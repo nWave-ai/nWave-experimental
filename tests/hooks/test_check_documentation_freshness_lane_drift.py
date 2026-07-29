@@ -45,10 +45,62 @@ _HOOK = _load()
 
 
 def _fake_docgen():
+    """Stub honouring the FULL ``docgen`` surface ``main()`` consults --
+    four agreement legs (stale / disagreements / lane-drift / generated-
+    region), each producing an empty-findings default so both tests below
+    exercise ONLY the lane-drift leg their docstring promises.
+
+    Kept in sync with ``scripts/docgen.py``'s real signatures deliberately
+    (not import-bound) -- see ``test_fake_docgen_matches_real_docgen_surface``
+    below, which fails loud the moment ``main()`` grows a 5th leg this stub
+    does not yet cover, instead of the bare ``AttributeError`` this file's
+    own history already produced once.
+    """
     return SimpleNamespace(
         run_pipeline=lambda root, output_dir: [],
         check_pages=lambda pages, output_dir: [],
         check_registry_runtime_agreement=lambda root: [],
+        scan=lambda root, *, public_only=False: {
+            "agents": [],
+            "commands": [],
+            "skills": [],
+            "templates": [],
+            "orchestrator_affordance": [],
+        },
+        project_generated_regions=lambda root, asset_paths: [],
+        check_generated_regions=lambda root, projections: [],
+    )
+
+
+def test_fake_docgen_matches_real_docgen_surface() -> None:
+    """The stub must expose every ``docgen`` attribute ``main()`` reads --
+    a future 5th leg growing ``main()`` without a matching stub attribute
+    must fail HERE, with a named missing-attribute list, rather than as a
+    bare ``AttributeError`` deep inside ``main()`` (this file's own history:
+    slice-04 added the generated-region leg and the stub silently fell out
+    of sync until the two tests above broke on an opaque trace)."""
+    import ast
+
+    tree = ast.parse(_HOOK_PATH.read_text(encoding="utf-8"))
+    main_func = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+    docgen_attrs = {
+        node.attr
+        for node in ast.walk(main_func)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "docgen"
+    }
+
+    stub_attrs = set(vars(_fake_docgen()).keys())
+    missing = docgen_attrs - stub_attrs
+
+    assert not missing, (
+        f"_fake_docgen() is missing attribute(s) {sorted(missing)} that "
+        f"main() now reads on the real docgen module -- extend the stub"
     )
 
 

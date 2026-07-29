@@ -109,12 +109,15 @@ def when_complete_revision_review(
         REVIEW_OUTCOME_BY_PHRASE["asked the entering slice for revision"]
     )
     after = composition.capture_universe()
+    # DD-1 both-outcomes write (declared-facts-reachable-recorded slice-01):
+    # NEEDS_REVISION now appends a record too -- verdict_count goes 0 -> 1,
+    # not "unchanged" as it did before the fix.
     assert_state_delta(
         before=before,
         after=after,
         universe={"ledger.verdict_count", "ledger.prior_records"},
         expected={
-            "ledger.verdict_count": unchanged(),
+            "ledger.verdict_count": set_to(1),
             "ledger.prior_records": unchanged(),
         },
     )
@@ -162,14 +165,14 @@ def then_no_earlier_record_altered(composition: ATReviewVerdictComposition) -> N
     assert prior == [{"event": "ATCompletion", "slice_id": "slice-06", "phase": "G"}]
 
 
-@then("the ledger gains no AT-review verdict for the entering slice")
-def then_no_verdict_recorded(
+@then("the recorded verdict is not an approval")
+def then_recorded_verdict_is_not_approval(
     composition: ATReviewVerdictComposition,
     result_box: dict[str, object],
 ) -> None:
-    assert composition.verdicts_for_entering_slice() == []
     outcome = result_box["outcome"]
-    assert outcome.record_written is False
+    assert outcome.recorded_verdict == "NEEDS_REVISION", outcome
+    assert composition.latest_verdict_field("verdict") == "NEEDS_REVISION"
 
 
 @then(parsers.parse("the verdict lists {count:d} reviewed test identifiers"))

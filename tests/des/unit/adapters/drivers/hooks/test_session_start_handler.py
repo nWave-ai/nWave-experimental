@@ -374,11 +374,19 @@ class TestSessionStartHandlerOutputFormat:
 
 
 class TestSessionStartHandlerSubstrateProbe:
-    """B10-B11: substrate probe advisory printed to stdout when non-empty; silent on healthy install."""
+    """B10-B11: substrate probe advisory written to stderr when non-empty; silent on healthy install.
+
+    The advisory is a plain-text (non-JSON) line. stdout is the channel every
+    consumer parses as JSON, so the advisory MUST NOT land there -- it goes to
+    stderr, where it stays visible to a terminal watcher without touching the
+    parsed channel.
+    """
 
     @pytest.mark.probe_test
-    def test_advisory_printed_to_stdout_when_probe_returns_non_empty(self, capsys):
-        """B10: run_probe() non-empty advisory is printed to stdout."""
+    def test_advisory_written_to_stderr_when_probe_returns_non_empty(
+        self, capsys, tmp_path
+    ):
+        """B10: run_probe() non-empty advisory is written to stderr, not stdout."""
         import io
 
         from des.adapters.drivers.hooks.session_start_handler import (
@@ -387,6 +395,7 @@ class TestSessionStartHandlerSubstrateProbe:
         from des.application.update_check_service import UpdateCheckResult, UpdateStatus
 
         result = UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
+        stdin_envelope = json.dumps({"cwd": str(tmp_path)})
 
         with (
             patch(
@@ -396,7 +405,7 @@ class TestSessionStartHandlerSubstrateProbe:
                 "des.adapters.drivers.hooks.session_start_handler.run_probe",
                 return_value="advisory line\n",
             ),
-            patch("sys.stdin", io.StringIO("{}")),
+            patch("sys.stdin", io.StringIO(stdin_envelope)),
         ):
             mock_svc = MagicMock()
             mock_svc.check_for_updates.return_value = result
@@ -405,12 +414,13 @@ class TestSessionStartHandlerSubstrateProbe:
             exit_code = handle_session_start()
 
         assert exit_code == 0
-        out = capsys.readouterr().out
-        assert out == "advisory line\n"
+        captured = capsys.readouterr()
+        assert captured.err == "advisory line\n"
+        assert captured.out == ""
 
     @pytest.mark.probe_test
-    def test_no_output_when_probe_returns_empty(self, capsys):
-        """B11: run_probe() empty string produces no advisory output."""
+    def test_no_output_when_probe_returns_empty(self, capsys, tmp_path):
+        """B11: run_probe() empty string produces no advisory output on either stream."""
         import io
 
         from des.adapters.drivers.hooks.session_start_handler import (
@@ -419,6 +429,7 @@ class TestSessionStartHandlerSubstrateProbe:
         from des.application.update_check_service import UpdateCheckResult, UpdateStatus
 
         result = UpdateCheckResult(status=UpdateStatus.UP_TO_DATE)
+        stdin_envelope = json.dumps({"cwd": str(tmp_path)})
 
         with (
             patch(
@@ -428,7 +439,7 @@ class TestSessionStartHandlerSubstrateProbe:
                 "des.adapters.drivers.hooks.session_start_handler.run_probe",
                 return_value="",
             ),
-            patch("sys.stdin", io.StringIO("{}")),
+            patch("sys.stdin", io.StringIO(stdin_envelope)),
         ):
             mock_svc = MagicMock()
             mock_svc.check_for_updates.return_value = result
@@ -437,9 +448,71 @@ class TestSessionStartHandlerSubstrateProbe:
             exit_code = handle_session_start()
 
         assert exit_code == 0
-        out = capsys.readouterr().out
-        # When update check returns UP_TO_DATE and probe returns empty, stdout has nothing
-        assert out == ""
+        captured = capsys.readouterr()
+        # When update check returns UP_TO_DATE and probe returns empty, neither
+        # stream carries anything.
+        assert captured.out == ""
+        assert captured.err == ""
+
+
+class TestSessionStartHandlerAdvisoryDoesNotCorruptStdoutJson:
+    """Regression: a plain-text health advisory must not corrupt stdout's JSON.
+
+    Property under test: when handle_session_start ALSO emits a JSON envelope
+    on stdout in the same invocation (e.g. UPDATE_AVAILABLE), and the
+    substrate probe reports issues in that same invocation, stdout -- taken as
+    a whole -- must still parse as exactly one JSON object. Asserting only
+    "the advisory is on stderr" is a weaker property: it would still pass if
+    stdout ALSO carried a stray copy of the advisory. This test parses the
+    captured stdout to prove the channel itself is clean.
+    """
+
+    @pytest.mark.probe_test
+    def test_stdout_parses_as_json_when_probe_reports_issues_alongside_a_json_write(
+        self, capsys, tmp_path
+    ):
+        import io
+
+        from des.adapters.drivers.hooks.session_start_handler import (
+            handle_session_start,
+        )
+        from des.application.update_check_service import UpdateCheckResult, UpdateStatus
+
+        result = UpdateCheckResult(
+            status=UpdateStatus.UPDATE_AVAILABLE, latest="9.9.9", changelog=None
+        )
+        advisory = (
+            "⚠ nWave install health check: 2 issues found"
+            " (run `nwave-ai doctor` for details).\n"
+        )
+        stdin_envelope = json.dumps({"cwd": str(tmp_path)})
+
+        with (
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._build_update_check_service"
+            ) as mock_factory,
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler._get_local_version",
+                return_value="1.0.0",
+            ),
+            patch(
+                "des.adapters.drivers.hooks.session_start_handler.run_probe",
+                return_value=advisory,
+            ),
+            patch("sys.stdin", io.StringIO(stdin_envelope)),
+        ):
+            mock_svc = MagicMock()
+            mock_svc.check_for_updates.return_value = result
+            mock_factory.return_value = mock_svc
+
+            exit_code = handle_session_start()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "install health check" in captured.err
+        # The property: stdout, taken whole, parses as ONE JSON object.
+        payload = json.loads(captured.out)
+        assert payload["hookSpecificOutput"]["hookEventName"] == "SessionStart"
 
 
 class TestSessionStartHandlerSingleCombinedPayload:

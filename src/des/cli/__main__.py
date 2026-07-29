@@ -64,6 +64,7 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     _SubcommandRow("classify-features", "des.cli.classify_features", "main"),
     _SubcommandRow("convert-to-atdd-pure", "des.cli.convert_to_atdd_pure", "main"),
     _SubcommandRow("reverify-slice-commit", "des.cli.reverify_slice_commit", "main"),
+    _SubcommandRow("verify-seal-provenance", "des.cli.verify_seal_provenance", "main"),
     _SubcommandRow(
         "verify-environmental-e2e",
         "des.cli.verify_environmental_e2e",
@@ -79,6 +80,10 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "main",
     ),
     _SubcommandRow("doctor", "des.cli.doctor", "main"),
+    # QW5 (mikado.md:47): the runner-capability probe report -- records
+    # supported/unsupported/indeterminate per declared runner against the
+    # LIVE probed environment, never a static reference.
+    _SubcommandRow("runner-probe", "des.cli.runner_probe", "main"),
     _SubcommandRow(
         "verify-readiness-pre-dispatch",
         "des.cli.verify_readiness_pre_dispatch",
@@ -248,6 +253,12 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # for clearing a stale wave-active floor (reuses WaveActiveWriter.clear via
     # WaveActivationService.clear_floor -- the floor's first CLI consumer, D11).
     _SubcommandRow("wave-clear", "des.cli.wave_clear", "main"),
+    # declared-vs-emitted defect class (docs/mikado/codex-parity-and-performance
+    # -delivery.mikado.md): shipped prose (skills/agents/tasks/CLAUDE.md/ADRs)
+    # claims an event/ledger record the code never produces. This gate mechanically
+    # cross-checks every claimed name against a producer registry scanned from
+    # src/des, PASS/FAIL/INDETERMINATE (never a silent pass).
+    _SubcommandRow("verify-declared-events", "des.cli.verify_declared_events", "main"),
     # f-coherence-and-attestation slice-06 (the gate-stack WIRING slice, JOB-028):
     # the three already-built feature modules are CONNECTED into the dispatcher so a
     # maintainer can REACH them and the closure scorecard sees the feature WIRED
@@ -483,6 +494,12 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # both verdicts, D-2); exit 2 only on a malformed --scope invocation.
     _SubcommandRow("parallel-safety-report", "des.cli.parallel_safety_report", "main"),
     _SubcommandRow("plan", "des.cli.delivery_plan", "main"),
+    # declared-facts-reachable-recorded slice-07 (DD-12): the read-side
+    # closing the "0 readers" state F1 named -- AGENT_USAGE_OBSERVED had
+    # exactly one caller in the tree (its own producer) before this row.
+    _SubcommandRow(
+        "report-delivery-metrics", "des.cli.report_delivery_metrics", "main"
+    ),
 )
 
 

@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 from des.application.deliver_loop_projection import project_next_step
+from des.cli._repo_root_arg import add_repo_root_argument
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -39,8 +40,21 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--feature-id", required=True, help="The feature id.")
+    add_repo_root_argument(
+        parser, "--repo", default=".", help="Path to the project root (default: cwd)."
+    )
     parser.add_argument(
-        "--repo", default=".", help="Path to the project root (default: cwd)."
+        "--slice",
+        dest="slice_id",
+        default=None,
+        help=(
+            "The slice THIS lane owns, e.g. slice-06. Declare it whenever the "
+            "Slice Plan carries more than one pending row -- a pending row is "
+            "not evidence the slice is yours, since in a parallel worktree "
+            "every slice the lane does not own stays pending forever. Omitted "
+            "on an ambiguous plan, the projection reports INDETERMINATE rather "
+            "than naming a slice by table position."
+        ),
     )
     parser.add_argument(
         "--format",
@@ -54,7 +68,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Parse argv, project the next step, print it. Returns the exit code."""
     args = _build_parser().parse_args(argv)
-    step = project_next_step(Path(args.repo), args.feature_id)
+    step = project_next_step(Path(args.repo), args.feature_id, args.slice_id)
     if args.format == "json":
         print(json.dumps(dataclasses.asdict(step)))
     else:

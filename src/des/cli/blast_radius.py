@@ -41,6 +41,7 @@ from des.application.blast_radius_measurement import (
     BlastRadiusInputRejected,
     measure_blast_radius,
 )
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.blast_radius import BlastRadiusConfigRejected
 
@@ -74,7 +75,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "COST."
         ),
     )
-    parser.add_argument("--repo", required=True, help="The repository root.")
+    add_repo_root_argument(parser, "--repo", required=True, help="The repository root.")
     parser.add_argument(
         "--paths",
         nargs="+",

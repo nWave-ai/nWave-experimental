@@ -2,7 +2,13 @@
 #
 # 1:1 mirror of `src/des/cli/__main__.py:_REGISTRY` (verified mechanically
 # by Phase 1 slice-01 AT-2). Adding a new gate = (1) add SubcommandRow to
-# `_REGISTRY`, (2) add corresponding entry here. CI arch test enforces parity.
+# `_REGISTRY`, (2) add corresponding entry here, (3) add the per-gate file.
+# Parity is enforced on TWO surfaces, not one: the `tests/build/
+# d4_phase_1_catalog_files` pytest AT (fires in CI on push -- a push-away
+# check, confirmed 2026-07-29 to have gone silently RED for hours between
+# two local, unpushed commits) and, since 2026-07-29, the `des
+# verify-catalog-coherence` CLI wired as a `.pre-commit-config.yaml`
+# pre-commit hook (fires at COMMIT time, before a push ever happens).
 #
 # Per INV-1 atomic units, INV-2 composable (via workflow-flavor), INV-13
 # single CLI entry (`des <gate_id>` already implemented).
@@ -156,6 +162,12 @@ gates:
     entry_function: main
     language_neutral_contract: true
 
+  - gate_id: runner-probe
+    responsibility: "Report supported/unsupported/indeterminate per declared runner against the live probed environment (QW5)."
+    module: des.cli.runner_probe
+    entry_function: main
+    language_neutral_contract: true
+
   - gate_id: verify-readiness-pre-dispatch
     responsibility: "Verify the 6 cascading first-dispatch invariants (slice plan section, slice tags per scenario, AT-review verdict ledger record, gate output produceable, pre-commit pytest scope, reuse-first analysis or DESIGN-skip witness) in one invocation; closes friction #57."
     module: des.cli.verify_readiness_pre_dispatch
@@ -238,6 +250,12 @@ gates:
   - gate_id: wave-clear
     responsibility: "Operator command: clear a stale wave-active floor through the one sanctioned, audited path (--reason required; CLEARED/NOOP_SUCCESS exit 0, INDETERMINATE degrade-LOUD exit 1) instead of hand-editing active.json."
     module: des.cli.wave_clear
+    entry_function: main
+    language_neutral_contract: true
+
+  - gate_id: verify-declared-events
+    responsibility: "Declared-vs-emitted defect class: every event/ledger-record name shipped prose (skills/agents/tasks/CLAUDE.md/permanent ADRs) claims is produced must have a real write call in src/des, an explicit not-yet-built caveat, or a reviewed exemption -- PASS/FAIL/INDETERMINATE, never a silent pass over a phantom name."
+    module: des.cli.verify_declared_events
     entry_function: main
     language_neutral_contract: true
 
@@ -552,5 +570,25 @@ gates:
   - gate_id: plan
     responsibility: "Advisory ready-set and unused-parallelism report. Reads a validated feature's Slice Plan and an explicit set of already-complete slices; never launches work, changes a ledger, or authorizes a gate -- makes safe, declared parallelism visible before an operator falls back to a serial delivery path."
     module: des.cli.delivery_plan
+    entry_function: main
+    language_neutral_contract: true
+
+  # lane-seal-refuses-premature, part B (fix-slice-seal-carries-commit-sha):
+  # 1:1 mirror of the _REGISTRY row added in b8bcb6ad4. Backfilled by the
+  # arm-coherence catalog-coherence gate-arming pass (2026-07-29) -- this row
+  # was missing since the row's own commit, silently drifting the catalog.
+  - gate_id: verify-seal-provenance
+    responsibility: "For every SliceCommitVerified record of --feature-id, audits whether the slice's AT file(s) existed as blobs in the commit_sha the record attests -- a record whose AT postdates its own seal is a proven PREMATURE attestation; a record predating commit_sha's existence is INDETERMINATE, never silently trusted. Pure read: no ledger mutation."
+    module: des.cli.verify_seal_provenance
+    entry_function: main
+    language_neutral_contract: true
+
+  # declared-facts-reachable-recorded slice-07 (DD-12): 1:1 mirror of the
+  # _REGISTRY row added in df0b49b3a. Backfilled by the arm-coherence
+  # catalog-coherence gate-arming pass (2026-07-29) -- this row was missing
+  # since the row's own commit, silently drifting the catalog.
+  - gate_id: report-delivery-metrics
+    responsibility: "Read-only delivery-cost/time-to-green report over the audit log and AT-completion ledger: agent-usage-by-stage aggregates deduped token totals per stage from the JSONL audit log; time-to-green joins RedObserved x SliceCommitVerified ledger records per slice into GREEN/IN_PROGRESS/UNATTRIBUTED states, never a bare duration. Both degrade LOUD to an explicit could-not-verify status on zero matching records, never a silent 0."
+    module: des.cli.report_delivery_metrics
     entry_function: main
     language_neutral_contract: true

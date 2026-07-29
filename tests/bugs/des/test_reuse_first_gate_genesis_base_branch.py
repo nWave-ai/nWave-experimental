@@ -69,9 +69,15 @@ _FEATURE_ID = "reuse-first-genesis-probe"
 def _write_feature_delta_justifying(repo: Path, component_name: str) -> None:
     delta_dir = repo / "docs" / "feature" / _FEATURE_ID
     delta_dir.mkdir(parents=True, exist_ok=True)
+    # DD-7: heading recognition now routes through the ONE unified
+    # `is_reuse_analysis_heading` predicate (bare `## Reuse Analysis` only) --
+    # `check_reuse_first_design.py` no longer accepts the Wave-form
+    # `## Wave: DESIGN / [REF] Reuse Analysis` heading. This bare canonical
+    # form is LOAD-BEARING for the gate under test; do not "helpfully" widen
+    # it back to the Wave-form, it would silently reintroduce the D2 defect.
     (delta_dir / "feature-delta.md").write_text(
         "# Feature Delta: reuse-first-genesis-probe\n\n"
-        "## Wave: DESIGN / [REF] Reuse Analysis\n\n"
+        "## Reuse Analysis\n\n"
         "| Existing Component | Justification |\n"
         "|---------------------|----------------|\n"
         f"| {component_name} | this feature's own genuinely new component |\n",

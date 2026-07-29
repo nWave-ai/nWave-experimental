@@ -34,6 +34,6 @@ Check SSOT first, then feature delta:
 | DESIGN | `docs/product/architecture/brief.md` has a section for this feature | `docs/feature/{id}/design/` exists but brief.md not updated |
 | DEVOPS | `docs/product/kpi-contracts.yaml` has contracts for this feature | `docs/feature/{id}/devops/` exists but no KPI contracts in SSOT |
 | DISTILL | `tests/acceptance/{id}/` has feature files | `docs/feature/{id}/distill/` exists but test files incomplete |
-| DELIVER | `docs/feature/{id}/deliver/execution-log.json` with all roadmap steps at COMMIT/PASS | `docs/feature/{id}/deliver/execution-log.json` exists with some steps incomplete |
+| DELIVER | every slice-plan row is `shipped` AND the AT-completion ledger `.nwave/telemetry/atdd-pure/{id}.jsonl` records `FeatureEndReviewVerdict` (or `EBatchRefactorCompleted`) — the real feature-end attesting events; there is no per-step `FeatureEndCheckpoint` record (named in ADR-028 D6, never implemented) | the ledger exists with at least one slice not yet `shipped`, or all slices `shipped` but neither `FeatureEndReviewVerdict` nor `EBatchRefactorCompleted` is recorded yet |
 
 "Not started" = neither SSOT entry nor feature delta directory exist for that wave.

@@ -29,6 +29,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.domain.repo_path_resolver import (
     resolve_repo_root as _resolve_repo_root,
 )
@@ -95,7 +96,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--verdict", required=True, choices=["APPROVED"])
     parser.add_argument("--reviewer-agent-id", required=True)
     parser.add_argument("--doc-review-ref", required=True)
-    parser.add_argument("--repo-root", default=None)
+    add_repo_root_argument(parser, "--repo-root", default=None)
     return parser.parse_args(sys.argv[1:] if argv is None else list(argv))
 
 

@@ -66,4 +66,3 @@ output_contract:
   files:
     - path: "docs/feature/{feature_id}/feature-delta.md"
       grade: mandatory
-      inline_in_feature_delta: true

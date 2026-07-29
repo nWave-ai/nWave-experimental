@@ -1,0 +1,49 @@
+# Gate-contract: verify-seal-provenance (lane-seal-refuses-premature, part B
+# of fix-slice-seal-carries-commit-sha)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` # 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=verify-seal-provenance.
+#
+# Backfilled by the arm-coherence catalog-coherence gate-arming pass
+# (2026-07-29): this per-gate file did not exist since the row's own
+# commit (b8bcb6ad4). log_events/failure_modes/idempotency below are
+# derived from reading src/des/cli/verify_seal_provenance.py directly
+# (its own docstring, exit-code epilog, and emitted payload/"how" text) --
+# host_visibility is NOT derivable from the module itself; it is set here
+# by analogy to verify-commit-trailers.yaml, the closest existing sibling
+# (a pure-read AT-completion-ledger audit gate), not measured.
+
+gate_id: verify-seal-provenance
+responsibility: |
+  Audits every SliceCommitVerified record for --feature-id: did the slice's
+  AT file(s) exist as blobs in the commit_sha the record attests? Composes
+  audit_seal_provenance (git-free logic) with GitCommitTreePathAdapter (the
+  ONE place git enters, degrading LOUD to INDETERMINATE on any git failure).
+  Pure read: no ledger mutation. An empty audited population is reported
+  INDETERMINATE, never a silent PASS (GDP-8 population floor).
+module: des.cli.verify_seal_provenance
+entry_function: main
+language_neutral_contract: true
+
+log_events: []
+
+failure_modes:
+  - error_class: SealProvenancePremature
+    exit_code: 1
+    remediation: "The AT for a PREMATURE slice postdates its own seal -- not mechanically auto-repairable; reconcile by hand which is true, then if the seal is spurious re-verify via `des reverify-slice-commit --feature-id <id> --slice-id <slice-id> --commit <real-sha>`."
+  - error_class: SealProvenanceIndeterminate
+    exit_code: 3
+    remediation: "These records cannot be mechanically verified (no commit_sha, no discoverable AT, or git itself could not resolve the fact) -- a visibility gap to review manually, not an automatic failure."
+  - error_class: SealProvenanceZeroPopulation
+    exit_code: 3
+    remediation: "0 SliceCommitVerified records were found for --feature-id at the AT-completion ledger path named in the verdict -- re-run with --repo pointed at the checkout that actually holds .nwave/telemetry/atdd-pure/<feature-id>.jsonl before trusting any verdict for this feature."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli
+  - git-hook

@@ -39,10 +39,11 @@ Feature: DISTILL records a keyless AT-review verdict for a reviewed slice
     And no earlier ledger record is altered
 
   @slice-07 @driving_port @error @contract-shape:bounded-change
-  Scenario: A rejected slice review records no verdict
+  Scenario: A rejected slice review records a NEEDS_REVISION verdict, never an approval
     Given an acceptance-designer reviewer asked the entering slice for revision
     When the designer completes the AT-review for the entering slice
-    Then the ledger gains no AT-review verdict for the entering slice
+    Then the ledger gains one AT-review verdict for the entering slice
+    And the recorded verdict is not an approval
 
   @slice-07 @driving_port @property @contract-shape:bounded-change
   Scenario Outline: The verdict covers a reviewed AT set of any size

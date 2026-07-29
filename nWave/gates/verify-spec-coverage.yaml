@@ -18,21 +18,6 @@ module: des.cli.verify_spec_coverage
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --checklist
-    required: true
-    type: path
-    help: "Requirement checklist file extracted at DISTILL-open (P3.1)."
-  - name: --at-dir
-    required: false
-    type: path
-    help: "Directory of AT files (.py / .feature); repeatable."
-  - name: --repo
-    required: false
-    type: path
-    help: "Repository root."
-    default: "."
-
 log_events:
   - SpecCoverageVerified
   - SpecCoverageRefused

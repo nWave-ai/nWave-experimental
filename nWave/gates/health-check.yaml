@@ -11,8 +11,6 @@ module: des.cli.health_check
 entry_function: main
 language_neutral_contract: true
 
-cli_args: []
-
 log_events:
   - DesHealthCheckCompleted
 

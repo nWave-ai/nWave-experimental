@@ -29,6 +29,7 @@ from pathlib import Path
 from des.adapters.driven.filesystem.wave_active_filesystem_store import (
     WaveActiveFilesystemStore,
 )
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.domain.wave_active import WaveActiveRecord, is_inferred_floor_expired
 from des.domain.wave_dispatch_guard_policy import (
     WAVE_OWNERS,
@@ -56,7 +57,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to a FILE holding the dispatch prompt (carries the DES-WAVE marker).",
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo-root",
         required=False,
         default=None,

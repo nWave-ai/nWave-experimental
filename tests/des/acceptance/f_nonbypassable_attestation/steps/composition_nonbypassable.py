@@ -73,6 +73,7 @@ _ALL_REQUIRED: tuple[FeatureEndRecord, ...] = (
     FeatureEndRecord.ENVIRONMENTAL_E2E_GATE_RAN,
     FeatureEndRecord.FEATURE_END_REVIEW_VERDICT,
     FeatureEndRecord.WALKING_SKELETON_GATE_RAN,
+    FeatureEndRecord.WALKING_SKELETON_TIER_VERIFIED,
     FeatureEndRecord.FULL_SUITE_LEG_RAN,
 )
 

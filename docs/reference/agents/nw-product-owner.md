@@ -3,7 +3,7 @@
 Conducts UX journey design and requirements gathering with BDD acceptance criteria. Use when defining user stories, emotional arcs, or enforcing Definition of Ready.
 
 **Wave:** Other
-**Model:** inherit
+**Model:** sonnet
 **Max turns:** 45
 **Tools:** Read, Write, Edit, Glob, Grep, Task
 

@@ -67,6 +67,12 @@ from des.adapters.driven.runner.runner_registry import (
     GLOBAL_REGISTRY,
     seed_runner_registry,
 )
+from des.application.feature_at_files import (
+    feature_tagged_test_files,
+    is_pytest_collectible,
+    resolve_test_file_attribution,
+)
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_slice_gate import _feature_tag_files
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.slice_id_trailer import SLICE_TAG_RE
@@ -2526,19 +2532,29 @@ def run_slice_ats(repo: Path, entering_slice: str) -> SliceGateRunScope:
 def _node_belongs_to_slice(repo: Path, node_id: str, entering_slice: str) -> bool:
     """Whether a collected node-id's test file is bound to the entering slice.
 
-    A node-id is in-slice when a ``.feature`` file in the SAME directory as the
-    node's test module carries the ``@<entering_slice>`` tag. This is the
-    genuine scope check -- it reads the bound ``.feature`` tags, never a
-    substring of the node-id path (the filesystem path uses ``slice_NN`` while
-    the tag uses ``slice-NN``). A node whose directory carries no slice-tagged
-    ``.feature`` is out-of-slice.
+    Two authoring arms, AT-kind agnostic (agnostic-at-discovery-ssot-repair,
+    gap 2): a node-id is in-slice when EITHER a ``.feature`` file in the SAME
+    directory as the node's test module carries the ``@<entering_slice>`` tag
+    (the Gherkin arm -- reads the bound ``.feature`` tags, never a substring of
+    the node-id path, since the filesystem path uses ``slice_NN`` while the tag
+    uses ``slice-NN``), OR the node's OWN pytest file is head-comment-tagged
+    ``@<entering_slice>`` (the pytest arm -- ``resolve_test_file_attribution``,
+    the SAME resolver ADR-AAD-001 and gap 1 of this repair already trust,
+    filtered through ``is_pytest_collectible`` so a non-test file is never
+    misread). A node with neither is out-of-slice.
     """
     rel_path = node_id.split("::", 1)[0]
-    node_dir = (repo / rel_path).parent
-    if not node_dir.is_dir():
-        return False
-    for feature_file in node_dir.glob("*.feature"):
-        if _feature_carries_slice_tag(feature_file, entering_slice):
+    node_path = repo / rel_path
+    node_dir = node_path.parent
+    if node_dir.is_dir():
+        # gherkin-scope: REPAIRED-as-one-arm (agnostic-at-discovery-ssot-
+        # repair gap 2, aa5bacca0) -- the Gherkin arm; the pytest arm is the
+        # `is_pytest_collectible` branch immediately below, same function.
+        for feature_file in node_dir.glob("*.feature"):
+            if _feature_carries_slice_tag(feature_file, entering_slice):
+                return True
+    if is_pytest_collectible(node_path):
+        if resolve_test_file_attribution(node_path).slice_id == entering_slice:
             return True
     return False
 
@@ -2578,6 +2594,9 @@ def _slice_feature_dir(repo: Path, entering_slice: str) -> Path | None:
     tests_dir = repo / "tests"
     if not tests_dir.is_dir():
         return None
+    # gherkin-scope: REPAIRED-as-one-arm -- one arm of the OR
+    # `des.cli.run_slice_ats.main` composes at its own call site (falls back
+    # to the pytest-tag oracle `feature_files_for_slice` when this is None).
     for feature_file in sorted(tests_dir.rglob("*.feature")):
         if _feature_carries_slice_tag(feature_file, entering_slice):
             return feature_file.parent
@@ -2745,6 +2764,59 @@ def _narrow_to_shipped_entering(
         if in_scope:
             kept.append(node_id)
             collected_tags |= in_scope
+    return kept, collected_tags
+
+
+def _pytest_only_at_files(repo: Path, feature_id: str) -> list[Path]:
+    """Every pytest-collectible AT file head-tagged ``@feature-{feature_id}``.
+
+    The pytest-arm mirror of ``_feature_tag_files`` (agnostic-at-discovery-
+    ssot-repair, gap 2): composes the SAME resolvers ADR-AAD-001 and gap 1 of
+    this repair already trust (``feature_tagged_test_files`` +
+    ``is_pytest_collectible``) instead of a Gherkin-only ``.feature`` scan --
+    no new discovery mechanism.
+    """
+    return sorted(
+        p
+        for p in feature_tagged_test_files(repo, feature_id)
+        if is_pytest_collectible(p)
+    )
+
+
+def _narrow_to_shipped_entering_pytest(
+    repo: Path,
+    node_ids: list[str],
+    entering_slice: str,
+) -> tuple[list[str], set[str]]:
+    """The pytest-arm mirror of ``_narrow_to_shipped_entering``.
+
+    A Gherkin scenario carries its ``@slice-NN`` tag per-SCENARIO
+    (``_scenario_slice_index``); a pytest AT carries it once per-FILE (the
+    head-comment ``@<slice>`` sub-tag, ``resolve_test_file_attribution``) --
+    every node-id collected from that file shares the SAME tag. Otherwise
+    identical semantics: shipped+entering = slice number ``<=`` the entering
+    slice's number, and an untagged node is conservatively KEPT (never
+    silently dropped).
+    """
+    entering_number = _slice_number(entering_slice)
+    file_tags: dict[Path, str | None] = {}
+    kept: list[str] = []
+    collected_tags: set[str] = set()
+    for node_id in node_ids:
+        node_path = repo / node_id.split("::", 1)[0]
+        if node_path not in file_tags:
+            file_tags[node_path] = resolve_test_file_attribution(node_path).slice_id
+        slice_id = file_tags[node_path]
+        if slice_id is None:
+            # Untagged node: not slice-attributed -- keep it, contributes no tag.
+            kept.append(node_id)
+            continue
+        slice_number = _slice_number(slice_id)
+        if entering_number is None or (
+            slice_number is not None and slice_number <= entering_number
+        ):
+            kept.append(node_id)
+            collected_tags.add(slice_id)
     return kept, collected_tags
 
 
@@ -3535,8 +3607,12 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
     """``--feature-id``: scope the contract gate to one feature's node-ids.
 
     Resolves the feature's ``.feature`` files via the ``@feature-`` tag (the
-    ``carpaccio_slice_gate._feature_tag_files`` resolver, OQ-2), then applies
-    the M-1/M-8 non-vacuity floor:
+    ``carpaccio_slice_gate._feature_tag_files`` resolver, OQ-2) -- OR, when
+    the feature owns none, falls back to the pytest arm
+    (``_pytest_only_at_files`` / ``_narrow_to_shipped_entering_pytest``,
+    agnostic-at-discovery-ssot-repair gap 2): a head-comment-tagged pytest AT
+    is a genuine delivered contract too, never a reason to refuse vacuously.
+    Either arm then applies the M-1/M-8 non-vacuity floor:
 
     * M-8 -- the union of ``@slice-NN`` tags across the feature's ``.feature``
       files must intersect the entering slice. A malformed tag (``@slice-abc``)
@@ -3561,55 +3637,95 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
         return cargo_verdict
 
     feature_files = _feature_tag_files(repo, feature_id)
-    if not feature_files:
-        return _feature_scope_malformed(
-            feature_id,
-            "zero-collected",
-            f"no .feature file resolves under feature id {feature_id!r} "
-            "-- the scoped contract gate would pass vacuously",
+    if feature_files:
+        collected_slice_tags: set[str] = set()
+        for feature_file in feature_files:
+            collected_slice_tags |= _slice_tags(feature_file)
+        if entering_slice not in collected_slice_tags:
+            return _feature_scope_malformed(
+                feature_id,
+                "empty-intersection",
+                f"the collected feature scope carries no @{entering_slice} "
+                "tag -- the scoped contract gate would pass vacuously",
+                entering_slice=entering_slice,
+            )
+
+        # M-1: real node-id collection over the feature's test scope. Routed
+        # through `_collect_scope_with_marker_fallback` (Q-169: the shared
+        # marker-agnostic fallback seam over the existing `_collect_scope` --
+        # DDD-12, no third pytest call site); scoped to the directories holding
+        # the resolved .feature files. A marker-less-but-genuinely-populated
+        # feature scope (no unit/integration/acceptance marker on its step
+        # module) no longer false-refuses at the M-1 floor below (RCA branch C).
+        scope_dirs = sorted({feature_file.parent for feature_file in feature_files})
+        try:
+            raw_node_ids = _collect_scope_with_marker_fallback(
+                repo, paths=scope_dirs
+            ).node_ids
+        except InterpreterUnavailable as exc:
+            return _degrade_interpreter_unavailable(exc)
+        except _CollectionError as exc:
+            return _feature_scope_malformed(
+                feature_id,
+                "collection-failed",
+                f"feature-scoped pytest collection failed: {exc}",
+                entering_slice=entering_slice,
+                kind=_KIND_BUILD_FAILURE,
+            )
+        # DDD-1/DDD-2: narrow the collected scope to the shipped+entering slice set,
+        # EXCLUDING a not-yet-entered future-slice scaffold -- by scenario slice-tag,
+        # never by mutating the .feature files (the @skip-pollution bug class). For
+        # the final/single entering slice the whole shipped set is retained (DDD-3).
+        node_ids, collected_slice_tags = _narrow_to_shipped_entering(
+            raw_node_ids, feature_files, entering_slice
+        )
+    else:
+        # PYTEST arm (agnostic-at-discovery-ssot-repair, gap 2): zero Gherkin
+        # .feature files does NOT mean zero AT -- the feature may be
+        # delivered exclusively via head-comment-tagged pytest files (the
+        # SAME convention ADR-AAD-001 and gap 1 of this repair already treat
+        # as first-class). Composes the SAME resolvers, never a Gherkin-
+        # shaped refusal for a target that never had Gherkin to check
+        # (mirrors the cargo run-facet's own zero-.feature carve-out above).
+        pytest_at_files = _pytest_only_at_files(repo, feature_id)
+        if not pytest_at_files:
+            return _feature_scope_malformed(
+                feature_id,
+                "zero-collected",
+                f"no .feature file resolves under feature id {feature_id!r} "
+                "and no head-comment-tagged pytest AT file was found either "
+                "-- the scoped contract gate would pass vacuously",
+            )
+        all_slice_ids = {
+            resolve_test_file_attribution(p).slice_id for p in pytest_at_files
+        }
+        all_slice_ids.discard(None)
+        if entering_slice not in all_slice_ids:
+            return _feature_scope_malformed(
+                feature_id,
+                "empty-intersection",
+                f"the collected feature scope carries no @{entering_slice} "
+                "tag -- the scoped contract gate would pass vacuously",
+                entering_slice=entering_slice,
+            )
+        try:
+            raw_node_ids = _collect_scope_with_marker_fallback(
+                repo, paths=pytest_at_files, markers=None
+            ).node_ids
+        except InterpreterUnavailable as exc:
+            return _degrade_interpreter_unavailable(exc)
+        except _CollectionError as exc:
+            return _feature_scope_malformed(
+                feature_id,
+                "collection-failed",
+                f"feature-scoped pytest collection failed: {exc}",
+                entering_slice=entering_slice,
+                kind=_KIND_BUILD_FAILURE,
+            )
+        node_ids, collected_slice_tags = _narrow_to_shipped_entering_pytest(
+            repo, raw_node_ids, entering_slice
         )
 
-    collected_slice_tags: set[str] = set()
-    for feature_file in feature_files:
-        collected_slice_tags |= _slice_tags(feature_file)
-    if entering_slice not in collected_slice_tags:
-        return _feature_scope_malformed(
-            feature_id,
-            "empty-intersection",
-            f"the collected feature scope carries no @{entering_slice} "
-            "tag -- the scoped contract gate would pass vacuously",
-            entering_slice=entering_slice,
-        )
-
-    # M-1: real node-id collection over the feature's test scope. Routed
-    # through `_collect_scope_with_marker_fallback` (Q-169: the shared
-    # marker-agnostic fallback seam over the existing `_collect_scope` --
-    # DDD-12, no third pytest call site); scoped to the directories holding
-    # the resolved .feature files. A marker-less-but-genuinely-populated
-    # feature scope (no unit/integration/acceptance marker on its step
-    # module) no longer false-refuses at the M-1 floor below (RCA branch C).
-    scope_dirs = sorted({feature_file.parent for feature_file in feature_files})
-    try:
-        raw_node_ids = _collect_scope_with_marker_fallback(
-            repo, paths=scope_dirs
-        ).node_ids
-    except InterpreterUnavailable as exc:
-        return _degrade_interpreter_unavailable(exc)
-    except _CollectionError as exc:
-        return _feature_scope_malformed(
-            feature_id,
-            "collection-failed",
-            f"feature-scoped pytest collection failed: {exc}",
-            entering_slice=entering_slice,
-            kind=_KIND_BUILD_FAILURE,
-        )
-    # DDD-1/DDD-2: narrow the collected scope to the shipped+entering slice set,
-    # EXCLUDING a not-yet-entered future-slice scaffold -- by scenario slice-tag,
-    # never by mutating the .feature files (the @skip-pollution bug class). For
-    # the final/single entering slice the whole shipped set is retained (DDD-3).
-    node_ids, collected_slice_tags = _narrow_to_shipped_entering(
-        raw_node_ids, feature_files, entering_slice
-    )
     if not node_ids:
         return _feature_scope_malformed(
             feature_id,
@@ -3694,8 +3810,11 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="des run-contract-gate",
         description="The canonical ATDD-pure contract gate (run / digest / verify).",
     )
-    parser.add_argument(
-        "--repo", required=True, help="Path to the git repository / project root."
+    add_repo_root_argument(
+        parser,
+        "--repo",
+        required=True,
+        help="Path to the git repository / project root.",
     )
     parser.add_argument(
         "--feature-id",

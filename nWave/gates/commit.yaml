@@ -16,24 +16,6 @@ module: des.cli.commit
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --repo-dir
-    required: true
-    type: path
-    help: "Path to the git repository / project root."
-  - name: --owned-paths
-    required: true
-    type: string
-    help: "The paths this invocation owns (repeatable). Only these enter the commit."
-  - name: --step-id
-    required: true
-    type: string
-    help: "The step identifier stamped as the commit's Step-Id trailer."
-  - name: --message
-    required: true
-    type: string
-    help: "The commit message body."
-
 log_events:
   - CommitCreated
   - CommitSkippedNoChanges

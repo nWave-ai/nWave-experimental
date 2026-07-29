@@ -755,6 +755,8 @@ def _emit_token_usage_events(
     agent_name: str | None,
     feature_id: str | None = None,
     wave: str | None = None,
+    slice_id: str | None = None,
+    stage: str | None = None,
 ) -> None:
     """Read transcript, extract token-usage events, write each via the audit port.
 
@@ -770,6 +772,8 @@ def _emit_token_usage_events(
             agent_name=agent_name or "unknown",
             feature_id=feature_id,
             wave=wave,
+            slice_id=slice_id,
+            stage=stage,
         )
         if not events:
             return
@@ -789,6 +793,44 @@ def _to_audit_event(event: AgentUsageObservedEvent) -> AuditEvent:
         feature_name=event.feature_id,
         data=event.to_audit_data(),
     )
+
+
+def _join_keys_from_resolved_context(
+    des_context_result: (
+        tuple[str, str, str, str | None, str]
+        | _AtddPureResolvedContext
+        | _WaveOnlyResolvedContext
+        | _WaveOnlyUnresolved
+        | tuple[None, dict[str, Any], int]
+    ),
+) -> tuple[str | None, str | None, str | None]:
+    """Derive (feature_id, slice_id, stage) join keys from a resolved DES context.
+
+    DD-4: classification is by the resolved-context SHAPE, not by which
+    downstream branch later consumes it -- every shape this resolver can
+    return maps to its own join keys, or to (None, None, None) when no DES
+    context could be established at all.
+
+    * ``_AtddPureResolvedContext``  -> project_id, slice_id, atdd_pure_phase
+    * ``_WaveOnlyResolvedContext``  -> project_id, None, declared_wave
+    * classic 5-tuple               -> project_id (element [1]), None, None
+    * ``_WaveOnlyUnresolved`` / any non-DES tuple -> None, None, None
+    """
+    if isinstance(des_context_result, _AtddPureResolvedContext):
+        return (
+            des_context_result.project_id,
+            des_context_result.slice_id,
+            des_context_result.atdd_pure_phase,
+        )
+    if isinstance(des_context_result, _WaveOnlyResolvedContext):
+        return (des_context_result.project_id, None, des_context_result.declared_wave)
+    if isinstance(des_context_result, _WaveOnlyUnresolved):
+        return (None, None, None)
+    if isinstance(des_context_result, tuple) and des_context_result[0] is not None:
+        # classic 5-tuple: (execution_log_path, project_id, step_id, raw_marker, effective_cwd)
+        project_id = des_context_result[1]
+        return (project_id, None, None)
+    return (None, None, None)
 
 
 def _extract_execution_stats(
@@ -1011,6 +1053,8 @@ def _emit_terminating_indeterminate(
     slice_id: str | None,
     event_name: str,
     reason_message: str,
+    *,
+    extra_fields: dict[str, object] | None = None,
 ) -> None:
     """The ONE shared terminating-INDETERMINATE shape for every watchdog terminal.
 
@@ -1037,6 +1081,13 @@ def _emit_terminating_indeterminate(
     the terminal's durable+loud shape; it never decides whether to terminate. The
     fail-safe DIRECTIONS of the callers are UNCHANGED by this unification:
     slice-02 fails-closed-to-block, slice-03 fails-open-to-leave-alone.
+
+    `extra_fields` (fix-bounded-block-names-how): optional additional keys
+    threaded into the durable record verbatim (mirror the `pinned_commit_sha`
+    / `block_reason` extra-field pattern `_emit_g_commit_ledger_event` already
+    uses). Callers that pass nothing keep the byte-identical
+    `{event, slice_id}` record shape -- this is additive, not a shape change
+    for the existing StaleAgentClosed / CollectionCrashTerminal callers.
     """
     if slice_id:
         try:
@@ -1045,7 +1096,10 @@ def _emit_terminating_indeterminate(
             )
 
             ledger = AtCompletionLedger(project_id, Path(effective_cwd or "."))
-            ledger._append_record({"event": event_name, "slice_id": slice_id})
+            record: dict[str, object] = {"event": event_name, "slice_id": slice_id}
+            if extra_fields:
+                record.update(extra_fields)
+            ledger._append_record(record)
         except Exception:
             # Fail-open: the terminal decision already stands; ledger emission is
             # audit (mirror `_emit_g_commit_ledger_event`).
@@ -1054,6 +1108,40 @@ def _emit_terminating_indeterminate(
     # not wired at the real-hook boundary yet; the durable ledger record above is
     # the KPI SSOT until R-69-C lands. Do NOT fabricate a sink here.
     print(reason_message, file=sys.__stderr__)
+
+
+# fix-bounded-block-names-how: the HOW-to-recover `des <subcommand>` for each
+# gate `block_reason` -- the concrete diagnostic that surfaces the REAL
+# underlying gate failure the terminal stopped re-firing on. Names in the
+# `des` single-entry-point registry (`src/des/cli/__main__.py`), not invented.
+_BOUNDED_BLOCK_HOW_COMMANDS: dict[str, str] = {
+    "slice-commit-completeness": "des verify-slice-commit",
+    "contract-gate": "des run-contract-gate",
+}
+
+
+def _bounded_block_how_text(block_reason: str) -> str:
+    """The HOW-to-recover + human-escalation clause (GDP-3/GDP-4) for a
+    bounded-block terminal.
+
+    Maps the resolved gate `block_reason` to the concrete `des <subcommand>`
+    diagnostic an operator can run to see the real, underlying gate failure
+    directly. `gate-timeout` has no mapped diagnostic command (a subprocess
+    timeout, not a gate verdict) -- say so honestly rather than fabricate one
+    (GDP-6 no silent-wrong). Always closes with an explicit human-escalation
+    statement: the bounded-block terminal hands the decision to a human, it
+    never auto-recovers.
+    """
+    command = _BOUNDED_BLOCK_HOW_COMMANDS.get(block_reason)
+    if command is not None:
+        how = f"HOW: run `{command}` to see the underlying gate failure directly."
+    else:
+        how = (
+            f"HOW: no diagnostic command is mapped for reason={block_reason!r} "
+            "(a subprocess timeout, not a gate verdict) -- inspect the "
+            "G_COMMIT gate subprocess logs directly."
+        )
+    return f"{how} A human must decide the next step (manual intervention required)."
 
 
 def _emit_bounded_block_terminal(
@@ -1072,12 +1160,18 @@ def _emit_bounded_block_terminal(
         `SliceCommitBlockedTerminal` ledger record (DDD-5 / DV-1; KPI-2 "the 3rd
         block paired with a terminal record") PLUS a `sys.__stderr__` warning
         that NAMES the bound, never a silent allow.
+      * NAMES HOW + ESCALATES (fix-bounded-block-names-how, GDP-3/GDP-4): the
+        diagnostic and the durable record both carry the SAME concrete
+        `des <subcommand>` recovery command plus an explicit human-escalation
+        statement, so a post-mortem operator sees the HOW without watching the
+        session live.
 
     Always exit 0 (the SubagentStop protocol: a non-zero exit would invert the
     contract and red CI -- the terminal is loud via stderr + durable record,
     never via exit code).
     """
     slice_id = resolved.slice_id
+    how_and_escalation = _bounded_block_how_text(block_reason)
     _emit_terminating_indeterminate(
         resolved.project_id,
         resolved.effective_cwd,
@@ -1086,7 +1180,8 @@ def _emit_bounded_block_terminal(
         f"INDETERMINATE: bounded-block terminal -- {_BOUNDED_BLOCK_N} identical "
         f"exit-gate blocks for (slice={slice_id}, pinned commit, reason="
         f"{block_reason}); terminating the agent to break the re-fire loop "
-        f"(no progress across {_BOUNDED_BLOCK_N} attempts).",
+        f"(no progress across {_BOUNDED_BLOCK_N} attempts). {how_and_escalation}",
+        extra_fields={"how_to_recover": how_and_escalation},
     )
     return 0
 
@@ -1856,6 +1951,15 @@ def _resolve_shipped_slice_set(
 # is the absent-flavor FALLBACK; the live SSOT is `atdd_pure.yaml
 # feature_end_required_records` (read by `_feature_end_required_records`), held
 # EQUAL to it + to `verify_deliver_integrity.py:required` (AT-A6).
+# fix-ws-done-gate-na-reconciliation slice-01: `WalkingSkeletonGateRan` alone
+# only proves the gate was ENTERED -- a walking skeleton that ran and FAILED
+# still leaves the heartbeat behind, so this frozenset used to let a FAILED
+# walking skeleton close (the hole this fix closes; `walking_skeleton_done_
+# gate.py` asserted the stronger PASS record correctly but had zero production
+# callers). `WalkingSkeletonTierVerified` is the PASS-only trust anchor (RM-3);
+# it is now ALSO required here, reconciled for a legitimately-NA feature by
+# the `WalkingSkeletonNotApplicable` marker via `feature_end_na_marker_
+# reconciles()` in `_missing_feature_end_cycle_records` below.
 _REQUIRED_FEATURE_END_RECORDS = frozenset(
     {
         "CoverageMapVerifiedAtDeliverExit",
@@ -1865,6 +1969,7 @@ _REQUIRED_FEATURE_END_RECORDS = frozenset(
         "FeatureEndReviewVerdict",
         "FullSuiteLegRan",
         "WalkingSkeletonGateRan",
+        "WalkingSkeletonTierVerified",
     }
 )
 
@@ -2152,6 +2257,10 @@ def _run_decision_table_traceability_gate(repo: Path, feature_id: str) -> None:
             return
         feature_texts: list[str] = []
         runnable_feature_files: list[tuple[str, str]] = []
+        # gherkin-scope: the clause-carrier `# clause:` tag is structurally
+        # bound to a Gherkin `.feature` file (the `g-<name>.feature` carrier
+        # convention `_witnessing_at_path` documents) -- there is no pytest-
+        # side equivalent of a "carrier" to discover here.
         for feature_file in repo.rglob("*.feature"):
             if not feature_file.is_file():
                 continue
@@ -2222,7 +2331,7 @@ def _handle_distill_exit_gate(
 
     Decision table (C5):
       denominator = `_slice_plan_slice_ids` (the SAME U4 resolves)
-      numerator   = `ledger.review_verdict_slices()` UNION
+      numerator   = `ledger.approved_review_verdict_slices()` UNION
                     `_mechanical_seal_cleared_slices(missing, resolved.at_kind)`
                     (bug #94: the mechanical-seal route -- a fresh
                     `RedObserved` seal + satisfied negative-AT mandate for
@@ -2336,7 +2445,13 @@ def _handle_distill_exit_gate(
             raise
 
         ledger = AtCompletionLedger(feature_id, repo)
-        verdict_signed = ledger.review_verdict_slices()
+        # APPROVED-only numerator (declared-facts-reachable-recorded slice-01
+        # DD-1 follow-up, D04a): since commit 0303ecea5 a NEEDS_REVISION
+        # verdict also appends an ATReviewVerdict record, so the any-verdict
+        # `review_verdict_slices()` would silently count a REJECTED slice as
+        # "signed". `approved_review_verdict_slices()` is the completeness
+        # gate's own predicate; see its docstring for the full history.
+        verdict_signed = ledger.approved_review_verdict_slices()
 
         missing = planned - verdict_signed
         if missing:
@@ -2747,15 +2862,26 @@ def handle_subagent_stop() -> int:
                 hook_id=hook_id,
             )
 
+            # Resolve DES context from either protocol
+            des_context_result = _resolve_des_context(hook_input)
+
             # L1 token instrumentation — additive walk of the same transcript.
             # Fail-open per D4: never blocks the hook on instrumentation errors.
+            # DD-4: fires AFTER context resolution (not before, the root-cause
+            # ordering bug) so feature_id/slice_id/stage can be threaded from
+            # whichever resolved-context shape came back. Every branch below
+            # returns AFTER this line, so every SubagentStop still emits
+            # exactly one observation -- never dropped by the reorder.
+            _usage_feature_id, _usage_slice_id, _usage_stage = (
+                _join_keys_from_resolved_context(des_context_result)
+            )
             _emit_token_usage_events(
                 hook_input.get("agent_transcript_path"),
                 agent_name=hook_input.get("agent_type"),
+                feature_id=_usage_feature_id,
+                slice_id=_usage_slice_id,
+                stage=_usage_stage,
             )
-
-            # Resolve DES context from either protocol
-            des_context_result = _resolve_des_context(hook_input)
 
             # A stop context that DECLARES the retired spine is refused before
             # signal or log handling; read-only replay stays outside this live

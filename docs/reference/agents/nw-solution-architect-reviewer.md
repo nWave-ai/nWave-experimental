@@ -3,7 +3,7 @@
 Architecture design and patterns review specialist - Optimized for cost-efficient review operations using Haiku model.
 
 **Wave:** DESIGN
-**Model:** haiku
+**Model:** sonnet
 **Max turns:** 25
 **Tools:** Read, Glob, Grep, Task, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "exemptions": [
+    {
+      "file": "docs/product/architecture/ADR-DES-002-feature-end-step-registry.md",
+      "name": "GateVerdict",
+      "reason": "GateVerdict is the shared verdict ENUM TYPE (src/des/domain/gate_outcome.py), never a literal event-name string; this line discusses folding feature-end records onto that type, not claiming a ledger record literally named GateVerdict."
+    },
+    {
+      "file": "docs/product/architecture/ADR-NB-001-non-bypassable-completion-attestation.md",
+      "name": "GateVerdict",
+      "reason": "Same as above: GateVerdict is the shared 5-value verdict enum (ADR-GV-001 SSOT), referenced by type, not a claimed ledger event string."
+    },
+    {
+      "file": "docs/product/architecture/ADR-GV-002-feature-end-leg-indeterminate-extension.md",
+      "name": "FullSuiteLegIndeterminate",
+      "reason": "Python dataclass TYPE (src/des/application/feature_end_cycle_service.py) used for in-memory control flow (isinstance checks), never serialized as a literal ledger-event string -- the ADR is discussing code architecture, not claiming a ledger record by this name."
+    },
+    {
+      "file": "docs/product/architecture/ADR-GV-002-feature-end-leg-indeterminate-extension.md",
+      "name": "CycleIndeterminate",
+      "reason": "Same family as FullSuiteLegIndeterminate: a control-flow return type (CycleSuccess | CycleIndeterminate | CycleRefusal), never a literal ledger-event string. Its outward-facing projection is the real ledger-adjacent name FeatureEndCycleIndeterminate (CLI-stdout payload, see feature_end.py), which this ADR line does not cite directly."
+    },
+    {
+      "file": "docs/product/architecture/ADR-FLOW-009-gate-role-schema-algebra.md",
+      "name": "DistillReviewVerdict",
+      "reason": "ADR-FLOW-009 Status is 'Accepted (DESIGNED-NOT-BUILT)' and every OTHER citation of this name in the same file carries an explicit not-yet-built caveat within self-exempt range; this specific line (the Open Questions bullet) sits far enough from that caveat's text to fall outside the same-line self-exempt window, but the ADR's own header already discloses the gap."
+    },
+    {
+      "file": "docs/product/architecture/ADR-DFR-001-at-review-verdict-both-outcomes.md",
+      "name": "ATReviewRejected",
+      "reason": "Cited as a REJECTED design alternative ('Alternative B: Write a NEW event type (ATReviewRejected) instead of reusing ATReviewVerdict' -- Rejected.'), not a claim of production; the rejection prose sits on the following line, outside the same-line self-exempt window."
+    }
+  ]
+}

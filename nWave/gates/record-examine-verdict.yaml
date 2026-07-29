@@ -18,37 +18,6 @@ module: des.cli.record_examine_verdict
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --repo
-    required: true
-    type: path
-    help: "Path to the repository."
-  - name: --feature-id
-    required: true
-    type: string
-    help: "Feature identifier; resolves the per-feature examine ledger."
-  - name: --slice
-    required: true
-    type: string
-    help: "The slice whose examination outcome is being recorded (slice-NN)."
-  - name: --charter
-    required: true
-    type: path
-    help: "Path to the expectation charter the examiner walked; its bytes are sealed into the record."
-  - name: --verdict
-    required: true
-    type: choice
-    choices: [PASS, FAIL, INDETERMINATE]
-    help: "The examiner outcome observed by walking the charter through the real surface."
-  - name: --observations
-    required: true
-    type: string
-    help: "Concrete observations backing the verdict (what was done, what was seen)."
-  - name: --examiner
-    required: true
-    type: string
-    help: "Identity of the examiner recording the verdict (e.g. nw-user-examiner)."
-
 log_events:
   - ExamineVerdictRecorded
 

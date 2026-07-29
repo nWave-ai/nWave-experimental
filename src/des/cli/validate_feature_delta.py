@@ -290,6 +290,57 @@ def _exact_heading_regex(heading_literal: str) -> re.Pattern[str]:
 #: -- not an independent hardcoded literal.
 _REUSE_ANALYSIS_HEADING_RE = _exact_heading_regex(REUSE_ANALYSIS_HEADING)
 
+
+def is_reuse_analysis_heading(line: str) -> bool:
+    """Whether `line` is the canonical `## Reuse Analysis` heading (DD-7). Pure.
+
+    The ONE Reuse Analysis heading predicate in the tree -- wraps the exact,
+    whitespace-tolerant `_REUSE_ANALYSIS_HEADING_RE` (bare `## Reuse Analysis`
+    only; the Wave-form `## Wave: DESIGN / [REF] Reuse Analysis` and every
+    other variant are rejected). `check_reuse_first_design.py` imports this
+    instead of carrying its own independent lenient regex, so both call sites
+    agree on section presence for the same document (D2 unification).
+
+    Callers are responsible for `.rstrip()`/line-splitting as they already do
+    -- this predicate takes a single line, not a document.
+    """
+    return _REUSE_ANALYSIS_HEADING_RE.match(line) is not None
+
+
+#: Match the generic section-BOUNDARY marker: any line starting with `## `
+#: (D31b). Deliberately distinct from every heading-RECOGNITION regex in this
+#: module (`is_reuse_analysis_heading`, the DESIGN-Dimensions heading regex in
+#: `check_design_dimension_coverage.py`, etc.) -- recognition asks "which
+#: section does this heading name", boundary asks only "does a section end
+#: here". The two questions are independently variable (a lenient
+#: contains-based recognition grammar can coexist with an exact-order one;
+#: D31a left that divergence as an open, unratified human decision) and this
+#: predicate never resolves that question -- it only marks where the CURRENT
+#: section's body stops.
+_H2_BOUNDARY_RE = re.compile(r"^##\s", re.MULTILINE)
+
+
+def next_h2_boundary(text: str, start: int) -> int:
+    """Return the offset in `text` where the current H2 section body ends.
+
+    Pure. The section-boundary SSOT (D31b): scans forward from `start`
+    (typically the offset just past a heading line already matched by a
+    caller's own recognition predicate) for the next line beginning with
+    `## `, and returns its start offset. Returns `len(text)` when no further
+    `##` line exists -- the section runs to end-of-document.
+
+    Two independent implementations of this exact scan pre-existed in
+    `scripts/cli/check_reuse_first_design.py` and
+    `scripts/cli/check_design_dimension_coverage.py` (one a manual
+    line-by-line walk, one a `re.MULTILINE` search) -- verified to agree on
+    every one of the 292 real `docs/feature/**/feature-delta.md` files in the
+    tree before being collapsed into this single function. Both call sites
+    now import this instead of carrying their own copy.
+    """
+    match = _H2_BOUNDARY_RE.search(text, start)
+    return match.start() if match else len(text)
+
+
 #: Match any `##` markdown heading (level-2 only, not `###` or deeper).
 _H2_RE = re.compile(r"^##\s+(?!#)(?P<text>.+?)\s*$")
 
@@ -906,7 +957,7 @@ def _present_section_set(content: str) -> set[str]:
     sections |= {
         "Reuse Analysis"
         for line in content.splitlines()
-        if _REUSE_ANALYSIS_HEADING_RE.match(line.rstrip()) is not None
+        if is_reuse_analysis_heading(line.rstrip())
     }
     return sections
 
@@ -937,7 +988,7 @@ def _reuse_analysis_heading_indices(content: str) -> list[int]:
     return [
         idx
         for idx, line in enumerate(content.splitlines())
-        if _REUSE_ANALYSIS_HEADING_RE.match(line.rstrip())
+        if is_reuse_analysis_heading(line.rstrip())
     ]
 
 

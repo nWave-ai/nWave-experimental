@@ -461,39 +461,63 @@ def _handle_uninstall(args: list[str]) -> int:
 
 
 def _handle_attribution(args: list[str]) -> int:
-    """Handle 'attribution on|off|status' subcommand."""
+    """Handle 'attribution on|off|status' subcommand.
+
+    Flags handled here:
+        --target <path>    toggle attribution for <path> instead of
+                           ~/.claude/ (sets CLAUDE_CONFIG_DIR for this
+                           process; see ADR-001). Mirrors install/uninstall
+                           (_handle_install / _handle_uninstall) so a
+                           multi-profile setup toggles the profile actually
+                           named, not always the default.
+    """
+    target, args, error = _extract_target_flag(args)
+    if error is not None:
+        print(f"nwave-ai: {error}", file=sys.stderr)
+        return 2
+    if target is not None:
+        os.environ["CLAUDE_CONFIG_DIR"] = str(target)
+
     if not args:
         print("Usage: nwave-ai attribution <on|off|status>", file=sys.stderr)
         return 1
 
     action = args[0].lower()
     config_dir = _get_config_dir()
+    # CLAUDE_CONFIG_DIR / --target scoped (same property install/uninstall
+    # already resolve on), NOT a fixed ~/.claude -- so the hook is
+    # registered/removed in the profile actually in scope, and the success
+    # message can name it (never a silent "success" about the wrong path).
+    from scripts.install.install_utils import PathUtils
+
+    claude_dir = PathUtils.get_claude_config_dir()
 
     if action == "on":
         write_attribution_preference(config_dir, enabled=True)
         # ADR-CA-007: the settings.json credit write surface is retired. The
         # activation-gated PreToolUse commit-attribution hook is the SOLE
         # attribution mechanism, so enabling registers it (and only it).
-        # Ensure ~/.claude exists so the hook has a home, then register it
+        # Ensure claude_dir exists so the hook has a home, then register it
         # idempotently. Contained so a registration fault never fails the
         # toggle (belt-and-suspenders).
-        claude_dir = Path.home() / ".claude"
         registered = False
         try:
             claude_dir.mkdir(parents=True, exist_ok=True)
-            registered = register_attribution_hook(enabled=True)
+            registered = register_attribution_hook(enabled=True, claude_dir=claude_dir)
         except Exception:
             pass
         if registered:
             print(
                 "Attribution enabled. New Claude commits will carry the nWave "
-                "credit via the commit-attribution hook. Restart Claude (don't "
-                "/resume older sessions) for this to take effect."
+                f"credit via the commit-attribution hook in {claude_dir}. "
+                "Restart Claude (don't /resume older sessions) for this to "
+                "take effect."
             )
         else:
             print(
-                "Attribution enabled, but the commit-attribution hook could not "
-                "be registered (Claude Code config absent or user-modified)."
+                "Attribution enabled, but the commit-attribution hook could "
+                f"not be registered in {claude_dir} (Claude Code config "
+                "absent or user-modified)."
             )
         return 0
 
@@ -502,13 +526,11 @@ def _handle_attribution(args: list[str]) -> int:
         # ADR-CA-007 DDD-3: clean any legacy nWave-managed settings credit,
         # preserving a user-modified value. Route through the claude_dir seam
         # explicitly so the sandbox injection holds (fail-open: never raises).
-        migrate_legacy_settings_attribution(
-            config_dir, claude_dir=Path.home() / ".claude"
-        )
+        migrate_legacy_settings_attribution(config_dir, claude_dir=claude_dir)
         # ADR-CA-006: disabling removes ONLY the commit-attribution hook entry,
         # leaving the DES guards intact. Contained so it never breaks the toggle.
         try:
-            unregister_attribution_hook()
+            unregister_attribution_hook(claude_dir=claude_dir)
         except Exception:
             pass
         # Root cause C: 'off' is the remediation affordance, so it must also
@@ -522,8 +544,8 @@ def _handle_attribution(args: list[str]) -> int:
             pass
         print(
             "Attribution disabled. New Claude sessions will not carry the nWave "
-            "credit line. Restart Claude (don't /resume older sessions) for this "
-            "to take effect."
+            f"credit line in {claude_dir}. Restart Claude (don't /resume older "
+            "sessions) for this to take effect."
         )
         return 0
 
@@ -571,20 +593,44 @@ def _repo_attribution_active() -> bool:
 
 
 def _handle_doctor(args: list[str]) -> int:
-    """Handle 'doctor [--json] [--fix] [--help]' subcommand."""
+    """Handle 'doctor [--json] [--fix] [--target <path>] [--help]' subcommand.
+
+    Flags handled here:
+        --target <path>    diagnose <path> instead of ~/.claude/ (sets
+                           CLAUDE_CONFIG_DIR for this process; see ADR-001).
+                           Mirrors install/uninstall (_handle_install /
+                           _handle_uninstall) so a multi-profile setup is
+                           diagnosed on the profile actually named, not
+                           always the default -- otherwise doctor silently
+                           reports on the WRONG installation.
+    """
+    target, args, error = _extract_target_flag(args)
+    if error is not None:
+        print(f"nwave-ai: {error}", file=sys.stderr)
+        return 2
+    if target is not None:
+        os.environ["CLAUDE_CONFIG_DIR"] = str(target)
+
     json_output = False
     fix = False
 
     for arg in args:
         if arg in ("--help", "-h"):
-            print("Usage: nwave-ai doctor [--json] [--fix]")
+            print("Usage: nwave-ai doctor [--json] [--fix] [--target <path>]")
             print()
             print("Run diagnostic checks on the nWave installation.")
             print()
             print("Options:")
-            print("  --json    Emit JSON output instead of human-readable text.")
-            print("  --fix     Attempt to fix detected issues (not yet implemented).")
-            print("  --help    Show this message and exit.")
+            print("  --json          Emit JSON output instead of human-readable text.")
+            print(
+                "  --fix           Attempt to fix detected issues (not yet "
+                "implemented)."
+            )
+            print(
+                "  --target <path> Diagnose <path> instead of ~/.claude/ "
+                "(sets CLAUDE_CONFIG_DIR)."
+            )
+            print("  --help          Show this message and exit.")
             return 0
         elif arg == "--json":
             json_output = True

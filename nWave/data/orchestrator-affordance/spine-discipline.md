@@ -140,35 +140,16 @@ problem, not the work.
 
 ## Dispatching an agent while a wave floor is ACTIVE — carry the markers, or clear a stale floor
 
-You must KNOW how to invoke an agent when a wave is active — do NOT get walled by the
-`WAVE_MARKER_BYPASS` guard and stall. A wave floor (`.nwave/wave-active/`) makes the dispatch
-guard demand that every in-wave, non-entering child carry a marker that DECLARES its wave
-membership; a child that dropped ALL markers, or carries only a partial DES marker subset, is a
-wave bypass, denied loud. The marker the child must carry depends on the wave's MODE:
-
-- **A non-`atdd_pure` wave (DEVOPS / DISTILL / DESIGN / DISCUSS).** The child carries a single
-  line — `<!-- DES-WAVE: <wave> -->` matching the ACTIVE wave (the same declaration the wave-entry
-  dispatch carried). That marker only ARMS enforcement — it is a membership declaration, the
-  opposite of a bypass — so the gate ALLOWS it (a matching-wave child is on-spine; a MISMATCHED
-  wave or a markerless/subset child is still denied). Do NOT reach for `des dispatch` here — it
-  supports `--mode {atdd_pure}` only and generates NO markers for these waves; the one-line
-  `DES-WAVE` marker IS the complete, sufficient contract. This is what makes N concurrent in-wave
-  child lanes reachable through the spine: give each backgrounded child the matching `DES-WAVE`
-  line and they all pass.
-- **An `atdd_pure` DELIVER slice.** Generate the sub-dispatch with the producing tool — `des dispatch
-  --mode atdd_pure ...` renders the full marker block + the 12 sections by construction. NEVER
-  hand-assemble it and NEVER strip the markers off a generated one.
-- **The wave floor is STALE (a days-old wave you are not in — you meant to dispatch OUTSIDE any
-  wave).** Clear it through the sanctioned, audited command — `des wave-clear --reason "<why the
-  floor is stale>"` — never hand-edit `active.json`. Once cleared, a plain agent dispatch outside
-  the spine is unblocked. `des wave-clear` is human-authorized: an autonomous instance surfaces
-  the stale floor and asks for the GO before clearing; it does not self-clear a floor it did not
-  raise.
-
-The guard message names the escape (what/why/how) — but reach it WITHOUT hitting the wall: check
-`ls .nwave/wave-active/` before a bare dispatch inside a project that runs waves, and carry the
-matching `DES-WAVE` line on every in-wave child. Wall-then-recover is a friction; knowing the
-matching-marker rule is the affordance.
+A wave floor (`.nwave/wave-active/`) gates every in-wave child dispatch on a matching marker —
+check for it before a bare dispatch inside a project that runs waves (GDP-2: catch it before the
+wall, not after). The marker required depends on the wave's MODE: an `atdd_pure` DELIVER slice
+carries the marker block `des dispatch --mode atdd_pure ...` generates by construction — NEVER
+hand-assemble it, and never reach for `des dispatch` on any other wave: it generates NO markers
+for these waves. Every other wave (DEVOPS / DISTILL / DESIGN / DISCUSS) instead carries a matching
+`<!-- DES-WAVE: <wave> -->` declaration. If you get walled anyway, the guard's own refusal names
+the exact recovery menu (WHAT/WHY/HOW, GDP-3) — including the human-authorized
+`des wave-clear --reason "<why>"` escape for a genuinely stale floor (never self-clear a floor you
+did not raise) — read it rather than reconstructing the syntax from memory.
 
 ## Why this is not advice — it is an obligation
 

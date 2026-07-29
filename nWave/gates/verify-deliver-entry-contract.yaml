@@ -32,22 +32,6 @@ module: des.cli.verify_deliver_entry_contract
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --feature-id
-    required: true
-    type: string
-    help: "The feature id whose DELIVER-entry contract is checked."
-  - name: --repo-root
-    required: true
-    type: path
-    help: "The repo root holding docs/feature/<id>/feature-delta.md + tests/."
-  - name: --format
-    required: false
-    type: choice
-    choices: [json]
-    default: json
-    help: "Output format (json -- the structured verdict envelope)."
-
 log_events:
   - ContractFrozen
 

@@ -23,13 +23,33 @@ raises, and the call-sites translate that into their LOUD degrade signal
 from __future__ import annotations
 
 import subprocess
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from des.adapters.driven.git.git_constants import GIT_REV_PARSE
+from des.runtime.spawn import GIT_TIMEOUT_ENV, git_timeout_seconds, spawn
 
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _git_spawn(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    """Every git spawn in this seam, on the GIT tier of the sanctioned boundary.
+
+    Routed through ``des.runtime.spawn.spawn`` rather than bounded with two
+    literal kwargs: the boundary also closes stdin (an inherited fd 0 lets a
+    credential prompt block INSIDE the bound, so the bound would be the only
+    thing ending it) and raises a ``SpawnTimeout`` naming the
+    ``NWAVE_GIT_TIMEOUT`` lever -- a bare ``TimeoutExpired`` hands the operator
+    a number and no HOW.
+    """
+    completed: subprocess.CompletedProcess[str] = spawn(
+        argv,
+        timeout=git_timeout_seconds(),
+        timeout_env=GIT_TIMEOUT_ENV,
+        **kwargs,
+    )
+    return completed
 
 
 def git_text(repo: Path, *args: str) -> str:
@@ -37,8 +57,13 @@ def git_text(repo: Path, *args: str) -> str:
 
     Byte-for-byte identical to the three former ``_git`` copies: a checked,
     text-mode ``git`` subprocess rooted at ``repo`` whose stdout is returned.
+
+    ``subprocess.TimeoutExpired`` propagates deliberately, exactly as
+    ``CalledProcessError`` already does: collapsing "git never answered" into a
+    return value would hand the caller a definite answer it has not earned. A
+    bounded raise is loud; an unbounded wait is not.
     """
-    completed = subprocess.run(
+    completed = _git_spawn(
         ["git", *args],
         cwd=repo,
         capture_output=True,
@@ -94,7 +119,7 @@ def _resolve_via_symbolic_ref(repo: Path) -> str | None:
     rather than leaking an unverified ref the caller cannot `git diff`
     against.
     """
-    completed = subprocess.run(
+    completed = _git_spawn(
         ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
         cwd=repo,
         capture_output=True,
@@ -121,7 +146,7 @@ def _resolve_via_candidate_probe(repo: Path) -> str | None:
 
 def _ref_resolves_to_commit(repo: Path, ref: str) -> bool:
     """True iff `ref` resolves to a real commit in `repo` (local git state only)."""
-    completed = subprocess.run(
+    completed = _git_spawn(
         ["git", GIT_REV_PARSE, "--verify", "--quiet", f"{ref}^{{commit}}"],
         cwd=repo,
         capture_output=True,
@@ -159,7 +184,7 @@ def resolve_feature_genesis_base_ref(repo: Path, feature_delta_path: str) -> str
     to its own fallback chain (LOUD, never a silent scope choice).
     """
     try:
-        completed = subprocess.run(
+        completed = _git_spawn(
             [
                 "git",
                 "log",
@@ -174,8 +199,6 @@ def resolve_feature_genesis_base_ref(repo: Path, feature_delta_path: str) -> str
             capture_output=True,
             text=True,
             check=False,
-            stdin=subprocess.DEVNULL,
-            timeout=30.0,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
@@ -200,7 +223,7 @@ def is_ancestor(repo: Path, ancestor_sha: str, descendant_sha: str) -> bool:
     ("not yet merged") is a legitimate answer, not an error, so a checked
     subprocess would wrongly turn it into a raised exception.
     """
-    result = subprocess.run(
+    result = _git_spawn(
         ["git", "merge-base", "--is-ancestor", ancestor_sha, descendant_sha],
         cwd=repo,
         capture_output=True,
@@ -238,7 +261,7 @@ def is_merged_contribution(repo: Path, head_sha: str, target_ref: str) -> bool:
     """
     if not is_ancestor(repo, head_sha, target_ref):
         return False
-    first_parent_line = subprocess.run(
+    first_parent_line = _git_spawn(
         ["git", "rev-list", "--first-parent", target_ref],
         cwd=repo,
         capture_output=True,

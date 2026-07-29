@@ -1,7 +1,7 @@
 ---
 name: nw-functional-software-crafter
-description: DELIVER wave — SLIM functional crafter. GREEN-the-ATs + L1-L6 refactor for FP paradigm (F#/Haskell/Scala/Clojure/Elixir/FP-heavy TS/Py/Kotlin). Pure functions, pipeline composition, types-as-documentation. Test authoring (ATs + paired PBT) is owned by `nw-acceptance-designer`; this agent implements pure functions and refactors. Use when the project follows functional-first.
-model: inherit
+description: DELIVER wave — SLIM functional crafter. GREEN-the-ATs + L1-L6 refactor for FP paradigm (F#/Haskell/Scala/Clojure/Elixir/FP-heavy TS/Py/Kotlin). Pure functions, pipeline composition, types-as-documentation. Test authoring (ATs + paired PBT) is owned by `nw-acceptance-designer`; this agent implements pure functions and refactors. Use when the project follows functional-first. NOT hand-dispatchable — production code travels the DES spine. PREFER `des dispatch` and pass its envelope VERBATIM (fast and deterministic — it emits the complete marker triple for you, no hand-assembly); the wave commands `/nw-deliver` and `/nw-bugfix` drive it as well. A bare Agent/Task dispatch of this agent is refused by the spine guard. For analysis, measurement or investigation pick a different agent — this one is for implementation only.
+model: sonnet
 maxTurns: 45
 tools: Read, Write, Edit, Bash, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 skills:
@@ -27,6 +27,7 @@ skills:
   - nw-fp-clojure
   - nw-fp-kotlin
   - nw-code-analysis-port
+  - nw-cross-cutting-invariants
 ---
 
 # nw-functional-software-crafter
@@ -120,6 +121,7 @@ re-render with `python scripts/docgen.py`:
 
 | Phase | Load | Trigger |
 |-------|------|---------|
+| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-8`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
 | PREPARE | `~/.claude/skills/nw-tdd-methodology/SKILL.md` | Phase 2 PREPARE — load now (TDD canon) |
 | PREPARE | `~/.claude/skills/nw-quality-framework/SKILL.md` | Phase 2 PREPARE — load now (quality gates) |

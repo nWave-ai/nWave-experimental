@@ -45,7 +45,6 @@ Reference: docs/feature/oss-feature-end-emit-cli/feature-delta.md (DDD-1..4).
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -54,17 +53,14 @@ from des.adapters.driven.logging.at_completion_ledger import (
     FEATURE_END_REVIEW_VERDICT,
     AtCompletionLedger,
 )
+from des.cli._emit_json import emit_json_line as _emit
+from des.cli._repo_root_arg import add_repo_root_argument
 
 
 # The two feature-end record kinds one emit may write (DDD-2). The CLI accepts
 # the ledger's own event-name constants verbatim so the records it appends are
 # byte-identical to the ones the hook-side emitter writes (no parallel naming).
 _RECORD_CHOICES = (EBATCH_REFACTOR_COMPLETED, FEATURE_END_REVIEW_VERDICT)
-
-
-def _emit(payload: dict[str, object]) -> None:
-    """Print exactly one single-line JSON object (the command's observable)."""
-    print(json.dumps(payload))
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -77,7 +73,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "it is REFUSED (anti-theater)."
         ),
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo",
         required=True,
         help="Path to the project root holding the .nwave/ ledger substrate.",

@@ -18,43 +18,30 @@ module: des.cli.feature_open
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --feature-id
-    required: true
-    type: string
-    help: "The feature id to open an initial feature context for."
-  - name: --intent
-    required: true
-    type: string
-    help: "Non-empty free-text statement of what the feature is for."
-  - name: --repo
-    required: false
-    type: path
-    help: "Path to the project root (default: current directory)."
-    default: "."
-  - name: --adopt-wip
-    required: false
-    type: bool
-    help: "Inventory an existing WIP directory (--adopt-root) into the bootstrap record instead of starting OPEN/empty."
-    default: false
-  - name: --adopt-root
-    required: false
-    type: path
-    help: "Repository-relative directory to inventory when --adopt-wip is set; required together with --adopt-wip."
-
 log_events:
   - FeatureContextReceipt
+  - FeatureContextRefused
 
+# Every entry below exit 1 reaches the operator as one `FeatureContextRefused`
+# JSON line carrying `error` (the stable slug named here), `what`, `why` and
+# `how` -- never as a Python traceback (GDP-3). The `how` re-invokes the
+# producing tool rather than asking for a hand edit (GDP-4).
 failure_modes:
   - error_class: UsageError
     exit_code: 2
-    remediation: "Provide both --feature-id and a non-empty --intent; see `des feature-open --help`."
-  - error_class: ValueError
+    remediation: "Provide both --feature-id and --intent; see `des feature-open --help`."
+  - error_class: IntentEmpty
     exit_code: 1
-    remediation: "Supply --adopt-wip and --adopt-root together, and ensure --adopt-root names an existing repository-relative directory."
+    remediation: "error=intent-empty -- rerun `des feature-open` with a non-empty --intent."
+  - error_class: AdoptFlagsIncomplete
+    exit_code: 1
+    remediation: "error=adopt-flags-incomplete -- rerun `des feature-open` supplying --adopt-wip and --adopt-root together, or neither."
+  - error_class: AdoptRootInvalid
+    exit_code: 1
+    remediation: "error=adopt-root-is-repo-root|adopt-root-outside-repo|adopt-root-not-a-directory -- rerun `des feature-open` with --adopt-root naming an existing subdirectory inside the repository."
   - error_class: FeatureContextConflict
     exit_code: 1
-    remediation: "A feature-delta already exists for this --feature-id; choose a different feature-id or edit the existing feature-delta.md directly."
+    remediation: "error=feature-context-conflict -- run `des next --feature-id <id>` for the lawful next step on the existing feature, or open a different --feature-id."
 
 idempotency: side-effects-explicit
 

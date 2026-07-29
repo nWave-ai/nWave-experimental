@@ -98,6 +98,21 @@ _FEATURE_END_EVENTS = frozenset({EBATCH_REFACTOR_COMPLETED, FEATURE_END_REVIEW_V
 WALKING_SKELETON_GATE_RAN = "WalkingSkeletonGateRan"
 WALKING_SKELETON_TIER_VERIFIED = "WalkingSkeletonTierVerified"
 
+# The walking-skeleton NA marker (fix-ws-done-gate-na-reconciliation slice-01).
+# `WalkingSkeletonGateRan` alone does NOT distinguish "ran and PASSED" from
+# "ran and FAILED" -- both leave only the heartbeat behind, so a feature-end
+# check keyed on the heartbeat wrongly lets a FAILED walking skeleton close.
+# The done-gate's actual trust anchor is `WalkingSkeletonTierVerified`
+# (PASS-only), but a feature with NO `@walking-skeleton` AT and NO delta-added
+# installable root is legitimately NOT_APPLICABLE -- it never earns, and
+# never should earn, a `WalkingSkeletonTierVerified` record. This marker is
+# minted ONLY on that mechanical `GateVerdict.NOT_APPLICABLE` decision (the
+# gate's own delta cross-check, never a hand-editable claim) and reconciles
+# `WalkingSkeletonTierVerified` at feature-end (mirrors
+# `EnvironmentalE2eNotApplicable` / `FullSuiteLegNotApplicable`). Feature-
+# scoped (`slice_id == ""`).
+WALKING_SKELETON_NOT_APPLICABLE = "WalkingSkeletonNotApplicable"
+
 # Environmental-e2e gate event names (fix-oss-environmental-e2e-gate slice-02).
 # The gate appends an `EnvironmentalE2eGateRan` heartbeat record BEFORE the
 # verdict (RM-1) and an `EnvironmentalE2eVerified` positive-proof record on a
@@ -162,7 +177,11 @@ _DESIGN_REVIEW_VERDICT = "DesignReviewVerdict"
 # new verdict logic.
 _DEVOPS_REVIEW_VERDICT = "DevopsReviewVerdict"
 _WALKING_SKELETON_EVENTS = frozenset(
-    {WALKING_SKELETON_GATE_RAN, WALKING_SKELETON_TIER_VERIFIED}
+    {
+        WALKING_SKELETON_GATE_RAN,
+        WALKING_SKELETON_TIER_VERIFIED,
+        WALKING_SKELETON_NOT_APPLICABLE,
+    }
 )
 
 # Feature-end full-suite-leg event names (f-nonbypassable-attestation slice-01,
@@ -482,6 +501,8 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         attested_via: str | None = None,
         regression_test_file: str | None = None,
         predecessor: str | None = None,
+        commit_sha: str | None = None,
+        reason: str | None = None,
     ) -> dict[str, Any]:
         """Append one slice gate-boundary audit record under the M7 write contract.
 
@@ -529,6 +550,13 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         (every existing call site stays byte-identical); when present, threaded
         into ``fields`` and hashed into ``record_hash`` like every other field.
 
+        fix-slice-seal-carries-commit-sha signature delta: the optional
+        ``commit_sha`` kwarg carries the real git sha of the commit a
+        ``SliceCommitVerified`` record attests. Defaults to None (every
+        existing call site stays byte-identical); when present, threaded into
+        ``fields`` and hashed into ``record_hash`` like every other field --
+        so a later check can join a seal to the commit it attests.
+
         SliceRef additive form (techdebt row
         ``at-completion-ledger-slice-ref-clump``): pass
         ``ref=SliceRef(feature_id, slice_id)`` INSTEAD of the separate
@@ -539,6 +567,16 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         alternative, never silently overriding an explicitly-passed
         ``slice_id``/``feature_id`` (mixing the two forms raises
         ``TypeError``).
+
+        D04b (canali muti class-scope): the optional ``reason`` kwarg carries
+        the same human-readable rejection reason a caller already surfaces to
+        the operator (e.g. ``InterceptDecision.reason``) -- before this, a
+        gate-rejection record told THAT a rejection happened but never WHY
+        (measured: 60/60 ``CarpaccioGateRejected`` + 82/82
+        ``ReadinessGateRejected`` records carried no reason field). Defaults
+        to None (every existing call site stays byte-identical); when
+        present, threaded into ``fields`` and hashed into ``record_hash``
+        like every other field.
 
         Returns the appended record.
         """
@@ -566,6 +604,10 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             fields["regression_test_file"] = regression_test_file
         if predecessor is not None:
             fields["predecessor"] = predecessor
+        if commit_sha is not None:
+            fields["commit_sha"] = commit_sha
+        if reason is not None:
+            fields["reason"] = reason
         return self._append_record(fields, feature_id=feature_id)
 
     def append_contract_frozen(
@@ -852,6 +894,29 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         if artifact_hash is not None:
             extra["artifact_hash"] = artifact_hash
         return self._append_record(extra, feature_id=feature_id)
+
+    def append_walking_skeleton_not_applicable(
+        self, *, feature_id: str | None = None
+    ) -> dict[str, Any]:
+        """Append the `WalkingSkeletonNotApplicable` NA-marker record.
+
+        Minted by the walking-skeleton gate CLI ONLY on the gate's own
+        mechanical `GateVerdict.NOT_APPLICABLE` decision (the un-gameable
+        delta cross-check `WalkingSkeletonGate.evaluate` already performs --
+        no @walking-skeleton AT and no delta-added installable root). The
+        DISTINCT marker reconciles `WalkingSkeletonTierVerified` at
+        feature-end IN PLACE OF the verified record; minting
+        `WalkingSkeletonTierVerified` on a leg that never ran would be
+        theater (DDD-2), so this path NEVER appends it. Mirrors
+        `append_environmental_e2e_not_applicable` /
+        `append_full_suite_leg_not_applicable`.
+
+        Feature-scoped (`slice_id == ""`).
+        """
+        return self._append_record(
+            {"event": WALKING_SKELETON_NOT_APPLICABLE, "slice_id": ""},
+            feature_id=feature_id,
+        )
 
     def append_environmental_e2e_gate_ran(
         self, *, feature_id: str | None = None
@@ -1383,7 +1448,10 @@ class AtCompletionLedger(AtCompletionLedgerPort):
 
         The feature-end integrity check asserts `WalkingSkeletonGateRan` is
         present (RM-1 heartbeat) and the done-gate asserts
-        `WalkingSkeletonTierVerified` is present (RM-3 positive proof).
+        `WalkingSkeletonTierVerified` is present (RM-3 positive proof) --
+        UNLESS the feature carries the `WalkingSkeletonNotApplicable` NA
+        marker, which reconciles `WalkingSkeletonTierVerified` for a
+        legitimately-NA feature (fix-ws-done-gate-na-reconciliation slice-01).
 
         Read under the M7 fail-closed integrity contract.
 
@@ -1942,16 +2010,30 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         )
 
     def review_verdict_slices(self, *, feature_id: str | None = None) -> frozenset[str]:
-        """The set of slice ids carrying an `ATReviewVerdict` record.
+        """The set of slice ids carrying an `ATReviewVerdict` record, ANY verdict.
 
-        The NUMERATOR of the G-DISTILL-EXIT gate completeness check
-        (oss-hook-side-phase-injection slice-01): the gate allows the
-        DISTILL->DELIVER transition only when every slice the feature-delta
-        `[REF] Slice Plan` declares (the denominator =
-        `_slice_plan_slice_ids`) appears in this set. Read under the M7
-        fail-closed integrity contract -- a corrupt ledger raises
-        `LedgerIntegrityViolation` rather than yielding an undercount that
-        would close an incomplete feature.
+        Provenance/ownership predicate ONLY -- "was this slice reviewed at
+        all by this feature's ledger", regardless of outcome. Consumed by
+        `verify_deliver_integrity.py::_foreign_owned_slices` to disambiguate
+        a shared-history slice-id across co-resident features: a slice
+        reviewed and REJECTED by another feature is still positive evidence
+        that THAT feature, not this one, owns it.
+
+        NOT the completeness-gate numerator (declared-facts-reachable-recorded
+        slice-01 DD-1 follow-up, D04a): before commit 0303ecea5 (DD-1,
+        both-outcomes write), only an APPROVED verdict ever wrote a record,
+        so "carries a record" and "APPROVED" were the same set and
+        `_handle_distill_exit_gate` safely read this method as its numerator.
+        DD-1 made a REJECTED (NEEDS_REVISION) verdict write a record too,
+        which silently widened this method's population to include rejected
+        slices -- a completeness/approval gate reading THIS method would
+        treat "reviewed and rejected" as "signed", contradicting ADR-029 D5's
+        unchanged control-flow clause (NEEDS_REVISION loops back to the
+        acceptance-designer, never proceeds to DELIVER). Use
+        `approved_review_verdict_slices()` for that gate instead.
+
+        Read under the M7 fail-closed integrity contract -- a corrupt ledger
+        raises `LedgerIntegrityViolation` rather than yielding an undercount.
 
         Optional `feature_id=` filter scopes the read to one feature in the
         singleton-shape substrate; ``None`` retains cross-feature semantics.
@@ -1960,6 +2042,32 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             str(record["slice_id"])
             for record in self.read_records(feature_id=feature_id)
             if record["event"] == _AT_REVIEW_VERDICT
+        )
+
+    def approved_review_verdict_slices(
+        self, *, feature_id: str | None = None
+    ) -> frozenset[str]:
+        """The set of slice ids carrying an APPROVED `ATReviewVerdict` record.
+
+        The NUMERATOR of the G-DISTILL-EXIT gate completeness check
+        (oss-hook-side-phase-injection slice-01; narrowed to APPROVED-only by
+        declared-facts-reachable-recorded slice-01's DD-1 follow-up, D04a):
+        the gate allows the DISTILL->DELIVER transition only when every slice
+        the feature-delta `[REF] Slice Plan` declares (the denominator =
+        `_slice_plan_slice_ids`) appears in THIS set -- a REJECTED
+        (NEEDS_REVISION) verdict must never satisfy it. Sibling of
+        `review_verdict_slices()` (any verdict, provenance-only); see that
+        method's docstring for why the two must not be conflated. Read under
+        the same M7 fail-closed integrity contract.
+
+        Optional `feature_id=` filter scopes the read to one feature in the
+        singleton-shape substrate; ``None`` retains cross-feature semantics.
+        """
+        return frozenset(
+            str(record["slice_id"])
+            for record in self.read_records(feature_id=feature_id)
+            if record["event"] == _AT_REVIEW_VERDICT
+            and record.get("verdict") == "APPROVED"
         )
 
     def feature_end_events(self, *, feature_id: str | None = None) -> frozenset[str]:
@@ -2038,6 +2146,7 @@ __all__ = [
     "FULL_SUITE_LEG_NOT_APPLICABLE",
     "FULL_SUITE_LEG_RAN",
     "WALKING_SKELETON_GATE_RAN",
+    "WALKING_SKELETON_NOT_APPLICABLE",
     "WALKING_SKELETON_TIER_VERIFIED",
     "WORKFLOW_PHASE_COMPLETED_DISTILL",
     "WORKFLOW_PHASE_COMPLETED_G_COMMIT",

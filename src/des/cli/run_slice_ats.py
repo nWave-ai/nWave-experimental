@@ -112,6 +112,7 @@ from des.adapters.driven.runner.pytest_runner import (
     run_timeout_seconds,
 )
 from des.application.slice_at_completeness import feature_files_for_slice
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.human_surface import Verdict, print_human_summary
 from des.cli.run_contract_gate import (
     SliceGateRunScope,
@@ -309,9 +310,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
             "acceleration); veto on a RED slice AT."
         ),
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo-root",
-        "--repo",
         dest="repo_root",
         required=True,
         help="the target repository root the slice's ATs are scoped within",

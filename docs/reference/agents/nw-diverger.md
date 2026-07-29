@@ -3,7 +3,7 @@
 Use before DISCUSS — runs JTBD analysis, competitive research, structured brainstorming, and taste-filtered evaluation to produce 3-5 design directions before the team converges on one. Use when the team has a validated problem but hasn't chosen a solution approach.
 
 **Wave:** Other
-**Model:** inherit
+**Model:** sonnet
 **Max turns:** 45
 **Tools:** Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, Task
 

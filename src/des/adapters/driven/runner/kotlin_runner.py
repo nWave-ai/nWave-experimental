@@ -67,6 +67,15 @@ if TYPE_CHECKING:
 # The gradlew binary name resolved at the head of the declared command.
 _GRADLEW_NAME = "gradlew"
 
+# The Kotlin/Gradle-specific remediation passed to `resolve_tool` -- NOT the
+# shared cargo-flavoured default (SOSTITUZIONE fix: a Rust hint told a Kotlin
+# target to run `cargo install gradlew`, which does not exist).
+GRADLE_INSTALL_HINT = (
+    "./gradlew is a per-project wrapper script that is GENERATED, not "
+    "installed: run `gradle wrapper` inside the target repo, bootstrapping "
+    "from a system Gradle (https://gradle.org/install)"
+)
+
 # The known install locations gradlew lives in off the hook PATH: the
 # project-local wrapper script (``.`` resolved against ``target_root`` via
 # ``base_dir``, the standard Gradle-wrapper convention) and the common Gradle
@@ -96,7 +105,12 @@ def run_kotlin_scope(
     binary = scoped_node_ids[0] if scoped_node_ids else _GRADLEW_NAME
     subcommand = scoped_node_ids[1:]
 
-    resolution = resolve_tool(binary, GRADLE_KNOWN_LOCATIONS, base_dir=target_root)
+    resolution = resolve_tool(
+        binary,
+        GRADLE_KNOWN_LOCATIONS,
+        base_dir=target_root,
+        install_hint=GRADLE_INSTALL_HINT,
+    )
     if resolution.path is None:
         raise RunnerAdapterUnavailable(adapter.name, reason=resolution.remediation)
 

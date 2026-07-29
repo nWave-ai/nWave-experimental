@@ -46,6 +46,9 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from des.cli._emit_json import emit_json_line as _emit
+from des.cli._repo_root_arg import add_repo_root_argument
+
 
 RECIPE_RELPATH = Path(".nwave") / "demo-recipe.json"
 _DEFAULT_STEP_TIMEOUT_SECONDS = 600
@@ -63,10 +66,6 @@ class _RecipeStep:
     name: str
     cmd: tuple[str, ...]
     timeout_seconds: int
-
-
-def _emit(payload: dict[str, object]) -> None:
-    print(json.dumps(payload))
 
 
 def _indeterminate(what: str, why: str, how: str) -> int:
@@ -255,7 +254,9 @@ def main(argv: list[str] | None = None) -> int:
             "the COMMITTED tree (evidence-by-execution gate, evolution P0.1)."
         ),
     )
-    parser.add_argument("--repo", default=".", help="Path to the git repository.")
+    add_repo_root_argument(
+        parser, "--repo", default=".", help="Path to the git repository."
+    )
     args = parser.parse_args(argv)
     repo = Path(args.repo).resolve()
 

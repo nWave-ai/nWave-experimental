@@ -22,7 +22,6 @@ mandate) + ADR-ABS-001 sec.4.
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 from typing import TYPE_CHECKING
@@ -37,6 +36,7 @@ from des.adapters.drivers.hooks.carpaccio_intercept import (
     _predecessor_slice,
     _slice_number,
 )
+from des.cli._emit_json import emit_json_line as _emit
 from des.cli.verify_slice_commit_completeness import (
     _SLICE_ID_TRAILER_RE,
     files_in_commit,
@@ -57,11 +57,6 @@ _SLICE_ID_RE = re.compile(
 # module constant so the feature-scoped-E1 marker (the W5-collision arch-test
 # self-coverage) resolves through the SSOT both CLIs share.
 _FEATURE_SCOPED_E1_GATE = "des.cli.check_slice_at_completeness"
-
-
-def _emit(payload: dict[str, object]) -> None:
-    """Print exactly one single-line JSON object."""
-    print(json.dumps(payload))
 
 
 def _malformed_input(repo: Path, slice_id: str, commit: str) -> dict[str, str] | None:
@@ -304,6 +299,10 @@ def _in_commit_at_presence(
     """
     slice_tag = re.compile(rf"@{re.escape(slice_id)}\b")
     for rel_path in sorted(files_in_commit(repo, commit)):
+        # gherkin-scope: KNOWN GAP (not fixed here) -- P4 hard-requires a
+        # Gherkin AT, no pytest-arm fallback like the sibling gap-1/2/4
+        # repairs. Flagged by lane/at-discovery-archtest 2026-07-29, reported
+        # for triage rather than silently repaired mid-guard-build.
         if not rel_path.endswith(".feature"):
             continue
         if not _path_in_commit_tree(repo, commit, rel_path):
@@ -354,6 +353,8 @@ def _tracked_before_at_presence(repo: Path, slice_id: str, commit: str) -> bool:
     slice_tag = re.compile(rf"@{re.escape(slice_id)}\b")
     tree = _git(repo, "ls-tree", "-r", "--name-only", parent)
     for rel_path in sorted(line for line in tree.splitlines() if line):
+        # gherkin-scope: KNOWN GAP (not fixed here), same class as the
+        # sibling P4 leg above -- see that marker.
         if not rel_path.endswith(".feature"):
             continue
         if rel_path in touched:

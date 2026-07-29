@@ -91,10 +91,41 @@ execution-log was chosen.
 <!-- DES-PROJECT-ROOT : /home/alex/worktrees/fix-des-worktree -->
 ```
 
-**Scope** (this iteration): marker honored on the hook side. Orchestrator-
-side injection (DISPATCH and DELIVER skills emitting the marker) is
-tracked under follow-up backlog item `F-DES-WORKTREE-ORCHESTRATOR-
-INJECTION`.
+**Producer** (since 2026-07-28): `des dispatch --repo-root <path>` emits this
+marker, resolving `<path>` to an absolute path with `Path.resolve()` — the same
+`resolve()` the hook-side validator applies, so generator and consumer agree by
+construction rather than by coincidence. Before that fix the CLI echoed a relative
+`--repo-root` verbatim and the refusal (`declared-project-root-not-absolute`)
+only fired downstream, at dispatch time, after the whole prompt had been
+assembled.
+
+### `DES-SWARM-ISOLATED-DISPATCH` *(added 2026-07-28)*
+
+Declares that this dispatch runs in an ISOLATED parallel worktree, which DEFERS
+the carpaccio slice-order check to integration time. Needed because a swarm
+worktree's local ledger carries no `SliceCommitVerified` record for predecessor
+slices — those live on trunk — so the order check would otherwise refuse a
+legitimately-ready slice.
+
+**Value**: free text naming which worktree this is, and which predecessor
+`SliceCommitVerified` record lands at integration.
+
+**Producer**: `des dispatch --swarm-isolated --swarm-justification '<text>'`.
+Both flags are required together; either one alone is refused at exit 2 at the
+authoring surface. A bare `--swarm-isolated` would emit a marker the hook cannot
+read, and the order check would then block naming the PREDECESSOR's missing
+ledger record instead of the malformed declaration — a rejection pointing at the
+wrong thing. A lone `--swarm-justification` would be silently dropped.
+
+**Consumer**: `carpaccio_intercept.py`, parsed by `des_marker_parser.py`.
+
+The isolation is a DECLARED fact, never inferred: the CLI does not sniff whether
+`.git` is a file or a directory, nor inspect the shape of the cwd. A gate decides
+on declared facts, never on inferred signals.
+
+```
+<!-- DES-SWARM-ISOLATED-DISPATCH : wt/df-slice-05; predecessor slice-04's SliceCommitVerified lands at integration -->
+```
 
 ## Empirical anchor
 

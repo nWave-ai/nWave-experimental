@@ -26,6 +26,11 @@ def sandbox_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    # The `attribution on|off` CLI resolves claude_dir via
+    # PathUtils.get_claude_config_dir(), which honors CLAUDE_CONFIG_DIR. On a
+    # multi-profile dev machine that env var overrides the HOME/Path.home
+    # sandboxing above unless scrubbed here too.
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     return home
 
 

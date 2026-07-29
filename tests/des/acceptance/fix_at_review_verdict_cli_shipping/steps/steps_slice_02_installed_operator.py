@@ -121,9 +121,9 @@ def then_recorder_completes_cleanly(record_result) -> None:
     assert record_result.exit_code == 0, record_result.stderr
 
 
-@then("the working repository's ledger gains no AT-review verdict for the slice")
-def then_ledger_gains_no_verdict(installed: ShippingComposition) -> None:
-    assert installed.verdicts_for_entering_slice() == []
+@then("the recorded verdict is not an approval")
+def then_recorded_verdict_is_not_approval(installed: ShippingComposition) -> None:
+    assert installed.latest_record_is_not_approval()
 
 
 @then("the carpaccio gate refuses to clear the slice")

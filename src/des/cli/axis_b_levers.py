@@ -737,6 +737,9 @@ def _bound_features(source_file: Path, text: str) -> list[Path]:
     """The sibling ``.feature`` files a bdd step module references by name."""
     return [
         feature
+        # gherkin-scope: pytest-bdd's OWN `scenarios("x.feature")` binding is
+        # structurally a step-module-to-.feature-file link; no other AT kind
+        # has this relationship to discover.
         for feature in sorted(source_file.parent.glob("*.feature"))
         if feature.name in text or feature.stem in text
     ]
@@ -899,6 +902,8 @@ def _file_is_walking_skeleton(source_file: Path) -> bool:
 
 def _bound_feature_is_walking_skeleton(source_file: Path, text: str) -> bool:
     """True iff a sibling ``.feature`` the step file references carries the WS tag."""
+    # gherkin-scope: same pytest-bdd sibling-binding fact as _bound_features
+    # above -- structurally Gherkin, no other AT kind has this relationship.
     for feature in source_file.parent.glob("*.feature"):
         try:
             feature_text = feature.read_text(encoding="utf-8")
@@ -1204,6 +1209,12 @@ def count_error_path_scenarios(
     error_path_count = 0
     total_count = 0
     slice_tag = f"@{entering_slice}"
+    # gherkin-scope: KNOWN GAP (not fixed here) -- counts Gherkin @error
+    # scenarios only; no pytest-side "@error density" authority exists
+    # anywhere in this repo to compose (unlike the .feature-vs-pytest AT-
+    # discovery gaps, this is not a same-fact-two-authorities duplicate, it
+    # is an unextended metric). Flagged by lane/at-discovery-archtest
+    # 2026-07-29 for triage.
     for feature_file in tests_dir.rglob("*.feature"):
         if feature_id not in feature_file.parts:
             continue

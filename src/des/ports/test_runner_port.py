@@ -222,6 +222,19 @@ class RunnerAdapterUnavailable(RuntimeError):
         )
 
 
+#: The suffix -> runner-name SSOT for native-regression AT-discovery
+#: (ADR-AAD-001 DA-5). Promoted here -- the module that already owns
+#: per-language runner-identity concepts -- from two independently-maintained,
+#: byte-identical private copies (``des.cli.carpaccio_format.
+#: _AT_DISCOVERY_SUFFIX_RUNNER`` and ``des.application.slice_at_completeness.
+#: _NATIVE_REGRESSION_SUFFIX_RUNNER``), which now IMPORT this constant
+#: (identity, not a redefinition) instead of each keeping its own literal.
+AT_KIND_SUFFIX_MAP = {
+    ".py": "pytest",
+    ".rs": "cargo-test",
+}
+
+
 @dataclass(frozen=True)
 class UnrecognizedRunner(Indeterminate):
     """The 0-lockfile resolution outcome -- UNRECOGNIZED, not AMBIGUOUS (D9).
@@ -488,6 +501,7 @@ def _unrecognized_reason(target_root: Path) -> str:
 
 
 __all__ = [
+    "AT_KIND_SUFFIX_MAP",
     "AtDiscoveryResult",
     "Indeterminate",
     "ListScope",

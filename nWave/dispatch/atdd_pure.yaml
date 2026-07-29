@@ -97,6 +97,14 @@ sections:
       last command; too small a budget kills the agent between the work and its confirmation
       (observed ~6x: work done, closing step lost). Machine load-sensitive (`uptime`; pause if
       load>10). STOP after the ATs are green + non-regression confirmed. Do NOT commit.
+      A finished report is not a delivered one: your final message IS the return value, so
+      SEND it (SendMessage) as the last act of the run. Going idle holding a written report
+      delivers nothing -- the same "closing step lost" failure the turn budget above guards,
+      reached by the other route. If a mandate arrives for work you have ALREADY done, do not
+      redo it: reply with the EVIDENCE (commit sha, file, ledger record) so the orchestrator
+      can verify the artifact instead of the status -- messages and status pings arrive out of
+      order with the work, so a nudge often means the orchestrator looked too early, not that
+      you failed.
 
 # Section-SELECTION profiles. `full` = every section. `review` = full minus the 5
 # implementation-only sections (a read-only review writes no code). `lane.*` rows are

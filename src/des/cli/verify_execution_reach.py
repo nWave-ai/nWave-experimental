@@ -44,13 +44,15 @@ WHY, and HOW to fix -- the standing what/why/how rule):
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 
 # The XML parsed here is the coverage report produced locally by the test
 # runner we just invoked, in a file we own -- not untrusted input.
 from pathlib import Path
 from xml.etree import ElementTree
+
+from des.cli._emit_json import emit_json_line as _emit
+from des.cli._repo_root_arg import add_repo_root_argument
 
 
 _EXIT_VERIFIED = 0
@@ -59,10 +61,6 @@ _EXIT_INDETERMINATE = 2
 
 _REASON_ZERO_HITS = "zero-hits"
 _REASON_ABSENT = "absent-from-report"
-
-
-def _emit(payload: dict[str, object]) -> None:
-    print(json.dumps(payload))
 
 
 def _indeterminate(what: str, why: str, how: str) -> int:
@@ -175,7 +173,9 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="Production source root, repo-relative.",
     )
-    parser.add_argument("--repo", default=".", help="Path to the repository.")
+    add_repo_root_argument(
+        parser, "--repo", default=".", help="Path to the repository."
+    )
     parser.add_argument(
         "--ext",
         default=".py",

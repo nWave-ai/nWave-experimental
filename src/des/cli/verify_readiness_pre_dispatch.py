@@ -65,6 +65,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from des.adapters.driven.config.des_config import DESConfig
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.axis_b_levers import (
     LayoutRoots,
     LeverResult,
@@ -417,6 +418,10 @@ def _check_scenario_slice_tags(
         # tree to this feature (and refuse on any other feature's untagged
         # scenario). The name of the directory the repo happens to live in is
         # not a selector.
+        # gherkin-scope: a Gherkin scenario-tag HYGIENE check ("every
+        # Scenario: carries @slice-NN") -- a different fact than "which
+        # files deliver this slice's ATs"; pytest ATs have no Scenario:
+        # lines to check, and never false-refuse via this leg.
         legacy_feature_files = [
             p
             for p in tests_dir.rglob("*.feature")
@@ -613,6 +618,9 @@ def _check_pre_commit_scope(repo_root: Path, feature_id: str) -> _InvariantResul
     # Repo-root-relative for the same reason as the legacy leg above: `p` is
     # absolute, so a worktree checked out at `.../wt/<feature-id>/` would put the
     # feature id in EVERY path and claim every .feature file in the tree.
+    # gherkin-scope: this invariant is INERT -- every path (empty, non-empty)
+    # returns satisfied=True unconditionally below (see the trailing
+    # unconditional return); the .feature scan decides nothing here.
     feature_files = [
         p
         for p in tests_dir.rglob("*.feature")
@@ -1101,7 +1109,8 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Slice id about to enter A_GREEN (slice-NN).",
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo-root",
         required=False,
         default=None,

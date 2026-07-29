@@ -1539,6 +1539,7 @@ def _run_doc_coherence_gate(
 # never silences a genuine claim).
 _DOC_COHERENCE_NOT_CURRENT_CLAIM_PREFIXES = frozenset(
     {
+        "docs/product/backlog.md",
         "docs/feature/",
         "docs/analysis/",
         "docs/internal/",

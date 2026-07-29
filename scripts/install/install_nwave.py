@@ -24,6 +24,53 @@ from typing import NamedTuple
 _HASH_CHUNK_BYTES = 65536  # 64 KiB chunked read keeps SKILL.md etc. memory-bounded
 _LEGACY_CODEX_AGENT_ALIASES = {"nw-architect", "nw-crafter"}
 
+# HOW remedies for the Codex ownership preflight (see
+# NWaveInstaller.validate_codex_ownership_preflight /
+# _report_ownership_preflight_errors). Keyed by the ``kind`` tag attached to
+# each collected error: distinct kinds need DISTINCT fixes -- adoption is the
+# right remedy for an untracked collision, but the wrong one for a corrupted
+# manifest -- so this is a lookup table, never one generic line reused for
+# every failure shape.
+_OWNERSHIP_PREFLIGHT_ADOPTABLE_COLLISION_HOW = (
+    "If this is legacy nWave dev state, adopt it into the normal backup "
+    "with `--adopt-legacy-codex-dev --dev --platform codex` (that flag "
+    "requires both --dev and --platform codex). If it is NOT nWave "
+    "state, remove or relocate it yourself, then re-run install."
+)
+_OWNERSHIP_PREFLIGHT_REMEDIES: dict[str, str] = {
+    # Adoptable skill/agent collisions are split into two kinds -- not one
+    # -- purely so the aggregate report in _report_ownership_preflight_errors
+    # names BOTH host roots (skills dir, agents dir) and samples from each,
+    # instead of one alphabetically-dominant root hiding the other.
+    "foreign-collision-adoptable-skill": _OWNERSHIP_PREFLIGHT_ADOPTABLE_COLLISION_HOW,
+    "foreign-collision-adoptable-agent": _OWNERSHIP_PREFLIGHT_ADOPTABLE_COLLISION_HOW,
+    "foreign-collision-manual": (
+        "This is not covered by --adopt-legacy-codex-dev. Back it up if you "
+        "need it, remove it yourself, then re-run install so nWave writes "
+        "its own trusted copy."
+    ),
+    "missing-owned-asset": (
+        "nWave's own manifest says it owns this asset, but the file is "
+        "gone. Re-run install to recreate it, or restore it from an nWave "
+        "backup if you need the exact prior version."
+    ),
+    "unsafe-path": (
+        "This path is a symlink, or the wrong type where nWave expects a "
+        "plain file or directory. Inspect it, replace it with the expected "
+        "type (or remove it), then re-run install."
+    ),
+    "corrupt-file": (
+        "This file could not be read or parsed. Restore it from an nWave "
+        "backup, or delete it and re-run install so nWave regenerates it."
+    ),
+    "untrusted-content": (
+        "This file's content does not match what nWave generates or "
+        "expects (hand-edited or incompatible). Back it up if you need it, "
+        "delete it, then re-run install so nWave regenerates its own "
+        "trusted copy."
+    ),
+}
+
 
 def _file_md5(path: Path) -> str | None:
     """Compute md5 of *path* read in 64 KiB chunks; return None on read error.
@@ -608,7 +655,13 @@ class NWaveInstaller:
             Path(codex_home_override) if codex_home_override else Path.home() / ".codex"
         )
         agents_dir = codex_dir / "agents"
-        errors: list[str] = []
+        # Each entry is (kind, line) rather than a bare string: ``kind`` keys
+        # the aggregation + HOW-remedy lookup at the bottom of this method,
+        # so a flood of same-shape collisions collapses to one header + one
+        # remedy instead of N repeated, HOW-less log lines (see
+        # _OWNERSHIP_PREFLIGHT_REMEDIES for the fixed set of kinds and why
+        # each maps to a DIFFERENT fix, never one generic HOW for all).
+        errors: list[tuple[str, str]] = []
         public_agents = load_public_agents(self.project_root / "nWave")
         legacy_agent_names = {
             source.stem
@@ -654,7 +707,7 @@ class NWaveInstaller:
                 (path in {skills_dir, agents_dir} and not safe_directory(path))
                 or (path not in {skills_dir, agents_dir} and not regular_file(path))
             ):
-                errors.append(f"unsafe {label}: {path}")
+                errors.append(("unsafe-path", f"unsafe {label}: {path}"))
 
         legacy_direct_command: str | None = None
         legacy_launcher_witness = False
@@ -721,12 +774,14 @@ class NWaveInstaller:
             if not (path.exists() or path.is_symlink()):
                 return None
             if not regular_file(path):
-                errors.append(f"unsafe nWave manifest {path}")
+                errors.append(("unsafe-path", f"unsafe nWave manifest {path}"))
                 return set()
             try:
                 document = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
-                errors.append(f"unreadable nWave manifest {path}: {exc}")
+                errors.append(
+                    ("corrupt-file", f"unreadable nWave manifest {path}: {exc}")
+                )
                 return set()
             names = document.get(key) if isinstance(document, dict) else None
             if (
@@ -741,7 +796,7 @@ class NWaveInstaller:
                 )
                 or len(names) != len(set(names))
             ):
-                errors.append(f"untrusted nWave manifest {path}")
+                errors.append(("untrusted-content", f"untrusted nWave manifest {path}"))
                 return set()
             return set(names)
 
@@ -816,7 +871,10 @@ class NWaveInstaller:
                     attested_legacy_skills = omissions
                 elif unadoptable_skills:
                     errors.extend(
-                        f"foreign or untracked Codex skill collision: {skills_dir / name}"
+                        (
+                            "foreign-collision-adoptable-skill",
+                            f"foreign or untracked Codex skill collision: {skills_dir / name}",
+                        )
                         for name in sorted(unadoptable_skills)
                     )
 
@@ -825,7 +883,12 @@ class NWaveInstaller:
         if skills_dir_safe and skills_dir.exists() and skill_manifest is None:
             for path in skills_dir.glob("nw-*"):
                 if path.name not in adoptable_skill_names:
-                    errors.append(f"foreign or untracked Codex skill collision: {path}")
+                    errors.append(
+                        (
+                            "foreign-collision-adoptable-skill",
+                            f"foreign or untracked Codex skill collision: {path}",
+                        )
+                    )
         if agents_dir_safe and agents_dir.exists() and agent_manifest is None:
             for path in agents_dir.glob("nw-*.toml"):
                 if (
@@ -835,29 +898,54 @@ class NWaveInstaller:
                     )
                     and path.stem not in adoptable_agent_names
                 ):
-                    errors.append(f"foreign or untracked Codex agent collision: {path}")
+                    errors.append(
+                        (
+                            "foreign-collision-adoptable-agent",
+                            f"foreign or untracked Codex agent collision: {path}",
+                        )
+                    )
 
         if skill_manifest is not None:
             owned_skill_names = skill_manifest | attested_legacy_skills
             for name in owned_skill_names:
                 if not safe_skill_tree(skills_dir / name):
-                    errors.append(f"manifest-owned Codex skill is missing: {name}")
+                    errors.append(
+                        (
+                            "missing-owned-asset",
+                            f"manifest-owned Codex skill is missing: {name}",
+                        )
+                    )
             for path in skills_dir.glob("nw-*"):
                 if (
                     path.name not in owned_skill_names
                     and path.name not in adoptable_skill_names
                 ):
-                    errors.append(f"foreign or untracked Codex skill collision: {path}")
+                    errors.append(
+                        (
+                            "foreign-collision-adoptable-skill",
+                            f"foreign or untracked Codex skill collision: {path}",
+                        )
+                    )
         if agent_manifest is not None:
             for name in agent_manifest:
                 if not regular_file(agents_dir / f"{name}.toml"):
-                    errors.append(f"manifest-owned Codex agent is missing: {name}")
+                    errors.append(
+                        (
+                            "missing-owned-asset",
+                            f"manifest-owned Codex agent is missing: {name}",
+                        )
+                    )
             for path in agents_dir.glob("nw-*.toml"):
                 if (
                     path.stem not in agent_manifest
                     and path.stem not in adoptable_agent_names
                 ):
-                    errors.append(f"foreign or untracked Codex agent collision: {path}")
+                    errors.append(
+                        (
+                            "foreign-collision-adoptable-agent",
+                            f"foreign or untracked Codex agent collision: {path}",
+                        )
+                    )
 
         hooks: object = None
         if regular_file(hooks_path):
@@ -865,7 +953,10 @@ class NWaveInstaller:
                 hooks_document = json.loads(hooks_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 errors.append(
-                    f"malformed Codex hooks configuration {hooks_path}: {exc}"
+                    (
+                        "corrupt-file",
+                        f"malformed Codex hooks configuration {hooks_path}: {exc}",
+                    )
                 )
             else:
                 hooks = (
@@ -876,14 +967,22 @@ class NWaveInstaller:
                 if not isinstance(hooks, dict) or any(
                     not isinstance(entries, list) for entries in hooks.values()
                 ):
-                    errors.append(f"ambiguous Codex hooks configuration {hooks_path}")
+                    errors.append(
+                        (
+                            "untrusted-content",
+                            f"ambiguous Codex hooks configuration {hooks_path}",
+                        )
+                    )
 
         if regular_file(des_manifest_path):
             try:
                 des_manifest = json.loads(des_manifest_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 errors.append(
-                    f"unreadable nWave DES manifest {des_manifest_path}: {exc}"
+                    (
+                        "corrupt-file",
+                        f"unreadable nWave DES manifest {des_manifest_path}: {exc}",
+                    )
                 )
             else:
                 if legacy_direct_command is not None:
@@ -967,7 +1066,10 @@ class NWaveInstaller:
                         legacy_launcher_witness or orphan_launcher_witness
                     ):
                         errors.append(
-                            f"untracked nWave DES launcher collision: {launcher_path}"
+                            (
+                                "foreign-collision-manual",
+                                f"untracked nWave DES launcher collision: {launcher_path}",
+                            )
                         )
                 elif not (
                     isinstance(des_manifest, dict)
@@ -993,7 +1095,12 @@ class NWaveInstaller:
                         },
                     )
                 ):
-                    errors.append(f"untrusted nWave DES manifest {des_manifest_path}")
+                    errors.append(
+                        (
+                            "untrusted-content",
+                            f"untrusted nWave DES manifest {des_manifest_path}",
+                        )
+                    )
                 else:
                     from scripts.install.plugins.codex_des_plugin import (
                         _command_owns_launcher,
@@ -1004,14 +1111,20 @@ class NWaveInstaller:
                         launcher_source = launcher_path.read_text(encoding="utf-8")
                     except OSError as exc:
                         errors.append(
-                            f"unreadable nWave DES launcher {launcher_path}: {exc}"
+                            (
+                                "corrupt-file",
+                                f"unreadable nWave DES launcher {launcher_path}: {exc}",
+                            )
                         )
                     else:
                         if launcher_source != _launcher_source(
                             des_manifest["python_path"], des_manifest["pythonpath"]
                         ):
                             errors.append(
-                                f"untrusted nWave DES launcher {launcher_path}"
+                                (
+                                    "untrusted-content",
+                                    f"untrusted nWave DES launcher {launcher_path}",
+                                )
                             )
                     has_owned_launcher_hook = isinstance(hooks, dict) and any(
                         isinstance(group, dict)
@@ -1027,13 +1140,60 @@ class NWaveInstaller:
                         for group in groups
                     )
                     if not has_owned_launcher_hook:
-                        errors.append(f"untrusted nWave DES hook {hooks_path}")
+                        errors.append(
+                            (
+                                "untrusted-content",
+                                f"untrusted nWave DES hook {hooks_path}",
+                            )
+                        )
         elif launcher_path.exists():
-            errors.append(f"untracked nWave DES launcher collision: {launcher_path}")
+            errors.append(
+                (
+                    "foreign-collision-manual",
+                    f"untracked nWave DES launcher collision: {launcher_path}",
+                )
+            )
 
-        for error in errors:
-            self.logger.error(f"  ❌ Ownership preflight: {error}")
+        self._report_ownership_preflight_errors(errors)
         return not errors
+
+    _OWNERSHIP_PREFLIGHT_SAMPLE_LIMIT = 5
+
+    def _report_ownership_preflight_errors(self, errors: list[tuple[str, str]]) -> None:
+        """Emit the Codex ownership preflight refusal, aggregated with a HOW.
+
+        A same-shape flood (e.g. one line per legacy Codex skill directory)
+        must not become one near-identical, HOW-less log line per collision
+        -- that buries the one fact the operator needs under noise (GDP-3)
+        and forces them to read installer source to find the fix (GDP-4).
+        Errors are grouped by ``kind``; each group prints a bounded sample
+        (house style shared with e.g. check_trailing_whitespace.py's
+        "... and N more") followed by the ONE remedy that fits that kind --
+        never a single generic remedy reused across kinds that need
+        different fixes. The method ends on an explicit verdict line so the
+        log never simply stops on the last collision with the outcome left
+        to be inferred.
+        """
+        if not errors:
+            return
+        by_kind: dict[str, list[str]] = {}
+        for kind, line in errors:
+            by_kind.setdefault(kind, []).append(line)
+        for kind, lines in sorted(by_kind.items()):
+            lines = sorted(lines)
+            limit = self._OWNERSHIP_PREFLIGHT_SAMPLE_LIMIT
+            for line in lines[:limit]:
+                self.logger.error(f"  ❌ Ownership preflight: {line}")
+            if len(lines) > limit:
+                self.logger.error(f"       ... and {len(lines) - limit} more")
+            how = _OWNERSHIP_PREFLIGHT_REMEDIES.get(kind)
+            if how:
+                self.logger.error(f"       HOW: {how}")
+        self.logger.error(
+            f"  ❌ Installation refused: {len(errors)} Codex ownership "
+            f"collision(s) across {len(by_kind)} failure kind(s) -- "
+            "0 files written, nothing changed."
+        )
 
     def restore_backup(self) -> bool:
         """Restore from most recent backup.
@@ -1241,7 +1401,16 @@ class NWaveInstaller:
             return True
 
         self.logger.info("")
-        self.logger.info(f"  💿 Installing nWave → {self.claude_config_dir}")
+        # Announce the Claude directory ONLY when Claude Code is a target.  A
+        # Codex/OpenCode/Copilot-only run writes nothing there, and naming a
+        # path the run will never touch is a silent-wrong: the user reads a
+        # location, follows the closing "reopen Claude Code" line, and finds an
+        # empty directory.
+        if "claude_code" in target_platforms:
+            self.logger.info(f"  💿 Installing nWave → {self.claude_config_dir}")
+        else:
+            hosts = ", ".join(sorted(target_platforms))
+            self.logger.info(f"  💿 Installing nWave → {hosts}")
 
         # Codex has no Claude activation surface.  Do not create an empty
         # ~/.claude directory merely because the installer knows its legacy
@@ -1277,6 +1446,28 @@ class NWaveInstaller:
                     f"  ❌ Plugin '{plugin_name}' failed: {result.message}"
                 )
                 return False
+
+        # Close on the PROPERTY, not on "the branch was taken": an announced
+        # Claude target that is still empty here means the run would otherwise
+        # report success over a directory the user will find bare.  Degrade
+        # LOUD rather than let the declared fact and the disk diverge.
+        if "claude_code" in target_platforms and not any(
+            self.claude_config_dir.iterdir()
+        ):
+            self.logger.error(
+                f"  ❌ WHAT: nothing was installed into {self.claude_config_dir}, "
+                "yet it was announced as the install target."
+            )
+            self.logger.error(
+                "  WHY: the Claude Code plugins produced no files, so Claude Code "
+                "would start with no nWave agents, skills or commands."
+            )
+            self.logger.error(
+                "  HOW: re-run the installer with the target made explicit -- "
+                f"CLAUDE_CONFIG_DIR={self.claude_config_dir} "
+                "python -m nwave_ai.cli install"
+            )
+            return False
 
         return True
 
@@ -1364,8 +1555,9 @@ class NWaveInstaller:
         target_platforms = self.effective_target_platforms
         codex_valid = True
         if "codex" in target_platforms:
-            codex_valid = self._validate_codex_installation()
-            if target_platforms == {"codex"}:
+            codex_only = target_platforms == {"codex"}
+            codex_valid = self._validate_codex_installation(verify_plugins=codex_only)
+            if codex_only:
                 return codex_valid
 
         self.logger.info("")
@@ -1592,8 +1784,23 @@ class NWaveInstaller:
             )
             return False
 
-    def _validate_codex_installation(self) -> bool:
-        """Validate the Codex-native discovery surfaces for a Codex-only install."""
+    def _validate_codex_installation(self, *, verify_plugins: bool = True) -> bool:
+        """Validate the Codex-native discovery surfaces selected for this install.
+
+        The Codex skill manifest is the ownership oracle: a public release may
+        legitimately omit skills that are private or unavailable for that host.
+        Requiring a separate hard-coded command list here would turn that
+        policy into a false deployment failure.  The Codex plugin verifies every
+        manifest-declared skill; the all-target registry below independently
+        verifies the Copilot and OpenCode surfaces.
+
+        Args:
+            verify_plugins: run the Codex-scoped plugin registry check here.
+                False when the caller is about to run the full all-target
+                registry check right after -- that check already covers the
+                Codex plugin, and running both double-invokes the same
+                registry.verify_all() for no additional signal.
+        """
         self.logger.info("")
         self.logger.info("  🔎 Validate Codex Installation...")
 
@@ -1623,23 +1830,27 @@ class NWaveInstaller:
         ]
         missing = [path for path in native_artifacts if not path.exists()]
 
-        registry = self._create_plugin_registry(silent=True, target_platforms={"codex"})
-        context = InstallContext(
-            claude_dir=self.claude_config_dir,
-            scripts_dir=self.project_root / "scripts" / "install",
-            templates_dir=self.framework_source / "templates",
-            logger=self.logger,
-            project_root=self.project_root,
-            framework_source=self.framework_source,
-            dry_run=self.dry_run,
-            dev_mode=self.dev_mode,
-            target_platforms={"codex"},
-        )
-        plugin_failures = {
-            name: result
-            for name, result in registry.verify_all(context).items()
-            if not result.success
-        }
+        plugin_failures: dict[str, object] = {}
+        if verify_plugins:
+            registry = self._create_plugin_registry(
+                silent=True, target_platforms={"codex"}
+            )
+            context = InstallContext(
+                claude_dir=self.claude_config_dir,
+                scripts_dir=self.project_root / "scripts" / "install",
+                templates_dir=self.framework_source / "templates",
+                logger=self.logger,
+                project_root=self.project_root,
+                framework_source=self.framework_source,
+                dry_run=self.dry_run,
+                dev_mode=self.dev_mode,
+                target_platforms={"codex"},
+            )
+            plugin_failures = {
+                name: result
+                for name, result in registry.verify_all(context).items()
+                if not result.success
+            }
         for path in missing:
             self.logger.error(f"    ❌ Missing Codex artifact: {path}")
         for name, result in plugin_failures.items():
@@ -1759,10 +1970,9 @@ def show_installation_summary(
             "Acceptance test creation and business validation",
         ),
         (
-            f"{command_prefix}nw-develop",
+            f"{command_prefix}nw-deliver",
             "Outside-In TDD implementation with refactoring",
         ),
-        (f"{command_prefix}nw-deliver", "Production readiness validation"),
     ]
     for cmd, desc in commands:
         logger.info(f"    {cmd:<16} {desc}")
@@ -1818,7 +2028,9 @@ def show_help():
 {B}OPTIONS:{N}
     --backup-only     Create backup of existing nWave installation without installing
     --restore         Restore from the most recent backup
-    --dry-run         Show what would be installed without making any changes
+    --dry-run         Show what would be installed without making any changes.
+                      Also surfaces Codex ownership-collision refusals safely,
+                      before a real install -- run this first if unsure.
     --dev             Install ALL agents and skills (including private/unreleased)
     --adopt-legacy-codex-dev
                       With --dev --platform codex only, quarantine safely
@@ -1979,8 +2191,12 @@ def main():
             return 1
 
     # Normal installation
+    # validate_codex_ownership_preflight already emits a full WHAT/WHY/HOW
+    # report plus a "0 files written" verdict line for every collision when
+    # it refuses (see _report_ownership_preflight_errors) -- no separate
+    # generic message here, or the operator sees a redundant, less useful
+    # second verdict on top of the specific one.
     if not installer.validate_codex_ownership_preflight():
-        installer.logger.error("  ❌ Installation refused: Codex ownership is unsafe")
         return 1
 
     if args.dry_run:

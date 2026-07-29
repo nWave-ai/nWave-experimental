@@ -23,6 +23,25 @@ ID: EXP-<feature>-<n> · Spec rows: <R…> · Persona: <who>
 ## Preconditions
 <start recipe: how to run the system from a clean state, seed state>
 
+> **Name the tree, or the examine measures the wrong build.** A machine can hold the
+> trunk checkout, several worktrees, and an installed copy at once. The same script
+> exists in all of them, runs, and prints a perfectly formed verdict from whichever one
+> the path happened to resolve against — silent-wrong at the one step whose whole point
+> is independent observation, and the examiner cannot catch it because she is required
+> not to read the source.
+> `uv run --project <dir>` selects the ENVIRONMENT, not the root a relative script path
+> resolves against; it does not protect you here.
+> The start recipe MUST: (1) `cd` into the tree under test, (2) give every script an
+> ABSOLUTE path, (3) tell the examiner that a free witness exists — every `des`
+> invocation prints `des.runtime.freshness.autoskipped` naming the root it resolved —
+> and that an observation whose root is not the tree under test must be DISCARDED and
+> re-run, never reported.
+> Note the asymmetry, because it says where to look first: BEFORE the feature is merged,
+> a PASS is self-authenticating (the other trees lack the feature, so they cannot produce
+> one), while a FAIL is ambiguous between "the code is broken" and "I looked where the
+> code is not". On a failed pre-merge examine, suspect the tree before the code. After
+> the merge the asymmetry disappears and both verdicts need the witness.
+
 ## Charter
 Explore <area> via <surface: browser/CLI/API> to verify <intent>.
 

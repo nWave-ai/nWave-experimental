@@ -34,21 +34,52 @@ Feature: The commit gate denies theater and proves itself by self-perturbation
   # assertions permitted at this layer (Mandate 8 universe-guard is a layer-1..3
   # requirement).
 
-  # AT-0 -- the allow path: a commit whose slice is all-earned is allowed
-  # (GAP-3(a), MINOR-1). Witnesses the {all-earned -> allow} decision-table row
-  # so a deny-only gate is no longer mechanically indistinguishable from a
-  # hard-wired-deny. AT-0 (allow) + AT-1 (deny) + AT-2 (self-deny) together
-  # witness all three observable gate outcomes. Defensible deviation from the
-  # slice plan's "exactly TWO" (slice-04 -> 3 ATs): the third AT closes a
-  # decision-table hole the slice plan did not foresee.
-  @driving_port @real-io @wiring_e2e @slice-04 @contract-shape:unbounded-preservation
+  # RETIRED 2026-07-29 (hook-audit fix, GDP-8) -- AT-0 and AT-1 below.
+  #
+  # What DELIVER actually shipped for these two: `_commit_event()`
+  # (composition_slice_04.py) stages the "Given" phrase VERBATIM into the git
+  # commit message (`git commit -m 'slice (all earned)'` / `'slice (a theater
+  # AT)'`), and the production hook's `_perturbations_for()` matched that exact
+  # substring in the raw command text to fabricate a hard-coded TestRun pair --
+  # NO acceptance test was ever staged, perturbed, or re-run. That is a decision
+  # on the commit's DESIGNATION (its text) standing in for the PROPERTY the gate
+  # exists to measure (does the AT actually flip red when its dependency
+  # breaks). Worse: because `_perturbations_for()` also fired on the mere
+  # presence of a `Slice-Id:` trailer -- which every REAL slice commit carries
+  # by construction via `des commit-slice` -- every real commit in this repo was
+  # unconditionally ruled "earned" without a single test ever re-running.
+  #
+  # Arming this honestly requires resolving "which ATs belong to the slice under
+  # commit" and "what seam does each declare" into real baseline/perturbed runs
+  # via the shipped `run_tests` (slice-02) / `inject_seam` (slice-03) adapters.
+  # That slice->AT->seam-manifest resolver does not exist anywhere in this repo
+  # (verified: `nwave.seam_manifest.v1` is declared only by THIS feature's own
+  # test fixtures, never by DISTILL's generated-AT scaffolding -- the
+  # feature-delta's "carries a seam by construction via scaffold ADR-028" claim
+  # does not hold; ADR-028 is the unrelated atdd-pure roadmap-free-spine ADR).
+  # Building that resolver is a real multi-slice feature (DESIGN->DISTILL->
+  # DELIVER), not a hook bugfix -- so per GDP-6 (no silent-wrong; degrade LOUD
+  # or INDETERMINATE) the production gate (`evaluate_commit_gate`) now always
+  # ABSTAINs on real commit traffic instead of fabricating a verdict. AT-0/AT-1
+  # witnessed the retired mechanism, not real behaviour, so they are retired
+  # with them (`@retired`, see conftest.py) rather than left green over dead
+  # logic. A future slice re-earns them once a real resolver ships.
+  #
+  # AT-2 (self-test) is UNAFFECTED: it drives a separate subprocess
+  # (`des.cli.earned_verdict_self_test`) that perturbs the CORE's own seam for
+  # real -- it never touched the retired commit-message discriminator.
+
+  # AT-0 -- RETIRED. Witnessed the {all-earned -> allow} decision-table row via
+  # the fabricated commit-message-text mechanism above, not a real perturb-loop.
+  @retired @driving_port @real-io @wiring_e2e @slice-04 @contract-shape:unbounded-preservation
   Scenario: A commit whose slice tests are all earned is allowed
     Given a slice whose acceptance tests are "all earned"
     When a commit of that slice is attempted through the pre-commit gate
     Then the commit gate decision is "allowed"
 
-  # AT-1 -- the gate denies a commit whose slice contains a theater AT.
-  @driving_port @real-io @wiring_e2e @slice-04 @error @contract-shape:unbounded-preservation
+  # AT-1 -- RETIRED. Witnessed the {theater -> deny} decision-table row via the
+  # same fabricated mechanism -- see the retirement rationale above.
+  @retired @driving_port @real-io @wiring_e2e @slice-04 @error @contract-shape:unbounded-preservation
   Scenario: A commit carrying a theater test is denied by the gate
     Given a slice whose acceptance tests are "a theater AT"
     When a commit of that slice is attempted through the pre-commit gate

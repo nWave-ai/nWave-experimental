@@ -19,41 +19,6 @@ module: des.cli.at_review_verdict
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --feature-id
-    required: true
-    type: string
-    help: "Feature identifier; resolves the slice's .feature scenarios and the per-feature ledger."
-  - name: --slice-id
-    required: true
-    type: string
-    help: "The entering slice whose reviewed AT set is being recorded."
-  - name: --verdict
-    required: true
-    type: choice
-    choices: [APPROVED, NEEDS_REVISION]
-    help: "The reviewer outcome. APPROVED appends a verdict record; NEEDS_REVISION writes nothing."
-  - name: --reviewer-agent-id
-    required: true
-    type: string
-    help: "Agent id of the acceptance-designer reviewer whose judgement is being recorded."
-  - name: --findings
-    required: false
-    type: string
-    help: "Optional findings summary entries (recorded alongside the verdict fields)."
-  - name: --repo-root
-    required: false
-    type: path
-    help: "Repository root override; defaults to the resolved current repo root."
-  - name: --robustness-declaration
-    required: false
-    type: path
-    help: "Optional robustness unbounded-domains.yaml projection; with --robustness-at-scope, consults the robustness density gate before the APPROVED write."
-  - name: --robustness-at-scope
-    required: false
-    type: path
-    help: "Optional staged AT-scope directory the robustness gate walks; required alongside --robustness-declaration."
-
 log_events: []
 
 failure_modes:

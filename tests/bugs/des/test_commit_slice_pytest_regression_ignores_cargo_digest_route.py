@@ -79,6 +79,7 @@ import pytest
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli.commit_slice import main as commit_slice_main
 from des.cli.record_examine_verdict import main as record_examine_verdict_main
+from tests.charter_fixtures import filled_charter
 
 
 _GATE_SCOPE_TRAILER_RE = re.compile(r"^Gate-Scope:\s*([0-9a-f]{64})\s*$", re.MULTILINE)
@@ -311,7 +312,7 @@ def _arm_examine_verdict(
     charter_dir.mkdir(parents=True, exist_ok=True)
     charter_file = charter_dir / f"{slice_id}.md"
     charter_file.write_text(
-        "# Charter\n\nWalk the Rust slice on the cargo-root repo.\n",
+        filled_charter("Walk the Rust slice on the cargo-root repo."),
         encoding="utf-8",
     )
     exit_code = record_examine_verdict_main(

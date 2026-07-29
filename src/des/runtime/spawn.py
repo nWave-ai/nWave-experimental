@@ -139,6 +139,27 @@ _AGENT_TIMEOUT_DEFAULT_SECONDS = 3600.0
 and the measured 25-minute-per-item reality. One hour, deliberately generous."""
 
 
+GIT_TIMEOUT_ENV = "NWAVE_GIT_TIMEOUT"
+"""Operator-facing override for the GIT tier -- the HOW of a fired git bound."""
+
+_GIT_TIMEOUT_DEFAULT_SECONDS = 30.0
+"""GIT tier: the read-only git seam (rev-parse, symbolic-ref, merge-base,
+rev-list). These answer from LOCAL git state and never dial the network, so
+seconds is the honest order of magnitude -- a probe still running after 30s is
+blocked on an index.lock, a credential prompt, or a hung mount, not working.
+Deliberately far tighter than the RUN default: a bound that inherits the
+45-minute suite ceiling would let a lock-blocked probe stall a gate for most of
+an hour, which is the hang this tier exists to bound."""
+
+
+def git_timeout_seconds() -> float:
+    """Wall-clock ceiling for one read-only git probe (GIT tier)."""
+    try:
+        return float(os.environ.get(GIT_TIMEOUT_ENV, _GIT_TIMEOUT_DEFAULT_SECONDS))
+    except ValueError:
+        return _GIT_TIMEOUT_DEFAULT_SECONDS
+
+
 def agent_timeout_seconds() -> float:
     """Wall-clock ceiling for one headless-agent invocation (RCA §8, AGENT tier).
 
@@ -402,9 +423,11 @@ def _describe(cmd: Any) -> str:
 
 __all__ = [
     "AGENT_TIMEOUT_ENV",
+    "GIT_TIMEOUT_ENV",
     "SpawnTimeout",
     "agent_timeout_seconds",
     "default_timeout_seconds",
+    "git_timeout_seconds",
     "reap_active_process_groups",
     "spawn",
 ]

@@ -45,13 +45,25 @@ import io
 import json
 import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, cast
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.adapters.drivers.hooks.carpaccio_intercept import (
     _predecessor_slice,
     _slice_number,
 )
+
+# ADR-AAD-001 (agnostic-at-discovery slice-02/03): the auto-discovery pure
+# function + its 3-arity result types are ALREADY SHIPPED (slice-02) in
+# feature_at_files -- imported here, never re-implemented, per the ADR's own
+# reuse-first instruction.
+from des.application.feature_at_files import (
+    AtKindAmbiguous,
+    AtKindNoneFound,
+    AtKindResolved,
+    discover_at_kind_for_slice,
+)
+from des.cli._repo_root_arg import add_repo_root_argument
 
 # Mechanical-seal alternative to the LLM AT-review verdict (evolution-plan
 # P1.1, pytest-regression mode only): the RED-observed seal predicates live in
@@ -96,7 +108,6 @@ from des.ports.driven_ports.committed_scope_port import Indeterminate
 
 if TYPE_CHECKING:
     from pathlib import Path
-    from typing import Literal
 
     from des.ports.driven_ports.commit_diff_port import CommitDiffPort
 
@@ -802,7 +813,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--feature-id", required=True)
     parser.add_argument("--entering-slice", required=True)
-    parser.add_argument("--repo-root", default=None)
+    add_repo_root_argument(parser, "--repo-root", default=None)
     parser.add_argument(
         "--enforce-sad-path-floor",
         action="store_true",
@@ -821,16 +832,25 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "native-regression",
             "rust-regression",
         ],
-        default="gherkin",
+        default=None,
         help=(
             "AT-discovery mode (ADR-001, fix-pre-push-hook-dual-installer-"
             "collision; 'native-regression' added fix-rust-regression-at-"
-            "kind-wiring). 'gherkin' (default) discovers ATs from .feature "
-            "Scenario blocks -- existing callers see byte-identical behavior. "
-            "'pytest-regression' AST-counts module-level test_* functions in "
-            "--regression-test-file. 'native-regression' resolves the "
-            "AT-discovery facet from --regression-test-file's own suffix via "
-            "the unified runner port (pytest .py / cargo-test .rs). "
+            "kind-wiring). OMITTING this flag now activates AUTO-DISCOVERY "
+            "(ADR-AAD-001): the gate tries the Gherkin path exactly as "
+            "before, and only when the entering slice owns zero matching "
+            "Gherkin scenarios does it auto-discover a tag-matched "
+            "pytest/native-regression candidate file "
+            "(des.application.feature_at_files.discover_at_kind_for_slice) "
+            "-- refusing to guess on 2+ candidates or an unrecognized "
+            "suffix. An EXPLICIT value ('gherkin' / 'pytest-regression' / "
+            "'native-regression' / 'rust-regression') is always honored "
+            "VERBATIM, unchanged -- auto-discovery never runs when "
+            "--at-kind is given. 'pytest-regression' AST-counts "
+            "module-level test_* functions in --regression-test-file. "
+            "'native-regression' resolves the AT-discovery facet from "
+            "--regression-test-file's own suffix via the unified runner "
+            "port (pytest .py / cargo-test .rs). "
             "'rust-regression' (rust-regression-at-kind-semi-wired) is an "
             "accepted ALIAS of 'native-regression' -- normalized to it "
             "immediately after parsing, so it reuses the SAME unified "
@@ -875,6 +895,129 @@ def _emit_sad_path_floor(repo: Path, feature_id: str, entering_slice: str) -> No
     sys.stderr.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
+def _run_assertions(
+    *,
+    plan: SlicePlan,
+    scenarios: list[Scenario],
+    entering_slice: str,
+    slice_max: int,
+    at_kind: Literal["gherkin", "pytest-regression", "native-regression"],
+    regression_test_file: Path | None,
+    repo: Path,
+    feature_id: str,
+    slice_max_source: Literal["repo-config", "framework-default"],
+) -> tuple[dict[str, object] | None, str | None]:
+    """Run carpaccio assertions 1-4 then assertion 5 (the same two-call
+    sequence ``main`` always ran) and return ``(coupled_event, at_evidence)``.
+
+    Extracted so ``main`` can retry the IDENTICAL sequence with a discovered
+    ``(at_kind, regression_test_file)`` pair (ADR-AAD-001 auto-discovery)
+    without duplicating the call shape or its keyword wiring.
+    """
+    coupled_event = check_carpaccio(
+        plan,
+        scenarios,
+        entering_slice,
+        slice_max,
+        at_kind=at_kind,
+        regression_test_file=regression_test_file,
+        repo=repo,
+        feature_id=feature_id,
+        slice_max_source=slice_max_source,
+    )
+    at_evidence = check_at_review(
+        repo,
+        feature_id,
+        entering_slice,
+        scenarios,
+        at_kind=at_kind,
+        regression_test_file=regression_test_file,
+        plan=plan,
+    )
+    return coupled_event, at_evidence
+
+
+def _with_auto_discovery_scan_empty(
+    rejection: GateError, searched_tag: str
+) -> GateError:
+    """Enrich a ``no-scenarios-for-slice`` rejection: the non-Gherkin
+    auto-discovery scan ALSO came up empty (ADR-AAD-001 Decision 3,
+    ``AtKindNoneFound`` branch).
+
+    ADD-not-mutate, mirrors ``_with_mechanical_remedy``: the rejection's
+    existing fields (event, slice_id, reason, instruction, ...) are
+    untouched; ``error`` is extended and a ``searched_tag`` field is added
+    -- the EXISTING exit code (45) and reason (``no-scenarios-for-slice``)
+    stay byte-identical, only the message grows.
+    """
+    payload = dict(rejection.payload)
+    existing_error = payload.get("error", "")
+    payload["error"] = (
+        f"{existing_error} The pytest/native-regression auto-discovery scan "
+        f"for {searched_tag!r} also came up empty."
+    )
+    payload["searched_tag"] = searched_tag
+    return GateError(rejection.exit_code, payload)
+
+
+def _auto_discover_and_retry(
+    *,
+    repo: Path,
+    feature_id: str,
+    entering_slice: str,
+    plan: SlicePlan,
+    scenarios: list[Scenario],
+    slice_max: int,
+    slice_max_source: Literal["repo-config", "framework-default"],
+    original_rejection: GateError,
+) -> tuple[dict[str, object] | None, str | None]:
+    """ADR-AAD-001 Decision 3: consult ``discover_at_kind_for_slice`` ONLY
+    after the Gherkin path has ALREADY rejected ``no-scenarios-for-slice``.
+
+    Acting strictly after the rejection guarantees, by construction, that
+    auto-discovery can only WIDEN what clears -- it can never narrow a slice
+    that would have cleared via Gherkin (or an exempt/coupled lane) before.
+    """
+    discovery = discover_at_kind_for_slice(repo, feature_id, entering_slice)
+    if isinstance(discovery, AtKindResolved):
+        discovered_at_kind = cast(
+            "Literal['pytest-regression', 'native-regression']", discovery.at_kind
+        )
+        return _run_assertions(
+            plan=plan,
+            scenarios=scenarios,
+            entering_slice=entering_slice,
+            slice_max=slice_max,
+            at_kind=discovered_at_kind,
+            regression_test_file=discovery.regression_test_file,
+            repo=repo,
+            feature_id=feature_id,
+            slice_max_source=slice_max_source,
+        )
+    if isinstance(discovery, AtKindAmbiguous):
+        raise GateError(
+            2,
+            {
+                "event": "AtKindDiscoveryAmbiguous",
+                "slice_id": entering_slice,
+                "feature_id": feature_id,
+                "reason": discovery.reason,
+                "candidates": [str(candidate) for candidate in discovery.candidates],
+                "error": (
+                    f"auto-discovery for slice {entering_slice} found "
+                    f"{discovery.reason} -- refusing to guess"
+                ),
+                "how": (
+                    "declare --at-kind explicitly (pytest-regression | "
+                    "native-regression | rust-regression) together with "
+                    "--regression-test-file naming exactly one candidate"
+                ),
+            },
+        )
+    assert isinstance(discovery, AtKindNoneFound)  # exhaustive 3-arity union
+    raise _with_auto_discovery_scan_empty(original_rejection, discovery.searched_tag)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Carpaccio slice gate entry point.
 
@@ -885,13 +1028,23 @@ def main(argv: list[str] | None = None) -> int:
     repo = _repo_root(args.repo_root)
     feature_id = args.feature_id
     entering_slice = args.entering_slice
+    # ADR-AAD-001: an OMITTED --at-kind activates auto-discovery. The
+    # sentinel is normalized to 'gherkin' IMMEDIATELY so every downstream
+    # branch (rust-regression -> native-regression included) stays
+    # unchanged; only `auto_mode` distinguishes "the flag was omitted" from
+    # "the operator explicitly typed gherkin" (which never auto-discovers).
+    auto_mode = args.at_kind is None
     # rust-regression-at-kind-semi-wired: 'rust-regression' is a CLI-facing
     # ALIAS of 'native-regression', normalized here (before any handling) so
     # downstream code (check_carpaccio/check_at_review, both typed against
     # the 3-way Literal) reuses the SAME unified runner-port AT-discovery
-    # facet -- never a second, duplicated parser.
+    # facet -- never a second, duplicated parser. Nested (not split into an
+    # intermediate variable) so mypy typechecks each branch directly against
+    # the ``at_kind`` annotation below.
     at_kind: Literal["gherkin", "pytest-regression", "native-regression"] = (
-        "native-regression" if args.at_kind == "rust-regression" else args.at_kind
+        "native-regression"
+        if args.at_kind == "rust-regression"
+        else ("gherkin" if args.at_kind is None else args.at_kind)
     )
     regression_test_file = (
         (repo / args.regression_test_file) if args.regression_test_file else None
@@ -934,26 +1087,34 @@ def main(argv: list[str] | None = None) -> int:
         plan = parse_slice_plan(delta_path.read_text(encoding="utf-8"))
         scenarios = parse_scenarios(read_feature_files(repo, feature_id))
         slice_max, slice_max_source = _resolve_slice_max(repo)
-        coupled_event = check_carpaccio(
-            plan,
-            scenarios,
-            entering_slice,
-            slice_max,
-            at_kind=at_kind,
-            regression_test_file=regression_test_file,
-            repo=repo,
-            feature_id=feature_id,
-            slice_max_source=slice_max_source,
-        )
-        at_evidence = check_at_review(
-            repo,
-            feature_id,
-            entering_slice,
-            scenarios,
-            at_kind=at_kind,
-            regression_test_file=regression_test_file,
-            plan=plan,
-        )
+        try:
+            coupled_event, at_evidence = _run_assertions(
+                plan=plan,
+                scenarios=scenarios,
+                entering_slice=entering_slice,
+                slice_max=slice_max,
+                at_kind=at_kind,
+                regression_test_file=regression_test_file,
+                repo=repo,
+                feature_id=feature_id,
+                slice_max_source=slice_max_source,
+            )
+        except GateError as gherkin_rejection:
+            if (
+                not auto_mode
+                or gherkin_rejection.payload.get("reason") != "no-scenarios-for-slice"
+            ):
+                raise
+            coupled_event, at_evidence = _auto_discover_and_retry(
+                repo=repo,
+                feature_id=feature_id,
+                entering_slice=entering_slice,
+                plan=plan,
+                scenarios=scenarios,
+                slice_max=slice_max,
+                slice_max_source=slice_max_source,
+                original_rejection=gherkin_rejection,
+            )
     except GateError as gate_error:
         _emit(gate_error.payload)
         return gate_error.exit_code

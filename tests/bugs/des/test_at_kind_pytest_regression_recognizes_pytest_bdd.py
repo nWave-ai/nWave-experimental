@@ -101,12 +101,23 @@ _GHERKIN_HINTS = ("gherkin", "pytest-bdd", "scenarios", "--at-kind gherkin")
 # ---------------------------------------------------------------------------
 # Surface 1 -- `des record-at-review-verdict --verdict NEEDS_REVISION`: the
 # lightest seam onto `_slice_at_derivation` -> `count_pytest_regression_ats`.
+#
+# This surface used to need NO feature-delta: the CLI's feature/slice existence
+# guard was APPROVED-only, precisely because a NEEDS_REVISION verdict wrote
+# nothing to the ledger. Since DD-1 (declared-facts-reachable-recorded
+# slice-01) NEEDS_REVISION writes a ledger record too, so the guard now applies
+# to every verdict -- and an absent feature-delta refuses the invocation before
+# it can exercise the AT-kind derivation this test is about. Staging the same
+# minimal Slice Plan the carpaccio-slice-gate surface already stages keeps BOTH
+# parameters on the axis under test (AT-kind recognition) instead of tripping
+# over an unrelated precondition.
 # ---------------------------------------------------------------------------
 
 
 def _run_record_at_review_verdict(
     repo_root: Path, regression_file: str
 ) -> tuple[int, str]:
+    _write_minimal_slice_plan(repo_root)
     exit_code, out, err = run_module_in_process(
         *[
             "des",

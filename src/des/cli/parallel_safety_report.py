@@ -55,6 +55,7 @@ from des.application.parallel_safety_report import (
     ParallelSafetyReport,
     run_parallel_safety_report,
 )
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.human_surface import Verdict, print_human_summary
 from des.cli.validate_feature_delta import (
     read_declared_parallel_feature_ids,
@@ -100,7 +101,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "exclusive with --feature-delta; exactly one is required."
         ),
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo",
         required=True,
         help="The repository root, forwarded to des blast-radius --repo.",

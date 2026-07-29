@@ -59,6 +59,11 @@ import sys
 from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.cli._scaffold_core import (
+    ScaffoldDegradeError,
+    decide_on_exists,
+    emit_scaffold_verdict,
+)
 from des.cli.verify_slice_commit_completeness import canonical_regression_test_path
 
 
@@ -66,6 +71,12 @@ _SHIPPED_SLICE = "slice-01"
 _ENTERING_SLICE = "slice-02"
 _WORK_AHEAD_SLICE = "slice-03"
 _DEFAULT_FEATURE_ID = "examine-fixture-demo"
+
+#: Degrade-LOUD verdict tokens (D49) -- this tool's previously-uncaught
+#: failure modes, now routed through the SAME JSON verdict vocabulary
+#: charter-scaffold / feature-end-preconditions-scaffold already use.
+VERDICT_GIT_OPERATION_FAILED = "git-operation-failed"
+VERDICT_LEDGER_WRITE_FAILED = "ledger-write-failed"
 
 
 def _flip_instructions(repo: Path, feature_id: str) -> str:
@@ -93,17 +104,36 @@ def _flip_instructions(repo: Path, feature_id: str) -> str:
 
 
 def _git(repo: Path, *args: str) -> str:
-    """Write-capable git call scoped to ``repo`` (returns stdout, raises on
-    non-zero). Never touches the real project's git config (rule #48) --
-    every invocation is explicit-target (``git -C <repo> ...``), never a
-    bare ``git config``.
+    """Write-capable git call scoped to ``repo`` (returns stdout). Never
+    touches the real project's git config (rule #48) -- every invocation is
+    explicit-target (``git -C <repo> ...``), never a bare ``git config``.
+
+    D49: the ONE locus every git-backed step (``_git_init``,
+    ``_commit_with_trailer``, and therefore ``build_fixture``) funnels
+    through -- a non-zero exit or a missing ``git`` executable now raises
+    ``ScaffoldDegradeError`` instead of an uncaught
+    ``CalledProcessError``/``FileNotFoundError`` (GDP-6: degrade LOUD, never
+    a bare traceback).
     """
-    completed = subprocess.run(
-        ["git", "-C", str(repo), *args],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    command = ["git", "-C", str(repo), *args]
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise ScaffoldDegradeError(
+            VERDICT_GIT_OPERATION_FAILED,
+            f"git command failed (exit {exc.returncode}): {' '.join(command)} "
+            f"-- {(exc.stderr or exc.stdout or '').strip() or '<no output>'}",
+        ) from exc
+    except FileNotFoundError as exc:
+        raise ScaffoldDegradeError(
+            VERDICT_GIT_OPERATION_FAILED,
+            f"git executable not found while running: {' '.join(command)}",
+        ) from exc
     return completed.stdout
 
 
@@ -221,7 +251,7 @@ def build_fixture(
     written but deliberately never wired into {shipped} union {entering} --
     it is a work-ahead test nobody has built yet.
     """
-    if out_dir.exists():
+    if decide_on_exists(target_exists=out_dir.exists(), policy="rebuild") == "rebuild":
         shutil.rmtree(out_dir)
     _git_init(out_dir)
     _write_repo_scaffolding(out_dir, feature_id)
@@ -236,9 +266,19 @@ def build_fixture(
 
     # The shipped slice's attestation goes through the REAL ledger writer --
     # never hand-written JSONL bytes (feature-delta.md C3 / arch invariant).
-    AtCompletionLedger(feature_id, out_dir).append_gate_event(
-        event="SliceCommitVerified", slice_id=_SHIPPED_SLICE
-    )
+    # D49: OSError is AtCompletionLedger.append_gate_event's OWN documented
+    # surfaced failure (EAFP, no separate writability probe) -- caught here
+    # and turned into the shared degrade-LOUD signal instead of propagating.
+    try:
+        AtCompletionLedger(feature_id, out_dir).append_gate_event(
+            event="SliceCommitVerified", slice_id=_SHIPPED_SLICE
+        )
+    except OSError as exc:
+        raise ScaffoldDegradeError(
+            VERDICT_LEDGER_WRITE_FAILED,
+            f"could not write the SliceCommitVerified ledger record for "
+            f"{_SHIPPED_SLICE} under {out_dir}: {exc}",
+        ) from exc
 
     entering_test = _write_regression_test(
         out_dir, feature_id, _ENTERING_SLICE, passing=True
@@ -286,9 +326,27 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     """Build the fixture and print its driving payload as one JSON line.
-    Always exits 0 -- this is a producing tool, not a gate."""
+    Exits 0 on success (still unconditional for the happy path -- this is a
+    producing tool, not a gate).
+
+    D49: a git/ledger failure previously raised an UNCAUGHT exception --
+    `ScaffoldDegradeError` is now caught here and turned into the shared
+    JSON degrade-LOUD verdict envelope (`emit_scaffold_verdict`, the SAME
+    vocabulary charter-scaffold / feature-end-preconditions-scaffold already
+    use), non-zero exit -- never a raw traceback.
+    """
     args = _build_parser().parse_args(argv)
-    payload = build_fixture(Path(args.out), args.feature_id)
+    try:
+        payload = build_fixture(Path(args.out), args.feature_id)
+    except ScaffoldDegradeError as exc:
+        return emit_scaffold_verdict(
+            {
+                "repo": str(args.out),
+                "feature_id": args.feature_id,
+                "verdict": exc.verdict,
+                "detail": exc.detail,
+            }
+        )
     print(json.dumps(payload))
     return 0
 

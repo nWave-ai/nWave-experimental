@@ -23,6 +23,7 @@ class TestDetectClaudeCodeViaDirctory:
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.delenv("CLAUDE_CODE", raising=False)
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
         monkeypatch.setattr("shutil.which", lambda _cmd: None)
 
         platforms = detect_target_platforms()
@@ -32,6 +33,7 @@ class TestDetectClaudeCodeViaDirctory:
     def test_detect_claude_code_via_env_var(self, monkeypatch, tmp_path):
         """detect_target_platforms() includes claude_code when CLAUDE_CODE env var set."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
         monkeypatch.setenv("CLAUDE_CODE", "1")
         monkeypatch.setattr("shutil.which", lambda _cmd: None)
 
@@ -50,8 +52,15 @@ class TestDetectClaudeCodeEmptyEnvVar:
 
         The bool() check on empty string correctly returns False, meaning
         an empty CLAUDE_CODE env var is not treated as a positive signal.
+
+        CLAUDE_CONFIG_DIR is deleted so the second signal -- the resolved
+        Claude config directory -- is DECLARED absent rather than inherited
+        from whatever the developer's shell happens to export. A test that
+        reads a different answer on a machine where CLAUDE_CONFIG_DIR points
+        at a real profile is measuring the host, not the code.
         """
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
         monkeypatch.setenv("CLAUDE_CODE", "")
 
         result = _detect_claude_code()
@@ -108,6 +117,7 @@ class TestDetectBothPlatforms:
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.delenv("CLAUDE_CODE", raising=False)
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
         monkeypatch.setattr(
             "scripts.install.context_detector.shutil.which",
             lambda _cmd: None,
@@ -127,6 +137,7 @@ class TestDetectNothingDefaultsToClaudeCode:
         """detect_target_platforms() defaults to {CLAUDE_CODE} when nothing detected."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.delenv("CLAUDE_CODE", raising=False)
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
         monkeypatch.setattr(
             "scripts.install.context_detector.shutil.which",
             lambda _cmd: None,

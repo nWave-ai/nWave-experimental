@@ -35,19 +35,37 @@ _SUITE_DIR = Path(__file__).parent
 # file head at the RED phase.
 _SKIPPED_TAGS: frozenset[str] = frozenset({"skip", "pending"})
 
+# A scenario witnessing a mechanism that was deliberately RETIRED (not merely
+# unbuilt) -- distinct skip reason so a reader of `pytest --collect-only -q`
+# output does not mistake a retirement for an unfinished RED scaffold. See
+# `slice-04-commit-gate-self-test.feature` for the full rationale (hook-audit
+# fix 2026-07-29, GDP-8).
+_RETIRED_TAG = "retired"
+
 
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:
-    """Skip every author-ahead RED-scaffold scenario until DELIVER unskips it."""
-    skip_marker = pytest.mark.skip(
+    """Skip RED-scaffold and RETIRED scenarios; each gets its own skip reason."""
+    red_scaffold_marker = pytest.mark.skip(
         reason="RED scaffold -- DISTILL-authored, awaiting DELIVER implementation"
+    )
+    retired_marker = pytest.mark.skip(
+        reason=(
+            "RETIRED 2026-07-29 -- witnessed a commit-message-text discriminator "
+            "that decided on DESIGNATION not PROPERTY (GDP-8); the production "
+            "gate now always ABSTAINs on real commit traffic. See the "
+            "slice-04-commit-gate-self-test.feature comment block."
+        )
     )
     for item in items:
         if not _belongs_to_this_suite(item):
             continue
-        if set(item.keywords) & _SKIPPED_TAGS:
-            item.add_marker(skip_marker)
+        keywords = set(item.keywords)
+        if _RETIRED_TAG in keywords:
+            item.add_marker(retired_marker)
+        elif keywords & _SKIPPED_TAGS:
+            item.add_marker(red_scaffold_marker)
 
 
 def _belongs_to_this_suite(item: pytest.Item) -> bool:

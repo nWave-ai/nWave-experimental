@@ -23,38 +23,6 @@ module: des.cli.bugfix_pipeline_tick
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --feature-id
-    required: true
-    type: string
-    help: "The feature id whose bugfix pipeline this tick observes."
-  - name: --project-root
-    required: true
-    type: path
-    help: "Repo root the AT-completion ledger is resolved under."
-  - name: --defect-id
-    required: true
-    type: string
-    help: "The defect this tick's stage transition applies to."
-  - name: --action
-    required: true
-    type: choice
-    choices: ["stage-started", "stage-completed", "stage-failed", "claim-drained"]
-    help: "The pipeline action this tick performs."
-  - name: --stage
-    required: false
-    type: choice
-    choices: ["rca", "charter-authoring", "at-authoring", "red-seal", "crafter-green", "vera-examine", "commit-slice"]
-    help: "Required for every --action except claim-drained."
-  - name: --now
-    required: true
-    type: string
-    help: "ISO-8601 instant this tick observes (the controllable clock)."
-  - name: --reason
-    required: false
-    type: string
-    help: "Non-empty for stage-failed (charter: fail loud, never silent)."
-
 log_events:
   - PipelineStageStarted
   - PipelineStageCompleted

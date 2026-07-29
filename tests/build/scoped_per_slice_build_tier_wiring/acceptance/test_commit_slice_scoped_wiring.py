@@ -79,6 +79,7 @@ from des.cli import run_contract_gate
 from des.cli.commit_slice import main as commit_slice_main
 from des.cli.record_examine_verdict import main as record_examine_verdict_main
 from des.cli.run_contract_gate import _ArchVerdict, _ResourceWindowResult
+from tests.charter_fixtures import filled_charter
 
 
 _FEATURE_ID = "scoped-per-slice-build-tier-wiring"
@@ -401,7 +402,7 @@ def test_commit_slice_without_regression_test_file_defers_whole_tree_build_tier_
     charter_dir.mkdir(parents=True, exist_ok=True)
     charter_file = charter_dir / "slice-02.md"
     charter_file.write_text(
-        "# Charter\n\nWalk the deferred-to-feature-end build-tier seal.\n",
+        filled_charter("Walk the deferred-to-feature-end build-tier seal."),
         encoding="utf-8",
     )
     charter_relpath = str(charter_file.relative_to(repo))

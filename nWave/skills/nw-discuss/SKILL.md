@@ -98,21 +98,34 @@ Menu when 1+ trigger fires: `Suggested expansions for this feature (triggered by
 
 ## Telemetry (per D4 + DDD-6)
 
-Every expansion choice emits a `DocumentationDensityEvent` (dataclass at `src/des/domain/telemetry/documentation_density_event.py`) via `event.to_audit_event()` → `JsonlAuditLogWriter().log_event(...)`. Schema fields per D4: `feature_id`, `wave`, `expansion_id`, `choice`, `timestamp`. For this wave the schema declares `"wave": "DISCUSS"`. Use helper `scripts/shared/telemetry.py:write_density_event(...)` — do NOT write JSONL directly.
+Every expansion choice emits a `DocumentationDensityEvent` (dataclass at `src/des/domain/telemetry/documentation_density_event.py`) via `event.to_audit_event()` → `JsonlAuditLogWriter().log_event(...)`. Schema fields per D4: `feature_id`, `wave`, `expansion_id`, `choice`, `timestamp`. For this wave the schema declares `"wave": "DISCUSS"`. Use helper `scripts/shared/telemetry.py:write_density_event(...)` — do NOT write JSONL directly. **NOT YET WIRED**: `scripts/shared/telemetry.py` does not exist yet and `DocumentationDensityEvent(` has zero constructor call sites in `src/des` — until this lands, skip the emission (the [WHY]/[HOW] section append is unaffected); do not hand-roll a substitute JSONL write.
 
 Wave-specific signal: feeds DDD-7 pilot success metric (4) — "downstream agent regression — DESIGN consumes lean DISCUSS feature-delta.md and produces no `--expand` invocation". `ask-intelligent` emission rules: one expand event per scoped-menu acceptance; one skip event for no-trigger silent-lean; one skip event for triggers fired but user declined. Full emission rules + per-mode patterns: `nWave/skills/nw-density-resolution-contract/SKILL.md`.
 
-## Expectation Charter (atdd_pure — arms the DELIVER EXAMINE step) <!-- mode-ref-ok -->
+## Expectation Charter — DISCUSS's contribution (atdd_pure — arms the DELIVER EXAMINE step) <!-- mode-ref-ok -->
 
-Provenance: evolution-plan P2.0/P2.1 (evidence-by-execution). For each Slice Plan row that promises **observable value**, the PO authors ONE expectation charter — the human-intent, re-examinable product document the User-Examiner ("Vera") walks in DELIVER.
+Provenance: evolution-plan P2.0/P2.1 (evidence-by-execution). For each Slice Plan row that promises **observable value**, an expectation charter — the human-intent, re-examinable product document the User-Examiner ("Vera") walks in DELIVER — eventually arms that slice's EXAMINE step.
 
-**How-to (disqualification rule, authoring steps, GOOD/BAD shape, when NOT to write one) is SSOT'd in `nWave/skills/nw-expectation-charter/SKILL.md`** — load it before authoring (also composed by `nw-product-owner` Workflow Phase 6.5). This section keeps only the DISCUSS-specific wiring:
+**Authoring is NOT a DISCUSS-close step.** The charter is SCAFFOLDED by the producing tool,
+`des charter-scaffold`, at DISTILL-open (once this wave's Slice Plan is confirmed present), which
+then dispatches a FRESH `nw-product-owner` context to FILL it — full wiring, disqualification
+rule, authoring steps, GOOD/BAD shape, when NOT to write one, is SSOT'd in
+`nWave/skills/nw-expectation-charter/SKILL.md` + `nWave/skills/nw-distill/SKILL.md` §
+"Charter Scaffold (DISTILL-open...)". DISCUSS's job stops at the Slice Plan (Phase 6) — its Value
+statement rows are what the scaffold's Intent gets seeded from; do NOT write charter files here,
+and do NOT treat this wave's close as the charter deadline.
 
-- **When it happens**: after the Slice Plan is authored (Phase 6), before closing the wave — a REQUIRED step, not optional (see Agent Invocation below).
-- **The imperative (dogfood friction 2026-07-03 — a documented [REF] deliverable alone did NOT trigger the PO)**: REQUIRED step: WRITE `docs/product/expectations/{feature-id}/{intent-name}.md` for EACH Slice Plan row that promises observable value, including ≥1 negative observation in the oracle. The full authoring steps live in the skill (§How-to above); this line is the non-skippable dispatch command.
-- **Arming contract**: writing at least one charter under `docs/product/expectations/{feature-id}/` ARMS the DELIVER EXAMINE step and the commit-slice examine-verdict gate for that feature. A slice that promises observable value but ships no charter leaves the gate unarmed — flag it (the observable-value slice was meant to be examined).
+- **Why the split matters (dogfood friction 2026-07-03)**: a documented `[REF]` deliverable
+  alone did not trigger charter authoring — that friction is now resolved by making the
+  scaffold GDP-1/GDP-2 proactive at DISTILL-open, not by moving authoring earlier into DISCUSS.
+  Writing the charter here, from the raw template, bypasses the scaffold's idempotent
+  path/naming/heading-dialect guarantees and is the exact hand-assembly `des charter-scaffold`
+  exists to prevent.
+- **Arming contract**: a FILLED charter under `docs/product/expectations/{feature-id}/` ARMS the
+  DELIVER EXAMINE step and the commit-slice examine-verdict gate for that feature. A slice that
+  promises observable value but never gets a filled charter leaves the gate unarmed — flag it
+  when it surfaces (the observable-value slice was meant to be examined).
 - For a backend-only slice the charter's surface is the API (the examiner acts as an API consumer); for an infra/observability outcome the charter names a concrete observable surface (see evolution-plan P2.3 — open design).
-- **Template**: `nWave/templates/expectation-charter.md` (worked examples: browser-UI + CLI/gate-outcome charters).
 
 ## Slice Plan annotation vocabulary (reference)
 
@@ -161,7 +174,7 @@ Oversized signals (closed list — ESC-1, NO new heuristics): >10 user stories �
 - **Propose** (ESC-3): propose epic-mode and NAME the literal `--epic` flag (discoverability floor — the user discovers the capability at the moment of need).
 - **Ask** (ESC-4): ASK confirmation with closed options (switch to epic-mode / continue feature-level). NEVER auto-switch — the tool proposes, the human decides (§22.0-coherent).
 - **Decline** (ESC-5): the user declines → standard feature-level DISCUSS continues, zero epic artifacts.
-- **Right-sized** (ESC-6): fewer than 2 signals fire → zero escalation, zero new prompts. Note `## Scope Assessment: PASS` in `wave-decisions.md`.
+- **Right-sized** (ESC-6): fewer than 2 signals fire → zero escalation, zero new prompts. Note `## Scope Assessment: PASS` in `feature-delta.md` (the single narrative file — see Outputs below; there is no separate `wave-decisions.md`).
 
 On confirmation the run switches to epic-mode (§Epic Mode below). Deeper Elephant Carpaccio slicing of a right-sized feature happens later in Phase 2.5 (User Story Mapping). Gate: scope assessed; right-sized (zero prompts) OR escalation raised (named signals + `--epic` proposal + confirmation ask) and the user's decision honored. If an over-ceiling-but-cohesive slice surfaces during assessment, see the Slice Plan annotation vocabulary reference below (§Slice Plan annotation vocabulary).
 
@@ -273,6 +286,12 @@ DISCUSS hands off to BOTH DESIGN (full artifacts) and DEVOPS (outcome-kpis.md on
 - `docs/product/personas/{name}.yaml` — create or extend persona profile
 
 Legacy multi-file outputs (`user-stories.md`, `story-map.md`, `dor-validation.md`, `outcome-kpis.md`, `wave-decisions.md`, `journey-{name}-visual.md` as separate files) are NOT produced — that content lives in `feature-delta.md`. Validator: `scripts/validation/validate_feature_layout.py`.
+
+**Decision-once — point, don't copy** (full convention SSOT in `nw-design/SKILL.md`): a DISCUSS
+decision worth carrying forward gets ONE line here; DESIGN elaborates it once, under a `DD-N`
+row in its own Decisions table. When DESIGN or DISTILL later needs the DISCUSS rationale, they
+cite it (`per` the story/AC it came from) instead of re-narrating it — do not pre-emptively
+duplicate a DISCUSS decision's rationale into a DESIGN-shaped section here.
 
 ## Examples
 

@@ -53,7 +53,7 @@ Feature: A wave-bypass veto tells a blocked dispatch how to truly get unblocked
 
   @slice-01 @walking_skeleton @driving_port @real-io @us-truthful-recovery @error @contract-shape:bounded-change
   Scenario: A wave-bypass veto names a recovery a blocked LLM can actually follow
-    Given a stale inferred wave floor the dispatch is not entering
+    Given a stale declared wave floor the dispatch is not entering
     When a partial-context in-wave dispatch is vetoed for the bypass
     Then the wave-bypass veto still blocks the dispatch
     And the block reason still names the wave-bypass error

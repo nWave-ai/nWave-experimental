@@ -33,7 +33,6 @@ stays untouched.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -41,6 +40,8 @@ from typing import TYPE_CHECKING
 from des.adapters.driven.git.git_subprocess import is_merged_contribution
 from des.adapters.driven.refactor.git_worktree_adapter import GitWorktreeAdapter
 from des.application.worktree_cleanup_service import WorktreeCleanupService
+from des.cli._emit_json import emit_json_line as _emit
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.domain.worktree_cleanup import WorktreeCleanupVerdict
 
 
@@ -51,10 +52,6 @@ if TYPE_CHECKING:
 _SCHEMA = "nwave.worktree_cleanup.v1"
 _EXIT_CLEAN = 0
 _EXIT_REFUSED = 1
-
-
-def _emit(payload: dict[str, object]) -> None:
-    print(json.dumps(payload))
 
 
 def _entry_payload(entry: WorktreeCleanupEntry, *, scoped: bool) -> dict[str, object]:
@@ -103,7 +100,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "DONE-check backstop that never mutates."
         ),
     )
-    parser.add_argument("--repo", default=".", help="Path to the repository root.")
+    add_repo_root_argument(
+        parser, "--repo", default=".", help="Path to the repository root."
+    )
     parser.add_argument(
         "--target-branch",
         required=True,

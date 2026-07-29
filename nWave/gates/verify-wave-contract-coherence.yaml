@@ -27,20 +27,6 @@ module: des.cli.verify_wave_contract_coherence
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --wave
-    required: true
-    type: string
-    help: "The wave id under check (e.g. `discuss`)."
-  - name: --prose
-    required: true
-    type: path
-    help: "The wave prose (markdown) to scan for pointers + inline restatement."
-  - name: --waves-dir
-    required: true
-    type: path
-    help: "The directory holding the wave-contract registry files (<wave>.yaml)."
-
 log_events: []
 
 failure_modes:

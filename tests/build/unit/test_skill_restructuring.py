@@ -196,11 +196,11 @@ BULK_HASHES = {
     "nw-architectural-styles-tradeoffs": "f6dc4a1e0f1ac40d9d1dd0d25d9c90f4",
     # Hash updated 2026-07-27: fixed a component-manifest example citing a
     # nonexistent src/des/cli/reverify.py path (techdebt drain).
-    "nw-architecture-patterns": "bbd7e6b51907f4e64ca5884e5c2cac66",
+    "nw-architecture-patterns": "8b05beca25e850385c54e10a62137df2",
     "nw-assessment-kirkpatrick": "abaecd7a3e1d040b4a4b53971e1716d8",
     "nw-authoritative-sources": "29aa67bf5e4dd89382504767654ed6a4",
     "nw-backward-design-ubd": "8e88399482057722474748531482667f",
-    "nw-bdd-methodology": "09cef8098c75b9f1504a9f547c6e6bb4",
+    "nw-bdd-methodology": "ff61ea46f9ef9577807f9939115d1012",
     "nw-bdd-requirements": "b7c1a43670bd2f98426c6971605b63e9",
     "nw-brainstorming": "e1b52438744b39ae52c37c89d7b4b338",
     # Hash updated 2026-04-28: D7 mandatory Read-tool instruction landed
@@ -357,7 +357,7 @@ BULK_HASHES = {
     # modules (b2b, cialdini); core is a lean composing router. §22.0 reviewed.
     "nw-proposal-structure": "bec9dd508f567c847da44cd41ee56821",
     "nw-psychological-safety": "106382f562186d415f5b5ad1430542b7",
-    "nw-quality-framework": "133bdc6013d23e6e5402b8de996f1805",
+    "nw-quality-framework": "89b35fa0c3e3502eff16829e7ba7833e",
     "nw-quality-validation": "41cee9327afa9d4e579b7c0699eb544d",
     "nw-query-optimization": "17959230c1a5f619b4a172e5e8196068",
     "nw-research-methodology": "e4910ea40aefc82f421640138986f300",
@@ -424,7 +424,7 @@ BULK_HASHES = {
     "nw-ux-tui-patterns": "08a2153ea16ec80e16946e324bf3274d",
     "nw-ux-web-patterns": "34fb487a2efe03de1f8526da8f214de9",
     "nw-voss-negotiation": "a97eb0ec6357ee6d0b1c572549aead0d",
-    "nw-wizard-shared-rules": "178aa443f0e4acba5b98ba4123055917",
+    "nw-wizard-shared-rules": "5750f4d7cdfd8e639b6d4fdb526b33a2",
 }
 
 

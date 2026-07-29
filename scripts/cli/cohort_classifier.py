@@ -99,6 +99,9 @@ def _count_test_placement_candidates(text: str) -> int:
 def _count_ats(target: Path, kind: str) -> int:
     total = 0
     if kind == "distill":
+        # gherkin-scope: already agnostic -- this same walk counts pytest
+        # `steps_*.py` / `test_*.py` AT-defs in the elif branch below, so it
+        # is not a Gherkin-only discovery gap.
         for path in target.rglob("*"):
             if not path.is_file():
                 continue

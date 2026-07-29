@@ -52,4 +52,10 @@ def composition(
     home_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("HOME", str(home_dir))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home_dir))
+    # nwave_ai.cli._handle_attribution resolves claude_dir via
+    # PathUtils.get_claude_config_dir(), which honors CLAUDE_CONFIG_DIR. On a
+    # multi-profile dev machine that env var overrides the HOME/Path.home
+    # sandboxing above unless scrubbed here too (same isolation as
+    # tests/installer/unit/cli/test_target_flag.py::_scrub_env).
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     return AttributionCouplingComposition(home_dir=home_dir, project_root=project_root)

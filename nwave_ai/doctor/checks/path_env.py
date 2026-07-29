@@ -33,6 +33,8 @@ class PathEnvCheck:
         if error is not None:
             return error
 
+        expected_bin = str(context.claude_dir / "bin")
+
         env_section = data.get("env", {})
         if not isinstance(env_section, dict) or "PATH" not in env_section:
             return CheckResult(
@@ -40,12 +42,11 @@ class PathEnvCheck:
                 error_code="ENV_PATH_MISSING",
                 message="settings.json env.PATH key is absent",
                 remediation=(
-                    "Run `nwave-ai install` to add ~/.claude/bin to env.PATH "
+                    f"Run `nwave-ai install` to add {expected_bin} to env.PATH "
                     "in settings.json."
                 ),
             )
 
-        expected_bin = str(context.claude_dir / "bin")
         path_entries = set(env_section["PATH"].split(":"))
 
         if expected_bin in path_entries:

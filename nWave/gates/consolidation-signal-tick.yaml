@@ -22,28 +22,6 @@ module: des.cli.consolidation_signal_tick
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --feature-id
-    required: true
-    type: string
-    help: "The feature id whose consolidation queue this tick observes."
-  - name: --project-root
-    required: true
-    type: path
-    help: "Repo root the AT-completion ledger is resolved under."
-  - name: --signal-type
-    required: true
-    type: string
-    help: "One of drift / unmerged-work / stale-branch / failing-gate -- not argparse-constrained so an unsupported value reaches the domain seam and is refused loudly (D-8)."
-  - name: --signal-key
-    required: true
-    type: string
-    help: "The signal-instance identifier (a branch name, a gate name, or 'trunk' for drift)."
-  - name: --now
-    required: true
-    type: string
-    help: "ISO-8601 instant this tick observes (the controllable clock)."
-
 log_events:
   - PipelineStageStarted
   - ConsolidationSignalIntakeRejected

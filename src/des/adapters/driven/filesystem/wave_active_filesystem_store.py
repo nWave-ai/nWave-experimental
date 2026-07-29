@@ -39,8 +39,21 @@ _FLOOR_FILE_NAME = "active.json"
 _PROVENANCE_VALUES: frozenset[str] = frozenset(p.value for p in WaveProvenance)
 
 
-def _floor_path(project_root: Path) -> Path:
+def floor_path(project_root: Path) -> Path:
+    """The single floor file's absolute path under ``project_root`` (SSOT).
+
+    Public (no leading underscore) so a REFUSAL that already re-read this same
+    file can NAME it rather than re-deriving the ``.nwave/wave-active/
+    active.json`` literal a second time (defect-3, docs/mikado/EXECUTION-SSOT-
+    des-optimization.md -- "the rifiuto tace su DOVE").
+    """
     return project_root.joinpath(*_FLOOR_REL_DIR, _FLOOR_FILE_NAME)
+
+
+# Back-compat alias: the module previously exposed this helper as private.
+# Kept so any external private-name reach-in (none found in this tree at the
+# time of the rename) does not silently break.
+_floor_path = floor_path
 
 
 class WaveActiveFilesystemStore(WaveActiveReader, WaveActiveWriter):

@@ -37,6 +37,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from des.cli._repo_root_arg import add_repo_root_argument
+
 
 # The asset families the gate guards (analysis §3.1). The flavor registry
 # (`nWave/flavors/`) is the SOLE legitimate home of the literals, so it is NOT
@@ -154,7 +156,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "outside a GENERATED region or a <!-- mode-ref-ok --> allow-marker."
         ),
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--root",
         default=None,
         help="Root of the asset tree to scan (default: this repository).",

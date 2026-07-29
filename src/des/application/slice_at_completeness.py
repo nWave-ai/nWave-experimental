@@ -43,7 +43,6 @@ recognizes the identical convention instead of reading it as taxonomy-blind
 
 from __future__ import annotations
 
-import fnmatch
 import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -52,9 +51,13 @@ from des.adapters.driven.git.git_subprocess import git_text as _git
 from des.application.feature_at_files import (
     feature_tag_files,
     feature_tagged_test_files,
+    is_pytest_collectible,
     resolve_test_file_attribution,
 )
 from des.domain.slice_id_trailer import SLICE_TAG_RE
+from des.ports.test_runner_port import (
+    AT_KIND_SUFFIX_MAP as _NATIVE_REGRESSION_SUFFIX_RUNNER,
+)
 
 
 if TYPE_CHECKING:
@@ -64,8 +67,6 @@ if TYPE_CHECKING:
 #: Imported from the domain SSOT (fix-slice-id-grammar-drift-ssot) so a
 #: letter-suffixed `@slice-04a` tag resolves identically to `@slice-NN`.
 _SLICE_TAG_RE = SLICE_TAG_RE
-
-_PYTEST_COLLECTIBLE_PATTERNS = ("test_*.py", "*_test.py")
 
 
 def _regression_file_naming_components(
@@ -134,23 +135,6 @@ def _regression_file_glob_candidates(
     return sorted(repo.glob(f"tests/**/{feature_dir}/test_{slice_us}_*.py"))
 
 
-def _is_pytest_collectible(path: Path) -> bool:
-    """True iff ``path``'s filename matches the pytest collection convention.
-
-    ``feature_tagged_test_files`` walks every file with no filename/extension
-    restriction, matching purely on a head-comment tag substring. Without this
-    filter a non-test file (a doc, an ADR, a plain module) whose head merely
-    *mentions* the tag convention is wrongly counted as a delivered AT --
-    F-FEATURE-END-COMPLETENESS-ORACLE-PYTEST-BLIND AT-D1. Restricting to the
-    pytest-collectible filename convention (``test_*.py`` / ``*_test.py``)
-    keeps this oracle bound to real, delivered test artifacts.
-    """
-    name = path.name
-    return any(
-        fnmatch.fnmatch(name, pattern) for pattern in _PYTEST_COLLECTIBLE_PATTERNS
-    )
-
-
 def feature_files_for_slice(
     repo: Path, slice_id: str, feature_id: str | None = None
 ) -> list[str]:
@@ -179,7 +163,8 @@ def feature_files_for_slice(
        filename/extension restriction (any file's head window may match), so
        this loop additionally restricts matches to the pytest-collectible
        filename convention (``test_*.py`` / ``*_test.py``, see
-       ``_is_pytest_collectible``) -- a doc, an ADR, or a non-test module that
+       ``feature_at_files.is_pytest_collectible``) -- a doc, an ADR, or a
+       non-test module that
        merely *mentions* the tag convention in its head must never count as a
        delivered AT (the un-gameable truncation guard).
 
@@ -222,7 +207,7 @@ def feature_files_for_slice(
             matched.append(str(path.relative_to(repo)))
     if feature_id is not None:
         for test_path in feature_tagged_test_files(repo, feature_id):
-            if not _is_pytest_collectible(test_path):
+            if not is_pytest_collectible(test_path):
                 continue
             attribution = resolve_test_file_attribution(test_path)
             if attribution.slice_id == slice_id:
@@ -259,16 +244,14 @@ class AtCompletenessOutcome:
 
 
 #: Suffix -> runner name for the native-regression fourth evidence source.
-#: Mirrors ``des.cli.carpaccio_format._AT_DISCOVERY_SUFFIX_RUNNER`` (the SAME
-#: suffix-keyed resolution ``_routes_through_runner_port`` and
-#: ``commit_slice._committed_scope_digest_or_degrade_reason`` already use) --
-#: kept as a private local copy rather than importing ``des.cli.carpaccio_
-#: format`` here, since this module's own contract stays behind the CLI layer
-#: (DDD-1/DDD-9, this module's docstring).
-_NATIVE_REGRESSION_SUFFIX_RUNNER: dict[str, str] = {
-    ".py": "pytest",
-    ".rs": "cargo-test",
-}
+#: ``_NATIVE_REGRESSION_SUFFIX_RUNNER`` is an IMPORT of the promoted
+#: ``des.ports.test_runner_port.AT_KIND_SUFFIX_MAP`` SSOT (ADR-AAD-001 DA-5)
+#: -- the SAME suffix-keyed resolution ``_routes_through_runner_port`` and
+#: ``commit_slice._committed_scope_digest_or_degrade_reason`` already use --
+#: not an independently-defined literal. Importing the ports-layer constant
+#: keeps this module behind the CLI layer (DDD-1/DDD-9, this module's
+#: docstring): the SSOT lives in ``des.ports``, not ``des.cli.carpaccio_
+#: format``, so this import crosses no CLI-layer boundary.
 
 
 def _native_regression_at_evidence_exists(

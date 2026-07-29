@@ -96,6 +96,7 @@ class TruthfulRecoveryComposition:
     _decision_action: str | None = field(default=None)
     _decision_reason: str | None = field(default=None)
     _decision_recovery: list[str] | None = field(default=None)
+    _decision_warning: str | None = field(default=None)
 
     # ---- given --------------------------------------------------------------
 
@@ -109,6 +110,20 @@ class TruthfulRecoveryComposition:
         self._write_floor(
             tmp_path,
             json.dumps({"wave": _STALE_WAVE, "provenance": "inferred"}),
+        )
+
+    def given_stale_declared_floor(self, tmp_path: Path) -> None:
+        """Arm a stale, days-old DECLARED (``command``) wave floor (slice-01's
+        precondition since 2026-07-29): an INFERRED floor no longer vetoes
+        (measured + Ale-authorized widening), so the truthful/followable
+        recovery oracle now needs a floor that STILL blocks -- a DECLARED
+        floor never expires (armed_at stays None, I5) and is never diverted
+        by provenance, so it keeps vetoing exactly as slice-01 requires.
+        """
+        self._project_root = tmp_path
+        self._write_floor(
+            tmp_path,
+            json.dumps({"wave": _STALE_WAVE, "provenance": "command"}),
         )
 
     # ---- when ---------------------------------------------------------------
@@ -186,6 +201,59 @@ class TruthfulRecoveryComposition:
             "following the recovery (clearing the floor) must yield "
             "markers.wave is None on the next read so WAVE_MARKER_BYPASS "
             f"(markers.wave is not None ...) no longer fires. {self._observed()}"
+        )
+
+    def then_reason_names_floor_absolute_path(self) -> None:
+        """slice-03: the ALLOW+warning names the floor file's absolute PATH.
+
+        Reads ``decision.warning``, not ``decision.reason``: since the
+        2026-07-29 widening an INFERRED floor no longer blocks, it ALLOWS
+        with an advisory warning that carries the same
+        ``_describe_wave_floor`` text this scenario checks -- the
+        self-locating property moved surfaces, it did not disappear.
+        """
+        assert self._project_root is not None
+        warning = self._decision_warning or ""
+        floor_path = str(self._project_root / _FLOOR_FILE_REL)
+        assert floor_path in warning, (
+            "the advisory warning must name the floor file's absolute path "
+            f"{floor_path!r} (the gate already re-read it to decide); got "
+            f"warning={warning!r}. {self._observed()}"
+        )
+
+    def then_reason_names_resolved_project_root(self) -> None:
+        """slice-03: the ALLOW+warning names the RESOLVED project root.
+
+        Reads ``decision.warning`` (see ``then_reason_names_floor_absolute_
+        path`` for why): a reader must be able to tell which of several
+        worktree/trunk roots the floor lives in without searching.
+        """
+        assert self._project_root is not None
+        warning = self._decision_warning or ""
+        assert str(self._project_root) in warning, (
+            "the advisory warning must name the resolved project root "
+            f"{str(self._project_root)!r} the floor was armed under; got "
+            f"warning={warning!r}. {self._observed()}"
+        )
+
+    def then_reason_names_the_inferred_signal(self) -> None:
+        """slice-03: the ALLOW+warning names WHAT the INFERRED floor was deduced from.
+
+        Reads ``decision.warning``: the concrete deduction (a wave-declaring
+        dispatch landing on an empty floor, the only writer of INFERRED --
+        ``arm_inferred``) must be named, not the bare word 'inferred' alone.
+        """
+        warning = self._decision_warning or ""
+        assert "INFERRED" in warning, (
+            f"the advisory warning must mention the floor is INFERRED at all; "
+            f"got warning={warning!r}. {self._observed()}"
+        )
+        assert "DES-WAVE" in warning and "empty floor" in warning, (
+            "an INFERRED floor's description must name the CONCRETE signal it "
+            "was deduced from (a <!-- DES-WAVE: <wave> --> declaration landing "
+            "on an empty floor -- the only writer of INFERRED provenance), not "
+            f"just the bare word 'INFERRED'; got warning={warning!r}. "
+            f"{self._observed()}"
         )
 
     def then_no_recovery_item_proposes_phantom_wave_entry(self) -> None:
@@ -320,6 +388,7 @@ class TruthfulRecoveryComposition:
         self._decision_action = decision.action  # type: ignore[attr-defined]
         self._decision_reason = decision.reason  # type: ignore[attr-defined]
         self._decision_recovery = list(decision.recovery_suggestions)  # type: ignore[attr-defined]
+        self._decision_warning = decision.warning  # type: ignore[attr-defined]
 
     def _gate_decision(self) -> GateDecision:
         assert self._decision_action is not None, (

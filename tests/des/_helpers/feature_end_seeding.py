@@ -110,6 +110,27 @@ def _write_walking_skeleton_gate_ran(
     return ledger.append_walking_skeleton_gate_ran(feature_id=feature_id)
 
 
+def _write_walking_skeleton_tier_verified(
+    ledger: AtCompletionLedger,
+    *,
+    feature_id: str | None = None,
+    verdict_hash: str | None,
+) -> dict[str, Any]:
+    """Emit the `WalkingSkeletonTierVerified` RM-3 positive-proof record.
+
+    fix-ws-done-gate-na-reconciliation slice-01: this is the PASS-only trust
+    anchor now ALSO required at feature-end (alongside the pre-existing
+    `WalkingSkeletonGateRan` heartbeat). A fixture that seeds "every required
+    record" via `seed_required_feature_end_records` needs this writer so the
+    happy-path composition still reaches a complete feature-end cycle.
+    """
+    if feature_id is None:
+        return ledger.append_walking_skeleton_tier_verified(tier_of_record="t1")
+    return ledger.append_walking_skeleton_tier_verified(
+        tier_of_record="t1", feature_id=feature_id
+    )
+
+
 def _write_coverage_map_verified_at_distill_exit(
     ledger: AtCompletionLedger,
     *,
@@ -155,6 +176,7 @@ _RECORD_WRITERS: dict[str, Callable[..., dict[str, Any]]] = {
     "FeatureEndReviewVerdict": _write_feature_end_review_verdict,
     "EnvironmentalE2eGateRan": _write_environmental_e2e_gate_ran,
     "WalkingSkeletonGateRan": _write_walking_skeleton_gate_ran,
+    "WalkingSkeletonTierVerified": _write_walking_skeleton_tier_verified,
     "CoverageMapVerifiedAtDistillExit": _write_coverage_map_verified_at_distill_exit,
     "CoverageMapVerifiedAtDeliverExit": _write_coverage_map_verified_at_deliver_exit,
     "FullSuiteLegRan": _write_full_suite_leg_ran,

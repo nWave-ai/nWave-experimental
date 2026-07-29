@@ -13,8 +13,6 @@ scripts/
 │   ├── detect_conflicts.py            # Conflicting file detection
 │   ├── validate_docs.py               # Documentation version validation
 │   ├── validate_tests.py              # Pytest wrapper
-│   ├── nwave-tdd-validator.py         # TDD phase completion gate
-│   ├── nwave-step-structure-validator.py # Step file structure validation
 │   ├── nwave-bypass-detector.py       # Commit bypass audit logger
 │   ├── commit-msg                     # Commit message hook (CI)
 │   └── commit_msg.py                  # Commit message validation

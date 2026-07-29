@@ -13,35 +13,6 @@ module: des.cli.commit_slice
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --repo
-    required: true
-    type: path
-    help: "Path to the git repository / project root."
-  - name: --message
-    required: true
-    type: string
-    help: "The commit message body; the Gate-Scope: trailer is appended mechanically."
-  - name: --path
-    required: false
-    type: string
-    help: "A path to stage (repeatable). Omit with --all to stage everything."
-  - name: --all
-    required: false
-    type: bool
-    help: "Stage all tracked+untracked changes (git add -A) instead of --path."
-    default: false
-  - name: --no-verify-commit
-    required: false
-    type: bool
-    help: "Pass --no-verify to the underlying git commit/amend (skip git hooks)."
-    default: false
-  - name: --skip-verify
-    required: false
-    type: bool
-    help: "Skip the post-amend run_contract_gate --verify-gate-scope check."
-    default: false
-
 log_events:
   - SliceCommitted
   - SliceCommitUnverified

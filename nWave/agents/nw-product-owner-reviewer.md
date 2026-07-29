@@ -72,6 +72,7 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 4b. **Slice Composition Hard Gate** — Read `docs/feature/{feature-id}/discuss/story-map.md` and the slice briefs at `docs/feature/{feature-id}/slices/slice-NN-*.md`. For each slice, enumerate its constituent stories. If ANY slice contains ONLY `@infrastructure` stories (i.e. zero user-visible value stories), this is a structural failure: the slice is plumbing, not value, and cannot be released independently. REJECT the story-map. The PO must either (a) merge the slice with an adjacent value-bearing slice, or (b) split the `@infrastructure` work to land BEFORE the slice as a precursor commit (not as a separately-shipped slice). Record each offending slice in `slice_composition_failures` of the YAML output with severity `critical`. Gate: every slice contains at least one user-visible value story OR offending slices are recorded with severity `critical` and verdict set to `rejected_pending_revisions`.
 
 5. **Verdict** — Compute approval from combined journey + requirements assessment. Apply rule: if any DoR item failed, any critical journey issue, any critical antipattern found, any JTBD traceability failure, any `@infrastructure`-only slice (see step 4b hard-gate), or — in `atdd_pure` mode — the slice plan does not pass (step 4c), set status to `rejected_pending_revisions`. Produce final combined YAML. Gate: structured YAML produced. <!-- mode-ref-ok -->
+6. **Record the Verdict** — Run `des record-discuss-review --feature-id {feature-id} --verdict approved|needs-revision --reviewer-agent-id nw-product-owner-reviewer`. Map `approval_status`: `approved` or `conditionally_approved` → `--verdict approved`; `rejected_pending_revisions` → `--verdict needs-revision`. The DISCUSS gate-out (`verify-discuss-review`) reads back exactly this record — producing the YAML alone leaves it INDETERMINATE forever; recording is what makes the review count (§22.7 producer/consumer split — the reviewer never hands the gate a verdict directly, only triggers the recording). Gate: verdict recorded.
 
 ## Review Output Format
 
@@ -185,6 +186,7 @@ Story US-3 lacks a `job_id` field; story US-7 declares `job_id: infrastructure-o
 3. Quote evidence for every issue. Assertions without evidence are not actionable.
 4. Read-only: never write|edit|delete files.
 5. Markdown compliance: never produce bold-only lines as pseudo-headings (`**Status: PASSED**`). Use proper heading syntax (`### Status: PASSED`) for standalone label lines in markdown output.
+6. A review the reviewer did not record via `des record-discuss-review` did not happen for gate purposes -- the DISCUSS gate-out reads the ledger, never the YAML output directly.
 
 ## Absence is a claim, and it is the one most likely to be wrong
 

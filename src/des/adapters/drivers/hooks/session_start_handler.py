@@ -32,8 +32,9 @@ independent ``print(json.dumps(...))`` calls in one invocation produce
 multiple JSON objects on separate stdout lines, which is not valid JSON as a
 whole and silently drops every contribution but the first for any consumer
 that reads/parses the full stdout as one object. The substrate-probe
-advisory (``run_probe``) is the one exception -- it is a plain one-line
-human-readable string, not JSON, and is printed on its own line by design.
+advisory (``run_probe``) is a plain one-line human-readable string, not
+JSON -- it is written to stderr, never stdout, so it never shares the
+channel any consumer parses as JSON.
 """
 
 from __future__ import annotations
@@ -902,12 +903,15 @@ def handle_session_start(host_provenance: str | None = None) -> int:
         pass
 
     # The substrate-probe advisory is a plain one-line human-readable string,
-    # not JSON -- printed on its own line by design (see module docstring),
-    # never folded into the additionalContext accumulator below.
+    # not JSON -- written to stderr (see module docstring), never printed to
+    # stdout and never folded into the additionalContext accumulator below.
+    # stdout is the channel every consumer parses as JSON; a plain-text line
+    # interleaved there breaks that parse even when it is otherwise well
+    # formed on its own line.
     try:
         advisory = run_probe()
         if advisory:
-            print(advisory, end="")
+            sys.stderr.write(advisory)
     except Exception:
         # WHAT: substrate probe failed (environment inspection error).
         # WHY/HOW: same SessionStart fail-open rationale -- an advisory

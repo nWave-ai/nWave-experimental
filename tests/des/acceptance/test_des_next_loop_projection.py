@@ -179,7 +179,12 @@ def _seed_red_observed(repo: Path, feature_id: str, slice_id: str) -> None:
 
 
 def _seed_at_review_verdict(repo: Path, feature_id: str, slice_id: str) -> None:
-    _ledger(repo, feature_id).append_review_verdict(slice_id, {}, feature_id=feature_id)
+    """Seed an APPROVED `ATReviewVerdict` (D04b: presence alone no longer
+    satisfies the AT-review-done predicate -- see
+    `_has_approved_review_verdict_for_slice`, `deliver_loop_projection.py`)."""
+    _ledger(repo, feature_id).append_review_verdict(
+        slice_id, {"verdict": "APPROVED"}, feature_id=feature_id
+    )
 
 
 def _arm_examine_gate(repo: Path, feature_id: str) -> None:
@@ -433,4 +438,200 @@ def test_main_never_crashes_on_empty_slice_plan_table(
     ), (
         f"the INDETERMINATE message must name the empty-table cause, not a "
         f"generic message: {verdict!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Scenario 4 -- slice-03: the feature-end branch (feature-delta.md [REF]
+# Slice Plan slice-03 row). Reached when every declared Slice Plan row is
+# NOT `pending` (`_select_row` finds none) -- distinct SSOT
+# (`EBatchRefactorCompleted`) from the per-slice precondition walk
+# slice-01/02 cover. Before this feature was extended, `project_next_step`
+# hard-coded `INDETERMINATE` for this entire branch ("a later slice's
+# scope") -- D36's reproduced symptom: an all-shipped feature got a mute
+# `INDETERMINATE` instead of the `des feature-end run` instruction.
+# CONTRACT_SHAPE: pure-function
+# ---------------------------------------------------------------------------
+
+_ALL_SHIPPED_SLICE_IDS = ("slice-01", "slice-02")
+
+
+def _feature_delta_text_all_shipped(feature_id: str, slice_ids) -> str:
+    """Same canonical, doctor-clean shape as `_feature_delta_text`, but every
+    declared row's Status column reads `shipped` (never `pending`) -- the
+    precondition `_select_row` needs to fall through to the feature-end
+    branch."""
+    rows = "\n".join(
+        f"| {slice_id} | thing shipped | shipped | | done |" for slice_id in slice_ids
+    )
+    return (
+        "## Wave: DESIGN / [REF] Architecture & Contract Tests\n"
+        "\n"
+        "Some architecture prose.\n"
+        "\n"
+        "## Wave: DESIGN / [REF] ADR Refs\n"
+        "\n"
+        "- ADR-001\n"
+        "\n"
+        "## Wave: DISCUSS / [REF] Slice Plan\n"
+        "\n"
+        "| Slice | Value statement | Status | Annotation | Justification |\n"
+        "|---|---|---|---|---|\n"
+        f"{rows}\n"
+        "\n"
+        "## Reuse Analysis\n"
+        "\n"
+        "Reuse-Analysis: no-overlap\n"
+        "\n"
+        "## Test Reuse & Consolidation Analysis\n"
+        "\n"
+        "Test-Reuse-Analysis: methodology-exempt\n"
+    )
+
+
+def _write_feature_delta_all_shipped(repo: Path, feature_id: str, slice_ids) -> None:
+    delta_path = repo / "docs" / "feature" / feature_id / "feature-delta.md"
+    delta_path.parent.mkdir(parents=True, exist_ok=True)
+    delta_path.write_text(
+        _feature_delta_text_all_shipped(feature_id, slice_ids), encoding="utf-8"
+    )
+
+
+def _seed_slice_commit_verified(repo: Path, feature_id: str, slice_id: str) -> None:
+    _ledger(repo, feature_id).append_gate_event(
+        event="SliceCommitVerified", slice_id=slice_id, feature_id=feature_id
+    )
+
+
+def _seed_feature_end_complete(repo: Path, feature_id: str) -> None:
+    ledger = _ledger(repo, feature_id)
+    ledger.append_feature_end_event(
+        "EBatchRefactorCompleted", None, feature_id=feature_id
+    )
+    ledger.append_feature_end_event(
+        "FeatureEndReviewVerdict", "deadbeefcafe", feature_id=feature_id
+    )
+
+
+def test_main_names_feature_end_run_when_every_slice_shipped(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CONTRACT_SHAPE: pure-function
+
+    Outcome anchor: DISCUSS Elevator Pitch, feature-delta.md [REF] Slice
+    Plan slice-03 row.
+
+    Given every declared Slice Plan row carries a `SliceCommitVerified`
+    ledger record (all shipped) and no `EBatchRefactorCompleted` record
+    exists yet, `des next` reports `loop_state=FEATURE_END_PENDING` and
+    names `des feature-end run` as the producing-tool `how` -- generalizing
+    the F-56 `FeatureEndPending` last-slice notice to this projection's
+    terminal branch (D36 reproduced symptom: this used to be a mute
+    `INDETERMINATE`).
+    """
+    feature_id = "des-next-feature-end-pending"
+    _write_feature_delta_all_shipped(tmp_path, feature_id, _ALL_SHIPPED_SLICE_IDS)
+    for slice_id in _ALL_SHIPPED_SLICE_IDS:
+        _seed_slice_commit_verified(tmp_path, feature_id, slice_id)
+
+    exit_code, verdict = _run(capsys, tmp_path, feature_id)
+
+    assert exit_code == 0, f"expected exit 0 (a step was projected): {verdict!r}"
+    assert verdict.get("loop_state") == "FEATURE_END_PENDING", (
+        f"every slice shipped + no completion evidence must report "
+        f"FEATURE_END_PENDING, never a mute INDETERMINATE: {verdict!r}"
+    )
+    assert verdict.get("how") == "des feature-end run", (
+        f"the feature-end branch must name the exact producing-tool "
+        f"invocation: {verdict!r}"
+    )
+    assert verdict.get("step_kind") == "producing-tool", verdict
+
+
+def test_main_reports_done_when_feature_end_cycle_completed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CONTRACT_SHAPE: pure-function
+
+    Outcome anchor: feature-delta.md [REF] Slice Plan slice-03 row.
+
+    Given every declared slice shipped AND an `EBatchRefactorCompleted`
+    ledger record exists for the feature, `des next` reports
+    `loop_state=DONE` -- the feature-end cycle already ran.
+    """
+    feature_id = "des-next-feature-end-done"
+    _write_feature_delta_all_shipped(tmp_path, feature_id, _ALL_SHIPPED_SLICE_IDS)
+    for slice_id in _ALL_SHIPPED_SLICE_IDS:
+        _seed_slice_commit_verified(tmp_path, feature_id, slice_id)
+    _seed_feature_end_complete(tmp_path, feature_id)
+
+    exit_code, verdict = _run(capsys, tmp_path, feature_id)
+
+    assert exit_code == 0, verdict
+    assert verdict.get("loop_state") == "DONE", (
+        f"a recorded EBatchRefactorCompleted must report DONE: {verdict!r}"
+    )
+
+
+@pytest.mark.negative_at
+def test_main_never_reports_done_without_completion_evidence(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CONTRACT_SHAPE: pure-function
+
+    Negative oracle for the feature-end branch: a Slice Plan whose rows are
+    all `shipped` but NO `EBatchRefactorCompleted` ledger record exists must
+    NEVER report `DONE` -- a false-DONE would fabricate completion over a
+    cycle that never ran (GDP-6 no-silent-wrong), the mirror image of the
+    positive test above.
+    """
+    feature_id = "des-next-feature-end-not-done"
+    _write_feature_delta_all_shipped(tmp_path, feature_id, _ALL_SHIPPED_SLICE_IDS)
+    for slice_id in _ALL_SHIPPED_SLICE_IDS:
+        _seed_slice_commit_verified(tmp_path, feature_id, slice_id)
+
+    exit_code, verdict = _run(capsys, tmp_path, feature_id)
+
+    assert exit_code == 0, verdict
+    assert verdict.get("loop_state") != "DONE", (
+        f"WRONG outcome produced: DONE must never be reported without an "
+        f"EBatchRefactorCompleted ledger record: {verdict!r}"
+    )
+
+
+@pytest.mark.negative_at
+def test_main_reports_indeterminate_on_status_ledger_drift_in_feature_end_branch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CONTRACT_SHAPE: pure-function
+
+    Negative oracle, table-ahead-of-ledger direction: a Slice Plan row whose
+    Status column reads `shipped` but carries NO `SliceCommitVerified`
+    ledger record must resolve to `INDETERMINATE` naming the disagreement --
+    never a false `FEATURE_END_PENDING` (which would silently trust the
+    markdown Status column alone). Mirrors the existing ledger-ahead-of-table
+    `_DriftedSlice` case in the opposite direction.
+    """
+    feature_id = "des-next-feature-end-drift"
+    _write_feature_delta_all_shipped(tmp_path, feature_id, ("slice-01",))
+    # Deliberately NOT seeding SliceCommitVerified for slice-01.
+
+    exit_code, verdict = _run(capsys, tmp_path, feature_id)
+
+    assert exit_code == 0, verdict
+    assert verdict.get("loop_state") == "INDETERMINATE", (
+        f"a Status='shipped' row with no SliceCommitVerified ledger record "
+        f"must report INDETERMINATE, never a guessed FEATURE_END_PENDING: "
+        f"{verdict!r}"
+    )
+    # `what` only (not `why`): the PRE-fix generic INDETERMINATE's `why` text
+    # happens to contain the substring "slice-01" (it names this feature's
+    # OWN slice-01, an unrelated self-reference) -- checking `why` too would
+    # let a stale, non-drift-naming message pass by coincidence.
+    what = verdict.get("what", "").lower()
+    assert "slice-01" in what, (
+        f"the INDETERMINATE message must name the drifted slice in `what`: {verdict!r}"
+    )
+    assert "slicecommitverified" in what, (
+        f"the `what` must name the missing ledger evidence: {verdict!r}"
     )

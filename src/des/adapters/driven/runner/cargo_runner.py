@@ -69,6 +69,15 @@ _logger = logging.getLogger(__name__)
 # The cargo binary name resolved at the head of the declared command.
 _CARGO_NAME = "cargo"
 
+# The cargo-specific remediation passed to `resolve_tool` (correct HERE by
+# construction -- this module only ever resolves cargo). Named explicitly,
+# rather than relying on `resolve_tool`'s own default, so non-cargo runners
+# (go/vitest/kotlin/java/csharp) never inherit this Rust-specific wording --
+# see SOSTITUZIONE fix in `tool_discovery.resolve_tool`.
+CARGO_INSTALL_HINT = (
+    "install it via rustup (https://rustup.rs) or 'cargo install <name>'"
+)
+
 # The known install locations cargo lives in off the hook PATH (WSL2 GOTCHA #1):
 # the rustup default ``~/.cargo/bin`` and a ``$CARGO_HOME/bin`` override. A cargo
 # present here but absent from PATH is USED via the known-location rung, never a
@@ -109,7 +118,9 @@ def run_cargo_scope(
     binary = scoped_node_ids[0] if scoped_node_ids else _CARGO_NAME
     subcommand = scoped_node_ids[1:]
 
-    resolution = resolve_tool(binary, CARGO_KNOWN_LOCATIONS)
+    resolution = resolve_tool(
+        binary, CARGO_KNOWN_LOCATIONS, install_hint=CARGO_INSTALL_HINT
+    )
     if resolution.path is None:
         raise RunnerAdapterUnavailable(adapter.name, reason=resolution.remediation)
 
@@ -203,7 +214,9 @@ def list_cargo_scope(
       this seam.
     * exit 0, valid UTF-8, non-empty -> the parsed node-id set.
     """
-    resolution = resolve_tool(_CARGO_NAME, CARGO_KNOWN_LOCATIONS)
+    resolution = resolve_tool(
+        _CARGO_NAME, CARGO_KNOWN_LOCATIONS, install_hint=CARGO_INSTALL_HINT
+    )
     if resolution.path is None:
         raise RunnerAdapterUnavailable(adapter.name, reason=resolution.remediation)
 

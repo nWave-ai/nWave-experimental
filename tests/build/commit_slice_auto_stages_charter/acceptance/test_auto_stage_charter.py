@@ -51,6 +51,7 @@ from pathlib import Path
 
 from des.cli.commit_slice import main as commit_slice_main
 from des.cli.record_examine_verdict import main as record_examine_verdict_main
+from tests.charter_fixtures import filled_charter
 
 
 def _git(root: Path, *args: str) -> str:
@@ -155,7 +156,7 @@ def test_charter_present_but_not_dashdash_path_is_auto_staged_into_commit(
     _init_repo(repo)
     feature_id, slice_id = "f-charter-owner", "slice-01"
     charter_relpath = _write_charter(
-        repo, feature_id, "some-charter.md", "# Charter\n\nWalk the checkout flow.\n"
+        repo, feature_id, "some-charter.md", filled_charter("Walk the checkout flow.")
     )
     _record_pass_verdict(repo, feature_id, slice_id, charter_relpath, capsys)
 
@@ -232,7 +233,7 @@ def test_explicit_dashdash_path_charter_is_idempotent_with_auto_stage(
     _init_repo(repo)
     feature_id, slice_id = "f-charter-explicit-path", "slice-01"
     charter_relpath = _write_charter(
-        repo, feature_id, "some-charter.md", "# Charter\n\nWalk the checkout flow.\n"
+        repo, feature_id, "some-charter.md", filled_charter("Walk the checkout flow.")
     )
     _record_pass_verdict(repo, feature_id, slice_id, charter_relpath, capsys)
 
@@ -277,13 +278,13 @@ def test_auto_stage_scoped_to_owning_feature_only(tmp_path: Path, capsys) -> Non
     feature_id, slice_id = "f-charter-owner-scope", "slice-01"
     other_feature_id = "f-charter-sibling-scope"
     charter_relpath = _write_charter(
-        repo, feature_id, "some-charter.md", "# Charter\n\nWalk the checkout flow.\n"
+        repo, feature_id, "some-charter.md", filled_charter("Walk the checkout flow.")
     )
     other_charter_relpath = _write_charter(
         repo,
         other_feature_id,
         "other-charter.md",
-        "# Charter\n\nA sibling feature.\n",
+        filled_charter("A sibling feature."),
     )
     _record_pass_verdict(repo, feature_id, slice_id, charter_relpath, capsys)
 

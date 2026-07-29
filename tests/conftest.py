@@ -230,6 +230,56 @@ def _isolate_git_hooks_dir(
         mp.undo()
 
 
+# ---------------------------------------------------------------------------
+# Per-session Codex/agents-home isolation.
+#
+# The installer's Codex surface resolves its write targets from `CODEX_HOME` and
+# `NWAVE_AGENTS_HOME`, falling back to `Path.home()/".codex"` and
+# `Path.home()/".agents"`. The installer/uninstaller fixtures redirect `HOME`
+# (see `tests/installer/acceptance/uninstaller/conftest.py`), which covers
+# `Path.home()` -- but the acceptance fixtures that do NOT redirect `HOME` leave
+# both fallbacks pointing at the DEVELOPER'S REAL home, and an in-process install
+# then writes `~/.agents/skills/.nwave-manifest.json`, `~/.codex/hooks.json` and
+# `~/.codex/.nwave-des-manifest.json` for real.
+#
+# Two harms, measured 2026-07-29 (see
+# `docs/mikado/2026-07-29-baseline-reds-taxonomy.md`):
+#   1. The suite MUTATES the developer's working machine.
+#   2. The measurement stops being repeatable. Once the real Codex home is
+#      populated, `validate_codex_ownership_preflight` refuses the next install
+#      with "Codex ownership is unsafe", so a second run of the SAME commit
+#      reports different reds than the first. Pointing both variables at empty
+#      dirs took the isolated red count from 83 to 68.
+# CI never sees it: an ephemeral runner starts with an empty home.
+#
+# SESSION-scoped for the same reason as `_isolate_git_hooks_dir` above: the
+# polluting installs are driven by MODULE-scoped fixtures that pytest
+# instantiates BEFORE any function-scoped autouse fixture. A test that wants the
+# real fallback semantics still overrides this with its own function-scoped
+# `monkeypatch.delenv(...)`.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_codex_and_agents_home(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[None]:
+    """Point the Codex and agents install roots at throwaway session-tmp dirs."""
+    sandbox = tmp_path_factory.mktemp("codex_agents_home")
+    codex_home = sandbox / "codex"
+    agents_home = sandbox / "agents"
+    codex_home.mkdir()
+    agents_home.mkdir()
+
+    mp = pytest.MonkeyPatch()
+    mp.setenv("CODEX_HOME", str(codex_home))
+    mp.setenv("NWAVE_AGENTS_HOME", str(agents_home))
+    try:
+        yield
+    finally:
+        mp.undo()
+
+
 @pytest.fixture(autouse=True)
 def restore_working_directory():
     """

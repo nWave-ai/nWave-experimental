@@ -148,7 +148,9 @@ from des.application.blast_radius_measurement import (
     measure_blast_radius,
 )
 from des.application.worktree_cleanup_service import WorktreeCleanupService
+from des.cli._emit_json import emit_json_line as _emit
 from des.cli._identity_args import meaningful_identity
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import GateError as _CarpaccioGateError
 from des.cli.carpaccio_format import is_slice_coupled as _is_slice_coupled
 from des.cli.carpaccio_format import (
@@ -659,6 +661,28 @@ def _guard_head_not_behind_remote(repo: Path) -> dict[str, object] | None:
 #   (b) a charter exists for the feature under
 #       docs/product/expectations/{feature_id}/*.md (i.e. the feature has
 #       ADOPTED the User-Examiner charter convention).
+#
+# HOLLOW-CHARTER THIRD STATE (GDP-8: decide on the PROPERTY, never on the
+# DESIGNATION). Condition (b) above is a DESIGNATION test -- a file with the
+# right name exists. It says nothing about whether that charter can act as an
+# oracle. A scaffold carrying only `## Intent`, every judgment section still a
+# verbatim template placeholder, satisfied (b) and armed the gate, whose
+# `ExamineVerdictMissing` remediation then instructed dispatching
+# nw-user-examiner AGAINST THAT EMPTY SCAFFOLD (observed 2026-07-28; the
+# verdict would have described the charter, not the code). The PROPERTY is
+# already computed by `des verify-charter-filled` -- catalogued, declared
+# mandatory by the DISTILL skill before a charter may arm an EXAMINE, and until
+# now never invoked from the flow. `check_examine_verdict` now consults it, so
+# the arity is THREE, not two:
+#   * no charter at all           -> UNARMED no-op (backward-compat: the
+#                                    feature never adopted the convention);
+#   * >=1 FILLED charter          -> ARMED exactly as before;
+#   * charters present, NONE      -> LOUD `ExamineCharterHollow` refusal naming
+#     filled                         each charter and the sections still
+#                                    unfilled, routing to the verifying tool --
+#                                    never a silent slide into the first case,
+#                                    which would let an empty scaffold pass for
+#                                    a feature that opted out.
 # Absent both AND a --feature-id, the gate cannot even resolve which ledger to
 # read, so it is a no-op there too -- a caller that never passes --feature-id
 # (as several pre-existing call sites do not) is completely unaffected.
@@ -710,6 +734,73 @@ def _examine_gate_armed(repo: Path, feature_id: str | None) -> bool:
         return False
     charter_dir = repo / "docs" / "product" / "expectations" / feature_id
     return charter_dir.is_dir() and any(charter_dir.glob("*.md"))
+
+
+def _charter_paths(repo: Path, feature_id: str) -> list[Path]:
+    """Every charter file for ``feature_id``, sorted. Empty when the feature
+    never adopted the charter convention."""
+    charter_dir = repo / "docs" / "product" / "expectations" / feature_id
+    if not charter_dir.is_dir():
+        return []
+    return sorted(p for p in charter_dir.glob("*.md") if p.is_file())
+
+
+def _hollow_charter_refusal(repo: Path, feature_id: str) -> dict[str, object] | None:
+    """A LOUD refusal when the feature has charters but NOT ONE of them is
+    FILLED; ``None`` when it has no charter at all (unarmed, backward-compat)
+    or when at least one charter can serve as an oracle.
+
+    The FILLED judgment is DELEGATED to `des verify-charter-filled`'s pure
+    core -- the tool that owns this property -- never re-derived here. A
+    charter that cannot be read at all counts as not-filled (fail-closed) and
+    is named with the read error, so an unreadable charter is never silently
+    mistaken for an absent one.
+    """
+    charters = _charter_paths(repo, feature_id)
+    if not charters:
+        return None
+
+    from des.cli.verify_charter_filled import charter_missing_sections
+
+    hollow: list[str] = []
+    for charter in charters:
+        try:
+            content = charter.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            hollow.append(f"{charter.name}: unreadable ({exc})")
+            continue
+        missing = charter_missing_sections(content)
+        if not missing:
+            return None  # >=1 usable oracle -- arm normally.
+        hollow.append(f"{charter.name}: {'; '.join(missing)}")
+
+    listed = ", ".join(str(c) for c in charters)
+    return {
+        "event": "ExamineCharterHollow",
+        "exit_code": 2,
+        "feature_id": feature_id,
+        "what": (
+            f"{feature_id} has {len(charters)} expectation charter(s) but NOT "
+            f"ONE of them is filled in: {'; '.join(hollow)}"
+        ),
+        "why": (
+            "the examine gate arms on a charter being usable as an ORACLE, "
+            "not on a file with the right name existing. A scaffold whose "
+            "judgment sections are still template placeholders can judge "
+            "nothing: an examiner walked through it would report on the "
+            "charter, not on the code -- and treating it instead as 'no "
+            "charter' would let an empty scaffold pass for a feature that "
+            "deliberately opted out of the convention."
+        ),
+        "how": (
+            "fill the charter -- run `des verify-charter-filled --charter "
+            f"{shlex.quote(str(charters[0]))}` (repeat per charter: {listed}) "
+            "for the exact still-incomplete sections, supply the real start "
+            "recipe under `## Preconditions` and real observations including "
+            ">=1 `Negative: ...` line under `## Expected observations "
+            "(oracle)`, then re-run this commit"
+        ),
+    }
 
 
 def _latest_examine_verdict(
@@ -808,6 +899,16 @@ def check_examine_verdict(
     """
     if not _examine_gate_armed(repo, feature_id):
         return None
+
+    # Decide on the PROPERTY before spending anything on the ledger: charters
+    # that exist but cannot serve as an oracle refuse HERE, so the remediation
+    # below (which instructs dispatching nw-user-examiner) is never printed
+    # for a charter the examiner could only misread. See the HOLLOW-CHARTER
+    # THIRD STATE note at the top of this section.
+    hollow_refusal = _hollow_charter_refusal(repo, feature_id)
+    if hollow_refusal is not None:
+        hollow_refusal["slice_id"] = slice_id
+        return hollow_refusal
 
     record = _latest_examine_verdict(repo, feature_id, slice_id)
     if record is None:
@@ -943,11 +1044,6 @@ def check_examine_verdict(
     return None
 
 
-def _emit(payload: dict[str, object]) -> None:
-    """Print exactly one single-line JSON object."""
-    print(json.dumps(payload))
-
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="des commit-slice",
@@ -957,7 +1053,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "construction, no manual amend."
         ),
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo",
         required=True,
         type=meaningful_identity,

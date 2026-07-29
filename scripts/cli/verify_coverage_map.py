@@ -583,6 +583,8 @@ def _scan_covers_tags(feature_root: Path) -> set[str]:
     detector).
     """
     covered: set[str] = set()
+    # gherkin-scope: same `@covers:` colon-syntax as derive_coverage_map.py
+    # (no pytest-side parser anywhere) -- see that module's marker.
     for feature_file in sorted(feature_root.rglob("*.feature")):
         try:
             lines = feature_file.read_text(encoding="utf-8").splitlines()

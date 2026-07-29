@@ -165,9 +165,18 @@ def _when_finished_legacy(gate: CommitStepGateComposition) -> CommitGateOutcome:
 
 @then("the feature-end commit gate stops the agent from closing the slice")
 def _then_commit_gate_blocks(last_outcome: CommitGateOutcome) -> None:
+    # A message may name a cause only when it has observed it. These two
+    # failure shapes are NOT the same claim and must not share a sentence:
+    # no parseable decision document (the composition never got a verdict to
+    # read -- report the observation, not a routing diagnosis) vs. a verdict
+    # WAS observed and it simply was not a block (report exactly that verdict).
+    assert last_outcome.decision_found, (
+        f"the commit step word {last_outcome.word!r}: no parseable decision "
+        f"document was found in the hook's stdout -- raw stdout was "
+        f"{last_outcome.raw_stdout!r}"
+    )
     assert last_outcome.blocked, (
-        f"the commit step word {last_outcome.word!r} did not route to the "
-        f"commit exit-gate: decision={last_outcome.decision!r} "
-        f"event={last_outcome.event!r}; expected the gate to block "
-        f"(SliceCommitBlocked) -- the C3 dispatch must route this word to the gate"
+        f"the commit step word {last_outcome.word!r}: the hook returned "
+        f"decision={last_outcome.decision!r} event={last_outcome.event!r} "
+        f"instead of blocking (decision='block', event='SliceCommitBlocked')"
     )

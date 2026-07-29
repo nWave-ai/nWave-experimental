@@ -19,23 +19,6 @@ module: des.cli.next_step
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --feature-id
-    required: true
-    type: string
-    help: "The feature id to project the next legal loop step for."
-  - name: --repo
-    required: false
-    type: path
-    help: "Path to the project root (default: current directory)."
-    default: "."
-  - name: --format
-    required: false
-    type: choice
-    choices: ["json", "human"]
-    help: "Output format."
-    default: "json"
-
 log_events:
   - NextStepProjected
 

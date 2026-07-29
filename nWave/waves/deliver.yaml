@@ -53,4 +53,3 @@ output_contract:
     # enumerable here as a fixed path). What DELIVER mechanically attests:
     - path: "docs/feature/{feature_id}/feature-delta.md"
       grade: mandatory
-      inline_in_feature_delta: true

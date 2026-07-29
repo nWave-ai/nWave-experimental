@@ -29,6 +29,7 @@ import json
 import sys
 from typing import TYPE_CHECKING
 
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.repo_path_resolver import resolve_repo_root
 from des.domain.telemetry_paths import LedgerFamily, ledger_path
@@ -99,7 +100,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--artifact", required=True, help="Free text: what was reviewed."
     )
-    parser.add_argument("--repo-root", default=None)
+    add_repo_root_argument(parser, "--repo-root", default=None)
     return parser.parse_args(sys.argv[1:] if argv is None else list(argv))
 
 

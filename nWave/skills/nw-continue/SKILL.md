@@ -39,7 +39,7 @@ Present via AskUserQuestion: project name|last modified date|most recent first. 
 
 ### Step 3: Wave Progress Detection
 
-Check each wave's artifacts using Wave Detection Rules in `~/.claude/nWave/skills/common/wizard-shared-rules.md`.
+Check each wave's artifacts using Wave Detection Rules in `~/.claude/skills/nw-wizard-shared-rules/SKILL.md`.
 
 ### Step 4: Anomaly Detection
 
@@ -68,9 +68,9 @@ Per-mode descriptor + DELIVER phase shape, projected from the mode registry:
 **`atdd_pure` mode** — resume is driven by the AT-completion ledger using the **two-case cue** (ADR-028 D6). Read the slice plan and the ledger, then pick the case: <!-- mode-ref-ok -->
 
 1. **Case (i): slices still `pending`.** Some slices are not yet `shipped`. Restart the `/nw-execute` per-slice lean cycle at the first **un-shipped slice** — the first slice plan row whose Status is not `shipped`.
-2. **Case (ii): all slices `shipped`, feature-end cycle unfinished.** The Status column gives no signal once every row is `shipped`, so read the latest `FeatureEndCheckpoint` ledger record and resume the **feature-end cycle** at the recorded step.
+2. **Case (ii): all slices `shipped`, feature-end cycle unfinished.** The Status column gives no signal once every row is `shipped`. There is no per-step ledger checkpoint (a `FeatureEndCheckpoint` record was named in ADR-028 D6 but never implemented — zero producers in `src/des`); instead, re-run `des feature-end run` (idempotent, safe to repeat) and read its own exit code / stdout payload (`FeatureEndCycleComplete` / `FeatureEndCycleRefused` / `FeatureEndCycleIndeterminate`) to learn the current outcome.
 
-Display under `atdd_pure`: "DELIVER (atdd_pure) in progress: 3/5 slices shipped. Next: re-enter /nw-execute at the first un-shipped slice" or "DELIVER (atdd_pure): all slices shipped. Resuming feature-end cycle from FeatureEndCheckpoint." <!-- mode-ref-ok -->
+Display under `atdd_pure`: "DELIVER (atdd_pure) in progress: 3/5 slices shipped. Next: re-enter /nw-execute at the first un-shipped slice" or "DELIVER (atdd_pure): all slices shipped. Re-running the feature-end cycle to determine its outcome." <!-- mode-ref-ok -->
 
 ### Step 6: Progress Display
 

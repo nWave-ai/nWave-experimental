@@ -11,16 +11,6 @@ module: des.cli.run_contract_gate
 entry_function: main
 language_neutral_contract: false
 
-cli_args:
-  - name: --collect-only
-    required: false
-    type: bool
-    help: "Collect tests without running."
-  - name: --print-digest
-    required: false
-    type: bool
-    help: "Print scope digest only."
-
 log_events:
   - GateScopeVerified
   - ContractGateCleared

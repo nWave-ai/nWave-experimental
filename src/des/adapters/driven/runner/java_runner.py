@@ -70,6 +70,14 @@ if TYPE_CHECKING:
 # The mvn binary name resolved at the head of the declared command.
 _MVN_NAME = "mvn"
 
+# The Java/Maven-specific remediation passed to `resolve_tool` -- NOT the
+# shared cargo-flavoured default (SOSTITUZIONE fix: a Rust hint told a Java
+# target to run `cargo install mvn`, which does not exist).
+MAVEN_INSTALL_HINT = (
+    "install a JDK plus Maven (e.g. via your OS package manager or "
+    "https://maven.apache.org/install.html) and ensure mvn is on PATH"
+)
+
 # The known install locations mvn lives in off the hook PATH: the env-derived
 # ``$MAVEN_HOME/bin`` / ``$M2_HOME/bin`` and the common system toolchain dirs.
 # An mvn present here but absent from PATH is USED via the known-location
@@ -102,7 +110,12 @@ def run_java_scope(
     binary = scoped_node_ids[0] if scoped_node_ids else _MVN_NAME
     subcommand = scoped_node_ids[1:]
 
-    resolution = resolve_tool(binary, JAVA_KNOWN_LOCATIONS, base_dir=target_root)
+    resolution = resolve_tool(
+        binary,
+        JAVA_KNOWN_LOCATIONS,
+        base_dir=target_root,
+        install_hint=MAVEN_INSTALL_HINT,
+    )
     if resolution.path is None:
         raise RunnerAdapterUnavailable(adapter.name, reason=resolution.remediation)
 

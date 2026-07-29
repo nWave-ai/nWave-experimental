@@ -15,6 +15,46 @@
       "skill": "nw-distill",
       "clause_id": "walking-skeleton:canonical-definition",
       "marker": "thinnest slice of real functionality that runs end-to-end"
+    },
+    {
+      "skill": "nw-cross-cutting-invariants",
+      "clause_id": "data:consumer-known-before-produced",
+      "marker": "a datum is produced because we already know who needs it"
+    },
+    {
+      "skill": "nw-cross-cutting-invariants",
+      "clause_id": "gate:self-explaining-what-why-how",
+      "marker": "state **WHAT**"
+    },
+    {
+      "skill": "nw-cross-cutting-invariants",
+      "clause_id": "gate:design-principles-gdp-1-8",
+      "marker": "GDP-8 \u2014 Decide on the PROPERTY, never the DESIGNATION"
+    },
+    {
+      "skill": "nw-cross-cutting-invariants",
+      "clause_id": "gate:design-principles-gdp-8-authoring-corollary",
+      "marker": "does this name have a PRODUCER?"
+    },
+    {
+      "skill": "nw-cross-cutting-invariants",
+      "clause_id": "gate:predicate-needs-its-own-enumerator",
+      "marker": "a predicate without an enumerator forces every caller to invent its own population"
+    },
+    {
+      "skill": "nw-cross-cutting-invariants",
+      "clause_id": "claim:falsify-before-asserting",
+      "marker": "the cheapest check that would falsify that conclusion"
+    },
+    {
+      "skill": "nw-design",
+      "clause_id": "decision-once:point-dont-copy",
+      "marker": "A decision lives in exactly ONE place; every other place that needs it points"
+    },
+    {
+      "skill": "nw-discuss",
+      "clause_id": "decision-once:point-dont-copy",
+      "marker": "Decision-once \u2014 point, don't copy"
     }
   ]
 }

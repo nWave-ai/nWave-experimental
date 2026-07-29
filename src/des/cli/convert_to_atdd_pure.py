@@ -183,6 +183,8 @@ def _has_untagged_scenarios(workspace: Path, feature_id: str) -> bool:
     feature_tests = workspace / "tests" / feature_id
     if not feature_tests.is_dir():
         return False
+    # gherkin-scope: this IS the classic->atdd_pure Gherkin migration/drain
+    # tool -- it operates ON Gherkin scenarios by definition.
     for feature_file in feature_tests.glob("*.feature"):
         lines = feature_file.read_text(encoding="utf-8").splitlines()
         previous = ""

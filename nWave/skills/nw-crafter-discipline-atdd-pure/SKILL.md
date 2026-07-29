@@ -123,6 +123,20 @@ des run-slice-ats --repo . --entering-slice <s>
 
 `run-slice-ats` genuinely RUNS only the entering slice's acceptance tests (scoped to its `@<s>` tag, slice-proportional, fast) and vetoes (FAIL) on a RED slice AT — the spine, not a git hook, is the commit-time test authority. The WHOLE-tree `pytest -m "unit or integration or acceptance"` run stays where the §2B allocation puts it: ONCE at **feature-end**, inside `feature_end_cycle_service._run_full_suite_leg` (the `des run-contract-gate --repo .` whole-tree run, emitting `FullSuiteLegRan`), NOT at every slice commit. The `G_COMMIT` commit MUST then carry a `Gate-Scope:` trailer holding the **committed-scope** digest of the commit's OWN tree. This is not skill text alone: the `G_COMMIT` DES `exit_gate` (E2) re-derives a fresh **committed-scope** digest via `run_contract_gate --verify-gate-scope --commit HEAD` (`git ls-tree` of HEAD's committed tree) and refuses the commit if the `Gate-Scope:` trailer is absent or mismatching — the skill prose and the mechanical exit gate are enforcement-paired, so a narrower terminating run is mechanically caught, not merely discouraged.
 
+### Staging hygiene and commit subject (gate-affordance audit A1/A2, 2026-07-28)
+
+Stage ONLY the files your slice owns. If the working tree carries unrelated changes,
+use `des commit-slice --owned-paths <path> [<path> ...]` explicitly rather than a bare
+`git add -A` — sweeping in an unrelated file poisoned the tree once (the 140da7ceb
+incident) and `commit-slice` will now refuse and print the exact `git restore --staged`
+command to fix it.
+
+Commit subject line ≤ 100 chars total, `type(scope): subject` included (gitlint T1) —
+CI's commitlint job re-checks the SAME rule and would reject the commit after it
+lands. The character right after `type(scope): ` must be a LETTER, not a digit
+(gitlint T7): write "four configuration values were wrong", not "4 configuration
+values were wrong".
+
 ### Stamp the trailer MECHANICALLY — `des commit-slice` (do NOT hand-stamp)
 
 **Do not compute or hand-stamp the digest.** The digest the exit gate verifies is the committed-scope digest of HEAD's **committed tree** — but at terminating-run time HEAD is still the slice's PARENT and the slice's new AT files are still **untracked**, so any digest computed *before* the commit fingerprints the wrong (parent) tree → `GateScopeUnverified` (mismatch) → a manual `git commit --amend` was historically required. That amend was inconsistent prose discipline (#67 facet-4 / AD-23 adjacent).
@@ -175,10 +189,9 @@ Each prohibition cites the memory rule that grounds it. Violation requires **exp
 | Prohibition | Memory rule anchor |
 |---|---|
 | `git commit --no-verify` (bypassing pre-commit hooks) | [[feedback_load_skills_before_touching_code_2026_05_15]] + plan v3 §9 mechanical guard |
-| `# noqa` (ruff suppression without targeted rule) | [[feedback_load_skills_before_touching_code_2026_05_15]] |
-| `# type: ignore` (mypy suppression without targeted rule) | [[feedback_load_skills_before_touching_code_2026_05_15]] |
-| `@pytest.mark.skip` / `@pytest.mark.xfail` without ticket reference | [[feedback_load_skills_before_touching_code_2026_05_15]] |
-| `suppress_health_check=[...]` in Hypothesis settings | [[feedback_load_skills_before_touching_code_2026_05_15]] (2026-05-15 anchor: 1-line "mechanical fix" without root-cause analysis) |
+| Lint/type-check suppression comment without a targeted rule (`# noqa`, `# type: ignore`, and the TARGET language's own equivalents — see the per-language table below) | [[feedback_load_skills_before_touching_code_2026_05_15]] |
+| Test-skip marker without ticket reference (`@pytest.mark.skip`/`@pytest.mark.xfail`, and the TARGET language's own equivalents — see the per-language table below) | [[feedback_load_skills_before_touching_code_2026_05_15]] |
+| `suppress_health_check=[...]` in Hypothesis settings (Python PBT; other languages' PBT libraries have their own health-check-suppression equivalents — same prohibition applies) | [[feedback_load_skills_before_touching_code_2026_05_15]] (2026-05-15 anchor: 1-line "mechanical fix" without root-cause analysis) |
 | `git push --force` / `--force-with-lease` | [[feedback_load_skills_before_touching_code_2026_05_15]] |
 | `git reset --hard` on any branch with uncommitted work | [[feedback_never_revert_user_work_unauthorized]] (2026-04-30 anchor: 3,343 LOC reverted unilaterally) |
 | `git clean -fd` on the working tree | [[feedback_never_revert_user_work_unauthorized]] |
@@ -186,6 +199,27 @@ Each prohibition cites the memory rule that grounds it. Violation requires **exp
 | Modifying ATs to "make crafter's life easier" | Same — back-pressure goes through Phase C → Phase D, not direct edit |
 | Speculative production code without paired AT | Plan v3 §3 + §6 AT-completeness gate |
 | Skipping Phase B coverage cleanup to "save time" | Plan v3 §4 — Phase B is a hard exit gate, not optional |
+
+### Per-language bypass markers (this list is per-language — extend it, don't assume Python)
+
+`nw-software-crafter` is a cross-language agent (OO/paradigm-generic, not Python-only). The
+prohibition is the CLASS (lint suppression / type-check suppression / test-skip / PBT
+health-check suppression), not the Python spelling — grep for the TARGET repo's own language,
+never the Python markers on a non-Python target:
+
+| Language | Lint suppression | Type-check suppression | Test-skip | PBT health-check suppression |
+|---|---|---|---|---|
+| Python | `# noqa` | `# type: ignore` | `@pytest.mark.skip` / `@pytest.mark.xfail` | `suppress_health_check=[...]` (Hypothesis) |
+| Go | `//nolint` | n/a (no separate type-checker) | `t.Skip(...)` | n/a (no PBT convention this repo standardizes on) |
+| Rust | `#[allow(...)]` | n/a (no separate type-checker) | `#[ignore]` | `proptest`'s config overrides / `quickcheck`'s skip attrs |
+| JS/TS | `// eslint-disable` | `// @ts-ignore` / `// @ts-expect-error` | `.skip()` / `xit()` / `xdescribe()` (vitest/jest) | fast-check's `{ skipAllProperties: true }`-style overrides |
+| Java | `@SuppressWarnings(...)` | n/a (compiler is the type-checker; no separate suppression class) | `@Disabled` (JUnit 5) / `@Ignore` (JUnit 4) | jqwik's `@Disabled` / tries-suppression config |
+| C#/.NET | `#pragma warning disable` | n/a (compiler is the type-checker) | `[Fact(Skip = "...")]` / `[Ignore]` | FsCheck's config overrides |
+| Kotlin | `@Suppress(...)` | n/a (compiler is the type-checker) | `@Disabled` / `@Ignore` | kotest property-test config overrides |
+
+If the target language is not in this table, name the gap to the operator rather than silently
+assuming no equivalent exists — a missing row is an audit gap in this skill, not evidence the
+language has no bypass surface.
 
 ### Escalation protocol
 If a prohibition appears blocking: stop, surface to operator with concrete diagnosis (what failed + what bypass was tempting + why root-cause matters). Wait for explicit approval. Never bypass silently.
@@ -214,7 +248,7 @@ Run mechanically before emitting any commit:
 4. ☐ No surviving defensive branch without paired AT.
 5. ☐ `git diff --name-only` confirms only files in roadmap `files_to_modify` were touched.
 6. ☐ Conventional commit message with `Step-Id:` trailer (per ADR-025 §3 commit gate).
-7. ☐ No prohibited bypass flags used (grep diff for `--no-verify`, `# noqa`, `# type: ignore`, `@pytest.mark.skip`, `suppress_health_check`).
+7. ☐ No prohibited bypass flags used — grep diff for `--no-verify` PLUS the TARGET language's own lint/type-check/test-skip/PBT-suppression markers from the per-language table above (Python's `# noqa`/`# type: ignore`/`@pytest.mark.skip`/`suppress_health_check` are ONE row of that table, not the universal set).
 8. ☐ Reviewer verdict-hash trailer present and valid (per plan v3 §8 keyless content-seal spec).
 
 Any unchecked box blocks COMMIT. Surface diagnosis to operator; do not bypass.

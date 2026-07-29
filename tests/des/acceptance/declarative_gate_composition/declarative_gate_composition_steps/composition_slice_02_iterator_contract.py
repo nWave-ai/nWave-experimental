@@ -453,7 +453,7 @@ class IteratorContractComposition:
         unknown: str | None = None,
         indeterminate: str | None = None,
     ) -> None:
-        """Invoke the EXISTING dispatch_lifecycle_event with a REAL in-process invoker.
+        """Invoke the EXISTING compose_lifecycle_event with a REAL in-process invoker.
 
         The invoker returns each declared gate's signal on its JSON stdout: the
         vetoing gate blocks (exit!=0 + FAIL), an unknown gate returns the
@@ -461,8 +461,21 @@ class IteratorContractComposition:
         INDETERMINATE JSON. The dispatcher's OWN iterate-in-declared-order +
         halt-at-first-block is the load-bearing behavior; the net-new per-gate
         recovery parse (GateInvocationResult.recovery_suggestions) is the seam.
+
+        Drives the DOCUMENT entry (``compose_lifecycle_event``), not the
+        IDENTITY-gated ``dispatch_lifecycle_event``: the synthetic probe flavors
+        (``probe_reorder`` / ``probe_single`` / ``probe_resolved``) are test-only
+        documents that name no shipped mode, so they are never members of
+        ``ACTIVE_MODES`` -- routing them through the identity-gated entry raises
+        ``FlavorNotExecutable`` on every call, which the surrounding except clause
+        silently swallowed into an empty/None result. ``compose_lifecycle_event`` is
+        mode-registry-blind BY SIGNATURE (it takes a flavor FILE, never an identity),
+        which is exactly the door a synthetic flavor document belongs through --
+        mirrors the established pattern in
+        ``tests/des/acceptance/d4_phase_3_flavor_dispatcher/conftest.py``
+        (``FlavorDispatcherComposition.dispatch``).
         """
-        from des.application.flavor_dispatcher import dispatch_lifecycle_event
+        from des.application.flavor_dispatcher import compose_lifecycle_event
 
         catalog = self._catalog_gate_ids()
 
@@ -496,11 +509,11 @@ class IteratorContractComposition:
             return 0, json.dumps({"verdict": "pass", "gate_id": gate_id})
 
         try:
-            result = dispatch_lifecycle_event(
-                _PROBE_EVENT,
-                flavor_id,
-                {"feature_id": "probe", "slice_id": "slice-01"},
-                flavors_dir=flavors_dir,
+            result = compose_lifecycle_event(
+                flavors_dir / f"{flavor_id}.yaml",
+                event_id=_PROBE_EVENT,
+                flavor_id=flavor_id,
+                context={"feature_id": "probe", "slice_id": "slice-01"},
                 gate_invoker=invoker,
             )
         except (KeyError, ValueError, FileNotFoundError):

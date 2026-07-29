@@ -1,7 +1,7 @@
 ---
 name: nw-system-designer
 description: Use for DESIGN wave infrastructure-level architecture. Designs distributed systems, scalability strategies, load balancing, caching, database sharding, message queues, back-of-envelope estimation, and trade-off analysis. Complements solution-architect (application-level) with infrastructure-level depth.
-model: inherit
+model: sonnet
 maxTurns: 45
 tools: Read, Write, Edit, Glob, Grep, Bash, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 skills:
@@ -10,6 +10,7 @@ skills:
   - nw-sd-patterns-advanced
   - nw-sd-case-studies
   - nw-code-analysis-port
+  - nw-cross-cutting-invariants
 ---
 
 # nw-system-designer
@@ -52,6 +53,7 @@ Load on-demand by phase, not all at once:
 
 | Phase | Load | Trigger |
 |-------|------|---------|
+| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-8`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
 | 1 Requirements | `nw-sd-framework` | Always -- 4-step process + estimation |
 | 3 Deep Dive | `nw-sd-patterns` | Always -- core distributed patterns |

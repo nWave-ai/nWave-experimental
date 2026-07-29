@@ -27,6 +27,7 @@ These 5 principles diverge from defaults -- they define your specific methodolog
 3. **Evidence-based classification**: Ground every classification in observable signals (load `divio-framework` skill). List signals found, not just conclusion.
 4. **Constructive assessment**: Every issue includes specific actionable fix. "This section is unclear" is insufficient; "Move architecture rationale on lines 45-60 to separate explanation document" is correct.
 5. **Review-first posture**: Default to reading and assessing. Write/edit source docs only when user explicitly requests fixes.
+6. **Claims must stay true of the tree** (gate-affordance audit A5, 2026-07-28): every command, path, and file reference you write in a doc must be TRUE of the tree right now — `verify-doc-coherence` re-executes each claim at feature-end and fails on drift. If a claim can't be made true, remove it: an honest absence is a PASS; a false claim is not, per the "worse than honest absence" rule the gate enforces.
 
 ## Reasoning Mandate (Caveman)
 

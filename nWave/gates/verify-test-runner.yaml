@@ -22,21 +22,6 @@ module: des.cli.run_tests
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --target
-    required: true
-    type: path
-    help: "The target directory whose tests are run through the test-runner port."
-  - name: --runner
-    required: false
-    type: string
-    default: pytest
-    help: "The named test runner this adapter invokes; a runner this adapter cannot invoke yields the fail-safe ABSTAIN envelope."
-  - name: --out
-    required: true
-    type: path
-    help: "Path the emitted JSON envelope (nwave.test_result.v1 on a real run, nwave.earned_verdict.v1 ABSTAIN on an un-invokable runner) is written to."
-
 log_events: []
 
 failure_modes:

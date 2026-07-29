@@ -14,12 +14,6 @@ module: des.cli.mode_registry_completeness
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --root
-    required: false
-    type: path
-    help: "Root of the asset tree to check (default: this repository)."
-
 log_events: []
 
 failure_modes:

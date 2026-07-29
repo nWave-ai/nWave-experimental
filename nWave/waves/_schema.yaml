@@ -152,8 +152,3 @@ $defs:
         type: string
         enum: [mandatory, optional]
         description: "Whether the file is required or optional."
-      inline_in_feature_delta:
-        type: boolean
-        description: |
-          True when the content lives inline in the feature-delta rather than
-          as a separate multi-file output (the legacy discuss/*.md retirement).

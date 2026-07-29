@@ -20,6 +20,14 @@ Post-migration (ADR-CA-007): the settings.json attribution write surface is
 RETIRED. 'on' registers the activation-gated PreToolUse commit-attribution hook
 as the sole mechanism and never writes attribution.{commit,pr}. 'off' still
 removes any legacy settings credit (cleanup) and unregisters the hook.
+
+_handle_attribution now resolves claude_dir via PathUtils.get_claude_config_dir()
+(honors CLAUDE_CONFIG_DIR / --target), not a fixed Path.home()/".claude" --
+see TestAttributionTargetFlag below. Every test in this module that relies on
+the Path.home() monkeypatch to select the default profile must also scrub
+CLAUDE_CONFIG_DIR from the host env, or a developer's own multi-profile
+env var overrides the monkeypatch and the test observes the wrong directory
+(target-machine independence, see feedback_target_machine_independence).
 """
 
 import json
@@ -32,6 +40,18 @@ from nwave_ai.cli import main
 
 # Serialize tests touching .git/hooks/ to avoid xdist races on shared state.
 pytestmark = pytest.mark.xdist_group("git_hooks")
+
+
+@pytest.fixture(autouse=True)
+def _scrub_claude_config_dir_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure CLAUDE_CONFIG_DIR is not leaked into the test from the host env.
+
+    Mirrors tests/installer/unit/cli/test_target_flag.py::_scrub_env -- without
+    this, a developer machine with CLAUDE_CONFIG_DIR set (e.g. a multi-profile
+    Claude Code setup) makes claude_dir resolve to that env var instead of the
+    tmp_path-based Path.home() monkeypatch each test below sets up.
+    """
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
 
 
 def _write_config(config_dir: Path, *, enabled: bool) -> None:

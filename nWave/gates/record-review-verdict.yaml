@@ -22,33 +22,6 @@ module: des.cli.record_review_verdict
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --feature-id
-    required: true
-    type: string
-    help: "Feature identifier; resolves the per-feature review ledger."
-  - name: --slice-id
-    required: true
-    type: string
-    help: "The slice whose review outcome is being recorded (slice-NN)."
-  - name: --reviewer-agent-id
-    required: true
-    type: string
-    help: "Identity of the reviewer recording the verdict (e.g. nw-agent-builder-reviewer)."
-  - name: --verdict
-    required: true
-    type: choice
-    choices: [APPROVED, NEEDS_REVISION, REJECTED]
-    help: "The reviewer outcome. An unknown value is rejected and nothing is written."
-  - name: --artifact
-    required: true
-    type: string
-    help: "What was reviewed (free text)."
-  - name: --repo-root
-    required: false
-    type: path
-    help: "Repository root; defaults to the current working directory."
-
 log_events:
   - ReviewVerdictRecorded
 

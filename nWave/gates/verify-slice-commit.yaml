@@ -11,24 +11,6 @@ module: des.cli.verify_slice_commit_completeness
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --repo
-    required: true
-    type: path
-    help: "Git repo to inspect."
-  - name: --commit
-    required: true
-    type: string
-    help: "Commit-ish."
-  - name: --feature-id
-    required: false
-    type: string
-    help: "Feature for E1+E2 verify-then-record."
-  - name: --expected-head
-    required: false
-    type: string
-    help: "Pinned HEAD SHA race check."
-
 log_events:
   - SliceCommitVerified
 

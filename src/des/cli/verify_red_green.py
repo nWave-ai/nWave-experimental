@@ -45,6 +45,9 @@ import tempfile
 from pathlib import Path
 from xml.etree import ElementTree
 
+from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.cli._emit_json import emit_json_line as _emit
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.ports import test_runner_port
 
 
@@ -162,10 +165,6 @@ def _pytest_default_run_cmd(repo: Path) -> tuple[str, ...]:
     if (repo / "Pipfile.lock").is_file() or (repo / "Pipfile").is_file():
         return ("pipenv", "run", "pytest", *_PYTEST_PLUGIN_ISOLATION, *tail)
     return _DEFAULT_RUN_CMD
-
-
-def _emit(payload: dict[str, object]) -> None:
-    print(json.dumps(payload))
 
 
 def _indeterminate(what: str, why: str, how: str, cmd: object = None) -> int:
@@ -405,7 +404,14 @@ def _run_and_collect(
         junit_out.unlink(missing_ok=True)
 
 
-def _record_red(repo: Path, test_file: Path, run_cmd: tuple[str, ...]) -> int:
+def _record_red(
+    repo: Path,
+    test_file: Path,
+    run_cmd: tuple[str, ...],
+    *,
+    feature_id: str | None = None,
+    slice_id: str | None = None,
+) -> int:
     outcomes = _run_and_collect(repo, test_file, run_cmd)
     if isinstance(outcomes, int):
         return outcomes
@@ -454,10 +460,21 @@ def _record_red(repo: Path, test_file: Path, run_cmd: tuple[str, ...]) -> int:
         }
     )
     print(f"✓ RED observed — {len(failing)} failing (witness candidates) recorded")
+    if feature_id is not None and slice_id is not None:
+        AtCompletionLedger(feature_id, repo).append_gate_event(
+            "RedObserved", slice_id, feature_id=feature_id, gate="verify-red-green"
+        )
     return _EXIT_OK
 
 
-def _verify_green(repo: Path, test_file: Path, run_cmd: tuple[str, ...]) -> int:
+def _verify_green(
+    repo: Path,
+    test_file: Path,
+    run_cmd: tuple[str, ...],
+    *,
+    feature_id: str | None = None,
+    slice_id: str | None = None,
+) -> int:
     seal = _seal_path(repo, test_file)
     if not seal.is_file():
         return _indeterminate(
@@ -471,7 +488,10 @@ def _verify_green(repo: Path, test_file: Path, run_cmd: tuple[str, ...]) -> int:
             {
                 "event": "RedGreenRefused",
                 "phase": "green",
-                "what": "test file CHANGED between RED and GREEN",
+                "test_file": test_file.name,
+                "recorded_content_sha256": record["content_sha256"],
+                "current_content_sha256": _content_sha(test_file),
+                "what": f"test file CHANGED between RED and GREEN: {test_file.name}",
                 "why": (
                     "edited tests void their own RED evidence — the "
                     "crafter-touched-the-test class."
@@ -482,7 +502,7 @@ def _verify_green(repo: Path, test_file: Path, run_cmd: tuple[str, ...]) -> int:
                 ),
             }
         )
-        print("✗ REFUSED — test content changed since RED; evidence void")
+        print(f"✗ REFUSED — {test_file.name} changed since RED; evidence void")
         return _EXIT_REFUSED
     outcomes = _run_and_collect(repo, test_file, run_cmd)
     if isinstance(outcomes, int):
@@ -517,6 +537,10 @@ def _verify_green(repo: Path, test_file: Path, run_cmd: tuple[str, ...]) -> int:
         f"✓ SEALED — {len(sealed)} test(s) witnessed red→green; "
         f"{len(pins)} regression pin(s) (not new-behavior coverage)"
     )
+    if feature_id is not None and slice_id is not None:
+        AtCompletionLedger(feature_id, repo).append_gate_event(
+            "RedGreenSealed", slice_id, feature_id=feature_id, gate="verify-red-green"
+        )
     return _EXIT_OK
 
 
@@ -528,9 +552,25 @@ def main(argv: list[str] | None = None) -> int:
             "non-vacuity evidence (evolution P0.2)."
         ),
     )
-    parser.add_argument("--repo", default=".", help="Repository root.")
+    add_repo_root_argument(parser, "--repo", default=".", help="Repository root.")
     parser.add_argument(
         "--test-file", required=True, help="The AT file (repo-relative or absolute)."
+    )
+    parser.add_argument(
+        "--feature-id",
+        default=None,
+        help=(
+            "Feature id to key an AT-completion ledger RedObserved/"
+            "RedGreenSealed gate event (optional; requires --slice-id)."
+        ),
+    )
+    parser.add_argument(
+        "--slice-id",
+        default=None,
+        help=(
+            "Slice id to key an AT-completion ledger RedObserved/"
+            "RedGreenSealed gate event (optional; requires --feature-id)."
+        ),
     )
     phase = parser.add_mutually_exclusive_group(required=True)
     phase.add_argument("--record-red", action="store_true")
@@ -583,8 +623,16 @@ def main(argv: list[str] | None = None) -> int:
         except _UnsupportedRunnerLayout as exc:
             return _unsupported_layout_refusal(exc)
     if args.record_red:
-        return _record_red(repo, test_file, run_cmd)
-    return _verify_green(repo, test_file, run_cmd)
+        return _record_red(
+            repo,
+            test_file,
+            run_cmd,
+            feature_id=args.feature_id,
+            slice_id=args.slice_id,
+        )
+    return _verify_green(
+        repo, test_file, run_cmd, feature_id=args.feature_id, slice_id=args.slice_id
+    )
 
 
 if __name__ == "__main__":

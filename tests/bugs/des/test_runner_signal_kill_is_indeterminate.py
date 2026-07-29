@@ -117,10 +117,13 @@ def _setup_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _setup_cargo(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `**_kwargs` swallows `install_hint` (and any future keyword
+    # `resolve_tool` gains) so this stub stays compatible with the real
+    # signature without needing a matching edit per new parameter.
     monkeypatch.setattr(
         cargo_runner,
         "resolve_tool",
-        lambda name, known_locations: ToolResolution(
+        lambda name, known_locations, **_kwargs: ToolResolution(
             rung="on-path", path="/fake/cargo"
         ),
     )
@@ -130,7 +133,7 @@ def _setup_vitest(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         vitest_runner,
         "resolve_tool",
-        lambda name, known_locations, base_dir=None: ToolResolution(
+        lambda name, known_locations, base_dir=None, **_kwargs: ToolResolution(
             rung="on-path", path="/fake/vitest"
         ),
     )
@@ -140,7 +143,7 @@ def _setup_go(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         go_runner,
         "resolve_tool",
-        lambda name, known_locations, base_dir=None: ToolResolution(
+        lambda name, known_locations, base_dir=None, **_kwargs: ToolResolution(
             rung="on-path", path="/fake/go"
         ),
     )

@@ -1,7 +1,7 @@
 ---
 name: nw-acceptance-designer
 description: "Use for DISTILL wave — designs E2E acceptance tests from user stories and architecture using Given-When-Then format. EXPANDED scope (plan v3 §3.A, 2026-05-19) — exclusive test-expertise owner; authors ATs with maximum PBT + parametrize density, runs self-completeness audit (7-category taxonomy + 15-item checklist), enforces Mandate-12 step-reuse ≥4× target informational, consults DISCUSS+DESIGN+DEVOPS upstream waves for taxonomy population (C2/C5/C6/C7). Creates executable specifications that drive Outside-In TDD development."
-model: inherit
+model: sonnet
 tools: Read, Write, Edit, Bash, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 maxTurns: 45
 skills:
@@ -28,6 +28,7 @@ skills:
   - nw-ad-mandate-summaries
   - nw-ad-distill-dod
   - nw-code-analysis-port
+  - nw-cross-cutting-invariants
 ---
 
 # nw-acceptance-designer
@@ -89,6 +90,7 @@ The four large test-design families are decomposed into one-job-one-trigger modu
 
 | Phase | Load | Trigger |
 |-------|------|----------------|
+| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-8`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
 | 0 Detect Language + Policy | `nw-distill`, `nw-distill-port-treatment-policy`, `nw-test-design-mandates` (core) | Always — Phase 0 entry; `nw-distill` = induction map + density contract + gate-G; `nw-distill-port-treatment-policy` = port→treatment classification + Project Infrastructure Policy + WS canonical def + state-delta port bootstrap; the mandate-registry + 3-Pillars + language-convention frame are cross-cutting core concerns |
 | 1 Understand Context | `nw-bdd-methodology`, `nw-distill-prior-wave-reading` | Always — Phase 1 entry; outside-in BDD framing + `nw-distill-prior-wave-reading` = read prior-wave SSOT/feature-delta, Wave-Decision Reconciliation HARD GATE, rows 7b/7c advisories, graceful degradation, back-propagation |

@@ -55,7 +55,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
-from des.application.feature_at_files import feature_tag_files
+from des.application.feature_at_files import (
+    feature_tag_files,
+    feature_tagged_test_files,
+    is_pytest_collectible,
+    resolve_test_file_attribution,
+)
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.validate_feature_delta import (
     LOCKED_REF_SECTIONS,
     VERDICT_ACCEPTED,
@@ -232,9 +238,10 @@ def _slice_without_at_module(
     """The first planned slice with no authored AT module, or None when all backed.
 
     A planned ``slice-NN`` row (the first cell of a Slice-Plan table row) must bind
-    to a ``.feature`` carrying both the file-level ``@feature-{feature_id}`` tag and
-    a ``@slice-NN`` scenario tag (DDD-1 step 2; the ``feature_tag_files``
-    resolution, reused).
+    to an authored AT module -- a ``.feature`` file carrying both the file-level
+    ``@feature-{feature_id}`` tag and a ``@slice-NN`` scenario tag (DDD-1 step 2;
+    the ``feature_tag_files`` resolution), OR a pytest file head-comment-tagged
+    the SAME pair (``_authored_slice_tags``, agnostic-at-discovery-ssot-repair).
     """
     authored = _authored_slice_tags(feature_id, repo_root)
     for line in content.splitlines():
@@ -245,12 +252,30 @@ def _slice_without_at_module(
 
 
 def _authored_slice_tags(feature_id: str, repo_root: Path) -> frozenset[str]:
-    """Every ``@slice-NN`` tag appearing in an authored AT module for the feature."""
+    """Every ``@slice-NN`` tag appearing in an authored AT module for the feature.
+
+    AT-kind agnostic (agnostic-at-discovery-ssot-repair, gap 1): a slice
+    backed EXCLUSIVELY by a pytest AT (no ``.feature`` file anywhere) must not
+    be reported unbacked. Composes the SAME two resolvers
+    ``slice_at_completeness.feature_files_for_slice`` already unions with the
+    Gherkin path -- ``feature_tagged_test_files`` (the ``@feature-{id}``
+    head-tag scan) + ``resolve_test_file_attribution`` (the ``@slice-NN``
+    sub-tag parse) -- filtered to pytest-collectible filenames so a doc/ADR
+    that merely mentions the tag convention is never counted (the
+    F-FEATURE-END-COMPLETENESS-ORACLE-PYTEST-BLIND AT-D1 guard, reused via
+    ``is_pytest_collectible``). No new discovery mechanism invented.
+    """
     tags: set[str] = set()
     for path in feature_tag_files(repo_root, feature_id):
         tags.update(
             _SLICE_TAG.findall(path.read_text(encoding="utf-8", errors="replace"))
         )
+    for test_path in feature_tagged_test_files(repo_root, feature_id):
+        if not is_pytest_collectible(test_path):
+            continue
+        slice_id = resolve_test_file_attribution(test_path).slice_id
+        if slice_id is not None:
+            tags.add(slice_id)
     return frozenset(tags)
 
 
@@ -478,7 +503,8 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="The feature id whose DELIVER-entry contract is checked.",
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo-root",
         required=True,
         type=Path,

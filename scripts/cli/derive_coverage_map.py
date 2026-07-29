@@ -126,6 +126,10 @@ def _scan_covers_tags(feature_root: Path) -> tuple[set[str], list[str]]:
     """
     covered: set[str] = set()
     malformed: list[str] = []
+    # gherkin-scope: `@covers:` (colon syntax, `_COVERS_TAG_PATTERN`) is a
+    # Gherkin tag-line convention with no pytest-side parser anywhere in this
+    # repo -- distinct vocabulary from the dash-syntax `@covers-R<n>`
+    # (`COVERS_TAG_RE`), which IS suffix-agnostic (verify_spec_coverage.py).
     for feature_file in sorted(feature_root.rglob("*.feature")):
         lines = feature_file.read_text(encoding="utf-8").splitlines()
         for index, line in enumerate(lines):

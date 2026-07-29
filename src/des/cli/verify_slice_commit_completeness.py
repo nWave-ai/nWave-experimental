@@ -76,6 +76,7 @@ from des.application.slice_at_completeness import (
     files_in_commit,
     missing_at_files,
 )
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import (
     _feature_tag_files,
     _lane_profile_for_slice,
@@ -248,8 +249,8 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="des verify-slice-commit",
         description="Verify a slice commit carries the slice's .feature AT files.",
     )
-    parser.add_argument(
-        "--repo", required=True, help="Path to the git repository to inspect."
+    add_repo_root_argument(
+        parser, "--repo", required=True, help="Path to the git repository to inspect."
     )
     parser.add_argument(
         "--commit",
@@ -963,6 +964,7 @@ def _append_slice_commit_verified(
     attested_via: str | None = None,
     entering_slice_id: str | None = None,
     entering_regression_test_file: str | None = None,
+    commit_sha: str | None = None,
 ) -> None:
     """Record one `SliceCommitVerified` event per verified slice (DDD-3).
 
@@ -993,6 +995,12 @@ def _append_slice_commit_verified(
     field. This is the STORED value a later slice's commit re-check reads
     (``_declared_regression_test_file``) instead of re-guessing a naming-
     convention glob against a possibly non-convention-named file.
+
+    ``commit_sha`` (fix-slice-seal-carries-commit-sha): the real git sha of
+    the sealed commit this batch of ``SliceCommitVerified`` records attests,
+    threaded through to every ``slice_id`` in ``slice_ids`` -- so a later
+    check can join a seal to the commit it attests. Absent/None leaves the
+    record byte-unchanged (additive/optional field).
     """
     ledger = AtCompletionLedger(feature_id, repo)
     for slice_id in slice_ids:
@@ -1004,6 +1012,7 @@ def _append_slice_commit_verified(
             slice_id,
             attested_via=attested_via,
             regression_test_file=regression_test_file,
+            commit_sha=commit_sha,
         )
 
 
@@ -1801,6 +1810,7 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
         attested_via=verified_context.attested_via,
         entering_slice_id=verified_context.entering_slice_id,
         entering_regression_test_file=verified_context.entering_regression_test_file,
+        commit_sha=verified_context.commit_sha,
     )
     if verified_context.deferred_examine_slices:
         _append_examine_deferred_to_feature_end(

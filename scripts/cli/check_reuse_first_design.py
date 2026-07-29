@@ -5,9 +5,12 @@ F-DESIGN-REUSE-FIRST-GATE-CLI (DDD-1..DDD-11). Sibling spine-gate of
 has no DES-runtime coupling (DDD-3 nwave-dev hooks-only).
 
 The gate asserts that every NEW component introduced by the feature's real
-commit range is justified in the feature-delta's ``## Reuse Analysis`` (or
-``## Wave: DESIGN / [REF] Reuse Analysis``) section. Two detection units
-(DDD-8 path-kind dispatch) contribute to the NEW-component UNION (DDD-11):
+commit range is justified in the feature-delta's bare canonical
+``## Reuse Analysis`` section (DD-7: recognition routes through
+``des.cli.validate_feature_delta.is_reuse_analysis_heading``, the single
+unified predicate -- the Wave-form ``## Wave: DESIGN / [REF] Reuse
+Analysis`` heading is not recognised). Two detection units (DDD-8
+path-kind dispatch) contribute to the NEW-component UNION (DDD-11):
 
 * **class-components** — added files under ``--scoped-path`` (default ``src``)
   are grepped for ``^class <Name>(`` declarations; each declared name is a NEW
@@ -36,7 +39,9 @@ LENIENT justified-match (DDD-6): justification inspects the **Existing
 Component** column (column 1) of any GFM table row of any matching Reuse
 Analysis section. Column-1-only inspection means a row whose Justification cell
 mentions a NEW component in a negation (e.g. "this row does not mention
-OrphanService") cannot vacuously justify it.
+OrphanService") cannot vacuously justify it. (DDD-6's leniency is about the
+Justification-column scope, not the heading-recognition grammar -- heading
+recognition itself is EXACT per DD-7.)
 """
 
 from __future__ import annotations
@@ -52,7 +57,7 @@ from des.adapters.driven.git.git_subprocess import (
     resolve_feature_genesis_base_ref,
 )
 from des.cli.human_surface import Verdict, print_human_summary
-from des.cli.validate_feature_delta import REUSE_ANALYSIS_HEADING
+from des.cli.validate_feature_delta import is_reuse_analysis_heading, next_h2_boundary
 
 
 _EXIT_PASS = 0
@@ -76,35 +81,28 @@ _DEFAULT_METHODOLOGY_PATHS = ("nWave/data", "nWave/skills", "scripts/cli")
 _CLASS_DECLARATION_RE = re.compile(r"^class\s+(?P<name>\w+)\s*\(", re.MULTILINE)
 
 
-# The lenient superset matcher (DDD-6) DERIVES its core text from the
-# canonical `des.cli.validate_feature_delta.REUSE_ANALYSIS_HEADING` constant
-# -- never an independent hardcoded literal (FR-11 root fix: the SSOT drift
-# a duplicated grammar concept caused). Matches a Markdown level-2 heading
-# whose text CONTAINS the canonical core -- either the bare canonical
-# ``## Reuse Analysis`` or the carpaccio variant
-# ``## Wave: DESIGN / [REF] Reuse Analysis``.
-_REUSE_ANALYSIS_HEADING_CORE = REUSE_ANALYSIS_HEADING.removeprefix("##").strip()
-_REUSE_ANALYSIS_HEADING_RE = re.compile(
-    rf"^##\s+(?:.*\b{re.escape(_REUSE_ANALYSIS_HEADING_CORE)}\b.*)$",
-    re.MULTILINE,
-)
-
-
 def _extract_reuse_analysis_sections(feature_delta_text: str) -> list[str]:
     """Return every Reuse Analysis section body found in the feature-delta.
 
     Each section runs from its ``##`` heading line up to (exclusive) the next
-    ``##`` heading or end-of-document. The LENIENT match (DDD-6) only needs
-    the section *bytes* to grep for NEW class names.
+    ``##`` heading or end-of-document. Heading RECOGNITION routes through the
+    unified ``is_reuse_analysis_heading`` predicate (DD-7) -- EXACT,
+    whitespace-tolerant, bare ``## Reuse Analysis`` only. Section-BOUNDARY
+    scanning routes through the sibling unified ``next_h2_boundary`` (D31b) --
+    this module no longer carries its own independent lenient CONTAINS regex
+    nor its own independent boundary scan, so it agrees with
+    ``validate_feature_delta`` on section presence AND section extent for the
+    SAME document (the Wave-form heading ``## Wave: DESIGN / [REF] Reuse
+    Analysis`` is no longer treated as a Reuse Analysis section here).
     """
-    headings = list(_REUSE_ANALYSIS_HEADING_RE.finditer(feature_delta_text))
-    next_section_re = re.compile(r"^##\s", re.MULTILINE)
     sections: list[str] = []
-    for heading_match in headings:
-        section_start = heading_match.start()
-        next_section = next_section_re.search(feature_delta_text, heading_match.end())
-        section_end = next_section.start() if next_section else len(feature_delta_text)
-        sections.append(feature_delta_text[section_start:section_end])
+    offset = 0
+    for line in feature_delta_text.splitlines(keepends=True):
+        if is_reuse_analysis_heading(line.rstrip()):
+            section_start = offset
+            section_end = next_h2_boundary(feature_delta_text, offset + len(line))
+            sections.append(feature_delta_text[section_start:section_end])
+        offset += len(line)
     return sections
 
 

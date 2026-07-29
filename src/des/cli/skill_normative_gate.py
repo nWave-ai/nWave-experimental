@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 
 from des.adapters.driven.skill_corpus_reader import SkillCorpusReader
 from des.application.skill_normative_gate_service import SkillNormativeGateService
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.domain.gate_outcome import _EXIT_BY_VERDICT, GateVerdict
 
 
@@ -53,7 +54,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Assert each registered clause marker is present in its skill.",
     )
     parser.add_argument("--manifest", type=Path, default=_DEFAULT_MANIFEST)
-    parser.add_argument("--root", type=Path, default=Path.cwd())
+    add_repo_root_argument(parser, "--root", type=Path, default=Path.cwd())
     return parser
 
 

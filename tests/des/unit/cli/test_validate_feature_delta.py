@@ -24,6 +24,7 @@ from des.cli.validate_feature_delta import (
     VERDICT_INDETERMINATE,
     Offender,
     ValidationResult,
+    next_h2_boundary,
     validate_feature_delta,
     validate_feature_delta_content,
 )
@@ -1004,3 +1005,39 @@ class TestSlicePlanDependenciesArity:
             ("slice-01", ()),
             ("slice-02", ("slice-01",)),
         )
+
+
+# ---------------------------------------------------------------------------
+# Pure function: next_h2_boundary (D31b -- the shared section-boundary SSOT)
+# ---------------------------------------------------------------------------
+
+
+class TestNextH2Boundary:
+    """`next_h2_boundary` is the ONE section-boundary scan in the tree, now
+    shared by `check_reuse_first_design.py` and
+    `check_design_dimension_coverage.py` (previously two independent copies).
+
+    A mid-document boundary (a `##` line following the one the caller is
+    scanning past) is the case a mutant that always returns `len(text)` slips
+    past IF the only fixtures ever place the target section last in the
+    document -- both gates' existing walking-skeleton suites do exactly that,
+    so this class is the regression net that would have caught it (proved by
+    planting that exact mutant and watching `test_a_boundary_mid_document_...`
+    go red before restoring, per the D31b mikado node's mutation-proof rule).
+    """
+
+    def test_a_boundary_mid_document_stops_before_the_next_h2_heading(self) -> None:
+        text = "## First\nbody line\n## Second\nother body\n"
+        # start = end of "## First\n" -> the next "## " line is "## Second".
+        start = text.index("body line")
+        assert next_h2_boundary(text, start) == text.index("## Second")
+
+    def test_no_further_h2_heading_runs_to_end_of_document(self) -> None:
+        text = "## Only\nbody line with no further heading\n"
+        start = text.index("body line")
+        assert next_h2_boundary(text, start) == len(text)
+
+    def test_a_third_level_heading_does_not_count_as_a_boundary(self) -> None:
+        text = "## First\n### Not a boundary\nstill inside First\n## Second\n"
+        start = text.index("### Not a boundary")
+        assert next_h2_boundary(text, start) == text.index("## Second")

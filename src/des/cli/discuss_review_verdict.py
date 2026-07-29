@@ -5,10 +5,11 @@ RECORDS the outcome as a ``DiscussReviewVerdict`` record on the per-feature
 AT-completion ledger. The DISCUSS gate-OUT consumer reads it back -- the agent
 NEVER hands the gate a verdict, it only triggers the RECORDING (§22.7).
 
-O-4 (intentional + isolated divergence from ``at_review_verdict``): this
-producer writes a record for BOTH ``approved`` AND ``needs-revision``.
-``at_review_verdict.record_review_outcome`` (which skips NEEDS_REVISION for its
-loop-back) is NOT affected.
+O-4: this producer writes a record for BOTH ``approved`` AND ``needs-revision``
+-- ``at_review_verdict.record_review_outcome`` now does the same (DD-1,
+commit 0303ecea5; before that fix it skipped NEEDS_REVISION for its
+loop-back). The two producers are independent code paths, not affected by
+each other's changes.
 
 The recording itself is the shared ``_wave_review_cli.producer_main``; this
 module is the DISCUSS spec bound to it.

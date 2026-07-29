@@ -18,11 +18,13 @@ Features removed (no longer needed):
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from des.domain.audit_log_path_resolver import AuditLogPathResolver
 from des.domain.nwave_dir_gitignore import ensure_nwave_gitignore
+from des.domain.run_context import resolve_run_context
 from des.ports.driven_ports.audit_log_writer import AuditEvent, AuditLogWriter
 
 
@@ -86,6 +88,14 @@ class JsonlAuditLogWriter(AuditLogWriter):
 
         # Merge additional event-specific data
         entry.update(event.data)
+
+        # Stamp the DECLARED run context last, so an event payload cannot
+        # relabel where the event was born. Always present -- an undeclared
+        # context serializes as the explicit `unknown` state rather than an
+        # absent field, otherwise a reader cannot tell "no context declared"
+        # from "written before this field existed", and every count that
+        # separates real firings from test-manufactured ones stays wrong.
+        entry["run_context"] = resolve_run_context(os.environ)
 
         # Serialize to compact JSONL
         json_line = json.dumps(entry, separators=(",", ":"), sort_keys=True)

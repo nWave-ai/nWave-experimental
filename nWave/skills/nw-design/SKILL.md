@@ -61,9 +61,33 @@ parsers correctly classify that shape as missing.
 - Driven ports + adapters — outbound side-effects with adapter mapping **and a Runtime Contract Matrix**: declared argument/receipt/authority type → exact invoked method → concrete runtime argument/receipt → boundary AT
 - Technology choices — pinned languages/frameworks/runtime versions
 - Decisions table — DDD-N row per locked decision (no rationale prose)
+- ADR Refs — `## Wave: DESIGN / [REF] ADR Refs`, a RefList of `ADR-<PREFIX>-<NNN>` ids for every decision promoted to a standalone ADR (see Decision-once below); `des feature-delta-doctor` dereferences each id against the 4 declared ADR roots and names any that is dangling or could-not-verify — never silently accepted
 - Reuse Analysis table — every overlapping component classified EXTEND or CREATE_NEW
 - Prefactoring Assessment — a `@prefactoring` slice, or an explicit justified NONE (never silently absent)
 - Open questions — items deliberately deferred to DISTILL/DELIVER
+
+### Decision-once — point, don't copy
+
+A decision lives in exactly ONE place; every other place that needs it points, it does not
+re-narrate. This is not a style preference — duplicated rationale is what turns a one-line
+review correction into an N-file edit (one edit per copy) and is the recurring source of
+DESIGN sections silently drifting apart from each other inside the same delta.
+
+- **Within this delta**: give the decision a `DD-N` row in the Decisions table (Decision +
+  one-line Rationale, no prose duplication). Every other section that touches the same
+  decision — Reuse Analysis rows, Contract/Architecture Tests, Application Architecture prose
+  — cites it (`per DD-N`) instead of restating the rationale.
+- **Across artifacts**: when a decision is durable or spans features (the kind that would earn
+  its own ADR), write it ONCE as `docs/product/architecture/ADR-*.md` (or the feature-local
+  `docs/feature/{id}/design/adrs/` for a feature-scoped one), list its id under ADR Refs above,
+  and cite the id at every point elsewhere the decision is relevant — do not paste the ADR's
+  rationale into feature-delta.md prose a second time.
+- **A pointer must resolve, or say so LOUD** (GDP-6): an id cited nowhere else is a broken
+  reference, not a saved edit. `des feature-delta-doctor` reports every `adr-refs` id as
+  PRESENT, dangling, or could-not-verify — run it before handoff; a dangling id is a defect in
+  the delta, not something DISTILL should discover downstream.
+- This is forward-only: it governs how a NEW feature-delta is authored. It does not require
+  retrofitting decisions already duplicated in already-delivered features.
 
 ### Tier-2 EXPANSION CATALOG — lazy, on-demand (per D10)
 
@@ -86,7 +110,7 @@ Call `resolve_density(global_config)` from `scripts/shared/density_config.py` af
 
 ## Telemetry (per D4 + DDD-6)
 
-Every expansion choice emits a `DocumentationDensityEvent` (dataclass at `src/des/domain/telemetry/documentation_density_event.py`) via `event.to_audit_event()` → `JsonlAuditLogWriter().log_event(...)`. Schema fields per D4: `feature_id`, `wave`, `expansion_id`, `choice`, `timestamp`. For this wave the schema declares `"wave": "DESIGN"`. Use helper `scripts/shared/telemetry.py:write_density_event(...)` — do NOT write JSONL directly.
+Every expansion choice emits a `DocumentationDensityEvent` (dataclass at `src/des/domain/telemetry/documentation_density_event.py`) via `event.to_audit_event()` → `JsonlAuditLogWriter().log_event(...)`. Schema fields per D4: `feature_id`, `wave`, `expansion_id`, `choice`, `timestamp`. For this wave the schema declares `"wave": "DESIGN"`. Use helper `scripts/shared/telemetry.py:write_density_event(...)` — do NOT write JSONL directly. **NOT YET WIRED**: `scripts/shared/telemetry.py` does not exist yet and `DocumentationDensityEvent(` has zero constructor call sites in `src/des` — until this lands, skip the emission (the [WHY]/[HOW] section append is unaffected); do not hand-roll a substitute JSONL write.
 
 Wave-specific signal: DEVOPS/DISTILL consuming a lean DESIGN feature-delta — downstream `--expand` requests for trade-off or evolution scenarios indicate the `[REF]` baseline was insufficient. Full emission rules: `nWave/skills/nw-density-resolution-contract/SKILL.md`.
 
@@ -123,6 +147,38 @@ Rules:
   population behind a count, assert conservation across a partition, name the discriminator that
   tells looked-and-absent from never-looked. Write the implied population/law/discriminator into
   the row's Justification so the ATD inherits it (SSOT: Closure obligations, `nw-test-design-mandates`).
+- **Blast radius includes `tests/` as a FIRST-CLASS surface** (2026-07-28, two independent lanes
+  converged on this gap in one night). When a decision NARROWS or CHANGES an existing semantics,
+  the caller search MUST cover `tests/`, not only production callers. A test that pins the OLD
+  behaviour is not collateral — it is part of the change, and updating it is intrinsic to the fix.
+  Grep the touched symbols across `tests/` and name every test that will flip verdict, in the
+  row's Justification.
+  **Then carry that list into the Slice Plan's `Owns`.** `Owns` naming only production files makes
+  the slice's own ownership declaration FALSE BY CONSTRUCTION whenever behaviour changes: the plan
+  says "disjoint — parallel-safe" while the slice genuinely cannot reach green inside those files.
+  Measured cost of omitting this: two lanes blocked mid-GREEN in one night, each needing an
+  out-of-band ownership extension before it could close.
+- **The third surface: ORDER OF REFUSALS.** Searching `tests/` for what ASSERTS the changed
+  semantics is still not enough. A change that moves, widens, or un-gates a guard reorders the
+  diagnostics of UNRELATED axes: a test that used to reach the check it was written for now
+  meets the relocated guard first, and fails having received the wrong refusal. Such a test
+  names none of the touched symbols — it passes THROUGH the point where the order changed, so
+  no grep finds it. When a decision changes WHICH refusal fires FIRST (not only what the code
+  computes), the blast radius must ask "what else flows through this decision point?", and the
+  honest answer usually costs a run, not a search.
+  Corollary worth stating because it saves the argument later: a guard that MASKS another
+  axis's diagnostic is wrong on its own merits, independent of the feature that exposed it —
+  fix the order, do not paper over the symptom in the tests that noticed.
+  Measured 2026-07-28: a lane's PRESUMED impact list was 2 files, the MEASURED one was 5, and
+  a third of the reds belonged to this surface — invisible to both other surfaces.
+- **Name WHO updates them, not only WHICH.** Listing the tests a behaviour change invalidates is
+  half the job; the plan must also route them. The crafter CANNOT do it — rewriting what a test
+  asserts is test authorship, the exclusive territory of `nw-acceptance-designer`, and a crafter
+  asked to do it will correctly refuse mid-slice. Nor can a peer grant that scope: an
+  authorization relayed sideways is not an authorization. So a behaviour-changing slice needs a
+  DISTILL dispatch for its stale tests, planned from the start — not discovered at GREEN.
+  Measured 2026-07-28: routing that work to the crafter cost four round-trips on a slice whose
+  production code had been ready for an hour.
 
 ## Prefactoring Assessment (mandatory DESIGN output — the sibling of Reuse Analysis)
 
@@ -358,35 +414,11 @@ Context files: see `nw-design-prior-wave-reading` (Prior Wave Consultation) + pr
 
 ## Wave Decisions Summary
 
-Before completing DESIGN, produce `docs/feature/{feature-id}/design/wave-decisions.md`:
-
-```markdown
-# DESIGN Decisions — {feature-id}
-
-## Key Decisions
-- [D1] {decision}: {rationale} (see: {source-file})
-
-## Architecture Summary
-- Pattern: {e.g., modular monolith with ports-and-adapters}
-- Paradigm: {OOP|FP}
-- Key components: {list top-level components}
-
-## Reuse Analysis
-| Existing Component | File | Overlap | Decision | Justification |
-|-------------------|------|---------|----------|---------------|
-| {component} | {path} | {what overlaps} | EXTEND/CREATE_NEW | {evidence} |
-
-## Technology Stack
-- {language/framework}: {rationale}
-
-## Constraints Established
-- {architectural constraint}
-
-## Upstream Changes
-- {any DISCUSS assumptions changed, with rationale}
-```
-
-This summary enables DEVOPS and DISTILL to quickly assess architecture decisions without reading all DESIGN files.
+There is no separate `design/wave-decisions.md` file (that shape is a legacy multi-file
+output — `scripts/validation/validate_feature_layout.py` flags any loose markdown under
+`design/` as an offender, canonical alternative "merge into feature-delta.md"). The Decisions
+table + ADR Refs already emitted under Tier-1 above (per Decision-once) ARE the summary DEVOPS
+and DISTILL read — a second file would be exactly the duplication that section forbids.
 
 ## Outputs
 

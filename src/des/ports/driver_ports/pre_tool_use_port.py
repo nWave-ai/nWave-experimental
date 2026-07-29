@@ -43,17 +43,25 @@ class HookDecision:
         reason: Block reason (None when allowed)
         exit_code: 0=allow, 2=block
         recovery_suggestions: Actionable steps to fix block (empty when allowed)
+        warning: Non-blocking advisory to surface LOUD on an allow decision
+            (GDP-6 -- degrade-LOUD, never silent-wrong). ``None`` on every
+            ordinary allow (byte-identical to before this field existed); set
+            ONLY when the gate consciously chose not to veto something it
+            noticed (e.g. an INFERRED wave floor past its own TTL). The
+            adapter renders it via ``permissionDecisionReason`` on the SAME
+            "allow" decision -- it never changes ``exit_code``.
     """
 
     action: str  # "allow" | "block"
     reason: str | None = None
     exit_code: int = 0
     recovery_suggestions: list[str] = field(default_factory=list)
+    warning: str | None = None
 
     @staticmethod
-    def allow() -> HookDecision:
-        """Create an allow decision."""
-        return HookDecision(action="allow", exit_code=0)
+    def allow(warning: str | None = None) -> HookDecision:
+        """Create an allow decision, optionally carrying a LOUD advisory."""
+        return HookDecision(action="allow", exit_code=0, warning=warning)
 
     @staticmethod
     def block(

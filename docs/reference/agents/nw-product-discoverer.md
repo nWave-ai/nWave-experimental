@@ -3,7 +3,7 @@
 Conducts evidence-based product discovery through customer interviews, assumption testing, and opportunity validation. Use when validating problems exist, prioritizing opportunities, or confirming market viability before writing requirements.
 
 **Wave:** Other
-**Model:** inherit
+**Model:** sonnet
 **Max turns:** 45
 **Tools:** Read, Write, Edit, Glob, Grep, Task
 

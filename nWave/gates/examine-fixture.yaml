@@ -15,16 +15,6 @@ module: des.cli.examine_fixture
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --out
-    required: true
-    type: path
-    help: "Directory to build the fixture repo at."
-  - name: --feature-id
-    required: false
-    type: string
-    help: "The feature id the fixture is built for (default: a generic id)."
-
 log_events:
   - ExamineFixtureBuilt
 

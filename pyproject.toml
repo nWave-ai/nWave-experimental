@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.30.1", "pip>=24"]
+requires = ["hatchling>=1.31.0", "pip>=24"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
@@ -30,7 +30,7 @@ path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave"
-version = "4.0.0+atddpure.a6eb98e2a"
+version = "4.0.0+atddpure.418ece0db"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -67,15 +67,15 @@ classifiers = [
 
 dependencies = [
     "rich>=13.7.0",
-    "typer>=0.26.8",
+    "typer>=0.27.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.14.2",
     "httpx>=0.27.0",
-    "platformdirs>=4.2.0",
+    "platformdirs>=4.11.0",
     "pyyaml>=6.0",
     "packaging>=21.0",
     "tomli>=2.0.0; python_version < '3.11'",
-    "typing_extensions>=4.0",
+    "typing_extensions>=4.16.0",
     "jsonschema>=4.0.0"
 ]
 
@@ -110,18 +110,18 @@ dev = [
     "pytest-split>=0.11.0",
     "allure-pytest>=2.13.0",
     "respx>=0.20.0",
-    "hypothesis>=6.155.7",
+    "hypothesis>=6.163.0",
     # Mutation testing
     "cosmic-ray>=8.4.0",
     "mutmut>=3.6.0",
     # Linting & formatting
-    "mypy>=1.8.0",
-    "ruff==0.15.20",
+    "mypy>=2.3.0",
+    "ruff==0.15.22",
     "bandit[toml]>=1.9.4",
     "detect-secrets>=1.4.0",
     # Git & release
-    "pre-commit>=3.6.0",
-    "commitizen>=4.16.4",
+    "pre-commit>=4.6.1",
+    "commitizen>=4.16.5",
     # `gitlint-core` (not the `gitlint` meta-package) — the meta-package forces the
     # `trusted-deps` extra, which exact-pins `sh==1.14.3` (CVE-2026-54552 /
     # GHSA-q38v-wp89-2w55, incomplete privilege drop in `sh`'s `_uid` option).
@@ -135,21 +135,21 @@ dev = [
     "gitlint-core>=0.19.0",
     "sh>=2.2.4; sys_platform != 'win32'",
     # Task runner (replaces Pipfile [scripts]; run via `uv run poe <task>`)
-    "poethepoet>=0.47.0",
+    "poethepoet>=0.48.0",
     # Utilities
     "fpdf2>=2.7.0",
     "click>=8.0.0",
     "colorama>=0.4.0",
-    "tqdm>=4.68.3",
+    "tqdm>=4.70.0",
     # Token measurement (advisory, dev-only) — DDD-1
     "tiktoken>=0.7.0",
     # E2E container testing
-    "testcontainers>=4.0.0",
-    "docker>=7.0.0",
+    "testcontainers>=4.15.0",
+    "docker>=7.2.0",
     # JSON Schema validation (used by tests/outcomes + tests/feature_delta)
     "jsonschema>=4.0.0",
     # Packaging (python -m build / scripts/build_dist.py)
-    "build>=1.2.0",
+    "build>=1.5.1",
     # pip — the WS-floor installable build leg shells `python -m pip wheel`
     # (src/des/cli/walking_skeleton_gate.py). uv venvs OMIT pip by default
     # (unlike the prior pipenv venv), so it MUST be declared or every
@@ -243,6 +243,7 @@ markers = [
     "negative_at: Negative acceptance test -- asserts the WRONG outcome is NOT produced (GS-8). Detected by `des verify-negative-at` (explicit alternative to the _not_/_never_/_rejects_/_refuses_/_fails_ name convention).",
     "polyglot_smoke: Polyglot pilot smoke tests (per-pilot toolchain required: Node/npm for TS, dotnet for C#, cargo for Rust). Skipped automatically when toolchain absent.",
     "probe_test: Tests that exercise substrate probe wiring (opt-out from _silence_probe autouse)",
+    "retired: Scenario witnessed a mechanism that was deliberately retired (not merely unbuilt) -- see the .feature file's comment block for the removal rationale. Distinct from `skip`/`pending` (unfinished RED scaffold).",
     "slice_01: Slice-01 traceability marker applied as a Python marker (pytest.mark.slice_01).",
     "slow: Tests that take longer to run",
     "unit: Unit tests (fast, isolated)",

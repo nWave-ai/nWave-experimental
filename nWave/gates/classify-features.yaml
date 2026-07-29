@@ -11,12 +11,6 @@ module: des.cli.classify_features
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --repo-root
-    required: false
-    type: path
-    help: "Repo root containing docs/feature/."
-
 log_events:
   - FeaturesClassified
 

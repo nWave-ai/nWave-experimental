@@ -8,8 +8,13 @@ Contract (DESIGN / Fail-Mode D + Done-gate block): blocks "feature done"
 (exit 1) unless BOTH hold for the feature:
   (a) no `walking-skeleton-unverified` marker is present (an unparseable
       marker counts as present -> block, RM-3 ST-20), AND
-  (b) a positive `WalkingSkeletonTierVerified` ledger record exists (RM-3 --
-      a hand-`rm` of the marker satisfies (a) but not (b)).
+  (b) a positive `WalkingSkeletonTierVerified` ledger record exists, OR the
+      feature carries the `WalkingSkeletonNotApplicable` NA marker (RM-3 --
+      a hand-`rm` of the unverified marker satisfies (a) but not (b); a
+      legitimately-NA feature -- no `@walking-skeleton` AT, no delta-added
+      installable root -- never earns and never should earn a Verified
+      record, so its mechanical NA marker reconciles (b) instead;
+      fix-ws-done-gate-na-reconciliation slice-01).
 
 RM-4 (an unsettled `walking-skeleton-tier-debt` record blocking an
 OS-sensitive feature) is OUT of this slice -- a follow.
@@ -26,10 +31,12 @@ import sys
 from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import (
+    WALKING_SKELETON_NOT_APPLICABLE,
     WALKING_SKELETON_TIER_VERIFIED,
     AtCompletionLedger,
     LedgerIntegrityViolation,
 )
+from des.cli._repo_root_arg import add_repo_root_argument
 
 
 _MARKER_SUBDIR = Path(".nwave") / "markers" / "walking-skeleton-unverified"
@@ -55,7 +62,8 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="The feature id under the done-gate check.",
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo-root",
         default=".",
         help="The repository root holding the .nwave/ marker + ledger substrate.",
@@ -139,18 +147,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    if WALKING_SKELETON_TIER_VERIFIED not in recorded_events:
+    if (
+        WALKING_SKELETON_TIER_VERIFIED not in recorded_events
+        and WALKING_SKELETON_NOT_APPLICABLE not in recorded_events
+    ):
         _emit(
             "block",
             feature_id,
-            f"no WalkingSkeletonTierVerified record found for feature "
+            f"no WalkingSkeletonTierVerified record (nor a "
+            f"WalkingSkeletonNotApplicable NA marker) found for feature "
             f"'{feature_id}' in the AT-completion ledger (a missing record "
             "is not proof)",
             how=(
                 "run `des walking-skeleton-gate --feature-dir docs/feature/"
-                f"{feature_id}/ --repo-root {repo_root}` until it PASSes; a "
-                "green run appends the WalkingSkeletonTierVerified record "
-                "this gate requires."
+                f"{feature_id}/ --repo-root {repo_root}` until it PASSes or "
+                "mechanically decides NOT_APPLICABLE; either run appends the "
+                "record this gate requires."
             ),
         )
         return 1
@@ -159,7 +171,8 @@ def main(argv: list[str] | None = None) -> int:
         "proceed",
         feature_id,
         f"no unverified marker present and a WalkingSkeletonTierVerified "
-        f"record exists for feature '{feature_id}'",
+        f"record (or its WalkingSkeletonNotApplicable NA marker) exists for "
+        f"feature '{feature_id}'",
     )
     return 0
 

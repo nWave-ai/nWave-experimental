@@ -62,11 +62,12 @@ Feature: An installed operator records a verdict that clears the carpaccio gate
     Then the carpaccio gate clears the slice
 
   @slice-02 @driving_port @error @real-io @contract-shape:bounded-change @coupled
-  Scenario: A needs-revision review records no approval and the gate stays blocked
+  Scenario: A needs-revision review records a NEEDS_REVISION verdict and the gate stays blocked
     Given the operator points the recorder at the working repository explicitly
     When the operator records a needs-revision AT-review verdict from the installed instance
     Then the installed recorder completes the recording cleanly
-    And the working repository's ledger gains no AT-review verdict for the slice
+    And the working repository's ledger gains one AT-review verdict for the slice
+    And the recorded verdict is not an approval
     And the carpaccio gate refuses to clear the slice
 
   # PRR keystone witness (reviewer iteration 1 blocker): the recorder is run

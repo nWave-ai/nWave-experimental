@@ -186,22 +186,97 @@ def _has_step_without_commit_pass(events: list[dict[str, object]]) -> bool:
     return bool(all_steps - committed_steps)
 
 
+def ledger_path(feature_dir: Path) -> str:
+    """The attested ledger file this feature's state was read from, or `""`.
+
+    The manifest's provenance column: it names WHERE the spine state came
+    from, so an operator reading a classification can tell a ledger-attested
+    verdict from a directory-inferred one. Empty string means no ledger file
+    was found for this feature -- a fact about the evidence, never a state of
+    the feature.
+    """
+    resolved = _resolve_ledger_file(feature_dir)
+    return str(resolved) if resolved is not None else ""
+
+
 def _is_atdd_pure(feature_dir: Path) -> bool:
     """Whether a roadmap-free feature is already on the atdd_pure spine.
 
-    True when an atdd_pure telemetry file exists OR a DISCUSS Slice Plan
-    heading is present. The roadmap-free precondition is established by the
-    caller (`_classify_without_roadmap`) -- the S21 guard.
+    True when the feature's ledger attests at least one recorded event OR a
+    DISCUSS Slice Plan heading is present. The roadmap-free precondition is
+    established by the caller (`_classify_without_roadmap`) -- the S21 guard.
     """
     return _has_atdd_pure_telemetry(feature_dir) or _has_slice_plan_heading(feature_dir)
 
 
+def _resolve_ledger_file(feature_dir: Path) -> Path | None:
+    """The feature's ledger file, located by ANCHOR rather than by `..` hops.
+
+    The atdd_pure ledger lives at the REPO ROOT
+    (`{repo}/.nwave/telemetry/atdd-pure/{feature_id}.jsonl`), not inside the
+    feature directory. A prior version of this probe looked for the nested
+    path `{feature_dir}/.nwave/telemetry/atdd-pure/*.jsonl`; measured on the
+    live tree 2026-07-28 that path existed for 0 of 376 feature directories
+    while 240 carried a repo-root ledger, so the branch never once fired and
+    the classification silently rested on the heading probe alone (Mikado
+    D52).
+
+    Anchoring on the first ancestor that actually carries the ledger file --
+    rather than a fixed `parents[2]` -- keeps the probe correct for any
+    features-root layout and for per-worktree ledgers, and needs no new CLI
+    flag, so every existing caller inherits the fix. Returns `None` when no
+    ancestor carries a ledger file for this feature: absence of evidence, not
+    evidence of a state.
+    """
+    feature_id = feature_dir.name
+    for ancestor in feature_dir.parents:
+        candidate = (
+            ancestor / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
+        )
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _has_atdd_pure_telemetry(feature_dir: Path) -> bool:
-    """Whether a `.nwave/telemetry/atdd-pure/{id}.jsonl` file exists."""
-    telemetry_dir = feature_dir / ".nwave" / "telemetry" / "atdd-pure"
-    if not telemetry_dir.is_dir():
+    """Whether the feature's ledger ATTESTS at least one recorded event.
+
+    Keyed on the presence of an attested record, never on a single event
+    name: a bare `FeatureEnd` event has 0 records and 0 producers in the tree
+    (measured 2026-07-28 over 3,400 records), so a predicate spelled that way
+    would answer False for every feature that ever ran.
+
+    Three-valued by construction. No ledger file -> `False`, and the
+    directory probes decide alone. A ledger carrying >=1 record that names an
+    event -> `True`. A ledger that exists but attests nothing readable --
+    empty, unparsable, or records that carry no `event` -- raises
+    `ValueError`, which `classify` maps to `classic-needs-manual-review`.
+    That third state is never collapsed into `False`: a ledger we could not
+    read is a different fact from a ledger that is not there.
+    """
+    ledger_file = _resolve_ledger_file(feature_dir)
+    if ledger_file is None:
         return False
-    return any(telemetry_dir.glob("*.jsonl"))
+    if not _attests_an_event(ledger_file):
+        raise ValueError(
+            f"ledger attests no event for '{feature_dir.name}': {ledger_file}"
+        )
+    return True
+
+
+def _attests_an_event(ledger_file: Path) -> bool:
+    """Whether any line of the ledger parses and names a non-empty `event`.
+
+    A malformed line raises `json.JSONDecodeError` (a `ValueError`) rather
+    than being skipped -- a ledger we cannot fully read must reach the
+    indeterminate state, not be silently under-counted into a `False`.
+    """
+    return any(
+        isinstance(record, dict) and bool(str(record.get("event") or ""))
+        for line in ledger_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+        for record in (json.loads(line),)
+    )
 
 
 def _has_slice_plan_heading(feature_dir: Path) -> bool:
@@ -225,4 +300,8 @@ def _has_slice_plan_heading(feature_dir: Path) -> bool:
 
 def _has_acceptance_tests(feature_dir: Path) -> bool:
     """Whether the feature dir carries at least one `.feature` acceptance test."""
+    # gherkin-scope: this classifies the LEGACY `classic-distill-done` spine
+    # state (a roadmap-less feature that already authored ATs) -- classic-
+    # spine ATs are Gherkin by definition (atdd_pure is the pytest-agnostic
+    # spine, classified separately by _is_atdd_pure above).
     return any(feature_dir.rglob("*.feature"))

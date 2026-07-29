@@ -1,0 +1,24 @@
+# Gate-contract: runner-probe (QW5, mikado.md:47)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=runner-probe.
+
+gate_id: runner-probe
+responsibility: |
+  Probe which declared runners (pytest, cargo, go, gradle, dotnet, maven, vitest) are actually invocable on this live environment, and report supported, unsupported, or indeterminate per runner -- never inferred from installed documentation or static references.
+module: des.cli.runner_probe
+entry_function: main
+language_neutral_contract: true
+
+log_events: []
+
+failure_modes: []
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

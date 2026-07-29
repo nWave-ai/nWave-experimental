@@ -77,6 +77,6 @@ class DesModuleCheck:
             ),
             remediation=(
                 "Re-run `nwave-ai install` to reinstall the DES runtime, "
-                "or check that ~/.claude/lib/python/des/ exists."
+                f"or check that {lib_python / 'des'} exists."
             ),
         )

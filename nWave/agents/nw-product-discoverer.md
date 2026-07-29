@@ -1,7 +1,7 @@
 ---
 name: nw-product-discoverer
 description: Conducts evidence-based product discovery through customer interviews, assumption testing, and opportunity validation. Use when validating problems exist, prioritizing opportunities, or confirming market viability before writing requirements.
-model: inherit
+model: sonnet
 maxTurns: 45
 tools: Read, Write, Edit, Glob, Grep, Task
 skills:

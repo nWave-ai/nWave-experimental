@@ -1,7 +1,7 @@
 ---
 name: nw-platform-architect-reviewer
 description: Use for review and critique tasks - Platform design, CI/CD pipeline, infrastructure, observability, deployment readiness, and production handoff review specialist. Runs on Haiku for cost efficiency.
-model: haiku
+model: sonnet
 maxTurns: 25
 tools: Read, Glob, Grep, Task
 skills:
@@ -56,6 +56,7 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 2. **External Validity Check** — Verify deployment path complete (commit to production). Check observability coverage (SLOs, metrics, alerts). Validate rollback strategy documented. Confirm security gates integrated. Gate: all external validity criteria pass. On failure, stop and report blockers immediately.
 3. **Dimension Review** — Load: `~/.claude/skills/nw-par-critique-dimensions/SKILL.md`, `~/.claude/skills/nw-par-review-criteria/SKILL.md`. Review: pipeline|infrastructure|deployment|observability|security|DORA metrics|priority validation|handoff completeness|deployment readiness|traceability|functional integration. Categorize issues by severity. Gate: all dimensions reviewed.
 4. **Output Generation** — Load: `~/.claude/skills/nw-review-output-format/SKILL.md`. Generate structured YAML: external validity results|strengths|issues with severity|DORA assessment|priority validation|recommendations|approval status. Gate: review output complete with approval decision.
+5. **Record the Verdict** — Run `des record-devops-review --feature-id {feature-id} --verdict approved|needs-revision --reviewer-agent-id nw-platform-architect-reviewer`. Map `approval_status`: `approved` or `conditionally_approved` → `--verdict approved`; `rejected_pending_revisions` → `--verdict needs-revision`. The DEVOPS gate-out (`verify-devops-review`) reads back exactly this record — producing the YAML alone leaves it INDETERMINATE forever; recording is what makes the review count (§22.7 producer/consumer split — the reviewer never hands the gate a verdict directly, only triggers the recording). Gate: verdict recorded.
 
 ## Critical Rules
 
@@ -63,6 +64,7 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 2. Every finding includes severity|evidence location|impact|actionable recommendation.
 3. Generate only YAML review feedback. Additional documents require explicit user permission.
 4. Partial reviews (missing artifacts) clearly labeled with scope limitations.
+5. A review the reviewer did not record via `des record-devops-review` did not happen for gate purposes -- the DEVOPS gate-out reads the ledger, never the YAML output directly.
 
 ## Examples
 

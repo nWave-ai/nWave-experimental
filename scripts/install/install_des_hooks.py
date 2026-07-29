@@ -11,6 +11,7 @@ import json
 import sys
 from pathlib import Path
 
+from scripts.install.install_utils import PathUtils
 from scripts.shared.install_paths import is_durable_interpreter_path
 
 
@@ -54,10 +55,15 @@ class DESHookInstaller:
         Initialize installer.
 
         Args:
-            config_dir: Path to .claude directory (default: ~/.claude)
+            config_dir: Path to .claude directory (default: PathUtils.
+                get_claude_config_dir(), which honors CLAUDE_CONFIG_DIR --
+                the active profile, not a fixed ~/.claude -- so this
+                standalone entry point (`python -m scripts.install.
+                install_des_hooks --install`) writes to the same profile
+                as the rest of the installer on a multi-profile machine.
         """
         if config_dir is None:
-            config_dir = Path.home() / ".claude"
+            config_dir = PathUtils.get_claude_config_dir()
         self.config_dir = Path(config_dir)
         self.settings_file = self.config_dir / "settings.json"
 
@@ -86,7 +92,20 @@ class DESHookInstaller:
             self._add_des_hooks(config)
             self._save_config(config)
 
-            print("DES hooks installed successfully")
+            # GDP-6/GDP-8: a success message is a claim about disk state, not
+            # about _save_config() returning without raising -- reload from
+            # the file we just wrote and confirm the hooks are actually
+            # there before declaring victory (never silent-wrong).
+            written_config = self._load_config()
+            if not self._is_installed(written_config):
+                print(
+                    f"Installation failed: DES hooks not found in "
+                    f"{self.settings_file} after saving",
+                    file=sys.stderr,
+                )
+                return False
+
+            print(f"DES hooks installed successfully in {self.config_dir}")
             print("Restart Claude Code session to activate hooks")
             return True
 
@@ -382,7 +401,9 @@ def main():
         "--status", action="store_true", help="Check installation status"
     )
     parser.add_argument(
-        "--config-dir", type=Path, help="Path to .claude directory (default: ~/.claude)"
+        "--config-dir",
+        type=Path,
+        help="Path to .claude directory (default: $CLAUDE_CONFIG_DIR or ~/.claude)",
     )
 
     args = parser.parse_args()

@@ -29,12 +29,21 @@ same DESIGN-PINNED location the driven adapter reads (git-free, stdlib only).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from des.domain.repo_path_resolver import feature_delta_path
 
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+#: `ADR-<PREFIX>-<NNN>`-shaped id token, e.g. `ADR-DFR-001` / `adr-flow-006`.
+#: Case-insensitive: the repo carries both `ADR-DFR-001-*.md` (upper) and
+#: `adr-029-*.md` (lower) casing conventions (Technology Choices row 1).
+_ADR_ID_RE = re.compile(r"ADR-[A-Z0-9]+(?:-[A-Z0-9]+)*", re.IGNORECASE)
 
 
 #: Cause tokens carried on a gate's per-invariant record so a DOWNSTREAM
@@ -44,14 +53,6 @@ FEATURE_DELTA_ABSENT = "feature-delta-absent"
 FEATURE_DELTA_UNDECODABLE = "feature-delta-undecodable"
 #: The delta WAS read; an invariant then found its own section missing.
 FEATURE_DELTA_SECTION_MISSING = "feature-delta-section-missing"
-
-_FEATURE_REL_DIR = ("docs", "feature")
-_FEATURE_DELTA_FILE = "feature-delta.md"
-
-
-def feature_delta_path(repo_root: Path, feature_id: str) -> Path:
-    """The DESIGN-PINNED feature-delta location under ``repo_root``."""
-    return repo_root.joinpath(*_FEATURE_REL_DIR, feature_id, _FEATURE_DELTA_FILE)
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,96 @@ class FeatureDeltaRead:
     @property
     def is_present(self) -> bool:
         return self.content is not None
+
+
+@dataclass(frozen=True)
+class AdrRefDereference:
+    """The outcome of resolving one declared `adr-refs` id token (DD-8, D6).
+
+    Exactly two states: PRESENT (`resolved_path` names the real file) or
+    ABSENT (`resolved_path` is None). The 4th-state locus resolver
+    (`LOCUS_UNRESOLVED`) is explicitly OUT of scope for this feature
+    (feature-delta.md Section 11 row 1, RIDIMENSIONA).
+    """
+
+    adr_id: str
+    resolved_path: Path | None
+
+
+def extract_adr_ref_ids(section_body: str) -> tuple[str, ...]:
+    """Every `ADR-<PREFIX>-<NNN>`-shaped id token declared in `section_body`,
+    first-seen order, de-duplicated. Pure, never raises."""
+    seen: dict[str, None] = {}
+    for match in _ADR_ID_RE.finditer(section_body):
+        seen.setdefault(match.group(0), None)
+    return tuple(seen)
+
+
+def adr_ref_roots(repo_root: Path, feature_id: str) -> tuple[Path, ...]:
+    """The declared, closed, ordered ADR root tuple (Technology Choices row 2)."""
+    return (
+        repo_root / "docs" / "product" / "architecture",
+        repo_root / "docs" / "feature" / feature_id / "design" / "adrs",
+        repo_root / "docs" / "architecture" / "adrs",
+        repo_root / "docs" / "adrs",
+    )
+
+
+def any_adr_ref_root_exists(repo_root: Path) -> bool:
+    """Whether `repo_root` holds AT LEAST ONE of the 4 declared ADR root
+    directories -- checked WITHOUT a feature_id (the feature-specific root is
+    matched via a wildcard over `docs/feature/*/design/adrs`, since a
+    feature-agnostic caller -- the doctor's could-not-verify leg (DD-9) -- has
+    no single feature in scope). Used to distinguish "the tree itself cannot
+    be checked" from "this one id is dangling"; reporting zero gaps when NO
+    declared root exists would be a GDP-6 silent-wrong."""
+    if (repo_root / "docs" / "product" / "architecture").is_dir():
+        return True
+    if (repo_root / "docs" / "architecture" / "adrs").is_dir():
+        return True
+    if (repo_root / "docs" / "adrs").is_dir():
+        return True
+    feature_dir = repo_root / "docs" / "feature"
+    if feature_dir.is_dir():
+        for child in feature_dir.iterdir():
+            if (child / "design" / "adrs").is_dir():
+                return True
+    return False
+
+
+def _resolve_adr_id(adr_id: str, roots: tuple[Path, ...]) -> Path | None:
+    """Case-insensitive resolve of one ADR id against the declared roots,
+    first-match-wins in root order. `Path.glob` is case-SENSITIVE on Linux,
+    so matching is done by lower-casing both sides rather than globbing."""
+    needle = f"{adr_id.lower()}-"
+    for root in roots:
+        try:
+            if not root.is_dir():
+                continue
+            candidates = sorted(root.iterdir())
+        except OSError:
+            continue
+        for candidate in candidates:
+            if candidate.is_file() and candidate.name.lower().startswith(needle):
+                return candidate
+    return None
+
+
+def dereference_adr_refs(
+    section_body: str, *, repo_root: Path, feature_id: str
+) -> tuple[AdrRefDereference, ...]:
+    """Resolve every declared `adr-refs` id token in `section_body` against
+    the declared, closed, ordered ADR root tuple (DD-8, D6).
+
+    Pure, read-only, never raises -- a malformed token simply never matches
+    the id pattern and is not extracted at all. Matching is case-insensitive
+    on the id prefix against the 4 declared roots.
+    """
+    roots = adr_ref_roots(repo_root, feature_id)
+    return tuple(
+        AdrRefDereference(adr_id=adr_id, resolved_path=_resolve_adr_id(adr_id, roots))
+        for adr_id in extract_adr_ref_ids(section_body)
+    )
 
 
 def _absent_detail(path: Path, repo_root: Path) -> str:

@@ -63,6 +63,21 @@ VITEST_KNOWN_LOCATIONS: tuple[str, ...] = (
     "/usr/lib/node_modules/.bin",
 )
 
+# The Node/vitest-specific remediations passed to `resolve_tool` -- NOT the
+# shared cargo-flavoured default (SOSTITUZIONE fix: a Rust hint told a
+# TypeScript target to run `cargo install vitest`, which does not exist).
+# Public (not `_`-prefixed): reused by every caller sharing
+# ``VITEST_KNOWN_LOCATIONS`` (the e2e runner, the contract-gate adapter, and
+# the npm install/pack adapters resolving `npm` itself).
+VITEST_INSTALL_HINT = (
+    "install it via 'npm install' in the project (vitest is a devDependency) "
+    "or 'npm install -g vitest'"
+)
+NPM_INSTALL_HINT = (
+    "install Node.js (npm ships with it) via https://nodejs.org or your OS "
+    "package manager"
+)
+
 
 def run_vitest_scope(
     adapter: RunnerAdapter,
@@ -81,7 +96,12 @@ def run_vitest_scope(
     binary = scoped_node_ids[0] if scoped_node_ids else _VITEST_NAME
     subcommand = scoped_node_ids[1:]
 
-    resolution = resolve_tool(binary, VITEST_KNOWN_LOCATIONS, base_dir=target_root)
+    resolution = resolve_tool(
+        binary,
+        VITEST_KNOWN_LOCATIONS,
+        base_dir=target_root,
+        install_hint=VITEST_INSTALL_HINT,
+    )
     if resolution.path is None:
         raise RunnerAdapterUnavailable(adapter.name, reason=resolution.remediation)
 

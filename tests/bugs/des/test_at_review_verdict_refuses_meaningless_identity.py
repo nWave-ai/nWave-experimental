@@ -497,14 +497,24 @@ def test_real_reviewer_and_real_feature_slice_still_records_approved(
     )
 
 
-def test_real_reviewer_needs_revision_still_skips_ledger_write(
+def test_real_reviewer_needs_revision_stays_a_soft_outcome_not_a_hard_refusal(
     tmp_path: Path,
 ) -> None:
-    """A genuine reviewer id recording NEEDS_REVISION must still skip the
-    ledger write (existing, unaffected behaviour) -- exit 0, zero records.
-    Guards the fix does not accidentally start treating NEEDS_REVISION as a
-    refusal (a different, unrelated exit-code family) once identity
-    validation is added.
+    """A genuine reviewer id recording NEEDS_REVISION must stay a SOFT
+    outcome -- exit 0, the DEGRADED (not FAIL) human face -- never a hard
+    refusal in the ``GateError`` exit-code family (2). Guards the fix does
+    not accidentally start treating NEEDS_REVISION as a refusal (a
+    different, unrelated exit-code family) once identity validation is
+    added.
+
+    Contract updated by declared-facts-reachable-recorded slice-01 (DD-1
+    both-outcomes write): NEEDS_REVISION now writes exactly one ledger
+    record too (a rejection leaves a mechanically-readable trace instead of
+    collapsing into "never reviewed", F3) -- the OLD half of this test
+    (``records == []``) is now stale and is replaced below by asserting the
+    record IS written with ``verdict == "NEEDS_REVISION"``. The
+    soft-outcome property (exit 0, DEGRADED face, never FAIL) is unchanged
+    and is what this test still exists to guard.
     """
     repo = tmp_path / "repo"
     feature_id = "real-needs-revision-control"
@@ -532,6 +542,16 @@ def test_real_reviewer_needs_revision_still_skips_ledger_write(
         f"stdout={stdout!r} stderr={stderr!r}"
     )
     records = _records(repo, feature_id, _SLICE_ID)
-    assert records == [], (
-        f"NEEDS_REVISION must never write an ATReviewVerdict record -- got {records!r}"
+    assert len(records) == 1, (
+        "NEEDS_REVISION now writes exactly one ATReviewVerdict record "
+        f"(DD-1 both-outcomes write) -- got {records!r}"
+    )
+    assert records[0].get("verdict") == "NEEDS_REVISION", records[0]
+    assert "⚠️ DEGRADED" in stdout + stderr, (
+        "a NEEDS_REVISION verdict must print the DEGRADED face -- "
+        f"stdout={stdout!r} stderr={stderr!r}"
+    )
+    assert "❌ FAIL" not in stdout + stderr, (
+        "NEEDS_REVISION must never be mapped onto the hard-refusal FAIL "
+        f"face -- stdout={stdout!r} stderr={stderr!r}"
     )

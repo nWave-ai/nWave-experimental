@@ -36,6 +36,8 @@ def extract_token_usage_events(
     agent_name: str,
     feature_id: str | None = None,
     wave: str | None = None,
+    slice_id: str | None = None,
+    stage: str | None = None,
 ) -> list[AgentUsageObservedEvent]:
     """Extract per-message token-usage events from parsed transcript entries.
 
@@ -45,6 +47,10 @@ def extract_token_usage_events(
         agent_name: Claude Code sub-agent type (e.g., "researcher").
         feature_id: Optional feature identifier for traceability.
         wave: Optional wave name for traceability.
+        slice_id: Optional atdd_pure slice identifier (DD-5), threaded onto
+            every emitted event as-is (not read from the transcript entry).
+        stage: Optional wave/atdd_pure-phase name (DD-5), threaded onto every
+            emitted event as-is (not read from the transcript entry).
 
     Returns:
         One AgentUsageObservedEvent per assistant message with valid usage.
@@ -58,6 +64,8 @@ def extract_token_usage_events(
                 agent_name=agent_name,
                 feature_id=feature_id,
                 wave=wave,
+                slice_id=slice_id,
+                stage=stage,
             )
             for entry in transcript_entries
         )
@@ -71,6 +79,8 @@ def _maybe_event_from_entry(
     agent_name: str,
     feature_id: str | None,
     wave: str | None,
+    slice_id: str | None = None,
+    stage: str | None = None,
 ) -> AgentUsageObservedEvent | None:
     """Return an event for a valid assistant entry, otherwise None.
 
@@ -116,6 +126,12 @@ def _maybe_event_from_entry(
     if not isinstance(timestamp, str):
         timestamp = ""
 
+    # DD-5: requestId is a TOP-LEVEL transcript field (sibling of "type" and
+    # "message"), never nested inside message.usage. A missing or non-string
+    # value degrades to None -- never raises, never drops the observation.
+    raw_request_id = entry.get("requestId")
+    request_id = raw_request_id if isinstance(raw_request_id, str) else None
+
     return AgentUsageObservedEvent(
         agent_name=agent_name,
         model=model,
@@ -126,4 +142,7 @@ def _maybe_event_from_entry(
         output_tokens=output_tokens,
         feature_id=feature_id,
         wave=wave,
+        request_id=request_id,
+        slice_id=slice_id,
+        stage=stage,
     )

@@ -54,6 +54,11 @@ if TYPE_CHECKING:
 # The go binary name resolved at the head of the declared command.
 _GO_NAME = "go"
 
+# The Go-specific remediation passed to `resolve_tool` -- NOT the shared
+# cargo-flavoured default (SOSTITUZIONE fix: a Rust hint told a Go target to
+# run `cargo install go`, which does not exist).
+GO_INSTALL_HINT = "install Go via https://go.dev/dl or your OS package manager"
+
 # The known install locations go lives in off the hook PATH: the env-derived
 # ``$GOROOT/bin`` and ``$GOPATH/bin``, the rustup-analogue default ``~/go/bin``,
 # and the common system toolchain dirs. A go present here but absent from PATH is
@@ -85,7 +90,12 @@ def run_go_scope(
     binary = scoped_node_ids[0] if scoped_node_ids else _GO_NAME
     subcommand = scoped_node_ids[1:]
 
-    resolution = resolve_tool(binary, GO_KNOWN_LOCATIONS, base_dir=target_root)
+    resolution = resolve_tool(
+        binary,
+        GO_KNOWN_LOCATIONS,
+        base_dir=target_root,
+        install_hint=GO_INSTALL_HINT,
+    )
     if resolution.path is None:
         raise RunnerAdapterUnavailable(adapter.name, reason=resolution.remediation)
 

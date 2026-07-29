@@ -135,12 +135,22 @@ class CommitGateOutcome:
       naming the commit exit-gate (the gate fired and stopped the agent from
       closing the slice). False when the hook fell through to a generic
       ``{"decision":"allow"}`` (the marker word did NOT route to the gate).
+    * ``decision_found`` is True when SOME JSON line in stdout carried a
+      "decision" key -- i.e. a verdict was actually observed, whether or not
+      it was a block. False means no such line was parseable at all, which is
+      a DIFFERENT failure than "the gate declined to block": it means the
+      composition never got a verdict to read in the first place (a parse
+      accident, a crash, an unexpected stdout shape). The Then-step must not
+      collapse these two into the same accusation -- see the fix-commit-gate
+      false-cause-message finding (raw stdout is kept for that branch only).
     """
 
     word: str
     blocked: bool
     decision: str
     event: str
+    decision_found: bool
+    raw_stdout: str
 
 
 class CommitStepGateComposition:
@@ -265,13 +275,34 @@ class CommitStepGateComposition:
     def _parse_gate_outcome(
         self, word: CommitStepWord, proc: subprocess.CompletedProcess[str]
     ) -> CommitGateOutcome:
-        payload = self._safe_json(proc.stdout)
+        payload = self._find_decision_line(proc.stdout)
         decision = str(payload.get("decision", ""))
         event = str(payload.get("event", ""))
         blocked = decision == "block" and event == "SliceCommitBlocked"
         return CommitGateOutcome(
-            word=word.value, blocked=blocked, decision=decision, event=event
+            word=word.value,
+            blocked=blocked,
+            decision=decision,
+            event=event,
+            decision_found=bool(payload),
+            raw_stdout=proc.stdout,
         )
+
+    def _find_decision_line(self, raw: str) -> dict:
+        # Every atdd_pure SubagentStop exit emits its OWN causal-envelope JSON
+        # line first (`_emit_causal_envelope`, subagent_stop_handler.py:313),
+        # THEN the gate's decision JSON line -- two newline-separated JSON
+        # documents, not one. A blind ``json.loads(raw)`` over the whole blob
+        # raises "Extra data" and silently degrades to ``{}``, misreporting a
+        # correctly-blocking gate as an unrouted word. The sibling
+        # ``causal_dispatch_envelope`` composition parses the same two-line
+        # shape line-by-line (test_dispatch_intent_causality.py:92-97); mirror
+        # it here, picking the line that carries the gate's own "decision" key.
+        for line in raw.splitlines():
+            candidate = self._safe_json(line)
+            if "decision" in candidate:
+                return candidate
+        return {}
 
     def _safe_json(self, raw: str) -> dict:
         try:

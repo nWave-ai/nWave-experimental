@@ -287,8 +287,7 @@ re-deriving what is already known. When this loop observes a genuine trunk-healt
 (CI red not caused by your own change, a recurring test failure, a build broken on a
 clean checkout) — something actually observed, never a hypothesis — record it:
 `des consolidation-signal-tick --feature-id <id> --project-root . --signal-type
-<drift|unmerged-work|stale-branch|failing-gate> --signal-key <short-slug> --now
-<iso8601>`.
+<signal-type> --signal-key <short-slug> --now <iso8601>`.
 
 **`/loop 20m` — swarm-throughput self-check (N cloud lanes, ONE box lane).** This is the
 mechanism `swarm-parallel-delivery` depends on — check it explicitly, don't just remember
@@ -396,7 +395,7 @@ preferred, AST/grep fallback, degrade LOUD — never hardcode a specific tool by
 Tsunami may not be installed in every session. The dispatched agent reports findings; YOU
 (the orchestrator) append each to `techdebt.md` at the repo root (create it if absent) as
 a pile row: `- [ ] <item_id>: paradigm=<object-oriented|functional> defect="<defect>"
-proposed_solution="<solution>"`. `paradigm=` MUST be one of the CLOSED set `{object-oriented, functional}` -- the code-refactoring RPP lenses `des refactor` recognises (SSOT `src/des/domain/refactor/paradigm_select.py:RecognizedParadigm`). DERIVE it from the TARGET project's DECLARED development paradigm (its `## Development Paradigm` section, or the equivalent declaration the project ships) -- NEVER infer it from the file's language (a language is not a paradigm) and NEVER put the defect CLASS there (`SSOT`, `code`, `duplication` are defect taxonomy, not paradigms; that is what `defect=` is for). An unrecognised value makes the drain REFUSE the row. Only append a row for a genuine finding — do NOT
+proposed_solution="<solution>" discovered_by=<channel>`. `paradigm=` is a CLOSED-set field (`{object-oriented, functional}`, SSOT `src/des/domain/refactor/paradigm_select.py:RecognizedParadigm`) -- full grammar + the DERIVE-from-declared-paradigm-never-the-file's-language guidance lives in `des-command-catalog.md`'s Tech-debt pile drain section (same payload, this session). `discovered_by=` is a CLOSED-set field (SSOT `src/des/domain/refactor/discovery_method.py:RecognizedDiscoveryMethod`) -- full value set + the declare-the-surfacing-channel-not-the-verifying-one guidance (incl. the `MISURATO` gotcha) lives in `des-command-catalog.md`'s Tech-debt pile drain section (same payload, this session). Only append a row for a genuine finding — do NOT
 fabricate one to justify the loop firing. This loop's job is to ENSURE the scan happens
 (dispatch it), not to perform the scan yourself inline — orchestrator delegates domain
 work, it does not DIY it.
@@ -464,9 +463,16 @@ zero pending rows, this is a no-op. `--driver loop` is a known stub (parsed, nev
 **`/loop 30m` — source the bugfix queue.** When you encounter a friction or a bug during
 other work — NOT a backlog item, a defect you just found — write it directly to
 `defects.md` at the repo root (create it if absent, same pile-row grammar as
-`techdebt.md`) INSTEAD OF adding it to `docs/product/backlog.md` (backlog.md stays for
-planned/roadmap work, not for individual discovered defects). Only append a row for a
-genuinely found friction/bug — do NOT manufacture one to justify the loop firing.
+`techdebt.md`: `- [ ] <item_id>: paradigm=<object-oriented|functional> defect="<defect>"
+proposed_solution="<solution>" discovered_by=<channel>`) INSTEAD OF adding it to
+`docs/product/backlog.md` (backlog.md stays for planned/roadmap work, not for individual
+discovered defects). `paradigm=` is the SAME CLOSED set as `techdebt.md`'s
+(`{object-oriented, functional}`, SSOT `src/des/domain/refactor/paradigm_select.py:
+RecognizedParadigm`), derived from THIS project's own declared paradigm — NEVER the
+defect CLASS (`bug`, `SSOT/DRY violation`, etc. are a defect taxonomy, not a paradigm;
+writing one there is the empirically observed failure mode this note exists to head off).
+Only append a row for a genuinely found friction/bug — do NOT manufacture one to justify
+the loop firing.
 
 **`/loop 45m` — drain the bugfix queue, if one exists.** Separate loop from sourcing
 above, on its own cadence. Same shape as the tech-debt drain — **including the rule that a

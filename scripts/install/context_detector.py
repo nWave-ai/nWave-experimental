@@ -227,13 +227,27 @@ def _detect_claude_code() -> bool:
     """Detect if Claude Code is available for installation.
 
     Checks two signals:
-    - ~/.claude/ directory exists
+    - the resolved Claude config directory exists
     - CLAUDE_CODE environment variable is set
+
+    The directory is resolved through ``PathUtils.get_claude_config_dir()`` --
+    the SAME resolver the installer writes through, so it honors
+    ``CLAUDE_CONFIG_DIR`` (the documented multi-profile setup). Deciding here on
+    the hardcoded ``~/.claude`` instead keys on the DESIGNATION rather than on
+    the property "a Claude config directory exists where we would install":
+    with ``CLAUDE_CONFIG_DIR`` set and no ``~/.claude``, writer and detector
+    disagreed, and the installer announced a target it never wrote into while
+    still reporting success.
 
     Returns:
         True if any Claude Code signal is detected.
     """
-    claude_dir_exists = (Path.home() / ".claude").is_dir()
+    try:
+        from scripts.install.install_utils import PathUtils
+    except ImportError:  # installed layout: scripts/install/ is on sys.path
+        from install_utils import PathUtils  # type: ignore[no-redef]
+
+    claude_dir_exists = PathUtils.get_claude_config_dir().is_dir()
     claude_env_set = bool(os.environ.get("CLAUDE_CODE", ""))
     return claude_dir_exists or claude_env_set
 

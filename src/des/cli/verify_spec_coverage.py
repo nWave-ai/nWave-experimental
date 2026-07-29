@@ -62,13 +62,14 @@ from __future__ import annotations
 import argparse
 import ast
 import io
-import json
 import re
 import sys
 import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
+from des.cli._emit_json import emit_json_line as _emit
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.domain.requirement_id import (
     COVERS_TAG_RE,
     REQUIREMENT_ID_PATTERN,
@@ -130,10 +131,6 @@ class _Requirement:
     category: str
     text: str
     line: int
-
-
-def _emit(payload: dict[str, object]) -> None:
-    print(json.dumps(payload))
 
 
 def _indeterminate(what: str, why: str, how: str) -> int:
@@ -408,6 +405,9 @@ def _covered_ids_in_source_text(path: Path) -> set[str] | int:
 
 
 def _covered_ids_in_file(path: Path) -> set[str] | int:
+    # gherkin-scope: PARSER dispatch, not AT-discovery -- `path` is already
+    # discovered by this module's own multi-language file walk; this only
+    # picks which content-parser reads it (pytest/TS/JS branches beside it).
     if path.suffix == ".feature":
         return _covered_ids_in_feature_file(path)
     if path.suffix in _PY_SUFFIXES:
@@ -585,7 +585,9 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         help="Directory of AT files (.py / .feature); repeatable.",
     )
-    parser.add_argument("--repo", default=".", help="Path to the repository root.")
+    add_repo_root_argument(
+        parser, "--repo", default=".", help="Path to the repository root."
+    )
     args = parser.parse_args(argv)
     repo = Path(args.repo).resolve()
 

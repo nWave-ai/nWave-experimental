@@ -42,6 +42,9 @@ import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from des.cli._emit_json import emit_json_line as _emit
+from des.cli._repo_root_arg import add_repo_root_argument
+
 
 _EXIT_VERIFIED = 0
 _EXIT_REFUSED = 1
@@ -167,8 +170,16 @@ _DOC_STALE_STATUS_RE = re.compile(
 # material, proposals, ADRs, ...). The DEFAULT scan (``--docs`` omitted)
 # drops any doc under these repo-relative prefixes; an EXPLICIT ``--docs``
 # stays byte-unchanged (operator override).
+#
+# ``docs/product/backlog.md`` is the one FILE entry: the planning backlog's
+# whole genre is not-yet-true work (deferred slices, untracked DISTILLs parked
+# in other worktrees, paths a future feature will create), so its honest
+# descriptions of absent paths are not claims about this tree. The entry is
+# that file and never the ``docs/product/`` folder -- its siblings are product
+# SSOT docs that DO describe the current tree.
 _NOT_CURRENT_CLAIM_DOC_PREFIXES = frozenset(
     {
+        "docs/product/backlog.md",
         "docs/feature/",
         "docs/analysis/",
         "docs/internal/",
@@ -219,10 +230,6 @@ class _Violation:
     claim: str
     why_false: str
     how_to_fix: str
-
-
-def _emit(payload: dict[str, object]) -> None:
-    print(json.dumps(payload))
 
 
 def _indeterminate(what: str, why: str, how: str) -> int:
@@ -602,7 +609,9 @@ def main(argv: list[str] | None = None) -> int:
             "evolution P0.5)."
         ),
     )
-    parser.add_argument("--repo", default=".", help="Path to the repository.")
+    add_repo_root_argument(
+        parser, "--repo", default=".", help="Path to the repository."
+    )
     parser.add_argument(
         "--docs",
         default=None,

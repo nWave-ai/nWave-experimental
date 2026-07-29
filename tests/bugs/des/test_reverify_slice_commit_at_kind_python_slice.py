@@ -124,7 +124,7 @@ def _stub_cargo_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         cargo_runner,
         "resolve_tool",
-        lambda name, known_locations: ToolResolution(
+        lambda name, known_locations, **_kwargs: ToolResolution(
             rung="on-path", path="/fake/cargo"
         ),
     )

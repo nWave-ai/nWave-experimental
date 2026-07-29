@@ -17,7 +17,10 @@ import subprocess
 from pathlib import Path
 
 from des.adapters.driven.runner.tool_discovery import resolve_tool
-from des.adapters.driven.runner.vitest_runner import VITEST_KNOWN_LOCATIONS
+from des.adapters.driven.runner.vitest_runner import (
+    NPM_INSTALL_HINT,
+    VITEST_KNOWN_LOCATIONS,
+)
 from des.ports.driven_ports.staged_installer import (
     InstalledTree,
     StagedInstaller,
@@ -38,7 +41,12 @@ class NpmInstallStagedInstaller(StagedInstaller):
         prefix = Path(prefix)
         if not artifact.is_file():
             raise StagedInstallError(f"artifact does not exist: {artifact}")
-        resolution = resolve_tool("npm", VITEST_KNOWN_LOCATIONS, base_dir=prefix)
+        resolution = resolve_tool(
+            "npm",
+            VITEST_KNOWN_LOCATIONS,
+            base_dir=prefix,
+            install_hint=NPM_INSTALL_HINT,
+        )
         if resolution.path is None:
             raise StagedInstallError(f"npm not found: {resolution.remediation}")
         prefix.mkdir(parents=True, exist_ok=True)

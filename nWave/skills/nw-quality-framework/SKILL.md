@@ -224,3 +224,14 @@ Consequence rules:
 - AST / schema / YAML validator
 
 **Full details**: `nWave/skills/nw-tdd-methodology/SKILL.md` section "Delta-First Test Paradigm (state-mutating code)".
+
+## Cross-cutting invariants (load them — they are not restated here)
+
+Paradigm- and role-independent rules live in ONE shipped home: `nw-cross-cutting-invariants`.
+Load it alongside this skill and honour these clauses by id — they are NOT duplicated here:
+
+- `data:consumer-known-before-produced` — a datum is produced only because a named consumer
+  reads it, and you must name the JOIN KEY it will be related on. No reader, or no key → the
+  datum is unjustified.
+- `gate:self-explaining-what-why-how` — every rejection states WHAT / WHY / HOW.
+- `gate:design-principles-gdp-1-8` — the canonical gate-design contract.

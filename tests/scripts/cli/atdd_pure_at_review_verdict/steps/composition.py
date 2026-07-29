@@ -59,10 +59,14 @@ def _at_body(index: int) -> str:
 class RecordOutcome:
     """Observable result of one verdict-recording invocation.
 
-    record_written -- whether the producer appended an ATReviewVerdict line.
+    recorded_verdict -- the verdict string actually sealed onto the ledger
+    record (declared-facts-reachable-recorded slice-01, DD-1 both-outcomes
+    write: every call appends exactly one ATReviewVerdict record, so "was
+    something written" is no longer a meaningful question -- the observable
+    is WHICH verdict was written).
     """
 
-    record_written: bool
+    recorded_verdict: str
 
 
 class ATReviewVerdictComposition:
@@ -122,12 +126,17 @@ class ATReviewVerdictComposition:
     def record_verdict(self, outcome: ReviewOutcome) -> RecordOutcome:
         """Record the reviewer outcome via the production producer surface.
 
-        Both outcomes go through the producer (``record_review_outcome``): the
-        producer owns the APPROVED-writes / NEEDS_REVISION-skips decision, so
-        the rejected-slice scenario genuinely exercises producer behaviour
-        rather than a step-local branch (no Fixture Theater).
+        Both outcomes go through the producer (``record_review_outcome``).
+        DD-1 both-outcomes write (declared-facts-reachable-recorded
+        slice-01): the producer now appends exactly one ATReviewVerdict
+        record for EVERY call -- APPROVED and NEEDS_REVISION alike -- so the
+        rejected-slice scenario genuinely exercises producer behaviour
+        (no Fixture Theater) while also proving a rejection leaves a
+        mechanically-readable trace instead of collapsing into "never
+        reviewed" (F3). The return value is the verdict string the producer
+        actually sealed onto the ledger record.
         """
-        written = record_review_outcome(
+        recorded_verdict = record_review_outcome(
             repo_root=self.repo_dir,
             feature_id=str(self.feature_id),
             slice_id=str(self.entering_slice),
@@ -138,7 +147,7 @@ class ATReviewVerdictComposition:
             timestamp="2026-05-20T00:00:00Z",
             findings_summary=[],
         )
-        return RecordOutcome(record_written=written)
+        return RecordOutcome(recorded_verdict=recorded_verdict)
 
     # --- Then: observe the ledger --------------------------------------------
 

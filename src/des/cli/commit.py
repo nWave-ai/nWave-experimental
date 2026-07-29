@@ -43,6 +43,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from des.cli._repo_root_arg import add_repo_root_argument
+
 
 try:
     import fcntl
@@ -61,7 +63,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "parallel agent's staged work is never swept into this commit."
         ),
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo-dir",
         default=".",
         help="Path to the git repository (default: current directory)",

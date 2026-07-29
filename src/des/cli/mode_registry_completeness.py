@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from des._internal import subset_parser
+from des.cli._repo_root_arg import add_repo_root_argument
 
 
 # The asset-facing 4-tuple fields every flavor MUST declare (analysis §2.2 /
@@ -213,7 +214,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "fields, exactly one default, every skill_load_set agent exists."
         ),
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--root",
         default=None,
         help="Root of the asset tree to check (default: this repository).",

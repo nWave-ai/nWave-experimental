@@ -19,29 +19,6 @@ module: des.cli.work_exhausted_tick
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --feature-id
-    required: true
-    type: string
-    help: "The feature id whose work-exhausted window this tick observes."
-  - name: --project-root
-    required: true
-    type: path
-    help: "Repo root the AT-completion ledger is resolved under."
-  - name: --queue-state
-    required: true
-    type: choice
-    choices: ["empty", "all-gated", "has-unblocked-item", "malformed"]
-    help: "The 4-way safe-work-tier state this tick observes (OQ-2 resolution)."
-  - name: --now
-    required: true
-    type: string
-    help: "ISO-8601 instant this tick observes (the controllable clock)."
-  - name: --gated-reasons
-    required: false
-    type: string
-    help: "Comma-separated reasons naming WHY each gated item is blocked."
-
 log_events:
   - WorkExhaustedWindowOpened
   - WorkExhaustedFirstWarning

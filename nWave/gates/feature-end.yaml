@@ -17,28 +17,6 @@ module: des.cli.feature_end
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --repo
-    required: true
-    type: path
-    help: "Path to the project root (retained for API-stability; sign reads no key post-demotion)."
-  - name: --feature-id
-    required: true
-    type: string
-    help: "The kebab-case feature identifier the verdict is scoped to."
-  - name: --reviewer-agent-id
-    required: false
-    type: string
-    help: "The reviewer agent that produced the deep-review verdict."
-  - name: --verdict
-    required: false
-    type: string
-    help: "The deep-review decision: APPROVED or REJECTED."
-  - name: --finding
-    required: false
-    type: string
-    help: "A reviewer finding (repeatable). Documentary; not part of the signed region."
-
 log_events:
   - FeatureEndReviewSigned
   - SignRefused

@@ -54,6 +54,7 @@ from typing import TYPE_CHECKING
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.adapters.driven.output.stdout_output import StdoutOutput
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.domain.iso_utc import parse_iso_utc
 from des.domain.work_exhausted_ladder import evaluate_and_record
 
@@ -75,7 +76,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--feature-id", required=True)
-    parser.add_argument("--project-root", required=True)
+    add_repo_root_argument(parser, "--project-root", required=True)
     parser.add_argument("--queue-state", required=True, choices=_QUEUE_STATES)
     parser.add_argument(
         "--now",

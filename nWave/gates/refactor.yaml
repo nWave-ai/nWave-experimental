@@ -16,31 +16,6 @@ module: des.cli.refactor
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --pile
-    required: true
-    type: path
-    help: "Path to the tech-debt pile file (techdebt.md) to drain one item from."
-  - name: --agent-cmd
-    required: true
-    type: string
-    help: "The shell command that runs the fixer agent on the claimed item."
-  - name: --max-parallel
-    required: false
-    type: int
-    help: "Maximum concurrent drains (loop driver only)."
-    default: "1"
-  - name: --driver
-    required: false
-    type: choice
-    choices: ["python", "loop"]
-    help: "The loop driver: python worker-pool, or /loop for Claude Code."
-    default: "python"
-  - name: --prompt-template
-    required: false
-    type: path
-    help: "Path to a user-editable prompt-template file for the agent."
-
 log_events:
   - RefactorItemDrained
 

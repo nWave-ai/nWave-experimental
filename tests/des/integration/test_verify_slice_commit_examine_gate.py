@@ -22,6 +22,7 @@ from pathlib import Path
 
 from des.cli import verify_slice_commit_completeness as vscc
 from des.cli.record_examine_verdict import main as record_examine_verdict_main
+from tests.charter_fixtures import filled_charter
 
 
 def _git(root: Path, *args: str) -> str:
@@ -44,7 +45,7 @@ def _write_charter(repo: Path, feature_id: str, slice_id: str) -> str:
     charter_dir = repo / "docs" / "product" / "expectations" / feature_id
     charter_dir.mkdir(parents=True, exist_ok=True)
     charter_file = charter_dir / f"{slice_id}.md"
-    charter_file.write_text("# Charter\n\nWalk the real surface.\n", encoding="utf-8")
+    charter_file.write_text(filled_charter("Walk the real surface."), encoding="utf-8")
     return str(charter_file.relative_to(repo))
 
 

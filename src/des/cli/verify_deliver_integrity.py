@@ -36,6 +36,7 @@ from des.adapters.driven.git.git_commit_trailer_read_adapter import (
 from des.application.feature_end_na_marker_reconciliation import (
     feature_end_na_marker_reconciles,
 )
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.ports.driven_ports.commit_trailer_read_port import (
     CommitTrailerReadPort,
     Indeterminate,
@@ -65,7 +66,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "substrate (atdd_pure spine is roadmap-free)."
         ),
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo",
         type=Path,
         default=None,
@@ -691,6 +693,15 @@ def _verify_atdd_pure(
     # fix-walking-skeleton-feature-end-wiring slice-01: the walking-skeleton
     # heartbeat MUST also be present -- mirror of env-e2e slice-02, 5th sibling
     # of the pre-7af95a3d2 shipped-but-unread defect class.
+    # fix-ws-done-gate-na-reconciliation slice-01: the heartbeat alone only
+    # proves the gate was ENTERED -- a walking skeleton that ran and FAILED
+    # still leaves the heartbeat behind, so a done-gate keyed on the
+    # heartbeat alone let a FAILED walking skeleton close (the hole this fix
+    # closes). `WalkingSkeletonTierVerified` is the done-gate's actual
+    # PASS-only trust anchor (RM-3); it is now ALSO required, reconciled for
+    # a legitimately-NA feature by the `WalkingSkeletonNotApplicable` marker
+    # via `feature_end_na_marker_reconciles()` below -- never by the
+    # heartbeat alone.
     # fix-distill-signoff-feature-end-wiring slice-01: the two coverage-map
     # touchpoint heartbeats (`CoverageMapVerifiedAtDistillExit` +
     # `CoverageMapVerifiedAtDeliverExit`) emitted by the slice-06 gate are
@@ -721,6 +732,7 @@ def _verify_atdd_pure(
         "FeatureEndReviewVerdict",
         "FullSuiteLegRan",
         "WalkingSkeletonGateRan",
+        "WalkingSkeletonTierVerified",
     }
     # fix-feature-end-ws-gate-applicability slice-04: each applicability-aware
     # required record is satisfied by itself OR its DISTINCT not-applicable

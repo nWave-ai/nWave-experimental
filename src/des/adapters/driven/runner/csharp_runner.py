@@ -70,6 +70,11 @@ if TYPE_CHECKING:
 # The dotnet binary name resolved at the head of the declared command.
 _DOTNET_NAME = "dotnet"
 
+# The .NET-specific remediation passed to `resolve_tool` -- NOT the shared
+# cargo-flavoured default (SOSTITUZIONE fix: a Go/Rust hint told a C# target
+# to run `cargo install dotnet`, which does not exist).
+DOTNET_INSTALL_HINT = "install the .NET SDK via https://dotnet.microsoft.com/download"
+
 # The known install locations dotnet lives in off the hook PATH: the env-derived
 # ``$DOTNET_ROOT`` and the common system/user install dirs. A dotnet present here
 # but absent from PATH is USED via the known-location rung, never a false
@@ -100,7 +105,12 @@ def run_csharp_scope(
     binary = scoped_node_ids[0] if scoped_node_ids else _DOTNET_NAME
     subcommand = scoped_node_ids[1:]
 
-    resolution = resolve_tool(binary, DOTNET_KNOWN_LOCATIONS, base_dir=target_root)
+    resolution = resolve_tool(
+        binary,
+        DOTNET_KNOWN_LOCATIONS,
+        base_dir=target_root,
+        install_hint=DOTNET_INSTALL_HINT,
+    )
     if resolution.path is None:
         raise RunnerAdapterUnavailable(adapter.name, reason=resolution.remediation)
 

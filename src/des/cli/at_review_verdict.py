@@ -1,16 +1,24 @@
-"""AT-review verdict producer (ADR-029 D5 -- PRODUCER half).
+"""AT-review verdict producer (ADR-029 D5 -- PRODUCER half; amended by
+declared-facts-reachable-recorded slice-01, DD-1/DD-2).
 
-After the acceptance-designer reviewer APPROVES a slice's AT set, the atdd_pure
-DISTILL step records the approval as an ``ATReviewVerdict`` record appended to
+After the acceptance-designer reviewer judges a slice's AT set, the atdd_pure
+DISTILL step records the outcome as an ``ATReviewVerdict`` record appended to
 the AT-completion ledger ``.nwave/telemetry/atdd-pure/{feature_id}.jsonl``.
+DD-1 both-outcomes write: BOTH ``APPROVED`` and ``NEEDS_REVISION`` append a
+record -- a rejection leaves a mechanically-readable trace instead of
+collapsing into "never reviewed" (F3). The control-flow half of D5 is
+UNCHANGED: NEEDS_REVISION still loops the slice back to the
+acceptance-designer; only the prior SILENCE on that path is removed.
 
 ``carpaccio_slice_gate.py`` is the CONSUMER (assertion 5) that reads this record
 at the DELIVER entry gate; this module is the PRODUCER that writes it. The
 record carries the veto-relevant fields (reviewer_agent_id, slice_id, verdict,
 at_ids, at_content_hash, timestamp) and the content seal (at_content_hash is a
-SHA-256 over sorted scenario bodies). No ``hmac_sha256`` field is written; key
-absence is a non-event (OSS threat model: key holder and would-be forger are the
-same person -- keyed signing adds friction without adding a guarantee).
+SHA-256 over sorted scenario bodies) -- ``at_content_hash``'s semantics are
+verdict-neutral: the content hash of the AT set AS REVIEWED, not "what was
+approved". No ``hmac_sha256`` field is written; key absence is a non-event
+(OSS threat model: key holder and would-be forger are the same person --
+keyed signing adds friction without adding a guarantee).
 
 Stdlib-only (no third-party imports) so the module is bundle-safe.
 """
@@ -28,6 +36,7 @@ from typing import Literal
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli._identity_args import meaningful_identity
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import GateError
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.repo_path_resolver import (
@@ -44,6 +53,8 @@ __all__ = [
 _SCHEMA_VERSION = "1.0.0"
 _EVENT = "ATReviewVerdict"
 _APPROVED = "APPROVED"
+_NEEDS_REVISION = "NEEDS_REVISION"
+_BLOCKED_BY_ROBUSTNESS_GATE = "robustness-density-gate"
 
 # Slice-05 wiring (feature-fix-robustness-pbt-density-gate, slice-05 AT1):
 # the verdict producer consults the robustness density gate CLI at DISTILL
@@ -67,6 +78,7 @@ def record_at_review_verdict(
     at_content_hash: str,
     timestamp: str,
     findings_summary: list[object],
+    blocked_by: str | None = None,
 ) -> None:
     """Append a keyless ATReviewVerdict record to the AT-completion ledger.
 
@@ -75,6 +87,13 @@ def record_at_review_verdict(
     reviewer_agent_id, at_ids, at_content_hash, timestamp, findings_summary).
     No ``hmac_sha256`` field is written; key absence is a non-event.
     Earlier ledger records are never altered (append-only).
+
+    ``blocked_by`` (DD-2, declared-facts-reachable-recorded slice-01): when a
+    downstream gate blocked an otherwise-APPROVED call and the caller
+    downgraded ``verdict`` to ``NEEDS_REVISION`` on its own authority, the
+    blocking gate's identity is sealed alongside the record. Omitted
+    (``None``, the default) for every ordinary APPROVED/NEEDS_REVISION call so
+    the record shape is unchanged there.
     """
     record: dict[str, object] = {
         "event": _EVENT,
@@ -87,6 +106,8 @@ def record_at_review_verdict(
         "timestamp": timestamp,
         "findings_summary": list(findings_summary),
     }
+    if blocked_by is not None:
+        record["blocked_by"] = blocked_by
 
     # F-13 closure: append through the M7 `AtCompletionLedger` API rather than
     # a hand-written JSONL line. The M7 critical section assigns the monotonic
@@ -146,46 +167,67 @@ def record_review_outcome(
     findings_summary: list[object],
     robustness_declaration: Path | None = None,
     robustness_at_scope: Path | None = None,
-) -> bool:
-    """Record a reviewer outcome; return whether a verdict was written.
+) -> str:
+    """Record a reviewer outcome; return the verdict actually written.
 
-    ADR-029 D5 producer half: on an ``APPROVED`` verdict the producer appends a
-    keyless ``ATReviewVerdict`` record (via :func:`record_at_review_verdict`) and
-    returns ``True``. On ``NEEDS_REVISION`` it writes NOTHING -- the slice loops
-    back to the acceptance-designer -- and returns ``False``. The
-    APPROVED-writes / NEEDS_REVISION-skips decision is the producer's, not the
-    caller's.
+    DD-1 both-outcomes write (declared-facts-reachable-recorded slice-01,
+    amending ADR-029 D5's producer half): appends exactly one keyless
+    ``ATReviewVerdict`` record for EVERY call, regardless of ``verdict`` --
+    bounded-change contract-shape, never zero records, never two. A
+    ``NEEDS_REVISION`` verdict is sealed onto the ledger just like an
+    ``APPROVED`` one, so a rejection leaves a mechanically-readable trace
+    instead of collapsing into "never reviewed" (F3). The control-flow half of
+    D5 is UNCHANGED: NEEDS_REVISION still loops the slice back to the
+    acceptance-designer -- only the SILENCE on that path is removed.
 
-    Slice-05 wiring (AT1): when both ``robustness_declaration`` AND
-    ``robustness_at_scope`` are supplied AND the verdict is APPROVED, the
-    producer FIRST consults the robustness density gate CLI. A non-zero
-    gate exit BLOCKS the ledger write (returns ``False``) and writes the
-    gate's stdout diagnostic to this process's stderr. Existing call sites
-    that omit both args keep the slice-01..04 behavior verbatim.
+    Return value: the ``verdict`` string that was actually sealed onto the
+    ledger record. This is normally ``verdict`` itself, EXCEPT when the
+    robustness-density-gate blocks an otherwise-APPROVED call (DD-2, see
+    below) -- there the return value is ``"NEEDS_REVISION"`` even though the
+    caller asked for ``"APPROVED"``. Callers that need a human-facing verdict
+    (PASS/DEGRADED badge, "recorded"/"skipped" text) MUST key off this return
+    value, never off "was something written" -- both outcomes now write, so a
+    boolean write-happened signal can no longer stand in for "was it
+    approved".
+
+    Slice-05 wiring (AT1), extended by DD-2: when both ``robustness_declaration``
+    AND ``robustness_at_scope`` are supplied AND the verdict is APPROVED, the
+    producer FIRST consults the robustness density gate CLI. A non-zero gate
+    exit BLOCKS the APPROVED write and instead records ``NEEDS_REVISION`` with
+    ``blocked_by="robustness-density-gate"`` -- never silence -- while still
+    writing the gate's stdout diagnostic to this process's stderr. Existing
+    call sites that omit both robustness args keep the slice-01..04 behavior
+    verbatim (never consult the gate).
     """
-    if verdict != _APPROVED:
-        return False
+    recorded_verdict = verdict
+    blocked_by: str | None = None
 
-    if robustness_declaration is not None and robustness_at_scope is not None:
+    if (
+        verdict == _APPROVED
+        and robustness_declaration is not None
+        and robustness_at_scope is not None
+    ):
         gate_exit, gate_stdout = _consult_robustness_gate(
             repo_root, robustness_declaration, robustness_at_scope
         )
         if gate_exit != 0:
             sys.stderr.write(gate_stdout)
-            return False
+            recorded_verdict = _NEEDS_REVISION
+            blocked_by = _BLOCKED_BY_ROBUSTNESS_GATE
 
     record_at_review_verdict(
         repo_root=repo_root,
         feature_id=feature_id,
         slice_id=slice_id,
-        verdict=verdict,
+        verdict=recorded_verdict,
         reviewer_agent_id=reviewer_agent_id,
         at_ids=at_ids,
         at_content_hash=at_content_hash,
         timestamp=timestamp,
         findings_summary=findings_summary,
+        blocked_by=blocked_by,
     )
-    return True
+    return recorded_verdict
 
 
 # ---------------------------------------------------------------------------
@@ -498,9 +540,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="at_review_verdict",
         description=(
-            "Record an AT-review verdict (ADR-029 D5 producer). On APPROVED a "
-            "keyless ATReviewVerdict record is appended to the AT-completion "
-            "ledger; on NEEDS_REVISION nothing is written."
+            "Record an AT-review verdict (ADR-029 D5 producer, DD-1 "
+            "both-outcomes write). A keyless ATReviewVerdict record is "
+            "appended to the AT-completion ledger for EVERY verdict -- "
+            "APPROVED and NEEDS_REVISION both write; NEEDS_REVISION still "
+            "loops the slice back to the acceptance-designer."
         ),
     )
     parser.add_argument("--feature-id", required=True, type=_meaningful_identity_arg)
@@ -512,7 +556,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--reviewer-agent-id", required=True, type=_meaningful_identity_arg
     )
     parser.add_argument("--findings", nargs="*", default=[])
-    parser.add_argument("--repo-root", default=None)
+    add_repo_root_argument(parser, "--repo-root", default=None)
     parser.add_argument(
         "--robustness-declaration",
         default=None,
@@ -564,8 +608,10 @@ def main(argv: list[str] | None = None) -> int:
 
     Computes ``at_ids`` + ``at_content_hash`` itself from the entering slice's
     scenarios -- the operator supplies only the feature id, slice id, verdict
-    and reviewer id. On APPROVED a keyless record is appended to the ledger; on
-    NEEDS_REVISION nothing is written. Returns 0 on success.
+    and reviewer id. A keyless record is appended to the ledger for EVERY
+    verdict (DD-1 both-outcomes write) -- both a feature/slice existence
+    refusal (any verdict) and a malformed-input refusal fire before that
+    write. Returns 0 on success.
     """
     args = _parse_args(argv)
     repo_root = _resolve_repo_root(args.repo_root)
@@ -587,12 +633,6 @@ def main(argv: list[str] | None = None) -> int:
             raise _refuse_meaningless_identity("slice-id")
         if args.reviewer_agent_id is None:
             raise _refuse_meaningless_identity("reviewer-agent-id")
-        if args.verdict == _APPROVED:
-            # Existence pre-check (bugfix fix-review-verdict-existence-check,
-            # slice-01): refuse an APPROVED verdict for an imaginary
-            # feature/slice BEFORE any ledger write. NEEDS_REVISION already
-            # writes nothing, so this check applies to APPROVED only.
-            _verify_feature_slice_exists(repo_root, args.feature_id, args.slice_id)
         if (
             at_kind in ("pytest-regression", "rust-regression")
             and regression_test_file is None
@@ -628,6 +668,25 @@ def main(argv: list[str] | None = None) -> int:
                 and args.robustness_at_scope is not None
             ),
         )
+        # Existence pre-check (bugfix fix-review-verdict-existence-check,
+        # slice-01; extended to NEEDS_REVISION by DD-1,
+        # declared-facts-reachable-recorded slice-01): refuse ANY verdict for
+        # an imaginary feature/slice BEFORE any ledger write. Originally
+        # APPROVED-only because NEEDS_REVISION wrote nothing -- now that
+        # NEEDS_REVISION writes a ledger record too (DD-1 both-outcomes), an
+        # unguarded NEEDS_REVISION for a non-existent feature/slice would
+        # append a record for a thing that does not exist.
+        #
+        # Ordered AFTER the at-kind checks and `_slice_at_derivation`, not
+        # before: those answer "is this invocation well-formed at all", a
+        # question that must keep its own (more specific) diagnostic. Hoisting
+        # the existence guard above them made a malformed --at-kind on a
+        # not-yet-authored feature report `unresolvable-feature-slice`,
+        # MASKING the at-kind diagnostic the caller actually needed. The guard
+        # still precedes every ledger write, which is the property it exists
+        # to hold -- being last among the refusals costs nothing, because all
+        # of them refuse before `record_review_outcome` is ever reached.
+        _verify_feature_slice_exists(repo_root, args.feature_id, args.slice_id)
     except GateError as gate_error:
         error_line = json.dumps(gate_error.payload, sort_keys=True) + "\n"
         sys.stdout.write(error_line)
@@ -648,7 +707,7 @@ def main(argv: list[str] | None = None) -> int:
     robustness_at_scope = (
         Path(args.robustness_at_scope) if args.robustness_at_scope else None
     )
-    written = record_review_outcome(
+    recorded_verdict = record_review_outcome(
         repo_root=repo_root,
         feature_id=args.feature_id,
         slice_id=args.slice_id,
@@ -661,7 +720,15 @@ def main(argv: list[str] | None = None) -> int:
         robustness_declaration=robustness_declaration,
         robustness_at_scope=robustness_at_scope,
     )
-    outcome = "recorded" if written else "skipped (NEEDS_REVISION)"
+    # DD-1 (declared-facts-reachable-recorded slice-01): both outcomes now
+    # write a ledger record (bounded-change: exactly one per call), so
+    # `verdict_written` is unconditionally True -- it stopped being a proxy
+    # for "was it approved" the moment NEEDS_REVISION started writing too.
+    # Every human/JSON-facing signal below keys on `recorded_verdict` (the
+    # verdict `record_review_outcome` actually sealed onto the ledger),
+    # never on "did we write".
+    approved = recorded_verdict == _APPROVED
+    outcome = "recorded" if approved else f"recorded ({recorded_verdict})"
     event_line = (
         json.dumps(
             {
@@ -669,7 +736,7 @@ def main(argv: list[str] | None = None) -> int:
                 "feature_id": args.feature_id,
                 "slice_id": args.slice_id,
                 "verdict": args.verdict,
-                "verdict_written": written,
+                "verdict_written": True,
                 "outcome": outcome,
             },
             sort_keys=True,
@@ -679,15 +746,20 @@ def main(argv: list[str] | None = None) -> int:
     # Pre-existing machine-readable contract keeps the JSON event on stdout
     # (no breaking change for existing CI / hook consumers); the slice-02
     # surface co-emits it on stderr alongside a colored human-readable line.
-    # Verdict mapping per slice-02: APPROVED → ✅ PASS (ledger record written),
-    # NEEDS_REVISION → ⚠️ DEGRADED (soft refusal, no ledger write).
+    # Verdict mapping per slice-02, re-keyed on `recorded_verdict` by DD-1: an
+    # APPROVED record -> ✅ PASS; a NEEDS_REVISION record (requested directly,
+    # OR DD-2's robustness-gate block downgrading an APPROVED request) ->
+    # ⚠️ DEGRADED. NEVER PASS merely because a ledger write happened.
     sys.stdout.write(event_line)
     sys.stderr.write(event_line)
-    human_verdict = Verdict.PASS if written else Verdict.DEGRADED
+    human_verdict = Verdict.PASS if approved else Verdict.DEGRADED
     summary = (
         f"AT-review {args.verdict} recorded for {args.feature_id}/{args.slice_id}"
-        if written
-        else f"AT-review {args.verdict} -- {args.feature_id}/{args.slice_id} needs revision (no ledger write)"
+        if approved
+        else (
+            f"AT-review {args.verdict} -- {args.feature_id}/{args.slice_id} "
+            f"needs revision ({recorded_verdict} recorded)"
+        )
     )
     print_human_summary(human_verdict, summary)
     return 0

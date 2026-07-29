@@ -73,6 +73,7 @@ from des.application.feature_end_cycle_service import (
 )
 from des.cli.commit_slice import main as commit_slice_main
 from des.cli.record_examine_verdict import record_examine_verdict
+from tests.charter_fixtures import filled_charter
 
 
 _COUPLED_JUSTIFICATION = (
@@ -158,7 +159,7 @@ def _write_charter(
     root: Path,
     feature_id: str,
     name: str = "main",
-    body: str = "# Charter\n\nDo the thing.\n",
+    body: str = filled_charter("Do the thing."),
 ) -> Path:
     """A charter under `docs/product/expectations/{feature_id}/` -- ARMS the
     examine-verdict commit gate (`_examine_gate_armed`) and the feature-end

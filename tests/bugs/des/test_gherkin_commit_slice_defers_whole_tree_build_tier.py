@@ -111,6 +111,7 @@ from des.cli.run_contract_gate import (
     build_tier_exit_verdict,
 )
 from des.testing.output_capture import CapturingOutput
+from tests.charter_fixtures import filled_charter
 
 
 _FEATURE_ID = "fix-gherkin-commit-slice-defers-whole-tree-build-tier"
@@ -293,7 +294,7 @@ def _arm_examine_verdict(repo: Path, capsys: pytest.CaptureFixture[str]) -> None
     charter_dir.mkdir(parents=True, exist_ok=True)
     charter_file = charter_dir / f"{_SLICE_ID}.md"
     charter_file.write_text(
-        "# Charter\n\nWalk the Gherkin per-slice build-tier deferral.\n",
+        filled_charter("Walk the Gherkin per-slice build-tier deferral."),
         encoding="utf-8",
     )
     charter_relpath = str(charter_file.relative_to(repo))

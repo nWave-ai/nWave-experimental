@@ -1,7 +1,7 @@
 ---
 name: nw-software-crafter-reviewer
 description: Use for review and critique tasks. AT-density-completeness audit is PRIMARY at Phase C_REVIEWER_AUDIT and Phase F_FINAL_REVIEW per ADR-027; code-quality and TDD-discipline review are secondary. Runs on Haiku for cost efficiency.
-model: haiku
+model: sonnet
 maxTurns: 25
 tools: Read, Glob, Grep, Task, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 skills:

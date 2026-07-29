@@ -96,13 +96,19 @@ _REMEDIATION_HINT = "nwave-ai install"
 #: reading source code or a separate doc (see `_ITEM_LINE_RE`,
 #: src/des/domain/refactor/pile.py -- this string mirrors it, kept in sync by
 #: hand since the regex itself is not renderable as prose).
+#:
+#: `discovered_by=` is OPTIONAL in the regex (223 pending rows predate it and
+#: must keep parsing) but is shown here as part of the shape on purpose: this
+#: message is the only place the tool itself teaches the row format, and a
+#: field absent from it is a field nobody fills in (GDP-2).
 _GRAMMAR_SHAPE = (
     '- [ ] <item_id>: paradigm=<paradigm> defect="<defect>" '
-    'proposed_solution="<solution>"'
+    'proposed_solution="<solution>" discovered_by=<channel>'
 )
 _GRAMMAR_EXAMPLE = (
     '- [ ] TD-001: paradigm=object-oriented defect="duplicate helper across '
-    'two modules" proposed_solution="extract a shared function"'
+    'two modules" proposed_solution="extract a shared function" '
+    "discovered_by=systematic-audit"
 )
 
 #: Rendered in place of a blocking reason when a drain did not complete yet
@@ -690,18 +696,103 @@ def _repo_relative_paths_in(agent_cmd: str) -> tuple[str, ...]:
     return tuple(paths)
 
 
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the real ``des refactor`` argument parser, WITH `help=` text on
+    every option (refactor-ux drain, 2026-07-29, repair 1/4).
+
+    Before this fix every option below was bare (`--pile PILE`, no
+    description) and `--help` never said the actuator resolved by default
+    lives in the nWave INSTALLATION, never inside the operator's own project
+    -- a real operator concluded "no actuator here" from her PROJECT repo and
+    dispatched an expensive background agent instead of ever running this
+    command (incident 1). `--help` is read BEFORE any refusal message has a
+    chance to fire, so this is where that fact belongs, not only in
+    ``_actuator_not_found_refusal``/``_entry_gate_verdict_missing_refusal``
+    (which only teach an operator who already ran the command).
+
+    ``EntryGateVerdict``/``MERGE_PERMITTING_VERDICTS`` are imported from the
+    lean domain module (``re`` + ``enum`` only) rather than hardcoding the
+    token list a second time, or importing the heavier application-layer
+    ``refactor_drain_service`` -- keeping this parser build cheap for every
+    invocation, including the ``--driver loop`` refusal path in ``main``
+    that deliberately returns before any heavier import.
+    """
+    from des.domain.refactor.entry_gate import (
+        MERGE_PERMITTING_VERDICTS,
+        EntryGateVerdict,
+    )
+
+    permitting = ", ".join(
+        verdict.value
+        for verdict in EntryGateVerdict
+        if verdict in MERGE_PERMITTING_VERDICTS
+    )
+
+    parser = argparse.ArgumentParser(
+        prog="des refactor",
+        description=(
+            "Drain pending pile item(s) (techdebt.md/defects.md) via a dispatched "
+            "agent_cmd: worktree-from-tip, green-to-green verification, merge into a "
+            "clean integration branch, mandatory cleanup either way."
+        ),
+    )
+    parser.add_argument(
+        "--pile",
+        required=True,
+        type=Path,
+        help="Path to the pending pile file to drain (e.g. techdebt.md or defects.md).",
+    )
+    parser.add_argument(
+        "--agent-cmd",
+        required=False,
+        default=None,
+        help=(
+            "Command dispatched per item, with {prompt} substituted; must print one of "
+            f"{permitting} on its stdout as its last act to permit a merge. Omit to let "
+            "des resolve nWave's OWN installed refactor_agent.py actuator -- it lives in "
+            "your nWave INSTALLATION, never inside your project repo (a repo-relative "
+            "'scripts/refactor_agent.py' will not be found there). Honest declaration: "
+            "that default actuator does not print a verdict, so it cannot reach a merge "
+            "on its own -- pass your own --agent-cmd to complete a drain."
+        ),
+    )
+    parser.add_argument(
+        "--max-parallel",
+        type=int,
+        default=1,
+        help=(
+            "Items to drain concurrently. 1 (default) is the entry-gated safe path; "
+            "N>1 runs the batch path, which does NOT consult the entry gate "
+            "(fail-open) -- use deliberately."
+        ),
+    )
+    parser.add_argument(
+        "--driver",
+        choices=("python", "loop"),
+        default="python",
+        help=(
+            "Execution driver. 'python' (default) is the only one implemented; 'loop' "
+            "is a parsed stub that refuses immediately."
+        ),
+    )
+    parser.add_argument(
+        "--prompt-template",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a custom per-item prompt template. Defaults to the repo's own "
+            ".nwave/refactor-agent-prompt.md."
+        ),
+    )
+    return parser
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     """Parse the ``--pile [--agent-cmd] [--max-parallel] [--driver]`` argv
     contract. ``--agent-cmd`` is OPTIONAL -- when omitted, ``main`` resolves
     nWave's own installed actuator (``_resolve_default_agent_cmd``) instead;
     an explicit ``--agent-cmd`` is passed through byte-identical, unaffected."""
-    parser = argparse.ArgumentParser(prog="des refactor")
-    parser.add_argument("--pile", required=True, type=Path)
-    parser.add_argument("--agent-cmd", required=False, default=None)
-    parser.add_argument("--max-parallel", type=int, default=1)
-    parser.add_argument("--driver", choices=("python", "loop"), default="python")
-    parser.add_argument("--prompt-template", type=Path, default=None)
-    return parser.parse_args(argv)
+    return _build_parser().parse_args(argv)
 
 
 if __name__ == "__main__":  # pragma: no cover - subprocess entry point

@@ -83,6 +83,16 @@ def _pre_tool_use_matcher() -> str:
     return "|".join(f"^{re.escape(tool)}$" for tool in _INTERCEPTED_TOOLS)
 
 
+# Wall-clock bound the generated launcher applies to the DES validation it
+# spawns, and the operator's lever over it.  25s is chosen against the two
+# opposing costs: it must be generous enough that a cold PreToolUse validation
+# doing real filesystem work is never guillotined, and it must stay strictly
+# under the `timeout: 30` this installer declares on the hook entry so the
+# launcher reaches its own explained verdict before the Codex harness kills it.
+_LAUNCHER_TIMEOUT_ENV = "NWAVE_CODEX_HOOK_TIMEOUT"
+_LAUNCHER_TIMEOUT_SECONDS = 25.0
+
+
 def _codex_config_dir() -> Path:
     """Return the Codex CLI configuration directory.
 
@@ -107,7 +117,29 @@ def _build_hook_invocation(python_path: str, pythonpath: str) -> dict:
 
 
 def _launcher_source(python_path: str, pythonpath: str) -> str:
-    """Return the exact bytes of an nWave-generated launcher."""
+    """Return the exact bytes of an nWave-generated launcher.
+
+    This text becomes executable code on the operator's machine, so the spawn it
+    emits owes the same two duties every hand-written spawn in this tree owes
+    (``tests/build/test_no_unbounded_unstdin_spawn.py``): an explicit stdin
+    decision and a wall-clock bound.  The static ban cannot see this one -- at
+    scan time it is a string literal, not a Call node -- so the duties are
+    discharged here and witnessed behaviourally by
+    ``tests/bugs/test_bug_generated_launcher_unbounded_spawn.py``.
+
+    The stdin decision is a FORWARD, not a ``DEVNULL``: the Codex hook protocol
+    is JSON on stdin and the DES adapter reads it, while
+    ``read_and_parse_stdin`` fails OPEN on empty input -- starving the child
+    would switch validation off silently.  It is a pass-through rather than an
+    ``input=`` read so the launcher itself never blocks on a descriptor that
+    never reaches EOF; the child's read stays the only blocking wait on the
+    path, and the bound covers it.
+
+    The bound sits below the ``timeout: 30`` this installer declares on the hook
+    entry, so the launcher reaches its own explained verdict before the harness
+    kills it, and degrades LOUD-and-allow on expiry (the adapter's own policy:
+    a hook never bricks a session).
+    """
     return (
         '"""nWave Codex DES launcher. Generated; reinstall to update."""\n'
         "import os\n"
@@ -115,6 +147,8 @@ def _launcher_source(python_path: str, pythonpath: str) -> str:
         "import sys\n\n"
         f"PYTHON_PATH = {json.dumps(python_path)}\n"
         f"PYTHONPATH = {json.dumps(pythonpath)}\n"
+        f"TIMEOUT_ENV = {json.dumps(_LAUNCHER_TIMEOUT_ENV)}\n"
+        f"DEFAULT_TIMEOUT_SECONDS = {_LAUNCHER_TIMEOUT_SECONDS!r}\n"
         "env = os.environ.copy()\n"
         'env["PYTHONPATH"] = PYTHONPATH\n'
         "argv = [\n"
@@ -123,7 +157,29 @@ def _launcher_source(python_path: str, pythonpath: str) -> str:
         '    "des.adapters.drivers.hooks.claude_code_hook_adapter",\n'
         '    "pre-tool-use",\n'
         "]\n"
-        "completed = subprocess.run(argv, env=env, check=False)\n"
+        "try:\n"
+        "    bound = float(os.environ.get(TIMEOUT_ENV, DEFAULT_TIMEOUT_SECONDS))\n"
+        "except (TypeError, ValueError):\n"
+        "    bound = DEFAULT_TIMEOUT_SECONDS\n"
+        "try:\n"
+        "    stdin_channel = sys.stdin.fileno()\n"
+        "except (AttributeError, OSError, ValueError):\n"
+        "    stdin_channel = subprocess.DEVNULL\n"
+        "try:\n"
+        "    completed = subprocess.run(\n"
+        "        argv, env=env, check=False, stdin=stdin_channel, timeout=bound\n"
+        "    )\n"
+        "except subprocess.TimeoutExpired:\n"
+        "    sys.stderr.write(\n"
+        '        f"WHAT: the nWave DES PreToolUse validation did not finish "\n'
+        '        f"within its {bound:g}s bound and was killed.\\n"\n'
+        '        f"WHY: a hook that never returns hangs the Codex session, so "\n'
+        '        f"this launcher bounds its child and always yields.\\n"\n'
+        '        f"HOW: re-run. If the validation genuinely needs longer, set "\n'
+        '        f"{TIMEOUT_ENV}=<seconds>. Allowing the tool without a "\n'
+        '        f"verdict.\\n"\n'
+        "    )\n"
+        "    sys.exit(0)\n"
         "sys.exit(completed.returncode)\n"
     )
 

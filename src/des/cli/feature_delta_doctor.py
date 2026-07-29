@@ -17,6 +17,8 @@ classification logic:
   rows), called WITHOUT `project_root` -- the content-grounding leg (which
   resolves citations through the CodeFactPort chain) is deliberately out of
   scope for this doctor's filesystem-only core.
+- `feature_delta_source.dereference_adr_refs` (D6/DD-8) -- resolves declared
+  `adr-refs` id tokens against the filesystem, read-only.
 
 Target-machine agnosticism (CLAUDE.md standing mandate): this module is
 FILESYSTEM-ONLY. It never shells out to `git` or any other external tool --
@@ -25,7 +27,7 @@ is explicitly out of scope here.
 
 CLI contract:
 
-    des feature-delta-doctor <path> --format=json
+    des feature-delta-doctor <path> [--repo-root <root>] --format=json
 
 Emits ``{"gap_count": N, "gaps": [{"id", "what", "why", "how"}, ...]}`` to
 stdout. Exit 0 on zero gaps, exit 1 on >=1 gap.
@@ -39,10 +41,12 @@ import sys
 from pathlib import Path
 from typing import TypedDict
 
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import (
     SLICE_PLAN_CANONICAL_COLUMNS,
     slice_plan_header_deviation,
 )
+from des.cli.feature_delta_schema import _section_body
 from des.cli.validate_feature_delta import (
     _SUSTAINABILITY_ACCEPTED_VERDICTS,
     LOCKED_REF_SECTIONS,
@@ -58,6 +62,10 @@ from des.cli.validate_feature_delta import (
     validate_feature_delta_content,
     validate_reuse_analysis_content,
     validate_sustainability_content,
+)
+from des.domain.feature_delta_source import (
+    any_adr_ref_root_exists,
+    dereference_adr_refs,
 )
 
 
@@ -265,22 +273,125 @@ def _slice_plan_header_gaps(content: str) -> list[Gap]:
     ]
 
 
-def diagnose(content: str) -> list[Gap]:
+#: `## Wave: DESIGN / [REF] ADR Refs` -- the `adr-refs` `RefList` section
+#: (`feature_delta_schema.py`) DD-9 reads read-only, via the EXISTING generic
+#: extractor (`_section_body`, M1: one locus, no second section parser).
+_ADR_REFS_HEADING = "## Wave: DESIGN / [REF] ADR Refs"
+
+#: A real, declared-but-nonexistent id -- write the missing ADR or drop the
+#: reference. Distinct from `_ADR_REF_COULD_NOT_VERIFY_ID`: the two route the
+#: operator to DIFFERENT actions.
+_DANGLING_ADR_REF_ID = "dangling-adr-ref"
+
+#: The resolved `repo_root` holds NONE of the 4 declared ADR root directories
+#: -- the TREE cannot be checked at all, not any one id. Reporting zero gaps
+#: here would be a GDP-6 silent-wrong.
+_ADR_REF_COULD_NOT_VERIFY_ID = "adr-ref-could-not-verify"
+
+
+def _dangling_adr_ref_gaps(content: str, repo_root: Path) -> list[Gap]:
+    """`dangling-adr-ref` / `adr-ref-could-not-verify` gaps (DD-9, D6).
+
+    Reuses the generic section-body extractor (`_section_body`) for the
+    `adr-refs` section and `feature_delta_source.dereference_adr_refs` (DD-8)
+    for per-id resolution -- this function adds no parsing logic of its own,
+    only the AGGREGATE THIRD state `dereference_adr_refs` deliberately does
+    not model (it answers per-id PRESENT/ABSENT only; "can the tree be
+    checked at all" is a doctor-level, not a per-id, question)."""
+    section_body = _section_body(content, _ADR_REFS_HEADING)
+    if not section_body or not section_body.strip():
+        return []
+
+    if not any_adr_ref_root_exists(repo_root):
+        return [
+            Gap(
+                id=_ADR_REF_COULD_NOT_VERIFY_ID,
+                what=(
+                    f"cannot verify any declared adr-refs id against repo_root="
+                    f"{repo_root} -- none of the 4 declared ADR root "
+                    "directories exist there"
+                ),
+                why=(
+                    "the resolved repo_root holds NONE of the declared, closed "
+                    "ADR root tuple (docs/product/architecture/, "
+                    "docs/feature/<feature-id>/design/adrs/, "
+                    "docs/architecture/adrs/, docs/adrs/) -- the TREE itself, "
+                    "not any one id, cannot be checked; reporting zero gaps "
+                    "here would silently agree every reference resolved "
+                    "(GDP-6 silent-wrong)"
+                ),
+                how=(
+                    "pass the correct tree: `des feature-delta-doctor <path> "
+                    f"--repo-root <project-root>` (resolved to {repo_root} "
+                    "this run). If that IS the correct tree, the 4 declared "
+                    "ADR root directories are themselves missing and must be "
+                    "created."
+                ),
+            )
+        ]
+
+    # feature_id is intentionally the empty string here: the doctor has no
+    # single feature in scope (DD-9's signature carries no feature_id
+    # parameter), so the feature-specific root
+    # (docs/feature/{feature_id}/design/adrs/) degrades to a no-op path while
+    # the other 3 declared roots resolve normally.
+    records = dereference_adr_refs(section_body, repo_root=repo_root, feature_id="")
+    return [
+        Gap(
+            id=_DANGLING_ADR_REF_ID,
+            what=(
+                f"declared adr-refs id {record.adr_id!r} names no file under "
+                "any declared ADR root"
+            ),
+            why=(
+                "D6: a declared 'adr-refs' reference must resolve to a real "
+                f"file or be NAMED dangling -- never silently accepted; "
+                f"{record.adr_id!r} matched no file under "
+                "docs/product/architecture/, "
+                "docs/feature/<feature-id>/design/adrs/, "
+                "docs/architecture/adrs/, or docs/adrs/ under this repo_root."
+            ),
+            how=(
+                f"write the missing ADR (e.g. "
+                f"docs/product/architecture/{record.adr_id}-<title>.md), or "
+                f"remove {record.adr_id!r} from the "
+                f"'{_ADR_REFS_HEADING}' section if it was declared in error."
+            ),
+        )
+        for record in records
+        if record.resolved_path is None
+    ]
+
+
+def diagnose(content: str, *, repo_root: Path | None = None) -> list[Gap]:
     """Aggregate every structural gap for one feature-delta body in ONE pass.
 
-    Pure function -- filesystem I/O lives only in `main`. Composes the four
+    Pure function -- filesystem I/O lives only in `main`. Composes the
     existing validators; never re-implements their classification logic. The
     covered-section set MUST match `des verify-readiness-pre-dispatch`'s
     (LOCKED_REF_SECTIONS + sustainability) -- see
     fix-doctor-covers-sustainability-section.
+
+    `repo_root` is KEYWORD-ONLY and DEFAULTED to None (DD-9) so the existing
+    single-positional-argument call
+    (`src/des/application/deliver_loop_projection.py:160`) keeps working
+    unchanged. The `adr-refs` dangling/could-not-verify leg only runs when a
+    caller EXPLICITLY names the tree to check it against -- with no
+    `repo_root`, this function has no basis to distinguish "the tree really
+    lacks the declared ADR roots" from "no tree was ever supplied", so it
+    stays silent on that leg rather than guessing and false-positiving on
+    every caller that predates DD-9 and never supplies one.
     """
-    return [
+    gaps: list[Gap] = [
         *_wave_heading_gaps(content),
         *_missing_section_gaps(content),
         *_reuse_analysis_gaps(content),
         *_sustainability_gaps(content),
         *_slice_plan_header_gaps(content),
     ]
+    if repo_root is not None:
+        gaps.extend(_dangling_adr_ref_gaps(content, repo_root))
+    return gaps
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -289,11 +400,24 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "One-pass structural gap aggregator for a feature-delta.md -- "
             "reports every gap (missing mandatory sections, malformed Wave "
-            "headings, malformed/unjustified Reuse Analysis rows) in ONE "
-            "invocation instead of one gate rejection at a time."
+            "headings, malformed/unjustified Reuse Analysis rows, dangling "
+            "ADR refs) in ONE invocation instead of one gate rejection at a "
+            "time."
         ),
     )
     parser.add_argument("path", help="Path to the feature-delta.md file.")
+    add_repo_root_argument(
+        parser,
+        "--repo-root",
+        default=None,
+        help=(
+            "Repo root the declared ADR root directories are resolved "
+            "against (DD-9). When omitted, the dangling/could-not-verify "
+            "adr-refs check is skipped entirely -- it has no tree to check "
+            "against, and guessing one would false-positive on any "
+            "feature-delta that predates this check."
+        ),
+    )
     parser.add_argument(
         "--format",
         choices=("json",),
@@ -322,7 +446,8 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, UnicodeDecodeError) as exc:
         print(json.dumps({"error": f"cannot read feature-delta at {args.path}: {exc}"}))
         return _EXIT_USAGE_ERROR
-    gaps = diagnose(content)
+    repo_root = Path(args.repo_root) if args.repo_root else None
+    gaps = diagnose(content, repo_root=repo_root)
     report = {"gap_count": len(gaps), "gaps": gaps}
     print(json.dumps(report))
     return 0 if not gaps else 1

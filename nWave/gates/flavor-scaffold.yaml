@@ -20,24 +20,6 @@ module: des.cli.flavor_scaffold
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --flavor-id
-    required: true
-    type: string
-    help: "New flavor's id, e.g. `my_flavor` (pattern ^[a-z][a-z0-9_]*$)."
-  - name: --display-name
-    required: false
-    type: string
-    help: "Human-readable display name (default: titled from --flavor-id)."
-  - name: --repo
-    required: false
-    type: path
-    help: "Repo root to write nWave/flavors/<id>.yaml under (default: cwd)."
-  - name: --stdout
-    required: false
-    type: bool
-    help: "Print the scaffold to stdout instead of writing a file."
-
 log_events: []
 
 failure_modes:

@@ -1,7 +1,7 @@
 ---
 name: nw-platform-architect
 description: Use for DESIGN wave (infrastructure design) and DEVOPS wave (deployment execution, production readiness, stakeholder sign-off). Transforms architecture into deployable infrastructure, then coordinates production delivery and outcome measurement.
-model: inherit
+model: sonnet
 maxTurns: 45
 tools: Read, Write, Edit, Bash, Glob, Grep, Task
 skills:
@@ -11,6 +11,7 @@ skills:
   - nw-deployment-strategies
   - nw-production-readiness
   - nw-stakeholder-engagement
+  - nw-cross-cutting-invariants
 ---
 
 # nw-platform-architect
@@ -52,6 +53,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 | Phase | Load | Trigger |
 |-------|------|---------|
+| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-8`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | Platform Design (DESIGN Phase 3) | `~/.claude/skills/nw-cicd-and-deployment/SKILL.md` | designing CI/CD pipeline stages and security gates |
 | Platform Design (DESIGN Phase 3) | `~/.claude/skills/nw-infrastructure-and-observability/SKILL.md` | designing infrastructure, SLOs, metrics, alerting |
 | Platform Design (DESIGN Phase 3) | `~/.claude/skills/nw-platform-engineering-foundations/SKILL.md` | designing the platform foundation and engineering practices |

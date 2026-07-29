@@ -23,20 +23,6 @@ module: des.cli.find_similar_responsibility
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --name
-    required: true
-    type: string
-    help: "The proposed new symbol's name to fingerprint against the scope."
-  - name: --scope
-    required: true
-    type: path
-    help: "Directory to search for existing module-level def/class symbols."
-  - name: --format
-    required: false
-    type: string
-    help: "Output format (only 'json' is supported)."
-
 log_events: []
 
 failure_modes:

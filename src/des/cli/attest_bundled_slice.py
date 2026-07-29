@@ -73,6 +73,7 @@ from des.adapters.driven.logging.at_completion_ledger import (
     AtCompletionLedger,
     LedgerIntegrityViolation,
 )
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli._reverify_core import (
     _compose_gates,
     _emit,
@@ -135,7 +136,8 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="des attest-bundled-slice",
         description="Attest a bundle-delivered carpaccio slice (human-GO required).",
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo",
         required=True,
         help="Path to the git repository carrying the bundled slice.",
@@ -266,6 +268,10 @@ def _matched_slice_feature(repo: Path, slice_id: str, commit: str) -> str | None
     """
     slice_tag = re.compile(rf"@{re.escape(slice_id)}\b")
     for rel_path in sorted(files_in_commit(repo, commit)):
+        # gherkin-scope: KNOWN GAP (not fixed here) -- mirrors
+        # _reverify_core.py's P4 legs, same unfixed limitation: no
+        # pytest-arm fallback. Flagged by lane/at-discovery-archtest
+        # 2026-07-29, reported for triage.
         if not rel_path.endswith(".feature"):
             continue
         if not _path_in_commit_tree(repo, commit, rel_path):
@@ -282,6 +288,7 @@ def _matched_slice_feature(repo: Path, slice_id: str, commit: str) -> str | None
     touched = files_in_commit(repo, commit)
     tree = _git(repo, "ls-tree", "-r", "--name-only", parent)
     for rel_path in sorted(line for line in tree.splitlines() if line):
+        # gherkin-scope: KNOWN GAP (not fixed here), same class as above.
         if not rel_path.endswith(".feature") or rel_path in touched:
             continue
         content = _git(repo, "show", f"{parent}:{rel_path}")

@@ -1562,11 +1562,16 @@ _PRE_SLICE_04_SUBAGENT_STOP_COUNT = 2
 # addition (fix-orchestrator-affordance-refresh-independent) registered the
 # standalone SessionStart + UserPromptSubmit affordance-refresh entries (both
 # matcher-less, neither PreToolUse nor SubagentStop), so the LIVE registry now
-# carries 17/8/3. The slice-04 behavioural claim (every spine-ledger entry
-# carries the `# des-hook:` marker) is unaffected by any addition; only the
-# absolute live-count pins shift.
+# carries 17/8/3. sessionstart-cross-host-contract (6a3e057e4) then removed
+# the legacy DES-runtime SessionStart entry (matcher="startup"), so the LIVE
+# registry dropped to 16/8/3. A further orthogonal addition
+# (fix-worktree-removal-liveness-guard, Ale-authorised 2026-07-29) registered
+# a 6th PreToolUse/Bash entry (the worktree-removal liveness guard), so the
+# LIVE registry now carries 17/9/3. The slice-04 behavioural claim (every
+# spine-ledger entry carries the `# des-hook:` marker) is unaffected by any
+# addition; only the absolute live-count pins shift.
 _POST_SLICE_04_HOOK_EVENTS_COUNT = 17
-_POST_SLICE_04_PRE_TOOL_USE_COUNT = 8
+_POST_SLICE_04_PRE_TOOL_USE_COUNT = 9
 _POST_SLICE_04_SUBAGENT_STOP_COUNT = 3
 
 

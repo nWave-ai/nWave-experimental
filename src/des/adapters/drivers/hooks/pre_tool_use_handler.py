@@ -609,6 +609,26 @@ def handle_pre_tool_use() -> int:
                     task_correlation_id = des_task_signal.create_signal(
                         step_id=step_id_marker, project_id=project_id_marker
                     )
+                # GDP-6 (degrade-LOUD, never silent-wrong): an allow decision
+                # normally prints nothing (silence IS the signal, exit 0). A
+                # decision carrying a ``warning`` chose NOT to veto something it
+                # noticed (e.g. an expired-INFERRED wave floor) -- print it via
+                # the SAME allow-with-message protocol shape
+                # ``emit_commit_attribution_mutation`` already uses above, so
+                # the operator sees WHY the dispatch went through instead of
+                # mistaking silence for "nothing happened".
+                if decision.warning:
+                    print(
+                        json.dumps(
+                            {
+                                "hookSpecificOutput": {
+                                    "hookEventName": "PreToolUse",
+                                    "permissionDecision": "allow",
+                                    "permissionDecisionReason": decision.warning,
+                                }
+                            }
+                        )
+                    )
                 exit_code = 0
                 return exit_code
             else:

@@ -50,7 +50,7 @@ Even when `density.mode = "lean"` and `density.expansion_prompt = "always-skip"`
 When the user makes such a request:
 
 1. Append the corresponding `[WHY]` or `[HOW]` section to `feature-delta.md` under the current wave's heading.
-2. Emit a `DocumentationDensityEvent` with `choice="expand"` and `expansion_id=<the requested item>` to `JsonlAuditLogWriter`.
+2. Emit a `DocumentationDensityEvent` with `choice="expand"` and `expansion_id=<the requested item>` to `JsonlAuditLogWriter` -- **NOT YET WIRED** (see §Telemetry below); skip this step until the helper lands.
 3. Do NOT modify `~/.nwave/global-config.json`. The override is ONE-SHOT for this wave only.
 
 If the user's request matches NO item in the wave's Expansion Catalog, respond with the catalog list (one-line description per item per D10) and ask for clarification — do NOT improvise an expansion outside the catalog.
@@ -80,6 +80,8 @@ Every expansion choice — whether the user expanded an item or skipped the menu
 3. Dispatch via `JsonlAuditLogWriter().log_event(audit_event)`.
 
 The wave-skill harness invokes the helper `scripts/shared/telemetry.py:write_density_event(...)` which performs all three steps. Wave skills MUST NOT bypass the helper or write JSONL directly — every density telemetry event flows through the shared helper to keep the audit-log schema consistent.
+
+**NOT YET WIRED**: `scripts/shared/telemetry.py` does not exist yet and `DocumentationDensityEvent(` has zero constructor call sites anywhere in `src/des` — the class, schema, and emission pattern above are the DESIGNED shape (D4/DDD-6), not yet a firing producer. Until the helper lands, skip step 2 above; the `[WHY]`/`[HOW]` section append (step 1) and the one-shot override rule (step 3) are unaffected. Do not hand-roll a substitute JSONL write to fill the gap.
 
 **When to emit**:
 

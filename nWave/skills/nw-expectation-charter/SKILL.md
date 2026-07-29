@@ -62,6 +62,37 @@ her walk, from the SAME value statement, INDEPENDENTLY. The crafter authors neit
 the structural reason the charter must stay value-side: it is one of two independent readings
 of the SAME intent, not a downstream artifact of the other.
 
+## Run the producing tool first (GDP-4) — never hand-assemble the scaffold
+
+**`des charter-scaffold` is the producing tool for the file you are about to touch — run it
+before writing a single line by hand.** It reads the Slice Plan (or the bug/brownfield seed) and
+generates the scaffold at the correct path, with the correct filename, and with every heading
+already in the exact dialect `des verify-charter-filled` greps for (see Parser dialect below) —
+Intent pre-filled VERBATIM from the Value statement. It is idempotent (never overwrites an
+existing charter) and system-paid (GDP-5): the path/naming/heading judgment calls below exist so
+you can VERIFY the tool's output or fill a scaffold by hand in the rare case the tool cannot run
+(never as the default authoring path).
+
+```
+# default — one charter per observable Slice Plan row:
+des charter-scaffold --feature-id <feature-id>
+
+# a /nw-bugfix charter (no Slice Plan involved):
+des charter-scaffold --feature-id <feature-id> --seed-mode bug-observable \
+    --observable "<what a user sees once the bug is fixed>"
+
+# a brownfield-discovery charter retrofit onto existing code:
+des charter-scaffold --feature-id <feature-id> --seed-mode brownfield-discovery \
+    --area "<existing system area>"
+```
+
+Your job as the FRESH `nw-product-owner` context is to **fill** the TODO placeholders the tool
+already scaffolded (start-recipe, expected observations incl. ≥1 negative, session-log) — not to
+invent the path, filename, or heading text yourself. `des verify-charter-filled` then verifies the
+fill (backstop gate) before the charter can arm a DELIVER EXAMINE. Full wiring (WHEN this runs in
+each wave): `nWave/skills/nw-distill/SKILL.md` § "Charter Scaffold (DISTILL-open...)" — the SSOT
+for when the tool fires; this skill is the SSOT for what to write once it has.
+
 ## When NOT to write a charter
 
 `@infrastructure` / `@prefactoring` slices with no user-observable value get NO charter —
@@ -76,7 +107,14 @@ now reads from the wired config", gets the charter (the observable behavior fina
 
 ## How to write a good charter
 
-1. **Path** — `docs/product/expectations/{feature-id}/{intent-name}.md`. `{intent-name}` is
+**This section documents the form `des charter-scaffold` already produces (Path/Preconditions/
+Parser dialect below), and the content YOU fill in on top of it (Charter body, Expected
+observations, Session log) — it is a fill-in-and-verify checklist, not a from-scratch authoring
+recipe.** Run the tool first (previous section); read this to know what a correctly-filled
+scaffold looks like.
+
+1. **Path** — `docs/product/expectations/{feature-id}/{intent-name}.md`, already correct in a
+   tool-produced scaffold. `{intent-name}` is
    kebab-case and names the INTENT from the user's side (e.g.
    `a-visitor-confirms-a-seat-and-finds-it-in-their-bookings`), never the implementation. Gate:
    filename reads as a value-outcome, not a mechanism.

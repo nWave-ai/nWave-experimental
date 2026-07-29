@@ -40,11 +40,12 @@ observable); non-zero on any degrade-LOUD verdict.
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
 
+from des.cli._repo_root_arg import add_repo_root_argument
+from des.cli._scaffold_core import decide_on_exists, emit_scaffold_verdict
 from des.cli.validate_feature_delta import (
     _NON_OBSERVABLE_ANNOTATIONS,
     _SLICE_PLAN_HEADING_RE,
@@ -269,7 +270,7 @@ def _scaffold_slice(
         return filename, False
     expectations_dir = repo_root / "docs" / "product" / "expectations" / feature_id
     path = expectations_dir / filename
-    if path.exists():
+    if decide_on_exists(target_exists=path.exists(), policy="skip") == "skip":
         return filename, False
     expectations_dir.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -314,8 +315,8 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--feature-id", required=True, help="The feature id.")
-    parser.add_argument(
-        "--repo-root", default=".", help="Repository root (default: cwd)."
+    add_repo_root_argument(
+        parser, "--repo-root", default=".", help="Repository root (default: cwd)."
     )
     parser.add_argument(
         "--format",
@@ -361,20 +362,19 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _degrade(feature_id: str, verdict: str, detail: str) -> int:
     """Emit a degrade-LOUD JSON payload (zero scaffolds attempted) and return
-    the non-zero exit code."""
-    print(
-        json.dumps(
-            {
-                "feature_id": feature_id,
-                "created": [],
-                "skipped": [],
-                "observable_slices": 0,
-                "verdict": verdict,
-                "detail": detail,
-            }
-        )
+    the non-zero exit code. `verdict` here is always a non-accepted token, so
+    `emit_scaffold_verdict` always returns 1 -- same as the hardcoded `return
+    1` this replaces."""
+    return emit_scaffold_verdict(
+        {
+            "feature_id": feature_id,
+            "created": [],
+            "skipped": [],
+            "observable_slices": 0,
+            "verdict": verdict,
+            "detail": detail,
+        }
     )
-    return 1
 
 
 def _load_template_skeleton_or_degrade(
@@ -473,19 +473,16 @@ def _emit_single_scaffold_result(
         # self-explaining); the empty-slug case is handled above.
         skipped = [] if was_created else [filename]
 
-    print(
-        json.dumps(
-            {
-                "feature_id": feature_id,
-                "created": created,
-                "skipped": skipped,
-                "observable_slices": 1,
-                "verdict": VERDICT_ACCEPTED,
-                "detail": f"{len(created)} scaffold(s) created, {len(skipped)} skipped",
-            }
-        )
+    return emit_scaffold_verdict(
+        {
+            "feature_id": feature_id,
+            "created": created,
+            "skipped": skipped,
+            "observable_slices": 1,
+            "verdict": VERDICT_ACCEPTED,
+            "detail": f"{len(created)} scaffold(s) created, {len(skipped)} skipped",
+        }
     )
-    return 0
 
 
 def _run_bug_observable(
@@ -619,19 +616,16 @@ def _run_slice_plan(repo_root: Path, feature_id: str) -> int:
         )
         (created if was_created else skipped).append(filename)
 
-    print(
-        json.dumps(
-            {
-                "feature_id": feature_id,
-                "created": created,
-                "skipped": skipped,
-                "observable_slices": len(observable_rows),
-                "verdict": VERDICT_ACCEPTED,
-                "detail": f"{len(created)} scaffold(s) created, {len(skipped)} skipped",
-            }
-        )
+    return emit_scaffold_verdict(
+        {
+            "feature_id": feature_id,
+            "created": created,
+            "skipped": skipped,
+            "observable_slices": len(observable_rows),
+            "verdict": VERDICT_ACCEPTED,
+            "detail": f"{len(created)} scaffold(s) created, {len(skipped)} skipped",
+        }
     )
-    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

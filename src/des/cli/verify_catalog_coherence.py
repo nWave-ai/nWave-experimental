@@ -49,6 +49,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from des.cli._repo_root_arg import add_repo_root_argument
+
 
 _SUBCOMMAND_ROW_NAME_RE = re.compile(r'_SubcommandRow\(\s*"([^"]+)"')
 _GATES_BLOCK_MARKER_RE = re.compile(r"^gates:\s*$", re.MULTILINE)
@@ -233,7 +235,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "report drift with a HOW to reconcile."
         ),
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo-root",
         type=str,
         default=".",

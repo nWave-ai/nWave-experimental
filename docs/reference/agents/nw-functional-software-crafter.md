@@ -1,9 +1,9 @@
 # nw-functional-software-crafter
 
-DELIVER wave — SLIM functional crafter. GREEN-the-ATs + L1-L6 refactor for FP paradigm (F#/Haskell/Scala/Clojure/Elixir/FP-heavy TS/Py/Kotlin). Pure functions, pipeline composition, types-as-documentation. Test authoring (ATs + paired PBT) is owned by `nw-acceptance-designer`; this agent implements pure functions and refactors. Use when the project follows functional-first.
+DELIVER wave — SLIM functional crafter. GREEN-the-ATs + L1-L6 refactor for FP paradigm (F#/Haskell/Scala/Clojure/Elixir/FP-heavy TS/Py/Kotlin). Pure functions, pipeline composition, types-as-documentation. Test authoring (ATs + paired PBT) is owned by `nw-acceptance-designer`; this agent implements pure functions and refactors. Use when the project follows functional-first. NOT hand-dispatchable — production code travels the DES spine. PREFER `des dispatch` and pass its envelope VERBATIM (fast and deterministic — it emits the complete marker triple for you, no hand-assembly); the wave commands `/nw-deliver` and `/nw-bugfix` drive it as well. A bare Agent/Task dispatch of this agent is refused by the spine guard. For analysis, measurement or investigation pick a different agent — this one is for implementation only.
 
 **Wave:** DELIVER
-**Model:** inherit
+**Model:** sonnet
 **Max turns:** 45
 **Tools:** Read, Write, Edit, Bash, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 
@@ -19,6 +19,7 @@ DELIVER wave — SLIM functional crafter. GREEN-the-ATs + L1-L6 refactor for FP 
 - [nw-code-design-fp](../skills/nw-code-design-fp.md) — FP code-design SSOT — the WHAT-to-design catalog (algebra-driven design, domain modelling with types, railway/error-track isolation) shared by the solution architect (design-time) and the functional crafter (execution-time).
 - [nw-collaboration-and-handoffs](../skills/nw-collaboration-and-handoffs.md) — Cross-agent collaboration protocols, workflow handoff patterns, and commit message formats for TDD/Mikado/refactoring workflows
 - [nw-crafter-discipline-atdd-pure](../skills/nw-crafter-discipline-atdd-pure.md) — Crafter discipline contract for the ATDD-pure workflow — what the slim crafter does in Phase A (GREEN-the-ATs with AT-driven minimalism), Phase B (coverage-driven dead-code elimination — DEPRECATED velocity-v2, absorbed into A_GREEN), and Phase E (batch L1-L6 refactor), plus hard prohibitions
+- [nw-cross-cutting-invariants](../skills/nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — paradigm-independent and role-independent rules that bind every architect and crafter (data justification, gate design GDP-1..8, self-explaining surfaces). SHIPPED home of these definitions; cite by clause id, never re-declare.
 - [nw-fp-algebra-driven-design](../skills/nw-fp-algebra-driven-design.md) — Algebra-driven API design with monoids, semigroups, and interpreters via algebraic equations
 - [nw-fp-clojure](../skills/nw-fp-clojure.md) — Clojure language-specific patterns, data-first modeling, REPL-driven development, and spec
 - [nw-fp-domain-modeling](../skills/nw-fp-domain-modeling.md) — Domain modeling with algebraic data types, smart constructors, and type-level error handling

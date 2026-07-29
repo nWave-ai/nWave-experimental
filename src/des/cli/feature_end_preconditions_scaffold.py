@@ -46,6 +46,8 @@ import re
 import sys
 from pathlib import Path
 
+from des.cli._repo_root_arg import add_repo_root_argument
+from des.cli._scaffold_core import decide_on_exists, emit_scaffold_verdict
 from des.cli.axis_b_levers import resolve_layout
 from des.cli.validate_feature_delta import VERDICT_ACCEPTED
 from des.cli.verify_fresh_clone import RECIPE_RELPATH
@@ -81,18 +83,16 @@ _POE_TASK_ENTRY_RE = re.compile(
 
 def _emit(target: str, written: bool, verdict: str, detail: str) -> int:
     """Print the shared `{target, written, verdict, detail}` JSON payload and
-    return the exit code -- 0 on `accepted`, 1 on any degrade-LOUD verdict."""
-    print(
-        json.dumps(
-            {
-                "target": target,
-                "written": written,
-                "verdict": verdict,
-                "detail": detail,
-            }
-        )
+    return the exit code -- 0 on `accepted`, 1 on any degrade-LOUD verdict.
+    Delegates to the shared des.cli._scaffold_core verdict envelope (D49)."""
+    return emit_scaffold_verdict(
+        {
+            "target": target,
+            "written": written,
+            "verdict": verdict,
+            "detail": detail,
+        }
     )
-    return 0 if verdict == VERDICT_ACCEPTED else 1
 
 
 # --- --target environmental-e2e -------------------------------------------
@@ -125,7 +125,10 @@ def _run_environmental_e2e(
         )
 
     content = delta_path.read_text(encoding="utf-8")
-    if has_environmental_e2e_block(content):
+    exists_decision = decide_on_exists(
+        target_exists=has_environmental_e2e_block(content), policy="skip"
+    )
+    if exists_decision == "skip":
         existing = _existing_e2e_test_path(content) or "<unreadable>"
         return _emit(
             TARGET_ENVIRONMENTAL_E2E,
@@ -206,7 +209,7 @@ def _run_demo_recipe(repo_root: Path) -> int:
     idempotent no-op when it already exists. Not pure (filesystem
     read/write + stdout print)."""
     recipe_path = repo_root / RECIPE_RELPATH
-    if recipe_path.is_file():
+    if decide_on_exists(target_exists=recipe_path.is_file(), policy="skip") == "skip":
         return _emit(
             TARGET_DEMO_RECIPE,
             False,
@@ -270,8 +273,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "the declared e2e test."
         ),
     )
-    parser.add_argument(
-        "--repo-root", default=".", help="Repository root (default: cwd)."
+    add_repo_root_argument(
+        parser, "--repo-root", default=".", help="Repository root (default: cwd)."
     )
     return parser
 

@@ -22,16 +22,6 @@ module: des.cli.verify_design_review
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --feature-id
-    required: true
-    type: string
-    help: "Feature identifier; resolves the feature-delta artefact and the per-feature ledger."
-  - name: --repo-root
-    required: false
-    type: path
-    help: "Repository root override; defaults to the resolved current repo root."
-
 log_events: []
 
 failure_modes:

@@ -333,6 +333,19 @@ class ShippingComposition:
             and bool(record.get("timestamp"))
         )
 
+    def latest_record_is_not_approval(self) -> bool:
+        """True iff the latest recorded verdict is NOT ``APPROVED``.
+
+        declared-facts-reachable-recorded slice-01 (DD-1 both-outcomes
+        write): a NEEDS_REVISION review now writes a ledger record too
+        (instead of writing nothing), so the observable this scenario pins
+        moved from "no record exists" to "a record exists and it is not an
+        approval".
+        """
+        verdicts = self.verdicts_for_entering_slice()
+        assert verdicts, "expected a ledger record for the entering slice"
+        return verdicts[-1].get("verdict") != "APPROVED"
+
     def latest_record_carries_signature_field(self) -> bool:
         """True iff the latest recorded verdict still carries ``hmac_sha256``.
 

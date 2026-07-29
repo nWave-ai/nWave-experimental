@@ -27,12 +27,17 @@ Regression ATs: tests/des/unit/cli/test_des_dispatch_generator.py
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
+import json
+import shlex
 import sys
 import uuid
 from pathlib import Path
 
 from des._internal import subset_parser
 from des.application.dispatch_lane_ssot import _DISPATCH_YAML_PARTS, _read_full_sections
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.validate_feature_delta import (
     VERDICT_METHODOLOGY_EXEMPT,
     VERDICT_MISSING_PREFACTORING_ASSESSMENT,
@@ -69,6 +74,225 @@ from des.domain.wave_dispatch_profile import WAVE_DISPATCH_PROFILES
 #: Deliberate, distinguishable exit for "bad input" (missing/invalid CLI
 #: argument, unreadable/malformed SSOT file) -- never a Python traceback.
 _EXIT_USAGE_ERROR = 2
+_MAX_HANDOFF_BYTES = 2_048
+
+
+def _handoff_refusal(*, what: str, why: str, how: str) -> int:
+    """Emit an actionable refusal without a success-shaped JSON envelope."""
+    print(f"WHAT: {what} WHY: {why} HOW: {how}", file=sys.stderr)
+    return _EXIT_USAGE_ERROR
+
+
+def _result_summary(observed_result: str) -> dict[str, int | str] | None:
+    """Return the public result fields for the accepted observed-result form."""
+    label, separator, value = observed_result.partition("=")
+    if label != "exit" or not separator or not value.isdecimal():
+        return None
+    canonical_result = f"exit={int(value)}"
+    return {
+        "exit_code": int(value),
+        "digest": hashlib.sha256(canonical_result.encode("utf-8")).hexdigest(),
+    }
+
+
+def _record_path_for(raw_log: Path) -> Path:
+    """Allocate a sibling record so the original evidence remains untouched."""
+    return raw_log.with_name(f"{raw_log.name}.des-handoff-{uuid.uuid4().hex}.json")
+
+
+def _output_record(raw_log: Path, raw_output: bytes) -> dict[str, int | str]:
+    """Encode tool bytes without pretending every completed log is UTF-8 text."""
+    output: dict[str, int | str] = {
+        "locator": str(raw_log),
+        "sha256": hashlib.sha256(raw_output).hexdigest(),
+        "bytes": len(raw_output),
+    }
+    try:
+        output["content"] = raw_output.decode("utf-8")
+    except UnicodeDecodeError:
+        output["content_base64"] = base64.b64encode(raw_output).decode("ascii")
+    return output
+
+
+def _json_bytes(value: object) -> bytes:
+    """Produce the exact UTF-8 representation that is hashed and persisted."""
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def _bounded_summary(
+    *,
+    command: str,
+    result: dict[str, int | str],
+    record_path: Path,
+    record_bytes: bytes,
+) -> bytes | None:
+    """Return a compact success envelope, or refuse before output can exceed 2 KiB."""
+    record = {
+        "locator": str(record_path),
+        "sha256": hashlib.sha256(record_bytes).hexdigest(),
+        "bytes": len(record_bytes),
+    }
+    details_command = (
+        f"des dispatch --show-tool-output {shlex.quote(str(record_path))} "
+        f"--sha256 {record['sha256']}"
+    )
+    summary: dict[str, object] = {
+        "command": command,
+        "result": result,
+        "record": record,
+        "details_command": details_command,
+    }
+    serialized = _json_bytes(summary)
+    if len(serialized) <= _MAX_HANDOFF_BYTES:
+        return serialized
+
+    summary.pop("command")
+    summary["command_digest"] = hashlib.sha256(command.encode("utf-8")).hexdigest()
+    serialized = _json_bytes(summary)
+    if len(serialized) <= _MAX_HANDOFF_BYTES:
+        return serialized
+    return None
+
+
+def _write_tool_output_handoff(
+    *, raw_log: Path, command: str, observed_result: str
+) -> int:
+    """Persist complete evidence and emit only its compact, verifiable handoff."""
+    result = _result_summary(observed_result)
+    if result is None:
+        return _handoff_refusal(
+            what="the observed tool result is not an `exit=<integer>` value",
+            why="the bounded handoff must publish an unambiguous exit code",
+            how="pass --tool-result in the form `exit=0` (or another integer exit code)",
+        )
+    try:
+        raw_output = raw_log.read_bytes()
+    except OSError as exc:
+        return _handoff_refusal(
+            what=f"the tool-output log cannot be read at {raw_log}",
+            why=f"no durable evidence can be recorded ({exc})",
+            how="pass --tool-output-log pointing to a readable completed command log",
+        )
+
+    output = _output_record(raw_log, raw_output)
+    complete_record = {"command": command, "result": result, "output": output}
+    record_path = _record_path_for(raw_log)
+    try:
+        record_path.write_bytes(_json_bytes(complete_record))
+        record_bytes = record_path.read_bytes()
+    except OSError as exc:
+        return _handoff_refusal(
+            what=f"the durable handoff record cannot be persisted at {record_path}",
+            why=f"complete command evidence would not remain recoverable ({exc})",
+            how="supply a tool-output log in a writable directory and rerun des dispatch",
+        )
+
+    summary = _bounded_summary(
+        command=command,
+        result=result,
+        record_path=record_path,
+        record_bytes=record_bytes,
+    )
+    if summary is None:
+        return _handoff_refusal(
+            what="the compact tool-output handoff exceeds the 2 KiB context budget",
+            why="the command or durable-record locator is too large to return without prompt bloat",
+            how="use a shorter command or tool-output-log path, then rerun des dispatch",
+        )
+    print(summary.decode("utf-8"))
+    return 0
+
+
+def _validated_tool_output_record(record: object) -> dict[str, object] | None:
+    """Accept only complete records whose embedded output verifies itself."""
+    if not isinstance(record, dict):
+        return None
+    command = record.get("command")
+    result = record.get("result")
+    output = record.get("output")
+    if (
+        not isinstance(command, str)
+        or not isinstance(result, dict)
+        or not isinstance(output, dict)
+    ):
+        return None
+    exit_code = result.get("exit_code")
+    result_digest = result.get("digest")
+    if (
+        isinstance(exit_code, bool)
+        or not isinstance(exit_code, int)
+        or not isinstance(result_digest, str)
+        or result_digest != hashlib.sha256(f"exit={exit_code}".encode()).hexdigest()
+    ):
+        return None
+    locator = output.get("locator")
+    output_digest = output.get("sha256")
+    output_bytes = output.get("bytes")
+    content = output.get("content")
+    content_base64 = output.get("content_base64")
+    if (
+        not isinstance(locator, str)
+        or not isinstance(output_digest, str)
+        or isinstance(output_bytes, bool)
+        or not isinstance(output_bytes, int)
+        or (isinstance(content, str) == isinstance(content_base64, str))
+    ):
+        return None
+    try:
+        raw_output = (
+            content.encode("utf-8")
+            if isinstance(content, str)
+            else base64.b64decode(content_base64, validate=True)
+        )
+    except (UnicodeEncodeError, ValueError):
+        return None
+    if (
+        len(raw_output) != output_bytes
+        or hashlib.sha256(raw_output).hexdigest() != output_digest
+    ):
+        return None
+    return record
+
+
+def _show_tool_output(argv: list[str]) -> int:
+    """Load a complete handoff record only when its published hash still matches."""
+    parser = argparse.ArgumentParser(prog="des dispatch")
+    parser.add_argument("--show-tool-output", required=True, type=Path)
+    parser.add_argument("--sha256", required=True)
+    args = parser.parse_args(argv)
+    try:
+        record_bytes = args.show_tool_output.read_bytes()
+    except OSError as exc:
+        return _handoff_refusal(
+            what=f"the durable handoff record cannot be read at {args.show_tool_output}",
+            why=f"the complete evidence is unavailable ({exc})",
+            how="use the record locator emitted by the original handoff or recreate the handoff",
+        )
+    actual_digest = hashlib.sha256(record_bytes).hexdigest()
+    if actual_digest != args.sha256:
+        return _handoff_refusal(
+            what="the durable handoff record SHA-256 does not match the requested digest",
+            why="the record was replaced or tampered with and is not verified",
+            how="recover the original record or recreate the handoff from the completed tool-output log",
+        )
+    try:
+        record = json.loads(record_bytes)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        return _handoff_refusal(
+            what="the durable handoff record is not valid JSON",
+            why=f"verified bytes cannot be interpreted as complete evidence ({exc})",
+            how="recreate the handoff from the completed tool-output log",
+        )
+    verified_record = _validated_tool_output_record(record)
+    if verified_record is None:
+        return _handoff_refusal(
+            what="the durable handoff record schema or embedded output integrity is invalid",
+            why="a matching outer record digest cannot prove that command evidence fields agree internally",
+            how="recreate the handoff from the completed tool-output log and use its emitted details command",
+        )
+    print(json.dumps(verified_record, ensure_ascii=False, separators=(",", ":")))
+    return 0
+
 
 #: Reuse Analysis verdicts that mean the feature-delta IS readiness-ready
 #: (GDP-1/2: proactive readiness ADVISORY, see `_feature_delta_readiness_
@@ -315,6 +539,67 @@ def _resolve_agent(phase: str | None, lane: str | None, wave: str | None = None)
     if wave is not None and wave in _WAVE_AGENTS:
         return _WAVE_AGENTS[wave]
     return _DEFAULT_AGENT
+
+
+def _wave_floor_armed_advisory(project_root: Path) -> str | None:
+    """Proactive heads-up (GDP-1/2) when a wave floor is armed at GENERATION time.
+
+    Defect 2, docs/mikado/EXECUTION-SSOT-des-optimization.md (2026-07-29): the
+    guidance "generate this with `des dispatch`, never hand-assemble it" only
+    ever reached the operator INSIDE the WAVE_MARKER_BYPASS refusal -- after a
+    hand-assembled prompt was already dispatched and the effort already spent
+    (GDP-5: cost landed on the operator, not the system). `des dispatch` is
+    the ONE authoring surface an operator following the standing "dispatch via
+    des dispatch, never bare" rule already touches for EVERY dispatch; this
+    makes it say, at that surface, the exact thing the refusal says too late.
+
+    ADVISORY-ONLY (mirrors ``_feature_delta_missing_advisory``'s contract):
+    printed to stderr, generation continues unconditionally, never blocks and
+    never changes the exit code -- unconditional (not gated on ``--lane`` or
+    ``--wave``) because ANY dispatch generated while a floor is armed benefits
+    from knowing so, not only one that happens to collide with it.
+
+    Reuses ``describe_wave_floor`` (the SAME domain SSOT the WAVE_MARKER_BYPASS
+    refusal's ``_describe_wave_floor`` calls, defect-3) -- one prose source,
+    read by both the reactive refusal and this proactive advisory, so the two
+    surfaces never drift into two hand-maintained descriptions of one floor.
+    An EXPIRED inferred floor (``is_inferred_floor_expired``) is silently
+    treated as absent -- the same read-side GC the refusal's own floor read
+    already applies -- so this never warns about a guess that no longer gates
+    anything.
+    """
+    import time
+
+    from des.adapters.driven.filesystem.wave_active_filesystem_store import (
+        WaveActiveFilesystemStore,
+        floor_path,
+    )
+    from des.domain.wave_active import (
+        WaveActiveRecord,
+        describe_wave_floor,
+        is_inferred_floor_expired,
+    )
+
+    try:
+        state = WaveActiveFilesystemStore().read(project_root)
+    except Exception:
+        return None
+    if not isinstance(state, WaveActiveRecord):
+        return None
+    now = time.time()
+    if is_inferred_floor_expired(state, now):
+        return None
+    description = describe_wave_floor(
+        state, floor_file=floor_path(project_root), project_root=project_root, now=now
+    )
+    return (
+        f"advisory: a wave floor is armed -- {description} You are already "
+        "doing the right thing by generating this dispatch with `des "
+        "dispatch`: use the envelope below VERBATIM. If you were about to "
+        "hand-assemble a prompt instead for a DIFFERENT dispatch, run `des "
+        "dispatch` for that one too -- hand-assembling is what trips "
+        "WAVE_MARKER_BYPASS later, after the effort is already spent."
+    )
 
 
 def _feature_delta_missing_advisory(project_root: Path, feature_id: str) -> str | None:
@@ -589,10 +874,16 @@ def _legacy_middle_slot_section_body(section_id: str) -> str | None:
             "middle slot on a partial review.\n"
         ),
         "AT_COMPLETION_LEDGER": (
-            "Emit a PhaseCReviewerVerdict with the technical audit findings.\n"
+            "Record the technical audit findings via `des record-review-verdict "
+            "--feature-id <id> --slice-id <slice> --reviewer-agent-id "
+            "<your-agent-id> --verdict {APPROVED|NEEDS_REVISION|REJECTED} "
+            "--artifact <what-you-reviewed>` (emits `ReviewVerdictRecorded` to "
+            "the review ledger -- the general reviewer-verdict producer, NOT a "
+            "bespoke event name).\n"
         ),
         "TERMINATING_RUN": (
-            "Report the 15-item AT-completeness audit and its PhaseCReviewerVerdict.\n"
+            "Report the 15-item AT-completeness audit and the recorded "
+            "`ReviewVerdictRecorded` verdict.\n"
         ),
     }
     return bodies.get(section_id)
@@ -923,6 +1214,7 @@ def _build_prompt(
     project_root: Path,
     capability: DeclaredCapability,
     declared_project_root: Path | None = None,
+    swarm_isolated_justification: str | None = None,
     middle_slot_charter: str | None = None,
     legacy_middle_slot: bool = False,
 ) -> str:
@@ -945,6 +1237,16 @@ def _build_prompt(
     the parser actually reads, not in prose the operator adds by hand.
     ``None`` (no ``--repo-root``) stamps nothing: nothing was declared, and the
     hook's cwd default is then the right answer.
+
+    ``swarm_isolated_justification`` is the DECLARED reason this dispatch runs
+    in an isolated parallel worktree; when set it is stamped as the
+    ``DES-SWARM-ISOLATED-DISPATCH`` marker, which defers the M8 carpaccio order
+    check to integration (a slice N>1 in an isolated worktree cannot see its
+    predecessor's ``SliceCommitVerified`` record until a later, in-order
+    integration folds it onto the shared line). It is stamped ONLY from an
+    explicit declaration -- never inferred from cwd shape, worktree layout, or
+    any other ambient signal: the marker disarms an ordering check, and a
+    guessed exemption would disarm it for a caller who never asked.
     """
 
     def marker(key: str, value: str) -> str:
@@ -967,6 +1269,10 @@ def _build_prompt(
         if lane in _LANES_REQUIRING_JUSTIFICATION:
             justification = f"{defect} -- regression test: {regression_test}"
             marker_lines.append(marker("DES-LANE-JUSTIFICATION", justification))
+    if swarm_isolated_justification:
+        marker_lines.append(
+            marker("DES-SWARM-ISOLATED-DISPATCH", swarm_isolated_justification)
+        )
     if at_kind == "pytest-regression" and regression_test_file is not None:
         marker_lines.append(marker("DES-AT-KIND", at_kind))
         marker_lines.append(marker("DES-REGRESSION-TEST-FILE", regression_test_file))
@@ -1068,12 +1374,45 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Bugfix lane only: the regression test name (test_<name>).",
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo-root",
         dest="repo_root",
         type=Path,
         default=None,
-        help="Repo root holding nWave/dispatch/*.yaml (default: cwd).",
+        help=(
+            "Repo root holding nWave/dispatch/*.yaml (default: cwd). A "
+            "relative value is resolved to an absolute path against the "
+            "invoking cwd BEFORE it is stamped as DES-PROJECT-ROOT -- the "
+            "consuming hook cannot answer 'relative to what', and that "
+            "question is answerable here."
+        ),
+    )
+    parser.add_argument(
+        "--swarm-isolated",
+        dest="swarm_isolated",
+        action="store_true",
+        help=(
+            "Declare that this dispatch executes in an ISOLATED parallel "
+            "worktree, emitting the DES-SWARM-ISOLATED-DISPATCH marker so the "
+            "carpaccio order check is deferred to integration (a slice N>1 in "
+            "an isolated worktree cannot see its predecessor's "
+            "SliceCommitVerified record until an in-order integration folds it "
+            "onto the shared line). Requires --swarm-justification. The "
+            "isolation is a fact the CALLER declares -- it is never inferred "
+            "from cwd shape or worktree layout."
+        ),
+    )
+    parser.add_argument(
+        "--swarm-justification",
+        dest="swarm_justification",
+        default=None,
+        help=(
+            "Free text naming WHY this dispatch is swarm-isolated (which "
+            "worktree, which predecessor record lands at integration). "
+            "Carried verbatim in the DES-SWARM-ISOLATED-DISPATCH marker; "
+            "paired with --swarm-isolated."
+        ),
     )
     parser.add_argument(
         "--at-kind",
@@ -1096,6 +1435,22 @@ def _build_parser() -> argparse.ArgumentParser:
             "--at-kind pytest-regression)."
         ),
     )
+    parser.add_argument(
+        "--tool-output-log",
+        type=Path,
+        default=None,
+        help="Completed tool-output log to persist as a bounded dispatch handoff.",
+    )
+    parser.add_argument(
+        "--tool-command",
+        default=None,
+        help="Exact command associated with --tool-output-log.",
+    )
+    parser.add_argument(
+        "--tool-result",
+        default=None,
+        help="Observed result as exit=<integer>, associated with --tool-output-log.",
+    )
     return parser
 
 
@@ -1106,7 +1461,77 @@ def main(argv: list[str] | None = None) -> int:
     no traceback) for a missing/unknown ``--project-id`` / ``--phase`` /
     ``--lane``, naming the offending value via ``choices``/``required``.
     """
-    args = _build_parser().parse_args(argv)
+    raw_argv = sys.argv[1:] if argv is None else argv
+    if "--show-tool-output" in raw_argv:
+        return _show_tool_output(raw_argv)
+
+    args = _build_parser().parse_args(raw_argv)
+
+    # GDP-1 (intercept BEFORE the effort it guards is spent): a relative
+    # --repo-root is resolved to an absolute path HERE, at generation, not
+    # echoed verbatim into DES-PROJECT-ROOT for the hook to refuse as
+    # `declared-project-root-not-absolute` AFTER the whole prompt (skills, task
+    # context, quality gates) has been assembled. "Absolute with respect to
+    # what?" is the question that refusal asks, and the generator is the ONE
+    # place that can answer it: the value is relative to the cwd the operator
+    # typed it in. `Path.resolve()` is pure Python + filesystem -- no `git`, no
+    # external CLI, so the target-machine-agnosticism constraint holds -- and it
+    # is the SAME normalisation the consuming validator applies to a marker it
+    # accepts (`project_root_validator.resolve_declared_project_root` returns
+    # `candidate.resolve()`), so generator and consumer agree by construction
+    # rather than by coincidence. Idempotent for an already-absolute value, so
+    # an explicit absolute --repo-root is carried through unchanged.
+    if args.repo_root is not None:
+        args.repo_root = args.repo_root.resolve()
+
+    handoff_values = (args.tool_output_log, args.tool_command, args.tool_result)
+    if any(value is not None for value in handoff_values):
+        if any(value is None for value in handoff_values):
+            return _handoff_refusal(
+                what="the bounded tool-output handoff is missing required evidence fields",
+                why="a durable record needs the completed log, exact command, and observed result together",
+                how="pass --tool-output-log, --tool-command, and --tool-result in the same des dispatch invocation",
+            )
+        return _write_tool_output_handoff(
+            raw_log=args.tool_output_log,
+            command=args.tool_command,
+            observed_result=args.tool_result,
+        )
+
+    # The swarm-isolation DECLARATION and its justification are one fact in two
+    # flags, so neither half is usable alone. Both halves are refused here, at
+    # the authoring surface (GDP-2), because neither failure is legible where it
+    # would otherwise land: an EMPTY justification fails closed at the hook
+    # (`_SWARM_ISOLATED_PATTERN` needs >=1 char), where the order check then
+    # reports a missing PREDECESSOR ledger record and names nothing about the
+    # malformed declaration; and a justification silently dropped for want of
+    # --swarm-isolated hands back an envelope missing the exemption the operator
+    # believes they asked for (GDP-6: no silent-wrong).
+    swarm_justification = (args.swarm_justification or "").strip()
+    if args.swarm_isolated and not swarm_justification:
+        print(
+            "error: --swarm-isolated declares that this dispatch runs in an "
+            "isolated parallel worktree, which DEFERS the carpaccio slice-order "
+            "check to integration -- an exemption that must say why it is "
+            "owed. Pass --swarm-justification '<which worktree, and which "
+            "predecessor SliceCommitVerified record lands at integration>' "
+            "alongside it. An empty justification would emit a marker the hook "
+            "cannot read, and the order check would then block naming the "
+            "predecessor's missing ledger record, not this declaration.",
+            file=sys.stderr,
+        )
+        return _EXIT_USAGE_ERROR
+    if swarm_justification and not args.swarm_isolated:
+        print(
+            "error: --swarm-justification was given without --swarm-isolated, "
+            "so no DES-SWARM-ISOLATED-DISPATCH marker would be emitted and the "
+            "justification would be silently dropped -- the dispatch would then "
+            "be blocked at the carpaccio order check, far from this cause. Add "
+            "--swarm-isolated to DECLARE the isolation, or drop "
+            "--swarm-justification if this dispatch is not swarm-isolated.",
+            file=sys.stderr,
+        )
+        return _EXIT_USAGE_ERROR
 
     phase: str | None = args.phase
     # An AUTHORING wave is phaseless for the SAME structural reason a
@@ -1198,6 +1623,14 @@ def main(argv: list[str] | None = None) -> int:
     project_root = resolve_repo_root(
         str(args.repo_root) if args.repo_root is not None else None
     )
+
+    # GDP-1/2 (proactive, at the AUTHORING surface, before any dispatch is
+    # attempted -- defect-2, docs/mikado/EXECUTION-SSOT-des-optimization.md):
+    # unconditional on lane/wave, since ANY dispatch generated while a floor
+    # is armed benefits from knowing so.
+    wave_floor_advisory = _wave_floor_armed_advisory(project_root)
+    if wave_floor_advisory is not None:
+        print(wave_floor_advisory, file=sys.stderr)
 
     dispatch_yaml_path = ssot_dir.joinpath(*_DISPATCH_YAML_PARTS)
 
@@ -1406,6 +1839,9 @@ def main(argv: list[str] | None = None) -> int:
         # is also the cwd default, and stamping that would turn every envelope
         # into a declaration the caller never made.
         declared_project_root=project_root if args.repo_root is not None else None,
+        # Stamped ONLY from the caller's explicit declaration (validated above),
+        # never inferred: the marker disarms the slice-order check.
+        swarm_isolated_justification=swarm_justification or None,
         middle_slot_charter=middle_slot_charter,
         legacy_middle_slot=legacy_middle_slot,
     )

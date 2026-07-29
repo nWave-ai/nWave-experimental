@@ -14,21 +14,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from des.domain.repo_path_resolver import feature_delta_path as _delta_path
 from des.ports.driven_ports.feature_delta_reader import FeatureDeltaReader
 
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-# DESIGN-PINNED feature-delta location: a single Markdown artefact under the
-# feature folder; the AT-seed + this reader share this one SSOT.
-_FEATURE_REL_DIR = ("docs", "feature")
-_FEATURE_DELTA_FILE = "feature-delta.md"
-
-
-def _delta_path(project_root: Path, feature_id: str) -> Path:
-    return project_root.joinpath(*_FEATURE_REL_DIR, feature_id, _FEATURE_DELTA_FILE)
 
 
 class FeatureDeltaFilesystemReader(FeatureDeltaReader):

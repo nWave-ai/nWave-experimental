@@ -7,10 +7,10 @@ delegate to the composition root
 (``composition_slice_01_truthful_recovery.py``); no business logic in step bodies
 (Mandate-12 criterion 3 -- each body is a single composition call).
 
-Active-RED scaffold (atdd_pure -- NOT @skip): RED until DELIVER replaces the
-untruthful DES-WAVE-only recovery item with the A2 stale-floor clear hint naming
-``des wave-clear``. Every assertion fails with a semantic AssertionError, never a
-collection / import / setup error.
+Precondition updated 2026-07-29 (widened INFERRED-floor advisory): an INFERRED
+floor no longer vetoes, so this scenario's precondition moved to a DECLARED
+(``command``) floor -- the surface that still blocks -- to keep testing the
+truthful/followable recovery-item oracle on a genuine veto.
 """
 
 from __future__ import annotations
@@ -34,11 +34,11 @@ def recovery() -> TruthfulRecoveryComposition:
 # --- Given -----------------------------------------------------------------
 
 
-@given("a stale inferred wave floor the dispatch is not entering")
-def given_stale_inferred_floor(
+@given("a stale declared wave floor the dispatch is not entering")
+def given_stale_declared_floor(
     recovery: TruthfulRecoveryComposition, tmp_path: Path
 ) -> None:
-    recovery.given_stale_inferred_floor(tmp_path)
+    recovery.given_stale_declared_floor(tmp_path)
 
 
 # --- When ------------------------------------------------------------------

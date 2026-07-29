@@ -10,6 +10,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # The closed nWave wave vocabulary (I1). A record's ``wave`` MUST be a member;
@@ -97,3 +102,59 @@ def is_inferred_floor_expired(record: WaveActiveRecord, now: float) -> bool:
     if record.armed_at is None:
         return False
     return (now - record.armed_at) > INFERRED_FLOOR_TTL_SECONDS
+
+
+def describe_wave_floor(
+    record: WaveActiveRecord,
+    *,
+    floor_file: Path,
+    project_root: Path,
+    now: float,
+) -> str:
+    """Describe an armed floor so a reader can JUDGE and LOCATE it (pure, no I/O).
+
+    SSOT for "what does this floor mean" -- shared by the REFUSAL path
+    (``PreToolUseService._describe_wave_floor``, which re-reads the record on
+    the rare block path) and the ADVISORY path (``des dispatch``'s proactive
+    heads-up, defect-2 docs/mikado/EXECUTION-SSOT-des-optimization.md), so the
+    two surfaces describe the SAME floor identically instead of drifting into
+    two hand-maintained prose copies.
+
+    Names the floor file's absolute PATH and the resolved project ROOT (the
+    gate/generator already read both to reach its decision -- restating them
+    costs nothing and saves the reader an investigation, defect-3), plus --
+    for an INFERRED floor -- the CONCRETE signal it was deduced from
+    (``arm_inferred`` is its only writer: a wave-declaring dispatch's
+    ``<!-- DES-WAVE: <wave> -->`` marker landing on an empty floor). "inferred"
+    alone is a label, not an antecedent.
+    """
+    parts = [
+        f"wave '{record.wave}', provenance {record.provenance.value}",
+        f"floor file: {floor_file}",
+        f"project root: {project_root}",
+    ]
+    if record.provenance is WaveProvenance.INFERRED:
+        parts.append(
+            "inferred means: no dispatch DECLARED this wave -- a prior "
+            f"dispatch's <!-- DES-WAVE: {record.wave} --> marker landed on an "
+            "empty floor and arm_inferred armed it by itself (the fallback "
+            "strand, the only writer of INFERRED provenance)"
+        )
+    if record.armed_at is None:
+        parts.append("armed with NO timestamp, so its age cannot be checked")
+    else:
+        age = now - record.armed_at
+        parts.append(f"armed {age / 60:.1f} min ago")
+        if record.provenance is WaveProvenance.INFERRED:
+            remaining = INFERRED_FLOOR_TTL_SECONDS - age
+            parts.append(
+                "an INFERRED floor expires by itself after "
+                f"{INFERRED_FLOOR_TTL_SECONDS / 60:.0f} min "
+                + (
+                    f"-- {remaining / 60:.1f} min remain, so WAITING clears it "
+                    "without disarming anything"
+                    if remaining > 0
+                    else "-- it is already past that, so it is genuinely stale"
+                )
+            )
+    return "; ".join(parts) + "."

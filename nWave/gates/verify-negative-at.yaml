@@ -12,26 +12,6 @@ module: des.cli.verify_negative_at
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --test-file
-    required: false
-    type: path
-    help: "Test file to analyze (.py or .feature); repeatable."
-  - name: --test-dir
-    required: false
-    type: path
-    help: "Directory to scan for test_*.py / *_test.py / *.feature files."
-  - name: --repo
-    required: false
-    type: path
-    help: "Path to the repository root."
-    default: "."
-  - name: --all-critical
-    required: false
-    type: bool
-    help: "Treat every scanned file as a critical scope (the caller decides criticality; the gate never fabricates it)."
-    default: false
-
 log_events:
   - NegativeAtVerified
   - NegativeAtRefused

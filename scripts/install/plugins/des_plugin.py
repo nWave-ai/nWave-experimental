@@ -185,6 +185,51 @@ def _robust_rmtree(path: Path) -> None:
     shutil.rmtree(path, ignore_errors=True)
 
 
+# SINGLE AUTHORITY for the `scripts/hooks/` source directory across every
+# distribution channel and every consumer (fix-cross-host-sessionstart-
+# packaging-path, RCA: three independent re-derivations of this same path
+# had drifted -- `_get_hook_scripts_source_dir` and `_install_des_hook_
+# scripts` each hand-rolled a FLAT-only probe that can never match a wheel
+# install, silently shipping ZERO spine-ledger hook scripts -- including
+# `orchestrator_affordance_refresh.py` -- to `~/.claude/scripts/`, which is
+# exactly where the installed Claude Code SessionStart command's discovery
+# one-liner (`hook_definitions._STANDALONE_ORCHESTRATOR_AFFORDANCE_
+# DISCOVERY`) looks for it).
+def _resolve_hook_scripts_source_dir(context: InstallContext) -> Path:
+    """Return the one true source directory for `scripts/hooks/*.py`.
+
+    Three physical layouts carry these scripts, tried in existence order
+    (NESTED-FIRST, unambiguous by construction -- mirrors the probe already
+    proven correct in `DESPlugin._install_nwave_runtime_assets`):
+
+      1. PyPI/pipx wheel -- NESTED under `framework_source/nWave/hooks/`.
+         `patch_pyproject.py`'s force-include ships
+         `orchestrator_affordance_refresh.py` to
+         `nWave/nWave/hooks/orchestrator_affordance_refresh.py`, one level
+         deeper than `framework_source` itself, which already resolves to
+         `site-packages/nWave/` on a pipx install.
+      2. GitHub-release `dist/` tarball -- FLAT under
+         `framework_source/scripts/hooks/` (no nested `nWave/` child, so
+         probe 1 can never false-match this layout).
+      3. Dev checkout -- `project_root/scripts/hooks/`.
+
+    Every install-time consumer of `scripts/hooks/*.py` -- the prerequisite
+    presence check, the Claude-scoped hook-script copy, and the host-neutral
+    runtime-asset copy -- MUST call this one function instead of re-deriving
+    the path locally.
+    """
+    if context.framework_source is not None:
+        nested = context.framework_source / "nWave" / "hooks"
+        if nested.is_dir():
+            return nested
+        flat = context.framework_source / "scripts" / "hooks"
+        if flat.is_dir():
+            return flat
+    if context.project_root:
+        return context.project_root / "scripts" / "hooks"
+    return Path("scripts/hooks")
+
+
 class RuntimeAssetShippingError(RuntimeError):
     """An nWave source tier failed to ship its declared runtime assets.
 
@@ -253,6 +298,15 @@ class DESPlugin(InstallationPlugin):
         # flat to ~/.claude/scripts/ so it resolves independent of whether
         # the `des` package is importable in the target session.
         "orchestrator_affordance_refresh.py",
+        # fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29):
+        # the PreToolUse/Bash hook (wired via hook_definitions.
+        # _BASH_WORKTREE_REMOVAL_GUARD) that refuses `git worktree remove`
+        # while a live process's cwd is inside the target, the target
+        # carries an explicit `git worktree lock`, or the target's branch
+        # carries unmerged commits -- replacing "did you check `git
+        # status`?" (a confirmation prompt that collects confident-but-wrong
+        # yeses) with a decision on the PROPERTY (GDP-8).
+        "worktree_removal_guard.py",
     ]
     # Asset-family key for the DES scripts list in the shared
     # .nwave-manifest.json mechanism (scripts/shared/skill_distribution.py).
@@ -420,17 +474,12 @@ class DESPlugin(InstallationPlugin):
         """Get the source directory for DES spine-ledger hook scripts.
 
         Slice-04 of F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2: the
-        `scripts/hooks/` directory under `framework_source` (dist tarball)
-        or under `project_root` (dev checkout) carries the three
-        spine-ledger hook scripts.
+        `scripts/hooks/` directory under `framework_source` (dist tarball or
+        wheel) or under `project_root` (dev checkout) carries the
+        spine-ledger hook scripts. Delegates to the single authority --
+        see `_resolve_hook_scripts_source_dir` for the three-layout probe.
         """
-        if context.framework_source:
-            source_dir = context.framework_source / "scripts" / "hooks"
-            if source_dir.exists():
-                return source_dir
-        if context.project_root:
-            return context.project_root / "scripts" / "hooks"
-        return Path("scripts/hooks")
+        return _resolve_hook_scripts_source_dir(context)
 
     def install(self, context: InstallContext) -> PluginResult:
         """Install DES module, scripts, and templates.
@@ -729,6 +778,11 @@ class DESPlugin(InstallationPlugin):
         ``nWave`` child (no ``build_dist.py`` step ever creates ``dist/nWave/``),
         so the nested probe can only ever match the wheel layout, making the
         two branches unambiguous by construction.
+
+        The hook-script source directory (``runtime_hook_source`` below) uses
+        the SAME probe shape, factored out as the single authority
+        `_resolve_hook_scripts_source_dir` -- every other consumer of
+        `scripts/hooks/*.py` at install time calls it too.
         """
         if using_prebuilt and context.framework_source is not None:
             nested = context.framework_source / "nWave"
@@ -738,12 +792,7 @@ class DESPlugin(InstallationPlugin):
         else:
             nwave_source = Path("nWave")
 
-        if using_prebuilt and context.framework_source is not None:
-            runtime_hook_source = nwave_source / "hooks"
-        elif context.project_root:
-            runtime_hook_source = context.project_root / "scripts" / "hooks"
-        else:
-            runtime_hook_source = Path("scripts/hooks")
+        runtime_hook_source = _resolve_hook_scripts_source_dir(context)
 
         channel = self._describe_asset_channel(
             context=context, using_prebuilt=using_prebuilt, nwave_source=nwave_source
@@ -1244,9 +1293,10 @@ class DESPlugin(InstallationPlugin):
         """Install spine-ledger hook scripts to ~/.claude/scripts/.
 
         Slice-04 of F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2: propagates each
-        script in `DES_HOOKS` from `<framework_source>/scripts/hooks/` (or
-        `<project_root>/scripts/hooks/` in dev mode) to the operator's
-        `<claude_dir>/scripts/` tree. Mirrors `_install_des_scripts` 1:1.
+        script in `DES_HOOKS` from the single-authority `scripts/hooks/`
+        source directory (see `_resolve_hook_scripts_source_dir`) to the
+        operator's `<claude_dir>/scripts/` tree. Mirrors `_install_des_scripts`
+        1:1.
 
         The installed scripts are referenced by the slice-04 HOOK_EVENTS
         entries via `$HOME/.claude/scripts/spine_ledger_*.py` -- when the
@@ -1256,16 +1306,7 @@ class DESPlugin(InstallationPlugin):
         contract `DES_SCRIPTS` already honours for non-hook utilities.
         """
         try:
-            # Resolve source: framework_source/scripts/hooks or
-            # project_root/scripts/hooks.
-            if context.framework_source:
-                source_dir = context.framework_source / "scripts" / "hooks"
-                if not source_dir.exists() and context.project_root:
-                    source_dir = context.project_root / "scripts" / "hooks"
-            elif context.project_root:
-                source_dir = context.project_root / "scripts" / "hooks"
-            else:
-                source_dir = Path("scripts/hooks")
+            source_dir = _resolve_hook_scripts_source_dir(context)
 
             target_dir = context.claude_dir / "scripts"
             target_dir.mkdir(parents=True, exist_ok=True)

@@ -79,12 +79,13 @@ from __future__ import annotations
 
 import argparse
 import ast
-import json
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from des.cli._emit_json import emit_json_line as _emit
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.pytest_bdd_detection import (
     module_level_scenarios_call as _module_level_scenarios_call,
 )
@@ -154,10 +155,6 @@ class _FileScan:
 
     def negative_cases(self) -> tuple[_Case, ...]:
         return tuple(c for c in self.cases if c.negative)
-
-
-def _emit(payload: dict[str, object]) -> None:
-    print(json.dumps(payload))
 
 
 def _indeterminate(what: str, why: str, how: str) -> int:
@@ -403,6 +400,9 @@ def _scan_generic_name_file(path: Path) -> _FileScan | int:
 
 
 def _scan_file(path: Path) -> _FileScan | int:
+    # gherkin-scope: PARSER dispatch, not AT-discovery -- `path` is already
+    # discovered by `_discover` below; this only picks which parser (Gherkin
+    # vs pytest) reads its content, with a pytest branch right beside it.
     if path.suffix == ".feature":
         return _scan_feature_file(path)
     if path.suffix == ".py":
@@ -520,7 +520,9 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Directory to scan for test_*.py / *_test.py / *.feature files.",
     )
-    parser.add_argument("--repo", default=".", help="Path to the repository root.")
+    add_repo_root_argument(
+        parser, "--repo", default=".", help="Path to the repository root."
+    )
     parser.add_argument(
         "--all-critical",
         action="store_true",

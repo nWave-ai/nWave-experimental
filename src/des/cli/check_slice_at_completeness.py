@@ -41,12 +41,13 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 from pathlib import Path
 
 from des.application.slice_at_completeness import missing_at_files
+from des.cli._emit_json import emit_json_line as _emit
+from des.cli._repo_root_arg import add_repo_root_argument
 
 
 #: Zero AT candidates matched anywhere for this (slice_id, feature_id) --
@@ -61,8 +62,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "Feature-scoped E1-only completeness verdict for one slice commit."
         ),
     )
-    parser.add_argument(
-        "--repo", required=True, help="Path to the git repository to inspect."
+    add_repo_root_argument(
+        parser, "--repo", required=True, help="Path to the git repository to inspect."
     )
     parser.add_argument(
         "--commit",
@@ -83,11 +84,6 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
-
-
-def _emit(payload: dict[str, object]) -> None:
-    """Print exactly one single-line JSON object."""
-    print(json.dumps(payload))
 
 
 def main(argv: list[str] | None = None) -> int:

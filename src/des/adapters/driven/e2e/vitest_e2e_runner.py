@@ -19,7 +19,10 @@ import subprocess
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.runner.tool_discovery import resolve_tool
-from des.adapters.driven.runner.vitest_runner import VITEST_KNOWN_LOCATIONS
+from des.adapters.driven.runner.vitest_runner import (
+    VITEST_INSTALL_HINT,
+    VITEST_KNOWN_LOCATIONS,
+)
 from des.ports.test_runner_port import RunnerAdapterUnavailable
 
 
@@ -36,7 +39,12 @@ def run_vitest_against_installed(
     the shared discovery scale (the LOUD INDETERMINATE channel, never a
     silent pass).
     """
-    resolution = resolve_tool("vitest", VITEST_KNOWN_LOCATIONS, base_dir=work_dir)
+    resolution = resolve_tool(
+        "vitest",
+        VITEST_KNOWN_LOCATIONS,
+        base_dir=work_dir,
+        install_hint=VITEST_INSTALL_HINT,
+    )
     if resolution.path is None:
         raise RunnerAdapterUnavailable("vitest", reason=resolution.remediation)
     env = {

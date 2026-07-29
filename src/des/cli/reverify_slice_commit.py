@@ -39,6 +39,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from des.cli._repo_root_arg import add_repo_root_argument
+
 # The shared precondition/gate/record core -- extracted VERBATIM into
 # des.cli._reverify_core (f-attest-bundled-slice slice-01). Re-importing the
 # helpers binds them at THIS module's scope, so reverify's public helper
@@ -84,8 +86,8 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="des reverify-slice-commit",
         description="Re-verify and recover an orphaned carpaccio slice.",
     )
-    parser.add_argument(
-        "--repo", required=True, help="Path to the git repository to inspect."
+    add_repo_root_argument(
+        parser, "--repo", required=True, help="Path to the git repository to inspect."
     )
     parser.add_argument(
         "--feature-id",

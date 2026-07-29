@@ -41,6 +41,22 @@ if _project_root not in sys.path:
 # tests/release/test_wheel_utility_scripts_invariant.py).
 from scripts.build_dist import UTILITY_SCRIPTS  # noqa: E402
 
+# DESPlugin.DES_HOOKS is the single source of truth for which
+# `scripts/hooks/*.py` files the installed `des` package (Claude Code and
+# host-neutral targets alike) propagates to `~/.claude/scripts/` or
+# `~/.nwave/nWave/hooks/`; the wheel force-include map is derived from it
+# below so a wheel build cannot silently omit one of them (RCA:
+# fix-cross-host-sessionstart-packaging-path -- only
+# `orchestrator_affordance_refresh.py` was ever hand-listed here, so the
+# wheel shipped 1/8 DES_HOOKS scripts; once the install-time source-dir
+# resolution was fixed to actually find the nested wheel directory,
+# `validate_prerequisites` started (correctly) failing the install outright
+# on the other 7 missing scripts). `scripts/hooks/` also carries this repo's
+# OWN dev-only pre-commit tooling (autofix_python.py, check_*.py, ...) that
+# must NOT ship to users, so the whole directory is never force-included --
+# only the explicit DES_HOOKS allow-list, mirroring UTILITY_SCRIPTS above.
+from scripts.install.plugins.des_plugin import DESPlugin  # noqa: E402
+
 
 def _utility_scripts_force_include_block() -> str:
     """Force-include line per ``UTILITY_SCRIPTS`` entry (single source of truth).
@@ -55,6 +71,20 @@ def _utility_scripts_force_include_block() -> str:
     second, redundant check, not the only one.
     """
     return "".join(f'"scripts/{name}" = "scripts/{name}"\n' for name in UTILITY_SCRIPTS)
+
+
+def _hook_scripts_force_include_block() -> str:
+    """Force-include line per ``DESPlugin.DES_HOOKS`` entry (single source of truth).
+
+    Ships each hook script NESTED under ``nWave/nWave/hooks/`` -- the same
+    physical shape ``_resolve_hook_scripts_source_dir`` (des_plugin.py)
+    probes FIRST on a pipx/PyPI install, since ``framework_source`` already
+    resolves to ``site-packages/nWave/`` there.
+    """
+    return "".join(
+        f'"scripts/hooks/{name}" = "nWave/nWave/hooks/{name}"\n'
+        for name in DESPlugin.DES_HOOKS
+    )
 
 
 class PatchError(Exception):
@@ -194,6 +224,7 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
     # `framework-catalog.yaml` is likewise shipped to both destinations; one
     # mapping therefore uses its own physically distinct staged copy too.
     utility_scripts_block = _utility_scripts_force_include_block()
+    hook_scripts_block = _hook_scripts_force_include_block()
     replacement = (
         "[tool.hatch.build.targets.wheel]\n"
         f'packages = ["{pkg_name}"]\n'
@@ -212,7 +243,7 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
         '"nWave/dispatch" = "nWave/nWave/dispatch"\n'
         f'"{_CATALOG_BUILD_ALIAS}" = "nWave/nWave/framework-catalog.yaml"\n'
         '"nWave/framework-catalog.yaml" = "nWave/framework-catalog.yaml"\n'
-        '"scripts/hooks/orchestrator_affordance_refresh.py" = "nWave/nWave/hooks/orchestrator_affordance_refresh.py"\n'
+        f"{hook_scripts_block}"
         '"nWave/VERSION" = "nWave/VERSION"\n'
         '"nWave/README.md" = "nWave/README.md"\n'
         '"scripts/install" = "scripts/install"\n'

@@ -66,6 +66,7 @@ from des.adapters.drivers.hooks.pre_tool_use_handler import _atdd_pure_intercept
 from des.cli import commit_slice as commit_slice_module
 from des.cli import record_examine_verdict as record_examine_verdict_module
 from des.cli.commit_slice import main as commit_slice_main
+from tests.charter_fixtures import filled_charter
 
 
 # ---------------------------------------------------------------------------
@@ -479,7 +480,7 @@ def test_examine_verdict_pass_does_not_rescue_an_interpreter_unavailable_indeter
     charter_dir = repo / "docs" / "product" / "expectations" / feature_id
     charter_dir.mkdir(parents=True)
     charter_path = charter_dir / "intent.md"
-    charter_path.write_text("# Intent\n\nCharter body.\n", encoding="utf-8")
+    charter_path.write_text(filled_charter("Charter body."), encoding="utf-8")
 
     record_exit = record_examine_verdict_module.main(
         [

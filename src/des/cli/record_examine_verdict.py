@@ -26,6 +26,7 @@ import json
 import sys
 from pathlib import Path
 
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.examine_verdict_signing import EXAMINE_VERDICTS, charter_seal
 from des.domain.telemetry_paths import LedgerFamily, ledger_path
@@ -100,7 +101,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "slice: charter walked through the real surface, verdict observed."
         ),
     )
-    parser.add_argument("--repo", required=True, help="Path to the repository.")
+    add_repo_root_argument(
+        parser, "--repo", required=True, help="Path to the repository."
+    )
     parser.add_argument("--feature-id", required=True)
     parser.add_argument("--slice", required=True, dest="slice_id")
     parser.add_argument(

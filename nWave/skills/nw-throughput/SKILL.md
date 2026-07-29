@@ -95,6 +95,31 @@ therefore emitted only when the declared ready lane and the relevant capacity ev
 are both present; otherwise the receipt asks the orchestrator to measure or declare the
 missing fact before scheduling.
 
+**The same rule binds a dispatched agent's `idle`: it attests a process state, never that
+the work is done.** `idle` is a designation; "the artifact exists" is the property, and the
+two diverge. Before reporting a dispatched agent's work as complete, verify the ARTIFACT it
+was told to produce — the commit, the file, the ledger record — never its status. Reporting
+from the status is the orchestrator asserting a fact it never checked.
+
+The asymmetry runs BOTH ways, and the second direction is the one that burns tokens.
+Status notifications and agent messages arrive out of order with respect to the work itself:
+an `idle` ping can precede a report already in flight, and a tree snapshot can catch an agent
+mid-run. So a quiet channel is not evidence of a stalled agent any more than it is evidence
+of a finished one. Read the artifact, and let the ARTIFACT — not the elapsed silence — decide
+whether to nudge. A nudge sent on silence alone is a paid roundtrip against an agent that was
+already working, and it teaches nothing; a nudge sent because the artifact is absent is
+diagnosis. Note also what a nudge cannot prove afterwards: once the work lands, the ordering
+no longer shows whether the nudge caused it, so do not record the recovery as evidence for
+its own necessity.
+
+**State the completion contract in every dispatch prompt — the final message is not
+automatic.** A dispatched agent's result reaches you only if it sends it, so write the
+instruction in: *your final message IS the return value; send it with SendMessage when
+done*. Measured over 4 dispatches in one session: delivered on 2 of 2 where the sentence was
+present, while the dispatch that omitted it sat idle holding a finished report nobody
+received. A nudge recovers the report, but a nudge is a paid roundtrip — one sentence in the
+prompt is cheaper than the recovery, every time.
+
 Every pass performs **worktree anti-rot triage**. It inventories each linked worktree
 and its branch/head, dirty state, lock/PID evidence, owner receipt and recent host-log
 activity. A worktree becomes `ABANDONED_CANDIDATE` only when convergent evidence shows
@@ -221,6 +246,44 @@ large tree, reading an entire source file when only one function is relevant (us
 line-ranged Read or a targeted grep instead). Does not apply to short, bounded outputs
 (`--help`, a single ledger record, a small diff) — the rule is about UNBOUNDED or
 LARGE-BY-CONSTRUCTION output, not every tool call.
+
+### The redirect target is a SHARED namespace — name it per-lane
+
+**All dispatched lanes share ONE scratchpad directory**, despite the per-session UUID in
+its path suggesting otherwise. The redirect-to-file rule above therefore creates its own
+hazard: two lanes writing `gate.out` silently overwrite each other. No error, no git
+conflict — the content changes underfoot, and a lane can read another lane's gate result
+and report it as its own. The orchestrator then integrates on a false fact with no way to
+notice.
+
+**THE RULE: every scratch file gets the lane name in it** — `gate-<lane>.out`,
+`msg-<lane>.txt` — or, better, lives inside the lane's own worktree, which is isolated by
+construction. State this IN the dispatch prompt, next to the redirect instruction: a lane
+cannot infer that a path it was handed is shared.
+
+**Apply it hardest to shell redirects.** The `Write` tool refuses to overwrite a file it
+has not read — that guardrail is what caught the collisions below. `> file` in Bash has
+NO such guardrail and destroys silently. Gate output is written with `>`, so the least
+protected write path is exactly the one carrying the results lanes report on.
+
+### `git stash` is BANNED while a swarm is live — `refs/stash` is shared
+
+`refs/stash` lives in the common dir, NOT per-worktree. Every lane pushes onto the SAME
+stack, and `git stash pop` takes the top entry — whoever pushed last, not the caller.
+Measured 2026-07-28: two lanes stashed nine seconds apart and the first lane's `pop`
+took and dropped the second lane's work. Recovered from the dangling commit
+(`git stash store -m "<label>" <sha>`), but by luck, not by design — one `gc` earlier and
+it would have been gone.
+
+To set work aside in a swarm: commit to a temporary branch in YOUR OWN worktree, or copy
+the files. Never the stash. Note also that untracked files are not in a stash at all, so
+a lane recovering one still has to check its untracked test directories separately.
+
+Measured 2026-07-28 with 8 parallel lanes: at least three collisions in one evening
+(`distill_prompt.md`, `carpaccio.txt`, `msg.txt`), reported independently by three lanes.
+One lane was stopped from overwriting another's dispatch envelope only by the Write
+guardrail, and initially read the refusal as a local inconvenience rather than the
+systemic symptom it was.
 
 ## The measure (re-runnable)
 

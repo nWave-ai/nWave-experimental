@@ -160,3 +160,46 @@ def test_flavor_scaffold_never_silently_overwrites_an_existing_flavor(
         "expected the refusal diagnostic to name the existing flavor-id "
         f"('atdd_pure'), got stdout={stdout!r} stderr={stderr!r}"
     )
+
+
+def test_flavor_scaffold_force_overwrites_an_existing_flavor(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--force` is the ONE declared escape hatch out of the refusal above
+    (D49, mikado 2026-07-29): passing it against an EXISTING flavor-id must
+    overwrite (exit 0, new content on disk) rather than refuse.
+
+    Added alongside the D49 exists-decision unification
+    (`des.cli._scaffold_core.decide_on_exists`) -- manual mutation of the
+    new `force=args.force` wiring (hardcoding `force=False`) survived the
+    pre-existing suite with 6/6 still green, proving `--force` had NO
+    regression-test coverage at the CLI/dispatcher level before this test.
+    """
+    original_body = "flavor_id: demo_flavor\ndisplay_name: Old\ndefault: false\n"
+    flavor_path = _seed_existing_flavor(tmp_path, "demo_flavor", original_body)
+
+    argv = [
+        "flavor-scaffold",
+        "--flavor-id",
+        "demo_flavor",
+        "--display-name",
+        "New",
+        "--repo",
+        str(tmp_path),
+        "--force",
+    ]
+    exit_code, stdout, stderr = _invoke_dispatcher(argv, capsys)
+
+    assert exit_code == 0, (
+        "expected --force against an existing flavor-id to overwrite (exit "
+        f"0), got exit_code={exit_code} stdout={stdout!r} stderr={stderr!r}"
+    )
+    new_body = flavor_path.read_text(encoding="utf-8")
+    assert new_body != original_body, (
+        "expected --force to actually overwrite the pre-existing file's "
+        "bytes, but they are unchanged"
+    )
+    assert "display_name: New" in new_body, (
+        f"expected the overwritten file to carry the new display name, got: {new_body!r}"
+    )

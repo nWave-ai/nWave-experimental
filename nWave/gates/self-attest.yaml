@@ -22,12 +22,6 @@ module: des.cli.self_attest
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --record
-    required: true
-    type: path
-    help: "Path to the dual-source verdict record: a JSON object with mechanical_verdict, llm_verdict, mechanical_evidence_ref, watchdog_timed_out."
-
 log_events: []
 
 failure_modes:

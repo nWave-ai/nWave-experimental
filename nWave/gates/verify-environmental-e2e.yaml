@@ -11,16 +11,6 @@ module: des.cli.verify_environmental_e2e
 entry_function: main
 language_neutral_contract: false
 
-cli_args:
-  - name: --mode
-    required: true
-    type: choice
-    help: "run | verify."
-  - name: --feature-id
-    required: true
-    type: string
-    help: "Feature being verified."
-
 log_events:
   - EnvironmentalE2eGateRan
   - EnvironmentalE2eVerified

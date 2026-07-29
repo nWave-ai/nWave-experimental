@@ -8,8 +8,9 @@ This service implements the PreToolUsePort driver port interface.
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from des.domain.des_marker_parser import (
     classify_atdd_pure_dispatch,
@@ -62,6 +63,24 @@ class PreToolUseService(PreToolUsePort):
       5. Validate prompt structure via ValidatorPort
          - If invalid: log HOOK_PRE_TOOL_USE_BLOCKED, return block
          - If valid: log HOOK_PRE_TOOL_USE_ALLOWED, return allow
+
+    Per-check timing (d48-hook-check-timing): on the main atdd_pure allow path,
+    ``validate`` accumulates a ``check_durations_ms`` dict of wall-clock buckets
+    for the 3 sequential checks that dominate hook latency --
+    ``wave_enforcement`` (marker parse + the wave-active file read + DISCUSS
+    gate-in + enforcement policy -- the one bucket that does I/O),
+    ``completeness`` (refactor/find classification + marker-completeness
+    policy), and ``atdd_pure_validation`` (the atdd_pure prompt validator's
+    regex-heavy check, timed inside ``_validate_atdd_pure_dispatch``). The dict
+    is threaded ADDITIVELY into the existing ``HOOK_PRE_TOOL_USE_ALLOWED`` /
+    ``HOOK_PRE_TOOL_USE_BLOCKED`` audit events (same audit_writer, same
+    ``hook_id`` join key already correlated against ``HOOK_COMPLETED.
+    duration_ms``): a ``None``/empty dict omits the key entirely (byte-identical
+    to pre-change output), so only the exits reached AFTER a checkpoint carry
+    the bucket for that checkpoint. The many earlier block/allow exits (the
+    wave-aware hinge, refactor/find recognition, orchestrator mode, and the
+    completeness/enforcement block exits themselves) are intentionally left
+    untouched -- this is additive instrumentation, not a control-flow rewrite.
     """
 
     def __init__(
@@ -106,15 +125,19 @@ class PreToolUseService(PreToolUsePort):
         Returns:
             HookDecision indicating allow or block
         """
+        t0 = time.perf_counter()
+
         # Step 1: Parse DES markers
         markers = self._marker_parser.parse(input_data.prompt)
 
         # Step 1b: Source the ACTIVE wave from the deterministic WaveActiveReader
         # (NEVER self-reported from the prompt). NoWaveActive -> wave None (S1);
         # a record -> the armed wave name; Indeterminate -> degrade-LOUD block.
-        wave_state = self._read_active_wave()
-        if isinstance(wave_state, Indeterminate):
-            reason = f"WAVE_ACTIVE_INDETERMINATE: {wave_state.reason}"
+        # The RECORD is kept (not just its wave name) so the S2 hinge below can
+        # decide on the DECLARED provenance/TTL facts, not merely the name.
+        active_wave_record = self._read_active_wave()
+        if isinstance(active_wave_record, Indeterminate):
+            reason = f"WAVE_ACTIVE_INDETERMINATE: {active_wave_record.reason}"
             self._log_blocked(reason, hook_id=hook_id)
             return HookDecision.block(
                 reason=reason,
@@ -127,6 +150,11 @@ class PreToolUseService(PreToolUsePort):
                     "so the floor is written cleanly, then retry the dispatch.",
                 ],
             )
+        wave_state = (
+            active_wave_record.wave
+            if isinstance(active_wave_record, WaveActiveRecord)
+            else None
+        )
         markers = replace(markers, wave=wave_state)
 
         # Step 1c: DISCUSS gate-IN precondition (slice-07). When the ACTIVE wave
@@ -189,6 +217,15 @@ class PreToolUseService(PreToolUsePort):
                 self._log_allowed(context="deliverable_type_exempt", hook_id=hook_id)
                 return HookDecision.allow()
 
+        # Checkpoint 1 (d48-hook-check-timing): marker parse + the wave-active
+        # file read + DISCUSS gate-in + enforcement policy -- the one bucket
+        # of the three that does real filesystem I/O, and therefore the
+        # leading hypothesis for the hook p99 tail.
+        t_check1 = time.perf_counter()
+        check_durations_ms: dict[str, float] = {
+            "wave_enforcement": (t_check1 - t0) * 1000.0
+        }
+
         if not markers.is_des_task:
             # Mode-aware routing BEFORE the classic WAVE_MARKER_BYPASS (spine
             # friction, 2026-06-23): an atdd_pure dispatch carries the atdd_pure
@@ -202,7 +239,10 @@ class PreToolUseService(PreToolUsePort):
             atdd_pure_classification = classify_atdd_pure_dispatch(markers)
             if atdd_pure_classification != "absent":
                 return self._validate_atdd_pure_dispatch(
-                    input_data.prompt, atdd_pure_classification, hook_id=hook_id
+                    input_data.prompt,
+                    atdd_pure_classification,
+                    hook_id=hook_id,
+                    check_durations_ms=check_durations_ms,
                 )
             # Wave-aware hinge (slice-04, relaxed by fix-wave-dispatch-marker-contract
             # slice-01). Asymmetric authority (§22.0): the gate only VETOES; it
@@ -227,12 +267,75 @@ class PreToolUseService(PreToolUsePort):
                 if markers.declared_wave == markers.wave:
                     self._log_allowed(context="wave_marker_match", hook_id=hook_id)
                     return HookDecision.allow()
+                # S2-inferred-advisory (the self-arming floor, 2026-07-29):
+                # decide on the PROPERTY, not the DESIGNATION (GDP-8) -- a
+                # floor whose own provenance is INFERRED
+                # (``arm_inferred`` is its only writer: a wave-declaring dispatch's
+                # marker landing on an EMPTY floor, never a declared /nw-<wave>)
+                # is an INFERRED signal, never a DECLARED fact. Vetoing on it is
+                # exactly what "controls key on declared facts, never inferred
+                # signals" forbids -- applied to the gate ITSELF, regardless of
+                # the floor's own TTL (widened from the expired-only strand,
+                # see the measurement note below).
+                #
+                # A COMMAND floor (``armed_at`` is always None, I5) is UNAFFECTED
+                # and keeps vetoing unchanged -- the branch keys on PROVENANCE,
+                # never the wave name or the floor's age.
+                # NEVER a silent allow (GDP-6): the floor is not cleared here
+                # (PreToolUseService stays writer-free, asymmetric authority
+                # §22.0 -- clearing is the ADAPTER-held WaveActivationService's
+                # job), so the operator is told LOUD, not left to wonder why
+                # nothing happened.
+                #
+                # MEASURED, not assumed: across 479 unique wave-clear events
+                # recorded on this machine, 48 name an INFERRED floor as the
+                # clear reason. None describes catching a real bypass -- every
+                # one describes a self-armed or spurious floor. The single
+                # "correctly block" style hit across all 479 names the OPPOSITE
+                # ("reviewer dispatches incorrectly blocked"). The prior
+                # TTL-gated exit was itself unreliable: arm_inferred re-arms on
+                # ANY wave-marker dispatch landing on an empty floor, so a
+                # passer-by could restart the 30-min clock before it elapsed --
+                # which is why this widens to "any INFERRED floor", not "wait
+                # out the TTL".
+                if isinstance(active_wave_record, WaveActiveRecord) and (
+                    active_wave_record.provenance is WaveProvenance.INFERRED
+                ):
+                    floor_description = self._describe_wave_floor()
+                    warning = (
+                        "WAVE_FLOOR_INFERRED_ADVISORY: WHAT: this dispatch would "
+                        f"have been denied WAVE_MARKER_BYPASS for the '{markers.wave}' "
+                        "wave, but the veto was SKIPPED and the dispatch ALLOWED "
+                        "instead. WHY: the floor that would have blocked it has "
+                        "INFERRED provenance -- no dispatch DECLARED this wave (no "
+                        "/nw-<wave> command armed it); it was self-armed by the "
+                        "PreToolUse fallback off a stray wave marker landing on an "
+                        "empty floor. An INFERRED floor no longer vetoes (measured, "
+                        "Ale-authorized 2026-07-29): of the wave-clear events on "
+                        "this machine that named an inferred floor as the reason "
+                        "for clearing, none described catching a genuine bypass -- "
+                        "only self-armed or spurious ones. A DECLARED (COMMAND) "
+                        "floor -- an explicit /nw-<wave> -- is unaffected and "
+                        "still vetoes exactly as before. HOW: no action is needed "
+                        "-- the floor is left AS-IS (not cleared by this check) "
+                        "and self-heals on the next wave-declaring dispatch; if it "
+                        "keeps reappearing, clear it explicitly with `des "
+                        'wave-clear --reason "<why>"`. '
+                        f"THE FLOOR THIS SKIPPED: {floor_description}"
+                    )
+                    self._log_allowed(
+                        context="inferred_floor_advisory", hook_id=hook_id
+                    )
+                    return HookDecision.allow(warning=warning)
                 # S2: a wave is active AND this dispatch carries PARTIAL wave context
                 # (a DES marker subset OR a DES-WAVE declaration) but MISSES the
                 # required DES-VALIDATION marker AND it is NOT entering the wave
                 # -> a positively-identified wave-owned child that dropped its
-                # required marker. The bypass is made LOUD (a DENY), never a silent
-                # allow that would let it slip past the gate (K1). A FULLY-MARKERLESS
+                # required marker. Reachable ONLY for a DECLARED (COMMAND) floor
+                # now -- every INFERRED floor is diverted to the advisory above,
+                # regardless of age. The bypass is made LOUD (a DENY), never a
+                # silent allow that would let it slip past the gate (K1). A
+                # FULLY-MARKERLESS
                 # dispatch (carries_partial_wave_context=False) is an ad-hoc benign
                 # prompt allowed below (K2 -- floor-in-the-tree is NOT in-the-wave);
                 # a wave-ENTERING dispatch (wave_entering=True) is a legitimate entry
@@ -340,13 +443,22 @@ class PreToolUseService(PreToolUsePort):
             self._log_allowed(context="orchestrator_mode", hook_id=hook_id)
             return HookDecision.allow()
 
+        # Checkpoint 2 (d48-hook-check-timing): reached only when BOTH the
+        # completeness check and the orchestrator-mode check fell through --
+        # covers Step 3's refactor/find classification (also fell through) and
+        # the completeness policy validation, both pure in-memory.
+        check_durations_ms["completeness"] = (time.perf_counter() - t_check1) * 1000.0
+
         # Step 4b: the only executable DES dispatch is explicitly atdd_pure.
         # Missing and legacy carriers are refused rather than falling through
         # to the retired execution-log template validator.
         classification = classify_atdd_pure_dispatch(markers)
         if classification != "absent":
             return self._validate_atdd_pure_dispatch(
-                input_data.prompt, classification, hook_id=hook_id
+                input_data.prompt,
+                classification,
+                hook_id=hook_id,
+                check_durations_ms=check_durations_ms,
             )
         reason = (
             "DISPATCH_MODE_UNRESOLVED: WHAT: the DES dispatch has no explicit "
@@ -367,6 +479,7 @@ class PreToolUseService(PreToolUsePort):
         prompt: str,
         classification: str,
         hook_id: str | None = None,
+        check_durations_ms: dict[str, float] | None = None,
     ) -> HookDecision:
         """Validate an atdd_pure carpaccio-slice dispatch prompt (T-B).
 
@@ -374,10 +487,22 @@ class PreToolUseService(PreToolUsePort):
         validated against the atdd_pure section schema via the atdd_pure
         validator; if no atdd_pure validator is wired, the dispatch is allowed
         (marker set already proven valid by classify_atdd_pure_dispatch).
+
+        ``check_durations_ms`` (d48-hook-check-timing), when the caller passed
+        one in, is mutated in place with an ``atdd_pure_validation`` bucket
+        timed around the ``ValidatorPort.validate_prompt`` call -- the
+        regex-heavy check over the prompt text -- and threaded through to
+        every exit's ``_log_allowed`` / ``_log_blocked`` call so the emitted
+        audit event carries whatever buckets were accumulated so far. ``None``
+        (the caller passed nothing) keeps every call byte-identical to before.
         """
+        t_start = time.perf_counter() if check_durations_ms is not None else None
+
         if classification == "defective":
             reason = "ATDD_PURE_DISPATCH_DEFECTIVE: incomplete atdd_pure marker set"
-            self._log_blocked(reason, hook_id=hook_id)
+            self._log_blocked(
+                reason, hook_id=hook_id, check_durations_ms=check_durations_ms
+            )
             return HookDecision.block(
                 reason=reason,
                 recovery_suggestions=[
@@ -393,16 +518,30 @@ class PreToolUseService(PreToolUsePort):
             )
 
         if self._atdd_pure_validator is None:
-            self._log_allowed(context="atdd_pure_validated", hook_id=hook_id)
+            self._log_allowed(
+                context="atdd_pure_validated",
+                hook_id=hook_id,
+                check_durations_ms=check_durations_ms,
+            )
             return HookDecision.allow()
 
         validation_result = self._atdd_pure_validator.validate_prompt(prompt)
+        if check_durations_ms is not None and t_start is not None:
+            check_durations_ms["atdd_pure_validation"] = (
+                time.perf_counter() - t_start
+            ) * 1000.0
         if validation_result.task_invocation_allowed:
-            self._log_allowed(context="atdd_pure_validated", hook_id=hook_id)
+            self._log_allowed(
+                context="atdd_pure_validated",
+                hook_id=hook_id,
+                check_durations_ms=check_durations_ms,
+            )
             return HookDecision.allow()
 
         reason = "; ".join(validation_result.errors)
-        self._log_blocked(reason, hook_id=hook_id)
+        self._log_blocked(
+            reason, hook_id=hook_id, check_durations_ms=check_durations_ms
+        )
         return HookDecision.block(
             reason=reason,
             recovery_suggestions=[
@@ -547,12 +686,17 @@ class PreToolUseService(PreToolUsePort):
             recovery_suggestions=list(blocking.recovery_suggestions),
         )
 
-    def _read_active_wave(self) -> str | None | Indeterminate:
-        """Read the ACTIVE wave name via WaveActiveReader (None <=> NoWaveActive).
+    def _read_active_wave(self) -> WaveActiveRecord | None | Indeterminate:
+        """Read the ACTIVE wave RECORD via WaveActiveReader (None <=> NoWaveActive).
 
         No reader wired -> None (S1): the wave-aware hinge degrades to the legacy
-        allow-ad-hoc behaviour. A record -> the armed wave name. Indeterminate ->
-        propagated so the hinge degrades LOUD (never silent-pass).
+        allow-ad-hoc behaviour. A record -> the FULL ``WaveActiveRecord`` (name +
+        provenance + ``armed_at``), so a caller can decide on the DECLARED
+        provenance/TTL facts (e.g. ``is_inferred_floor_expired``), not merely the
+        wave name -- previously this discarded the record down to a bare string,
+        which is exactly why the S2 veto below could not tell a live COMMAND
+        floor from an already-expired INFERRED guess. Indeterminate -> propagated
+        so the hinge degrades LOUD (never silent-pass).
 
         Resolves the root via `resolve_nwave_root()` (DDD-14/15) rather than a
         bare `Path.cwd()`, so a `DES_PROJECT_DIR` override (the per-test
@@ -565,7 +709,7 @@ class PreToolUseService(PreToolUsePort):
 
         state = self._wave_active_reader.read(resolve_nwave_root())
         if isinstance(state, WaveActiveRecord):
-            return state.wave
+            return state
         if isinstance(state, NoWaveActive):
             return None
         return state
@@ -587,16 +731,30 @@ class PreToolUseService(PreToolUsePort):
         so "how much longer" is a real, checkable answer -- often the correct
         move is simply to wait rather than to clear anything.
 
+        WHERE + WHY (defect-3, docs/mikado/EXECUTION-SSOT-des-optimization.md,
+        2026-07-29): the description ALSO names the floor file's absolute path
+        and the resolved project root it was read under -- the gate just read
+        both to decide this refusal, so restating them costs nothing here and
+        saves the reader four investigation commands. For an INFERRED floor it
+        names the CONCRETE signal it was deduced from (``arm_inferred`` is the
+        floor's only writer of that provenance: a wave-declaring dispatch's
+        ``<!-- DES-WAVE: <wave> -->`` marker landing on an empty floor) --
+        "inferred" alone is a label, not an antecedent.
+
         Degrades LOUD (GDP-6): if the floor cannot be re-read, say so plainly
         rather than emit a confident-looking description of nothing.
         """
         if self._wave_active_reader is None:
             return "no wave-active reader is wired, so the floor cannot describe itself"
         try:
+            from des.adapters.driven.filesystem.wave_active_filesystem_store import (
+                floor_path,
+            )
             from des.domain.nwave_root import resolve_nwave_root
-            from des.domain.wave_active import INFERRED_FLOOR_TTL_SECONDS
+            from des.domain.wave_active import describe_wave_floor
 
-            state = self._wave_active_reader.read(resolve_nwave_root())
+            root = resolve_nwave_root()
+            state = self._wave_active_reader.read(root)
         except Exception as exc:
             return f"the floor could not be re-read to describe it ({exc!r})"
 
@@ -606,44 +764,61 @@ class PreToolUseService(PreToolUsePort):
                 f"({state!r}) -- treat this description as unavailable, not as absence"
             )
 
-        parts = [f"wave '{state.wave}', provenance {state.provenance.value}"]
-        if state.armed_at is None:
-            parts.append("armed with NO timestamp, so its age cannot be checked")
-        else:
-            age = self._time_provider.now_utc().timestamp() - state.armed_at
-            parts.append(f"armed {age / 60:.1f} min ago")
-            if state.provenance is WaveProvenance.INFERRED:
-                remaining = INFERRED_FLOOR_TTL_SECONDS - age
-                parts.append(
-                    f"an INFERRED floor expires by itself after "
-                    f"{INFERRED_FLOOR_TTL_SECONDS / 60:.0f} min "
-                    + (
-                        f"-- {remaining / 60:.1f} min remain, so WAITING clears it "
-                        "without disarming anything"
-                        if remaining > 0
-                        else "-- it is already past that, so it is genuinely stale"
-                    )
-                )
-        return "; ".join(parts) + "."
+        return describe_wave_floor(
+            state,
+            floor_file=floor_path(root),
+            project_root=root,
+            now=self._time_provider.now_utc().timestamp(),
+        )
 
-    def _log_allowed(self, context: str, hook_id: str | None = None) -> None:
-        """Log an allowed invocation to the audit trail."""
+    def _log_allowed(
+        self,
+        context: str,
+        hook_id: str | None = None,
+        check_durations_ms: dict[str, float] | None = None,
+    ) -> None:
+        """Log an allowed invocation to the audit trail.
+
+        ``check_durations_ms`` (d48-hook-check-timing), when non-empty, is
+        added to the emitted event's ``data`` under the same key -- this
+        EXTENDS the existing ``HOOK_PRE_TOOL_USE_ALLOWED`` event, no new event
+        type. Empty/None omits the key, keeping emitted JSON byte-identical to
+        before this instrumentation for every call site that does not pass one.
+        """
+        data: dict[str, Any] = {"context": context}
+        if check_durations_ms:
+            data["check_durations_ms"] = check_durations_ms
         self._audit_writer.log_event(
             AuditEvent(
                 event_type="HOOK_PRE_TOOL_USE_ALLOWED",
                 timestamp=self._time_provider.now_utc().isoformat(),
                 hook_id=hook_id,
-                data={"context": context},
+                data=data,
             )
         )
 
-    def _log_blocked(self, reason: str, hook_id: str | None = None) -> None:
-        """Log a blocked invocation to the audit trail."""
+    def _log_blocked(
+        self,
+        reason: str,
+        hook_id: str | None = None,
+        check_durations_ms: dict[str, float] | None = None,
+    ) -> None:
+        """Log a blocked invocation to the audit trail.
+
+        ``check_durations_ms`` (d48-hook-check-timing), when non-empty, is
+        added to the emitted event's ``data`` under the same key -- this
+        EXTENDS the existing ``HOOK_PRE_TOOL_USE_BLOCKED`` event, no new event
+        type. Empty/None omits the key, keeping emitted JSON byte-identical to
+        before this instrumentation for every call site that does not pass one.
+        """
+        data: dict[str, Any] = {"reason": reason}
+        if check_durations_ms:
+            data["check_durations_ms"] = check_durations_ms
         self._audit_writer.log_event(
             AuditEvent(
                 event_type="HOOK_PRE_TOOL_USE_BLOCKED",
                 timestamp=self._time_provider.now_utc().isoformat(),
                 hook_id=hook_id,
-                data={"reason": reason},
+                data=data,
             )
         )

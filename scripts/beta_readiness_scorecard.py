@@ -33,29 +33,15 @@ import ast
 import json
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
+
+from _scorecard_fs_helpers import REPO
+from _scorecard_fs_helpers import file_contains as _file_contains
+from _scorecard_fs_helpers import file_exists as _file_exists
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-
-REPO = Path(__file__).resolve().parents[1]
-
-
-def _file_exists(rel: str) -> bool:
-    return (REPO / rel).is_file()
-
-
-def _file_contains(rel: str, needle: str) -> bool:
-    path = REPO / rel
-    if not path.is_file():
-        return False
-    try:
-        return needle in path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return False
 
 
 def _dir_has_children(rel: str, glob: str) -> bool:

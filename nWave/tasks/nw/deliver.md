@@ -52,7 +52,7 @@ Replace the per-step `RED→GREEN→COMMIT` dispatch (Phase 2 step c2) with the 
 |-------|-------|--------|------|
 | A_GREEN_ATS | crafter (instance #1) | Make all DISTILL-authored ATs pass, NO defensive code beyond AT-driven need | All ATs green |
 | B_COVERAGE_CLEANUP | same crafter instance | Coverage-driven dead-code elimination | ≥90% line+branch OR justified misses documented in commit body |
-| C_REVIEWER_AUDIT | reviewer | 15-item AT-completeness audit via `nw-at-completeness-check` | `PhaseCReviewerVerdict` emitted; verdict_hash optional |
+| C_REVIEWER_AUDIT | reviewer | 15-item AT-completeness audit via `nw-at-completeness-check` | `ReviewVerdictRecorded` recorded via `des record-review-verdict`; verdict_hash optional |
 | D_GAP_ROUTING | orchestrator | Route per `ATGapKind` (see §Phase D Routing below) | exactly one Routing decision recorded |
 | E_BATCH_REFACTOR | **crafter-B (separate instance, distinct agent_instance_id)** | L1-L6 batch refactor per `feedback_refactor_batch_when_test_suite_slow_2026_05_19` | Tests stay green |
 | F_FINAL_REVIEW | reviewer | Code review + refactor green check | `PhaseFReviewerVerdict` with MANDATORY verdict_hash (keyless content seal) |

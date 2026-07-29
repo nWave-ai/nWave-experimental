@@ -23,24 +23,6 @@ module: des.cli.verify_wave_dispatch
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --subagent-type
-    required: true
-    type: string
-    help: "The subagent_type the orchestrator is dispatching."
-  - name: --prompt-path
-    required: false
-    type: path
-    help: "Path to a FILE holding the dispatch prompt (carries the DES-WAVE marker)."
-  - name: --repo-root
-    required: false
-    type: path
-    help: "Repo root path. Defaults to CWD."
-  - name: --session-id
-    required: false
-    type: string
-    help: "Session id keying the session-scoped pre-grant lookup."
-
 log_events:
   - WaveDispatchAllowed
   - WaveDispatchBlocked

@@ -105,7 +105,6 @@ $defs:
       - module
       - entry_function
       - language_neutral_contract
-      - cli_args
       - log_events
       - failure_modes
       - idempotency
@@ -127,34 +126,6 @@ $defs:
         pattern: "^[a-z_][a-z0-9_]*$"
       language_neutral_contract:
         type: boolean
-
-      cli_args:
-        type: array
-        description: |
-          Ordered list of argparse arguments the gate accepts. Each entry is
-          {name, required, type, help, default?}. `name` is either an optional
-          flag ("--foo") or a bare positional argparse name ("foo", e.g.
-          `parser.add_argument("path", ...)`).
-        items:
-          type: object
-          required: [name, required, type]
-          additionalProperties: false
-          properties:
-            name:
-              type: string
-              pattern: "^(--[a-z][a-z0-9-]*|[a-z][a-z0-9_]*)$"
-            required:
-              type: boolean
-            type:
-              type: string
-              enum: [string, int, bool, path, choice]
-            help:
-              type: string
-            default:
-              description: "Default value (any type)."
-            choices:
-              type: array
-              items: { type: string }
 
       log_events:
         type: array

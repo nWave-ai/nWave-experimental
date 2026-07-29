@@ -15,27 +15,6 @@ module: des.cli.emit_feature_end
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --repo
-    required: true
-    type: path
-    help: "Path to the project root holding the .nwave/ ledger substrate."
-  - name: --feature-id
-    required: true
-    type: string
-    help: "The kebab-case feature identifier the record is scoped to."
-  - name: --record
-    required: true
-    type: choice
-    help: "The feature-end record kind to emit (one per invocation)."
-    choices:
-      - EBatchRefactorCompleted
-      - FeatureEndReviewVerdict
-  - name: --verdict-hash
-    required: false
-    type: string
-    help: "The signed reviewer verdict hash. Required for FeatureEndReviewVerdict; must not be supplied for EBatchRefactorCompleted."
-
 log_events:
   - FeatureEndRecordEmitted
   - EmitRefused

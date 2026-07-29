@@ -15,41 +15,6 @@ module: des.cli.verify_refactor_trigger
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --repo
-    required: false
-    type: path
-    help: "Repository root."
-    default: "."
-  - name: --files
-    required: false
-    type: path
-    help: "Explicit file selection (repeatable; XOR with --diff-base)."
-  - name: --diff-base
-    required: false
-    type: string
-    help: "Git ref: analyze files from `git diff --name-only <ref>...HEAD` (XOR with --files)."
-  - name: --ext
-    required: false
-    type: string
-    help: "Source extension the AST arm analyzes."
-    default: ".py"
-  - name: --threshold-func-lines
-    required: false
-    type: int
-    help: "Long-function threshold (lines)."
-    default: 60
-  - name: --threshold-dup-block-lines
-    required: false
-    type: int
-    help: "Duplicated-block window (normalized lines)."
-    default: 5
-  - name: --threshold-enum-overlap
-    required: false
-    type: string
-    help: "Parallel-enum member-name overlap ratio."
-    default: 0.8
-
 log_events:
   - RefactorTriggerClean
   - RefactorTriggerFired

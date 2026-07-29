@@ -132,6 +132,105 @@ def _refuse(verdict: FreshnessVerdict) -> None:
     sys.exit(_REFUSE_EXIT_CODE)
 
 
+# Advisory-throttle finding (measured 2026-07-28): the hook adapter fires this
+# gate as an IMPORT-TIME side effect on every single hook subprocess (PreToolUse,
+# PostToolUse, SubagentStop, SubagentStart, SessionStart — one fresh process per
+# Claude Code tool call). In an actively-edited multi-lane repo, `src/des`
+# diverges from the shared install within minutes of a reinstall and STAYS
+# diverged until the next manual reinstall — nothing auto-clears it. The result:
+# ``HEALTH_GATE_INSTALL_FRESHNESS_STALE`` fired 14,378 times over 8 days in this
+# project's audit log (measured via `grep -c` over `.nwave/des/logs/audit-*.log`),
+# 75/hour on average, and `mcp__tsunami__reads_of` confirms zero production
+# readers (only this module and 4 test files touch the symbol). Each individual
+# emission is mechanically CORRECT — the installed tree really does differ from
+# the live repo tree at that instant — so silencing it outright would hide a real
+# condition (GDP-6). What is wrong is the CADENCE: re-announcing an UNCHANGED
+# verdict on every hook call defeats "loud" through sheer repetition (habituation
+# is silent-wrong-by-volume) and bloats the audit sink with near-duplicate rows
+# that add no information a future KPI-1 duration query could use (all of them
+# say "still stale", none says "how long" better than the first one did).
+#
+# Throttle to one emission per (state) per window; a STATE TRANSITION (STALE ->
+# fresh, STALE -> CONFIG_DRIFT, a reinstall clearing the drift) is NEVER
+# throttled — it always breaks through immediately. This is the GDP-8 arity
+# corollary applied to volume: suppress an unchanged repeat, never a change.
+# 30 minutes mirrors this repo's existing persona/context reload cadence
+# (CLAUDE.md "Mechanism 1"), long enough to cut the measured volume by roughly
+# two orders of magnitude, short enough that a stale install is still named
+# again well within a single working session.
+_DEGRADE_THROTTLE_SECONDS = 1800
+_DEGRADE_SENTINEL_FILENAME = "_freshness_degrade_sentinel.json"
+
+
+def _degrade_sentinel_path() -> Path:
+    """Resolve the throttle sentinel next to this project's own audit sink.
+
+    Reuses ``AuditLogPathResolver`` (project-local ``.nwave/des/logs/`` by
+    default, honoring ``DES_AUDIT_LOG_DIR``) so the throttle's SCOPE matches the
+    audit sink's own scope — per-project, exactly like the records it throttles.
+    This also means tests that already redirect ``DES_AUDIT_LOG_DIR`` to a
+    ``tmp_path`` get an isolated, empty sentinel for free, with no new env var
+    or fixture plumbing required.
+    """
+    from des.domain.audit_log_path_resolver import AuditLogPathResolver
+
+    return AuditLogPathResolver().resolve() / _DEGRADE_SENTINEL_FILENAME
+
+
+def _should_emit_degrade(state: str) -> bool:
+    """True iff ``state`` merits a fresh degrade-loud emission right now.
+
+    Fail-OPEN (returns True) on a missing sentinel, a corrupt/unreadable one, or
+    any parse error — a throttle-machinery bug must never cost the FIRST
+    occurrence of a real condition its visibility (GDP-6: degrade-loud, never
+    silently-wrong). Only an EXACT, RECENT repeat of the same ``state`` is
+    suppressed; a different state (including one never seen before) always
+    emits.
+    """
+    from datetime import datetime, timezone
+
+    path = _degrade_sentinel_path()
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+        last_emitted = datetime.fromisoformat(record["last_emitted_iso"])
+        elapsed_seconds = (datetime.now(timezone.utc) - last_emitted).total_seconds()
+        if record.get("state") == state and elapsed_seconds < _DEGRADE_THROTTLE_SECONDS:
+            return False
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        # Absent file (nothing recorded yet), corrupt JSON, missing/malformed
+        # key, or an unparsable timestamp all mean "no valid throttle state" —
+        # fail open to emitting rather than silently swallowing a first-seen or
+        # ambiguous condition.
+        pass
+    return True
+
+
+def _record_degrade_emitted(state: str) -> None:
+    """Persist ``(state, now)`` so a later call can throttle an unchanged repeat.
+
+    Best-effort: a write failure here must not block the emission that just
+    happened, and must not raise — the worst case (sentinel unwritable, e.g. a
+    read-only filesystem) is reverting to pre-throttle behavior (every call
+    emits again), never silence.
+    """
+    from datetime import datetime, timezone
+
+    path = _degrade_sentinel_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "state": state,
+                    "last_emitted_iso": datetime.now(timezone.utc).isoformat(),
+                }
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
 def _degrade_loud(
     verdict: FreshnessVerdict, *, stderr_event: str, audit_event_name: str
 ) -> None:
@@ -148,7 +247,13 @@ def _degrade_loud(
     The two callers differ ONLY in their event names: the stderr telemetry string
     and the audit ``EventType`` value. Everything else (state / reason /
     remediation payload, the audit sink) is identical, so both ride one helper.
+
+    Throttled per ``verdict.state`` (see ``_should_emit_degrade``): an unchanged
+    repeat within the window is a silent no-op (still PROCEED, just no re-emit);
+    a state transition always emits regardless of the window.
     """
+    if not _should_emit_degrade(verdict.state):
+        return
     _emit_event(
         {
             "event": stderr_event,
@@ -158,6 +263,7 @@ def _degrade_loud(
         }
     )
     _persist_audit_record(verdict, audit_event_name=audit_event_name)
+    _record_degrade_emitted(verdict.state)
 
 
 def _warn_stale(verdict: FreshnessVerdict) -> None:

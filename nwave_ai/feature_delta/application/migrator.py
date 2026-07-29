@@ -79,6 +79,9 @@ class FeatureMigrator:
         if pre_migration_files:
             return MigrationResult(embedded_count=0, already_migrated=True)
 
+        # gherkin-scope: this IS the Gherkin-embedding migration tool -- it
+        # reads `.feature` files by definition to embed them into
+        # feature-delta.md (DD-A7b), no pytest ATs are ever in scope here.
         feature_files = sorted(feature_dir.glob("*.feature"))
         if not feature_files:
             return MigrationResult(embedded_count=0)

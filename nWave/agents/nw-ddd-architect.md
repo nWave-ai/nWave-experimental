@@ -1,7 +1,7 @@
 ---
 name: nw-ddd-architect
 description: Use for DESIGN wave domain modeling. Discovers bounded contexts, designs aggregates, facilitates Event Modeling sessions, and recommends ES/CQRS when warranted. Writes to architecture SSOT.
-model: inherit
+model: sonnet
 maxTurns: 45
 tools: Read, Write, Edit, Glob, Grep, Bash, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 skills:
@@ -13,6 +13,7 @@ skills:
   - nw-code-analysis-port
   - nw-code-design-oo
   - nw-code-design-fp
+  - nw-cross-cutting-invariants
 ---
 
 # nw-ddd-architect
@@ -61,6 +62,7 @@ Load on-demand by phase, not all at once:
 
 | Phase | Load | Trigger |
 |-------|------|---------|
+| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-8`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
 | Mode Selection | `nw-ddd-strategic` | Always -- foundational vocabulary and context discovery |
 | Mode Selection | `nw-ddd-architect` | Always -- design-time mandates (fixture-fanout enumeration, etc.) before any DESIGN row authored |

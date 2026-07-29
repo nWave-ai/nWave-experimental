@@ -60,6 +60,7 @@ def resolve_tool(
     name: str,
     known_locations: Sequence[str],
     base_dir: Path | str | None = None,
+    install_hint: str | None = None,
 ) -> ToolResolution:
     """Discover ``name`` across the 3-rung scale; return a typed resolution.
 
@@ -76,6 +77,18 @@ def resolve_tool(
     against the TARGET repo, never the caller's CWD. ``base_dir=None`` (the
     default) preserves EXACTLY today's CWD-relative behaviour for every
     existing caller.
+
+    ``install_hint`` -- the CALLER's own toolchain-specific install
+    instruction (e.g. cargo's caller passes ``"install it via rustup"``,
+    go's caller passes a go-specific hint). ``resolve_tool`` is SHARED by
+    every language-adapter's runner, so it must never guess a remediation
+    for a tool it has no toolchain knowledge of -- that is how a cargo-only
+    hardcoded template used to leak into every non-cargo not-found message
+    (e.g. a Go target being told to run ``cargo install go``, which does not
+    exist). When ``install_hint`` is omitted, the not-found message names
+    only what it actually knows -- PATH and the supplied ``known_locations``
+    -- and says explicitly that no toolchain-specific hint was given, rather
+    than inventing one (degrade LOUD, never silently-wrong, per GDP-6).
     """
     on_path = shutil.which(name)
     if on_path is not None:
@@ -90,13 +103,19 @@ def resolve_tool(
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return ToolResolution(rung="known-location", path=str(candidate))
 
-    return ToolResolution(
-        rung="not-found",
-        remediation=(
+    if install_hint:
+        remediation = (
             f"{name} not found on PATH or in {list(known_locations)}; "
-            f"install it (e.g. via rustup or 'cargo install {name}') and retry"
-        ),
-    )
+            f"{install_hint} and retry"
+        )
+    else:
+        remediation = (
+            f"{name} not found on PATH or in {list(known_locations)}; "
+            "no toolchain-specific install hint was supplied for this tool -- "
+            "install it and ensure it is on PATH, then retry"
+        )
+
+    return ToolResolution(rung="not-found", remediation=remediation)
 
 
 __all__ = ["ToolResolution", "resolve_tool"]

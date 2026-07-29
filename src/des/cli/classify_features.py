@@ -60,10 +60,17 @@ def _classify_one(scan: FeatureScanPort, feature_dir: Path) -> dict[str, object]
     M7 staleness guard compares this stamp against the live tree -- an
     untracked or non-repo feature dir stamps ``""`` and is never refused as
     stale (symmetric with the comparator).
+
+    The ``ledger_path`` column is the state's PROVENANCE: the attested
+    ``.nwave/telemetry/atdd-pure/{id}.jsonl`` the class was read from, or
+    ``""`` when no ledger attests this feature. It lets an operator tell a
+    ledger-derived verdict from a directory-inferred one without re-deriving
+    either (Mikado D52).
     """
     return {
         "feature_id": feature_dir.name,
         "class": feature_classifier.classify(feature_dir),
+        "ledger_path": feature_classifier.ledger_path(feature_dir),
         "has_slice_plan": feature_classifier.has_slice_plan(feature_dir),
         "roadmap_steps": None,
         "committed_steps": [],

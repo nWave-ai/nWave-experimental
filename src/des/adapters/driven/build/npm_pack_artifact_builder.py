@@ -18,7 +18,10 @@ import subprocess
 from pathlib import Path
 
 from des.adapters.driven.runner.tool_discovery import resolve_tool
-from des.adapters.driven.runner.vitest_runner import VITEST_KNOWN_LOCATIONS
+from des.adapters.driven.runner.vitest_runner import (
+    NPM_INSTALL_HINT,
+    VITEST_KNOWN_LOCATIONS,
+)
 from des.ports.driven_ports.artifact_builder import ArtifactBuilder, ArtifactBuildError
 
 
@@ -32,7 +35,12 @@ class NpmPackArtifactBuilder(ArtifactBuilder):
         `npm pack` subprocess fails.
         """
         feature_root = Path(feature_root)
-        resolution = resolve_tool("npm", VITEST_KNOWN_LOCATIONS, base_dir=feature_root)
+        resolution = resolve_tool(
+            "npm",
+            VITEST_KNOWN_LOCATIONS,
+            base_dir=feature_root,
+            install_hint=NPM_INSTALL_HINT,
+        )
         if resolution.path is None:
             raise ArtifactBuildError(f"npm not found: {resolution.remediation}")
         dist_dir = feature_root / "dist"

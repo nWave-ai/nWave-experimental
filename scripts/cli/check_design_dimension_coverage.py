@@ -50,6 +50,7 @@ import sys
 from pathlib import Path
 
 from des.cli.human_surface import Verdict, print_human_summary
+from des.cli.validate_feature_delta import next_h2_boundary
 
 
 _EXIT_PASS = 0
@@ -85,15 +86,16 @@ def _extract_design_dimensions_sections(feature_delta_text: str) -> list[str]:
     """Return every DESIGN Dimensions section body found in the feature-delta.
 
     Each section runs from its ``##`` heading line up to (exclusive) the next
-    ``##`` heading or end-of-document.
+    ``##`` heading or end-of-document. Section-BOUNDARY scanning routes
+    through the unified ``next_h2_boundary`` (D31b) -- shared with the
+    sibling reuse-first gate's own section extraction, so this module no
+    longer carries its own independent boundary scan.
     """
     headings = list(_DESIGN_DIMENSIONS_HEADING_RE.finditer(feature_delta_text))
-    next_section_re = re.compile(r"^##\s", re.MULTILINE)
     sections: list[str] = []
     for heading_match in headings:
         section_start = heading_match.start()
-        next_section = next_section_re.search(feature_delta_text, heading_match.end())
-        section_end = next_section.start() if next_section else len(feature_delta_text)
+        section_end = next_h2_boundary(feature_delta_text, heading_match.end())
         sections.append(feature_delta_text[section_start:section_end])
     return sections
 

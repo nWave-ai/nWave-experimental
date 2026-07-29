@@ -21,48 +21,6 @@ module: des.cli.dispatch
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --mode
-    required: true
-    type: choice
-    choices: [atdd_pure]
-    help: "Workflow mode (only atdd_pure is supported today)."
-  - name: --project-id
-    required: true
-    type: string
-    help: "The feature id this dispatch targets."
-  - name: --slice
-    required: true
-    type: string
-    help: "The slice id (e.g. slice-01) this dispatch targets."
-  - name: --phase
-    required: true
-    type: choice
-    choices: [A_GREEN, C_REVIEWER_AUDIT, D_REFACTOR_COMMIT, D_DISTILL]
-    help: "The ATDDPurePhase this dispatch executes (canonical values, aliases excluded)."
-  - name: --lane
-    required: false
-    type: choice
-    choices: [prefactoring, bugfix]
-    help: "Optional non-standard lane (e.g. bugfix, prefactoring)."
-  - name: --intent
-    required: false
-    type: string
-    default: ""
-    help: "Free-text task intent."
-  - name: --defect
-    required: false
-    type: string
-    help: "Bugfix lane only: free text naming the defect."
-  - name: --regression-test
-    required: false
-    type: string
-    help: "Bugfix lane only: the regression test name (test_<name>)."
-  - name: --repo-root
-    required: false
-    type: path
-    help: "Repo root holding nWave/dispatch/*.yaml (default: cwd)."
-
 log_events: []
 
 failure_modes:

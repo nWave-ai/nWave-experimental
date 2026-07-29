@@ -10,6 +10,7 @@ resolves cross-references, and renders navigable Markdown reference pages.
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import sys
 import tempfile
@@ -38,6 +39,7 @@ from des.application.flavor_dispatcher import (  # noqa: E402
     resolve_skill_load_set,
 )
 from des.application.workflow_mode import resolve_workflow_mode  # noqa: E402
+from des.cli.__main__ import _REGISTRY  # noqa: E402
 from des.domain.atdd_pure_phases import (  # noqa: E402
     CANONICAL_PHASES,
     normalize_phase_token,
@@ -170,11 +172,15 @@ def scan(root: Path, *, public_only: bool = False) -> dict[str, list[Path]]:
     templates = sorted(
         p for p in (nwave / "templates").glob("*.yaml") if not p.name.startswith(".")
     )
+    orchestrator_affordance = sorted(
+        (nwave / "data" / "orchestrator-affordance").glob("*.md")
+    )
     return {
         "agents": agents,
         "commands": commands,
         "skills": skills,
         "templates": templates,
+        "orchestrator_affordance": orchestrator_affordance,
     }
 
 
@@ -780,11 +786,21 @@ def _declared_flavor_ids(flavors_dir: Path) -> list[str]:
     )
 
 
+# A region's marker DECLARES where its body comes from; a marker naming a source
+# that did not produce the body is a false fact shipped inside generated prose,
+# so each region names its own source instead of inheriting the flavors default.
+_REGION_SOURCE_OF_TRUTH = {
+    "des-command-catalog": "src/des/cli/__main__.py::_REGISTRY",
+}
+_DEFAULT_REGION_SOURCE_OF_TRUTH = "nWave/flavors/*.yaml"
+
+
 def _generated_region(region_id: str, body: str) -> str:
     """The canonical full region text (markers + body) docgen owns."""
+    source = _REGION_SOURCE_OF_TRUTH.get(region_id, _DEFAULT_REGION_SOURCE_OF_TRUTH)
     return (
         f"<!-- GENERATED:{region_id} START — source of truth: "
-        "nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->\n"
+        f"{source}; do not hand-edit (docgen renders this region) -->\n"
         f"{body}\n"
         f"<!-- GENERATED:{region_id} END -->"
     )
@@ -819,11 +835,44 @@ def _mode_descriptor_body(flavors_dir: Path) -> str:
     return "\n".join(lines)
 
 
+def _module_first_docstring_line(module_path: str) -> str:
+    """First line of *module_path*'s module docstring, read via ``ast.parse``
+    on its source file under ``src/`` — parse only, NEVER import-and-execute
+    (DD-10; a registry target module may run CLI argument parsing, ledger
+    writes, etc. as import-time side effects)."""
+    file_path = Path(_project_src).joinpath(*module_path.split(".")).with_suffix(".py")
+    tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
+    doc = ast.get_docstring(tree)
+    if not doc:
+        raise DocgenError(
+            f"module {module_path} ({file_path}) carries no module docstring — "
+            "the des-command-catalog GENERATED region needs one to render a "
+            "Description cell; add a one-line module docstring"
+        )
+    return doc.splitlines()[0]
+
+
+def _command_catalog_body() -> str:
+    """Render the ``des-command-catalog`` GENERATED region: one row per
+    ``des.cli.__main__._REGISTRY`` entry (declaration order), Description
+    sourced from that module's own first docstring line."""
+    header = "| Verb | Module | Description |"
+    sep = "| --- | --- | --- |"
+    rows = [
+        f"| `{row.name}` | `{row.module_path}` | "
+        f"{_module_first_docstring_line(row.module_path)} |"
+        for row in _REGISTRY
+    ]
+    return "\n".join([header, sep, *rows])
+
+
 def _render_region_body(region_id: str, asset_path: Path, flavors_dir: Path) -> str:
     if region_id == "skill-load-set":
         return _skill_load_set_body(asset_path.stem, flavors_dir)
     if region_id == "mode-descriptor":
         return _mode_descriptor_body(flavors_dir)
+    if region_id == "des-command-catalog":
+        return _command_catalog_body()
     raise DocgenError(
         f"Unknown GENERATED region id '{region_id}' in {asset_path} — "
         "refusing to serve a region no renderer owns"
@@ -853,6 +902,7 @@ def project_generated_regions(
         *asset_paths["agents"],
         *asset_paths["commands"],
         *asset_paths["skills"],
+        *asset_paths["orchestrator_affordance"],
     ]
     projections: list[AssetProjection] = []
     for path in files:
@@ -870,12 +920,22 @@ def write_generated_regions(projections: list[AssetProjection]) -> None:
             projection.path.write_text(projection.projected_text, encoding="utf-8")
 
 
+def _display_path(path: Path, root: Path) -> str:
+    """*path* relative to *root* when it lives under it, else the raw path --
+    a projection may legitimately name a file outside *root* (e.g. an
+    isolated test working copy exercising the mechanism)."""
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
 def check_generated_regions(
     root: Path, projections: list[AssetProjection]
 ) -> list[str]:
     """Stale-asset list, each entry NAMING the drifted asset. Empty = fresh."""
     return [
-        f"stale generated region: {projection.path.relative_to(root)}"
+        f"stale generated region: {_display_path(projection.path, root)}"
         for projection in projections
         if projection.stale
     ]

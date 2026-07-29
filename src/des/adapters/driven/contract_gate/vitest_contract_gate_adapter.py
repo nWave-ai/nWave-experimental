@@ -28,7 +28,10 @@ import subprocess
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.runner.tool_discovery import resolve_tool
-from des.adapters.driven.runner.vitest_runner import VITEST_KNOWN_LOCATIONS
+from des.adapters.driven.runner.vitest_runner import (
+    VITEST_INSTALL_HINT,
+    VITEST_KNOWN_LOCATIONS,
+)
 from des.ports.driven_ports.contract_gate_port import ContractVerdict
 from des.ports.test_runner_port import RunnerAdapterUnavailable
 
@@ -56,7 +59,12 @@ class VitestContractGateAdapter:
         ContractGatePort parity): when given, requests vitest's own JUnit
         reporter so this run persists a JUnit XML report a caller can parse.
         """
-        resolution = resolve_tool(_VITEST_RUNNER, VITEST_KNOWN_LOCATIONS, base_dir=repo)
+        resolution = resolve_tool(
+            _VITEST_RUNNER,
+            VITEST_KNOWN_LOCATIONS,
+            base_dir=repo,
+            install_hint=VITEST_INSTALL_HINT,
+        )
         if resolution.path is None:
             raise RunnerAdapterUnavailable(
                 _VITEST_RUNNER, reason=resolution.remediation

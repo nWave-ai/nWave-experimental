@@ -53,6 +53,10 @@ class FeatureEndRecord(Enum):
     ENVIRONMENTAL_E2E_GATE_RAN = "EnvironmentalE2eGateRan"
     FEATURE_END_REVIEW_VERDICT = "FeatureEndReviewVerdict"
     WALKING_SKELETON_GATE_RAN = "WalkingSkeletonGateRan"
+    # NEW (fix-ws-done-gate-na-reconciliation slice-01) -- the PASS-only trust
+    # anchor, now ALSO required alongside the WALKING_SKELETON_GATE_RAN heartbeat
+    # (the heartbeat alone let a FAILED walking skeleton close).
+    WALKING_SKELETON_TIER_VERIFIED = "WalkingSkeletonTierVerified"
     # NEW (DDD-4) — slice-01 emits this from run_feature_end_cycle and adds it to
     # the `required` set in BOTH SSOTs.
     FULL_SUITE_LEG_RAN = "FullSuiteLegRan"

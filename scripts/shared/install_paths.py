@@ -138,6 +138,15 @@ def is_durable_interpreter_path(path: str) -> bool:
     """
     if not path:
         return False
+
+    # A Windows absolute path is not a POSIX relative path merely because an
+    # installer test happens to run on Linux. On Windows itself, keep the
+    # platform-native resolution below so its declared temporary roots are
+    # still rejected. On a non-Windows host, no POSIX filesystem judgment can
+    # decide whether C:/... is durable; preserve it for the Windows consumer.
+    if PureWindowsPath(path).is_absolute() and os.name != "nt":
+        return True
+
     candidate = Path(path).resolve()
     for root in _standard_temp_roots():
         resolved_root = root.resolve()

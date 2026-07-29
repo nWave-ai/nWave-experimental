@@ -38,8 +38,11 @@ from des.application.feature_at_files import (
     feature_tag_files as _feature_tag_files,
 )
 from des.cli.pytest_bdd_detection import module_level_scenarios_call
+from des.cli.verify_red_green import _content_sha as _red_seal_content_sha
+from des.cli.verify_red_green import _seal_path as _red_green_seal_path
 from des.domain.lane_profile import LANE_PROFILES, AtRequirement, LaneProfile
 from des.domain.slice_id_trailer import SLICE_TAG_RE
+from des.ports.test_runner_port import AT_KIND_SUFFIX_MAP as _AT_DISCOVERY_SUFFIX_RUNNER
 
 
 if TYPE_CHECKING:
@@ -874,12 +877,26 @@ def _malformed_pytest_bdd_bound_file(
 
 
 def count_pytest_regression_ats(regression_test_file: Path) -> int:
-    """AT count for ``at_kind="pytest-regression"`` (ADR-001, this feature).
+    """AT count for ``at_kind="pytest-regression"`` -- ``len`` of
+    :func:`pytest_regression_at_names` (ADR-001, this feature).
 
-    AST-counts module-level (never class-nested) ``def test_*`` / ``async def
-    test_*`` function definitions in ``regression_test_file`` -- the pytest-
-    native mirror of "one Gherkin ``Scenario:`` = one AT". Three exclusions
-    are CLOSED (ADR-001):
+    See that function for the CLOSED counting rules and the raised
+    ``GateError``s; this wrapper adds nothing but the count, and stays the
+    published surface its existing callers import.
+    """
+    return len(pytest_regression_at_names(regression_test_file))
+
+
+def pytest_regression_at_names(regression_test_file: Path) -> list[str]:
+    """The module-level AT NAMES for ``at_kind="pytest-regression"``.
+
+    AST-collects module-level (never class-nested) ``def test_*`` / ``async
+    def test_*`` function definitions in ``regression_test_file`` -- the
+    pytest-native mirror of "one Gherkin ``Scenario:`` = one AT". Names, not
+    just a count, because the RED-seal delta path
+    (:func:`_red_seal_net_new_at_names`) must INTERSECT this AT universe with
+    the seal's failing set; the count is :func:`count_pytest_regression_ats`.
+    Three exclusions are CLOSED (ADR-001):
 
     * a ``class TestFoo: def test_bar(self): ...`` is NOT counted (the walk
       is over ``tree.body`` only, never recursed into a class body);
@@ -910,18 +927,18 @@ def count_pytest_regression_ats(regression_test_file: Path) -> int:
     scenarios_call = module_level_scenarios_call(tree)
     if scenarios_call is not None:
         raise _malformed_pytest_bdd_bound_file(regression_test_file, scenarios_call)
-    count = sum(
-        1
+    names = [
+        node.name
         for node in tree.body
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
         and node.name.startswith("test_")
         and not _has_fixture_decorator(node)
-    )
-    if count == 0:
+    ]
+    if not names:
         raise _malformed_regression_file(
             f"zero test_* functions found at module level in {regression_test_file}"
         )
-    return count
+    return names
 
 
 def _predecessor_attested_at_total(
@@ -978,6 +995,61 @@ def _predecessor_attested_at_total(
     return total
 
 
+def _red_seal_net_new_at_names(
+    repo: Path, regression_test_file: Path
+) -> set[str] | None:
+    """The file's ATs that this slice is INTRODUCING, per its fresh RED seal.
+
+    The property-side answer (GDP-8) to "how many ATs does this slice add to
+    a file it SHARES with earlier work". ``des verify-red-green --record-red``
+    seals, at ``.nwave/telemetry/red-green/{slug}.json``, one outcome per test
+    id: the ATs the entering slice is introducing FAIL (they witness behavior
+    that does not exist yet) while every already-delivered test PASSES. So the
+    failing set IS the slice's delta -- observed, not designated, and read
+    from the filesystem alone (GDP-7: no git, no external tool).
+
+    Junit ids are ``{classname}::{name}``; the name is reduced to its function
+    identifier (a ``@parametrize`` id suffix ``[...]`` is dropped, mirroring
+    :func:`pytest_regression_at_names`' one-AT-per-parametrized-function rule)
+    and INTERSECTED by the caller with that AST universe -- so a class-nested
+    or fixture-decorated test in the seal can never inflate the delta.
+
+    Returns ``None`` -- never a count the caller might trust -- on every
+    degraded input: seal absent, unreadable, malformed, outside the repo, or
+    content-STALE. Staleness is the load-bearing one (GDP-6, fail-closed):
+    the seal is bound to ``content_sha256``, so tests appended after RED was
+    recorded leave the seal no longer describing the file, and the caller
+    falls back to the whole-file charge rather than letting the additions ride
+    in unseen.
+    """
+    try:
+        seal = _red_green_seal_path(repo, regression_test_file)
+    except ValueError:
+        return None  # regression file outside the repo -- no resolvable slug
+    if not seal.is_file():
+        return None
+    try:
+        record = json.loads(seal.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(record, dict):
+        return None
+    try:
+        if record.get("content_sha256") != _red_seal_content_sha(regression_test_file):
+            return None
+    except OSError:
+        return None
+    outcomes = record.get("outcomes")
+    if not isinstance(outcomes, dict):
+        return None
+    failing = {
+        str(test_id).rsplit("::", 1)[-1].split("[", 1)[0]
+        for test_id, outcome in outcomes.items()
+        if outcome == "fail"
+    }
+    return failing or None
+
+
 def count_net_new_pytest_regression_ats(
     regression_test_file: Path,
     *,
@@ -996,19 +1068,47 @@ def count_net_new_pytest_regression_ats(
     WHOLE total unconditionally -- a slice adding 1 AT to a file already
     carrying a predecessor's 10 attested ATs was over-counted to 11.
 
-    Net-new = the file's whole-file AST count MINUS the total ``at_ids``
-    already attested to OTHER slices of this feature in the AT-completion
-    ledger (:func:`_predecessor_attested_at_total`). Clamped at 0 (never
-    negative) -- a net-new AT count cannot be negative even if ledger data
-    is unexpectedly stale.
+    Two sources answer "net-new", consulted STRONGEST-FIRST.
+
+    1. The fresh RED seal (:func:`_red_seal_net_new_at_names`) -- the file's
+       ATs that FAIL pre-implementation, intersected with the module-level AT
+       universe. This is the PROPERTY (which ATs is this slice introducing),
+       and it is the only one of the two that can see tests left by ANOTHER
+       feature or by a bugfix.
+    2. Otherwise the whole-file AST count MINUS the ``at_ids`` already
+       attested to other slices of THIS feature in the AT-completion ledger
+       (:func:`_predecessor_attested_at_total`). Clamped at 0 -- a net-new
+       count cannot be negative even if ledger data is unexpectedly stale.
+
+    Source 2 alone was the defect (defects.md: ``carpaccio-pytest-route-
+    counts-whole-file-not-slice-delta``): its ledger is FEATURE-SCOPED and its
+    verdict records carry no file path, so tests a PRIOR feature or bugfix
+    left in a shared file subtract nothing and are charged to the entering
+    slice. Measured: 5 inherited + 3 added = 8, rejected against the ceiling
+    of 7. That made the gate PENALISE reuse of an existing test file and
+    REWARD spawning new ones -- inverting the reuse-first discipline DESIGN
+    enforces upstream.
+
+    The seal-derived count needs no upper clamp: it is an INTERSECTION with
+    the file's own AT universe, so a stray or renamed seal id cannot charge
+    more than the file holds. It is taken only when non-empty, so a seal whose
+    failing tests all fall outside that universe (class-nested, say) degrades
+    to source 2 rather than reporting a free 0.
 
     Degrades honestly to the WHOLE-FILE count (today's behavior, never
     silently permissive) when ``repo``, ``feature_id``, or ``entering_slice``
-    is omitted, or when the ledger is absent/unreadable -- see
-    :func:`_predecessor_attested_at_total`.
+    is omitted, and to source 2 when the seal is absent/stale/unusable.
     """
-    total = count_pytest_regression_ats(regression_test_file)
-    if repo is None or feature_id is None or entering_slice is None:
+    names = pytest_regression_at_names(regression_test_file)
+    total = len(names)
+    if repo is None:
+        return total
+    seal_names = _red_seal_net_new_at_names(repo, regression_test_file)
+    if seal_names is not None:
+        net_new = len(set(names) & seal_names)
+        if net_new:
+            return net_new
+    if feature_id is None or entering_slice is None:
         return total
     predecessor_total = _predecessor_attested_at_total(repo, feature_id, entering_slice)
     return max(total - predecessor_total, 0)
@@ -1038,13 +1138,10 @@ def pytest_regression_content_hash(regression_test_file: Path) -> str:
 # instead of a per-language hand-rolled scanner. The runner is resolved from
 # the regression file's OWN suffix -- mirrors ``verify_slice_commit_
 # completeness._routes_through_runner_port``'s suffix-keyed decision -- NEVER
-# an operator-declared per-language flag.
+# an operator-declared per-language flag. ``_AT_DISCOVERY_SUFFIX_RUNNER`` is
+# an IMPORT of the ``des.ports.test_runner_port.AT_KIND_SUFFIX_MAP`` SSOT
+# (ADR-AAD-001 DA-5) -- not an independently-defined literal.
 # ---------------------------------------------------------------------------
-
-_AT_DISCOVERY_SUFFIX_RUNNER: dict[str, str] = {
-    ".py": "pytest",
-    ".rs": "cargo-test",
-}
 
 
 def _no_at_detector_for_language(regression_test_file: Path, detail: str) -> GateError:

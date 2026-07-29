@@ -35,7 +35,6 @@ Reference: docs/feature/oss-feature-end-emit-cli/feature-delta.md (DDD-5..7).
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -57,6 +56,8 @@ from des.application.feature_end_sign_service import (
     SignRefusal,
     sign_feature_end_review,
 )
+from des.cli._emit_json import emit_json_line as _emit
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import GateError as _CarpaccioGateError
 from des.cli.carpaccio_format import mark_feature_end_sealed as _mark_feature_end_sealed
 from des.cli.carpaccio_format import (
@@ -64,11 +65,6 @@ from des.cli.carpaccio_format import (
 )
 from des.cli.carpaccio_format import parse_slice_plan as _parse_slice_plan
 from des.domain.repo_path_resolver import feature_delta_path as _feature_delta_path
-
-
-def _emit(payload: dict[str, object]) -> None:
-    """Print exactly one single-line JSON object (the command's observable)."""
-    print(json.dumps(payload))
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +171,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "(anti-theater); no hash is minted."
         ),
     )
-    sign.add_argument(
+    add_repo_root_argument(
+        sign,
         "--repo",
         required=True,
         help=(
@@ -221,7 +218,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "for the whole set instead of once per invocation."
         ),
     )
-    run.add_argument(
+    add_repo_root_argument(
+        run,
         "--repo",
         required=True,
         help="Path to the project root holding the .nwave/ ledger substrate.",
@@ -271,7 +269,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "reviewer_agent_id, verdict} entries (>=1)."
         ),
     )
-    run_batch.add_argument(
+    add_repo_root_argument(
+        run_batch,
         "--repo",
         required=True,
         help="Path to the project root holding the .nwave/ ledger substrate.",

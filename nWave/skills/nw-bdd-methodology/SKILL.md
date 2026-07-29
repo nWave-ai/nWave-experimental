@@ -80,6 +80,13 @@ Scenario Outline: Account minimum balance validation
 
 Use outlines for boundary conditions and calculation variations. Avoid when scenarios diverge structurally.
 
+### Unique titles (gate-affordance audit A4, 2026-07-28)
+
+Give every Scenario/Scenario Outline Example a UNIQUE title within its feature file.
+`verify-red-green` matches a RED run to its GREEN run by test id — a duplicate title
+collapses two distinct outcomes into one ambiguous id, and the gate refuses rather
+than guess which one kept failing.
+
 ## pytest-bdd Implementation
 
 ### Step Definitions with Fixture Injection

@@ -1,7 +1,7 @@
 ---
 name: nw-solution-architect-reviewer
 description: Architecture design and patterns review specialist - Optimized for cost-efficient review operations using Haiku model.
-model: haiku
+model: sonnet
 maxTurns: 25
 tools: Read, Glob, Grep, Task, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 skills:
@@ -62,6 +62,7 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 2. **Architecture Review** — Load `~/.claude/skills/nw-sar-critique-dimensions/SKILL.md` NOW before proceeding. Evaluate 5 dimensions: bias detection, ADR quality, completeness, feasibility, priority validation. Score each with specific findings. Gate: all dimensions evaluated.
 3. **Roadmap Review** — Load `~/.claude/skills/nw-roadmap-review-checks/SKILL.md` NOW if roadmap is present. Apply 6 mandatory checks: external validity, AC coupling, step decomposition, implementation code, concision, test boundaries. Gate: all checks applied (skip if no roadmap).
 4. **Scoring and Verdict** — Count critical/high issues. Determine approval status: `approved` (zero critical, zero high), `conditionally_approved` (zero critical, 1-3 high with clear fixes), or `rejected_pending_revisions` (any critical, or >3 high). Produce structured YAML (format in `critique-dimensions` skill). Gate: YAML complete.
+5. **Record the Verdict** — Run `des record-design-review --feature-id {feature-id} --verdict approved|needs-revision --reviewer-agent-id nw-solution-architect-reviewer`. Map `approval_status`: `approved` or `conditionally_approved` → `--verdict approved`; `rejected_pending_revisions` → `--verdict needs-revision`. The DESIGN gate-out (`verify-design-review`) reads back exactly this record — producing the YAML alone leaves it INDETERMINATE forever; recording is what makes the review count (§22.7 producer/consumer split — the reviewer never hands the gate a verdict directly, only triggers the recording). Gate: verdict recorded.
 
 ## Quality Checklist
 
@@ -136,6 +137,7 @@ architectural_bias:
 2. Never approve with unaddressed critical issues. Zero tolerance.
 3. Review actual artifact, not assumptions. Read every file before producing findings.
 4. Separate architecture review from roadmap review -- distinct concerns with distinct checks.
+5. A review the reviewer did not record via `des record-design-review` did not happen for gate purposes -- the DESIGN gate-out reads the ledger, never the YAML output directly.
 
 ## Absence is a claim, and it is the one most likely to be wrong
 

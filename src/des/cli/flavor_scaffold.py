@@ -42,6 +42,9 @@ import re
 import sys
 from pathlib import Path
 
+from des.cli._repo_root_arg import add_repo_root_argument
+from des.cli._scaffold_core import decide_on_exists
+
 
 # Mirrors `nWave/flavors/_schema.yaml` `flavor_id` pattern -- kebab/snake-case
 # identifier. Validated here so a hostile/empty --flavor-id degrades LOUD
@@ -122,7 +125,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Human-readable display name (default: titled from --flavor-id).",
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo",
         type=Path,
         default=None,
@@ -172,7 +176,10 @@ def main(argv: list[str] | None = None) -> int:
     target_dir = repo_root / "nWave" / "flavors"
     target_path = target_dir / f"{flavor_id}.yaml"
 
-    if target_path.exists() and not args.force:
+    exists_decision = decide_on_exists(
+        target_exists=target_path.exists(), policy="refuse", force=args.force
+    )
+    if exists_decision == "refuse":
         sys.stderr.write(
             f"flavor-scaffold: flavor {flavor_id!r} already exists at "
             f"{target_path}.\n"

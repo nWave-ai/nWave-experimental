@@ -19,16 +19,6 @@ module: des.cli.verify_slice_ledger_evidence
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --report
-    required: true
-    type: bool
-    help: "Emit the structured JSON report to stdout."
-  - name: --since
-    required: true
-    type: string
-    help: "ISO date (YYYY-MM-DD); events on or after this date are counted."
-
 log_events: []
 
 failure_modes:

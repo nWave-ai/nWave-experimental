@@ -52,6 +52,17 @@ def _carpaccio_gate_event_for(tmp_path: Path, slice_id: str) -> str | None:
     return None
 
 
+def _latest_record_for(
+    tmp_path: Path, slice_id: str, event: str
+) -> dict[str, object] | None:
+    """The latest ledger record of ``event`` for ``slice_id``, full fields."""
+    records = AtCompletionLedger(_FEATURE_ID, tmp_path).read_records()
+    for record in reversed(records):
+        if record.get("slice_id") == slice_id and record.get("event") == event:
+            return record
+    return None
+
+
 def test_cleared_dispatch_emits_carpaccio_gate_cleared_record(
     tmp_path: Path,
 ) -> None:
@@ -82,6 +93,57 @@ def test_rejected_dispatch_emits_carpaccio_gate_rejected_record(
 
     assert decision.is_block
     assert _carpaccio_gate_event_for(tmp_path, "slice-01") == "CarpaccioGateRejected"
+
+
+def test_rejected_dispatch_ledger_record_carries_the_rejection_reason(
+    tmp_path: Path,
+) -> None:
+    """D04b (canali muti class-scope): the ledger record must persist the
+    SAME reason the operator saw in ``InterceptDecision.reason`` -- before
+    this fix ``_emit_carpaccio_gate_event`` threaded only ``event`` +
+    ``slice_id``, so every ``CarpaccioGateRejected`` / ``ReadinessGateRejected``
+    record told THAT a rejection happened but never WHY (live telemetry,
+    2026-07-28/29: 60/60 CarpaccioGateRejected + 82/82 ReadinessGateRejected
+    carried no reason field at all)."""
+    decision = evaluate_atdd_pure_dispatch(
+        prompt=_atdd_pure_prompt("slice-01"),
+        feature_id=_FEATURE_ID,
+        project_root=tmp_path,
+        carpaccio_runner=lambda _f, _s: (1, '{"event": "SliceNotThin"}'),
+        readiness_runner=lambda _f, _s: (0, ""),
+    )
+
+    assert decision.is_block
+    record = _latest_record_for(tmp_path, "slice-01", "CarpaccioGateRejected")
+    assert record is not None, "expected a CarpaccioGateRejected ledger record"
+    assert record.get("reason") == decision.reason, (
+        f"the ledger record must carry the reason the operator saw -- got "
+        f"record reason={record.get('reason')!r}, "
+        f"decision.reason={decision.reason!r}"
+    )
+
+
+def test_readiness_rejected_dispatch_ledger_record_carries_the_rejection_reason(
+    tmp_path: Path,
+) -> None:
+    """D04b: same reason-persistence fix, readiness-gate rejection branch."""
+    decision = evaluate_atdd_pure_dispatch(
+        prompt=_atdd_pure_prompt("slice-01"),
+        feature_id=_FEATURE_ID,
+        project_root=tmp_path,
+        carpaccio_runner=lambda _f, _s: (0, "{}"),
+        readiness_runner=lambda _f, _s: (1, '{"event": "ReadinessRefused"}'),
+    )
+
+    assert decision.is_block
+    assert decision.event == "ReadinessGateRejected"
+    record = _latest_record_for(tmp_path, "slice-01", "ReadinessGateRejected")
+    assert record is not None, "expected a ReadinessGateRejected ledger record"
+    assert record.get("reason") == decision.reason, (
+        f"the ledger record must carry the reason the operator saw -- got "
+        f"record reason={record.get('reason')!r}, "
+        f"decision.reason={decision.reason!r}"
+    )
 
 
 def test_emitted_carpaccio_event_makes_reconciliation_meaningful(

@@ -26,16 +26,6 @@ module: des.cli.gate_g
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --design-contract
-    required: true
-    type: path
-    help: "The feature-delta carrying the prose `[REF] Code-Design` example-table, or a code-design.manifest.yaml whose example-tables row-ids are the design side."
-  - name: --at-module
-    required: true
-    type: path
-    help: "The acceptance-test module directory (or file) whose Gherkin scenarios (and @row: tags) are diffed against the design side."
-
 log_events: []
 
 failure_modes:

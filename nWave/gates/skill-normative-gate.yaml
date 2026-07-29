@@ -14,16 +14,6 @@ module: des.cli.skill_normative_gate
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --manifest
-    required: false
-    type: path
-    help: "Normative-clause manifest path (default: nWave/data/skill-normative-clauses.json)."
-  - name: --root
-    required: false
-    type: path
-    help: "Repository root the skill corpus is resolved against (default: current working directory)."
-
 log_events: []
 
 failure_modes:

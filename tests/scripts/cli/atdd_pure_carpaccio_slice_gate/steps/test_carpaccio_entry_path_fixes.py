@@ -330,11 +330,15 @@ def test_f02_at_review_verdict_cli_records_verdict_the_gate_then_accepts(
     assert gate_payload.get("event") == "SliceCleared"
 
 
-def test_f02_at_review_verdict_cli_needs_revision_writes_nothing(
+def test_f02_at_review_verdict_cli_needs_revision_writes_a_not_approved_record(
     tmp_path: Path,
 ) -> None:
-    """F-02: on NEEDS_REVISION the CLI writes no verdict and the gate then
-    rejects the slice (reason ``absent``).
+    """F-02: on NEEDS_REVISION the CLI writes a verdict record (declared-
+    facts-reachable-recorded slice-01, DD-1 both-outcomes write) and the
+    gate still rejects the slice -- now for the more precise reason
+    ``not-approved`` instead of the old ``absent``. The slice stays blocked
+    either way; only the diagnostic sharpens from "no record found" to "a
+    record exists and it is not APPROVED".
     """
     repo = tmp_path / "repo"
     feature_id = "feature-needs-revision"
@@ -375,8 +379,15 @@ def test_f02_at_review_verdict_cli_needs_revision_writes_nothing(
 
     assert cli_exit == 0
     ledger = repo / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
-    assert not ledger.exists() or ledger.read_text(encoding="utf-8").strip() == ""
+    assert ledger.exists(), "NEEDS_REVISION now writes a ledger record (DD-1)"
+    records = [
+        json.loads(line)
+        for line in ledger.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(records) == 1, records
+    assert records[0].get("verdict") == "NEEDS_REVISION", records[0]
 
     gate_exit, gate_payload = _run_gate(repo, feature_id, "slice-01")
     assert gate_exit == 45
-    assert gate_payload.get("reason") == "absent", gate_payload
+    assert gate_payload.get("reason") == "not-approved", gate_payload

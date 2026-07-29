@@ -24,6 +24,7 @@ from pathlib import Path
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli.commit_slice import main as commit_slice_main
 from des.cli.record_examine_verdict import main as record_examine_verdict_main
+from tests.charter_fixtures import filled_charter
 from tests.des._helpers.commit_slice_git_template import (
     provision_commit_slice_repo,
 )
@@ -107,7 +108,7 @@ def test_commit_refused_when_examine_verdict_is_fail(tmp_path: Path, capsys) -> 
     _init_repo(repo)
     feature_id, slice_id = "f-examine", "slice-01"
     charter = _write_charter(
-        repo, feature_id, slice_id, "# Charter\n\nWalk the checkout flow.\n"
+        repo, feature_id, slice_id, filled_charter("Walk the checkout flow.")
     )
     _record_examine_verdict(repo, feature_id, slice_id, charter, "FAIL", capsys)
 
@@ -136,7 +137,9 @@ def test_commit_refused_when_no_verdict_recorded(tmp_path: Path, capsys) -> None
     repo = tmp_path / "repo"
     _init_repo(repo)
     feature_id, slice_id = "f-examine", "slice-01"
-    _write_charter(repo, feature_id, slice_id, "# Charter\n\nWalk the checkout flow.\n")
+    _write_charter(
+        repo, feature_id, slice_id, filled_charter("Walk the checkout flow.")
+    )
     # No des record-examine-verdict call at all.
 
     _add_new_slice_file(repo, "test_slice_01.py")
@@ -167,12 +170,12 @@ def test_commit_refused_when_pass_verdict_charter_changed_after(
     _init_repo(repo)
     feature_id, slice_id = "f-examine", "slice-01"
     charter = _write_charter(
-        repo, feature_id, slice_id, "# Charter\n\nORIGINAL body.\n"
+        repo, feature_id, slice_id, filled_charter("ORIGINAL body.")
     )
     _record_examine_verdict(repo, feature_id, slice_id, charter, "PASS", capsys)
 
     # Mutate the charter AFTER the exam -- the recorded charter_seal is now stale.
-    (repo / charter).write_text("# Charter\n\nTAMPERED body.\n", encoding="utf-8")
+    (repo / charter).write_text(filled_charter("TAMPERED body."), encoding="utf-8")
 
     _add_new_slice_file(repo, "test_slice_01.py")
     exit_code = commit_slice_main(
@@ -199,7 +202,7 @@ def test_commit_proceeds_when_pass_verdict_seal_matches(tmp_path: Path, capsys) 
     _init_repo(repo)
     feature_id, slice_id = "f-examine", "slice-01"
     charter = _write_charter(
-        repo, feature_id, slice_id, "# Charter\n\nWalk the checkout flow.\n"
+        repo, feature_id, slice_id, filled_charter("Walk the checkout flow.")
     )
     _record_examine_verdict(repo, feature_id, slice_id, charter, "PASS", capsys)
 
@@ -240,7 +243,7 @@ def test_verified_record_attests_via_examine_verdict_when_that_cleared_it(
     _init_repo(repo)
     feature_id, slice_id = "f-examine-attribution", "slice-01"
     charter = _write_charter(
-        repo, feature_id, slice_id, "# Charter\n\nWalk the checkout flow.\n"
+        repo, feature_id, slice_id, filled_charter("Walk the checkout flow.")
     )
     _record_examine_verdict(repo, feature_id, slice_id, charter, "PASS", capsys)
 
@@ -283,7 +286,7 @@ def test_commit_refused_when_verdict_is_indeterminate(tmp_path: Path, capsys) ->
     _init_repo(repo)
     feature_id, slice_id = "f-examine", "slice-01"
     charter = _write_charter(
-        repo, feature_id, slice_id, "# Charter\n\nWalk the checkout flow.\n"
+        repo, feature_id, slice_id, filled_charter("Walk the checkout flow.")
     )
     _record_examine_verdict(
         repo, feature_id, slice_id, charter, "INDETERMINATE", capsys

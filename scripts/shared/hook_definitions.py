@@ -202,6 +202,43 @@ _BASH_NO_VERIFY_REMINDER = (
     'echo "$INPUT" | python3 -m scripts.hooks.no_verify_reminder'
 )
 
+# Pure-shell wrapper around the worktree-removal guard
+# (fix-worktree-removal-liveness-guard, Ale-authorised 2026-07-29). This is
+# the removal-time CONSUMER of the Sentinel's own read-only "worktree
+# anti-rot triage" predicate (`nWave/skills/nw-throughput/SKILL.md`
+# "Throughput Sentinel"; `des.domain.worktree_anti_rot_triage.
+# triage_worktree`) -- the Sentinel never removes a worktree itself, so this
+# is the separate component that acts on its receipt. Mirrors
+# `_BASH_GIT_STASH_GUARD`'s shape exactly: the shell fast-path greps the
+# command for `git worktree remove` (cheap pre-filter; the Python hook does
+# the precise tokenized detection -- a raw grep would false-negative a
+# `git worktree remove` buried after `&&`/`;` and false-positive on the
+# phrase inside a quoted commit message, which is why the Python layer
+# re-checks with `shlex`) and only then invokes the Python entry point.
+#
+# Matcher coexistence: this entry joins the existing PreToolUse/Bash roster
+# ADJACENT to the other five (execution-log guard, the two spine-ledger
+# entries, the git-stash guard, the no-verify reminder) -- do NOT modify any
+# existing entry. Claude Code permits multiple registrations per (event,
+# matcher) tuple; execution is registration-ordered; ANY hook returning
+# `{decision: block}` blocks the tool invocation. This guard greps for
+# `git worktree remove` only -- orthogonal to every other Bash entry's grep,
+# so its block decision wins by construction on a match.
+#
+# Uses module-import form (no `$HOME`) so it is valid in BOTH
+# installer-path AND plugin-bundle distribution modes; `des_plugin.py:
+# DES_HOOKS` ships `worktree_removal_guard.py` to the operator's
+# `~/.claude/scripts/` tree so the module resolves at runtime.
+_BASH_WORKTREE_REMOVAL_GUARD = (
+    "# des-hook:pre-bash-worktree-removal-guard\n"
+    "INPUT=$(cat); "
+    'CMD=$(echo "$INPUT" | python3 -c '
+    '"import sys,json; print(json.load(sys.stdin)'
+    ".get('tool_input',{}).get('command',''))\"); "
+    "echo \"$CMD\" | grep -qE 'git\\s+worktree\\s+remove' || exit 0; "
+    'echo "$INPUT" | python3 -m scripts.hooks.worktree_removal_guard'
+)
+
 # Standalone, spine-independent orchestrator-affordance refresh (fix-
 # orchestrator-affordance-refresh-independent). Unlike the DES-runtime-coupled
 # refresh in session_start_handler.py / user_prompt_submit_handler.py (which
@@ -352,6 +389,20 @@ GIT_PRE_PUSH_BACKSTOP_SCRIPT = "des_declare_done_pre_push.py"
 # compact read-only orientation.  The UserPromptSubmit registration remains the
 # 900-second rich refresh surface.  Do not add a DES-runtime SessionStart entry:
 # it performs maintenance and would make a session open mutate maintainer state.
+# sessionstart-cross-host-contract (6a3e057e4): removed the legacy DES-runtime
+# SessionStart entry (matcher="startup", action="session-start") -- the
+# standalone registration above is now the sole SessionStart surface. Total
+# 17 -> 16 (offsetting the two additions above, net unchanged from 17).
+#
+# fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29): 1 new entry
+# joins -- PreToolUse/Bash for the worktree-removal liveness guard (6th Bash
+# entry; #8 -> #9 PreToolUse; greps `git worktree remove`, orthogonal to every
+# other Bash entry's grep). Blocks a `git worktree remove` while a live
+# process's cwd is inside the target, the target carries an explicit
+# `git worktree lock`, or the target's branch carries unmerged commits --
+# closing the incident where a clean `git status` was mistaken for "safe to
+# remove" while a lane's pytest run was still live inside the worktree.
+# Total grows 16 -> 17.
 HOOK_EVENTS: tuple[HookEvent, ...] = (
     HookEvent(event="PreToolUse", matcher="Agent", action="pre-task"),
     HookEvent(event="PreToolUse", matcher="Write", action="pre-write", is_guard=True),
@@ -385,6 +436,12 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
         matcher="Bash",
         action="pre-bash-no-verify-reminder",
         shell_command=_BASH_NO_VERIFY_REMINDER,
+    ),
+    HookEvent(
+        event="PreToolUse",
+        matcher="Bash",
+        action="pre-bash-worktree-removal-guard",
+        shell_command=_BASH_WORKTREE_REMOVAL_GUARD,
     ),
     HookEvent(event="PostToolUse", matcher="Agent", action="post-tool-use"),
     HookEvent(event="SubagentStop", matcher=None, action="subagent-stop"),

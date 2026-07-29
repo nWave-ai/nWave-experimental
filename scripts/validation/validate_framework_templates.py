@@ -215,13 +215,27 @@ def validate_agent(filepath: Path, result: ValidationResult) -> None:
     elif len(examples) > 7:
         result.add("A09", "warning", name, f"{len(examples)} examples (maximum: 7)")
 
-    # A11: reviewer model must be haiku
-    if is_reviewer and fm.get("model") != "haiku":
+    # A11: reviewer model must be a cost-bounded tier.
+    #
+    # The rule keys on the COST CEILING, not on the "-reviewer" designation.
+    # A reviewer that must CHOOSE its method (architecture, domain modelling,
+    # test-design judgement) needs sonnet; one that runs a FIXED method
+    # (checklist, schema conformance) runs on haiku. Both are legitimate, so
+    # pinning every reviewer to haiku encoded the name instead of the work and
+    # forced judgement reviews onto a tier that cannot do them. What stays
+    # forbidden is the expensive tier: reviewers never run on opus or fable.
+    _REVIEWER_MODELS = ("haiku", "sonnet")
+    if is_reviewer and fm.get("model") not in _REVIEWER_MODELS:
         result.add(
             "A11",
             "error",
             name,
-            f"Reviewer model must be 'haiku', got '{fm.get('model')}'",
+            f"Reviewer model must be one of {list(_REVIEWER_MODELS)}, got "
+            f"'{fm.get('model')}'. WHY: reviewers are cost-bounded — haiku for "
+            f"fixed-method checks, sonnet when the reviewer must choose its "
+            f"method; opus/fable are orchestrator tiers. HOW: set 'model: "
+            f"sonnet' in the agent frontmatter for a judgement review, or "
+            f"'model: haiku' for a mechanical one.",
         )
 
     # A12: reviewer must not have write tools (Bash is allowed, read-only

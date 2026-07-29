@@ -7,6 +7,7 @@ Uses the same log directory resolution as JsonlAuditLogWriter.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,55 @@ from des.ports.driven_ports.audit_log_reader import AuditLogReader
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+_AGENT_USAGE_EVENT = "AGENT_USAGE_OBSERVED"
+_USAGE_FIELDS = (
+    "input_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+    "output_tokens",
+)
+
+
+@dataclass(frozen=True)
+class AgentUsageStageAggregate:
+    """Deduped token totals for one `stage` bucket of one feature's usage.
+
+    Deduplication follows the proven `dedup-by-request_id, MAX-per-category`
+    recipe (`docs/analysis/actual-usage-by-request-2026-07-26.md`): within a
+    `request_id` group every category is IDENTICAL except `output_tokens`
+    (early rows are partial streaming snapshots), so MAX is correct and safe
+    uniformly across all four categories -- never a sum of raw records, which
+    over-counts by ~2x on this exact event shape (one row per assistant
+    transcript entry, not per API request).
+    """
+
+    stage: str | None
+    request_count: int
+    input_tokens: int
+    cache_creation_input_tokens: int
+    cache_read_input_tokens: int
+    output_tokens: int
+    unattributed_record_count: int
+    """Records in this stage bucket carrying NO `request_id` -- cannot be
+    deduped, so their tokens are EXCLUDED from the totals above rather than
+    summed in raw (which would silently reintroduce the over-count the
+    dedup exists to remove). Counted here so the gap is visible, never
+    silently dropped (GDP-8 arity)."""
+
+
+@dataclass(frozen=True)
+class AgentUsageByFeatureReport:
+    """`AGENT_USAGE_OBSERVED` records for one `feature_id`, grouped by stage."""
+
+    feature_id: str
+    stages: tuple[AgentUsageStageAggregate, ...] = field(default_factory=tuple)
+    total_records_scanned: int = 0
+    """Every AGENT_USAGE_OBSERVED record matching `feature_id`, before any
+    dedup/grouping split -- `0` is the honest, computed fact "no record
+    named this feature_id" (never a guess), distinct from "records exist but
+    none attributed cleanly". The caller renders `0` as could-not-verify."""
 
 
 class JsonlAuditLogReader(AuditLogReader):
@@ -122,3 +172,87 @@ class JsonlAuditLogReader(AuditLogReader):
             self._log_dir / f"audit-{today}.log",
             self._log_dir / f"audit-{yesterday}.log",
         ]
+
+    def aggregate_agent_usage_by_stage(
+        self, feature_id: str
+    ) -> AgentUsageByFeatureReport:
+        """Deduped `AGENT_USAGE_OBSERVED` token totals for `feature_id`, by stage.
+
+        declared-facts-reachable-recorded DD-12 (slice-07): the reader closing
+        the "0 readers" state F1 named. Scans EVERY `audit-*.log` file in the
+        log directory (not just today/yesterday -- a feature's work can span
+        several days), unlike `read_last_entry`'s 2-day window, because an
+        aggregate over a feature's lifetime must not silently miss its own
+        earlier days.
+
+        Join key: `feature_id` (also matches `feature_name`, which the writer
+        always sets to the same value -- see `_to_audit_event`). Dedup key:
+        `request_id`, MAX per category (see `AgentUsageStageAggregate`).
+        """
+        stage_groups: dict[str | None, dict[str, dict[str, int]]] = {}
+        unattributed_by_stage: dict[str | None, int] = {}
+        total_scanned = 0
+
+        for log_file in sorted(self._log_dir.glob("audit-*.log")):
+            try:
+                lines = log_file.read_text(encoding="utf-8").splitlines()
+            except (OSError, PermissionError):
+                continue
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if entry.get("event") != _AGENT_USAGE_EVENT:
+                    continue
+                if (
+                    entry.get("feature_id") != feature_id
+                    and entry.get("feature_name") != feature_id
+                ):
+                    continue
+                total_scanned += 1
+                stage = entry.get("stage")
+                request_id = entry.get("request_id")
+                if not isinstance(request_id, str) or not request_id:
+                    unattributed_by_stage[stage] = (
+                        unattributed_by_stage.get(stage, 0) + 1
+                    )
+                    continue
+                requests = stage_groups.setdefault(stage, {})
+                group = requests.setdefault(request_id, dict.fromkeys(_USAGE_FIELDS, 0))
+                for f in _USAGE_FIELDS:
+                    value = entry.get(f)
+                    if isinstance(value, int):
+                        group[f] = max(group[f], value)
+
+        all_stages = set(stage_groups) | set(unattributed_by_stage)
+        stages = tuple(
+            AgentUsageStageAggregate(
+                stage=stage,
+                request_count=len(stage_groups.get(stage, {})),
+                input_tokens=sum(
+                    g["input_tokens"] for g in stage_groups.get(stage, {}).values()
+                ),
+                cache_creation_input_tokens=sum(
+                    g["cache_creation_input_tokens"]
+                    for g in stage_groups.get(stage, {}).values()
+                ),
+                cache_read_input_tokens=sum(
+                    g["cache_read_input_tokens"]
+                    for g in stage_groups.get(stage, {}).values()
+                ),
+                output_tokens=sum(
+                    g["output_tokens"] for g in stage_groups.get(stage, {}).values()
+                ),
+                unattributed_record_count=unattributed_by_stage.get(stage, 0),
+            )
+            for stage in sorted(all_stages, key=lambda s: (s is None, s))
+        )
+        return AgentUsageByFeatureReport(
+            feature_id=feature_id,
+            stages=stages,
+            total_records_scanned=total_scanned,
+        )

@@ -75,6 +75,11 @@ BLOCK_DECISION = "block"
 # Grew from six → seven: `FullSuiteLegRan` added by feature
 # `f-nonbypassable-attestation` slice-01 (DDD-4 — the full-suite leg becomes a
 # required feature-end record across all three SSOTs, incl. this boundary).
+# Grew from seven → eight: `WalkingSkeletonTierVerified` added by feature
+# `fix-ws-done-gate-na-reconciliation` slice-01 -- `WalkingSkeletonGateRan`
+# alone only proves the gate was ENTERED, so it let a FAILED walking skeleton
+# close; the PASS-only trust anchor is now ALSO required (reconciled for a
+# legitimately-NA feature by the `WalkingSkeletonNotApplicable` marker).
 PRODUCTION_REQUIRED_RECORDS = frozenset(
     {
         "CoverageMapVerifiedAtDeliverExit",
@@ -84,6 +89,7 @@ PRODUCTION_REQUIRED_RECORDS = frozenset(
         "FeatureEndReviewVerdict",
         "FullSuiteLegRan",
         "WalkingSkeletonGateRan",
+        "WalkingSkeletonTierVerified",
     }
 )
 

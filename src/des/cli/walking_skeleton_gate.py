@@ -49,6 +49,7 @@ from des.adapters.driven.git.git_feature_delta_adapter import GitFeatureDeltaAda
 from des.adapters.driven.git.git_subprocess import resolve_default_base_ref
 from des.adapters.driven.install.pip_target_installer import PipTargetInstaller
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.domain.gate_outcome import GateOutcome, GateVerdict
 from des.domain.tier_ladder import TierCapability
 from des.domain.walking_skeleton_gate import FeatureUnderGate, WalkingSkeletonGate
@@ -80,7 +81,8 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="The feature directory holding the walking-skeleton.json manifest.",
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--repo-root",
         default=".",
         help="The repository root (layout-independent invocation).",
@@ -389,6 +391,12 @@ def main(argv: list[str] | None = None) -> int:
         ledger.append_walking_skeleton_tier_verified(
             tier_of_record=outcome.tier_of_record.value
         )
+    elif outcome.verdict is GateVerdict.NOT_APPLICABLE:
+        # fix-ws-done-gate-na-reconciliation slice-01: mint the NA marker ONLY
+        # on the gate's own mechanical NOT_APPLICABLE decision -- never on
+        # FAIL/INDETERMINATE/UNVERIFIED, which must stay unreconciled so a
+        # walking skeleton that ran and did NOT pass is BLOCKED at feature-end.
+        ledger.append_walking_skeleton_not_applicable()
 
     _emit(outcome)
     return outcome.exit_code

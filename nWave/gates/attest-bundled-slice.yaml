@@ -11,20 +11,6 @@ module: des.cli.attest_bundled_slice
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --feature-id
-    required: true
-    type: string
-    help: "Feature owning the bundle-delivered slice."
-  - name: --slice-id
-    required: true
-    type: string
-    help: "Bundled slice to attest (slice-NN)."
-  - name: --reason
-    required: true
-    type: string
-    help: "Human-authored GO reason justifying the bundled-slice attestation."
-
 log_events:
   - BundledSliceAttestNotApplicable
 

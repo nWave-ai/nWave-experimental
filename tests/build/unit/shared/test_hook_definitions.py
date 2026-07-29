@@ -48,7 +48,7 @@ class TestHookEventDefinitions:
     """Verify the canonical hook event definitions are complete and correct."""
 
     def test_defines_all_twelve_hook_registrations(self):
-        """All 14 hook registrations are defined (7 PreToolUse + 7 others).
+        """All 17 hook registrations are defined.
 
         slice-02 of atdd-spine-ledger-enforcement-gate-v2 added the
         ("PreToolUse", "Bash", "pre-bash-spine-ledger") dev-mode entry
@@ -70,6 +70,16 @@ class TestHookEventDefinitions:
         fix-orchestrator-affordance-refresh-independent added 2 standalone
         entries -- SessionStart (matcher=None, standalone) and
         UserPromptSubmit (matcher=None, standalone) -- total 15 -> 17.
+        sessionstart-cross-host-contract (6a3e057e4) then removed the legacy
+        DES-runtime SessionStart entry (matcher="startup", action=
+        "session-start"): the standalone SessionStart registration is now
+        the sole SessionStart surface, so the DES-runtime entry would
+        duplicate it and make a session open mutate maintainer state.
+        Total 17 -> 16.
+        fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29) added
+        the 6th PreToolUse/Bash entry (#8 -> #9 PreToolUse): the
+        worktree-removal liveness guard, greps `git worktree remove`,
+        orthogonal to every other Bash entry's grep. Total 16 -> 17.
         Matcher coexistence: Claude Code permits multiple entries per
         (event, matcher) tuple.
         """
@@ -88,11 +98,16 @@ class TestHookEventDefinitions:
             "pre-bash-spine-ledger-gate-installed",
         ) in events_matchers
         assert ("PreToolUse", "Bash", "pre-bash-git-stash-guard") in events_matchers
+        assert (
+            "PreToolUse",
+            "Bash",
+            "pre-bash-worktree-removal-guard",
+        ) in events_matchers
         assert ("PostToolUse", "Agent", "post-tool-use") in events_matchers
         assert ("SubagentStop", None, "subagent-stop") in events_matchers
         assert ("SubagentStop", None, "deliver-progress") in events_matchers
         assert ("SubagentStop", None, "subagent-stop-spine-detector") in events_matchers
-        assert ("SessionStart", "startup", "session-start") in events_matchers
+        assert ("SessionStart", "startup", "session-start") not in events_matchers
         assert ("SubagentStart", None, "subagent-start") in events_matchers
         assert ("UserPromptSubmit", None, "user-prompt-submit") in events_matchers
         assert (
@@ -153,25 +168,28 @@ class TestGenerateHookConfig:
         assert set(config.keys()) == HOOK_EVENT_TYPES
 
     def test_pretooluse_has_eight_entries(self):
-        """PreToolUse has 8 entries: Agent, Write, Edit, Bash x 5.
+        """PreToolUse has 9 entries: Agent, Write, Edit, Bash x 6.
 
         slice-02 of atdd-spine-ledger-enforcement-gate-v2 added a NEW Bash
         entry adjacent to the execution-log guard (4 -> 5). slice-04 added
         the installed-path Bash entry (5 -> 6). slice-01 of
         fix-crafter-stash-structural-mitigation added the git-stash guard
         Bash entry (6 -> 7). The --no-verify reminder guard (Ale 2026-06-26)
-        added the 5th Bash entry (7 -> 8). All 5 Bash entries share the same
-        matcher; Claude Code's PreToolUse protocol executes them in
-        registration order ("any block wins" semantic).
+        added the 5th Bash entry (7 -> 8). fix-worktree-removal-liveness-guard
+        (Ale-authorised 2026-07-29) added the 6th Bash entry (8 -> 9). All 6
+        Bash entries share the same matcher; Claude Code's PreToolUse
+        protocol executes them in registration order ("any block wins"
+        semantic).
         """
         config = generate_hook_config(self._simple_command)
         pre_tool_use = config["PreToolUse"]
-        assert len(pre_tool_use) == 8
+        assert len(pre_tool_use) == 9
         matchers = [e.get("matcher") for e in pre_tool_use]
         assert matchers == [
             "Agent",
             "Write",
             "Edit",
+            "Bash",
             "Bash",
             "Bash",
             "Bash",

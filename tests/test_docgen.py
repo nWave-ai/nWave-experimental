@@ -517,6 +517,39 @@ class TestIntegration:
         pages = run_pipeline(real_root, real_root / "docs" / "generated")
         assert pages  # No DocgenError raised
 
+    def test_check_passes_against_real_repo(self, real_root: Path):
+        """`docgen --check` must accept the live repo as-is.
+
+        Nothing wires `docgen --check` into pre-commit/CI today (mikado D28a
+        finding, 2026-07-29) -- a des-command-catalog GENERATED region or a
+        catalog-authored command-guide front-matter value can drift silently
+        (e.g. a new `_SubcommandRow` landing in the registry without a
+        docgen re-run) and nothing red-flags it until someone happens to run
+        docgen by hand. This test is that flag: it re-runs the SAME checks
+        `docgen --check` runs and fails naming every stale asset, so this
+        drift class is caught by the ordinary test suite instead of going
+        unnoticed indefinitely.
+        """
+        from scripts.docgen import (
+            check_command_front_matter,
+            check_generated_regions,
+            project_command_front_matter,
+            project_generated_regions,
+            scan,
+        )
+
+        asset_paths = scan(real_root)
+        region_projections = project_generated_regions(real_root, asset_paths)
+        front_matter_projections = project_command_front_matter(real_root)
+        stale = check_generated_regions(
+            real_root, region_projections
+        ) + check_command_front_matter(real_root, front_matter_projections)
+        assert not stale, (
+            "docgen --check would refuse the live repo -- regenerate with "
+            "`uv run python scripts/docgen.py` and commit the diff:\n"
+            + "\n".join(stale)
+        )
+
 
 # ---------------------------------------------------------------------------
 # Link validation

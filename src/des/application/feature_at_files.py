@@ -18,6 +18,7 @@ reads the filesystem and mutates nothing.
 
 from __future__ import annotations
 
+import fnmatch
 import itertools
 import os
 from dataclasses import dataclass
@@ -26,6 +27,20 @@ from typing import TYPE_CHECKING
 
 from des.domain.requirement_id import COVERS_TAG_RE
 from des.domain.slice_id_trailer import SLICE_TAG_RE
+from des.ports.test_runner_port import AT_KIND_SUFFIX_MAP
+
+
+#: A pytest-collectible filename convention (``test_*.py`` / ``*_test.py``).
+#: SSOT promotion (agnostic-at-discovery-ssot-repair): previously a private
+#: copy lived ONLY in ``slice_at_completeness.py``; a second agnostic-AT-
+#: discovery consumer (``verify_deliver_entry_contract._authored_slice_tags``)
+#: needs the SAME filter -- without it, a doc/ADR/module that merely
+#: *mentions* the ``@feature-{id}`` tag convention in its head window would be
+#: wrongly counted as a delivered AT (the exact class of defect
+#: F-FEATURE-END-COMPLETENESS-ORACLE-PYTEST-BLIND AT-D1 already fixed once in
+#: this repo). One physical home, imported by both, closes the divergence
+#: risk before a 3rd private copy could form.
+PYTEST_COLLECTIBLE_PATTERNS = ("test_*.py", "*_test.py")
 
 
 if TYPE_CHECKING:
@@ -151,6 +166,22 @@ def feature_tagged_test_files(repo: Path, feature_id: str) -> list[Path]:
     return sorted(matched)
 
 
+def is_pytest_collectible(path: Path) -> bool:
+    """True iff ``path``'s filename matches the pytest collection convention.
+
+    ``feature_tagged_test_files`` walks every file with no filename/extension
+    restriction, matching purely on a head-comment tag substring. Without this
+    filter a non-test file (a doc, an ADR, a plain module) whose head merely
+    *mentions* the tag convention is wrongly counted as a delivered AT.
+    Restricting to the pytest-collectible filename convention keeps a
+    consumer bound to real, delivered test artifacts.
+    """
+    name = path.name
+    return any(
+        fnmatch.fnmatch(name, pattern) for pattern in PYTEST_COLLECTIBLE_PATTERNS
+    )
+
+
 def _file_head_window(path: Path) -> str:
     """The first ``_HEAD_SCAN_LINES`` lines of ``path``, or ``""`` if unreadable."""
     try:
@@ -229,3 +260,107 @@ def resolve_test_file_attribution(path: Path) -> TestFileAttribution:
     slice_id = slice_match.group(1) if slice_match else None
     covers = tuple(match.group(1) for match in _COVERS_SUBTAG_RE.finditer(window))
     return TestFileAttribution(slice_id=slice_id, covers=covers)
+
+
+# ---------------------------------------------------------------------------
+# agnostic-at-discovery slice-02
+# ---------------------------------------------------------------------------
+#
+# ADD-not-mutate (RATIFIED, ADR-AAD-001): everything above stays UNTOUCHED.
+# ``discover_at_kind_for_slice`` is composed entirely from the two sibling
+# resolvers this module already ships -- ``feature_tagged_test_files`` for the
+# ``@feature-{id}`` head-tag candidate scan, ``resolve_test_file_attribution``
+# for the ``@slice-NN`` sub-tag filter -- plus the ``AT_KIND_SUFFIX_MAP`` SSOT
+# slice-01 promoted into ``des.ports.test_runner_port`` (DA-5: no 3rd private
+# copy of that map).
+
+#: DA-4: derived from the resolved RUNNER name (``AT_KIND_SUFFIX_MAP`` values),
+#: never a 3rd independent suffix->at_kind mapping. ``pytest`` alone carries
+#: the CLI-vocabulary ``pytest-regression`` name; every other recognized
+#: runner (``cargo-test`` today, future rows for free) maps to the generic
+#: port-routed ``native-regression`` path.
+_PYTEST_RUNNER_NAME = "pytest"
+
+
+@dataclass(frozen=True)
+class AtKindResolved:
+    """Exactly one tag-matched candidate whose suffix is recognized."""
+
+    at_kind: str
+    regression_test_file: Path
+
+
+@dataclass(frozen=True)
+class AtKindNoneFound:
+    """Zero tag-matched candidates -- the honest "nothing found" outcome."""
+
+    searched_tag: str
+
+
+@dataclass(frozen=True)
+class AtKindAmbiguous:
+    """2+ tag-matched candidates, OR one candidate with an unrecognized suffix.
+
+    Both are "found something, cannot auto-resolve" -- NEVER collapsed into
+    ``AtKindNoneFound`` (DA-2, GDP-8 arity corollary).
+    """
+
+    candidates: tuple[Path, ...]
+    reason: str
+
+
+#: The 3-arity result of ``discover_at_kind_for_slice`` (DA-2).
+AtKindDiscovery = AtKindResolved | AtKindNoneFound | AtKindAmbiguous
+
+
+def _runner_name_to_at_kind(runner_name: str) -> str:
+    """DA-4: ``pytest`` -> ``pytest-regression``; every other recognized
+    runner -> the generic ``native-regression`` path."""
+    if runner_name == _PYTEST_RUNNER_NAME:
+        return "pytest-regression"
+    return "native-regression"
+
+
+def discover_at_kind_for_slice(
+    repo: Path, feature_id: str, slice_id: str
+) -> AtKindDiscovery:
+    """Auto-resolve ``slice_id``'s AT kind from ``@feature-{id}``/``@{slice_id}``
+    tag-matched files on disk (ADR-AAD-001).
+
+    Pure: reads the filesystem, mutates nothing, never raises -- a missing or
+    unreadable ``repo`` degrades to ``AtKindNoneFound`` via the sibling
+    resolvers this composes (Contract-Tests row 1). Honestly reports one of
+    three outcomes -- resolved / none-found / ambiguous -- never collapsing
+    "found something, cannot pick" into "found nothing" (DA-2).
+    """
+    searched_tag = f"@feature-{feature_id} @{slice_id}"
+    candidates = sorted(
+        path
+        for path in feature_tagged_test_files(repo, feature_id)
+        if resolve_test_file_attribution(path).slice_id == slice_id
+    )
+
+    if not candidates:
+        return AtKindNoneFound(searched_tag=searched_tag)
+
+    if len(candidates) > 1:
+        return AtKindAmbiguous(
+            candidates=tuple(candidates),
+            reason=f"{len(candidates)} tag-matched candidates for {searched_tag}",
+        )
+
+    (only_candidate,) = candidates
+    runner_name = AT_KIND_SUFFIX_MAP.get(only_candidate.suffix)
+    if runner_name is None:
+        return AtKindAmbiguous(
+            candidates=tuple(candidates),
+            reason=(
+                f"{only_candidate} has an unrecognized suffix "
+                f"{only_candidate.suffix!r} -- not in AT_KIND_SUFFIX_MAP"
+            ),
+        )
+
+    return AtKindResolved(
+        at_kind=_runner_name_to_at_kind(runner_name),
+        regression_test_file=only_candidate,
+    )

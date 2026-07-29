@@ -39,6 +39,7 @@ from des.application.wave_activation_service import (
     ClearFloorOutcome,
     WaveActivationService,
 )
+from des.cli._repo_root_arg import add_repo_root_argument
 
 
 # Exit codes the operator sees (the DESIGN contract table). CLEARED and
@@ -75,7 +76,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "captures). REQUIRED -- the human, not the tool, authorizes the clear."
         ),
     )
-    parser.add_argument(
+    add_repo_root_argument(
+        parser,
         "--project-root",
         type=Path,
         default=Path.cwd(),

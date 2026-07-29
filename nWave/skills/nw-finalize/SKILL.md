@@ -91,7 +91,7 @@ These are process scaffolding — valuable during delivery, disposable after:
 
 1. **List remaining files** — List all files still in `docs/feature/{feature-id}/` after migration. Gate: list produced.
 2. **Present for approval** — Show the exact list to the user and request approval. Gate: user explicitly approves.
-3. **Preserve workspace** — `docs/feature/{feature-id}/` is NOT deleted. The wave matrix derives status from this directory. Removing it would make finalized features disappear from the matrix. The evolution doc in `docs/evolution/` is the summary; the feature directory is the history. Gate: directory preserved, session markers removed.
+3. **Preserve workspace** — `docs/feature/{feature-id}/` is NOT deleted. (Correction 2026-07-28: this line used to credit "the wave matrix" for deriving status from the directory. Measured: `git grep -in 'wave.matrix|wave_matrix' -- src scripts tests` returns ZERO lines — that consumer does not exist. Status is derived from the AT-completion ledger, whose real attesting events are `SliceCommitVerified` per slice and the pair `FeatureEndReviewVerdict` + `EBatchRefactorCompleted` at feature-end; a bare `FeatureEnd` event has zero records and zero producers. The directory is still preserved — it is the feature's history — but do not justify preserving it by naming a reader that was never written.) Removing it would make finalized features disappear from the matrix. The evolution doc in `docs/evolution/` is the summary; the feature directory is the history. Gate: directory preserved, session markers removed.
 4. **Clean session artifacts only** — Remove `.nwave/des/deliver-session.json`, `.develop-progress.json`, and any temp files. Do NOT remove wave artifacts (discuss/, design/, distill/, deliver/). Gate: session markers removed, wave artifacts intact.
 
 **NEVER delete without user approval.** Show exactly what will be removed.
@@ -102,7 +102,7 @@ These are process scaffolding — valuable during delivery, disposable after:
 2. **Update architecture doc statuses** — Change any "FUTURE DESIGN" labels to "IMPLEMENTED" in migrated architecture docs. Gate: no stale FUTURE DESIGN labels.
 3. **Optionally generate reference docs** — Invoke /nw-document unless `--skip-docs` flag provided. Gate: docs generated or skipped.
 4. **Commit evolution doc and artifacts** — Commit 1: evolution doc + migrated artifacts. Gate: commit created.
-5. **Commit workspace cleanup** — Commit 2: workspace removal. Gate: commit created and pushed.
+5. **Commit session-artifact cleanup** — Commit 2: the session markers removed in Phase C step 4 (the feature workspace directory itself is preserved, per Phase C step 3 — never deleted). Gate: commit created and pushed.
 
 ## Agent Invocation
 

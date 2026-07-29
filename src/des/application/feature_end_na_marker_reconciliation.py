@@ -23,7 +23,9 @@ Mirrors the sibling `feature_end_required_records` field precedent
 the `subagent.stop` composition's `feature_end_na_marker_reconciles` field
 in `nWave/flavors/atdd_pure.yaml` (present-in-YAML wins); the
 `_DEFAULT_NA_MARKER_RECONCILES` dict below is the absent-field fallback,
-preserving today's three-entry reconciliation set. The `NWAVE_FLAVORS_DIR`
+preserving today's reconciliation set (extended to a fourth entry --
+`WalkingSkeletonNotApplicable -> WalkingSkeletonTierVerified` --
+fix-ws-done-gate-na-reconciliation slice-01). The `NWAVE_FLAVORS_DIR`
 env-var seam (`wave_gate_stack_dispatch.shipped_flavors_dir`) lets tests
 (and alternate installs) redirect the lookup -- the SAME seam
 `_feature_end_required_records()` already uses for its sibling field.
@@ -45,6 +47,7 @@ _DEFAULT_NA_MARKER_RECONCILES: dict[str, str] = {
     "CoverageMapNotApplicableAtDistillExit": "CoverageMapVerifiedAtDistillExit",
     "CoverageMapNotApplicableAtDeliverExit": "CoverageMapVerifiedAtDeliverExit",
     "FullSuiteLegNotApplicable": "FullSuiteLegRan",
+    "WalkingSkeletonNotApplicable": "WalkingSkeletonTierVerified",
 }
 
 

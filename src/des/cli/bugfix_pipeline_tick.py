@@ -55,6 +55,7 @@ from typing import TYPE_CHECKING
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.adapters.driven.output.stdout_output import StdoutOutput
+from des.cli._repo_root_arg import add_repo_root_argument
 from des.domain.bugfix_pipeline import evaluate_and_record
 from des.domain.iso_utc import parse_iso_utc
 
@@ -84,7 +85,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--feature-id", required=True)
-    parser.add_argument("--project-root", required=True)
+    add_repo_root_argument(parser, "--project-root", required=True)
     parser.add_argument("--defect-id", required=True)
     parser.add_argument("--action", required=True, choices=_ACTIONS)
     parser.add_argument(

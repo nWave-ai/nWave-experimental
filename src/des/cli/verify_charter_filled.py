@@ -38,11 +38,12 @@ thin-shell split). Pure Python + filesystem only -- no git.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from des.cli._emit_json import emit_json_line as _emit
 
 
 if TYPE_CHECKING:
@@ -183,6 +184,18 @@ def _analyze_charter(content: str) -> _CharterAnalysis:
     return _CharterAnalysis(filled, missing_sections, has_negative, verdict, detail)
 
 
+def charter_missing_sections(content: str) -> list[str]:
+    """PUBLIC: the still-incomplete judgment sections of a charter's content --
+    an EMPTY list means FILLED.
+
+    The same judgment ``main`` renders into its JSON verdict, exposed so that
+    callers which must decide on the FILLED *property* (rather than on the
+    mere presence of a charter file) reuse this ONE implementation instead of
+    re-deriving it. Pure.
+    """
+    return _analyze_charter(content).missing_sections
+
+
 def _read_charter(charter_path: Path) -> tuple[str | None, str | None]:
     """Read a charter file. Returns (content, None) on success, or
     (None, detail) on any unreadable condition -- never raises. Not pure
@@ -217,10 +230,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output format (only 'json' is supported).",
     )
     return parser
-
-
-def _emit(payload: dict[str, Any]) -> None:
-    print(json.dumps(payload))
 
 
 def main(argv: list[str] | None = None) -> int:

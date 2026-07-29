@@ -153,6 +153,13 @@ lifecycle_events:
       # f-nonbypassable-attestation slice-01 (DDD-4): FullSuiteLegRan is held
       # EQUAL to the verify_deliver_integrity.py `required` set (AT-A6) so a
       # single-location edit cannot silently re-open the half-wired hole.
+      # fix-ws-done-gate-na-reconciliation slice-01: WalkingSkeletonGateRan
+      # alone only proves the gate was ENTERED -- a walking skeleton that ran
+      # and FAILED still leaves the heartbeat behind, so this list used to let
+      # a FAILED walking skeleton close. WalkingSkeletonTierVerified is the
+      # PASS-only trust anchor (RM-3); it is now ALSO required, reconciled for
+      # a legitimately-NA feature by the WalkingSkeletonNotApplicable marker
+      # below.
       feature_end_required_records:
         - CoverageMapVerifiedAtDeliverExit
         - CoverageMapVerifiedAtDistillExit
@@ -161,6 +168,7 @@ lifecycle_events:
         - FeatureEndReviewVerdict
         - FullSuiteLegRan
         - WalkingSkeletonGateRan
+        - WalkingSkeletonTierVerified
       # fix-na-marker-reconcile-drift slice-01: the ONE shared source for which
       # NotApplicable (NA) marker reconciles which required record above --
       # read by BOTH `subagent_stop_handler._missing_feature_end_cycle_records`
@@ -170,10 +178,14 @@ lifecycle_events:
       # reconciled `FullSuiteLegNotApplicable` (inline special-case) while the
       # CLI hardcoded all three entries in a local literal -- the two surfaces
       # silently disagreed on every repo with inactive coverage-map adoption.
+      # fix-ws-done-gate-na-reconciliation slice-01: WalkingSkeletonNotApplicable
+      # is the 4th entry -- minted ONLY on the gate's own mechanical NOT_
+      # APPLICABLE decision, never on FAIL/INDETERMINATE.
       feature_end_na_marker_reconciles:
         CoverageMapNotApplicableAtDistillExit: CoverageMapVerifiedAtDistillExit
         CoverageMapNotApplicableAtDeliverExit: CoverageMapVerifiedAtDeliverExit
         FullSuiteLegNotApplicable: FullSuiteLegRan
+        WalkingSkeletonNotApplicable: WalkingSkeletonTierVerified
 
   # Commit lifecycle (git-hook prepare-commit-msg) — closes friction #35
   # mechanical trailer derivation. Phase 5 wiring; today the trailer

@@ -1296,57 +1296,68 @@ def _decision_from_composition(
         # slice-05 (DDD-8): a wave-OWNER dispatched off-spine. The runner is
         # fail-OPEN, so a halt here is a DEFINITE off-spine BLOCK (gate exit 1) --
         # the warn+ask the wave-level silent-entry hole closes.
+        reason = (
+            "wave-dispatch guard rejected an off-spine wave-owner dispatch "
+            f"(exit {blocking_result.exit_code}): "
+            f"{_carpaccio_reason(blocking_result.stdout)}"
+        )
         _emit_carpaccio_gate_event(
-            "WaveDispatchGateRejected", feature_id, slice_id, project_root
+            "WaveDispatchGateRejected",
+            feature_id,
+            slice_id,
+            project_root,
+            reason=reason,
         )
-        return InterceptDecision.block(
-            event="WaveDispatchGateRejected",
-            reason=(
-                "wave-dispatch guard rejected an off-spine wave-owner dispatch "
-                f"(exit {blocking_result.exit_code}): "
-                f"{_carpaccio_reason(blocking_result.stdout)}"
-            ),
-        )
+        return InterceptDecision.block(event="WaveDispatchGateRejected", reason=reason)
 
     if blocking_gate_id == _VERIFY_READINESS_PRE_DISPATCH_GATE_ID:
-        _emit_carpaccio_gate_event(
-            "ReadinessGateRejected", feature_id, slice_id, project_root
-        )
-        return InterceptDecision.block(
-            event="ReadinessGateRejected",
-            reason=(
-                f"readiness gate rejected {slice_id} (exit "
-                f"{blocking_result.exit_code}): "
-                f"{_readiness_reason(blocking_result.stdout)}"
-            ),
-        )
-
-    _emit_carpaccio_gate_event(
-        "CarpaccioGateRejected", feature_id, slice_id, project_root
-    )
-    return InterceptDecision.block(
-        event="CarpaccioGateRejected",
-        reason=(
-            f"carpaccio gate rejected {slice_id} (exit "
+        reason = (
+            f"readiness gate rejected {slice_id} (exit "
             f"{blocking_result.exit_code}): "
-            f"{_carpaccio_reason(blocking_result.stdout)}"
-        ),
+            f"{_readiness_reason(blocking_result.stdout)}"
+        )
+        _emit_carpaccio_gate_event(
+            "ReadinessGateRejected", feature_id, slice_id, project_root, reason=reason
+        )
+        return InterceptDecision.block(event="ReadinessGateRejected", reason=reason)
+
+    reason = (
+        f"carpaccio gate rejected {slice_id} (exit "
+        f"{blocking_result.exit_code}): "
+        f"{_carpaccio_reason(blocking_result.stdout)}"
     )
+    _emit_carpaccio_gate_event(
+        "CarpaccioGateRejected", feature_id, slice_id, project_root, reason=reason
+    )
+    return InterceptDecision.block(event="CarpaccioGateRejected", reason=reason)
 
 
 def _emit_carpaccio_gate_event(
-    event: str, feature_id: str, slice_id: str, project_root: Path
+    event: str,
+    feature_id: str,
+    slice_id: str,
+    project_root: Path,
+    *,
+    reason: str | None = None,
 ) -> None:
-    """Append a `CarpaccioGateCleared` / `CarpaccioGateRejected` ledger record.
+    """Append a `CarpaccioGateCleared` / `*GateRejected` ledger record.
 
     F2 (M4): the U1 intercept records one carpaccio gate event per dispatch so
     `reconcile_dispatch_count` is meaningful. The emission is **fail-OPEN on the
     audit write** -- a ledger-write failure is swallowed so it can never change
     the gate decision.
+
+    D04b (canali muti class-scope): the optional `reason` persists the SAME
+    human-readable rejection reason `InterceptDecision.reason` already carries
+    to the operator -- before this, the record told THAT a rejection happened
+    but never WHY (measured: 60/60 CarpaccioGateRejected + 82/82
+    ReadinessGateRejected records carried no reason field). Defaults to None
+    (the `CarpaccioGateCleared` call site passes none -- a clearance has
+    nothing to explain).
     """
     try:
         AtCompletionLedger(feature_id, project_root).append_gate_event(
-            event=event, slice_id=slice_id
+            event=event, slice_id=slice_id, reason=reason
         )
     except Exception:
         # Fail-open: the gate verdict already stands; ledger emission is audit.

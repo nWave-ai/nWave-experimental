@@ -19,20 +19,6 @@ module: des.cli.feature_delta_schema
 entry_function: main
 language_neutral_contract: true
 
-cli_args:
-  - name: --types
-    required: false
-    type: bool
-    help: "describe: list the five section-type constructors."
-  - name: --consumed-by
-    required: false
-    type: bool
-    help: "describe: list each section's consumed_by wave set."
-  - name: --wave
-    required: false
-    type: string
-    help: "inject: the wave whose consumed sections to project (wave-injection)."
-
 log_events: []
 
 failure_modes:

@@ -15,6 +15,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from des.domain.refactor.discovery_method import (
+    RecognizedDiscoveryMethod,
+    select_discovery_method,
+)
+
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -23,14 +28,23 @@ if TYPE_CHECKING:
 #: (``des find``) must emit against (Open Question 3).
 SCHEMA_VERSION = 1
 
-_PENDING_HEADER = "# Tech debt pile"
 _PAID_HEADER = "# Paid tech debt"
 
 # One pending-item line: `- [ ] <id>: paradigm=<p> defect="..." proposed_solution="..."`
+# with an OPTIONAL trailing ` discovered_by=<token>`
 # -- byte-for-byte the shape the DISTILL composition fixture seeds.
+#
+# The trailing field is optional and can never be made mandatory here: 223
+# pending rows of the pre-field shape sit in the real ``defects.md``, and a
+# required group would turn every one of them into a ``skipped_line`` at once
+# -- the drain would report an empty pile and exit 0, which is
+# ``fix-drain-single-item-silent-noop`` all over again. A row that declares
+# nothing is not silent, though: it parses as ``UNATTRIBUTED`` AND its id
+# reaches ``PileParseReport.unattributed_item_ids``.
 _ITEM_LINE_RE = re.compile(
     r"^- \[ \] (?P<item_id>\S+): paradigm=(?P<paradigm>\S+) "
-    r'defect="(?P<defect>[^"]*)" proposed_solution="(?P<proposed_solution>[^"]*)"$'
+    r'defect="(?P<defect>[^"]*)" proposed_solution="(?P<proposed_solution>[^"]*)"'
+    r"(?: discovered_by=(?P<discovered_by>\S+))?$"
 )
 
 
@@ -46,6 +60,7 @@ class PileItem:
     defect: str
     proposed_solution: str
     paradigm: str
+    discovered_by: str = RecognizedDiscoveryMethod.UNATTRIBUTED.value
     schema_version: int = SCHEMA_VERSION
 
 
@@ -79,11 +94,33 @@ class PileParseReport:
     parsed pile produces is what let ``des refactor`` tell a maintainer who
     mistyped ``--pile`` that their pile was empty, and exit 0
     (fix-drain-single-item-silent-noop).
+
+    ``unattributed_item_ids`` names the parsed items that declared NO
+    ``discovered_by=`` channel. It is the same third-state discipline applied
+    to attribution: a consumer computing yield-per-discovery-method sums the
+    items it can bucket, and without this aggregate the rows it cannot bucket
+    are invisible -- coverage would read 100% of whatever happened to be
+    countable (GDP-8 arity corollary: the third state must reach the
+    AGGREGATE, not merely the record).
+
+    ``unrecognized_discovery`` names the items whose declared channel is not a
+    member of the closed set, paired with the offending token. It REPORTS and
+    does not refuse: unlike ``paradigm=``, which decides which RPP lens the
+    fixer dispatches and so must block a wrong value before dispatch,
+    ``discovered_by=`` is provenance -- it changes nothing about the fix.
+    Refusing to drain a real defect because its provenance tag is misspelled
+    would put the enforcement cost on the operator for zero correctness gain
+    (GDP-5) and would decide on the DESIGNATION rather than the property
+    (GDP-8). The item keeps its raw token verbatim rather than being
+    normalised to ``unattributed``, because a typo is evidence of what the
+    author meant and silently rewriting it destroys that.
     """
 
     items: tuple[PileItem, ...]
     skipped_lines: tuple[str, ...]
     unreadable: PileUnreadable | None = None
+    unattributed_item_ids: tuple[str, ...] = ()
+    unrecognized_discovery: tuple[tuple[str, str], ...] = ()
 
 
 def classify_unreadable_pile(pile_path: Path) -> PileUnreadable | None:
@@ -111,6 +148,8 @@ def parse_pile_report(pile_path: Path) -> PileParseReport:
         return PileParseReport(items=(), skipped_lines=(), unreadable=unreadable)
     items: list[PileItem] = []
     skipped: list[str] = []
+    unattributed: list[str] = []
+    unrecognized: list[tuple[str, str]] = []
     for raw_line in pile_path.read_text(encoding="utf-8").splitlines():
         stripped = raw_line.strip()
         if not stripped or stripped.startswith("#"):
@@ -119,15 +158,27 @@ def parse_pile_report(pile_path: Path) -> PileParseReport:
         if match is None:
             skipped.append(stripped)
             continue
+        declared_channel = match.group("discovered_by")
+        if declared_channel is None:
+            declared_channel = RecognizedDiscoveryMethod.UNATTRIBUTED.value
+            unattributed.append(match.group("item_id"))
+        elif not select_discovery_method(declared_channel).accepted:
+            unrecognized.append((match.group("item_id"), declared_channel))
         items.append(
             PileItem(
                 item_id=match.group("item_id"),
                 defect=match.group("defect"),
                 proposed_solution=match.group("proposed_solution"),
                 paradigm=match.group("paradigm"),
+                discovered_by=declared_channel,
             )
         )
-    return PileParseReport(items=tuple(items), skipped_lines=tuple(skipped))
+    return PileParseReport(
+        items=tuple(items),
+        skipped_lines=tuple(skipped),
+        unattributed_item_ids=tuple(unattributed),
+        unrecognized_discovery=tuple(unrecognized),
+    )
 
 
 def parse_pile(pile_path: Path) -> tuple[PileItem, ...]:
@@ -149,11 +200,25 @@ def move_item(pile_path: Path, paid_path: Path, item_id: str) -> None:
 
     Atomic-observable: both writes happen in this one call, so a caller never
     observes the item missing from both files or present in both at once.
+
+    Line-surgical, exactly like ``annotate_item_escalated``: the ONE matching
+    pending line is dropped and every other line is written back
+    byte-identical. Re-RENDERING the pile from the PARSED items instead
+    deletes everything the grammar cannot read -- header comments,
+    prose-format pending rows, rows using a variant field name -- and those
+    are the pile's irreplaceable content, not decoration. Measured on the real
+    ``techdebt.md`` before this was fixed: one closure took it from 302 lines
+    to 49, destroying nine pending rows.
     """
-    items = parse_pile(pile_path)
-    moved = next((item for item in items if item.item_id == item_id), None)
-    remaining = tuple(item for item in items if item.item_id != item_id)
-    _write_pending(pile_path, remaining)
+    if not pile_path.is_file():
+        return
+    moved = next(
+        (item for item in parse_pile(pile_path) if item.item_id == item_id), None
+    )
+    item_prefix_re = re.compile(rf"^- \[ \] {re.escape(item_id)}:")
+    lines = pile_path.read_text(encoding="utf-8").splitlines()
+    remaining = [line for line in lines if not item_prefix_re.match(line)]
+    pile_path.write_text("\n".join(remaining) + "\n", encoding="utf-8")
     if moved is not None:
         _append_paid(paid_path, moved)
 
@@ -178,12 +243,6 @@ def annotate_item_escalated(pile_path: Path, item_id: str) -> None:
     pile_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
 
 
-def _write_pending(pile_path: Path, items: tuple[PileItem, ...]) -> None:
-    lines = [_PENDING_HEADER, ""]
-    lines.extend(_render_line("[ ]", item) for item in items)
-    pile_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
 def _append_paid(paid_path: Path, item: PileItem) -> None:
     existing = (
         paid_path.read_text(encoding="utf-8")
@@ -196,7 +255,16 @@ def _append_paid(paid_path: Path, item: PileItem) -> None:
 
 
 def _render_line(checkbox: str, item: PileItem) -> str:
+    """Render one item back to the row grammar.
+
+    ``discovered_by=`` is rendered ALWAYS, including when it is
+    ``unattributed``: a closed row that quietly dropped the marker would put
+    the ledger back where it started -- prose with no extractable channel --
+    and the denominator this field exists to create is over the CLOSED rows
+    just as much as the pending ones.
+    """
     return (
         f"- {checkbox} {item.item_id}: paradigm={item.paradigm} "
-        f'defect="{item.defect}" proposed_solution="{item.proposed_solution}"'
+        f'defect="{item.defect}" proposed_solution="{item.proposed_solution}" '
+        f"discovered_by={item.discovered_by}"
     )

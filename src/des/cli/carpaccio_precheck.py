@@ -33,6 +33,10 @@ import json
 import sys
 from typing import TYPE_CHECKING
 
+from des.application.feature_at_files import (
+    feature_tagged_test_files,
+    is_pytest_collectible,
+)
 from des.cli.carpaccio_format import (
     GateError,
     Scenario,
@@ -73,8 +77,21 @@ def collect_violations(repo: Path, feature_id: str) -> list[str]:
 
 
 def _check_binding(repo: Path, feature_id: str) -> list[str]:
-    """Report when no ``.feature`` file is bound to the feature (friction #1)."""
+    """Report when no AT module is bound to the feature (friction #1).
+
+    AT-kind agnostic (agnostic-at-discovery-ssot-repair, gap 4): a Gherkin
+    ``.feature`` file is one binding source; a head-comment-tagged pytest AT
+    (``feature_tagged_test_files`` + ``is_pytest_collectible`` -- the SAME
+    resolvers ADR-AAD-001 and gap 1 of this repair already trust) is another.
+    A feature delivered exclusively via pytest must not be told to author a
+    ``.feature`` file it was never designed to have.
+    """
     if _feature_tag_files(repo, feature_id):
+        return []
+    if any(
+        is_pytest_collectible(path)
+        for path in feature_tagged_test_files(repo, feature_id)
+    ):
         return []
     legacy_dir = _legacy_acceptance_dir(repo, feature_id)
     underscore_id = feature_id.replace("-", "_")
@@ -132,6 +149,9 @@ def _feature_scoped_feature_files(repo: Path, feature_id: str) -> list[Path]:
     matched: set[Path] = set()
     for directory in candidate_dirs:
         if directory.is_dir():
+            # gherkin-scope: REPAIRED-as-one-arm (agnostic-at-discovery-ssot-
+            # repair gap 4, ed2bb451c) -- ONE arm of the OR `_check_binding`
+            # composes with the pytest arm.
             matched.update(directory.rglob("*.feature"))
     return sorted(matched)
 

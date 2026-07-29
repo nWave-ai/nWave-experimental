@@ -99,7 +99,15 @@ def main() -> int:
     # models itself on (registry<->runtime agreement, above).
     lane_drift = check_lane_profile_drift(_ROOT)
 
-    if not stale and not disagreements and not lane_drift:
+    # GENERATED-region freshness leg (declared-facts-reachable-recorded
+    # slice-04, DD-11): every GENERATED-marker-carrying asset (agents,
+    # commands, skills, orchestrator-affordance docs) must byte-match a
+    # fresh re-render -- alongside the existing 3 legs above.
+    asset_paths = docgen.scan(_ROOT)
+    generated_projections = docgen.project_generated_regions(_ROOT, asset_paths)
+    generated_stale = docgen.check_generated_regions(_ROOT, generated_projections)
+
+    if not stale and not disagreements and not lane_drift and not generated_stale:
         print("✓ docs/reference/ is up to date")
         return 0
 
@@ -138,6 +146,19 @@ def main() -> int:
             "against src/des/domain/lane_profile.py::LANE_PROFILES, then retry.",
             file=sys.stderr,
         )
+
+    if generated_stale:
+        print(
+            f"ERROR: {len(generated_stale)} GENERATED region(s) are stale:",
+            file=sys.stderr,
+        )
+        for entry in generated_stale:
+            print(f"  {entry}", file=sys.stderr)
+        print(
+            "Run the following to re-render every GENERATED region:",
+            file=sys.stderr,
+        )
+        print("  python scripts/docgen.py", file=sys.stderr)
 
     print("Then retry your push.", file=sys.stderr)
     return 1

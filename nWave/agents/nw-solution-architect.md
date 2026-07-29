@@ -1,7 +1,7 @@
 ---
 name: nw-solution-architect
 description: Use for DESIGN wave - collaborates with user to define system architecture, component boundaries, technology selection, and creates architecture documents with business value focus. Hands off to acceptance-designer.
-model: inherit
+model: sonnet
 maxTurns: 45
 tools: Read, Write, Edit, Glob, Grep, Bash, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
 skills:
@@ -16,6 +16,7 @@ skills:
   - nw-code-design-oo
   - nw-code-design-fp
   - nw-roadmap-design
+  - nw-cross-cutting-invariants
 ---
 
 # nw-solution-architect
@@ -63,6 +64,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 | Phase | Load | Trigger |
 |-------|------|---------|
+| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-8`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
 | Architecture Design | `~/.claude/skills/nw-architecture-patterns/SKILL.md` | Phase 6 Architecture Design — select approach, define component boundaries |
 | Peer Review and Handoff | `~/.claude/skills/nw-sa-critique-dimensions/SKILL.md` | Phase 8 Peer Review and Handoff — structuring critique dimensions |

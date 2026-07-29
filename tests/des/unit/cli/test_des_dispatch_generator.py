@@ -807,3 +807,109 @@ def test_plain_dispatch_design_context_still_points_to_an_existing_feature_delta
         "a non-bugfix, code-facing dispatch with a real feature-delta.md "
         f"must keep pointing to it -- section:\n{design_context}"
     )
+
+
+# ---------------------------------------------------------------------------
+# AT-6 -- proactive wave-floor advisory AT GENERATION time (defect 2,
+# docs/mikado/EXECUTION-SSOT-des-optimization.md, 2026-07-29)
+#
+# ROOT CAUSE: the WAVE_MARKER_BYPASS refusal's guidance ("generate this with
+# `des dispatch`, never hand-assemble it") only ever reached the operator
+# INSIDE the refusal -- after a hand-assembled prompt was already dispatched
+# and the effort already spent (GDP-5). `des dispatch` is the ONE authoring
+# surface an operator already touches for every dispatch; it must say the
+# same thing PROACTIVELY, at that surface, before any dispatch is attempted
+# (GDP-2), and its HOW must be "you are already using the producing tool" --
+# never an instruction to repair anything by hand (GDP-4).
+#
+# Driving surface: SAME hermetic subprocess boundary as AT-5 above (`python -m
+# des.cli.__main__ dispatch`), isolated `tmp_path` cwd so the wave-active
+# floor file is test-controlled and never a leaked ambient one.
+# ---------------------------------------------------------------------------
+
+_WAVE_FLOOR_REL = Path(".nwave") / "wave-active" / "active.json"
+
+
+def _arm_wave_floor(tmp_path: Path, *, wave: str, provenance: str) -> None:
+    """Write a wave-active floor file directly (mirrors the production store's
+    JSON shape) -- no need to drive the writer for a pure fixture precondition."""
+    import json
+
+    floor = tmp_path / _WAVE_FLOOR_REL
+    floor.parent.mkdir(parents=True, exist_ok=True)
+    floor.write_text(
+        json.dumps({"wave": wave, "provenance": provenance}), encoding="utf-8"
+    )
+
+
+def _run_plain_dispatch(tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    """An ORDINARY dispatch, unrelated to any armed wave (no --wave given)."""
+    return subprocess.run(
+        _dispatch_argv(
+            "--mode",
+            "atdd_pure",
+            "--project-id",
+            "probe-wave-floor-advisory",
+            "--slice",
+            "slice-01",
+            "--phase",
+            "A_GREEN",
+        ),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_isolated_dispatch_env(),
+        cwd=str(tmp_path),
+    )
+
+
+def test_dispatch_warns_proactively_when_a_wave_floor_is_armed(
+    tmp_path: Path,
+) -> None:
+    """POSITIVE (the fix, RED today): with an armed wave floor under the
+    dispatch's cwd, `des dispatch` must print a proactive advisory to STDERR
+    naming the armed wave and pointing at the SAME `des dispatch` invocation
+    the operator is already running -- BEFORE any WAVE_MARKER_BYPASS refusal
+    could ever fire. Generation must still succeed (advisory, never a block).
+
+    FAILS TODAY: `des dispatch` never reads the wave-active floor at all, so
+    stderr carries no advisory regardless of an armed floor.
+    """
+    _arm_wave_floor(tmp_path, wave="distill", provenance="inferred")
+
+    result = _run_plain_dispatch(tmp_path)
+
+    assert result.returncode == 0, (
+        "an armed wave floor must not block generation -- this is an "
+        f"ADVISORY, never a gate; got exit {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "distill" in result.stderr and "wave floor is armed" in result.stderr, (
+        "stderr must proactively name the armed wave BEFORE any dispatch is "
+        f"attempted; got stderr={result.stderr!r}"
+    )
+    assert "des dispatch" in result.stderr, (
+        "the advisory's HOW must point at the producing tool (`des dispatch`) "
+        f"the operator is already running, never a manual-repair instruction; "
+        f"got stderr={result.stderr!r}"
+    )
+
+
+def test_dispatch_advisory_is_silent_when_no_wave_floor_is_armed(
+    tmp_path: Path,
+) -> None:
+    """NEGATIVE (no regression / no noise): with NO wave-active floor file at
+    all, `des dispatch` must emit no wave-floor advisory -- proving the
+    advisory is conditioned on a genuinely armed floor, not unconditional
+    stderr noise on every invocation.
+    """
+    result = _run_plain_dispatch(tmp_path)
+
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    assert "wave floor is armed" not in result.stderr, (
+        "no wave floor is armed under this cwd -- stderr must carry no "
+        f"wave-floor advisory; got stderr={result.stderr!r}"
+    )
