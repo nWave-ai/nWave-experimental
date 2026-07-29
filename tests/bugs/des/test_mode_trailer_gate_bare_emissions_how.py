@@ -212,21 +212,34 @@ def test_mode_registry_completeness_no_flavors_dir_names_a_how(
 def test_mode_locus_gate_success_never_carries_a_how(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A ``--root`` that DOES contain an ``nWave/`` tree with no naked mode
-    literals clears the gate (exit 0, ``no naked mode literal found``) with
-    NO spurious ``Fix:`` line -- the HOW remediation belongs only to the
-    refusal path, never leaking into a passing run. Must stay green both
-    BEFORE and AFTER the fix.
+    """A ``--root`` that DOES contain an ``nWave/`` tree holding a REAL
+    scanned family (``nWave/skills/``) with a REAL scannable file
+    (``.md``) carrying no naked mode literal clears the gate (exit 0,
+    ``no naked mode literal found``) with NO spurious ``Fix:`` line -- the
+    HOW remediation belongs only to the refusal path, never leaking into a
+    passing run. Must stay green both BEFORE and AFTER the fix.
+
+    The fixture MUST contain a genuine scanned family + file -- an
+    ``nWave/`` tree with zero families inside it is a scan of NOTHING, not
+    a clean tree, and is pinned separately (never as success) by
+    ``test_mode_locus_gate_zero_families_is_indeterminate_not_success``
+    below.
     """
     root = tmp_path / "clean_root"
-    (root / "nWave").mkdir(parents=True)
+    skills_dir = root / "nWave" / "skills"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "example-skill.md").write_text(
+        "# Example Skill\n\n"
+        "Does something ordinary. No mode literals appear in this file.\n",
+        encoding="utf-8",
+    )
 
     exit_code = mode_locus_gate_main(["--root", str(root)])
     captured = capsys.readouterr()
 
     assert exit_code == 0, (
-        "a --root with a clean nWave/ tree must clear (exit 0) -- got "
-        f"exit_code={exit_code}; stdout={captured.out!r}; stderr={captured.err!r}"
+        "a --root with a clean nWave/skills/ family must clear (exit 0) -- "
+        f"got exit_code={exit_code}; stdout={captured.out!r}; stderr={captured.err!r}"
     )
     assert "no naked mode literal found" in captured.out, captured.out
     assert not _has_fix_marker(captured.out), (
@@ -234,4 +247,43 @@ def test_mode_locus_gate_success_never_carries_a_how(
     )
     assert not _has_fix_marker(captured.err), (
         f"a passing run must never carry a spurious `Fix:` line: {captured.err!r}"
+    )
+
+
+@pytest.mark.negative_at
+def test_mode_locus_gate_zero_families_is_indeterminate_not_success(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ``--root`` whose ``nWave/`` tree exists but holds NONE of the
+    scanned families (``skills``/``agents``/``tasks``) must NEVER report the
+    exit-0 clean verdict. Today ``mode_locus_gate.py`` (``_scanned_files``)
+    silently ``continue``s past every missing family dir and falls through
+    to ``no naked mode literal found`` (exit 0) -- indistinguishable from a
+    genuinely scanned-and-clean tree. A scan of zero files is not evidence
+    of cleanliness; it must surface as a LOUD, non-zero refusal naming the
+    missing families, carrying a ``Fix:`` HOW -- mirroring the sibling
+    ``mode-registry-completeness`` gate's ``no flavor files under {dir}``
+    branch (``mode_registry_completeness.py:234-242``).
+
+    RED today by design: the crafter, not this AT, makes it GREEN.
+    """
+    root = tmp_path / "no_families_root"
+    (root / "nWave").mkdir(parents=True)
+
+    exit_code = mode_locus_gate_main(["--root", str(root)])
+    captured = capsys.readouterr()
+
+    assert exit_code != 0, (
+        "a --root whose nWave/ tree holds ZERO of the scanned families "
+        "(skills/agents/tasks) must never report the exit-0 clean verdict "
+        f"-- got exit_code=0; stdout={captured.out!r}; stderr={captured.err!r}"
+    )
+    assert "no naked mode literal found" not in captured.out, (
+        "zero families scanned is not evidence of a clean tree -- the "
+        f"clean-success line must not appear here: stdout={captured.out!r}"
+    )
+    assert _has_fix_marker(captured.out) or _has_fix_marker(captured.err), (
+        "the zero-families refusal must carry a `Fix:` HOW naming the "
+        f"missing scanned families -- stdout={captured.out!r}; "
+        f"stderr={captured.err!r}"
     )

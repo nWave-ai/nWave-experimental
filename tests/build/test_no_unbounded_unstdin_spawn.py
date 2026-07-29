@@ -120,7 +120,6 @@ PRE_EXISTING_2026_07_22: dict[str, int] = {
     "src/des/cli/verify_environmental_e2e.py": 1,
     "src/des/cli/verify_fresh_clone.py": 2,
     "src/des/cli/verify_red_green.py": 1,
-    "src/des/cli/verify_refactor_trigger.py": 1,
     "src/des/runtime/interpreter.py": 4,
     "scripts/build_offline_bundle.py": 1,
     "scripts/cli/check_reuse_first_design.py": 1,

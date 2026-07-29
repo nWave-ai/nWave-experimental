@@ -23,6 +23,9 @@ failure_modes:
   - error_class: RootNotFound
     exit_code: 1
     remediation: "Provide a --root containing an nWave/ asset tree."
+  - error_class: ScanVacuous
+    exit_code: 3
+    remediation: "nWave/ exists but none of skills/agents/tasks exist under it, so zero files were scanned -- point --root at a tree that actually contains one of those families; a zero-file scan must never be reported as a clean pass."
 
 idempotency: idempotent
 

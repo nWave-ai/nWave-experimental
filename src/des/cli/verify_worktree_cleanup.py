@@ -2,7 +2,7 @@
 
 CREATE_NEW (parallel-work-cleans-up-after-merge-back slice-01, D-2/D-3,
 ADR-SWARM-002). ``_emit``'s JSON-payload convention
-(``des.cli.verify_refactor_trigger``) is the shape this CLI's output follows,
+(``des.cli.verify_red_green``) is the shape this CLI's output follows,
 not code it calls (Reuse Analysis).
 
 ACT-by-default (D-D3): sweeps every registered worktree (or the ONE named via

@@ -194,15 +194,6 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # evolution-plan P0.3: the negative-AT mandate -- a critical scope with
     # presence-only ATs is refused (weak assertions die to negative ATs).
     _SubcommandRow("verify-negative-at", "des.cli.verify_negative_at", "main"),
-    # evolution-plan P1.3: the signal-driven refactor trigger -- detector
-    # findings on the slice diff (incl. the SSOT-violation classes) ARE the
-    # refactor's expectations; zero findings = no refactor pass runs; the
-    # verdict declares which analysis arm ran (never a silent nobody-looked).
-    _SubcommandRow(
-        "verify-refactor-trigger",
-        "des.cli.verify_refactor_trigger",
-        "main",
-    ),
     # evolution-plan P0.5: doc<->code coherence -- shipped docs claiming
     # absent scripts/files/modules are refused (docs cannot overstate code).
     _SubcommandRow(

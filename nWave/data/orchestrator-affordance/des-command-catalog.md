@@ -101,7 +101,6 @@ so this table can never silently drift from the registry the way M-III's defect 
 | `verify-fresh-clone` | `des.cli.verify_fresh_clone` | ``des verify-fresh-clone`` -- the P0.1 evidence-by-execution gate. |
 | `verify-red-green` | `des.cli.verify_red_green` | ``des verify-red-green`` -- the P0.2 RED->GREEN non-vacuity seal. |
 | `verify-negative-at` | `des.cli.verify_negative_at` | ``des verify-negative-at`` -- the P0.3 negative-AT mandate gate. |
-| `verify-refactor-trigger` | `des.cli.verify_refactor_trigger` | ``des verify-refactor-trigger`` -- the P1.3 signal-driven refactor trigger. |
 | `verify-doc-coherence` | `des.cli.verify_doc_coherence` | ``des verify-doc-coherence`` -- the P0.5 evidence-by-execution gate. |
 | `verify-execution-reach` | `des.cli.verify_execution_reach` | ``des verify-execution-reach`` -- the P0.4 evidence-by-execution gate. |
 | `verify-spec-coverage` | `des.cli.verify_spec_coverage` | ``des verify-spec-coverage`` -- the P3.2 spec-coverage gate. |

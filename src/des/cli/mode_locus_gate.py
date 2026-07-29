@@ -25,7 +25,10 @@ Modelled on ``scripts/cli/cohort_classifier.py`` (ADR-028 precedent): argparse +
 a small dataclass + a pure scan function + a thin ``main``.
 
 Exit codes: 0 = no naked literal | 1 = ``--root`` invalid | 2 = at least one
-naked literal (each named file+line on stdout).
+naked literal (each named file+line on stdout) | 3 = INDETERMINATE (an
+``nWave/`` tree exists but none of the scanned families -- ``skills`` /
+``agents`` / ``tasks`` -- exist under it, so zero files were scanned; this is
+NOT the same fact as a clean tree and must never report the exit-0 verdict).
 """
 
 from __future__ import annotations
@@ -121,6 +124,13 @@ def _mask_preserving_lines(match: re.Match[str]) -> str:
     return "\n" * match.group(0).count("\n")
 
 
+def _missing_families(root: Path) -> list[str]:
+    """The scanned families that do NOT exist under ``root / 'nWave'``."""
+    return [
+        family for family in _SCANNED_FAMILIES if not (root / "nWave" / family).is_dir()
+    ]
+
+
 def _scanned_files(root: Path) -> list[Path]:
     files: list[Path] = []
     for family in _SCANNED_FAMILIES:
@@ -170,6 +180,20 @@ def main(argv: list[str] | None = None) -> int:
             "this gate from the repo root.\n"
         )
         return 1
+    missing_families = _missing_families(root)
+    if len(missing_families) == len(_SCANNED_FAMILIES):
+        sys.stderr.write(
+            f"mode-locus-gate: INDETERMINATE -- nWave/ exists under root {root} "
+            f"but none of the scanned families ({', '.join(_SCANNED_FAMILIES)}) "
+            "exist under it, so zero files were scanned.\n"
+        )
+        sys.stderr.write(
+            "Fix: pass --root pointing at a tree that actually contains "
+            "nWave/skills, nWave/agents, or nWave/tasks -- a zero-file scan "
+            "is not the same fact as a clean scan and must not be reported "
+            "as a pass.\n"
+        )
+        return 3
     offenders = scan_for_naked_literals(root)
     if not offenders:
         sys.stdout.write("mode-locus-gate: no naked mode literal found.\n")
