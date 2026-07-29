@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from pathlib import Path
 
 
@@ -175,18 +176,19 @@ def read_defects(path: Path) -> dict[str, tuple[str, str, str]]:
 
 
 def read_edges(path: Path) -> dict[str, set[str]]:
-    """node id -> the set of nodes it WAITS FOR."""
-    edges: dict[str, set[str]] = {}
-    for line in path.read_text(encoding="utf-8").split("\n"):
-        match = _DECISION_ROW_RE.match(line)
-        if not match:
-            continue
-        cells = [c.strip() for c in line.split("|")]
-        if len(cells) <= 7:
-            continue
-        node = match.group(1)
-        deps = {d for d in _DEP_RE.findall(cells[7]) if d != node}
-        edges[node] = deps
+    """node id -> the set of nodes it WAITS FOR.
+
+    Delegates to the coherence gate's reader, so the board and the gate cannot
+    disagree about the graph they both render decisions from. That reader
+    refuses to turn a `dipende-da` cell which says NONE, or which states the
+    inverse relation, into edges: reading every `D\\d+` token in the cell as a
+    dependency inverted 12 of 80 rows and closed phantom cycles that kept D27,
+    D20, D44, D21 and D33 out of this very board.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "validation"))
+    from validate_mikado_tree_coherence import read_dependency_register
+
+    edges, _undecidable = read_dependency_register(path)
     return edges
 
 
@@ -229,11 +231,15 @@ def build(
     """Resolve sub-slices onto the graph and return (deps, roots)."""
     deps: dict[str, set[str]] = {}
     for node in states:
-        base = re.sub(r"[ab]$", "", node)
+        base = re.sub(r"[ab]$", "", node, flags=re.IGNORECASE)
         resolved: set[str] = set()
         for dep in edges.get(base, set()):
             # A base id with sub-slices is waited for through its sub-slices.
-            subs = [s for s in states if re.sub(r"[ab]$", "", s) == dep and s != dep]
+            subs = [
+                s
+                for s in states
+                if re.sub(r"[ab]$", "", s, flags=re.IGNORECASE) == dep and s != dep
+            ]
             resolved.update(subs or ([dep] if dep in states else []))
         deps[node] = resolved - {node}
     waited_for = {d for ds in deps.values() for d in ds}

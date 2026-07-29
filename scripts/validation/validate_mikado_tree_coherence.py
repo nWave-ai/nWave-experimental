@@ -78,8 +78,20 @@ CANONICAL_CARRIERS = (CARRIER_LANES, CARRIER_TREE, CARRIER_NODES)
 #: premise) -- the orchestrator's own prose treats them as closed for open/closed
 #: purposes (`## IL GATE ... DESIGNAZIONE`: "le otto righe sono corrette FATTO/CHIUSO").
 CLOSED_STATES = frozenset({"FATTO", "INTEGRATA", "INTEGRATE", "CHIUSO", "CHIUSA"})
+#: `BLOCCATO-SERVE-DESIGN` is the document's own word for "open, and cannot be
+#: scheduled until a DESIGN decision lands". It was missing from this set, and a
+#: row carrying it did not become UNVERIFIABLE -- it vanished from the gate's
+#: population entirely, D03b and D27 among the seven.
 OPEN_STATES = frozenset(
-    {"PRONTO", "IN CORSO", "QUARANTENA", "CONTESO", "NON_MISURATO", "SOSPESO"}
+    {
+        "PRONTO",
+        "IN CORSO",
+        "QUARANTENA",
+        "CONTESO",
+        "NON_MISURATO",
+        "SOSPESO",
+        "BLOCCATO-SERVE-DESIGN",
+    }
 )
 NOT_WORK_STATES = frozenset({"GUARDIA", "—", "–", "-", ""})
 
@@ -529,7 +541,14 @@ def parse_node_table_claims(section: _Section) -> list[StateClaim]:
                     raw_state = candidate
                     break
         if not raw_state:
-            continue
+            # A word the legend does not know must become UNVERIFIABLE, never
+            # disappear. Dropping the row silently shrank the population by
+            # seven nodes and took D03b with it, so every rule that asks about
+            # a child's state got "no such node" instead of "still open".
+            if state_index is not None and state_index < len(cells):
+                raw_state = cells[state_index]
+            if not normalize_state(raw_state):
+                continue
         reference_index = _column(header, "riferimento")
         reference = ""
         if reference_index is not None and reference_index < len(cells):
@@ -981,16 +1000,53 @@ def _rule_completion_word(
 _DECISIONS_REL = "2026-07-28-decisions-consolidated.md"
 _DEP_ROW_RE = re.compile(r"^\| (D\d+) \|")
 _DEP_ID_RE = re.compile(r"\bD\d+\b")
+#: The cell declares this node depends on NOTHING. Any id after it is prose.
+_DEP_NONE_RE = re.compile(r"\bNONE\b|\bnessun[ao]?\b", re.IGNORECASE)
+#: Phrases under which a neighbouring id is NOT something this node waits for.
+#: `X e' prerequisito di D44` says D44 waits for X -- the opposite edge. Reading
+#: the id and ignoring the phrase inverts the arrow.
+_DEP_INVERSE_RE = re.compile(
+    r"prerequisit\w*\s+(?:di|per)|precede|distint\w+\s+da|non\s+avviare|"
+    r"beneficia|contende|si\s+toccherebbero",
+    re.IGNORECASE,
+)
 
 
-def read_dependency_edges(doc_path: Path) -> dict[str, set[str]]:
-    """node id -> the set of node ids it WAITS FOR. Empty when unreadable."""
-    register = doc_path.parent / _DECISIONS_REL
+def read_dependency_edges(
+    doc_path: Path,
+) -> tuple[dict[str, set[str]], dict[str, str]]:
+    """``(edges, undecidable)`` from the register's ``dipende-da`` column.
+
+    ``edges`` maps a node to the set it WAITS FOR, and carries only cells whose
+    declaration is unambiguous -- ids, or nothing. ``undecidable`` maps a node
+    to why its cell could not be turned into edges.
+
+    The previous reader took every ``D\\d+`` token in the cell as a dependency.
+    That decides on the DESIGNATION (an id appears) rather than the PROPERTY
+    (this cell declares a wait), and the register's prose says the opposite at
+    least as often as it agrees: ``NONE -- e' prerequisito di D44`` became "waits
+    for D44" when it means D44 waits for this node; ``NON avviare insieme a
+    D22`` -- an anti-affinity -- became a dependency. Twelve of eighty rows
+    manufactured edges this way, and the phantom arrows closed cycles that hid
+    five real nodes from every view built on this graph.
+    """
+    return read_dependency_register(doc_path.parent / _DECISIONS_REL)
+
+
+def read_dependency_register(
+    register: Path,
+) -> tuple[dict[str, set[str]], dict[str, str]]:
+    """``read_dependency_edges`` against an explicit register path.
+
+    The board renders from the same register, and calls this directly so the
+    two cannot drift into disagreeing about what the graph is.
+    """
     try:
         text = register.read_text(encoding="utf-8")
     except OSError:
-        return {}
+        return {}, {}
     edges: dict[str, set[str]] = {}
+    undecidable: dict[str, str] = {}
     for line in text.split("\n"):
         if _DEP_ROW_RE.match(line) is None:
             continue
@@ -998,8 +1054,24 @@ def read_dependency_edges(doc_path: Path) -> dict[str, set[str]]:
         if len(cells) <= 7:
             continue
         node = _DEP_ROW_RE.match(line).group(1)  # type: ignore[union-attr]
-        edges[node] = {d for d in _DEP_ID_RE.findall(cells[7]) if d != node}
-    return edges
+        cell = cells[7]
+        named = {d for d in _DEP_ID_RE.findall(cell) if d != node}
+        says_none = bool(_DEP_NONE_RE.search(cell))
+        inverse = bool(_DEP_INVERSE_RE.search(cell))
+        if not named:
+            edges[node] = set()
+        elif says_none or inverse:
+            # The cell names ids AND says they are not what it waits for (or
+            # says it waits for nothing at all). Which of the two the author
+            # meant is not mechanically decidable: record it, invent nothing.
+            undecidable[node] = (
+                f"names {', '.join(sorted(named))} inside a cell that "
+                + ("declares NONE" if says_none else "states the inverse relation")
+                + f": {cell[:70]}"
+            )
+        else:
+            edges[node] = named
+    return edges, undecidable
 
 
 def check_closed_over_open_child(
@@ -1019,16 +1091,42 @@ def check_closed_over_open_child(
     ``D31a``/``D31b`` and a missing literal id is never read as a missing node.
     """
     findings: list[Finding] = []
-    edges = read_dependency_edges(doc_path)
-    if not edges:
+    edges, undecidable = read_dependency_edges(doc_path)
+    if not edges and not undecidable:
         return findings
+    for node, reason in sorted(undecidable.items()):
+        if states.get(node) is not ClosureClass.CLOSED:
+            continue
+        findings.append(
+            Finding(
+                rule="closure-prerequisites-undecidable",
+                node_id=node,
+                severity=Severity.UNVERIFIABLE,
+                what=(f"`{node}` is closed and its `dipende-da` cell {reason}"),
+                why=(
+                    "whether this node still waits for those ids cannot be decided from "
+                    "the cell, so the closure is neither sound nor unsound: inventing "
+                    "the edge is how five nodes ended up hidden behind phantom cycles"
+                ),
+                how=(
+                    f"rewrite the `dipende-da` cell of `{node}` in "
+                    f"{doc_path.parent / _DECISIONS_REL} as ids only (`D47 + D03`) or "
+                    "`NONE`, and put the prose in a neighbouring column"
+                ),
+                locations=(str(doc_path.parent / _DECISIONS_REL),),
+            )
+        )
     for node, klass in sorted(states.items()):
         if klass is not ClosureClass.CLOSED:
             continue
-        base = re.sub(r"[ab]$", "", node)
+        # `_base_id` is case-insensitive on the suffix; a bare `[ab]$` strip is
+        # not, and every node id reaches this map already uppercased -- so
+        # `D03B` never resolved as a sub-slice of `D03` and every dependency on
+        # a split node silently found nothing to wait for.
+        base = _base_id(node)
         waited: set[str] = set()
         for dep in edges.get(base, set()):
-            subs = [s for s in states if re.sub(r"[ab]$", "", s) == dep and s != dep]
+            subs = [s for s in states if _base_id(s) == dep and s != dep]
             waited.update(subs or ([dep] if dep in states else []))
         open_children = sorted(
             c for c in waited - {node} if states.get(c) is not ClosureClass.CLOSED
@@ -1054,6 +1152,131 @@ def check_closed_over_open_child(
             )
         )
     return findings
+
+
+def check_node_visible_from_a_root(
+    doc_path: Path, states: dict[str, ClosureClass]
+) -> list[Finding]:
+    """A node the tables list but no view can reach is present-and-invisible.
+
+    Every view of this tree is rendered by walking down from the roots -- the
+    nodes nobody waits for. A node that no root reaches is in the tables and in
+    nobody's field of view: real work, invisible to the person reading the map.
+    Catalogued is not wired, applied to the map instead of to the code.
+
+    Unreachability is never a free-standing fact: a detached but acyclic
+    subgraph has a root of its own and is therefore reachable. So a node is
+    unreachable only when a CYCLE sits above it, and this rule names the cycle
+    rather than the symptom -- a Mikado tree is a DAG by definition, and "A
+    cannot start before B, B cannot start before A" is unschedulable work.
+    """
+    edges, _ = read_dependency_edges(doc_path)
+    if not edges or not states:
+        return []
+
+    deps: dict[str, set[str]] = {}
+    for node in states:
+        resolved: set[str] = set()
+        for dep in edges.get(_base_id(node), set()):
+            subs = [s for s in states if _base_id(s) == dep and s != dep]
+            resolved.update(subs or ([dep] if dep in states else []))
+        deps[node] = resolved - {node}
+
+    waited_for = {d for ds in deps.values() for d in ds}
+    roots = sorted(n for n in deps if n not in waited_for)
+    seen: set[str] = set()
+    stack = list(roots)
+    while stack:
+        node = stack.pop()
+        if node in seen:
+            continue
+        seen.add(node)
+        stack.extend(deps.get(node, set()))
+    unreachable = sorted(set(states) - seen)
+    if not unreachable:
+        return []
+
+    cycles = _cycles_among(deps, unreachable)
+    findings: list[Finding] = []
+    for cycle in cycles:
+        findings.append(
+            Finding(
+                rule="dependency-cycle-hides-nodes",
+                node_id=cycle[0],
+                severity=Severity.REJECT,
+                what=(
+                    "the dependency graph closes a cycle over "
+                    + " -> ".join(f"`{c}`" for c in [*cycle, cycle[0]])
+                    + ": no root reaches these nodes, so no view of the tree shows them"
+                ),
+                why=(
+                    "a Mikado tree is a DAG -- a cycle says each of these cannot start "
+                    "before the other, which is unschedulable, and the renderer walks "
+                    "down from the roots so it drops them in silence instead of saying so"
+                ),
+                how=(
+                    f"break the cycle in {doc_path.parent / _DECISIONS_REL}: exactly "
+                    f"one of {' / '.join(cycle)} must stop declaring the other in its "
+                    f"`dipende-da` cell, then re-run {_how_report(doc_path)}"
+                ),
+                locations=(str(doc_path.parent / _DECISIONS_REL),),
+            )
+        )
+    in_a_cycle = {n for cycle in cycles for n in cycle}
+    for node in unreachable:
+        if node in in_a_cycle:
+            continue
+        findings.append(
+            Finding(
+                rule="node-unreachable-from-every-root",
+                node_id=node,
+                severity=Severity.REJECT,
+                what=(
+                    f"`{node}` is listed in the tables but no root of the dependency "
+                    "graph reaches it, so no rendered view of the tree shows it"
+                ),
+                why=(
+                    "a node present in the register and absent from every view is work "
+                    "nobody can see to schedule: present-and-invisible, which is how "
+                    "D27 stayed out of the board"
+                ),
+                how=_how_explain(doc_path, node),
+                locations=(str(doc_path.parent / _DECISIONS_REL),),
+            )
+        )
+    return findings
+
+
+def _cycles_among(deps: dict[str, set[str]], candidates: list[str]) -> list[list[str]]:
+    """Strongly connected components of size > 1 among ``candidates``."""
+    pool = set(candidates)
+    found: list[list[str]] = []
+    unassigned = set(pool)
+    while unassigned:
+        start = min(unassigned)
+        # forward closure
+        fwd: set[str] = set()
+        stack = [start]
+        while stack:
+            n = stack.pop()
+            if n in fwd:
+                continue
+            fwd.add(n)
+            stack.extend(d for d in deps.get(n, set()) if d in pool)
+        # backward closure
+        back: set[str] = set()
+        stack = [start]
+        while stack:
+            n = stack.pop()
+            if n in back:
+                continue
+            back.add(n)
+            stack.extend(m for m in pool if n in deps.get(m, set()))
+        component = fwd & back
+        unassigned -= component or {start}
+        if len(component) > 1:
+            found.append(sorted(component))
+    return found
 
 
 def check_tree_coherence(
@@ -1150,6 +1373,7 @@ def check_tree_coherence(
         for nid, cs in claims_by_node.items()
     }
     findings += check_closed_over_open_child(doc_path, node_states)
+    findings += check_node_visible_from_a_root(doc_path, node_states)
 
     if any(f.severity is Severity.REJECT for f in findings):
         verdict = Verdict.INCOHERENT
