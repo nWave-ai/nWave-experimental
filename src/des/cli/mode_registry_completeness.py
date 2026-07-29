@@ -31,7 +31,6 @@ Exit codes: 0 = registry complete | 1 = ``--root`` / flavors dir invalid
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 from dataclasses import dataclass
@@ -39,6 +38,7 @@ from pathlib import Path
 
 from des._internal import subset_parser
 from des.cli._repo_root_arg import add_repo_root_argument
+from des.domain.repo_path_resolver import resolve_repo_root
 
 
 # The asset-facing 4-tuple fields every flavor MUST declare (analysis §2.2 /
@@ -67,12 +67,7 @@ class CompletenessDefect:
 
 
 def _repo_root(root_arg: str | None) -> Path:
-    if root_arg is not None:
-        return Path(root_arg)
-    override = os.environ.get("NWAVE_REPO_ROOT")
-    if override:
-        return Path(override)
-    return Path(__file__).resolve().parents[3]
+    return resolve_repo_root(root_arg)
 
 
 def _flavor_files(flavors_dir: Path) -> list[Path]:

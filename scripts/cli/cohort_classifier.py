@@ -3,19 +3,21 @@
 Plan v3 §4.1.bis: mechanical S/M/L/XL pre-assignment invoked by
 `/nw-distill` Phase 0. Exit codes: 0 ok | 1 feature dir not found
 | 2 malformed artifacts | 43 COHORT_OUT_OF_PILOT_SCOPE. Output:
-single-line JSON. Repo root via NWAVE_REPO_ROOT env or parents[2].
+single-line JSON. Repo root via des.domain.repo_path_resolver.resolve_repo_root
+(flag -> NWAVE_REPO_ROOT env -> cwd; this module never passes a flag).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+
+from des.domain.repo_path_resolver import resolve_repo_root
 
 
 # Expose ``src/`` so ``des`` resolves under a bare ``python3`` (this script
@@ -56,10 +58,7 @@ class Classification:
 
 
 def _repo_root() -> Path:
-    override = os.environ.get("NWAVE_REPO_ROOT")
-    if override:
-        return Path(override)
-    return Path(__file__).resolve().parents[2]
+    return resolve_repo_root(None)
 
 
 def _locate_feature(repo: Path, feature_id: str) -> tuple[Path, str] | None:

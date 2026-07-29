@@ -31,13 +31,13 @@ naked literal (each named file+line on stdout).
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from des.cli._repo_root_arg import add_repo_root_argument
+from des.domain.repo_path_resolver import resolve_repo_root
 
 
 # The asset families the gate guards (analysis §3.1). The flavor registry
@@ -82,12 +82,7 @@ class Offender:
 
 
 def _repo_root(root_arg: str | None) -> Path:
-    if root_arg is not None:
-        return Path(root_arg)
-    override = os.environ.get("NWAVE_REPO_ROOT")
-    if override:
-        return Path(override)
-    return Path(__file__).resolve().parents[3]
+    return resolve_repo_root(root_arg)
 
 
 def _naked_literal_on_line(line: str) -> str | None:
