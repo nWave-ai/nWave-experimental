@@ -141,4 +141,5 @@ so this table can never silently drift from the registry the way M-III's defect 
 | `verify-worktree-cleanup` | `des.cli.verify_worktree_cleanup` | ``des verify-worktree-cleanup`` -- the mechanical worktree-cleanup gate. |
 | `parallel-safety-report` | `des.cli.parallel_safety_report` | des parallel-safety-report -- advisory measured cross-check of a plan's |
 | `plan` | `des.cli.delivery_plan` | `des plan` -- advisory ready-set and unused-parallelism report. |
+| `report-delivery-metrics` | `des.cli.report_delivery_metrics` | des report-delivery-metrics -- the read-side closing "0 readers" (F1) and |
 <!-- GENERATED:des-command-catalog END -->

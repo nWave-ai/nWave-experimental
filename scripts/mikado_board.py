@@ -219,7 +219,7 @@ def render(
             return
         expanded.add(node)
         mark = "" if glyph in CLOSED_GLYPHS else f"  \u2190 {state}"
-        lines.append(f"{pad}{glyph} {node:5} {title[:52]}{mark}")
+        lines.append(f"{pad}{glyph} {node:5} {title[:52]}{mark}".rstrip())
         children = sorted(
             deps.get(node, ()),
             key=lambda c: (_glyph(states.get(c, ("?", ""))[0])[1], c),
