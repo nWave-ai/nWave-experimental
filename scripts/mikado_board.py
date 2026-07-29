@@ -50,6 +50,9 @@ CLOSED_GLYPHS = {"[x]", "[-]", "[m]", "[>]", "[G]"}
 
 #: Glyph -> CSS class, so colour carries the same meaning as in the document
 #: rendering rather than a second, private vocabulary.
+#: Longest title rendered inline on a tree row; the rest moves to detail.
+_TITLE_MAX = 64
+
 _CSS_CLASS = {
     "[x]": "done", "[-]": "done", "[m]": "done", "[>]": "done", "[G]": "guard",
     "[ ]": "ready", "[~]": "wip", "[!]": "cont", "[D]": "dsn", "[Q]": "quar",
@@ -104,6 +107,16 @@ LANE_NODES = {
     "lane/d12-design": ("D12",),
     "lane/review-producer-wiring": ("F14",),
     "lane/d03b": ("D03b",),
+    "lane/unified-event-store": ("D80",),
+    "lane/context-consumption-probe": ("D71", "D81"),
+    "lane/gatecarry": ("D72",),
+    "lane/ssotpath": ("D73",),
+    "lane/ssotsem": ("D74",),
+    "lane/smallres": ("D76", "D77"),
+    "lane/d24": ("D24",),
+    "lane/d41-design": ("D41",),
+    "lane/at-discovery-archtest": ("F19", "F20"),
+    "lane/discuss-producer-wiring": ("F18",),
 }
 
 
@@ -278,6 +291,20 @@ li.t-ref>a.t-id{text-decoration:underline;text-decoration-thickness:1px;text-und
 li.t-has-detail>details>summary::before{content:"\u203a";font-size:.85rem}
 li.t-has-detail>details[open]>summary::before{content:"\u2304";font-size:.7rem}
 .wrap{max-width:none}
+/* HIDE-DONE: hides the closed node's own ROW, never its subtree. A closed
+   parent can hold OPEN children; swallowing them would be worse than no
+   filter, so the <li> keeps rendering and only its row collapses -- the open
+   children re-parent upward visually. Keyed on the closed-state class, which
+   is derived from CLOSED_GLYPHS, never on a colour or a label. */
+.hidedone li.row-s-done>details,
+.hidedone li.row-s-done>.t-row{display:none}
+.hidedone li.row-s-done{list-style:none;margin:0;padding:0}
+.hidedone li.row-s-done>ul.tree{margin-left:0;border-left:none;padding-left:0}
+.hidedone li.t-ref.row-s-done{display:none}
+.filterbar{display:flex;align-items:center;gap:.5rem;margin:.6rem 0 1rem;
+  font-size:.9rem;user-select:none}
+.filterbar label{display:flex;align-items:center;gap:.45rem;cursor:pointer}
+.filterbar input{accent-color:currentColor;width:1rem;height:1rem;cursor:pointer}
 </style>
 <div class="wrap">
 <div class="provenance">
@@ -289,12 +316,32 @@ li.t-has-detail>details[open]>summary::before{content:"\u2304";font-size:.7rem}
 <p>__COUNTS__ &middot; le <strong>foglie</strong> non dipendono da nulla e si implementano per
 <strong>prime</strong>; un padre sta sopra i nodi che aspetta. Apri un nodo per leggerne la
 descrizione; un nodo ripetuto e\u2019 un collegamento all\u2019espansione che la porta.</p>
+<div class="filterbar">
+<label><input type="checkbox" id="hidedone"> Nascondi i nodi completati</label>
+<span id="hidedone-note"></span>
+</div>
 <div class="treewrap">
 <ul class="tree">
 __ROWS__
 </ul>
 </div>
 </div>
+<script>
+(function(){
+  var box=document.getElementById('hidedone'),
+      note=document.getElementById('hidedone-note'),
+      root=document.documentElement,
+      KEY='mikado-hidedone';
+  function apply(on){
+    root.classList.toggle('hidedone',on);
+    note.textContent=on?'\u2014 i figli aperti di un nodo chiuso restano visibili':'';
+    try{localStorage.setItem(KEY,on?'1':'0');}catch(e){}
+  }
+  try{if(localStorage.getItem(KEY)==='1'){box.checked=true;}}catch(e){}
+  apply(box.checked);
+  box.addEventListener('change',function(){apply(box.checked);});
+})();
+</script>
 """
 
 
@@ -330,8 +377,25 @@ def render_html(
     out: list[str] = []
     expanded: set[str] = set()
 
-    def detail_dl(node: str) -> str:
-        rows = details.get(node, [])
+    #: A title long enough to be a paragraph is unreadable as a tree row. Cut
+    #: it at the first natural break and hand the FULL text to the expandable
+    #: detail, so nothing is lost and the shape stays legible. Structural, so
+    #: it applies to every node -- never a per-node hand-edit that would rot.
+    def split_title(title: str) -> tuple[str, str]:
+        clean = title.replace("**", "").strip()
+        if len(clean) <= _TITLE_MAX:
+            return clean, ""
+        for sep in (" \u2014 ", ". ", " (", ": "):
+            head = clean.split(sep)[0]
+            if 12 <= len(head) <= _TITLE_MAX:
+                return head, clean
+        cut = clean[:_TITLE_MAX].rsplit(" ", 1)[0]
+        return cut + "\u2026", clean
+
+    def detail_dl(node: str, full_title: str = "") -> str:
+        rows = list(details.get(node, []))
+        if full_title:
+            rows.insert(0, ("Cosa", full_title))
         if not rows:
             return ""
         cells = "".join(
@@ -340,7 +404,8 @@ def render_html(
         return f'<dl class="t-detail">{cells}</dl>'
 
     def walk(node: str) -> None:
-        state, title = states.get(node, ("?", ""))
+        state, raw_title = states.get(node, ("?", ""))
+        title, full_title = split_title(raw_title)
         glyph, _rank = _glyph(state)
         row_cls = f"row-s-{_CSS_CLASS.get(glyph, 'ready')}"
         idn = _h.escape(node)
@@ -367,7 +432,7 @@ def render_html(
             deps.get(node, ()),
             key=lambda c: (_glyph(states.get(c, ("?", ""))[0])[1], c),
         )
-        dl = detail_dl(node)
+        dl = detail_dl(node, full_title)
 
         # The description toggle and the child subtree are SIBLINGS, never
         # nested. Collapsing a description must never hide the nodes beneath

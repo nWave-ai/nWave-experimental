@@ -11,12 +11,30 @@ This gate decides on the PROPERTY -- *is there attested evidence of closure?* --
 never on the DESIGNATION -- *the row says PRONTO*. It answers with three states
 and never collapses the third into the first.
 
-Only dependency: Python. Commit ancestry is read straight off ``.git/`` through
-a port that degrades LOUD when the object store cannot answer.
+A sha that EXISTS is still a designation
+----------------------------------------
+Resolving the pointer was itself only half the property. A node can close on a
+sha that is a perfectly good ancestor of trunk and still not be closed, because
+that commit does not carry the work the node declares. So the gate also reads
+what each cited commit actually rewrote and compares it with what the closure
+note claims.
+
+What that comparison can and cannot decide is stated in the report itself, and
+the honest half is the second: **the gate cannot verify that a commit implements
+a node**, and does not try. It decides one narrow, falsifiable conjunction -- the
+note NAMES an artifact (a source path, a `des` subcommand) AND the commit
+rewrote nothing outside the plan's own bookkeeping documentation. A closure note
+that names no artifact is unfalsifiable by construction; those are counted and
+reported, never passed off as verified.
+
+Only dependency: Python. Commit ancestry and commit contents are read straight
+off ``.git/`` through ports that degrade LOUD when the object store cannot
+answer.
 
 Usage:
     python3 scripts/validation/validate_mikado_tree_coherence.py --file DOC
     python3 scripts/validation/validate_mikado_tree_coherence.py --file DOC --explain D22
+    python3 scripts/validation/validate_mikado_tree_coherence.py --file DOC --find-carrier D32
 
 Exit codes:
     0: COHERENT
@@ -36,6 +54,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from git_commit_contents import (
+    CommitContentsPort,
+    UnavailableContents,
+    build_contents,
+)
 from git_commit_reachability import (
     CommitReachabilityPort,
     Reachability,
@@ -84,6 +107,15 @@ _LANE_ID_HEAD = re.compile(r"^([A-Za-z]{1,2}\d{1,3})([a-z]?)(?![A-Za-z0-9])")
 _SHA_IN_BACKTICKS = re.compile(r"`([0-9a-fA-F]{7,40})`")
 _SHA_AFTER_COMMIT = re.compile(r"\bcommit\s+([0-9a-fA-F]{7,40})\b")
 _PLACEHOLDER = re.compile(r"da\s+compilare|^n/?a$|^tbd$|^\?+$", re.IGNORECASE)
+
+#: Extensions that make a token in a closure note read as a source artifact.
+_SOURCE_EXT = "py|json|ya?ml|toml|sh|js|ts|cfg|ini|feature"
+#: `scripts/validation/foo.py` -- a path, named as a deliverable.
+_NOTE_PATH = re.compile(r"\b([\w.\-]+(?:/[\w.\-]+)+\.(?:" + _SOURCE_EXT + r"))\b")
+#: `foo_bar.py` in backticks -- a file, named without its directory.
+_NOTE_FILE = re.compile(r"`([\w.\-]+\.(?:" + _SOURCE_EXT + r"))`")
+#: `des report-delivery-metrics` -- a CLI surface, named as a deliverable.
+_NOTE_CLI = re.compile(r"`(des\s+[a-z][a-z0-9-]+)")
 _SEPARATOR_CELL = re.compile(r"^:?-{2,}:?$")
 _TREE_NODE_LINE = re.compile(r"^\s+([A-Z]{1,2}\d{1,3}[a-z]?)\s+\|")
 _TREE_ATTRIBUTE = re.compile(r"^\s*:\s*(.*?)\s*\|\s*(.*)$")
@@ -165,6 +197,38 @@ class Finding:
         return "\n".join([head, *body])
 
 
+@dataclass
+class _CarryCoverage:
+    """How much of the closed population the carry-check could actually judge.
+
+    Printed with every verdict. A gate that reports only what it caught invites
+    the reader to mistake its silence for a clean bill: these counters are how
+    the third state -- and the unfalsifiable majority -- reach the aggregate.
+    """
+
+    closures: int = 0
+    carried: int = 0
+    not_carried: int = 0
+    undecidable: int = 0
+    unfalsifiable: int = 0
+
+    @property
+    def evaluable(self) -> int:
+        return self.carried + self.not_carried
+
+    def render(self) -> str:
+        return (
+            f"  carry-check · {self.closures} attested closures · "
+            f"{self.evaluable} decided ({self.carried} carry the claim, "
+            f"{self.not_carried} do not) · {self.undecidable} undecidable · "
+            f"{self.unfalsifiable} unfalsifiable (the note names no artifact)\n"
+            "  cannot catch: a note that names an artifact the commit did touch but "
+            "did not actually implement,\n"
+            "  and any claim about work done outside the diff (a measurement, a "
+            "review, a run on real data)."
+        )
+
+
 @dataclass(frozen=True)
 class GateReport:
     verdict: Verdict
@@ -172,6 +236,7 @@ class GateReport:
     nodes_examined: int
     carriers_seen: tuple[str, ...]
     claims: tuple[StateClaim, ...] = ()
+    carry: _CarryCoverage = None  # type: ignore[assignment]
 
     def by_severity(self, severity: Severity) -> tuple[Finding, ...]:
         return tuple(f for f in self.findings if f.severity is severity)
@@ -226,6 +291,45 @@ def extract_shas(text: str) -> tuple[str, ...]:
 def is_placeholder(text: str) -> bool:
     cleaned = text.strip().strip("*`_() ").strip()
     return not cleaned or bool(_PLACEHOLDER.search(cleaned))
+
+
+def is_bookkeeping_path(path: str) -> bool:
+    """True when the path is the plan talking about itself, not the product.
+
+    ``docs/`` is the internal narrative (the mikado tree, feature deltas, audit
+    notes) and a root-level ``*.md`` is a repo-level note. Everything else --
+    including ``nWave/`` and every skill and data asset under it -- is shipped,
+    so rewriting it IS work and must never read as "documentation only".
+    """
+    return path.startswith("docs/") or ("/" not in path and path.endswith(".md"))
+
+
+def artifact_claims(note: str) -> tuple[str, ...]:
+    """Artifacts a closure note NAMES as delivered.
+
+    Only two shapes count, both of them things the note itself declares rather
+    than something the gate infers from prose: a source path/file, and a `des`
+    subcommand. A bookkeeping path names no artifact.
+    """
+    found: list[str] = []
+    for token in (
+        *_NOTE_PATH.findall(note),
+        *_NOTE_FILE.findall(note),
+        *_NOTE_CLI.findall(note),
+    ):
+        cleaned = re.sub(r"\s+", " ", token.strip())
+        if cleaned.startswith("des ") or not is_bookkeeping_path(cleaned):
+            if cleaned not in found:
+                found.append(cleaned)
+    return tuple(found)
+
+
+def path_fragments_for(claim_token: str) -> tuple[str, ...]:
+    """Path fragments that would evidence ``claim_token`` in a changed-path set."""
+    if claim_token.startswith("des "):
+        sub = claim_token.split(None, 1)[1]
+        return (sub, sub.replace("-", "_"))
+    return (claim_token,)
 
 
 def _base_id(node_id: str) -> str:
@@ -671,6 +775,105 @@ def _rule_sha_on_trunk(
     return findings
 
 
+def _how_find_carrier(doc_path: Path, node_id: str) -> str:
+    script = Path(__file__).resolve()
+    try:
+        rendered = script.relative_to(Path.cwd())
+    except ValueError:
+        rendered = script
+    return f"python3 {rendered} --file {doc_path} --find-carrier {node_id}"
+
+
+def _rule_closure_does_not_carry(
+    doc_path: Path,
+    node_id: str,
+    claims: list[StateClaim],
+    contents: CommitContentsPort,
+    coverage: _CarryCoverage,
+) -> list[Finding]:
+    """The sha exists AND is on trunk -- but does it carry what the note claims?
+
+    Falsifiable conjunction only: the note NAMES an artifact, and the cited
+    commits rewrote nothing outside the plan's own bookkeeping documentation.
+    Everything softer than that is counted, not asserted.
+    """
+    findings: list[Finding] = []
+    already: set[tuple[str, str]] = set()
+    for claim in claims:
+        if claim.closure is not ClosureClass.CLOSED or not claim.shas:
+            continue
+        signature = (node_id, claim.reference.strip())
+        if signature in already:
+            continue
+        already.add(signature)
+        coverage.closures += 1
+
+        named = artifact_claims(claim.reference)
+        if not named:
+            coverage.unfalsifiable += 1
+            continue
+
+        changed: set[str] = set()
+        undecidable: list[str] = []
+        for sha in claim.shas:
+            answer = contents.changed_paths(sha)
+            if answer.is_available:
+                changed |= set(answer.paths)
+            else:
+                undecidable.append(answer.detail)
+
+        product = sorted(p for p in changed if not is_bookkeeping_path(p))
+        if product:
+            coverage.carried += 1
+            continue
+        if undecidable:
+            coverage.undecidable += 1
+            findings.append(
+                Finding(
+                    rule="closure-carry-unverifiable",
+                    node_id=node_id,
+                    severity=Severity.UNVERIFIABLE,
+                    what=(
+                        f"`{node_id}` names the artifact {', '.join(f'`{n}`' for n in named)} "
+                        f"in its closure note, and what the cited commit rewrote cannot be "
+                        f"read — {undecidable[0]}"
+                    ),
+                    why=(
+                        "without the changed-path set this closure is neither carried nor "
+                        "empty: calling it coherent would be the silent pass this rule "
+                        "exists to prevent"
+                    ),
+                    how=_how_find_carrier(doc_path, node_id),
+                    locations=(_where(doc_path, claim),),
+                )
+            )
+            continue
+
+        coverage.not_carried += 1
+        touched = ", ".join(f"`{p}`" for p in sorted(changed)[:3]) or "nothing"
+        findings.append(
+            Finding(
+                rule="closure-sha-does-not-carry-the-claim",
+                node_id=node_id,
+                severity=Severity.REJECT,
+                what=(
+                    f"`{node_id}` closes on {', '.join(f'`{s[:9]}`' for s in claim.shas)} "
+                    f"and its note names {', '.join(f'`{n}`' for n in named)}, but those "
+                    f"commits rewrote only bookkeeping documentation ({touched})"
+                ),
+                why=(
+                    "the pointer resolves and sits on trunk, so every earlier check passes "
+                    "— and the commit still does not carry the work the node declares. "
+                    "Closure was decided on the DESIGNATION (a sha exists) instead of the "
+                    "PROPERTY (the sha carries the work)"
+                ),
+                how=_how_find_carrier(doc_path, node_id),
+                locations=(_where(doc_path, claim),),
+            )
+        )
+    return findings
+
+
 def _rule_unknown_state(
     doc_path: Path, node_id: str, claims: list[StateClaim]
 ) -> list[Finding]:
@@ -772,12 +975,100 @@ def _rule_completion_word(
 # ---------------------------------------------------------------------------
 
 
+#: The dependency graph lives in the consolidated register's ``dipende-da``
+#: column -- the same source the board generator reads. Kept here rather than
+#: imported so the gate stays a single file with Python as its only dependency.
+_DECISIONS_REL = "2026-07-28-decisions-consolidated.md"
+_DEP_ROW_RE = re.compile(r"^\| (D\d+) \|")
+_DEP_ID_RE = re.compile(r"\bD\d+\b")
+
+
+def read_dependency_edges(doc_path: Path) -> dict[str, set[str]]:
+    """node id -> the set of node ids it WAITS FOR. Empty when unreadable."""
+    register = doc_path.parent / _DECISIONS_REL
+    try:
+        text = register.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    edges: dict[str, set[str]] = {}
+    for line in text.split("\n"):
+        if _DEP_ROW_RE.match(line) is None:
+            continue
+        cells = [c.strip() for c in line.split("|")]
+        if len(cells) <= 7:
+            continue
+        node = _DEP_ROW_RE.match(line).group(1)  # type: ignore[union-attr]
+        edges[node] = {d for d in _DEP_ID_RE.findall(cells[7]) if d != node}
+    return edges
+
+
+def check_closed_over_open_child(
+    doc_path: Path, states: dict[str, ClosureClass]
+) -> list[Finding]:
+    """A parent cannot be closed while a node it WAITS FOR is still open.
+
+    Ale 2026-07-29, looking at D48 closed above an open D03b: "una
+    precondizione per poter chiudere un nodo padre e' assicurarsi che tutti i
+    nodi figli siano chiusi". The parent's own work being finished is not
+    sufficient -- the tree's whole purpose is that a node's value is only real
+    once what it stands on is real too. Decides on the PROPERTY (is the child
+    in a closed state) and never on the parent's own designation.
+
+    A base id split into sub-slices is waited for THROUGH its sub-slices, the
+    same resolution the board generator applies, so ``D31`` resolves to
+    ``D31a``/``D31b`` and a missing literal id is never read as a missing node.
+    """
+    findings: list[Finding] = []
+    edges = read_dependency_edges(doc_path)
+    if not edges:
+        return findings
+    for node, klass in sorted(states.items()):
+        if klass is not ClosureClass.CLOSED:
+            continue
+        base = re.sub(r"[ab]$", "", node)
+        waited: set[str] = set()
+        for dep in edges.get(base, set()):
+            subs = [s for s in states if re.sub(r"[ab]$", "", s) == dep and s != dep]
+            waited.update(subs or ([dep] if dep in states else []))
+        open_children = sorted(
+            c for c in waited - {node} if states.get(c) is not ClosureClass.CLOSED
+        )
+        if not open_children:
+            continue
+        findings.append(
+            Finding(
+                rule="closed-over-open-child",
+                node_id=node,
+                severity=Severity.REJECT,
+                what=(
+                    f"`{node}` is closed while it still waits for "
+                    + ", ".join(f"`{c}`" for c in open_children)
+                ),
+                why=(
+                    "a parent stands on the nodes it waits for: closing it while one "
+                    "of them is open reports finished work whose foundation does not "
+                    "exist yet, which is the overstatement the board exists to prevent"
+                ),
+                how=_how_explain(doc_path, node),
+                locations=(),
+            )
+        )
+    return findings
+
+
 def check_tree_coherence(
     doc_path: Path,
     *,
     reachability: CommitReachabilityPort,
     trunk_ref: str = DEFAULT_TRUNK_REF,
+    contents: CommitContentsPort | None = None,
 ) -> GateReport:
+    if contents is None:
+        contents = UnavailableContents(
+            "no commit-contents port supplied: what each closure sha rewrote was "
+            "not read"
+        )
+    carry = _CarryCoverage()
     lines = doc_path.read_text(encoding="utf-8").splitlines()
     sections = _split_sections(lines)
 
@@ -844,9 +1135,21 @@ def check_tree_coherence(
         findings += _rule_sha_on_trunk(
             doc_path, node_id, node_claims, reachability, trunk_ref
         )
+        findings += _rule_closure_does_not_carry(
+            doc_path, node_id, node_claims, contents, carry
+        )
 
     findings += _rule_completion_word(doc_path, tree_nodes, claims_by_node)
     findings += _rule_lane_join_ambiguous(doc_path, lane_ambiguities)
+    node_states = {
+        nid: (
+            ClosureClass.CLOSED
+            if any(c.closure is ClosureClass.CLOSED for c in cs)
+            else ClosureClass.OPEN
+        )
+        for nid, cs in claims_by_node.items()
+    }
+    findings += check_closed_over_open_child(doc_path, node_states)
 
     if any(f.severity is Severity.REJECT for f in findings):
         verdict = Verdict.INCOHERENT
@@ -861,6 +1164,7 @@ def check_tree_coherence(
         nodes_examined=len(claims_by_node),
         carriers_seen=carriers_seen,
         claims=tuple(claims),
+        carry=carry,
     )
 
 
@@ -894,6 +1198,76 @@ def _explain(report: GateReport, node_id: str, doc_path: Path) -> None:
             print(finding.render())
 
 
+def _find_carrier(
+    report: GateReport,
+    node_id: str,
+    contents: CommitContentsPort,
+    trunk_ref: str,
+    search_depth: int,
+) -> int:
+    """Name the commits that DID rewrite what a node's closure note claims.
+
+    The repair for a closure that does not carry its claim is a different sha,
+    and finding it by hand is exactly the manual work a HOW must not ask for.
+    """
+    wanted = node_id.upper()
+    claims = [c for c in report.claims if c.node_id.upper() == wanted]
+    named: list[str] = []
+    for claim in claims:
+        for token in artifact_claims(claim.reference):
+            if token not in named:
+                named.append(token)
+    print(f"NODE {wanted} — artifacts named in its closure notes: {named or 'none'}")
+    if not named:
+        print(
+            "  Nothing to search for: the note names no source path and no `des` "
+            "subcommand,\n  so no commit can be shown to carry it. Name the artifact "
+            "in the closure note first."
+        )
+        return 2
+    if not hasattr(contents, "recent_commits"):
+        print("  the commit-contents port cannot walk history: no candidates")
+        return 2
+
+    fragments = {t: path_fragments_for(t) for t in named}
+    walked, complete = contents.recent_commits(trunk_ref, search_depth)  # type: ignore[attr-defined]
+    hits: dict[str, list[tuple[str, str]]] = {t: [] for t in named}
+    for sha in walked:
+        answer = contents.changed_paths(sha)
+        if not answer.is_available:
+            continue
+        for token, frags in fragments.items():
+            # A bookkeeping path never evidences delivery, so it is never a
+            # candidate carrier -- the same rule the gate itself decides on.
+            matched = [
+                p
+                for p in answer.paths
+                if any(f in p for f in frags) and not is_bookkeeping_path(p)
+            ]
+            if matched:
+                hits[token].append((sha, matched[0]))
+
+    found_any = False
+    for token in named:
+        print(f"\n  `{token}`")
+        if not hits[token]:
+            print(
+                f"    no commit among the {len(walked)} walked from `{trunk_ref}` "
+                "rewrote a matching path"
+            )
+            continue
+        found_any = True
+        for sha, path in hits[token][:5]:
+            print(f"    {sha[:9]}  rewrote {path}")
+    print(
+        f"\n  walked {len(walked)} commits from `{trunk_ref}`"
+        + ("" if complete else " (walk truncated: older commits not searched)")
+    )
+    if found_any:
+        print("  Put the sha that carries the work in the closure reference cell.")
+    return 0 if found_any else 2
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -909,6 +1283,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--explain", default=None, help="print every claim for one node"
     )
+    parser.add_argument(
+        "--find-carrier",
+        default=None,
+        metavar="NODE",
+        help="name the commits that rewrote the artifact a node's closure note claims",
+    )
+    parser.add_argument(
+        "--search-depth",
+        type=int,
+        default=600,
+        help="commits to walk back from trunk when searching for a carrier",
+    )
     args = parser.parse_args(argv)
 
     if not args.file.is_file():
@@ -916,21 +1302,30 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     repo = args.repo or args.file.resolve().parent
+    contents = build_contents(repo)
     report = check_tree_coherence(
         args.file,
         reachability=build_reachability(repo),
         trunk_ref=args.trunk_ref,
+        contents=contents,
     )
 
     if args.explain:
         _explain(report, args.explain, args.file)
         return 0
 
+    if args.find_carrier:
+        return _find_carrier(
+            report, args.find_carrier, contents, args.trunk_ref, args.search_depth
+        )
+
     print(f"VERDICT {report.verdict.value}")
     print(
         f"  {report.nodes_examined} nodes · carriers: "
         f"{', '.join(report.carriers_seen) or 'none'} · trunk `{args.trunk_ref}`"
     )
+    if report.carry is not None:
+        print(report.carry.render())
     for severity in (Severity.REJECT, Severity.UNVERIFIABLE, Severity.ADVISORY):
         group = report.by_severity(severity)
         if not group:
