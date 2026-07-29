@@ -29,7 +29,7 @@
     {
       "skill": "nw-cross-cutting-invariants",
       "clause_id": "gate:design-principles-gdp-1-8",
-      "marker": "GDP-8 \u2014 Decide on the PROPERTY, never the DESIGNATION"
+      "marker": "GDP-8 — Decide on the PROPERTY, never the DESIGNATION"
     },
     {
       "skill": "nw-cross-cutting-invariants",
@@ -54,7 +54,12 @@
     {
       "skill": "nw-discuss",
       "clause_id": "decision-once:point-dont-copy",
-      "marker": "Decision-once \u2014 point, don't copy"
+      "marker": "Decision-once — point, don't copy"
+    },
+    {
+      "skill": "nw-cross-cutting-invariants",
+      "clause_id": "join-key:shape-conformance-over-uniqueness",
+      "marker": "conforms to a declared id shape"
     }
   ]
 }

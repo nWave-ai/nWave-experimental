@@ -243,3 +243,36 @@ the tree: measure on the scope the claim is actually ABOUT, not the subset you h
 at (the enumerator gap above is the architectural form of this same failure). The asymmetry that
 justifies the discipline: the check costs seconds; an unfalsified conclusion, once acted on,
 costs an order of magnitude more to undo.
+
+---
+
+## `join-key:shape-conformance-over-uniqueness` — a borrowed identifier is not a key until its shape is declared (STANDING)
+
+A field supplied by an external producer — a platform, a harness, another team's payload — is
+not a join key until EVERY value in the population conforms to a declared id shape. A single
+non-conforming value disqualifies the field, however rare. The tempting weaker test is
+"measure whether it is unique": that test passes on exactly the fields that hurt most, because
+the usual defect is not a field that collides often but a field that is a well-formed
+identifier almost everywhere and carries a hardcoded literal — a lifecycle-event name, a
+placeholder, a fallback string — in a small minority of records. Rarity is not safety here; it
+is the reason the field survived every informal check that came before. A join keyed on such a
+field silently folds unrelated records together, and a reader that takes first-wins or MAX over
+the group discards the rest without reporting anything.
+
+Two properties make shape the right test rather than a proxy for uniqueness. It is
+LOCALLY DECIDABLE: a checker holding one record can decide whether that record's value is
+well-formed, whereas uniqueness is a property of a population the checker usually never sees —
+a rule that cannot be executed at the point it is needed is not a control. And it is
+DISCOVERABLE WITHOUT FOREKNOWLEDGE: conformance finds the offending values in one pass without
+anyone knowing in advance which literal to look for, while a sampling check must draw the rare
+value AND notice it collides.
+
+The shape itself must be written down LITERALLY — the accepted pattern, and which
+near-miss forms are excluded. "Conforms to an id shape" is not a specification: two honest
+implementers will resolve an ambiguous form differently and reach opposite verdicts on the same
+data, which reproduces the original silent-wrong one level up. Where a borrowed field must be
+carried for a best-effort correlation it cannot guarantee, carry it as an ATTRIBUTE and mint
+the structural key yourself: a key you generate is one whose uniqueness you own rather than
+assume. When a value fails the shape check, the record degrades to the third state with a
+reason naming the field — never to a silent drop, and never to a guess at which group it
+belonged to.
