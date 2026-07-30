@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from git_commit_reachability import LooseObjectReachability, locate_git_dirs
+from git_packed_objects import PackedObjectStore
 
 
 class ContentAvailability(str, Enum):
@@ -88,6 +89,15 @@ class LooseObjectContents:
         located = locate_git_dirs(repo_path)
         self._common = located[1] if located else None
         self._resolver = LooseObjectReachability(repo_path)
+        #: Packed objects are read too. A reader that saw only loose objects
+        #: decayed silently: `git gc` packs on its own schedule, so a closure
+        #: naming an artifact became unverifiable for an environmental reason
+        #: the author never caused. Still pure Python -- no `git` dependency.
+        self._packed = (
+            PackedObjectStore(self._common / "objects")
+            if self._common is not None
+            else None
+        )
 
     # -- objects ----------------------------------------------------------
 
@@ -105,6 +115,18 @@ class LooseObjectContents:
         header, _, body = raw.partition(b"\x00")
         kind = header.split(b" ", 1)[0].decode("ascii", errors="replace")
         return kind, body
+
+    def _read_object(self, sha: str) -> tuple[str, bytes] | None:
+        """``(type, body)`` from a loose object, else from a pack, else None.
+
+        Loose first because it is the cheaper read; the pack lookup only pays
+        its index parse when the loose path misses. None still means the honest
+        INDETERMINATE -- neither reader guesses.
+        """
+        loaded = self._read_loose(sha)
+        if loaded is not None:
+            return loaded
+        return self._packed.read(sha) if self._packed is not None else None
 
     @staticmethod
     def _tree_entries(body: bytes) -> dict[str, tuple[str, str]]:
@@ -154,9 +176,9 @@ class LooseObjectContents:
             )
         sha = matches[0]
 
-        loaded = self._read_loose(sha)
+        loaded = self._read_object(sha)
         if loaded is None or loaded[0] != "commit":
-            packed = " (the object is packed: this reader decodes loose objects only)"
+            packed = " (neither a loose object nor readable in any pack)"
             return ChangedPathsAnswer(
                 ContentAvailability.INDETERMINATE,
                 (),
@@ -178,7 +200,7 @@ class LooseObjectContents:
         new_tree = trees[0]
         old_tree: str | None = None
         if parents:
-            parent_loaded = self._read_loose(parents[0])
+            parent_loaded = self._read_object(parents[0])
             if parent_loaded is None or parent_loaded[0] != "commit":
                 return ChangedPathsAnswer(
                     ContentAvailability.INDETERMINATE,
@@ -229,7 +251,7 @@ class LooseObjectContents:
         sha: str | None = tip
         while sha is not None and len(walked) < limit:
             walked.append(sha)
-            loaded = self._read_loose(sha)
+            loaded = self._read_object(sha)
             if loaded is None or loaded[0] != "commit":
                 return walked, False
             parents = self._header_field(loaded[1], b"parent")
@@ -257,7 +279,7 @@ class LooseObjectContents:
             if oid is None:
                 return {}
             budget[0] -= 1
-            loaded = self._read_loose(oid)
+            loaded = self._read_object(oid)
             if loaded is None or loaded[0] != "tree":
                 return (
                     f"tree object `{oid[:9]}` (at `{prefix or '/'}`) is not readable as "

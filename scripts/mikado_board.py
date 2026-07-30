@@ -33,11 +33,21 @@ _DECISION_ROW_RE = re.compile(r"^\| (D\d+) \|")
 _STATE_ROW_RE = re.compile(r"^\| `([DV]\d+[ab]?)` \|")
 
 #: State -> (glyph, rank). Rank orders siblings so what is workable floats up.
+#: `FUSO IN <target>` is authored generically, not as one hard-coded target: the
+#: glyph a fusion earns depends on the node it fused INTO, which `_glyph` resolves.
+#: Words that CLOSE a node. Each also spawns a `<word>-SOSPESO` reading -- work
+#: finished, closure suspended above an open node -- generated rather than typed so
+#: the board can never know a closing word the suspended form forgot.
+CLOSING_WORDS = ("FATTO", "CHIUSO", "CHIUSA", "MISURATO", "INTEGRATA", "INTEGRATE")
 STATE_GLYPH = {
+    **{f"{word}-SOSPESO": ("[s]", 2) for word in CLOSING_WORDS},
     "FATTO": ("[x]", 9),
     "CHIUSO": ("[-]", 9),
+    "CHIUSA": ("[-]", 9),
     "MISURATO": ("[m]", 9),
-    "FUSO IN D03b": ("[>]", 9),
+    "INTEGRATA": ("[x]", 9),
+    "INTEGRATE": ("[x]", 9),
+    "FUSO IN": ("[>]", 9),
     "GUARDIA": ("[G]", 9),
     "AL LAVORO": ("[~]", 0),
     "PRONTO": ("[ ]", 1),
@@ -45,9 +55,15 @@ STATE_GLYPH = {
     "BLOCCATO-SERVE-DESIGN": ("[D]", 3),
     "QUARANTENA": ("[Q]", 4),
     "NON_MISURATO": ("[Q]", 4),
+    "SOSPESO": ("[s]", 2),
     "RAMO": ("[+]", 6),
 }
+#: `[s]` -- work finished, closure suspended -- is deliberately NOT here. A
+#: suspended closure that rendered as closed would be the same overstatement the
+#: tree gate rejects, printed in a colour instead of a word.
 CLOSED_GLYPHS = {"[x]", "[-]", "[m]", "[>]", "[G]"}
+#: A fusion that resolved to its OPEN target: still a deferral, drawn as one.
+_FUSED_OPEN = ("[>~]", 3)
 
 #: Glyph -> CSS class, so colour carries the same meaning as in the document
 #: rendering rather than a second, private vocabulary.
@@ -67,6 +83,8 @@ _CSS_CLASS = {
     "[Q]": "quar",
     "[+]": "guard",
     "[?]": "guard",
+    "[s]": "susp",
+    "[>~]": "susp",
 }
 
 #: Defect-register states mapped onto the node-state vocabulary.
@@ -78,10 +96,44 @@ _DEFECT_STATE = {
 }
 
 
-def _glyph(state: str) -> tuple[str, int]:
-    for key, value in STATE_GLYPH.items():
+#: `FUSO IN <target>` -- the node id whose state this fusion carries.
+_FUSED_INTO = re.compile(r"^FUSO\s+IN\s+([A-Z]{1,2}\d{1,3}[A-Za-z]?)\b", re.IGNORECASE)
+#: How deep a chain of fusions is walked before it is called a ring.
+_FUSION_HOPS = 8
+
+
+def _glyph(
+    state: str, states: dict[str, tuple[str, str]] | None = None
+) -> tuple[str, int]:
+    """State -> (glyph, rank), matching the LONGEST state word first.
+
+    Longest-first, not insertion order: `FATTO-SOSPESO` starts with `FATTO`, so a
+    first-key-wins scan would have drawn a suspended closure as a finished one --
+    the overstatement this vocabulary exists to prevent, reintroduced by dict order.
+
+    A `FUSO IN X` state carries X's state rather than one of its own, so it is
+    resolved against `states` when the caller has the map. Fused into an open node
+    it has closed nothing and must not draw as closed; with no map, no chain end, or
+    a ring, it stays open -- the safe direction.
+    """
+    fused = _FUSED_INTO.match(state.strip())
+    if fused is not None:
+        if states is None:
+            return _FUSED_OPEN
+        target, seen = fused.group(1).upper(), {""}
+        for _ in range(_FUSION_HOPS):
+            if target in seen or target not in states:
+                return _FUSED_OPEN
+            seen.add(target)
+            hop = _FUSED_INTO.match(states[target][0].strip())
+            if hop is None:
+                inner, _rank = _glyph(states[target][0])
+                return STATE_GLYPH["FUSO IN"] if inner in CLOSED_GLYPHS else _FUSED_OPEN
+            target = hop.group(1).upper()
+        return _FUSED_OPEN
+    for key in sorted(STATE_GLYPH, key=len, reverse=True):
         if state.startswith(key):
-            return value
+            return STATE_GLYPH[key]
     return ("[?]", 5)
 
 
@@ -273,7 +325,7 @@ def render(
 
     def walk(node: str, depth: int) -> None:
         state, title = states.get(node, ("?", ""))
-        glyph, _ = _glyph(state)
+        glyph, _ = _glyph(state, states)
         pad = "    " * depth
         if node in expanded:
             lines.append(f"{pad}{glyph} {node:5} \u2192 gia' mostrato sopra")
@@ -283,25 +335,25 @@ def render(
         lines.append(f"{pad}{glyph} {node:5} {title[:52]}{mark}".rstrip())
         children = sorted(
             deps.get(node, ()),
-            key=lambda c: (_glyph(states.get(c, ("?", ""))[0])[1], c),
+            key=lambda c: (_glyph(states.get(c, ("?", ""))[0], states)[1], c),
         )
         for child in children:
             walk(child, depth + 1)
 
     for root in sorted(
-        roots, key=lambda r: (_glyph(states.get(r, ("?", ""))[0])[1], r)
+        roots, key=lambda r: (_glyph(states.get(r, ("?", ""))[0], states)[1], r)
     ):
         walk(root, 0)
     lines.append("```")
 
     open_nodes = [
-        n for n, (s, _) in states.items() if _glyph(s)[0] not in CLOSED_GLYPHS
+        n for n, (s, _) in states.items() if _glyph(s, states)[0] not in CLOSED_GLYPHS
     ]
     free = [
         n
         for n in open_nodes
         if not any(
-            _glyph(states.get(d, ("?", ""))[0])[0] not in CLOSED_GLYPHS
+            _glyph(states.get(d, ("?", ""))[0], states)[0] not in CLOSED_GLYPHS
             for d in deps.get(n, ())
         )
     ]
@@ -441,7 +493,7 @@ def render_html(
     def walk(node: str) -> None:
         state, raw_title = states.get(node, ("?", ""))
         title, full_title = split_title(raw_title)
-        glyph, _rank = _glyph(state)
+        glyph, _rank = _glyph(state, states)
         cls = _CSS_CLASS.get(glyph, "ready")
         row_cls = f"row-s-{cls}"
         # `t-closed` drives the hide-done toggle. It keys on the SAME glyph
@@ -480,7 +532,7 @@ def render_html(
         )
         children = sorted(
             deps.get(node, ()),
-            key=lambda c: (_glyph(states.get(c, ("?", ""))[0])[1], c),
+            key=lambda c: (_glyph(states.get(c, ("?", ""))[0], states)[1], c),
         )
         dl = detail_dl(node, full_title)
 
@@ -511,11 +563,15 @@ def render_html(
         )
 
     for root in sorted(
-        roots, key=lambda r: (_glyph(states.get(r, ("?", ""))[0])[1], r)
+        roots, key=lambda r: (_glyph(states.get(r, ("?", ""))[0], states)[1], r)
     ):
         walk(root)
 
-    open_n = [n for n, (s_, _t) in states.items() if _glyph(s_)[0] not in CLOSED_GLYPHS]
+    open_n = [
+        n
+        for n, (s_, _t) in states.items()
+        if _glyph(s_, states)[0] not in CLOSED_GLYPHS
+    ]
     counts = (
         f"{len(states)} nodi &middot; {len(states) - len(open_n)} chiusi "
         f"&middot; {len(open_n)} aperti"
@@ -545,7 +601,7 @@ def main() -> int:
     deps, roots = build(states, read_edges(args.decisions))
 
     for node in live_nodes(args.file.resolve().parent.parent.parent):
-        if node in states and _glyph(states[node][0])[0] not in CLOSED_GLYPHS:
+        if node in states and _glyph(states[node][0], states)[0] not in CLOSED_GLYPHS:
             states[node] = ("AL LAVORO", states[node][1])
 
     defects = read_defects(args.file)
@@ -555,7 +611,7 @@ def main() -> int:
         if parent and parent in deps:
             deps[parent].add(fid)
     for node in live_nodes(args.file.resolve().parent.parent.parent):
-        if node in states and _glyph(states[node][0])[0] not in CLOSED_GLYPHS:
+        if node in states and _glyph(states[node][0], states)[0] not in CLOSED_GLYPHS:
             states[node] = ("AL LAVORO", states[node][1])
 
     unparented = sorted(f for f, (_s, _t, p) in defects.items() if not p)

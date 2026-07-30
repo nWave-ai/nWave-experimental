@@ -77,23 +77,68 @@ CANONICAL_CARRIERS = (CARRIER_LANES, CARRIER_TREE, CARRIER_NODES)
 #: are the document's other closure designation (closed-without-work, e.g. a refuted
 #: premise) -- the orchestrator's own prose treats them as closed for open/closed
 #: purposes (`## IL GATE ... DESIGNAZIONE`: "le otto righe sono corrette FATTO/CHIUSO").
-CLOSED_STATES = frozenset({"FATTO", "INTEGRATA", "INTEGRATE", "CHIUSO", "CHIUSA"})
+#: `MISURATO` is closure for a node whose deliverable IS the measurement -- the
+#: board has always drawn it closed (`[m]`, rank 9) and the document tallies it
+#: beside FATTO/CHIUSO. It was missing here, and the miss was silent rather than
+#: loud: with the word unknown, the column-drift rescue in `parse_node_table_claims`
+#: walked past the `Stato` cell and read D46a/D46b/D81's state out of the `Verdetto`
+#: column next door, which happens to hold `NON_MISURATO`. Board said closed, gate
+#: said open, and nothing reported the disagreement -- the same shape as the seven
+#: nodes that vanished, one word further along.
+CLOSED_STATES = frozenset(
+    {"FATTO", "INTEGRATA", "INTEGRATE", "CHIUSO", "CHIUSA", "MISURATO"}
+)
 #: `BLOCCATO-SERVE-DESIGN` is the document's own word for "open, and cannot be
 #: scheduled until a DESIGN decision lands". It was missing from this set, and a
 #: row carrying it did not become UNVERIFIABLE -- it vanished from the gate's
 #: population entirely, D03b and D27 among the seven.
-OPEN_STATES = frozenset(
-    {
-        "PRONTO",
-        "IN CORSO",
-        "QUARANTENA",
-        "CONTESO",
-        "NON_MISURATO",
-        "SOSPESO",
-        "BLOCCATO-SERVE-DESIGN",
-    }
+#: `<closed word>-SOSPESO` says the one thing the legend could not: the work is
+#: FINISHED and the closure is SUSPENDED, because a node this one waits for is
+#: still open. It exists because both available words lied -- `FATTO` overstates
+#: (it reports a closure standing on nothing) and `PRONTO`/`AL LAVORO` erase work
+#: that genuinely happened, sending the next reader to redo it.
+#:
+#: Built as a SUFFIX over every closing word rather than as one new token, because
+#: the property is "this closure is suspended" and not the particular word in front
+#: of it: `MISURATO-SOSPESO` is the same fact about a measurement node that
+#: `FATTO-SOSPESO` is about an implementation node, and a vocabulary that needed a
+#: hand-written entry per closing word would have grown a gap the day someone added
+#: the seventh. Every one classifies OPEN, never closed: a suspended closure counted
+#: as closed would reproduce the exact overstatement `closed-over-open-child` exists
+#: to stop, one token further along.
+SUSPENDED_STATES = frozenset(f"{state}-SOSPESO" for state in CLOSED_STATES)
+OPEN_STATES = (
+    frozenset(
+        {
+            "PRONTO",
+            "IN CORSO",
+            "QUARANTENA",
+            "CONTESO",
+            "NON_MISURATO",
+            "SOSPESO",
+            "BLOCCATO-SERVE-DESIGN",
+        }
+    )
+    | SUSPENDED_STATES
 )
 NOT_WORK_STATES = frozenset({"GUARDIA", "—", "–", "-", ""})
+
+#: `FUSO IN <target>` -- this node's work was folded into another node. Fusion is
+#: not a closure of its own: it CARRIES the target's state. Fused into an open node
+#: it has closed nothing, so it reads OPEN; it turns CLOSED only when the node it
+#: fused into closes. Classified as the safe direction (OPEN) here and upgraded by
+#: `resolve_fusions` once every node's class is known, because the answer depends on
+#: a node other than this one. Before this existed the word was unknown to the
+#: legend, and the column-drift fallback below walked past the `Stato` cell and read
+#: D47's state out of the `Verdetto` column instead.
+_FUSED_INTO = re.compile(r"^FUSO\s+IN\s+([A-Z]{1,2}\d{1,3}[A-Za-z]?)\b", re.IGNORECASE)
+
+
+def fusion_target(raw: str) -> str | None:
+    """The node id a `FUSO IN X` state defers to, or None when not a fusion."""
+    match = _FUSED_INTO.match(normalize_state(raw))
+    return match.group(1).upper() if match else None
+
 
 #: Completion words that predicted a wrong state 3 times out of 3 when they
 #: appeared WITHOUT a pointer next to them. An inferred signal, so advisory only.
@@ -273,7 +318,43 @@ def classify_state(raw: str) -> ClosureClass:
         return ClosureClass.OPEN
     if state in NOT_WORK_STATES:
         return ClosureClass.NOT_WORK
+    # A fusion carries the target's state, which this function cannot see. OPEN is
+    # the only safe answer from here: `resolve_fusions` turns it CLOSED when -- and
+    # only when -- the target is closed, so a fusion never reports a closure early.
+    if fusion_target(state) is not None:
+        return ClosureClass.OPEN
     return ClosureClass.UNKNOWN
+
+
+def resolve_fusions(
+    states: dict[str, ClosureClass], targets: dict[str, str | None]
+) -> dict[str, ClosureClass]:
+    """A fused node reads CLOSED only once the node it fused INTO is closed.
+
+    Fusion defers work instead of finishing it, so a fused node's class is the
+    TARGET's, never its own -- `FUSO IN X` while X is open has closed nothing. A
+    chain of fusions is walked to its end. A cycle of fusions, and a fusion naming a
+    target the document does not carry, both stay OPEN: the safe direction, because
+    the alternative is reporting a closure nobody can point at.
+    """
+    resolved = dict(states)
+    for node, target in targets.items():
+        if target is None:
+            continue
+        seen = {node}
+        cursor: str | None = target
+        while cursor is not None and targets.get(cursor) is not None:
+            if cursor in seen:
+                cursor = None  # a ring of fusions closes nothing
+                break
+            seen.add(cursor)
+            cursor = targets[cursor]
+        resolved[node] = (
+            ClosureClass.CLOSED
+            if cursor is not None and states.get(cursor) is ClosureClass.CLOSED
+            else ClosureClass.OPEN
+        )
+    return resolved
 
 
 def _state_token_in(text: str) -> str | None:
@@ -283,6 +364,11 @@ def _state_token_in(text: str) -> str | None:
     for word in known:
         if re.search(rf"\b{re.escape(word)}\b", upper):
             return word
+    # A fusion keeps its target: `FUSO` alone would name a deferral without saying
+    # what it defers TO, and `resolve_fusions` would have nothing to resolve.
+    fusion = _FUSED_INTO.match(normalize_state(text))
+    if fusion is not None:
+        return fusion.group(0)
     stripped = normalize_state(text)
     if stripped in NOT_WORK_STATES:
         return stripped
@@ -1364,14 +1450,20 @@ def check_tree_coherence(
 
     findings += _rule_completion_word(doc_path, tree_nodes, claims_by_node)
     findings += _rule_lane_join_ambiguous(doc_path, lane_ambiguities)
-    node_states = {
-        nid: (
-            ClosureClass.CLOSED
-            if any(c.closure is ClosureClass.CLOSED for c in cs)
-            else ClosureClass.OPEN
-        )
-        for nid, cs in claims_by_node.items()
-    }
+    node_states = resolve_fusions(
+        {
+            nid: (
+                ClosureClass.CLOSED
+                if any(c.closure is ClosureClass.CLOSED for c in cs)
+                else ClosureClass.OPEN
+            )
+            for nid, cs in claims_by_node.items()
+        },
+        {
+            nid: next((t for t in (fusion_target(c.raw_state) for c in cs) if t), None)
+            for nid, cs in claims_by_node.items()
+        },
+    )
     findings += check_closed_over_open_child(doc_path, node_states)
     findings += check_node_visible_from_a_root(doc_path, node_states)
 
