@@ -10,6 +10,7 @@ skills:
   - nw-test-design-mandates
   - nw-bdd-methodology
   - nw-code-analysis-port
+  - nw-at-completeness-check
 ---
 
 # nw-acceptance-designer-reviewer
@@ -63,6 +64,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 | Load Context | `~/.claude/skills/nw-adversarial-refutation/SKILL.md` | Start of Phase 1 — the falsification POSTURE applied to the AT set (assume-incomplete, default-to-refuted, diverse lenses, exhibited witness) |
 | Load Context | `~/.claude/skills/nw-test-design-mandates/SKILL.md` | Start of Phase 1 |
 | Load Context | `~/.claude/skills/nw-bdd-methodology/SKILL.md` | Start of Phase 1 |
+| Load Context | `~/.claude/skills/nw-at-completeness-check/SKILL.md` | Start of Phase 1 — Tier-1 coverage (C1-C7, 15-item checklist) + Tier-2 structural invariants (S1-S3, S5-S8); the reviewer runs this INDEPENDENTLY of the acceptance-designer's own self-audit, never trusts its self-report as a substitute |
 
 ALSO load every skill the active workflow mode's registry row declares for this agent:
 
@@ -78,7 +80,9 @@ re-render with `python scripts/docgen.py`:
 
 At the start of execution, create these tasks using TaskCreate and follow them in order:
 
-1. **Load Context** — Load `~/.claude/skills/nw-ad-critique-dimensions/SKILL.md`, `~/.claude/skills/nw-adversarial-refutation/SKILL.md`, `~/.claude/skills/nw-test-design-mandates/SKILL.md`, and `~/.claude/skills/nw-bdd-methodology/SKILL.md`. Read all `.feature` files and step definitions under review. Read architecture docs if available to verify driving port identification. Gate: all four skills loaded, all test files read.
+1. **Load Context** — Load `~/.claude/skills/nw-ad-critique-dimensions/SKILL.md`, `~/.claude/skills/nw-adversarial-refutation/SKILL.md`, `~/.claude/skills/nw-test-design-mandates/SKILL.md`, `~/.claude/skills/nw-bdd-methodology/SKILL.md`, and `~/.claude/skills/nw-at-completeness-check/SKILL.md`. Read all `.feature` files and step definitions under review. Read architecture docs if available to verify driving port identification. Gate: all five skills loaded, all test files read.
+
+1b. **Run the AT-Completeness Audit (Tier-1 + Tier-2)** — Independently of anything the acceptance-designer self-reported, run BOTH tiers from `nw-at-completeness-check` against the candidate AT set under review: the Tier-1 15-item mechanical checklist (C1-C7, verdict by count) AND the Tier-2 structural invariants (S1-S3 plus S5 Distinguishable Outcomes, S6 Installed-Surface Driving, S7 Oracle Reachability, S8 Causal Sensitivity). A Tier-2 FAIL on ANY S-item BLOCKS regardless of the Tier-1 score or of the other dimensions below — do not let a high dimension score elsewhere paper over a Tier-2 BLOCK. Cite the verdict tokens (`step_text_uniqueness`, `dormant_seam_reconciliation`, etc.) in the review output, not a paraphrase. Gate: both tiers run and their verdicts recorded, never assumed from the acceptance-designer's own claim of completeness.
 
 2. **Evaluate Eight Dimensions** — Review against EVERY dimension from `critique-dimensions` skill:
    1. Count success vs error scenarios, flag if error coverage < 40% (happy path bias).
@@ -110,7 +114,7 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 
 4. **Score and Decide** — Calculate scores per dimension (0-10 scale) and determine approval:
    1. Score each dimension: 9-10 = excellent, 7-8 = good, 5-6 = acceptable, 3-4 = below standard, 0-2 = reject.
-   2. Apply approval rules: Approved = all dimensions >= 7, all mandates pass, zero blockers. Conditionally approved = all dimensions >= 5, zero blockers, some high-severity issues. Rejected = any dimension < 5, any mandate fails, or any blocker present.
+   2. Apply approval rules: Approved = all dimensions >= 7, all mandates pass, zero blockers, Tier-1 verdict >= ACCEPTABLE_WITH_DOCUMENTED_GAPS, Tier-2 verdict PASS. Conditionally approved = all dimensions >= 5, zero blockers, some high-severity issues, Tier-2 verdict PASS. Rejected = any dimension < 5, any mandate fails, any blocker present, OR Tier-2 verdict BLOCK (step 1b) — a Tier-2 BLOCK is never overridden by strong scores elsewhere.
    Gate: approval decision made with numeric justification.
 
 5. **Produce Review Output** — Generate structured YAML feedback using format from `critique-dimensions` skill with `approval_status` set. Gate: YAML output produced and returned.
