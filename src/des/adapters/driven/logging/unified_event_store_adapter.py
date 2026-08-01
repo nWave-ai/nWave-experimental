@@ -186,9 +186,23 @@ class UnifiedEventStoreAdapter:
 
     def append(self, record: EventRecord) -> AppendedRecord:
         """Append one PRIMARY record, validating DD-5 and the closed scope
-        vocabulary before delegating to `AtCompletionLedger.append_event`."""
+        vocabulary before delegating to `AtCompletionLedger.append_event`.
+
+        Stamps `envelope_generation="unified"` into the fields dict before
+        delegating (bugfix, feature-delta.md f-context-consumption-probe
+        line 556 "Mechanism the bugfix must apply") -- without this key,
+        `_classify_line` routes the row past its own `"envelope_generation"
+        not in row"` check into `LegacyEnvelopeNormalizer`, which
+        unconditionally overlays `scope="feature"`, `determination=
+        "measured"` on every read, silently clobbering this record's own
+        declared `scope`/`determination`. Confined to this seam -- zero
+        change to `_classify_line`'s branch condition or to any of the 39
+        existing `append_*` call sites.
+        """
         self._validate_scope(record.scope)
         partition_key = self._resolve_partition_key(record)
+        fields = dict(record.fields)
+        fields["envelope_generation"] = "unified"
         raw = self._ledger.append_event(
             record.scope,
             record.event,
@@ -196,7 +210,7 @@ class UnifiedEventStoreAdapter:
             partition_key=partition_key,
             feature_id=record.feature_id,
             agent_id=record.agent_id,
-            fields=dict(record.fields),
+            fields=fields,
         )
         return self._to_appended_record(raw)
 
@@ -217,6 +231,7 @@ class UnifiedEventStoreAdapter:
         self._validate_scope(record.scope)
         partition_key = self._resolve_partition_key(record)
         derived_fields = dict(record.fields)
+        derived_fields["envelope_generation"] = "unified"
         derived_fields["reduction_key"] = reduction.reduction_key
         derived_fields["reducer_version"] = reduction.reducer_version
         raw = self._ledger.append_event(
