@@ -42,7 +42,7 @@ This core holds the mode dispatch, the per-slice spine + feature-end cycle, the 
 
 | Module | Kind | Trigger — load when... | Covers |
 |---|---|---|---|
-| `nw-deliver-atdd-pure-slice-gates` | PROCEDURE | a per-slice phase boundary beyond the A_GREEN entry dispatch must be governed (C_REVIEWER_AUDIT verdict routing, D_REFACTOR_COMMIT dispatch, D_REFACTOR_COMMIT commit close) | D_REFACTOR_COMMIT exit gate (E1 + E2), Phase D Routing, Separation Enforcement, Verdict-Hash Trailer, Telemetry per Phase Boundary, Falsifier-Gate hook |
+| `nw-deliver-atdd-pure-slice-gates` | PROCEDURE | a per-slice phase boundary beyond the A_GREEN entry dispatch must be governed (C_REVIEWER_AUDIT verdict routing, D_REFACTOR_COMMIT dispatch, D_REFACTOR_COMMIT commit close) | D_REFACTOR_COMMIT exit gate (E1 + E2), Phase D Routing, Separation Enforcement, Verdict-Hash Trailer, Telemetry per Phase Boundary |
 
 Load path: `~/.claude/skills/nw-{module}/SKILL.md`. Load the module whose trigger matches your current moment; every extracted section lives in exactly one module.
 
@@ -252,7 +252,7 @@ transition, completion, refusal or new artifact.
 
 ### Per-slice phase-boundary contracts (module)
 
-The remaining per-slice contracts — the `D_REFACTOR_COMMIT` exit gate (E1 slice-commit completeness + E2 contract-gate scope), §Phase D Routing, §Separation Enforcement, §Verdict-Hash Trailer, §Telemetry per Phase Boundary, and the §Post-Commit Falsifier-Gate Hook — live in `nw-deliver-atdd-pure-slice-gates`. Load `~/.claude/skills/nw-deliver-atdd-pure-slice-gates/SKILL.md` when a slice crosses any phase boundary beyond the A_GREEN entry dispatch.
+The remaining per-slice contracts — the `D_REFACTOR_COMMIT` exit gate (E1 slice-commit completeness + E2 contract-gate scope), §Phase D Routing, §Separation Enforcement, §Verdict-Hash Trailer, and §Telemetry per Phase Boundary — live in `nw-deliver-atdd-pure-slice-gates`. Load `~/.claude/skills/nw-deliver-atdd-pure-slice-gates/SKILL.md` when a slice crosses any phase boundary beyond the A_GREEN entry dispatch.
 
 ## Skill Loading (ATDD-pure additions)
 

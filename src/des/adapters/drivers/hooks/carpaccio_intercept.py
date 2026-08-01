@@ -228,6 +228,11 @@ class InterceptDecision:
         )
 
 
+_REGRESSION_AT_KINDS = frozenset(
+    {"pytest-regression", "native-regression", "rust-regression"}
+)
+
+
 def _real_carpaccio_runner(
     project_root: Path,
     at_kind: str = "gherkin",
@@ -259,9 +264,6 @@ def _real_carpaccio_runner(
     a Rust/native-regression slice with `no-scenarios-for-slice`.
     """
 
-    _REGRESSION_AT_KINDS = frozenset(
-        {"pytest-regression", "native-regression", "rust-regression"}
-    )
     _at_kind_args: tuple[str, ...] = (
         ("--at-kind", at_kind, "--regression-test-file", regression_test_file)
         if at_kind in _REGRESSION_AT_KINDS and regression_test_file is not None
@@ -354,6 +356,8 @@ def _real_readiness_runner(
     project_root: Path,
     lane: str | None = None,
     lane_justification: str = "",
+    at_kind: str = "gherkin",
+    regression_test_file: str | None = None,
 ) -> ReadinessRunner:
     """Build the real readiness runner bound to ``project_root`` (slice-05).
 
@@ -368,11 +372,25 @@ def _real_readiness_runner(
     BUILD time, so the returned `_run(feature_id, entering_slice)` Callable
     signature is UNCHANGED. With ``lane is None`` (default) the des_spawn call is
     byte-identical to the pre-RC4-b invocation -- zero blast-radius.
+
+    fix-readiness-gate-at-kind-blind-scenario-tags (ADD-not-mutate, template-
+    identical to `_real_carpaccio_runner`'s own ``_at_kind_args``): when
+    ``at_kind`` is a regression kind (``_REGRESSION_AT_KINDS``) the closure
+    appends ``--at-kind <kind> --regression-test-file <file>`` so the
+    scenario_slice_tags mechanical-seal escape becomes reachable from a live
+    dispatch. Closed over at BUILD time -- the returned Callable signature is
+    UNCHANGED. With the default ``at_kind="gherkin"`` the des_spawn call is
+    byte-identical to the pre-fix invocation -- zero blast-radius.
     """
 
     _lane_args: tuple[str, ...] = (
         ("--lane", lane, "--lane-justification", lane_justification)
         if lane is not None
+        else ()
+    )
+    _at_kind_args: tuple[str, ...] = (
+        ("--at-kind", at_kind, "--regression-test-file", regression_test_file)
+        if at_kind in _REGRESSION_AT_KINDS and regression_test_file is not None
         else ()
     )
 
@@ -389,6 +407,7 @@ def _real_readiness_runner(
                 "--repo-root",
                 str(project_root),
                 *_lane_args,
+                *_at_kind_args,
                 capture_output=True,
                 text=True,
                 timeout=READINESS_GATE_SUBPROCESS_TIMEOUT_SECONDS,
@@ -1153,7 +1172,11 @@ def evaluate_atdd_pure_dispatch(
     )
     _lane, _lane_just = _parse_lane_from_prompt(prompt)
     readiness = readiness_runner or _real_readiness_runner(
-        project_root, lane=_lane, lane_justification=_lane_just
+        project_root,
+        lane=_lane,
+        lane_justification=_lane_just,
+        at_kind=_at_kind,
+        regression_test_file=_regression_test_file,
     )
     wave_dispatch = wave_dispatch_runner or _real_wave_dispatch_runner(project_root)
     completeness = completeness_runner or _real_completeness_runner(project_root)

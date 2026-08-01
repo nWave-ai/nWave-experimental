@@ -37,10 +37,30 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
+
+if TYPE_CHECKING:  # only in annotations
+    from pathlib import Path
+
+from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli._repo_root_arg import add_repo_root_argument
+from des.domain.gate_outcome import GateVerdict
 from des.domain.repo_path_resolver import resolve_repo_root
+
+
+_GATE_NAME = "mode-locus-gate"
+
+
+def _record_outcome(root: Path, outcome: GateVerdict) -> None:
+    """Append a `GateOutcomeRecorded` record (slice-04, ADR-GV-003 D5).
+
+    Singleton-shape ledger (`AtCompletionLedger(project_root=root)`):
+    this gate has no per-feature concept, ever (repo-wide invariant scan).
+    """
+    AtCompletionLedger(project_root=root).append_gate_event(
+        "GateOutcomeRecorded", "", feature_id="", gate=_GATE_NAME, outcome=outcome
+    )
 
 
 # The asset families the gate guards (analysis §3.1). The flavor registry
@@ -193,10 +213,12 @@ def main(argv: list[str] | None = None) -> int:
             "is not the same fact as a clean scan and must not be reported "
             "as a pass.\n"
         )
+        _record_outcome(root, GateVerdict.INDETERMINATE)
         return 3
     offenders = scan_for_naked_literals(root)
     if not offenders:
         sys.stdout.write("mode-locus-gate: no naked mode literal found.\n")
+        _record_outcome(root, GateVerdict.PASS)
         return 0
     sys.stdout.write(
         f"mode-locus-gate: {len(offenders)} naked mode literal(s) re-state the "
@@ -208,6 +230,7 @@ def main(argv: list[str] | None = None) -> int:
             f"  {offender.relative_path}:{offender.line_number}: "
             f"{offender.literal}  |  {offender.line_text}\n"
         )
+    _record_outcome(root, GateVerdict.FAIL)
     return 2
 
 

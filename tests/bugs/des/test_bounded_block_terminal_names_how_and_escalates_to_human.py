@@ -358,6 +358,10 @@ def test_non_terminal_block_never_carries_the_how_and_escalation_text(
 
     exit_code, stdout, stderr = _fire_hook(repo, transcript_path)
 
+    # stderr was unpacked and never inspected. A hook that exits 0 while
+    # complaining on stderr is not the same thing as a hook that is silent,
+    # and only one of the two is what "clean pass" means here.
+    assert stderr == "", f"expected a silent pass, got on stderr: {stderr!r}"
     assert exit_code == 0
 
     block = _block_decision(stdout)

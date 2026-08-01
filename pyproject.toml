@@ -30,7 +30,7 @@ path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave"
-version = "4.0.0+atddpure.15132009e"
+version = "4.0.0+atddpure.b38e91d"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -121,7 +121,7 @@ dev = [
     "detect-secrets>=1.4.0",
     # Git & release
     "pre-commit>=4.6.1",
-    "commitizen>=4.16.5",
+    "commitizen>=4.17.0",
     # `gitlint-core` (not the `gitlint` meta-package) — the meta-package forces the
     # `trusted-deps` extra, which exact-pins `sh==1.14.3` (CVE-2026-54552 /
     # GHSA-q38v-wp89-2w55, incomplete privilege drop in `sh`'s `_uid` option).
@@ -149,7 +149,7 @@ dev = [
     # JSON Schema validation (used by tests/outcomes + tests/feature_delta)
     "jsonschema>=4.0.0",
     # Packaging (python -m build / scripts/build_dist.py)
-    "build>=1.5.1",
+    "build>=1.5.0,!=1.5.1",  # 1.5.1 yanked on PyPI, makes fresh resolves unsatisfiable
     # pip — the WS-floor installable build leg shells `python -m pip wheel`
     # (src/des/cli/walking_skeleton_gate.py). uv venvs OMIT pip by default
     # (unlike the prior pipenv venv), so it MUST be declared or every

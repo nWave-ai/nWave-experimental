@@ -15,6 +15,7 @@ skills:
   - nw-outcome-kpi-framework
   - nw-user-story-mapping
   - nw-expectation-charter
+  - nw-distill
   - nw-ux-principles
   - nw-ux-web-patterns
   - nw-ux-desktop-patterns

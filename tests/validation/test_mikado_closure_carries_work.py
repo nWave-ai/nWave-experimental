@@ -135,7 +135,18 @@ def repo(tmp_path: Path):
     }
 
 
-def _doc(tmp_path: Path, nodi: str, corsie: str = "", name: str = "tree.md") -> Path:
+#: A decorative CORSIA row, unrelated to any node id a test asserts on. Keeps
+#: `## CORSIE` populated so the gate still sees its floor of >= 2 carriers
+#: once `## L'ALBERO` carries no state (see the module docstring in
+#: validate_mikado_tree_coherence.py: state is typed once, in
+#: `## STATO NODO PER NODO`, and `## L'ALBERO` no longer contributes to
+#: `carriers_seen` at all).
+_DECOR_CORSIA = "| `lane-decor` | decor | `x.py` | **PRONTO** |"
+
+
+def _doc(
+    tmp_path: Path, nodi: str, corsie: str = _DECOR_CORSIA, name: str = "tree.md"
+) -> Path:
     text = f"""# tree
 
 ## CORSIE
@@ -148,7 +159,7 @@ def _doc(tmp_path: Path, nodi: str, corsie: str = "", name: str = "tree.md") -> 
 
 ```nwtree
 GOAL | esempio
-  D99 | qualcosa | PRONTO | XS | onda 1
+  D99 | qualcosa
 ```
 
 ## STATO NODO PER NODO
@@ -291,6 +302,106 @@ def test_a_closure_claiming_a_named_source_path_is_checked_the_same_way(repo, tm
     assert [
         f for f in report.findings if f.rule == "closure-sha-does-not-carry-the-claim"
     ]
+
+
+# --------------------------------------------------------------------------
+# the same designation error, one level up: SOME work is not THE named work
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def other_product_work(repo):
+    """A commit on trunk that rewrites product code, but not the named artifact."""
+    objects = repo["objects"]
+    layout = {
+        "docs": {"mikado": {"plan.md": "v2"}},
+        "src": {
+            "cli.py": "v1",
+            "report_delivery_metrics.py": "the reader",
+            "unrelated.py": "somewhere else entirely",
+        },
+    }
+    sha = _write_commit(
+        objects, _write_tree(objects, layout), [repo["with_code"]], "unrelated work"
+    )
+    ref = repo["path"] / ".git" / "refs" / "heads" / "feature" / "atdd-pure-staging"
+    ref.write_text(sha + "\n")
+    return sha
+
+
+def test_rejects_a_closure_naming_a_path_no_cited_commit_ever_touched(
+    repo, other_product_work, tmp_path
+):
+    """Product code moved, so the old check passed -- but not the code named."""
+    doc = _doc(
+        tmp_path,
+        nodi=(
+            f"| `D40` | lettore di costo | SEMPLIFICA | M | FATTO | "
+            f"`{other_product_work}` — riscritto `src/report_delivery_metrics.py` |"
+        ),
+    )
+
+    report = _run(doc, repo)
+
+    rejects = [
+        f
+        for f in report.by_severity(Severity.REJECT)
+        if f.rule == "closure-names-a-path-the-commit-never-touched"
+    ]
+    assert len(rejects) == 1
+    assert "src/report_delivery_metrics.py" in rejects[0].what
+    assert report.verdict is Verdict.INCOHERENT
+    assert report.carry.not_carried == 1
+    assert report.carry.carried == 0
+
+
+def test_accepts_a_named_path_that_is_among_the_rewritten_paths(
+    repo, other_product_work, tmp_path
+):
+    """The guard against over-rejection: a truthful note still passes."""
+    doc = _doc(
+        tmp_path,
+        nodi=(
+            f"| `D40` | altrove | SEMPLIFICA | M | FATTO | "
+            f"`{other_product_work}` — riscritto `src/unrelated.py` |"
+        ),
+    )
+
+    report = _run(doc, repo)
+
+    assert not [f for f in report.findings if f.rule.startswith("closure-names-a-path")]
+    assert report.carry.carried == 1
+
+
+def test_a_des_subcommand_no_path_evidences_is_advisory_not_a_rejection(
+    repo, other_product_work, tmp_path
+):
+    """`des next` ships in `deliver_loop_projection.py`: the fragment can miss.
+
+    A subcommand name is matched by heuristic fragments, so an absent match is
+    a weaker signal than an absent path and must not block. It still may never
+    be counted as carrying the claim.
+    """
+    doc = _doc(
+        tmp_path,
+        nodi=(
+            f"| `D41` | loop | SEMPLIFICA | M | FATTO | "
+            f"`{other_product_work}` — `des next` |"
+        ),
+    )
+
+    report = _run(doc, repo)
+
+    advisories = [
+        f
+        for f in report.by_severity(Severity.ADVISORY)
+        if f.rule == "closure-names-a-subcommand-no-path-evidences"
+    ]
+    assert len(advisories) == 1
+    assert report.verdict is Verdict.COHERENT
+    assert report.carry.carried == 0
+    assert report.carry.not_carried == 0
+    assert report.carry.unmatched == 1
 
 
 # --------------------------------------------------------------------------

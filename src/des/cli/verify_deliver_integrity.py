@@ -38,6 +38,7 @@ from des.application.feature_end_na_marker_reconciliation import (
 )
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.domain.repo_path_resolver import feature_delta_path
+from des.domain.telemetry_paths import LedgerFamily, ledger_dir, ledger_path
 from des.ports.driven_ports.commit_trailer_read_port import (
     CommitTrailerReadPort,
     Indeterminate,
@@ -136,16 +137,16 @@ def _find_at_completion_ledger(
 
     Returns the ledger path, or None when no unambiguous ledger is found.
     """
-    ledger_dir = project_dir / ".nwave" / "telemetry" / "atdd-pure"
-    if not ledger_dir.is_dir():
+    at_ledger_dir = ledger_dir(project_dir, LedgerFamily.ATDD_PURE)
+    if not at_ledger_dir.is_dir():
         return None
     if feature_id is not None:
-        named = ledger_dir / f"{feature_id}.jsonl"
+        named = at_ledger_dir / f"{feature_id}.jsonl"
         if named.is_file():
             return named
         if explicit:
             return None
-    ledgers = sorted(ledger_dir.glob("*.jsonl"))
+    ledgers = sorted(at_ledger_dir.glob("*.jsonl"))
     return ledgers[0] if len(ledgers) == 1 else None
 
 
@@ -210,10 +211,10 @@ def _foreign_owned_slices(project_dir: Path, *, own_ledger: Path) -> frozenset[s
         LedgerIntegrityViolation,
     )
 
-    ledger_dir = project_dir / ".nwave" / "telemetry" / "atdd-pure"
+    at_ledger_dir = ledger_dir(project_dir, LedgerFamily.ATDD_PURE)
     own = own_ledger.resolve()
     foreign: set[str] = set()
-    for ledger_file in sorted(ledger_dir.glob("*.jsonl")):
+    for ledger_file in sorted(at_ledger_dir.glob("*.jsonl")):
         if ledger_file.resolve() == own:
             continue
         other = AtCompletionLedger(ledger_file.stem, project_dir)
@@ -360,7 +361,7 @@ def _prose_delivered_slices(project_dir: Path, feature_id: str) -> frozenset[str
     it. Un-gameable: the record is hash-stamped + reviewer-attested, NOT the
     hand-editable ``Status`` column. Returns the empty set when no ledger exists.
     """
-    ledger = project_dir / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
+    ledger = ledger_path(project_dir, LedgerFamily.ATDD_PURE, feature_id)
     if not ledger.is_file():
         return frozenset()
     delivered: set[str] = set()
@@ -396,7 +397,7 @@ def _slice_commit_verified_slices(project_dir: Path, feature_id: str) -> frozens
     `_prose_delivered_slices`'s raw-JSONL ledger scan. Returns the empty set
     when no ledger exists.
     """
-    ledger = project_dir / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
+    ledger = ledger_path(project_dir, LedgerFamily.ATDD_PURE, feature_id)
     if not ledger.is_file():
         return frozenset()
     delivered: set[str] = set()
@@ -504,18 +505,18 @@ def _verify_atdd_pure(
 
     explicit = feature_id is not None
     resolved_feature_id = feature_id or _derive_feature_id(project_dir)
-    ledger_dir = project_dir / ".nwave" / "telemetry" / "atdd-pure"
-    ledger_path = _find_at_completion_ledger(
+    at_ledger_dir = ledger_dir(project_dir, LedgerFamily.ATDD_PURE)
+    at_ledger_path = _find_at_completion_ledger(
         project_dir, resolved_feature_id, explicit=explicit
     )
 
-    if ledger_path is None:
+    if at_ledger_path is None:
         if explicit:
             print(
                 "INTEGRITY VIOLATION: the AT-completion ledger is missing for "
                 f"feature '{resolved_feature_id}'.\n"
                 f"  - expected the append-only JSONL ledger at "
-                f"{ledger_dir / f'{resolved_feature_id}.jsonl'}\n"
+                f"{at_ledger_dir / f'{resolved_feature_id}.jsonl'}\n"
                 "  - the atdd_pure DELIVER spine records audit telemetry in the "
                 "AT-completion ledger (ADR-028 D3); without it the feature has "
                 "no verifiable integrity trace. The verifier targets THIS "
@@ -525,7 +526,7 @@ def _verify_atdd_pure(
         else:
             print(
                 "INTEGRITY VIOLATION: cannot determine which feature to verify.\n"
-                f"  - the AT-completion telemetry directory {ledger_dir} holds "
+                f"  - the AT-completion telemetry directory {at_ledger_dir} holds "
                 "more than one feature ledger (or none)\n"
                 "  - pass --feature-id <id> so the verifier targets exactly "
                 "that feature's ledger; it will NOT fall through to an "
@@ -536,7 +537,7 @@ def _verify_atdd_pure(
     # The ledger may have been resolved via the single-ledger fallback (no
     # explicit / no derived id). Bind the feature id to the located ledger so
     # the feature-end read below targets the file actually verified.
-    resolved_feature_id = ledger_path.stem
+    resolved_feature_id = at_ledger_path.stem
 
     from des.adapters.driven.logging.at_completion_ledger import (
         AtCompletionLedger,
@@ -644,6 +645,11 @@ def _verify_atdd_pure(
         shipped: frozenset[str] = frozenset()
     else:
         shipped = shipped_or_indeterminate
+    # F-PUSH-GATE-SLICE-ATTRIBUTION: named third state (GDP-8 arity corollary)
+    # for a shipped-unverified slice this feature cannot positively claim.
+    # Populated below; carried into the eventual FeatureReconciled verdict so
+    # it reaches the AGGREGATE output even when it never blocks the push.
+    unattributable_shipped_slices: list[str] = []
     if shipped:
         # F-DELIVER-INTEGRITY-LEDGER-TARGETING: start from the loud-safe
         # `shipped - verified` and SUBTRACT only slices POSITIVELY owned by
@@ -655,8 +661,61 @@ def _verify_atdd_pure(
         # other feature's ledger, so it survives and is still reported (the
         # loud-safe done-gate). An isolated single-feature repo has an empty
         # `foreign_owned`, so the formula degenerates to `shipped - verified`.
-        foreign_owned = _foreign_owned_slices(project_dir, own_ledger=ledger_path)
-        unreconciled = sorted((shipped - verified) - foreign_owned)
+        foreign_owned = _foreign_owned_slices(project_dir, own_ledger=at_ledger_path)
+        candidate_unreconciled = sorted((shipped - verified) - foreign_owned)
+        # F-PUSH-GATE-SLICE-ATTRIBUTION: `shipped` walks the WHOLE git log
+        # (unbounded -- every Slice-Id trailer ever merged into this branch's
+        # history) while `verified`/`foreign_owned` are read from LEDGER FILES
+        # that are per-worktree and gitignored (feedback_telemetry_ledgers_
+        # dont_travel_with_merge). A worktree that only ever ran ONE feature
+        # has no ledger for any co-resident feature merged upstream of its
+        # fork point, so those foreign slice-ids survive the subtraction above
+        # and get misattributed to THIS feature -- reproduced empirically: a
+        # 1-slice feature (its own Slice-Plan declares only slice-01) saw 15
+        # unrelated slice-ids (slice-00..slice-14, none of them slice-01)
+        # reported as ITS unreconciled debt, purely an artifact of which
+        # ledgers happened to be locally on disk.
+        #
+        # The fix keys ownership on a PROPERTY that travels with the feature's
+        # own git-free tree at HEAD, not on ledger-file presence: the feature's
+        # OWN declared Slice-Plan (`_declared_slice_plan_slice_ids`, read from
+        # its `feature-delta.md`, the same source the reconciled-slices report
+        # below already trusts). A candidate slice-id is only ever this
+        # feature's genuine debt when the feature's OWN plan claims it; every
+        # other candidate is NOT a designation flip to "pass" -- it is the
+        # distinct `could-not-attribute` state (GDP-8), named and surfaced,
+        # never silently dropped and never silently blamed on this feature.
+        #
+        # A feature with NO Slice-Plan (classic / no feature-delta) offers no
+        # positive membership signal to filter on -- `declared` is then empty
+        # and the legacy unfiltered behavior is preserved byte-for-byte (this
+        # fix narrows attribution only where a real ownership signal exists;
+        # it never widens a refusal that passed before).
+        if candidate_unreconciled:
+            declared = frozenset(
+                _declared_slice_plan_slice_ids(project_dir, resolved_feature_id)
+            )
+            if declared:
+                unreconciled = [s for s in candidate_unreconciled if s in declared]
+                unattributable_shipped_slices = [
+                    s for s in candidate_unreconciled if s not in declared
+                ]
+            else:
+                unreconciled = candidate_unreconciled
+        else:
+            unreconciled = []
+        if unattributable_shipped_slices:
+            print(
+                "Warning: "
+                f"{len(unattributable_shipped_slices)} shipped Slice-Id "
+                f"commit(s) {unattributable_shipped_slices} carry no matching "
+                f"SliceCommitVerified record and are NOT declared in "
+                f"{resolved_feature_id!r}'s own Slice-Plan -- could-not-"
+                "attribute (likely another co-resident feature's slice-id "
+                "whose ledger is not on disk in this worktree, "
+                "F-PUSH-GATE-SLICE-ATTRIBUTION). Not counted as this "
+                "feature's debt; does not block this push by itself."
+            )
         if unreconciled:
             print(
                 json.dumps(
@@ -664,6 +723,7 @@ def _verify_atdd_pure(
                         "event": "FeatureUnreconciled",
                         "feature_id": resolved_feature_id,
                         "unreconciled_slices": unreconciled,
+                        "unattributable_shipped_slices": unattributable_shipped_slices,
                         "error": (
                             f"feature {resolved_feature_id!r} has Slice-Id "
                             f"commit(s) for {unreconciled} with no matching "
@@ -859,18 +919,20 @@ def _verify_atdd_pure(
         # to `shipped` (its historical behaviour, unchanged).
         declared = _declared_slice_plan_slice_ids(project_dir, resolved_feature_id)
         reconciled_ids = sorted(declared) if declared else sorted(shipped)
-        print(
-            json.dumps(
-                {
-                    "event": "FeatureReconciled",
-                    "feature_id": resolved_feature_id,
-                    "reconciled_slices": reconciled_ids,
-                }
-            )
-        )
+        verdict: dict[str, object] = {
+            "event": "FeatureReconciled",
+            "feature_id": resolved_feature_id,
+            "reconciled_slices": reconciled_ids,
+        }
+        # GDP-8 arity corollary: a could-not-attribute third state reaches the
+        # AGGREGATE verdict even on the passing path -- never silently dropped
+        # once the sweep clears (F-PUSH-GATE-SLICE-ATTRIBUTION).
+        if unattributable_shipped_slices:
+            verdict["unattributable_shipped_slices"] = unattributable_shipped_slices
+        print(json.dumps(verdict))
         return 0
     print(
-        f"All slices have a complete AT-completion ledger trace: {ledger_path} "
+        f"All slices have a complete AT-completion ledger trace: {at_ledger_path} "
         "and the feature-end cycle recorded its refactor + review verdict "
         "(atdd_pure: roadmap.json and execution-log.json cross-reference skipped)."
     )

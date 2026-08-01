@@ -156,3 +156,23 @@ def test_targeted_manifest_labels_each_host_without_claude_only_claims(
     assert "Installation directory:" not in manifest_text
     assert "'/nw-discuss'" not in manifest_text
     assert ("Claude Code agents: 3" in manifest_text) is expects_claude
+
+
+def test_claude_manifest_accepts_the_all_target_install_context(tmp_path):
+    """An all-target install can finish its Claude manifest without error.
+
+    Native targets own their adapter-specific manifests; the shared target set
+    is nevertheless part of the caller/writer contract so that the Claude
+    legacy manifest does not abort a successful Codex/Copilot/OpenCode install.
+    """
+    claude_dir = tmp_path / ".claude"
+    _seed_installed_tree(claude_dir, agents_count=1, commands_count=1, skills_count=1)
+
+    ManifestWriter.write_install_manifest(
+        claude_dir,
+        None,
+        tmp_path,
+        target_platforms={"claude_code", "codex", "copilot", "opencode"},
+    )
+
+    assert (claude_dir / "nwave-manifest.txt").is_file()

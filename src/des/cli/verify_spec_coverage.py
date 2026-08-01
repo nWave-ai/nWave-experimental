@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import fnmatch
 import io
 import re
 import sys
@@ -68,6 +69,21 @@ import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
+from des.application.feature_at_files import (
+    feature_tag_files,
+    feature_tagged_test_files,
+)
+from des.application.spec_coverage_attribution import (
+    EmptyAttribution,
+    NoDeclaredIdentity,
+    Scoped,
+    WrongScope,
+    aggregate_covered_ids,
+    declared_checklist_feature_id,
+    resolve_attribution,
+    resolve_feature_identity,
+    uncovered_requirements,
+)
 from des.cli._emit_json import emit_json_line as _emit
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.domain.requirement_id import (
@@ -133,10 +149,12 @@ class _Requirement:
     line: int
 
 
-def _indeterminate(what: str, why: str, how: str) -> int:
+def _indeterminate(
+    what: str, why: str, how: str, *, event: str = "SpecCoverageIndeterminate"
+) -> int:
     _emit(
         {
-            "event": "SpecCoverageIndeterminate",
+            "event": event,
             "what": what,
             "why": why,
             "how": how,
@@ -434,6 +452,22 @@ _AT_FILE_GLOBS = (
 )
 
 
+def is_at_file(path: Path) -> bool:
+    """True iff ``path``'s filename matches the AT-file convention this gate
+    discovers (``_AT_FILE_GLOBS``: pytest / TS-JS / Gherkin).
+
+    The ONE predicate ``_discover`` (D) and attribution resolution (A) must
+    share: ``feature_at_files.feature_tagged_test_files`` matches ANY file
+    whose head window carries the tag, with no filename filter -- a doc, a
+    checklist, or a cache blob can legitimately enter that raw scan. Without
+    this filter such a file could enter A even though it can never enter D
+    (D is glob-filtered), corrupting the WRONG-SCOPE 'point --at-dir at
+    one of: ...' remediation with directories that hold no AT (GDP-4: the
+    HOW must name a real fix, not mislead).
+    """
+    return any(fnmatch.fnmatch(path.name, pattern) for pattern in _AT_FILE_GLOBS)
+
+
 def _discover(at_dir: Path) -> list[Path]:
     """AT files under a directory: pytest + TS/JS test conventions + Gherkin.
 
@@ -489,6 +523,7 @@ def _refuse(
     uncovered: list[_Requirement],
     requirements: list[_Requirement],
     counts: dict[str, dict[str, int]],
+    ignored_count: int,
 ) -> int:
     mandatory_uncovered = [
         category
@@ -521,6 +556,7 @@ def _refuse(
             ],
             "mandatory_categories_uncovered": mandatory_uncovered,
             "counts": counts,
+            "ignored_non_attributed_files": ignored_count,
         }
     )
     for req in uncovered:
@@ -533,13 +569,18 @@ def _refuse(
     return _EXIT_REFUSED
 
 
-def _verify(requirements: list[_Requirement], counts: dict[str, dict[str, int]]) -> int:
+def _verify(
+    requirements: list[_Requirement],
+    counts: dict[str, dict[str, int]],
+    ignored_count: int,
+) -> int:
     _emit(
         {
             "event": "SpecCoverageVerified",
             "requirements_total": len(requirements),
             "requirements_covered": len(requirements),
             "counts": counts,
+            "ignored_non_attributed_files": ignored_count,
         }
     )
     per_category = ", ".join(
@@ -551,6 +592,28 @@ def _verify(requirements: list[_Requirement], counts: dict[str, dict[str, int]])
         f"AT-covered ({per_category})"
     )
     return _EXIT_VERIFIED
+
+
+def _resolve_attributed_files(repo: Path, feature_id: str) -> tuple[Path, ...]:
+    """A = files SSOT-attributed to ``feature_id`` -- REUSES
+    ``feature_at_files`` (the existing ``@feature-{id}`` head-tag SSOT),
+    never a private re-scan.
+
+    ``feature_tagged_test_files`` matches ANY file whose head window carries
+    the tag, no filename filter (a doc, a checklist, a cache blob can all
+    legitimately match). Filtered here through ``is_at_file`` -- the SAME
+    predicate ``_discover`` (D) uses -- so A can never contain a file D
+    could never contain; without this, a non-AT match corrupts the
+    WRONG-SCOPE remediation with a directory holding no AT.
+    """
+    return tuple(
+        sorted(
+            p
+            for p in set(feature_tag_files(repo, feature_id))
+            | set(feature_tagged_test_files(repo, feature_id))
+            if is_at_file(p)
+        )
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -571,19 +634,45 @@ def main(argv: list[str] | None = None) -> int:
             "exact ID in the test docstring; Gherkin @covers-R<n> or "
             "@covers-R-S01-03 "
             "tag. The six mandatory categories (ui, e2e, nfr, security, "
-            "validation, build) are called out explicitly when uncovered."
+            "validation, build) are called out explicitly when uncovered. "
+            "Attribution is a DECLARED BINDING: a checklist row is covered "
+            "only by an AT that self-identifies (via a line-anchored "
+            "'@feature-<id>' checklist declaration, or --feature-id) as "
+            "belonging to THIS feature -- --at-dir can only narrow that "
+            "corpus, never grant attribution."
         ),
     )
     parser.add_argument(
         "--checklist",
-        required=True,
-        help="Requirement checklist file extracted at DISTILL-open (P3.1).",
+        default=None,
+        help=(
+            "Requirement checklist file extracted at DISTILL-open (P3.1). "
+            "Omit when --feature-id is given -- it resolves to "
+            "docs/feature/<id>/distill/requirement-checklist.md."
+        ),
     )
     parser.add_argument(
         "--at-dir",
         action="append",
         default=[],
-        help="Directory of AT files (.py / .feature); repeatable.",
+        help=(
+            "Directory of AT files (.py / .feature); repeatable. A FILTER "
+            "that can only narrow the feature's own attributed AT corpus, "
+            "never a source of attribution. Omit to scan the feature's full "
+            "attributed corpus (requires --feature-id or a checklist "
+            "declaration)."
+        ),
+    )
+    parser.add_argument(
+        "--feature-id",
+        default=None,
+        help=(
+            "The feature identity attribution is scoped to. Overrides any "
+            "checklist-declared '@feature-<id>' identity. Given ALONE (no "
+            "--checklist, no --at-dir) resolves --checklist to "
+            "docs/feature/<id>/distill/requirement-checklist.md and scans "
+            "the feature's own attributed AT corpus."
+        ),
     )
     add_repo_root_argument(
         parser, "--repo", default=".", help="Path to the repository root."
@@ -591,34 +680,104 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     repo = Path(args.repo).resolve()
 
-    if not args.at_dir:
+    checklist_arg = args.checklist
+    if checklist_arg is None and args.feature_id is None:
+        return _indeterminate(
+            what="no --checklist and no --feature-id given",
+            why="the gate needs a requirement checklist to verify coverage against.",
+            how=(
+                "pass --checklist <path>, or --feature-id <id> to resolve "
+                "docs/feature/<id>/distill/requirement-checklist.md."
+            ),
+        )
+    if checklist_arg is None:
+        checklist_arg = (
+            f"docs/feature/{args.feature_id}/distill/requirement-checklist.md"
+        )
+
+    checklist_path = (repo / checklist_arg).resolve()
+    requirements_or_exit = _parse_checklist(checklist_path)
+    if isinstance(requirements_or_exit, int):
+        return requirements_or_exit
+    requirements = requirements_or_exit
+
+    declared = declared_checklist_feature_id(checklist_path)
+    feature_id = resolve_feature_identity(declared, args.feature_id)
+
+    if args.at_dir:
+        scanned_or_exit = _resolve_at_files(args.at_dir, repo)
+        if isinstance(scanned_or_exit, int):
+            return scanned_or_exit
+        scanned_files: tuple[Path, ...] = tuple(scanned_or_exit)
+    elif feature_id is None:
         return _indeterminate(
             what="no AT corpus given",
             why="--at-dir was not provided; there is nothing to scan.",
             how="pass at least one --at-dir <dir> holding the ATs.",
         )
+    else:
+        scanned_files = _resolve_attributed_files(repo, feature_id)
 
-    requirements_or_exit = _parse_checklist((repo / args.checklist).resolve())
-    if isinstance(requirements_or_exit, int):
-        return requirements_or_exit
-    requirements = requirements_or_exit
+    attributed_files = (
+        _resolve_attributed_files(repo, feature_id) if feature_id is not None else ()
+    )
+    outcome = resolve_attribution(feature_id, scanned_files, attributed_files)
 
-    files_or_exit = _resolve_at_files(args.at_dir, repo)
-    if isinstance(files_or_exit, int):
-        return files_or_exit
+    if isinstance(outcome, NoDeclaredIdentity):
+        return _indeterminate(
+            what=f"checklist {checklist_path} declares no '@feature-<id>' identity",
+            why=(
+                "no feature identity means there is no F to attribute AT "
+                "files against -- a computed verdict without an identity "
+                "would decide on the DESIGNATION (an id token appearing "
+                "somewhere), never the PROPERTY (this feature's own ATs "
+                "cover this feature's rows)."
+            ),
+            how=(
+                "add a line-anchored '@feature-<id>' declaration (its own "
+                "line, in the checklist's head) or pass --feature-id <id> "
+                "explicitly."
+            ),
+        )
+    if isinstance(outcome, EmptyAttribution):
+        return _indeterminate(
+            what=f"no file anywhere under {repo} declares '@feature-{outcome.feature_id}'",
+            why=(
+                "A = ∅ -- attribution is empty even though the identity is "
+                "known; a computed verdict without any attributed file "
+                "would be vacuous."
+            ),
+            how=(
+                f"head-tag the feature's own AT file(s) with "
+                f"'@feature-{outcome.feature_id}' (a '# @feature-{outcome.feature_id}' "
+                "comment for pytest, or the Gherkin file-level tag before "
+                "'Feature:')."
+            ),
+        )
+    if isinstance(outcome, WrongScope):
+        dirs = sorted({str(p.parent) for p in outcome.attributed_files})
+        return _indeterminate(
+            what=(f"--at-dir scanned no file attributed to '{outcome.feature_id}'"),
+            why=(
+                "S = D ∩ A = ∅ though A != ∅ -- the scanned corpus and the "
+                "feature's attributed AT files do not intersect; the "
+                "operator pointed --at-dir at the wrong corpus."
+            ),
+            how=f"point --at-dir at one of: {', '.join(dirs)}",
+            event="SpecCoverageWrongScope",
+        )
 
-    covered: set[str] = set()
-    for path in files_or_exit:
-        ids_or_exit = _covered_ids_in_file(path)
-        if isinstance(ids_or_exit, int):
-            return ids_or_exit
-        covered |= ids_or_exit
+    assert isinstance(outcome, Scoped)
+    covered_or_exit = aggregate_covered_ids(outcome.scoped_files, _covered_ids_in_file)
+    if isinstance(covered_or_exit, int):
+        return covered_or_exit
+    covered = covered_or_exit
 
     counts = _category_counts(requirements, covered)
-    uncovered = [req for req in requirements if req.req_id not in covered]
+    uncovered = uncovered_requirements(requirements, covered)
     if uncovered:
-        return _refuse(uncovered, requirements, counts)
-    return _verify(requirements, counts)
+        return _refuse(uncovered, requirements, counts, outcome.ignored_count)
+    return _verify(requirements, counts, outcome.ignored_count)
 
 
 if __name__ == "__main__":

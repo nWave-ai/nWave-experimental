@@ -1,8 +1,8 @@
 """Regression -- the orchestrator-affordance refresh is DES-runtime-coupled,
 30-minute (not 15), and never fires on `/clear`/`/compact`.
 
-DEFECT (root-caused): the "how to use nWave" affordance (`nWave/data/
-orchestrator-affordance/{spine-discipline.md, des-command-catalog.md}`) is
+DEFECT (root-caused): the "how to use nWave" affordance (every `*.md` asset
+under `nWave/data/orchestrator-affordance/`) is
 injected into the model's context ONLY by the DES runtime hooks
 (`src/des/adapters/drivers/hooks/{session_start_handler,
 user_prompt_submit_handler}.py`), which means:
@@ -53,6 +53,30 @@ current failure is a genuine, semantic `AssertionError` naming the missing
 script/behaviour -- never a bare interpreter traceback or an import error
 on THIS test file itself (this file imports only stdlib + already-existing
 `des`/`scripts.*` modules).
+
+EXTENSION (2026-07-30, `bugfix/affordance-injection-serves-stale-content`):
+sections 7-8 below cover a SEPARATE, later-discovered defect in the SAME
+resolver -- `_resolve_assets_dir()` returns the first candidate that merely
+EXISTS, never the one that is CURRENT. Two properties:
+
+  P1 (section 7) -- when BOTH an installed Claude-scoped root
+  (`<claude_dir>/lib/nWave/data/orchestrator-affordance`) and a host-neutral
+  root (`~/.nwave/nWave/data/orchestrator-affordance`) exist and disagree,
+  the hook must never silently serve the staler one, and must announce the
+  disagreement in-band (Claude Code discards hook stderr, so an in-band
+  notice is the only observable channel). A dev-checkout root disagreeing
+  with a global install is NOT a divergence -- that ordering
+  (script-local beats machine-global) is intentional and must survive.
+
+  P2 (section 8) -- the shipped `50-standing-loops.md` asset opens with a
+  `<EXTREMELY-IMPORTANT>` / "TRUNCATED PREVIEW?" recovery pointer explaining
+  what to do when the harness's ~2048-byte admission preview cuts the
+  payload. Fixing P1 alone (reordering/deduping candidates) does nothing to
+  guarantee this pointer's BYTE POSITION inside the assembled payload --
+  measured (2026-07-30, real shipped assets) at ~15x past the preview
+  window. Asserted on POSITION, never on WHICH FILE carries the pointer, so
+  it cannot be satisfied by pinning a filename the fix is free to rename,
+  relocate, or hoist.
 """
 
 from __future__ import annotations
@@ -70,6 +94,11 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _SCRIPT = _REPO_ROOT / "scripts" / "hooks" / "orchestrator_affordance_refresh.py"
+# R-8: the shared reconciliation module the script imports as a
+# same-directory sibling. Ships flat beside it via `DESPlugin.DES_HOOKS`.
+_RESOLUTION_MODULE = (
+    _REPO_ROOT / "scripts" / "hooks" / "orchestrator_affordance_resolution.py"
+)
 _SPINE_DISCIPLINE_MARKER = "Orchestrator discipline"
 _CATALOG_DES_NEXT_MARKER = "des next"
 _CATALOG_EXAMINE_FIXTURE_MARKER = "des examine-fixture"
@@ -122,8 +151,9 @@ def test_session_start_injects_valid_json_containing_the_affordance_markers(
     """`orchestrator_affordance_refresh.py SessionStart` must print a valid
     Claude Code `hookSpecificOutput` envelope whose `additionalContext`
     contains a stable marker from BOTH shipped assets -- proving the
-    concatenation of `spine-discipline.md` + `des-command-catalog.md`
-    actually reaches the model's context, not just that a file was read.
+    concatenation of the `spine-discipline` and `des-command-catalog` role
+    assets actually reaches the model's context, not just that a file was
+    read.
     """
     result = _run(_SCRIPT, "SessionStart", cwd=tmp_path)
 
@@ -141,13 +171,13 @@ def test_session_start_injects_valid_json_containing_the_affordance_markers(
 
     additional_context = hook_output.get("additionalContext", "")
     assert _SPINE_DISCIPLINE_MARKER in additional_context, (
-        "additionalContext must contain the spine-discipline.md heading "
-        f"marker {_SPINE_DISCIPLINE_MARKER!r} -- got "
+        "additionalContext must contain the spine-discipline asset's "
+        f"heading marker {_SPINE_DISCIPLINE_MARKER!r} -- got "
         f"additionalContext={additional_context!r}"
     )
     assert _CATALOG_DES_NEXT_MARKER in additional_context, (
-        "additionalContext must contain the des-command-catalog.md marker "
-        f"{_CATALOG_DES_NEXT_MARKER!r} -- got "
+        "additionalContext must contain the des-command-catalog asset's "
+        f"marker {_CATALOG_DES_NEXT_MARKER!r} -- got "
         f"additionalContext={additional_context!r}"
     )
 
@@ -536,4 +566,474 @@ def test_session_start_resolves_assets_from_host_neutral_runtime_when_installed_
         "THE DEFECT: host-neutral install assets exist on disk but were "
         f"never found -- got additionalContext={additional_context!r}, "
         f"stderr={result.stderr!r}"
+    )
+
+
+# ===========================================================================
+# 7. DIVERGED INSTALL ROOTS (P1) -- existence is not currency
+#
+# DEFECT (measured live, 2026-07-30): `_resolve_assets_dir()` returns the
+# FIRST candidate that merely EXISTS. On a machine carrying BOTH install
+# roots -- `<claude_dir>/lib/nWave/data/orchestrator-affordance/` (written
+# only by an install whose target platforms include `claude_code`) and
+# `~/.nwave/nWave/data/orchestrator-affordance/` (written only by a
+# host-neutral install) -- the Claude-scoped root wins unconditionally.
+# `DESPlugin._runtime_python_dir` ships the assets to exactly ONE of those
+# roots per run and `_secondary_runtime_python_dir` mirrors only for a MIXED
+# target, so a codex-only install refreshes one root and leaves the other
+# frozen. Every hook firing then serves stale content, silently, at exit 0.
+#
+# The candidate ORDER is not the bug and is deliberately preserved: a
+# dev-checkout tree must still outrank an unrelated global install (the
+# shadowing protection `_candidate_assets_dirs()`'s docstring exists for).
+# What is corrected is applying that order between two INSTALL outputs,
+# which are obliged to agree.
+# ===========================================================================
+
+
+_DIVERGENCE_MARKER = "DIVERGED"
+_STALE_MARKER = "STALE-CONTENT-MUST-NOT-BE-SERVED"
+_FRESH_MARKER = "FRESH-CONTENT-MUST-BE-SERVED"
+
+
+def _write_affordance_tree(root: Path, *, marker: str, mtime: float) -> Path:
+    """One `orchestrator-affordance/` tree whose content and age are both pinned."""
+    root.mkdir(parents=True, exist_ok=True)
+    asset = root / "00-spine-discipline.md"
+    asset.write_text(f"# {_SPINE_DISCIPLINE_MARKER}\n{marker}\n", encoding="utf-8")
+    os.utime(asset, (mtime, mtime))
+    return root
+
+
+def _installed_layout_script(claude_dir: Path) -> Path:
+    """The script at the exact path an install ships it to: `<claude_dir>/scripts/`.
+
+    Candidate 1 (`<claude_dir>/lib/nWave/...`) is two `.parent` hops from
+    here, so this layout is what makes the Claude-scoped install root
+    reachable at all.
+
+    Ships the R-8 shared reconciliation module as a same-directory sibling
+    too: `DESPlugin.DES_HOOKS` puts both files flat in this same directory on
+    a real install, and the script imports the sibling to reach the
+    reconciliation rule. A fixture that omits it is not "an installed copy of
+    this script" -- it is a relocated one, which exercises the fail-open
+    degradation instead of the shipped behaviour.
+    """
+    scripts_dir = claude_dir / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    script = scripts_dir / _SCRIPT.name
+    script.write_text(_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+    (scripts_dir / _RESOLUTION_MODULE.name).write_text(
+        _RESOLUTION_MODULE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    return script
+
+
+def _prompt_submit_context(script: Path, *, home: Path, cwd: Path) -> str:
+    """`additionalContext` from a UserPromptSubmit firing (no sentinel => elapsed)."""
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+    result = _run(script, "UserPromptSubmit", cwd=cwd, env=env)
+    assert result.returncode == 0, (
+        "UserPromptSubmit must exit 0 (fail-open) -- got returncode="
+        f"{result.returncode}, stderr={result.stderr!r}"
+    )
+    payload = _parse_json_or_fail(result.stdout)
+    return payload.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+
+def test_stale_claude_scoped_install_root_never_shadows_a_fresher_host_neutral_one(
+    tmp_path: Path,
+) -> None:
+    """THE DEFECT, byte-for-byte: both install roots present, the
+    Claude-scoped one demonstrably older, and the resolver serves it anyway
+    because it merely comes first in the candidate list.
+    """
+    home = tmp_path / "home"
+    claude_dir = home / ".claude"
+    script = _installed_layout_script(claude_dir)
+    now = time.time()
+    _write_affordance_tree(
+        claude_dir / "lib" / "nWave" / "data" / "orchestrator-affordance",
+        marker=_STALE_MARKER,
+        mtime=now - 34 * 3600,
+    )
+    _write_affordance_tree(
+        home / ".nwave" / "nWave" / "data" / "orchestrator-affordance",
+        marker=_FRESH_MARKER,
+        mtime=now,
+    )
+
+    context = _prompt_submit_context(script, home=home, cwd=tmp_path)
+
+    assert _FRESH_MARKER in context, (
+        f"the fresher INSTALL root must be served -- got additionalContext={context!r}"
+    )
+    assert _STALE_MARKER not in context, (
+        "the 34-hour-stale INSTALL root must NOT be served -- got "
+        f"additionalContext={context!r}"
+    )
+    assert _DIVERGENCE_MARKER in context, (
+        "two disagreeing install roots must degrade LOUD in-band (GDP-6): "
+        "Claude Code discards hook stderr, so a stderr-only diagnostic can "
+        f"never be observed to fire -- got additionalContext={context!r}"
+    )
+
+
+def test_diverged_install_roots_are_announced_even_when_the_priority_pick_is_fresher(
+    tmp_path: Path,
+) -> None:
+    """Divergence is the defect, not merely being served the older tree.
+
+    When the Claude-scoped root happens to be the fresher one the session
+    reads correct content, but the machine still carries an install root
+    that a host-neutral session would read stale. Announcing only in the
+    direction that hurts THIS session would make the notice a function of
+    who is looking rather than of the machine's state.
+    """
+    home = tmp_path / "home"
+    claude_dir = home / ".claude"
+    script = _installed_layout_script(claude_dir)
+    now = time.time()
+    _write_affordance_tree(
+        claude_dir / "lib" / "nWave" / "data" / "orchestrator-affordance",
+        marker=_FRESH_MARKER,
+        mtime=now,
+    )
+    _write_affordance_tree(
+        home / ".nwave" / "nWave" / "data" / "orchestrator-affordance",
+        marker=_STALE_MARKER,
+        mtime=now - 34 * 3600,
+    )
+
+    context = _prompt_submit_context(script, home=home, cwd=tmp_path)
+
+    assert _FRESH_MARKER in context, f"got additionalContext={context!r}"
+    assert _DIVERGENCE_MARKER in context, (
+        "a diverged pair of install roots must be announced regardless of "
+        f"which one won -- got additionalContext={context!r}"
+    )
+
+
+def test_agreeing_install_roots_produce_no_divergence_notice(tmp_path: Path) -> None:
+    """No false positive: identical content in both roots is the healthy
+    state a correct install produces, and must stay silent however far apart
+    the two mtimes are. (Sibling-branch pin -- must keep passing after fix.)
+    """
+    home = tmp_path / "home"
+    claude_dir = home / ".claude"
+    script = _installed_layout_script(claude_dir)
+    now = time.time()
+    _write_affordance_tree(
+        claude_dir / "lib" / "nWave" / "data" / "orchestrator-affordance",
+        marker=_FRESH_MARKER,
+        mtime=now - 34 * 3600,
+    )
+    _write_affordance_tree(
+        home / ".nwave" / "nWave" / "data" / "orchestrator-affordance",
+        marker=_FRESH_MARKER,
+        mtime=now,
+    )
+
+    context = _prompt_submit_context(script, home=home, cwd=tmp_path)
+
+    assert _FRESH_MARKER in context, f"got additionalContext={context!r}"
+    assert _DIVERGENCE_MARKER not in context, (
+        "identical content in both install roots is NOT a divergence -- "
+        f"got additionalContext={context!r}"
+    )
+
+
+def test_a_global_install_never_outranks_a_dev_checkout_even_when_fresher(
+    tmp_path: Path,
+) -> None:
+    """The shadowing protection the candidate order exists for, held intact.
+
+    A dev checkout is deliberately at whatever revision the operator checked
+    out, so its assets being OLDER than a global install is expected, not a
+    divergence. Reordering the candidates by freshness would have "fixed"
+    the stale-install bug by reintroducing exactly this one. (Sibling-branch
+    pin -- must keep passing after fix.)
+    """
+    home = tmp_path / "home"
+    repo_root = tmp_path / "checkout"
+    hooks_dir = repo_root / "scripts" / "hooks"
+    hooks_dir.mkdir(parents=True)
+    script = hooks_dir / _SCRIPT.name
+    script.write_text(_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+    now = time.time()
+    _write_affordance_tree(
+        repo_root / "nWave" / "data" / "orchestrator-affordance",
+        marker=_STALE_MARKER,
+        mtime=now - 34 * 3600,
+    )
+    _write_affordance_tree(
+        home / ".nwave" / "nWave" / "data" / "orchestrator-affordance",
+        marker=_FRESH_MARKER,
+        mtime=now,
+    )
+
+    context = _prompt_submit_context(script, home=home, cwd=tmp_path)
+
+    assert _STALE_MARKER in context, (
+        "the dev checkout's own assets must win over an unrelated global "
+        f"install regardless of mtime -- got additionalContext={context!r}"
+    )
+    assert _FRESH_MARKER not in context, (
+        "the global install must not shadow the dev checkout -- got "
+        f"additionalContext={context!r}"
+    )
+    assert _DIVERGENCE_MARKER not in context, (
+        "a checkout disagreeing with a global install is expected, not a "
+        f"divergence -- got additionalContext={context!r}"
+    )
+
+
+def _prompt_submit_context_via_runpy(script: Path, *, home: Path, cwd: Path) -> str:
+    """`additionalContext`, driven the way the REGISTERED hook command drives it.
+
+    Claude Code's `settings.json` entry for this hook does not hand the script
+    to the interpreter as a path -- it runs
+    `python3 -c "... runpy.run_path(<script>, run_name='__main__')"` from
+    whatever cwd the session happens to be in. `runpy.run_path` leaves
+    `sys.path[0]` pointing at that cwd, NOT at the script's own directory.
+
+    Driving via `_run` alone cannot observe the difference: passing a script
+    path to the interpreter DOES put its directory on `sys.path`, so a
+    same-directory sibling that the script fails to find in the SHIPPED
+    invocation still resolves under the test's invocation and the whole suite
+    stays green while the real install silently loses the behaviour.
+    """
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+    program = (
+        "import runpy, sys;"
+        f"sys.argv=[{script.name!r}, 'UserPromptSubmit'];"
+        f"runpy.run_path({str(script)!r}, run_name='__main__')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        input="",
+        timeout=30,
+        env=env,
+    )
+    assert result.returncode == 0, (
+        "the registered runpy invocation must exit 0 (fail-open) -- got "
+        f"returncode={result.returncode}, stderr={result.stderr!r}"
+    )
+    payload = _parse_json_or_fail(result.stdout)
+    return payload.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+
+def test_divergence_is_still_announced_under_the_registered_runpy_invocation(
+    tmp_path: Path,
+) -> None:
+    """The reconciliation must survive the invocation Claude Code actually uses.
+
+    Measured 2026-08-01 on a real redirected-HOME install: the shipped
+    `settings.json` command runs this script through `runpy.run_path` from the
+    session's cwd, so a bare `import orchestrator_affordance_resolution`
+    resolved to nothing and the hook degraded to an unreconciled,
+    unannounced priority-order pick -- silently undoing the round-1 fix on
+    every real install, while every path-driven test stayed green.
+    """
+    home = tmp_path / "home"
+    claude_dir = home / ".claude"
+    script = _installed_layout_script(claude_dir)
+    now = time.time()
+    _write_affordance_tree(
+        claude_dir / "lib" / "nWave" / "data" / "orchestrator-affordance",
+        marker=_STALE_MARKER,
+        mtime=now - 34 * 3600,
+    )
+    _write_affordance_tree(
+        home / ".nwave" / "nWave" / "data" / "orchestrator-affordance",
+        marker=_FRESH_MARKER,
+        mtime=now,
+    )
+
+    context = _prompt_submit_context_via_runpy(script, home=home, cwd=tmp_path)
+
+    assert _FRESH_MARKER in context, (
+        "the fresher INSTALL root must be served under the registered "
+        f"invocation too -- got additionalContext={context!r}"
+    )
+    assert _DIVERGENCE_MARKER in context, (
+        "the divergence notice must survive `runpy.run_path` -- its absence "
+        "here means the shared reconciliation module was not reachable in the "
+        f"shipped invocation -- got additionalContext={context!r}"
+    )
+
+
+# ===========================================================================
+# 8. RECOVERY-POINTER ADMISSION-WINDOW SURVIVAL (P2)
+#
+# DEFECT: the `<EXTREMELY-IMPORTANT>` / question-form recovery block
+# tells the reader what to do when the harness's ~2048-byte admission
+# preview truncates the payload -- but that guidance is USELESS if it sits
+# outside the very preview the truncation leaves behind. The assets are
+# concatenated in `sorted(glob("*.md"))` order joined by `"\n\n"`, so a
+# rename that changes sort order silently moves the pointer's byte offset.
+# Measured on the real shipped assets (2026-07-30): the pointer sits far
+# outside a 2048-byte window.
+#
+# Property, not mechanism: these tests assert the pointer's BYTE POSITION in
+# the assembled `additionalContext`, never which asset file carries it or
+# where in `_candidate_assets_dirs()` order it lives. A fix that renames,
+# relocates, or hoists the block in the hook itself all satisfy this
+# unchanged; a fix that only reorders/dedupes install-root candidates (P1)
+# does not, because P1 never touches intra-payload byte position.
+# ===========================================================================
+
+
+_ADMITTED_PREVIEW_WINDOW_BYTES = 2048  # harness admission budget, RCA-measured
+# The block's STRUCTURAL opening tag, not a sentence inside it. `ccf3c9679`
+# rewrote the pointer's prose into question form and the old literal
+# ("TRUNCATED PREVIEW?") vanished from the shipped assets, turning this test
+# red without anything about the defect changing -- a marker that a wording
+# edit can delete was never the property under test.
+_RECOVERY_POINTER_MARKER = "<EXTREMELY-IMPORTANT>"
+
+
+def _byte_offset(haystack: str, marker: str) -> int:
+    """UTF-8 byte offset of `marker` in `haystack`, or -1 if absent.
+
+    Byte-based (not char-based) to match `_collect_affordance_payloads`'s own
+    `len(text.encode("utf-8"))` accounting -- the quantity the real harness
+    truncates on is bytes, not characters.
+    """
+    return haystack.encode("utf-8").find(marker.encode("utf-8"))
+
+
+def test_recovery_pointer_lands_within_the_admitted_preview_window_on_real_shipped_assets(
+    tmp_path: Path,
+) -> None:
+    """THE DEFECT, on the REAL production assets: drives the actual shipped
+    script against its actual shipped `nWave/data/orchestrator-affordance/`
+    dev-checkout assets (candidate 2 -- the only candidate reachable from
+    the real script's real repo location, verified absent-candidate-1 so
+    this is deterministic regardless of host state) and asserts the
+    recovery pointer's byte offset is within the admission window.
+    """
+    result = _run(_SCRIPT, "UserPromptSubmit", cwd=tmp_path)
+
+    assert result.returncode == 0, (
+        "UserPromptSubmit must exit 0 -- got returncode="
+        f"{result.returncode}, stderr={result.stderr!r}"
+    )
+    payload = _parse_json_or_fail(result.stdout)
+    additional_context = payload.get("hookSpecificOutput", {}).get(
+        "additionalContext", ""
+    )
+    assert additional_context, (
+        "expected a non-empty UserPromptSubmit injection against the real "
+        f"shipped assets -- got payload={payload!r}"
+    )
+
+    offset = _byte_offset(additional_context, _RECOVERY_POINTER_MARKER)
+    total_bytes = len(additional_context.encode("utf-8"))
+
+    assert offset != -1, (
+        "the recovery-pointer marker "
+        f"{_RECOVERY_POINTER_MARKER!r} must be present at all in the "
+        f"assembled payload -- got additionalContext={additional_context!r}"
+    )
+    assert offset < _ADMITTED_PREVIEW_WINDOW_BYTES, (
+        f"the recovery pointer sits at byte offset {offset} of "
+        f"{total_bytes} total -- outside the harness's "
+        f"{_ADMITTED_PREVIEW_WINDOW_BYTES}-byte admission preview window. "
+        "A reader who only ever sees the preview never sees the guidance "
+        "that tells them the rest was truncated and where to find it."
+    )
+
+
+def test_recovery_pointer_stays_within_window_when_its_asset_sorts_first(
+    tmp_path: Path,
+) -> None:
+    """Sibling-branch pin / tautology guard: isolated, synthetic assets,
+    decoupled from whatever the real `nWave/data/` content happens to be
+    tomorrow. When the recovery-pointer asset sorts FIRST, its offset is
+    small and the property holds TODAY -- proving the oracle is a genuine
+    measurement (it can pass), not a check that fails unconditionally.
+    """
+    isolated_root = tmp_path / "isolated-first"
+    isolated_script_dir = isolated_root / "scripts" / "hooks"
+    isolated_script_dir.mkdir(parents=True)
+    isolated_script = isolated_script_dir / _SCRIPT.name
+    isolated_script.write_text(_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+
+    assets_dir = isolated_root / "nWave" / "data" / "orchestrator-affordance"
+    assets_dir.mkdir(parents=True)
+    (assets_dir / "00-recovery.md").write_text(
+        f"{_RECOVERY_POINTER_MARKER} synthetic control asset\n", encoding="utf-8"
+    )
+    (assets_dir / "10-filler.md").write_text("PADDING-" * 500, encoding="utf-8")
+
+    isolated_env = os.environ.copy()
+    isolated_env["HOME"] = str(tmp_path / "empty-home-first")
+    result = _run(
+        isolated_script, "UserPromptSubmit", cwd=isolated_root, env=isolated_env
+    )
+
+    assert result.returncode == 0, (
+        f"must exit 0 -- got returncode={result.returncode}, stderr={result.stderr!r}"
+    )
+    payload = _parse_json_or_fail(result.stdout)
+    additional_context = payload.get("hookSpecificOutput", {}).get(
+        "additionalContext", ""
+    )
+    offset = _byte_offset(additional_context, _RECOVERY_POINTER_MARKER)
+
+    assert offset != -1, f"got additionalContext={additional_context!r}"
+    assert offset < _ADMITTED_PREVIEW_WINDOW_BYTES, (
+        f"synthetic control: marker sorts first, offset={offset} must be "
+        f"well within the window -- got additionalContext={additional_context!r}"
+    )
+
+
+def test_recovery_pointer_falls_outside_window_when_its_asset_sorts_last(
+    tmp_path: Path,
+) -> None:
+    """Sibling-branch pin / tautology guard, FAIL branch: isolated, synthetic
+    assets independent of the real repo's current content. When the
+    recovery-pointer asset sorts LAST behind >2048 bytes of filler, the
+    SAME oracle correctly reports the pointer outside the window --
+    reproducing the defect class in a controlled, drift-proof form.
+    """
+    isolated_root = tmp_path / "isolated-last"
+    isolated_script_dir = isolated_root / "scripts" / "hooks"
+    isolated_script_dir.mkdir(parents=True)
+    isolated_script = isolated_script_dir / _SCRIPT.name
+    isolated_script.write_text(_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+
+    assets_dir = isolated_root / "nWave" / "data" / "orchestrator-affordance"
+    assets_dir.mkdir(parents=True)
+    (assets_dir / "00-filler.md").write_text("PADDING-" * 500, encoding="utf-8")
+    (assets_dir / "10-recovery.md").write_text(
+        f"{_RECOVERY_POINTER_MARKER} synthetic control asset\n", encoding="utf-8"
+    )
+
+    isolated_env = os.environ.copy()
+    isolated_env["HOME"] = str(tmp_path / "empty-home-last")
+    result = _run(
+        isolated_script, "UserPromptSubmit", cwd=isolated_root, env=isolated_env
+    )
+
+    assert result.returncode == 0, (
+        f"must exit 0 -- got returncode={result.returncode}, stderr={result.stderr!r}"
+    )
+    payload = _parse_json_or_fail(result.stdout)
+    additional_context = payload.get("hookSpecificOutput", {}).get(
+        "additionalContext", ""
+    )
+    offset = _byte_offset(additional_context, _RECOVERY_POINTER_MARKER)
+
+    assert offset != -1, f"got additionalContext={additional_context!r}"
+    assert offset >= _ADMITTED_PREVIEW_WINDOW_BYTES, (
+        "synthetic control expected the marker OUTSIDE the window (filler "
+        f"padding forces it there) -- got offset={offset}, "
+        f"additionalContext={additional_context!r}"
     )

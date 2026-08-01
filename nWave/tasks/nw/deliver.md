@@ -119,16 +119,7 @@ Each phase A-G emits one JSONL event at PhaseEntered and PhaseCompleted to `nWav
 }
 ```
 
-Fields `reviewer_findings`, `cycle_n`, `verdict_hash` are null outside their respective phases. Validator: `scripts/validation/validate_atdd_pure_telemetry.py`.
-
-### Phase G Post-Commit: Falsifier-Gate Hook
-
-After Phase G commit completes, invoke `python scripts/automation/atdd_pure_falsifier_gate.py` (Phase 5 deliverable per plan v3 §4.5). Behavior:
-
-- Reads N=3 latest pilot JSONL records.
-- Otherwise → emit `FalsifierGateHealthy`, exit 0.
-
-Falsifier-gate exit 42 blocks subsequent CI release steps; operator review required before next pilot feature.
+Fields `reviewer_findings`, `cycle_n`, `verdict_hash` are null outside their respective phases. **NO VALIDATOR YET**: nothing enforces this nullability contract. The only consumer is the falsifier-gate health check (module `scripts.automation.atdd_pure_falsifier_gate`), which reads `reviewer_findings` and tolerates any other shape. Treat the contract as an authoring obligation on the emitter, not a checked invariant.
 
 ## Skill Loading (ATDD-pure additions)
 

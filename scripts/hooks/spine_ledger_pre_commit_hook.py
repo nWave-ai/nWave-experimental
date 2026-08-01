@@ -81,6 +81,15 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GATE_MODULE = "scripts.hooks.spine_ledger_gate"
 
+# Bootstrap `des` onto sys.path so the telemetry-path authority is importable
+# from this standalone hook script (mirrors spine_ledger_subagent_stop_detector.py).
+_SRC_DIR = _REPO_ROOT / "src"
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+
+from des.domain.telemetry_paths import LedgerFamily, ledger_dir  # noqa: E402
+
+
 # Env-var contract for test-harness parameter passing. In production these are
 # unset and the hook falls back to Path.cwd() + the canonical telemetry path.
 _ENV_TARGET_ROOT = "NWAVE_SPINE_LEDGER_GATE_TARGET_ROOT"
@@ -88,7 +97,7 @@ _ENV_LEDGER_ROOT = "NWAVE_SPINE_LEDGER_GATE_LEDGER_ROOT"
 _ENV_INVOCATION_MARKER = "NWAVE_SPINE_LEDGER_GATE_INVOCATION_MARKER_FILE"
 
 # Default telemetry path under a target root (mirrors spine_ledger_gate.py).
-_TELEMETRY_RELPATH = Path(".nwave") / "telemetry" / "atdd-pure"
+_TELEMETRY_RELPATH = ledger_dir(Path(), LedgerFamily.ATDD_PURE)
 
 # Shell-fast-path discriminator: a bash command starts with `git commit` (with
 # optional leading whitespace). The composition fixture's command literal is

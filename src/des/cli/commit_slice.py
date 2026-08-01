@@ -147,6 +147,7 @@ from des.application.blast_radius_measurement import (
     BlastRadiusVerdict,
     measure_blast_radius,
 )
+from des.application.commit_message_attribution import attribute_commit_message
 from des.application.worktree_cleanup_service import WorktreeCleanupService
 from des.cli._emit_json import emit_json_line as _emit
 from des.cli._identity_args import meaningful_identity
@@ -176,9 +177,17 @@ from des.cli.verify_slice_commit_completeness import (
     _append_slice_commit_indeterminate,
 )
 from des.domain.blast_radius import BlastRadiusConfigRejected
+from des.domain.commit_trailer_append import (
+    append_mechanical_trailer_block,
+)
 from des.domain.examine_verdict_signing import charter_seal as _charter_seal
+from des.domain.expectation_charter_mapping import CharterObligation
+from des.domain.expectation_charter_mapping import (
+    latest_declared_obligation as _latest_declared_obligation,
+)
 from des.domain.repo_path_resolver import feature_delta_path as _feature_delta_path
 from des.domain.slice_id_trailer import extract_slice_ids
+from des.domain.telemetry_paths import LedgerFamily, ledger_dir
 
 
 # ---------------------------------------------------------------------------
@@ -720,6 +729,65 @@ def _slice_is_coupled(repo: Path, feature_id: str, slice_id: str) -> bool:
     return _is_slice_coupled(plan, slice_id)
 
 
+# The distinct EXEMPT outcome (GDP-8 fix, fix-examine-gate-defer-keyed-on-
+# designation-not-property): an `@infrastructure`/`@prefactoring` slice has
+# NO observable surface AT ALL -- not now, not ever, not even at feature-end
+# (DISTILL's own `des charter-scaffold` tool never creates a charter for this
+# row in the first place, so `_run_feature_end_examine_leg`'s per-CHARTER
+# sweep has nothing to re-examine for it either -- nw-distill/SKILL.md: "no
+# scaffold -> no charter -> EXAMINE unarmed -- by design, not a gap").
+# Naming this outcome `ExamineDeferredToFeatureEnd` would be a LIE: nothing
+# defers, because nothing will ever look. A DIFFERENT event, so a ledger
+# reader can tell "permanently exempt, no oracle can exist" apart from
+# "checked later" apart from "examined and passed" apart from "nobody
+# looked" -- distinguished by the SAME `exit_code`-absence discriminator as
+# the `@coupled` DEFER (see `check_examine_verdict`'s docstring).
+_EXAMINE_EXEMPT_EVENT = "ExamineExemptNonObservableSlice"
+
+
+def _slice_has_no_observable_surface(
+    repo: Path, feature_id: str, slice_id: str
+) -> bool:
+    """Whether ``slice_id``'s OWN Slice-Plan row is annotated
+    ``@infrastructure`` or ``@prefactoring`` -- the SAME ``_is_observable``
+    PROPERTY DISTILL's own charter-scaffold tool (``des charter-scaffold``,
+    ``charter_scaffold._is_observable``) already consults to decide whether
+    this row ever RECEIVES a charter at all. Imported (local, avoiding a
+    module-level cycle -- ``charter_scaffold`` is a sibling CLI module),
+    never re-derived, so this gate's notion of "has no surface" can never
+    drift from DISTILL's own.
+
+    GDP-8: this is the discriminator on the PROPERTY (will DISTILL ever
+    scaffold a charter for THIS row?), not on the feature-level DESIGNATION
+    (does the FEATURE have charters, for ANY row?) that ``_examine_gate_armed``
+    alone tests -- the gap this predicate exists to close. Measured on
+    ``unified-event-store`` slice-01 (`@infrastructure`): the feature carries
+    3 charters, none of them for slice-01, and the prior code had no escape
+    but `@coupled` -- refusing `ExamineVerdictMissing` with a remediation
+    ("dispatch nw-user-examiner with the slice's charter") that names a
+    charter that will never exist.
+
+    Fail-CLOSED to ``False`` on ANY read failure (mirrors `_slice_is_coupled`
+    above) -- an absent feature-delta, an absent row, or a malformed
+    Slice-Plan table never grants the exemption; the slice then falls
+    through to the ordinary `ExamineVerdictMissing` refusal.
+    """
+    from des.cli.charter_scaffold import _is_observable
+
+    delta_path = _feature_delta_path(repo, feature_id)
+    if not delta_path.is_file():
+        return False
+    try:
+        feature_delta_text = delta_path.read_text(encoding="utf-8")
+        plan = _parse_slice_plan(feature_delta_text)
+    except (OSError, UnicodeDecodeError, _CarpaccioGateError):
+        return False
+    row = plan.row_for(slice_id)
+    if row is None:
+        return False
+    return not _is_observable(row.annotation)
+
+
 def _examine_gate_armed(repo: Path, feature_id: str | None) -> bool:
     """Whether the examine-verdict commit gate applies to this commit.
 
@@ -873,21 +941,33 @@ def check_examine_verdict(
     caller pops before emitting) otherwise -- every refusal states WHAT
     failed, WHY, and HOW to fix it (never a bare event name).
 
-    A THIRD outcome exists for a ``@coupled`` slice with no per-slice record
-    (RCA fix-coupled-slice-examine-deferred-to-feature-end): a DEFER payload
-    carrying event ``ExamineDeferredToFeatureEnd`` and deliberately NO
-    ``exit_code`` key -- the discriminator every caller uses to tell "defer,
-    proceed" apart from "refuse, exit_code pops cleanly". A ``@coupled`` slice
-    has no independently-observable surface (its guarantee is only checkable
-    through the ASSEMBLED feature), so demanding a per-slice PASS asks for
-    evidence that cannot exist; feature-end's unconditional per-charter
-    examine leg (``feature_end_cycle_service._run_feature_end_examine_leg``)
-    covers it instead -- deferred, never dropped.
+    TWO further non-refusal outcomes exist beyond "clears with a fresh PASS",
+    both keyed on the entering slice's OWN Slice-Plan row and both carrying
+    NO ``exit_code`` key -- the discriminator every caller uses to tell
+    "not a refusal, proceed" apart from "refuse, exit_code pops cleanly":
+
+      * ``@coupled`` slice with no per-slice record (RCA fix-coupled-slice-
+        examine-deferred-to-feature-end): a DEFER payload, event
+        ``ExamineDeferredToFeatureEnd``. A ``@coupled`` slice has no
+        independently-observable surface (its guarantee is only checkable
+        through the ASSEMBLED feature), so demanding a per-slice PASS asks
+        for evidence that cannot exist; feature-end's unconditional
+        per-charter examine leg
+        (``feature_end_cycle_service._run_feature_end_examine_leg``) covers
+        it instead -- deferred, never dropped.
+      * ``@infrastructure``/``@prefactoring`` slice (GDP-8 fix, fix-examine-
+        gate-defer-keyed-on-designation-not-property): an EXEMPT payload,
+        event ``ExamineExemptNonObservableSlice``, DISTINCT from the DEFER
+        above. This row has no observable surface EVER, at ANY scope --
+        DISTILL's own charter-scaffold tool never creates a charter for it,
+        so unlike ``@coupled`` there is nothing for feature-end to examine
+        later either. Labeling it "deferred" would promise an examine that
+        will never happen.
 
     Refusal taxonomy (fail-closed, never a silent pass):
       * ``ExamineVerdictMissing``       (exit 2) -- no record at all, and the
-        slice is NOT ``@coupled`` (a ``@coupled`` slice defers instead, see
-        above).
+        slice is neither ``@coupled`` nor ``@infrastructure``/
+        ``@prefactoring`` (those defer/exempt instead, see above).
       * ``ExamineVerdictRefused``       (exit 1) -- recorded verdict is FAIL.
       * ``ExamineVerdictIndeterminate`` (exit 2) -- recorded verdict is
         INDETERMINATE (an unexaminable slice carries no observable value --
@@ -927,6 +1007,27 @@ def check_examine_verdict(
                     "through the ASSEMBLED feature); feature-end's "
                     "unconditional per-charter examine leg covers it "
                     "instead of a per-slice ExamineVerdict."
+                ),
+            }
+        if _slice_has_no_observable_surface(repo, feature_id, slice_id):
+            return {
+                "event": _EXAMINE_EXEMPT_EVENT,
+                "feature_id": feature_id,
+                "slice_id": slice_id,
+                "what": (
+                    f"slice {slice_id} is @infrastructure/@prefactoring -- "
+                    "it has NO observable surface and is PERMANENTLY EXEMPT "
+                    "from the per-slice examine-verdict requirement"
+                ),
+                "why": (
+                    "DISTILL's own `des charter-scaffold` tool never creates "
+                    "a charter for an @infrastructure/@prefactoring row (it "
+                    "carries no user-visible value to examine); demanding a "
+                    "per-slice PASS here would instruct dispatching an "
+                    "examiner against a charter that can never exist. "
+                    "Unlike @coupled (deferred to feature-end, where a real "
+                    "charter DOES eventually examine it), this slice has no "
+                    "charter to defer to, at any scope, ever."
                 ),
             }
         return {
@@ -1041,6 +1142,199 @@ def check_examine_verdict(
                 f"PASS verdict: {_examine_remediation_command(repo, feature_id, slice_id, charter_path_raw)}"
             ),
         }
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Charter-obligation commit-time gate (feature charter-obligation-declared-
+# at-dispatch, slice-02) -- CONSUMES the `CharterObligationDeclared` record
+# `des dispatch` (slice-01) writes to this SAME examine ledger.
+#
+# This is DELIBERATELY additive, not a rewire of `_examine_gate_armed`
+# itself. `_examine_gate_armed`'s existing two activation conditions (opt-in
+# env, or a charter directory with >=1 `.md` file) govern a DIFFERENT
+# question -- whether the pre-existing Vera examine-verdict machinery
+# (`_hollow_charter_refusal` + the PASS-verdict requirement above) applies to
+# this commit -- and feature-delta's own Prefactoring Assessment/blast-radius
+# analysis names the risk explicitly: several EXISTING tests (charter_filled_
+# arming, test_commit_slice_examine_gate, test_verify_slice_commit_examine_
+# gate, test_des_next_loop_projection) arm that machinery purely off charter
+# PRESENCE, with no `des dispatch` ever run, so no `CharterObligationDeclared`
+# record ever exists for them -- collapsing the two questions into one
+# resolution would silently unarm all of them. So: `_examine_gate_armed`
+# stays byte-identical; the THREE-valued (REQUIRED/EXEMPT/INDETERMINATE) plus
+# never-declared (`None`) resolution below is a NEW, orthogonal gate for the
+# NEW question DDD-1..DDD-5 asks -- "does this work OWE a charter at all" --
+# consulted at the SAME commit-time chokepoint as `check_examine_verdict`,
+# alongside it rather than inside it.
+# ---------------------------------------------------------------------------
+
+_OBLIGATION_UNMET_EVENT = "CharterObligationUnmet"
+_OBLIGATION_CLEARED_EVENT = "CharterObligationCleared"
+_ARMING_INDETERMINATE_EVENT = "ExamineArmingIndeterminate"
+
+
+def _declared_charter_obligation(
+    repo: Path, feature_id: str, slice_id: str
+) -> tuple[CharterObligation | None, str | None, str | None]:
+    """The latest declared ``(obligation, lane, reason)`` for ``slice_id``, or
+    ``(None, None, None)`` when the slice was NEVER DECLARED.
+
+    Delegates the ledger read to the domain reader (same ledger, same
+    ``(feature_id, slice_id)`` key, same malformed-line tolerance
+    `_latest_examine_verdict` already established on this file) -- never
+    re-derives the JSONL walk a second time in this module.
+    """
+    ledger = _examine_ledger_path(repo, feature_id)
+    record = _latest_declared_obligation(ledger, slice_id)
+    if record is None:
+        return None, None, None
+    raw_obligation = record.get("obligation")
+    try:
+        obligation = (
+            CharterObligation(raw_obligation)
+            if isinstance(raw_obligation, str)
+            else None
+        )
+    except ValueError:
+        obligation = None
+    lane = record.get("lane")
+    reason = record.get("reason")
+    return (
+        obligation,
+        lane if isinstance(lane, str) else None,
+        reason if isinstance(reason, str) else None,
+    )
+
+
+def _charter_obligation_unmet_refusal(
+    feature_id: str, slice_id: str
+) -> dict[str, object]:
+    """The ``CharterObligationUnmet`` refusal: REQUIRED obligation, no charter.
+
+    The HOW hands over the SAME producing tool `_hollow_charter_refusal`
+    (above) already routes to (`des charter-scaffold`), adapted for the
+    `bug-observable` seed-mode (DDD-6: no Slice Plan read required). The
+    ``--observable`` VALUE is a genuine unknown -- only the operator can say
+    what the change looks like from the outside -- so it is printed as an
+    honest, named slot (the printed-remediation rule at the top of this
+    module), never a fabricated placeholder dressed up as a real value.
+    """
+    how = (
+        "run `des charter-scaffold --feature-id "
+        f"{shlex.quote(feature_id)} --seed-mode bug-observable "
+        '--observable "<the change'
+        "'"
+        's observable, user-side behaviour>"` to scaffold the charter -- '
+        "only the operator knows the --observable text -- then fill in its "
+        "Preconditions and Expected observations (oracle) sections, then "
+        "re-run this commit"
+    )
+    return {
+        "event": _OBLIGATION_UNMET_EVENT,
+        "exit_code": 2,
+        "feature_id": feature_id,
+        "slice_id": slice_id,
+        "what": (
+            f"slice {slice_id} declared a REQUIRED expectation-charter "
+            f"obligation but {feature_id} carries no expectation charter "
+            "under docs/product/expectations/"
+        ),
+        "why": (
+            "the operator's own declared lane (`des dispatch --lane ...`) "
+            "says this work is user-visible and OWES a charter (DDD-1.."
+            "DDD-3); committing it with no charter at all would let the "
+            "obligation the operator already stated go silently unmet."
+        ),
+        "how": how,
+    }
+
+
+def _charter_obligation_cleared_attestation(
+    feature_id: str,
+    slice_id: str,
+    obligation: CharterObligation,
+    lane: str | None,
+) -> dict[str, object]:
+    """The POSITIVE attestation: the DECLARED obligation was checked and
+    cleared (REQUIRED-with-charter, or EXEMPT) -- never a silent absence of
+    refusal, which is indistinguishable from "never checked".
+    """
+    return {
+        "event": _OBLIGATION_CLEARED_EVENT,
+        "feature_id": feature_id,
+        "slice_id": slice_id,
+        "obligation": obligation.value,
+        "lane": lane,
+    }
+
+
+def _charter_arming_indeterminate_warning(
+    feature_id: str, slice_id: str
+) -> dict[str, object]:
+    """The LOUD, NON-BLOCKING third-state warning (DDD-5): no
+    ``CharterObligationDeclared`` record exists for ``slice_id`` at all --
+    never declared, never inferred as a negative declaration.
+    """
+    return {
+        "event": _ARMING_INDETERMINATE_EVENT,
+        "feature_id": feature_id,
+        "slice_id": slice_id,
+        # Explicit ALL-CAPS `obligation` label (mirroring
+        # `_charter_obligation_cleared_attestation`'s "REQUIRED"/"EXEMPT"):
+        # the event NAME ("ExamineArmingIndeterminate") is mixed-case and is
+        # not itself the reported STATE token an operator or a downstream
+        # consumer (R12, OQ-6) greps for.
+        "obligation": "INDETERMINATE",
+        "what": (
+            f"slice {slice_id} carries no CharterObligationDeclared record "
+            f"for {feature_id} -- whether this work owes an expectation "
+            "charter could not be determined"
+        ),
+        "why": (
+            "no `des dispatch --lane ...` was ever run for this slice (or "
+            "an authoring-wave dispatch declared nothing), so the charter-"
+            "obligation gate has nothing to key on. DDD-5: this is loud and "
+            "recorded, never blocking -- blocking it would refuse the "
+            "measured majority of commits that never went through a "
+            "feature dispatch at all."
+        ),
+        "how": (
+            "declare the obligation up front: run `des dispatch --lane "
+            f"<bugfix|prefactoring|charter|...> --project-id "
+            f"{shlex.quote(feature_id)} --slice {shlex.quote(slice_id)} "
+            "...` before committing this slice"
+        ),
+    }
+
+
+def _apply_charter_obligation_gate(
+    repo: Path, feature_id: str, slice_id: str
+) -> dict[str, object] | None:
+    """Resolve the declared charter obligation and enforce it (R8-R11).
+
+    Returns a refusal payload (carrying ``exit_code``) iff the obligation is
+    ``REQUIRED`` and no charter exists for ``feature_id`` -- the ONLY
+    blocking outcome. Every other outcome is non-blocking and ALWAYS emits
+    exactly one loud, self-explaining event as a side effect (never silent):
+    a positive attestation for ``REQUIRED``-with-charter and ``EXEMPT``, or
+    the non-blocking ``ExamineArmingIndeterminate`` warning for
+    ``INDETERMINATE``/never-declared.
+    """
+    obligation, lane, _reason = _declared_charter_obligation(repo, feature_id, slice_id)
+    if obligation is None or obligation is CharterObligation.INDETERMINATE:
+        sys.stderr.write(
+            json.dumps(_charter_arming_indeterminate_warning(feature_id, slice_id))
+            + "\n"
+        )
+        return None
+    if obligation is CharterObligation.REQUIRED and not _charter_paths(
+        repo, feature_id
+    ):
+        return _charter_obligation_unmet_refusal(feature_id, slice_id)
+    _emit(
+        _charter_obligation_cleared_attestation(feature_id, slice_id, obligation, lane)
+    )
     return None
 
 
@@ -1527,7 +1821,10 @@ def _commit_with_placeholder(repo: Path, message: str, no_verify: bool) -> None:
     AT files. Written via ``--file`` (never a shell-interpolated ``-m``) so a
     multi-line body with special characters commits verbatim.
     """
-    full_message = f"{message.rstrip()}\n\nGate-Scope: {_PLACEHOLDER_DIGEST}\n"
+    full_message = (
+        append_mechanical_trailer_block(message, f"Gate-Scope: {_PLACEHOLDER_DIGEST}")
+        + "\n"
+    )
     args = ["commit", "--file", "-"]
     if no_verify:
         args.append("--no-verify")
@@ -1744,10 +2041,10 @@ def _review_verdict_hash(
     if feature_id is not None:
         candidates = [feature_id]
     else:
-        ledger_dir = repo / ".nwave" / "telemetry" / "atdd-pure"
+        at_ledger_dir = ledger_dir(repo, LedgerFamily.ATDD_PURE)
         candidates = (
-            sorted(path.stem for path in ledger_dir.glob("*.jsonl"))
-            if ledger_dir.is_dir()
+            sorted(path.stem for path in at_ledger_dir.glob("*.jsonl"))
+            if at_ledger_dir.is_dir()
             else []
         )
 
@@ -1832,7 +2129,7 @@ def _ensure_reviewed_by(
 
     if not trailers:
         return message
-    return f"{message.rstrip()}\n\n" + "\n".join(trailers)
+    return append_mechanical_trailer_block(message, "\n".join(trailers))
 
 
 # ---------------------------------------------------------------------------
@@ -2050,7 +2347,9 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         # Idempotent stamp: append only when the message carries no Slice-Id (the
         # presence check above already excluded a message-carried one).
-        message = f"{args.message.rstrip()}\n\nSlice-Id: {args.slice_id}"
+        message = append_mechanical_trailer_block(
+            args.message, f"Slice-Id: {args.slice_id}"
+        )
     else:
         # The message already carries a Slice-Id -- preserve it verbatim, no
         # duplicate stamp even if --slice-id was also passed.
@@ -2064,6 +2363,14 @@ def main(argv: list[str] | None = None) -> int:
     message = _ensure_reviewed_by(
         repo, message, extract_slice_ids(message), args.feature_id
     )
+
+    # Attribute the nWave trailer when active + enabled (GDP-4, fix-attribution-
+    # trailer-never-applied): applied HERE, before both the shadow-commit
+    # preflight and the real commit, so every downstream consumer of `message`
+    # sees the SAME final text. `_amend_trailer` later touches only the
+    # `Gate-Scope:` line via a scoped regex sub, so a trailer applied here
+    # survives that amend untouched -- never re-applied, never doubled.
+    message = attribute_commit_message(repo, message)
 
     # Remote-ancestry guard (fix-commit-slice-never-amends-pushed): refuse or
     # auto-heal a local HEAD regressed behind an already-pushed remote-
@@ -2186,6 +2493,20 @@ def main(argv: list[str] | None = None) -> int:
     # below), never here.
     if args.feature_id is not None:
         for slice_id in extract_slice_ids(message):
+            # Charter-obligation gate (feature charter-obligation-declared-at-
+            # dispatch, slice-02): consulted FIRST, so its attestation/warning
+            # is always emitted regardless of what the examine-verdict gate
+            # below later decides. Additive to `check_examine_verdict` -- see
+            # the module note above `_apply_charter_obligation_gate`.
+            obligation_rejection = _apply_charter_obligation_gate(
+                repo, args.feature_id, slice_id
+            )
+            if obligation_rejection is not None:
+                obligation_exit_code = obligation_rejection.pop("exit_code")
+                _emit(obligation_rejection)
+                assert isinstance(obligation_exit_code, int)
+                return obligation_exit_code
+
             examine_rejection = check_examine_verdict(repo, args.feature_id, slice_id)
             if examine_rejection is not None and "exit_code" in examine_rejection:
                 exit_code = examine_rejection.pop("exit_code")

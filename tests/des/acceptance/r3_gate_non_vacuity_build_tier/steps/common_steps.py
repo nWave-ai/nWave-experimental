@@ -15,10 +15,18 @@ they are agnostic to WHICH slice produced the run (slice-01 broken-arch run-time
 failure, slice-02 vacuous arch scope) -- both observe the same exit-code-exact
 verdict + the structured verdict event on stdout.
 
-Mandate-13: the driving port (`run_feature_scoped_gate`) is a Layer-3 subprocess
-black-box; these steps observe ONLY the CLI's exit code + stdout JSON verdict
-event. Mandate-12 criterion 3: step bodies are <=2 statements / assertion-only,
+Mandate-13: the per-slice driving port (`run_feature_scoped_gate`) is a Layer-3
+subprocess black-box; these steps observe ONLY the CLI's exit code + stdout JSON
+events. Mandate-12 criterion 3: step bodies are <=2 statements / assertion-only,
 no business logic, no control flow beyond the assertion message expression.
+
+RE-ALLOCATION (fix-e2-whole-tree-scope-blocks-unrelated-slices, 2026-07-30):
+this module now carries TWO verdict vocabularies, because the protection this
+feature encodes now lives on two surfaces. `gate_run`-shaped Thens observe the
+PER-SLICE gate (which must judge a slice on its own scope and DEFER the
+whole-tree tier LOUD); `whole_tree_run`-shaped Thens observe the FEATURE-END
+whole-tree architecture run (where the keystone refusal relocated). No
+protection was deleted -- each one is asserted at whichever surface now owns it.
 """
 
 from __future__ import annotations
@@ -27,7 +35,12 @@ from pytest_bdd import given as bdd_given
 from pytest_bdd import then, when
 
 from .composition_slice_01 import R3GateComposition
-from .domain_types_slice_01 import GateVerdict
+from .domain_types_slice_01 import (
+    BUILD_TIER_VERIFIED_EVENT,
+    DEFERRED_TO_FEATURE_END,
+    GateVerdict,
+    WholeTreeVerdict,
+)
 
 
 # The slice bindings do `from .common_steps import *` (the proven repo idiom +
@@ -71,6 +84,15 @@ def when_certify_slice(composition: R3GateComposition, repo):
     return composition.run_feature_scoped_gate(repo)
 
 
+@when(
+    "the whole-tree architecture run certifies the repository",
+    target_fixture="whole_tree_run",
+)
+def when_whole_tree_arch_run(composition: R3GateComposition, repo):
+    """Drive the real whole-tree architecture run (the relocated protection)."""
+    return composition.run_whole_tree_arch_gate(repo)
+
+
 # ===========================================================================
 # Then -- verdict-shaped, slice-agnostic (shared across all slices)
 # ===========================================================================
@@ -105,12 +127,64 @@ def then_gate_clears(gate_run) -> None:
     )
 
 
-@then("the gate certifies a non-vacuous architecture-tier scope")
-def then_arch_scope_non_vacuous(gate_run) -> None:
-    # The CLEAR must carry the FeatureScopeCleared verdict event -- proving the
-    # gate did not clear vacuously (the arch tier collected real node-ids
-    # alongside the feature scope).
-    assert gate_run.event == "FeatureScopeCleared", (
-        "the gate cleared but did not surface a FeatureScopeCleared verdict "
-        f"(saw event {gate_run.event!r}, exit {gate_run.exit_code})"
+@then("the gate defers the whole-tree architecture tier to feature-end")
+def then_gate_defers_whole_tree(gate_run) -> None:
+    # RE-ALLOCATION (fix-e2-whole-tree-scope-blocks-unrelated-slices): the
+    # per-slice gate no longer RUNS the whole-tree architecture tier, so it
+    # must SAY SO. A narrowing that announces nothing is indistinguishable
+    # from a coverage drop (GDP-6, no silent-wrong), and the record must NAME
+    # where the coverage moved to or the reader cannot follow it.
+    deferral = gate_run.whole_tree_deferral
+    assert deferral is not None, (
+        "the per-slice gate must LOUDLY emit BuildTierWholeTreeDeferred -- "
+        "proof the whole-tree architecture tier was DEFERRED rather than "
+        "silently narrowed away (a silent narrowing is indistinguishable from "
+        f"a dropped protection). Saw events "
+        f"{[e.get('event') for e in gate_run.emitted_events]!r}"
+    )
+    assert deferral.get("deferred_to") == DEFERRED_TO_FEATURE_END, (
+        "the deferral record must NAME feature-end as where the whole-tree run "
+        f"moves to, so the relocated coverage stays traceable -- got {deferral}"
+    )
+
+
+@then("the whole-tree architecture run refuses the repository")
+def then_whole_tree_refuses(whole_tree_run) -> None:
+    # Exit-code-exact: REFUSED <=> exit 1 (the BuildTierRefused fail-closed
+    # path). CLEARED would mean the relocated protection evaporated in the
+    # move; UNEXPECTED means it failed via a WRONG mode -- both are caught, so
+    # the assertion never passes for the wrong reason.
+    assert whole_tree_run.verdict is WholeTreeVerdict.REFUSED, (
+        f"expected the whole-tree architecture run to REFUSE (exit 1), got "
+        f"verdict {whole_tree_run.verdict.value!r} (exit "
+        f"{whole_tree_run.exit_code}) -- this run is where the keystone "
+        "protection RELOCATED to when the per-slice gate stopped sweeping the "
+        "whole tree; if it clears here, the protection was dropped, not moved"
+    )
+
+
+@then("the whole-tree architecture run clears the repository")
+def then_whole_tree_clears(whole_tree_run) -> None:
+    assert whole_tree_run.verdict is WholeTreeVerdict.CLEARED, (
+        f"expected the whole-tree architecture run to CLEAR a sound repository "
+        f"(exit 0), got verdict {whole_tree_run.verdict.value!r} (exit "
+        f"{whole_tree_run.exit_code})"
+    )
+
+
+@then("the whole-tree architecture run certifies a non-vacuous architecture-tier scope")
+def then_whole_tree_arch_scope_non_vacuous(whole_tree_run) -> None:
+    # RELOCATED from the per-slice gate. The CLEAR must carry a
+    # BuildTierVerified naming a NON-ZERO executed count -- a run that
+    # executed nothing has certified nothing, however green its exit code
+    # (`check:unfired-is-not-evidence`).
+    assert whole_tree_run.event == BUILD_TIER_VERIFIED_EVENT, (
+        "the whole-tree run cleared but did not surface a BuildTierVerified "
+        f"verdict (saw event {whole_tree_run.event!r}, exit "
+        f"{whole_tree_run.exit_code})"
+    )
+    assert whole_tree_run.collected > 0, (
+        "the whole-tree run must certify a NON-VACUOUS architecture scope -- a "
+        "run reporting zero executed invariants certified nothing; got "
+        f"collected={whole_tree_run.collected}"
     )

@@ -152,8 +152,9 @@ def test_agreeing_carriers_with_a_trunk_sha_are_coherent(fake_repo, tmp_path):
     doc = _doc(
         tmp_path,
         corsie=f"| `lane-d99` | nodo D99 | `x.py` | **INTEGRATA** `{sha}` |",
-        albero=f"  D99 | qualcosa | FATTO | XS | onda 1\n"
-        f"      : Riferimento di chiusura | commit `{sha}`",
+        # L'ALBERO carries id + title only: state lives once, in STATO NODO
+        # PER NODO (state-typed-outside-its-carrier).
+        albero=f"  D99 | qualcosa\n      : Riferimento di chiusura | commit `{sha}`",
         nodi=f"| `D99` | qualcosa | TIENI | XS | FATTO | `{sha}` |",
     )
 
@@ -268,8 +269,7 @@ def test_unverifiable_reachability_never_collapses_into_coherent(tmp_path):
     doc = _doc(
         tmp_path,
         corsie=f"| `lane-d95` | nodo D95 | `w.py` | **INTEGRATA** `{sha}` |",
-        albero=f"  D95 | quinto | FATTO | XS | onda 1\n"
-        f"      : Riferimento di chiusura | commit `{sha}`",
+        albero=f"  D95 | quinto\n      : Riferimento di chiusura | commit `{sha}`",
         nodi=f"| `D95` | quinto | TIENI | XS | FATTO | `{sha}` |",
     )
 
@@ -318,8 +318,14 @@ def test_fails_instead_of_passing_by_absence_when_no_node_is_found(fake_repo, tm
     assert any(f.rule == "population-floor" for f in report.findings)
 
 
-def test_real_execution_ssot_yields_a_named_population_on_three_carriers():
-    """Second axis: the gate must actually see the tree it was built for."""
+def test_real_execution_ssot_yields_a_named_population_on_two_state_carriers():
+    """Second axis: the gate must actually see the tree it was built for.
+
+    L'ALBERO carries no state (state-typed-outside-its-carrier withdrew it
+    with `mikado_board.py --withdraw-tree-state`), so it never contributes to
+    `carriers_seen` -- CORSIE and STATO NODO PER NODO remain the two live
+    carriers of state, still >= the population-floor of 2.
+    """
     assert REAL_TREE_DOC.is_file(), REAL_TREE_DOC
     report = check_tree_coherence(
         REAL_TREE_DOC,
@@ -333,7 +339,8 @@ def test_real_execution_ssot_yields_a_named_population_on_three_carriers():
             f"node `{expected}` missing from the population: {sorted(seen)}"
         )
     assert report.nodes_examined >= 40, report.nodes_examined
-    assert set(report.carriers_seen) == {"CORSIE", "L'ALBERO", "STATO NODO PER NODO"}
+    assert set(report.carriers_seen) == {"CORSIE", "STATO NODO PER NODO"}
+    assert not any(f.rule == "state-typed-outside-its-carrier" for f in report.findings)
 
 
 # --------------------------------------------------------------------------
@@ -346,8 +353,7 @@ def test_every_rejection_carries_a_how_that_actually_runs(fake_repo, tmp_path):
     doc = _doc(
         tmp_path,
         corsie=f"| `lane-d99` | nodo D99 | `x.py` | **INTEGRATA** `{sha}` |",
-        albero=f"  D99 | qualcosa | FATTO | XS | onda 1\n"
-        f"      : Riferimento di chiusura | commit `{sha}`",
+        albero=f"  D99 | qualcosa\n      : Riferimento di chiusura | commit `{sha}`",
         nodi="| `D99` | qualcosa | TIENI | XS | PRONTO | _(da compilare)_ |",
     )
     report = check_tree_coherence(
@@ -412,8 +418,11 @@ def test_completion_word_without_a_pointer_is_advisory_and_does_not_reject(
     """A lexicon match is an INFERRED signal, so it may warn but never block."""
     doc = _doc(
         tmp_path,
-        corsie="",
-        albero="  D94 | sesto | QUARANTENA | S | onda 3\n"
+        # Non-empty CORSIE keeps two carriers of state present (CORSIE +
+        # STATO NODO PER NODO) once L'ALBERO carries none -- population-floor
+        # needs >= 2, and L'ALBERO no longer contributes to that count.
+        corsie="| `lane-decor` | decor | `x.py` | **PRONTO** |",
+        albero="  D94 | sesto\n"
         "      : Cosa serve | sigillato; resta la chiusura d'installazione\n"
         "      : Riferimento di chiusura | *(da compilare)*",
         nodi="| `D94` | sesto | TIENI | S | QUARANTENA | _(da compilare)_ |",
@@ -482,8 +491,7 @@ def test_ambiguous_lane_base_reaches_the_aggregate_and_never_guesses(
     doc = _doc(
         tmp_path,
         corsie=f"| `d25-deadtests` | rimozione | test | **CHIUSO** `{sha}` |",
-        albero="  D25a | dead a | PRONTO | S | onda 1\n"
-        "  D25b | dead b | PRONTO | S | onda 3",
+        albero="  D25a | dead a\n  D25b | dead b",
         nodi="| `D25a` | dead a | RIMUOVI | S | PRONTO | _(da compilare)_ |\n"
         "| `D25b` | dead b | RIMUOVI | S | PRONTO | _(da compilare)_ |",
     )
@@ -510,7 +518,7 @@ def test_short_lane_id_never_cross_joins_a_longer_node_id(fake_repo, tmp_path):
     doc = _doc(
         tmp_path,
         corsie="| `d3` | qualcosa | `x.py` | **INTEGRATA** |",
-        albero="  D30 | altro | PRONTO | M | onda 2",
+        albero="  D30 | altro",
         nodi="| `D30` | altro | TIENI | M | PRONTO | _(da compilare)_ |",
     )
 

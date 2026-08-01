@@ -53,7 +53,7 @@ Feature: Each supported tool is smoked through its own contract
       | opencode    |
 
   @driving_port @in-memory @error @contract-shape:bounded-change
-  Scenario: An unsupported tool has no contract and is rejected loudly
+  Scenario: An unregistered smoke target is rejected loudly
     Given the smoke harness contract registry
-    When the release engineer requests a lane for an unsupported tool "copilot"
+    When the release engineer requests a lane for an unsupported tool "unregistered-cli"
     Then the request is rejected with a readable unsupported-tool diagnostic

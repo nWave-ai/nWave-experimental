@@ -1,3 +1,4 @@
+# @feature-sessionstart-cross-host-contract
 """Installed host acceptance contract for the SessionStart orientation boundary."""
 
 from __future__ import annotations

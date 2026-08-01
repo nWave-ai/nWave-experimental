@@ -43,6 +43,9 @@ from _scorecard_fs_helpers import REPO
 from _scorecard_fs_helpers import file_contains as _file_contains
 from _scorecard_fs_helpers import file_exists as _file_exists
 
+from des.domain.telemetry_paths import LedgerFamily
+from des.domain.telemetry_paths import ledger_dir as _ledger_dir
+
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -57,7 +60,7 @@ def _dir_has_children(rel: str, glob: str) -> bool:
 # a feature is DONE only when a REAL feature-end RECORD exists -- the event-type
 # AND the feature_id on the SAME JSONL line (a prose mention can never credit;
 # "slices delivered" is NOT done). Fail-closed on an unreadable ledger.
-_LEDGER_DIR = REPO / ".nwave" / "telemetry" / "atdd-pure"
+_LEDGER_DIR = _ledger_dir(REPO, LedgerFamily.ATDD_PURE)
 _FEATURE_END_EVENTS = ("FeatureEndReviewVerdict", "EBatchRefactorCompleted")
 
 

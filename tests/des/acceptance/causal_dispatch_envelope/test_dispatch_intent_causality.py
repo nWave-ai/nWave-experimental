@@ -1,3 +1,4 @@
+# @feature-causal-dispatch-envelope
 """Acceptance contract for truthful causal dispatch envelopes.
 
 The public dispatch command only renders an operator's intended work.  It is

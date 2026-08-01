@@ -46,6 +46,15 @@ entering_slice, work_ahead_slice, flip_instructions}. Each slice entry
 carries {slice_id, test_file, currently_passing}. Exits 0 unconditionally --
 this is a producing tool, not a gate (the gate it feeds is `des
 verify-slice-commit`).
+
+fix-null-gate-scope-exit-gate: the entering slice's HEAD commit is now
+amended with a REAL `Gate-Scope:` trailer (never fabricated -- derived
+through the shipped `run_contract_gate --committed-scope-digest` machinery)
+so this tool's own fixture clears the seal-integrity leg the sibling fix
+added to `verify_slice_commit_completeness._run_verify_then_record`. Only
+HEAD's own trailer matters here: that leg reads the trailer of the exact
+`--commit` an examiner passes, and `flip_instructions` always documents
+`--commit HEAD`.
 """
 
 from __future__ import annotations
@@ -56,6 +65,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
@@ -64,6 +75,7 @@ from des.cli._scaffold_core import (
     decide_on_exists,
     emit_scaffold_verdict,
 )
+from des.cli.run_contract_gate import main as _run_contract_gate_main
 from des.cli.verify_slice_commit_completeness import canonical_regression_test_path
 from des.domain.repo_path_resolver import feature_delta_in_dir, feature_dir_path
 
@@ -78,6 +90,13 @@ _DEFAULT_FEATURE_ID = "examine-fixture-demo"
 #: charter-scaffold / feature-end-preconditions-scaffold already use.
 VERDICT_GIT_OPERATION_FAILED = "git-operation-failed"
 VERDICT_LEDGER_WRITE_FAILED = "ledger-write-failed"
+#: fix-null-gate-scope-exit-gate slice-01: the entering slice's HEAD commit
+#: must carry a REAL Gate-Scope: trailer (never fabricated) so this tool's
+#: own fixture can clear the G_COMMIT seal-integrity leg the sibling fix
+#: added to `verify_slice_commit_completeness._run_verify_then_record` --
+#: raised when the digest cannot be DERIVED through the shipped
+#: `run_contract_gate --committed-scope-digest` machinery.
+VERDICT_GATE_SCOPE_DIGEST_FAILED = "gate-scope-digest-failed"
 
 
 def _flip_instructions(repo: Path, feature_id: str) -> str:
@@ -159,6 +178,52 @@ def _commit_with_trailer(
         args.append("--allow-empty")
     args += ["-m", f"{subject}\n\nSlice-Id: {slice_id}"]
     _git(repo, *args)
+
+
+def _committed_scope_digest_via_gate(repo: Path) -> str:
+    """Derive the REAL committed-scope digest of ``repo`` at HEAD through the
+    shipped ``run_contract_gate --committed-scope-digest`` machinery --
+    never fabricated (fix-null-gate-scope-exit-gate).
+
+    In-process (captures the child CLI's own stdout via ``redirect_stdout``
+    rather than spawning a subprocess): this tool already runs inside the
+    same interpreter as the ``des`` dispatcher, and `_mode_committed_scope_
+    digest` prints the bare digest as its FIRST stdout line (a second,
+    JSON-wrapped event goes to stderr) -- captured here so it never leaks
+    into this tool's own one-line JSON stdout contract.
+    """
+    buffer = StringIO()
+    with redirect_stdout(buffer):
+        exit_code = _run_contract_gate_main(
+            ["--repo", str(repo), "--committed-scope-digest"]
+        )
+    output = buffer.getvalue()
+    for line in (ln.strip() for ln in output.splitlines()):
+        if len(line) == 64 and all(c in "0123456789abcdef" for c in line):
+            return line
+    raise ScaffoldDegradeError(
+        VERDICT_GATE_SCOPE_DIGEST_FAILED,
+        f"could not derive a committed-scope digest for {repo} via "
+        f"`run_contract_gate --committed-scope-digest` (exit {exit_code}); "
+        f"output={output!r}",
+    )
+
+
+def _amend_with_gate_scope_trailer(repo: Path, gate_scope_digest: str) -> None:
+    """Amend HEAD so its message ALSO carries a real ``Gate-Scope:`` trailer,
+    kept alongside the existing ``Slice-Id:`` trailer already on HEAD's
+    message -- the same shape ``des commit-slice`` stamps and ``des
+    verify-slice-commit``'s seal-integrity leg reads.
+    """
+    original = _git(repo, "log", "-1", "--format=%B", "HEAD").strip()
+    _git(
+        repo,
+        "commit",
+        "-q",
+        "--amend",
+        "-m",
+        f"{original}\n\nGate-Scope: {gate_scope_digest}",
+    )
 
 
 def _regression_test_body(slice_id: str, *, passing: bool) -> str:
@@ -248,7 +313,10 @@ def build_fixture(
     regression tests -> commit slice-01 (`Slice-Id: slice-01`) -> attest
     slice-01 as SHIPPED through the REAL ledger writer (never hand-written
     JSONL) -> write slice-02's (green) regression test -> commit slice-02
-    (`Slice-Id: slice-02`, the entering slice, HEAD). slice-03's file is
+    (`Slice-Id: slice-02`, the entering slice, HEAD) -> amend HEAD with a
+    REAL `Gate-Scope:` trailer, derived through the shipped `run_contract_
+    gate --committed-scope-digest` machinery (fix-null-gate-scope-exit-gate),
+    so the fixture clears the G_COMMIT seal-integrity leg. slice-03's file is
     written but deliberately never wired into {shipped} union {entering} --
     it is a work-ahead test nobody has built yet.
     """
@@ -285,6 +353,14 @@ def build_fixture(
         out_dir, feature_id, _ENTERING_SLICE, passing=True
     )
     _commit_with_trailer(out_dir, _ENTERING_SLICE, "feat(fixture): slice-02 entering")
+
+    # fix-null-gate-scope-exit-gate: seal HEAD (slice-02, the entering slice)
+    # with a REAL Gate-Scope: trailer -- `des verify-slice-commit`'s
+    # seal-integrity leg reads exactly this commit's trailer (the one
+    # `flip_instructions` tells the examiner to pass as `--commit HEAD`),
+    # and a blank/absent trailer would refuse this tool's own fixture.
+    gate_scope_digest = _committed_scope_digest_via_gate(out_dir)
+    _amend_with_gate_scope_trailer(out_dir, gate_scope_digest)
 
     return {
         "repo": str(out_dir),

@@ -41,7 +41,7 @@ from des.adapters.driven.filesystem.wave_active_filesystem_store import (
     WaveActiveFilesystemStore,
 )
 from des.adapters.drivers.hooks.session_start_handler import (
-    _ORCHESTRATOR_AFFORDANCE_ASSETS_DIR,
+    _resolve_orchestrator_affordance_assets_dir,
     load_orchestrator_affordance,
 )
 from des.application.wave_active_anchor import CommandLiteralWaveActiveAnchor
@@ -114,8 +114,15 @@ def _maybe_refresh_orchestrator_affordance(project_root: Path) -> None:
         sentinel = project_root / _ORCHESTRATOR_AFFORDANCE_SENTINEL_RELATIVE
         if not _is_orchestrator_affordance_sentinel_elapsed(sentinel):
             return
-        affordance = load_orchestrator_affordance(_ORCHESTRATOR_AFFORDANCE_ASSETS_DIR)
+        # R-8: reconcile the two install roots here too, not just on
+        # SessionStart. This path re-injects the SAME assets on the same
+        # cadence, so leaving it on the single-candidate constant would keep
+        # serving the stale root to every refresh after the first prompt.
+        assets_dir, divergence_notice = _resolve_orchestrator_affordance_assets_dir()
+        affordance = load_orchestrator_affordance(assets_dir) if assets_dir else None
         if affordance:
+            if divergence_notice:
+                affordance = divergence_notice + affordance
             print(json.dumps(_build_user_prompt_submit_affordance_output(affordance)))
         _touch_orchestrator_affordance_sentinel(sentinel)
     except Exception:

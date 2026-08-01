@@ -68,7 +68,7 @@ python scripts/cli/cohort_classifier.py \
     --workflow-mode atdd_pure  # <!-- mode-ref-ok -->
 ```
 
-Exit 0 → proceed. Exit 43 → BLOCK + propagate `COHORT_OUT_OF_PILOT_SCOPE` to operator. Anti-pattern (forbidden): silently re-labelling an S-cohort feature as M to expand the pilot pool — invalidates falsifier-gate per plan v3 §4.5.
+Exit 0 → proceed. Exit 43 → BLOCK + propagate `COHORT_OUT_OF_PILOT_SCOPE` to operator. Anti-pattern (forbidden): silently re-labelling an S-cohort feature as M to expand the pilot pool.
 
 ## Phase 1: Decisions and Context
 

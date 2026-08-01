@@ -53,3 +53,36 @@ Feature: deliver-integrity reconciliation is scoped to the feature's own slices
     When the operator verifies deliver integrity for this feature
     Then the verifier reports the feature has unreconciled work
     And the only unreconciled slice reported is "slice-01"
+
+  # AT-3 (F-PUSH-GATE-SLICE-ATTRIBUTION, the real swarm defect): a co-resident
+  # feature's slice lands in the shared git history but that feature's ledger
+  # does NOT exist on disk in THIS worktree (per-worktree telemetry, gitignored
+  # -- unlike AT-1 above, which seeds a visible foreign ledger). Before the fix,
+  # `foreign_owned` cannot subtract a ledger it cannot see, so the pollutant
+  # survived as this feature's "unreconciled" debt. The fix keys ownership on
+  # this feature's OWN declared Slice-Plan (data that travels with THIS
+  # feature's tree, not on which ledgers happen to be on disk): a shipped slice
+  # this feature never declared is the distinct could-not-attribute state, named
+  # but non-blocking, never silently dropped and never silently blamed.
+  @slice-01 @contract-shape:bounded-change
+  Scenario: A co-resident feature's slice with no visible ledger is not misattributed
+    Given a shared git history carrying this feature's slices "slice-01"
+    And the same history also carries another feature's slice "slice-07" with no visible ledger
+    And this feature declares a Slice-Plan naming "slice-01"
+    And this feature's ledger verified slices "slice-01"
+    And this feature's ledger recorded a complete feature-end cycle
+    When the operator verifies deliver integrity for this feature
+    Then the verifier reports the feature is reconciled
+    And the verifier names "slice-07" as unattributable, not blocking
+
+  # AT-4 (regression-pin, plan-aware): the Slice-Plan filter narrows attribution
+  # -- it must NEVER weaken genuine own-feature detection. A slice THIS
+  # feature's own plan declares, shipped with no ledger record, still fails.
+  @slice-01 @regression_pin @contract-shape:bounded-change
+  Scenario: An own-feature declared slice shipped with no ledger record still fails with a Slice-Plan present
+    Given a shared git history carrying this feature's slices "slice-01"
+    And this feature declares a Slice-Plan naming "slice-01"
+    And this feature's ledger recorded a complete feature-end cycle
+    When the operator verifies deliver integrity for this feature
+    Then the verifier reports the feature has unreconciled work
+    And the only unreconciled slice reported is "slice-01"

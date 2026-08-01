@@ -1813,16 +1813,7 @@ class NWaveInstaller:
         codex_home = (
             Path(codex_home_override) if codex_home_override else Path.home() / ".codex"
         )
-        essential_skills = (
-            "nw-deliver",
-            "nw-design",
-            "nw-discuss",
-            "nw-distill",
-            "nw-devops",
-            "nw-review",
-        )
         native_artifacts = [
-            *(skills_dir / name / "SKILL.md" for name in essential_skills),
             skills_dir / ".nwave-manifest.json",
             codex_home / "agents" / ".nwave-agents-manifest.json",
             codex_home / "hooks.json",

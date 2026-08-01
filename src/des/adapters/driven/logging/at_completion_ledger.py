@@ -57,7 +57,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from des.domain import telemetry_paths
+from des.domain.gate_outcome import GateVerdict
 from des.domain.iso_utc import format_iso_utc
+from des.domain.telemetry_paths import LedgerFamily
+from des.domain.telemetry_paths import ledger_dir as telemetry_ledger_dir
 from des.ports.driven_ports.at_completion_ledger_port import (
     COVERAGE_MAP_NOT_APPLICABLE_AT_DELIVER_EXIT,
     COVERAGE_MAP_NOT_APPLICABLE_AT_DISTILL_EXIT,
@@ -327,7 +331,7 @@ _QUIESCE_ENV = "NWAVE_AUDIT_LOG_MIGRATING"
 # The legacy per-feature telemetry directory (relative to a repo root). This
 # is the SSOT resolution root for `active_feature_id` below -- see its
 # docstring for the disambiguation contract.
-TELEMETRY_DIR_RELPATH = Path(".nwave") / "telemetry" / "atdd-pure"
+TELEMETRY_DIR_RELPATH = telemetry_ledger_dir(Path(), LedgerFamily.ATDD_PURE)
 
 
 def active_feature_id(repo_root: Path) -> str | None:
@@ -474,7 +478,7 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         """
         if self._is_singleton:
             return self._project_root / ".nwave" / "audit"
-        return self._project_root / ".nwave" / "telemetry" / "atdd-pure"
+        return telemetry_ledger_dir(self._project_root, LedgerFamily.ATDD_PURE)
 
     def ledger_path(self) -> Path:
         """The JSONL file path for the audit substrate.
@@ -503,6 +507,10 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         predecessor: str | None = None,
         commit_sha: str | None = None,
         reason: str | None = None,
+        outcome: GateVerdict | None = None,
+        at_kind: str | None = None,
+        content_digest: str | None = None,
+        override: bool | None = None,
     ) -> dict[str, Any]:
         """Append one slice gate-boundary audit record under the M7 write contract.
 
@@ -578,6 +586,26 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         present, threaded into ``fields`` and hashed into ``record_hash``
         like every other field.
 
+        gate-outcome-record-seam signature delta (slice-02, ADR-GV-003 D1):
+        the optional ``outcome`` kwarg carries the typed
+        :class:`~des.domain.gate_outcome.GateVerdict` a gate call site
+        actually observed. Defaults to None (every existing call site stays
+        byte-identical); when present, threaded into ``fields`` and hashed
+        into ``record_hash`` like every other field. `append_gate_event`
+        stays a pure write -- it never disputes ``outcome`` against
+        ``gate``/``reason`` truth (that reconciliation is explicitly out of
+        this layer's scope).
+
+        fix-shipped-regression-file-backfill signature delta: the optional
+        ``at_kind``, ``content_digest`` and ``override`` kwargs carry a
+        ``RegressionFileHistoricalBackfill`` record's own attested fields --
+        the AT-kind of the backfilled file, the sha256 digest over the
+        file's REAL bytes at the attested commit, and whether this backfill
+        intentionally superseded a prior one for the same slice. All three
+        default to None (every existing call site stays byte-identical);
+        when present, each is threaded into ``fields`` and hashed into
+        ``record_hash`` like every other field.
+
         Returns the appended record.
         """
         if ref is not None:
@@ -608,6 +636,14 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             fields["commit_sha"] = commit_sha
         if reason is not None:
             fields["reason"] = reason
+        if outcome is not None:
+            fields["outcome"] = outcome
+        if at_kind is not None:
+            fields["at_kind"] = at_kind
+        if content_digest is not None:
+            fields["content_digest"] = content_digest
+        if override is not None:
+            fields["override"] = override
         return self._append_record(fields, feature_id=feature_id)
 
     def append_contract_frozen(
@@ -950,7 +986,11 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         Feature-scoped (`slice_id == ""`).
         """
         return self._append_record(
-            {"event": ENVIRONMENTAL_E2E_VERIFIED, "slice_id": ""},
+            {
+                "event": ENVIRONMENTAL_E2E_VERIFIED,
+                "slice_id": "",
+                "outcome": GateVerdict.PASS,
+            },
             feature_id=feature_id,
         )
 
@@ -969,7 +1009,11 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         Feature-scoped (`slice_id == ""`).
         """
         return self._append_record(
-            {"event": ENVIRONMENTAL_E2E_NOT_APPLICABLE, "slice_id": ""},
+            {
+                "event": ENVIRONMENTAL_E2E_NOT_APPLICABLE,
+                "slice_id": "",
+                "outcome": GateVerdict.NOT_APPLICABLE,
+            },
             feature_id=feature_id,
         )
 
@@ -1078,7 +1122,11 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         pass. Feature-scoped (`slice_id == ""`).
         """
         return self._append_record(
-            {"event": FRESH_CLONE_VERIFIED, "slice_id": ""},
+            {
+                "event": FRESH_CLONE_VERIFIED,
+                "slice_id": "",
+                "outcome": GateVerdict.PASS,
+            },
             feature_id=feature_id,
         )
 
@@ -1092,9 +1140,20 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         the gate's own exit-2 INDETERMINATE degrades to a non-blocking NA here
         (a repo never asked to have a demo recipe is not held to one).
         Feature-scoped (`slice_id == ""`).
+
+        Honest caveat (gate-outcome-record-seam slice-02): this record is
+        currently WRITE-ONLY. `FreshCloneNotApplicable` has no reader
+        anywhere in `src/` or `scripts/` other than this write site itself --
+        no reconciliation, no done-gate check, no downstream consumer reads
+        it back. Writing it does not, by itself, accomplish anything
+        downstream today; it is a durable trace awaiting a future reader.
         """
         return self._append_record(
-            {"event": FRESH_CLONE_NOT_APPLICABLE, "slice_id": ""},
+            {
+                "event": FRESH_CLONE_NOT_APPLICABLE,
+                "slice_id": "",
+                "outcome": GateVerdict.NOT_APPLICABLE,
+            },
             feature_id=feature_id,
         )
 
@@ -1125,7 +1184,11 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         Feature-scoped (`slice_id == ""`).
         """
         return self._append_record(
-            {"event": EXECUTION_REACH_VERIFIED, "slice_id": ""},
+            {
+                "event": EXECUTION_REACH_VERIFIED,
+                "slice_id": "",
+                "outcome": GateVerdict.PASS,
+            },
             feature_id=feature_id,
         )
 
@@ -1141,9 +1204,20 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         not held to a reach check over it).
 
         Feature-scoped (`slice_id == ""`).
+
+        Honest caveat (gate-outcome-record-seam slice-02): this record is
+        currently WRITE-ONLY. `ExecutionReachNotApplicable` has no reader
+        anywhere in `src/` or `scripts/` other than this write site itself --
+        no reconciliation, no done-gate check, no downstream consumer reads
+        it back. Writing it does not, by itself, accomplish anything
+        downstream today; it is a durable trace awaiting a future reader.
         """
         return self._append_record(
-            {"event": EXECUTION_REACH_NOT_APPLICABLE, "slice_id": ""},
+            {
+                "event": EXECUTION_REACH_NOT_APPLICABLE,
+                "slice_id": "",
+                "outcome": GateVerdict.NOT_APPLICABLE,
+            },
             feature_id=feature_id,
         )
 
@@ -1173,7 +1247,11 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         never a fake pass. Feature-scoped (`slice_id == ""`).
         """
         return self._append_record(
-            {"event": DOC_COHERENCE_VERIFIED, "slice_id": ""},
+            {
+                "event": DOC_COHERENCE_VERIFIED,
+                "slice_id": "",
+                "outcome": GateVerdict.PASS,
+            },
             feature_id=feature_id,
         )
 
@@ -1188,9 +1266,20 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         repo never asked to ship docs claims is not held to this check).
 
         Feature-scoped (`slice_id == ""`).
+
+        Honest caveat (gate-outcome-record-seam slice-02): this record is
+        currently WRITE-ONLY. `DocCoherenceNotApplicable` has no reader
+        anywhere in `src/` or `scripts/` other than this write site itself --
+        no reconciliation, no done-gate check, no downstream consumer reads
+        it back. Writing it does not, by itself, accomplish anything
+        downstream today; it is a durable trace awaiting a future reader.
         """
         return self._append_record(
-            {"event": DOC_COHERENCE_NOT_APPLICABLE, "slice_id": ""},
+            {
+                "event": DOC_COHERENCE_NOT_APPLICABLE,
+                "slice_id": "",
+                "outcome": GateVerdict.NOT_APPLICABLE,
+            },
             feature_id=feature_id,
         )
 
@@ -1581,6 +1670,52 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             fields["reason"] = reason
         return self._append_record(fields, feature_id=feature_id)
 
+    def append_event(
+        self,
+        scope: str,
+        event: str,
+        *,
+        family: LedgerFamily,
+        partition_key: str,
+        feature_id: str | None = None,
+        agent_id: str | None = None,
+        fields: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Append one unified-event-store record (D80, DD-11 Reuse Analysis row 2).
+
+        Resolves the physical write target PER ``family`` via
+        ``telemetry_paths.ledger_path(project_root, family, partition_key)`` --
+        never ``self.ledger_path()`` (the construction-time singleton/legacy
+        target). Without this, ``family`` would validate syntactically and
+        have zero effect on where the record physically lands -- the exact
+        ``LedgerFamily.RED_GREEN`` failure class D80 exists to kill, one
+        layer up (event_store_port.py's DELIVER routing note).
+
+        Shares the SAME flock-serialised ``_append_record`` critical section
+        every other ``append_*`` method uses (Correction 4 -- one write
+        primitive for the whole substrate).
+
+        ``feature_id`` is nullable (DD-5) -- a session/node-scoped record
+        legitimately carries no feature_id, so this bypasses
+        ``_resolve_feature_id``'s singleton-shape "feature_id is required"
+        rule, which exists for the legacy audit-log call sites, not this one.
+        """
+        target_path = telemetry_paths.ledger_path(
+            self._project_root, family, partition_key
+        )
+        record_fields: dict[str, Any] = {
+            "event": event,
+            "scope": scope,
+            "family": family.value,
+        }
+        if agent_id is not None:
+            record_fields["agent_id"] = agent_id
+        if fields:
+            record_fields.update(fields)
+        return self._append_record(
+            record_fields, feature_id=feature_id, target_path=target_path
+        )
+
     def _resolve_feature_id(self, call_feature_id: str | None) -> str:
         """Pick the effective feature_id for one append call.
 
@@ -1604,7 +1739,11 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         return call_feature_id if call_feature_id is not None else self._feature_id
 
     def _append_record(
-        self, fields: dict[str, Any], *, feature_id: str | None = None
+        self,
+        fields: dict[str, Any],
+        *,
+        feature_id: str | None = None,
+        target_path: Path | None = None,
     ) -> dict[str, Any]:
         """The shared M7 append critical section -- one flock-serialised write.
 
@@ -1629,8 +1768,24 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         slice_id + feature_id so a post-migration audit can replay the
         attempted-but-quiesced writes. Legacy callers (slice-02 migrates them)
         are unaffected.
+
+        ``target_path`` (D80 unified-event-store, `append_event`): when given,
+        overrides the construction-time ``self.ledger_path()`` destination --
+        the ONLY way `EventRecord.family` genuinely selects where a record
+        physically lands (event_store_port.py's DELIVER routing note). Every
+        existing ``append_*`` call site passes no ``target_path`` and stays
+        byte-identical. `feature_id` resolution is bypassed for this path too
+        (used verbatim, may legitimately be ``None`` for a session/node-scoped
+        record, DD-5) -- `_resolve_feature_id`'s singleton "feature_id is
+        required" rule is a legacy audit-log concern, not this one's.
         """
-        resolved_feature_id = self._resolve_feature_id(feature_id)
+        resolved_feature_id: str | None
+        if target_path is None:
+            resolved_feature_id = self._resolve_feature_id(feature_id)
+            path = self.ledger_path()
+        else:
+            resolved_feature_id = feature_id
+            path = target_path
 
         if self._is_singleton and os.environ.get(_QUIESCE_ENV) == "1":
             # Migration-quiesce: refuse the caller-requested record AND
@@ -1642,8 +1797,7 @@ class AtCompletionLedger(AtCompletionLedgerPort):
                 "quiesced_event": str(fields.get("event", "")),
             }
 
-        self.ledger_dir().mkdir(parents=True, exist_ok=True)
-        path = self.ledger_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
 
         # Open in append+read mode; the flock serialises the whole
         # read-seq -> append critical section against concurrent appenders.
@@ -1664,7 +1818,7 @@ class AtCompletionLedger(AtCompletionLedgerPort):
                 # NOT carry it -- backward-compat hash domain unchanged.
                 if self._is_singleton:
                     record["correlation_id"] = derive_correlation_id(
-                        resolved_feature_id,
+                        str(resolved_feature_id or ""),
                         str(record.get("slice_id", "")),
                         next_seq,
                     )

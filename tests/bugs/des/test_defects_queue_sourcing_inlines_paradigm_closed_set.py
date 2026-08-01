@@ -15,7 +15,10 @@ tree's own `des-command-catalog.md:39` names ("NEVER put the defect CLASS
 there"). `select_paradigm_lens` (`src/des/domain/refactor/paradigm_select.py`)
 refuses both: neither is a member of `RecognizedParadigm`.
 
-The two sourcing instructions in `00-standing-loops.md` are ASYMMETRIC. The
+The two sourcing instructions in the shipped orchestrator-affordance asset
+whose role stem is `standing-loops` (basename carries a numeric
+injection-order prefix that is expected to churn -- resolved via
+`resolve_affordance_asset`, never a literal basename) are ASYMMETRIC. The
 `techdebt.md` one (`/loop 30m` — source tech-debt findings, ~line 397)
 inlines the closed set explicitly: `paradigm=<object-oriented|functional>`.
 The `defects.md` one (`/loop 30m` — source the bugfix queue) only says "same
@@ -34,15 +37,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.common.orchestrator_affordance_paths import resolve_affordance_asset
+
 
 # tests/bugs/des/<this file> -> parents[3] == checkout root (mirrors the
 # convention already used by sibling files in this directory, e.g.
 # test_coherence_catalog_path_override.py / test_dispatch_lane_for_non_code_
 # facing_agents.py).
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_STANDING_LOOPS_PATH = (
-    _REPO_ROOT / "nWave" / "data" / "orchestrator-affordance" / "00-standing-loops.md"
-)
+_STANDING_LOOPS_PATH = resolve_affordance_asset(_REPO_ROOT, "standing-loops")
 
 _SOURCING_MARKER = "source the bugfix queue"
 _DRAINING_MARKER = "drain the bugfix queue"

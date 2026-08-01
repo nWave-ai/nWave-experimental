@@ -156,4 +156,6 @@ def then_names_missing(run_state):
 def then_rejected(run_state):
     err = run_state["error"]
     assert err is not None, "unsupported tool was NOT rejected"
-    assert "copilot" in str(err).lower() or "unsupported" in str(err).lower(), str(err)
+    assert (
+        "unregistered-cli" in str(err).lower() or "unsupported" in str(err).lower()
+    ), str(err)

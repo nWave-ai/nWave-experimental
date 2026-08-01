@@ -10,6 +10,7 @@ import json
 import os
 import sys
 from collections import Counter
+from pathlib import Path
 
 
 root = sys.argv[1]
@@ -20,7 +21,9 @@ attributable = opaque = 0
 prompt_bytes = 0
 attach_bytes = Counter()
 
-files = [f for f in sorted(os.listdir(root)) if f.endswith(".jsonl")]
+files = [
+    f for f in sorted([p.name for p in Path(root).iterdir()]) if f.endswith(".jsonl")
+]
 for f in files:
     tool_by_id = {}
     target_by_id = {}

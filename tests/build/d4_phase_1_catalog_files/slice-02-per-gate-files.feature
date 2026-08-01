@@ -28,6 +28,13 @@ Feature: Per-gate YAML files validate against GateContractFull schema (slice-02)
     Then every catalog gate_id has a corresponding per-gate file with matching name
     And every per-gate file's internal gate_id field equals its filename stem
 
+  @driving_port @in-process @real-io @slice-02 @contract-shape:pure-function
+  Scenario: Catalog and per-gate file agree on every shared contract field
+    Given the gate catalog loaded from "nWave/gates/_catalog.yaml"
+    And the per-gate files loaded from "nWave/gates/"
+    When the shared contract fields are compared entry by entry
+    Then no gate declares a different value in the catalog than in its per-gate file
+
   @driving_port @in-process @real-io @slice-02 @contract-shape:pure-function @regression-pin
   Scenario: language_neutral_contract:false count equals 2 (env-e2e + contract-gate)
     Given the per-gate files loaded from "nWave/gates/"

@@ -39,27 +39,48 @@ would FALSE-POSITIVE the ~20 legitimate operator-CLI / git-hook / orchestrated
 gates (``doctor``, ``commit-slice``, ``walking-skeleton-gate`` ...) -- the exact
 false-positive class the indirect-wiring rule removes.
 
-ACTIVE-RED (atdd_pure -- NOT @skip): at HEAD
-  * ``_schema.yaml`` ``GateContract`` is ``additionalProperties: false`` with NO
-    ``dormant`` property (``:48``), so a catalogued ``dormant:`` value is
-    SCHEMA-REJECTED -- AT-A1-D (schema permits dormant) RED-fails;
-  * there is NO production coherence check + NO ``dormant`` annotation on the
-    genuinely-unwired catalogued gates, so the coherence-over-the-real-catalog
-    assertion RED-fails NAMING the unwired gates (the authored-but-unwired class
-    is live at HEAD).
-Every failure is a semantic ``AssertionError``, never a collection / import /
-setup error. GREEN once DELIVER (1) extends ``_schema.yaml`` to permit
-``dormant: {type: string, minLength: 10}`` on ``GateContract``, (2) ships the
-pure-function coherence check, and (3) annotates each genuinely-unwired
-catalogued gate with ``dormant: <rationale>`` (or wires it).
+PROMOTED (gate-armed-state-derivation slice-02, EXTEND-as-promotion): the
+``coherence_offenders`` reducer and its ``ArmedStateInputs`` dataclass have
+been promoted into a first-class, catalogued, operator-invokable ``des`` CLI
+gate at ``src/des/cli/verify_gate_armed_state.py`` (mirroring
+``src/des/cli/verify_catalog_coherence.py``'s shape). This file is now a THIN
+CONSUMER of that production module -- it imports the reducer + dataclass
+rather than owning its own copy, and keeps driving the SAME 6 regression AT
+fixtures (byte-for-byte unchanged assertions) as the real-tree + synthetic-
+fixture regression witness for the promoted CLI (`tests/des/acceptance/
+test_verify_gate_armed_state.py`'s own slice-02 CLI-contract ATs cover the
+argparse/JSON/degrade-LOUD layer this file does not re-derive).
+
+TRUST-POLICY CHANGE (gate-armed-state-derivation slice-03, decision #1,
+feature-delta.md `## Wave: DESIGN / [REF] Decisions` row 1 + `## Wave: DESIGN
+/ [REF] Architecture & Contract Tests` four-tier table): ``host_visibility``
+self-declaration (``cli`` / ``git-hook``) NO LONGER, by itself, resolves a
+gate as wired/armed -- it is demoted to CLI-existence-only metadata,
+cross-checked against ``src/des/cli/__main__.py``'s ``_REGISTRY``, necessary
+but never sufficient. Today's binary WIRED/DORMANT becomes four tiers:
+ARMED (>=1 independent CODE surface hit) / ARMED-PROSE (prose-only hit,
+distinct, never merged into ARMED) / DORMANT (unchanged, L-4) /
+INDETERMINATE (no independent CODE or PROSE hit -- includes the
+self-declaration-only case AND the zero-evidence case alike, since a static
+reducer can never manufacture a hard NOT-ARMED verdict, decision #4). The
+new ``gate_armed_states`` production function (RED at HEAD -- does not exist
+yet) returns the per-gate tier mapping; ``coherence_offenders`` is preserved
+UNCHANGED in name and shape as a backward-compatible view over it (the
+gate-ids resolving to the ``indeterminate`` tier), so the 5 fixtures below
+that were never evidenced by ``host_visibility`` alone keep passing
+byte-for-byte. Exactly ONE of the 6 original fixtures --
+``test_arch_a_live_catalog_is_coherent`` -- drove the REAL catalog, where
+33/78 gates ARE self-declaration-only, so ITS parity claim legitimately
+flips (re-baselined below, renamed, with the WHY inline).
 """
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import yaml
+
+from des.cli.verify_gate_armed_state import ArmedStateInputs, coherence_offenders
 
 
 # tests/build/f_nonbypassable_attestation/<this file> -> parents[3] = REPO_ROOT
@@ -94,11 +115,6 @@ _LIVE_HOOK_FILES = (
     _REPO_ROOT / "src" / "des" / "application" / "feature_end_cycle_service.py",
 )
 
-# host_visibility values that mean "invoked directly by an operator / git" (a
-# valid indirect wiring -- the gate fires on a real surface even with no flavor
-# gate_id row). S3: indirect wiring counts.
-_OPERATOR_VISIBILITIES = frozenset({"cli", "git-hook"})
-
 
 # --------------------------------------------------------------------------
 # Readers over the shipped DATA (the real coherence check operates on exactly
@@ -130,44 +146,6 @@ def _gate_contract_properties() -> dict:
     return doc["$defs"]["GateContract"]["properties"]
 
 
-def coherence_offenders(
-    gates: list[dict],
-    *,
-    firing_text: str,
-    host_visibility: dict[str, frozenset[str]],
-) -> list[str]:
-    """The PURE coherence reducer (the SUT, @contract-shape:pure-function).
-
-    Over an arbitrary catalogue (a list of gate entries), returns the gate-ids
-    that are NEITHER wired NOR dormant-annotated -- catalogued gate-ids not a
-    subset of (wired union dormant). A non-empty result is the authored-but-unwired
-    failure class. INJECTED inputs (catalogue gates + firing-surface text +
-    per-gate host-visibility) so the reducer can be driven over BOTH the live
-    shipped surface (the regression guardrail) AND a synthetic incoherent
-    fixture (the FLAG+NAME witness) -- distinct-fixture-per-verdict discipline.
-
-    Wiredness counts INDIRECT wiring (S3 / Mandate-15): a flavor gate_id row, OR
-    a live-hook module reference, OR operator-direct visibility (cli / git-hook).
-    """
-    offenders: list[str] = []
-    for entry in gates:
-        gid = entry["gate_id"]
-        module = entry.get("module", "")
-        visibilities = host_visibility.get(gid, frozenset())
-        wired = (
-            bool(re.search(rf"gate_id:\s*{re.escape(gid)}\b", firing_text))
-            or (bool(module) and module in firing_text)
-            or bool(visibilities & _OPERATOR_VISIBILITIES)
-        )
-        if wired:
-            continue
-        rationale = entry.get("dormant")
-        if rationale and rationale.strip():  # non-empty rationale -> excused
-            continue
-        offenders.append(gid)
-    return offenders
-
-
 def _live_offenders() -> list[str]:
     """The coherence reducer applied to the REAL shipped catalog + firing surfaces."""
     doc = yaml.safe_load(_CATALOG_PATH.read_text(encoding="utf-8"))
@@ -175,8 +153,10 @@ def _live_offenders() -> list[str]:
     host_visibility = {g["gate_id"]: _gate_host_visibility(g["gate_id"]) for g in gates}
     return coherence_offenders(
         gates,
-        firing_text=_firing_surface_text(),
-        host_visibility=host_visibility,
+        inputs=ArmedStateInputs(
+            firing_text=_firing_surface_text(),
+            host_visibility=host_visibility,
+        ),
     )
 
 
@@ -209,8 +189,10 @@ def test_arch_a_wired_gate_is_coherent() -> None:
     """
     offenders = coherence_offenders(
         [{"gate_id": "alpha-wired", "module": "des.cli.alpha_wired"}],
-        firing_text=_SYNTH_FIRING,
-        host_visibility={"alpha-wired": frozenset()},
+        inputs=ArmedStateInputs(
+            firing_text=_SYNTH_FIRING,
+            host_visibility={"alpha-wired": frozenset()},
+        ),
     )
     assert offenders == [], (
         "a catalogued gate reached via a live firing surface (its module named in "
@@ -237,8 +219,10 @@ def test_arch_b_unwired_non_dormant_gate_is_flagged_and_named() -> None:
     ]
     offenders = coherence_offenders(
         catalogue,
-        firing_text=_SYNTH_FIRING,  # names alpha-wired only; orphan-gate unreached
-        host_visibility={"alpha-wired": frozenset(), "orphan-gate": frozenset()},
+        inputs=ArmedStateInputs(
+            firing_text=_SYNTH_FIRING,  # names alpha-wired only; orphan-gate unreached
+            host_visibility={"alpha-wired": frozenset(), "orphan-gate": frozenset()},
+        ),
     )
     assert offenders == ["orphan-gate"], (
         "an UNWIRED, non-dormant catalogued gate (no flavor row, no live-hook "
@@ -248,27 +232,60 @@ def test_arch_b_unwired_non_dormant_gate_is_flagged_and_named() -> None:
     )
 
 
-def test_arch_a_live_catalog_is_coherent() -> None:
-    """AT-A1-A-live (regression guardrail): the REAL shipped catalogue is coherent
-    -- every catalogued gate is wired (flavor row / live-hook module reference /
-    operator-direct ``host_visibility``) OR ``dormant``-annotated. Drives the
-    reducer over the REAL ``_catalog.yaml`` + firing surfaces.
+def test_arch_a_live_catalog_moves_self_declaration_only_gates_to_indeterminate() -> (
+    None
+):
+    """AT-A1-A-live RE-BASELINED (gate-armed-state-derivation slice-03, decision
+    #1): originally named ``test_arch_a_live_catalog_is_coherent`` and asserted
+    ``_live_offenders() == []`` over the REAL shipped catalogue -- true ONLY
+    because ``host_visibility`` self-declaration (``cli`` / ``git-hook``) was
+    treated as sufficient wiring proof for the gates lacking any independent
+    CODE-surface hit. Decision #1 (feature-delta.md ``## Wave: DESIGN / [REF]
+    Decisions`` row 1) demotes that self-declaration to CLI-existence-only
+    metadata -- it no longer, by itself, resolves a gate as armed. This
+    legitimately FLIPS the real-tree parity claim: the real catalogue now
+    contains a non-empty self-declaration-only population (the ``indeterminate``
+    tier), of which ``verify-charter-filled`` (zero real callers, per the prior
+    912k-token audit -- the measurement's proven false positive, Critical
+    Grounding Finding) is the flagship member.
 
-    GREEN at HEAD: f-coherence-and-attestation slice-06 already wired
-    gate-G / self-attest / verify-test-runner, and every other catalogued gate is
-    a real operator-CLI gate (``host_visibility: [cli]`` = indirect wiring per
-    S3 / Mandate-15). This is the standing CI guard: a future maintainer who adds
-    a catalogued gate but forgets to wire it (and does not mark it ``dormant:``)
-    RED-fails HERE, named. (The slice-04 deliverable IS this permanent guard.)
+    Re-baselined, never silently relaxed: this test still proves TWO things over
+    the REAL, unchanged tree -- (i) ``verify-charter-filled`` now correctly
+    resolves ``indeterminate``, never ``armed``; (ii) a gate with a genuine CODE
+    surface hit (``carpaccio-slice-gate``, a real ``gate_id`` row in
+    ``nWave/flavors/atdd_pure.yaml``) is NEVER incorrectly demoted by this
+    trust-policy change -- it must remain ``armed``.
+
+    RED at HEAD (4e2c07581): ``gate_armed_states`` does not exist yet -- the
+    shipped ``coherence_offenders`` still treats ``host_visibility`` as
+    sufficient (slice-02 behaviour, unchanged until this slice's implementation
+    lands). GREEN once DELIVER implements the demoted trust policy.
     """
-    offenders = _live_offenders()
-    assert offenders == [], (
-        "the REAL catalogue must be coherent: every catalogued gate wired into a "
-        "live firing surface (flavor row / live-hook module reference / "
-        "operator-direct cli|git-hook visibility -- indirect wiring counts, S3) OR "
-        f"marked `dormant: <rationale>`. Unwired-and-undeclared gates: {offenders}. "
-        "Wire each (add to a flavor stack / reference its module in a live hook) "
-        "OR annotate it with a non-empty `dormant:` rationale."
+    from des.cli.verify_gate_armed_state import gate_armed_states
+
+    doc = yaml.safe_load(_CATALOG_PATH.read_text(encoding="utf-8"))
+    gates = doc["gates"]
+    host_visibility = {g["gate_id"]: _gate_host_visibility(g["gate_id"]) for g in gates}
+    states = gate_armed_states(
+        gates,
+        inputs=ArmedStateInputs(
+            firing_text=_firing_surface_text(),
+            host_visibility=host_visibility,
+        ),
+    )
+
+    assert states.get("verify-charter-filled") == "indeterminate", (
+        "verify-charter-filled (host_visibility self-declaration only, zero real "
+        "callers per the prior 912k-token audit) must resolve indeterminate over "
+        f"the REAL catalogue, never armed -- got "
+        f"{states.get('verify-charter-filled')!r}. This is the measurement's "
+        "headline false-positive (Critical Grounding Finding, feature-delta.md)."
+    )
+    assert states.get("carpaccio-slice-gate") == "armed", (
+        "carpaccio-slice-gate has a real CODE-surface hit (a `gate_id` row in "
+        "nWave/flavors/atdd_pure.yaml) and must remain armed -- the "
+        "host_visibility trust-policy demotion must NEVER downgrade a gate with "
+        f"independent CODE evidence. Got {states.get('carpaccio-slice-gate')!r}."
     )
 
 
@@ -294,8 +311,10 @@ def test_arch_c_dormant_with_rationale_is_excused() -> None:
                 "dormant": "intentionally unwired pending the SF-tier dispatch layer",
             }
         ],
-        firing_text="",  # unwired
-        host_visibility={"dozing-gate": frozenset()},
+        inputs=ArmedStateInputs(
+            firing_text="",  # unwired
+            host_visibility={"dozing-gate": frozenset()},
+        ),
     )
     assert excused == [], (
         "an unwired gate carrying a non-empty `dormant: <rationale>` MUST be "
@@ -309,8 +328,10 @@ def test_arch_c_dormant_with_rationale_is_excused() -> None:
                 "dormant": "   ",
             }
         ],  # whitespace-only rationale
-        firing_text="",
-        host_visibility={"dozing-gate": frozenset()},
+        inputs=ArmedStateInputs(
+            firing_text="",
+            host_visibility={"dozing-gate": frozenset()},
+        ),
     )
     assert still_flagged == ["dozing-gate"], (
         "an unwired gate whose `dormant:` rationale is EMPTY/whitespace MUST STILL "
@@ -371,8 +392,7 @@ def test_arch_e_empty_catalog_is_vacuously_coherent() -> None:
     # the 33-gate live catalogue never reaches.
     offenders_over_empty = coherence_offenders(
         [],
-        firing_text="",
-        host_visibility={},
+        inputs=ArmedStateInputs(firing_text="", host_visibility={}),
     )
     assert offenders_over_empty == [], (
         "coherence over a ZERO-gate catalog must be vacuously true -- the empty "

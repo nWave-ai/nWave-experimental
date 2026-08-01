@@ -16,6 +16,7 @@ import json
 import os
 import sys
 from collections import Counter, defaultdict
+from pathlib import Path
 
 
 paths = sys.argv[1:]
@@ -41,7 +42,11 @@ files = []
 for p in paths:
     if os.path.isdir(p):
         files.extend(
-            sorted(os.path.join(p, f) for f in os.listdir(p) if f.endswith(".jsonl"))
+            sorted(
+                os.path.join(p, f)
+                for f in [p.name for p in Path(p).iterdir()]
+                if f.endswith(".jsonl")
+            )
         )
     else:
         files.append(p)

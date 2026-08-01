@@ -70,6 +70,9 @@ import pytest
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli import verify_slice_commit_completeness as vscc
+from tests.common.gate_scope_fixtures import (
+    stamp_genuine_gate_scope_trailer as _stamp_genuine_gate_scope_trailer,
+)
 
 
 _FEATURE_RC2_HEADLINE = "fix-contract-gate-slice-scope-rc2-headline"
@@ -277,6 +280,7 @@ def test_all_shipped_and_entering_slices_green_still_verifies_with_a_future_slic
     )
     _write_regression_test(repo, feature_id, "slice-03", "future", passing=False)
     _commit_with_trailer(repo, "slice-02", "feat(slice): entering slice behaviour")
+    _stamp_genuine_gate_scope_trailer(repo)
     AtCompletionLedger(feature_id, repo).append_gate_event(
         event="SliceCommitVerified", slice_id="slice-01"
     )
@@ -383,6 +387,7 @@ def test_pytest_regression_feature_without_at_kind_flag_is_not_silently_misroute
     _commit_with_trailer(
         repo, "slice-01", "feat(slice): pytest-regression-only feature"
     )
+    _stamp_genuine_gate_scope_trailer(repo)
 
     exit_code, payload = _run_verify_slice_commit(repo, feature_id, capsys)
 
@@ -506,6 +511,7 @@ def test_verified_payload_names_the_regression_files_it_actually_ran(
         repo, feature_id, "slice-02", "entering", passing=True
     )
     _commit_with_trailer(repo, "slice-02", "feat(slice): entering slice behaviour")
+    _stamp_genuine_gate_scope_trailer(repo)
     AtCompletionLedger(feature_id, repo).append_gate_event(
         event="SliceCommitVerified", slice_id="slice-01"
     )
@@ -555,6 +561,7 @@ def test_verified_never_carries_an_empty_executed_scope(
         repo, feature_id, "slice-01", "only", passing=True
     )
     _commit_with_trailer(repo, "slice-01", "feat(slice): only slice behaviour")
+    _stamp_genuine_gate_scope_trailer(repo)
 
     exit_code, payload = _run_verify_slice_commit(
         repo,
@@ -603,6 +610,7 @@ def test_verified_payload_testifies_as_much_as_the_refusal_payload_does(
     _commit_with_trailer(
         clean_repo, "slice-02", "feat(slice): entering slice behaviour"
     )
+    _stamp_genuine_gate_scope_trailer(clean_repo)
     AtCompletionLedger(clean_feature, clean_repo).append_gate_event(
         event="SliceCommitVerified", slice_id="slice-01"
     )

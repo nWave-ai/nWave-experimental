@@ -32,6 +32,7 @@ from pathlib import Path
 from des.ports.driven_ports.impacted_test_selector_port import (
     ImpactedTestSelection,
     ImpactedTestSelectorPort,
+    SelectionOutcome,
 )
 
 
@@ -150,8 +151,16 @@ class HeuristicImpactedTestSelectorAdapter(ImpactedTestSelectorPort):
         if not changed_paths:
             # Nothing changed yet (e.g. the drain's pre-agent baseline run) --
             # there is nothing to narrow AGAINST. Not a heuristic miss, a
-            # structural absence of input.
-            return ImpactedTestSelection(targets=(str(repo),), narrowed=False)
+            # structural absence of input -- INDETERMINATE, not
+            # NOT_NARROWABLE (feature impacted-test-selector-arity-fix).
+            return ImpactedTestSelection(
+                targets=(str(repo),),
+                narrowed=False,
+                outcome=SelectionOutcome.INDETERMINATE,
+                reason=(
+                    "no change set was supplied -- there is nothing to narrow against"
+                ),
+            )
 
         tests_root = repo / "tests"
         candidates: set[Path] = set()
@@ -167,7 +176,15 @@ class HeuristicImpactedTestSelectorAdapter(ImpactedTestSelectorPort):
             # The heuristic ran and found no candidate -- still "could not
             # narrow", distinct from "narrowed to the whole repo", but the
             # observable fallback scope is the same repo root either way.
-            return ImpactedTestSelection(targets=(str(repo),), narrowed=False)
+            return ImpactedTestSelection(
+                targets=(str(repo),),
+                narrowed=False,
+                outcome=SelectionOutcome.NOT_NARROWABLE,
+                reason=(
+                    "the heuristic found no candidate test directory for "
+                    "the changed paths"
+                ),
+            )
 
         common = Path(
             _common_ancestor(sorted(str(candidate) for candidate in candidates))
@@ -176,8 +193,23 @@ class HeuristicImpactedTestSelectorAdapter(ImpactedTestSelectorPort):
             # The candidates collapsed all the way back up to the repo root
             # -- e.g. changed files touching unrelated top-level areas -- so
             # this is not a genuine restriction either.
-            return ImpactedTestSelection(targets=(str(repo),), narrowed=False)
-        return ImpactedTestSelection(targets=(str(common),), narrowed=True)
+            return ImpactedTestSelection(
+                targets=(str(repo),),
+                narrowed=False,
+                outcome=SelectionOutcome.NOT_NARROWABLE,
+                reason=(
+                    "the candidate test directories collapsed back to the repo root"
+                ),
+            )
+        return ImpactedTestSelection(
+            targets=(str(common),),
+            narrowed=True,
+            outcome=SelectionOutcome.NARROWED,
+            reason=(
+                "narrowed to same-feature test directories and importers "
+                "of the changed module"
+            ),
+        )
 
 
 def _common_ancestor(paths: list[str]) -> str:

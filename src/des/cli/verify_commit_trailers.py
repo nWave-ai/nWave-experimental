@@ -48,6 +48,7 @@ from des.cli.carpaccio_slice_gate import (
 )
 from des.domain.repo_path_resolver import feature_delta_path as _feature_delta_path
 from des.domain.slice_id_trailer import extract_slice_ids
+from des.domain.telemetry_paths import LedgerFamily, ledger_dir
 from des.ports.driven_ports.commit_trailer_read_port import (
     CommitTrailerReadPort,
     Indeterminate,
@@ -65,10 +66,10 @@ def _feature_id_for_slice(repo: Path, slice_id: str) -> str | None:
     the feature id. Returns the FIRST matching feature id in filesystem order,
     or ``None`` if no record matches (the gate will then surface ``absent``).
     """
-    ledger_dir = repo / ".nwave" / "telemetry" / "atdd-pure"
-    if not ledger_dir.is_dir():
+    at_ledger_dir = ledger_dir(repo, LedgerFamily.ATDD_PURE)
+    if not at_ledger_dir.is_dir():
         return None
-    for ledger_file in sorted(ledger_dir.glob("*.jsonl")):
+    for ledger_file in sorted(at_ledger_dir.glob("*.jsonl")):
         for line in ledger_file.read_text(encoding="utf-8").splitlines():
             stripped = line.strip()
             if not stripped:

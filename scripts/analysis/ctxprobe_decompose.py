@@ -13,9 +13,12 @@ Also classifies the chain-identity drifts (GDP-6: named, not swallowed).
 
 import os
 import sys
+from pathlib import Path
 
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, str(Path(str(Path(__file__).parent).resolve())))
+import itertools
+
 from ctxprobe_account import account
 
 
@@ -26,7 +29,7 @@ drops = []  # prefix SHRANK -> compaction / cache miss
 misses = []  # prefix grew by more than declared -> cache eviction
 per_agent = []
 
-for f in sorted(os.listdir(root)):
+for f in sorted([p.name for p in Path(root).iterdir()]):
     if not f.endswith(".jsonl"):
         continue
     p = os.path.join(root, f)
@@ -48,7 +51,7 @@ for f in sorted(os.listdir(root)):
     turns_tot += t
     name = f.replace("agent-a", "").rsplit("-", 1)[0]
     per_agent.append((name, t, p0, cr, fixed, accrued))
-    for a, b in zip(rows, rows[1:]):
+    for a, b in itertools.pairwise(rows):
         expect = a["cr"] + a["cw"]
         if b["cr"] < expect:
             drops.append((name, expect - b["cr"]))
@@ -82,5 +85,5 @@ print("\n=== top agents by FIXED-prefix waste ===")
 print(
     f"{'agent':38s} {'turns':>5} {'prefix0':>9} {'fixed re-read':>15} {'%of its cr':>10}"
 )
-for name, t, p0, cr, fx, ac in sorted(per_agent, key=lambda x: -x[4])[:20]:
+for name, t, p0, cr, fx, _ac in sorted(per_agent, key=lambda x: -x[4])[:20]:
     print(f"{name[:38]:38s} {t:5d} {p0:9,} {fx:15,} {100 * fx / cr:9.1f}%")

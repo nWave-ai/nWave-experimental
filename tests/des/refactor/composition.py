@@ -103,6 +103,36 @@ class CliResult:
     stderr: str
 
 
+@dataclass(frozen=True)
+class ScopeReport:
+    """Observable outcome of one drain driven with an INJECTED impacted-test
+    selector (feature impacted-test-selector-arity-fix, slice-01) -- the
+    Mandate-8 port-exposed universe an AT asserts on without ever reading
+    ``DrainResult`` internals directly.
+
+    ``selection_reason`` reads ``DrainResult.selection_reason`` DEFENSIVELY
+    (``getattr(..., None)``) because that field does not exist on
+    ``DrainResult`` yet -- reading it via ``getattr`` turns "the field is
+    still missing" into a clean ``AssertionError`` (``None`` compared against
+    an expected reason) instead of an ``AttributeError``, so a not-yet-wired
+    scenario fails for the RIGHT reason (MISSING_FUNCTIONALITY), never a
+    setup/collection error.
+
+    ``drained is False`` with ``refusal_reason`` naming a raised exception is
+    how a drain that RAISED (rather than returning a refusal ``DrainResult``)
+    is represented here -- "refused loudly" (CT-3) covers both a graceful
+    refusal AND an uncaught exception the drain's own cleanup wrapper
+    re-raises; this report collapses both into the SAME observable shape so
+    an AT does not have to guess which one DELIVER chooses.
+    """
+
+    drained: bool
+    merged: bool
+    test_target_scope: str | None
+    selection_reason: str | None
+    refusal_reason: str | None
+
+
 class RefactorSwarmComposition:
     """Production-wired composition root for the slice-01 acceptance set.
 
@@ -589,6 +619,120 @@ proposed_solution="extract a shared function"
             paid_path=self.paid_path,
             agent_cmd=agent_cmd,
             integration_branch=self.integration_branch,
+        )
+
+    # --- Given/When: impacted-test-selector-arity-fix slice-01 --------------
+    # -- INJECTED selector treatment: "what does the drain DO with a given --
+    # -- answer" (WS Strategy dual-treatment rule) ----------------------------
+
+    def drain_service_with_selector(self, selector) -> RefactorDrainService:
+        """Composition root wiring the REAL ``GitWorktreeAdapter``/agent/env
+        adapters (unchanged from ``drain_service()``) but an INJECTED
+        ``ImpactedTestSelectorPort`` -- the seam a configured
+        ``SelectorAnsweringOutcome`` (``.doubles``) is wired through so an AT
+        can arrange 'the selector answered X' without depending on what the
+        real heuristic happens to compute for a given tiny hermetic repo."""
+        return RefactorDrainService(
+            git_worktree=GitWorktreeAdapter(),
+            agent_invocation=ShellAgentInvocationAdapter(),
+            env_provision=UvEnvProvisionAdapter(),
+            impacted_test_selector=selector,
+            ledger=AtCompletionLedger(self.feature_id, self.project_root),
+        )
+
+    def observe_reported_scope(
+        self, *, selector, agent_cmd: str | None = None
+    ) -> ScopeReport:
+        """Layer 3 composition: drive ``RefactorDrainService.drain_one``
+        in-process with ``selector`` injected, and reduce the outcome to a
+        ``ScopeReport`` -- whether ``drain_one`` returned a refusal
+        ``DrainResult`` or RAISED (both are "refused loudly", CT-3's
+        arrangement; see ``ScopeReport``'s own docstring)."""
+        service = self.drain_service_with_selector(selector)
+        try:
+            result = service.drain_one(
+                repo=self.project_root,
+                pile_path=self.pile_path,
+                paid_path=self.paid_path,
+                agent_cmd=agent_cmd or self.agent_cmd_that_makes_a_benign_real_change(),
+                integration_branch=self.integration_branch,
+            )
+        except Exception as exc:
+            return ScopeReport(
+                drained=False,
+                merged=False,
+                test_target_scope=None,
+                selection_reason=None,
+                refusal_reason=f"raised: {exc}",
+            )
+        return ScopeReport(
+            drained=result.drained,
+            merged=result.merged,
+            test_target_scope=result.test_target_scope,
+            selection_reason=getattr(result, "selection_reason", None),
+            refusal_reason=result.refusal_reason,
+        )
+
+    def drain_service_for_batch_with_selector(
+        self,
+        *,
+        selector,
+        merge_lock,
+        env_provision,
+        barrier_parties: int,
+    ) -> RefactorDrainService:
+        """The slice-02 batch composition shape (``drain_service_for_batch``),
+        with the impacted-test selector ALSO injected -- so scenario 5's
+        batch leg can arrange the same configured answer the single-item leg
+        arranges via ``drain_service_with_selector``."""
+        from .doubles import BarrierGatedAgentInvocationPort
+
+        return RefactorDrainService(
+            git_worktree=GitWorktreeAdapter(),
+            agent_invocation=BarrierGatedAgentInvocationPort(
+                delegate=ShellAgentInvocationAdapter(), parties=barrier_parties
+            ),
+            env_provision=env_provision,
+            impacted_test_selector=selector,
+            ledger=AtCompletionLedger(self.feature_id, self.project_root),
+        )
+
+    def observe_reported_scope_for_batch(
+        self, *, selector, item_ids: tuple[str, ...] = ("TD-001", "TD-002")
+    ) -> tuple[ScopeReport, ...]:
+        """Layer 3 composition: drive ``RefactorDrainService.drain_batch``
+        in-process with ``selector`` injected for every lane, reduced to one
+        ``ScopeReport`` per seeded item (conservation: exactly ``len(item_ids)``
+        reports, success or refusal alike -- the SAME conservation contract
+        ``BatchDrainResult.results`` already carries)."""
+        from .doubles import FakeEnvProvisionPort, RecordingMergeLock
+
+        merge_lock = RecordingMergeLock()
+        env_provision = FakeEnvProvisionPort()
+        service = self.drain_service_for_batch_with_selector(
+            selector=selector,
+            merge_lock=merge_lock,
+            env_provision=env_provision,
+            barrier_parties=len(item_ids),
+        )
+        batch_result = service.drain_batch(
+            repo=self.project_root,
+            pile_path=self.pile_path,
+            paid_path=self.paid_path,
+            agent_cmd=self.agent_cmd_that_fixes_the_items_own_file(),
+            integration_branch=self.integration_branch,
+            max_parallel=len(item_ids),
+            merge_lock=merge_lock,
+        )
+        return tuple(
+            ScopeReport(
+                drained=result.drained,
+                merged=result.merged,
+                test_target_scope=result.test_target_scope,
+                selection_reason=getattr(result, "selection_reason", None),
+                refusal_reason=result.refusal_reason,
+            )
+            for result in batch_result.results
         )
 
     # --- Given/When: bugfix-drain-cleanup-on-every-exit mid-drain crash -----

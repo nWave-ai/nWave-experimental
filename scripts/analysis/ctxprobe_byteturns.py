@@ -13,6 +13,7 @@ import json
 import os
 import sys
 from collections import Counter, OrderedDict
+from pathlib import Path
 
 
 root = sys.argv[1]
@@ -25,7 +26,7 @@ bt_by_tool = Counter()
 bt_total = 0
 skipped = 0
 
-for f in sorted(os.listdir(root)):
+for f in sorted([p.name for p in Path(root).iterdir()]):
     if not f.endswith(".jsonl"):
         continue
     p = os.path.join(root, f)

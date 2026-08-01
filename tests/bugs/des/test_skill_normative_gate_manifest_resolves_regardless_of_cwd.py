@@ -1,45 +1,39 @@
-"""Regression: `--manifest`'s default resolves against the invoking process's
-CWD, not against the shipped package tree -- the one outlier among the several
-consumers of the same `nWave/data/` asset directory.
+"""Regression: a bare `des skill-normative-gate` must never validate a tree
+the operator is not in -- neither by resolving against an accidental CWD, nor
+by silently answering from the installed copy.
 
-OBSERVED: `_DEFAULT_MANIFEST = Path("nWave/data/skill-normative-clauses.json")`
-(`src/des/cli/skill_normative_gate.py:42`) is a bare relative `Path`, used
-directly as the `--manifest` argparse default (line 50). A relative `Path` is
-never resolved at construction time -- it is resolved lazily, against
-`Path.cwd()`, the moment something calls `.exists()` / `.read_text()` on it
-(here: `SkillCorpusReader.read_manifest`, `manifest_path.read_text(...)`). So
-`des skill-normative-gate` (with no explicit `--manifest`) finds its own
-manifest only when the caller's CWD happens to already be the checkout root --
-true in CI and in a maintainer's habitual shell, false for a sibling worktree,
-a packaged install, or any other invoker.
+Two defects, one after the other, on the same line of code. This file pins
+both, because the second was introduced by the fix for the first.
 
-Every OTHER consumer of the SAME shipped `nWave/data/` tree resolves relative
-to the PACKAGE instead, via `Path(__file__).resolve().parents[N]`:
-  - `coverage_map_verify_service._default_omission_classes_path`
-    (`parents[3]` from `src/des/application/...`)
-  - `session_start_handler.py` / `carpaccio_intercept.py` (`parents[5]`)
-This file is the one outlier -- CWD-dependent where every sibling is
-CWD-independent by construction.
+ROUND 1 (original): `_DEFAULT_MANIFEST = Path("nWave/data/skill-normative-
+clauses.json")` was a bare RELATIVE path, resolved lazily against `Path.cwd()`
+at read time. The gate found its manifest only when the caller's CWD happened
+to be the checkout root -- true in CI and in a maintainer's habitual shell,
+false from a sibling worktree or a packaged install.
 
-THE FIX (not yet applied -- this test pins the pre-fix RED and the post-fix
-GREEN in one assertion set):
-    _DEFAULT_MANIFEST = (
-        Path(__file__).resolve().parents[3]
-        / "nWave" / "data" / "skill-normative-clauses.json"
-    )
+ROUND 2 (introduced by round 1's fix): the fix anchored the default to the
+PACKAGE -- `Path(__file__).resolve().parents[3] / "nWave" / ...`. That is
+CWD-independent, which was the point, but under the installed shim
+`Path(__file__)` is the INSTALLED package, so the gate read the installed
+manifest (9 clauses on this machine) while `--root` defaulted to the operator's
+repo (12 clauses). A clause that exists only in the repo was not checked at
+all: perturbing its marker with a string absent from every skill still printed
+`PASS: 0 failing clauses`. The gate announced `developer checkout detected via
+.git adjacency at '<the worktree>'` on the very same run -- it had the
+information and read elsewhere anyway.
 
-DRIVING SURFACE (Mandate 16, no direct domain testing): the defect lives in a
-module-level constant consumed by the real `_build_parser()` / `main()`
-composition root of `des skill-normative-gate` -- the same driving port the
-CLI dispatcher invokes. This test exercises that constant + parser exactly as
-`main()` does, from a hostile CWD, rather than re-deriving the resolution
-logic by hand.
+ROUND 3 (current): which tree to read is DECIDED at run time by
+`des.runtime.packaged_asset.resolve_packaged_asset`, and the decision is
+printed. When a developer checkout carries its own copy that DIFFERS from the
+installed one, the gate refuses INDETERMINATE naming both paths instead of
+picking one. When the two agree, or only one exists, there is no ambiguity and
+it resolves silently -- refusing there would be ceremony charged for nothing.
 
-RED-for-right-reason: `test_default_manifest_resolves_to_shipped_asset_regardless_of_cwd`
-fails with a plain `AssertionError` -- `resolved.is_absolute()` is `False` (a
-relative `Path` object) and `resolved.exists()` is `False` (nothing at that
-relative path under a CWD with no `nWave/` tree). Neither fails on
-import/collection.
+These tests therefore pin the PROPERTY (a bare invocation from a hostile CWD
+still finds the shipped manifest, anchored to the package and never to the
+accidental CWD) rather than the SHAPE (`_DEFAULT_MANIFEST` being an absolute
+module-level constant) -- pinning the shape is what let round 2 land while the
+suite stayed green.
 """
 
 from __future__ import annotations
@@ -50,6 +44,14 @@ from pathlib import Path
 import pytest
 
 from des.cli import skill_normative_gate as gate_module
+from des.runtime.packaged_asset import (
+    AssetOrigin,
+    installed_package_root,
+    resolve_packaged_asset,
+)
+
+
+_MANIFEST_RELATIVE = "nWave/data/skill-normative-clauses.json"
 
 
 def _real_shipped_manifest() -> Path:
@@ -66,59 +68,91 @@ def _real_shipped_manifest() -> Path:
 
 
 @pytest.mark.negative_at
-def test_default_manifest_resolves_to_shipped_asset_regardless_of_cwd(
+def test_bare_invocation_resolves_the_shipped_manifest_regardless_of_cwd(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`_DEFAULT_MANIFEST` must name the shipped manifest by PACKAGE location,
-    never by a path relative to the invoking process's CWD."""
+    """Round 1 pinned: from a CWD with no `nWave/` tree, the gate still finds
+    its own shipped manifest -- by PACKAGE location, never by accidental CWD."""
     monkeypatch.chdir(tmp_path)  # a CWD with no `nWave/` tree at all
     importlib.reload(gate_module)
 
-    resolved = gate_module._DEFAULT_MANIFEST
+    resolution = resolve_packaged_asset(_MANIFEST_RELATIVE, start=tmp_path)
 
-    assert resolved.is_absolute(), (
-        f"_DEFAULT_MANIFEST is {resolved!r} -- a bare relative Path that is "
-        "resolved lazily against whatever CWD happens to be active when it "
-        "is later read (argparse default -> SkillCorpusReader.read_manifest "
-        "-> .read_text()), instead of being anchored to the package location "
-        "the way every sibling consumer of nWave/data/ is"
+    assert resolution.installed.is_absolute(), (
+        f"the shipped-asset anchor is {resolution.installed!r} -- a relative "
+        "path resolved lazily against whatever CWD happens to be active, "
+        "instead of being anchored to the package location"
     )
-    assert resolved.exists(), (
-        f"_DEFAULT_MANIFEST resolved to {resolved!r} from CWD={tmp_path}, a "
-        "directory with no `nWave/` tree at all -- `des skill-normative-gate` "
-        "invoked without an explicit --manifest cannot find its own shipped "
-        "manifest unless the caller's CWD happens to already be the checkout "
-        "root"
+    assert resolution.is_usable, (
+        f"from CWD={tmp_path}, a directory with no `nWave/` tree at all, the "
+        f"gate could not resolve its own shipped manifest: {resolution.detail}"
     )
-    assert resolved == _real_shipped_manifest(), (
-        f"_DEFAULT_MANIFEST resolved to {resolved!r}, expected the shipped "
-        f"asset at {_real_shipped_manifest()!r}"
+    assert resolution.path == _real_shipped_manifest(), (
+        f"resolved to {resolution.path!r}, expected the shipped asset at "
+        f"{_real_shipped_manifest()!r}"
     )
 
 
 @pytest.mark.negative_at
-def test_default_manifest_matches_sibling_consumer_of_the_same_shipped_tree(
+def test_shipped_anchor_matches_sibling_consumer_of_the_same_tree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Pin parity with the CWD-independent sibling: both `_DEFAULT_MANIFEST`
-    and `coverage_map_verify_service`'s own shipped-asset default must resolve
-    into the SAME `nWave/data/` directory, from the SAME hostile CWD -- they
-    ship next to the same package, so an outlier resolving differently is
-    exactly the defect this AT pins."""
+    """Pin parity with the CWD-independent sibling: the gate's shipped-asset
+    anchor and `coverage_map_verify_service`'s own default must land in the
+    SAME `nWave/data/` directory from the SAME hostile CWD -- they ship next to
+    the same package, so an outlier resolving differently is the defect."""
     monkeypatch.chdir(tmp_path)
     importlib.reload(gate_module)
 
     from des.application import coverage_map_verify_service as sibling_module
 
     sibling_default = sibling_module._default_omission_classes_path()
+    anchored = installed_package_root() / _MANIFEST_RELATIVE
 
-    assert gate_module._DEFAULT_MANIFEST.parent == sibling_default.parent, (
-        f"_DEFAULT_MANIFEST resolved to {gate_module._DEFAULT_MANIFEST!r}, "
-        f"but the sibling consumer of the SAME shipped tree resolved its own "
-        f"default to {sibling_default!r} -- both should agree on the "
-        "`nWave/data/` directory regardless of CWD, since both ship next to "
-        "the same package"
+    assert anchored.parent == sibling_default.parent, (
+        f"the gate's shipped anchor resolved to {anchored!r}, but the sibling "
+        f"consumer of the SAME shipped tree resolved to {sibling_default!r} -- "
+        "both should agree on the `nWave/data/` directory regardless of CWD"
     )
+
+
+@pytest.mark.negative_at
+def test_two_disagreeing_copies_are_refused_instead_of_silently_picked(
+    tmp_path: Path,
+) -> None:
+    """Round 2 pinned: the exact state that printed `PASS: 0 failing clauses`.
+
+    A developer checkout whose copy DIFFERS from the installed one must yield
+    AMBIGUOUS -- the gate names both paths and validates neither.
+    """
+    checkout = tmp_path / "checkout"
+    (checkout / ".git").mkdir(parents=True)
+    asset = checkout / _MANIFEST_RELATIVE
+    asset.parent.mkdir(parents=True)
+    asset.write_text('{"clauses": []}', encoding="utf-8")
+
+    resolution = resolve_packaged_asset(_MANIFEST_RELATIVE, start=checkout)
+
+    assert resolution.origin is AssetOrigin.AMBIGUOUS, (
+        "a checkout copy that differs from the installed copy resolved to "
+        f"{resolution.origin} instead of being refused: {resolution.detail}"
+    )
+    assert resolution.path is None, "an ambiguous resolution must name no path"
+
+
+def test_identical_copies_resolve_without_ceremony(tmp_path: Path) -> None:
+    """The `differs` test is load-bearing: when the two copies agree there is
+    no ambiguity, and refusing would charge the operator for nothing."""
+    checkout = tmp_path / "checkout"
+    (checkout / ".git").mkdir(parents=True)
+    asset = checkout / _MANIFEST_RELATIVE
+    asset.parent.mkdir(parents=True)
+    asset.write_bytes(_real_shipped_manifest().read_bytes())
+
+    resolution = resolve_packaged_asset(_MANIFEST_RELATIVE, start=checkout)
+
+    assert resolution.origin is AssetOrigin.REPO
+    assert resolution.is_usable
 
 
 def test_explicit_manifest_argument_still_overrides_default_regardless_of_cwd(

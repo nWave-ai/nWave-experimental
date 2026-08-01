@@ -49,6 +49,10 @@ import json
 import subprocess
 from pathlib import Path
 
+from tests.common.gate_scope_fixtures import (
+    stamp_genuine_gate_scope_trailer as _stamp_genuine_gate_scope_trailer,
+)
+
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli import verify_slice_commit_completeness as vscc
 
@@ -208,6 +212,7 @@ def test_prefactoring_exempt_zero_at_slice_clears_exit_gate(
     _commit_predecessor_with_at(repo)
     _mark_predecessor_verified(repo)
     _commit_entering_zero_at(repo)
+    _stamp_genuine_gate_scope_trailer(repo)
 
     exit_code, event = _run_verify_slice_commit(repo, capsys)
 

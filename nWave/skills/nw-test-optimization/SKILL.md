@@ -50,5 +50,5 @@ Path form: `~/.claude/skills/{module}/SKILL.md`.
 - `nw-property-based-testing` — PBT paradigm, falsifier-gate for closed-world domains
 - `nw-test-design-mandates` — universe-per-layer, state-delta + Universe matrix (§263-270)
 - `nw-test-refactoring-catalog` — refactoring patterns for test code structure
-- `docs/analysis/investigation-overtesting-hypothesis-2026-04-28.md` — empirical evidence (~580 removable tests, 18% of unit suite, the gap is enforcement decay + loose behavior definition)
+- Overtesting investigation, 2026-04-28 — empirical evidence (~580 removable tests, 18% of unit suite, the gap is enforcement decay + loose behavior definition). Findings restated here in full; the write-up itself was an nWave-internal analysis note and is not part of any shipped or published tree, so do not look for a file.
 - Empirical speedup commits 2026-05-18: `c2637f6c8` (parametrize-collapse 8.9×), `defc07f0d` (single-lifecycle 2.4×), `e97c94663`+`a90606d6b` (CVE+timeout+tiktoken)

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import datetime
 import hashlib
 import json
 import shlex
@@ -62,11 +63,15 @@ from des.domain.atdd_pure_phases import (
 )
 from des.domain.des_marker_parser import dispatch_is_phaseless
 from des.domain.expectation_charter_mapping import (
+    CHARTER_OBLIGATION_UNWRITABLE_EVENT,
     CharterMappingState,
+    CharterObligation,
+    charter_obligation_record,
     resolve_slice_charter,
 )
 from des.domain.lane_profile import LANE_PROFILES, PHASELESS_LANES
 from des.domain.repo_path_resolver import feature_delta_path, resolve_repo_root
+from des.domain.telemetry_paths import LedgerFamily, ledger_path
 from des.domain.wave_active import WAVE_VOCABULARY
 from des.domain.wave_dispatch_profile import WAVE_DISPATCH_PROFILES
 
@@ -1300,6 +1305,187 @@ def _build_prompt(
     return "\n".join(marker_lines) + "\n\n" + "\n".join(section_lines) + "\n"
 
 
+def _declared_charter_obligation(
+    lane: str | None, exemption_reason: str | None
+) -> CharterObligation:
+    """The obligation this dispatch DECLARES, read off facts already stated.
+
+    Never inferred from a path, a diff or a wave. Each of those is a proxy for
+    observability rather than observability itself -- a gate refusal lives in a
+    ``.py`` file and IS a user surface, a rendered page is one and lives
+    nowhere near ``src/`` -- so keying on one would write the very
+    decide-on-the-DESIGNATION defect (GDP-8) into the declaration meant to
+    catch it. Three inputs, all declared by the operator: an explicit
+    ``--charter-exemption`` beats the lane; a lane answers for itself; a
+    dispatch that names NO lane MINTS the third state here, rather than
+    leaving an absence for a downstream reader to interpret.
+    """
+    if exemption_reason is not None:
+        return CharterObligation.EXEMPT
+    if lane is None:
+        return CharterObligation.INDETERMINATE
+    return LANE_PROFILES[lane].charter_obligation
+
+
+def _utc_timestamp() -> str:
+    """Second-resolution UTC stamp, the form the sibling ledger records use."""
+    return (
+        datetime.datetime.now(datetime.timezone.utc)
+        .replace(microsecond=0)
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+
+
+def _append_charter_obligation_record(ledger: Path, record: dict[str, object]) -> None:
+    """Append one declaration line to ``ledger``. Raises ``OSError`` on failure.
+
+    Starts a fresh line when the file does not end in one: a concurrent writer
+    can leave a truncated final line, and appending onto it would FUSE the
+    partial line with this declaration into a single unparseable one -- the
+    real record would then be silently swallowed by the reader's
+    malformed-line tolerance and read, downstream, as "never declared".
+    """
+    existing = ledger.read_bytes() if ledger.is_file() else b""
+    separator = "\n" if existing and not existing.endswith(b"\n") else ""
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    with ledger.open("a", encoding="utf-8") as handle:
+        handle.write(separator + json.dumps(record, sort_keys=True) + "\n")
+
+
+def _report_unwritable_ledger(ledger: Path, exc: OSError) -> None:
+    """Announce a failed declaration LOUD, on a path independent of the ledger.
+
+    The dispatch's exit code and rendered envelope are UNCHANGED: telemetry
+    that cannot be written must never take down the dispatch that is the
+    operator's only way forward (GDP-6 -- degrade LOUD, never
+    degrade-refuse-everything). Silence here would be worse than the lost
+    record: the slice would later read as never-declared, indistinguishable
+    from work that never started.
+    """
+    what = (
+        f"the charter-obligation declaration could not be written to {ledger} "
+        f"({exc.__class__.__name__}: {exc})"
+    )
+    why = (
+        "this dispatch is the only place the obligation is declared, so "
+        "without the record the slice reads downstream as never-declared -- "
+        "indistinguishable from work that never went through a dispatch"
+    )
+    how = (
+        f"make {ledger} an appendable file (it must not be a directory, and "
+        "its parent must be writable), then re-run this same `des dispatch` "
+        "to re-declare"
+    )
+    print(
+        json.dumps(
+            {
+                "event": CHARTER_OBLIGATION_UNWRITABLE_EVENT,
+                "path": str(ledger),
+                "error": f"{exc.__class__.__name__}: {exc}",
+                "what": what,
+                "why": why,
+                "how": how,
+            },
+            sort_keys=True,
+        ),
+        file=sys.stderr,
+    )
+    print(f"warning: WHAT: {what} WHY: {why} HOW: {how}", file=sys.stderr)
+
+
+def _charter_obligation_screen_line(
+    obligation: str,
+    lane: str | None,
+    reason: str | None,
+    feature_id: str,
+) -> str:
+    """The one operator-visible line stating this dispatch's charter obligation.
+
+    A record written to the examine ledger and never spoken IS "buried" -- the
+    exact defect this feature removes (feature-delta R18-R22). Built from the
+    SAME facts the ledger record carries, so the screen and the ledger can
+    never disagree about what was declared.
+
+    - REQUIRED hands back the PRODUCING TOOL that discharges it (GDP-4), with
+      THIS feature's id already filled in -- never a command the operator
+      still has to edit.
+    - EXEMPT names its ANTECEDENT: the operator's own ``--charter-exemption``
+      reason when supplied (shown back verbatim), else the declared lane
+      (GDP-3 omission corollary -- a label with no antecedent is not a
+      reason).
+    - INDETERMINATE is the third state, minted and spoken explicitly rather
+      than dressed up as either a requirement or a clearance (GDP-8 arity
+      corollary).
+    """
+    if obligation == CharterObligation.REQUIRED.value:
+        return (
+            f"charter: REQUIRED (lane={lane}) -- this work OWES an "
+            "expectation charter. Run `des charter-scaffold --feature-id "
+            f"{feature_id} --seed-mode slice-plan` to scaffold it before "
+            "commit."
+        )
+    if obligation == CharterObligation.EXEMPT.value:
+        antecedent = reason if reason is not None else (lane or "no lane declared")
+        return (
+            "charter: EXEMPT -- this work does not owe an expectation "
+            f"charter (reason: {antecedent})."
+        )
+    return (
+        "charter: INDETERMINATE -- no lane was declared, so whether this "
+        "work owes an expectation charter could not be determined."
+    )
+
+
+def _print_charter_obligation(record: dict[str, object], feature_id: str) -> None:
+    """Speak the SAME record just declared to the ledger (never disk-only)."""
+    obligation = record.get("obligation")
+    lane = record.get("lane")
+    reason = record.get("reason")
+    print(
+        _charter_obligation_screen_line(
+            obligation=str(obligation),
+            lane=lane if lane is None else str(lane),
+            reason=reason if reason is None else str(reason),
+            feature_id=feature_id,
+        ),
+        file=sys.stderr,
+    )
+
+
+def _declare_charter_obligation(
+    project_root: Path,
+    feature_id: str,
+    slice_id: str,
+    lane: str | None,
+    exemption_reason: str | None,
+) -> None:
+    """Make the obligation a DURABLE fact on the EXISTING examine ledger.
+
+    Keyed ``(feature_id, slice_id)`` -- the same key ``_latest_examine_verdict``
+    already indexes on -- so the commit-time consumer and the end-of-feature
+    aggregate join against what they already hold, with no new store and no new
+    reader. The record carries a distinct ``event``, so the existing
+    verdict reader skips it untouched.
+
+    The SAME record is also spoken to the operator (R18-R22): a fact only the
+    ledger holds is buried, and the charter promises the operator is TOLD.
+    """
+    record = charter_obligation_record(
+        feature_id=feature_id,
+        slice_id=slice_id,
+        obligation=_declared_charter_obligation(lane, exemption_reason),
+        lane=lane,
+        reason=exemption_reason,
+        timestamp=_utc_timestamp(),
+    )
+    _print_charter_obligation(record, feature_id)
+    ledger = ledger_path(project_root, LedgerFamily.EXAMINE, feature_id)
+    try:
+        _append_charter_obligation_record(ledger, record)
+    except OSError as exc:
+        _report_unwritable_ledger(ledger, exc)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="des dispatch",
@@ -1436,6 +1622,21 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--charter-exemption",
+        dest="charter_exemption",
+        default=None,
+        help=(
+            "Declare that this dispatch owes NO expectation charter, and say "
+            "WHY. Overrides the obligation the --lane would otherwise declare "
+            "(the escape for a lane-level over-reach, e.g. a bugfix repairing "
+            "a purely internal defect no operator can observe). The reason is "
+            "carried verbatim in the CharterObligationDeclared record, so a "
+            "later reader is told why the work cleared. A blank reason is "
+            "refused: an exemption with no reason is an absence wearing a "
+            "declaration's clothes."
+        ),
+    )
+    parser.add_argument(
         "--tool-output-log",
         type=Path,
         default=None,
@@ -1532,6 +1733,32 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return _EXIT_USAGE_ERROR
+
+    # An exemption is a DECLARATION, and a declaration with no content is an
+    # absence wearing a declaration's clothes. Refused HERE, at the authoring
+    # surface and before anything is written, so the refusal cannot leave the
+    # effect it denied: a rejected declaration that still appended a line would
+    # grant silently what the refusal denied loudly. `is not None` (not
+    # truthiness) is what tells "the operator passed a blank reason" from "the
+    # operator passed no flag at all" -- the same absence-vs-negative-value
+    # distinction this whole feature exists to keep.
+    charter_exemption: str | None = args.charter_exemption
+    if charter_exemption is not None and not charter_exemption.strip():
+        print(
+            "error: --charter-exemption declares that this work owes NO "
+            "expectation charter, which is a claim that must say why it is "
+            "owed -- and the reason given is blank. Pass "
+            "--charter-exemption '<why this work has no user-observable "
+            "outcome to charter>', or drop the flag entirely and let the "
+            "--lane declare the obligation. An exemption with no reason "
+            "would clear the commit-time gate while telling a later reader "
+            "nothing about why.",
+            file=sys.stderr,
+        )
+        return _EXIT_USAGE_ERROR
+    charter_exemption = (
+        charter_exemption.strip() if charter_exemption is not None else None
+    )
 
     phase: str | None = args.phase
     # An AUTHORING wave is phaseless for the SAME structural reason a
@@ -1845,6 +2072,22 @@ def main(argv: list[str] | None = None) -> int:
         middle_slot_charter=middle_slot_charter,
         legacy_middle_slot=legacy_middle_slot,
     )
+
+    # The declaration is written by a dispatch that SUCCEEDS -- a refused one
+    # never started the work it would have declared for. Gated on
+    # ``runs_tests``: an AUTHORING wave produces no committable slice, so it
+    # has no obligation to declare (OQ-5, decided rather than left to fall out
+    # of control flow). That silence is the UNDECLARED state, which the
+    # aggregate counts as INDETERMINATE -- never a silent EXEMPT.
+    if runs_tests:
+        _declare_charter_obligation(
+            project_root,
+            args.project_id,
+            slice_id,
+            args.lane,
+            charter_exemption,
+        )
+
     print(prompt, end="")
     return 0
 

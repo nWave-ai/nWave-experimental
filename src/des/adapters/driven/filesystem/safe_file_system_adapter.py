@@ -18,6 +18,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from des.domain.telemetry_paths import LedgerFamily, ledger_dir
 from des.ports.driven_ports.safe_file_system import OutOfScopeWrite, SafeFileSystem
 
 
@@ -33,7 +34,7 @@ class SafeFileSystemAdapter(SafeFileSystem):
         self._feature_dir = self._workspace / "docs" / "feature" / feature_id
         self._config_path = self._workspace / ".nwave" / "config.yaml"
         self._journal_dir = self._workspace / ".nwave" / "conversion-journal"
-        self._telemetry_dir = self._workspace / ".nwave" / "telemetry" / "atdd-pure"
+        self._telemetry_dir = ledger_dir(self._workspace, LedgerFamily.ATDD_PURE)
 
     def read_text(self, path: Path) -> str:
         """Read a UTF-8 text file. Reads are unrestricted."""

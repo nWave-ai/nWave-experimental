@@ -401,7 +401,7 @@ class IteratorContractComposition:
         if resolver is None:
             return []
         try:
-            return list(resolver(wave, boundary))
+            return list(resolver(wave, boundary).rows)
         except (KeyError, ValueError, FileNotFoundError):
             return []
 

@@ -146,8 +146,19 @@ def spec_coverage_gate_stdout(project_root: Path, feature_id: str) -> tuple[int,
     import io
     from contextlib import redirect_stdout
 
+    from des.application import spec_coverage_attribution as attribution
     from des.application import wave_gate_stack_dispatch as wgs
+    from des.application.feature_at_files import (
+        feature_tag_files,
+        feature_tagged_test_files,
+    )
     from des.cli import verify_spec_coverage as spec_coverage_cli
+
+    def _best_effort_ids(path: Path) -> set[str]:
+        # An unparseable AT file never blocks the advisory -- best effort:
+        # skip its (unknowable) contribution to coverage.
+        ids_or_exit = spec_coverage_cli._covered_ids_in_file(path)
+        return ids_or_exit if isinstance(ids_or_exit, set) else set()
 
     checklist_path = _distill_checklist_path(project_root, feature_id)
     if not checklist_path.is_file():
@@ -161,6 +172,22 @@ def spec_coverage_gate_stdout(project_root: Path, feature_id: str) -> tuple[int,
                 "extract the requirement checklist at DISTILL-open (P3.1) to "
                 f"{checklist_path} to arm the spec-coverage gate for this "
                 "feature.",
+            ],
+        )
+
+    if attribution.checklist_mentions_undeclared_decoy(checklist_path, feature_id):
+        return wgs.advisory_stdout(
+            _SPEC_COVERAGE_GATE_ID,
+            reason=(
+                f"the requirement checklist at {checklist_path} mentions "
+                f"'@feature-{feature_id}' without a valid line-anchored, "
+                "own-line declaration -- a decoy occurrence (e.g. inside a "
+                "requirement's prose) must not be mistaken for a genuine "
+                "self-declaration."
+            ),
+            advice=[
+                f"add a dedicated line '@feature-{feature_id}' to the "
+                "checklist's head to properly self-declare its identity.",
             ],
         )
 
@@ -197,20 +224,61 @@ def spec_coverage_gate_stdout(project_root: Path, feature_id: str) -> tuple[int,
             )
         requirements = requirements_or_exit
 
-        files = sorted(
+        scanned_files = sorted(
             {path for at_dir in at_dirs for path in spec_coverage_cli._discover(at_dir)}
         )
-        covered: set[str] = set()
-        for path in files:
-            ids_or_exit = spec_coverage_cli._covered_ids_in_file(path)
-            if isinstance(ids_or_exit, int):
-                # An unparseable AT file never blocks the advisory -- best
-                # effort: skip its (unknowable) contribution to coverage.
-                continue
-            covered |= ids_or_exit
+
+    attributed_files = tuple(
+        sorted(
+            p
+            for p in set(feature_tag_files(project_root, feature_id))
+            | set(feature_tagged_test_files(project_root, feature_id))
+            if spec_coverage_cli.is_at_file(p)
+        )
+    )
+    outcome = attribution.resolve_attribution(
+        feature_id, scanned_files, attributed_files
+    )
+
+    if isinstance(outcome, attribution.EmptyAttribution):
+        return wgs.advisory_stdout(
+            _SPEC_COVERAGE_GATE_ID,
+            reason=(
+                f"no file anywhere under {project_root} declares "
+                f"'@feature-{feature_id}' -- attribution is empty (A = ∅)."
+            ),
+            advice=[
+                f"head-tag the feature's own AT file(s) with '@feature-{feature_id}'.",
+            ],
+        )
+    if isinstance(outcome, attribution.WrongScope):
+        dirs = sorted({str(p.parent) for p in outcome.attributed_files})
+        return wgs.advisory_stdout(
+            _SPEC_COVERAGE_GATE_ID,
+            reason=(
+                "the scanned AT corpus does not intersect the files "
+                f"attributed to '{feature_id}' (S = D ∩ A = ∅)."
+            ),
+            advice=[f"point the AT corpus at: {', '.join(dirs)}"],
+        )
+    if isinstance(outcome, attribution.NoDeclaredIdentity):
+        # Unreachable in practice -- feature_id is a required str parameter
+        # here -- but kept honest rather than assert-crashing an advisory
+        # (never-veto) path.
+        return wgs.advisory_stdout(
+            _SPEC_COVERAGE_GATE_ID,
+            reason="no feature identity was given -- spec-coverage cannot attribute.",
+            advice=["pass a feature_id to spec_coverage_gate_stdout."],
+        )
+
+    with redirect_stdout(buffer):
+        covered_or_exit = attribution.aggregate_covered_ids(
+            outcome.scoped_files, _best_effort_ids
+        )
+    covered = covered_or_exit if isinstance(covered_or_exit, set) else set()
 
     counts = spec_coverage_cli._category_counts(requirements, covered)
-    uncovered = [req for req in requirements if req.req_id not in covered]
+    uncovered = attribution.uncovered_requirements(requirements, covered)
     if not uncovered:
         return wgs.pass_stdout(_SPEC_COVERAGE_GATE_ID)
 
@@ -696,7 +764,22 @@ class SubagentStopService(SubagentStopPort):
         if active_wave not in _REVIEW_GATE_OUT_WAVES:
             return None
 
-        stack = wgs.resolve_stack(active_wave, "gate-out")
+        resolved = wgs.resolve_stack(active_wave, "gate-out", start=project_root)
+        if resolved.indeterminate is not None:
+            reason = f"WAVE_GATE_STACK_INDETERMINATE: {resolved.indeterminate}"
+            return self._discuss_gate_block(
+                context,
+                reason=reason,
+                gate_data={"wave_gate_stack": "indeterminate"},
+                recovery_suggestions=[
+                    "Reinstall so nWave/waves/ ships: "
+                    "python scripts/install/install_nwave.py",
+                    "Or name the registry explicitly: "
+                    "NWAVE_WAVES_DIR=<repo>/nWave/waves",
+                ],
+                hook_id=hook_id,
+            )
+        stack = resolved.rows
         if not stack:
             return None
 

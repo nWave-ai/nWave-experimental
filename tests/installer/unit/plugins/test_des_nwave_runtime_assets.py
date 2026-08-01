@@ -33,6 +33,12 @@ def _context_with_nwave(base: Path) -> tuple[InstallContext, Path]:
     hooks = project_root / "scripts" / "hooks"
     hooks.mkdir(parents=True)
     (hooks / "orchestrator_affordance_refresh.py").write_text("print('hook')\n")
+    # R-8: the shared reconciliation seam ships as a sibling of the refresh
+    # hook, so `session_start_handler.py` can reach it via a dynamic import
+    # off this same installed `nWave/hooks/` directory.
+    (hooks / "orchestrator_affordance_resolution.py").write_text(
+        "ASSETS_KIND_INSTALLED_CLAUDE = 'installed-claude-scoped'\n"
+    )
 
     claude_dir = base / ".claude"
     claude_dir.mkdir(parents=True)
@@ -65,6 +71,8 @@ def test_runtime_assets_shipped_to_lib_nwave(tmp_path: Path) -> None:
     assert (lib_nwave / "schemas" / "atdd-pure-phase-sequence.schema.json").is_file()
     assert (lib_nwave / "framework-catalog.yaml").is_file()
     assert (lib_nwave / "hooks" / "orchestrator_affordance_refresh.py").is_file()
+    # R-8: the shared resolution seam must ship alongside the refresh hook.
+    assert (lib_nwave / "hooks" / "orchestrator_affordance_resolution.py").is_file()
 
 
 def test_missing_nwave_source_skips_without_crash(tmp_path: Path) -> None:
@@ -98,3 +106,82 @@ def test_dry_run_ships_nothing(tmp_path: Path) -> None:
     DESPlugin()._install_nwave_runtime_assets(context=context, using_prebuilt=False)
 
     assert not (claude_dir / "lib" / "nWave").exists()
+
+
+def test_nested_wheel_runtime_uses_flat_des_templates_when_required(
+    tmp_path: Path,
+) -> None:
+    """A public wheel keeps DES prerequisites and runtime templates coherent.
+
+    Hatch normalizes two force-include keys differing only by a trailing slash
+    to one source path.  The wheel must therefore carry templates flat for the
+    DES prerequisite, while the nested runtime tier falls back to that same
+    canonical source when it populates ``lib/nWave/templates``.
+    """
+    framework_source = tmp_path / "site-packages" / "nWave"
+    nested = framework_source / "nWave"
+    (nested / "data").mkdir(parents=True)
+    (nested / "data" / "doctor.json").write_text("{}\n")
+    (nested / "framework-catalog.yaml").write_text("agents: []\n")
+    (framework_source / "templates").mkdir(parents=True)
+    (framework_source / "templates" / ".pre-commit-config-nwave.yaml").write_text(
+        "repos: []\n"
+    )
+
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    context = InstallContext(
+        claude_dir=claude_dir,
+        scripts_dir=tmp_path / "scripts",
+        templates_dir=framework_source / "templates",
+        logger=MagicMock(),
+        project_root=None,
+        framework_source=framework_source,
+    )
+
+    DESPlugin()._install_nwave_runtime_assets(context=context, using_prebuilt=True)
+
+    expected = (
+        claude_dir / "lib" / "nWave" / "templates" / ".pre-commit-config-nwave.yaml"
+    )
+    assert expected.is_file(), (
+        f"WHAT  {expected} was not created.\n"
+        "WHY   Hatch normalizes the two force-include keys "
+        "('nWave/templates' and 'nWave/templates/') to the SAME source "
+        "path, so `_install_nwave_runtime_assets` must fall back to the "
+        "flat `framework_source / 'templates'` tree when populating "
+        "`lib/nWave/templates` for a nested wheel runtime -- that "
+        "fallback did not fire (or fired against the wrong source).\n"
+        "HOW   Inspect `DESPlugin._install_nwave_runtime_assets` "
+        "(scripts/install/plugins/des_plugin.py) for the branch that "
+        "populates `lib/nWave/templates` under `using_prebuilt=True`; "
+        "confirm it reads from `context.templates_dir` "
+        "(here: framework_source/templates), not from the nested "
+        "`framework_source/nWave/...` tree that only carries `data` and "
+        "`framework-catalog.yaml` in this fixture."
+    )
+
+
+def test_public_wheel_data_tier_installs_without_a_development_checkout(
+    tmp_path: Path,
+) -> None:
+    """The packaged data tier serves an all-target install from its wheel alone."""
+    framework_source = tmp_path / "site-packages" / "nWave"
+    packaged_data = framework_source / "nWave" / "data"
+    packaged_data.mkdir(parents=True)
+    (packaged_data / "orchestrator-affordance.yaml").write_text("entries: []\n")
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    context = InstallContext(
+        claude_dir=claude_dir,
+        scripts_dir=tmp_path / "scripts",
+        templates_dir=framework_source / "templates",
+        logger=MagicMock(),
+        project_root=None,
+        framework_source=framework_source,
+    )
+
+    result = DESPlugin()._install_des_data(context)
+
+    assert result.success is True, result.message
+    assert (claude_dir / "data" / "orchestrator-affordance.yaml").is_file()

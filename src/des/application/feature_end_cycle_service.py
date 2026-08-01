@@ -85,6 +85,7 @@ from des.cli.record_examine_verdict import examine_ledger_path
 from des.cli.verify_fresh_clone import RECIPE_RELPATH
 from des.domain.examine_verdict_signing import charter_seal as _charter_seal
 from des.domain.repo_path_resolver import feature_delta_in_dir
+from des.domain.telemetry_paths import TelemetrySubtree, subtree_dir
 from des.runtime.interpreter import des_spawn
 
 
@@ -1037,7 +1038,7 @@ def _run_coverage_map_verify_leg(
     return CoverageMapLegRan()
 
 
-_FULL_SUITE_JUNIT_RELDIR = Path(".nwave") / "telemetry" / "feature-end"
+_FULL_SUITE_JUNIT_RELDIR = subtree_dir(Path(), TelemetrySubtree.FEATURE_END)
 
 # The named-failing-tests display ceiling (fix-feature-end-refusal-names-
 # failing-tests, GDP-3): the refusal's `failing_tests` list names AT MOST

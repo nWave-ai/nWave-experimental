@@ -62,7 +62,7 @@ pre-GREEN state). If tests still pass, it's Fixture Theater.
 
 ## Extension Justification (Mandate against Parallel Implementations)
 
-**Provenance**: 2026-05-02, RCA `docs/analysis/rca-systematic-duplication-despite-design.md`. Outcomes-registry catches duplicate *outcomes* (same input/output contract). It does NOT catch the failure mode where a NEW outcome is genuinely different but should have *extended* an existing component instead of being shipped as a parallel implementation in a new file.
+**Provenance**: 2026-05-02, RCA "systematic duplication despite design" (an nWave-internal analysis note — never shipped or published, so do not look for a file; the conclusion it reached is stated in full below). Outcomes-registry catches duplicate *outcomes* (same input/output contract). It does NOT catch the failure mode where a NEW outcome is genuinely different but should have *extended* an existing component instead of being shipped as a parallel implementation in a new file.
 
 This rule is **language-agnostic**: it applies to any source file regardless of host language. Examples in this section use multiple languages to underscore that.
 

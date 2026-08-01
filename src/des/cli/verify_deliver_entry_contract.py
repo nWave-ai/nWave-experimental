@@ -77,6 +77,9 @@ from des.domain.slice_id_trailer import SLICE_ROW_ID_RE, SLICE_TAG_RE
 from des.runtime.interpreter import InterpreterUnavailable, python_for
 
 
+_OUTCOME_GATE_NAME = "verify-deliver-entry-contract"
+
+
 #: A ``| slice-NN |`` first cell in the Slice Plan table — the planned slice ids
 #: whose authored AT module the gate must resolve (DDD-1 step 2). Imported
 #: from the domain SSOT (fix-slice-id-grammar-drift-ssot) so a letter-suffixed
@@ -455,6 +458,13 @@ def main(argv: list[str] | None = None) -> int:
         if outcome.verdict is GateVerdict.PASS:
             ledger.append_contract_frozen(baseline=_live_baseline(args))
 
+    ledger.append_gate_event(
+        "GateOutcomeRecorded",
+        "",
+        feature_id=args.feature_id,
+        gate=_OUTCOME_GATE_NAME,
+        outcome=outcome.verdict,
+    )
     print(
         json.dumps({"verdict": outcome.verdict.value, "diagnostic": outcome.diagnostic})
     )

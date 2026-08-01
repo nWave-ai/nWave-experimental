@@ -76,7 +76,7 @@ def _write_md(path: Path, content: str) -> Path:
 
 
 def _discipline_asset_text() -> str:
-    """Mirrors the shipped `spine-discipline.md` STRUCTURAL anchors -- the
+    """Mirrors the shipped `spine-discipline` asset's STRUCTURAL anchors -- the
     heading, the ORCHESTRATOR identity line, and the DIRECT/DISPATCH section
     tokens -- not the surrounding persuasive prose, which gets Cialdini-
     retuned periodically (rewritten 2026-07-12) and would make a full-sentence
@@ -93,7 +93,7 @@ def _discipline_asset_text() -> str:
 
 
 def _catalog_asset_text() -> str:
-    """Mirrors the shipped `des-command-catalog.md` producing-tool wording."""
+    """Mirrors the shipped `des-command-catalog` asset's producing-tool wording."""
     return (
         "# des producing-tools + gates -- reach for these instead of hand-editing\n\n"
         "Reach for `des dispatch` instead of hand-editing a checked artifact.\n"

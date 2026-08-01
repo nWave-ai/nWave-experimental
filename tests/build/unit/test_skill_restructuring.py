@@ -248,7 +248,7 @@ BULK_HASHES = {
     # `Co-Authored-By: nWave <nwave@nwave.ai>` across the 4 example commit
     # templates (Ale-ratified 2026-06-05 trailer convention). Content-only
     # snapshot refresh — no structural change to the skill.
-    "nw-collaboration-and-handoffs": "6c13ac6880b1a7ed4109accec49abd38",
+    "nw-collaboration-and-handoffs": "b51d3cd2f3f6e61a65857af1025bec7c",
     "nw-collapse-detection": "d9d627bef17d03649583302e18482570",
     # Hash updated 2026-06-17: decompose-and-recompose into 3 nw-command-design-patterns-*
     # modules (classification, reduction, authoring); core is a lean composing router. §22.0 reviewed.
@@ -357,7 +357,7 @@ BULK_HASHES = {
     # modules (b2b, cialdini); core is a lean composing router. §22.0 reviewed.
     "nw-proposal-structure": "bec9dd508f567c847da44cd41ee56821",
     "nw-psychological-safety": "106382f562186d415f5b5ad1430542b7",
-    "nw-quality-framework": "89b35fa0c3e3502eff16829e7ba7833e",
+    "nw-quality-framework": "30bbb0644b306c8632b40fb7e538f448",
     "nw-quality-validation": "41cee9327afa9d4e579b7c0699eb544d",
     "nw-query-optimization": "17959230c1a5f619b4a172e5e8196068",
     "nw-research-methodology": "e4910ea40aefc82f421640138986f300",
@@ -424,7 +424,13 @@ BULK_HASHES = {
     "nw-ux-tui-patterns": "08a2153ea16ec80e16946e324bf3274d",
     "nw-ux-web-patterns": "34fb487a2efe03de1f8526da8f214de9",
     "nw-voss-negotiation": "a97eb0ec6357ee6d0b1c572549aead0d",
-    "nw-wizard-shared-rules": "5750f4d7cdfd8e639b6d4fdb526b33a2",
+    # Hash updated 2026-07-30: the DELIVER row of the wave-completion table was
+    # corrected twice — 1cf062162 replaced the stale execution-log.json criterion
+    # with the AT-completion ledger, then 04c6909c8 replaced the phantom
+    # `FeatureEndCheckpoint` record (named in ADR-028 D6, never implemented) with
+    # the real attesting events FeatureEndReviewVerdict / EBatchRefactorCompleted.
+    # Both are declared-vs-emitted corrections; the content is right, the pin was stale.
+    "nw-wizard-shared-rules": "709278c698f60e36e9a900dd50a5ba06",
 }
 
 

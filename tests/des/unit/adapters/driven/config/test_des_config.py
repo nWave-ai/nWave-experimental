@@ -13,6 +13,7 @@ Test Budget: 20 behaviors x 2 = 40 max. Actual: 20 tests (4 parametrized).
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -401,3 +402,119 @@ class TestDESConfigHousekeepingReadsCustomValues:
 
         prop_name = f"housekeeping_{field}"
         assert getattr(cfg, prop_name) == expected
+
+
+class TestDESConfigEnabledForRepoRelativeCwd:
+    """Regression AT -- `DESConfig._nearest_marker`'s ascend-loop never fires
+    when `cwd` is passed as a RELATIVE path (`Path(".")`), the shape produced
+    by the single most natural real-world CLI invocation (`--repo .` /
+    `--repo-dir .`).
+
+    Site under test (`src/des/adapters/driven/config/des_config.py`,
+    `DESConfig._nearest_marker`):
+
+        current = self._config_path.parent.parent
+        while current not in (home, current.parent):
+            ...
+            current = current.parent
+
+    `self._config_path` is built from the constructor's `cwd` argument
+    WITHOUT ever calling `.resolve()` (`__init__`: `config_path =
+    effective_cwd / ".nwave" / "des-config.json"`). `Path(".").parent ==
+    Path(".")` -- pathlib's own behaviour for the trivial relative path --
+    so for `cwd=Path(".")` the ascend-loop's exit condition (`current ==
+    current.parent`) is already true on the FIRST check: `candidate.exists()`
+    never runs even once, and `_nearest_marker` returns `None` even when
+    `.nwave/local-config.json` genuinely exists at the resolved repo root.
+    `enabled_for_repo` then silently returns `None` instead of the marker's
+    declared value, so `resolve_activation(None, "opt-in")` treats a
+    genuinely-activated repo as inactive.
+
+    Reproduced live (2026-07-30): `DESConfig(cwd=Path(".")).enabled_for_repo`
+    -> `None` in a directory with a real `.nwave/local-config.json` declaring
+    `enabled_for_repo: true`; `DESConfig(cwd=Path(".").resolve())
+    .enabled_for_repo` -> `True`, same directory, only difference is
+    resolving to absolute first. End-to-end: `des commit --repo-dir .` /
+    `des commit-slice --repo .` land commits with NO attribution trailer even
+    when attribution is enabled and the repo is genuinely activated.
+
+    RED before the fix: both tests below observe `enabled_for_repo is None`
+    against a marker that declares `True`. GREEN after: `_nearest_marker`
+    (or the constructor) resolves `cwd`/`current` to absolute before the
+    ascend-loop runs, matching what an absolute `cwd` already returns today.
+    """
+
+    @staticmethod
+    def _write_local_config(root: Path, *, enabled_for_repo: bool) -> None:
+        config_dir = root / ".nwave"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        (config_dir / "local-config.json").write_text(
+            json.dumps({"enabled_for_repo": enabled_for_repo}), encoding="utf-8"
+        )
+
+    @pytest.mark.negative_at
+    def test_enabled_for_repo_resolves_relative_cwd_to_absolute(
+        self, tmp_path, monkeypatch
+    ):
+        """`DESConfig(cwd=Path("."))` (a RELATIVE cwd, exactly what `--repo .`
+        produces) must find the SAME marker an absolute `cwd` finds -- the
+        trivial `Path(".").parent == Path(".")` self-loop must not
+        short-circuit the ascend-loop before it ever inspects the repo root."""
+        self._write_local_config(tmp_path, enabled_for_repo=True)
+        monkeypatch.chdir(tmp_path)
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        config = DESConfig(cwd=Path())
+
+        assert config.enabled_for_repo is True, (
+            "DESConfig._nearest_marker's ascend-loop (des_config.py, "
+            "`current = self._config_path.parent.parent` / `while current "
+            "not in (home, current.parent)`) must resolve a RELATIVE cwd to "
+            "absolute before walking up -- Path('.').parent == Path('.') "
+            "self-loops the exit check on the very first iteration for the "
+            "un-resolved relative case, so candidate.exists() never runs "
+            "even though .nwave/local-config.json genuinely declares "
+            "enabled_for_repo=True at the resolved repo root. Observed "
+            f"enabled_for_repo={config.enabled_for_repo!r}. Fix: resolve "
+            "cwd/current to absolute early in _nearest_marker (or the "
+            "constructor) before the ascend-loop runs."
+        )
+
+    def test_enabled_for_repo_resolves_relative_subdirectory_cwd_walk_up(
+        self, tmp_path, monkeypatch
+    ):
+        """A relative `cwd` pointing at a SUBDIRECTORY (`Path("sub")`) with
+        the marker one level up must still be found by the ascend-loop
+        itself -- not just the trivial `Path(".")` case above."""
+        project_root = tmp_path / "project_root"
+        subdir = project_root / "sub"
+        subdir.mkdir(parents=True)
+        self._write_local_config(project_root, enabled_for_repo=True)
+        monkeypatch.chdir(project_root)
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        config = DESConfig(cwd=Path("sub"))
+
+        assert config.enabled_for_repo is True, (
+            "DESConfig._nearest_marker's ascend-loop must walk up from a "
+            "RELATIVE subdirectory cwd (Path('sub')) to find "
+            ".nwave/local-config.json one level up at the resolved project "
+            "root, exactly as it does for an absolute subdirectory cwd. "
+            f"Observed enabled_for_repo={config.enabled_for_repo!r}, "
+            "expected True (the project root's declared marker value)."
+        )
+
+    def test_enabled_for_repo_absolute_cwd_still_works(self, tmp_path, monkeypatch):
+        """Non-regression pin: an ABSOLUTE `cwd` must keep resolving exactly
+        as it does today -- unaffected by the relative-cwd fix, proving the
+        fix does not merely shift the bug onto the already-working case."""
+        self._write_local_config(tmp_path, enabled_for_repo=True)
+        monkeypatch.chdir(tmp_path)
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        config = DESConfig(cwd=tmp_path.resolve())
+
+        assert config.enabled_for_repo is True

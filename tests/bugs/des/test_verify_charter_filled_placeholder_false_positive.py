@@ -62,7 +62,7 @@ from des.cli.verify_charter_filled import main
 #: enumerated above) appears anywhere. This is the sister's exact repro
 #: shape.
 LEGITIMATE_PROSE_WITH_ANGLE_BRACKETS_CHARTER = """# A developer registers and sees their profile
-ID: EXP-onboarding-1 . Spec rows: R1 . Persona: developer
+ID: EXP-onboarding-1 . Spec rows: slice-01 · Persona: developer
 
 ## Intent
 A developer registers an account and immediately sees their profile

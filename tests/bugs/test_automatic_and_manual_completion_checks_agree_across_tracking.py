@@ -1,3 +1,4 @@
+# @feature-fix-na-marker-reconcile-drift
 """Regression AT: the automatic hand-back check and `des verify-integrity`
 agree with each other -- correctly -- whether or not the optional coverage-map
 tracking feature is switched on.

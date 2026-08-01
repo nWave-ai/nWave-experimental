@@ -27,6 +27,22 @@ Two properties asserted as distinct scenarios:
        formula degenerates to the loud-safe `shipped - verified` done-gate that
        the prior intersection-fix regressed.
 
+F-PUSH-GATE-SLICE-ATTRIBUTION extends the same formula with a THIRD layer,
+covering the case AT-1 does NOT: a co-resident feature's slice whose ledger is
+NOT visible on disk in this worktree at all (the real swarm defect --
+`.nwave/telemetry/atdd-pure/*.jsonl` is per-worktree and gitignored, so it
+never travels with a merge). `foreign_owned` cannot subtract a ledger it
+cannot see, so `candidate_unreconciled` is narrowed a second way: only a
+slice-id the feature's OWN declared Slice-Plan claims (`feature-delta.md`,
+git-free, travels with THIS feature's own tree) can ever be genuine debt.
+  AT-3: a shipped slice this feature never declared is NOT reported
+       unreconciled -- it is the distinct `could-not-attribute` third state,
+       named on stdout (`unattributable_shipped_slices`), never blocking the
+       push by itself.
+  AT-4 (regression-pin, plan-aware): the Slice-Plan filter never WEAKENS
+       genuine detection -- a slice the feature's OWN plan declares, shipped
+       with no ledger record, still fails exactly like AT-2.
+
 Fixture discipline: the git history and the ledger records are PRECONDITION
 input state, NOT the expected output. The observable output is the verifier's
 exit code + the `FeatureUnreconciled` / `FeatureReconciled` JSON payload on
@@ -51,6 +67,14 @@ from tests.des.acceptance.fix_deliver_integrity_ledger_targeting.steps.domain_ty
 
 
 scenarios("../ledger_targeting.feature")
+
+
+# feedback_examine_surface_staleness_pin_worktree_local_invocation: `sys.executable`
+# is the SHARED venv, whose editable `des` install resolves to whichever checkout
+# it was last `pip install -e`d from -- NOT necessarily this worktree. Pin `src`
+# on PYTHONPATH so the subprocess imports THIS worktree's `des.cli`, mirroring
+# the sibling suite `gate-trailer-read-git-port-extract/steps/composition.py`.
+REPO_ROOT = Path(__file__).resolve().parents[5]
 
 
 # The feature under verification. The CLI receives this exact id via
@@ -149,6 +173,47 @@ def given_own_commits(ctx: _Ctx, literal: str) -> None:
 
 @given(
     parsers.parse(
+        'the same history also carries another feature\'s slice "{foreign_slice}" '
+        "with no visible ledger"
+    )
+)
+def given_foreign_commit_no_ledger(ctx: _Ctx, foreign_slice: str) -> None:
+    # F-PUSH-GATE-SLICE-ATTRIBUTION, the real swarm defect: the co-resident
+    # commit lands in the SAME git history (so it is in `shipped`), but --
+    # UNLIKE `given_foreign_commit` below -- NO ledger is seeded for it
+    # anywhere. This is the per-worktree-gitignored-telemetry reality: a
+    # worktree that only ever ran ITS OWN feature has no ledger for a
+    # co-resident feature merged upstream of its fork point, so
+    # `_foreign_owned_slices` cannot see it and cannot subtract it.
+    _commit_with_slice_id(
+        ctx.repo_dir, foreign_slice, f"foreign-noledger-{foreign_slice}"
+    )
+
+
+@given(parsers.parse('this feature declares a Slice-Plan naming "{literal}"'))
+def given_slice_plan(ctx: _Ctx, literal: str) -> None:
+    # F-PUSH-GATE-SLICE-ATTRIBUTION: the property that travels with THIS
+    # feature's own tree at HEAD -- its declared Slice-Plan, read from
+    # feature-delta.md, git-free. Mirrors the minimal table shape
+    # `_declared_slice_plan_slice_ids` parses (the `Slice` column only).
+    feature_dir = ctx.repo_dir / "docs" / "feature" / ctx.feature_id
+    feature_dir.mkdir(parents=True, exist_ok=True)
+    rows = "\n".join(
+        f"| {slice_id} | value statement | Planned | | |"
+        for slice_id in SliceSet.parse(literal)
+    )
+    (feature_dir / "feature-delta.md").write_text(
+        f"# Feature Delta: {ctx.feature_id}\n\n"
+        "## Wave: DISCUSS / [REF] Slice Plan\n\n"
+        "| Slice | Value statement | Status | Annotation | Justification |\n"
+        "|---|---|---|---|---|\n"
+        f"{rows}\n",
+        encoding="utf-8",
+    )
+
+
+@given(
+    parsers.parse(
         'the same history also carries another feature\'s slice "{foreign_slice}"'
     )
 )
@@ -202,7 +267,9 @@ def given_feature_end_complete(ctx: _Ctx) -> None:
     ledger.append_feature_end_event(EBATCH_REFACTOR_COMPLETED)
     ledger.append_feature_end_event(FEATURE_END_REVIEW_VERDICT, verdict_hash="deadbeef")
     ledger.append_walking_skeleton_gate_ran()
+    ledger.append_walking_skeleton_tier_verified("tier-sml")
     ledger.append_environmental_e2e_gate_ran()
+    ledger.append_full_suite_leg_ran()
     ledger.append_coverage_map_verified_at_distill_exit()
     ledger.append_coverage_map_verified_at_deliver_exit()
 
@@ -220,12 +287,14 @@ def when_verify(ctx: _Ctx) -> None:
         ctx.feature_id,
         ".",
     ]
+    env = {**os.environ, "NWAVE_FRESHNESS": "skip"}
+    env["PYTHONPATH"] = str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
     ctx.completed = subprocess.run(
         cmd,
         cwd=ctx.repo_dir,
         capture_output=True,
         text=True,
-        env={**os.environ, "NWAVE_FRESHNESS": "skip"},
+        env=env,
     )
 
 
@@ -267,4 +336,37 @@ def then_foreign_absent(ctx: _Ctx, foreign_slice: str) -> None:
     assert foreign_slice not in reported, (
         f"foreign slice {foreign_slice!r} leaked into unreconciled_slices="
         f"{reported!r} (cross-feature reconciliation defect)"
+    )
+
+
+@then("the verifier reports the feature is reconciled")
+def then_reconciled(ctx: _Ctx) -> None:
+    assert ctx.completed is not None
+    assert ctx.completed.returncode == 0, (
+        f"expected exit 0, got {ctx.completed.returncode}; "
+        f"stdout={ctx.completed.stdout!r} stderr={ctx.completed.stderr!r}"
+    )
+    payload = _payload(ctx)
+    assert payload.get("event") == "FeatureReconciled", (
+        f"expected FeatureReconciled event, got {payload!r}"
+    )
+
+
+@then(parsers.parse('the verifier names "{slice_id}" as unattributable, not blocking'))
+def then_unattributable_named(ctx: _Ctx, slice_id: str) -> None:
+    # GDP-8 arity corollary: the could-not-attribute third state must reach the
+    # AGGREGATE verdict -- named, not silently dropped -- while never blocking
+    # the push by itself (the surrounding scenario already asserted exit 0 /
+    # FeatureReconciled via `then_reconciled`).
+    payload = _payload(ctx)
+    reported = payload.get("unattributable_shipped_slices", [])
+    assert slice_id in reported, (
+        f"expected {slice_id!r} named in unattributable_shipped_slices, got "
+        f"{reported!r} (the could-not-attribute state was silently dropped "
+        "or the pollutant was wrongly promoted to a hard-block)"
+    )
+    reconciled = payload.get("reconciled_slices", [])
+    assert slice_id not in reconciled, (
+        f"{slice_id!r} was wrongly reported as THIS feature's own reconciled "
+        f"slice: {reconciled!r} (cross-feature misattribution, inverted)"
     )

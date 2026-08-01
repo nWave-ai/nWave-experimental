@@ -16,6 +16,7 @@ import os
 import re
 import sys
 from collections import Counter, OrderedDict
+from pathlib import Path
 
 
 root = sys.argv[1]
@@ -33,7 +34,7 @@ agent_cr = Counter()
 skill_by_agent = {}
 tot_bt_all = 0  # byte-turns of ALL tool_results, for share math
 
-for f in sorted(os.listdir(root)):
+for f in sorted([p.name for p in Path(root).iterdir()]):
     if not f.endswith(".jsonl"):
         continue
     p = os.path.join(root, f)

@@ -206,6 +206,16 @@ a gap is a plan item to correct that gate.
   event/record name is cross-checked against a producer registry scanned from source,
   PASS/FAIL/INDETERMINATE — never a silent pass over a phantom name.
 
+- **Wiring corollary — CATALOGUED is not WIRED.** A module's presence in a catalog, registry,
+  manifest or import list says it EXISTS; it never says it FIRES. Existence is a designation and
+  firing is a property, decided only by executing the surface that should invoke it and observing
+  the difference. The failure is silent by construction: the catalog entry, the passing unit tests
+  and the green import all remain true of a module nothing calls. So when a fix consists of adding
+  a capability, the demonstration is the CONSUMER's behaviour changing — not the capability's own
+  tests going green. Read a gate's third state (`UNVERIFIABLE` / `INDETERMINATE`) as a candidate
+  wiring gap before reading it as environmental: it is frequently the reachable surface reporting,
+  correctly, that the thing meant to answer was never connected to it.
+
 ---
 
 ## `gate:predicate-needs-its-own-enumerator` — a predicate without an enumerator forces every caller to invent its own population (STANDING)
@@ -246,6 +256,80 @@ costs an order of magnitude more to undo.
 
 ---
 
+## `check:unfired-is-not-evidence` — a check you have not seen FAIL is not evidence (STANDING)
+
+A passing check has two indistinguishable explanations: the property holds, or the check cannot
+detect its violation. Green discriminates between them only AFTER the check has been observed
+failing on a constructed violation. Before that, green is a fact about the instrument, not about
+the subject.
+
+Binds every instrument, not only tests:
+
+| Instrument | Vacuous when | What earns the trust |
+|---|---|---|
+| negative test | the corruption is applied where the subject is not | corrupt AT the subject's own locus; watch the assertion fire |
+| guard predicate | the pattern accepts the empty case (`^password=` matches an empty value) | feed the empty and near-miss forms; watch both rejected |
+| gate | its arming precondition is absent, so it skips | run it on an artifact that violates the rule; watch the refusal |
+| oracle inside an AT | the step derives the value it was supposed to read from the output | withhold the field; watch the step fail |
+
+The demonstration is an ACT, never an argument: "this would obviously catch it" is the reasoning
+that produced every vacuous check already shipped. Cost asymmetry — constructing the violation
+costs one run; a vacuous check ships as coverage and every later reader reads its green as proof.
+
+**Who demonstrates it, and when: the AUTHOR, immediately, with no dispatch.** Whoever writes the
+check, tool, gate or script runs it against a constructed violation right after writing it and
+watches HOW it fails.
+
+**This clause governs WHO RUNS the demonstration. It says nothing about WHO WRITES the code, and
+conflating the two licenses hand-authoring production code.** The two rules are orthogonal and both
+bind: authorship of production code follows the dispatch discipline, while the fail-demonstration is
+always the author's own act, executed on the spot. So "demonstrate it yourself, no dispatch" is an
+instruction about the demonstration only — a dispatched implementer still runs its own
+demonstration, and an orchestrator who reads that phrase as permission to write the code has taken
+a licence the clause does not grant. Anyone handed the shorter phrasing and noticing the collision
+should say so rather than pick a side silently. That is seconds of work at the authoring surface; routing it to an independent
+examiner buys nothing here and costs a full handoff, because the question — *can this instrument
+fire?* — is decided by execution, and the author is already holding the keyboard. Reserve an
+independent reader for the different question: whether the number MEANS what the report claims.
+
+Corollary: the FIRST version of a measuring instrument is suspect BY CONSTRUCTION — it is the only
+version written before its author has seen the data, and a test written from that same first reading
+inherits the misreading it was built to catch. Green unit tests certify the arithmetic the instrument
+was told to do, never that the figure means what the report says it means. The check worth writing is
+the one that could embarrass you.
+
+---
+
+## `instrument:a-reading-that-misled-you-is-a-defect-in-the-instrument` — fix the tool, not the conclusion (STANDING)
+
+When a measurement, receipt or status report leads to a wrong action, the finding is not "I should
+read it more carefully next time". The instrument is defective and the work is to REPAIR IT — vigilance
+does not scale, and the next reader inherits the same trap with less context than you had.
+
+| Step | What it means |
+|---|---|
+| Name the axis that lied | not "it was wrong" — WHICH signal, and what it actually measures versus what you read it as |
+| Repair the instrument | and prefer removing the inference over adding a caveat: a footnote is not a fix |
+| Re-run it on the case that fooled you | the repair is verified by the original counterexample reproducing the correct answer, never by the code looking better |
+| Keep the counterexample | in the instrument, as a comment or a test, so the next change cannot silently restore the trap |
+
+Two failure shapes this rule exists to stop, both observed:
+
+- **Fixing the conclusion instead of the tool.** Correcting the one wrong verdict and leaving the
+  instrument intact guarantees the same wrong verdict, and the second occurrence looks like a fresh
+  mistake rather than a known one.
+- **Fixing the wrong axis.** Diagnose before repairing: an instrument can produce the right complaint
+  from the wrong cause, and a plausible repair then leaves the real defect in place while retiring
+  the symptom that would have exposed it. Establish which signal failed by reproducing it, not by
+  reasoning about which signal COULD have failed — the two diverge, and the second is faster to
+  produce and satisfying to believe.
+
+Corollary — **an instrument you run repeatedly is production code.** A report generated on a schedule
+or before every decision does not get to live as an unversioned scratch script: it needs a home, a
+history, and a test, because a defect in it is a defect in every decision downstream of it.
+
+---
+
 ## `join-key:shape-conformance-over-uniqueness` — a borrowed identifier is not a key until its shape is declared (STANDING)
 
 A field supplied by an external producer — a platform, a harness, another team's payload — is
@@ -266,6 +350,19 @@ a rule that cannot be executed at the point it is needed is not a control. And i
 DISCOVERABLE WITHOUT FOREKNOWLEDGE: conformance finds the offending values in one pass without
 anyone knowing in advance which literal to look for, while a sampling check must draw the rare
 value AND notice it collides.
+
+**A key must be exercised at N≥2, and a one-occurrence suite cannot test one at all.** Ask what the
+candidate is addressed BY: an EVENT key is unique per occurrence; a CONTENT key is unique per
+payload, and the two are indistinguishable until two occurrences carry the same payload. Measured
+instance: a hook's stdout digest was adopted as the parent↔child join, and the hook's stdout is a
+module constant — two firings produced 2 parents and exactly **1** distinct digest, so every child
+joined BOTH parents and the reader emitted a silent cross product. Every scenario that had validated
+that key fired exactly ONCE, which is why the whole suite was green: a single-firing test makes the
+defect structurally unreachable, so it was never a weak test but a test of the wrong thing. The
+remedy is not more assertions, it is a second occurrence — and where a content key must be carried
+anyway (it is often the only value both sides can compute), it carries a mandatory
+`join_key_collision` third state, and the collision must be COUNTED and reported rather than
+resolved by picking one of N.
 
 The shape itself must be written down LITERALLY — the accepted pattern, and which
 near-miss forms are excluded. "Conforms to an id shape" is not a specification: two honest

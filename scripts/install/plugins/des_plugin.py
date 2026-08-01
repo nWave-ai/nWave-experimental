@@ -298,6 +298,16 @@ class DESPlugin(InstallationPlugin):
         # flat to ~/.claude/scripts/ so it resolves independent of whether
         # the `des` package is importable in the target session.
         "orchestrator_affordance_refresh.py",
+        # R-8 (RCA docs/feature/fix-affordance-resolver-prefers-stale-copy/
+        # rca.md, Root Cause E): the shared, stdlib-only resolution seam
+        # (`scripts/hooks/orchestrator_affordance_resolution.py`) the
+        # standalone hook above delegates its reconciliation DECISION to.
+        # Shipped flat here too so it lands as a same-directory sibling of
+        # `orchestrator_affordance_refresh.py` at ~/.claude/scripts/ --
+        # ALSO shipped via `_NWAVE_RUNTIME_HOOK_FILES` below so
+        # `session_start_handler.py` can reach it via a dynamic
+        # `importlib` load off the installed nWave runtime tree.
+        "orchestrator_affordance_resolution.py",
         # fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29):
         # the PreToolUse/Bash hook (wired via hook_definitions.
         # _BASH_WORKTREE_REMOVAL_GUARD) that refuses `git worktree remove`
@@ -740,13 +750,26 @@ class DESPlugin(InstallationPlugin):
     # nWave runtime assets the installed des package resolves as siblings of
     # lib/python (Path(__file__).parents[N] / "nWave" / ...). Code-only shipping
     # leaves these absent and breaks every atdd_pure dispatch.
-    _NWAVE_RUNTIME_ASSET_DIRS = ("flavors", "data", "templates", "schemas", "dispatch")
+    _NWAVE_RUNTIME_ASSET_DIRS = (
+        "flavors",
+        "data",
+        "templates",
+        "schemas",
+        "dispatch",
+        "waves",
+    )
     _NWAVE_RUNTIME_ASSET_FILES = ("framework-catalog.yaml",)
     # A host-neutral SessionStart hook must be executable from the installed
     # runtime, not from a Claude-scoped copy or the source checkout.  Keep the
     # source script canonical under scripts/hooks; this list declares the small
     # subset that belongs beside the runtime assets for non-Claude hosts.
-    _NWAVE_RUNTIME_HOOK_FILES = ("orchestrator_affordance_refresh.py",)
+    # R-8: `orchestrator_affordance_resolution.py` ships alongside it so
+    # `session_start_handler.py` can dynamically load the shared
+    # reconciliation seam off this same installed `nWave/hooks/` directory.
+    _NWAVE_RUNTIME_HOOK_FILES = (
+        "orchestrator_affordance_refresh.py",
+        "orchestrator_affordance_resolution.py",
+    )
 
     def _install_nwave_runtime_assets(
         self, *, context: InstallContext, using_prebuilt: bool
@@ -841,6 +864,17 @@ class DESPlugin(InstallationPlugin):
         shipped_dirs = []
         for subdir in self._NWAVE_RUNTIME_ASSET_DIRS:
             src = nwave_source / subdir
+            if (
+                not src.is_dir()
+                and subdir == "templates"
+                and context.templates_dir.is_dir()
+            ):
+                # Hatch normalizes the "nWave/templates" and "nWave/templates/"
+                # force-include keys onto the SAME flat source path, so a
+                # nested wheel runtime tier (nwave_source == framework_source /
+                # "nWave") never gets its own templates/ subdir -- the flat
+                # context.templates_dir is the canonical source in that case.
+                src = context.templates_dir
             if not src.is_dir():
                 continue
             dst = target_root / subdir
@@ -885,10 +919,10 @@ class DESPlugin(InstallationPlugin):
                 "such read fails later on the operator's machine. "
                 f"HOW: this is the {channel}; rebuild it so the tier carries "
                 "its assets -- for a distribution run scripts/build_dist.py "
-                "(build_nwave_runtime_assets ships data/flavors/schemas/"
-                "dispatch, build_templates ships templates), and for a wheel "
-                "check the force-include map in scripts/release/"
-                "patch_pyproject.py."
+                "(build_nwave_runtime_assets ships "
+                f"{'/'.join(self._NWAVE_RUNTIME_ASSET_DIRS)}, build_templates "
+                "ships templates), and for a wheel check the force-include map "
+                "in scripts/release/patch_pyproject.py."
             )
 
         # Verify the STRUCTURED FACT -- every entry we actually copied is
@@ -1423,6 +1457,14 @@ class DESPlugin(InstallationPlugin):
         """
         try:
             source_dir = context.framework_source / "data"
+            # A public wheel has the host-facing templates at the flat root,
+            # while runtime data is intentionally packaged under nWave/nWave.
+            # Resolve that package-owned tier before considering a development
+            # checkout fallback; otherwise an all-target install has copied a
+            # valid runtime tree but fails on this legacy flat lookup.
+            packaged_data = context.framework_source / "nWave" / "data"
+            if not source_dir.exists() and packaged_data.is_dir():
+                source_dir = packaged_data
             if not source_dir.exists() and context.project_root:
                 source_dir = context.project_root / "nWave" / "data"
 

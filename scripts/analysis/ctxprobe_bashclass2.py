@@ -16,6 +16,7 @@ import os
 import re
 import sys
 from collections import Counter, OrderedDict
+from pathlib import Path
 
 
 root = sys.argv[1]
@@ -137,7 +138,7 @@ sizes, sizes_by_class = [], {}
 cmd_repeat = Counter()
 total_calls = 0
 
-for f in sorted(os.listdir(root)):
+for f in sorted([p.name for p in Path(root).iterdir()]):
     if not f.endswith(".jsonl"):
         continue
     p = os.path.join(root, f)
@@ -254,7 +255,12 @@ for t, c in other_tokens.most_common(15):
 
 sizes.sort()
 n = len(sizes)
-pct = lambda q: sizes[min(int(n * q), n - 1)] if n else 0
+
+
+def pct(q):
+    return sizes[min(int(n * q), n - 1)] if n else 0
+
+
 tot = sum(sizes)
 print("\n=== PER-CALL Bash OUTPUT SIZE DISTRIBUTION ===")
 print(f"  calls {n:,}  total {tot:,} B  mean {tot // max(n, 1):,} B")

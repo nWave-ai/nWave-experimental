@@ -23,6 +23,9 @@ from pathlib import Path
 from des.cli import verify_slice_commit_completeness as vscc
 from des.cli.record_examine_verdict import main as record_examine_verdict_main
 from tests.charter_fixtures import filled_charter
+from tests.common.gate_scope_fixtures import (
+    stamp_genuine_gate_scope_trailer as _stamp_genuine_gate_scope_trailer,
+)
 
 
 def _git(root: Path, *args: str) -> str:
@@ -132,6 +135,7 @@ def test_verify_slice_commit_clears_with_pass_examine(
     charter = _write_charter(repo, feature_id, slice_id)
     _record_examine_verdict(repo, feature_id, slice_id, charter, "PASS", capsys)
     _commit_slice_with_feature_file(repo, feature_id, slice_id)
+    _stamp_genuine_gate_scope_trailer(repo)
     capsys.readouterr()
 
     exit_code = vscc.main(
@@ -157,6 +161,7 @@ def test_verify_slice_commit_unarmed_without_charter(
     _init_repo(repo)
     feature_id, slice_id = "f-vscc-noexamine", "slice-01"
     _commit_slice_with_feature_file(repo, feature_id, slice_id)
+    _stamp_genuine_gate_scope_trailer(repo)
     capsys.readouterr()
 
     exit_code = vscc.main(

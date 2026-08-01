@@ -2,8 +2,8 @@
 projects -- gated on ``_session_cwd_is_atdd_pure``, never unconditionally.
 
 RCA (empirically confirmed, not assumed): ``handle_session_start()`` already
-loads ``nWave/data/orchestrator-affordance/*.md`` (spine-discipline.md +
-des-command-catalog.md) via ``load_orchestrator_affordance`` and injects it
+loads every ``nWave/data/orchestrator-affordance/*.md`` asset via
+``load_orchestrator_affordance`` and injects it
 as ``hookSpecificOutput.additionalContext`` on EVERY session -- verified by
 driving the real handler against a bare ``tmp_path`` (no ``.nwave/``, no
 ``docs/``) and observing the spine-discipline content on stdout regardless.
@@ -182,8 +182,8 @@ def test_atdd_pure_cwd_bootstrap_names_spine_dispatch_mode_and_buddy(tmp_path, c
     assert "atdd_pure" in ctx, "bootstrap must name the atdd_pure mode explicitly"
 
     # (4) names /nw-buddy for methodology questions -- RED today: the shipped
-    # orchestrator-affordance content (spine-discipline.md +
-    # des-command-catalog.md) never mentions /nw-buddy.
+    # orchestrator-affordance content (every nWave/data/orchestrator-
+    # affordance/*.md asset) never mentions /nw-buddy.
     assert "/nw-buddy" in ctx, (
         "bootstrap must name /nw-buddy as the producing tool for questions -- "
         "absent from the shipped orchestrator-affordance content today"

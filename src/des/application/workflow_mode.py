@@ -187,9 +187,9 @@ def _parse_workflow_mode(text: str) -> str | None:
     """Extract `workflow.mode` from a machine-managed `.nwave/config.yaml`.
 
     Stdlib-only parser (the DES bundle installs standalone and must not depend
-    on PyYAML). Handles the simple two-level `workflow:` -> `mode:` nesting
-    written by scripts/automation/atdd_pure_falsifier_gate.py, tolerating
-    indentation, blank lines, comments, and quoted/unquoted values.
+    on PyYAML). Handles the simple two-level `workflow:` -> `mode:` nesting of
+    a machine-managed `.nwave/config.yaml`, tolerating indentation, blank
+    lines, comments, and quoted/unquoted values.
 
     Returns the mode string, or None if the key is absent.
     """

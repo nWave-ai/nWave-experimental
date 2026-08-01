@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "wired_gates": [
+    {
+      "gate": "run-contract-gate",
+      "module": "src/des/cli/run_contract_gate.py",
+      "shape": "call_kwarg",
+      "functions": null,
+      "slice": "slice-04",
+      "note": "single call site (_record_outcome) invokes AtCompletionLedger.append_gate_event(..., outcome=outcome)."
+    },
+    {
+      "gate": "run-slice-ats",
+      "module": "src/des/cli/run_slice_ats.py",
+      "shape": "call_kwarg",
+      "functions": null,
+      "slice": "slice-04",
+      "note": "single call site (_record_outcome) invokes AtCompletionLedger.append_gate_event(..., outcome=outcome)."
+    },
+    {
+      "gate": "validate-feature-delta",
+      "module": "src/des/cli/validate_feature_delta.py",
+      "shape": "call_kwarg",
+      "functions": null,
+      "slice": "slice-04",
+      "note": "single call site (_record_outcome) invokes AtCompletionLedger.append_gate_event(..., outcome=outcome)."
+    },
+    {
+      "gate": "mode-locus-gate",
+      "module": "src/des/cli/mode_locus_gate.py",
+      "shape": "call_kwarg",
+      "functions": null,
+      "slice": "slice-04",
+      "note": "single call site (_record_outcome) invokes AtCompletionLedger.append_gate_event(..., outcome=outcome)."
+    },
+    {
+      "gate": "verify-deliver-entry-contract",
+      "module": "src/des/cli/verify_deliver_entry_contract.py",
+      "shape": "call_kwarg",
+      "functions": null,
+      "slice": "slice-04",
+      "note": "single call site inline in main() invokes ledger.append_gate_event(..., outcome=outcome.verdict)."
+    },
+    {
+      "gate": "environmental-e2e",
+      "module": "src/des/adapters/driven/logging/at_completion_ledger.py",
+      "shape": "dict_literal",
+      "functions": [
+        "append_environmental_e2e_verified",
+        "append_environmental_e2e_not_applicable"
+      ],
+      "slice": "slice-05",
+      "note": "RM-1 heartbeat-leg family. Retrofit shape is a dict-literal \"outcome\" key passed to the shared _append_record writer, NOT a keyword argument to append_gate_event -- these two functions never call append_gate_event (measured: git grep confirms zero append_gate_event call sites in this module outside its own definition). The literal call_kwarg shape used by the 5 CLI gates above does not apply here; checking for it would falsely flag a genuinely-wired family (GDP-8: decide on the property -- an outcome IS durably recorded here -- never a designation that only matches one code shape)."
+    },
+    {
+      "gate": "fresh-clone",
+      "module": "src/des/adapters/driven/logging/at_completion_ledger.py",
+      "shape": "dict_literal",
+      "functions": [
+        "append_fresh_clone_verified",
+        "append_fresh_clone_not_applicable"
+      ],
+      "slice": "slice-05",
+      "note": "RM-1 heartbeat-leg family. Same dict_literal shape as environmental-e2e -- see that entry's note."
+    },
+    {
+      "gate": "execution-reach",
+      "module": "src/des/adapters/driven/logging/at_completion_ledger.py",
+      "shape": "dict_literal",
+      "functions": [
+        "append_execution_reach_verified",
+        "append_execution_reach_not_applicable"
+      ],
+      "slice": "slice-05",
+      "note": "RM-1 heartbeat-leg family. Same dict_literal shape as environmental-e2e -- see that entry's note."
+    },
+    {
+      "gate": "doc-coherence",
+      "module": "src/des/adapters/driven/logging/at_completion_ledger.py",
+      "shape": "dict_literal",
+      "functions": [
+        "append_doc_coherence_verified",
+        "append_doc_coherence_not_applicable"
+      ],
+      "slice": "slice-05",
+      "note": "RM-1 heartbeat-leg family. Same dict_literal shape as environmental-e2e -- see that entry's note."
+    }
+  ]
+}

@@ -295,12 +295,12 @@ class WiringComposition:
         """
         from des.application import wave_gate_stack_dispatch
 
-        stack = wave_gate_stack_dispatch.resolve_stack(
+        resolved = wave_gate_stack_dispatch.resolve_stack(
             _DISTILL_WAVE, _GATE_OUT_BOUNDARY
         )
         return any(
             isinstance(row, dict) and row.get("gate_id") == GATE_SUBCOMMAND_ID
-            for row in stack
+            for row in resolved.rows
         )
 
     def _dispatch_and_read_verdict(self, feature_root: Path) -> str | None:

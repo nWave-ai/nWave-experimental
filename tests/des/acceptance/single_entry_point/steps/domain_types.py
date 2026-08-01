@@ -119,6 +119,11 @@ SUBCOMMAND_TABLE: tuple[SubcommandRow, ...] = (
     # subcommand is mirrored here so the single-entry-point AT verifies its
     # reachability (DISCUSS/DESIGN Reuse Posture required this mirror).
     SubcommandRow("wave-clear", "des.cli.wave_clear", "main"),
+    # backfill-regression-file -- fix-shipped-regression-file-backfill's
+    # historical regression-gap backfill producer.
+    SubcommandRow(
+        "backfill-regression-file", "des.cli.backfill_regression_file", "main"
+    ),
 )
 
 

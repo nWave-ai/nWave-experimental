@@ -139,7 +139,6 @@ Commit message format (both modes):
 - Refactoring: L1+L2+...
 
 Step-Id: {step-id}
-Co-Authored-By: nWave <nwave@nwave.ai>
 ```
 
 ## Test Integrity -- Mandatory

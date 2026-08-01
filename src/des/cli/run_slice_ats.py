@@ -105,6 +105,7 @@ from pathlib import Path
 
 from des.adapters.driven.logging.at_completion_ledger import (
     TELEMETRY_DIR_RELPATH,
+    AtCompletionLedger,
     active_feature_id,
 )
 from des.adapters.driven.runner.pytest_runner import (
@@ -121,11 +122,37 @@ from des.cli.run_contract_gate import (
     _slice_feature_dir,
     run_slice_ats,
 )
+from des.domain.gate_outcome import GateVerdict
 from des.ports.driven_ports.committed_scope_port import Indeterminate
 from des.ports.test_runner_port import RunnerAdapterUnavailable, resolve
 
 
 _EVENT = "SliceAtGateResult"
+_OUTCOME_GATE_NAME = "run-slice-ats"
+
+
+def _record_outcome(
+    repo_root: Path,
+    entering_slice: str,
+    feature_id: str | None,
+    outcome: GateVerdict,
+) -> None:
+    """Append a `GateOutcomeRecorded` record (slice-04, ADR-GV-003 D5).
+
+    Singleton-shape ledger (`AtCompletionLedger(project_root=repo_root)`),
+    threading the SAME `feature_id` already resolved via `active_feature_id`
+    before AT discovery -- no second resolution mechanism. The singleton
+    shape requires a non-None `feature_id=` on every write; `""` is the
+    established sentinel (mirrors `slice_id=""`) for the unresolvable case.
+    """
+    AtCompletionLedger(project_root=repo_root).append_gate_event(
+        "GateOutcomeRecorded",
+        entering_slice,
+        feature_id=feature_id if feature_id is not None else "",
+        gate=_OUTCOME_GATE_NAME,
+        outcome=outcome,
+    )
+
 
 # The class invariant (fix-precommit-fabricates-vacuous-scaffold, slice-01
 # second pass): pytest reports a genuinely EXECUTED case -- the test body
@@ -758,6 +785,7 @@ def main(argv: list[str] | None = None) -> int:
             Verdict.PASS,
             f"slice {entering_slice} acceptance tests passed",
         )
+        _record_outcome(repo_root, entering_slice, feature_id, GateVerdict.PASS)
         return 0
 
     # THE PLAIN FAIL -- WHAT / WHY / HOW, on BOTH surfaces.
@@ -789,6 +817,7 @@ def main(argv: list[str] | None = None) -> int:
         how=_FAIL_HOW,
         command=command,
     )
+    _record_outcome(repo_root, entering_slice, feature_id, GateVerdict.FAIL)
     return 1
 
 

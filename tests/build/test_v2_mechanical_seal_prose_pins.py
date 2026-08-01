@@ -62,21 +62,58 @@ def test_deliver_examine_slot_dispatches_examiner_armed_by_charter() -> None:
     assert "unarmed" in text.lower()
 
 
-def test_discuss_authors_the_expectation_charter_that_arms_examine() -> None:
-    """nw-discuss: the PO authors the charter that arms the DELIVER EXAMINE gate."""
+#: The hand-authoring commands 36d3ca2e0 retired from nw-discuss. Re-introducing
+#: any of them puts a from-scratch template recipe back on the DISCUSS path,
+#: which is what produced the 2026-07-12 charter dialect-mismatch incident.
+_RETIRED_DISCUSS_HAND_AUTHORING = (
+    "author the Expectation Charters",
+    "write its charter",
+    "WRITE `docs/product/expectations/",
+)
+
+
+def test_discuss_seeds_the_charter_the_producing_tool_scaffolds() -> None:
+    """nw-discuss: DISCUSS seeds the charter Intent; the tool produces the file.
+
+    Supersedes the pre-2026-07-30 pin that required nw-discuss to COMMAND
+    hand-authoring at wave close. 36d3ca2e0 (AUDIT P2/S1) retired that
+    instruction: `des charter-scaffold` produces the charter at DISTILL-open
+    (path, filename and heading dialect already correct) and a fresh
+    nw-product-owner context fills it, with `des verify-charter-filled` as the
+    backstop. Restoring a hand-authoring command here requires unwiring those
+    two gates first.
+    """
     text = _read("nWave/skills/nw-discuss/SKILL.md")
     assert "Expectation Charter" in text
+    # The arming condition must match the code (_examine_gate_armed).
     assert "docs/product/expectations/" in text
-    assert "expectation-charter.md" in text  # the template
-    # The charter must demand at least one negative observation (the oracle).
-    assert "negative observation" in text.lower()
-    # Authoring the charter is what ARMS the examine step.
     assert "arm" in text.lower()
-    # It must be an IMPERATIVE STEP in the dispatch (a documented deliverable
-    # alone did NOT trigger the PO — dogfood friction 2026-07-03), not just a
-    # descriptive [REF] section: the dispatch commands WRITE + marks it REQUIRED.
+    # GDP-4: the HOW names the PRODUCING TOOL, never a manual recipe.
+    assert "des charter-scaffold" in text
+    # Seeding must stay an IMPERATIVE STEP in the dispatch — a documented
+    # deliverable alone did NOT trigger the PO (dogfood friction 2026-07-03).
     assert "REQUIRED step" in text
-    assert "WRITE `docs/product/expectations/" in text
+    for retired in _RETIRED_DISCUSS_HAND_AUTHORING:
+        assert retired not in text, (
+            f"nw-discuss re-introduced the retired hand-authoring command "
+            f"{retired!r}. Charters are SCAFFOLDED by `des charter-scaffold` at "
+            "DISTILL-open and filled by a fresh nw-product-owner context — "
+            "DISCUSS owes the seeding Slice Plan Value statement only."
+        )
+
+
+def test_expectation_charter_skill_owns_the_negative_observation_oracle() -> None:
+    """The >=1-negative-observation oracle rule is pinned at its SSOT.
+
+    It used to be pinned in nw-discuss. Charter authoring moved to DISTILL-open,
+    so the rule is pinned where it is now taught AND where the mechanical gate
+    `des verify-charter-filled` enforces it — a strictly stronger location than
+    prose in the wave that no longer authors charters.
+    """
+    text = _read("nWave/skills/nw-expectation-charter/SKILL.md")
+    assert "negative observation" in text.lower()
+    assert "des charter-scaffold" in text
+    assert "verify-charter-filled" in text
 
 
 def test_distill_authors_requirement_checklist_and_spec_coverage_advisory() -> None:

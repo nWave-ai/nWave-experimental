@@ -55,6 +55,21 @@ Fixtures:
     exists under ``docs/product/expectations/{feature_id}/`` so E3 is
     UNARMED (green-to-green suffices) -- the commit reaches the true
     ``SliceCommitVerified`` exit-0 path.
+
+fix-null-gate-scope-exit-gate fixture-realism update: `des verify-slice-
+commit`'s `_run_verify_then_record` now carries a seal-integrity leg -- a
+slice commit whose `Gate-Scope:` trailer is absent/malformed/the all-zero
+placeholder is refused (`SliceCommitIndeterminate reason=gate_scope_
+unsealed`), never fabricated into `SliceCommitVerified`. No real `des
+commit-slice` ever produces a trailer-less commit, so
+`_make_repo_fully_verified` (the NEGATIVE fixture, the only caller reaching
+the VERIFIED exit-0 path) now also stamps a REAL, well-formed `Gate-Scope:`
+trailer -- derived through the shipped CLI (`run_contract_gate
+--committed-scope-digest`), never fabricated -- via
+`_stamp_genuine_gate_scope_trailer`, mirroring the pattern in
+`test_run_contract_gate_scope_unverified_names_how.py`. The POSITIVE fixture
+(`_make_repo_missing_feature_file`) refuses at E1, well before the
+seal-integrity leg is ever reached, so it is untouched.
 """
 
 from __future__ import annotations
@@ -66,6 +81,9 @@ from pathlib import Path
 import pytest
 
 from des.cli import verify_slice_commit_completeness as vscc
+from tests.common.gate_scope_fixtures import (
+    stamp_genuine_gate_scope_trailer as _stamp_genuine_gate_scope_trailer,
+)
 
 
 _FEATURE_ID = "slice-commit-refused-how-fixture"
@@ -138,7 +156,10 @@ def _make_repo_fully_verified(tmp_path: Path) -> Path:
     """A slice commit that carries its ``.feature`` AT file, with no charter
     (E3 unarmed) -- reaches the true ``SliceCommitVerified`` exit-0 path once
     E2 is monkeypatched to PASS (mirrors
-    ``test_verify_slice_commit_unarmed_without_charter``).
+    ``test_verify_slice_commit_unarmed_without_charter``). Also carries a
+    REAL, well-formed ``Gate-Scope:`` trailer (fix-null-gate-scope-exit-gate
+    fixture-realism update) -- no real ``des commit-slice`` commit is ever
+    trailer-less, and the exit gate's seal-integrity leg now refuses one.
     """
     repo = tmp_path / "verified_repo"
     _git_init(repo)
@@ -150,6 +171,7 @@ def _make_repo_fully_verified(tmp_path: Path) -> Path:
         "-qm",
         f"feat(slice): behaviour\n\nSlice-Id: {_SLICE_ID}",
     )
+    _stamp_genuine_gate_scope_trailer(repo)
     return repo
 
 

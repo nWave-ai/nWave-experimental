@@ -42,6 +42,7 @@ from des.cli.verify_red_green import _content_sha as _red_seal_content_sha
 from des.cli.verify_red_green import _seal_path as _red_green_seal_path
 from des.domain.lane_profile import LANE_PROFILES, AtRequirement, LaneProfile
 from des.domain.slice_id_trailer import SLICE_TAG_RE
+from des.domain.telemetry_paths import LedgerFamily, ledger_path
 from des.ports.test_runner_port import AT_KIND_SUFFIX_MAP as _AT_DISCOVERY_SUFFIX_RUNNER
 
 
@@ -964,12 +965,12 @@ def _predecessor_attested_at_total(
     (whole-file count when the ledger is entirely absent) is what keeps this
     honest, per GDP-7 (filesystem-only, no git).
     """
-    ledger_path = repo / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
-    if not ledger_path.is_file():
+    at_ledger_path = ledger_path(repo, LedgerFamily.ATDD_PURE, feature_id)
+    if not at_ledger_path.is_file():
         return 0
     latest_by_slice: dict[str, object] = {}
     try:
-        lines = ledger_path.read_text(encoding="utf-8").splitlines()
+        lines = at_ledger_path.read_text(encoding="utf-8").splitlines()
     except OSError:
         return 0
     for line in lines:
@@ -993,6 +994,45 @@ def _predecessor_attested_at_total(
         if isinstance(at_ids, list):
             total += len(at_ids)
     return total
+
+
+def _red_seal_is_fresh(repo: Path, regression_test_file: Path) -> bool:
+    """True iff a ``RedObserved`` seal (P0.2, ``verify-red-green
+    --record-red``) is on record for ``regression_test_file`` AND its recorded
+    ``content_sha256`` matches the file's CURRENT bytes AND it witnessed >=1
+    failing test.
+
+    The single extracted locus for the content-bound freshness FACT
+    (fix-readiness-gate-at-kind-blind-scenario-tags) -- pulled out of
+    :func:`_red_seal_net_new_at_names` so a second caller needing ONLY the
+    boolean freshness predicate (never the AT-name delta) reuses this instead
+    of hand-rolling a second staleness rule. Mirrors
+    ``carpaccio_slice_gate._red_seal_fresh``'s semantics exactly (same
+    content-sha + witnessed-failure contract, over RESOLVED paths so the
+    slug/hash can never diverge from the producer, which also resolves both).
+    Degrades ``False`` -- never a silent pass -- on every malformed, absent,
+    outside-repo, or stale input.
+    """
+    try:
+        seal = _red_green_seal_path(repo.resolve(), regression_test_file.resolve())
+    except ValueError:
+        return False  # regression file outside the repo -- no resolvable slug
+    if not seal.is_file():
+        return False
+    try:
+        record = json.loads(seal.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(record, dict):
+        return False
+    outcomes = record.get("outcomes")
+    if not isinstance(outcomes, dict) or "fail" not in outcomes.values():
+        return False
+    try:
+        current_sha = _red_seal_content_sha(regression_test_file)
+    except OSError:
+        return False
+    return record.get("content_sha256") == current_sha
 
 
 def _red_seal_net_new_at_names(
@@ -1020,24 +1060,18 @@ def _red_seal_net_new_at_names(
     the seal is bound to ``content_sha256``, so tests appended after RED was
     recorded leave the seal no longer describing the file, and the caller
     falls back to the whole-file charge rather than letting the additions ride
-    in unseen.
+    in unseen. The freshness half of this check now delegates to
+    :func:`_red_seal_is_fresh` (the single extracted locus for that fact).
     """
+    if not _red_seal_is_fresh(repo, regression_test_file):
+        return None
     try:
         seal = _red_green_seal_path(repo, regression_test_file)
     except ValueError:
         return None  # regression file outside the repo -- no resolvable slug
-    if not seal.is_file():
-        return None
     try:
         record = json.loads(seal.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(record, dict):
-        return None
-    try:
-        if record.get("content_sha256") != _red_seal_content_sha(regression_test_file):
-            return None
-    except OSError:
         return None
     outcomes = record.get("outcomes")
     if not isinstance(outcomes, dict):
@@ -1502,7 +1536,17 @@ def _check_total_coverage(plan: SlicePlan, scenarios: list[Scenario]) -> None:
 
 
 def _check_walking_skeleton_first(plan: SlicePlan) -> None:
-    """Assertion 3: a @walking-skeleton slice must be the first plan row."""
+    """Assertion 3: a @walking-skeleton slice must be the first plan row,
+    OR preceded ONLY by @prefactoring prerequisite rows (any count, N>=0).
+
+    The shape is `prefactoring* -> walking-skeleton -> later behavioral
+    slices`: zero or more @prefactoring rows immediately before the walking
+    skeleton are a recognized, behavior-preserving prerequisite (e.g. an
+    extract-interface refactor the walking skeleton must drive against) --
+    not an ad-hoc reordering, and NOT capped at one row. Any prefix row that
+    is NOT @prefactoring still rejects, naming the FIRST such offending row
+    rather than the old generic "not ordered first" text.
+    """
     ws_index = next(
         (
             i
@@ -1511,16 +1555,29 @@ def _check_walking_skeleton_first(plan: SlicePlan) -> None:
         ),
         None,
     )
-    if ws_index is not None and ws_index != 0:
+    if ws_index is None or ws_index == 0:
+        return
+    prefix = plan.rows[:ws_index]
+    non_prefactoring = [
+        row for row in prefix if not _PREFACTORING_TAG_RE.search(row.annotation)
+    ]
+    if non_prefactoring:
+        offending = non_prefactoring[0]
         raise GateError(
             44,
             {
                 "event": "CARPACCIO_SLICE_TOO_LARGE",
                 "error": (
-                    "the @walking-skeleton slice is not ordered first "
-                    f"(found at row {ws_index + 1})"
+                    f"slice {offending.slice_id} precedes the @walking-skeleton "
+                    "row but is neither the walking skeleton nor a recognized "
+                    "@prefactoring prerequisite"
                 ),
-                "instruction": "order the @walking-skeleton slice first in the plan",
+                "instruction": (
+                    "order the @walking-skeleton slice first in the plan, or "
+                    "tag the prerequisite row @prefactoring with a "
+                    "justification via `des feature-delta-doctor "
+                    "<feature-delta.md>`"
+                ),
             },
         )
 

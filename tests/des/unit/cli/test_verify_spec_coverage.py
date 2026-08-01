@@ -18,8 +18,31 @@ import pytest
 from des.cli.verify_spec_coverage import main
 
 
-_CHECKLIST_TABLE = """\
+# fix-coverage-claim-names-a-feature: attribution is now a DECLARED BINDING
+# (a checklist's line-anchored '@feature-<id>' declaration + a matching AT
+# head-tag), not a bare marker anywhere under --at-dir. Every fixture below
+# declares the SAME feature id and tags its own AT file(s) with it so the
+# ORIGINAL test intent (a marker on THIS file covers THIS checklist's row)
+# still holds under the new attribution contract -- each test is hermetic
+# (its own tmp_path), so sharing one id across fixtures is safe.
+_FIXTURE_FEATURE_ID = "spec-coverage-fixture"
+
+
+def _tag_at_source(name: str, source: str) -> str:
+    """Prepend the fixture's '@feature-<id>' attribution tag -- a leading
+    '# @feature-<id>' comment for pytest files, '// @feature-<id>' for
+    TS/JS, or a leading Gherkin tag line for '.feature' files."""
+    if name.endswith(".feature"):
+        return f"@feature-{_FIXTURE_FEATURE_ID}\n{source}"
+    if name.endswith((".ts", ".tsx", ".js", ".jsx")):
+        return f"// @feature-{_FIXTURE_FEATURE_ID}\n{source}"
+    return f"# @feature-{_FIXTURE_FEATURE_ID}\n{source}"
+
+
+_CHECKLIST_TABLE = f"""\
 # Requirements
+
+@feature-{_FIXTURE_FEATURE_ID}
 
 | ID | Requirement | Category |
 |----|-------------|----------|
@@ -55,7 +78,9 @@ def _write_corpus(tmp_path: Path, at_source: str) -> tuple[str, str]:
     checklist.write_text(_CHECKLIST_TABLE)
     at_dir = tmp_path / "ats"
     at_dir.mkdir()
-    (at_dir / "test_booking.py").write_text(at_source)
+    (at_dir / "test_booking.py").write_text(
+        _tag_at_source("test_booking.py", at_source)
+    )
     return str(checklist), str(at_dir)
 
 
@@ -70,7 +95,10 @@ def test_uncovered_security_requirement_is_refused_naming_the_row(
     """
     checklist, at_dir = _write_corpus(tmp_path, _AT_COVERS_R1_ONLY)
 
-    assert main(["--checklist", checklist, "--at-dir", at_dir]) == 1
+    assert (
+        main(["--checklist", checklist, "--at-dir", at_dir, "--repo", str(tmp_path)])
+        == 1
+    )
     event = _first_event(capsys)
     assert event["event"] == "SpecCoverageRefused"
     assert all(k in event for k in ("what", "why", "how"))
@@ -90,7 +118,10 @@ def test_body_comment_marker_covers_the_requirement(
         tmp_path, _AT_COVERS_R1_ONLY + _AT_COVERS_R2_BODY_COMMENT
     )
 
-    assert main(["--checklist", checklist, "--at-dir", at_dir]) == 0
+    assert (
+        main(["--checklist", checklist, "--at-dir", at_dir, "--repo", str(tmp_path)])
+        == 0
+    )
     event = _first_event(capsys)
     assert event["event"] == "SpecCoverageVerified"
     assert event["counts"] == {
@@ -111,7 +142,17 @@ def test_missing_checklist_degrades_loud_indeterminate(
     (at_dir / "test_x.py").write_text("def test_x():\n    assert True\n")
 
     assert (
-        main(["--checklist", str(tmp_path / "nope.md"), "--at-dir", str(at_dir)]) == 2
+        main(
+            [
+                "--checklist",
+                str(tmp_path / "nope.md"),
+                "--at-dir",
+                str(at_dir),
+                "--repo",
+                str(tmp_path),
+            ]
+        )
+        == 2
     )
     event = _first_event(capsys)
     assert event["event"] == "SpecCoverageIndeterminate"
@@ -124,17 +165,34 @@ def test_gherkin_covers_tag_satisfies_the_requirement(tmp_path: Path) -> None:
     checklist.write_text(_CHECKLIST_TABLE)
     at_dir = tmp_path / "ats"
     at_dir.mkdir()
-    (at_dir / "test_booking.py").write_text(_AT_COVERS_R1_ONLY)
+    (at_dir / "test_booking.py").write_text(
+        _tag_at_source("test_booking.py", _AT_COVERS_R1_ONLY)
+    )
     (at_dir / "identity.feature").write_text(
-        "Feature: Identity\n\n"
-        "  @covers-R2\n"
-        "  Scenario: Client-supplied identity is rejected\n"
-        "    Given a request carrying a client-supplied identity\n"
-        "    When it reaches the API\n"
-        "    Then it is rejected\n"
+        _tag_at_source(
+            "identity.feature",
+            "Feature: Identity\n\n"
+            "  @covers-R2\n"
+            "  Scenario: Client-supplied identity is rejected\n"
+            "    Given a request carrying a client-supplied identity\n"
+            "    When it reaches the API\n"
+            "    Then it is rejected\n",
+        )
     )
 
-    assert main(["--checklist", str(checklist), "--at-dir", str(at_dir)]) == 0
+    assert (
+        main(
+            [
+                "--checklist",
+                str(checklist),
+                "--at-dir",
+                str(at_dir),
+                "--repo",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
 
 
 def test_docstring_marker_covers_the_requirement(tmp_path: Path) -> None:
@@ -146,21 +204,39 @@ def test_docstring_marker_covers_the_requirement(tmp_path: Path) -> None:
         "    assert True\n",
     )
 
-    assert main(["--checklist", checklist, "--at-dir", at_dir]) == 0
+    assert (
+        main(["--checklist", checklist, "--at-dir", at_dir, "--repo", str(tmp_path)])
+        == 0
+    )
 
 
 def test_list_row_grammar_is_parsed(tmp_path: Path) -> None:
     """List-row arm: '- R<n> [category] text' rows form the denominator."""
     checklist = tmp_path / "checklist.md"
     checklist.write_text(
+        f"@feature-{_FIXTURE_FEATURE_ID}\n\n"
         "- R1 [functional] a booking produces a confirmation\n"
         "- R2 [security] client-supplied identity must be rejected\n"
     )
     at_dir = tmp_path / "ats"
     at_dir.mkdir()
-    (at_dir / "test_booking.py").write_text(_AT_COVERS_R1_ONLY)
+    (at_dir / "test_booking.py").write_text(
+        _tag_at_source("test_booking.py", _AT_COVERS_R1_ONLY)
+    )
 
-    assert main(["--checklist", str(checklist), "--at-dir", str(at_dir)]) == 1
+    assert (
+        main(
+            [
+                "--checklist",
+                str(checklist),
+                "--at-dir",
+                str(at_dir),
+                "--repo",
+                str(tmp_path),
+            ]
+        )
+        == 1
+    )
 
 
 def test_empty_at_corpus_degrades_loud_indeterminate(
@@ -172,7 +248,19 @@ def test_empty_at_corpus_degrades_loud_indeterminate(
     at_dir = tmp_path / "ats"
     at_dir.mkdir()
 
-    assert main(["--checklist", str(checklist), "--at-dir", str(at_dir)]) == 2
+    assert (
+        main(
+            [
+                "--checklist",
+                str(checklist),
+                "--at-dir",
+                str(at_dir),
+                "--repo",
+                str(tmp_path),
+            ]
+        )
+        == 2
+    )
     assert _first_event(capsys)["event"] == "SpecCoverageIndeterminate"
 
 
@@ -189,7 +277,19 @@ def test_malformed_row_with_id_but_no_category_degrades_loud(
     at_dir.mkdir()
     (at_dir / "test_x.py").write_text("def test_x():\n    assert True\n")
 
-    assert main(["--checklist", str(checklist), "--at-dir", str(at_dir)]) == 2
+    assert (
+        main(
+            [
+                "--checklist",
+                str(checklist),
+                "--at-dir",
+                str(at_dir),
+                "--repo",
+                str(tmp_path),
+            ]
+        )
+        == 2
+    )
     event = _first_event(capsys)
     assert event["event"] == "SpecCoverageIndeterminate"
     assert "R1" in str(event["what"])
@@ -203,7 +303,19 @@ def test_duplicate_requirement_id_degrades_loud(tmp_path: Path) -> None:
     at_dir.mkdir()
     (at_dir / "test_x.py").write_text("def test_x():\n    assert True\n")
 
-    assert main(["--checklist", str(checklist), "--at-dir", str(at_dir)]) == 2
+    assert (
+        main(
+            [
+                "--checklist",
+                str(checklist),
+                "--at-dir",
+                str(at_dir),
+                "--repo",
+                str(tmp_path),
+            ]
+        )
+        == 2
+    )
 
 
 def test_ts_test_file_with_slash_comment_covers(tmp_path):
@@ -213,18 +325,34 @@ def test_ts_test_file_with_slash_comment_covers(tmp_path):
 
     checklist = tmp_path / "cl.md"
     checklist.write_text(
+        f"@feature-{_FIXTURE_FEATURE_ID}\n\n"
         "| R1 | booking works | functional |\n| R2 | identity rejected | security |\n"
     )
     at = tmp_path / "ats"
     at.mkdir()
     (at / "booking.test.ts").write_text(
-        "test('books a seat', () => {\n"
-        "  // covers: R1\n"
-        "  // covers: R2\n"
-        "  expect(true).toBe(true);\n"
-        "});\n"
+        _tag_at_source(
+            "booking.test.ts",
+            "test('books a seat', () => {\n"
+            "  // covers: R1\n"
+            "  // covers: R2\n"
+            "  expect(true).toBe(true);\n"
+            "});\n",
+        )
     )
-    assert main(["--checklist", str(checklist), "--at-dir", str(at)]) == 0
+    assert (
+        main(
+            [
+                "--checklist",
+                str(checklist),
+                "--at-dir",
+                str(at),
+                "--repo",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
 
 
 def test_ts_uncovered_still_refused(tmp_path):
@@ -233,14 +361,30 @@ def test_ts_uncovered_still_refused(tmp_path):
 
     checklist = tmp_path / "cl.md"
     checklist.write_text(
+        f"@feature-{_FIXTURE_FEATURE_ID}\n\n"
         "| R1 | booking works | functional |\n| R2 | identity rejected | security |\n"
     )
     at = tmp_path / "ats"
     at.mkdir()
     (at / "booking.spec.ts").write_text(
-        "test('books', () => {\n  // covers: R1\n  expect(1).toBe(1);\n});\n"
+        _tag_at_source(
+            "booking.spec.ts",
+            "test('books', () => {\n  // covers: R1\n  expect(1).toBe(1);\n});\n",
+        )
     )
-    assert main(["--checklist", str(checklist), "--at-dir", str(at)]) == 1
+    assert (
+        main(
+            [
+                "--checklist",
+                str(checklist),
+                "--at-dir",
+                str(at),
+                "--repo",
+                str(tmp_path),
+            ]
+        )
+        == 1
+    )
 
 
 # --- regression: comment-marker scanner must not count STRING-LITERAL data ---
@@ -285,12 +429,26 @@ def test_string_literal_marker_is_not_real_coverage_python(
     substring is wrongly counted, so the gate wrongly reports exit 0
     (SpecCoverageVerified) instead of exit 1 (SpecCoverageRefused)."""
     checklist = tmp_path / "checklist.md"
-    checklist.write_text("| R1 | a booking produces a confirmation | functional |\n")
+    checklist.write_text(
+        f"@feature-{_FIXTURE_FEATURE_ID}\n\n"
+        "| R1 | a booking produces a confirmation | functional |\n"
+    )
     at_dir = tmp_path / "ats"
     at_dir.mkdir()
-    (at_dir / "test_fixture_writer.py").write_text(_AT_STRING_LITERAL_FALSE_POSITIVE_PY)
+    (at_dir / "test_fixture_writer.py").write_text(
+        _tag_at_source("test_fixture_writer.py", _AT_STRING_LITERAL_FALSE_POSITIVE_PY)
+    )
 
-    result = main(["--checklist", str(checklist), "--at-dir", str(at_dir)])
+    result = main(
+        [
+            "--checklist",
+            str(checklist),
+            "--at-dir",
+            str(at_dir),
+            "--repo",
+            str(tmp_path),
+        ]
+    )
 
     assert result == 1, (
         "BUG: string-literal '# covers: R1' DATA was wrongly counted as a "
@@ -312,12 +470,25 @@ def test_string_literal_marker_is_not_real_coverage_typescript(
     must NOT count -- only a genuine `// covers: R1` comment line counts.
     On the current (unfixed) scanner this assertion FAILS."""
     checklist = tmp_path / "cl.md"
-    checklist.write_text("| R1 | booking works | functional |\n")
+    checklist.write_text(
+        f"@feature-{_FIXTURE_FEATURE_ID}\n\n| R1 | booking works | functional |\n"
+    )
     at_dir = tmp_path / "ats"
     at_dir.mkdir()
-    (at_dir / "fixture.test.ts").write_text(_AT_STRING_LITERAL_FALSE_POSITIVE_TS)
+    (at_dir / "fixture.test.ts").write_text(
+        _tag_at_source("fixture.test.ts", _AT_STRING_LITERAL_FALSE_POSITIVE_TS)
+    )
 
-    result = main(["--checklist", str(checklist), "--at-dir", str(at_dir)])
+    result = main(
+        [
+            "--checklist",
+            str(checklist),
+            "--at-dir",
+            str(at_dir),
+            "--repo",
+            str(tmp_path),
+        ]
+    )
 
     assert result == 1, (
         "BUG: TS string-literal '// covers: R1' was wrongly counted as a "
@@ -338,10 +509,26 @@ def test_string_literal_decoy_does_not_mask_a_real_marker_elsewhere(
     checklist.write_text(_CHECKLIST_TABLE)
     at_dir = tmp_path / "ats"
     at_dir.mkdir()
-    (at_dir / "test_fixture_writer.py").write_text(_AT_STRING_LITERAL_FALSE_POSITIVE_PY)
-    (at_dir / "test_identity.py").write_text(_AT_COVERS_R2_BODY_COMMENT)
+    (at_dir / "test_fixture_writer.py").write_text(
+        _tag_at_source("test_fixture_writer.py", _AT_STRING_LITERAL_FALSE_POSITIVE_PY)
+    )
+    (at_dir / "test_identity.py").write_text(
+        _tag_at_source("test_identity.py", _AT_COVERS_R2_BODY_COMMENT)
+    )
 
-    assert main(["--checklist", str(checklist), "--at-dir", str(at_dir)]) == 1
+    assert (
+        main(
+            [
+                "--checklist",
+                str(checklist),
+                "--at-dir",
+                str(at_dir),
+                "--repo",
+                str(tmp_path),
+            ]
+        )
+        == 1
+    )
     event = _first_event(capsys)
     assert event["event"] == "SpecCoverageRefused"
     uncovered = event["uncovered"]
@@ -359,6 +546,7 @@ def test_string_literal_decoy_does_not_mask_a_real_marker_elsewhere(
 
 _HIERARCHICAL_REQUIREMENT_ID = "R-S01-03"
 _HIERARCHICAL_CHECKLIST = (
+    f"@feature-{_FIXTURE_FEATURE_ID}\n\n"
     "| ID | Requirement | Category |\n"
     "|----|-------------|----------|\n"
     f"| {_HIERARCHICAL_REQUIREMENT_ID} | installed Codex host starts the slice | functional |\n"
@@ -374,7 +562,7 @@ def _write_hierarchical_coverage_corpus(
     at_dir = tmp_path / "ats"
     at_dir.mkdir()
     for name, source in at_files:
-        (at_dir / name).write_text(source)
+        (at_dir / name).write_text(_tag_at_source(name, source))
     return str(checklist), str(at_dir)
 
 
@@ -397,7 +585,10 @@ def test_python_marker_covers_exact_hierarchical_requirement_id(
         ),
     )
 
-    assert main(["--checklist", checklist, "--at-dir", at_dir]) == 0, (
+    assert (
+        main(["--checklist", checklist, "--at-dir", at_dir, "--repo", str(tmp_path)])
+        == 0
+    ), (
         "BUG: an exact Python coverage marker for R-S01-03 must verify the "
         "hierarchical checklist row rather than degrading INDETERMINATE"
     )
@@ -421,7 +612,10 @@ def test_gherkin_tag_covers_exact_hierarchical_requirement_id(
         ),
     )
 
-    assert main(["--checklist", checklist, "--at-dir", at_dir]) == 0, (
+    assert (
+        main(["--checklist", checklist, "--at-dir", at_dir, "--repo", str(tmp_path)])
+        == 0
+    ), (
         "BUG: an exact Gherkin @covers-R-S01-03 tag must verify the "
         "hierarchical checklist row rather than degrading INDETERMINATE"
     )
@@ -442,7 +636,10 @@ def test_uncovered_hierarchical_requirement_is_refused_not_indeterminate(
         ("test_unrelated.py", "def test_unrelated():\n    assert True\n"),
     )
 
-    assert main(["--checklist", checklist, "--at-dir", at_dir]) == 1, (
+    assert (
+        main(["--checklist", checklist, "--at-dir", at_dir, "--repo", str(tmp_path)])
+        == 1
+    ), (
         "BUG: R-S01-03 is a valid requirement identity; without an exact "
         "AT it must be REFUSED (1), never treated as malformed/INDETERMINATE (2)"
     )
@@ -459,14 +656,31 @@ def test_legacy_numeric_requirement_id_remains_supported(
 ) -> None:
     """Compatibility: the existing `R1` grammar remains a valid exact ID."""
     checklist = tmp_path / "checklist.md"
-    checklist.write_text("| R1 | legacy booking works | functional |\n")
+    checklist.write_text(
+        f"@feature-{_FIXTURE_FEATURE_ID}\n\n| R1 | legacy booking works | functional |\n"
+    )
     at_dir = tmp_path / "ats"
     at_dir.mkdir()
     (at_dir / "test_legacy.py").write_text(
-        '@pytest.mark.covers("R1")\ndef test_legacy_booking():\n    assert True\n'
+        _tag_at_source(
+            "test_legacy.py",
+            '@pytest.mark.covers("R1")\ndef test_legacy_booking():\n    assert True\n',
+        )
     )
 
-    assert main(["--checklist", str(checklist), "--at-dir", str(at_dir)]) == 0
+    assert (
+        main(
+            [
+                "--checklist",
+                str(checklist),
+                "--at-dir",
+                str(at_dir),
+                "--repo",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
     assert _first_event(capsys)["event"] == "SpecCoverageVerified"
 
 
@@ -497,7 +711,10 @@ def test_hierarchical_marker_lookalikes_do_not_cover_exact_requirement(
         ),
     )
 
-    assert main(["--checklist", checklist, "--at-dir", at_dir]) == 1, (
+    assert (
+        main(["--checklist", checklist, "--at-dir", at_dir, "--repo", str(tmp_path)])
+        == 1
+    ), (
         f"BUG: marker {lookalike!r} is not the exact canonical ID "
         f"{_HIERARCHICAL_REQUIREMENT_ID!r}; it must leave that row REFUSED"
     )

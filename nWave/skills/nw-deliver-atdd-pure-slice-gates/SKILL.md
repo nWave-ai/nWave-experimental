@@ -132,7 +132,7 @@ Each canonical phase (A_GREEN → C_REVIEWER_AUDIT → D_REFACTOR_COMMIT) emits 
 }
 ```
 
-`reviewer_findings`, `cycle_n`, `verdict_hash` null outside their phases. Validator: `scripts/validation/validate_atdd_pure_telemetry.py`.
+`reviewer_findings`, `cycle_n`, `verdict_hash` null outside their phases. **NO VALIDATOR YET**: this per-field nullability contract is the DESIGNED shape, not a checked one — no module enforces it. The only consumer of these records is the falsifier-gate health check (module `scripts.automation.atdd_pure_falsifier_gate`), which reads `reviewer_findings` for threshold medians and tolerates any other shape. Treat the contract as an authoring obligation on the emitter; do not assume a malformed record would be rejected.
 
 ## Post-Commit (D_REFACTOR_COMMIT): Falsifier-Gate Hook
 

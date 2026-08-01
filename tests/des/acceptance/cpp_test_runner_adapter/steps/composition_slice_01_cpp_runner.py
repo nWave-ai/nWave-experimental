@@ -328,7 +328,7 @@ class CppRunnerComposition:
         (rc != 0, no ``DISCOVERY:`` marker) -> this AssertionError fires.
         """
         assert self._probe_rc == 0 and "DISCOVERY:AT_IDS:" in self._probe_out, (
-            f"the C++ AT-discovery facet must discover the TEST(\"...\") "
+            f'the C++ AT-discovery facet must discover the TEST("...") '
             f"identities a regression file carries; at HEAD "
             f"{_CPP_RUNNER_MODULE} is absent so the child probe could not "
             f"produce a discovery result. {self._probe_observed()}"
@@ -345,7 +345,7 @@ class CppRunnerComposition:
         )
         assert set(observed_ids) == set(expected_ids), (
             "the C++ AT-discovery facet must discover EXACTLY the "
-            f"TEST(\"...\")-declared cases in the regression file: expected "
+            f'TEST("...")-declared cases in the regression file: expected '
             f"{sorted(expected_ids)}, got {sorted(observed_ids)}. "
             f"{self._probe_observed()}"
         )
@@ -386,7 +386,7 @@ class CppRunnerComposition:
         degrade-LOUD row (never a silently-empty discovery).
         """
         assert self._probe_rc == 0 and "DISCOVERY:INDETERMINATE:" in self._probe_out, (
-            "a C++ regression file with ZERO TEST(\"...\") cases must degrade "
+            'a C++ regression file with ZERO TEST("...") cases must degrade '
             "LOUD (RunnerAdapterUnavailable), never a silently-empty discovery; "
             f"at HEAD {_CPP_RUNNER_MODULE} is absent so the child probe could "
             f"not produce it. {self._probe_observed()}"

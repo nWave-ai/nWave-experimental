@@ -16,21 +16,22 @@ import json
 import os
 import sys
 from collections import Counter, OrderedDict
+from pathlib import Path
 
 
 path = sys.argv[1]
 
 DISK = {}
 for base in (
-    os.path.expanduser("~/.claude/skills"),
+    str(Path("~/.claude/skills").expanduser()),
     "/home/alexd/Projects/nWave-dev/nWave/skills",
 ):
     if not os.path.isdir(base):
         continue
-    for d in os.listdir(base):
+    for d in [p.name for p in Path(base).iterdir()]:
         f = os.path.join(base, d, "SKILL.md")
         if os.path.isfile(f):
-            DISK.setdefault(d, os.path.getsize(f))
+            DISK.setdefault(d, Path(f).stat().st_size)
 
 order = OrderedDict()
 with open(path, encoding="utf-8", errors="replace") as fh:

@@ -14,6 +14,19 @@ responsibility: |
   mandatory categories (ui, e2e, nfr, security, validation, build) are called
   out explicitly when uncovered. A missing/malformed checklist or an empty AT
   corpus degrades LOUD (INDETERMINATE), never a silent pass.
+
+  Attribution (fix-coverage-claim-names-a-feature): coverage decides on the
+  PROPERTY (this feature's own ATs cover this feature's rows), never the
+  DESIGNATION (a marker token appears somewhere under --at-dir). A checklist
+  declares its identity via a line-anchored `@feature-<id>` tag (or an
+  explicit --feature-id override); an AT covers a row only if it BOTH carries
+  the marker AND self-identifies as this feature's own (via
+  `des.application.feature_at_files`'s `@feature-<id>` head-tag SSOT).
+  --at-dir is a FILTER that can only narrow the feature's own attributed
+  corpus, never a source of attribution. A scanned corpus with zero overlap
+  against the feature's attributed files (S = D ∩ A = ∅, A != ∅) is the
+  WRONG-SCOPE state -- distinct from an ordinary INDETERMINATE (no identity,
+  or A = ∅) -- and names the actual attributed directories in its remediation.
 module: des.cli.verify_spec_coverage
 entry_function: main
 language_neutral_contract: true
@@ -22,6 +35,7 @@ log_events:
   - SpecCoverageVerified
   - SpecCoverageRefused
   - SpecCoverageIndeterminate
+  - SpecCoverageWrongScope
 
 failure_modes:
   - error_class: SpecCoverageRefused
@@ -29,7 +43,10 @@ failure_modes:
     remediation: "One or more requirement rows have no covering AT (mandatory categories called out): author an AT carrying @pytest.mark.covers/# covers:/@covers-Rn for each uncovered row, then re-run."
   - error_class: SpecCoverageIndeterminate
     exit_code: 2
-    remediation: "Missing/malformed checklist or empty AT corpus: provide a well-formed --checklist (rows `| Rn | text | category |` or `- Rn [category] text`) and at least one --at-dir; a feature without a checklist cannot claim coverage."
+    remediation: "Missing/malformed checklist or empty AT corpus: provide a well-formed --checklist (rows `| Rn | text | category |` or `- Rn [category] text`) and at least one --at-dir; a feature without a checklist cannot claim coverage. Also fires when no feature identity can be resolved (no line-anchored @feature-<id> checklist declaration and no --feature-id), or when A = ∅ (no file anywhere declares @feature-<id>)."
+  - error_class: SpecCoverageWrongScope
+    exit_code: 2
+    remediation: "The scanned --at-dir corpus does not intersect the feature's own attributed AT files (S = D ∩ A = ∅ though A != ∅): the operator pointed --at-dir at the wrong directory. The gate's own output names the actual attributed directories to point at instead."
 
 idempotency: idempotent
 

@@ -98,23 +98,42 @@ def test_green_to_green_reads_the_test_result_envelope_never_scraped_stdout(
     )
 
 
-def test_green_to_green_never_invokes_the_full_suite_as_the_per_item_gate(
+def test_the_per_item_gate_never_claims_a_narrowed_scope_it_did_not_earn(
     tmp_path,
 ):
-    """AT-10 / D3, negative -- Given a drain completes, Then the green-to-green
-    comparison's scope is bounded to fast+impacted tests, never the full suite.
+    """AT-10 / D3, negative -- covers R3. AMENDED (feature
+    impacted-test-selector-arity-fix, slice-01, 2026-08-01): the ORIGINAL
+    assertion here (``result.test_target_scope == "fast+impacted"``) decided
+    on the DESIGNATION and was satisfied by the very literal the service
+    assigns unconditionally at all three reporting sites -- it held green
+    while the per-item gate silently collected the whole worktree. That
+    premise WAS the defect in test form (see feature-delta 'Amendment, not
+    duplication'). The POSITIVE half of AT-10 (a real drain's actual scope,
+    bounded and reported) moved to
+    ``test_drain_report_says_whether_it_narrowed.py::
+    test_the_shipped_selector_answers_indeterminate_when_no_change_set_arrives``.
+    This scenario keeps the NEGATIVE half, retargeted onto the property:
+    Given a drain completes with the harness's default no-op agent (nothing
+    for the REAL selector to narrow against), Then the per-item gate must
+    NEVER report the narrowed ``"fast+impacted"`` literal for a run where
+    nothing was actually narrowed.
 
     Design doc §7/§9: full-suite x N concurrent agents serialises
     catastrophically on the shared box; full suite is a PERIODIC backstop,
     never the per-item gate.
     """
+    # covers: R3
     composition = RefactorSwarmComposition(tmp_path)
     composition.init_git_repo()
     composition.seed_pile_item(item_id="TD-001")
 
     result = composition.run_drain_one_item()
 
-    assert result.test_target_scope == "fast+impacted", (
-        "the per-item green-to-green gate must never run the full suite; "
-        f"got test_target_scope={result.test_target_scope!r}"
+    assert result.test_target_scope != "fast+impacted", (
+        "the per-item gate must never claim the narrowed 'fast+impacted' "
+        "scope for a run where nothing was actually narrowed -- the "
+        "harness's default no-op agent leaves no change set for the real "
+        "selector to narrow against; got "
+        f"test_target_scope={result.test_target_scope!r} (the unearned "
+        "literal this scenario replaces)"
     )

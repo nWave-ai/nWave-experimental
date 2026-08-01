@@ -8,9 +8,12 @@ Plus the aggregate and the chain-identity health (GDP-6: drift is LOUD).
 
 import os
 import sys
+from pathlib import Path
 
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, str(Path(str(Path(__file__).parent).resolve())))
+import itertools
+
 from ctxprobe_account import account
 
 
@@ -24,7 +27,7 @@ def analyse(path):
     tot_cr = sum(r["cr"] for r in rows)
     tot_out = sum(r["out"] for r in rows)
     drift = 0
-    for a, b in zip(rows, rows[1:]):
+    for a, b in itertools.pairwise(rows):
         if b["cr"] != a["cr"] + a["cw"]:
             drift += 1
     t0 = rows[0]
@@ -44,7 +47,9 @@ def analyse(path):
 def main():
     root = sys.argv[1]
     files = sorted(
-        os.path.join(root, f) for f in os.listdir(root) if f.endswith(".jsonl")
+        os.path.join(root, f)
+        for f in [p.name for p in Path(root).iterdir()]
+        if f.endswith(".jsonl")
     )
     results = []
     for p in files:

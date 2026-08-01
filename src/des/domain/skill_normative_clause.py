@@ -145,6 +145,33 @@ class NormativeVerdict:
         return cls(verdict=GateVerdict.PASS)
 
     @classmethod
+    def rejected(
+        cls,
+        failing: tuple[FailingClause, ...],
+        indeterminate: tuple[IndeterminateClause, ...] = (),
+    ) -> NormativeVerdict:
+        """FAIL, carrying BOTH populations honestly (gate-ratchet-skill-normative).
+
+        A reject wins over the third state: any non-empty `failing` means FAIL
+        at any indeterminate count, and a caller deciding the exit code MUST
+        NEVER consult the ratchet for a verdict this constructor produced --
+        `verdict` reads FAIL, and the ratchet is gated on INDETERMINATE only.
+        `indeterminate` still reaches the aggregate (GDP-8): it is carried
+        here, not discarded, so the CLI can render both populations instead of
+        silently dropping the could-not-verify ones behind the real reject.
+
+        Provenance: before gate-ratchet-skill-normative, `evaluate()` returned
+        INDETERMINATE whenever ANY clause was unreadable -- discarding
+        `failing` outright -- which was survivable only because INDETERMINATE
+        also exited non-zero. The ratchet made that precedence load-bearing:
+        it turned "hidden but blocking" into "hidden and passing" the moment
+        an unrelated could-not-verify clause let a real reject exit 0.
+        """
+        return cls(
+            verdict=GateVerdict.FAIL, failing=failing, indeterminate=indeterminate
+        )
+
+    @classmethod
     def indeterminate_for(
         cls, offending: tuple[IndeterminateClause, ...]
     ) -> NormativeVerdict:

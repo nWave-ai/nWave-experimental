@@ -10,12 +10,13 @@ import json
 import os
 import sys
 from collections import Counter, OrderedDict
+from pathlib import Path
 
 
 root = sys.argv[1]
 per_agent = []
 
-for f in sorted(os.listdir(root)):
+for f in sorted([p.name for p in Path(root).iterdir()]):
     if not f.endswith(".jsonl"):
         continue
     p = os.path.join(root, f)
@@ -73,7 +74,10 @@ print(f"agents: {n}\n")
 def dist(key, label):
     v = sorted(a[key] for a in per_agent)
     m = len(v)
-    q = lambda x: v[min(int(m * x), m - 1)]
+
+    def q(x):
+        return v[min(int(m * x), m - 1)]
+
     print(
         f"  {label:22s} total {sum(v):>10,}  p50 {q(0.5):>6,}  p75 {q(0.75):>6,}  "
         f"p90 {q(0.9):>6,}  p99 {q(0.99):>6,}  max {v[-1]:>6,}"

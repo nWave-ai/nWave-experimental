@@ -19,6 +19,11 @@ from ..conftest import GATES_DIR, REPO_ROOT
 # Excluded "underscore-prefixed" meta files from per-gate enumeration.
 _META_FILES = {"_catalog.yaml", "_schema.yaml"}
 
+# Fields carried by BOTH the catalog row and the per-gate file. A per-gate file
+# that contradicts its catalog row makes every consumer's answer depend on which
+# of the two it happened to read.
+_SHARED_CONTRACT_FIELDS = ("module", "entry_function", "language_neutral_contract")
+
 
 class PerGateComposition:
     def __init__(self) -> None:
@@ -27,6 +32,7 @@ class PerGateComposition:
         self._schema: dict | None = None
         self._validation_errors: list[str] = []
         self._language_bound: list[str] = []
+        self._field_divergences: list[str] = []
         self._coherence_result: CoherenceResult | None = None
 
     def load_files(self) -> None:
@@ -68,6 +74,30 @@ class PerGateComposition:
             entry = yaml.safe_load(f.read_text())
             if entry["language_neutral_contract"] is False:
                 self._language_bound.append(entry["gate_id"])
+
+    def compare_shared_fields(self) -> None:
+        import yaml
+
+        catalog = yaml.safe_load((GATES_DIR / "_catalog.yaml").read_text())
+        by_id = {g["gate_id"]: g for g in catalog["gates"]}
+        self._field_divergences = []
+        for f in self._per_gate_files:
+            entry = yaml.safe_load(f.read_text())
+            catalog_entry = by_id.get(entry["gate_id"])
+            if catalog_entry is None:
+                continue  # orphan direction is asserted by the coherence step
+            for field in _SHARED_CONTRACT_FIELDS:
+                if field not in catalog_entry or field not in entry:
+                    continue
+                if catalog_entry[field] != entry[field]:
+                    self._field_divergences.append(
+                        f"{f.name}: {field} catalog={catalog_entry[field]!r} "
+                        f"file={entry[field]!r}"
+                    )
+
+    @property
+    def field_divergences(self) -> list[str]:
+        return self._field_divergences
 
     def check_catalog_coherence(self) -> None:
         self._coherence_result = compute_catalog_coherence(REPO_ROOT)
@@ -134,6 +164,21 @@ def when_validate_all(per_gate_comp) -> None:
 @when("the filenames are compared to catalog gate_ids")
 def when_compare_names(per_gate_comp) -> None:
     pass  # @then reads
+
+
+@when("the shared contract fields are compared entry by entry")
+def when_compare_shared_fields(per_gate_comp) -> None:
+    per_gate_comp.compare_shared_fields()
+
+
+@then("no gate declares a different value in the catalog than in its per-gate file")
+def then_no_field_divergence(per_gate_comp) -> None:
+    assert per_gate_comp.field_divergences == [], (
+        "Catalog/per-gate contract-field divergence — the two SSOT copies "
+        "disagree, so a consumer's answer depends on which it read. Fix the "
+        "side that is wrong (do NOT delete the field):\n  "
+        + "\n  ".join(per_gate_comp.field_divergences)
+    )
 
 
 @when("language_neutral_contract:false entries are enumerated")

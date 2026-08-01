@@ -45,8 +45,41 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple, get_args
 
+from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.domain.gate_outcome import GateVerdict
 from des.domain.telemetry.documentation_density_event import WaveName
+
+
+_OUTCOME_GATE_NAME = "validate-feature-delta"
+
+
+def _resolve_repo_root_and_feature_id(target: Path) -> tuple[Path, str]:
+    """Best-effort repo root + feature id from the conventional
+    ``docs/feature/{id}/feature-delta.md`` path shape (DISTILL: a DELIVER-time
+    refinement, not prescribed -- this gate has no ``--repo-root``/
+    ``--feature-id`` flag). Falls back to the target's own parent directory
+    as repo root and ``""`` (the singleton-shape sentinel) as feature id when
+    the path does not match that convention.
+    """
+    resolved = target.resolve()
+    feature_dir = resolved.parent
+    family_dir = feature_dir.parent
+    docs_dir = family_dir.parent
+    if family_dir.name == "feature" and docs_dir.name == "docs":
+        return docs_dir.parent, feature_dir.name
+    return feature_dir, ""
+
+
+def _record_outcome(target: Path, outcome: GateVerdict) -> None:
+    """Append a `GateOutcomeRecorded` record (slice-04, ADR-GV-003 D5)."""
+    repo_root, feature_id = _resolve_repo_root_and_feature_id(target)
+    AtCompletionLedger(project_root=repo_root).append_gate_event(
+        "GateOutcomeRecorded",
+        "",
+        feature_id=feature_id,
+        gate=_OUTCOME_GATE_NAME,
+        outcome=outcome,
+    )
 
 
 if TYPE_CHECKING:
@@ -100,6 +133,17 @@ VERDICT_REJECTED_INFRA_ONLY = "rejected-infra-only"
 #: feature-plan-mode closed set (five tokens) is UNCHANGED — this token never
 #: appears under `--require-feature-plan` (D-6).
 VERDICT_UNJUSTIFIED_SLICE_DEPENDENCY = "unjustified-slice-dependency"
+
+#: fix-charter-scaffold-placeholder-scope O1 (DD-6): a slice-plan row whose
+#: `Slice` id repeats an earlier row's id makes two competing claims about the
+#: SAME slice -- `charter-scaffold` would otherwise scaffold two charters
+#: both stamped with the identical `slice-NN` scope, which
+#: `resolve_slice_charter` can then only see as "mapped by multiple
+#: charters" (indeterminate). The producer must refuse FIRST (GDP-1: earlier
+#: than the scaffolder), before writing anything. Widens the slice-plan-mode
+#: closed set to SEVEN tokens; the feature-plan-mode closed set is UNCHANGED
+#: (this guard is slice-plan-only, per DD-6).
+VERDICT_DUPLICATE_SLICE_ID = "duplicate-slice-id"
 
 #: The two NEW closed `verdict` tokens emitted under --require-feature-plan
 #: --format=json (discuss-epic-mode slice-01). The verdict must name WHICH plan
@@ -399,6 +443,9 @@ class _PlanSpec(NamedTuple):
     row_noun: str  # "slice" | "feature"
     enforce_dependency_justification: bool  # D-1/D-2: both modes (row 2)
     verdict_unjustified_dependency: str  # closed token: depends-on, no Justification
+    #: fix-charter-scaffold-placeholder-scope O1/DD-6: slice-plan-only guard.
+    #: `None` (feature-plan mode) means the duplicate-id check is skipped.
+    verdict_duplicate_id: str | None = None
 
 
 class ReuseAnalysisResult(NamedTuple):
@@ -527,6 +574,7 @@ _SLICE_PLAN_SPEC = _PlanSpec(
     row_noun="slice",
     enforce_dependency_justification=True,
     verdict_unjustified_dependency=VERDICT_UNJUSTIFIED_SLICE_DEPENDENCY,
+    verdict_duplicate_id=VERDICT_DUPLICATE_SLICE_ID,
 )
 _FEATURE_PLAN_SPEC = _PlanSpec(
     heading_re=_FEATURE_PLAN_HEADING_RE,
@@ -688,6 +736,50 @@ def _classify_slice_dependency_justification(
     )
 
 
+def _classify_duplicate_row_id(
+    data_rows: list[str], spec: _PlanSpec
+) -> PlanValidationResult | None:
+    """Refuse a plan whose row-id column (`cells[0]`) repeats. Pure.
+
+    fix-charter-scaffold-placeholder-scope O1 (DD-6): two rows sharing the
+    SAME id (e.g. two `slice-01` rows) are two competing claims about the
+    same slice -- `charter-scaffold` must never scaffold two charters both
+    stamped with the identical scope. Only active when
+    `spec.verdict_duplicate_id` is set (slice-plan mode); returns `None`
+    unconditionally for a spec that leaves it `None` (feature-plan mode,
+    D-6: out of scope for this guard).
+
+    Detail names the duplicated id and every competing Value statement
+    (GDP-3 WHAT/WHY/HOW) -- the AT reads these back out of `payload["detail"]`.
+    """
+    if spec.verdict_duplicate_id is None:
+        return None
+    seen_ids: dict[str, list[str]] = {}
+    order: list[str] = []
+    for row in data_rows:
+        cells = _parse_table_cells(row)
+        if not cells:
+            continue
+        row_id = cells[0].strip()
+        value_statement = cells[1].strip() if len(cells) > 1 else ""
+        if row_id not in seen_ids:
+            seen_ids[row_id] = []
+            order.append(row_id)
+        seen_ids[row_id].append(value_statement)
+    for row_id in order:
+        statements = seen_ids[row_id]
+        if len(statements) > 1:
+            return PlanValidationResult(
+                verdict=spec.verdict_duplicate_id,
+                detail=(
+                    f"duplicate {spec.row_noun} id {row_id!r} declared "
+                    f"{len(statements)} times with competing Value statements: "
+                    f"{statements!r}"
+                ),
+            )
+    return None
+
+
 def _validate_plan_content(content: str, spec: _PlanSpec) -> PlanValidationResult:
     """Structurally validate a plan section against `spec`. Pure function.
 
@@ -751,6 +843,10 @@ def _validate_plan_content(content: str, spec: _PlanSpec) -> PlanValidationResul
                 f"{spec.table_noun} table has its header but zero {spec.row_noun} rows"
             ),
         )
+
+    duplicate_id_veto = _classify_duplicate_row_id(data_rows, spec)
+    if duplicate_id_veto is not None:
+        return duplicate_id_veto
 
     cohesion_veto = _classify_slice_cohesion(data_rows, spec.row_noun)
     if cohesion_veto is not None:
@@ -2112,8 +2208,10 @@ def _run_plain(target: Path) -> int:
     result = validate_feature_delta(target)
     if result.is_valid:
         print(_format_success(result))
+        _record_outcome(target, GateVerdict.PASS)
         return 0
     print(_format_failure(result))
+    _record_outcome(target, GateVerdict.FAIL)
     return 1
 
 

@@ -1,3 +1,4 @@
+# @feature-feature-end-attests-pytest-regression
 """Regression: the feature-end truncation oracle recognizes a slice attested
 by a `SliceCommitVerified` ledger record as DELIVERED.
 

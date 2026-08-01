@@ -17,6 +17,9 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from des.domain.telemetry_paths import LedgerFamily
+from des.domain.telemetry_paths import ledger_path as _telemetry_ledger_path
+
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -230,9 +233,7 @@ def _resolve_ledger_file(feature_dir: Path) -> Path | None:
     """
     feature_id = feature_dir.name
     for ancestor in feature_dir.parents:
-        candidate = (
-            ancestor / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
-        )
+        candidate = _telemetry_ledger_path(ancestor, LedgerFamily.ATDD_PURE, feature_id)
         if candidate.is_file():
             return candidate
     return None

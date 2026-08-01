@@ -195,6 +195,69 @@ def _extract_template_skeleton(template_content: str) -> str:
     return "\n".join(lines[fence_start + 1 : fence_end]) + "\n"
 
 
+#: Grammar `resolve_slice_charter` (`des.domain.expectation_charter_mapping`)
+#: accepts for `Spec rows:` -- mirrors that module's private `_SLICE_ID_PATTERN`
+#: (not imported: a domain-internal symbol, and this module only needs the
+#: shape, not the mapping logic itself).
+_SLICE_ID_RE = re.compile(r"\Aslice-\d+\Z")
+
+#: fix-charter-scaffold-placeholder-scope O2 (feature-delta amendment,
+#: 2026-07-30, DD-1..DD-3, human-granted forward-only): the two non-slice
+#: `--seed-mode` identifiers `_run_bug_observable` / `_run_brownfield_discovery`
+#: stamp as the `Slice` field. Neither reads a Slice Plan, so their own
+#: identifier is the ONLY scope they can honestly claim -- a `slice-01`
+#: fabricated from the template's untouched fence default is a silent-wrong
+#: claim (O2's defect). Deliberately a closed, producer-owned set -- NOT
+#: "anything not slice-NN" -- so a future third-party token (`n/a`, `human
+#: directive`, ...) keeps leaving the field untouched (DD-2's original guard,
+#: still the right call for values this producer never emits itself).
+_FEATURE_LEVEL_SEED_MODE_IDENTIFIERS: frozenset[str] = frozenset(
+    {"bug-observable", "brownfield-discovery"}
+)
+
+#: The `ID:` line's `Spec rows:` field, up to the next `·` separator or end of
+#: line -- same shape as `resolve_slice_charter`'s `_SPEC_ROWS_PATTERN`, scoped
+#: to a replace instead of a read.
+_SPEC_ROWS_FIELD_RE = re.compile(r"(Spec rows:\s*)([^·\n]+)")
+
+
+def _fill_spec_rows_field(content: str, slice_id: str) -> str:
+    """Replace the `ID:` line's `Spec rows:` placeholder with the slice this
+    charter was actually generated for. Pure.
+
+    DD-1: the scaffolder already knows `slice_id` (it read the Slice Plan row
+    to decide the row was observable) -- write it down in the
+    comma-separated `slice-NN` grammar `resolve_slice_charter` accepts,
+    instead of copying the template's own literal placeholder (`<R…>`)
+    verbatim.
+
+    DD-2 (scope guard, widened O2 2026-07-30): rewrites when `slice_id`
+    matches the `slice-NN` grammar OR is one of the two producer-owned
+    non-slice seed-mode identifiers (`_FEATURE_LEVEL_SEED_MODE_IDENTIFIERS`)
+    -- both `_run_bug_observable` and `_run_brownfield_discovery` call this
+    with their OWN `identifier`, never a slice-NN token, and must stamp it
+    rather than leave the template's fence default untouched. Any OTHER
+    identifier is left UNTOUCHED -- deciding a third party's `Spec rows:`
+    grammar stays out of scope.
+    """
+    if not (
+        _SLICE_ID_RE.fullmatch(slice_id)
+        or slice_id in _FEATURE_LEVEL_SEED_MODE_IDENTIFIERS
+    ):
+        return content
+    lines = content.splitlines()
+    for idx, line in enumerate(lines):
+        if line.startswith("ID:") and _SPEC_ROWS_FIELD_RE.search(line):
+            # Trailing space restored: the `[^·\n]+` capture in group 2
+            # swallows the template's own space before the `·` delimiter
+            # (it matches everything up to, but not including, `·`), and the
+            # replacement drops group 2 entirely -- so the space must be
+            # re-added here, not recovered from the match.
+            lines[idx] = _SPEC_ROWS_FIELD_RE.sub(rf"\g<1>{slice_id} ", line, count=1)
+            break
+    return "\n".join(lines) + "\n"
+
+
 def _fill_intent_section(skeleton: str, value_statement: str) -> str:
     """Replace the `## Intent` placeholder body with the Value statement
     VERBATIM. Pure.
@@ -265,6 +328,7 @@ def _scaffold_slice(
         written in the first place).
     """
     value_statement = slice_row.get("Value statement", "").strip()
+    slice_id = slice_row.get("Slice", "").strip()
     slug = _kebab_slug(value_statement)
     filename = f"{slug}.md"
     if not slug:
@@ -274,9 +338,9 @@ def _scaffold_slice(
     if decide_on_exists(target_exists=path.exists(), policy="skip") == "skip":
         return filename, False
     expectations_dir.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        _fill_intent_section(template_skeleton, value_statement), encoding="utf-8"
-    )
+    content = _fill_intent_section(template_skeleton, value_statement)
+    content = _fill_spec_rows_field(content, slice_id)
+    path.write_text(content, encoding="utf-8")
     return filename, True
 
 

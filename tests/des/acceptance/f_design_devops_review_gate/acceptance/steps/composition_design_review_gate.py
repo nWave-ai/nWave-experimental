@@ -176,10 +176,10 @@ def _design_sequence_resolved_by_spine(boundary: WaveBoundary) -> tuple[str, ...
     """
     from des.application import wave_gate_stack_dispatch
 
-    stack = wave_gate_stack_dispatch.resolve_stack(_DESIGN_WAVE, boundary.value)
+    resolved = wave_gate_stack_dispatch.resolve_stack(_DESIGN_WAVE, boundary.value)
     return tuple(
         str(row["gate_id"])
-        for row in stack
+        for row in resolved.rows
         if isinstance(row, dict) and "gate_id" in row
     )
 

@@ -66,7 +66,7 @@ existing mechanism already covered them; the cost was DISCOVERING that).
 | 3 | Pipeline/service-level tests do NOT replace driving adapter tests — calling `generate_matrix()` directly proves the pipeline, NOT that the CLI parses arguments, resolves PYTHONPATH, wires adapters, produces correct exit codes | both present |
 | 4 | Scan DESIGN for entry points: grep for `python -m`, `cli`, `endpoint`, `hook adapter`; each match → ≥1 subprocess/HTTP/hook scenario | zero uncovered entry points |
 
-Exists because of a systematic pattern (RCA `docs/analysis/rca-user-port-gap.md`): ATs entered from application services instead of user-facing CLIs — working pipelines shipped with broken entry points.
+Exists because of a systematic pattern, established by an nWave-internal "user-port gap" RCA (an analysis note, never shipped — do not look for a file; its finding is stated here in full): ATs entered from application services instead of user-facing CLIs — working pipelines shipped with broken entry points.
 
 ## Adapter Scenario Coverage (Mandate 6 Enforcement)
 

@@ -252,19 +252,19 @@ def _run(
     *,
     cwd: Path,
     env: dict[str, str] | None = None,
-    timeout: int = 600,
     input_text: str | None = None,
+    timeout: int = 600,
     shell: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
         cwd=cwd,
         env=env,
+        input=input_text,
         capture_output=True,
         text=True,
         timeout=timeout,
         check=False,
-        input=input_text,
         shell=shell,
     )
 

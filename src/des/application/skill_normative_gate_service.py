@@ -3,12 +3,24 @@
 Feature: skill-normative-content-gate (DESIGN §5, component `SkillNormativeGateService`).
 Layer: Application.
 
-Orchestration (DESIGN §5):
-  read manifest → for each clause resolve its skill asset via the reader →
-  on absent/undecodable asset assemble INDETERMINATE → on non-discriminating
-  marker assemble INDETERMINATE (load-time) → else assert each marker present →
-  assemble the closed verdict (PASS / FAIL / INDETERMINATE). Owns NO matching
-  logic (delegates to the pure domain).
+Orchestration (DESIGN §5, revised gate-ratchet-skill-normative -- REJECT WINS):
+  read manifest → flag non-discriminating markers (load-time, no asset read) →
+  resolve + assert every OTHER (discriminating) clause's asset over the WHOLE
+  remaining corpus → a non-empty failing population decides FAIL, at ANY
+  indeterminate count, carrying the indeterminate population alongside it
+  (GDP-8: never discarded) → otherwise a non-empty indeterminate population
+  decides INDETERMINATE → otherwise PASS. Owns NO matching logic (delegates to
+  the pure domain).
+
+  Precedence history: the ORIGINAL orchestration returned INDETERMINATE the
+  moment ANY clause was non-discriminating/unreadable, discarding `failing`
+  outright without ever computing it for the rest of the corpus. That was
+  survivable only because INDETERMINATE also exited non-zero. The
+  gate-ratchet-skill-normative fix (Mikado D86) made INDETERMINATE exit 0 on
+  an unchanged could-not-verify population -- which would have turned the
+  discarded-`failing` precedence into a silent pass for a real reject, as
+  long as one unrelated clause anywhere in the manifest was unverifiable.
+  Fixed by computing both populations first and deciding on `failing` alone.
 
 Verdict + exit codes REUSE `GateOutcome`/`GateVerdict` (gate_outcome.py):
   PASS → 0, FAIL → 1, INDETERMINATE → 4 (DESIGN §6).
@@ -37,7 +49,7 @@ from des.domain.skill_normative_clause import (
 
 
 if TYPE_CHECKING:
-    from des.adapters.driven.skill_corpus_reader import SkillCorpusReader
+    from des.ports.driven_ports.skill_corpus_reader_port import SkillCorpusReaderPort
 
 
 _SKILLS_SUBPATH = ("nWave", "skills")
@@ -45,33 +57,74 @@ _SKILL_FILE = "SKILL.md"
 
 
 class SkillNormativeGateService:
-    """Assembles the closed normative-content verdict over the manifest corpus."""
+    """Assembles the closed normative-content verdict over the manifest corpus.
 
-    def __init__(self, reader: SkillCorpusReader, root: Path) -> None:
+    ``reader`` is typed to the structural `SkillCorpusReaderPort`, not the
+    concrete working-tree `SkillCorpusReader` -- the gate's own INDETERMINATE
+    ratchet (gate-ratchet-skill-normative) hands this service a
+    `HeadSkillCorpusReader` (HEAD git-blob-backed) to compute a PAST corpus's
+    verdict, reusing this class UNMODIFIED.
+    """
+
+    def __init__(self, reader: SkillCorpusReaderPort, root: Path) -> None:
         self._reader = reader
         self._root = root
 
     def evaluate(self, manifest_path: Path) -> NormativeVerdict:
-        """Read the corpus and assemble the closed PASS/FAIL/INDETERMINATE verdict."""
+        """Read the corpus and assemble the closed PASS/FAIL/INDETERMINATE verdict.
+
+        A REJECT wins over the third state (gate-ratchet-skill-normative): any
+        non-empty failing population decides FAIL at any indeterminate count.
+        Before this fix, a non-discriminating marker OR an unreadable asset
+        anywhere in the corpus made `evaluate()` return INDETERMINATE without
+        ever computing `failing` for the rest of the corpus -- discarding a
+        real reject outright. That precedence was survivable only because
+        INDETERMINATE also exited non-zero; ratcheting INDETERMINATE to exit 0
+        on an unchanged population turned it into a silent pass for a hidden
+        FAIL. So both populations are now computed over the WHOLE corpus
+        first, and `failing` decides the verdict class when non-empty --
+        `indeterminate` is carried alongside it (GDP-8), never discarded.
+        """
         clauses = self._load_clauses(manifest_path)
         non_discriminating = self._non_discriminating(clauses)
-        if non_discriminating:
-            return NormativeVerdict.indeterminate_for(non_discriminating)
-        unreadable, failing = self._check_assets(clauses)
-        if unreadable:
-            return NormativeVerdict.indeterminate_for(unreadable)
-        return NormativeVerdict.over(
-            tuple(
-                FailingClause(
-                    skill=c.skill,
-                    clause_id=c.clause_id,
-                    marker=c.marker,
-                    skill_path=self._skill_path_for(c),
-                    manifest_path=str(manifest_path),
-                )
-                for c in failing
-            )
+        discriminating = self._discriminating(clauses, non_discriminating)
+        unreadable, failing = self._check_assets(discriminating)
+        indeterminate: tuple[NonDiscriminatingClause | UnreadableClause, ...] = (
+            non_discriminating + unreadable
         )
+        if failing:
+            return NormativeVerdict.rejected(
+                tuple(
+                    FailingClause(
+                        skill=c.skill,
+                        clause_id=c.clause_id,
+                        marker=c.marker,
+                        skill_path=self._skill_path_for(c),
+                        manifest_path=str(manifest_path),
+                    )
+                    for c in failing
+                ),
+                indeterminate,
+            )
+        if indeterminate:
+            return NormativeVerdict.indeterminate_for(indeterminate)
+        return NormativeVerdict.over(())
+
+    @staticmethod
+    def _discriminating(
+        clauses: tuple[NormativeClause, ...],
+        non_discriminating: tuple[NonDiscriminatingClause, ...],
+    ) -> tuple[NormativeClause, ...]:
+        """Clauses NOT flagged non-discriminating -- the only ones asset-checkable.
+
+        A non-discriminating marker cannot be matched against asset text at
+        all (that is exactly why it is refused at load time), so it is
+        excluded here rather than fed to `_check_assets` -- but excluding it
+        must never suppress a FAIL/UnreadableClause finding on any OTHER,
+        genuinely discriminating clause in the same corpus.
+        """
+        offending = {(nd.skill, nd.clause_id) for nd in non_discriminating}
+        return tuple(c for c in clauses if (c.skill, c.clause_id) not in offending)
 
     def _skill_path_for(self, clause: NormativeClause) -> str:
         """The resolved asset path(s) a maintainer must edit to restore the marker."""

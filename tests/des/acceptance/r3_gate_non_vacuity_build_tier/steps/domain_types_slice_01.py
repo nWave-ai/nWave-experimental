@@ -103,18 +103,25 @@ class ArchTierState(str, Enum):
 class GateVerdict(str, Enum):
     """How `des run-contract-gate --feature-id` resolves, EXIT-CODE-EXACT.
 
-    The feature-scoped contract (verified-from-source, `run_contract_gate.py:29`
-    + `_mode_feature_scoped`):
+    The feature-scoped contract, RE-ALLOCATED by
+    fix-e2-whole-tree-scope-blocks-unrelated-slices:
 
-    * CLEARED  -- exit 0, emits `FeatureScopeCleared`. The feature scope AND the
-      arch-invariant set both collected non-vacuously AND the arch set RAN
-      GREEN (corrected contract, §6.2 join point).
-    * REFUSED  -- exit 2, emits `FeatureScopeMalformed`. The non-vacuity floor
-      tripped OR (the keystone) the arch-invariant set RAN RED -- malformed
-      reason `arch-invariant-failed`.
+    * CLEARED  -- exit 0, emits `FeatureScopeCleared`. The feature scope
+      collected non-vacuously. The whole-tree architecture tier is DEFERRED to
+      feature-end (announced LOUD via `BuildTierWholeTreeDeferred`), so an
+      unrelated concurrent lane's in-flight RED can no longer hold this slice
+      hostage.
+    * REFUSED  -- exit 2, emits `FeatureScopeMalformed`. The feature-scope
+      non-vacuity floor tripped (`zero-collected` / `empty-intersection` /
+      `collection-failed`) -- always something inside the entering slice's OWN
+      scope, never another lane's file.
     * UNEXPECTED -- any OTHER non-zero exit (argparse error, uncaught crash) --
       a WRONG failure mode, so a REFUSED assertion never passes for the wrong
       reason.
+
+    The `arch-invariant-failed` / `arch-scope-zero-collected` refusals this
+    feature originally pinned HERE now live on `WholeTreeVerdict` (the
+    feature-end whole-tree run). The protection relocated; it was not dropped.
     """
 
     CLEARED = "cleared"  # exit 0 -- FeatureScopeCleared
@@ -124,12 +131,46 @@ class GateVerdict(str, Enum):
     UNEXPECTED = "unexpected"  # any other non-zero -- a WRONG failure mode
 
 
-# The malformed `reason` the corrected gate emits when a run-time arch invariant
-# FAILS (§6.2 join point: `_feature_scope_malformed(..., reason="arch-invariant-failed")`).
-# The AT MAY assert this for precision -- it distinguishes the keystone refusal
-# from the other floor-trip reasons (zero-collected / empty-intersection /
-# arch-scope-zero-collected).
+class WholeTreeVerdict(str, Enum):
+    """How the WHOLE-TREE architecture run resolves, EXIT-CODE-EXACT.
+
+    RE-ALLOCATION (fix-e2-whole-tree-scope-blocks-unrelated-slices): the
+    keystone protection ("a slice must not earn a verified record while
+    breaking an architecture boundary") is NOT deleted -- it MOVES off the
+    per-slice gate and onto the whole-tree run at feature-end. This enum is the
+    verdict vocabulary of that relocated surface.
+
+    * CLEARED -- exit 0, emits `BuildTierVerified` (a non-vacuous tier that ran
+      GREEN) or `BuildTierNotApplicable` (a target carrying no arch tier).
+    * REFUSED -- exit 1, emits `BuildTierRefused` -- reason
+      `arch-invariant-failed` (a run-time arch invariant FAILED) or
+      `arch-scope-zero-collected` (a PRESENT-but-vacuous tier).
+    * UNEXPECTED -- any OTHER non-zero exit, so a REFUSED assertion never
+      passes for the wrong reason.
+    """
+
+    CLEARED = "cleared"  # exit 0 -- BuildTierVerified / BuildTierNotApplicable
+    REFUSED = "refused"  # exit 1 -- BuildTierRefused
+    UNEXPECTED = "unexpected"  # any other non-zero -- a WRONG failure mode
+
+
+# The malformed `reason` the gate emits when a run-time arch invariant FAILS.
+# After the re-allocation this reason is observed on the WHOLE-TREE run
+# (`BuildTierRefused`), no longer on the per-slice feature-scoped verdict.
 ARCH_INVARIANT_FAILED_REASON = "arch-invariant-failed"
+
+# The whole-tree architecture-run verdict events (verified-from-source:
+# `run_contract_gate.py` `build_tier_exit_verdict`).
+BUILD_TIER_REFUSED_EVENT = "BuildTierRefused"
+BUILD_TIER_VERIFIED_EVENT = "BuildTierVerified"
+BUILD_TIER_NOT_APPLICABLE_EVENT = "BuildTierNotApplicable"
+
+# The LOUD per-slice deferral record (GDP-6, no silent-wrong): the per-slice
+# gate must ANNOUNCE that it deferred the whole-tree tier, and NAME where the
+# coverage moved to -- a narrowing that says nothing is indistinguishable from
+# a coverage drop.
+BUILD_TIER_WHOLE_TREE_DEFERRED_EVENT = "BuildTierWholeTreeDeferred"
+DEFERRED_TO_FEATURE_END = "feature-end"
 
 
 # The synthetic fixture's feature id -- DISTINCT from this AT's own feature id

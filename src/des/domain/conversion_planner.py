@@ -34,6 +34,7 @@ from des.domain.repo_path_resolver import (
     FEATURE_DELTA_FILENAME,
     feature_delta_in_dir,
 )
+from des.domain.telemetry_paths import LedgerFamily, ledger_path
 
 
 if TYPE_CHECKING:
@@ -427,15 +428,11 @@ def _undo_flip_config(context: _RollbackContext) -> None:
 
 def _undo_seed_ledger(context: _RollbackContext) -> None:
     """Delete the AT-completion ledger seeded by the conversion."""
-    ledger_path = (
-        context.ledger_root
-        / ".nwave"
-        / "telemetry"
-        / "atdd-pure"
-        / f"{context.feature_id}.jsonl"
+    at_ledger_path = ledger_path(
+        context.ledger_root, LedgerFamily.ATDD_PURE, context.feature_id
     )
-    if context.fs.exists(ledger_path):
-        context.fs.delete(ledger_path)
+    if context.fs.exists(at_ledger_path):
+        context.fs.delete(at_ledger_path)
 
 
 def _undo_promote_heading(context: _RollbackContext) -> None:

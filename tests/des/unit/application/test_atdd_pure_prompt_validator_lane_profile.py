@@ -41,6 +41,7 @@ from des.application.atdd_pure_prompt_validator import (
     ATDD_PURE_MANDATORY_SECTIONS,
     AtddPurePromptValidator,
 )
+from des.domain.expectation_charter_mapping import CharterObligation
 from des.domain.lane_profile import AtRequirement, GuardKind, LaneProfile
 
 
@@ -148,6 +149,7 @@ def test_validator_consults_the_datum_at_call_time_not_a_hardcoded_branch() -> N
             at_requirement=AtRequirement.EXEMPT,
             skipped_invariants=(),
             annotation_token="prefactoring",
+            charter_obligation=CharterObligation.EXEMPT,
         )
     }
 
@@ -402,6 +404,7 @@ def test_bugfix_and_prefactoring_lanes_both_resolve_via_the_same_datum_lookup() 
             at_requirement=AtRequirement.EXEMPT,
             skipped_invariants=(),
             annotation_token="prefactoring",
+            charter_obligation=CharterObligation.EXEMPT,
         ),
         "bugfix": LaneProfile(
             lane_id="bugfix",
@@ -411,6 +414,7 @@ def test_bugfix_and_prefactoring_lanes_both_resolve_via_the_same_datum_lookup() 
             at_requirement=AtRequirement.REQUIRED,
             skipped_invariants=(),
             annotation_token="bugfix",
+            charter_obligation=CharterObligation.REQUIRED,
         ),
     }
 

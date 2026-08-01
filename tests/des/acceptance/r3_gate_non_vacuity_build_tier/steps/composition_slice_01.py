@@ -1,13 +1,29 @@
 """Composition root for r3-gate-non-vacuity-build-tier slice-01 (Mandate-12 SSOT).
 
-Mandate-13 (driving-port-only boundary): every service method drives the REAL
-`des run-contract-gate --feature-id <f> --entering-slice <s>` CLI as a Layer-3
-SUBPROCESS black-box -- never a direct
+RE-ALLOCATION (fix-e2-whole-tree-scope-blocks-unrelated-slices, 2026-07-30) --
+this composition now drives TWO production surfaces, because the protection
+this feature encodes now lives in two places:
+
+  * `run_feature_scoped_gate` -- the PER-SLICE gate. It must judge a slice on
+    ITS OWN scope, and DEFER the whole-tree architecture tier to feature-end
+    (announcing the deferral LOUD). It must never refuse a slice over another
+    concurrent lane's in-flight file.
+  * `run_whole_tree_arch_gate` -- the FEATURE-END whole-tree architecture run.
+    The keystone protection ("a slice must not earn a verified record while
+    breaking an architecture boundary") relocated HERE. Nothing was weakened:
+    the refusal moved from "blocks every slice, tree-wide, immediately" to
+    "blocks that feature's own close".
+
+Mandate-13 (driving-port-only boundary): `run_feature_scoped_gate` drives the
+REAL `des run-contract-gate --feature-id <f> --entering-slice <s>` CLI as a
+Layer-3 SUBPROCESS black-box -- never a direct
 `from des.cli.run_contract_gate import _mode_feature_scoped` + function-boundary
 call. `_arch_invariant_paths` / `_collect_node_ids` / `_mode_feature_scoped` are
 NEVER imported; the AT observes ONLY the CLI's exit code and its stdout JSON
-verdict event. This is the same definition the U2 SubagentStop / G_COMMIT exit
-gate invokes (port-to-port).
+events. This is the same definition the U2 SubagentStop / G_COMMIT exit gate
+invokes (port-to-port). `run_whole_tree_arch_gate` is a Layer-3 COMPOSITION
+drive of the real `build_tier_exit_verdict` entry -- see its own docstring for
+why no subprocess black-box exists for that surface.
 
 Genericità (dispatch invariant 2): the CLI is spawned through
 `python_for(None)` from `des.runtime.interpreter` (NOT raw `sys.executable`), so
@@ -56,10 +72,16 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from des.cli.run_contract_gate import build_tier_exit_verdict
 from des.runtime.interpreter import python_for
+from des.testing.output_capture import CapturingOutput
 
 from .domain_types_slice_01 import (
     ARCH_PROBE_FEATURE_ID,
+    BUILD_TIER_NOT_APPLICABLE_EVENT,
+    BUILD_TIER_REFUSED_EVENT,
+    BUILD_TIER_VERIFIED_EVENT,
+    BUILD_TIER_WHOLE_TREE_DEFERRED_EVENT,
     FEATURE_SCOPE_CLEARED_EVENT,
     FEATURE_SCOPE_MALFORMED_EVENT,
     PROBE_SLICE_TAG,
@@ -68,7 +90,18 @@ from .domain_types_slice_01 import (
     FeatureId,
     GateVerdict,
     SliceTag,
+    WholeTreeVerdict,
 )
+
+
+# A single fine resource reading (well above the 700 MiB / load1 design
+# default) so the whole-tree run's pre-launch resource window never trips a
+# real wait. This is the ONE external/non-deterministic port the whole-tree
+# driving surface fakes (Pillar 3) -- never the observable under test.
+_FINE_READING = (900, 1.0)
+
+# The exit code the whole-tree build-tier run returns when it REFUSES.
+_WHOLE_TREE_REFUSE_EXIT = 1
 
 
 # The exit code `_mode_feature_scoped` returns when the non-vacuity floor trips
@@ -126,6 +159,100 @@ class GateRun:
                 ):
                     found = event
         return found
+
+    @property
+    def emitted_events(self) -> list[dict[str, object]]:
+        """Every structured event the run emitted, in order.
+
+        The verdict is only ONE of the run's observables. The per-slice
+        whole-tree DEFERRAL (`BuildTierWholeTreeDeferred`) is a second,
+        independently load-bearing one: without it the narrowing would be
+        silent, and a silent narrowing is indistinguishable from a coverage
+        drop (GDP-6).
+        """
+        events: list[dict[str, object]] = []
+        for line in self.stdout.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict) and "event" in payload:
+                events.append(payload)
+        return events
+
+    @property
+    def whole_tree_deferral(self) -> dict[str, object] | None:
+        """The LOUD per-slice deferral record, or ``None`` when none was emitted."""
+        for payload in self.emitted_events:
+            if payload.get("event") == BUILD_TIER_WHOLE_TREE_DEFERRED_EVENT:
+                return payload
+        return None
+
+
+@dataclass
+class WholeTreeArchRun:
+    """The observable outcome of ONE whole-tree architecture run.
+
+    This is where the keystone protection LIVES after
+    fix-e2-whole-tree-scope-blocks-unrelated-slices re-allocated it off the
+    per-slice gate: a slice still cannot ship an architecture-boundary break,
+    but the refusal now lands at the feature's own close rather than tree-wide
+    on every concurrent lane's slice.
+    """
+
+    exit_code: int
+    events: list[dict[str, object]]
+
+    @property
+    def verdict(self) -> WholeTreeVerdict:
+        """How the whole-tree run resolved -- derived EXIT-CODE-EXACT."""
+        if self.exit_code == 0:
+            return WholeTreeVerdict.CLEARED
+        if self.exit_code == _WHOLE_TREE_REFUSE_EXIT:
+            return WholeTreeVerdict.REFUSED
+        return WholeTreeVerdict.UNEXPECTED
+
+    @property
+    def event(self) -> str:
+        """The terminating verdict event name (empty when none was emitted)."""
+        found = ""
+        for payload in self.events:
+            name = payload.get("event")
+            if name in (
+                BUILD_TIER_REFUSED_EVENT,
+                BUILD_TIER_VERIFIED_EVENT,
+                BUILD_TIER_NOT_APPLICABLE_EVENT,
+            ):
+                found = str(name)
+        return found
+
+    @property
+    def reason(self) -> str:
+        """The refusal reason the whole-tree run named (empty when it cleared)."""
+        for payload in self.events:
+            if payload.get("event") == BUILD_TIER_REFUSED_EVENT:
+                return str(payload.get("reason", ""))
+        return ""
+
+    @property
+    def collected(self) -> int:
+        """How many architecture invariants the whole-tree run actually EXECUTED.
+
+        The non-vacuity witness: a run reporting zero executed invariants has
+        certified nothing, however green its exit code (`check:unfired-is-not-
+        evidence`).
+        """
+        for payload in self.events:
+            if payload.get("event") == BUILD_TIER_VERIFIED_EVENT:
+                return int(payload.get("collected", 0))
+        return 0
+
+    def names(self, needle: str) -> bool:
+        """Whether the run's own output NAMES ``needle`` (a file / node-id stem)."""
+        return needle in json.dumps(self.events)
 
 
 @dataclass
@@ -363,3 +490,39 @@ class R3GateComposition:
             stderr=completed.stderr,
         )
         return self.last_run
+
+    def run_whole_tree_arch_gate(self, repo: Path) -> WholeTreeArchRun:
+        """Drive the WHOLE-TREE architecture run -- the relocated protection.
+
+        Mandate-13 DRIVING-SURFACE NOTE, stated honestly rather than implied:
+        this leg is a Layer-3 COMPOSITION drive (in-process call of the real
+        ``build_tier_exit_verdict`` production entry), NOT the Layer-3
+        subprocess black-box the per-slice leg uses. The reason is structural,
+        not convenience: ``des run-contract-gate`` exposes NO CLI flag that
+        selects the whole-tree build-tier run (verified from source -- the
+        parser has no ``--full``), so a subprocess black-box for this surface
+        does not exist to drive. ``build_tier_exit_verdict`` IS the real entry
+        ``des commit-slice`` calls at its build-tier exit check, and it is the
+        entry the per-slice deferral record explicitly names as the deferral
+        target -- so it is the production surface, reached at the only
+        boundary that exposes it. The same choice, for the same reason, is
+        already the established precedent in
+        ``tests/bugs/des/test_build_tier_scoped_zero_is_not_applicable.py``.
+
+        NOTHING about the architecture outcome is faked: ``_run_arch_invariant
+        _set`` spawns its REAL ``_collect_scope_worker.py --run`` subprocess
+        over the synthetic tier, exactly as production spawns it. The only
+        faked port is the pre-launch resource window (deterministic, no real
+        ``/proc`` reads) -- Pillar 3, the external/non-deterministic boundary,
+        never the observable under test.
+        """
+        output = CapturingOutput()
+        exit_code = build_tier_exit_verdict(
+            repo,
+            output=output,
+            resource_readings=iter([_FINE_READING]),
+            sleep_fn=lambda _seconds: None,
+            full=True,
+        )
+        events = [json.loads(line) for line in output.lines if line.strip()]
+        return WholeTreeArchRun(exit_code=exit_code, events=events)

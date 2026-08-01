@@ -43,7 +43,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+from des.application.commit_message_attribution import attribute_commit_message
 from des.cli._repo_root_arg import add_repo_root_argument
+from des.domain.commit_trailer_append import append_mechanical_trailer_block
 
 
 try:
@@ -105,7 +107,7 @@ def _with_step_id_trailer(message: str, step_id: str) -> str:
     """Append a ``Step-Id:`` trailer unless the message already carries one."""
     if "Step-Id:" in message:
         return message
-    return f"{message}\n\nStep-Id: {step_id}"
+    return append_mechanical_trailer_block(message, f"Step-Id: {step_id}")
 
 
 def _commit_owned_locked(
@@ -189,6 +191,7 @@ def main(argv: list[str] | None = None) -> int:
 
     owned_paths: list[str] = list(args.owned_paths)
     message = _with_step_id_trailer(args.message, args.step_id)
+    message = attribute_commit_message(repo, message)
 
     exit_code, error = _commit_owned_locked(repo, owned_paths, message)
     if exit_code != 0:

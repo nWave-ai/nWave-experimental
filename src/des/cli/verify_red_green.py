@@ -48,10 +48,11 @@ from xml.etree import ElementTree
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli._emit_json import emit_json_line as _emit
 from des.cli._repo_root_arg import add_repo_root_argument
+from des.domain.telemetry_paths import TelemetrySubtree, subtree_dir
 from des.ports import test_runner_port
 
 
-_SEAL_DIR = Path(".nwave") / "telemetry" / "red-green"
+_SEAL_DIR = subtree_dir(Path(), TelemetrySubtree.RED_GREEN)
 # Fix B (enabling change, docs/feature/fix-seal-keys-on-nodeid-not-docstring):
 # ``-p no:pspec`` isolates the seal run from pytest-pspec, whose UNGUARDED
 # ``pytest_collection_modifyitems`` rewrites ``item._nodeid`` to embed the

@@ -1,9 +1,13 @@
-"""GateOutcome -- the immutable verdict of one walking-skeleton gate evaluation.
+"""GateVerdict -- the general DES gate-verdict vocabulary; GateOutcome -- the
+immutable verdict of one walking-skeleton gate evaluation.
 
-Domain value object for feature `walking-skeleton-production-like-gate`
-(DESIGN / Component Decomposition). A `GateOutcome` is a frozen observation:
-the verdict (PASS / FAIL / NOT_APPLICABLE / UNVERIFIED), the tier of record,
-the deferral reason (fail-mode D), and the D6 facet violation (if any).
+`GateVerdict` (PASS / FAIL / NOT_APPLICABLE / UNVERIFIED / INDETERMINATE) is
+THE domain verdict representation for DES gate CLIs (ADR-GV-001 D1/D3) and,
+per ADR-GV-003 (gate-outcome-record-seam), for durable gate-outcome ledger
+records as well -- reused as-is by other substrates rather than forked into
+a parallel enum. `GateOutcome` remains the walking-skeleton-specific frozen
+observation built on top of it: the verdict, the tier of record, the
+deferral reason (fail-mode D), and the D6 facet violation (if any).
 
 Pure domain -- no I/O, no dependency on ports or adapters.
 """
@@ -15,7 +19,9 @@ from enum import Enum
 
 
 class GateVerdict(str, Enum):
-    """The user-observable verdict of the walking-skeleton gate.
+    """The general DES gate-verdict vocabulary (ADR-GV-001 D1/D3), reused
+    across DES gate CLIs and durable gate-outcome records (ADR-GV-003) --
+    not scoped to any single gate.
 
     PASS            -- the AT ran green at the tier of record.
     FAIL            -- the AT ran red, a D6 facet was violated, or the
@@ -26,6 +32,11 @@ class GateVerdict(str, Enum):
     INDETERMINATE   -- the feature's git delta could not be established (git
                        absent / not a work-tree / base ref unresolvable); a LOUD
                        refusal-to-decide rather than a fabricated pass (slice-03).
+
+    The per-member descriptions above are phrased in the walking-skeleton
+    gate's own terms (its first producer); a reuser outside that gate maps
+    its own PASS/FAIL/... semantics onto the same five members rather than
+    literally re-reading "AT"/"tier of record" for its own domain.
     """
 
     PASS = "pass"

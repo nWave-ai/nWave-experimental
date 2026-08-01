@@ -1,3 +1,4 @@
+# @feature-fix-slice-id-grammar-drift-ssot
 """Regression: five sites carry the PRE-fix `slice-NN` tag/row grammar.
 
 DEFECT (fix-slice-id-grammar-drift-ssot, oracle in

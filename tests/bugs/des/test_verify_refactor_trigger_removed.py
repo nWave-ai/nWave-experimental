@@ -1,3 +1,4 @@
+# @feature-remove-verify-refactor-trigger
 """Regression AT: ``des verify-refactor-trigger`` is REMOVED from every
 public des surface (mikado D24; evolution-plan P1.3 WITHDRAWN;
 human-authorized by Ale 2026-07-29).
@@ -24,10 +25,13 @@ proves is gone):
      (feature-delta Reuse Analysis: "EXTEND ... no new gate is written for
      this removal"). Driven, not reimplemented: this AT parses zero YAML
      itself.
-  3. The generated orchestrator-affordance catalog markdown
-     ``nWave/data/orchestrator-affordance/des-command-catalog.md``, read as
-     text (GENERATED region, docgen output -- never hand-edited, but a
-     public surface an operator reads).
+  3. The generated orchestrator-affordance catalog markdown -- the shipped
+     ``nWave/data/orchestrator-affordance/`` asset whose role stem is
+     ``des-command-catalog`` (basename carries a numeric injection-order
+     prefix that is expected to churn; resolved via
+     ``resolve_affordance_asset``, never a literal basename), read as text
+     (GENERATED region, docgen output -- never hand-edited, but a public
+     surface an operator reads).
   4. The filesystem presence/absence of the per-gate contract file
      ``nWave/gates/verify-refactor-trigger.yaml`` and the doomed module file
      ``src/des/cli/verify_refactor_trigger.py``.
@@ -52,6 +56,7 @@ from pathlib import Path
 import pytest
 
 from des.cli.verify_catalog_coherence import compute_catalog_coherence
+from tests.common.orchestrator_affordance_paths import resolve_affordance_asset
 
 
 # tests/bugs/des/<this file> -> parents[2] = repo root
@@ -63,9 +68,7 @@ _DOOMED_MODULE_PATH = "des.cli.verify_refactor_trigger"
 _DOOMED_MODULE_FILE = _REPO_ROOT / "src" / "des" / "cli" / "verify_refactor_trigger.py"
 _DOOMED_PER_GATE_FILE = _REPO_ROOT / "nWave" / "gates" / f"{_DOOMED_GATE_ID}.yaml"
 _MAIN_PY = _REPO_ROOT / "src" / "des" / "cli" / "__main__.py"
-_AFFORDANCE_CATALOG_MD = (
-    _REPO_ROOT / "nWave" / "data" / "orchestrator-affordance" / "des-command-catalog.md"
-)
+_AFFORDANCE_CATALOG_MD = resolve_affordance_asset(_REPO_ROOT, "des-command-catalog")
 
 # Survivors -- neighbouring gates the removal must NOT gut. Each must still be
 # declared coherently in ALL THREE of registry / catalog / per-gate-file, AND

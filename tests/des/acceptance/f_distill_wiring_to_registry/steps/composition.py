@@ -252,7 +252,7 @@ class DistillWiringComposition:
         """Drive the REAL spine ``resolve_stack`` (the SOLE resolved surface)."""
         from des.application.wave_gate_stack_dispatch import resolve_stack
 
-        rows = resolve_stack(_DISTILL_WAVE, _GATE_OUT_BOUNDARY)
+        rows = resolve_stack(_DISTILL_WAVE, _GATE_OUT_BOUNDARY).rows
         gate_ids = tuple(str(r.get("gate_id")) for r in rows)
         on_failure = {str(r.get("gate_id")): str(r.get("on_failure")) for r in rows}
         return StackObservable(

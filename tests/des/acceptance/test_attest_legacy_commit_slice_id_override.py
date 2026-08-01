@@ -72,6 +72,9 @@ import pytest
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli import verify_slice_commit_completeness as vscc
+from tests.common.gate_scope_fixtures import (
+    stamp_genuine_gate_scope_trailer as _stamp_genuine_gate_scope_trailer,
+)
 
 
 _REGRESSION_FILE_REL = "tests/fixture/test_pytest_regression_fixture.py"
@@ -212,6 +215,7 @@ def test_override_attests_a_bare_commit_via_behavioral_proof(
     _git_init(repo)
     _write_regression_test(repo, _FEATURE_ID_OVERRIDE_POS, "slice-01", passing=True)
     _bare_commit_no_trailer(repo)
+    _stamp_genuine_gate_scope_trailer(repo)
 
     exit_code, payload = _run_verify_slice_commit(
         repo,
@@ -418,6 +422,7 @@ def test_legacy_trailer_path_is_unchanged_without_the_override_flag(
     _git_init(repo)
     _write_regression_test(repo, _FEATURE_ID_LEGACY_UNCHANGED, "slice-01", passing=True)
     _commit_with_trailer(repo, "slice-01", "fix: trailer-carrying legacy fix")
+    _stamp_genuine_gate_scope_trailer(repo)
 
     exit_code, payload = _run_verify_slice_commit(
         repo,

@@ -3,10 +3,18 @@
 The dispatcher must not guess whether a C_REVIEWER_AUDIT slot is an EXAMINE
 or a legacy technical audit.  This small domain seam owns only the charter
 ``Spec rows:`` to ``slice-NN`` mapping; prompt wording remains in the CLI.
+
+It also owns the OTHER half of the same question -- not "which charter arms
+this slot" but "does this work OWE a charter at all".  That is the
+``CharterObligation`` vocabulary plus the pure builder for the
+``CharterObligationDeclared`` record ``des dispatch`` appends to the examine
+ledger.  The two live together because they are one subject read from two
+ends, and because a second module would be a second place to look.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -20,6 +28,35 @@ if TYPE_CHECKING:
 _SPEC_ROWS_PATTERN = re.compile(r"\bSpec rows:\s*([^\n·]+)", re.IGNORECASE)
 _SLICE_ID_PATTERN = re.compile(r"slice-\d+\Z")
 
+#: fix-charter-scaffold-placeholder-scope O3 (feature-delta amendment,
+#: 2026-07-30, human-granted forward-only decision): the two `Spec rows:`
+#: tokens meaning "deliberately not slice-scoped, feature-level" -- the SAME
+#: two producer-owned seed-mode identifiers `charter_scaffold` stamps (O2).
+#: A first-class, closed set -- every other non-slice-NN value (`n/a`, `human
+#: directive`, ...) keeps refusing `indeterminate` unchanged.
+_FEATURE_LEVEL_SCOPE_TOKENS: frozenset[str] = frozenset(
+    {"bug-observable", "brownfield-discovery"}
+)
+
+
+def _classify_spec_rows_value(raw_value: str) -> tuple[str, tuple[str, ...]] | None:
+    """Classify one charter's raw `Spec rows:` value. Pure.
+
+    Returns `("feature-level", (token,))` when the value is EXACTLY one of
+    the two first-class feature-level tokens; `("slice", (id, ...))` when it
+    is one or more comma-separated `slice-NN` values; `None` when it is
+    neither -- a malformed/unrecognized claim the caller must refuse LOUD.
+    """
+    stripped = raw_value.strip()
+    if stripped in _FEATURE_LEVEL_SCOPE_TOKENS:
+        return "feature-level", (stripped,)
+    mapped_slices = [value.strip() for value in stripped.split(",")]
+    if mapped_slices and all(
+        _SLICE_ID_PATTERN.fullmatch(value) for value in mapped_slices
+    ):
+        return "slice", tuple(mapped_slices)
+    return None
+
 
 class CharterMappingState(str, Enum):
     """The three safe outcomes of resolving one middle-slot charter map."""
@@ -30,6 +67,44 @@ class CharterMappingState(str, Enum):
     INDETERMINATE = "indeterminate"
 
 
+class CharterObligation(str, Enum):
+    """Whether a piece of work OWES an expectation charter -- THREE values.
+
+    The arity is the point.  ``_examine_gate_armed`` (``commit_slice.py``)
+    answers this with a two-valued ``bool``, which collapses "this work was
+    DECLARED exempt" and "nobody ever declared anything" into one ``False``.
+    That collapse is the silent-wrong: an absence reads as a negative
+    declaration.  ``INDETERMINATE`` exists so the third state can be minted at
+    declaration time and REACH the aggregate, instead of vanishing into
+    pass/empty (GDP-8 arity corollary).
+
+    Never-declared is NOT a member here.  It is the ABSENCE of a record on the
+    ledger, and it must never be coerced into a value of this enum.
+    """
+
+    REQUIRED = "REQUIRED"
+    EXEMPT = "EXEMPT"
+    INDETERMINATE = "INDETERMINATE"
+
+
+#: The record ``des dispatch`` appends to the EXISTING examine ledger, keyed
+#: ``(feature_id, slice_id)`` -- the SAME key ``_latest_examine_verdict``
+#: already indexes on, so the two records join without a new store, a new
+#: reader or a new key.  Named consumers: the ``des commit-slice`` arming
+#: resolution and the end-of-feature aggregate.
+CHARTER_OBLIGATION_DECLARED_EVENT = "CharterObligationDeclared"
+
+#: The LOUD stderr event when that append fails.  The dispatch's exit code and
+#: envelope are UNCHANGED: a telemetry write must never take down the dispatch
+#: that is the operator's only way forward (GDP-6 -- degrade LOUD, not
+#: degrade-refuse-everything).
+CHARTER_OBLIGATION_UNWRITABLE_EVENT = "CharterObligationRecordUnwritable"
+
+#: Mirrors the sibling ``ExamineVerdictRecorded`` record on the same ledger, so
+#: a reader can tell which shape it is parsing rather than guessing from keys.
+CHARTER_OBLIGATION_SCHEMA_VERSION = "1.0.0"
+
+
 @dataclass(frozen=True)
 class CharterMapping:
     """A resolved charter path, or an actionable refusal explanation."""
@@ -37,6 +112,71 @@ class CharterMapping:
     state: CharterMappingState
     charter_path: Path | None = None
     detail: str | None = None
+
+
+def charter_obligation_record(
+    *,
+    feature_id: str,
+    slice_id: str,
+    obligation: CharterObligation,
+    lane: str | None,
+    reason: str | None,
+    timestamp: str,
+) -> dict[str, object]:
+    """Build one ``CharterObligationDeclared`` record.  Pure -- no I/O.
+
+    ``lane`` is the ANTECEDENT the obligation was read off, carried because a
+    state named without what it was derived FROM hands the reader an
+    investigation the producer had already finished (GDP-3 omission
+    corollary): an ``EXEMPT`` with no antecedent is a label, not a reason.
+    ``reason`` carries an operator's explicit ``--charter-exemption`` text, the
+    only case where the lane alone does not explain the value.
+    """
+    return {
+        "event": CHARTER_OBLIGATION_DECLARED_EVENT,
+        "schema_version": CHARTER_OBLIGATION_SCHEMA_VERSION,
+        "feature_id": feature_id,
+        "slice_id": slice_id,
+        "obligation": obligation.value,
+        "lane": lane,
+        "reason": reason,
+        "timestamp": timestamp,
+    }
+
+
+def latest_declared_obligation(ledger: Path, slice_id: str) -> dict[str, object] | None:
+    """The LATEST ``CharterObligationDeclared`` record for ``slice_id`` on
+    ``ledger``, or ``None`` when the slice was NEVER DECLARED.
+
+    Mirrors ``commit_slice._latest_examine_verdict``'s malformed-line
+    tolerance (a truncated line from a concurrent writer is skipped, never
+    raised) and latest-record-wins semantics, on the SAME
+    ``(feature_id, slice_id)``-keyed examine ledger -- a sibling reader of an
+    existing record family sharing that ledger and that key, not a new store.
+
+    ``None`` IS the discriminator: it is not a value of ``CharterObligation``
+    and must never be coerced into one -- "never declared" is the ABSENCE of
+    a record, distinct from any declared value including ``INDETERMINATE``.
+    """
+    if not ledger.is_file():
+        return None
+    latest: dict[str, object] | None = None
+    for line in ledger.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        if record.get("event") != CHARTER_OBLIGATION_DECLARED_EVENT:
+            continue
+        if record.get("slice_id") != slice_id:
+            continue
+        latest = record
+    return latest
 
 
 def resolve_slice_charter(
@@ -90,18 +230,19 @@ def resolve_slice_charter(
                 ),
             )
         match = matches[0]
-        mapped_slices = [value.strip() for value in match.group(1).split(",")]
-        if not mapped_slices or any(
-            not _SLICE_ID_PATTERN.fullmatch(value) for value in mapped_slices
-        ):
+        classification = _classify_spec_rows_value(match.group(1))
+        if classification is None:
             return CharterMapping(
                 CharterMappingState.INDETERMINATE,
                 detail=(
                     f"charter {charter_path} maps `Spec rows:` to "
-                    f"{match.group(1)!r}, not comma-separated `slice-NN` values"
+                    f"{match.group(1)!r}, not comma-separated `slice-NN` values "
+                    "nor a first-class feature-level scope token "
+                    f"({sorted(_FEATURE_LEVEL_SCOPE_TOKENS)})"
                 ),
             )
-        if slice_id in mapped_slices:
+        _kind, mapped_tokens = classification
+        if slice_id in mapped_tokens:
             matching_paths.append(charter_path)
         else:
             practice_adopted = True

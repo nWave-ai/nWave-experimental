@@ -1,8 +1,9 @@
 """Per-tool boot + provisioning contracts as DATA (DESIGN D-2).
 
-Adding a tool is adding a row, not a code branch. The registry holds the three
-known tools (claude-code / codex / opencode). Copilot is deliberately ABSENT —
-its absence is pinned by ``test_copilot_absent.py`` (DESIGN D-5, US-4).
+Adding a tool is adding a row, not a code branch. The registry holds the
+release-smoke targets (claude-code / codex / opencode). An unregistered target
+is rejected by ``test_unknown_tool_rejection.py`` before it can create a
+misleading release lane.
 """
 
 from __future__ import annotations
@@ -75,9 +76,9 @@ class UnsupportedToolError(ValueError):
 def tool_contract(tool_id: str) -> ToolContract:
     """Look up the contract for a supported tool.
 
-    Raises ``UnsupportedToolError`` for an unknown tool (e.g. "copilot"), so a
-    typo in the matrix — or a tool with no install path — fails loudly rather
-    than silently smoke-passing.
+    Raises ``UnsupportedToolError`` for an unregistered tool, so a typo in the
+    matrix — or a future tool without a release-smoke contract — fails loudly
+    rather than silently smoke-passing.
     """
     try:
         return _REGISTRY[tool_id]

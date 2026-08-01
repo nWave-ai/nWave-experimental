@@ -425,6 +425,18 @@ gates:
     entry_function: main
     language_neutral_contract: true
 
+  # gate-armed-state-derivation slice-02 (EXTEND-as-promotion): the
+  # coherence_offenders reducer promoted from
+  # tests/build/f_nonbypassable_attestation/test_arch_catalog_gate_wiring.py
+  # into a first-class, catalogued des CLI gate mirroring
+  # verify-catalog-coherence's shape. 1:1 mirror of the new _REGISTRY row;
+  # matching per-gate file verify-gate-armed-state.yaml.
+  - gate_id: verify-gate-armed-state
+    responsibility: "Derives whether each catalogued gate is wired into a real invocation surface (flavor gate_id row / live-hook module reference / operator-direct cli|git-hook host_visibility) or dormant-excused, and names any authored-but-unwired gate. Filesystem + regex only (no import, no git); degrades LOUD (non-zero + diagnostic, never a traceback) on a missing nWave/gates/ directory or malformed _catalog.yaml."
+    module: des.cli.verify_gate_armed_state
+    entry_function: main
+    language_neutral_contract: true
+
   # check-contract-shape-declarations slice-01 (GDP-4/6): the PRODUCING tool
   # for Principle 11's three mechanical Contract-Shape checks over an explicit
   # caller-scoped --files list. 1:1 mirror of the new _REGISTRY row; matching
@@ -586,3 +598,61 @@ gates:
     module: des.cli.report_delivery_metrics
     entry_function: main
     language_neutral_contract: true
+
+  # sentinel-tool: the Throughput Sentinel's versioned worktree-triage
+  # receipt (nw-throughput SKILL.md "Throughput Sentinel"), promoted from an
+  # unversioned scratchpad script.
+  - gate_id: sentinel
+    responsibility: "Read-only worktree-triage receipt: classifies every linked worktree OWNED / ABANDONED_CANDIDATE / UNDECIDABLE from declared ownership, reused anti-rot evidence (PID/lock/dirty/unmerged), and recent HEAD/index activity, offers MERGE/RESUME/DEFER/REMOVE for a candidate, and snapshots host capacity (nproc/load/MemAvailable/real-pytest-count). Never removes, merges, dispatches, or authorizes anything."
+    module: des.cli.worktree_sentinel
+    entry_function: main
+    language_neutral_contract: true
+
+  # unified-event-store slice-02 (DD-14): 1:1 mirror of the _REGISTRY row.
+  # RED scaffold wiring authored by DISTILL -- des.cli.event_store_probe.main
+  # calls into UnifiedEventStoreAdapter (itself a RED scaffold), so an
+  # invocation fails "probe not implemented" (MISSING_FUNCTIONALITY), not an
+  # argparse invalid-choice usage error.
+  - gate_id: event-store-probe
+    responsibility: "Earned Trust startup probe (principle 13, DD-14) for the unified event store: exercises a canary write/flock/read/delete against --repo-root's telemetry substrate and refuses LOUD (never exit 0) when the substrate cannot honor its contract -- missing directory, permission-denied, not-a-directory, or ENOSPC."
+    module: des.cli.event_store_probe
+    entry_function: main
+    language_neutral_contract: true
+    dormant: "Diagnostic probe reachable via `des event-store-probe`; not yet composed into a flavor gate_stack -- startup-refusal wiring into a composition root's own startup path is DELIVER slice-02 scope (feature-delta.md Runtime Contract Matrix), tracked there, not silently dropped."
+
+  # fix-shipped-regression-file-backfill: the human-authorized, append-only
+  # historical regression-file attestation PRODUCER. Recovers a shipped
+  # slice's regression-evidence gap (a SliceCommitVerified record predating
+  # the regression_test_file field) for ANY at-kind sharing that mechanism.
+  - gate_id: backfill-regression-file
+    responsibility: "Historical regression-file backfill PRODUCER (fix-shipped-regression-file-backfill): validates a SHIPPED slice, a real ancestor --commit, and the declared file's presence in that commit's tree, then appends ONE RegressionFileHistoricalBackfill record to the per-feature AtCompletionLedger -- consumed by _shipped_and_entering_regression_files as a second resolution tier, after the stored declaration and before the naming-convention glob. Refuses a duplicate backfill for the same (feature-id, slice-id) unless --override is passed."
+    module: des.cli.backfill_regression_file
+    entry_function: main
+    language_neutral_contract: true
+
+  # des-saturated-scheduler slice-01 (DD-D1): the plan-only "what can run
+  # now" scheduling query, plus its policy-projection coherence check. Both
+  # subcommands live in the same des.cli.schedule module under distinct
+  # entry_functions. 1:1 mirror of the two new _REGISTRY rows; matching
+  # per-gate files schedule.yaml and verify-scheduling-coherence.yaml.
+  - gate_id: schedule
+    responsibility: "Read-only artifact-level lane DAG for --feature-id: reads the declared Slice Plan and the AT-completion ledger, keys cross-slice declared-artifact readiness to the artifact actually attested (never to producing-slice completion, DD-D2), and renders admitted/deferred cloud lanes, the one box lane, and named blockers. Never starts a process or agent; --consumer box-action self-refuses on unused cloud parallelism."
+    module: des.cli.schedule
+    entry_function: schedule
+    language_neutral_contract: true
+
+  - gate_id: verify-scheduling-coherence
+    responsibility: "Read-only verification that every declared SchedulingPolicy projection (cli_help, session_start, skills, runtime, gate_message, command_catalog) carries the current policy digest; reports PASS or the exact stale target plus the regeneration command. Writes nothing."
+    module: des.cli.schedule
+    entry_function: verify_scheduling_coherence
+    language_neutral_contract: true
+
+  # unified-event-store slice-03 (DD-9): 1:1 mirror of the _REGISTRY row.
+  # Composes LegacyEnvelopeNormalizer (DD-10) + ReductionKeyDeduper (DD-7/
+  # DD-8) over one family's raw JSONL into one arity-safe ReadResult.
+  - gate_id: event-store-query
+    responsibility: "Single-family cross-cutting query (DD-9) for the unified event store: reads one telemetry ledger family's JSONL for a partition key, normalizes legacy rows via LegacyEnvelopeNormalizer (DD-10) and dedupes new-envelope derived rows via ReductionKeyDeduper (DD-7/DD-8), reporting one merged answer whose measured_count and could_not_verify_count always travel together -- never a bare total."
+    module: des.cli.event_store_query
+    entry_function: main
+    language_neutral_contract: true
+    dormant: "Diagnostic query reachable via `des event-store-query`; not yet composed into a flavor gate_stack -- cross-cutting query is a caller-driven diagnostic surface (feature-delta.md consumer #4), not a per-slice/per-feature enforcement gate."

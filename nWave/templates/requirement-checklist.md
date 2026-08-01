@@ -27,9 +27,22 @@ An AT covers an ID iff it carries the exact same marker: pytest
 `# covers: R12` / `# covers: R-S01-03` comment in the test body, that exact ID
 in the test docstring, or a Gherkin `@covers-R12` / `@covers-R-S01-03` tag.
 Partial or lookalike IDs do not cover another row.
+
+ATTRIBUTION (fix-coverage-claim-names-a-feature): a marker alone is not
+enough — an AT must additionally SELF-IDENTIFY as belonging to THIS feature
+(a `# @feature-{feature-id}` head-comment tag for pytest, a Gherkin
+`@feature-{feature-id}` file-level tag, or a legacy
+`tests/scripts/cli/{feature-id}/acceptance` location). `--at-dir` is a
+FILTER that can only narrow that attributed set, never grant it — a foreign
+feature's AT carrying the same marker text does NOT cover this checklist's
+row. The declaration line below is the checklist's OWN identity binding:
+line-anchored (its own line, no other content), never a substring elsewhere
+in this file.
 -->
 
 # Requirement Checklist — {feature-id}
+
+@feature-{feature-id}
 
 Source: {spec / feature-delta path + section}
 Extracted at: DISTILL-open

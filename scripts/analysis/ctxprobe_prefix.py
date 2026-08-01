@@ -17,27 +17,30 @@ import json
 import os
 import statistics
 import sys
+from pathlib import Path
 
 
 root = sys.argv[1]
 
 KNOWN_INVISIBLE = {
-    "CLAUDE.md (global)": os.path.expanduser("~/.claude-alt3/CLAUDE.md"),
+    "CLAUDE.md (global)": str(Path("~/.claude-alt3/CLAUDE.md").expanduser()),
     "CLAUDE.md (project)": "/home/alexd/Projects/nWave-dev/CLAUDE.md",
-    "MEMORY.md (index)": os.path.expanduser(
-        "~/.claude-alt3/projects/-home-alexd-Projects-nWave-dev/memory/MEMORY.md"
+    "MEMORY.md (index)": str(
+        Path(
+            "~/.claude-alt3/projects/-home-alexd-Projects-nWave-dev/memory/MEMORY.md"
+        ).expanduser()
     ),
 }
 known_bytes = {}
 for k, p in KNOWN_INVISIBLE.items():
     try:
-        known_bytes[k] = os.path.getsize(p)
+        known_bytes[k] = Path(p).stat().st_size
     except OSError as e:
         print(f"!! INDETERMINATE {k}: {e}", file=sys.stderr)
         known_bytes[k] = None
 
 rows = []
-for f in sorted(os.listdir(root)):
+for f in sorted([p.name for p in Path(root).iterdir()]):
     if not f.endswith(".jsonl"):
         continue
     p = os.path.join(root, f)
@@ -87,7 +90,12 @@ print(f"dispatches with a measured turn-0 prefix: {len(rows)}\n")
 pt = sorted(r[1] for r in rows)
 vb = sorted(r[2] for r in rows)
 n = len(pt)
-q = lambda a, x: a[min(int(len(a) * x), len(a) - 1)]
+
+
+def q(a, x):
+    return a[min(int(len(a) * x), len(a) - 1)]
+
+
 print("=== MEASURED ===")
 print(
     f"  turn-0 prefix (tokens) : p50 {q(pt, 0.5):,}  p90 {q(pt, 0.9):,}  max {q(pt, 1):,}"

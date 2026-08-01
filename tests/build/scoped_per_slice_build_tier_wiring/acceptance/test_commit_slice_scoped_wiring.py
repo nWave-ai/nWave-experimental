@@ -74,12 +74,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.charter_fixtures import filled_charter
 
 from des.cli import run_contract_gate
 from des.cli.commit_slice import main as commit_slice_main
 from des.cli.record_examine_verdict import main as record_examine_verdict_main
 from des.cli.run_contract_gate import _ArchVerdict, _ResourceWindowResult
-from tests.charter_fixtures import filled_charter
 
 
 _FEATURE_ID = "scoped-per-slice-build-tier-wiring"

@@ -135,7 +135,7 @@ Behavior:
 1. Execute full research workflow (Phases 1-4)
 2. Write comprehensive research to `docs/research/architecture-patterns/residuality-theory-comprehensive-research.md`
 3. Distill into practitioner-focused skill using distillation workflow from `research-methodology`
-4. Write skill to `nWave/skills/solution-architect/residuality-theory-methodology.md`
+4. Write the skill to the installed skills directory as a `nw-`-prefixed skill dir containing a `SKILL.md` (locate the convention with `ls <skills-dir>/nw-*/SKILL.md`) — never a per-agent subdirectory, which is not the layout. For residuality specifically the methodology already ships as the `nw-stress-analysis` skill, so this example would EXTEND it rather than create a parallel one.
 5. Report both file locations
 
 ### Example 3: Insufficient Sources

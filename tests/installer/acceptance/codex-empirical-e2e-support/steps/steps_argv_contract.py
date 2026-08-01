@@ -48,11 +48,16 @@ def _nwave_command_strings(parsed: dict) -> list[str]:
     return cmds
 
 
-def _synthetic_codex_pretool_stdin() -> str:
-    """Synthetic Codex PreToolUse envelope (matches spike Q4 required fields)."""
+def _synthetic_codex_pretool_stdin(cwd: str) -> str:
+    """Synthetic Codex PreToolUse envelope (matches spike Q4 required fields).
+
+    ``cwd`` must resolve ACTIVE under the hook_router activation gate
+    (ADR-AG-001) for ``handle_pre_tool_use`` to actually dispatch and write its
+    audit trail — see the ``activated_project_dir`` fixture in conftest.py.
+    """
     return json.dumps(
         {
-            "cwd": "/tmp/fake-cwd",
+            "cwd": cwd,
             "hook_event_name": "PreToolUse",
             "model": "gpt-5",
             "permission_mode": "default",
@@ -87,14 +92,23 @@ def _invoke_adapter(
     The patched_resolvers fixture seeds the command string with
     /usr/bin/python3 and /home/tester/.claude/lib/python — neither suitable
     for actual subprocess execution. We therefore re-bind to the current
-    interpreter + repo src/ via env, but preserve the trailing argv tokens
-    (the part that step 01-02 is contractually testing).
+    interpreter + repo src/ via env, but preserve the event token (the part
+    that step 01-02 is contractually testing).
+
+    The event token is the LAST whitespace token of the installed command
+    string (same contract scenario 01-01 already asserts via
+    ``command_ends_with_token``). Codex installs route through a generated
+    launcher file whose OWN filename contains the substring
+    "claude_code_hook_adapter" (``_LAUNCHER_FILENAME`` in
+    codex_des_plugin.py) — a marker-substring search over the whole command
+    would match inside THAT filename instead of a module path, so the token
+    must be taken positionally, not by slicing after a substring.
     """
-    # Extract trailing argv: everything after `claude_code_hook_adapter` token.
-    marker = "claude_code_hook_adapter"
-    idx = command.find(marker)
-    assert idx != -1, f"command must reference adapter; got {command!r}"
-    trailing = command[idx + len(marker) :].strip().split()
+    assert "claude_code_hook_adapter" in command, (
+        f"command must reference the DES adapter (directly or via its "
+        f"generated launcher); got {command!r}"
+    )
+    event_token = command.strip().split()[-1]
 
     env = {
         "PATH": "/usr/bin:/bin",
@@ -106,7 +120,7 @@ def _invoke_adapter(
         sys.executable,
         "-m",
         "des.adapters.drivers.hooks.claude_code_hook_adapter",
-        *trailing,
+        event_token,
     ]
     return subprocess.run(
         cmd,
@@ -162,13 +176,15 @@ def installer_run_codex(install_context, patched_resolvers, hooks_path, state) -
 @when(
     "the installed PreToolUse hook command is invoked with a synthetic Codex Bash tool-event stdin payload"
 )
-def invoke_hook_command_synthetic_stdin(state, tmp_path) -> None:
+def invoke_hook_command_synthetic_stdin(state, tmp_path, activated_project_dir) -> None:
     audit_dir = tmp_path / "audit-logs"
     audit_dir.mkdir(parents=True, exist_ok=True)
     state["audit_dir"] = audit_dir
     command = state["commands"][0]
     state["proc"] = _invoke_adapter(
-        command, _synthetic_codex_pretool_stdin(), audit_dir
+        command,
+        _synthetic_codex_pretool_stdin(str(activated_project_dir)),
+        audit_dir,
     )
 
 

@@ -10,6 +10,7 @@ steps/conftest.py.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -106,6 +107,25 @@ def patched_resolvers(monkeypatch):  # type: ignore[no-untyped-def]
 def hooks_path(codex_home):  # type: ignore[no-untyped-def]
     """Absolute path to the installed Codex hooks.json under tmp."""
     return codex_home / "hooks.json"
+
+
+@pytest.fixture
+def activated_project_dir(tmp_path):  # type: ignore[no-untyped-def]
+    """A tmp_path-scoped project directory marked ACTIVE (ADR-AG-001).
+
+    The `@real-io` argv-contract scenarios invoke the installed hook command
+    as a real subprocess; ``hook_router``'s activation gate resolves an
+    unmarked cwd as opt-in-inactive and exits 0 before any handler runs. This
+    fixture writes ``.nwave/local-config.json`` with ``enabled_for_repo:
+    true`` so those scenarios exercise a project the gate dispatches for.
+    """
+    project_dir = tmp_path / "activated-project"
+    nwave_dir = project_dir / ".nwave"
+    nwave_dir.mkdir(parents=True, exist_ok=True)
+    (nwave_dir / "local-config.json").write_text(
+        json.dumps({"enabled_for_repo": True}), encoding="utf-8"
+    )
+    return project_dir
 
 
 @pytest.fixture

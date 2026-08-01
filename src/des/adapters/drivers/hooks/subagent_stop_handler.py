@@ -367,6 +367,60 @@ class _WaveOnlyUnresolved:
     project_id: str | None
 
 
+@dataclass(frozen=True)
+class _TranscriptInaccessible:
+    """A DECLARED ``agent_transcript_path`` that cannot be resolved to a
+    readable file (fix-subagent-stop-silent-transcript).
+
+    The fourth resolver outcome, mirroring ``_WaveOnlyUnresolved`` (DDD-6) for
+    a sibling conflation: ``extract_des_context_from_transcript`` collapses
+    "transcript inaccessible" (path absent, or present-but-unreadable) and
+    "transcript accessible but marker-free" into the SAME ``None`` return
+    (rca.md ROOT CAUSE A). A genuinely non-DES return (readable transcript,
+    zero markers) still resolves this way and stays ``None`` -- keeps the
+    existing byte-stable passthrough-allow (AT5). Only a DECLARED
+    (non-empty) path that fails to resolve reaches this outcome (AT1-AT4);
+    an ABSENT ``agent_transcript_path`` key never reaches here at all -- it
+    is not a broken promise (RCA Q5, AT6).
+
+    ``absence`` distinguishes "does not exist" (True) from "exists but could
+    not be opened" (False) -- the charter's absence-vs-incapacity negative
+    oracle (AT2): the diagnostic must never claim "no markers found" when the
+    true condition is that the file could never be read at all.
+    """
+
+    transcript_path: str
+    detail: str
+    absence: bool
+
+
+def _detect_transcript_inaccessible(
+    transcript_path: str,
+) -> _TranscriptInaccessible | None:
+    """Probe ``transcript_path`` for the SAME accessibility primitive
+    ``extract_des_context_from_transcript`` / ``_read_transcript_entries``
+    already compute internally (``Path.exists()`` + open-and-catch
+    ``OSError``/``PermissionError``) -- reused, not reinvented.
+
+    Returns ``None`` when the path is accessible (the caller already knows
+    it is marker-free, since this only runs when the extractor returned
+    ``None``); otherwise a ``_TranscriptInaccessible`` naming WHAT failed.
+    """
+    path = Path(transcript_path)
+    if not path.exists():
+        return _TranscriptInaccessible(
+            transcript_path=transcript_path, detail="does not exist", absence=True
+        )
+    try:
+        with open(path):
+            pass
+    except (OSError, PermissionError) as exc:
+        return _TranscriptInaccessible(
+            transcript_path=transcript_path, detail=str(exc), absence=False
+        )
+    return None
+
+
 def _resolve_des_context(
     hook_input: dict[str, Any],
 ) -> (
@@ -374,6 +428,7 @@ def _resolve_des_context(
     | _AtddPureResolvedContext
     | _WaveOnlyResolvedContext
     | _WaveOnlyUnresolved
+    | _TranscriptInaccessible
     | tuple[None, dict[str, Any], int]
 ):
     """Resolve DES context from hook input.
@@ -433,6 +488,16 @@ def _resolve_des_context(
     des_context = None
     if agent_transcript_path:
         des_context = extract_des_context_from_transcript(agent_transcript_path)
+        if des_context is None:
+            # fix-subagent-stop-silent-transcript: catch the DECLARED-but-
+            # inaccessible case BEFORE the wave-only re-parse below can
+            # swallow it into the same None (it inherits the identical
+            # collapse one level deeper, rca.md Q2). Strictly inside this
+            # `if agent_transcript_path:` truthy gate -- an ABSENT key never
+            # reaches this branch at all (Q5, AT6).
+            inaccessible = _detect_transcript_inaccessible(agent_transcript_path)
+            if inaccessible is not None:
+                return inaccessible
 
     if des_context is None:
         # WGO-001 wave-only reachability route (ADD-not-mutate): the classic +
@@ -2799,6 +2864,79 @@ def _handle_wave_only_unresolved(
     return 0
 
 
+def _transcript_inaccessible_reason(inaccessible: _TranscriptInaccessible) -> str:
+    """WHAT/WHY/HOW diagnostic for a declared-but-inaccessible transcript.
+
+    WHAT names the offending path verbatim and the failure kind (absence vs
+    incapacity-to-read, AT2's negative oracle -- never a false "no markers
+    found" claim). WHY states DES cannot verify whether the dispatch's exit
+    gate ran (rca.md WHY 1B). HOW names a concrete corrective action -- never
+    a bare "ask a human" deferral (AT3).
+    """
+    path = inaccessible.transcript_path
+    if inaccessible.absence:
+        what = f"the declared agent transcript {path!r} does not exist"
+        how = (
+            f"check the path with `ls -la {path}`; if the transcript was "
+            "legitimately removed, re-run the dispatch so a fresh "
+            "transcript is written"
+        )
+    else:
+        what = (
+            f"DES could not read the declared agent transcript {path!r} "
+            f"({inaccessible.detail})"
+        )
+        how = f"check file permissions with `ls -l {path}` and restore read access"
+    return (
+        f"INDETERMINATE: {what}. DES cannot verify whether any exit gate "
+        f"for this dispatch return was satisfied. HOW: {how}."
+    )
+
+
+def _handle_transcript_inaccessible(
+    inaccessible: _TranscriptInaccessible,
+    hook_id: str,
+) -> int:
+    """Degrade LOUD when a DECLARED ``agent_transcript_path`` is inaccessible
+    (fix-subagent-stop-silent-transcript).
+
+    Mirrors ``_handle_wave_only_unresolved`` (DDD-6): a declared-but-
+    inaccessible transcript is a broken promise, distinguishable from BOTH
+    the legitimate marker-free silent allow (a readable transcript with no
+    DES markers, AT5) and the absent-key silent allow (no promise was ever
+    made, AT6/RCA Q5). For a genuine atdd_pure return, an unreadable
+    transcript means DES cannot verify whether the G_COMMIT / feature-end /
+    D_DISTILL exit gate was satisfied -- rca.md WHY 1B (a gate BYPASS, not
+    merely missing operator feedback).
+
+    Unlike the sibling ``_handle_wave_only_unresolved``, this NEVER emits a
+    ``{"decision": "block"}`` body -- not even on the first fire (AT7). A
+    broken transcript promise is an infrastructure fault the agent does not
+    control and cannot resolve by being re-invoked; blocking would only
+    invite Claude Code to re-fire against a condition retrying cannot cure.
+    The outcome is purely informational instead: a distinct audit record (so
+    it never files under the same ``subagent_stop_passthrough`` bucket a
+    legitimate no-op gets, AT4) plus a LOUD ``sys.__stderr__`` diagnostic
+    naming WHAT/WHY/HOW (AT1-AT3), at exit 0 -- which also means there is no
+    re-fire loop to break in the first place (AT7 holds on both fires).
+    """
+    log_hook_invoked(
+        "subagent_stop_transcript_inaccessible",
+        {
+            "transcript_path": inaccessible.transcript_path,
+            "detail": inaccessible.detail,
+            "absence": inaccessible.absence,
+        },
+        hook_id=hook_id,
+    )
+    print(
+        _transcript_inaccessible_reason(inaccessible),
+        file=sys.__stderr__,
+        flush=True,
+    )
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Main handler
 # ---------------------------------------------------------------------------
@@ -2970,6 +3108,17 @@ def handle_subagent_stop() -> int:
                     hook_id,
                     stop_hook_active=bool(hook_input.get("stop_hook_active", False)),
                 )
+                return exit_code
+
+            # fix-subagent-stop-silent-transcript: a DECLARED
+            # agent_transcript_path that could not be resolved to a readable
+            # file (nonexistent, or existing but unreadable) is a broken
+            # promise -- distinct from the legitimate marker-free silent
+            # allow (AT5) AND the absent-key silent allow (AT6). Degrades
+            # LOUD (never the silent passthrough-allow); never blocks (an
+            # infrastructure fault the agent cannot fix by being re-invoked).
+            if isinstance(des_context_result, _TranscriptInaccessible):
+                exit_code = _handle_transcript_inaccessible(des_context_result, hook_id)
                 return exit_code
 
             if des_context_result[0] is None:

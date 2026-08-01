@@ -29,24 +29,12 @@ class EventType(Enum):
     # TASK_INVOCATION events
     TASK_INVOCATION_STARTED = "TASK_INVOCATION_STARTED"
     TASK_INVOCATION_VALIDATED = "TASK_INVOCATION_VALIDATED"
-    TASK_INVOCATION_REJECTED = "TASK_INVOCATION_REJECTED"
 
     # PHASE events
     PHASE_STARTED = "PHASE_STARTED"
-    PHASE_EXECUTED = "PHASE_EXECUTED"
-    PHASE_SKIPPED = "PHASE_SKIPPED"
-    PHASE_FAILED = "PHASE_FAILED"
 
     # SUBAGENT_STOP events
     SUBAGENT_STOP_VALIDATION = "SUBAGENT_STOP_VALIDATION"
-    SUBAGENT_STOP_FAILURE = "SUBAGENT_STOP_FAILURE"
-
-    # COMMIT events
-    COMMIT_SUCCESS = "COMMIT_SUCCESS"
-    COMMIT_FAILURE = "COMMIT_FAILURE"
-
-    # VALIDATION events
-    VALIDATION_REJECTED = "VALIDATION_REJECTED"
 
     # HOOK events
     HOOK_PRE_TASK_PASSED = "HOOK_PRE_TASK_PASSED"
@@ -75,8 +63,6 @@ class AuditEvent:
     step_id: str | None = None  # Step identifier (e.g., "01-02")
     phase_name: str | None = None  # Name of the TDD phase
     status: str | None = None  # Phase status: IN_PROGRESS, EXECUTED, SKIPPED
-    outcome: str | None = None  # Success or failure outcome
-    duration_minutes: float | None = None  # Duration of phase/event
     reason: str | None = None  # Reason for failure/rejection
     commit_hash: str | None = None  # Git commit hash (for COMMIT events)
     rejection_reason: str | None = None  # Detailed rejection reason

@@ -10,7 +10,7 @@ Vocabulary shared across the suite (all under
   * test_smoke_orchestration.py   (SmokeRunner orchestration + exit-code contract)
   * test_tool_contract_registry.py (per-tool ToolContract behaviour)
   * test_platform_passthrough.py  (US-5 --platform contract)
-  * test_copilot_absent.py        (US-4 Copilot xfail-strict)
+  * test_unknown_tool_rejection.py (unregistered target diagnostic)
 
 This is a config-/orchestration-shaped feature (one smoke lane, finite tool
 set), so Tier B (state-machine PBT) is NOT warranted (Mandate 10 skip rule).
@@ -27,18 +27,12 @@ from enum import Enum
 class Tool(Enum):
     """A supported agentic CLI the harness can smoke.
 
-    The three KNOWN tools have a ToolContract row. COPILOT is deliberately
-    absent from the contract registry — its absence is the US-4 assertion.
+    Each member has a ToolContract row in the release-smoke registry.
     """
 
     CLAUDE_CODE = "claude-code"
     CODEX = "codex"
     OPENCODE = "opencode"
-
-
-# Tools that are NOT supported and must have NO install path (US-4 / D-5).
-class UnsupportedTool(Enum):
-    COPILOT = "copilot"
 
 
 class SmokeStepKind(Enum):

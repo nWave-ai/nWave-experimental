@@ -14,6 +14,7 @@ import os
 import re
 import sys
 from collections import Counter, OrderedDict
+from pathlib import Path
 
 
 root = sys.argv[1]
@@ -136,7 +137,7 @@ sizes = []
 big = []
 total = 0
 
-for f in sorted(os.listdir(root)):
+for f in sorted([p.name for p in Path(root).iterdir()]):
     if not f.endswith(".jsonl"):
         continue
     p = os.path.join(root, f)
@@ -221,7 +222,7 @@ sizes.sort()
 n = len(sizes)
 print(f"  calls {n:,}   max {sizes[-1]:,} B")
 print("  largest 20 results (bytes):")
-print("   ", [s for s in sizes[-20:]])
+print("   ", list(sizes[-20:]))
 print(
     f"  calls in 25,000-30,000 B band: {sum(1 for s in sizes if 25000 < s <= 30000):,}"
 )

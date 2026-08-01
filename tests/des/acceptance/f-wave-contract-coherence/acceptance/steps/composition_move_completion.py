@@ -423,12 +423,12 @@ class MoveCompletionComposition:
         from des.application import wave_gate_stack_dispatch
 
         try:
-            stack = wave_gate_stack_dispatch.resolve_stack("distill", "gate-out")
+            resolved = wave_gate_stack_dispatch.resolve_stack("distill", "gate-out")
         except (KeyError, ValueError, FileNotFoundError):
             return ()
         return tuple(
             str(row["gate_id"])
-            for row in (stack or [])
+            for row in resolved.rows
             if isinstance(row, dict) and "gate_id" in row
         )
 
@@ -492,7 +492,7 @@ class MoveCompletionComposition:
         os.environ["NWAVE_FLAVORS_DIR"] = str(flavors_dir)
         try:
             try:
-                stack = wave_gate_stack_dispatch.resolve_stack(
+                resolved = wave_gate_stack_dispatch.resolve_stack(
                     _DISCUSS_WAVE, boundary.value
                 )
             except (KeyError, ValueError, FileNotFoundError):
@@ -504,7 +504,7 @@ class MoveCompletionComposition:
                 os.environ["NWAVE_FLAVORS_DIR"] = prev
         seq = tuple(
             str(row["gate_id"])
-            for row in (stack or [])
+            for row in resolved.rows
             if isinstance(row, dict) and "gate_id" in row
         )
         return seq, bool(seq)

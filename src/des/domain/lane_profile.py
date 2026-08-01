@@ -9,15 +9,20 @@ scaffold defines the enums + frozen dataclass shape and an EMPTY registry so
 slice-01's ATs fail with ``AssertionError`` (impl missing), never
 ``ImportError`` (Mandate 7 -- RED-not-BROKEN).
 
-Pure, stdlib-only (`dataclasses`, `enum`) -- zero I/O, zero upward dependency
-(D1: domain must not import the application/cli layers that consult this
-datum).
+Pure -- zero I/O, zero upward dependency (D1: domain must not import the
+application/cli layers that consult this datum). Beyond `dataclasses`/`enum`
+it imports exactly one sibling DOMAIN module, `expectation_charter_mapping`,
+for the `CharterObligation` vocabulary: the obligation is declared where the
+charter subject already lives, so there is one place to look, and the edge
+points domain->domain (acyclic: that module imports nothing from here).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+
+from des.domain.expectation_charter_mapping import CharterObligation
 
 
 class GuardKind(Enum):
@@ -46,6 +51,12 @@ class LaneProfile:
     at_requirement: AtRequirement
     skipped_invariants: tuple[str, ...]
     annotation_token: str
+    #: Whether work dispatched on this lane OWES an expectation charter -- the
+    #: FOURTH sibling ceremony declaration on the same row, read as a
+    #: consequence of the lane the operator already chose rather than asked as
+    #: a second question. Deliberately NO default: a lane added later without
+    #: one fails LOUD at construction, never defaults into a silent value.
+    charter_obligation: CharterObligation
 
 
 # The queryable lane-definition datum. slice-01 (keystone) populates exactly ONE
@@ -86,6 +97,10 @@ LANE_PROFILES: dict[str, LaneProfile] = {
             "sustainability",
         ),
         annotation_token="prefactoring",
+        # A prefactoring lane ALREADY declares behaviour-preservation
+        # (GREEN_TO_GREEN): it changes no promised outcome, so there is no
+        # outcome to charter.
+        charter_obligation=CharterObligation.EXEMPT,
     ),
     # A bugfix writes code + records ATs -> the FULL section set (mirrors the
     # dispatch SSOT's `profiles.lane.bugfix` row under `nWave/dispatch/`,
@@ -113,6 +128,11 @@ LANE_PROFILES: dict[str, LaneProfile] = {
         at_requirement=AtRequirement.REQUIRED,
         skipped_invariants=(),
         annotation_token="bugfix",
+        # A bugfix repairs something a user could observe going wrong, so the
+        # repaired outcome is chartered. The known over-reach -- a purely
+        # internal defect nobody can observe -- is escaped by declaring
+        # `des dispatch --charter-exemption "<reason>"`, not by loosening this.
+        charter_obligation=CharterObligation.REQUIRED,
     ),
     # The NON-CODE-FACING, PHASELESS cross-wave-child lane
     # (fix-po-charter-dispatch-marker-lane): a spine-MANDATED sub-dispatch of a
@@ -149,6 +169,10 @@ LANE_PROFILES: dict[str, LaneProfile] = {
             "sustainability",
         ),
         annotation_token="charter",
+        # This lane WRITES a charter; it does not owe one. Holding the
+        # charter-authoring dispatch to producing a charter for itself is the
+        # same circularity its skipped `prefactoring_assessment` names.
+        charter_obligation=CharterObligation.EXEMPT,
     ),
 }
 

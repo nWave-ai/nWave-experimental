@@ -1,0 +1,45 @@
+# Gate-contract: sentinel (lane/sentinel-tool, nw-throughput SKILL.md
+# "Throughput Sentinel" section)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=sentinel.
+
+gate_id: sentinel
+responsibility: |
+  Read-only worktree-triage receipt, promoted from an unversioned scratchpad
+  script that produced three wrong readings in one afternoon, each costing
+  real work. Classifies every linked worktree OWNED / ABANDONED_CANDIDATE /
+  UNDECIDABLE from three convergent axes: DECLARED ownership (a
+  `.nwave/lane-owner.json` marker, or a manual `--owned` fallback --
+  outranks every physical signal), the REUSED anti-rot receipt
+  (PID/lock/dirty/unmerged-commits, from the existing
+  `worktree_anti_rot_triage.triage_worktree` production predicate), and
+  recent HEAD/index write activity (the second liveness axis process-cwd
+  scanning alone cannot supply -- an LLM agent has no process for most of
+  its life). Offers exactly MERGE/RESUME/DEFER/REMOVE for a candidate,
+  naming the evidence behind it; never removes, merges, dispatches, or
+  authorizes anything -- deletion stays human-authorized. Also snapshots
+  host capacity (nproc, load average, MemAvailable from /proc/meminfo --
+  never the `free` command's column, which under-reports on this box class
+  -- and a count of REAL pytest suites excluding earlyoom/bash/sh wrappers).
+module: des.cli.worktree_sentinel
+entry_function: main
+language_neutral_contract: true
+
+log_events:
+  - WorktreeSentinelReport
+  - WorktreeSentinelSweepFailed
+
+failure_modes:
+  - error_class: WorktreeSentinelSweepFailed
+    exit_code: 1
+    remediation: "Verify `git worktree list --porcelain` runs cleanly against the target --repo, then re-run `des sentinel`. Per-worktree signal failures (an unreadable gitdir, an unresolvable target branch) degrade to UNDECIDABLE per-row instead of failing the whole sweep -- this exit code is reserved for 'no receipt was possible at all'."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

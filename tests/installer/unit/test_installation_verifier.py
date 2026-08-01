@@ -395,6 +395,41 @@ class TestInstallationVerifierEssentialCommands:
 class TestInstallationVerifierFullVerification:
     """Test full verification orchestration."""
 
+    def test_host_neutral_runtime_verifies_the_des_runtime_used_by_codex(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        GIVEN: A Codex-targeted installation whose DES runtime is shared
+        WHEN: InstallationVerifier is configured for the host-neutral runtime
+        THEN: It accepts the DES module at the runtime the Codex hook invokes
+        """
+        from scripts.install.installation_verifier import InstallationVerifier
+
+        config_dir = tmp_path / ".claude"
+        runtime_dir = tmp_path / ".nwave" / "runtime"
+        monkeypatch.setattr(
+            "scripts.install.installation_verifier.host_neutral_runtime_dir",
+            lambda: runtime_dir,
+        )
+        skills_dir = config_dir / "skills"
+        for name in InstallationVerifier.ESSENTIAL_COMMAND_SKILLS:
+            skill_dir = skills_dir / name
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                f"---\nname: {name}\nuser-invocable: true\n---\n# skill"
+            )
+        (runtime_dir / "des").mkdir(parents=True)
+        (runtime_dir / "des" / "__init__.py").write_text("")
+        (config_dir / "nwave-manifest.txt").write_text("manifest")
+
+        result = InstallationVerifier(
+            claude_config_dir=config_dir,
+            use_host_neutral_runtime=True,
+        ).run_verification()
+
+        assert result.success is True
+        assert result.des_installed is True
+
     def test_run_verification_success_when_all_present(self, tmp_path):
         """
         GIVEN: A complete installation with all files present

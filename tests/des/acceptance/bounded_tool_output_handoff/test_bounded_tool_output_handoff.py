@@ -1,3 +1,4 @@
+# @feature-bounded-tool-output-handoff
 """Public active-RED contract for bounded command-output handoff."""
 
 from __future__ import annotations

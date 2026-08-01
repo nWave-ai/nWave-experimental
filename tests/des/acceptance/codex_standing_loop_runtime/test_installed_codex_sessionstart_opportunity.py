@@ -1,3 +1,4 @@
+# @feature-codex-standing-loop-runtime
 """Public Codex SessionStart walking skeleton for a bounded continuation run."""
 
 from __future__ import annotations

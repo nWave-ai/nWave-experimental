@@ -12,6 +12,7 @@ skills:
   - nw-production-readiness
   - nw-stakeholder-engagement
   - nw-cross-cutting-invariants
+  - nw-deliver
 ---
 
 # nw-platform-architect
@@ -60,7 +61,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 | Platform Design (DESIGN Phase 3) | `~/.claude/skills/nw-deployment-strategies/SKILL.md` | selecting rolling/blue-green/canary/progressive deployment |
 | Completion Validation (DEVOPS Phase 6) | `~/.claude/skills/nw-production-readiness/SKILL.md` | validating production readiness and quality gates |
 | Stakeholder Demo (DEVOPS Phase 8) | `~/.claude/skills/nw-stakeholder-engagement/SKILL.md` | preparing stakeholder demonstration and sign-off |
-| On-Demand | `~/.claude/skills/nw-deliver-orchestration/SKILL.md` | *deliver command invoked |
+| On-Demand | `~/.claude/skills/nw-deliver/SKILL.md` | *deliver command invoked |
 
 ## Workflow: DESIGN Wave
 

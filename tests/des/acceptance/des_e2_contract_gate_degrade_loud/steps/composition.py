@@ -58,6 +58,9 @@ from des.adapters.drivers.hooks.carpaccio_intercept import (
 from des.cli import run_contract_gate as _run_contract_gate_mod
 from des.cli import verify_slice_commit_completeness as _verify_mod
 from des.runtime.interpreter import InterpreterUnavailable, des_subprocess_env
+from tests.common.gate_scope_fixtures import (
+    stamp_genuine_gate_scope_trailer as _stamp_genuine_gate_scope_trailer,
+)
 from tests.common.in_process_cli import run_cli_in_process
 
 from .domain_types import (
@@ -220,6 +223,13 @@ class DegradeLoudComposition:
             "-m",
             f"feat: seed slice work\n\nSlice-Id: {self._predecessor}",
         )
+        # fix-null-gate-scope-exit-gate: AC-4 (`drive_verify_slice_commit_
+        # with_interpreter`) drives the REAL verify-slice-commit with a usable
+        # interpreter and expects a genuine SliceCommitVerified mint -- that
+        # path now requires a well-formed Gate-Scope: trailer (fixture-realism
+        # only; AC-1/AC-2/AC-3 force the interpreter absent and never reach
+        # this seal-integrity leg, so this stamp is inert for them).
+        _stamp_genuine_gate_scope_trailer(self._repo)
 
     def _write_feature_delta(self) -> None:
         """Write a minimal feature-delta carrying a ``[REF] Slice Plan`` row."""

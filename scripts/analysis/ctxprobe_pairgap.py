@@ -54,7 +54,7 @@ with open(path, encoding="utf-8", errors="replace") as fh:
 
 # flatten: one row per hook_success record carrying stdout
 rows = []
-for tid, lst in success.items():
+for _tid, lst in success.items():
     for n, cmd in lst:
         if n > 0:
             rows.append((tid, n, cmd, tid in addctx))
@@ -88,7 +88,7 @@ stats(unpaired, "UNPAIRED")
 print("\n=== THE DECISIVE TEST: large UNPAIRED injections ===")
 big_unpaired = sorted([r for r in unpaired if r[1] >= 10000], key=lambda x: -x[1])
 print(f"  unpaired records with stdout >= 10,000 B : {len(big_unpaired)}")
-for tid, n, cmd, _ in big_unpaired[:12]:
+for _tid, n, cmd, _ in big_unpaired[:12]:
     print(f"    {n:>8,} B  {cmd[:78]}")
 big_paired = [r for r in paired if r[1] >= 10000]
 print(f"  paired   records with stdout >= 10,000 B : {len(big_paired)}")
@@ -96,7 +96,7 @@ print(f"  paired   records with stdout >= 10,000 B : {len(big_paired)}")
 print("\n=== UNPAIRED by command (are they one homogeneous class?) ===")
 by_cmd = Counter()
 bytes_cmd = Counter()
-for tid, n, cmd, _ in unpaired:
+for _tid, n, cmd, _ in unpaired:
     key = cmd[:70]
     by_cmd[key] += 1
     bytes_cmd[key] += n
@@ -107,7 +107,7 @@ print("\n=== PAIRED by command ===")
 by_cmd_p = Counter()
 bytes_cmd_p = Counter()
 adm_p = Counter()
-for tid, n, cmd, _ in paired:
+for _tid, n, cmd, _ in paired:
     key = cmd[:70]
     by_cmd_p[key] += 1
     bytes_cmd_p[key] += n

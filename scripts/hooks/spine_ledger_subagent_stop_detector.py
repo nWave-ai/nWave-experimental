@@ -81,6 +81,7 @@ from des.adapters.driven.logging.at_completion_ledger import (  # noqa: E402
     AtCompletionLedger,
     LedgerIntegrityViolation,
 )
+from des.domain.telemetry_paths import LedgerFamily, ledger_dir  # noqa: E402
 
 
 # Env-var contract (inherited from slice-02 test harness).
@@ -88,7 +89,7 @@ _ENV_TARGET_ROOT = "NWAVE_SPINE_LEDGER_GATE_TARGET_ROOT"
 _ENV_LEDGER_ROOT = "NWAVE_SPINE_LEDGER_GATE_LEDGER_ROOT"
 
 # Default paths mirroring slice-00/01/02 conventions.
-_TELEMETRY_RELPATH = Path(".nwave") / "telemetry" / "atdd-pure"
+_TELEMETRY_RELPATH = ledger_dir(Path(), LedgerFamily.ATDD_PURE)
 _AUDIT_LOG_DIR_RELPATH = Path(".nwave") / "des" / "logs"
 
 # Audit-event literals (per platform architect critical-4 schema).

@@ -595,23 +595,6 @@ class DeliverTimeoutExceeded:
             raise ValueError(f"wall_clock_s must be >= 0: {self.wall_clock_s}")
 
 
-@dataclass(frozen=True)
-class FalsifierGateTripped:
-    """Emitted by falsifier-gate script on metric breach (plan v3 §4.5.2).
-
-    Shape lives here (not in scripts/automation/) so script + DES sequencer
-    + telemetry aggregator share one SSOT definition.
-    """
-
-    feature_id: FeatureId
-    breach: dict[str, float]
-    timestamp: datetime
-    halted: Literal[True] = True
-
-    def __post_init__(self) -> None:
-        _require_tz_aware(self.timestamp, "FalsifierGateTripped.timestamp")
-
-
 def _require_tz_aware(ts: datetime, field_name: str) -> None:
     """Enforce tz-aware UTC timestamp invariant on event dataclasses."""
     if ts.tzinfo is None:
@@ -642,7 +625,6 @@ __all__ = [
     "Cohort",
     "DeliverBlocker",
     "DeliverTimeoutExceeded",
-    "FalsifierGateTripped",
     "FeatureId",
     "IllegalPhaseTransition",
     "PhaseCReviewerVerdict",

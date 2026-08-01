@@ -426,10 +426,10 @@ class DeclarativeGateStackComposition:
         if resolver is None:
             return []
         try:
-            stack = resolver(wave, boundary.value)
+            resolved = resolver(wave, boundary.value)
         except (KeyError, ValueError, FileNotFoundError):
             return []
-        return list(stack)
+        return list(resolved.rows)
 
     def _capture_composed_order(self) -> None:
         """Build the run-ORDER from DESIGN-sanctioned seams only.

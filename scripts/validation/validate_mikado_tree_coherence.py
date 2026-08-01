@@ -1,11 +1,31 @@
 #!/usr/bin/env python3
 """Tree-coherence gate for a Mikado execution SSOT.
 
-One node's state is written down in three places in the same document -- the
-lane table (`## CORSIE`), the mindmap (`## L'ALBERO`) and the per-node tables
-(`## STATO NODO PER NODO`). Nothing compared them, so a node could read
+A node's state used to be written down in three places in the same document --
+the lane table (`## CORSIE`), the mindmap (`## L'ALBERO`) and the per-node
+tables (`## STATO NODO PER NODO`). Nothing compared them, so a node could read
 INTEGRATA with a sha in one carrier and PRONTO with an empty closure reference
-in another, at the same time.
+in another, at the same time -- and `carrier-contradiction` (below) only fires
+on a CLOSED-vs-OPEN split, so eight drifts across five classes between
+`## L'ALBERO` and `## STATO NODO PER NODO` went uncaught: two states (D12
+table BLOCCATO-SERVE-DESIGN vs tree CONTESO; D24 table PRONTO vs tree
+CONTESO), one effort (D12 table `M (era XS)` vs tree `S/M (non XS)`), one
+Verdetto (D53 table MISURATO vs tree detail NON_MISURATO), one title (D29,
+wrong in BOTH carriers -- 3 vs 4, and the node's own `CORREZIONE MISURATA
+2026-07-28` line says the measured answer is 5), and three closure-sha
+citations naming another node's commit (D31a cited D17's sha; D31b and D46a
+both cited D14's sha). Every one of them was OPEN-vs-OPEN or a non-state
+field, structurally invisible to that rule.
+
+State is now typed ONCE: `## STATO NODO PER NODO` is the SOLE carrier of a
+node's state. `## L'ALBERO` keeps the tree's SHAPE -- dependency rings, node
+ids, curated per-node prose -- and carries no state word at all; a state word
+on an `## L'ALBERO` node row is rejected by `state-typed-outside-its-carrier`
+and withdrawn mechanically with `mikado_board.py --withdraw-tree-state`, never
+by hand. `## CORSIE` is unaffected -- it types state for its own population
+(lane-level work, 24 of its 42 rows describing work with no tree node at all)
+and remains a live second axis: `carrier-contradiction` still compares it
+against `## STATO NODO PER NODO`.
 
 This gate decides on the PROPERTY -- *is there attested evidence of closure?* --
 never on the DESIGNATION -- *the row says PRONTO*. It answers with three states
@@ -47,14 +67,17 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from dataclasses import dataclass
+import tempfile
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from gate_ratchet import RatchetDecision, decide_ratchet, undecidable_baseline
 from git_commit_contents import (
+    BlobOutcome,
     CommitContentsPort,
     UnavailableContents,
     build_contents,
@@ -63,6 +86,7 @@ from git_commit_reachability import (
     CommitReachabilityPort,
     Reachability,
     build_reachability,
+    locate_worktree_root,
 )
 
 
@@ -71,6 +95,16 @@ DEFAULT_TRUNK_REF = "feature/atdd-pure-staging"
 CARRIER_LANES = "CORSIE"
 CARRIER_TREE = "L'ALBERO"
 CARRIER_NODES = "STATO NODO PER NODO"
+#: Three sections, but ONE carrier of node STATE plus two carriers of other
+#: facts. `CARRIER_NODES` (`## STATO NODO PER NODO`) is the sole carrier of
+#: state -- `_rule_state_typed_outside_its_carrier` rejects a state word
+#: anywhere on a `CARRIER_TREE` node row. `CARRIER_TREE` (`## L'ALBERO`)
+#: carries the dependency SHAPE (rings, node ids) and curated per-node prose,
+#: never a state word. `CARRIER_LANES` (`## CORSIE`) carries closure claims
+#: for its own lane-level population, which is not always a tree node, and
+#: stays the second live axis `carrier-contradiction` reconciles against
+#: `CARRIER_NODES`. Collapsing state to one carrier does not collapse the
+#: carrier COUNT: `population-floor` still requires >= 2 carriers present.
 CANONICAL_CARRIERS = (CARRIER_LANES, CARRIER_TREE, CARRIER_NODES)
 
 #: The document's own legend: FATTO means "chiuso **con riferimento**". CHIUSO/CHIUSA
@@ -267,6 +301,7 @@ class _CarryCoverage:
     carried: int = 0
     not_carried: int = 0
     undecidable: int = 0
+    unmatched: int = 0
     unfalsifiable: int = 0
 
     @property
@@ -278,8 +313,10 @@ class _CarryCoverage:
             f"  carry-check · {self.closures} attested closures · "
             f"{self.evaluable} decided ({self.carried} carry the claim, "
             f"{self.not_carried} do not) · {self.undecidable} undecidable · "
+            f"{self.unmatched} named-but-unmatched (a `des` subcommand no changed "
+            "path evidences) · "
             f"{self.unfalsifiable} unfalsifiable (the note names no artifact)\n"
-            "  cannot catch: a note that names an artifact the commit did touch but "
+            "  cannot catch: a note whose NAMED artifact the commit did rewrite but "
             "did not actually implement,\n"
             "  and any claim about work done outside the diff (a measurement, a "
             "review, a run on real data)."
@@ -767,6 +804,62 @@ def _rule_carrier_contradiction(
     ]
 
 
+def _rule_state_typed_outside_its_carrier(
+    doc_path: Path, tree_nodes: list[_TreeNode]
+) -> list[Finding]:
+    """A state word on an `## L'ALBERO` node row -- REJECT.
+
+    `## STATO NODO PER NODO` is the sole carrier of a node's state (module
+    docstring). A second typing on the `L'ALBERO` node row is exactly how
+    this document drifted eight times across five classes without
+    `carrier-contradiction` ever seeing it -- every one of the eight was
+    OPEN-vs-OPEN or a non-state field, the one shape that rule cannot see.
+    Reuses `_TREE_NODE_LINE` (via
+    `parse_tree_nodes`, which already walks it) and `_state_token_in` against
+    the SAME legend `CLOSED_STATES`/`OPEN_STATES`/`SUSPENDED_STATES`/
+    `NOT_WORK_STATES` populate -- never a private second vocabulary.
+
+    Fires only on a node ROW (`parse_tree_nodes` populates `raw_state` only
+    from a field after the title on the `_TREE_NODE_LINE` itself), so a
+    `: <key> | <value>` detail line, the `GOAL |` line, and the `R0 ·`..`R6 ·`
+    ring headings -- none of which `parse_tree_nodes` reads a state out of --
+    can never trip it.
+    """
+    findings: list[Finding] = []
+    for node in tree_nodes:
+        if not node.raw_state:
+            continue
+        findings.append(
+            Finding(
+                rule="state-typed-outside-its-carrier",
+                node_id=node.node_id,
+                severity=Severity.REJECT,
+                what=(
+                    f"`{node.node_id}` carries the state word "
+                    f"`{normalize_state(node.raw_state)}` on its {CARRIER_TREE} node "
+                    f"row at {doc_path}:{node.line}"
+                ),
+                why=(
+                    f"state is typed once, in `{CARRIER_NODES}`: a second typing on "
+                    f"`{CARRIER_TREE}` drifted from it eight times across five classes "
+                    "(two states, one effort, one Verdetto, one title, three "
+                    "closure-sha citations naming another node's commit) and none of "
+                    "the eight was caught, because `carrier-contradiction` only fires "
+                    "on a CLOSED-vs-OPEN split and every one of these eight was "
+                    "same-class"
+                ),
+                how=(
+                    "withdraw it mechanically -- never by hand -- with the "
+                    "producing tool: "
+                    f"uv run python scripts/mikado_board.py --withdraw-tree-state "
+                    f"--file {doc_path}"
+                ),
+                locations=(f"{doc_path}:{node.line} ({CARRIER_TREE})",),
+            )
+        )
+    return findings
+
+
 def _rule_quarantine_split(
     doc_path: Path, node_id: str, claims: list[StateClaim]
 ) -> list[Finding]:
@@ -889,6 +982,60 @@ def _how_find_carrier(doc_path: Path, node_id: str) -> str:
     return f"python3 {rendered} --file {doc_path} --find-carrier {node_id}"
 
 
+def _named_path_never_touched(
+    doc_path: Path,
+    node_id: str,
+    claim: StateClaim,
+    missing: list[str],
+    product: list[str],
+) -> Finding:
+    touched = ", ".join(f"`{p}`" for p in product[:3])
+    return Finding(
+        rule="closure-names-a-path-the-commit-never-touched",
+        node_id=node_id,
+        severity=Severity.REJECT,
+        what=(
+            f"`{node_id}` closes on {', '.join(f'`{s[:9]}`' for s in claim.shas)} and "
+            f"its note names {', '.join(f'`{n}`' for n in missing)}, which no cited "
+            f"commit rewrote — they rewrote {touched}"
+        ),
+        why=(
+            "the commit carries product work, so the bookkeeping-only check passes — "
+            "and it is still not the work the note names. Accepting SOME work for THE "
+            "named work decides on the DESIGNATION (a diff is non-empty) instead of "
+            "the PROPERTY (the diff contains what was claimed)"
+        ),
+        how=_how_find_carrier(doc_path, node_id),
+        locations=(_where(doc_path, claim),),
+    )
+
+
+def _subcommand_unevidenced(
+    doc_path: Path,
+    node_id: str,
+    claim: StateClaim,
+    named: tuple[str, ...],
+    product: list[str],
+) -> Finding:
+    touched = ", ".join(f"`{p}`" for p in product[:3])
+    return Finding(
+        rule="closure-names-a-subcommand-no-path-evidences",
+        node_id=node_id,
+        severity=Severity.ADVISORY,
+        what=(
+            f"`{node_id}` names {', '.join(f'`{n}`' for n in named)} and no path the "
+            f"cited commits rewrote evidences it — they rewrote {touched}"
+        ),
+        why=(
+            "a subcommand is matched by name fragments, and a subcommand can ship in "
+            "a file named nothing like it, so an absent match is too weak to block; "
+            "it is never counted as carrying the claim either"
+        ),
+        how=_how_find_carrier(doc_path, node_id),
+        locations=(_where(doc_path, claim),),
+    )
+
+
 def _rule_closure_does_not_carry(
     doc_path: Path,
     node_id: str,
@@ -901,6 +1048,13 @@ def _rule_closure_does_not_carry(
     Falsifiable conjunction only: the note NAMES an artifact, and the cited
     commits rewrote nothing outside the plan's own bookkeeping documentation.
     Everything softer than that is counted, not asserted.
+
+    "Rewrote SOME product file" is itself a designation: it answers a question
+    the note never asked. A named PATH is inspectable exactly -- absent from the
+    changed set, the note is false, and that rejects. A named `des` subcommand
+    is matched by heuristic fragments (`des next` ships in
+    `deliver_loop_projection.py`), so an absent match there is a weaker signal:
+    it is reported and it never counts as carried, but it does not block.
     """
     findings: list[Finding] = []
     already: set[tuple[str, str]] = set()
@@ -929,7 +1083,30 @@ def _rule_closure_does_not_carry(
 
         product = sorted(p for p in changed if not is_bookkeeping_path(p))
         if product:
-            coverage.carried += 1
+            evidenced = {
+                token: [
+                    p for p in product if any(f in p for f in path_fragments_for(token))
+                ]
+                for token in named
+            }
+            missing_paths = [
+                t for t in named if not t.startswith("des ") and not evidenced[t]
+            ]
+            if missing_paths:
+                coverage.not_carried += 1
+                findings.append(
+                    _named_path_never_touched(
+                        doc_path, node_id, claim, missing_paths, product
+                    )
+                )
+                continue
+            if any(evidenced.values()):
+                coverage.carried += 1
+                continue
+            coverage.unmatched += 1
+            findings.append(
+                _subcommand_unevidenced(doc_path, node_id, claim, named, product)
+            )
             continue
         if undecidable:
             coverage.undecidable += 1
@@ -1435,6 +1612,8 @@ def check_tree_coherence(
             )
         )
 
+    findings += _rule_state_typed_outside_its_carrier(doc_path, tree_nodes)
+
     for node_id in sorted(claims_by_node):
         node_claims = claims_by_node[node_id]
         findings += _rule_carrier_contradiction(doc_path, node_id, node_claims)
@@ -1482,6 +1661,148 @@ def check_tree_coherence(
         claims=tuple(claims),
         carry=carry,
     )
+
+
+# ---------------------------------------------------------------------------
+# the ratchet: decide the EXIT CODE on the delta, never on the absolute count
+# ---------------------------------------------------------------------------
+
+
+def third_state_keys(report: GateReport) -> tuple[str, ...]:
+    """One identity per could-not-verify finding: the complaint and its subject.
+
+    ``(rule, node)`` and not the rendered text: the text carries a sha prefix
+    and a path list, so an author who merely reworded a closure note would read
+    as having introduced a brand new unverifiable claim.
+    """
+    return tuple(
+        f"{f.rule} · {f.node_id}" for f in report.by_severity(Severity.UNVERIFIABLE)
+    )
+
+
+def baseline_findings(
+    doc_path: Path,
+    *,
+    repo: Path,
+    reachability: CommitReachabilityPort,
+    contents: CommitContentsPort,
+    trunk_ref: str,
+) -> tuple[tuple[str, ...] | None, str]:
+    """This gate's third-state population over the SAME paths as HEAD holds them.
+
+    ``(keys, provenance)`` when the previous state could be measured, and
+    ``(None, reason)`` when it could not -- which the caller must treat as a
+    refusal, never as permission.
+
+    RECOMPUTED, never stored. A count kept in a file is an artifact an author
+    can edit to buy a pass; worse, it is measured in a PAST environment, and the
+    incident this ratchet exists for is precisely an environmental change with
+    the document held constant -- a stored count from before the repack would
+    have read 0 and blocked all 88 findings, reproducing the hostage it was
+    meant to release. Recomputing here, in this process, against this object
+    store, is what makes the delta attributable to the AUTHOR's edit: whatever
+    the environment is doing, it is doing it to both measurements equally.
+
+    The same port instances are reused, so the second pass inherits the first
+    pass's decoded-commit cache instead of re-inflating the same ancestors.
+    """
+    root = locate_worktree_root(repo)
+    if root is None:
+        return None, f"`{repo}` is not a checkout, so it records no previous state"
+    try:
+        rel_doc = doc_path.resolve().relative_to(root)
+    except ValueError:
+        return None, (
+            f"`{doc_path}` is not inside the checkout `{root}`, so that checkout "
+            "records no previous version of it"
+        )
+    head = getattr(reachability, "resolve_head", lambda: None)()
+    if head is None:
+        return None, f"HEAD does not resolve in `{root}`"
+
+    #: The register is an INPUT to this gate as much as the document is -- the
+    #: dependency rules read it -- so the baseline must be measured against its
+    #: HEAD version too. Reading today's register beside yesterday's document
+    #: would attribute the difference between them to the author's edit.
+    rel_register = rel_doc.parent / _DECISIONS_REL
+    provenance = [f"HEAD `{head[:9]}`"]
+    materialize: list[tuple[Path, bytes]] = []
+
+    doc_blob = contents.blob_at(head, rel_doc.as_posix())
+    if doc_blob.outcome is BlobOutcome.INDETERMINATE:
+        return (
+            None,
+            f"the previous version of `{rel_doc}` is unreadable: {doc_blob.detail}",
+        )
+    if doc_blob.outcome is BlobOutcome.ABSENT:
+        return (), (
+            f"HEAD `{head[:9]}` does not record `{rel_doc}` at all, so this "
+            "document is new and every finding in it is introduced here"
+        )
+    assert doc_blob.data is not None  # PRESENT, by the two branches above
+    materialize.append((rel_doc, doc_blob.data))
+    provenance.append(
+        f"`{rel_doc}` = blob `{doc_blob.oid[:9] if doc_blob.oid else '?'}`"
+    )
+
+    register_blob = contents.blob_at(head, rel_register.as_posix())
+    if register_blob.outcome is BlobOutcome.INDETERMINATE:
+        return None, (
+            f"the previous version of `{rel_register}` is unreadable: "
+            f"{register_blob.detail}"
+        )
+    if register_blob.outcome is BlobOutcome.PRESENT:
+        assert register_blob.data is not None
+        materialize.append((rel_register, register_blob.data))
+        provenance.append(
+            f"`{rel_register}` = blob "
+            f"`{register_blob.oid[:9] if register_blob.oid else '?'}`"
+        )
+
+    with tempfile.TemporaryDirectory(prefix="mikado-baseline-") as staging:
+        stage = Path(staging)
+        for rel, data in materialize:
+            target = stage / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        previous = check_tree_coherence(
+            stage / rel_doc,
+            reachability=reachability,
+            trunk_ref=trunk_ref,
+            contents=contents,
+        )
+    return third_state_keys(previous), " · ".join(provenance) + (
+        f" (check it: git rev-parse {head[:9]}:{rel_doc})"
+    )
+
+
+def ratchet_decision(
+    report: GateReport,
+    doc_path: Path,
+    *,
+    repo: Path,
+    reachability: CommitReachabilityPort,
+    contents: CommitContentsPort,
+    trunk_ref: str,
+) -> RatchetDecision:
+    current = third_state_keys(report)
+    baseline, note = baseline_findings(
+        doc_path,
+        repo=repo,
+        reachability=reachability,
+        contents=contents,
+        trunk_ref=trunk_ref,
+    )
+    if baseline is None:
+        return undecidable_baseline(current, note)
+    decision = decide_ratchet(current, baseline, note)
+    if not decision.introduced:
+        return decision
+    # Route the refusal at the FIRST claim it actually names, through this
+    # gate's own affordance -- the operator should not have to work out which of
+    # the printed findings is the new one, nor how to interrogate it.
+    first_node = decision.introduced[0][0].rsplit(" · ", 1)[-1]
+    return replace(decision, how=_how_explain(doc_path, first_node))
 
 
 # ---------------------------------------------------------------------------
@@ -1619,9 +1940,10 @@ def main(argv: list[str] | None = None) -> int:
 
     repo = args.repo or args.file.resolve().parent
     contents = build_contents(repo)
+    reachability = build_reachability(repo)
     report = check_tree_coherence(
         args.file,
-        reachability=build_reachability(repo),
+        reachability=reachability,
         trunk_ref=args.trunk_ref,
         contents=contents,
     )
@@ -1650,9 +1972,30 @@ def main(argv: list[str] | None = None) -> int:
         for finding in group:
             print(finding.render())
             print()
-    return {Verdict.COHERENT: 0, Verdict.INCOHERENT: 1, Verdict.UNVERIFIABLE: 2}[
+
+    exit_code = {Verdict.COHERENT: 0, Verdict.INCOHERENT: 1, Verdict.UNVERIFIABLE: 2}[
         report.verdict
     ]
+
+    # The ratchet is reached ONLY on the third state -- which by construction
+    # means at least one unverifiable finding and NOT ONE reject. So a coherent
+    # document pays nothing for it (not a line of output, not a second pass over
+    # history), and a document carrying a real incoherence never sees an
+    # allowance printed beside its rejection.
+    if report.verdict is Verdict.UNVERIFIABLE:
+        decision = ratchet_decision(
+            report,
+            args.file,
+            repo=repo,
+            reachability=reachability,
+            contents=contents,
+            trunk_ref=args.trunk_ref,
+        )
+        print()
+        print(decision.render())
+        if not decision.blocks:
+            exit_code = 0
+    return exit_code
 
 
 if __name__ == "__main__":

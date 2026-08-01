@@ -1,16 +1,28 @@
 # Context-cost measurement instruments
 
-Fifteen probes plus the reducer, salvaged 2026-07-29 from a session-scoped
+Fifteen probes plus a reducer, salvaged 2026-07-29 from a session-scoped
 scratchpad that would not have survived. They answer *where the tokens go*.
+
+> **`ctxprobe_reduce.py` is NOT the canonical reducer.** The canonical one is
+> `scripts/telemetry/context_consumption_reduce.py` (chartered by ADR-D71,
+> AT-covered). The two write filenames ONE CHARACTER apart into the SAME
+> directory -- `context_consumption.jsonl` (underscore, this one) vs
+> `context-consumption.jsonl` (hyphen, canonical) -- so tell their records
+> apart by `reducer_version` (`"d71-reducer-1.0.0"` here, `"1"` canonical),
+> never by the filename you believe you opened. See the feature-delta section
+> "Which reducer is CANONICAL, and the one-character collision".
 
 | script | answers |
 |---|---|
-| `ctxprobe_reduce.py` | the reducer: streams transcripts, emits `context_consumption` records |
+| `ctxprobe_reduce.py` | a reducer -- NOT canonical, see the note above: streams transcripts, emits `context_consumption` records |
 | `ctxprobe_account.py` | requestId dedup + the cache-chain accounting law |
 | `ctxprobe_fleet.py` | per-agent census across the dispatch fleet |
 | `ctxprobe_decompose.py` | fixed admission prefix vs task-accrued re-reads |
 | `ctxprobe_attrib.py` | byte attribution by tool and by file |
 | `ctxprobe_byteturns.py` | the byte-turn ranking (bytes x residency) |
+| `ctxprobe_byteturn_categories.py` | the same charge bucketed by CATEGORY, so competing cut proposals share one denominator |
+| `ctxprobe_orchestrator_byteturns.py` | byte-turns on the ORCHESTRATOR's own session -- the hook-injected ledger no subagent probe can see |
+| `ctxprobe_affordance_admission.py` | which affordance asset owns the admitted window, and whether the runtime serves the revision you are reading |
 | `ctxprobe_bashclass2.py` | Bash byte-turns by command class |
 | `ctxprobe_bashtarget.py` | search-class targets + the harness output-ceiling probe |
 | `ctxprobe_calls.py` | calls per agent, lifetime concentration |
@@ -50,6 +62,20 @@ Re-measuring without these reproduces the numbers and loses their meaning.
 6. **`des skill-normative-gate` bare invocation reads an INSTALLED manifest**,
    not the repo's. Pass `--manifest` and `--root` explicitly or it validates a
    tree you are not working on, and passes.
+7. **A byte-turn figure means nothing until it names its LEDGER.** The same
+   orchestrator-affordance payload measures **0.18%** of tool-admitted byte-turns
+   on the subagent corpus and **72.6%** of hook-injected byte-turns on the
+   orchestrator's own session, because the hooks fire only on the orchestrator
+   lifecycle and their bytes never enter a subagent transcript. A percentage
+   quoted without its denominator is not a small number, it is an unmeasured
+   one -- the tree once retired the affordance as "efficacy, not cost" on the
+   strength of the first figure alone.
+8. **The ~2 KB affordance cut is NOT truncation any more.** The current binary
+   persists the oversized payload to a file and declares it
+   (`Output too large (NN KB). Full output saved to: <path>` + `Preview (first
+   2KB)`), so the body costs zero byte-turns unless something reads the path.
+   Prose in the tree that reasons about an in-place cut is describing an older
+   harness -- same shape as caveat 1.
 
 ## The method rule these earned
 

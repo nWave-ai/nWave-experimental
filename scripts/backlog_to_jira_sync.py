@@ -47,6 +47,7 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
 from backlog_to_jira_csv import parse  # noqa: E402
 
 from des.domain.repo_path_resolver import feature_delta_path  # noqa: E402
+from des.domain.telemetry_paths import LedgerFamily, ledger_path  # noqa: E402
 
 
 _REPO = Path(__file__).resolve().parents[1]
@@ -96,7 +97,7 @@ def _slice_plan(fid: str) -> list[tuple[str, str]]:
 def _done_slices(fid: str) -> set[str]:
     """Slice-ids attested ``SliceCommitVerified`` in the AT-completion ledger --
     the substance of 'this slice is done'. Empty set when no ledger exists."""
-    led = _REPO / ".nwave" / "telemetry" / "atdd-pure" / f"{fid}.jsonl"
+    led = ledger_path(_REPO, LedgerFamily.ATDD_PURE, fid)
     if not led.is_file():
         return set()
     done: set[str] = set()

@@ -79,6 +79,7 @@ from des.cli.axis_b_levers import (
 from des.cli.carpaccio_format import (
     GateError,
     _no_scenarios_rejection,
+    _red_seal_is_fresh,
     _slice_scenarios,
     parse_scenarios,
     parse_slice_plan,
@@ -107,6 +108,12 @@ from des.domain.feature_delta_source import (
     read_feature_delta,
 )
 from des.domain.lane_profile import LANE_PROFILES, LaneProfile
+from des.domain.telemetry_paths import (
+    LedgerFamily,
+    TelemetrySubtree,
+    ledger_path,
+    subtree_dir,
+)
 
 
 def _lane_profile_for(lane_name: str | None) -> LaneProfile | None:
@@ -132,6 +139,15 @@ _INV_PRE_COMMIT = "pre_commit_scope"
 _INV_REUSE_FIRST = "reuse_first_or_design_skip"
 _INV_PREFACTORING = "prefactoring_assessment"
 _INV_SUSTAINABILITY = "sustainability"
+
+# at_kind values whose ownership proof is the mechanical RED->GREEN seal
+# rather than a Gherkin @slice-NN tag (fix-readiness-gate-at-kind-blind-
+# scenario-tags). Mirrors `carpaccio_intercept._REGRESSION_AT_KINDS` (the
+# module-level constant both runners there share) -- this gate's OWN parser
+# accepts the same three kinds via `--at-kind`.
+_REGRESSION_AT_KINDS = frozenset(
+    {"pytest-regression", "native-regression", "rust-regression"}
+)
 
 _ALL_INVARIANTS = (
     _INV_SLICE_PLAN,
@@ -386,16 +402,83 @@ def _check_slice_plan_section(
     return _InvariantResult(invariant_id=_INV_SLICE_PLAN, satisfied=True)
 
 
+def _pytest_regression_seal_clears_ownership(
+    repo_root: Path, at_kind: str, regression_test_file: str | None
+) -> bool:
+    """True iff the ENTERING slice's declared ``at_kind`` is a regression kind
+    AND ``regression_test_file`` names a file carrying a FRESH, content-
+    matching RED seal (fix-readiness-gate-at-kind-blind-scenario-tags).
+
+    Evidence, never a label: declaring ``--at-kind pytest-regression`` with no
+    seal recorded, or a STALE one (the file edited after RED was recorded),
+    returns ``False`` here -- the caller's ordinary Gherkin-ownership leg (b)
+    then runs and refuses exactly as it does today for a slice with no
+    matching ``.feature`` scenario.
+    """
+    if at_kind not in _REGRESSION_AT_KINDS or not regression_test_file:
+        return False
+    return _red_seal_is_fresh(repo_root, repo_root / regression_test_file)
+
+
+def _scenario_tags_pytest_escape_remediation(
+    rejection: GateError, slice_id: str
+) -> str:
+    """This gate's OWN scenario_slice_tags remediation (RCA fact 4, GDP-3/
+    GDP-4). ``_no_scenarios_rejection``'s payload advertises
+    ``--at-kind``/``--regression-test-file`` for ``des carpaccio-slice-gate``
+    -- real options THERE, but copying that text verbatim onto THIS gate was a
+    lying rejection back when this parser accepted neither flag. Both are now
+    real options here too (this fix), so this names them directly, states
+    what is ACTUALLY checked (the content-bound RED seal, never ``des
+    verify-negative-at`` -- that CLI persists nothing durable for a later gate
+    to re-verify), and the producing tool that earns the escape.
+    """
+    wanted_tag = rejection.payload.get("searched_tag", f"@feature-{slice_id}")
+    searched_roots = rejection.payload.get("searched_roots", "")
+    gherkin_how = (
+        f"add/author a '.feature' file tagged {wanted_tag!r} with a scenario "
+        f"tagged @{slice_id} (searched {searched_roots})"
+    )
+    pytest_how = (
+        "OR, if this slice's ATs are pytest tests rather than Gherkin "
+        "scenarios: pass `--at-kind pytest-regression --regression-test-file "
+        "<path>` on THIS invocation, with a FRESH, content-matching RED seal "
+        "recorded for that file via `des verify-red-green --record-red "
+        "--test-file <path>`. This gate checks ONLY that seal's freshness "
+        "(content_sha256 matches the file's CURRENT bytes) and that it "
+        "witnessed >=1 failing test -- declaring the kind alone, or a STALE "
+        "seal recorded before a later edit, still refuses. `des "
+        "verify-negative-at` is NOT checked by this gate."
+    )
+    return f"{gherkin_how}. {pytest_how}"
+
+
 def _check_scenario_slice_tags(
-    repo_root: Path, feature_id: str, slice_id: str
+    repo_root: Path,
+    feature_id: str,
+    slice_id: str,
+    at_kind: str = "gherkin",
+    regression_test_file: str | None = None,
 ) -> _InvariantResult:
     """Invariant 2: every Gherkin scenario for the feature carries a @slice-NN
-    tag, AND the ENTERING slice owns at least one matching scenario.
+    tag, AND the ENTERING slice owns at least one matching scenario -- UNLESS
+    the entering slice earns a mechanical-seal escape instead (leg c).
 
-    Two legs, evaluated in order:
-      (a) legacy leg (unchanged): searches `tests/**/<feature_id>/**/*.feature`
-          and verifies each Scenario: line's preceding tag block contains
-          `@slice-NN` at all (a feature-wide "nothing untagged" check).
+    Three legs, evaluated in order:
+      (a) legacy leg (unchanged, kind-independent): searches
+          `tests/**/<feature_id>/**/*.feature` and verifies each Scenario:
+          line's preceding tag block contains `@slice-NN` at all (a
+          feature-wide "nothing untagged" check).
+      (c) regression-seal escape (fix-readiness-gate-at-kind-blind-scenario-
+          tags): when the ENTERING slice's `at_kind` is a regression kind
+          (`pytest-regression` / `native-regression` / `rust-regression`) AND
+          its named `regression_test_file` carries a FRESH, content-matching
+          RED seal, leg (b) below is satisfied for THIS slice WITHOUT
+          requiring a `.feature` file. The escape is earned by EVIDENCE, never
+          by the bare label -- see `_pytest_regression_seal_clears_ownership`.
+          It is also strictly PER-SLICE: a Gherkin sibling slice in the SAME
+          feature that owns zero matching scenarios is UNAFFECTED (leg (b)
+          still runs, and still refuses, for that OTHER slice).
       (b) per-slice ownership leg (bug #73, twin of #27 -- fix-readiness-not-
           vacuously-cleared): delegates to carpaccio's OWN predicates
           (`read_feature_files` + `parse_scenarios` + `_slice_scenarios`,
@@ -436,6 +519,11 @@ def _check_scenario_slice_tags(
                     remediation=_REMEDIATIONS[_INV_SCENARIO_TAGS],
                 )
 
+    if _pytest_regression_seal_clears_ownership(
+        repo_root, at_kind, regression_test_file
+    ):
+        return _InvariantResult(invariant_id=_INV_SCENARIO_TAGS, satisfied=True)
+
     feature_texts = read_feature_files(repo_root, feature_id)
     if not feature_texts:
         return _InvariantResult(invariant_id=_INV_SCENARIO_TAGS, satisfied=True)
@@ -443,9 +531,7 @@ def _check_scenario_slice_tags(
     scenarios = parse_scenarios(feature_texts)
     if not _slice_scenarios(scenarios, slice_id):
         rejection = _no_scenarios_rejection(repo_root, feature_id, slice_id)
-        remediation = str(
-            rejection.payload.get("error") or _REMEDIATIONS[_INV_SCENARIO_TAGS]
-        )
+        remediation = _scenario_tags_pytest_escape_remediation(rejection, slice_id)
         return _InvariantResult(
             invariant_id=_INV_SCENARIO_TAGS,
             satisfied=False,
@@ -490,7 +576,7 @@ def _at_review_verdict_recorded(
     """True iff an ``ATReviewVerdict APPROVED`` record for the entering slice
     exists in ``.nwave/telemetry/atdd-pure/{feature_id}.jsonl``. Missing file,
     missing record, or a REJECTED verdict all return False."""
-    ledger = repo_root / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
+    ledger = ledger_path(repo_root, LedgerFamily.ATDD_PURE, feature_id)
     if not ledger.is_file():
         return False
     for line in ledger.read_text().splitlines():
@@ -954,7 +1040,7 @@ def _has_red_green_seal(repo_root: Path) -> bool:
     """True iff at least one RED->GREEN mechanical-seal JSON is on record under
     ``.nwave/telemetry/red-green/`` (written by ``des verify-red-green
     --record-red``)."""
-    seal_dir = repo_root / ".nwave" / "telemetry" / "red-green"
+    seal_dir = subtree_dir(repo_root, TelemetrySubtree.RED_GREEN)
     return seal_dir.is_dir() and any(seal_dir.glob("*.json"))
 
 
@@ -1044,6 +1130,8 @@ def _run_lane_profile(
     feature_id: str,
     slice_id: str,
     profile: LaneProfile,
+    at_kind: str = "gherkin",
+    regression_test_file: str | None = None,
 ) -> _ReadinessReport:
     """Build the readiness report for a ``--lane`` value recognized by the
     LIVE ``LANE_PROFILES`` datum (slice-02).
@@ -1053,13 +1141,23 @@ def _run_lane_profile(
     attaches a LOUD, durable ``lane`` audit record naming the lane id, the
     skipped invariants, and the datum's declared ``guard_kind`` (mirrors the
     bugfix lane's own audit record shape, one level up).
+
+    ``at_kind``/``regression_test_file`` thread into the
+    ``scenario_slice_tags`` check exactly like the default `main()` path
+    (fix-readiness-gate-at-kind-blind-scenario-tags) -- a lane profile that
+    does NOT skip that invariant must still honour a declared regression
+    kind's mechanical-seal escape.
     """
     checks: dict[str, Callable[[], _InvariantResult]] = {
         _INV_SLICE_PLAN: lambda: _check_slice_plan_section(
             repo_root, feature_id, slice_id
         ),
         _INV_SCENARIO_TAGS: lambda: _check_scenario_slice_tags(
-            repo_root, feature_id, slice_id
+            repo_root,
+            feature_id,
+            slice_id,
+            at_kind=at_kind,
+            regression_test_file=regression_test_file,
         ),
         _INV_AT_VERDICT: lambda: _check_at_review_verdict(
             repo_root, feature_id, slice_id
@@ -1138,6 +1236,31 @@ def _build_parser() -> argparse.ArgumentParser:
             "`-- regression test: <name>` -- the safety mechanism for the "
             "skipped at_review_verdict gate. Vacuous justifications are REFUSED "
             "fail-closed."
+        ),
+    )
+    parser.add_argument(
+        "--at-kind",
+        default="gherkin",
+        help=(
+            "Declare the entering slice's AT kind (fix-readiness-gate-at-"
+            "kind-blind-scenario-tags). `pytest-regression` / "
+            "`native-regression` / `rust-regression` let the "
+            "scenario_slice_tags invariant clear on a FRESH, content-matching "
+            "RED seal for --regression-test-file instead of requiring a "
+            "`.feature` scenario. Defaults to `gherkin` -- byte-identical to "
+            "today for every caller that omits this flag."
+        ),
+    )
+    parser.add_argument(
+        "--regression-test-file",
+        default=None,
+        help=(
+            "The regression test file the RED->GREEN mechanical seal is "
+            "recorded for (paired with `--at-kind pytest-regression` / "
+            "`native-regression` / `rust-regression`). Path relative to "
+            "--repo-root. Record the seal with `des verify-red-green "
+            "--record-red --test-file <path>` before this gate can clear on "
+            "it -- declaring the kind alone never substitutes for the seal."
         ),
     )
     parser.add_argument(
@@ -1249,6 +1372,8 @@ def main(argv: list[str] | None = None) -> int:
     repo_root = Path(args.repo_root) if args.repo_root else Path.cwd()
     feature_id = args.feature_id
     slice_id = args.slice_id
+    at_kind = getattr(args, "at_kind", "gherkin") or "gherkin"
+    regression_test_file = getattr(args, "regression_test_file", None)
 
     lane_name = getattr(args, "lane", None)
 
@@ -1269,14 +1394,27 @@ def main(argv: list[str] | None = None) -> int:
         # names, sibling of the bugfix branch above (ADD-not-mutate). An
         # unrecognized/absent lane falls through to the full 7-invariant
         # default path below -- the exemption never leaks.
-        report = _run_lane_profile(repo_root, feature_id, slice_id, lane_profile)
+        report = _run_lane_profile(
+            repo_root,
+            feature_id,
+            slice_id,
+            lane_profile,
+            at_kind=at_kind,
+            regression_test_file=regression_test_file,
+        )
         _emit_report(report)
         return 0 if report.verdict == "cleared" else 1
 
     report = _ReadinessReport(feature_id=feature_id, slice_id=slice_id)
     report.invariants.append(_check_slice_plan_section(repo_root, feature_id, slice_id))
     report.invariants.append(
-        _check_scenario_slice_tags(repo_root, feature_id, slice_id)
+        _check_scenario_slice_tags(
+            repo_root,
+            feature_id,
+            slice_id,
+            at_kind=at_kind,
+            regression_test_file=regression_test_file,
+        )
     )
     report.invariants.append(_check_at_review_verdict(repo_root, feature_id, slice_id))
     report.invariants.append(_check_gate_output_produceable(repo_root))

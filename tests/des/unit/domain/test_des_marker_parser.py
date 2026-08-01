@@ -1,3 +1,4 @@
+# @feature-feature-end-examine-phase
 """Tests for DesMarkerParser DES-PROJECT-ROOT marker support.
 
 Outcome anchor: DISCUSS "orchestrator dispatching crafter on a worktree sees

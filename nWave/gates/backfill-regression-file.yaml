@@ -1,0 +1,58 @@
+# Gate-contract: backfill-regression-file (fix-shipped-regression-file-backfill)
+#
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=backfill-regression-file.
+
+gate_id: backfill-regression-file
+responsibility: |
+  Record a human-authorized, append-only historical attestation that a
+  SHIPPED slice's regression-evidence file genuinely existed and passed at a
+  real commit in this branch's own history -- recovering a shipped slice's
+  regression-evidence bookkeeping when its SliceCommitVerified record
+  predates the regression_test_file ledger field (#59), or was never stored.
+  Validates, in order: a non-empty --reason, that --slice-id genuinely
+  SHIPPED (a SliceCommitVerified record exists for --feature-id), that
+  --commit is an ancestor of (or equal to) HEAD, that --regression-test-file
+  exists in --commit's committed tree, and that no prior
+  RegressionFileHistoricalBackfill record for this (feature-id, slice-id)
+  exists unless --override is passed. On success appends ONE
+  RegressionFileHistoricalBackfill record (regression_test_file, at_kind,
+  commit_sha, content_sha256, human reason, override) to the SAME
+  per-feature AtCompletionLedger `des commit-slice` writes to.
+  `_shipped_and_entering_regression_files`
+  (verify_slice_commit_completeness.py) reads this record back as its SECOND
+  resolution tier -- after the slice's own stored declaration, before the
+  naming-convention glob -- for ANY at-kind sharing this mechanism
+  (pytest-regression, native-regression).
+module: des.cli.backfill_regression_file
+entry_function: main
+language_neutral_contract: true
+
+log_events:
+  - RegressionFileBackfillRecorded
+  - RegressionFileBackfillRefused
+
+failure_modes:
+  - error_class: ReasonRequired
+    exit_code: 1
+    remediation: "Pass a non-empty --reason naming why this historical backfill is genuinely warranted."
+  - error_class: SliceNeverShipped
+    exit_code: 1
+    remediation: "Confirm --feature-id/--slice-id name a slice that already shipped via `des commit-slice` (has a SliceCommitVerified record), or ship it first."
+  - error_class: CommitNotAncestorOfHead
+    exit_code: 1
+    remediation: "Pass the actual commit sha where this shipped slice's regression evidence was committed (`git log --oneline -- <path>`) -- it must be an ancestor of, or equal to, the current HEAD."
+  - error_class: RegressionTestFileMissingAtCommit
+    exit_code: 1
+    remediation: "Confirm the file's repo-relative path and the commit where it genuinely shipped, e.g. `git show <commit>:<path>`."
+  - error_class: DuplicateBackfillWithoutOverride
+    exit_code: 1
+    remediation: "Pass --override to intentionally supersede the existing backfill record with a new one, naming why in --reason."
+
+idempotency: side-effects-explicit
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

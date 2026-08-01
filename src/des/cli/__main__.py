@@ -359,6 +359,17 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.verify_catalog_coherence",
         "main",
     ),
+    # gate-armed-state-derivation slice-02 (EXTEND-as-promotion): promotes
+    # the coherence_offenders reducer (previously living inside
+    # tests/build/f_nonbypassable_attestation/test_arch_catalog_gate_wiring.py)
+    # into a first-class, catalogued des CLI gate mirroring
+    # verify-catalog-coherence's shape. Pure move + wiring, zero
+    # verdict-logic change.
+    _SubcommandRow(
+        "verify-gate-armed-state",
+        "des.cli.verify_gate_armed_state",
+        "main",
+    ),
     # check-contract-shape-declarations slice-01 (GDP-4/6): the PRODUCING tool
     # for Principle 11's three mechanical Contract-Shape checks (CONTRACT_SHAPE
     # docstring / acceptance Outcome-anchor / banned-regex name) over an
@@ -491,6 +502,47 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     _SubcommandRow(
         "report-delivery-metrics", "des.cli.report_delivery_metrics", "main"
     ),
+    # sentinel-tool (nw-throughput SKILL.md "Throughput Sentinel"): the
+    # versioned worktree-triage receipt, promoted from an unversioned
+    # scratchpad script that produced three wrong readings in one afternoon
+    # (each costing real work -- absence-from-silence liveness, no
+    # declared-ownership axis, a name-normalization bug that made the fix
+    # for the second defect unable to fire). Advisory only (GDP-6): never
+    # removes, merges, dispatches, or authorizes -- reuses the existing
+    # `sweep_worktrees`/`triage_worktree` production predicate for the
+    # PID/lock/dirty/unmerged evidence and adds the two missing axes
+    # (declared ownership, recent HEAD/index activity) on top.
+    _SubcommandRow("sentinel", "des.cli.worktree_sentinel", "main"),
+    # unified-event-store slice-02 (DD-14): the Earned Trust startup probe's
+    # CLI driving surface. RED scaffold wiring authored by DISTILL --
+    # `des.cli.event_store_probe.main` calls into `UnifiedEventStoreAdapter`
+    # (itself a RED scaffold), so this row makes the failure "probe not
+    # implemented" (MISSING_FUNCTIONALITY, a bare AssertionError), never an
+    # argparse `invalid choice` usage error, for the feature's walking
+    # skeleton.
+    _SubcommandRow("event-store-probe", "des.cli.event_store_probe", "main"),
+    # fix-shipped-regression-file-backfill: the historical regression-gap
+    # backfill producer -- attests a SHIPPED slice's regression file
+    # genuinely existed and passed at a real historical commit, recording a
+    # RegressionFileHistoricalBackfill ledger record
+    # `_shipped_and_entering_regression_files` reads back as its second
+    # resolution tier.
+    _SubcommandRow(
+        "backfill-regression-file", "des.cli.backfill_regression_file", "main"
+    ),
+    # des-saturated-scheduler slice-01 (DD-D1): the plan-only "what can run
+    # now" query -- an artifact-level lane DAG, the READY cloud lanes, the one
+    # ordered box lane, and blockers naming artifact + condition + action. It
+    # never starts a process or agent; DD-D6's coherence check verifies the
+    # projections against the one typed scheduling policy.
+    _SubcommandRow("schedule", "des.cli.schedule", "schedule"),
+    _SubcommandRow(
+        "verify-scheduling-coherence", "des.cli.schedule", "verify_scheduling_coherence"
+    ),
+    # unified-event-store slice-03 (DD-9): single-family cross-cutting query
+    # over the merged legacy/new-envelope view -- honest could-not-verify
+    # count, never a bare total.
+    _SubcommandRow("event-store-query", "des.cli.event_store_query", "main"),
 )
 
 

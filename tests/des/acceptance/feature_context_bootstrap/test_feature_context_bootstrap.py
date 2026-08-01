@@ -1,3 +1,4 @@
+# @feature-feature-context-bootstrap
 """Public contract for a maintainer opening a feature context.
 
 The tests use the stable, dynamically resolved ``des`` command dispatcher as

@@ -66,15 +66,17 @@ import importlib
 from pathlib import Path
 
 import pytest
+from tests.common.orchestrator_affordance_paths import (
+    affordance_asset_names,
+    resolve_affordance_asset,
+)
 
 from des.cli.__main__ import _REGISTRY
 from scripts import docgen
 
 
 _REPO_ROOT = Path(docgen.__file__).resolve().parent.parent
-_CATALOG_ASSET = (
-    _REPO_ROOT / "nWave" / "data" / "orchestrator-affordance" / "des-command-catalog.md"
-)
+_CATALOG_ASSET = resolve_affordance_asset(_REPO_ROOT, "des-command-catalog")
 _REGION_ID = "des-command-catalog"
 
 
@@ -163,7 +165,11 @@ def test_scan_includes_orchestrator_affordance_asset_paths() -> None:
         f"keys {sorted(paths)}"
     )
     names = {p.name for p in paths["orchestrator_affordance"]}
-    expected = {"des-command-catalog.md", "spine-discipline.md"}
+    # Independent filesystem read of the real shipped basenames (genuine
+    # two-source comparison: scan() output vs. a direct directory read) --
+    # never a literal name list, since the numeric injection-order prefix
+    # is expected to churn (mikado D50).
+    expected = affordance_asset_names(_REPO_ROOT)
     missing = expected - names
     assert not missing, (
         f"scan()['orchestrator_affordance'] must include {sorted(expected)} "

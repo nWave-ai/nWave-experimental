@@ -92,6 +92,27 @@ def _run_skill_gate_subprocess() -> subprocess.CompletedProcess[str]:
     )
 
 
+#: The gate's own exit codes (`des.domain.gate_outcome._EXIT_BY_VERDICT`) name
+#: TWO distinct verdict classes that both count as "non-zero" here: FAIL (1,
+#: a REAL violation) and INDETERMINATE (4, a could-not-verify claim the
+#: gate's own ratchet -- gate-ratchet-skill-normative -- refused to allow).
+#: Collapsing both into one "vetoed" reason lost the GDP-8 third state at
+#: this aggregate: an operator reading the block could not tell a real defect
+#: from a could-not-verify without re-running the gate by hand.
+_GATE_EXIT_KIND: dict[int, str] = {
+    1: "a REAL violation (FAIL)",
+    4: (
+        "a COULD-NOT-VERIFY finding this edit did not clear "
+        "(INDETERMINATE, ratchet-refused)"
+    ),
+}
+
+
+def _gate_exit_kind(returncode: int) -> str:
+    """Name which verdict class a non-zero gate exit code belongs to."""
+    return _GATE_EXIT_KIND.get(returncode, f"an unrecognised exit ({returncode})")
+
+
 def _evaluate_skill_normative_intercept(file_path: str) -> dict[str, str] | None:
     """Guard a skill-tree edit, fail-closed (ADR-SNCG-002 §Placement rule, H-1).
 
@@ -107,6 +128,11 @@ def _evaluate_skill_normative_intercept(file_path: str) -> dict[str, str] | None
     ever sees the exit code, so reporting only "gate exit N" would silently
     drop a fact already in hand -- an operator would have to re-run
     `des skill-normative-gate` by hand to learn what this call already knew.
+    The reason also NAMES which verdict class the exit code belongs to
+    (`_gate_exit_kind`) -- FAIL vs INDETERMINATE -- never just the bare code;
+    this intercept still blocks on BOTH, unconditionally propagating whatever
+    exit code the gate itself decided (the gate now owns the ratchet decision
+    on the INDETERMINATE delta; this intercept never second-guesses it).
     """
     if not file_path or not _is_skill_tree_path(file_path):
         return None
@@ -114,14 +140,15 @@ def _evaluate_skill_normative_intercept(file_path: str) -> dict[str, str] | None
         completed = _run_skill_gate_subprocess()
         if completed.returncode != 0:
             gate_output = (completed.stdout or "").strip()
+            kind = _gate_exit_kind(completed.returncode)
             return {
                 "decision": "block",
                 "reason": (
-                    "skill-normative gate vetoed the skill edit "
+                    f"skill-normative gate vetoed the skill edit — {kind} "
                     f"(gate exit {completed.returncode}): "
                     f"{gate_output[:STDERR_CAPTURE_MAX_CHARS]}"
                     if gate_output
-                    else "skill-normative gate vetoed the skill edit "
+                    else f"skill-normative gate vetoed the skill edit — {kind} "
                     f"(gate exit {completed.returncode}, no gate output captured)"
                 ),
             }

@@ -39,6 +39,7 @@ channel any consumer parses as JSON.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from datetime import datetime, timezone
@@ -592,6 +593,92 @@ def load_orchestrator_affordance(assets_dir: Path) -> str | None:
         return None
 
 
+# R-8 (RCA docs/feature/fix-affordance-resolver-prefers-stale-copy/rca.md,
+# Root Cause E): this producer previously read `_ORCHESTRATOR_AFFORDANCE_
+# ASSETS_DIR` unconditionally -- a single hardcoded candidate, no
+# reconciliation with a host-neutral install root, no divergence notice.
+# The standalone hook (`scripts/hooks/orchestrator_affordance_refresh.py`)
+# already reconciles two install roots; this seam reaches the SAME rule via
+# its shared sibling module instead of duplicating it (RCA R11).
+
+# The shared module ships as `<claude_dir>/lib/nWave/hooks/
+# orchestrator_affordance_resolution.py` (or `~/.nwave/nWave/hooks/...` for a
+# host-neutral install) -- same hop family already used for the "data" asset
+# directory above (`parents[5] / "nWave" / ...`), extended to "hooks". Loaded
+# dynamically, never statically imported: `src/des/**` must not import
+# `scripts/**` (F-D-09), and this file is not shipped as a sibling of the
+# resolution module's own directory the way the standalone hook is.
+_ORCHESTRATOR_AFFORDANCE_RESOLUTION_MODULE_PATH = (
+    Path(__file__).resolve().parents[5]
+    / "nWave"
+    / "hooks"
+    / "orchestrator_affordance_resolution.py"
+)
+
+# The second candidate D-R8-3 adds: a host-neutral install (Codex, Copilot,
+# OpenCode -- `DESPlugin._runtime_python_dir`) ships the SAME runtime assets
+# to `~/.nwave/nWave/data/...` instead of `<claude_dir>/lib/nWave/data/...`.
+# Hardcoded inline (not imported from `scripts/shared/install_paths`),
+# mirroring the standalone hook's own zero-coupling rationale.
+_ORCHESTRATOR_AFFORDANCE_HOST_NEUTRAL_ASSETS_DIR = (
+    Path.home() / ".nwave" / "nWave" / "data" / "orchestrator-affordance"
+)
+
+
+def _load_orchestrator_affordance_resolution_module() -> Any:
+    """Dynamically load the shared R-8 resolution module, or `None`.
+
+    Fail-open (this design's own failure-behaviour obligation): a missing
+    file, an unloadable spec, or any import-time exception all return `None`
+    rather than raising -- the caller degrades to the CURRENT (pre-R-8)
+    single-candidate resolution. Never lets a load failure escape past this
+    boundary.
+    """
+    try:
+        path = _ORCHESTRATOR_AFFORDANCE_RESOLUTION_MODULE_PATH
+        if not path.is_file():
+            return None
+        spec = importlib.util.spec_from_file_location(
+            "orchestrator_affordance_resolution", path
+        )
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        return None
+
+
+def _resolve_orchestrator_affordance_assets_dir() -> tuple[Path | None, str | None]:
+    """`(assets dir, divergence notice)` -- the R-8 seam for this producer.
+
+    This producer has exactly two candidates and no dev checkout: the
+    Claude-scoped install root (the existing hop, unchanged) and the
+    host-neutral one (new). Selection wiring lives here, per-caller; the
+    DECISION between two install roots obliged to agree is delegated to the
+    dynamically-loaded shared module.
+
+    Falls back to the CURRENT single-candidate behaviour
+    (`_ORCHESTRATOR_AFFORDANCE_ASSETS_DIR` only, no reconciliation, no
+    notice) when the shared module is absent, unloadable, or itself raises --
+    fail-open, never a SessionStart crash.
+    """
+    installed = _ORCHESTRATOR_AFFORDANCE_ASSETS_DIR
+    host_neutral = _ORCHESTRATOR_AFFORDANCE_HOST_NEUTRAL_ASSETS_DIR
+    module = _load_orchestrator_affordance_resolution_module()
+    try:
+        if installed.is_dir():
+            if host_neutral.is_dir() and module is not None:
+                return module.reconcile_install_roots(installed, host_neutral)
+            return installed, None
+        if module is not None and host_neutral.is_dir():
+            return host_neutral, None
+        return None, None
+    except Exception:
+        return (installed if installed.is_dir() else None), None
+
+
 # ---------------------------------------------------------------------------
 # slice-05 (autonomous-consolidation-and-bugfix-loops) -- SessionStart wiring
 # for the three pending-loop-tick request files slices 02-04 shipped as
@@ -957,14 +1044,19 @@ def handle_session_start(host_provenance: str | None = None) -> int:
     # spine-teaching noise.
     try:
         if _session_cwd_is_atdd_pure(session_cwd):
-            affordance = load_orchestrator_affordance(
-                _ORCHESTRATOR_AFFORDANCE_ASSETS_DIR
+            assets_dir, divergence_notice = (
+                _resolve_orchestrator_affordance_assets_dir()
+            )
+            if divergence_notice:
+                additional_context_parts.append(divergence_notice)
+            affordance = (
+                load_orchestrator_affordance(assets_dir) if assets_dir else None
             )
             if affordance:
                 additional_context_parts.append(affordance)
     except Exception:
         # WHAT: orchestrator-affordance asset load failed (e.g. missing/
-        # unreadable text asset under _ORCHESTRATOR_AFFORDANCE_ASSETS_DIR).
+        # unreadable text asset under the resolved assets dir).
         # WHY: explicitly documented "fail-open" (comment above).
         # HOW: safe to continue -- no affordance text is appended; the
         # combined JSON payload below still emits whatever else was

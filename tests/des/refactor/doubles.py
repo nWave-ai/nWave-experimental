@@ -37,6 +37,14 @@ Three doubles:
   cleanup/return that today's ``drain_one``/``_drain_concurrently`` leave
   unguarded. Proves the fix's ``try / except BaseException: cleanup; raise``
   window actually fires on a real exception, not merely a refusal branch.
+* ``SelectorAnsweringOutcome`` -- feature impacted-test-selector-arity-fix
+  (slice-01) EXTEND: a configured stand-in ``ImpactedTestSelectorPort``
+  answering a FIXED ``SelectionOutcome`` + ``reason`` regardless of
+  ``changed_paths``, with ``targets`` always echoing the ``repo`` argument it
+  was actually called with -- so varying the OUTCOME leaves the tests
+  actually run unchanged (isolates "what does the drain DO with a given
+  answer" from "what does the shipped selector actually answer", per the
+  DISTILL WS Strategy's dual-treatment rule for this port).
 """
 
 from __future__ import annotations
@@ -50,6 +58,11 @@ from des.ports.driven_ports.agent_invocation_port import (
     AgentInvocationResult,
 )
 from des.ports.driven_ports.env_provision_port import EnvProvisionPort
+from des.ports.driven_ports.impacted_test_selector_port import (
+    ImpactedTestSelection,
+    ImpactedTestSelectorPort,
+    SelectionOutcome,
+)
 from des.ports.driven_ports.merge_lock_port import MergeLockPort
 
 
@@ -165,4 +178,33 @@ class ExplodingEnvProvisionPort(EnvProvisionPort):
         raise RuntimeError(
             "ExplodingEnvProvisionPort: simulated mid-drain crash after "
             f"worktree creation at {worktree_path}"
+        )
+
+
+@dataclass
+class SelectorAnsweringOutcome(ImpactedTestSelectorPort):
+    """Configured stand-in ``ImpactedTestSelectorPort`` -- feature
+    impacted-test-selector-arity-fix, slice-01.
+
+    Answers the SAME configured ``outcome``/``reason``/``narrowed`` triple on
+    every call, regardless of ``changed_paths``; ``targets`` always echoes
+    the ``repo`` argument it was actually invoked with, so two drains that
+    differ only in this double's configured ``outcome`` differ in NOTHING
+    else the drain could have observed (CT-1's arrangement: the reported
+    scope must differ BECAUSE the answer differed, not because the harness
+    also varied something else).
+    """
+
+    outcome: SelectionOutcome
+    reason: str = ""
+    narrowed: bool = False
+
+    def select(
+        self, repo: Path, changed_paths: tuple[str, ...]
+    ) -> ImpactedTestSelection:
+        return ImpactedTestSelection(
+            targets=(str(repo),),
+            narrowed=self.narrowed,
+            outcome=self.outcome,
+            reason=self.reason,
         )

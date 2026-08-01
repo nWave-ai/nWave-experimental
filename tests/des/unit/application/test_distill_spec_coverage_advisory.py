@@ -42,11 +42,16 @@ def _run(root: Path) -> tuple[int, dict]:
     return code, json.loads(out)
 
 
+def _write_at(at: Path, body: str) -> None:
+    """Head-tag the fixture AT with '@feature-{_FID}' -- fix-coverage-claim-
+    names-a-feature: attribution requires the file to self-identify (a
+    '# @feature-<id>' comment), never a bare marker anywhere on disk."""
+    at.write_text(f"# @feature-{_FID}\n{body}", encoding="utf-8")
+
+
 def test_uncovered_security_row_is_surfaced_advisory_not_veto(tmp_path: Path) -> None:
     root, _checklist, at = _feature(tmp_path)
-    at.write_text(
-        "def test_b():\n    assert True\n", encoding="utf-8"
-    )  # covers nothing
+    _write_at(at, "def test_b():\n    assert True\n")  # covers nothing
     code, verdict = _run(root)
     assert code == 0, "advisory NEVER vetoes a mandatory wave"
     assert verdict["verdict"] == "advisory"
@@ -60,9 +65,8 @@ def test_uncovered_security_row_is_surfaced_advisory_not_veto(tmp_path: Path) ->
 def test_full_coverage_is_a_silent_pass(tmp_path: Path) -> None:
     root, _checklist, at = _feature(tmp_path)
     # markers INSIDE the test body (the gate's convention)
-    at.write_text(
-        "def test_b():\n    # covers: R1\n    # covers: R2\n    assert True\n",
-        encoding="utf-8",
+    _write_at(
+        at, "def test_b():\n    # covers: R1\n    # covers: R2\n    assert True\n"
     )
     code, verdict = _run(root)
     assert code == 0
@@ -71,7 +75,7 @@ def test_full_coverage_is_a_silent_pass(tmp_path: Path) -> None:
 
 def test_no_checklist_is_advisory_skip_composition_proceeds(tmp_path: Path) -> None:
     root, checklist, at = _feature(tmp_path)
-    at.write_text("def test_b():\n    assert True\n", encoding="utf-8")
+    _write_at(at, "def test_b():\n    assert True\n")
     checklist.unlink()  # unarmed — no checklist authored yet
     code, verdict = _run(root)
     assert code == 0, "no checklist -> advisory-skip, the composition does NOT halt"

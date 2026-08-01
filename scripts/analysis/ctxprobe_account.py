@@ -88,7 +88,7 @@ def main():
     print(f"  chain identity      : {ok} hold / {bad} drift")
     if verbose:
         print("\n  turn-by-turn:")
-        for i, (rid, r, drift) in enumerate(rows[:60]):
+        for i, (_rid, r, drift) in enumerate(rows[:60]):
             d = "" if drift is None else f" drift={drift:+d}"
             print(
                 f"   {i:3d} in={r['in']:>7} cw={r['cw']:>8} cr={r['cr']:>9} "

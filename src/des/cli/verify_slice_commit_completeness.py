@@ -62,7 +62,7 @@ import json
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from des.adapters.driven.git.git_subprocess import git_text as _git
@@ -78,12 +78,13 @@ from des.application.slice_at_completeness import (
 )
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import (
+    GateError,
     _feature_tag_files,
     _lane_profile_for_slice,
     parse_slice_plan,
 )
 from des.cli.human_surface import Verdict, print_human_summary
-from des.cli.run_contract_gate import _GATE_INDETERMINATE_EXIT_CODE
+from des.cli.run_contract_gate import _GATE_INDETERMINATE_EXIT_CODE, extract_gate_scope
 from des.cli.verify_deliver_integrity import _slice_commit_verified_slices
 from des.domain.lane_profile import AtRequirement
 from des.domain.repo_path_resolver import feature_delta_path
@@ -92,6 +93,7 @@ from des.domain.slice_id_trailer import (
     extract_slice_id,
     extract_slice_ids,
 )
+from des.domain.telemetry_paths import LedgerFamily, ledger_path
 from des.ports.test_runner_port import (
     RunnerAdapter,
     RunnerAdapterUnavailable,
@@ -99,6 +101,38 @@ from des.ports.test_runner_port import (
 )
 from des.ports.test_runner_port import resolve as resolve_runner
 from des.runtime.interpreter import Capability, InterpreterUnavailable, des_spawn
+
+
+# The all-zero placeholder digest `des commit-slice` stamps on the FIRST
+# (pre-amend) commit, mirroring `commit_slice._PLACEHOLDER_DIGEST` (kept as
+# an independent module-level literal rather than a cross-import -- that
+# module already imports FROM this one, so importing back would cycle).
+# 64 zero-hex characters match the `Gate-Scope:` trailer's own well-formed
+# shape (`extract_gate_scope`'s `[0-9a-f]{64}` regex matches it cleanly) yet
+# unmistakably attest nothing real.
+_ALL_ZERO_GATE_SCOPE_DIGEST = "0" * 64
+
+
+def _gate_scope_seal_intact(commit_message: str) -> bool:
+    """Whether the commit's `Gate-Scope:` trailer is a real, sealed digest.
+
+    RCA fix-null-gate-scope-exit-gate: decides on the PROPERTY -- does this
+    trailer attest real gate coverage -- never the DESIGNATION (a literal
+    64-zeros-only special case is REJECTED as too narrow). Absent, short,
+    non-hex, whitespace-mangled, and the all-zero placeholder trailers are
+    ALL the same class: "I checked nothing" must never earn the SAME
+    `SliceCommitVerified` a genuinely-sealed commit earns ("everything is
+    fine" and "nothing was checked" must not produce the same output).
+
+    Reuses the EXISTING `run_contract_gate.extract_gate_scope` parser
+    (reuse-before-create) rather than reimplementing hex/length validation:
+    its `_GATE_SCOPE_TRAILER_RE` already requires a well-formed 64-char
+    lowercase-hex value, so `None` here already covers "absent" AND
+    "malformed" (short, non-hex, mangled) uniformly -- only the well-formed
+    all-zero placeholder needs an explicit second check.
+    """
+    digest = extract_gate_scope(commit_message)
+    return digest is not None and digest != _ALL_ZERO_GATE_SCOPE_DIGEST
 
 
 # The contract gate's dedicated INDETERMINATE exit code (DDD-2): the E2 gate
@@ -451,14 +485,21 @@ def _is_at_exempt_lane(repo: Path, feature_id: str, slice_id: str) -> bool:
     (`carpaccio_slice_gate.py:880-892`) -- the single shared consulting
     mechanism (D11/D12), so the exit gate's lane awareness never diverges
     from the entry gate's. Returns ``False`` (never exempt) when the
-    feature-delta is absent or the slice carries no `@prefactoring`
-    annotation -- the fail-closed default that leaves the non-exempt path
-    byte-identical.
+    feature-delta is absent, carries no `[REF] Slice Plan` section (a
+    DESIGN-only feature-delta that never reaches multi-slice authoring, or
+    a single-slice bugfix design doc), or the slice carries no
+    `@prefactoring` annotation -- the fail-closed default that leaves the
+    non-exempt path byte-identical. A missing Slice Plan section is a real,
+    expected shape (not every feature-delta authors one) -- degrading to
+    "not exempt" here, never a bare traceback out of `parse_slice_plan`.
     """
     delta_path = feature_delta_path(repo, feature_id)
     if not delta_path.is_file():
         return False
-    plan = parse_slice_plan(delta_path.read_text(encoding="utf-8"))
+    try:
+        plan = parse_slice_plan(delta_path.read_text(encoding="utf-8"))
+    except GateError:
+        return False
     profile = _lane_profile_for_slice(plan, slice_id)
     return profile is not None and profile.at_requirement is AtRequirement.EXEMPT
 
@@ -734,7 +775,7 @@ def _declared_regression_test_file(
     historical record predating this feature, or a non-pytest-regression
     slice).
     """
-    ledger = repo / ".nwave" / "telemetry" / "atdd-pure" / f"{feature_id}.jsonl"
+    ledger = ledger_path(repo, LedgerFamily.ATDD_PURE, feature_id)
     if not ledger.is_file():
         return None
     declared: str | None = None
@@ -757,12 +798,50 @@ def _declared_regression_test_file(
     return declared
 
 
+def _backfilled_regression_test_file(
+    repo: Path, feature_id: str, slice_id: str
+) -> str | None:
+    """The repo-relative regression file a human explicitly backfilled for
+    ``slice_id`` via ``des backfill-regression-file`` (fix-shipped-
+    regression-file-backfill).
+
+    Same tolerant raw-JSONL-scan shape as ``_declared_regression_test_file``
+    (mirrors its documented reason: a corrupt/unreadable ledger must degrade
+    to "nothing found", never crash ``commit-slice``) -- returns the LAST
+    matching ``RegressionFileHistoricalBackfill`` record's
+    ``regression_test_file`` (an ``--override`` backfill appends a NEW
+    record; last-wins naturally implements the supersession). ``None`` when
+    absent/unreadable.
+    """
+    ledger = ledger_path(repo, LedgerFamily.ATDD_PURE, feature_id)
+    if not ledger.is_file():
+        return None
+    backfilled: str | None = None
+    try:
+        for line in ledger.read_text(encoding="utf-8").splitlines():
+            if '"RegressionFileHistoricalBackfill"' not in line:
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if (
+                rec.get("event") == "RegressionFileHistoricalBackfill"
+                and rec.get("slice_id") == slice_id
+                and isinstance(rec.get("regression_test_file"), str)
+            ):
+                backfilled = rec["regression_test_file"]
+    except OSError:
+        return None
+    return backfilled
+
+
 def _shipped_and_entering_regression_files(
     repo: Path,
     feature_id: str,
     entering_slice: str,
     entering_regression_test_file: str,
-) -> tuple[list[tuple[str, str]], list[str]]:
+) -> tuple[list[tuple[str, str]], list[str], list[str]]:
     """Resolve the {shipped} UNION {entering} regression-file set (RC2 Fix A).
 
     The entering slice always uses its explicitly declared
@@ -773,26 +852,38 @@ def _shipped_and_entering_regression_files(
     hop away in ``commit_slice.py``) other than the entering slice itself is
     resolved:
 
-    1. FIRST, its own STORED declaration (#59, fix-commit-slice-reverify-
+    0. FIRST, is it AT-EXEMPT (``_is_at_exempt_lane``, fix-shipped-
+       regression-file-backfill)? A ``@prefactoring``/``@infrastructure``
+       shipped slice never had a regression file BY DESIGN -- it is skipped
+       entirely, never added to ``resolved`` and never counted as
+       ``unresolved``, mirroring the entry gate's own lane exemption.
+    1. Else, its own STORED declaration (#59, fix-commit-slice-reverify-
        uses-stored-file): ``_declared_regression_test_file`` reads the file
        the shipped slice itself declared via ``--regression-test-file`` at
        its OWN commit time. If present AND still a real file on this tree,
        it wins -- no naming-convention guessing needed.
-    2. Else, the naming-convention glob (``_regression_file_glob_candidates``,
+    2. Else, a ``RegressionFileHistoricalBackfill`` record (NEW, fix-shipped-
+       regression-file-backfill): ``_backfilled_regression_test_file`` reads
+       a human-attested historical recovery for a slice whose declaration
+       predates #59. If present AND still a real file on this tree, it wins.
+    3. Else, the naming-convention glob (``_regression_file_glob_candidates``,
        UNCHANGED) -- the pre-#59 behaviour, still the only signal available
-       for a historical record that predates this field.
+       for a historical record that predates every stored mechanism.
 
-    Only when BOTH miss is the slice ``unresolved`` (GDP-6: never a silent
-    guess -- a genuinely missing file, whether the stored path was deleted or
-    no convention match exists, degrades LOUD).
+    Only when ALL of 1-3 miss is the slice ``unresolved`` (GDP-6: never a
+    silent guess -- a genuinely missing file, whether the stored/backfilled
+    path was deleted or no convention match exists, degrades LOUD).
 
-    Returns ``(resolved, unresolved_slice_ids)``: ``resolved`` is an ordered
-    list of ``(slice_id, repo_relative_path)`` pairs -- shipped slices first,
-    then the entering slice; ``unresolved_slice_ids`` names every SHIPPED
-    slice whose file could not be resolved (no stored value, and zero or
-    ambiguous convention matches) -- a conservative-keep signal (never a
-    silent skip) the caller degrades LOUD INDETERMINATE on, mirroring
+    Returns ``(resolved, unresolved_slice_ids, exempted_slice_ids)``:
+    ``resolved`` is an ordered list of ``(slice_id, repo_relative_path)``
+    pairs -- shipped slices first, then the entering slice;
+    ``unresolved_slice_ids`` names every SHIPPED slice whose file could not
+    be resolved (no stored value, no backfill, and zero or ambiguous
+    convention matches) -- a conservative-keep signal (never a silent skip)
+    the caller degrades LOUD INDETERMINATE on, mirroring
     ``_narrow_to_shipped_entering``'s "never silently narrow" discipline.
+    ``exempted_slice_ids`` names every SHIPPED slice skipped via the
+    ``@prefactoring``/``@infrastructure`` lane exemption.
     """
     shipped = sorted(
         slice_id
@@ -801,10 +892,18 @@ def _shipped_and_entering_regression_files(
     )
     resolved: list[tuple[str, str]] = []
     unresolved: list[str] = []
+    exempted: list[str] = []
     for slice_id in shipped:
+        if _is_at_exempt_lane(repo, feature_id, slice_id):
+            exempted.append(slice_id)
+            continue
         declared = _declared_regression_test_file(repo, feature_id, slice_id)
         if declared is not None and (repo / declared).is_file():
             resolved.append((slice_id, declared))
+            continue
+        backfilled = _backfilled_regression_test_file(repo, feature_id, slice_id)
+        if backfilled is not None and (repo / backfilled).is_file():
+            resolved.append((slice_id, backfilled))
             continue
         candidates = _regression_file_glob_candidates(repo, feature_id, slice_id)
         if len(candidates) != 1:
@@ -812,7 +911,7 @@ def _shipped_and_entering_regression_files(
             continue
         resolved.append((slice_id, str(candidates[0].relative_to(repo))))
     resolved.append((entering_slice, entering_regression_test_file))
-    return resolved, unresolved
+    return resolved, unresolved, exempted
 
 
 def _run_regression_gate_shipped_and_entering(
@@ -820,7 +919,7 @@ def _run_regression_gate_shipped_and_entering(
     feature_id: str,
     entering_slice: str,
     entering_regression_test_file: str,
-) -> tuple[int, str | None, str | None, str, str, list[str]]:
+) -> tuple[int, str | None, str | None, str, str, list[str], list[str]]:
     """Run E2 behaviorally over {shipped} UNION {entering} (RC2 Fix A).
 
     Composes ``_shipped_and_entering_regression_files`` (the ledger-backed
@@ -830,7 +929,8 @@ def _run_regression_gate_shipped_and_entering(
     preservation clause.
 
     Returns ``(exit_code, reason, diagnostic, failed_slice_id,
-    failed_regression_test_file, executed_regression_test_files)``.
+    failed_regression_test_file, executed_regression_test_files,
+    exempted_prefactoring_slices)``.
     ``failed_slice_id`` / ``failed_regression_test_file`` name the file that
     actually produced the non-zero/INDETERMINATE outcome -- which may be a
     SHIPPED slice, not the entering one (the honest attribution RC2's fix
@@ -846,12 +946,19 @@ def _run_regression_gate_shipped_and_entering(
     files after it were never reached) and empty when the shipped set itself
     was unresolvable (nothing was run).
 
+    ``exempted_prefactoring_slices`` (fix-shipped-regression-file-backfill)
+    names every SHIPPED slice ``_shipped_and_entering_regression_files``
+    skipped via the ``@prefactoring``/``@infrastructure`` lane exemption --
+    passed through unchanged on every return path, including the unresolved-
+    refusal early return (a slice can be exempted AND another slice
+    unresolved in the same call).
+
     A SHIPPED slice with NO resolvable regression file degrades LOUD
     INDETERMINATE (``reason="shipped_regression_file_unresolvable"``) --
     conservative-keep, never a silent skip of a shipped slice's regression
     protection.
     """
-    resolved, unresolved = _shipped_and_entering_regression_files(
+    resolved, unresolved, exempted = _shipped_and_entering_regression_files(
         repo, feature_id, entering_slice, entering_regression_test_file
     )
     if unresolved:
@@ -869,6 +976,7 @@ def _run_regression_gate_shipped_and_entering(
             entering_slice,
             entering_regression_test_file,
             [],
+            exempted,
         )
     executed: list[str] = []
     for checked_slice_id, checked_file in resolved:
@@ -884,8 +992,17 @@ def _run_regression_gate_shipped_and_entering(
                 checked_slice_id,
                 checked_file,
                 executed,
+                exempted,
             )
-    return 0, None, None, entering_slice, entering_regression_test_file, executed
+    return (
+        0,
+        None,
+        None,
+        entering_slice,
+        entering_regression_test_file,
+        executed,
+        exempted,
+    )
 
 
 def _infer_pytest_regression_at_kind(
@@ -1034,6 +1151,29 @@ def _append_examine_deferred_to_feature_end(
     ledger = AtCompletionLedger(feature_id, repo)
     for slice_id in slice_ids:
         ledger.append_gate_event("ExamineDeferredToFeatureEnd", slice_id)
+
+
+def _append_examine_exempt_non_observable_slice(
+    repo: Path, feature_id: str, slice_ids: frozenset[str]
+) -> None:
+    """Record one `ExamineExemptNonObservableSlice` event per
+    `@infrastructure`/`@prefactoring` slice whose per-slice examine
+    requirement is PERMANENTLY exempt (GDP-8 fix, fix-examine-gate-defer-
+    keyed-on-designation-not-property).
+
+    Written at the SAME single chokepoint as `_append_slice_commit_verified`
+    / `_append_examine_deferred_to_feature_end` (`_run_verify_then_record`,
+    the ONE place this function is called) -- never inside
+    `check_examine_verdict` itself, so the attestation is never duplicated.
+    A DISTINCT event name from `ExamineDeferredToFeatureEnd`: an auditor
+    scanning `.nwave/**/*.jsonl` must be able to tell "permanently exempt,
+    no oracle can ever exist for this slice" apart from "deferred, a real
+    charter WILL examine it later at feature-end" apart from "nobody
+    checked".
+    """
+    ledger = AtCompletionLedger(feature_id, repo)
+    for slice_id in slice_ids:
+        ledger.append_gate_event("ExamineExemptNonObservableSlice", slice_id)
 
 
 def _append_slice_commit_indeterminate(
@@ -1336,8 +1476,58 @@ class _VerifiedSliceContext:
     attested_via: str | None
     regression_test_files_executed: list[str]
     deferred_examine_slices: frozenset[str] = frozenset()
+    exempt_examine_slices: frozenset[str] = frozenset()
     entering_slice_id: str | None = None
     entering_regression_test_file: str | None = None
+    prefactoring_exempt_shipped_slices: list[dict[str, str]] = field(
+        default_factory=list
+    )
+
+
+def _emit_charter_obligation_arming(
+    repo: Path, feature_id: str, slice_ids: list[str]
+) -> None:
+    """Surface the DECLARED charter-obligation arming for each of
+    ``slice_ids``, DISTINCTLY (OQ-6, R12) -- read-only, never refuses.
+
+    `check_examine_verdict` has THREE production callers, not one
+    (`commit_slice.main`; this module at two sites), so widening the arming
+    result changes what THIS completeness verifier reports too. The
+    REQUIRED-without-charter refusal is `des commit-slice`'s OWN enforcement
+    (`_apply_charter_obligation_gate`) -- never re-derived or re-enforced
+    here; this only reports which of EXEMPT/INDETERMINATE/REQUIRED applies,
+    so the verifier's output never re-collapses the two states the gate
+    keeps apart.
+
+    Called from TWO sites in `_run_verify_checks`: once up front for a
+    caller-supplied ``--slice-id`` override (so the arming is reported even
+    when the Honesty Guard #1 refusal below fires before E1/E2/E3 ever run),
+    and once later for the trailer-resolved ``slice_ids`` when no override
+    was supplied -- never both for the SAME invocation (mutually exclusive
+    on ``slice_id_override``), so no slice is reported twice.
+    """
+    from des.cli.commit_slice import CharterObligation as _CharterObligation
+    from des.cli.commit_slice import (
+        _charter_arming_indeterminate_warning,
+        _charter_obligation_cleared_attestation,
+        _declared_charter_obligation,
+    )
+
+    for slice_id in slice_ids:
+        arming_obligation, arming_lane, _arming_reason = _declared_charter_obligation(
+            repo, feature_id, slice_id
+        )
+        if (
+            arming_obligation is None
+            or arming_obligation is _CharterObligation.INDETERMINATE
+        ):
+            _emit(_charter_arming_indeterminate_warning(feature_id, slice_id))
+        else:
+            _emit(
+                _charter_obligation_cleared_attestation(
+                    feature_id, slice_id, arming_obligation, arming_lane
+                )
+            )
 
 
 def _run_verify_checks(
@@ -1366,6 +1556,17 @@ def _run_verify_checks(
     """
     feature_id = args.feature_id
     slice_id_override = getattr(args, "slice_id", None)
+
+    # Charter-obligation arming (OQ-6, R12): reported HERE, before the
+    # Honesty Guard #1 refusal below, for an override slice id -- otherwise
+    # a `--slice-id`-without-`--regression-test-file` refusal (a real,
+    # pre-existing, unrelated CLI-grammar guard) would refuse before E1/E2/E3
+    # ever run, and the arming would never be reported for that invocation at
+    # all. The trailer-resolved (non-override) path reports it later, once
+    # `slice_ids` is known (see below) -- the two sites are mutually
+    # exclusive on `slice_id_override`, so no slice is ever reported twice.
+    if slice_id_override is not None:
+        _emit_charter_obligation_arming(repo, feature_id, [slice_id_override])
 
     # Honesty guard #1 (#51, GDP-6, fail-closed): --slice-id overrides a
     # trailer only on the strength of a behavioral proof -- a bare structural
@@ -1507,6 +1708,7 @@ def _run_verify_checks(
     pytest_regression_checked = False
     regression_test_files_executed: list[str] = []
     entering_regression_slice_id: str | None = None
+    exempted_prefactoring_slices: list[str] = []
     examine_cleared_slices: set[str] = set()
     for slice_id in slice_ids:
         if _is_at_exempt_lane(repo, feature_id, slice_id):
@@ -1552,6 +1754,7 @@ def _run_verify_checks(
                 regression_failed_slice,
                 regression_failed_file,
                 regression_test_files_executed,
+                exempted_prefactoring_slices,
             ) = _run_regression_gate_shipped_and_entering(
                 repo, feature_id, slice_id, regression_test_file
             )
@@ -1727,20 +1930,39 @@ def _run_verify_checks(
     # This closes the bypass where a slice committed via `git commit` + `des
     # verify-slice-commit` skipped the examine gate that only `des commit-slice`
     # enforced (Ale 2026-07-05: "without evidence the slice is not implemented").
-    from des.cli.commit_slice import check_examine_verdict
+    from des.cli.commit_slice import _EXAMINE_EXEMPT_EVENT, check_examine_verdict
+
+    # Charter-obligation arming, surfaced DISTINCTLY (OQ-6, R12): the
+    # override-slice-id path already reported it up front (see
+    # `_emit_charter_obligation_arming`'s call site above the Honesty Guard
+    # #1 check) -- only report it HERE, for the trailer-resolved slice_ids,
+    # when NO override was supplied, so a slice is never reported twice.
+    if slice_id_override is None:
+        _emit_charter_obligation_arming(repo, feature_id, slice_ids)
 
     deferred_examine_slices: set[str] = set()
+    exempt_examine_slices: set[str] = set()
     for slice_id in slice_ids:
         examine_rejection = check_examine_verdict(repo, feature_id, slice_id)
         if examine_rejection is None:
             continue
         if "exit_code" not in examine_rejection:
-            # DEFER outcome (RCA fix-coupled-slice-examine-deferred-to-
-            # feature-end): a `@coupled` slice with no per-slice record --
-            # not a refusal. Collect it so `_run_verify_then_record`'s SOLE
-            # write chokepoint (constraint e) can attest the deferral exactly
-            # once; this pure half writes nothing itself.
-            deferred_examine_slices.add(slice_id)
+            # Two DISTINCT non-refusal outcomes share the exit_code-absence
+            # discriminator (see check_examine_verdict's docstring): a
+            # `@coupled` slice DEFERS to feature-end (RCA fix-coupled-slice-
+            # examine-deferred-to-feature-end -- a real charter WILL examine
+            # it later), while an `@infrastructure`/`@prefactoring` slice is
+            # PERMANENTLY EXEMPT (GDP-8 fix, fix-examine-gate-defer-keyed-on-
+            # designation-not-property -- no charter will EVER examine it, at
+            # any scope). Collected into SEPARATE sets so
+            # `_run_verify_then_record`'s SOLE write chokepoint (constraint
+            # e) can attest each with its own, honest event name instead of
+            # conflating "checked later" with "never checked, by design";
+            # this pure half writes nothing itself.
+            if examine_rejection.get("event") == _EXAMINE_EXEMPT_EVENT:
+                exempt_examine_slices.add(slice_id)
+            else:
+                deferred_examine_slices.add(slice_id)
             continue
         exit_code = examine_rejection.pop("exit_code")
         examine_rejection["refused_half"] = "E3"
@@ -1770,6 +1992,8 @@ def _run_verify_checks(
         attested_via = "examine-verdict"
     elif deferred_examine_slices:
         attested_via = "examine-deferred"
+    elif exempt_examine_slices:
+        attested_via = "examine-exempt-non-observable"
     else:
         attested_via = None
     return 0, _VerifiedSliceContext(
@@ -1779,10 +2003,22 @@ def _run_verify_checks(
         attested_via=attested_via,
         regression_test_files_executed=regression_test_files_executed,
         deferred_examine_slices=frozenset(deferred_examine_slices),
+        exempt_examine_slices=frozenset(exempt_examine_slices),
         entering_slice_id=entering_regression_slice_id,
         entering_regression_test_file=(
             regression_test_file if entering_regression_slice_id is not None else None
         ),
+        prefactoring_exempt_shipped_slices=[
+            {
+                "slice_id": exempted_slice_id,
+                "reason": (
+                    "@prefactoring lane exemption (feature-delta Slice Plan) "
+                    "-- behavior-preserving shipped slice, no regression file "
+                    "required"
+                ),
+            }
+            for exempted_slice_id in exempted_prefactoring_slices
+        ],
     )
 
 
@@ -1803,6 +2039,89 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
     if verified_context is None:
         return exit_code
 
+    # Seal-integrity leg (RCA fix-null-gate-scope-exit-gate) -- decide on the
+    # PROPERTY of this commit's `Gate-Scope:` trailer, never its DESIGNATION,
+    # right BEFORE the one place this module ever mints a durable
+    # `SliceCommitVerified` record. A blank/malformed/placeholder trailer
+    # attests nothing -- "I checked nothing" and "everything is fine" must
+    # never earn the SAME record. Cheap: one `git log -1 --format=%B` read.
+    #
+    # PLACEMENT (not `_run_verify_checks`, GDP-1 still honoured): the guarded
+    # effort is the DURABLE ATTESTATION this function is about to write, and
+    # a commit's Gate-Scope digest is a property of its OWN COMMITTED TREE --
+    # it is not yet DEFINED before that tree exists. `commit_slice`'s Step
+    # 1.5 pre-flight (ADR-DES-001) calls `_run_verify_checks` directly
+    # against an UNREFERENCED `git commit-tree` shadow object minted from the
+    # staged index (`_mint_shadow_commit`) specifically so E1/E2 can refuse
+    # BEFORE the real commit lands; that shadow object is stamped with
+    # whatever message the caller passed in, verbatim, and can never carry a
+    # sealed trailer (the seal is computed from the REAL commit's tree in
+    # later steps). Seal-checking `_run_verify_checks` itself would fire on
+    # every single pre-flight shadow commit unconditionally, and this gate's
+    # own `_GATE_INDETERMINATE_EXIT_CODE` is `commit-slice`'s documented
+    # "record honestly and PROCEED" exemption (ADR-DES-001 addendum Rule 3)
+    # -- so an early seal check would silently defeat the ENTIRE
+    # gates-run-before-commit safety net: a shadow commit that structurally
+    # cannot be sealed would always degrade to INDETERMINATE-and-proceed,
+    # masking a genuine E1/E2 refusal that should have blocked the real
+    # commit from landing at all. Checking here instead -- immediately before
+    # the one write this module performs -- intercepts at the EARLIEST point
+    # the seal property is even meaningful, while still running strictly
+    # before every other side effect this function has (the ledger appends
+    # below).
+    commit_message = _git(repo, "log", "-1", "--format=%B", args.commit)
+    if not _gate_scope_seal_intact(commit_message):
+        # Which remedy to name depends on whether the target commit is still
+        # HEAD (fix-null-gate-scope-exit-gate, HOW-honesty follow-up):
+        # `des reverify-slice-commit` (`_reverify_core._compose_gates`) never
+        # reads the Gate-Scope: trailer at all -- it runs E2 as
+        # `run_contract_gate --repo .` in default whole-tree mode, a property
+        # independent of the target commit's own trailer -- so naming it as a
+        # reseal path for a BURIED unsealed commit mints SliceCommitVerified
+        # while the trailer stays null (defects.md row
+        # `reverify-slice-commit-mints-verified-without-reading-gate-scope-
+        # trailer`). Only `des commit-slice` genuinely reseals, and it only
+        # ever operates on HEAD.
+        current_head_sha = _git(repo, "rev-parse", "HEAD").strip()
+        commit_is_still_head = verified_context.commit_sha == current_head_sha
+        if commit_is_still_head:
+            how = (
+                "reseal the commit's Gate-Scope: trailer through the real "
+                "producing tool -- `des commit-slice`, since this commit "
+                "is still HEAD -- never by hand-editing the trailer with "
+                "git directly"
+            )
+        else:
+            how = (
+                "this commit is already buried under further commits -- no "
+                "producing tool can currently reseal an already-buried "
+                "commit's own Gate-Scope: trailer (amending it would "
+                "rewrite history under whatever now sits on top of it); "
+                "`des reverify-slice-commit` is NOT a remedy here -- it "
+                "never reads the Gate-Scope: trailer at all, so it would "
+                "mint a SliceCommitVerified record while the trailer stays "
+                "unsealed (tracked: defects.md row "
+                "'reverify-slice-commit-mints-verified-without-reading-"
+                "gate-scope-trailer') -- never hand-edit the trailer with "
+                "git directly"
+            )
+        return _record_indeterminate_outcome(
+            repo,
+            args,
+            verified_context.feature_id,
+            verified_context.slice_ids,
+            reason="gate_scope_unsealed",
+            diagnostic=(
+                "commit's Gate-Scope: trailer is not a well-formed, "
+                "non-placeholder committed-scope digest -- absent, "
+                "malformed, or the all-zero placeholder trailer attests "
+                "nothing (a blank receipt means nothing was actually "
+                "checked), so this commit's gate coverage is unsealed and "
+                "unverified"
+            ),
+            how=how,
+        )
+
     _append_slice_commit_verified(
         repo,
         verified_context.feature_id,
@@ -1817,6 +2136,12 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
             repo,
             verified_context.feature_id,
             verified_context.deferred_examine_slices,
+        )
+    if verified_context.exempt_examine_slices:
+        _append_examine_exempt_non_observable_slice(
+            repo,
+            verified_context.feature_id,
+            verified_context.exempt_examine_slices,
         )
     verified_payload: dict[str, object] = {
         "event": "SliceCommitVerified",
@@ -1834,6 +2159,10 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
         # consent testifies at least as much as the refusal already does.
         verified_payload["regression_test_files_executed"] = (
             verified_context.regression_test_files_executed
+        )
+    if verified_context.prefactoring_exempt_shipped_slices:
+        verified_payload["prefactoring_exempt_shipped_slices"] = (
+            verified_context.prefactoring_exempt_shipped_slices
         )
     _emit_with_human_surface(verified_payload)
     return 0

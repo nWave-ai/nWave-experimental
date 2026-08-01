@@ -59,6 +59,10 @@ from des.domain.refactor.prompt_template import (
     load_prompt_template,
     render_prompt,
 )
+from des.ports.driven_ports.impacted_test_selector_port import (
+    ImpactedTestSelection,
+    SelectionOutcome,
+)
 from des.runtime.interpreter import des_spawn
 
 
@@ -104,6 +108,32 @@ _NO_TEST_NET_REASON = "EntryGateNoTestNet"
 _PROMPT_FILENAME = ".refactor-prompt.md"
 _ENVELOPE_FILENAME = "test-result.json"
 
+#: The venv directory name ``EnvProvisionPort.provision`` leaves inside the
+#: worktree (mirrors ``GitWorktreeAdapter``'s own ``_VENV_DIR_NAME`` --
+#: duplicated as a literal here rather than imported, the same "local
+#: re-declaration of a sibling module's constant" pattern this codebase
+#: already uses elsewhere for a value used only to recognize the SAME
+#: artifact, never as the thing under test). Feature
+#: impacted-test-selector-arity-fix, slice-01: consulted only by
+#: ``_is_harness_noise_path`` below, for REPORTING purposes -- see
+#: ``_selection_for_reporting``'s docstring for why.
+_VENV_DIR_NAME = ".venv"
+
+
+def _is_harness_noise_path(path: str) -> bool:
+    """True iff ``path`` is an artifact the DRAIN HARNESS ITSELF wrote into
+    the worktree -- never a change the dispatched agent made. Feature
+    impacted-test-selector-arity-fix, slice-01: used ONLY to decide whether
+    ``changed_paths`` carries a GENUINE change to narrow against for
+    REPORTING; never passed to the real selector or used to compute the
+    actual pytest target (see ``_selection_for_reporting``)."""
+    return (
+        path == _PROMPT_FILENAME
+        or path == _VENV_DIR_NAME
+        or path.startswith(f"{_VENV_DIR_NAME}/")
+    )
+
+
 #: The pre-agent baseline leg's stand-in when nothing has changed yet to
 #: narrow a test scope against (BUGFIX 2026-07-26, [[impacted-test-selector-
 #: selects-everything-and-its-premise-is-false]]). ``runner`` self-documents
@@ -115,6 +145,61 @@ _ENVELOPE_FILENAME = "test-result.json"
 _UNOBSERVED_PLACEHOLDER_RUN = TestRun(
     runner="unobserved-placeholder", passed=0, failed=0, exit_code=0
 )
+
+#: The reported ``test_target_scope`` for the two non-``NARROWED`` outcomes
+#: (feature impacted-test-selector-arity-fix, slice-01). Distinct from EACH
+#: OTHER and from ``_TEST_SCOPE_FAST_IMPACTED`` -- CT-1/CT-2's arity
+#: corollary: a maintainer must be able to tell "narrowed" from
+#: "not narrowable" from "indeterminate" by the SCOPE alone, never only by a
+#: prose reason string that could differ while the scope silently collapsed
+#: to the same token.
+_TEST_SCOPE_NOT_NARROWABLE = "whole-tree (not_narrowable)"
+_TEST_SCOPE_INDETERMINATE = "whole-tree (indeterminate)"
+
+_SCOPE_BY_SELECTION_OUTCOME: dict[SelectionOutcome, str] = {
+    SelectionOutcome.NARROWED: _TEST_SCOPE_FAST_IMPACTED,
+    SelectionOutcome.NOT_NARROWABLE: _TEST_SCOPE_NOT_NARROWABLE,
+    SelectionOutcome.INDETERMINATE: _TEST_SCOPE_INDETERMINATE,
+}
+
+#: WHY for the defensive fallback in ``_scope_and_reason_from_selection``
+#: below -- reached only if a selector (production or test double) answers
+#: with ``outcome=None``, which no shipped adapter or documented double does
+#: after this feature. Named so the fallback path is never silent (GDP-6).
+_UNKNOWN_SELECTION_OUTCOME_REASON = (
+    "the impacted-test selector answered without a recognized outcome -- "
+    "reporting INDETERMINATE so the drain never silently claims a narrower "
+    "scope than it earned"
+)
+
+#: The reason a leg with nothing tracked-changed carries (feature
+#: impacted-test-selector-arity-fix, slice-01) -- SAME text the real
+#: adapter's own no-``changed_paths`` branch uses
+#: (``tsunami_impacted_test_selector_adapter.py``), kept as one literal here
+#: because ``_selection_for_reporting`` below synthesizes this outcome
+#: WITHOUT calling the adapter (see that method's docstring for why).
+_NO_CHANGE_SET_REASON = (
+    "no change set was supplied -- there is nothing to narrow against"
+)
+
+
+def _scope_and_reason_from_selection(
+    selection: ImpactedTestSelection,
+) -> tuple[str, str | None]:
+    """Derive the reported ``test_target_scope``/``selection_reason`` pair
+    from the selector's OWN answer (GDP-8 arity corollary, feature
+    impacted-test-selector-arity-fix) -- never a constant assigned
+    regardless of what the selector did (Finding 2). Falls back to
+    INDETERMINATE, defensively, for an ``outcome`` left unset -- reading an
+    unset outcome as NARROWED by omission would be exactly the
+    silent-wrong class GDP-6 forbids.
+    """
+    outcome = selection.outcome
+    if outcome is None:
+        return _TEST_SCOPE_INDETERMINATE, (
+            selection.reason or _UNKNOWN_SELECTION_OUTCOME_REASON
+        )
+    return _SCOPE_BY_SELECTION_OUTCOME[outcome], selection.reason
 
 
 @dataclass(frozen=True)
@@ -133,6 +218,13 @@ class DrainResult:
     integration_removed: bool = False
     test_target_scope: str | None = None
     test_result_source: str | None = None
+    #: WHY ``test_target_scope`` is what it is (feature
+    #: impacted-test-selector-arity-fix, slice-01) -- derived from the
+    #: selector's own answer, never a constant. ``None`` only when no
+    #: selection was ever made for this outcome (a refusal raised before the
+    #: post-agent leg ran at all -- paradigm/probe/worktree-creation/
+    #: entry-gate refusals).
+    selection_reason: str | None = None
     reason: str | None = None
     parsed_count: int = 0
     skipped_lines: tuple[str, ...] = ()
@@ -289,7 +381,15 @@ class RefactorDrainService:
                 changed_paths = self._git_worktree.changed_paths_since(
                     handle.path, handle.head_sha
                 )
-                after = self._run_tests(handle.path, changed_paths)
+                after_selection = self._selection_for_reporting(
+                    handle.path, changed_paths
+                )
+                after = self._run_tests(
+                    handle.path, changed_paths, selection=after_selection
+                )
+                scope, selection_reason = _scope_and_reason_from_selection(
+                    after_selection
+                )
 
                 outcome = classify_green_to_green(before, after)
                 if outcome.verdict != GreenToGreenVerdict.SAFE:
@@ -300,6 +400,8 @@ class RefactorDrainService:
                         item.item_id,
                         _TESTS_RED_REASON,
                         handle.head_sha,
+                        test_target_scope=scope,
+                        selection_reason=selection_reason,
                     )
 
                 merge_result = self._git_worktree.merge_into(
@@ -307,7 +409,11 @@ class RefactorDrainService:
                 )
                 if not merge_result.merged:
                     return self._refused(
-                        item.item_id, merge_result.blocked_reason, handle.head_sha
+                        item.item_id,
+                        merge_result.blocked_reason,
+                        handle.head_sha,
+                        test_target_scope=scope,
+                        selection_reason=selection_reason,
                     )
             except BaseException:
                 self._cleanup_worktree_and_branch(repo, handle.path, branch)
@@ -331,8 +437,9 @@ class RefactorDrainService:
                 worktree_removed=True,
                 branch_deleted=True,
                 integration_removed=integration_removed,
-                test_target_scope=_TEST_SCOPE_FAST_IMPACTED,
+                test_target_scope=scope,
                 test_result_source=_TEST_SOURCE_ENVELOPE,
+                selection_reason=selection_reason,
             )
         finally:
             self._forget_in_flight(repo, handle.path, branch)
@@ -429,7 +536,15 @@ class RefactorDrainService:
                 changed_paths = self._git_worktree.changed_paths_since(
                     handle.path, handle.head_sha
                 )
-                after = self._run_tests(handle.path, changed_paths)
+                after_selection = self._selection_for_reporting(
+                    handle.path, changed_paths
+                )
+                after = self._run_tests(
+                    handle.path, changed_paths, selection=after_selection
+                )
+                scope, selection_reason = _scope_and_reason_from_selection(
+                    after_selection
+                )
                 outcome = classify_green_to_green(before, after)
                 if outcome.verdict != GreenToGreenVerdict.SAFE:
                     return self._refused_after_cleanup(
@@ -439,6 +554,8 @@ class RefactorDrainService:
                         item.item_id,
                         _TESTS_RED_REASON,
                         handle.head_sha,
+                        test_target_scope=scope,
+                        selection_reason=selection_reason,
                     )
 
                 merge_result = self._git_worktree.merge_into(
@@ -448,7 +565,11 @@ class RefactorDrainService:
                     self._git_worktree.remove_worktree(repo, handle.path)
                     self._git_worktree.delete_branch(repo, branch)
                     return self._refused(
-                        item.item_id, merge_result.blocked_reason, handle.head_sha
+                        item.item_id,
+                        merge_result.blocked_reason,
+                        handle.head_sha,
+                        test_target_scope=scope,
+                        selection_reason=selection_reason,
                     )
 
                 self._git_worktree.remove_worktree(repo, handle.path)
@@ -465,8 +586,9 @@ class RefactorDrainService:
                     worktree_head_sha_at_creation=handle.head_sha,
                     worktree_removed=True,
                     branch_deleted=True,
-                    test_target_scope=_TEST_SCOPE_FAST_IMPACTED,
+                    test_target_scope=scope,
                     test_result_source=_TEST_SOURCE_ENVELOPE,
+                    selection_reason=selection_reason,
                 )
             finally:
                 lock.release(item.item_id)
@@ -520,8 +642,18 @@ class RefactorDrainService:
         worktree_head_sha: str | None = None,
         *,
         reason: str | None = None,
+        test_target_scope: str | None = None,
+        selection_reason: str | None = None,
     ) -> DrainResult:
-        scope = _TEST_SCOPE_FAST_IMPACTED if worktree_head_sha else None
+        """``test_target_scope``/``selection_reason`` are HONEST absence
+        (``None``) unless the caller derived them from a real selection
+        (feature impacted-test-selector-arity-fix, slice-01) -- this used to
+        assign the ``_TEST_SCOPE_FAST_IMPACTED`` constant unconditionally
+        whenever a worktree existed, regardless of what the selector
+        actually did (Finding 2, one of the three named call sites). A
+        refusal that never reached a post-agent selection (paradigm/probe/
+        worktree-creation/entry-gate refusals) correctly reports ``None`` --
+        nothing was ever selected to report."""
         source = _TEST_SOURCE_ENVELOPE if worktree_head_sha else None
         return DrainResult(
             drained=False,
@@ -529,8 +661,9 @@ class RefactorDrainService:
             merged=False,
             merge_blocked_reason=merge_blocked_reason,
             worktree_head_sha_at_creation=worktree_head_sha,
-            test_target_scope=scope,
+            test_target_scope=test_target_scope,
             test_result_source=source,
+            selection_reason=selection_reason,
             reason=reason,
         )
 
@@ -542,6 +675,9 @@ class RefactorDrainService:
         item_id: str | None,
         merge_blocked_reason: str | None = None,
         worktree_head_sha: str | None = None,
+        *,
+        test_target_scope: str | None = None,
+        selection_reason: str | None = None,
     ) -> DrainResult:
         """Same refusal shape as ``_refused``, for a refusal that fires AFTER
         a worktree already exists (D9 entry-gate refusals): removes the
@@ -549,10 +685,23 @@ class RefactorDrainService:
         leaves the repository exactly as clean as a red-tests or
         merge-failure-then-cleanup refusal already does (bugfix-refactor-
         entry-gate-worktree-leak -- an entry-gate refusal must never strand a
-        worktree/branch the way a bare ``_refused`` call would)."""
+        worktree/branch the way a bare ``_refused`` call would).
+
+        ``test_target_scope``/``selection_reason`` (feature
+        impacted-test-selector-arity-fix, slice-01): passed through when the
+        caller HAS a post-agent selection to report (the tests-red refusal,
+        which runs after ``_run_tests``' AFTER leg); left at their ``None``
+        default for the entry-gate refusals, which fire before that leg ever
+        runs."""
         self._git_worktree.remove_worktree(repo, worktree_path)
         self._git_worktree.delete_branch(repo, branch)
-        result = self._refused(item_id, merge_blocked_reason, worktree_head_sha)
+        result = self._refused(
+            item_id,
+            merge_blocked_reason,
+            worktree_head_sha,
+            test_target_scope=test_target_scope,
+            selection_reason=selection_reason,
+        )
         return replace(result, worktree_removed=True, branch_deleted=True)
 
     def _cleanup_worktree_and_branch(
@@ -701,10 +850,30 @@ class RefactorDrainService:
     # -- internal: green-to-green test execution (D3) ------------------------
 
     def _run_tests(
-        self, worktree: Path, changed_paths: tuple[str, ...] = ()
+        self,
+        worktree: Path,
+        changed_paths: tuple[str, ...] = (),
+        *,
+        selection: ImpactedTestSelection | None = None,
     ) -> TestRun:
         """Run the fast+impacted test scope for ``worktree`` -- or, for the
         pre-agent baseline call, DON'T run anything at all.
+
+        ``selection`` (feature impacted-test-selector-arity-fix, slice-01) is
+        an OPTIONAL pre-computed answer the caller already obtained (via
+        ``_selection_for_reporting``) for the SAME ``changed_paths`` --
+        passing it in avoids asking the selector the same question twice.
+        When omitted (every existing caller's default, and every existing
+        unit test pinning this method's behaviour), the selector is
+        consulted here exactly as before: NOT AT ALL for an empty
+        ``changed_paths`` (see ``test_the_pre_agent_baseline_call_never_
+        spawns_pytest_at_all`` -- the selector must never be asked when
+        there is nothing to narrow against), and once for a non-empty one.
+        This method's signature and empty-leg behaviour are otherwise
+        UNCHANGED by this feature -- only the AFTER leg's caller learns what
+        the answer was, via the new ``selection=`` kwarg or
+        ``_selection_for_reporting``, never by this method changing its own
+        return shape.
 
         ``changed_paths`` is empty for the pre-agent baseline call (nothing
         has changed yet) and the real diff for the post-agent call (see the
@@ -742,7 +911,8 @@ class RefactorDrainService:
             # leg's counts. Skip the selector call AND the real pytest spawn
             # entirely: this is not a cheaper baseline, it is no baseline.
             return _UNOBSERVED_PLACEHOLDER_RUN
-        selection = self._impacted_test_selector.select(worktree, changed_paths)
+        if selection is None:
+            selection = self._impacted_test_selector.select(worktree, changed_paths)
         target = selection.targets[0]
         with tempfile.TemporaryDirectory() as tmp_dir:
             out_path = Path(tmp_dir) / _ENVELOPE_FILENAME
@@ -760,6 +930,58 @@ class RefactorDrainService:
             )
             envelope = json.loads(out_path.read_text(encoding="utf-8"))
         return test_run_from_envelope(envelope)
+
+    def _selection_for_reporting(
+        self, worktree: Path, changed_paths: tuple[str, ...]
+    ) -> ImpactedTestSelection:
+        """The selector's answer for the AGGREGATE report (GDP-8 arity
+        corollary, feature impacted-test-selector-arity-fix) -- computed
+        ONCE per drain and threaded into ``_run_tests`` via its
+        ``selection=`` kwarg, so the pytest-targeting call never re-consults
+        the selector for the SAME ``changed_paths``.
+
+        REACHABILITY DECISION (named explicitly, per the round-1 review
+        finding that the real adapter's own no-``changed_paths`` branch is
+        unreachable from ``_run_tests``' early return): for a
+        ``changed_paths`` that carries NOTHING but the harness's OWN
+        artifacts (see ``_is_harness_noise_path`` below), this SYNTHESIZES
+        ``INDETERMINATE`` LOCALLY, without calling
+        ``self._impacted_test_selector.select(...)`` at all -- the same
+        choice ``_run_tests`` itself makes for its own pre-agent baseline
+        leg (literal ``()``), extended here to cover the case measured
+        empirically in this harness: the AFTER leg's ``changed_paths_since``
+        is NEVER a literal empty tuple in practice, because
+        ``_dispatch_agent`` writes ``_PROMPT_FILENAME`` into the worktree
+        BEFORE this call, and ``env_provision.provision`` leaves an untracked
+        ``.venv/`` behind with no ``.gitignore`` in this hermetic test repo
+        to exclude it -- so a "genuinely nothing changed" drain's real
+        ``changed_paths`` is ``('.refactor-prompt.md', '.venv/')``, not
+        ``()``. Filtering those two OUT before deciding "is there anything
+        to narrow against" is REPORTING-ONLY: the UNFILTERED
+        ``changed_paths`` is what reaches ``_run_tests`` (this method's
+        caller passes the SAME tuple to both), so the real pytest target is
+        computed exactly as before this feature -- and neither noise path
+        could ever have contributed a heuristic candidate anyway (neither is
+        a ``.py`` source file under a feature directory), so the real
+        selector, if it WERE consulted with the unfiltered tuple, would
+        reach the identical ``NOT_NARROWABLE`` "no candidate" answer this
+        synthesis reproduces. Scenario 6
+        (``test_a_drain_that_could_not_narrow_still_runs_the_tests_it_ran_
+        before``) is the regression pin for this: it asserts the drain's
+        VERDICT (merged / refused-for-tests-red) is unchanged, which only
+        holds if the real pytest target is unaffected by this filtering.
+        """
+        genuine_changes = tuple(
+            path for path in changed_paths if not _is_harness_noise_path(path)
+        )
+        if not genuine_changes:
+            return ImpactedTestSelection(
+                targets=(str(worktree),),
+                narrowed=False,
+                outcome=SelectionOutcome.INDETERMINATE,
+                reason=_NO_CHANGE_SET_REASON,
+            )
+        return self._impacted_test_selector.select(worktree, changed_paths)
 
 
 def _worktree_creation_failure_message(

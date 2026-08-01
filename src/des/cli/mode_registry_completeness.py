@@ -34,7 +34,11 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:  # only in annotations
+    from pathlib import Path
 
 from des._internal import subset_parser
 from des.cli._repo_root_arg import add_repo_root_argument

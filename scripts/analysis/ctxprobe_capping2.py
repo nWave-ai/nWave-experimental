@@ -23,13 +23,14 @@ import os
 import statistics
 import sys
 from collections import OrderedDict
+from pathlib import Path
 
 
 root = sys.argv[1]
 KS = (2, 3, 4)
 rows_out = []
 
-for f in sorted(os.listdir(root)):
+for f in sorted([p.name for p in Path(root).iterdir()]):
     if not f.endswith(".jsonl"):
         continue
     p = os.path.join(root, f)
@@ -66,8 +67,14 @@ for f in sorted(os.listdir(root)):
     P0 = cr[0] + cw[0]
     measured = sum(cr)
 
-    def counterfactual(k):
-        """Replay measured cw under a k-way equal split."""
+    def counterfactual(k, *, T=T, P0=P0, cr=cr, cw=cw):
+        """Replay measured cw under a k-way equal split.
+
+        The loop variables are bound as defaults, not captured: this closure is
+        built inside a per-agent loop, and a late-bound reference would replay
+        the LAST agent's numbers for every earlier one -- a silently wrong
+        counterfactual, which is the class this whole analysis exists to avoid.
+        """
         total = 0
         bounds = [round(i * T / k) for i in range(k + 1)]
         for i in range(k):

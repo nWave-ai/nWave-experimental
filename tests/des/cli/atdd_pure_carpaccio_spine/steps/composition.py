@@ -26,6 +26,10 @@ import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
+from tests.common.gate_scope_fixtures import (
+    stamp_genuine_gate_scope_trailer as _stamp_genuine_gate_scope_trailer,
+)
+
 from des.adapters.driven.logging.at_completion_ledger import (
     AtCompletionLedger,
     LedgerIntegrityViolation,
@@ -357,6 +361,7 @@ class CarpaccioSpineComposition:
         """
         self._author_runnable_slice("slice_commit_at", str(self.entering_slice))
         self._commit_slice(stage_feature_file=True)
+        _stamp_genuine_gate_scope_trailer(self.project_root)
 
     def arrange_failing_exit_gate(self, failing_half: object) -> None:
         """slice-02: arrange a commit where exactly one exit-gate half fails.
@@ -611,6 +616,11 @@ class CarpaccioSpineComposition:
         # row A_GREEN never cleared, so the flow never reaches the exit gate.
         exit_gate_run = flaw is None
         if exit_gate_run:
+            # fix-null-gate-scope-exit-gate: the exit gate's seal-integrity leg
+            # now requires a well-formed Gate-Scope: trailer before it can mint
+            # SliceCommitVerified -- fixture-realism only, only on the happy
+            # path that expects the exit gate to actually clear.
+            _stamp_genuine_gate_scope_trailer(self.project_root)
             self.run_verify_slice_commit(CommitRef("HEAD"))
 
         # The commit step -- the M-2 involuntary backstop inspects the slice

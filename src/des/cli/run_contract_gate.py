@@ -52,6 +52,7 @@ from typing import TYPE_CHECKING
 
 from des.adapters.driven.git.committed_scope_adapter import GitCommittedScopeAdapter
 from des.adapters.driven.git.git_subprocess import git_text as _git
+from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.adapters.driven.output.stdout_output import StdoutOutput
 from des.adapters.driven.runner.pytest_runner import (
     pytest_interpreter,
@@ -75,6 +76,7 @@ from des.application.feature_at_files import (
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_slice_gate import _feature_tag_files
 from des.cli.human_surface import Verdict, print_human_summary
+from des.domain.gate_outcome import GateVerdict
 from des.domain.slice_id_trailer import SLICE_TAG_RE
 from des.ports.driven_ports.committed_scope_port import (
     CommittedFileSet,
@@ -122,6 +124,24 @@ _INTERPRETER_UNAVAILABLE_INDETERMINATE_EVENT = (
 # honest INDETERMINATE record; a non-Python target degrades LOUD here.
 _GATE_INDETERMINATE_EXIT_CODE = 3
 
+_OUTCOME_GATE_NAME = "run-contract-gate"
+
+
+def _record_outcome(repo: Path, outcome: GateVerdict) -> None:
+    """Append a `GateOutcomeRecorded` record (slice-04, ADR-GV-003 D5).
+
+    Singleton-shape ledger (`AtCompletionLedger(project_root=repo)`): this
+    gate's two feature-agnostic modes (`--print-digest`, `--verify-gate-scope`
+    without `--commit`) have no `--feature-id` concept.
+    """
+    AtCompletionLedger(project_root=repo).append_gate_event(
+        "GateOutcomeRecorded",
+        "",
+        feature_id="",
+        gate=_OUTCOME_GATE_NAME,
+        outcome=outcome,
+    )
+
 
 # The FULL-SUITE marker expression -- the exact pre-push scope
 # (.pre-commit-config.yaml). NOT a crafter-picked subset.
@@ -136,6 +156,17 @@ _GATE_INDETERMINATE_EXIT_CODE = 3
 _FULL_SUITE_MARKER = "unit or integration or acceptance"
 
 _GATE_SCOPE_TRAILER_RE = re.compile(r"^Gate-Scope:\s*([0-9a-f]{64})\s*$")
+
+# The all-zero placeholder digest `des commit-slice` stamps on the FIRST
+# (pre-amend) commit -- mirrors `commit_slice._PLACEHOLDER_DIGEST` (kept as an
+# independent module-level literal, not a cross-import, to avoid coupling this
+# module to `commit_slice`'s own module-load order). RCA fix-null-gate-scope-
+# exit-gate finding #1: a placeholder trailer is well-formed (matches
+# `_GATE_SCOPE_TRAILER_RE` cleanly) yet attests nothing -- it is NOT the same
+# class of problem as a genuine mismatch (a real digest that no longer agrees
+# with a fresh collect), so `_mode_verify_gate_scope` classifies it under its
+# OWN honest `reason="unsealed"`, distinct from `reason="mismatch"`.
+_ALL_ZERO_GATE_SCOPE_DIGEST = "0" * 64
 
 # A Gherkin `@slice-NN` tag -- the carpaccio slice scoping anchor (DDD-5).
 # Imported from the domain SSOT (fix-slice-id-grammar-drift-ssot) so a
@@ -1216,9 +1247,14 @@ def _await_resource_window(
 def _light_invariant_paths(repo: Path) -> list[Path]:
     """Resolve the internal default light always-on invariant set.
 
-    Used only when a caller opts into the SCOPED per-slice tier
-    (``regression_test_file`` and/or ``light_invariant_paths`` given, ``full``
-    not True) but does not inject an explicit ``light_invariant_paths`` list.
+    Two callers. (1) ``build_tier_exit_verdict``'s scoped tier, when a caller
+    opts in (``regression_test_file`` and/or ``light_invariant_paths`` given,
+    ``full`` not True) but injects no explicit ``light_invariant_paths`` list.
+    (2) ``_mode_feature_scoped``, which injects THIS set as the per-slice
+    architecture scope -- the feature-scoped gate judges the entering slice on
+    the light always-on invariants and defers the whole tree to feature-end
+    (nw-throughput move 3, C1), so an empty resolve here means that leg runs no
+    architecture invariant at all, by design.
     Every AT in the scoped-per-slice-build-tier feature-delta injects the
     light set explicitly (never coupling the AT to a guessed filesystem
     convention), so this resolver has no AT-pinned content yet -- it defaults
@@ -1271,12 +1307,19 @@ def _resolve_build_tier_run_paths(
             ),
             "light_invariant_paths": [str(p) for p in resolved_light],
             "deferred_to": "feature-end",
-            "what": "whole-tree tests/build/** architecture tier",
+            # The WHAT deliberately names the TIER, never its directory path.
+            # This record is emitted on the PER-SLICE surface, whose verdict
+            # must never name a location outside the entering slice's own
+            # scope: a maintainer reading a foreign path in their own verdict
+            # has no action available to them inside their scope (GDP-3, the
+            # HOW must be reachable by its reader). The location belongs to
+            # the feature-end surface, which the `how` below names.
+            "what": "whole-tree architecture-invariant tier",
             "why": (
                 "the per-slice seal scopes to the entering slice's regression "
                 "test + the light always-on invariants -- the whole-tree "
-                "tests/build/** tier is deferred to feature-end, never "
-                "silently narrowed"
+                "architecture-invariant tier is deferred to feature-end, "
+                "never silently narrowed"
             ),
             "how": (
                 "the whole-tree floor still runs at feature-end: "
@@ -2061,6 +2104,7 @@ def _mode_print_digest(repo: Path) -> int:
     if scope.marker_mismatch is not None:
         digest_event["marker_mismatch"] = scope.marker_mismatch
     print(json.dumps(digest_event), file=sys.stderr)
+    _record_outcome(repo, GateVerdict.PASS)
     return 0
 
 
@@ -2339,6 +2383,71 @@ def _mode_verify_gate_scope(repo: Path, commit: str, at_kind: str | None = None)
                     "re-commit the slice through `des commit-slice` -- it "
                     "stamps the Gate-Scope: trailer mechanically"
                 ),
+            }
+        )
+        return 1
+
+    if declared == _ALL_ZERO_GATE_SCOPE_DIGEST:
+        # RCA fix-null-gate-scope-exit-gate finding #2: the placeholder is a
+        # DIFFERENT problem than a genuine mismatch, and the pre-existing
+        # "mismatch" wording was FALSE for it on two counts -- the WHAT/WHY
+        # claimed "the terminating run was narrower than the contract" (a
+        # real run that undershot), when in truth the terminating run never
+        # sealed at all; and the HOW ("re-run the full gate ... then
+        # re-commit") is destructive -- re-committing to patch a null trailer
+        # trades a visible defect for a silent ledger<->history divergence.
+        # The truthful repair is a RESEAL, never a fresh commit.
+        #
+        # Which remedy to name depends on whether `commit` is still HEAD
+        # (HOW-honesty follow-up): `des reverify-slice-commit`
+        # (`_reverify_core._compose_gates`) never reads the Gate-Scope:
+        # trailer at all -- it runs E2 as `run_contract_gate --repo .` in
+        # default whole-tree mode, a property independent of the target
+        # commit's own trailer -- so naming it as a reseal path for a
+        # BURIED unsealed commit mints SliceCommitVerified while the
+        # trailer stays null (defects.md row
+        # `reverify-slice-commit-mints-verified-without-reading-gate-scope-
+        # trailer`). Only `des commit-slice` genuinely reseals, and it only
+        # ever operates on HEAD.
+        try:
+            resolved_commit_sha = _git(repo, "rev-parse", commit).strip()
+            current_head_sha = _git(repo, "rev-parse", "HEAD").strip()
+            commit_is_still_head = resolved_commit_sha == current_head_sha
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            commit_is_still_head = False
+        if commit_is_still_head:
+            how = (
+                "reseal the commit's Gate-Scope: trailer through the real "
+                "producing tool -- `des commit-slice`, since this commit "
+                "is still HEAD -- never a fresh re-commit"
+            )
+        else:
+            how = (
+                "this commit is already buried under further commits -- no "
+                "producing tool can currently reseal an already-buried "
+                "commit's own Gate-Scope: trailer (amending it would "
+                "rewrite history under whatever now sits on top of it); "
+                "`des reverify-slice-commit` is NOT a remedy here -- it "
+                "never reads the Gate-Scope: trailer at all, so it would "
+                "mint a SliceCommitVerified record while the trailer stays "
+                "unsealed (tracked: defects.md row "
+                "'reverify-slice-commit-mints-verified-without-reading-"
+                "gate-scope-trailer') -- never a fresh re-commit"
+            )
+        _emit(
+            {
+                "event": "GateScopeUnverified",
+                "commit": commit,
+                "reason": "unsealed",
+                "declared_digest": declared,
+                "fresh_digest": fresh,
+                "error": (
+                    "commit Gate-Scope: trailer is the all-zero placeholder "
+                    "-- the terminating run never sealed this commit at "
+                    "all (it was never narrower than the contract; nothing "
+                    "was checked)"
+                ),
+                "how": how,
             }
         )
         return 1
@@ -3735,31 +3844,105 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
             entering_slice=entering_slice,
         )
 
-    # Keystone (feature-delta §6.2): the feature-scoped verdict must cover the
-    # architecture tier the whole-tree pre-push gate enforces, not just the
-    # feature's own `.feature` scope. A slice can break a run-time arch invariant
-    # (the F-D-09 scans-not-imports AST gate class) while its feature scope is
-    # clean -- a collect-only feature-scoped run is structurally blind to it. So
-    # AFTER the feature-scope M-1 floor clears and BEFORE clearing the slice,
-    # collect-AND-RUN the arch-invariant set and refuse the slice when a run-time
-    # arch invariant FAILS.
+    # Keystone, RE-ALLOCATED (fix-e2-whole-tree-scope-blocks-unrelated-slices,
+    # 2026-07-30). The concern is UNCHANGED and UNWEAKENED -- a slice must not
+    # earn a verified record while an architecture boundary is broken. What
+    # moved is WHERE that is enforced.
+    #
+    # This leg used to resolve the WHOLE-TREE `_arch_invariant_paths(repo)` and
+    # collect-AND-RUN every member on EVERY entering slice. Measured twice on
+    # 2026-07-30 (lanes c1-matcher and D80), that allocation refused slices whose
+    # OWN scope was fully green, because a DIFFERENT concurrent lane's legitimate
+    # active-RED scaffold was failing elsewhere under the architecture tier --
+    # the atdd_pure JIT method working correctly, not a defect. The blocked
+    # maintainer's refusal named files they had never opened, with no action
+    # available inside their own scope.
+    #
+    # Restores nw-throughput move 3 (C1): "the per-slice seal digests only the
+    # ENTERING slice's regression test + light always-on invariants; the
+    # whole-tree tier defers to feature-end. Running the whole tree per-slice is
+    # the JIT poison that forbids pipelining." This is a DRIFT REPAIR, not a new
+    # policy: `_full_suite_marker_args` already documents the feature-end leg as
+    # the RETAINED one and the per-slice whole-tree run as obsolete (C10 §V.B);
+    # this leg simply never got the memo, while the SIBLING per-slice seal
+    # (`build_tier_exit_verdict` + `_resolve_build_tier_run_paths`, which
+    # `commit_slice.py` already opts into) has implemented C1 all along. The
+    # SAME resolver is reused here -- one SSOT for the scoping AND for the LOUD
+    # `BuildTierWholeTreeDeferred` record, never a second, drifting copy.
+    #
+    # NOTHING IS DROPPED, it MOVES (GDP-6 -- the narrowing is announced, never
+    # silent). TWO DIFFERENT checks carry the weight, and they are deliberately
+    # NOT conflated -- only the first is a whole-tree floor:
+    #
+    # 1. THE FEATURE-END WHOLE-TREE FLOOR, AND IT IS THE ONLY ONE. Established by
+    #    call site, not assumed. `feature_end_cycle_service._run_full_suite_leg`
+    #    invokes this module's DEFAULT full-suite mode (`run-contract-gate --repo
+    #    <root>`, the whole-tree run `_full_suite_marker_args` owns) and derives
+    #    its verdict from that run's REAL exit code: a PRESENT-but-RED suite
+    #    fail-closes as `CycleRefusal`, so no signed feature verdict is issued
+    #    while the tree carries an architecture failure.
+    #
+    #    Do NOT read `build_tier_exit_verdict`'s whole-tree (`full=True`) path as
+    #    a second, redundant floor -- it has NO production caller. Its only
+    #    production call site is `commit_slice.py:2466`, which ALWAYS passes
+    #    `light_invariant_paths` and never `full=True`; `full=True` is exercised
+    #    by tests alone. Spelled out because the danger is asymmetric: a
+    #    maintainer trimming what looks like a duplicated floor would be deleting
+    #    the last one.
+    #
+    # 2. THE SLICE'S OWN COMMITTED BUILD-TIER CONTENT, fail-closed at that same
+    #    `commit_slice.py:2466` chokepoint via `_slice_build_tier_paths` (the
+    #    entering slice's own committed paths under the arch tier). That is a
+    #    per-slice SCOPED check, NOT a whole-tree floor -- it is precisely the
+    #    narrow blast radius this repair preserves.
+    #
+    # What changed is WHO is blocked: that feature's own close, not every
+    # concurrent lane's entering slice.
     #
     # Genericità (STANDING mandate): the `--feature-id` gate runs on the TARGET
     # repo during DELIVER, and an external target legitimately has NO nWave
-    # `tests/build/` arch tier. An EMPTY arch set therefore must CLEAR -- there is
-    # no arch invariant to enforce, so the gate clears on the feature scope alone
-    # (slice-01's contract). Only a PRESENT-but-vacuous arch tier is malformed:
-    # slice-02 closes the zero-collected hole (Hole B -- a `tests/build/` that
-    # collects zero runnable node-ids under the contract marker filter), while
-    # keeping slice-01's keystone `arch-invariant-failed` branch (a run-time arch
-    # invariant FAILS on a non-vacuous tier). The empty-arch-set "Hole A" is NOT
-    # a refusal -- refusing it would break the genericità guard for external
-    # targets that carry no nWave arch tier.
+    # architecture tier. An EMPTY arch set therefore clears on the feature scope
+    # alone, with no deferral record to make -- there was never a whole-tree tier
+    # on this target to defer.
     arch_collected: int | None = None
     arch_paths = _arch_invariant_paths(repo)
+    run_paths: list[Path] = []
     if arch_paths:
+        # SCOPED per-slice (C1): the entering slice is judged on the light
+        # always-on invariant set, never on the whole tree. The resolver emits
+        # the LOUD `BuildTierWholeTreeDeferred` record naming feature-end BEFORE
+        # anything runs, so the narrowing can never be mistaken for a dropped
+        # protection. `regression_test_file=None`: this leg is reached from the
+        # gate CLI, which carries no per-slice regression-test declaration --
+        # that declaration belongs to `des commit-slice`, whose own build-tier
+        # exit check already threads it through the same resolver.
+        run_paths = _resolve_build_tier_run_paths(
+            repo,
+            arch_paths,
+            regression_test_file=None,
+            light_invariant_paths=_light_invariant_paths(repo),
+            full=False,
+            output=None,
+        )
+    # The SCOPED set is what runs -- and today `_light_invariant_paths` resolves
+    # to an empty list (it has no AT-pinned content yet), so with no
+    # regression-test declaration threaded in from this CLI the scope is EMPTY
+    # and nothing runs here at all. Stated plainly rather than left for a reader
+    # to infer: this leg currently enforces NO architecture invariant, by design
+    # -- the enforcement lives at feature-end (see above). The run below is not
+    # decoration: it is the same execute-the-scoped-set shape the sibling
+    # `build_tier_exit_verdict` uses, so the moment the light always-on set
+    # gains a member it is ENFORCED here rather than silently ignored. Keeping
+    # the two per-slice seals one shape is what stops them drifting apart again.
+    #
+    # Every refusal below names the PER-SLICE scope, never the tier's directory:
+    # a verdict handed to a maintainer must only name locations they can act on
+    # inside their own scope. That property now holds BY CONSTRUCTION (the run
+    # can only ever see paths the slice owns), not by the accident of the scope
+    # being empty.
+    if run_paths:
         try:
-            arch = _run_arch_invariant_set(repo, arch_paths)
+            arch = _run_arch_invariant_set(repo, run_paths)
         except InterpreterUnavailable as exc:
             return _degrade_interpreter_unavailable(exc)
         except _CollectionError as exc:
@@ -3774,9 +3957,9 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
             return _feature_scope_malformed(
                 feature_id,
                 "arch-scope-zero-collected",
-                "the tests/build architecture tier collected zero runnable "
-                "node-ids under the contract marker filter -- refusing rather "
-                "than certifying a vacuous arch set",
+                "the per-slice architecture-invariant scope collected zero "
+                "runnable node-ids under the contract marker filter -- refusing "
+                "rather than certifying a vacuous arch set",
                 entering_slice=entering_slice,
             )
         if not arch.passed:
@@ -3784,8 +3967,8 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
                 feature_id,
                 "arch-invariant-failed",
                 "a run-time architecture invariant FAILED -- the slice breaks an "
-                "architecture-boundary test in tests/build/**, which the "
-                "whole-tree pre-push gate would refuse",
+                "architecture-boundary test in its own per-slice architecture "
+                "scope, which the feature-end whole-tree gate would refuse too",
                 entering_slice=entering_slice,
                 kind=_KIND_TEST_FAILURE,
                 failed_node_ids=list(arch.failed_node_ids),
@@ -4052,6 +4235,7 @@ def main(argv: list[str] | None = None, output: OutputPort | None = None) -> int
                     "error": "--verify-gate-scope requires --commit",
                 }
             )
+            _record_outcome(repo, GateVerdict.INDETERMINATE)
             return 2
         # M9 / F3: a HEAD raced off the pinned SHA fails closed before the
         # gate-scope verdict.

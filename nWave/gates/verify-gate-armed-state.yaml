@@ -1,0 +1,46 @@
+# Gate-contract: verify-gate-armed-state (gate-armed-state-derivation
+# slice-02, EXTEND-as-promotion)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` # 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=verify-gate-armed-state.
+
+gate_id: verify-gate-armed-state
+responsibility: |
+  Promotes the coherence_offenders reducer (previously living inside
+  tests/build/f_nonbypassable_attestation/test_arch_catalog_gate_wiring.py)
+  into a first-class, catalogued, operator-invokable CLI gate. Derives
+  whether each catalogued gate (nWave/gates/_catalog.yaml gates[].gate_id)
+  is wired into a real invocation surface -- a flavor gate_id row, a
+  live-hook module reference, or operator-direct host_visibility
+  (cli / git-hook) -- or excused via an explicit dormant: <rationale>
+  (existing schema key, unchanged). A catalogued gate that is NEITHER
+  wired NOR dormant is the authored-but-unwired failure class: the check
+  FAILS and NAMES it, with HOW to fix (wire it into a real firing surface,
+  or add a non-empty dormant: rationale). Degrades LOUD (non-zero exit +
+  named diagnostic, never a traceback) on a missing nWave/gates/ directory
+  or a missing/malformed _catalog.yaml.
+module: des.cli.verify_gate_armed_state
+entry_function: main
+language_neutral_contract: true
+
+log_events: []
+
+failure_modes:
+  - error_class: GateUnwiredAndNotDormant
+    exit_code: 1
+    remediation: "The JSON verdict's 'how' list names each offending gate_id and the exact fix: wire it into a real firing surface (flavor gate_id row / live-hook module reference / operator-direct cli|git-hook host_visibility), or add a non-empty `dormant: <rationale>` to its nWave/gates/_catalog.yaml row."
+  - error_class: ArmedStateCatalogMalformed
+    exit_code: 1
+    remediation: "Fix or restore nWave/gates/_catalog.yaml so it parses as valid YAML with a top-level 'gates' list; the verdict names the unreadable/malformed path."
+  - error_class: ArmedStateInputUnavailable
+    exit_code: 1
+    remediation: "The nWave/gates/ catalog directory could not be read -- --repo-root is not an nWave-dev checkout. Point --repo-root at a real nWave-dev checkout; the command prints a plain-text guidance line plus an 'indeterminate' JSON verdict, never a raw Python traceback."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

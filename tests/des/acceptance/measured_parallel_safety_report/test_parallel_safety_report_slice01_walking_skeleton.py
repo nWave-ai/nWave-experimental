@@ -1,3 +1,4 @@
+# @feature-measured-parallel-safety-report
 """Acceptance tests -- `des parallel-safety-report` (DISTILL, slice-01, walking skeleton).
 
 Feature-delta: docs/feature/measured-parallel-safety-report/feature-delta.md

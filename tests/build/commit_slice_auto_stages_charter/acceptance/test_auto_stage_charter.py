@@ -49,9 +49,10 @@ import json
 import subprocess
 from pathlib import Path
 
+from tests.charter_fixtures import filled_charter
+
 from des.cli.commit_slice import main as commit_slice_main
 from des.cli.record_examine_verdict import main as record_examine_verdict_main
-from tests.charter_fixtures import filled_charter
 
 
 def _git(root: Path, *args: str) -> str:

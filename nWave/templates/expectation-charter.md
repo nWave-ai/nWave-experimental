@@ -58,7 +58,7 @@ Explore <area> via <surface: browser/CLI/API> to verify <intent>.
 
 ```markdown
 # Visitor holds two seats and sees a countdown
-ID: EXP-seat-booking-3 · Spec rows: R12, R37 · Persona: a visitor booking seats for an event
+ID: EXP-seat-booking-3 · Spec rows: slice-01, slice-02 · Persona: a visitor booking seats for an event
 
 ## Intent
 A visitor picks two seats for an event and both are held for them while they decide; a

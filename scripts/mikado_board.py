@@ -21,6 +21,11 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 BEGIN = "<!-- MIKADO-BOARD:BEGIN -->"
@@ -156,44 +161,102 @@ _DEFECT_ROW_RE = re.compile(r"^\| (F\d+) \| (.*?) \| (.*?) \| \*\*(.*?)\*\*")
 #: their own branch. Authored here because the register is prose, not a graph.
 DEFECT_PARENT = {"F12": "V15"}
 
-#: Branch of a LIVE lane -> the node ids it is working on. Authored, because a
-#: lane's branch name is not a node id and guessing the link would be exactly
-#: the designation-not-property mistake this tree keeps repairing. A lane whose
-#: worktree still exists and whose branch is not merged into trunk is live.
-LANE_NODES = {
-    "lane/at-discovery-ssot": ("V15", "F12"),
-    "lane/codex-recover": ("D37", "D38", "D34", "D35"),
-    "lane/ws-na-reconciliation": ("F13",),
-    "lane/d27-design": ("D27",),
-    "lane/d15-design": ("D15", "D03b"),
-    "lane/d12-design": ("D12",),
-    "lane/review-producer-wiring": ("F14",),
-    "lane/d03b": ("D03b",),
-    "lane/unified-event-store": ("D80",),
-    "lane/context-consumption-probe": ("D71", "D81"),
-    "lane/gatecarry": ("D72",),
-    "lane/ssotpath": ("D73",),
-    "lane/ssotsem": ("D74",),
-    "lane/smallres": ("D76", "D77"),
-    "lane/d24": ("D24",),
-    "lane/d41-design": ("D41",),
-    "lane/at-discovery-archtest": ("F19", "F20"),
-    "lane/discuss-producer-wiring": ("F18",),
-}
+#: The branch a lane's work has to land on before the lane is finished.
+_TRUNK = "feature/atdd-pure-staging"
 
 
-def live_nodes(repo: Path) -> set[str]:
-    """Node ids a live lane is working on right now.
+def lane_node(
+    branch: str, known_ids: Iterable[str]
+) -> tuple[str | None, tuple[str, ...]]:
+    """Which node a BRANCH DECLARES it works on -> (node, ambiguous group).
 
-    A lane is LIVE when its worktree still exists -- read from git's own
-    worktree list, never from a hand-kept list that would go stale the moment
-    a lane finishes.
+    The declaration is read out of the branch NAME -- `lane/d27-design` works
+    D27, `lane/d25a-deadtests` works D25a -- and out of nothing else. That is
+    the point: a derived reading cannot go stale, because renaming the branch
+    moves the reading with it and deleting the branch deletes it.
+
+    This replaced a hand-kept `LANE_NODES` dict, which did not merely risk rot
+    but had already rotted through. `lane/codex-recover` carried four real
+    unmerged commits of codex-host-parity work, so the liveness half of the
+    probe fired correctly and forced D37/D38/D34/D35 to `AL LAVORO` -- four
+    nodes whose topics that branch has never touched. Measured while repairing
+    it, all 17 surviving entries were dead: not one named a branch that still
+    had unmerged work, while two lanes that did -- `lane/d64-remeasure-and-
+    reconcile` and `lane/d95-examine-gate` -- were invisible to it. Every live
+    reading it produced was false and every true one was missing. D97's row
+    already names it as the fourth state carrier, Python-resident and therefore
+    invisible to the gate that guards the other three.
+
+    Prose that MENTIONS a branch was weighed as a second carrier and refused:
+    D92's row names `lane/codex-recover` as a branch to PROTECT from removal,
+    and reading a mention as "this lane works this node" would rebuild the same
+    bug on a different substrate. A mention is a DESIGNATION; a name that
+    declares its node is the PROPERTY.
+
+    Three outcomes, never two. A candidate resolving to exactly one real node is
+    that node. A candidate whose base is shared by several suffixed nodes
+    (`lane/d03` against D03a and D03b) comes back as the AMBIGUOUS group and
+    overrides nothing -- picking one is how a board states a falsehood
+    confidently. A name that is not node-shaped, or is shaped like an id no node
+    carries (`bugfix/c1-...`, `spike/qw5-...`), declares no node at all: most
+    branches are not lane work, and silence is the correct reading for them
+    rather than a degradation.
+    """
+    # The coherence gate's own lane -> node join, borrowed whole: it already had
+    # to answer this exact question for `## CORSIE` rows, ambiguity discipline
+    # included (`lane-closure-join-ambiguous`). A second regex here would be a
+    # second contract, free to drift from the one the gate enforces.
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "validation"))
+    from validate_mikado_tree_coherence import (
+        lane_id_candidate,
+        resolve_node_reference,
+    )
+
+    candidate = lane_id_candidate(branch.rsplit("/", 1)[-1])
+    if candidate is None:
+        return None, ()
+    # The gate's join works on uppercased ids; this document spells a sub-slice
+    # with a lowercase suffix (`D03b`). Fold for the lookup, then hand back the
+    # id as the document actually writes it -- a case-normalised near-miss would
+    # match no row and silently override nothing.
+    by_upper = {node.upper(): node for node in known_ids}
+    resolved, group = resolve_node_reference(candidate, frozenset(by_upper))
+    if resolved is not None:
+        return by_upper[resolved], ()
+    return None, tuple(by_upper[member] for member in group)
+
+
+def live_nodes(
+    repo: Path, known_ids: Iterable[str]
+) -> tuple[set[str], list[tuple[str, tuple[str, ...]]]]:
+    """(nodes a live lane works on, ambiguous joins) -- read entirely from git.
+
+    A lane is LIVE when its worktree still exists AND its branch still carries
+    work trunk does not have. BOTH halves are required, and for a long time only
+    the first was checked. Worktree-exists alone is a DESIGNATION ("somebody
+    opened a directory"), not the PROPERTY ("there is unlanded work here"): a
+    lane that finished and was merged keeps its worktree until someone prunes
+    it, so 17 of 18 branches then listed were fully merged (`ahead=0`) while
+    this function still forced their nodes to `AL LAVORO`. That override WON
+    over the register, which is how the board once rendered `D03b` as `AL
+    LAVORO` on top of a row saying `BLOCCATO-SERVE-DESIGN`.
+
+    WHICH node a live branch works on is `lane_node`'s question, and it is asked
+    FIRST: the join is pure and cheap, the liveness probe is a git call per
+    branch, and there is no reason to spend one on a branch that declares no
+    node at all. The old order could not do this -- it started from the list of
+    branches it already believed in, which is precisely what made it blind to
+    every lane the list had never heard of.
+
+    A branch that cannot be resolved is NOT silently treated as merged: an
+    unreadable ref means "cannot tell", and the safe direction for a state
+    override is to leave the register's own word standing.
     """
     import subprocess
 
-    try:
-        listing = subprocess.run(
-            ["git", "worktree", "list", "--porcelain"],
+    def _git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args],
             cwd=repo,
             capture_output=True,
             text=True,
@@ -201,19 +264,41 @@ def live_nodes(repo: Path) -> set[str]:
             # inherit a terminal or hang the render.
             stdin=subprocess.DEVNULL,
             timeout=10,
-        ).stdout
+        )
+
+    try:
+        listing = _git("worktree", "list", "--porcelain").stdout
     except (OSError, subprocess.SubprocessError):
-        return set()
-    present = {
+        return set(), []
+    present = sorted(
         line.split("refs/heads/", 1)[1].strip()
         for line in listing.split("\n")
         if line.startswith("branch refs/heads/")
-    }
+    )
     out: set[str] = set()
-    for branch, nodes in LANE_NODES.items():
-        if branch in present:
-            out.update(nodes)
-    return out
+    ambiguous: list[tuple[str, tuple[str, ...]]] = []
+    for branch in present:
+        node, group = lane_node(branch, known_ids)
+        if node is None and not group:
+            continue
+        try:
+            ahead = _git("rev-list", "--count", f"{_TRUNK}..{branch}")
+        except (OSError, subprocess.SubprocessError):
+            continue
+        # rc != 0 -> the ref or trunk did not resolve. Undecidable, so no
+        # override: never invent "live", never invent "merged".
+        if ahead.returncode != 0 or not ahead.stdout.strip().isdigit():
+            continue
+        if int(ahead.stdout.strip()) == 0:
+            continue
+        # Only a LIVE ambiguity is worth a word. A merged branch whose name
+        # names no single node overrides nothing either way, and reporting it
+        # would bury the one case a reader has to act on.
+        if node is None:
+            ambiguous.append((branch, group))
+        else:
+            out.add(node)
+    return out, ambiguous
 
 
 def read_defects(path: Path) -> dict[str, tuple[str, str, str]]:
@@ -242,6 +327,194 @@ def read_edges(path: Path) -> dict[str, set[str]]:
 
     edges, _undecidable = read_dependency_register(path)
     return edges
+
+
+#: The summary line, authored ONCE. The pattern that reads a PREVIOUS summary
+#: back out of the document is DERIVED from this same template, so the renderer
+#: and the parser cannot drift apart: reword the line and the parser follows by
+#: construction. A hand-kept second copy of the pattern is exactly how a parser
+#: ends up silently matching nothing while the renderer keeps working fine --
+#: and a parser that matches nothing would report every render as a first one.
+_SUMMARY_TEMPLATE = (
+    "**{nodes} nodi · {closed} chiusi · {open} aperti, "
+    "di cui {free} senza dipendenze aperte.**"
+)
+_SUMMARY_FIELDS = ("nodes", "closed", "open", "free")
+
+
+def _summary_re() -> re.Pattern[str]:
+    """The template with its count slots turned into capture groups."""
+    pattern = re.escape(_SUMMARY_TEMPLATE)
+    for field in _SUMMARY_FIELDS:
+        pattern = pattern.replace(re.escape("{" + field + "}"), r"(\d+)")
+    return re.compile(pattern)
+
+
+_SUMMARY_RE = _summary_re()
+
+#: Three readings of "what did the board say last time", never two.
+PREV_PRESENT, PREV_ABSENT, PREV_UNREADABLE = "present", "absent", "unreadable"
+
+#: What the delta sentence calls the clock, so a reader cannot take it for the
+#: tree's last change: it is the moment this RENDER ran, nothing else.
+_RENDER_PREFIX = "Reso (ora del RENDERING, non dell'ultima modifica all'albero)"
+_COUNT_LABELS = ("nodi", "chiusi", "aperti", "schedulabili")
+
+#: Populations the total has always MIXED. Applied as a PARTITION, never a
+#: filter: every id lands in exactly one bucket, so the buckets sum to the total
+#: by construction and an id class nobody has labelled yet surfaces as `altri`
+#: instead of silently inflating `decisioni`. Rendered in this order, so the page
+#: reads the same way run to run.
+_SYNTHETIC_ROOT = "DIFETTI"
+_POPULATION_ORDER = (
+    "decisioni",
+    "difetti, foglie che non bloccano l'albero",
+    "radice sintetica, iniettata solo per disegnare l'albero",
+    "altri, classe di id non etichettata",
+)
+
+
+def _population_of(node: str) -> str:
+    """Which population an id belongs to.
+
+    Keyed on the id NAMESPACE, which is what this document's ids actually mean --
+    and the fallback bucket is why that is safe: an id shape this function does
+    not know is NAMED as unlabelled rather than absorbed into a class it was
+    never checked against.
+    """
+    if node == _SYNTHETIC_ROOT:
+        return _POPULATION_ORDER[2]
+    if re.fullmatch(r"F\d+", node):
+        return _POPULATION_ORDER[1]
+    if re.fullmatch(r"[DV]\d+[ab]?", node, flags=re.IGNORECASE):
+        return _POPULATION_ORDER[0]
+    return _POPULATION_ORDER[3]
+
+
+def composition(states: dict[str, tuple[str, str]]) -> list[tuple[str, int]]:
+    """The total, broken into the populations it mixes -- largest classes first.
+
+    The board quoted one sum for months while that sum blended decision nodes,
+    defect-register leaves the tree itself calls "foglie, non bloccano l'albero",
+    and one synthetic root injected purely to draw the tree. A reader could not
+    see the mix from the sum, which is the same defect as the missing delta: a
+    number whose population is invisible.
+    """
+    tally: dict[str, int] = {}
+    for node in states:
+        label = _population_of(node)
+        tally[label] = tally.get(label, 0) + 1
+    return [(lab, tally[lab]) for lab in _POPULATION_ORDER if lab in tally]
+
+
+def counts_of(
+    states: dict[str, tuple[str, str]], deps: dict[str, set[str]]
+) -> tuple[int, int, int, int]:
+    """(nodi, chiusi, aperti, schedulabili) -- computed ONCE for BOTH surfaces.
+
+    The markdown block and the HTML page must never disagree about the four
+    numbers, and the only way to guarantee that is to have one computation rather
+    than two that happen to match today. Before this existed the HTML carried
+    three of the four (it silently dropped `schedulabili`), which is exactly the
+    drift a shared computation makes impossible.
+    """
+    open_nodes = [
+        n for n, (s, _) in states.items() if _glyph(s, states)[0] not in CLOSED_GLYPHS
+    ]
+    free = [
+        n
+        for n in open_nodes
+        if not any(
+            _glyph(states.get(d, ("?", ""))[0], states)[0] not in CLOSED_GLYPHS
+            for d in deps.get(n, ())
+        )
+    ]
+    return (len(states), len(states) - len(open_nodes), len(open_nodes), len(free))
+
+
+def now_stamp() -> str:
+    """The render clock, read ONCE per run so both surfaces carry one stamp."""
+    from datetime import datetime
+
+    return datetime.now().strftime("%Y-%m-%d %H:%M")
+
+
+def read_previous_summary(text: str) -> tuple[str, tuple[int, int, int, int] | None]:
+    """What did the board say LAST time? -> (status, counts).
+
+    The baseline is DERIVED from the very document this render is about to
+    overwrite -- never kept in a state file. A stored count was measured in a
+    past environment and cannot be trusted against the present one, and a
+    counter nobody ever diffs against reality rots in silence; the document, by
+    contrast, is read in the same process that recomputes the new numbers.
+
+    Three outcomes, which is why this returns a STATUS rather than an Optional:
+    a document with no previous line (`absent`) is a different fact from a
+    previous line the parser cannot read (`unreadable`). Collapsing either onto
+    zeros would print a delta of 0 -- a confident claim that nothing changed,
+    made from no evidence at all. GDP-6: degrade LOUD, never silently-wrong.
+    """
+    if BEGIN not in text or END not in text:
+        return PREV_ABSENT, None
+    block = text.split(BEGIN, 1)[1].split(END, 1)[0]
+    # The summary sits AFTER the tree's closing fence. Anchoring on that
+    # structural landmark, rather than on the word "nodi", keeps a NODE TITLE
+    # that happens to contain the word from being read as a summary line.
+    tail = block.rsplit("```", 1)[-1] if "```" in block else block
+    match = _SUMMARY_RE.search(tail)
+    if match:
+        nodes, closed, open_, free = (int(group) for group in match.groups())
+        return PREV_PRESENT, (nodes, closed, open_, free)
+    # Something occupies the summary's slot but does not parse -- say so.
+    return (PREV_UNREADABLE, None) if tail.strip() else (PREV_ABSENT, None)
+
+
+def _signed(delta: int) -> str:
+    """`+2` / `0` / `-2` -- the sign is ALWAYS carried for a non-zero delta.
+
+    Never absolute-valued and never rendered with a bare `+`: a DECREASE in
+    `chiusi` is the single most informative reading this line carries, because
+    it means a closure claim was WITHDRAWN rather than that work regressed.
+    Hiding its direction would bury the one number a reader must not miss.
+    """
+    return f"{delta:+d}" if delta else "0"
+
+
+def _delta_sentence(
+    rendered_at: str,
+    current: tuple[int, int, int, int],
+    previous: tuple[str, tuple[int, int, int, int] | None],
+) -> str:
+    """When this ran, what it said before, what moved -- with NO markup.
+
+    Markup-free on purpose: the markdown block italicises it and the HTML page
+    escapes it into a paragraph, but the WORDS are authored here once. Two
+    surfaces formatting one sentence cannot disagree about the delta; two
+    surfaces each composing their own sentence would drift, and a delta that
+    contradicts itself across surfaces is worse than one surface without a delta.
+    """
+    status, prev = previous
+    head = f"{_RENDER_PREFIX} {rendered_at}"
+    if status == PREV_UNREADABLE:
+        return (
+            f"{head} · precedente: ILLEGGIBILE — una riga di sintesi "
+            "c'e', ma non e' interpretabile, quindi NESSUN delta e' calcolabile."
+        )
+    if prev is None:
+        return (
+            f"{head} · precedente: NESSUNO (primo rendering di questo "
+            "blocco) — nessun delta calcolabile."
+        )
+    # `strict` on every pairing: a counts tuple that ever loses a field must
+    # RAISE, not quietly render a line that is short one number.
+    was = " · ".join(f"{v} {lab}" for v, lab in zip(prev, _COUNT_LABELS, strict=True))
+    deltas = [now - before for now, before in zip(current, prev, strict=True)]
+    moved = [
+        f"{_signed(d)} {lab}" for d, lab in zip(deltas, _COUNT_LABELS, strict=True)
+    ]
+    if deltas[1] < 0:
+        moved[1] += f" ({abs(deltas[1])} chiusure RITIRATE)"
+    return f"{head} · precedente {was} → Δ {' · '.join(moved)}."
 
 
 _ONDA_RE = re.compile(r"^### ONDA (\d+)")
@@ -300,8 +573,20 @@ def build(
 
 
 def render(
-    states: dict[str, tuple[str, str]], deps: dict[str, set[str]], roots: list[str]
+    states: dict[str, tuple[str, str]],
+    deps: dict[str, set[str]],
+    roots: list[str],
+    rendered_at: str | None = None,
+    previous: tuple[str, tuple[int, int, int, int] | None] | None = None,
 ) -> str:
+    """The board block. `previous` is the reading this render replaces.
+
+    Both extras default to the honest no-information case -- no previous reading
+    at all -- so a caller that knows nothing about the document gets a line
+    saying exactly that, never a fabricated zero delta.
+    """
+    rendered_at = rendered_at or now_stamp()
+    previous = previous or (PREV_ABSENT, None)
     lines = [
         BEGIN,
         "## ▶ ALBERO MIKADO — dipendenze, stato di ogni nodo",
@@ -346,21 +631,13 @@ def render(
         walk(root, 0)
     lines.append("```")
 
-    open_nodes = [
-        n for n, (s, _) in states.items() if _glyph(s, states)[0] not in CLOSED_GLYPHS
-    ]
-    free = [
-        n
-        for n in open_nodes
-        if not any(
-            _glyph(states.get(d, ("?", ""))[0], states)[0] not in CLOSED_GLYPHS
-            for d in deps.get(n, ())
-        )
-    ]
+    # The SAME four numbers the summary has always carried, from the ONE
+    # computation the HTML page also uses -- so the two surfaces cannot disagree.
+    current = counts_of(states, deps)
     lines += [
         "",
-        f"**{len(states)} nodi · {len(states) - len(open_nodes)} chiusi · "
-        f"{len(open_nodes)} aperti, di cui {len(free)} senza dipendenze aperte.**",
+        _SUMMARY_TEMPLATE.format(**dict(zip(_SUMMARY_FIELDS, current, strict=True))),
+        f"*{_delta_sentence(rendered_at, current, previous)}*",
         END,
     ]
     return "\n".join(lines)
@@ -405,6 +682,11 @@ body.hide-done li.t-closed{display:contents}
 body.hide-done li.t-closed>.t-row,
 body.hide-done li.t-closed>details{display:none}
 body.hide-done li.t-ref.t-closed{display:none}
+/* The render-time + previous-reading line. Same words as the markdown block,
+   never a second phrasing of them. */
+.t-delta{font-size:.85rem;color:var(--muted);margin:.1rem 0 .5rem}
+.t-inflight{font-weight:700;color:#0284c7;border:1px solid #0284c7;border-radius:.25rem;padding:0 .3rem;margin-left:.3rem}
+li.row-inflight,li.row-inflight>.t-row,li.row-inflight>details>summary,li.row-inflight .t-id,li.row-inflight .t-name{color:#0ea5e9!important}
 </style>
 <div class="wrap">
 <div class="toolbar">
@@ -421,6 +703,7 @@ Nascondi i nodi chiusi</label>
 <p>__COUNTS__ &middot; le <strong>foglie</strong> non dipendono da nulla e si implementano per
 <strong>prime</strong>; un padre sta sopra i nodi che aspetta. Apri un nodo per leggerne la
 descrizione; un nodo ripetuto e\u2019 un collegamento all\u2019espansione che la porta.</p>
+<p class="t-delta">__DELTA__</p>
 <div class="treewrap">
 <ul class="tree">
 __ROWS__
@@ -430,9 +713,132 @@ __ROWS__
 """
 
 
+#: A node row inside `## L'ALBERO`: leading whitespace, the node id, then a
+#: pipe. Mirrors `_TREE_NODE_LINE` in validate_mikado_tree_coherence.py -- the
+#: gate's `state-typed-outside-its-carrier` REJECT and this withdrawal tool
+#: must agree on what counts as a node row, or the HOW that rule points at
+#: would not actually silence the finding it names.
+_NODE_ROW_LINE = re.compile(r"^\s+[A-Z]{1,2}\d{1,3}[a-z]?\s+\|")
+#: An attribute tail glued onto a node/detail line: 2+ spaces then ": ".
+#: Mirrors `_ATTRIBUTE_SPLIT` in validate_mikado_tree_coherence.py -- reused
+#: as the same idea rather than a second regex that could drift from it.
+_ALBERO_ATTRIBUTE_SPLIT = re.compile(r"(?=\s{2,}:\s)")
+
+#: The `## L'ALBERO` heading this tool withdraws state from. Matched the same
+#: way `_find_section` in validate_mikado_tree_coherence.py matches carriers
+#: -- a case-insensitive prefix of the heading text -- so the two never
+#: silently disagree about which section is the tree.
+_TREE_SECTION_HEADING = "L'ALBERO"
+
+
+def withdraw_tree_state(text: str) -> str:
+    """Strip every pipe field after the title from an `## L'ALBERO` node row.
+
+    State used to be typed a second time on every node row in this section,
+    duplicating `## STATO NODO PER NODO` -- and it drifted from that table
+    eight times across five classes without the coherence gate ever seeing it
+    (see
+    `state-typed-outside-its-carrier` in validate_mikado_tree_coherence.py).
+    This walks ONLY the `## L'ALBERO` section and rewrites a node row from
+    ``    D01 | Campo x | FATTO | XS | onda 1`` to ``    D01 | Campo x``,
+    leaving everything else -- ring headings, the `GOAL |` line, `: key |
+    value` detail lines, an attribute tail glued onto a node row, every other
+    section (`## CORSIE`, `## STATO NODO PER NODO`, the board block) --
+    byte-identical. IDEMPOTENT: a node row already carrying only id+title has
+    nothing after its one pipe to drop, so a second run is a no-op.
+    """
+    lines = text.split("\n")
+    out: list[str] = []
+    in_tree = False
+    for line in lines:
+        if line.startswith("## "):
+            in_tree = line[3:].strip().upper().startswith(_TREE_SECTION_HEADING.upper())
+            out.append(line)
+            continue
+        out.append(_withdraw_node_row(line) if in_tree else line)
+    return "\n".join(out)
+
+
+def _withdraw_node_row(line: str) -> str:
+    """Drop every pipe field after the title on one `## L'ALBERO` line.
+
+    A glued attribute tail (`      : key | value`, `_ALBERO_ATTRIBUTE_SPLIT`'s
+    lookahead never consumes it) rides through untouched: it is joined back
+    onto the rewritten head verbatim, never re-parsed as part of the row.
+    Only when there is NO tail is the rewritten head trailing-space-stripped:
+    dropping the state/effort/wave fields leaves a trailing space before the
+    pipe that used to separate title from state (`    D01 | Campo x `), and an
+    end-of-line trailing space trips the repo's pre-commit whitespace check.
+    A glued tail's own text starts right where the head ends, so THAT line
+    never carries a trailing space to begin with -- stripping there would
+    only ever be a no-op, so it is skipped rather than risk eating tail text.
+    """
+    segments = _ALBERO_ATTRIBUTE_SPLIT.split(line)
+    head = segments[0]
+    if not _NODE_ROW_LINE.match(head):
+        return line
+    parts = head.split("|")
+    kept = head if len(parts) <= 2 else "|".join(parts[:2])
+    if len(segments) == 1:
+        kept = kept.rstrip()
+    return "".join([kept, *segments[1:]])
+
+
+_SLICE_PROGRESS_ROW = re.compile(
+    r"^\| nodo `([DV]\d+[ab]?)` \| (.*?) \| (.*?) \| (.*?) \|$"
+)
+
+
+def read_slice_progress(path: Path) -> dict[str, list[tuple[str, str]]]:
+    """node id -> its `## PROGRESSO PER FETTA` row (dove / fetta / evidenza).
+
+    A SEPARATE section and format from `## L'ALBERO`'s `: key | value` sub-lines
+    (`read_details`'s source) -- the free-text table where a node's live
+    slice-in-flight detail actually lives. Read independently so the HTML
+    surface can merge both into one node's expandable detail; neither format
+    subsumes the other.
+    """
+    progress: dict[str, list[tuple[str, str]]] = {}
+    for line in path.read_text(encoding="utf-8").split("\n"):
+        row = _SLICE_PROGRESS_ROW.match(line.strip())
+        if not row:
+            continue
+        node, dove, fetta, evidenza = (g.strip() for g in row.groups())
+        progress.setdefault(node, []).extend(
+            [("Dove", dove), ("Fetta", fetta), ("Evidenza", evidenza)]
+        )
+    return progress
+
+
+_PROGRESS_FRACTION = re.compile(r"(\d+)\s*(?:di|su)\s*(\d+)")
+
+
+def read_progress_fractions(path: Path) -> dict[str, str]:
+    """node id -> a short 'N/M' read off its PROGRESSO PER FETTA `Fetta` cell.
+
+    The cell is free prose ('fetta 03 di 4 in corso', '3 item su 4', 'non a
+    fette -- 2 rami...') because the underlying units differ (slices, sites,
+    items, branches) -- this extracts the first `<n> di|su <m>` numeral pair
+    when the row happens to carry one, and is silently absent (no entry)
+    otherwise rather than guessing a fraction out of prose that has none.
+    """
+    fractions: dict[str, str] = {}
+    for node, rows in read_slice_progress(path).items():
+        fetta = next((v for k, v in rows if k == "Fetta"), "")
+        match = _PROGRESS_FRACTION.search(fetta)
+        if match:
+            fractions[node] = f"{int(match.group(1))}/{int(match.group(2))}"
+    return fractions
+
+
 def read_details(path: Path) -> dict[str, list[tuple[str, str]]]:
     """node id -> its `: key | value` sub-lines from L'ALBERO -- the description
-    a reader wants when they click a node."""
+    a reader wants when they click a node.
+
+    Merges in `read_slice_progress` so a node with live slice-in-flight
+    evidence shows it alongside its L'ALBERO description, not only in the
+    markdown's separate `## PROGRESSO PER FETTA` prose section.
+    """
     details: dict[str, list[tuple[str, str]]] = {}
     current: str | None = None
     for line in path.read_text(encoding="utf-8").split("\n"):
@@ -446,6 +852,9 @@ def read_details(path: Path) -> dict[str, list[tuple[str, str]]]:
             details[current].append((sub.group(1).strip(), sub.group(2).strip()))
         elif line and not line.startswith("      ") and not line.startswith("    "):
             current = None
+    for node, rows in read_slice_progress(path).items():
+        details.setdefault(node, [])
+        details[node] = rows + details[node]
     return details
 
 
@@ -455,12 +864,36 @@ def render_html(
     roots: list[str],
     details: dict[str, list[tuple[str, str]]],
     meta: dict[str, tuple[str, str, str]] | None = None,
+    rendered_at: str | None = None,
+    previous: tuple[str, tuple[int, int, int, int] | None] | None = None,
+    in_flight: set[str] | None = None,
+    progress_fractions: dict[str, str] | None = None,
 ) -> str:
     """The document renderer\u2019s own tree markup, carrying THESE nodes in
-    dependency order."""
+    dependency order.
+
+    `rendered_at` and `previous` are the SAME values the markdown block was
+    rendered with, handed down from one read in `main()` -- not re-derived here.
+    This page is the surface the work is actually read on, so it carries the
+    render clock and the delta too; deriving them independently is how the two
+    surfaces would come to disagree.
+
+    `in_flight` (node ids with a `## PROGRESSO PER FETTA` row) drives a purely
+    INFORMATIONAL "IN VOLO" badge alongside the STATO pill -- never a
+    replacement for it. STATO stays exactly what `validate_mikado_tree_
+    coherence.py`'s two gate-recognized carriers (CORSIE, STATO NODO PER NODO)
+    say it is; a hand-stamped STATO change without a corroborating carrier is
+    correctly rejected by that gate (reverted on D80 2026-07-31 for exactly
+    this reason). This badge answers a DIFFERENT, narrower question -- "does a
+    branch/slice-plan row explicitly declare working this node" -- from a
+    source (`nodo `D80`` row headers) that is a declaration, not a mention, the
+    same evidentiary bar `lane_node` already applies.
+    """
     import html as _h
 
     meta = meta or {}
+    in_flight = in_flight or set()
+    progress_fractions = progress_fractions or {}
     out: list[str] = []
     expanded: set[str] = set()
 
@@ -502,6 +935,7 @@ def render_html(
         # would silently desync (e.g. GUARDIA is closed but coloured "guard",
         # not "done").
         closed_cls = " t-closed" if glyph in CLOSED_GLYPHS else ""
+        inflight_cls = " row-inflight" if node in in_flight else ""
         idn = _h.escape(node)
 
         if node in expanded:
@@ -520,6 +954,10 @@ def render_html(
         # the document's own nwtree badges carry, just sourced from the state
         # table instead of the hand-authored block.
         badge = f'<span class="chip s-{cls}">{_h.escape(state)}</span>'
+        if node in in_flight:
+            frac = progress_fractions.get(node)
+            label = f"IN VOLO — fetta {frac}" if frac else "IN VOLO"
+            badge += f'<span class="t-badge t-inflight">{_h.escape(label)}</span>'
         effort, wave, sha = meta.get(node, ("", "", ""))
         for extra in (effort, wave):
             if extra:
@@ -558,7 +996,7 @@ def render_html(
 
         branch_cls = " t-branch" if children else ""
         out.append(
-            f'<li class="{row_cls}{branch_cls}{detail_cls}{closed_cls}" id="n-{idn}">'
+            f'<li class="{row_cls}{branch_cls}{detail_cls}{closed_cls}{inflight_cls}" id="n-{idn}">'
             f"{node_html}{kids_html}</li>"
         )
 
@@ -567,19 +1005,32 @@ def render_html(
     ):
         walk(root)
 
-    open_n = [
-        n
-        for n, (s_, _t) in states.items()
-        if _glyph(s_, states)[0] not in CLOSED_GLYPHS
-    ]
+    rendered_at = rendered_at or now_stamp()
+    previous = previous or (PREV_ABSENT, None)
+    nodes, closed, open_n, free = counts_of(states, deps)
+    # The sum now SHOWS the populations it mixes, so `122 nodi` can no longer be
+    # read as one homogeneous count of work.
+    mix = " &middot; ".join(
+        f"{n} {_h.escape(label)}" for label, n in composition(states)
+    )
     counts = (
-        f"{len(states)} nodi &middot; {len(states) - len(open_n)} chiusi "
-        f"&middot; {len(open_n)} aperti"
+        f"{nodes} nodi ({mix}) &middot; {closed} chiusi &middot; {open_n} aperti "
+        f"&middot; {free} senza dipendenze aperte"
     )
     return (
         _PAGE.replace("__CSS__", _doc_css())
         .replace("__ROWS__", "\n".join(out))
         .replace("__COUNTS__", counts)
+        .replace(
+            "__DELTA__",
+            _h.escape(
+                _delta_sentence(
+                    rendered_at,
+                    current=(nodes, closed, open_n, free),
+                    previous=previous,
+                )
+            ),
+        )
     )
 
 
@@ -595,14 +1046,29 @@ def main() -> int:
     )
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--html", type=Path, default=None)
+    parser.add_argument(
+        "--withdraw-tree-state",
+        action="store_true",
+        help=(
+            "rewrite '## L'ALBERO' node rows to id+title only, in place -- "
+            "the producing tool for the coherence gate's "
+            "state-typed-outside-its-carrier REJECT"
+        ),
+    )
     args = parser.parse_args()
+
+    if args.withdraw_tree_state:
+        text = args.file.read_text(encoding="utf-8")
+        rewritten = withdraw_tree_state(text)
+        if rewritten == text:
+            print(f"{args.file} already carries no L'ALBERO state (no-op)")
+            return 0
+        args.file.write_text(rewritten, encoding="utf-8")
+        print(f"withdrew L'ALBERO state in {args.file}")
+        return 0
 
     states = read_states(args.file)
     deps, roots = build(states, read_edges(args.decisions))
-
-    for node in live_nodes(args.file.resolve().parent.parent.parent):
-        if node in states and _glyph(states[node][0], states)[0] not in CLOSED_GLYPHS:
-            states[node] = ("AL LAVORO", states[node][1])
 
     defects = read_defects(args.file)
     for fid, (state, title, parent) in defects.items():
@@ -610,9 +1076,37 @@ def main() -> int:
         deps.setdefault(fid, set())
         if parent and parent in deps:
             deps[parent].add(fid)
-    for node in live_nodes(args.file.resolve().parent.parent.parent):
-        if node in states and _glyph(states[node][0], states)[0] not in CLOSED_GLYPHS:
+
+    # ONE probe, applied ONCE and only after the defect rows are in `states` --
+    # a branch may name an F-id as readily as a D-id, so an override applied
+    # before them missed every defect node and had to be repeated verbatim
+    # afterwards. The duplicate was pure cost (a git call per branch, twice) for
+    # a result the second pass already subsumed. Passing `states` here is also
+    # what keeps the join honest: the set of ids a branch may resolve against IS
+    # the set of nodes the document carries, never a list kept beside it.
+    #
+    # A SUSPENDED closure is not overridable either, and `CLOSED_GLYPHS` alone
+    # does not say so: `[s]` is deliberately outside that set (a suspended
+    # closure must never render as closed), which left `AL LAVORO` free to
+    # overwrite `FATTO-SOSPESO`/`CHIUSO-SOSPESO` and erase work that genuinely
+    # happened -- the precise harm the `-SOSPESO` vocabulary was added to
+    # prevent. The lane being live is a fact about the LANE; the work being
+    # finished-and-suspended is a fact about the NODE, and it wins.
+    unoverridable = CLOSED_GLYPHS | {"[s]"}
+    working, ambiguous = live_nodes(args.file.resolve().parent.parent.parent, states)
+    for node in working:
+        if _glyph(states[node][0], states)[0] not in unoverridable:
             states[node] = ("AL LAVORO", states[node][1])
+    # LOUD, never silent. A live branch whose name names a base several nodes
+    # share is the one case the projection cannot decide, and a reader who never
+    # hears about it has no way to learn the board is missing a live lane.
+    for branch, group in ambiguous:
+        print(
+            f"AMBIGUO: il ramo vivo `{branch}` nomina una base condivisa da "
+            f"{', '.join(group)} — nessuno dei due e' stato forzato a AL LAVORO. "
+            f"COME: rinomina il ramo sul nodo esatto (es. `{group[0].lower()}`).",
+            file=sys.stderr,
+        )
 
     unparented = sorted(f for f, (_s, _t, p) in defects.items() if not p)
     if unparented:
@@ -622,7 +1116,20 @@ def main() -> int:
         )
         deps["DIFETTI"] = set(unparented)
         roots = [r for r in roots if r not in unparented] + ["DIFETTI"]
-    board = render(states, deps, roots)
+
+    # The baseline comes out of the document itself, read BEFORE the block is
+    # replaced -- no state file to go stale, and no second source to disagree
+    # with the numbers this same process is about to recompute.
+    # ONE read of the baseline and ONE read of the clock per run, shared by BOTH
+    # surfaces. The markdown block is the only durable record of a previous
+    # reading, so the HTML page's baseline necessarily originates there -- but it
+    # arrives via this single in-process value, never a second read of a second
+    # artifact. Two reads would eventually disagree, and a delta that contradicts
+    # itself across two surfaces is worse than one surface without a delta.
+    text = args.file.read_text(encoding="utf-8")
+    previous = read_previous_summary(text)
+    rendered_at = now_stamp()
+    board = render(states, deps, roots, rendered_at=rendered_at, previous=previous)
 
     if args.html is not None:
         args.html.write_text(
@@ -632,6 +1139,10 @@ def main() -> int:
                 roots,
                 read_details(args.file),
                 read_node_meta(args.file),
+                rendered_at=rendered_at,
+                previous=previous,
+                in_flight=set(read_slice_progress(args.file).keys()),
+                progress_fractions=read_progress_fractions(args.file),
             ),
             encoding="utf-8",
         )
@@ -642,7 +1153,6 @@ def main() -> int:
         print(board)
         return 0
 
-    text = args.file.read_text(encoding="utf-8")
     if BEGIN in text and END in text:
         head, rest = text.split(BEGIN, 1)
         _, tail = rest.split(END, 1)

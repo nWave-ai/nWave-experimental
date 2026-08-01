@@ -60,7 +60,7 @@ parsers correctly classify that shape as missing.
 - Driving ports — inbound surfaces (CLI, skill, HTTP) named per the C4 contract
 - Driven ports + adapters — outbound side-effects with adapter mapping **and a Runtime Contract Matrix**: declared argument/receipt/authority type → exact invoked method → concrete runtime argument/receipt → boundary AT
 - Technology choices — pinned languages/frameworks/runtime versions
-- Decisions table — DDD-N row per locked decision (no rationale prose)
+- Decisions table — DD-N row per locked decision (no rationale prose)
 - ADR Refs — `## Wave: DESIGN / [REF] ADR Refs`, a RefList of `ADR-<PREFIX>-<NNN>` ids for every decision promoted to a standalone ADR (see Decision-once below); `des feature-delta-doctor` dereferences each id against the 4 declared ADR roots and names any that is dangling or could-not-verify — never silently accepted
 - Reuse Analysis table — every overlapping component classified EXTEND or CREATE_NEW
 - Prefactoring Assessment — a `@prefactoring` slice, or an explicit justified NONE (never silently absent)

@@ -92,6 +92,15 @@ def _pre_tool_use_matcher() -> str:
 _LAUNCHER_TIMEOUT_ENV = "NWAVE_CODEX_HOOK_TIMEOUT"
 _LAUNCHER_TIMEOUT_SECONDS = 25.0
 
+# Wall-clock bound the generated launcher applies to the DES validation it
+# spawns, and the operator's lever over it.  25s is chosen against the two
+# opposing costs: it must be generous enough that a cold PreToolUse validation
+# doing real filesystem work is never guillotined, and it must stay strictly
+# under the `timeout: 30` this installer declares on the hook entry so the
+# launcher reaches its own explained verdict before the Codex harness kills it.
+_LAUNCHER_TIMEOUT_ENV = "NWAVE_CODEX_HOOK_TIMEOUT"
+_LAUNCHER_TIMEOUT_SECONDS = 25.0
+
 
 def _codex_config_dir() -> Path:
     """Return the Codex CLI configuration directory.

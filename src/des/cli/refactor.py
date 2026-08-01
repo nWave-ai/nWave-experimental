@@ -291,6 +291,24 @@ def _abort_message(signum: int) -> str:
     )
 
 
+def _drained_line(result: DrainResult, integration_branch: str) -> str:
+    """The ONE 'drained successfully' rendering -- shared by ``_report`` and
+    ``_report_batch`` (same discipline as ``_refusal_line`` below: a second
+    hand-maintained copy is how the single-item/batch reporters drifted
+    apart before).
+
+    Names the selector's own answer (GDP-8 arity corollary, feature
+    impacted-test-selector-arity-fix) via ``result.test_target_scope`` --
+    the walking-skeleton scenario's own requirement: a maintainer reading
+    the terminal report must be able to tell narrowed/not_narrowable/
+    indeterminate apart, never only the bare "Drained ... -> merged" line
+    this replaces, which carried no scope information at all."""
+    return (
+        f"Drained 1 item: {result.item_id} -> merged into '{integration_branch}' "
+        f"(test scope: {result.test_target_scope})"
+    )
+
+
 def _report(
     result: DrainResult,
     integration_branch: str,
@@ -312,7 +330,7 @@ def _report(
     ``DrainRefused -> exit_code: 1`` since slice-01.
     """
     if result.drained:
-        print(f"Drained 1 item: {result.item_id} -> merged into '{integration_branch}'")
+        print(_drained_line(result, integration_branch))
         if skipped_lines:
             # A malformed sibling line must never be silently swallowed just
             # because a real item in the same pile successfully drained.
@@ -354,10 +372,7 @@ def _report_batch(
     exit_code = 0
     for result in batch_result.results:
         if result.drained:
-            print(
-                f"Drained 1 item: {result.item_id} -> "
-                f"merged into '{integration_branch}'"
-            )
+            print(_drained_line(result, integration_branch))
         else:
             print(_refusal_line(result, context), file=sys.stderr)
             exit_code = 1

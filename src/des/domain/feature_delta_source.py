@@ -165,6 +165,236 @@ def dereference_adr_refs(
     )
 
 
+# --- D76: internal `per <ID>` decision-citation resolution -----------------
+#
+# D33 closed the ADR-refs half of "a citation resolves to something real, or
+# is named dangling, never silence" (dereference_adr_refs, above). Its own
+# closure note declared the residue verbatim: "Nessun controllo che una
+# citazione interna <<per DD-N>> risolva a una riga esistente -- solo il
+# caso ADR-refs e' presidiato." This section closes the rest of the SAME
+# defect class -- any `<PREFIX>-<N>` decision id (DD-N is the convention
+# `nw-design` SKILL.md names; empirically the shipped corpus also carries
+# D-N, DDD-N, AC-N, and others, all authored the same way: a table row /
+# heading / checklist item DECLARES the id, other prose CITES it via
+# `per <ID>`) -- never a second, differently-shaped checker for the ADR
+# family, which stays entirely out of scope here.
+
+#: One `<PREFIX>-<N>` id token, e.g. `DD-3`, `D-12`, `DDD-8`, `AC-5`,
+#: `AC-5.b` (a lettered sub-item). 1-4 letters, 1-3 digits, optional
+#: `.<suffix>`.
+_DECISION_ID_TOKEN = r"[A-Za-z]{1,4}-[0-9]{1,3}(?:\.[a-z0-9]+)?"
+
+#: A CITATION: `per <ID>`, optionally backticked/bolded. This is the exact
+#: citation form the residue names ("per DD-N") and the convention teaches
+#: ("cites it (`per DD-N`)", `nw-design` SKILL.md Decision-once).
+_DECISION_CITE_RE = re.compile(
+    rf"\bper\s+`?\*{{0,2}}({_DECISION_ID_TOKEN})\*{{0,2}}`?", re.IGNORECASE
+)
+
+#: A DECLARATION: the id token OPENS a table row, a heading, or a checklist
+#: item -- i.e. it is being DEFINED, not merely mentioned in running prose.
+#: A bare in-paragraph mention (`... per DD-2 earlier ...`) never matches
+#: this -- only `_DECISION_CITE_RE` reads prose mentions, deliberately, so
+#: a citation can never satisfy itself by being its own "declaration".
+_DECISION_DECL_RE = re.compile(
+    r"^(?:\|\s*|[-*]\s*(?:\[[ xX]\]\s*)?|#{2,4}\s*)"
+    rf"\*{{0,2}}({_DECISION_ID_TOKEN})\*{{0,2}}"
+    r"\s*(?:[|:]|—|--|-\s|$)"
+)
+
+#: The ADR family already has its own dedicated, wired checker
+#: (`dereference_adr_refs` / `feature_delta_doctor._dangling_adr_ref_gaps`,
+#: D33/D6) -- excluded here so this module never duplicates it a second,
+#: differently-shaped way.
+_ADR_FAMILY = "ADR"
+
+#: The GDP family is a closed, external, repo-wide enumeration (CLAUDE.md
+#: Gate Design Principles; canonical clause `nw-cross-cutting-invariants`
+#: SKILL.md `gate:design-principles-gdp-1-8`) -- fixed at GDP-1..GDP-8,
+#: never per-document.
+_GDP_CLOSED_SET = frozenset(f"GDP-{n}" for n in range(1, 9))
+
+#: The AD family (`ARCH_TECH_DEBT.md` items) is a repo-global registry
+#: declared in exactly ONE file, not per-feature-delta.
+_ARCH_TECH_DEBT_RELPATH = "ARCH_TECH_DEBT.md"
+
+_DECISION_STATE_RESOLVED_LOCAL = "resolved-local"
+_DECISION_STATE_RESOLVED_EXTERNAL = "resolved-external"
+_DECISION_STATE_DANGLING = "dangling"
+_DECISION_STATE_COULD_NOT_VERIFY = "could-not-verify"
+
+
+@dataclass(frozen=True)
+class DecisionCitation:
+    """One `per <ID>` decision citation found in a document.
+
+    ``context`` is the whole source line, for self-explaining gap reporting.
+    """
+
+    id: str
+    line: int
+    context: str
+
+
+@dataclass(frozen=True)
+class DecisionCitationResolution:
+    """The outcome of resolving one `DecisionCitation` -- one of the four
+    states above. ``detail`` names WHERE resolution was attempted (or why it
+    could not be), for the gap-rendering layer to build WHAT/WHY/HOW from
+    without re-deriving it."""
+
+    citation: DecisionCitation
+    state: str
+    detail: str
+
+
+def extract_decision_declarations(document_text: str) -> frozenset[str]:
+    """Every decision id DECLARED (table row / heading / checklist item) in
+    `document_text`, upper-cased, first-seen order collapsed to a set. Pure,
+    never raises."""
+    declared: set[str] = set()
+    for line in document_text.splitlines():
+        match = _DECISION_DECL_RE.match(line)
+        if match:
+            declared.add(match.group(1).upper())
+    return frozenset(declared)
+
+
+def extract_decision_citations(document_text: str) -> tuple[DecisionCitation, ...]:
+    """Every `per <ID>` citation in `document_text`, in document order.
+
+    The ADR family is excluded at extraction time (not resolution time) --
+    it is out of this module's scope entirely, not merely "always resolved".
+    Pure, never raises."""
+    citations: list[DecisionCitation] = []
+    for lineno, line in enumerate(document_text.splitlines(), start=1):
+        for match in _DECISION_CITE_RE.finditer(line):
+            cid = match.group(1).upper()
+            family = re.match(r"[A-Za-z]+", cid)
+            if family is not None and family.group(0).upper() == _ADR_FAMILY:
+                continue
+            citations.append(
+                DecisionCitation(id=cid, line=lineno, context=line.strip())
+            )
+    return tuple(citations)
+
+
+def _decision_family(decision_id: str) -> str:
+    match = re.match(r"[A-Za-z]+", decision_id)
+    return match.group(0).upper() if match is not None else ""
+
+
+def _load_arch_tech_debt_ids(repo_root: Path) -> frozenset[str] | None:
+    """The AD-N ids declared in `ARCH_TECH_DEBT.md`, or None when that file
+    is absent/unreadable at `repo_root` (the could-not-verify leg)."""
+    path = repo_root / _ARCH_TECH_DEBT_RELPATH
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return extract_decision_declarations(text)
+
+
+def resolve_decision_citations(
+    document_text: str, *, repo_root: Path | None
+) -> tuple[DecisionCitationResolution, ...]:
+    """Resolve every non-ADR `per <ID>` citation in `document_text` to one of
+    the four states (module section docstring above).
+
+    Pure, read-only, never raises. `repo_root` is used ONLY to resolve the
+    AD-N external registry (`ARCH_TECH_DEBT.md`); every other family
+    resolves against `document_text` alone or the closed GDP-1..8 set.
+    """
+    local_ids = extract_decision_declarations(document_text)
+    citations = extract_decision_citations(document_text)
+    if not citations:
+        return ()
+
+    arch_tech_debt_ids: frozenset[str] | None = None
+    arch_tech_debt_loaded = False
+
+    results: list[DecisionCitationResolution] = []
+    for citation in citations:
+        base_id = citation.id.split(".")[0]
+        if citation.id in local_ids or base_id in local_ids:
+            results.append(
+                DecisionCitationResolution(
+                    citation=citation,
+                    state=_DECISION_STATE_RESOLVED_LOCAL,
+                    detail=f"declared in this same document as `{citation.id}`",
+                )
+            )
+            continue
+
+        family = _decision_family(citation.id)
+
+        if family == "GDP":
+            if base_id in _GDP_CLOSED_SET:
+                results.append(
+                    DecisionCitationResolution(
+                        citation=citation,
+                        state=_DECISION_STATE_RESOLVED_EXTERNAL,
+                        detail="member of the closed GDP-1..GDP-8 enumeration",
+                    )
+                )
+            else:
+                results.append(
+                    DecisionCitationResolution(
+                        citation=citation,
+                        state=_DECISION_STATE_DANGLING,
+                        detail="not a member of the closed GDP-1..GDP-8 enumeration",
+                    )
+                )
+            continue
+
+        if family == "AD":
+            if not arch_tech_debt_loaded:
+                arch_tech_debt_ids = (
+                    _load_arch_tech_debt_ids(repo_root)
+                    if repo_root is not None
+                    else None
+                )
+                arch_tech_debt_loaded = True
+            if arch_tech_debt_ids is None:
+                results.append(
+                    DecisionCitationResolution(
+                        citation=citation,
+                        state=_DECISION_STATE_COULD_NOT_VERIFY,
+                        detail=(
+                            f"{_ARCH_TECH_DEBT_RELPATH} is absent or unreadable "
+                            f"at repo_root={repo_root}"
+                        ),
+                    )
+                )
+            elif base_id in arch_tech_debt_ids:
+                results.append(
+                    DecisionCitationResolution(
+                        citation=citation,
+                        state=_DECISION_STATE_RESOLVED_EXTERNAL,
+                        detail=f"declared in {_ARCH_TECH_DEBT_RELPATH}",
+                    )
+                )
+            else:
+                results.append(
+                    DecisionCitationResolution(
+                        citation=citation,
+                        state=_DECISION_STATE_DANGLING,
+                        detail=f"not declared in {_ARCH_TECH_DEBT_RELPATH}",
+                    )
+                )
+            continue
+
+        results.append(
+            DecisionCitationResolution(
+                citation=citation,
+                state=_DECISION_STATE_DANGLING,
+                detail="not declared in this document, and its prefix names no known external registry",
+            )
+        )
+
+    return tuple(results)
+
+
 def _absent_detail(path: Path, repo_root: Path) -> str:
     return (
         f"what: no feature-delta.md exists at {path} / "

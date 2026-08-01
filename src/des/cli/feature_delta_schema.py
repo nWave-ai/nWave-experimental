@@ -639,10 +639,13 @@ def _mandatory_reuse_analysis_block(content: str, source: str) -> str:
             what=what,
             why=f"{result.detail} (source: {source})",
             how=(
-                "fix the '## Reuse Analysis' table (DDD-8 five-column contract, "
-                "or a Reuse-Analysis: methodology-exempt/no-overlap marker) "
-                "before projecting for the crafter role — this section is "
-                "MANDATORY and can never be projected away"
+                "add the '## Reuse Analysis' heading -- it is required either "
+                "way, the parser only ever looks beneath it. Under it, put "
+                "the DDD-8 five-column table, or a Reuse-Analysis: "
+                "methodology-exempt/no-overlap marker (the marker alone, "
+                "with no heading above it, is refused) -- before projecting "
+                "for the crafter role, this section is MANDATORY and can "
+                "never be projected away"
             ),
         )
     body = _section_body(content, REUSE_ANALYSIS_HEADING)

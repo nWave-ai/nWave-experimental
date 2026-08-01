@@ -1,6 +1,9 @@
 """Regression pin -- D50 (Mikado des-optimization) compaction of the
-``Dispatching an agent while a wave floor is ACTIVE`` section in
-``nWave/data/orchestrator-affordance/spine-discipline.md``.
+``Dispatching an agent while a wave floor is ACTIVE`` section in the shipped
+``nWave/data/orchestrator-affordance/`` asset whose role stem is
+``spine-discipline`` (basename carries a numeric injection-order prefix that
+is expected to churn -- resolved via ``resolve_affordance_asset``, never a
+literal basename).
 
 Context: ``docs/mikado/2026-07-29-payload-classification.md`` +
 ``docs/mikado/2026-07-29-payload-residency-classification.md`` established
@@ -33,8 +36,13 @@ from pathlib import Path
 
 import pytest
 
+from tests.common.orchestrator_affordance_paths import resolve_affordance_asset
 
-_PAYLOAD_PATH = Path("nWave/data/orchestrator-affordance/spine-discipline.md")
+
+# tests/bugs/des/<this file> -> parents[3] = repo root
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+_PAYLOAD_PATH = resolve_affordance_asset(_REPO_ROOT, "spine-discipline")
 
 _SECTION_HEADING = "## Dispatching an agent while a wave floor is ACTIVE"
 

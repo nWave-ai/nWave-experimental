@@ -41,6 +41,7 @@ import json
 from typing import TYPE_CHECKING
 
 from des.cli import verify_readiness_pre_dispatch as gate
+from des.domain.expectation_charter_mapping import CharterObligation
 from des.domain.lane_profile import LANE_PROFILES, AtRequirement, GuardKind, LaneProfile
 
 
@@ -195,6 +196,7 @@ def test_prefactoring_lane_consults_datum_live_not_hardcoded(
             at_requirement=AtRequirement.EXEMPT,
             skipped_invariants=("slice_plan_section",),
             annotation_token="prefactoring",
+            charter_obligation=CharterObligation.EXEMPT,
         )
     }
     monkeypatch.setattr(gate, "LANE_PROFILES", substituted_profiles, raising=False)

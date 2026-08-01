@@ -117,7 +117,13 @@ def test_intercept_threads_des_lane_into_readiness_builder(
     """
     captured: dict[str, object] = {}
 
-    def _capturing_builder(project_root, lane=None, lane_justification=""):
+    def _capturing_builder(
+        project_root,
+        lane=None,
+        lane_justification="",
+        at_kind="gherkin",
+        regression_test_file=None,
+    ):
         captured["lane"] = lane
         captured["justification"] = lane_justification
         return lambda _fid, _slice: (0, '{"event": "ReadinessVerified"}')

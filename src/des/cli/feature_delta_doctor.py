@@ -66,6 +66,7 @@ from des.cli.validate_feature_delta import (
 from des.domain.feature_delta_source import (
     any_adr_ref_root_exists,
     dereference_adr_refs,
+    resolve_decision_citations,
 )
 
 
@@ -217,12 +218,15 @@ def _sustainability_gaps(content: str) -> list[Gap]:
                 "a missing or malformed section is REJECTED there."
             ),
             how=(
-                f"Add the canonical '{SUSTAINABILITY_HEADING}' heading with "
-                "the canonical five-column Test Reuse table (well-formed "
-                "REUSE/EXTEND/CONSOLIDATE/CREATE_NEW rows, Justification "
-                "required on CREATE_NEW), or a "
-                "'Test-Reuse-Analysis: methodology-exempt' marker if no new "
-                "tests were authored."
+                f"Add the canonical '{SUSTAINABILITY_HEADING}' heading -- it "
+                "is required either way, the parser only ever looks BENEATH "
+                "it. Under it, put the canonical five-column Test Reuse "
+                "table (well-formed REUSE/EXTEND/CONSOLIDATE/CREATE_NEW "
+                "rows, Justification required on CREATE_NEW); or, if no new "
+                "tests were authored, put the "
+                "'Test-Reuse-Analysis: methodology-exempt' marker UNDER "
+                "that same heading -- the marker alone, with no heading "
+                "above it, is refused."
             ),
         )
     ]
@@ -363,6 +367,88 @@ def _dangling_adr_ref_gaps(content: str, repo_root: Path) -> list[Gap]:
     ]
 
 
+#: A `per <ID>` decision citation (D76) that resolves nowhere this doctor can
+#: see: not declared in this document, and its prefix names no known
+#: external registry (ADR excluded entirely -- `_DANGLING_ADR_REF_ID` above
+#: is that family's own check).
+_DANGLING_DECISION_CITATION_ID = "dangling-decision-citation"
+
+#: An AD-N citation (ARCH_TECH_DEBT.md's own id space) that could not be
+#: checked because that file is absent/unreadable at `repo_root` -- the
+#: TREE, not the id, is the problem (GDP-6: reporting nothing here would
+#: silently agree it resolved). Mirrors `_ADR_REF_COULD_NOT_VERIFY_ID`'s own
+#: third-state shape for the AD-N sub-family.
+_DECISION_CITATION_COULD_NOT_VERIFY_ID = "decision-citation-could-not-verify"
+
+
+def _dangling_decision_citation_gaps(content: str, repo_root: Path) -> list[Gap]:
+    """`dangling-decision-citation` / `decision-citation-could-not-verify`
+    gaps (D76) -- the residue D33's closure note declared and left for its
+    own node: "Nessun controllo che una citazione interna <<per DD-N>>
+    risolva a una riga esistente -- solo il caso ADR-refs e' presidiato."
+
+    Reuses `feature_delta_source.resolve_decision_citations` verbatim -- this
+    function adds no parsing/resolution logic of its own, only the gap
+    rendering, mirroring `_dangling_adr_ref_gaps`'s own shape for its sibling
+    family."""
+    resolutions = resolve_decision_citations(content, repo_root=repo_root)
+    gaps: list[Gap] = []
+    for resolution in resolutions:
+        citation = resolution.citation
+        if resolution.state == "dangling":
+            gaps.append(
+                Gap(
+                    id=_DANGLING_DECISION_CITATION_ID,
+                    what=(
+                        f"line {citation.line}: `per {citation.id}` cites a "
+                        "decision id with no declared row/heading/checklist "
+                        f"item in this document ({resolution.detail})"
+                    ),
+                    why=(
+                        "the Decision-once convention (`nw-design` SKILL.md) "
+                        "requires every `per <ID>` pointer to resolve to a "
+                        "declared row -- a reader who follows an unresolved "
+                        "pointer finds nothing; an id declared in a "
+                        "DIFFERENT document does not resolve a citation in "
+                        "THIS one (same-document scope is the point)."
+                    ),
+                    how=(
+                        f"declare a `{citation.id}` row in this document's "
+                        "Decisions table (or the section that owns this id "
+                        "family), or correct the citation to the real id it "
+                        "meant, or if it names something outside the "
+                        "decision-citation convention (a review-artifact "
+                        "reference, an external id), rewrite the sentence to "
+                        "say so explicitly instead of `per <ID>`."
+                    ),
+                )
+            )
+        elif resolution.state == "could-not-verify":
+            gaps.append(
+                Gap(
+                    id=_DECISION_CITATION_COULD_NOT_VERIFY_ID,
+                    what=(
+                        f"line {citation.line}: cannot verify `per "
+                        f"{citation.id}` -- {resolution.detail}"
+                    ),
+                    why=(
+                        "the AD-N family is declared in ARCH_TECH_DEBT.md, a "
+                        "repo-global registry outside this document; without "
+                        "it this ONE citation cannot be checked -- reporting "
+                        "nothing here would silently agree it resolved "
+                        "(GDP-6)."
+                    ),
+                    how=(
+                        "pass the correct --repo-root (one that holds "
+                        "ARCH_TECH_DEBT.md at its root), or if this really is "
+                        "the right tree, ARCH_TECH_DEBT.md itself is missing "
+                        "and must be restored."
+                    ),
+                )
+            )
+    return gaps
+
+
 def diagnose(content: str, *, repo_root: Path | None = None) -> list[Gap]:
     """Aggregate every structural gap for one feature-delta body in ONE pass.
 
@@ -391,6 +477,7 @@ def diagnose(content: str, *, repo_root: Path | None = None) -> list[Gap]:
     ]
     if repo_root is not None:
         gaps.extend(_dangling_adr_ref_gaps(content, repo_root))
+        gaps.extend(_dangling_decision_citation_gaps(content, repo_root))
     return gaps
 
 

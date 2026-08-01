@@ -47,7 +47,7 @@ import pytest
 #: recipe, a real oracle with both a positive AND a negative observation.
 #: No `<...>` placeholder tokens anywhere.
 FILLED_CHARTER = """# A visitor books two seats and sees a countdown
-ID: EXP-seat-booking-1 . Spec rows: R1 . Persona: visitor
+ID: EXP-seat-booking-1 . Spec rows: slice-01 · Persona: visitor
 
 ## Intent
 A visitor books two seats and sees a live countdown while payment is pending

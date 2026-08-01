@@ -22,7 +22,6 @@ nothing.
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
@@ -34,11 +33,26 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "validation"))
 
+from git_commit_reachability import locate_git_dirs
 from git_packed_objects import PackedObjectStore
 
 
 REPO = Path(__file__).resolve().parents[2]
-OBJECTS = REPO / ".git" / "objects"
+
+# ``REPO / ".git"`` is a FILE (a ``gitdir:`` pointer), not a directory, in a
+# linked worktree -- every lane in this swarm works from one. Naming
+# ``REPO / ".git" / "objects"`` directly therefore names a path that can never
+# exist there, silently satisfying `needs_pack`'s skip condition and hiding
+# this whole oracle suite (the one that proves the packed reader agrees with
+# `git cat-file`) from every worktree checkout. `locate_git_dirs` -- the same
+# resolution the production code already uses -- follows the pointer AND the
+# `commondir` indirection to the SHARED object store where packs actually
+# live. Fall back to the naive path only when `locate_git_dirs` cannot find a
+# checkout at all (e.g. a released tarball with no `.git`), in which case
+# `needs_pack` must still skip, not error.
+_located = locate_git_dirs(REPO)
+_commondir = _located[1] if _located is not None else (REPO / ".git")
+OBJECTS = _commondir / "objects"
 
 
 def _git(*args: str) -> bytes:
@@ -63,7 +77,10 @@ def _packed_samples(limit: int) -> list[tuple[str, str]]:
 
 needs_pack = pytest.mark.skipif(
     not (OBJECTS / "pack").is_dir() or not _packed_samples(1),
-    reason="no packfile in this checkout: nothing for a packed reader to read",
+    # Name the path actually looked in -- a skip reason with no path is how
+    # this suite went unnoticed while silently checking a location that could
+    # never exist in a linked worktree (see the OBJECTS derivation above).
+    reason=f"no packfile found under `{OBJECTS / 'pack'}`: nothing for a packed reader to read",
 )
 
 
@@ -138,7 +155,7 @@ def _mutated_store(mutate, sha: str) -> PackedObjectStore | None:
     for source in (owner, owner.with_suffix(".pack")):
         target = pack_dir / source.name
         shutil.copy(source, target)
-        os.chmod(target, 0o644)  # git keeps packs read-only
+        target.chmod(0o644)  # git keeps packs read-only
     mutate(pack_dir / owner.name, pack_dir / owner.with_suffix(".pack").name)
     return PackedObjectStore(tmp / "objects")
 

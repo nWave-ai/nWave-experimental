@@ -64,6 +64,24 @@ regression test file IS the AT (pytest-regression convention) -- a real,
 collectible `test_*.py` module head-tagged `# @feature-{id}` / `# @{slice-
 NN}`, containing a genuinely passing or genuinely failing `test_*` function
 so the E2 behavioral run is execution-observed, not asserted.
+
+fix-null-gate-scope-exit-gate fixture-realism update: `des verify-slice-
+commit`'s `_run_verify_then_record` now carries a seal-integrity leg -- a
+slice commit whose `Gate-Scope:` trailer is absent/malformed/the all-zero
+placeholder is refused (`SliceCommitIndeterminate reason=gate_scope_
+unsealed`), never fabricated into `SliceCommitVerified`. No real `des
+commit-slice` ever produces a trailer-less commit (it always stamps one --
+the placeholder first, then a real digest after the amend), so a fixture
+commit that expects a VERIFIED outcome must carry a REAL, well-formed
+`Gate-Scope:` trailer too -- `_stamp_genuine_gate_scope_trailer` below derives
+it through the shipped CLI (`run_contract_gate --committed-scope-digest`),
+never fabricated, mirroring the pattern in `test_run_contract_gate_scope_
+unverified_names_how.py` / `test_verify_slice_commit_refuses_unsealed_gate_
+scope.py`. Applied ONLY to the two scenarios whose fixture commit must reach
+the VERIFIED outcome (scenario 1, scenario 4/ADDITIVITY) -- scenarios 2 and 3
+refuse/degrade for their OWN reason (a genuinely failing regression / a
+missing regression file) well before the seal-integrity leg is ever reached,
+so their trailer-less fixture commits are unaffected and stay untouched.
 """
 
 from __future__ import annotations
@@ -76,6 +94,9 @@ import pytest
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli import verify_slice_commit_completeness as vscc
+from tests.common.gate_scope_fixtures import (
+    stamp_genuine_gate_scope_trailer as _stamp_genuine_gate_scope_trailer,
+)
 
 
 _SLICE_ID = "slice-01"
@@ -208,6 +229,7 @@ def test_pytest_regression_slice_with_passing_regression_test_is_verified_behavi
     _git_init(repo)
     _write_regression_test(repo, _FEATURE_ID_POS, _SLICE_ID, passing=True)
     _commit_regression_file(repo, _SLICE_ID)
+    _stamp_genuine_gate_scope_trailer(repo)
 
     exit_code, payload = _run_behavioral_verify_slice_commit(
         repo, _FEATURE_ID_POS, _REGRESSION_FILE_REL, capsys
@@ -364,6 +386,7 @@ def test_non_pytest_regression_feature_still_clears_via_the_feature_scoped_contr
         "-m",
         f"feat(slice): behaviour\n\nSlice-Id: {_SLICE_ID}",
     )
+    _stamp_genuine_gate_scope_trailer(repo)
 
     exit_code = vscc.main(
         ["--repo", str(repo), "--commit", "HEAD", "--feature-id", feature_id]

@@ -14,9 +14,18 @@ this commit (not) get the credit?":
      TOP-LEVEL location (DDD-7 bug fix — it was previously read nested under
      ``attribution``).
 
-It never mutates settings.json. It is a diagnostic, not a gate: it always
-reports passed=True so a clean install still shows all checks green. The signal
-lives in the message body.
+It never mutates settings.json.
+
+Three-valued verdict (fix-attribution-trailer-never-applied, P7): the check
+observes TWO axes (GDP-8 witness corollary) -- (a) is the hook registered in
+settings.json, (b) does the producing-tool resolver (the SAME resolution
+``attribute_commit_message`` performs: activation AND ``attribution.enabled``)
+now attribute for this repo. AGREED (both axes agree, live or dark) ->
+passed=True. DISAGREED (axes disagree) -> passed=False,
+``ATTRIBUTION_DISAGREEMENT``, remediation naming the real producing-tool
+command ``nwave-ai attribution on``. COULD_NOT_VERIFY (the resolution itself
+raises) -> passed=False, ``ATTRIBUTION_UNVERIFIABLE`` -- its own third state
+reaching the aggregate rather than being silently folded into AGREED.
 """
 
 from __future__ import annotations
@@ -47,7 +56,11 @@ class AttributionCheck:
     )
 
     def run(self, context: DoctorContext) -> CheckResult:
-        """Return a read-only attribution diagnostic — never mutates."""
+        """Return a read-only attribution diagnostic — never mutates.
+
+        See the module docstring for the three-valued AGREED / DISAGREED /
+        COULD_NOT_VERIFY verdict this returns.
+        """
         settings = self._read_settings(context.settings_path)
 
         hook_present = self._hook_registered(settings)
@@ -56,7 +69,9 @@ class AttributionCheck:
             f"{'registered' if hook_present else 'not registered'}"
         )
 
-        active = self._repo_is_active(context)
+        active, attribution_enabled, resolution_error = self._resolve_attribution_state(
+            context
+        )
         activation_line = f"this repo activation: {'active' if active else 'inactive'}"
 
         residue_present = self._legacy_residue_present(context, settings)
@@ -69,11 +84,37 @@ class AttributionCheck:
         deprecated_line = f"deprecated includeCoAuthoredBy: {deprecated_state}"
 
         message = "\n".join([hook_line, activation_line, residue_line, deprecated_line])
+
+        if resolution_error is not None:
+            return CheckResult(
+                passed=False,
+                error_code="ATTRIBUTION_UNVERIFIABLE",
+                message=message,
+                remediation=(
+                    "Could not resolve the attribution configuration "
+                    f"({resolution_error}). Fix the underlying config read, "
+                    "then re-run `nwave-ai doctor`."
+                ),
+            )
+
+        would_attribute = active and attribution_enabled
+        if hook_present == would_attribute:
+            return CheckResult(
+                passed=True,
+                error_code=None,
+                message=message,
+                remediation=None,
+            )
+
         return CheckResult(
-            passed=True,
-            error_code=None,
+            passed=False,
+            error_code="ATTRIBUTION_DISAGREEMENT",
             message=message,
-            remediation=None,
+            remediation=(
+                "The attribution commit hook registration and the resolved "
+                "attribution state disagree. Run `nwave-ai attribution on` "
+                "to re-register the hook and align both."
+            ),
         )
 
     @staticmethod
@@ -97,16 +138,24 @@ class AttributionCheck:
         )
 
     @staticmethod
-    def _repo_is_active(context: DoctorContext) -> bool:
-        """Resolve THIS repo's activation, failing to INACTIVE on a read error.
+    def _resolve_attribution_state(
+        context: DoctorContext,
+    ) -> tuple[bool, bool, Exception | None]:
+        """Resolve ``(active, attribution_enabled, resolution_error)``.
 
-        Reuses the canonical ``resolve_activation`` policy over the two scalars
-        the ``DESConfig`` reader exposes (marker ``enabled_for_repo`` + global
-        ``activation.mode``) — the policy is NOT re-derived here.
+        Reuses the SAME resolution
+        ``des.application.commit_message_attribution.attribute_commit_message``
+        performs (the canonical ``resolve_activation`` policy over the two
+        scalars ``DESConfig`` exposes -- marker ``enabled_for_repo`` + global
+        ``activation.mode`` -- AND ``DESConfig.attribution_enabled``) — the
+        policy is NOT re-derived here.
 
-        On a config-read exception we fail to INACTIVE (return False), matching
-        the activation gate's fail-to-inactive-under-opt-in semantics: a
-        diagnostic must never be more optimistic than the enforcement gate.
+        On a config-read exception, returns ``(False, False, exc)`` rather
+        than raising: ``active=False`` lets the diagnostic message still fail
+        OPEN to "inactive" (never more optimistic than the enforcement gate),
+        while the returned exception lets the caller surface its own
+        COULD_NOT_VERIFY third state instead of silently folding the failure
+        into AGREED.
         """
         try:
             from des.adapters.driven.config.des_config import DESConfig
@@ -116,9 +165,10 @@ class AttributionCheck:
                 cwd=context.project_root,
                 global_config_path=context.global_config_path,
             )
-            return resolve_activation(config.enabled_for_repo, config.activation_mode)
-        except Exception:
-            return False
+            active = resolve_activation(config.enabled_for_repo, config.activation_mode)
+            return active, config.attribution_enabled, None
+        except Exception as exc:
+            return False, False, exc
 
     @classmethod
     def _legacy_residue_present(cls, context: DoctorContext, settings: dict) -> bool:

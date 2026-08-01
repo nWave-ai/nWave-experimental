@@ -583,9 +583,23 @@ class PreToolUseService(PreToolUsePort):
         normal wave-aware flow proceeds (PASS = "no objection found", NOT a GO).
         """
         from des.application import wave_gate_stack_dispatch as wgs
+        from des.domain.nwave_root import resolve_nwave_root
 
         assert self._product_ssot_reader is not None
-        stack = wgs.resolve_stack(wave, "gate-in")
+        resolved = wgs.resolve_stack(wave, "gate-in", start=resolve_nwave_root())
+        if resolved.indeterminate is not None:
+            reason = f"WAVE_GATE_STACK_INDETERMINATE: {resolved.indeterminate}"
+            self._log_blocked(reason, hook_id=hook_id)
+            return HookDecision.block(
+                reason=reason,
+                recovery_suggestions=[
+                    "Reinstall so nWave/waves/ ships: "
+                    "python scripts/install/install_nwave.py",
+                    "Or name the registry explicitly: "
+                    "NWAVE_WAVES_DIR=<repo>/nWave/waves",
+                ],
+            )
+        stack = resolved.rows
         if not stack:
             return None
 

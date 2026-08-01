@@ -165,18 +165,18 @@ class DistBuilder:
         return count
 
     def build_nwave_runtime_assets(self) -> int:
-        """nWave/{data,flavors,schemas,dispatch}/ + framework-catalog.yaml -> dist/.
+        """nWave/{data,flavors,schemas,dispatch,waves}/ + framework-catalog.yaml -> dist/.
 
         Mirrors ``build_templates`` (flat, no ``nWave/`` prefix under dist/) --
         this is the layout ``des_plugin.py``'s ``_install_nwave_runtime_assets``
         reads for a prebuilt (PyPI/pipx) install via ``framework_source / <subdir>``.
         Without this, a consumer install never receives
-        ``nWave/data/orchestrator-affordance/`` (or flavors/schemas/dispatch/
+        ``nWave/data/orchestrator-affordance/`` (or flavors/schemas/dispatch/waves/
         framework-catalog.yaml) -- every atdd_pure runtime lookup against those
         assets silently degrades on a pipx-installed nwave-ai.
         """
         count = 0
-        for subdir in ("data", "flavors", "schemas", "dispatch"):
+        for subdir in ("data", "flavors", "schemas", "dispatch", "waves"):
             src = self.nwave_dir / subdir
             if not src.exists():
                 continue

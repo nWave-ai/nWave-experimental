@@ -51,8 +51,20 @@ import sys
 from pathlib import Path
 
 
+# Expose ``src/`` so ``des`` resolves under a bare ``python3`` (this script
+# runs outside the uv venv as a ``language: system`` hook / ad-hoc tool).
+# Guarded: ``src/`` exists only in the dev repo -- in an installed layout
+# ``des`` is already importable and this is a no-op.
+_SRC = Path(__file__).resolve().parents[1] / "src"
+if _SRC.is_dir() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from des.domain.telemetry_paths import LedgerFamily  # noqa: E402
+from des.domain.telemetry_paths import ledger_dir as _ledger_dir  # noqa: E402
+
+
 REPO = Path(__file__).resolve().parents[1]
-LEDGER_DIR = REPO / ".nwave" / "telemetry" / "atdd-pure"
+LEDGER_DIR = _ledger_dir(REPO, LedgerFamily.ATDD_PURE)
 BACKLOG = REPO / "docs" / "product" / "backlog.md"
 
 # ---------------------------------------------------------------------------

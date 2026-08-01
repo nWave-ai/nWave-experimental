@@ -1,3 +1,4 @@
+# @feature-fix-blast-radius-reparses-tree-per-symbol
 """Acceptance tests -- CodeFactPort floor-tier tree-walk fix (DISTILL, slice-01).
 
 Feature-delta: docs/feature/fix-blast-radius-reparses-tree-per-symbol/feature-delta.md

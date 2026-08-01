@@ -1,0 +1,299 @@
+docs/feature/F-LANGUAGE-ADAPTER-PLUGIN-INFRASTRUCTURE/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Title', 'AT count', 'Walking-skeleton tier', 'Compound substrate'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/F0-atdd-pure-orchestrator-runner/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/affordance-refresh-30min/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/agnostic-at-discovery/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/algebra-gate-stack-enforcement-projection/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/algebra-projections-enforced/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/at-in-process-port-default/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/at-mandate-mechanical-enforcement/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/atdd-pure-dispatch-lifecycle/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/atdd-pure-gate-outcome-surface/feature-delta.md	1	FAIL: Slice Plan: no '## Wave: DISCUSS / [REF] Slice Plan' section found (ADR-028 D2)
+docs/feature/atdd-pure-roadmap-free-rollout/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'Value statement', 'Status', 'Annotation', 'Justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/atdd-pure-spine-hardening/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/atdd-pure-wiring-gates/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/atdd-spine-ledger-enforcement-gate-v2/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 78: ## Wave: DISTILL (per-slice, populated as slices progress) - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/attest-legacy-commit-slice-id-override/feature-delta.md	1	FAIL: ## Reuse Analysis: row 2 Decision 'REUSE' does not normalise into ['CREATE_NEW', 'EXTEND'] (DDD-7)
+docs/feature/attribution-activation-coupling/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/attribution-heredoc-commit-coverage/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/autonomous-consolidation-and-bugfix-loops/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/background-loops-hybrid-c/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/blast-radius-measured-tier/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/bounded-tool-output-handoff/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/carpaccio-handoff-no-manual-steps/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/carpaccio-in-order-honest-non-at-attestation/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/carpaccio-pytest-at-comment-tag-binding/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/causal-dispatch-envelope/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/certification-legs-observe-real-execution/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/charter-scaffold-help-example/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/charter-scaffold-hyphen-slug-guard/feature-delta.md	1	FAIL: ## Reuse Analysis: row 2 Decision 'REUSE' does not normalise into ['CREATE_NEW', 'EXTEND'] (DDD-7)
+docs/feature/charter-scaffold/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/check-contract-shape-declarations/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'AT count', 'Annotation', 'Status', 'Description'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/classic-spine-decommission/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 725: ## Wave: DESIGN / [REVIEW] Solution-Architect-Reviewer - invalid type token '[REVIEW]'; expected one of ['HOW', 'REF', 'WHY']
+docs/feature/claude-code-attribution-migration/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 264: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/codefact-similar-responsibility/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/codex-empirical-e2e-support/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/codex-standing-loop-runtime/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/commit-author-identity-validation/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/commit-slice-auto-stages-charter/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/copilot-cli-integration/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 37: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/cpp-test-runner-adapter/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/crafter-design-adherence-enforcement/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/d4-phase-1-catalog-files/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 15: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/d4-phase-2-workflow-flavors/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 16: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/d4-phase-3-flavor-dispatcher/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 19: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/declared-facts-reachable-recorded/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/deliver-finalize-unmissable/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/des-gate-error-explain-and-guide/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/des-gate-outcome-record/feature-delta.md	1	FAIL: Slice Plan: no '## Wave: DISCUSS / [REF] Slice Plan' section found (ADR-028 D2)
+docs/feature/des-next-loop-projection/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/des-refactor-fixer-swarm/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 501: ## Wave: DISTILL / RED classification (slice-02) - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/des-spine-control-plane-ssot/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/discuss-epic-mode/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/doc-coherence-scope-current-claim-docs/feature-delta.md	1	FAIL: ## Reuse Analysis: row 2 Decision 'REUSE' does not normalise into ['CREATE_NEW', 'EXTEND'] (DDD-7)
+docs/feature/dor-items-ssot/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/drain-via-subagent-dispatch/feature-delta.md	1	FAIL: ## Reuse Analysis: Reuse Analysis table columns ['Existing Component', 'File', 'Overlap', 'Decision', 'Contract Shape', 'Justification'] do not match the canonical five-column header ['Existing Component', 'File', 'Overlap', 'Decision', 'Justification'] (DDD-8)
+docs/feature/evidence-locus-and-absence-detection/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/examinable-gate-surface/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/expectation-authoring-in-distill/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/f-arch-tier-absent-vs-vacuous/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/f-attest-bundled-slice/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 553: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/f-code-design-manifest-and-gate-g/feature-delta.md	1	FAIL: Architecture & Contract Tests: Contract-Tests columns ['ID', 'Contract (observable behavior)', 'SUT (path::symbol)', 'Verdict on violation', 'Consumed-by'] do not match the byte-locked header ['Component/AT-target', 'Contract-shape', 'Universe', 'Assertion-mechanism', 'Consumed-by']
+docs/feature/f-coherence-and-attestation/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/f-context-consumption-probe/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/f-declarative-gate-composition/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/f-deliver-entry-contract-freeze/feature-delta.md	1	FAIL: Architecture & Contract Tests: Contract-Tests columns ['ID', 'Contract (observable behavior)', 'SUT (path::symbol)', 'Verdict on violation', 'Consumed-by'] do not match the byte-locked header ['Component/AT-target', 'Contract-shape', 'Universe', 'Assertion-mechanism', 'Consumed-by']
+docs/feature/f-deliver-wave-migration/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/f-design-devops-review-gate/feature-delta.md	1	FAIL: Architecture & Contract Tests: Contract-Tests columns ['Component / AT-target', 'Contract-shape', 'Universe', 'Assertion-mechanism', 'Consumed-by'] do not match the byte-locked header ['Component/AT-target', 'Contract-shape', 'Universe', 'Assertion-mechanism', 'Consumed-by']
+docs/feature/f-design-wave-migration/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/f-devops-wave-migration/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/f-distill-wave-migration/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/f-distill-wiring-to-registry/feature-delta.md	1	FAIL: Architecture & Contract Tests: Contract-Tests columns ['ID', 'Contract (observable behavior)', 'SUT (path::symbol)', 'Verdict on violation', 'Consumed-by'] do not match the byte-locked header ['Component/AT-target', 'Contract-shape', 'Universe', 'Assertion-mechanism', 'Consumed-by']
+docs/feature/f-finalize-verify-single-spine/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/f-mandatory-floor-producer-agnostic/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/f-nonbypassable-attestation/feature-delta.md	1	FAIL: Architecture & Contract Tests: Contract-Tests columns ['ID', 'Contract (observable behavior)', 'SUT (path::symbol)', 'Verdict on violation', 'Consumed-by'] do not match the byte-locked header ['Component/AT-target', 'Contract-shape', 'Universe', 'Assertion-mechanism', 'Consumed-by']
+docs/feature/f-prefactoring-dispatch-clears-honestly/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/f-rust-test-runner-adapter/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/f-skill-load-set-parity/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/f-spine-runs-tests-not-git-hooks/feature-delta.md	1	FAIL: Architecture & Contract Tests: Contract-Tests columns ['ID', 'Contract (observable behavior)', 'SUT (path::symbol)', 'Verdict on violation', 'Consumed-by'] do not match the byte-locked header ['Component/AT-target', 'Contract-shape', 'Universe', 'Assertion-mechanism', 'Consumed-by']
+docs/feature/f-test-corpus-migration-in-process/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/f-wave-contract-coherence/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/feature-context-bootstrap/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/feature-delta-section-locus-resolver/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Scope', 'Entry condition', '`@prefactoring`?'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/feature-delta-section-schema/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/feature-end-attests-pytest-regression/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/feature-end-certifies-real-consumers/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/feature-end-examine-phase/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/feature-end-reds-baseline-diff/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/feature-end-steps-are-pluggable/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/feature-end-ws-gate-manifest-optional/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-actionable-veto-recovery/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-adapter-route-preserves-gate-contracts/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-arch-tier-selected-by-assertion/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-at-review-verdict-cli-shipping/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['slice_id', 'value_statement', 'status', 'annotation', 'justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-at-review-verdict-surface/feature-delta.md	1	FAIL: ## Reuse Analysis: row 2 Decision 'LEAVE UNTOUCHED' does not normalise into ['CREATE_NEW', 'EXTEND'] (DDD-7)
+docs/feature/fix-atdd-pure-common-audit-log-ssot/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Title', 'Compounds into', 'Status', 'AT count'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-atdd-pure-spine-dogfood-defects/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 14: ## Wave: DISCUSS - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-atdd-pure-spine-phase-count-reduction/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Value Statement', 'Annotation', 'AT cap', 'Justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-blast-radius-reparses-tree-per-symbol/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-cargo-nextest-flat-list-parse/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-cargo-scope-nomatch-not-red/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-carpaccio-distill-authoring-ergonomics/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 80: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-carpaccio-future-slice-scaffold-blocks-commit/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-carpaccio-intercept-honors-at-kind/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-carpaccio-names-malformed-table-line/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-carpaccio-reason-truncates-what-why-how/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'AT count', 'Annotation', 'Status', 'Description'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-carpaccio-reverify-orphaned-slice/feature-delta.md	1	FAIL: Slice Plan: no '## Wave: DISCUSS / [REF] Slice Plan' section found (ADR-028 D2)
+docs/feature/fix-carpaccio-slice-plan-parser-unify/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-catalog-count-pin-derived/feature-delta.md	1	FAIL: ## Reuse Analysis: row 1 Decision 'REUSE' does not normalise into ['CREATE_NEW', 'EXTEND'] (DDD-7)
+docs/feature/fix-charter-placeholder-fp/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'AT count', 'Annotation', 'Status', 'Description'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-cicd-warning-suppress/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 18: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-codex-bootstrap-spine/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-coherence-catalog-path-isolation/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-cohort-gate-preauthoring/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-collector-marker-filter-target-agnostic/feature-delta.md	1	FAIL: ## Reuse Analysis: Reuse-Analysis: no-overlap marker present (DDD-9)
+docs/feature/fix-commit-slice-index-isolation/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-commit-slice-never-amends-pushed/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-commit-slice-omits-slice-id-trailer/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-commit-slice-verify-before-commit/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-commit-slice-writes-verified-record/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-conformance-catalog-degrade-loud/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'AT count', 'Annotation', 'Status', 'Description'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-contract-gate-adapter-interpreter-unavailable-uncaught/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-contract-gate-digest-undercount/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['slice_id', 'value_statement', 'status', 'annotation', 'justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-contract-gate-execution-leg-multilang/feature-delta.md	1	FAIL: Slice Plan: no '## Wave: DISCUSS / [REF] Slice Plan' section found (ADR-028 D2)
+docs/feature/fix-contract-gate-slice-scope/feature-delta.md	1	FAIL: ## Reuse Analysis: row 3 Decision 'REUSE (Fix B introspection)' does not normalise into ['CREATE_NEW', 'EXTEND'] (DDD-7)
+docs/feature/fix-crafter-slim-atd-expert/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Value Statement', 'ATs (≤3)', 'files_to_modify', 'Wave Coverage'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-crafter-stash-structural-mitigation/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 24: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-d1-human-readable-gate-surfaces/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 9: ## Wave: DISCUSS - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-deliver-integrity-ledger-targeting/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 16: ## Wave: DISCUSS - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-delta-doctor-validates-slice-plan-columns/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-delta-grounding-incapacity-is-indeterminate/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-des-e2-contract-gate-degrade-loud/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-des-feature-id-marker-distinct/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-des-ledger-bypass-gate/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-des-runtime-interpreter-boundary/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-des-self-hosted-gate-sync/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Name', 'Behaviour', 'Tier', 'AT count'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-des-silent-config-failure/feature-delta.md	1	FAIL: ## Reuse Analysis: Reuse-Analysis: no-overlap marker present (DDD-9)
+docs/feature/fix-des-single-entry-point-consolidation/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 337: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-des-subprocess-pythonpath/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-design-component-manifest/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['slice_id', 'value_statement', 'status', 'annotation', 'justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-design-reuse-first-gate-cli/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-design-reuse-first-gate/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/fix-dispatch-cannot-generate-feature-end-phases/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-dispatch-distill-by-construction/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 22: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-dispatch-emits-at-kind-markers/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'AT count', 'Annotation', 'Status', 'Description'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-dispatch-guard-blind-to-authoring-wave/feature-delta.md	1	FAIL: ## Reuse Analysis: row 2 Decision 'REUSE (read-only consumer, no new datum)' does not normalise into ['CREATE_NEW', 'EXTEND'] (DDD-7)
+docs/feature/fix-dispatch-guard-ssot-drift/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-dispatch-ssot-consuming-repo/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-dispatch-ssot-resolves-from-installed-runtime/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-distill-exit-mechanical-seal-route/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-distill-human-signoff/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 1449: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-distill-signoff-feature-end-wiring/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 3: ## Wave: DISCUSS - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-distribution-boundary-dev-mode/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 17: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-doc-coherence-unreadable-loud/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-feature-delta-schema-path/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-feature-end-notice-actionable-how/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-feature-end-refusal-names-failing-tests/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-feature-end-ws-gate-applicability/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/fix-feature-tag-files-workspace-layout/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-find-similar-declares-unparseable-coverage/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-flavor-scaffold-producing-tool/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/fix-floor-auto-close-cross-wave/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-freshness-gate-dev-checkout-autoskip/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 17: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-gate-readers-never-mask-transient-oserror/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-gcommit-exit-gate-scoping/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['slice_id', 'value_statement', 'status', 'annotation', 'justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-git-pollution-guard-clobbers-concurrent-writer/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-hmac-bootstrap-installer/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-hook-interpreter-durability/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/fix-hook-marker-parser-atdd-pure-recognition/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 3: ## Wave: DISCUSS - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-indeterminate-seal-affordance/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-installer-private-skill-leak/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-installer-self-referential-des-import/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 16: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-ledger-evidence-since-validated/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-mandate-9-v2-rollout/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'ATs (declared up-front per Sentinel finding #1)', 'Layer', 'Driving port', 'Scope'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-mode-trailer-gate-bare-emissions-how/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-omission-classes-json-ssot/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/fix-oss-environmental-e2e-gate/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Tag', 'Delivers', 'ATs (≤3)', 'Walking skeleton?'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-outcomes-register-schema-path/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-po-charter-dispatch-marker-lane/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-pre-push-hook-dual-installer-collision/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-pre-push-suite-not-diff-aware/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-precommit-fabricates-vacuous-scaffold/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-pytest-timeout-mechanism-proof-flaky/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 25: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-readiness-gate-clears-on-empty/feature-delta.md	1	FAIL: ## Reuse Analysis: row 1 Decision 'REUSE' does not normalise into ['CREATE_NEW', 'EXTEND'] (DDD-7)
+docs/feature/fix-readiness-gate-reuse-first-invariant/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-red-green-duplicate-testcase-false-pass/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-refactor-pile-grammar-undocumented/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-resolve-tool-repo-relative-locations/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'Value', 'Status'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-reverify-e1-via-scoped-wrapper/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Goal', 'Surface', 'AT count', 'Decision-table rows witnessed'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-reverify-p4-tracked-before-fallback/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['slice_id', 'value_statement', 'status', 'annotation', 'justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-reverify-slice-commit-at-kind/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Value (observable)', 'AT'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-robustness-pbt-density-gate/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['slice_id', 'value_statement', 'status', 'annotation', 'justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/fix-run-slice-ats-fail-names-how/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-runverdict-sigkill-mislabel/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-rust-regression-at-kind-wiring/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-rust-regression-at-kind/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-scorecard-freshness-audit-cli/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 51: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-seal-keys-on-nodeid-not-docstring/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-self-extending-gate-deadlock/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-slice-at-completeness-incomplete-how/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-slice-commit-refused-names-how/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-slice-id-grammar-drift-ssot/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-slice-id-regex-suffix-support/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 17: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-slicecommitverified-emission/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 236: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-subagent-stop-fenced-marker-false-block/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-test-git-pollution/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-u2-gcommit-reviewer-trailer-enforcement/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 17: ## Wave: DISCUSS - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-unreadable-gitignore-exit-propagation/feature-delta.md	1	FAIL: ## Reuse Analysis: Reuse-Analysis: no-overlap marker present (DDD-9)
+docs/feature/fix-validate-tests-path-precision/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 24: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-validator-refuses-own-generated-dispatch/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/fix-verify-negative-at-indeterminate/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-verify-negative-at-two-causes/feature-delta.md	1	FAIL: ## Reuse Analysis: Reuse-Analysis: no-overlap marker present (DDD-9)
+docs/feature/fix-verify-wave-dispatch-exemption-ssot/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-walking-skeleton-feature-end-wiring/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 3: ## Wave: DISCUSS - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/fix-walking-skeleton-gate-verdict-names-how/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-wave-bypass-recovery-truthful/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-wave-dispatch-marker-contract/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/fix-wave-marker-bypass-benign-passthrough/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-wheel-force-include-runtime-assets/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/fix-whole-tree-contract-gate-runner-aware/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Status', 'Scope (walking-skeleton-first)', 'Keystone AT'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/gate-layer-test-runner-genericity/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['slice', 'value', 'files_to_modify'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/gate-runner-resource-aware/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/gate-scope-digest-runner-agnostic/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/gate-self-explanation-completeness/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'Gate', 'What it adds', 'Status'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/gate-trailer-read-git-port-extract/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/gate-trailer-read-seam-a-indeterminate/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/generated-command-catalog/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/git-port-in-memory-execution/feature-delta.md	1	FAIL: ## Reuse Analysis: row 5 Decision 'FOLLOW (shape precedent, no code reuse)' does not normalise into ['CREATE_NEW', 'EXTEND'] (DDD-7)
+docs/feature/go-test-runner-adapter/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/implement-language-adapter-facets/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/implement-walking-skeleton-done-gate/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/installer-orphan-sweep/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/intra-implementation-duplication-gate/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/js-language-adapter/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/l1-token-instrumentation/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/language-adapter-registry-self-enforcement/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/language-port-realization-gate/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/lean-wave-documentation/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/many-features-close-for-one-full-suite/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/measured-parallel-safety-report/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/mode-registry-single-locus/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/non-slice-dispatch-exemption-model/feature-delta.md	1	FAIL: Slice Plan: no '## Wave: DISCUSS / [REF] Slice Plan' section found (ADR-028 D2)
+docs/feature/nw-stabilize/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Value statement', 'Status', 'Class', 'Justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/nwave-flow-v2-enforcement/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/nwave-project-activation-gating/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/opt-in-per-step-double-review/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/orchestrator-affordance-hourly-refresh/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/orchestrator-affordance-injection/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'AT count', 'Annotation', 'Status', 'Description'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/oss-design-dimension-pbt-gate-pair/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['slice_id', 'value_statement', 'status', 'annotation', 'justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/oss-dormant-seam-gate/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 217: ## Wave: DESIGN / Handoff → DISTILL (acceptance-designer) - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/oss-earned-verdict-gate/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 179: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/oss-feature-end-emit-cli/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/oss-hook-side-phase-injection/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 11: ## Wave: DISCUSS - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/oss-review-verdict-demotion/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Value statement', 'Annotation', 'ADD + REMOVE (DoD §13)', 'Justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/oss-spine-watchdog/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/oss-upstream-gate-pair-traceability/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['slice', 'description', 'status'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/outcomes-registry/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/parallel-by-default-distill-slicing/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/parallel-by-default-feature-plan/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/parallel-by-default-slice-plan/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/parallel-work-cleans-up-after-merge-back/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/pista1v2-phase225-bypasscause/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 16: ## Wave: DISTILL - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/plugin-skill-deliverable-type/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/pretooluse-attribution-enforcement/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/r3-gate-non-vacuity-build-tier/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/rc-cross-os-multitool-validation/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/reconcile-a12-reviewer-bash/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/release-staging-ssot/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/remove-verify-refactor-trigger/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/rigor-review-step-toggles/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/scoped-per-slice-build-tier-wiring/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/scoped-per-slice-build-tier/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/sessionstart-cross-host-contract/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/simplify-atdd-pure-carpaccio-spine/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 273: ## Wave: DESIGN / [WHY|HOW] Expansion Catalog - invalid type token '[WHY|HOW]'; expected one of ['HOW', 'REF', 'WHY']
+docs/feature/single-entry-point/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Title', 'Scope', 'ATs', 'Status'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/skill-hash-repin/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'AT count', 'Annotation', 'Status', 'Description'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/skill-normative-content-gate/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 561: ## Wave: DISTILL (authored by nw-acceptance-designer / Quinn) - missing schema prefix; expected '## Wave: <NAME> / [REF|WHY|HOW] <Section>'
+docs/feature/slice-dependency-declared/feature-delta.md	1	FAIL: Architecture & Contract Tests: Contract-Tests columns ['Component / AT-target', 'Contract-shape', 'Universe', 'Assertion-mechanism', 'Consumed-by'] do not match the byte-locked header ['Component/AT-target', 'Contract-shape', 'Universe', 'Assertion-mechanism', 'Consumed-by']
+docs/feature/stabilize-cadence-evaluator/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Value statement', 'Status', 'Class', 'Justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/stabilize-concurrency-proof/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Value statement', 'Status', 'Class', 'Justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/stabilize-gate-runner/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Value statement', 'Status', 'Class', 'Justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/stabilize-loop-runner-local-channel/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Value statement', 'Class', 'Justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/stabilize-loop-runner/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Value statement', 'Status', 'Class', 'Justification'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/stabilize-onboarding/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/state-delta-matcher/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/sustainable-test-suite/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/test-feature/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/ular-reentrancy-guard/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'AT count', 'Annotation', 'Status', 'Description'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/unified-event-store/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/unified-feature-delta/feature-delta.md	1	FAIL: ## Reuse Analysis: no '## Reuse Analysis' section found (DDD-8 / nw-design SKILL.md step 5)
+docs/feature/unified-language-adapter-registry/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/verify-catalog-coherence/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'AT count', 'Annotation', 'Status', 'Description'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/verify-red-green-default-runner-aware/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/verify-slice-commit-runner-aware-collection/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/vitest-test-runner-adapter/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/walking-skeleton-production-like-gate/feature-delta.md	1	FAIL: Slice Plan: malformed wave heading at line 1335: ## Wave: DESIGN / [REVIEW] Solution-Architect-Reviewer - invalid type token '[REVIEW]'; expected one of ['HOW', 'REF', 'WHY']
+docs/feature/wave-entry-gate-affordance-nudge/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'AT count', 'Annotation', 'Status', 'Description'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/wave-gateout-enforced-under-orchestration/feature-delta.md	0	PASS: every checked section is well formed
+docs/feature/wheel-ships-nwave-runtime-assets/feature-delta.md	1	FAIL: Slice Plan: slice-plan table columns ['Slice', 'Class', 'AT count', 'Annotation', 'Status', 'Description'] do not match the D2 fixed five-column header ['Slice', 'Value statement', 'Status', 'Annotation', 'Justification']
+docs/feature/wire-multilang-run-facets/feature-delta.md	1	FAIL: Architecture & Contract Tests: missing 'Contract-Tests' sub-table
+docs/feature/wire-p0-gates-at-feature-end/feature-delta.md	0	PASS: every checked section is well formed

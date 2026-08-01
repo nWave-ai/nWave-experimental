@@ -1,3 +1,4 @@
+# @feature-classic-explicit-only
 """Public ATs for the one-spine ``atdd_pure`` workflow contract.
 
 The selection boundary is deliberately the only oracle for mode semantics:

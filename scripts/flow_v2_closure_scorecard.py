@@ -63,6 +63,8 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from des.domain.repo_path_resolver import feature_delta_path  # noqa: E402
+from des.domain.telemetry_paths import LedgerFamily  # noqa: E402
+from des.domain.telemetry_paths import ledger_dir as _ledger_dir  # noqa: E402
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -71,7 +73,7 @@ REPO = Path(__file__).resolve().parents[1]
 # (at_completion_ledger.py:316). `.nwave/des/logs/` holds only audit logs, NOT
 # the per-feature attestation records, so reading it could never detect a
 # FeatureEnd (the iter-2 bug: scorecard reported 0/N regardless of reality).
-LEDGER_DIR = REPO / ".nwave" / "telemetry" / "atdd-pure"
+LEDGER_DIR = _ledger_dir(REPO, LedgerFamily.ATDD_PURE)
 
 # Wiring = a FIRING surface (the wave-contract registry gate-stacks + flavor
 # gate-stacks + hooks). NOT the catalog (that is the registry of CLI subcommands,
@@ -337,8 +339,11 @@ def _slice_commits_verified(feature_id: str) -> int:
     return len(slices)
 
 
-def _live_resolved(wave: str, boundary: str, gate_id: str) -> bool:
-    """True iff ``gate_id`` LIVE-resolves on the ``wave``/``boundary`` gate stack.
+def _live_resolved(wave: str, boundary: str, gate_id: str) -> bool | None:
+    """True/False iff ``gate_id`` LIVE-resolves on the ``wave``/``boundary`` gate
+    stack; ``None`` iff the wave-contract registry directory itself could not be
+    verified (RCA fix-installed-waves-registry-silent-empty §6.3 "third
+    consumer, do not miss it").
 
     The un-gameable wiring check (f-distill-wiring-to-registry DDD-7): drives the
     REAL in-tree spine resolver ``wave_gate_stack_dispatch.resolve_stack`` over the
@@ -348,7 +353,11 @@ def _live_resolved(wave: str, boundary: str, gate_id: str) -> bool:
     block can no longer false-credit a gate-stack module wired. Pure in-repo
     Python, no subprocess (consistent with target-machine-independence: the
     scorecard already shells ``des --help``; importing the in-tree resolver is the
-    same in-repo mechanism). Fail-closed: any import / resolve error -> False.
+    same in-repo mechanism). Fail-closed on a genuine import / resolve error ->
+    False -- but an INDETERMINATE resolution (the registry directory could not be
+    read at all) is NEVER collapsed into that SAME False: scoring "could not
+    verify" as "not wired" would silently understate epic closure, the identical
+    defect class this scorecard exists to catch, one layer out.
     """
     try:
         repo_src = REPO / "src"
@@ -356,7 +365,10 @@ def _live_resolved(wave: str, boundary: str, gate_id: str) -> bool:
             sys.path.insert(0, str(repo_src))
         from des.application.wave_gate_stack_dispatch import resolve_stack
 
-        rows = resolve_stack(wave, boundary)
+        result = resolve_stack(wave, boundary)
+        if getattr(result, "indeterminate", None) is not None:
+            return None
+        rows = getattr(result, "rows", result)
         return any(str(r.get("gate_id")) == gate_id for r in rows)
     except Exception:
         return False
@@ -407,7 +419,7 @@ def _hook_installed(token: str) -> bool:
     return False
 
 
-def _module_wired(subs: set[str], module: str) -> bool:
+def _module_wired(subs: set[str], module: str) -> bool | None:
     sub = {
         "gate-design-at-coherence": "gate-design-at-coherence",
         "self-attest": "self-attest",

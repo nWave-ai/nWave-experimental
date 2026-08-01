@@ -76,7 +76,18 @@ class DESConfig:
         """
         if config_path is None:
             effective_cwd = cwd or resolve_nwave_root()
-            config_path = effective_cwd / ".nwave" / "des-config.json"
+            # `effective_cwd` may be RELATIVE (e.g. `Path(".")`, exactly what
+            # `--repo .` / `--repo-dir .` produce). `_nearest_marker`'s
+            # ascend-loop walks up via `.parent` and stops when
+            # `current == current.parent` -- but `Path(".").parent ==
+            # Path(".")` is pathlib's own behaviour for the trivial relative
+            # path, so an un-resolved relative cwd self-loops the exit check
+            # on the FIRST iteration and the walk-up never inspects the real
+            # repo root. Resolve to absolute HERE, before `_config_path` is
+            # built, so every downstream consumer (including
+            # `_nearest_marker`) always ascends real directories regardless
+            # of whether the caller passed a relative or absolute cwd.
+            config_path = effective_cwd.resolve() / ".nwave" / "des-config.json"
 
         self._config_path = config_path
         self._config_data = self._load_json_file(self._config_path)
@@ -234,6 +245,23 @@ class DESConfig:
         marker_data = self._load_json_file(marker_path)
         value = marker_data.get("enabled_for_repo")
         return value if isinstance(value, bool) else None
+
+    @property
+    def attribution_enabled(self) -> bool:
+        """Global ``attribution.enabled`` (fix-attribution-trailer-never-applied).
+
+        Read from ``~/.nwave/global-config.json`` -> ``attribution.enabled``.
+        Defaults to ``False`` when the key, the ``attribution`` block, or the
+        whole file is absent/corrupt -- an unconfigured machine must never
+        attribute (the install-time default of ``True`` for a *configured*
+        install, written by ``attribution_plugin.py``, is preserved because a
+        configured install carries the key explicitly).
+        """
+        attribution = self._global_config_data.get("attribution", {})
+        if not isinstance(attribution, dict):
+            return False
+        enabled = attribution.get("enabled", False)
+        return enabled if isinstance(enabled, bool) else False
 
     @property
     def deliverable_type(self) -> str | None:

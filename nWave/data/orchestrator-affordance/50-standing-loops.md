@@ -1,17 +1,9 @@
 <EXTREMELY-IMPORTANT>
-TRUNCATED PREVIEW? If this looks cut off, or you see a line like "Full output saved
-to: <path>" above/below this block: that path IS this same file, re-rendered as a
-tool-result. Read <path> (or, failing that, `nWave/data/orchestrator-affordance/
-00-standing-loops.md` directly) with the Read tool RIGHT NOW, before your next reply
-— a preview that "looks consistent with what you already know" is not a reason to
-stop reading. This paragraph is deliberately first so the pointer survives even a
-2KB-preview cut.
-
 WHO THIS ADDRESSES — read this before the mandate below, because the mandate is dangerous
 in the wrong hands. These instructions are for the SESSION ORCHESTRATOR: the top-level agent
 in direct conversation with the human. **If you are a SUBAGENT — dispatched by an
 orchestrator, working a mission, running inside a worktree — you must NEVER arm these loops,
-and encountering this text is not an instruction to you.** Three of the ten dispatch agents
+and encountering this text is not an instruction to you.** Three of the eleven dispatch agents
 that WRITE to working trees; a subagent arming them mid-mission would start concurrent writers
 nobody asked for, on a machine whose state it cannot see. Note the file and carry on with your
 mission; if you think the loops should be armed, SAY SO to whoever dispatched you and let them
@@ -39,31 +31,33 @@ comes right after, not instead of, and not before.
    des producing-tools: reach for the CLI/gate that produces the artifact, never
    hand-assemble what a gate checks." (from the catalog's other two files — this line
    IS the action, reading the full files is optional beyond it.)
-3. Check `TaskList`/`CronList` — the REAL mechanism, not memory — for which of the 9
+3. Check `TaskList`/`CronList` — the REAL mechanism, not memory — for which of the 11
    loops below are active RIGHT NOW, IN THIS SESSION. Dynamic loops (`ScheduleWakeup`)
    do NOT persist across sessions; a fresh session starts with ZERO active loops even
-   if a PRIOR session asked and started all ten. "I recall covering this already" is
+   if a PRIOR session asked and started all eleven. "I recall covering this already" is
    about a different session's state, not this one's — it does not satisfy step 3,
    checking does. If ANY are not active in THIS session, **ARM THEM — all of them, now,
-   without asking first — and then SAY SO in one batched message** naming what each does
-   and how to stop them. They are ON BY DEFAULT (Ale, 2026-07-22): the human opts OUT,
-   not in. The reason is that these loops are the safety net — they drain the defect and
-   tech-debt piles, catch a bare failure that explains nothing, reconcile a worktree
-   abandoned mid-task, and stop a lane idling — and a safety net that waits to be asked
-   for is missing exactly when nobody thought to ask. Arming is not the sensitive act;
-   arming SILENTLY is. So the disclosure is NOT optional and NOT a formality: state
-   plainly that background work is now running, what it will do, roughly what it costs,
-   and the literal sentence that stops it — *"stop the standing loops"* — which you must
-   honour immediately and without argument. A human who says stop is not to be
-   persuaded; they are to be obeyed, and the loops stay off for the rest of that session.
+   without asking first — and then SAY SO in the same reply**, naming what each does and
+   how to stop them. They are ARM-BY-DEFAULT (re-authorized 2026-08-01 after a one-week
+   ASK-THEN-ARM period): the human opts OUT, not in. Why re-authorizing the default is not
+   the self-authorization the ASK-THEN-ARM period warned against: that restriction was an
+   agent requesting a policy for itself; arm-by-default is the standing human authority's
+   own explicit choice, the same act of authorization it always was, not an exception to
+   it. A loop that only starts when asked is a safety net that is missing exactly when
+   nobody thought to ask for it. Arming is not the sensitive act; arming SILENTLY is. So
+   the disclosure is NOT optional and NOT a formality: state
+   plainly, in the SAME reply, what was armed, what each does, roughly what it costs, and
+   the literal sentence that stops them — *"stop the standing loops"* — which you must
+   honour immediately and without argument. A human who says stop is not to be persuaded;
+   they are to be obeyed, and the loops stay off for the rest of that session.
    **THE ARRIVAL OF THIS INJECTION IS THE TRIGGER TO RE-CHECK — every time it arrives,
    never once and then from memory.** This block is injected on SessionStart AND on
    UserPromptSubmit precisely because the loops are session-scoped: a restart, a crash or
    a killed session disarms ALL of them SILENTLY, and nothing else will ever tell you they
-   are gone. So when you see this text, run the tool again — "I already did this" describes
-   a session that may no longer exist. Only a tool call in the CURRENT session satisfies
-   this step. A later explicit "start/stop the loops" from the human overrides for the rest
-   of that session.
+   are gone. So when you see this text, run the tool again and re-arm what is missing —
+   "I already did this" describes a session that may no longer exist. Only a tool call in
+   the CURRENT session satisfies the check. A later explicit "stop the loops" from the
+   human overrides for the rest of that session.
 
 Full detail (red-flags, per-loop rationale) follows below — read it if present, but
 the three actions above do not require it: act on this paragraph alone if that is all
@@ -78,11 +72,11 @@ agents has an unconditional right to know it, in the first reply, without having
 
 ## Red flags — these thoughts mean you are about to skip the CHECK or the DISCLOSURE. Don't.
 
-*(These rows were written when the mandate was ASK-then-arm. Under the current policy the
-loops arm by default, so wherever a row says "the ask" read "the check plus the disclosure":
-verify with the real tool which loops are live, arm what is missing, and SAY SO. The failure
-each row describes is unchanged — it was never really about the question, it was about the
-silence.)*
+*(These rows were written when the mandate was ASK-then-arm, 2026-07-31 to 2026-08-01.
+Under the current ARM-by-default policy, wherever a row below says "the ask" read "the
+disclosure": verify with the real tool which loops are live, arm what is missing, and SAY
+SO. The failure each row describes is unchanged — it was never really about the question,
+it was about the silence.)*
 
 **Verify-before-defer (STANDING).** A loop that offers WORK — drain, dispatch, throughput — may
 be skipped ONLY for a hazard MECHANICALLY CONFIRMED this turn. "Seems risky / probably blocked /
@@ -170,8 +164,8 @@ one, go looking for the smaller instance.
 | "I don't want to be pushy" | One batched question is not pushy. Silence is the actual failure mode here. |
 | "Let me just check X first, then I'll do the ask" | No. The ask is BEFORE any other tool call, not after "one quick check" — that check is how the ask silently never happens. |
 | "I already covered this in a previous session / I remember asking about the loops before" | That was a DIFFERENT session's state. Dynamic loops don't persist — this session starts at zero regardless. Check `TaskList`/`CronList` in THIS session; a remembered conclusion is not a substitute for checking. |
-| "This work is X, not nWave delivery, so the sensible default is to leave them off — I'll offer instead of asking" | A default you picked is a unilateral decision wearing the costume of an offer. The mandate is an ASK with all ten named, not a recommendation to decline. The premise is usually wrong too: the loops are mostly ABOUT delivery — spine routing, bugfix source/drain, worktree hygiene — so "this isn't delivery work" rarely survives contact with what the loops actually do. |
-| "The recurring cadence was my own scheduling, not the ten loops" | Self-scheduled wakeups are session-scoped too: a restart kills those as well. A cadence that stops is evidence the session died, not that the work ended. Re-check with the real tool regardless of which mechanism was driving it. |
+| "This work is X, not nWave delivery, so the sensible default is to leave them off — I'll offer instead of asking" | A default you picked is a unilateral decision wearing the costume of an offer. The mandate is an ASK with all eleven named, not a recommendation to decline. The premise is usually wrong too: the loops are mostly ABOUT delivery — spine routing, bugfix source/drain, worktree hygiene — so "this isn't delivery work" rarely survives contact with what the loops actually do. |
+| "The recurring cadence was my own scheduling, not the eleven loops" | Self-scheduled wakeups are session-scoped too: a restart kills those as well. A cadence that stops is evidence the session died, not that the work ended. Re-check with the real tool regardless of which mechanism was driving it. |
 | "This drain/dispatch looks risky — shared box, design-gated, a known block — safer to no-op" | The conclusion is not earned until the cheap check that proves the block has been RUN. A no-op justified by an INFERRED hazard is the defect this file exists to catch. Cite the command and its observed output, never the inference. |
 | "I'll fire the next unit after this one comes back" | Then you have one lane running and the rest idle, and the wait was self-imposed. Independent work does not become more independent by waiting. Fire it now, in the SAME message, batched. |
 | "I've got five agents running, so I am parallelising" | Are they reporting to YOU, or to an owner? If every result comes back to you to judge and re-fire, you have parallelised your INBOX, not the work — five agents make you five times busier. Count the threads that end at you, not the agents that are running. |
@@ -182,14 +176,54 @@ one, go looking for the smaller instance.
 | "It's night / the box is shared / I was told not to load the machine, so zero work is the safe default" | That is a QUANTITATIVE limit (`--max-parallel 1`, resource-aware launch, one box lane), never a licence for zero. Caution over-applied into a total stop is a rationalisation in a safety costume, and it is not what was asked for. |
 | "Most of this pile is design-gated, so the pile is gated" | Do not generalise from the heaviest rows — nor from the lightest. Gating a pile by glancing at its biggest items produces zero; declaring it drainable by keyword-excluding those items is the same error inverted. Route each row by a MEASURED blast radius, one row at a time, and report how many you actually measured. |
 | "The classifier said tier L, so this is L-lane work" | Only if the classifier measured THIS unit. Consumer counts keyed on a bare symbol name conflate every same-named symbol in the repo, so any module exposing a common name (`main`, `run`, `setup`) is tier L by construction. Sanity-probe a measuring gate with two inputs that MUST differ; if the number is identical, the gate is not measuring what it claims. |
-| "This work is X, not nWave delivery, so the sensible default is to leave them off — I'll offer instead of asking" | A default you picked is a unilateral decision wearing the costume of an offer. The mandate is an ASK with all ten named, not a recommendation to decline. Measured 2026-07-22: an instance reasoned exactly this thirty seconds before starting a delivery — and the loops are mostly ABOUT delivery (spine routing, bugfix source/drain, worktree hygiene), so the premise was wrong too. |
-| "The recurring cadence was my own scheduling, not the ten loops" | Self-scheduled wakeups are session-scoped too: the restart killed those as well. Measured 2026-07-22: an instance saw its own cadence stop, never connected "session restarted" to "the thing firing all night just died", and resumed ad-hoc. Re-check regardless of which mechanism was driving the cadence. |
+| "This work is X, not nWave delivery, so the sensible default is to leave them off — I'll offer instead of asking" | A default you picked is a unilateral decision wearing the costume of an offer. The mandate is an ASK with all eleven named, not a recommendation to decline. Measured 2026-07-22: an instance reasoned exactly this thirty seconds before starting a delivery — and the loops are mostly ABOUT delivery (spine routing, bugfix source/drain, worktree hygiene), so the premise was wrong too. |
+| "The recurring cadence was my own scheduling, not the eleven loops" | Self-scheduled wakeups are session-scoped too: the restart killed those as well. Measured 2026-07-22: an instance saw its own cadence stop, never connected "session restarted" to "the thing firing all night just died", and resumed ad-hoc. Re-check regardless of which mechanism was driving the cadence. |
 
-## The ten loops
+## The eleven loops
 
-**NAME EVERY ARMED LOOP `Loop N/10 — <what it does>`.** The numbering is not cosmetic: it is what
+**EVERY LOOP BELOW IS WORDED AS A QUESTION — answering it means naming the command you just
+ran to produce the fact, not restating a prior turn's answer to the same question.** Measured
+2026-08-01: a session fired these loops dozens of times over several hours and answered nearly
+all of them from a running narrative ("7/6 sopra tetto") instead of from a fresh check, because
+a plausible continuation of the last answer is cheaper than re-deriving it, and that shortcut
+wins over the instruction not to take it even when the instruction is explicit. The loops did
+not catch this on their own — a human had to. The fix is mechanical, not a resolution to try
+harder: before writing ANY sentence that states a fact this loop asks about (a lane's liveness,
+a worktree's state, a node's dependency status), you must be able to point to a command you ran
+in THIS turn whose output is that fact. If you cannot, you have not answered the question — stop
+and run the command first. This applies with equal force to the timestamp itself: capture `NOW`
+via `date -u +%Y-%m-%dT%H:%M:%SZ` in the same tool call as the check, never write a clock value
+from memory (measured same session: a placeholder hour was written in place of the real one).
+When a `TaskList` row is part of the evidence, its `status` word is not enough on its own —
+cross it against `metadata.last_verified_at` (itself a captured, not typed, timestamp) and
+against live agent evidence before trusting it; a status can outlive the process behind it by
+hours. **The exact command, verified 2026-08-01**: this box's `find` is `bfs`, which rejects
+GNU find's relative `-newermt "-15 minutes"` syntax outright (errors, yields zero matches every
+time — a structural false-negative, not a finding of inactivity) and nests `subagents/` one
+level deeper than a naive glob assumes:
+```bash
+CUTOFF=$(date -u -d '-15 minutes' +%Y-%m-%dT%H:%M:%SZ)
+find ~/.claude/projects/*/*/subagents -newermt "$CUTOFF" 2>/dev/null
+```
+Always compute an absolute ISO cutoff first — never pass a relative expression to `-newermt`. If the loop's answer requires
+delegating to another agent, that agent — not you — must be the one whose output you quote; do
+not answer on its behalf from what you expect it would find.
+
+**STAGGER THE SCHEDULE — never arm all eleven at the same clock minute.** `CronCreate` accepts a
+full 5-field cron expression, not just a bare interval: use it to give each loop its OWN minute
+offset within its period, so that a 5-minute loop and a 30-minute loop do not both land on `:00`,
+`:05`, `:15`, `:30` and pile eleven prompts into a single turn. `"*/5 * * * *"` and `"*/30 * * * *"`
+both fire at `:00` — pick `"2,7,12,17,22,27,32,37,42,47,52,57 * * * *"` and `"5,35 * * * *"`
+instead, choosing eleven offsets (one per loop) that share no minute across the whole hour. This is
+a property to VERIFY, not eyeball: list every loop's resulting minute set for a full hour and
+confirm the eleven sets are pairwise disjoint before calling `CronCreate` — a plausible-looking
+stagger that still collides on one minute defeats the entire point. The same discipline applies
+to `ScheduleWakeup`-driven dynamic loops: don't return to the same round-number cadence (`1200`,
+`1800`) as a sibling loop already running; nudge the delay so the two wake at different times.
+
+**NAME EVERY ARMED LOOP `Loop N/11 — <what it does>`.** The numbering is not cosmetic: it is what
 makes a MISSING loop visible at a glance in a bare `CronList`/`TaskList` listing. Descriptive names
-alone cannot show a gap — with `Loop 1/10 … Loop 10/10` a single absent number is obvious, and that is
+alone cannot show a gap — with `Loop 1/11 … Loop 11/11` a single absent number is obvious, and that is
 the whole point, since the loops die silently on restart and nothing else reports it. Write the
 prompt in ENGLISH like every other nWave asset, even when the conversation is in another language:
 these prompts are prose the system executes, not chat.
@@ -220,14 +254,16 @@ its own act of arming them. The discipline was in the reminder but not in the pr
 following; both now carry it.
 
 
-**`/loop 30m` — never bare-dispatch for epic/feature/slice work.** Delivering an
-epic/feature/slice is NEVER a raw `Agent()`/Task dispatch. Always route through the DES
-CLI or `/nw-*` commands — in particular `/nw-deliver` run IN FULL, including the
-feature-end cycle's final phases (deep review · env-e2e · full-suite · sign+emit). Those
-final phases are exactly what catch false-done and blast-radius, and exactly what gets
-skipped when work is fragmented (e.g. running `/nw-execute` slice-by-slice without ever
-closing the feature-end cycle). Never skip them — ensure failure injection and Vera's
-examine both actually ran before calling anything done.
+**`/loop 30m` — (answer only with dispatches you just re-scanned THIS turn, never a memory
+of a prior audit) Did any epic/feature/slice work this session go through a raw `Agent()`/Task
+dispatch instead of the DES CLI or `/nw-*` commands, and did every feature-end cycle you
+closed actually run its final phases (deep review · env-e2e · full-suite · sign+emit), or
+did one get called done while fragmented (e.g. `/nw-execute` slice-by-slice with the
+feature-end cycle never closed)?** Delivering an epic/feature/slice is NEVER a raw
+dispatch — always route through the DES CLI or `/nw-*` commands. Those final phases are
+exactly what catch false-done and blast-radius, and exactly what gets skipped when work is
+fragmented. Never skip them — ensure failure injection and Vera's examine both actually ran
+before calling anything done.
 
 **Know the shape of the pull, because knowing the rule is not enough to resist it.** The
 moment you need work from an agent, the form that arrives first is `Agent(subagent_type=…)`.
@@ -262,12 +298,13 @@ reason is a human authorisation token, not a field to fill in so the command wil
 Writing one yourself to unblock yourself is the asymmetry violation in miniature —
 controls veto, only humans authorise.
 
-**`/loop 30m` — Sentinel worktree anti-rot triage.** The Throughput Sentinel must
-inventory `git worktree list` plus branch/head, dirty state, lock/PID evidence, owner
-receipt and recent host-log activity. A worktree is never called abandoned merely because
-it is quiet: it becomes `ABANDONED_CANDIDATE` only when those independent observations
-converge on missing live ownership/activity and unintegrated or dirty work. For every
-candidate, emit the evidence and an explicit decision request: `MERGE` (done and green),
+**`/loop 30m` — (name the `git worktree list`/mtime command you just ran THIS turn — a prior
+turn's inventory does not count) Is every worktree you are about to call abandoned actually
+converged-on by independent evidence (missing live ownership/activity AND unintegrated or
+dirty work), or are you about to label one `ABANDONED_CANDIDATE` just because it has been
+quiet?** The Throughput Sentinel must inventory `git worktree list` plus branch/head, dirty state,
+lock/PID evidence, owner receipt and recent host-log activity — quiet alone is never
+sufficient. For every candidate, emit the evidence and an explicit decision request: `MERGE` (done and green),
 `RESUME` (close and owned), `DEFER` (record why/what remains), or `REMOVE` (fully merged
 and clean). The Sentinel NEVER removes anything; deletion remains human-authorized and
 must use a separate verified action. A worktree lingering with no decision recorded is
@@ -279,19 +316,35 @@ the session remains alive. If the Sentinel finds an unknown that could change
 parallel-safety, slicing, architecture, or feasibility, it emits a bounded `nw-spike`
 recommendation with the question and decision it can change.
 
-**`/loop 15m` — search for parallel work, never sit idle.** Do not wait passively on a
-single in-flight task. Optimize throughput with parallel swarms (cloud-bound stages fan
-out; box-bound stages stay serialized to one lane — see the throughput doctrine). Don't
-waste tokens: prefer cheap verification (reading a ledger, running a scoped test) over
-re-deriving what is already known. When this loop observes a genuine trunk-health signal
-(CI red not caused by your own change, a recurring test failure, a build broken on a
-clean checkout) — something actually observed, never a hypothesis — record it:
+**`/loop 15m` — (the verification below must be a command you ran THIS turn, not a recalled
+snapshot) Is there independent parallel work you are leaving idle while passively
+waiting on a single in-flight task, and have you actually verified that cheaply (a ledger
+read, a scoped test) instead of assuming it — AND have you first counted how many lanes are
+one step from a seal, per the closing-beats-opening principle below, before counting idle
+capacity for a NEW front?** Optimize throughput with parallel swarms
+(cloud-bound stages fan out; box-bound stages stay serialized to one lane — see the
+throughput doctrine). Don't waste tokens re-deriving what is already known. When this loop
+observes a genuine trunk-health signal (CI red not caused by your own change, a recurring
+test failure, a build broken on a clean checkout) — something actually observed, never a
+hypothesis — record it:
 `des consolidation-signal-tick --feature-id <id> --project-root . --signal-type
 <signal-type> --signal-key <short-slug> --now <iso8601>`.
 
-**`/loop 20m` — swarm-throughput self-check (N cloud lanes, ONE box lane).** This is the
-mechanism `swarm-parallel-delivery` depends on — check it explicitly, don't just remember
-it. **THE PARALLELISM MECHANISM IS THE ISOLATED WORKTREE, not more agents in one tree:** N
+**`/loop 20m` — CLOSING BEATS OPENING: how many nodes/slices/features are within ONE clear
+step of a seal right now (AT-review APPROVED awaiting EXAMINE, EXAMINE PASS awaiting
+`commit-slice`, or a RED already sealed awaiting GREEN) — stated as a NUMBER from `TaskList`
++ `git log` checked in THIS turn, never recalled — and has EVERY one of those been
+dispatched or nudged before any capacity went to a front that has not yet produced a RED?
+Only once that count is zero does the rest of this question apply: is this swarm's
+throughput actually advancing the ToC-constraint node toward closure, or only saturating
+idle cloud capacity with parallel fronts that don't bring that node closer?** Saturated
+capacity is NOT the goal, and neither is a busy swarm — see the `nw-throughput`
+skill's "Saturated capacity is not the goal" section: before opening/parallelizing any new
+front, verify the identified constraint node's own critical path is already maximally
+resourced; if it is not, that is where the next dispatch goes, not into a fresh front.
+Only once the constraint's path is fully resourced does spare capacity go elsewhere. This
+is the mechanism `swarm-parallel-delivery` depends on — check it explicitly, don't just
+remember it. **THE PARALLELISM MECHANISM IS THE ISOLATED WORKTREE, not more agents in one tree:** N
 units of work = N worktrees, each with its OWN provisioned environment, so N crafters never
 contend (a crafter runs only its own SCOPED tests). What stays serialized behind ONE lane is
 the box-bound legs — the seals, the whole-tree verification runs, and the merge-back write.
@@ -342,17 +395,45 @@ using. The serial thread is not wrong; letting it SET THE PACE for everything el
 lanes are silent: they never ask for attention, so only a COUNT surfaces them. Ask the
 question against capacity, never against the thread you happen to be holding.
 
-**`/loop 30m` — every failure names WHAT/WHY/HOW, never a silent fail.** A gate
-rejection, a test failure, an error, a refusal — its message must carry all three: (1)
-WHAT failed (the specific invariant/check/assertion), (2) WHY (the cause), (3) HOW to fix
-it (the concrete remediation, or the producing tool to re-run). A bare `FAILED` / `exit
-1` / stack trace with no what-why-how is itself a defect — fix the message, don't just
-work around it. Applies both to gates/tools you build (their surfaces must self-explain)
-and to how you report failures to a human (never a bare "it failed").
+**`/loop 20m` — (verified THIS turn against the Slice Plan's actual `depends-on` and the
+later slice's real test imports, never against memory of the plan) Are you parallelizing
+every slice you genuinely can WITHIN a node/feature itself — but ONLY after confirming, per
+closing-beats-opening above, that no already-open slice is one step from a seal and
+unnudged — and were those slices designed so they COULD be — while each one still delivers
+value a real user can see, not just a machine-checkable property?** Pipelining DISTILL(N+1)
+while GREEN(N) runs is necessary but not sufficient: if slice N+1 and N+2 do NOT actually
+consume each other's unstable output (check the Slice Plan's declared `depends-on` against
+what the later slice's tests actually import, never the row's ORDER alone), open a SECOND
+isolated worktree branched from the earlier slice's sealed tip and run them as genuinely
+separate lanes, not a queue in one tree. **`des dispatch`'s own carpaccio-ordering check will
+otherwise block that later slice** the moment it can't see a `SliceCommitVerified` record for
+its predecessor (sealing in the OTHER worktree) — declare `--swarm-isolated
+--swarm-justification "..."` on both the dispatch and the eventual commit-slice UP FRONT, per
+the `nw-throughput` skill's own section on this (load it, don't rediscover the flag reactively
+after the refusal). The same question runs FORWARD, at authoring time:
+when a Slice Plan is written (yours or one you are reviewing), is each slice sequenced after
+another because it TRULY needs that output, or only because it was written down in that
+order — a plan that declares real parallel branches up front saves the later archaeology of
+discovering the dependency was never real. And check the OTHER axis a plan can fail on even
+when it parallelizes cleanly: does each slice's value statement name something a demanding
+user could observe and care about (the walking-skeleton discipline), or does splitting for
+parallelism produce slices that are individually invisible — real to a test, not to a user —
+with the actual user-visible outcome only appearing once every slice lands together? A slice
+plan optimized for parallel throughput at the cost of per-slice observable value has traded
+one kind of throughput for another kind of risk.
 
-**`/loop 30m` — source the tech-debt pile via a DISPATCHED, TIME-BOXED FINDER AGENT, not
-your own incidental noticing.** Passively "watching while working" finds only what you
-happen to touch — most of the repo never gets looked at. This is a real, already-shipped
+**`/loop 30m` — (scanned THIS turn, not recalled from an earlier scan) Does every failure you've seen this session actually name WHAT failed, WHY,
+and HOW to fix it, or did one just fail silently?** A gate rejection, a test failure, an
+error, a refusal — its message must carry all three: (1) WHAT failed (the specific
+invariant/check/assertion), (2) WHY (the cause), (3) HOW to fix it (the concrete
+remediation, or the producing tool to re-run). A bare `FAILED` / `exit 1` / stack trace
+with no what-why-how is itself a defect — fix the message, don't just work around it.
+Applies both to gates/tools you build (their surfaces must self-explain) and to how you
+report failures to a human (never a bare "it failed").
+
+**`/loop 30m` — (name the dispatch you just checked THIS turn, not a recalled one) Has a DISPATCHED, TIME-BOXED FINDER AGENT actually swept the tech-debt pile
+recently, or are you only relying on your own incidental noticing?** Passively "watching
+while working" finds only what you happen to touch — most of the repo never gets looked at. This is a real, already-shipped
 spine lane, not a bespoke convention: `des-refactor-fixer-swarm` slice-03 ships a
 `DES-MODE: find` classifier (`classify_find_dispatch`, `des_marker_parser.py`) that spine-
 same as `DES-MODE: refactor` — but nothing yet fires it periodically. THIS loop is that
@@ -395,13 +476,13 @@ preferred, AST/grep fallback, degrade LOUD — never hardcode a specific tool by
 Tsunami may not be installed in every session. The dispatched agent reports findings; YOU
 (the orchestrator) append each to `techdebt.md` at the repo root (create it if absent) as
 a pile row: `- [ ] <item_id>: paradigm=<object-oriented|functional> defect="<defect>"
-proposed_solution="<solution>" discovered_by=<channel>`. `paradigm=` is a CLOSED-set field (`{object-oriented, functional}`, SSOT `src/des/domain/refactor/paradigm_select.py:RecognizedParadigm`) -- full grammar + the DERIVE-from-declared-paradigm-never-the-file's-language guidance lives in `des-command-catalog.md`'s Tech-debt pile drain section (same payload, this session). `discovered_by=` is a CLOSED-set field (SSOT `src/des/domain/refactor/discovery_method.py:RecognizedDiscoveryMethod`) -- full value set + the declare-the-surfacing-channel-not-the-verifying-one guidance (incl. the `MISURATO` gotcha) lives in `des-command-catalog.md`'s Tech-debt pile drain section (same payload, this session). Only append a row for a genuine finding — do NOT
+proposed_solution="<solution>" discovered_by=<channel>`. `paradigm=` is a CLOSED-set field (`{object-oriented, functional}`, SSOT `src/des/domain/refactor/paradigm_select.py:RecognizedParadigm`) -- full grammar + the DERIVE-from-declared-paradigm-never-the-file's-language guidance lives in the des-command-catalog affordance's Tech-debt pile drain section (same payload, this session). `discovered_by=` is a CLOSED-set field (SSOT `src/des/domain/refactor/discovery_method.py:RecognizedDiscoveryMethod`) -- full value set + the declare-the-surfacing-channel-not-the-verifying-one guidance (incl. the `MISURATO` gotcha) lives in the des-command-catalog affordance's Tech-debt pile drain section (same payload, this session). Only append a row for a genuine finding — do NOT
 fabricate one to justify the loop firing. This loop's job is to ENSURE the scan happens
 (dispatch it), not to perform the scan yourself inline — orchestrator delegates domain
 work, it does not DIY it.
 
-**`/loop 45m` — drain the tech-debt pile, if one exists.** Separate loop from sourcing
-above, on its own cadence, so each can be tuned independently.
+**`/loop 45m` — (read `techdebt.md` and its owners THIS turn, not from memory) Does `techdebt.md` have a pending row with no owner draining it right now?**
+Separate loop from sourcing above, on its own cadence, so each can be tuned independently.
 
 **A DRAIN IS DELEGATED, NOT CONDITIONALLY EXECUTED — read this before the mechanics below.**
 The failure mode this loop actually suffers is not a bad command: it is the orchestrator
@@ -460,8 +541,9 @@ integration branch, mandatory cleanup on success OR failure either way. If the p
 zero pending rows, this is a no-op. `--driver loop` is a known stub (parsed, never wired)
 — omit it, `python` is the only driver that runs today.
 
-**`/loop 30m` — source the bugfix queue.** When you encounter a friction or a bug during
-other work — NOT a backlog item, a defect you just found — write it directly to
+**`/loop 30m` — (checked THIS turn, not recalled) Has every friction or bug you hit during other work this session actually
+been written to the bugfix queue?** When you encounter one — NOT a backlog item, a defect
+you just found — write it directly to
 `defects.md` at the repo root (create it if absent, same pile-row grammar as
 `techdebt.md`: `- [ ] <item_id>: paradigm=<object-oriented|functional> defect="<defect>"
 proposed_solution="<solution>" discovered_by=<channel>`) INSTEAD OF adding it to
@@ -474,8 +556,8 @@ writing one there is the empirically observed failure mode this note exists to h
 Only append a row for a genuinely found friction/bug — do NOT manufacture one to justify
 the loop firing.
 
-**`/loop 45m` — drain the bugfix queue, if one exists.** Separate loop from sourcing
-above, on its own cadence. Same shape as the tech-debt drain — **including the rule that a
+**`/loop 45m` — (read `defects.md` and its owners THIS turn, not from memory) Does `defects.md` have a pending row with no owner draining it right now?**
+Separate loop from sourcing above, on its own cadence. Same shape as the tech-debt drain — **including the rule that a
 drain is DELEGATED, not conditionally executed**: the default action is to hand the queue to
 an owner with the evidence you hold, a bounded scope, and per-item decision authority. "No
 row is drainable mechanically right now" is the wrong answer to the wrong question; the right
@@ -506,8 +588,8 @@ work-exhausted-tick` / `des bugfix-pipeline-tick` /
 (`handle_session_start()`) — this loop feeds real work INTO that bookkeeping, it does not
 duplicate it. If `defects.md` has zero pending rows, this is a no-op.
 
-**`/loop 20m` — don't skip the upstream design waves, for features AND for fixes that need
-prefactoring.** Do NOT avoid `/nw-discuss` and `/nw-design` for new features — and run
+**`/loop 20m` — (checked THIS turn against every lane's real current wave, not remembered) Is any feature or fix in flight right now skipping `/nw-discuss` /
+`/nw-design` when it actually needs them?** Do NOT avoid `/nw-discuss` and `/nw-design` for new features — and run
 `/nw-design` for FIXES that require a prefactoring too. A fix is not automatically fast-lane: if
 it needs restructuring FIRST (prefactoring), or the defect is really one facet of a coupled
 feature with emergent design or many consumers, it is L-lane work and goes through DISCUSS/DESIGN

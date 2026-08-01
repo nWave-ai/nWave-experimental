@@ -736,11 +736,23 @@ class ManifestWriter:
         claude_config_dir: Path,
         backup_dir: Path | None,
         script_dir: Path,
-        target_platforms: frozenset[str] | None = None,
+        *,
+        target_platforms: frozenset[str] | set[str] | None = None,
     ) -> None:
-        """Write an installation manifest for the resolved target set."""
+        """Write the Claude-surface installation manifest.
+
+        ``Installer.create_manifest`` always supplies the effective target set
+        for a multi-host installation.  This legacy manifest remains scoped to
+        Claude (native adapters own their manifests), but accepting that set
+        keeps the writer's public contract aligned with its caller and lets an
+        all-target installation complete without a late ``TypeError``.
+        """
         manifest_path = claude_config_dir / "nwave-manifest.txt"
-        targets = target_platforms or frozenset({"claude_code"})
+        targets = (
+            frozenset(target_platforms)
+            if target_platforms
+            else frozenset({"claude_code"})
+        )
 
         agents_count = PathUtils.count_files(claude_config_dir / "agents", "*.md")
         commands_count = PathUtils.count_files(claude_config_dir / "commands", "*.md")

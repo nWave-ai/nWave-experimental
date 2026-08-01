@@ -1,0 +1,52 @@
+# Gate-contract: event-store-query (unified-event-store slice-03, DD-9)
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=event-store-query.
+
+gate_id: event-store-query
+responsibility: |
+  Single-family cross-cutting query (DD-9) for the unified event store: reads one telemetry ledger family's JSONL for a partition key, normalizes legacy (pre-cutover) rows via LegacyEnvelopeNormalizer (DD-10) and dedupes new-envelope derived rows via ReductionKeyDeduper (DD-7/DD-8), then reports one merged, provenance-tagged answer whose measured_count and could_not_verify_count always travel together -- never a bare, possibly-shrunk total. An absent ledger file and an unreadable ledger file are both reported could_not_verify with a named reason, distinguishable from a ledger that exists and genuinely holds zero records. Never mutates the store it reads.
+
+  Default (no `--family`) cross-domain mode (unified-event-store slice-04, DD-13): the caller names only `--partition-key` (a feature id); the command merges the atdd-pure/examine/review families via `CrossDomainReader.read_across` into one chronologically-ordered, provenance-tagged timeline. RED at HEAD -- `read_across` is a DISTILL-authored scaffold (`AssertionError`, DELIVER scope).
+module: des.cli.event_store_query
+entry_function: main
+language_neutral_contract: true
+
+log_events:
+  - EventStoreQueryResult
+  - EventStoreCrossDomainQueryResult
+
+failure_modes:
+  - error_class: SystemExit
+    exit_code: 2
+    remediation: "Malformed invocation (missing --repo-root/--partition-key, or an unrecognized --family value) -- re-run with --repo-root and --partition-key always required; --family is OPTIONAL (slice-04) -- pass a value from LedgerFamily for single-family mode, or omit it entirely for the default cross-domain timeline mode."
+  - error_class: MalformedLedgerLineDegraded
+    exit_code: 0
+    remediation: "A ledger line was present but not parseable as JSON (e.g. a truncated write from a process killed mid-append) -- the query still exits 0 and answers, with could_not_verify_count raised and a reason naming the malformed line, distinguishable from an unreadable-FILE reason. Repair or discard the offending line per the AtCompletionLedger repair instructions if the count must be closed."
+  - error_class: NonObjectLedgerRowDegraded
+    exit_code: 0
+    remediation: "A ledger line parsed as valid JSON but was not a JSON object (e.g. a bare string/list/number/boolean/null -- ADR-EVT-002 Gate 0's full closed vocabulary) -- the query still exits 0 and answers, with could_not_verify_count raised and a reason naming the non-object row, distinguishable from both the unreadable-FILE and the malformed-LINE reasons."
+  - error_class: DerivedRowMissingAgentIdKeyDegraded
+    exit_code: 0
+    remediation: "A derived row (JSON object, envelope_generation present, reduction_key present) was missing its agent_id key entirely, rather than carrying agent_id: null -- the query still exits 0 and answers, with could_not_verify_count raised and a reason naming the missing agent_id key, distinguishable from DD-8's agent_id-present-but-null reason and from the malformed-LINE/non-object-ROW/unreadable-FILE reasons. Re-append the record with an agent_id (or explicitly null, per DD-8) if the count must be closed."
+  - error_class: DerivedRowMissingReductionSeqKeyDegraded
+    exit_code: 0
+    remediation: "A derived row (JSON object, envelope_generation present, reduction_key present, agent_id present) was missing its reduction_seq key entirely -- the query still exits 0 and answers, with could_not_verify_count raised and a reason naming the missing reduction_seq key, distinguishable from the ambiguous-tied-max reason and from the malformed-LINE/non-object-ROW/unreadable-FILE reasons. Re-append the record with a reduction_seq if the count must be closed."
+  - error_class: RowShapeTypeViolationDegraded
+    exit_code: 0
+    remediation: "DD-17 (ADR-EVT-002): a primary-new or derived row's agent_id/reduction_key/reduction_seq positively failed the declared, bounded, enumerable admissible-type contract (e.g. agent_id not None/str, reduction_key not a non-empty str, reduction_seq not exactly int excluding bool/float/NaN) -- the query still exits 0 and answers, with could_not_verify_count raised and a reason naming every violated field from a single pass, distinguishable from DD-8's null-agent_id reason and the dedup ambiguous-tied-max reason. Re-append the record with admissible field types if the count must be closed."
+  - error_class: UnreadableOrNonUtf8LedgerFileDegraded
+    exit_code: 0
+    remediation: "The whole ledger file could not be opened (OSError -- permissions/ENOENT-race) OR was not valid UTF-8 (UnicodeDecodeError, ADR-EVT-002's widened whole-file boundary) -- the query still exits 0 and answers, with could_not_verify_count raised for the WHOLE partition and a reason naming the file-level fault; the file's rows are never reported as measured. Repair the file's encoding/permissions if the count must be closed."
+  - error_class: OversizedIntegerOrExcessiveNestingLineDegraded
+    exit_code: 0
+    remediation: "ADR-EVT-002's widened per-line boundary: a ledger line contained an integer literal beyond CPython's int-string conversion limit (ValueError) or JSON nesting deep enough to trigger Python's recursion limit (RecursionError) -- both syntactically valid JSON, neither a json.JSONDecodeError -- the query still exits 0 and answers, with could_not_verify_count raised and a reason distinguishable from the malformed-JSON-line reason and from each other. Repair or discard the offending line if the count must be closed."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex
+  - opencode
+  - cli

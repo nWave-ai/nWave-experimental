@@ -71,6 +71,52 @@ class TestCreatePluginRegistrySilentParameter:
 class TestValidateInstallationPluginVerification:
     """Test validate_installation() wires registry.verify_all() correctly."""
 
+    def test_codex_validation_accepts_the_public_manifest_without_claude_only_skills(
+        self, tmp_path, monkeypatch
+    ):
+        """
+        GIVEN: An all-target public install with a verified Codex manifest
+        WHEN: Codex validation runs
+        THEN: It accepts the native discovery surfaces without requiring
+              Claude-only command skill names in the Codex catalogue
+        """
+        installer = self._build_installer_with_mocks(tmp_path)
+        agents_home = tmp_path / "agents-home"
+        codex_home = tmp_path / "codex-home"
+        monkeypatch.setenv("NWAVE_AGENTS_HOME", str(agents_home))
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+        skills_dir = agents_home / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / ".nwave-manifest.json").write_text(
+            '{"installed_skills": ["nw-public-skill"], "version": "1.0"}'
+        )
+        agents_dir = codex_home / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / ".nwave-agents-manifest.json").write_text(
+            '{"installed_agents": ["nw-public-agent"], "version": "1.0"}'
+        )
+        (codex_home / "hooks.json").write_text('{"hooks": {}}')
+        (codex_home / ".nwave-des-manifest.json").write_text('{}')
+
+        registry = MagicMock()
+        registry.verify_all.return_value = {
+            "codex-skills": PluginResult(
+                success=True, plugin_name="codex-skills", message="OK"
+            ),
+            "codex-agents": PluginResult(
+                success=True, plugin_name="codex-agents", message="OK"
+            ),
+            "codex-des": PluginResult(
+                success=True, plugin_name="codex-des", message="OK"
+            ),
+        }
+
+        with patch.object(
+            installer, "_create_plugin_registry", return_value=registry
+        ):
+            assert installer._validate_codex_installation() is True
+
     def _build_installer_with_mocks(self, tmp_path):
         """Build an NWaveInstaller with filesystem and verifier mocked."""
         # Create minimal catalog to satisfy fail-closed load_public_agents

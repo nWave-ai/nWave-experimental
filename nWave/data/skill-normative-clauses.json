@@ -47,6 +47,16 @@
       "marker": "the cheapest check that would falsify that conclusion"
     },
     {
+      "skill": "nw-cross-cutting-invariants",
+      "clause_id": "check:unfired-is-not-evidence",
+      "marker": "a check you have not seen FAIL is not evidence"
+    },
+    {
+      "skill": "nw-cross-cutting-invariants",
+      "clause_id": "instrument:a-reading-that-misled-you-is-a-defect-in-the-instrument",
+      "marker": "fix the tool, not the conclusion"
+    },
+    {
       "skill": "nw-design",
       "clause_id": "decision-once:point-dont-copy",
       "marker": "A decision lives in exactly ONE place; every other place that needs it points"
