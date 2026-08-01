@@ -11,7 +11,7 @@ Feature: The dependency token is discoverable at the point of authoring a Slice 
 
   # docs/feature/parallel-by-default-slice-plan/feature-delta.md slice-02.
   # No driving port exists for "is this documented" (same posture as
-  # tests/des/unit/cli/test_carpaccio_ceiling_7_and_coupled_affordance.py
+  # tests/des/unit/cli/test_carpaccio_ceiling_15_and_coupled_affordance.py
   # AT-d for the sibling `@coupled` affordance) -- these scenarios read the
   # two authoring-surface files directly, section-scoped (fence-aware
   # extraction keyed to the exact H2 heading), never file-scoped substring

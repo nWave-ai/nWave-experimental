@@ -7,7 +7,7 @@ vocabulary reference rather than restating it.
 No production driving port exists for "is this documented" (same posture as the
 row-1 sibling suite
 ``tests/scripts/cli/atdd_pure_slice_dependency_annotation_discoverable/`` and as
-AT-d in ``tests/des/unit/cli/test_carpaccio_ceiling_7_and_coupled_affordance.py``
+AT-d in ``tests/des/unit/cli/test_carpaccio_ceiling_15_and_coupled_affordance.py``
 for the ``@coupled`` affordance) -- step bodies delegate to
 ``DistillDependencyDiscoverabilityComposition``, which reads the real family
 files (or a fabricated fixture, for the negative scenarios) and extracts the

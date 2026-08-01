@@ -72,11 +72,18 @@ __all__ = [
 
 
 # Default carpaccio slice-size ceiling when .nwave/config.yaml omits it.
-# Ratified 7 (Ale, 2026-07-05, F-CARPACCIO-CEILING-7-AND-COUPLED-SURFACE) --
-# the ONE canonical locus; .nwave/config.yaml MUST agree (never a diverging
-# project override) and the docstring example below MUST NOT hardcode a
-# second, independently-stale copy of this literal.
-_DEFAULT_SLICE_MAX = 7
+# Raised 7 -> 15 (Ale, 2026-08-01): the escape valve (@coupled + ADR-028 D2
+# justification) already proved itself the correct call on cohesive slices --
+# D80 used it three times in one session (up to 20 ATs) once negative/symmetric
+# oracles became mandatory (S5/S6, this same session) made hitting a low
+# ceiling routine rather than exceptional. Raising the default cuts the
+# round-trip-to-justify tax for the now-common case without removing the
+# ceiling itself -- an unbounded slice is still a real smell worth a gate.
+# Originally ratified 7 (Ale, 2026-07-05, F-CARPACCIO-CEILING-7-AND-COUPLED-
+# SURFACE) -- still the ONE canonical locus; .nwave/config.yaml MUST agree
+# (never a diverging project override) and no docstring/example elsewhere
+# may hardcode a second, independently-stale copy of this literal.
+_DEFAULT_SLICE_MAX = 15
 
 _SLICE_PLAN_HEADING_RE = re.compile(
     r"^#{2,4}\s+Wave:\s+DISCUSS\s+/\s+\[REF\]\s+Slice Plan\s*$"

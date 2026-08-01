@@ -4,7 +4,7 @@ authoring a Slice Plan.
 `docs/feature/parallel-by-default-slice-plan/feature-delta.md` slice-02.
 
 No production driving port exists for "is this documented" (same posture as
-AT-d in ``tests/des/unit/cli/test_carpaccio_ceiling_7_and_coupled_affordance.py``
+AT-d in ``tests/des/unit/cli/test_carpaccio_ceiling_15_and_coupled_affordance.py``
 for the sibling ``@coupled`` affordance) -- step bodies delegate to
 ``SliceDependencyDiscoverabilityComposition``, which reads the real
 authoring-surface files (or a fabricated fixture, for the negative

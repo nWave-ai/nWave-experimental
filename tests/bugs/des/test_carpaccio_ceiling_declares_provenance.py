@@ -3,15 +3,15 @@ but discards its PROVENANCE.
 
 DEFECT (GDP-3/GDP-6 message-provenance): ``_config_slice_max(repo)``
 (``src/des/cli/carpaccio_format.py:165``) reads ``atdd_pure.carpaccio_slice_max``
-from ``.nwave/config.yaml`` OR falls back to ``_DEFAULT_SLICE_MAX`` (line 63 =
-7, Ale-ratified), but returns a BARE ``int`` -- the caller has no way to know
+from ``.nwave/config.yaml`` OR falls back to ``_DEFAULT_SLICE_MAX`` (Ale-ratified,
+15 as of 2026-08-01), but returns a BARE ``int`` -- the caller has no way to know
 whether the value came from a repo override or the framework default. When
 ``_check_slice_size_count`` (``carpaccio_format.py:994-1019``) raises
 ``CARPACCIO_SLICE_TOO_LARGE``, the rejection text says only "exceeding the
 carpaccio ceiling of {slice_max}" -- a repo whose (often gitignored)
 ``.nwave/config.yaml`` sets ``carpaccio_slice_max: 3`` silently LOWERS the
-framework default 7, and the operator sees "ceiling of 3" with no clue that a
-higher default (7) exists or that a repo file is overriding it. Same defect
+framework default 15, and the operator sees "ceiling of 3" with no clue that a
+higher default (15) exists or that a repo file is overriding it. Same defect
 family as issue #180 (untracked recipe): a local override is invisible in the
 loud diagnostic that is supposed to explain itself (every-failure-explains-
 what-why-how mandate).
@@ -29,7 +29,7 @@ The fix (crafter's job, NOT implemented by this AT -- test-authoring only,
 zero ``src/`` edits): ``_config_slice_max`` (or a sibling helper) must also
 surface the ceiling's SOURCE, and ``_check_slice_size_count``'s rejection text
 must declare it -- e.g. ``"ceiling of 3 (from repo .nwave/config.yaml;
-framework default is 7)"`` when the repo config overrides, or ``"ceiling of 7
+framework default is 15)"`` when the repo config overrides, or ``"ceiling of 15
 (framework default)"`` when no override exists. This AT pins the OUTCOME (the
 rejection text names the source), never the mechanism.
 
@@ -66,7 +66,7 @@ from tests.common.in_process_cli import run_cli_in_process
 
 _FEATURE_ID = "carpaccio-ceiling-provenance"
 _ENTERING_SLICE = "slice-01"
-_FRAMEWORK_DEFAULT = 7
+_FRAMEWORK_DEFAULT = 15
 _REPO_OVERRIDE = 3
 
 
@@ -153,9 +153,9 @@ def _rejection_text(stdout: str) -> str:
 
 def test_carpaccio_ceiling_rejection_names_repo_config_source(tmp_path: Path) -> None:
     """A repo whose `.nwave/config.yaml` lowers `carpaccio_slice_max` to 3
-    (below the framework default 7) must have its too-large rejection
+    (below the framework default 15) must have its too-large rejection
     declare BOTH the literal `.nwave/config.yaml` (naming the repo-config
-    source) AND the framework default `7` (so the operator sees the override
+    source) AND the framework default `15` (so the operator sees the override
     lowered it) -- not just the bare number "3".
     """
     repo = tmp_path / "repo"
@@ -179,8 +179,8 @@ def test_carpaccio_ceiling_rejection_names_repo_config_source(tmp_path: Path) ->
         f"got rejection text={text!r} (bare 'ceiling of 3' today, no "
         "provenance)"
     )
-    assert "7" in text, (
-        "the too-large rejection must surface the framework default (7) "
+    assert "15" in text, (
+        "the too-large rejection must surface the framework default (15) "
         "alongside the repo override (3) so the operator sees the override "
         f"LOWERED it -- got rejection text={text!r}"
     )
@@ -196,7 +196,7 @@ def test_carpaccio_ceiling_rejection_names_repo_config_source(tmp_path: Path) ->
 def test_carpaccio_ceiling_rejection_default_not_mislabeled_as_repo_config(
     tmp_path: Path,
 ) -> None:
-    """A repo with NO `.nwave/config.yaml` override (the framework default 7
+    """A repo with NO `.nwave/config.yaml` override (the framework default 15
     is in effect) must have its too-large rejection NEVER falsely claim
     `.nwave/config.yaml` as the ceiling's source -- the fix must not
     overcorrect by unconditionally naming a repo-config file that does not
@@ -206,7 +206,7 @@ def test_carpaccio_ceiling_rejection_default_not_mislabeled_as_repo_config(
     _write_feature_delta(repo, feature_id=_FEATURE_ID)
     assert not (repo / ".nwave" / "config.yaml").exists(), (
         "test setup invariant: no .nwave/config.yaml must exist so the "
-        "framework default (7) is genuinely in effect, unresolved by any "
+        "framework default (15) is genuinely in effect, unresolved by any "
         "repo override"
     )
     regression_test_file_rel = _write_regression_file(

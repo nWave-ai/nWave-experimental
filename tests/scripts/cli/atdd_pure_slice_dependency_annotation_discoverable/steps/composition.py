@@ -3,7 +3,7 @@ fixture) and extract the section-scoped vocabulary text a PO would see.
 
 No production driving port exists for "is this documented" -- these are
 prose files, not executable code (same posture as AT-d in
-``tests/des/unit/cli/test_carpaccio_ceiling_7_and_coupled_affordance.py``
+``tests/des/unit/cli/test_carpaccio_ceiling_15_and_coupled_affordance.py``
 for the sibling ``@coupled`` affordance). This composition root reads the
 real repo files directly, section-scoped: a bare ``"depends-on" in text``
 check is testing-theater -- satisfied by pasting the token anywhere in

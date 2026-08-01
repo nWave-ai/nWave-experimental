@@ -192,16 +192,16 @@ _PREDECESSOR_2 = "".join(
     for n in range(1, 3)
 )
 
-# The entering slice's 8 genuinely NEW ATs (net-new > ceiling of 7 on its own).
-_SLICE_07_EIGHT_NEW_ATS = "".join(
-    f"def test_slice_07_new_at_{n:02d}():\n    assert True\n\n\n" for n in range(1, 9)
+# The entering slice's 16 genuinely NEW ATs (net-new > ceiling of 15 on its own).
+_SLICE_07_SIXTEEN_NEW_ATS = "".join(
+    f"def test_slice_07_new_at_{n:02d}():\n    assert True\n\n\n" for n in range(1, 17)
 )
 
 
 def test_slice_clears_when_only_net_new_ats_counted_against_ceiling(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """RED (right reason): slice-06 adds exactly 1 new AT (ceiling 7) to a
+    """RED (right reason): slice-06 adds exactly 1 new AT (ceiling 15) to a
     shared file that already carries 10 ATs attested to predecessor slice-02.
 
     Wrong (today): `count_pytest_regression_ats` returns 11 (10 + 1, the
@@ -209,7 +209,7 @@ def test_slice_clears_when_only_net_new_ats_counted_against_ceiling(
     `@coupled` annotation on a slice that genuinely added only 1 AT.
 
     Right (fixed): the entering slice's AT count reflects what IT adds (1),
-    which clears the ceiling of 7 without any `@coupled` escape -- exit 0,
+    which clears the ceiling of 15 without any `@coupled` escape -- exit 0,
     `SliceCleared`.
     """
     regression_rel = "tests/regression/test_shared_slice_ats.py"
@@ -229,7 +229,7 @@ def test_slice_clears_when_only_net_new_ats_counted_against_ceiling(
 
     assert exit_code == 0 and payload.get("event") == "SliceCleared", (
         "slice-06 adds exactly 1 new AT to the shared regression file (ceiling "
-        f"7) but was rejected: exit_code={exit_code} payload={payload}. "
+        f"15) but was rejected: exit_code={exit_code} payload={payload}. "
         "count_pytest_regression_ats (src/des/cli/carpaccio_format.py "
         "L375-420) AST-counts the file's WHOLE total (10 ATs already "
         "attested to predecessor slice-02 + 1 new = 11), not the net-new "
@@ -246,23 +246,25 @@ def test_gate_rejects_when_entering_slice_genuinely_adds_more_than_ceiling_new_a
     """Negative guard (GREEN before AND after the fix): a shared file must
     NOT be blanket-exempted from the ceiling.
 
-    Predecessor slice-02 attested only 2 ATs; entering slice-07 adds 8
-    genuinely NEW ATs to the SAME shared file -- net-new (8) alone exceeds
-    the ceiling (7), so the slice must still be rejected. Passes today
-    (2 + 8 = 10 > 7 on the raw total) AND must keep passing once the
-    over-counting fix lands (net-new 8 > 7 on the corrected count) -- pins
+    Predecessor slice-02 attested only 2 ATs; entering slice-07 adds 16
+    genuinely NEW ATs to the SAME shared file -- net-new (16) alone exceeds
+    the ceiling (15), so the slice must still be rejected. Passes today
+    (2 + 16 = 18 > 15 on the raw total) AND must keep passing once the
+    over-counting fix lands (net-new 16 > 15 on the corrected count) -- pins
     the boundary so a naive fix cannot blanket-exempt every shared-file
-    slice from the size ceiling.
+    slice from the size ceiling. Count raised 8 -> 16 (Ale, 2026-08-01)
+    alongside the ceiling raise 7 -> 15, so the fixture still genuinely
+    exceeds whatever ceiling is in effect.
     """
     regression_rel = "tests/regression/test_shared_slice_ats_2.py"
     repo = _make_repo(
         tmp_path,
         plan_rows=[
             ("slice-02", "Predecessor slice already attested via the ledger"),
-            ("slice-07", "Entering slice adds eight new ATs to the shared file"),
+            ("slice-07", "Entering slice adds sixteen new ATs to the shared file"),
         ],
         regression_rel=regression_rel,
-        regression_src=_PREDECESSOR_2 + _SLICE_07_EIGHT_NEW_ATS,
+        regression_src=_PREDECESSOR_2 + _SLICE_07_SIXTEEN_NEW_ATS,
     )
     _write_predecessor_verdict(repo, slice_id="slice-02", at_ids=["AT-1", "AT-2"])
 

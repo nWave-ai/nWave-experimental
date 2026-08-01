@@ -78,7 +78,7 @@ from des.cli.verify_red_green import _seal_path
 
 _FEATURE_ID = "carpaccio-slice-delta"
 _ENTERING_SLICE = "slice-01"
-_FRAMEWORK_DEFAULT = 7
+_FRAMEWORK_DEFAULT = 15  # raised from 7 (Ale, 2026-08-01) -- see carpaccio_format.py
 _REGRESSION_REL = "tests/regression/test_shared_fixture.py"
 
 
@@ -272,19 +272,25 @@ def test_stale_red_seal_never_shrinks_the_charged_at_count(tmp_path: Path) -> No
 
     Fail-closed (GDP-6): were a stale seal honoured, an operator could record
     RED on 1 test and then append any number more, each of them invisible to
-    the ceiling. The file holds 8 module-level tests and the seal's
-    ``content_sha256`` does not match it, so the gate must fall back to
-    today's whole-file behavior and reject.
+    the ceiling. The file holds more tests than the ceiling allows and the
+    seal's ``content_sha256`` does not match it, so the gate must fall back
+    to today's whole-file behavior and reject. Delivered/entering split
+    raised (5/3 -> `_FRAMEWORK_DEFAULT`/1, Ale 2026-08-01) so the fixture's
+    whole-file total still genuinely exceeds whatever ceiling is in effect.
     """
     repo = tmp_path / "repo"
     _write_feature_delta(repo)
-    oversized = _FRAMEWORK_DEFAULT + 1
-    regression_file = _write_regression_file(repo, delivered=5, entering=3)
+    delivered = _FRAMEWORK_DEFAULT
+    entering = 1
+    oversized = delivered + entering
+    regression_file = _write_regression_file(
+        repo, delivered=delivered, entering=entering
+    )
     _record_red_seal(
         repo,
         regression_file,
-        delivered=5,
-        entering=3,
+        delivered=delivered,
+        entering=entering,
         content_sha="0" * 64,
     )
     assert hashlib.sha256(regression_file.read_bytes()).hexdigest() != "0" * 64, (

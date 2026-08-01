@@ -13,7 +13,7 @@ Feature: The dependency token is discoverable from the DISTILL authoring surface
   # docs/feature/parallel-by-default-distill-slicing/feature-delta.md slice-02.
   # No driving port exists for "is this documented" (same posture as the row-1
   # sibling suite tests/scripts/cli/atdd_pure_slice_dependency_annotation_discoverable/
-  # and as tests/des/unit/cli/test_carpaccio_ceiling_7_and_coupled_affordance.py
+  # and as tests/des/unit/cli/test_carpaccio_ceiling_15_and_coupled_affordance.py
   # AT-d). These scenarios read the nw-distill family files directly, locus-scoped
   # (a window around the token), never file-scoped substring matching.
   # Layer 3 (FS acceptance) -- example-only, no PBT (Mandate 9/11): the family is a

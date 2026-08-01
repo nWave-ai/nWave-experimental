@@ -49,7 +49,7 @@ from des.cli.carpaccio_format import (
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _CARPACCIO_FORMAT_PATH = _REPO_ROOT / "src" / "des" / "cli" / "carpaccio_format.py"
 _CONFIG_PATH = _REPO_ROOT / ".nwave" / "config.yaml"
-_RATIFIED_CEILING = 7
+_RATIFIED_CEILING = 15  # raised from 7 (Ale, 2026-08-01) -- see carpaccio_format.py
 
 
 def test_repo_root_resolution_sanity() -> None:
@@ -69,12 +69,14 @@ def test_repo_root_resolution_sanity() -> None:
 # --- AT-a: ONE-LOCUS ceiling SSOT --------------------------------------------
 
 
-def test_default_slice_max_is_the_ratified_ceiling_of_seven() -> None:
-    """The canonical constant is the RATIFIED ceiling (7), not the stale 3.
+def test_default_slice_max_is_the_ratified_ceiling_of_fifteen() -> None:
+    """The canonical constant is the RATIFIED ceiling (15), not a stale value.
 
-    Ale ratified 7 on 2026-07-05 (F-CARPACCIO-CEILING-7-AND-COUPLED-SURFACE);
-    today the constant still reads 3 -- a stale value at the one locus meant
-    to be the single source of truth.
+    Ale originally ratified 7 on 2026-07-05
+    (F-CARPACCIO-CEILING-7-AND-COUPLED-SURFACE), then raised it to 15 on
+    2026-08-01 once the escape valve proved itself the correct call on
+    cohesive slices. This test pins the ONE canonical locus to whatever the
+    current ratified value is -- it must never silently drift.
     """
     assert _DEFAULT_SLICE_MAX == _RATIFIED_CEILING, (
         f"_DEFAULT_SLICE_MAX must be the ratified ceiling {_RATIFIED_CEILING}, "
@@ -195,19 +197,21 @@ def test_six_at_slice_clears_carpaccio_under_the_default_ceiling(
 # --- AT-c: OVERRIDE PRESERVED (regression-lock guard) -------------------------
 
 
-def test_nine_coupled_ats_still_clear_via_the_coupled_escape(tmp_path: Path) -> None:
-    """GUARD (regression-lock): a 9-AT slice where EVERY scenario carries
+def test_sixteen_coupled_ats_still_clear_via_the_coupled_escape(tmp_path: Path) -> None:
+    """GUARD (regression-lock): a 16-AT slice where EVERY scenario carries
     ``@coupled`` AND the plan row records a justification must still clear
     via ``CoupledSliceAccepted`` -- raising the ceiling default must never
     remove or weaken this escape.
 
     This assertion is expected to PASS today (the escape already exists) --
     it exists to CATCH a future fix that raises the ceiling but accidentally
-    drops or narrows the ``@coupled`` override.
+    drops or narrows the ``@coupled`` override. Count raised 9 -> 16 (Ale,
+    2026-08-01) alongside the ceiling raise 7 -> 15, so the fixture still
+    genuinely exceeds whatever ceiling is in effect.
     """
     slice_max = _config_slice_max(tmp_path)
-    assert slice_max < 9, (
-        "test setup invariant broken: 9 ATs must exceed whatever ceiling is "
+    assert slice_max < 16, (
+        "test setup invariant broken: 16 ATs must exceed whatever ceiling is "
         f"in effect ({slice_max}) so the size check actually engages the "
         "coupled-escape branch, not the plain in-ceiling pass-through"
     )
@@ -219,7 +223,7 @@ def test_nine_coupled_ats_still_clear_via_the_coupled_escape(tmp_path: Path) -> 
             "breaking the single end-to-end vertical it proves"
         ),
     )
-    scenarios = [_scenario("slice-01", coupled=True, ordinal=i) for i in range(9)]
+    scenarios = [_scenario("slice-01", coupled=True, ordinal=i) for i in range(16)]
 
     result = check_carpaccio(plan, scenarios, "slice-01", slice_max)
 
@@ -229,7 +233,7 @@ def test_nine_coupled_ats_still_clear_via_the_coupled_escape(tmp_path: Path) -> 
         "the @coupled escape has been weakened or removed -- do NOT let a "
         "ceiling-raise fix touch this branch."
     )
-    assert result.get("at_count") == 9, (
+    assert result.get("at_count") == 16, (
         f"CoupledSliceAccepted must report the true AT count -- observed "
         f"{result.get('at_count')!r}"
     )
