@@ -64,7 +64,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 | Phase | Load | Trigger |
 |-------|------|---------|
-| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-8`, `gate:self-explaining-what-why-how`) that bind every decision you make |
+| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
 | Architecture Design | `~/.claude/skills/nw-architecture-patterns/SKILL.md` | Phase 6 Architecture Design — select approach, define component boundaries |
 | Peer Review and Handoff | `~/.claude/skills/nw-sa-critique-dimensions/SKILL.md` | Phase 8 Peer Review and Handoff — structuring critique dimensions |

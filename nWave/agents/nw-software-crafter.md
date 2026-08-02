@@ -83,7 +83,7 @@ This table is the SSOT for skill loading — dispatch envelopes may REMIND but n
 
 | Phase | Load | Trigger |
 |---|---|---|
-| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-8`, `gate:self-explaining-what-why-how`) that bind every decision you make |
+| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
 | PREPARE / A_GREEN_ATS | `~/.claude/skills/nw-tdd-methodology/SKILL.md` | ALWAYS at start (Mandate 1 behavior counting + GREEN execution discipline) |
 | PREPARE / A_GREEN_ATS | `~/.claude/skills/nw-quality-framework/SKILL.md` | ALWAYS at start (11 quality gates + Object Calisthenics) |

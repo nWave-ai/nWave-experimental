@@ -62,7 +62,7 @@ Load on-demand by phase, not all at once:
 
 | Phase | Load | Trigger |
 |-------|------|---------|
-| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-8`, `gate:self-explaining-what-why-how`) that bind every decision you make |
+| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
 | Mode Selection | `nw-ddd-strategic` | Always -- foundational vocabulary and context discovery |
 | Mode Selection | `nw-ddd-architect` | Always -- design-time mandates (fixture-fanout enumeration, etc.) before any DESIGN row authored |

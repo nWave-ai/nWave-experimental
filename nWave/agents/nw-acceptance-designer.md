@@ -90,7 +90,7 @@ The four large test-design families are decomposed into one-job-one-trigger modu
 
 | Phase | Load | Trigger |
 |-------|------|----------------|
-| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-8`, `gate:self-explaining-what-why-how`) that bind every decision you make |
+| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
 | 0 Detect Language + Policy | `nw-distill`, `nw-distill-port-treatment-policy`, `nw-test-design-mandates` (core) | Always — Phase 0 entry; `nw-distill` = induction map + density contract + gate-G; `nw-distill-port-treatment-policy` = port→treatment classification + Project Infrastructure Policy + WS canonical def + state-delta port bootstrap; the mandate-registry + 3-Pillars + language-convention frame are cross-cutting core concerns |
 | 1 Understand Context | `nw-bdd-methodology`, `nw-distill-prior-wave-reading` | Always — Phase 1 entry; outside-in BDD framing + `nw-distill-prior-wave-reading` = read prior-wave SSOT/feature-delta, Wave-Decision Reconciliation HARD GATE, rows 7b/7c advisories, graceful degradation, back-propagation |

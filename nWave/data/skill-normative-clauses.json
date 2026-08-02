@@ -28,8 +28,13 @@
     },
     {
       "skill": "nw-cross-cutting-invariants",
-      "clause_id": "gate:design-principles-gdp-1-8",
+      "clause_id": "gate:design-principles-gdp-1-9",
       "marker": "GDP-8 — Decide on the PROPERTY, never the DESIGNATION"
+    },
+    {
+      "skill": "nw-cross-cutting-invariants",
+      "clause_id": "gate:design-principles-gdp-9-interrogative-framing",
+      "marker": "Interrogative framing forces self-audit"
     },
     {
       "skill": "nw-cross-cutting-invariants",

@@ -190,7 +190,7 @@
 
 ## nw-cross-cutting-invariants
 
-- [nw-cross-cutting-invariants](nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — paradigm-independent and role-independent rules that bind every architect and crafter (data justification, gate design GDP-1..8, self-explaining surfaces). SHIPPED home of these definitions; cite by clause id, never re-declare.
+- [nw-cross-cutting-invariants](nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — paradigm-independent and role-independent rules that bind every architect and crafter (data justification, gate design GDP-1..9, self-explaining surfaces). SHIPPED home of these definitions; cite by clause id, never re-declare.
 
 ## nw-data-architecture-patterns
 

@@ -30,4 +30,5 @@ Use when creating new AI agents, validating agent specifications, optimizing com
 - [nw-agent-testing](../skills/nw-agent-testing.md) — 5-layer testing approach for agent validation including adversarial testing, security validation, and prompt injection resistance
 - [nw-command-design-patterns](../skills/nw-command-design-patterns.md) — Best practices for command definition files - size targets, declarative template, anti-patterns, and canonical examples based on research evidence
 - [nw-command-optimization-workflow](../skills/nw-command-optimization-workflow.md) — Step-by-step workflow for converting bloated command files to lean declarative definitions
+- [nw-cross-cutting-invariants](../skills/nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — paradigm-independent and role-independent rules that bind every architect and crafter (data justification, gate design GDP-1..9, self-explaining surfaces). SHIPPED home of these definitions; cite by clause id, never re-declare.
 - [nw-design-patterns](../skills/nw-design-patterns.md) — 7 agentic design patterns with decision tree for choosing the right pattern for each agent type

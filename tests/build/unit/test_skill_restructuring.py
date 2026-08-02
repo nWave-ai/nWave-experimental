@@ -196,7 +196,7 @@ BULK_HASHES = {
     "nw-architectural-styles-tradeoffs": "f6dc4a1e0f1ac40d9d1dd0d25d9c90f4",
     # Hash updated 2026-07-27: fixed a component-manifest example citing a
     # nonexistent src/des/cli/reverify.py path (techdebt drain).
-    "nw-architecture-patterns": "8b05beca25e850385c54e10a62137df2",
+    "nw-architecture-patterns": "2408b704750ce8dd0cb71d50f613b949",
     "nw-assessment-kirkpatrick": "abaecd7a3e1d040b4a4b53971e1716d8",
     "nw-authoritative-sources": "29aa67bf5e4dd89382504767654ed6a4",
     "nw-backward-design-ubd": "8e88399482057722474748531482667f",
@@ -357,7 +357,7 @@ BULK_HASHES = {
     # modules (b2b, cialdini); core is a lean composing router. §22.0 reviewed.
     "nw-proposal-structure": "bec9dd508f567c847da44cd41ee56821",
     "nw-psychological-safety": "106382f562186d415f5b5ad1430542b7",
-    "nw-quality-framework": "30bbb0644b306c8632b40fb7e538f448",
+    "nw-quality-framework": "f07139e33b05628ae028903044055cf5",
     "nw-quality-validation": "41cee9327afa9d4e579b7c0699eb544d",
     "nw-query-optimization": "17959230c1a5f619b4a172e5e8196068",
     "nw-research-methodology": "e4910ea40aefc82f421640138986f300",

@@ -7,11 +7,11 @@ disable-model-invocation: true
 
 # Architecture Patterns and Methodologies
 
-## Gate design invariants — WHAT/WHY/HOW and GDP-1..8 (moved)
+## Gate design invariants — WHAT/WHY/HOW and GDP-1..9 (moved)
 
 These two STANDING contracts are paradigm- and role-independent, so they live in ONE shipped
 home instead of being restated per role: `nw-cross-cutting-invariants` (clause ids
-`gate:self-explaining-what-why-how`, `gate:design-principles-gdp-1-8`). Load that skill when
+`gate:self-explaining-what-why-how`, `gate:design-principles-gdp-1-9`). Load that skill when
 designing any gate, oracle, or error surface; cite the clause id, never re-declare the text.
 
 ## C4 Model -- Hierarchical Architecture Visualization

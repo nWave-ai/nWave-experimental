@@ -1,6 +1,6 @@
 ---
 name: nw-cross-cutting-invariants
-description: Cross-cutting normative invariants — paradigm-independent and role-independent rules that bind every architect and crafter (data justification, gate design GDP-1..8, self-explaining surfaces). SHIPPED home of these definitions; cite by clause id, never re-declare.
+description: Cross-cutting normative invariants — paradigm-independent and role-independent rules that bind every architect and crafter (data justification, gate design GDP-1..9, self-explaining surfaces). SHIPPED home of these definitions; cite by clause id, never re-declare.
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -128,7 +128,7 @@ GDP-4 / GDP-2).
 
 ---
 
-## `gate:design-principles-gdp-1-8` — Gate Design Principles GDP-1..8 (STANDING — canonical definitions)
+## `gate:design-principles-gdp-1-9` — Gate Design Principles GDP-1..9 (STANDING — canonical definitions)
 
 The design contract EVERY gate, oracle, or error surface must satisfy. This skill is the
 SHIPPED home of these definitions: everywhere else in the framework (skills, agents) that
@@ -215,6 +215,27 @@ a gap is a plan item to correct that gate.
   tests going green. Read a gate's third state (`UNVERIFIABLE` / `INDETERMINATE`) as a candidate
   wiring gap before reading it as environmental: it is frequently the reachable surface reporting,
   correctly, that the thing meant to answer was never connected to it.
+- **GDP-9 — Interrogative framing forces self-audit; imperative alone invites ritual
+  compliance.** Phrase a standing check as a question that names the lazy alternative as the
+  wrong answer ("did you just re-run X THIS turn, or are you about to restate a prior turn's
+  result?"), paired with an explicit imperative for the branch where the honest answer is no
+  ("if you have not just done it, do it now before answering"). An imperative alone ("always
+  reverify X before answering") is followed as a rule recalled from memory, and recall decays
+  into ritual compliance — the reader can believe it is complying while only pattern-matching
+  to yesterday's answer, because nothing in the instruction's SHAPE forces a live check. A
+  question forces the reader to evaluate a present-tense claim (did I, or didn't I, in this
+  turn) before answering it, which is a different cognitive operation than executing a stored
+  directive — evaluating a claim resists being satisfied by memory alone the way executing a
+  rule does not. Neither half is sufficient alone: a question with no imperative fallback risks
+  a literal, un-inferred answer that misses the implied correct one and fails silently (the
+  reader can honestly answer "no, from memory, and that's fine" without recognizing the
+  question as a trap); an imperative with no question is the ritual-compliance failure this
+  principle exists to catch in the first place. Pair them. Measured across dozens of standing
+  self-audit firings in one overnight session (2026-08-02): the question-plus-imperative
+  pairing consistently produced a genuinely fresh re-check (a re-run `git status`, a re-issued
+  grep, a re-read mtime) rather than a restated prior-turn answer, in a setting where the
+  underlying facts (worktree state, ToC mention counts) DO change between firings and a
+  memory-recalled answer would have gone stale silently.
 
 ---
 

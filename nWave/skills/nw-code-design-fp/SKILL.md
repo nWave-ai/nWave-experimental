@@ -172,4 +172,4 @@ Load it alongside this skill and honour these clauses by id — they are NOT dup
   reads it, and you must name the JOIN KEY it will be related on. No reader, or no key → the
   datum is unjustified.
 - `gate:self-explaining-what-why-how` — every rejection states WHAT / WHY / HOW.
-- `gate:design-principles-gdp-1-8` — the canonical gate-design contract.
+- `gate:design-principles-gdp-1-9` — the canonical gate-design contract.

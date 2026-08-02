@@ -5,6 +5,7 @@ model: inherit
 tools: Read, Write, Edit, Glob, Grep, Task
 maxTurns: 30
 skills:
+  - nw-cross-cutting-invariants
   - nw-agent-creation-workflow
   - nw-design-patterns
   - nw-command-design-patterns
@@ -71,6 +72,7 @@ This agent is a router: the deep methodology lives in the `nw-ab-*` skills. Each
 
 | Phase | Load | Trigger |
 |-------|------|---------|
+| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | when the agent you are forging/optimizing will itself author gate rejections, error surfaces, or standing-loop instructional prose — its wording must satisfy `gate:design-principles-gdp-1-9`, including GDP-9 (interrogative framing + explicit imperative, never question alone or imperative alone) |
 | `*forge` | `~/.claude/skills/nw-ab-create-agent/SKILL.md` — composes `nw-agent-creation-workflow`, `nw-design-patterns`, `nw-ab-agent-template`, `nw-ab-house-style` | creating a new agent |
 | `*validate` | `~/.claude/skills/nw-ab-validate-spec/SKILL.md` — composes `nw-ab-validation-checklist`, `nw-ab-anti-patterns`, `nw-ab-critique-dimensions`, `nw-agent-testing`, `nw-agent-evals` | checking a spec for compliance |
 | `*evals` | `~/.claude/skills/nw-agent-evals/SKILL.md` — eval-driven agent validation (graded eval cases over agent behavior, not just spec compliance) | building/running evals for an agent |
