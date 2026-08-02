@@ -119,7 +119,7 @@ Each phase A-G emits one JSONL event at PhaseEntered and PhaseCompleted to `nWav
 }
 ```
 
-Fields `reviewer_findings`, `cycle_n`, `verdict_hash` are null outside their respective phases. **NO VALIDATOR YET**: nothing enforces this nullability contract. The only consumer is the falsifier-gate health check (module `scripts.automation.atdd_pure_falsifier_gate`), which reads `reviewer_findings` and tolerates any other shape. Treat the contract as an authoring obligation on the emitter, not a checked invariant.
+Fields `reviewer_findings`, `cycle_n`, `verdict_hash` are null outside their respective phases. **NO VALIDATOR YET**: nothing enforces this nullability contract. Currently no consumer of these telemetry records is wired. Treat the contract as an authoring obligation on the emitter for future consumers to consume reliably.
 
 ## Skill Loading (ATDD-pure additions)
 

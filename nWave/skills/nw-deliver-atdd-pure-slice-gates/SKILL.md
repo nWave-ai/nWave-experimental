@@ -1,6 +1,6 @@
 ---
 name: nw-deliver-atdd-pure-slice-gates
-description: "DELIVER ATDD-pure per-slice phase-boundary contracts — the D_REFACTOR_COMMIT exit gate (E1 slice-commit completeness + E2 contract-gate scope), Phase D routing decision rules, A_GREEN/D_REFACTOR_COMMIT separation enforcement, the verdict-hash trailer, per-phase-boundary telemetry, and the post-commit falsifier-gate hook. Load when a per-slice phase boundary beyond the A_GREEN entry dispatch must be governed."
+description: "DELIVER ATDD-pure per-slice phase-boundary contracts — the D_REFACTOR_COMMIT exit gate (E1 slice-commit completeness + E2 contract-gate scope), Phase D routing decision rules, A_GREEN/D_REFACTOR_COMMIT separation enforcement, the verdict-hash trailer, and per-phase-boundary telemetry. Load when a per-slice phase boundary beyond the A_GREEN entry dispatch must be governed."
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -132,13 +132,5 @@ Each canonical phase (A_GREEN → C_REVIEWER_AUDIT → D_REFACTOR_COMMIT) emits 
 }
 ```
 
-`reviewer_findings`, `cycle_n`, `verdict_hash` null outside their phases. **NO VALIDATOR YET**: this per-field nullability contract is the DESIGNED shape, not a checked one — no module enforces it. The only consumer of these records is the falsifier-gate health check (module `scripts.automation.atdd_pure_falsifier_gate`), which reads `reviewer_findings` for threshold medians and tolerates any other shape. Treat the contract as an authoring obligation on the emitter; do not assume a malformed record would be rejected.
+`reviewer_findings`, `cycle_n`, `verdict_hash` null outside their phases. **NO VALIDATOR YET**: this per-field nullability contract is the DESIGNED shape, not a checked one — no module enforces it. Currently no consumer of these telemetry records is wired. Treat the contract as an authoring obligation on the emitter (for future consumers to consume reliably).
 
-## Post-Commit (D_REFACTOR_COMMIT): Falsifier-Gate Hook
-
-After the D_REFACTOR_COMMIT commit completes, invoke `python scripts/automation/atdd_pure_falsifier_gate.py` (plan v3 §4.5 Phase 5 deliverable):
-
-- Reads N=3 latest pilot JSONL records.
-- Otherwise → emit `FalsifierGateHealthy`, exit 0.
-
-Exit 42 blocks subsequent CI release steps; operator review required before next pilot feature.
