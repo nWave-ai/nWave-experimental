@@ -511,6 +511,13 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         at_kind: str | None = None,
         content_digest: str | None = None,
         override: bool | None = None,
+        regression_test_files_executed: list[str] | None = None,
+        member_hashes: dict[str, str] | None = None,
+        aggregate_digest: str | None = None,
+        declared_suite_paths: list[str] | None = None,
+        declaration_digest: str | None = None,
+        historical_declaration_id: str | None = None,
+        member_outcomes: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """Append one slice gate-boundary audit record under the M7 write contract.
 
@@ -606,6 +613,17 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         when present, each is threaded into ``fields`` and hashed into
         ``record_hash`` like every other field.
 
+        prefactoring-aggregate-regression-seal signature delta: the optional
+        ``historical_declaration_id`` and ``member_outcomes`` kwargs carry a
+        ``SliceCommitVerified`` record's governed historical declaration
+        identity and one outcome per declared member
+        (``{"path": ..., "outcome": ...}``). Both default to None (every
+        existing call site stays byte-identical); when present, each is
+        threaded into ``fields`` and hashed into ``record_hash`` like every
+        other field -- so a later auditor can join a durable historical seal
+        to its governed authority and detect an omitted suite from the
+        ledger record itself.
+
         Returns the appended record.
         """
         if ref is not None:
@@ -644,6 +662,20 @@ class AtCompletionLedger(AtCompletionLedgerPort):
             fields["content_digest"] = content_digest
         if override is not None:
             fields["override"] = override
+        if regression_test_files_executed is not None:
+            fields["regression_test_files_executed"] = regression_test_files_executed
+        if member_hashes is not None:
+            fields["member_hashes"] = member_hashes
+        if aggregate_digest is not None:
+            fields["aggregate_digest"] = aggregate_digest
+        if declared_suite_paths is not None:
+            fields["declared_suite_paths"] = declared_suite_paths
+        if declaration_digest is not None:
+            fields["declaration_digest"] = declaration_digest
+        if historical_declaration_id is not None:
+            fields["historical_declaration_id"] = historical_declaration_id
+        if member_outcomes is not None:
+            fields["member_outcomes"] = member_outcomes
         return self._append_record(fields, feature_id=feature_id)
 
     def append_contract_frozen(
@@ -1361,6 +1393,7 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         reason: str,
         *,
         feature_id: str | None = None,
+        member: str | None = None,
     ) -> dict[str, Any]:
         """Append one honest `SliceCommitIndeterminate` record (DDD-2 / DDD-6).
 
@@ -1381,18 +1414,18 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         in-order gate reads the record (it accepts an INDETERMINATE predecessor),
         so the successor slice dispatches instead of wedging. Slice-scoped.
         """
-        return self._append_record(
-            {
-                "event": SLICE_COMMIT_INDETERMINATE,
-                "slice_id": slice_id,
-                "reason": reason,
-                "gate_scope": GATE_SCOPE_INDETERMINATE,
-                "attested": True,
-                "at_verified": False,
-                "terminal": True,
-            },
-            feature_id=feature_id,
-        )
+        fields: dict[str, Any] = {
+            "event": SLICE_COMMIT_INDETERMINATE,
+            "slice_id": slice_id,
+            "reason": reason,
+            "gate_scope": GATE_SCOPE_INDETERMINATE,
+            "attested": True,
+            "at_verified": False,
+            "terminal": True,
+        }
+        if member is not None:
+            fields["member"] = member
+        return self._append_record(fields, feature_id=feature_id)
 
     def bypass_debt_slices(self, *, feature_id: str | None = None) -> frozenset[str]:
         """The set of slice ids carrying a `SliceCommitBypassed` debt record (DDD-3).
@@ -1882,10 +1915,29 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         have been filtered out, so a fail-closed read stays fail-closed.
         """
         path = self.ledger_path()
-        if not path.is_file():
+        if path.is_symlink():
+            raise LedgerIntegrityViolation(
+                "non-regular-path",
+                f"AT-completion ledger path must not be a symlink: {path}. "
+                f"See {_REPAIR_INSTRUCTIONS_PATH} for recovery steps.",
+            )
+        if not path.exists():
             return []
+        if not path.is_file():
+            raise LedgerIntegrityViolation(
+                "non-regular-path",
+                f"AT-completion ledger path is not a regular file: {path}. "
+                f"See {_REPAIR_INSTRUCTIONS_PATH} for recovery steps.",
+            )
 
-        raw = path.read_text(encoding="utf-8")
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise LedgerIntegrityViolation(
+                "invalid-encoding",
+                f"AT-completion ledger is not valid UTF-8: {path}. "
+                f"See {_REPAIR_INSTRUCTIONS_PATH} for recovery steps.",
+            ) from exc
         records: list[dict[str, Any]] = []
         lines = raw.splitlines(keepends=True)
 

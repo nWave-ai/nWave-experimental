@@ -294,6 +294,8 @@ def missing_at_files(
     *,
     at_kind: str | None = None,
     regression_test_file: str | None = None,
+    regression_test_files: tuple[str, ...] | None = None,
+    historical_selection: bool = False,
 ) -> AtCompletenessOutcome:
     """Return `.feature` AT files for the slice that the commit fails to carry.
 
@@ -368,7 +370,42 @@ def missing_at_files(
     (slice_id, feature_id) at all AND no pytest-regression file was declared
     -- distinct from a genuine "verified everything, nothing missing" pass.
     See ``AtCompletenessOutcome``.
+
+    ``historical_selection`` (ADR-002) is a FIFTH, mutually-exclusive
+    evidence source keyed on an EXPLICIT, upstream-verified historical
+    declaration (``--historical-declaration-id``): when ``True``, the
+    working-tree scan (``feature_files_for_slice``) is never consulted and
+    never unioned -- the E1-expected AT population comes SOLELY from
+    ``regression_test_files``, the declaration's own canonical suite tuple.
+    A declared member that is present-in-commit or tracked-before-commit is
+    counted as positive evidence; a declared member that is neither is
+    EXCLUDED from the population -- never added, therefore never appearing
+    in ``missing`` -- mirroring, byte-for-byte, the ``declared_regression``
+    carve-out above (same reasoning, one mechanism for both the single-file
+    and the historical/aggregate evidence shape). ``verifiable`` is ``True``
+    unconditionally on this path, mirroring ``declared_regression``'s own
+    unconditional flip: the declaration's bare existence is all E1 decides
+    here: whether a declared member is genuinely present, collectable, and
+    green is E2's alone. ``historical_selection=False`` (the default) keeps
+    every existing caller and path BYTE-IDENTICAL to pre-ADR-002 behavior.
     """
+    if historical_selection:
+        in_commit = files_in_commit(repo, commit)
+        historical_at_files = [
+            member
+            for member in (regression_test_files or ())
+            if member in in_commit or _tracked_before_commit(repo, commit, member)
+        ]
+        historical_missing = [
+            rel_path
+            for rel_path in historical_at_files
+            if rel_path not in in_commit
+            and not _tracked_before_commit(repo, commit, rel_path)
+        ]
+        return AtCompletenessOutcome(
+            missing=sorted(historical_missing), verifiable=True
+        )
+
     at_files = feature_files_for_slice(repo, slice_id, feature_id)
     if at_kind == "native-regression" and regression_test_file:
         if _native_regression_at_evidence_exists(repo, regression_test_file):
