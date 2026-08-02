@@ -1,3 +1,4 @@
+# @feature-f-context-consumption-probe
 """Acceptance tests -- D71 `context_admission` EMITTER (component 1 of 2).
 
 Feature: f-context-consumption-probe, slice-01. Full design:

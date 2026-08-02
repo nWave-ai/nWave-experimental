@@ -1,0 +1,40 @@
+# Gate-contract: forward-context-admission (f-context-consumption-probe slice-02,
+# ADR-D71 "CONTEXT-family production writer")
+#
+# Per `docs/analysis/d4-schema-spec-2026-05-26.md` § 3.1 GateContractFull.
+# Schema: `nWave/gates/_schema.yaml#/$defs/GateContractFull`.
+# Catalog entry: `nWave/gates/_catalog.yaml` gate_id=forward-context-admission.
+
+gate_id: forward-context-admission
+responsibility: |
+  Forwards `.nwave/staging/d71/{context-admission,context-admission-paired}.jsonl` rows past a persistent, per-file cursor into `LedgerFamily.CONTEXT` via `EventStorePort.append` -- never `append_derived` (ADR-D71 Consequences: `agent_id` is null for 100% of this hook's population, so DD-8's `ReductionKeyIneligible` would refuse every such call). `reduction_key`/`scope`/`event` are stripped from the source row before it rides through as ordinary `EventRecord.fields` payload -- `reduction_key` collides by name with the store's own DD-7/DD-8 reserved dedup-gate key and would otherwise make the read path misclassify a forwarded row as DERIVED and drop it.
+
+  A `session_id`-null row is structurally unforwardable (`EventScope="session"` with an empty `partition_key` is refused by `PartitionKeyRequired`, DD-5): it is never appended, counted `partition_key_absent` in the run summary, and the cursor still advances past it (a permanently-null `session_id` would loop forever if retried). The cursor for one row is persisted only AFTER that row's `append()` call returns successfully -- a crash between a successful `append()` and the following cursor write causes a duplicate ledger record on the next run, never a lost one (documented, deliberate: duplication is observable and cheap to dedupe, silent loss is not). An absent spool file is a clean zero-work exit, not an error.
+module: des.cli.forward_context_admission
+entry_function: main
+language_neutral_contract: true
+
+log_events:
+  - ContextAdmissionForwardResult
+  - ContextAdmissionForwardCursorCorrupt
+  - ContextAdmissionForwardRowRejected
+
+failure_modes:
+  - error_class: SystemExit
+    exit_code: 2
+    remediation: "Malformed invocation (missing --repo-root, or any of its registered aliases --repo/--repo-dir/--project-root/--root) -- re-run with the target repository root always supplied."
+  - error_class: PartitionKeyAbsentSkipped
+    exit_code: 0
+    remediation: "A spool row's session_id is null -- EventScope=\"session\" with an empty partition_key is exactly what PartitionKeyRequired (DD-5) exists to refuse, so the row is structurally unforwardable, not transiently so. The row is NOT appended, is counted partition_key_absent in the ContextAdmissionForwardResult run summary, and the cursor advances past it (never retried -- a permanently-null session_id would loop forever). The run still exits 0: a structurally-unforwardable row is a named skip, not an error."
+  - error_class: CorruptCursorRefused
+    exit_code: 1
+    remediation: "The cursor file at .nwave/staging/d71/forward-cursor.json exists but could not be parsed as a JSON object (e.g. truncated by a process killed mid-write) -- the forwarder refuses to run rather than guess a start offset; the refusal (ContextAdmissionForwardCursorCorrupt) names the cursor path and the parse error. Delete the cursor file to re-forward from the start -- idempotent, since append() on an already-forwarded row produces a duplicate record, never a corruption."
+  - error_class: AppendRefusedByStore
+    exit_code: 1
+    remediation: "EventStorePort.append raised InvalidScope, PartitionKeyRequired, or LedgerIntegrityViolation for a row the forwarder's own pre-check believed was well-formed (e.g. a spool row carrying a scope value outside the closed EventScope vocabulary) -- a genuine store-side refusal, distinct from the permanent partition_key_absent skip decided before append() is ever attempted. The row is NOT forwarded, the cursor does NOT advance past it (so it is retried on the next run), and the refusal (ContextAdmissionForwardRowRejected) names the row and the exception class."
+
+idempotency: idempotent
+
+host_visibility:
+  - claude-code
+  - codex

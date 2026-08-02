@@ -656,3 +656,16 @@ gates:
     entry_function: main
     language_neutral_contract: true
     dormant: "Diagnostic query reachable via `des event-store-query`; not yet composed into a flavor gate_stack -- cross-cutting query is a caller-driven diagnostic surface (feature-delta.md consumer #4), not a per-slice/per-feature enforcement gate."
+
+  # f-context-consumption-probe slice-02 (ADR-D71 "CONTEXT-family production
+  # writer"): 1:1 mirror of the _REGISTRY row. Forwards the
+  # .nwave/staging/d71/ spool (context_admission + context_admission_paired)
+  # past a persistent cursor into LedgerFamily.CONTEXT via
+  # EventStorePort.append -- never append_derived (agent_id is null for
+  # 100% of this hook's population, DD-8 would refuse every call).
+  - gate_id: forward-context-admission
+    responsibility: "Forwards .nwave/staging/d71/{context-admission,context-admission-paired}.jsonl rows past a persistent cursor into LedgerFamily.CONTEXT via EventStorePort.append (never append_derived, DD-8). A session_id-null row is skipped and counted partition_key_absent, cursor still advances past it; a re-run past an already-advanced cursor forwards zero new rows (idempotent); a corrupt cursor file refuses the run rather than guessing a start offset; a row the store refuses (InvalidScope/PartitionKeyRequired/LedgerIntegrityViolation) is not forwarded and the cursor does not advance past it."
+    module: des.cli.forward_context_admission
+    entry_function: main
+    language_neutral_contract: true
+    dormant: "Forwarder CLI reachable via `des forward-context-admission`; not yet composed into a flavor gate_stack -- an operator/DEVOPS-scheduled forwarding surface (ADR-D71 Slice-02 Decision, 'a THIRD, des-importing component'), not a per-slice/per-feature enforcement gate."

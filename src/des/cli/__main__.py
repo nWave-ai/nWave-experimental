@@ -543,6 +543,17 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # over the merged legacy/new-envelope view -- honest could-not-verify
     # count, never a bare total.
     _SubcommandRow("event-store-query", "des.cli.event_store_query", "main"),
+    # f-context-consumption-probe slice-02 (D71): forwards the
+    # .nwave/staging/d71/ spool into LedgerFamily.CONTEXT via
+    # EventStorePort.append. RED scaffold wiring authored by DISTILL --
+    # `des.cli.forward_context_admission.main`'s sole callee
+    # (`_forward_all`) raises a bare `AssertionError`, mirroring the
+    # `event-store-probe` precedent above: this row makes the failure
+    # "forwarder not implemented" (a semantic AssertionError), never an
+    # argparse `invalid choice` usage error.
+    _SubcommandRow(
+        "forward-context-admission", "des.cli.forward_context_admission", "main"
+    ),
 )
 
 
