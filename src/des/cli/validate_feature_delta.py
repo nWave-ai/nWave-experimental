@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple, get_args
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.cli.carpaccio_format import _split_table_cells as _split_table_cells_escaped
 from des.domain.gate_outcome import GateVerdict
 from des.domain.telemetry.documentation_density_event import WaveName
 
@@ -538,14 +539,13 @@ def _parse_table_cells(row: str) -> list[str]:
     """Split a GFM table row into its trimmed cell values. Pure.
 
     A GFM row is `| a | b | c |`; the leading and trailing pipes produce empty
-    edge fields which are dropped.
+    edge fields which are dropped. Delegates to the single shared GFM
+    cell-splitter (`carpaccio_format._split_table_cells`) so a
+    backslash-escaped pipe (``\\|``) inside a cell is honored as literal text,
+    not a column boundary -- one locus for the escape contract, not a second
+    implementation that silently diverges from it.
     """
-    parts = [cell.strip() for cell in row.strip().split("|")]
-    if parts and parts[0] == "":
-        parts = parts[1:]
-    if parts and parts[-1] == "":
-        parts = parts[:-1]
-    return parts
+    return _split_table_cells_escaped(row)
 
 
 def _is_separator_row(row: str) -> bool:
