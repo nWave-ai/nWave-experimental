@@ -554,6 +554,13 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     _SubcommandRow(
         "forward-context-admission", "des.cli.forward_context_admission", "main"
     ),
+    # f-mikado-node-closure-record slice-01 (ADR-D70): attests one Mikado
+    # node state transition (closed|work_started) as a re-verifiable
+    # LedgerFamily.MIKADO record via EventStorePort.append (never
+    # append_derived -- D70-2).
+    _SubcommandRow(
+        "mikado-attest-node-closure", "des.cli.mikado_node_closure_attest", "main"
+    ),
 )
 
 

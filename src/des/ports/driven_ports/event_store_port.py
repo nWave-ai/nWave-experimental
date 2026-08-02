@@ -172,7 +172,10 @@ class EventStorePort(Protocol):
     ) -> AppendedRecord:
         """Append one DERIVED record, stamped with `reduction_key` (DD-7).
 
-        D71 reducer, future D70 closure-attestation.
+        D71 reducer. D70 closure-attestation is PRIMARY, never DERIVED
+        (ADR-D70 D70-2): its population is 100% null-`agent_id` by
+        construction, and DD-8 refuses every `append_derived` call for a
+        null `agent_id` -- it uses `append()` instead.
         """
         ...
 
