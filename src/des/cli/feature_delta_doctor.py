@@ -44,7 +44,9 @@ from typing import TypedDict
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import (
     SLICE_PLAN_CANONICAL_COLUMNS,
+    SLICE_PLAN_CANONICAL_STATUS_TOKENS,
     slice_plan_header_deviation,
+    slice_plan_status_deviations,
 )
 from des.cli.feature_delta_schema import _section_body
 from des.cli.validate_feature_delta import (
@@ -68,6 +70,86 @@ from des.domain.feature_delta_source import (
     dereference_adr_refs,
     resolve_decision_citations,
 )
+
+
+#: Gap id for a Slice Plan Status cell outside the closed EDC-7/LSC-6
+#: vocabulary (`SLICE_PLAN_CANONICAL_STATUS_TOKENS`) -- a non-canonical token
+#: silently suppresses `carpaccio_format.mark_slice_status_shipped`'s sync in
+#: production (`row.status.strip().lower() != "pending"`).
+_NON_CANONICAL_SLICE_STATUS_ID = "non-canonical-slice-status"
+
+#: The GDP-8 arity third state: the Slice Plan table EXISTS but could not be
+#: parsed into rows at all, so no Status cell in it could be read -- reporting
+#: zero status gaps there would be a GDP-6 silent-wrong. Mirrors
+#: `_ADR_REF_COULD_NOT_VERIFY_ID` / `_DECISION_CITATION_COULD_NOT_VERIFY_ID`'s
+#: own third-state shape.
+_SLICE_STATUS_COULD_NOT_VERIFY_ID = "slice-status-could-not-verify"
+
+#: The closed vocabulary rendered for a gap's `why`, built FROM
+#: `SLICE_PLAN_CANONICAL_STATUS_TOKENS` (M1: never a copied literal).
+_CANONICAL_SLICE_STATUS_VOCABULARY = ", ".join(SLICE_PLAN_CANONICAL_STATUS_TOKENS)
+
+
+def _slice_plan_status_gaps(content: str) -> list[Gap]:
+    """`non-canonical-slice-status` / `slice-status-could-not-verify` gaps
+    (EDC-7/LSC-6) -- reusing `carpaccio_format.slice_plan_status_deviations`,
+    the SAME parser module that reads the Slice Plan table downstream (M1:
+    one locus, no copy). Mirrors `_slice_plan_header_gaps`'s detection/
+    rendering split: detection lives in carpaccio_format, only rendering
+    here."""
+    gaps: list[Gap] = []
+    for deviation in slice_plan_status_deviations(content):
+        if deviation.state == "could-not-verify":
+            gaps.append(
+                Gap(
+                    id=_SLICE_STATUS_COULD_NOT_VERIFY_ID,
+                    what=(
+                        "cannot verify any Slice Plan Status cell -- the "
+                        f"table could not be parsed into rows: {deviation.detail}"
+                    ),
+                    why=(
+                        "the Slice Plan table EXISTS but could not be parsed "
+                        "into rows at all, so no Status cell in it could be "
+                        "read or checked against the closed EDC-7/LSC-6 "
+                        f"vocabulary ({_CANONICAL_SLICE_STATUS_VOCABULARY}); "
+                        "reporting zero status gaps here would silently "
+                        "agree every status resolved (GDP-6 silent-wrong)."
+                    ),
+                    how=(
+                        "fix the malformed Slice Plan row named above (every "
+                        "data row needs a 'slice-NN' identifier cell), then "
+                        "re-run `des feature-delta-doctor <feature-delta.md>` "
+                        "to confirm the table parses and its statuses can be "
+                        "verified."
+                    ),
+                )
+            )
+            continue
+        gaps.append(
+            Gap(
+                id=_NON_CANONICAL_SLICE_STATUS_ID,
+                what=(
+                    f"slice '{deviation.slice_id}' Status cell "
+                    f"{deviation.status!r} is outside the closed vocabulary"
+                ),
+                why=(
+                    "EDC-7/LSC-6 (`nw-discuss` SKILL.md) close the Slice Plan "
+                    "Status column to exactly "
+                    f"{_CANONICAL_SLICE_STATUS_VOCABULARY} -- a non-canonical "
+                    "token silently suppresses "
+                    "`carpaccio_format.mark_slice_status_shipped`'s sync in "
+                    "production (`row.status.strip().lower() != 'pending'`), "
+                    "so `des commit-slice` never flips it to 'shipped' and "
+                    "only `des next` notices later, reporting the SYMPTOM "
+                    "(ledger/plan disagree) never the CAUSE."
+                ),
+                how=(
+                    f"rewrite slice '{deviation.slice_id}''s Status cell to "
+                    f"one of: {_CANONICAL_SLICE_STATUS_VOCABULARY}."
+                ),
+            )
+        )
+    return gaps
 
 
 class Gap(TypedDict):
@@ -474,6 +556,7 @@ def diagnose(content: str, *, repo_root: Path | None = None) -> list[Gap]:
         *_reuse_analysis_gaps(content),
         *_sustainability_gaps(content),
         *_slice_plan_header_gaps(content),
+        *_slice_plan_status_gaps(content),
     ]
     if repo_root is not None:
         gaps.extend(_dangling_adr_ref_gaps(content, repo_root))

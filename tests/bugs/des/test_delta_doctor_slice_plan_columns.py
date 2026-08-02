@@ -108,7 +108,7 @@ def _feature_delta_with_slice_plan_header(header_line: str) -> str:
         "\n"
         f"{header_line}\n"
         "|---|---|---|---|---|\n"
-        "| slice-01 | ships the walking skeleton | done |  | shipped |\n"
+        "| slice-01 | ships the walking skeleton | shipped |  | shipped |\n"
         "\n"
         "## Reuse Analysis\n"
         "\n"

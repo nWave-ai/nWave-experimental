@@ -119,7 +119,7 @@ def _clean_feature_delta(adr_refs_body: str) -> str:
         "\n"
         "| Slice | Value statement | Status | Annotation | Justification |\n"
         "|---|---|---|---|---|\n"
-        "| slice-01 | ships the walking skeleton | done |  | shipped |\n"
+        "| slice-01 | ships the walking skeleton | shipped |  | shipped |\n"
         "\n"
         "## Reuse Analysis\n"
         "\n"

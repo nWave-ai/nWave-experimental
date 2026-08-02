@@ -689,6 +689,110 @@ def slice_plan_header_deviation(feature_delta_text: str) -> str | None:
     return header_line.strip()
 
 
+#: EDC-7/LSC-6 closed vocabulary for the Slice Plan ``Status`` column -- the
+#: ONE exported locus every consumer of the closed status set imports (M1:
+#: never a copied literal). ``mark_slice_status_shipped``'s own
+#: ``.strip().lower() != "pending"`` comparison is the exact tolerance this
+#: vocabulary's membership check mirrors: case-insensitive, whitespace-
+#: stripped, no more and no less.
+SLICE_PLAN_CANONICAL_STATUS_TOKENS: tuple[str, ...] = (
+    "pending",
+    "in-flight",
+    "shipped",
+)
+
+
+def _normalized_status_token(status: str) -> str:
+    """Case-insensitive, whitespace-stripped Status-cell token -- EXACTLY as
+    tolerant as :func:`mark_slice_status_shipped`'s own ``.strip().lower()``
+    comparison (no more, no less)."""
+    return status.strip().lower()
+
+
+@dataclass(frozen=True)
+class SliceStatusDeviation:
+    """One Slice Plan Status-cell finding outside the closed EDC-7/LSC-6
+    vocabulary, or the GDP-8 third state naming why the statuses could not be
+    read at all.
+
+    ``state`` is one of ``"non-canonical"`` (a row's own Status cell is
+    outside the closed vocabulary) or ``"could-not-verify"`` (the table
+    exists but could not be parsed into rows at all -- ``detail`` names why).
+    ``slice_id``/``status`` are populated only for the ``"non-canonical"``
+    state.
+    """
+
+    state: str
+    detail: str
+    slice_id: str = ""
+    status: str = ""
+
+
+def slice_plan_status_deviations(feature_delta_text: str) -> list[SliceStatusDeviation]:
+    """Every Slice Plan Status-cell deviation from the closed EDC-7/LSC-6
+    vocabulary (:data:`SLICE_PLAN_CANONICAL_STATUS_TOKENS`), or the GDP-8
+    third state when the table exists but cannot be parsed into rows at all.
+
+    Returns ``[]`` when: the ``[REF] Slice Plan`` section is absent (already
+    reported elsewhere, by ``missing-locked-section``), or the header names
+    no ``Status`` column at all (already reported elsewhere, by
+    ``malformed-slice-plan-header`` -- every cell then reads ``''`` and
+    re-flagging it here would double-count one root cause under two gap
+    ids).
+
+    Never raises: any ``GateError`` the shared parse machinery raises while
+    reading the table is caught and turned into the ``"could-not-verify"``
+    state (GDP-6 -- silently reporting zero status deviations there would be
+    a silent-wrong).
+
+    Consumed by ``feature_delta_doctor._slice_plan_status_gaps`` (M1: one
+    locus, detection here / rendering there -- mirrors
+    :func:`slice_plan_header_deviation` / ``_slice_plan_header_gaps``).
+    """
+    lines = feature_delta_text.splitlines()
+    heading_index = next(
+        (i for i, line in enumerate(lines) if _SLICE_PLAN_HEADING_RE.match(line)),
+        None,
+    )
+    if heading_index is None:
+        return []
+    try:
+        table_rows = _collect_table_rows(lines, heading_index + 1)
+    except GateError as exc:
+        return [
+            SliceStatusDeviation(
+                state="could-not-verify",
+                detail=str(exc.payload.get("error", exc)),
+            )
+        ]
+    if not table_rows:
+        return []
+    header_line = table_rows[0]
+    columns = _resolve_header_columns(header_line)
+    if _STATUS_COLUMN not in columns:
+        return []
+    try:
+        rows = _build_slice_rows(table_rows[2:], header_line)
+    except GateError as exc:
+        return [
+            SliceStatusDeviation(
+                state="could-not-verify",
+                detail=str(exc.payload.get("error", exc)),
+            )
+        ]
+    canonical = frozenset(SLICE_PLAN_CANONICAL_STATUS_TOKENS)
+    return [
+        SliceStatusDeviation(
+            state="non-canonical",
+            detail="",
+            slice_id=row.slice_id,
+            status=row.status,
+        )
+        for row in rows
+        if _normalized_status_token(row.status) not in canonical
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Slice-plan table WRITE (F-SLICE-PLAN-STATUS-COLUMN-NEVER-SYNCED)
 # ---------------------------------------------------------------------------
