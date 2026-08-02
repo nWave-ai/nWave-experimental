@@ -1502,21 +1502,21 @@ def check_carpaccio(
         raise ValueError(
             f"check_carpaccio: at_kind={at_kind!r} requires regression_test_file"
         )
-    if at_kind in ("pytest-regression", "native-regression") and scenarios:
-        # Mixed-mode guard (ADR-001 HIGH-3): the caller always parses
-        # `scenarios` from `_feature_tag_files(repo, feature_id)`, so a
-        # non-empty list here IS "the feature owns .feature files" -- the two
-        # AT-discovery modes are mutually exclusive by enforcement, never a
-        # silent precedence rule.
+    if at_kind in ("pytest-regression", "native-regression") and _slice_scenarios(
+        scenarios, entering_slice
+    ):
+        # A selected regression file may coexist with Gherkin scenarios owned
+        # by other slices, but never with a second AT-discovery route for the
+        # slice entering delivery.
         raise GateError(
             2,
             {
                 "event": "MalformedInput",
                 "cause": "mixed AT-discovery mode",
                 "error": (
-                    f"at_kind={at_kind!r} but the feature also owns "
-                    ".feature scenarios; the two AT-discovery modes are "
-                    "mutually exclusive"
+                    f"at_kind={at_kind!r} but entering slice {entering_slice!r} "
+                    "also owns .feature scenarios; select one AT-discovery mode "
+                    "for that slice"
                 ),
             },
         )
