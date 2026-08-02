@@ -237,10 +237,21 @@ class TestFileAttribution:
 
     ``slice_id`` is ``None`` (never a raise) when the head window carries no
     ``@slice-NN`` tag -- "no attribution" is a valid, non-exceptional
-    resolution outcome (slice-02 guardrail).
+    resolution outcome (slice-02 guardrail). ``slice_id`` resolves the FIRST
+    ``@slice-NN`` tag only, kept for back-compat with call sites that only
+    ever cared about a single-slice file.
+
+    ``slice_ids`` (ADD-not-mutate, additive -- fix-multi-slice-shared-at-file)
+    is the FULL ordered tuple of every ``@slice-NN`` tag in the head window,
+    empty when none is present. A shared multi-slice AT file (one head-
+    comment block declaring ``@slice-02`` through ``@slice-07``) must resolve
+    to EVERY declared slice, not only the first -- callers that need
+    membership across a shared file's declared slices read ``slice_ids``;
+    ``slice_id`` alone under-reports for that shape.
     """
 
     slice_id: str | None
+    slice_ids: tuple[str, ...]
     covers: tuple[str, ...]
 
 
@@ -254,12 +265,16 @@ def resolve_test_file_attribution(path: Path) -> TestFileAttribution:
     will prove works for ``//``/``--`` comments with no code change).
     ``slice_id`` is ``None`` when no ``@slice-NN`` tag is present -- "no
     attribution" is a valid, non-exceptional outcome, never a raise.
+    ``slice_ids`` resolves every ``@slice-NN`` tag via ``finditer`` -- the
+    same plural idiom ``covers`` already used, closing the ``search``/
+    ``finditer`` asymmetry that made a shared multi-slice file resolve to
+    only its first-declared slice.
     """
     window = _file_head_window(path)
-    slice_match = _SLICE_SUBTAG_RE.search(window)
-    slice_id = slice_match.group(1) if slice_match else None
+    slice_ids = tuple(match.group(1) for match in _SLICE_SUBTAG_RE.finditer(window))
+    slice_id = slice_ids[0] if slice_ids else None
     covers = tuple(match.group(1) for match in _COVERS_SUBTAG_RE.finditer(window))
-    return TestFileAttribution(slice_id=slice_id, covers=covers)
+    return TestFileAttribution(slice_id=slice_id, slice_ids=slice_ids, covers=covers)
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +352,7 @@ def discover_at_kind_for_slice(
     candidates = sorted(
         path
         for path in feature_tagged_test_files(repo, feature_id)
-        if resolve_test_file_attribution(path).slice_id == slice_id
+        if slice_id in resolve_test_file_attribution(path).slice_ids
     )
 
     if not candidates:

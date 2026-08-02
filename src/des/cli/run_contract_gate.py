@@ -2663,7 +2663,7 @@ def _node_belongs_to_slice(repo: Path, node_id: str, entering_slice: str) -> boo
             if _feature_carries_slice_tag(feature_file, entering_slice):
                 return True
     if is_pytest_collectible(node_path):
-        if resolve_test_file_attribution(node_path).slice_id == entering_slice:
+        if entering_slice in resolve_test_file_attribution(node_path).slice_ids:
             return True
     return False
 
@@ -2901,31 +2901,41 @@ def _narrow_to_shipped_entering_pytest(
 
     A Gherkin scenario carries its ``@slice-NN`` tag per-SCENARIO
     (``_scenario_slice_index``); a pytest AT carries it once per-FILE (the
-    head-comment ``@<slice>`` sub-tag, ``resolve_test_file_attribution``) --
-    every node-id collected from that file shares the SAME tag. Otherwise
-    identical semantics: shipped+entering = slice number ``<=`` the entering
-    slice's number, and an untagged node is conservatively KEPT (never
-    silently dropped).
+    head-comment ``@<slice>`` sub-tag(s), ``resolve_test_file_attribution``)
+    -- every node-id collected from that file shares the SAME tag set. A
+    shared multi-slice file (``@slice-02`` .. ``@slice-07`` in one head
+    window) may carry SEVERAL tags; the node is kept and each qualifying tag
+    (slice number ``<=`` the entering slice's number) contributes to
+    ``collected_tags`` -- not only the first-declared tag
+    (fix-multi-slice-shared-at-file). Otherwise identical semantics:
+    shipped+entering = slice number ``<=`` the entering slice's number, and
+    an untagged node is conservatively KEPT (never silently dropped).
     """
     entering_number = _slice_number(entering_slice)
-    file_tags: dict[Path, str | None] = {}
+    file_tags: dict[Path, tuple[str, ...]] = {}
     kept: list[str] = []
     collected_tags: set[str] = set()
     for node_id in node_ids:
         node_path = repo / node_id.split("::", 1)[0]
         if node_path not in file_tags:
-            file_tags[node_path] = resolve_test_file_attribution(node_path).slice_id
-        slice_id = file_tags[node_path]
-        if slice_id is None:
+            file_tags[node_path] = resolve_test_file_attribution(node_path).slice_ids
+        slice_ids = file_tags[node_path]
+        if not slice_ids:
             # Untagged node: not slice-attributed -- keep it, contributes no tag.
             kept.append(node_id)
             continue
-        slice_number = _slice_number(slice_id)
-        if entering_number is None or (
-            slice_number is not None and slice_number <= entering_number
-        ):
+        qualifying = tuple(
+            slice_id
+            for slice_id in slice_ids
+            if entering_number is None
+            or (
+                (slice_number := _slice_number(slice_id)) is not None
+                and slice_number <= entering_number
+            )
+        )
+        if qualifying:
             kept.append(node_id)
-            collected_tags.add(slice_id)
+            collected_tags.update(qualifying)
     return kept, collected_tags
 
 
@@ -3805,10 +3815,9 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
                 "and no head-comment-tagged pytest AT file was found either "
                 "-- the scoped contract gate would pass vacuously",
             )
-        all_slice_ids = {
-            resolve_test_file_attribution(p).slice_id for p in pytest_at_files
-        }
-        all_slice_ids.discard(None)
+        all_slice_ids: set[str] = set()
+        for p in pytest_at_files:
+            all_slice_ids.update(resolve_test_file_attribution(p).slice_ids)
         if entering_slice not in all_slice_ids:
             return _feature_scope_malformed(
                 feature_id,

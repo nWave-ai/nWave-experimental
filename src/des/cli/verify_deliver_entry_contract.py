@@ -277,9 +277,7 @@ def _authored_slice_tags(feature_id: str, repo_root: Path) -> frozenset[str]:
     for test_path in feature_tagged_test_files(repo_root, feature_id):
         if not is_pytest_collectible(test_path):
             continue
-        slice_id = resolve_test_file_attribution(test_path).slice_id
-        if slice_id is not None:
-            tags.add(slice_id)
+        tags.update(resolve_test_file_attribution(test_path).slice_ids)
     return frozenset(tags)
 
 

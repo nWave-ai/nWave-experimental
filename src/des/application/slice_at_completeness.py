@@ -210,7 +210,7 @@ def feature_files_for_slice(
             if not is_pytest_collectible(test_path):
                 continue
             attribution = resolve_test_file_attribution(test_path)
-            if attribution.slice_id == slice_id:
+            if slice_id in attribution.slice_ids:
                 matched.append(str(test_path.relative_to(repo)))
         convention_candidates = _regression_file_glob_candidates(
             repo, feature_id, slice_id

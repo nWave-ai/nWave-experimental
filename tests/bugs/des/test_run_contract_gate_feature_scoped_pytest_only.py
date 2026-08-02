@@ -81,6 +81,32 @@ def _write_pytest_only_at(
     )
 
 
+def _write_shared_multi_slice_at(
+    project_dir: Path,
+    feature_id: str,
+    slice_ids: tuple[str, ...],
+    *,
+    rel_dir: str,
+) -> None:
+    """A single pytest-collectible AT file head-tagged with SEVERAL
+    `@slice-NN` lines in one head-comment block -- the real-world shape
+    (`gate-armed-state-derivation`) `_narrow_to_shipped_entering_pytest`
+    (fix-multi-slice-shared-at-file) exists to resolve correctly: every
+    qualifying tag must contribute to `collected_slice_tags`, not only the
+    first-declared one.
+    """
+    scope_dir = project_dir / rel_dir
+    scope_dir.mkdir(parents=True, exist_ok=True)
+    (scope_dir / "__init__.py").write_text("", encoding="utf-8")
+    header = f"# @feature-{feature_id}\n" + "".join(
+        f"# @{slice_id}\n" for slice_id in slice_ids
+    )
+    (scope_dir / "test_shared_slices.py").write_text(
+        header + "def test_shared_behaviour():\n    assert 1 + 1 == 2\n",
+        encoding="utf-8",
+    )
+
+
 def test_pytest_only_feature_clears_instead_of_vacuous_refusal(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -161,4 +187,71 @@ def test_genuinely_no_at_of_either_kind_still_refuses_zero_collected(
     assert exit_code == 2 and event.get("reason") == "zero-collected", (
         f"a genuinely-empty feature scope must still refuse -- got exit "
         f"{exit_code}, event {event!r}"
+    )
+
+
+def test_shared_multi_slice_at_file_contributes_only_qualifying_tags(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """POSITIVE (fix-multi-slice-shared-at-file): a single pytest AT file
+    head-tagged with SEVERAL `@slice-NN` lines, entered from a slice in the
+    MIDDLE of the tagged range, must contribute EVERY qualifying tag to
+    `collected_slice_tags` (not only the first-declared one) while a tag
+    whose slice number EXCEEDS `entering_number` is excluded from
+    `collected_slice_tags` -- even though the shared file's node is still
+    kept because at least one OTHER tag on that same file qualifies.
+
+    Concrete shape: the shared file is tagged `@slice-02`, `@slice-03`,
+    `@slice-06`; a SEPARATE file (a distinct, realistic AT authored FOR
+    slice-04 itself) is tagged `@slice-04` only -- the entering slice must
+    itself own an AT somewhere in the feature for `_mode_feature_scoped`'s
+    `empty-intersection` precondition to pass (M-8 floor: refuse when the
+    entering slice has genuinely zero AT anywhere), exactly mirroring the
+    real-world shape (`gate-armed-state-derivation`) where the full
+    slice-02..slice-07 range is jointly covered by several files, not
+    necessarily one contiguous window per file. Entering `slice-04`:
+    `slice-02` and `slice-03` qualify (<= 4) on the shared file; `slice-06`
+    does not (> 4); `slice-04` qualifies on its own dedicated file. Before
+    the fix, `resolve_test_file_attribution.slice_id` (the `.search()`-based
+    single match) resolved only the FIRST declared tag (`slice-02`) for the
+    shared file, so this partial-qualification, multi-tag-contribution shape
+    was never exercised by any existing fixture at the `_mode_feature_scoped`
+    driving surface -- every prior fixture reaching
+    `_narrow_to_shipped_entering_pytest` via this entry point carried
+    exactly one `@slice-NN` tag per file.
+    """
+    feature_id = "gap2-shared-multi-slice-partial-qualification-probe"
+    entering_slice = "slice-04"
+    project_dir = tmp_path / "shared_multi_slice_repo"
+    project_dir.mkdir(parents=True)
+    rel_dir = f"tests/acceptance/{feature_id.replace('-', '_')}"
+    _write_shared_multi_slice_at(
+        project_dir,
+        feature_id,
+        ("slice-02", "slice-03", "slice-06"),
+        rel_dir=rel_dir,
+    )
+    _write_pytest_only_at(project_dir, feature_id, "slice-04", rel_dir=rel_dir)
+
+    exit_code = _mode_feature_scoped(project_dir, feature_id, entering_slice)
+    event = _last_json_event_on_stdout(capsys.readouterr().out)
+
+    assert exit_code == 0 and event.get("event") == "FeatureScopeCleared", (
+        "a shared multi-slice AT file with at least one qualifying tag must "
+        f"clear the feature scope -- got exit {exit_code}, event {event!r}"
+    )
+    assert event.get("collected_slice_tags") == [
+        "slice-02",
+        "slice-03",
+        "slice-04",
+    ], (
+        "collected_slice_tags must carry EVERY qualifying tag off the "
+        "shared file (slice-02 AND slice-03, both <= entering slice-04) "
+        "plus the dedicated slice-04 file's own tag, and MUST exclude "
+        f"slice-06 (> entering slice-04) -- got {event!r}"
+    )
+    assert event.get("collected_node_ids") == 2, (
+        "both AT files' nodes must be KEPT: the shared file because "
+        "slice-02/slice-03 qualify (even though slice-06 does not), and the "
+        f"dedicated slice-04 file because its own tag qualifies -- got {event!r}"
     )
