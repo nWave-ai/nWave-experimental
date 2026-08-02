@@ -128,6 +128,41 @@ live ownership/activity together with unintegrated or dirty work. The receipt na
 evidence and offers exactly `MERGE`, `RESUME`, `DEFER`, or `REMOVE`. It never removes a
 worktree automatically — is deletion staying human-authorized and separately verified?
 
+**Did the Sentinel read the orchestrator's declared active-lane ledger BEFORE inferring
+anything from git/mtime/telemetry — or did it re-derive "which worktrees are live lanes"
+from ambiguous signals, the way every prior pass in the session already got wrong?** A
+worktree's dirty-file count, its last-commit age, and a ledger row it happens to contain
+are properties of the FILE TREE, not evidence of orchestrator intent — a worktree can be
+dirty and old because a lane is genuinely mid-`commit-slice` deliberation, or because it
+is five days of undisturbed backlog, and nothing in `git status`/`git log` alone tells
+these apart. Inferring liveness from those signals is exactly the class GDP-8 names:
+deciding on a DESIGNATION (looks busy, looks stale) instead of the PROPERTY (is the
+orchestrator actually driving this worktree right now). Measured repeatedly in one
+overnight session (2026-08-02): eight consecutive Sentinel passes each re-derived the
+same three-lane RUNNING set from scratch, and each time conflated total worktree COUNT
+with dispatched-lane count ("10/6 capacity" for 3 real lanes among 10 existing
+worktrees), read a stale ledger row as current state, or — once — recommended REMOVE on
+two worktrees carrying live uncommitted bugfix work because their last-named COMMIT
+happened to already be an ancestor of trunk, which said nothing about the UNCOMMITTED
+diff sitting on top of it. Every one of those had to be caught and corrected by hand,
+after the fact, on the SAME facts a declared ledger would have made unambiguous up front.
+
+**Does the orchestrator maintain a small declared-lanes file BEFORE dispatching the next
+Sentinel pass — one row per worktree it has itself dispatched and is actively driving,
+written and updated on every REAL confirmation (a genuine status message, a verdict, a
+seal — never a Sentinel's own inference, which would make the ledger self-referential)?**
+Is its filename prefixed with the orchestrator's own lane name per the shared-scratchpad
+rule elsewhere in this skill (`team-lead-active-lanes.md`, or the equivalent for whichever
+lane is doing the dispatching)? Does every Sentinel dispatch prompt then name that exact
+path and say, verbatim in substance, *read this file first; treat it as the primary
+source for which worktrees are live dispatched lanes; corroborate it against
+git/mtime/ledger evidence and surface a named discrepancy if something disagrees, but do
+not silently reclassify a declared lane as abandoned, or an undeclared worktree as
+running, on your own inference*? A worktree absent from that ledger is backlog, not
+urgent, regardless of how many files are dirty or how fresh the last commit is — is "how
+many corsie are actually in flight" answerable from one read of that file, rather than
+reconstructed from ambiguous git state on every single pass?
+
 Is the agent classifying an ambiguous dependency actually Luna — Vera's economical model
 tier — and only when deterministic facts are insufficient? She may not invent work,
 liveness, capacity, or override the snapshot. Has the Sentinel run at SessionStart and at
