@@ -173,3 +173,22 @@ $defs:
           enum: [claude-code, codex, opencode, cli, git-hook]
         minItems: 1
         uniqueItems: true
+
+      input_assumptions:
+        type: array
+        description: |
+          Optional. What this gate silently assumes about the POPULATION of
+          its typical caller (never about its interface -- GDP-8: a caller
+          can satisfy the signature and still violate an assumption the
+          signature never states). Absence means undeclared, never "none" --
+          a gate with real input assumptions and an empty/missing list here
+          is a documentation gap, not evidence the gate is assumption-free.
+          Read by `des feature-delta-doctor` (GDP-1/GDP-2): when a
+          feature-delta's Reuse Analysis cites this gate's `module` under
+          Decision=EXTEND, the doctor surfaces these assumptions inline at
+          authoring time, before DISTILL/DELIVER spend any effort against a
+          reuse that may not hold for the new caller.
+        items:
+          type: string
+          minLength: 10
+        minItems: 0

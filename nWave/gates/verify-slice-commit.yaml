@@ -29,3 +29,12 @@ host_visibility:
   - codex
   - opencode
   - cli
+
+input_assumptions:
+  - "E1 (AT-completeness check) assumes the expected AT population for a
+     commit is the CURRENT working-tree scan -- correct for an ordinary
+     (non-historical) seal, but false for an explicitly selected historical
+     declaration, whose commit predates the AT files E1 would look for.
+     ADR-002 (prefactoring-aggregate-regression-seal) documents the fix:
+     on --historical-declaration-id, E1's population comes from the
+     declaration's own canonical suite tuple, never the working-tree scan."

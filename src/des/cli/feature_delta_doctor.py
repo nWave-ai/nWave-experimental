@@ -41,6 +41,8 @@ import sys
 from pathlib import Path
 from typing import TypedDict
 
+import yaml
+
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import (
     SLICE_PLAN_CANONICAL_COLUMNS,
@@ -60,6 +62,9 @@ from des.cli.validate_feature_delta import (
     VERDICT_NO_OVERLAP_DECLARED,
     VERDICT_STRUCTURALLY_ACCEPTED,
     VERDICT_UNJUSTIFIED_CREATE_NEW,
+    _normalise_decision_token,
+    _parse_table_cells,
+    _reuse_analysis_table_rows,
     locked_sections_present,
     validate_feature_delta_content,
     validate_reuse_analysis_content,
@@ -271,6 +276,136 @@ def _reuse_analysis_gaps(content: str) -> list[Gap]:
             ),
         )
     ]
+
+
+#: `reused-gate-assumption-unreviewed` -- an EXTEND row cites a file that IS
+#: a catalogued gate's `module:`, that gate declares `input_assumptions`, and
+#: the row's Justification cell never marks them reviewed. GDP-1/GDP-2: this
+#: fires at authoring time (feature-delta-doctor runs before DISTILL/DELIVER
+#: spend any effort), surfacing the reused gate's OWN declared assumptions
+#: inline instead of leaving them to be rediscovered downstream (E1's
+#: historical-target assumption was found this way, at Vera's 9th examine).
+_REUSED_GATE_ASSUMPTION_ID = "reused-gate-assumption-unreviewed"
+
+#: Marker a Reuse Analysis Justification cell writes once its author has
+#: read and addressed a reused gate's `input_assumptions` -- e.g.
+#: "Assumptions-Reviewed: verify-slice-commit". Matched loosely (the gate id
+#: must appear after the literal marker phrase) so authors are not forced
+#: into one exact sentence shape.
+_ASSUMPTIONS_REVIEWED_MARKER = "assumptions-reviewed"
+
+
+def _module_to_repo_path(module: str) -> str:
+    """Map a catalogued gate's dotted `module:` to its repo-relative file path.
+
+    `des.cli.foo` -> `src/des/cli/foo.py`; `scripts.cli.bar` -> `scripts/cli/bar.py`.
+    Mirrors the closed `^(des|scripts)\\.[a-z0-9_.]+$` pattern `_schema.yaml`
+    already enforces on every `module:` value -- this is the inverse of that
+    same convention, not a new one."""
+    prefix, _, rest = module.partition(".")
+    root = "src/des" if prefix == "des" else "scripts"
+    return f"{root}/{rest.replace('.', '/')}.py"
+
+
+def _gate_input_assumptions_by_path(
+    repo_root: Path,
+) -> dict[str, tuple[str, list[str]]]:
+    """Load every `nWave/gates/*.yaml` GateContractFull with a non-empty
+    `input_assumptions`, keyed by the gate's own module resolved to a
+    repo-relative file path -- so a Reuse Analysis File cell can be looked up
+    directly. Fails-open (empty dict) on a missing directory or an
+    unparseable gate file: this affordance is advisory (GDP-2), never a
+    reason to make the doctor itself unusable."""
+    gates_dir = repo_root / "nWave" / "gates"
+    if not gates_dir.is_dir():
+        return {}
+    result: dict[str, tuple[str, list[str]]] = {}
+    for gate_file in sorted(gates_dir.glob("*.yaml")):
+        if gate_file.name.startswith("_"):
+            continue
+        try:
+            data = yaml.safe_load(gate_file.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        assumptions = data.get("input_assumptions")
+        module = data.get("module")
+        gate_id = data.get("gate_id")
+        if not assumptions or not module or not gate_id:
+            continue
+        result[_module_to_repo_path(module)] = (gate_id, list(assumptions))
+    return result
+
+
+def _reused_gate_assumption_gaps(content: str, repo_root: Path) -> list[Gap]:
+    """`reused-gate-assumption-unreviewed` gaps (GDP-1/GDP-2 authoring-time
+    affordance). For every Reuse Analysis row whose Decision normalises to
+    EXTEND and whose File cell resolves to a catalogued gate carrying
+    `input_assumptions`, requires the row's own Justification cell to mark
+    those assumptions reviewed (`_ASSUMPTIONS_REVIEWED_MARKER` + the gate
+    id) -- never a hard rejection of the reuse itself, only of authoring the
+    row without having read what the reused gate assumes about its caller.
+    Silent (empty list) when no gate catalog is reachable at `repo_root`,
+    or the Reuse Analysis table is absent/malformed -- those are
+    `_reuse_analysis_gaps`'s and `_dangling_adr_ref_gaps`'s own concerns."""
+    rows = _reuse_analysis_table_rows(content)
+    if not rows or len(rows) < 3:
+        return []
+    assumptions_by_path = _gate_input_assumptions_by_path(repo_root)
+    if not assumptions_by_path:
+        return []
+    gaps: list[Gap] = []
+    for row in rows[2:]:
+        cells = _parse_table_cells(row)
+        if len(cells) < 5:
+            continue
+        if _normalise_decision_token(cells[3]) != "EXTEND":
+            continue
+        file_cell = cells[1].strip().strip("`")
+        match = assumptions_by_path.get(file_cell)
+        if match is None:
+            continue
+        gate_id, assumptions = match
+        justification = cells[4].strip().lower()
+        if (
+            _ASSUMPTIONS_REVIEWED_MARKER in justification
+            and gate_id.lower() in justification
+        ):
+            continue
+        assumptions_rendered = "\n".join(f"  - {a}" for a in assumptions)
+        gaps.append(
+            Gap(
+                id=_REUSED_GATE_ASSUMPTION_ID,
+                what=(
+                    f"Reuse Analysis EXTENDs {file_cell!r} (gate {gate_id!r}) "
+                    "without marking its declared input assumptions reviewed"
+                ),
+                why=(
+                    f"gate {gate_id!r} declares input_assumptions in "
+                    f"`nWave/gates/{gate_id}.yaml` -- what it silently "
+                    "assumes about the POPULATION of its typical caller, "
+                    "never checked by its interface (GDP-8: a caller can "
+                    "satisfy the signature and still violate an assumption "
+                    "the signature never states):\n"
+                    f"{assumptions_rendered}\n"
+                    "reusing this gate without re-deriving each assumption "
+                    "against the new caller is exactly how E1's "
+                    "historical-target defect shipped undetected until "
+                    "Vera's 9th examine (a cost this check exists to move "
+                    "to authoring time, GDP-1)."
+                ),
+                how=(
+                    f"for each assumption above, confirm it still holds for "
+                    "this feature's use case, or name the ADR/design "
+                    "decision that changes it (e.g. ADR-002 for "
+                    f"{gate_id!r}'s historical-target carve-out); then add "
+                    f"'{_ASSUMPTIONS_REVIEWED_MARKER.title()}: {gate_id}' to "
+                    "this row's Justification cell."
+                ),
+            )
+        )
+    return gaps
 
 
 def _sustainability_gaps(content: str) -> list[Gap]:
@@ -561,6 +696,7 @@ def diagnose(content: str, *, repo_root: Path | None = None) -> list[Gap]:
     if repo_root is not None:
         gaps.extend(_dangling_adr_ref_gaps(content, repo_root))
         gaps.extend(_dangling_decision_citation_gaps(content, repo_root))
+        gaps.extend(_reused_gate_assumption_gaps(content, repo_root))
     return gaps
 
 
