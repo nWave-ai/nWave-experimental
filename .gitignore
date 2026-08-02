@@ -19,6 +19,12 @@ state/
 test-results/
 .nwave/*
 !.nwave/local-config.json
+!.nwave/.gitignore
+!.nwave/telemetry/
+!.nwave/telemetry-archive/
+!.nwave/audit/
+!.nwave/observability/
+!.nwave/feature-end/
 .des/
 
 # Temporary files
