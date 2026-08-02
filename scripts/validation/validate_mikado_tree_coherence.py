@@ -88,6 +88,12 @@ from git_commit_reachability import (
     build_reachability,
     locate_worktree_root,
 )
+from mikado_closure_ledger import (
+    NodeState,
+    RefusalCause,
+    evaluate_node,
+    node_refusal_cause,
+)
 
 
 DEFAULT_TRUNK_REF = "feature/atdd-pure-staging"
@@ -1252,6 +1258,141 @@ def _rule_completion_word(
     return findings
 
 
+#: The two REFUSED causes `mikado_closure_ledger.RefusalCause` can name,
+#: rendered as distinguishable WHAT-clause prose (orchestrator's own
+#: constraint, f-mikado-node-closure-record slice-02: "citazione a un
+#: commit irraggiungibile e citazione a un commit che non porta il path
+#: dichiarato sono due cause DISTINTE dello stesso REFUSED -- distinguibili
+#: nell'output, non collassate"). Never a new Finding.rule/Severity --
+#: `ledger-closure-refused` stays the ONE rule name (Reuse Analysis: "zero
+#: new Finding/Severity vocabulary"), the distinction lives in this text.
+_REFUSAL_CAUSE_TEXT = {
+    RefusalCause.SHA_NOT_REACHABLE: "the cited commit is not reachable from trunk at all",
+    RefusalCause.PATH_NOT_CARRIED: (
+        "the cited commit is reachable but did not rewrite the cited path"
+    ),
+}
+
+
+def _ledger_closure_refused_finding(
+    doc_path: Path, node_id: str, cause: RefusalCause | None
+) -> Finding:
+    """`ledger-closure-refused` (ADR-D70 D70-6): REJECT, unconditional,
+    never ratcheted -- mirrors `_rule_carrier_contradiction`'s own severity
+    exactly. Prose reads a CLOSED-class state AND the ledger's independent
+    re-verification reads REFUSED: an actively false closure claim."""
+    cause_text = _REFUSAL_CAUSE_TEXT.get(
+        cause, "the ledger's independent re-verification contradicts it"
+    )
+    return Finding(
+        rule="ledger-closure-refused",
+        node_id=node_id,
+        severity=Severity.REJECT,
+        what=(
+            f"`{node_id}` is closed in {CARRIER_NODES}, and the MIKADO ledger's "
+            f"independent re-verification of its closure record is REFUSED -- "
+            f"{cause_text}"
+        ),
+        why=(
+            "a false closure claim is worse than silence: this is an actively "
+            "contradicted record, not merely an unattested one, so it blocks "
+            "absolutely and is never ratcheted (mirrors carrier-contradiction's "
+            "own severity, ADR-D70 D70-6) -- write a NEW, correctly-citing "
+            "closure record via `des mikado-attest-node-closure`; the ledger "
+            "is append-only, so a later verifying record supersedes this false "
+            "one for read purposes rather than editing history"
+        ),
+        how=_how_explain(doc_path, node_id),
+        locations=(str(doc_path),),
+    )
+
+
+def _ledger_closure_unattested_finding(
+    doc_path: Path, node_id: str, ledger_state: NodeState
+) -> Finding:
+    """`ledger-closure-unattested` (ADR-D70 D70-6): ADVISORY, unconditional,
+    NEVER blocking, no ratchet (reviewed and declined -- `gate_ratchet.py`'s
+    baseline precondition does not hold for a non-git-tracked ledger).
+    Prose reads CLOSED AND the ledger reads OPEN or COULD_NOT_DETERMINE: an
+    honest gap the forward-only convention does not retrofit."""
+    return Finding(
+        rule="ledger-closure-unattested",
+        node_id=node_id,
+        severity=Severity.ADVISORY,
+        what=(
+            f"`{node_id}` is closed in {CARRIER_NODES}, and the MIKADO ledger "
+            f"carries no verified closure record for it (ledger reads "
+            f"{ledger_state.value})"
+        ),
+        why=(
+            "forward-only convention (ADR-D70 D70-6): the historical, "
+            "non-retrofitted backlog is never held hostage -- this is "
+            "printed, named, and counted every run, and never blocks the "
+            "commit. Run `des mikado-attest-node-closure` to attest this "
+            "node going forward, purely advisory, never required to unblock"
+        ),
+        how=_how_explain(doc_path, node_id),
+        locations=(str(doc_path),),
+    )
+
+
+def check_ledger_closure_reconciliation(
+    doc_path: Path,
+    states: dict[str, ClosureClass],
+    *,
+    ledger_root: Path | None,
+    reachability: CommitReachabilityPort,
+    contents: CommitContentsPort,
+    trunk_ref: str,
+) -> list[Finding]:
+    """The fourth carrier (ADR-D70 D70-6): for every node whose RESOLVED
+    prose state is CLOSED, reconcile against the MIKADO ledger's own
+    independent re-verification (`mikado_closure_ledger.evaluate_node`).
+
+    `ledger_root is None` (no repo root supplied to this gate invocation,
+    e.g. a caller exercising only the three prose carriers) degrades to
+    `NodeState.COULD_NOT_DETERMINE` for every CLOSED node -- never a silent
+    skip (GDP-6): the sibling ADVISORY finding still fires, it simply never
+    escalates to REJECT, exactly the weakest-honest-answer discipline this
+    file already applies to an absent `contents` port (`UnavailableContents`).
+    """
+    findings: list[Finding] = []
+    for node_id, klass in sorted(states.items()):
+        if klass is not ClosureClass.CLOSED:
+            continue
+        if ledger_root is None:
+            ledger_state = NodeState.COULD_NOT_DETERMINE
+        else:
+            ledger_state = evaluate_node(
+                node_id,
+                project_root=ledger_root,
+                reachability=reachability,
+                contents=contents,
+                trunk_ref=trunk_ref,
+            )
+        if ledger_state is NodeState.CLOSED:
+            continue
+        if ledger_state is NodeState.REFUSED:
+            cause = (
+                node_refusal_cause(
+                    node_id,
+                    project_root=ledger_root,
+                    reachability=reachability,
+                    contents=contents,
+                    trunk_ref=trunk_ref,
+                )
+                if ledger_root is not None
+                else None
+            )
+            findings.append(_ledger_closure_refused_finding(doc_path, node_id, cause))
+            continue
+        # OPEN or COULD_NOT_DETERMINE
+        findings.append(
+            _ledger_closure_unattested_finding(doc_path, node_id, ledger_state)
+        )
+    return findings
+
+
 # ---------------------------------------------------------------------------
 # gate
 # ---------------------------------------------------------------------------
@@ -1548,6 +1689,7 @@ def check_tree_coherence(
     reachability: CommitReachabilityPort,
     trunk_ref: str = DEFAULT_TRUNK_REF,
     contents: CommitContentsPort | None = None,
+    ledger_root: Path | None = None,
 ) -> GateReport:
     if contents is None:
         contents = UnavailableContents(
@@ -1645,6 +1787,14 @@ def check_tree_coherence(
     )
     findings += check_closed_over_open_child(doc_path, node_states)
     findings += check_node_visible_from_a_root(doc_path, node_states)
+    findings += check_ledger_closure_reconciliation(
+        doc_path,
+        node_states,
+        ledger_root=ledger_root,
+        reachability=reachability,
+        contents=contents,
+        trunk_ref=trunk_ref,
+    )
 
     if any(f.severity is Severity.REJECT for f in findings):
         verdict = Verdict.INCOHERENT
@@ -1941,11 +2091,19 @@ def main(argv: list[str] | None = None) -> int:
     repo = args.repo or args.file.resolve().parent
     contents = build_contents(repo)
     reachability = build_reachability(repo)
+    # The MIKADO ledger lives at `.nwave/telemetry/mikado/` under the repo's
+    # OWN root, joined literally by `telemetry_paths.ledger_path` (no
+    # upward walk) -- so, unlike `reachability`/`contents` (which walk up
+    # from `repo` themselves via `locate_git_dirs`), the fourth carrier
+    # needs the resolved worktree root explicitly, not `repo` as given
+    # (`repo` defaults to the DOCUMENT's own directory, e.g. `docs/mikado/`,
+    # not the checkout root).
     report = check_tree_coherence(
         args.file,
         reachability=reachability,
         trunk_ref=args.trunk_ref,
         contents=contents,
+        ledger_root=locate_worktree_root(repo) or repo,
     )
 
     if args.explain:
