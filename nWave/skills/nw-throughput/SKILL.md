@@ -293,9 +293,17 @@ capacity remains.
    N+1's cloud work on slice N's box work. This is mandatory whenever those lanes are
    READY, not a discretionary speed-up.
 
-3. **Is the box scoped per-slice (C1)?** The per-slice seal digests only the ENTERING
+3. **Is the box scoped per-slice (C1)?** The per-slice seal EXECUTES only the ENTERING
    slice's regression test + light always-on invariants; the whole-tree tier defers to
-   feature-end. Running the whole tree per-slice is the JIT poison that forbids
+   feature-end. This governs which architectural invariants RUN per-slice — it is a
+   DIFFERENT axis from the `Gate-Scope:` commit trailer, which is a whole-tree SET
+   FINGERPRINT (sha256 over every collected test node-id) and is legitimately whole-tree
+   by design: it detects the test population itself drifting between gate-run and
+   commit-land, including files OUTSIDE the entering slice — a scoped collect cannot see
+   that delta structurally. Measured 2026-08-03: reading "digests" here as license to
+   scope the Gate-Scope fingerprint to one slice produced a bugfix dispatch that a real
+   RCA had to retire (`gate-scope-per-slice`, `defects.md`) — the wording invited exactly
+   that inference. Running the whole tree per-slice is the JIT poison that forbids
    pipelining. Seal 3-10' → 1-2'.
 
 4. **Is the box launch resource-aware (C3 / GDP-6 starvation-class)?** BEFORE a heavy box
