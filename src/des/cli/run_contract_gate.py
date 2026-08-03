@@ -189,6 +189,57 @@ _COLLECT_ERROR_PREFIX = "NWAVE_COLLECT_SCOPE_ERROR:"
 _COLLECT_TIMEOUT_SECONDS = 180
 
 
+def _emit_collect_budget_margin(*, elapsed_seconds: float, trim: bool) -> None:
+    """Report how much of THIS module's own collect-worker wall-clock budget
+    (``_COLLECT_TIMEOUT_SECONDS``, the ``timeout=`` passed to the collect-worker
+    ``subprocess.run`` call this function measures around) a single invocation
+    actually consumed.
+
+    Fires on EVERY collect-worker invocation -- success, a non-(0,5) exit, or a
+    timeout -- never only on the happy path: a margin line that appears only
+    when things are fine tells a contributor nothing at the moment it matters
+    (the charter `a-contributor-seals-a-slice-despite-a-slow-gate-or-gets-an-
+    actionable-next-step.md`: "a fix that merely happens to sneak under the
+    wire on today's repo size, with no visible headroom reported, is not
+    distinguishable from a near-miss that will reproduce the same block again
+    as the tree grows").
+
+    Deliberately reports ONLY the budget this call enforces. The subagent hook
+    (``subagent_stop_handler.py``) enforces its OWN, separate and tighter,
+    per-subprocess budget -- this event never reads or implies that bound;
+    naming the wrong budget here would be worse than reporting none.
+
+    A SEPARATE event from ``GateScopeDigest`` (whose shape other consumers
+    parse) -- printed the same way, one JSON object per line on stderr.
+    """
+    budget_seconds = float(_COLLECT_TIMEOUT_SECONDS)
+    margin_seconds = budget_seconds - elapsed_seconds
+    margin_percent = (margin_seconds / budget_seconds) * 100 if budget_seconds else 0.0
+    event: dict[str, object] = {
+        "event": "CollectBudgetMargin",
+        "elapsed_seconds": round(elapsed_seconds, 2),
+        "budget_seconds": budget_seconds,
+        "budget_source": "run_contract_gate._COLLECT_TIMEOUT_SECONDS",
+        "margin_seconds": round(margin_seconds, 2),
+        "margin_percent": round(margin_percent, 1),
+        "trim": trim,
+        "what": "collect-worker wall-clock budget margin",
+        "why": (
+            f"used {elapsed_seconds:.1f}s of {budget_seconds:.0f}s budget "
+            f"({margin_percent:.0f}% margin remaining) against "
+            "_COLLECT_TIMEOUT_SECONDS -- the ONLY budget this line reports; a "
+            "DIFFERENT, tighter per-subprocess budget lives separately in "
+            "subagent_stop_handler.py and is not measured here"
+        ),
+        "how": (
+            "if this margin trends toward 0% as the tree grows, raise "
+            "_COLLECT_TIMEOUT_SECONDS in run_contract_gate.py before it "
+            "reproduces the same block again"
+        ),
+    }
+    print(json.dumps(event), file=sys.stderr)
+
+
 # The worker's `--run` branch marker (the arch-invariant collect-AND-RUN path).
 # DISTINCT from the collect-only markers: the run branch reports the run outcome
 # (`pytest_exit_code` + `collected_count`), never node-ids.
@@ -445,10 +496,12 @@ def _collect_scope_uncached_dispatch(
 
 # The pytest hooks through which a plugin can ADD/REMOVE a collected item (change
 # the digested SET), as opposed to merely labelling/reordering/reporting it. A
-# plugin implementing any of these is KEPT when autoload is disabled; a plugin
-# implementing none of them (allure's per-item labelling, pytest-cov, pytest-html,
-# metadata, xdist, timeout, respx, ...) is answer-neutral and safely dropped, so
-# the inventory step pays enumeration cost, not full tooling-load cost.
+# plugin implementing any of these is KEPT when autoload is disabled. A plugin
+# implementing none of them (allure's per-item labelling, pytest-cov, xdist,
+# respx, ...) is answer-neutral on the collected SET; it is dropped UNLESS it
+# also declares a pytest ini option (see ``_plugin_declares_ini_option`` below)
+# -- pytest-html, pytest-timeout, xdist, and pytest-mock all fall in that
+# second bucket and are kept for that reason, not this one.
 _ITEM_COLLECTION_HOOKS = frozenset(
     {
         "pytest_collect_file",
@@ -465,24 +518,77 @@ _ITEM_COLLECTION_HOOKS = frozenset(
 _COLLECTION_PLUGIN_ALLOWLIST: list[str] | None = None
 
 
+def _plugin_declares_ini_option(module: object) -> bool:
+    """True iff ``module`` registers at least one ``[tool.pytest.ini_options]``
+    name via its own ``pytest_addoption`` hook.
+
+    pytest validates EVERY declared ini option at startup regardless of
+    collection relevance (``strict_config = true``), so a plugin dropped from
+    the trimmed collect-worker env while its ini option stays declared makes
+    pytest refuse the trimmed collect before it reaches a single test file --
+    an orphaned option is a hard usage error, not a soft "unused" no-op.
+
+    Ownership is PROBED, never a hand-typed option-name list (same
+    dynamic-discovery discipline as ``_collection_plugin_allowlist`` itself,
+    for the same reason -- see its docstring). The module is already imported
+    by the caller, so this costs one ``pytest_addoption(...)`` call: a real
+    ``_pytest.config.argparsing.Parser`` records every ``addini`` name the
+    hook registers. Some plugins declare the 1-arg hook signature
+    (``pytest_addoption(parser)``); others declare the 2-arg signature
+    (``pytest_addoption(parser, pluginmanager)``, e.g. ``pytest_asyncio``) --
+    both are tried. Any exception during the probe propagates to the caller,
+    which fails open (keeps the plugin) rather than silently answering False.
+    """
+    add_option = getattr(module, "pytest_addoption", None)
+    if add_option is None:
+        return False
+    from _pytest.config.argparsing import Parser
+
+    parser = Parser(_ispytest=True)
+    try:
+        add_option(parser)
+    except TypeError:
+        from _pytest.config import PytestPluginManager
+
+        add_option(parser, PytestPluginManager())
+    return bool(parser._inidict)
+
+
 def _collection_plugin_allowlist() -> list[str]:
-    """The installed ``pytest11`` plugins that can alter the collected item SET.
+    """The installed ``pytest11`` plugins that must survive the trimmed
+    (``PYTEST_DISABLE_PLUGIN_AUTOLOAD=1``) collect-worker env.
 
     Derived DYNAMICALLY from ``importlib.metadata`` at runtime -- NEVER a
     hand-typed name list (a prior perf commit hand-typed ``-p no:<plugin>`` names
     that silently no-op'd when the venv's actual plugin set diverged from the
     list, e.g. ``no:pytest_pspec`` vs the real ``pspec``). Each installed
-    ``pytest11`` entry point is imported and KEPT iff its module implements at
-    least one item-creation hook (``_ITEM_COLLECTION_HOOKS``); a plugin that
-    cannot be imported is kept too (fail-open toward answer-preservation -- never
-    DROP a plugin we cannot inspect). The result is the
-    ``PYTEST_DISABLE_PLUGIN_AUTOLOAD`` re-enable allowlist: these plugins are
-    re-enabled by module name so the trimmed collect stays item-for-item
-    identical to a full-autoload collect for any target whose collection they
-    drive. A target needing a collection plugin NOT on this list fails LOUD in
-    the worker, and ``_collect_scope_uncached`` falls back to the full-autoload
-    collect -- never a silent shrink. Memoised per interpreter session (the
-    installed plugin set is immutable within a process).
+    ``pytest11`` entry point is imported and KEPT iff EITHER:
+
+    * its module implements at least one item-creation hook
+      (``_ITEM_COLLECTION_HOOKS``) -- it can change the collected item SET; OR
+    * its module declares at least one pytest ini option
+      (``_plugin_declares_ini_option``) -- dropping it would orphan a
+      ``[tool.pytest.ini_options]`` key pytest validates at startup regardless
+      of collection relevance, turning a target-agnostic speed optimisation
+      into a hard "Unknown config option" failure for any target repo that
+      declares that plugin's option(s). This criterion is deliberately
+      TARGET-AGNOSTIC: it keeps the plugin because it declares *some* ini
+      option, never because THIS repo's ``pyproject.toml`` happens to use it --
+      this function takes no target argument and must stay valid for any repo
+      this gate runs against.
+
+    A plugin that cannot be imported is kept too, and a plugin whose ini-option
+    probe raises is ALSO kept with a one-line diagnostic on stderr (fail-open
+    toward answer-preservation -- never DROP a plugin we could not inspect).
+    The result is the ``PYTEST_DISABLE_PLUGIN_AUTOLOAD`` re-enable allowlist:
+    these plugins are re-enabled by module name so the trimmed collect stays
+    item-for-item identical to a full-autoload collect, and admits every ini
+    option any installed plugin declares, for any target whose collection or
+    configuration they drive. A target needing a collection plugin NOT on this
+    list fails LOUD in the worker, and ``_collect_scope_uncached`` falls back
+    to the full-autoload collect -- never a silent shrink. Memoised per
+    interpreter session (the installed plugin set is immutable within a
+    process).
     """
     global _COLLECTION_PLUGIN_ALLOWLIST
     if _COLLECTION_PLUGIN_ALLOWLIST is not None:
@@ -499,6 +605,21 @@ def _collection_plugin_allowlist() -> list[str]:
             modules.append(module_name)
             continue
         if any(hasattr(module, hook) for hook in _ITEM_COLLECTION_HOOKS):
+            modules.append(module_name)
+            continue
+        try:
+            keep_for_ini_option = _plugin_declares_ini_option(module)
+        except Exception as exc:
+            print(
+                f"_collection_plugin_allowlist: could not probe {module_name}'s "
+                f"pytest_addoption for declared ini options ({exc!r}) -- "
+                "keeping it in the trimmed-collect allowlist (fail-open, "
+                "moves the trimmed set toward full autoload, never shrinks it)",
+                file=sys.stderr,
+            )
+            modules.append(module_name)
+            continue
+        if keep_for_ini_option:
             modules.append(module_name)
     _COLLECTION_PLUGIN_ALLOWLIST = sorted(set(modules))
     return _COLLECTION_PLUGIN_ALLOWLIST
@@ -624,6 +745,8 @@ def _run_collect_worker(
     """
     interpreter = pytest_interpreter(repo_root=repo)
     worker = Path(__file__).with_name("_collect_scope_worker.py")
+    trimmed = env.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") == "1"
+    started = time.monotonic()
     try:
         completed = subprocess.run(
             [
@@ -640,6 +763,9 @@ def _run_collect_worker(
             env=env,
         )
     except subprocess.TimeoutExpired as exc:
+        _emit_collect_budget_margin(
+            elapsed_seconds=time.monotonic() - started, trim=trimmed
+        )
         # ZERO DEFECTS: the collect worker must never block forever. A collect
         # that exceeds the wall-clock bound (a hang, or a recursive collect that
         # re-enters the gate over the real tree) is an untrustworthy collection
@@ -656,6 +782,9 @@ def _run_collect_worker(
             f"{_COLLECT_TIMEOUT_SECONDS}s (a hanging or recursive collect); "
             f"stderr: {stderr_tail.strip()[:500]}"
         ) from exc
+    _emit_collect_budget_margin(
+        elapsed_seconds=time.monotonic() - started, trim=trimmed
+    )
     payload = _parse_worker_line(completed.stdout, _COLLECT_RESULT_PREFIX)
     error = _parse_worker_line(completed.stdout, _COLLECT_ERROR_PREFIX)
     if error is not None:
