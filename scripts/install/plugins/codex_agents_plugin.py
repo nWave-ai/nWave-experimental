@@ -61,6 +61,15 @@ _logger = logging.getLogger(__name__)
 _toml_reader = importlib.import_module(
     "tomllib" if sys.version_info >= (3, 11) else "tomli"
 )
+_CLAUDE_MODEL_SELECTOR = re.compile(
+    r"\b(?:claude-)?(?:haiku|sonnet|opus)(?:-[\w.-]+)?\b|\binherit\b",
+    re.IGNORECASE,
+)
+
+
+def _rewrite_model_selectors_for_codex(content: str) -> str:
+    """Replace source-only model selectors with Codex's configured model."""
+    return _CLAUDE_MODEL_SELECTOR.sub("configured Codex model", content)
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +134,11 @@ def _find_agents_source(context: InstallContext) -> Path | None:
 def _extract_scalar_fields(frontmatter: dict) -> dict[str, str]:
     """Extract string-valued TOML fields from the agent frontmatter.
 
-    Keeps only scalar (string) fields that have TOML equivalents.
+    Keeps only scalar (string) fields that have TOML equivalents, except
+    ``model``.  nWave's canonical agent sources use Claude model aliases and
+    ``inherit``; neither is a portable Codex subagent model setting.  Omitting
+    the field makes Codex use its configured, supported session model.
+
     Drops all fields in CODEX_AGENT_FORBIDDEN_FIELDS and any non-string
     complex values (lists, dicts).
 
@@ -138,7 +151,9 @@ def _extract_scalar_fields(frontmatter: dict) -> dict[str, str]:
     return {
         key: str(value)
         for key, value in frontmatter.items()
-        if key not in CODEX_AGENT_FORBIDDEN_FIELDS and isinstance(value, str)
+        if key not in CODEX_AGENT_FORBIDDEN_FIELDS
+        and key != "model"
+        and isinstance(value, str)
     }
 
 
@@ -492,7 +507,11 @@ def _transform_agent(
             agent_name,
             UNPROJECTED_MODEL_NOTICE.format(model=unprojected_model),
         )
+    scalar_fields["description"] = _rewrite_model_selectors_for_codex(
+        scalar_fields.get("description", "")
+    )
     body = rewrite_host_paths(body, "codex")
+    body = _rewrite_model_selectors_for_codex(body)
     body = _translate_skill_invocations(body)
     preamble = _capability_preamble(frontmatter)
     if preamble:
