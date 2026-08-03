@@ -38,6 +38,11 @@
     },
     {
       "skill": "nw-cross-cutting-invariants",
+      "clause_id": "gate:design-principles-gdp-10-parsimony",
+      "marker": "simplicity is the ultimate sophistication"
+    },
+    {
+      "skill": "nw-cross-cutting-invariants",
       "clause_id": "gate:design-principles-gdp-8-authoring-corollary",
       "marker": "does this name have a PRODUCER?"
     },
@@ -75,6 +80,11 @@
       "skill": "nw-cross-cutting-invariants",
       "clause_id": "join-key:shape-conformance-over-uniqueness",
       "marker": "conforms to a declared id shape"
+    },
+    {
+      "skill": "nw-cross-cutting-invariants",
+      "clause_id": "provenance:a-count-without-a-sender-is-not-attributable",
+      "marker": "who wrote each one"
     }
   ]
 }

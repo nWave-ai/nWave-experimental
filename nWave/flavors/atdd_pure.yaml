@@ -137,6 +137,17 @@ lifecycle_events:
   # SubagentStop (Claude Code) / dispatch.post (Codex/OpenCode) —
   # fires when dispatched subagent returns. Verify slice commit + emit
   # SliceCommitVerified ledger record (M76 §3.4 slice.committed event).
+  # SCOPE NOTE (I1, Opus friction audit 2026-08-03): this list declares ONE
+  # gate (`verify-slice-commit`) with `on_failure: warn`. It is NOT the
+  # complete subagent.stop policy: `handle_subagent_stop`
+  # (subagent_stop_handler.py) ALSO runs the G_COMMIT exit gate and the
+  # feature-end required-records gate below on the same hook, and BOTH
+  # hard-block (`_emit_atdd_pure_block`) -- neither is declared here as its
+  # own `gate_id`/`on_failure`. A reader of only this YAML would wrongly
+  # conclude subagent.stop is advisory. Declaring those two phases explicitly
+  # (so this file's `on_failure` values are the truth, not just this one
+  # check's) is future work, not attempted here -- flagging the gap honestly
+  # rather than silently leaving the file's own claim uncorrected.
   subagent.stop:
     - gate_id: verify-slice-commit
       args:
@@ -156,10 +167,23 @@ lifecycle_events:
       # fix-ws-done-gate-na-reconciliation slice-01: WalkingSkeletonGateRan
       # alone only proves the gate was ENTERED -- a walking skeleton that ran
       # and FAILED still leaves the heartbeat behind, so this list used to let
-      # a FAILED walking skeleton close. WalkingSkeletonTierVerified is the
-      # PASS-only trust anchor (RM-3); it is now ALSO required, reconciled for
-      # a legitimately-NA feature by the WalkingSkeletonNotApplicable marker
-      # below.
+      # a FAILED walking skeleton close. WalkingSkeletonTierVerified was meant
+      # as the PASS-only trust anchor (RM-3) closing that gap.
+      #
+      # REMOVED 2026-08-03 (Ale, GDP-10 D1): measured across 386 feature
+      # ledgers (dev checkout AND installed tree), WalkingSkeletonTierVerified's
+      # sole producer (WalkingSkeletonFeatureEndGate.run,
+      # walking_skeleton_feature_end_gate.py:70) has ZERO callers anywhere in
+      # `src/` -- designed, never wired. Requiring it made feature-end
+      # UNCONDITIONALLY unsatisfiable: 0 of 386 measured features could ever
+      # pass. The NA escape (WalkingSkeletonNotApplicable) was never emitted
+      # either (0 of 3,771 telemetry records). Removing the requirement loses
+      # no currently-functioning protection -- the record never fired for
+      # ANY feature, ever, so no feature-end has genuinely been gated by it.
+      # See defects.md `the-definition-of-done-names-a-ledger-event-that-has-
+      # zero-producers`. Re-add it once WalkingSkeletonFeatureEndGate.run is
+      # actually invoked somewhere in the DELIVER/feature-end flow and
+      # verified to produce a real PASS on at least one feature.
       feature_end_required_records:
         - CoverageMapVerifiedAtDeliverExit
         - CoverageMapVerifiedAtDistillExit
@@ -168,7 +192,6 @@ lifecycle_events:
         - FeatureEndReviewVerdict
         - FullSuiteLegRan
         - WalkingSkeletonGateRan
-        - WalkingSkeletonTierVerified
       # fix-na-marker-reconcile-drift slice-01: the ONE shared source for which
       # NotApplicable (NA) marker reconciles which required record above --
       # read by BOTH `subagent_stop_handler._missing_feature_end_cycle_records`

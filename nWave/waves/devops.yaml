@@ -41,8 +41,6 @@ output_contract:
       grade: mandatory
     - id: Deployment Strategy
       grade: mandatory
-    - id: Mutation Testing Strategy
-      grade: mandatory
     - id: Observability Stack
       grade: mandatory
     - id: Branching Strategy

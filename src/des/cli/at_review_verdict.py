@@ -39,6 +39,11 @@ from des.cli._identity_args import meaningful_identity
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import GateError
 from des.cli.human_surface import Verdict, print_human_summary
+from des.cli.verify_charter_filled import charter_missing_sections
+from des.domain.expectation_charter_mapping import (
+    CharterMappingState,
+    resolve_slice_charter,
+)
 from des.domain.repo_path_resolver import (
     feature_delta_path,
 )
@@ -409,13 +414,19 @@ def _slice_at_derivation(
 
 
 def _refuse_unresolvable_feature_slice(
-    feature_id: str, slice_id: str, error: str
+    feature_id: str, slice_id: str, error: str, *, how: str | None = None
 ) -> GateError:
     """Build the refusal GateError for an unresolvable feature/slice.
 
     Exit 2, ``ATReviewVerdictRefused`` / ``unresolvable-feature-slice`` --
-    self-explaining what/why/how (routes the operator to the missing
-    feature-delta + Slice Plan row, never a bare non-zero exit).
+    self-explaining what/why/how, naming BOTH admissible resolution routes
+    (bugfix fix-at-review-verdict-charter-form, slice-01): a feature-delta
+    + Slice Plan row, OR an expectation charter (the ``atdd_pure`` bugfix
+    lane's own evidence artifact, which never produces a feature-delta).
+    Never a bare non-zero exit. ``how`` overrides the default two-route
+    message with a more specific remediation naming the PRODUCING TOOL for
+    the exact defect diagnosed (round 2: a charter that maps a different
+    slice, or one that is present but not yet FILLED).
     """
     return GateError(
         2,
@@ -423,11 +434,118 @@ def _refuse_unresolvable_feature_slice(
             "event": "ATReviewVerdictRefused",
             "reason": "unresolvable-feature-slice",
             "error": error,
-            "how": (
-                f"author the feature-delta + Slice Plan row for "
-                f"{feature_id}/{slice_id} before recording an AT-review verdict"
+            "how": how
+            if how is not None
+            else (
+                f"resolve {feature_id}/{slice_id} through ONE of two routes "
+                "before recording an AT-review verdict: (1) author the "
+                f"feature-delta + Slice Plan row at docs/feature/{feature_id}/"
+                "feature-delta.md, OR (2) for an atdd_pure bugfix lane (which "
+                "never produces a feature-delta), author an expectation "
+                f"charter with `des charter-scaffold --feature-id {feature_id} "
+                "--seed-mode bug-observable --observable \"<the bug's "
+                'observable behaviour>"` -- written under '
+                f"docs/product/expectations/{feature_id}/"
             ),
         },
+    )
+
+
+def _refuse_charter_unmapped(
+    feature_id: str, slice_id: str, detail: str | None
+) -> GateError:
+    """FLAG 1 refusal: expectation charter(s) exist under the feature's
+    ``docs/product/expectations/`` directory, but none maps ``slice_id`` --
+    neither a matching ``slice-NN`` token nor a feature-level scope token.
+    """
+    return _refuse_unresolvable_feature_slice(
+        feature_id,
+        slice_id,
+        f"docs/product/expectations/{feature_id}/ carries expectation "
+        f"charter(s), but none maps {slice_id!r} -- {detail}",
+        how=(
+            f"edit the mapped charter's ID line so its `Spec rows:` field "
+            f"names {slice_id!r} (comma-separated for multiple slices), or "
+            f"re-run with the --slice-id the charter actually maps"
+        ),
+    )
+
+
+def _refuse_charter_unfilled(
+    feature_id: str, slice_id: str, charter_path: Path, missing_sections: list[str]
+) -> GateError:
+    """FLAG 2 refusal: a charter maps ``slice_id`` but is still a scaffold --
+    residual placeholder markers or a missing oracle/preconditions body --
+    never adopted practice regardless of the file merely existing.
+    """
+    return _refuse_unresolvable_feature_slice(
+        feature_id,
+        slice_id,
+        f"expectation charter {charter_path} maps {feature_id}/{slice_id} "
+        f"but is not yet FILLED -- {'; '.join(missing_sections)}",
+        how=(
+            f"verify with `des verify-charter-filled --charter "
+            f"{charter_path}` and fill in the sections it names before "
+            "recording an AT-review verdict for a charter-only slice"
+        ),
+    )
+
+
+def _verify_expectation_charter_arms_slice(
+    repo_root: Path, feature_id: str, slice_id: str
+) -> None:
+    """Refuse unless an expectation charter both MAPS ``slice_id`` (a
+    matching ``slice-NN`` token, or a feature-level charter which by
+    construction maps ANY slice) and is genuinely FILLED (round 2 of this
+    bugfix, after Vera's real-CLI EXAMINE flagged both holes in round 1's
+    bare-presence check).
+
+    Routes through ``expectation_charter_mapping.resolve_slice_charter`` --
+    the SAME ARMED/UNMAPPED/UNARMED/INDETERMINATE resolution the
+    ``commit_slice`` EXAMINE-arming gate already uses -- rather than
+    ``has_expectation_charter``'s bare presence check (round 1), which
+    accepted ANY ``--slice-id`` once ANY ``*.md`` existed (FLAG 1) and armed
+    on an unfilled scaffold (FLAG 2). FILLED-ness reuses
+    ``verify_charter_filled.charter_missing_sections`` -- the same
+    judgment ``des verify-charter-filled`` renders -- rather than
+    re-deriving it. Returns (accepts) only on ``ARMED`` + zero missing
+    sections; raises :class:`GateError` (exit 2) on every other outcome.
+
+    ``has_expectation_charter`` itself is UNCHANGED and still the correct,
+    weaker, pure-presence semantics for its OTHER caller (the bugfix-lane
+    evidence-floor check in ``verify_readiness_pre_dispatch``) -- that
+    invariant is untouched by this function.
+    """
+    mapping = resolve_slice_charter(repo_root, feature_id, slice_id)
+
+    if mapping.state == CharterMappingState.ARMED:
+        assert mapping.charter_path is not None  # ARMED always carries a path
+        content = mapping.charter_path.read_text(encoding="utf-8")
+        missing_sections = charter_missing_sections(content)
+        if missing_sections:
+            raise _refuse_charter_unfilled(
+                feature_id, slice_id, mapping.charter_path, missing_sections
+            )
+        return
+
+    if mapping.state == CharterMappingState.UNMAPPED:
+        raise _refuse_charter_unmapped(feature_id, slice_id, mapping.detail)
+
+    if mapping.state == CharterMappingState.INDETERMINATE:
+        raise _refuse_unresolvable_feature_slice(
+            feature_id,
+            slice_id,
+            f"expectation charter mapping for {feature_id}/{slice_id} is "
+            f"indeterminate -- {mapping.detail}",
+        )
+
+    raise _refuse_unresolvable_feature_slice(
+        feature_id,
+        slice_id,
+        f"no feature-delta at docs/feature/{feature_id}/feature-delta.md "
+        f"and no expectation charter at docs/product/expectations/"
+        f"{feature_id}/ -- cannot certify a review for a feature/slice "
+        "that does not exist",
     )
 
 
@@ -437,8 +555,18 @@ def _verify_feature_slice_exists(
     """Refuse an APPROVED verdict for a feature/slice that does not exist.
 
     Raises :class:`GateError` (exit 2) when
-    ``docs/feature/{feature_id}/feature-delta.md`` is absent, OR it exists but
-    ``slice_id`` is not a row in its ``[REF] Slice Plan`` table. Reuses
+    ``docs/feature/{feature_id}/feature-delta.md`` is absent AND no
+    expectation charter both MAPS ``slice_id`` and is FILLED (see
+    ``_verify_expectation_charter_arms_slice``), OR the feature-delta exists
+    but ``slice_id`` is not a row in its ``[REF] Slice Plan`` table.
+
+    The expectation-charter form (bugfix fix-at-review-verdict-charter-form)
+    is an ADDITIONAL acceptance path consulted ONLY when the feature-delta
+    file itself is absent -- an ``atdd_pure`` bugfix lane produces a
+    charter, never a feature-delta, so the whole bugfix class was otherwise
+    structurally unreachable through this CLI. It is never a bypass: when a
+    feature-delta EXISTS, resolution proceeds exactly as before this fix --
+    same Slice Plan parse, same refusals. Reuses
     ``carpaccio_format.parse_slice_plan`` -- the same tolerant Slice Plan
     parser the carpaccio entry/exit gates use -- rather than hand-rolling a
     parallel parser (bugfix fix-review-verdict-existence-check, slice-01).
@@ -447,13 +575,8 @@ def _verify_feature_slice_exists(
 
     delta_path = feature_delta_path(repo_root, feature_id)
     if not delta_path.is_file():
-        raise _refuse_unresolvable_feature_slice(
-            feature_id,
-            slice_id,
-            f"no feature-delta at docs/feature/{feature_id}/feature-delta.md "
-            "-- cannot certify a review for a feature/slice that does not "
-            "exist",
-        )
+        _verify_expectation_charter_arms_slice(repo_root, feature_id, slice_id)
+        return
 
     feature_delta_text = delta_path.read_text(encoding="utf-8")
     try:

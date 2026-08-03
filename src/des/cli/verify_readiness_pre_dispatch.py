@@ -101,6 +101,7 @@ from des.cli.validate_feature_delta import (
     validate_reuse_analysis_content,
     validate_sustainability_content,
 )
+from des.domain import repo_path_resolver
 from des.domain.feature_delta_source import (
     FEATURE_DELTA_ABSENT,
     FEATURE_DELTA_SECTION_MISSING,
@@ -1046,9 +1047,14 @@ def _has_red_green_seal(repo_root: Path) -> bool:
 
 def _has_expectation_charter(repo_root: Path, feature_id: str) -> bool:
     """True iff an expectation charter is authored for the feature under
-    ``docs/product/expectations/{feature_id}/``."""
-    charter_dir = repo_root / "docs" / "product" / "expectations" / feature_id
-    return charter_dir.is_dir() and any(charter_dir.glob("*.md"))
+    ``docs/product/expectations/{feature_id}/``.
+
+    Delegates to the domain-layer SSOT (``repo_path_resolver
+    .has_expectation_charter``, bugfix fix-at-review-verdict-charter-form,
+    slice-01) -- second call site made this a shared concept; the local
+    name/signature stay so existing call sites here are undisturbed.
+    """
+    return repo_path_resolver.has_expectation_charter(repo_root, feature_id)
 
 
 def _check_bugfix_lane_evidence_floor(

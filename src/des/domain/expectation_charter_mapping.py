@@ -198,7 +198,13 @@ def resolve_slice_charter(
     if not charter_dir.is_dir():
         return CharterMapping(CharterMappingState.UNARMED)
 
-    matching_paths: list[Path] = []
+    # Two independent match lists, because a feature-level charter (bug-
+    # observable / brownfield-discovery) must never OUTRANK a slice-scoped
+    # charter that specifically names the queried slice (bugfix fix-at-
+    # review-verdict-charter-form, round 2 precedence guard) -- `specific`
+    # is checked FIRST and, if non-empty, `feature_level` is never consulted.
+    specific_matches: list[Path] = []
+    feature_level_matches: list[Path] = []
     # Whether ANY well-formed charter lives here -- the discriminator between
     # "this repo does not write charters" and "it does, and this slice is not
     # in one".  Named because an absence that was never looked for reads the
@@ -241,20 +247,47 @@ def resolve_slice_charter(
                     f"({sorted(_FEATURE_LEVEL_SCOPE_TOKENS)})"
                 ),
             )
-        _kind, mapped_tokens = classification
-        if slice_id in mapped_tokens:
-            matching_paths.append(charter_path)
+        kind, mapped_tokens = classification
+        practice_adopted = True
+        if kind == "slice":
+            if slice_id in mapped_tokens:
+                specific_matches.append(charter_path)
+            continue
+        # kind == "feature-level": a charter whose `Spec rows:` is one of
+        # the two first-class tokens (`bug-observable` /
+        # `brownfield-discovery`, stamped by `charter_scaffold`'s
+        # feature-level seed-modes) by construction maps no specific slice.
+        # `dispatch.py` (the production caller) queries it BY that same
+        # token verbatim (exact-token equality is then the right rule); a
+        # real `--slice-id` (e.g. `slice-01`) never equals a feature-level
+        # token, so in that case ANY feature-level charter arms it --
+        # UNLESS a more specific slice-scoped charter also claims it, which
+        # `specific_matches`, checked first below, already guards.
+        if slice_id in _FEATURE_LEVEL_SCOPE_TOKENS:
+            if slice_id == mapped_tokens[0]:
+                feature_level_matches.append(charter_path)
         else:
-            practice_adopted = True
+            feature_level_matches.append(charter_path)
 
-    if len(matching_paths) == 1:
-        return CharterMapping(CharterMappingState.ARMED, matching_paths[0])
-    if len(matching_paths) > 1:
-        rendered_paths = ", ".join(str(path) for path in matching_paths)
+    if len(specific_matches) == 1:
+        return CharterMapping(CharterMappingState.ARMED, specific_matches[0])
+    if len(specific_matches) > 1:
+        rendered_paths = ", ".join(str(path) for path in specific_matches)
         return CharterMapping(
             CharterMappingState.INDETERMINATE,
             detail=(
                 f"slice {slice_id!r} is mapped by multiple charters: {rendered_paths}"
+            ),
+        )
+    if len(feature_level_matches) == 1:
+        return CharterMapping(CharterMappingState.ARMED, feature_level_matches[0])
+    if len(feature_level_matches) > 1:
+        rendered_paths = ", ".join(str(path) for path in feature_level_matches)
+        return CharterMapping(
+            CharterMappingState.INDETERMINATE,
+            detail=(
+                f"{slice_id!r} is mapped by multiple feature-level charters: "
+                f"{rendered_paths}"
             ),
         )
     if practice_adopted:

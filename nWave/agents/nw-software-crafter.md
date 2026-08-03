@@ -15,7 +15,6 @@ skills:
   - nw-quality-framework
   - nw-code-design-oo
   - nw-hexagonal-testing
-  - nw-mutation-test
   - nw-collaboration-and-handoffs
   - nw-crafter-discipline-atdd-pure
   - nw-code-analysis-port

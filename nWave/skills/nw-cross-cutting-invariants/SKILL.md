@@ -128,12 +128,15 @@ GDP-4 / GDP-2).
 
 ---
 
-## `gate:design-principles-gdp-1-9` — Gate Design Principles GDP-1..9 (STANDING — canonical definitions)
+## `gate:design-principles-gdp-1-9` — Gate Design Principles GDP-1..10 (STANDING — canonical definitions)
 
 The design contract EVERY gate, oracle, or error surface must satisfy. This skill is the
 SHIPPED home of these definitions: everywhere else in the framework (skills, agents) that
 cites "GDP-N" by number resolves against this list. Audit every gate you design against it;
-a gap is a plan item to correct that gate.
+a gap is a plan item to correct that gate. The clause id below retains its original
+`gdp-1-9` suffix for citation stability (11+ existing citation sites across agents/skills/ADRs)
+even though the list now runs through GDP-10 — GDP-10 is separately registered as
+`gate:design-principles-gdp-10-parsimony` for anyone citing it specifically.
 
 - **GDP-1 — Intercept EARLY (timing).** Fire at the earliest point the defect is detectable —
   BEFORE the effort it guards is spent and the value delivered. A gate that fires after
@@ -236,6 +239,48 @@ a gap is a plan item to correct that gate.
   grep, a re-read mtime) rather than a restated prior-turn answer, in a setting where the
   underlying facts (worktree state, ToC mention counts) DO change between firings and a
   memory-recalled answer would have gone stale silently.
+- **GDP-10 — Parsimony: prefer removing/relaxing over adding a special case (STANDING, Ale
+  2026-08-03 — "simplicity is the ultimate sophistication").** GDP-1..9 govern the QUALITY of a
+  gate once it is justified; GDP-10 governs whether it should exist, or exist in that form, at
+  all. When an edge case surfaces, the default move is NOT "add a new gate, token, lane, or
+  scope-recognition rule to cover it" — it is to ask whether an EXISTING, more general rule
+  already covers the risk, or whether the risk is small enough that a MORE PERMISSIVE answer is
+  correct. Every new named exception multiplies the surface every other gate, reader, and future
+  agent must reconcile against; N special cases compound combinatorially while the risk any
+  single one prevents stays additive — past some point the system spends more on ceremony than
+  the incidents it prevents are worth. Measured 2026-08-03: 4 Slice-Plan annotation tokens
+  (`@coupled`/`@walking-skeleton`/`@infrastructure`/`@prefactoring`), 275 open rows in
+  `defects.md`, and a Tier-2 AT-completeness invariant (S8, causal-sensitivity) removed the same
+  day for blocking a collaborator with a value not worth its friction — the accumulation is not
+  hypothetical.
+  - **Corollary — name the incident before adding the restriction.** Before shipping a new
+    gate/token/exception, name the SPECIFIC incident or measured risk it prevents and its
+    frequency; if you cannot, the restriction is precautionary ceremony, not a fix, and the
+    parsimonious default (do not add it) wins.
+  - **Corollary — ceremony proportional to blast radius.** The rigor a change goes through must
+    scale with what it actually risks, not with the anxiety of the moment the gap was found in —
+    a zero-behavior docstring commit does not need the same examine cycle as a production
+    behavior change; a bugfix to a one-off dev script does not need a full
+    DISCUSS→DESIGN→DISTILL cycle merely because the spine CAN run one.
+  - **Corollary — reversible removal beats irreversible accumulation.** When genuinely unsure
+    whether a check earns its cost, removing it is the better default: an absent check that
+    later proves load-bearing is cheap to re-add, now backed by a real incident instead of a
+    hypothetical one; a check that never earns its keep is not cheap to notice or remove once a
+    wave of later rules has grown to assume it is there.
+  - **Corollary — existing constraints are removal candidates too, but removal needs a
+    challenge.** GDP-10 is not only about resisting NEW restrictions — it licenses actively
+    auditing EXISTING gates/tokens/lanes/annotations for removal, preferably against DATA (has
+    this gate ever fired on a REAL defect? check the ledger/telemetry for actual catches versus
+    rejections that were false-positives or pure ceremony) rather than impression. But "we
+    probably don't need this" must survive a genuine CHALLENGE before removal lands — an
+    adversarial pass that argues FOR keeping the constraint, citing the strongest incident it
+    would have caught and the worst case if it is gone — never a rubber-stamped "seems safe,
+    remove it." Skipping the challenge makes "prefer removing" decay into the SAME failure this
+    principle exists to prevent, pointed the other way: a removal rubber-stamped without real
+    scrutiny is agility-THEATER, not agility, and costs the system the next time the removed
+    check would have caught something real. The asymmetry that justifies the extra step: adding
+    ceremony wastes time repeatedly, every time the gate fires; removing a load-bearing check
+    wrongly can cost far more, once, silently, later.
 
 ---
 
@@ -348,6 +393,45 @@ Two failure shapes this rule exists to stop, both observed:
 Corollary — **an instrument you run repeatedly is production code.** A report generated on a schedule
 or before every decision does not get to live as an unversioned scratch script: it needs a home, a
 history, and a test, because a defect in it is a defect in every decision downstream of it.
+
+---
+
+## `provenance:a-count-without-a-sender-is-not-attributable` — name who wrote the record before it becomes evidence (STANDING)
+
+A count extracted from a SHARED log or ledger is a claim about the SENDER of each record, not only
+about the event it names. Before a count feeds a ranking, a defect row, or a dispatch decision, the
+question is not "how many?" but "who wrote each one, and is that population the one the claim is
+about?" A number is not evidence until that second question has an answer.
+
+MEASURED 2026-08-03: an audit counted 225 `DES_MARKERS_MISSING` block records from a shared PreToolUse
+log and concluded a re-fire pattern existed across four step-ids, ranking a detector as the top fix
+candidate. The count was real; the attribution was not checked. 224 of the 225 records were written by
+the project's OWN acceptance suite — two test files pointed the tool at the real repo instead of an
+isolated one, defeating an isolation fixture, and every test run deposited identical records into the
+SAME shared log a real dispatch would write to. The suite and the product were indistinguishable in
+the log, because the log carries no field that reliably separates them (`run_context`/`subagent_type`
+were checked and do not discriminate). Cost of the unattributed count: a fix was dispatched against a
+defect that did not exist, and a downstream ranking (which mechanism to fix first) was wrong until the
+attribution was checked.
+
+**The check that actually discriminates, when the log has no reliable sender field**: cluster by
+BURST, not by a fixed count threshold. Machine-generated repetition (a test loop, a retry storm) fires
+at machine cadence — sub-second gaps, tight clusters of near-identical size — while independent
+real-world events do not share that rhythm. Measured: 263 records clustered into 102 bursts by a
+<500ms gap boundary; bursts of 5-7 records were, without exception, the SAME reason repeated at a
+median 30ms internal gap, concentrated on a handful of calendar days — the signature of a test loop,
+not of an agent retrying a blocked dispatch. The singletons left over after excluding bursts were the
+population the original claim should have been about.
+
+Corollary — **a shared substrate that a test suite writes into by design, and mitigates only by
+SERIALIZING (never isolating), keeps producing this trap indefinitely.** If ~N test suites are
+documented as deliberately pointing a tool at the real, shared state (not a fixture copy) because
+isolating them was harder than serializing their access, then every count taken from that shared
+state carries an unknown contamination fraction FOREVER, not just once — the fix is not re-deriving
+the attribution each time a number is needed, it is closing the shared-write path itself (see
+`des-acceptance-suite-writes-into-the-production-audit-trail` /
+`observability-substrate-does-not-separate-production-from-test-writes` in this project's
+`defects.md` for the concrete instance).
 
 ---
 
