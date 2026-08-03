@@ -300,10 +300,7 @@ capacity remains.
    FINGERPRINT (sha256 over every collected test node-id) and is legitimately whole-tree
    by design: it detects the test population itself drifting between gate-run and
    commit-land, including files OUTSIDE the entering slice — a scoped collect cannot see
-   that delta structurally. Measured 2026-08-03: reading "digests" here as license to
-   scope the Gate-Scope fingerprint to one slice produced a bugfix dispatch that a real
-   RCA had to retire (`gate-scope-per-slice`, `defects.md`) — the wording invited exactly
-   that inference. Running the whole tree per-slice is the JIT poison that forbids
+   that delta structurally. Running the whole tree per-slice is the JIT poison that forbids
    pipelining. Seal 3-10' → 1-2'.
 
 4. **Is the box launch resource-aware (C3 / GDP-6 starvation-class)?** BEFORE a heavy box
