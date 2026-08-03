@@ -123,15 +123,21 @@ def test_readiness_reason_degrades_loud_when_no_invariants_key() -> None:
 
 
 def test_readiness_reason_handles_failed_invariant_with_no_remediation() -> None:
-    """A failed invariant missing its remediation is still named (degrade-LOUD)."""
+    """A failed invariant missing its remediation is still named (degrade-LOUD).
+
+    Uses `slice_plan_section` -- a surviving readiness invariant -- rather than
+    the now-deleted `at_review_verdict` id (fix-readiness-carpaccio-disagree):
+    that id can never again appear in a real readiness-gate payload, so
+    asserting on it would exercise a state the system can no longer produce.
+    """
     payload = json.dumps(
         {
             "event": "ReadinessRefused",
             "invariants": [
-                {"id": "at_review_verdict", "status": "failed", "remediation": None},
+                {"id": "slice_plan_section", "status": "failed", "remediation": None},
             ],
         }
     )
     reason = _readiness_reason(payload)
-    assert "at_review_verdict" in reason
+    assert "slice_plan_section" in reason
     assert "(no remediation provided)" in reason

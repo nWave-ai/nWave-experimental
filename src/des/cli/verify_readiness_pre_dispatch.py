@@ -4,35 +4,43 @@ D4 Phase 3 slice-03 (per `docs/analysis/d4-schema-spec-2026-05-26.md`
 § 5 Phase 3 slice-03 + DDD analysis `docs/analysis/ddd-workflow-change-difficulty-2026-05-26.md`
 D1 design direction).
 
-Single-invocation aggregate gate that checks all 8 cascading invariants
+Single-invocation aggregate gate that checks all 7 cascading invariants
 catalogued in `docs/product/backlog.md` friction #57 (`F-NEW-FEATURE-FIRST-DISPATCH-FRICTION-STACK`)
 BEFORE a NEW feature first crafter dispatches. Cascade-debug reduced from
 several friction roundtrips to 1 combined diagnostic.
 
-The 8 invariants verified:
+NOTE (fix-readiness-carpaccio-disagree): this gate used to also own an
+8th, `AT_REVIEW_VERDICT` invariant asking whether an `ATReviewVerdict
+APPROVED` record exists for the entering slice. It asked EXACTLY the
+question `des.cli.carpaccio_slice_gate` assertion 5 (`_AT_REVIEW_REJECTED_
+EXIT = 45`) asks, but as an ADVISORY, rigor-gated copy that could answer
+differently (satisfied=True/attested=False) from carpaccio's fail-closed
+BLOCK -- a GDP-7 violation (a floor is never rigor-gated). Deleted, not
+stubbed: carpaccio's assertion 5 is the one surviving voice on that
+question.
+
+The 7 invariants verified:
   1. SLICE_PLAN_SECTION -- `## Wave: DISCUSS / [REF] Slice Plan` heading
      present in `docs/feature/{feature_id}/feature-delta.md`.
   2. SCENARIO_SLICE_TAGS -- every scenario in the feature's .feature files
      carries a `@slice-NN` tag.
-  3. AT_REVIEW_VERDICT -- ATReviewVerdict ledger record present for the
-     entering slice in `.nwave/telemetry/atdd-pure/{feature_id}.jsonl`.
-  4. GATE_OUTPUT_PRODUCEABLE -- carpaccio CLI output produceable from CWD
+  3. GATE_OUTPUT_PRODUCEABLE -- carpaccio CLI output produceable from CWD
      (freshness gate compatible per friction #16 fix shape).
-  5. PRE_COMMIT_SCOPE -- no RED scaffolds in pre-commit pytest scope
+  4. PRE_COMMIT_SCOPE -- no RED scaffolds in pre-commit pytest scope
      without `@skip` markers.
-  6. REUSE_FIRST -- a `## Reuse Analysis` section (or exemption marker) OR an
+  5. REUSE_FIRST -- a `## Reuse Analysis` section (or exemption marker) OR an
      explicit `## Wave: DESIGN / [REF] Design Skipped` witness with a non-empty
      rationale is present in `docs/feature/{feature_id}/feature-delta.md`. A
      feature that skips the optional DESIGN wave cannot slip past the
      reuse-first guarantee.
-  7. PREFACTORING_ASSESSMENT -- a DESIGN-having feature-delta carries a
+  6. PREFACTORING_ASSESSMENT -- a DESIGN-having feature-delta carries a
      substantive `## Prefactoring Assessment` section (naming the
      `@prefactoring` slice that does the reshaping work, or a justified
      NONE). Wires the SHIPPED `validate_prefactoring_assessment_content`
      parser (`--require-prefactoring-assessment`) into the aggregate so the
      gate FIRES before dispatch instead of staying opt-in. Vacuously
      satisfied when no `## Wave: DESIGN` section is present at all.
-  8. SUSTAINABILITY -- a well-formed Test Reuse & Consolidation Analysis section
+  7. SUSTAINABILITY -- a well-formed Test Reuse & Consolidation Analysis section
      (or accepted exemption: methodology-exempt / no-new-tests) is present in
      `docs/feature/{feature_id}/feature-delta.md`. Wires the SHIPPED slice-03
      `validate_sustainability_content` parser into the aggregate so the
@@ -40,7 +48,7 @@ The 8 invariants verified:
      declared-but-missing or malformed section cannot slip past the gate.
 
 Exit codes:
-  0 -- all 8 invariants PASS; dispatcher proceeds to next gate.
+  0 -- all 7 invariants PASS; dispatcher proceeds to next gate.
   1 -- at least one invariant FAILS; diagnostic enumerates each invariant's
        status + remediation.
   2 -- malformed input (argparse failure on required --feature-id/--slice-id).
@@ -64,7 +72,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from des.adapters.driven.config.des_config import DESConfig
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.axis_b_levers import (
     LayoutRoots,
@@ -110,9 +117,7 @@ from des.domain.feature_delta_source import (
 )
 from des.domain.lane_profile import LANE_PROFILES, LaneProfile
 from des.domain.telemetry_paths import (
-    LedgerFamily,
     TelemetrySubtree,
-    ledger_path,
     subtree_dir,
 )
 
@@ -134,7 +139,6 @@ def _lane_profile_for(lane_name: str | None) -> LaneProfile | None:
 
 _INV_SLICE_PLAN = "slice_plan_section"
 _INV_SCENARIO_TAGS = "scenario_slice_tags"
-_INV_AT_VERDICT = "at_review_verdict"
 _INV_GATE_OUTPUT = "gate_output_produceable"
 _INV_PRE_COMMIT = "pre_commit_scope"
 _INV_REUSE_FIRST = "reuse_first_or_design_skip"
@@ -153,7 +157,6 @@ _REGRESSION_AT_KINDS = frozenset(
 _ALL_INVARIANTS = (
     _INV_SLICE_PLAN,
     _INV_SCENARIO_TAGS,
-    _INV_AT_VERDICT,
     _INV_GATE_OUTPUT,
     _INV_PRE_COMMIT,
     _INV_REUSE_FIRST,
@@ -172,7 +175,6 @@ _BUGFIX_LANE = "bugfix"
 _BUGFIX_LANE_SKIPPED: tuple[str, ...] = (
     _INV_SLICE_PLAN,
     _INV_SCENARIO_TAGS,
-    _INV_AT_VERDICT,
     _INV_REUSE_FIRST,
     _INV_PREFACTORING,
     _INV_SUSTAINABILITY,
@@ -203,15 +205,6 @@ _REMEDIATIONS: dict[str, str] = {
     ),
     _INV_SCENARIO_TAGS: (
         "Tag every Gherkin scenario with `@slice-NN` per friction #57 invariant 2"
-    ),
-    _INV_AT_VERDICT: (
-        "Run the recorder -- `des record-at-review-verdict --feature-id <id> "
-        "--slice-id <slice-NN> --verdict APPROVED --reviewer-agent-id "
-        "<reviewer>` -- after an independent reviewer "
-        "has reviewed the entering slice's ATs. On the pytest-regression "
-        "(bugfix) path the mechanical pair `des verify-red-green --record-red "
-        "--test-file <f>` + `des verify-negative-at --test-file <f> "
-        "--all-critical` clears this invariant instead, with no reviewer dispatch"
     ),
     _INV_GATE_OUTPUT: (
         "Run carpaccio CLI from valid CWD (freshness gate compatible per friction #16)"
@@ -569,90 +562,6 @@ def _collect_untagged_scenarios(feature_files: list[Path]) -> list[str]:
                 # via the @ prefix branch above).
                 pending_tags = ""
     return untagged
-
-
-def _at_review_verdict_recorded(
-    repo_root: Path, feature_id: str, slice_id: str
-) -> bool:
-    """True iff an ``ATReviewVerdict APPROVED`` record for the entering slice
-    exists in ``.nwave/telemetry/atdd-pure/{feature_id}.jsonl``. Missing file,
-    missing record, or a REJECTED verdict all return False."""
-    ledger = ledger_path(repo_root, LedgerFamily.ATDD_PURE, feature_id)
-    if not ledger.is_file():
-        return False
-    for line in ledger.read_text().splitlines():
-        if not line.strip():
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if (
-            record.get("event") == "ATReviewVerdict"
-            and record.get("slice_id") == slice_id
-            and record.get("verdict") == "APPROVED"
-        ):
-            return True
-    return False
-
-
-def _human_authorization_required(repo_root: Path) -> bool:
-    """Read the ``rigor.human_authorization`` axis (velocity-v2, default OFF).
-
-    Off by default: EXAMINE provides the outcome-independence and the carpaccio
-    mechanical-seal + AT-completeness check cover the AT attestation, so the
-    two-party human GO is an opt-in compliance layer, not the baseline.
-    """
-    return DESConfig(cwd=repo_root).rigor_human_authorization
-
-
-def _check_at_review_verdict(
-    repo_root: Path, feature_id: str, slice_id: str
-) -> _InvariantResult:
-    """Invariant 3: AT-review attestation for the entering slice.
-
-    A recorded ``ATReviewVerdict APPROVED`` always satisfies it. When ABSENT,
-    whether the invariant BLOCKS depends on the ``rigor.human_authorization`` axis
-    (velocity-v2, Ale 2026-07-04): OFF (default) -> advisory (satisfied) -- the
-    carpaccio mechanical-seal + AT-completeness check attest the AT at the same
-    dispatch.pre and EXAMINE provides the outcome-independence downstream, so the
-    two-party human GO is opt-in compliance only (this closes the beta-tester
-    "asked several times per slice" grind); ON (regulated) -> hard-require the GO.
-    """
-    if _at_review_verdict_recorded(repo_root, feature_id, slice_id):
-        return _InvariantResult(invariant_id=_INV_AT_VERDICT, satisfied=True)
-    if not _human_authorization_required(repo_root):
-        # NOT satisfied-because-verified: satisfied-because-not-enforced-here.
-        # We looked for an ATReviewVerdict and did NOT find one; the rigor axis
-        # says do not BLOCK on that, so the dispatch proceeds. It does NOT say
-        # the attestation exists -- and the carpaccio gate downstream may still
-        # hard-require it (it does, for any slice whose at_kind cannot take the
-        # mechanical-seal route). Reporting `attested=False` is what lets the
-        # operator see WHY two gates disagree instead of guessing.
-        return _InvariantResult(
-            invariant_id=_INV_AT_VERDICT,
-            satisfied=True,
-            attested=False,
-            remediation=(
-                "NOT VERIFIED, not blocking: no ATReviewVerdict is recorded for "
-                "this slice, and `rigor.human_authorization` is off so this gate "
-                "does not block on it. A DOWNSTREAM gate still can -- the "
-                "carpaccio slice gate hard-requires the attestation for any "
-                "slice that cannot take the mechanical-seal route. To attest it "
-                "now: `des record-at-review-verdict --feature-id <id> "
-                "--slice-id <slice-NN> --verdict APPROVED "
-                "--reviewer-agent-id <reviewer>` "
-                "after an independent reviewer has reviewed the slice's ATs; on "
-                "the pytest-regression path `des verify-red-green --record-red "
-                "--test-file <f>` + `des verify-negative-at --test-file <f> "
-                "--all-critical` clears it mechanically instead."
-            ),
-        )
-    return _InvariantResult(
-        invariant_id=_INV_AT_VERDICT,
-        satisfied=False,
-        remediation=_REMEDIATIONS[_INV_AT_VERDICT],
-    )
 
 
 def _check_gate_output_produceable(repo_root: Path) -> _InvariantResult:
@@ -1014,19 +923,24 @@ def _lane_justification_names_defect_and_test(justification: str) -> bool:
     """True iff a bugfix-lane justification is non-vacuous AND names a
     regression test, in ANY language's naming convention.
 
-    The strict shape is the anti-abuse SAFETY mechanism for the one skipped
-    quality gate (``at_review_verdict``, Tsunami Q-10): a real bugfix
-    references its regression test -- a NEW test it pins RED->GREEN, OR an
-    EXISTING test that covers the behavior. Accepted EITHER as (a) the
-    pytest-style ``test_<name>`` token, OR (b) the language-neutral
+    The strict shape is the anti-abuse SAFETY mechanism for the 5 feature-
+    readiness invariants this lane skips (slice-plan, scenario-tags,
+    reuse-first, prefactoring, sustainability -- see ``_BUGFIX_LANE_SKIPPED``):
+    a real bugfix references its regression test -- a NEW test it pins
+    RED->GREEN, OR an EXISTING test that covers the behavior. Accepted EITHER
+    as (a) the pytest-style ``test_<name>`` token, OR (b) the language-neutral
     ``regression test: <name>`` phrase emitted by ``des dispatch`` itself --
     Rust/Go/etc. regression-test names carry no ``test_`` prefix, so (a) alone
     wrongly refuses a well-formed non-Python justification (backlog #41,
     genericità/agnosticismo mandate). (b) is additive, not a replacement --
     (a) keeps working byte-identical. An empty or vague justification ("just
     fixing a thing") names neither and is refused fail-closed -- the lane
-    cannot become the shortcut that skips AT review on a real feature
-    mislabeled as a bugfix.
+    cannot become the shortcut that skips feature-readiness ceremony on a
+    real feature mislabeled as a bugfix. AT review itself is NOT among the
+    invariants this justification guards: `des.cli.carpaccio_slice_gate`
+    assertion 5 (exit 45) hard-requires it downstream, unconditionally, for
+    every lane -- this gate no longer carries an advisory copy of that
+    question at all (fix-readiness-carpaccio-disagree).
     """
     if not justification.strip():
         return False
@@ -1165,9 +1079,6 @@ def _run_lane_profile(
             at_kind=at_kind,
             regression_test_file=regression_test_file,
         ),
-        _INV_AT_VERDICT: lambda: _check_at_review_verdict(
-            repo_root, feature_id, slice_id
-        ),
         _INV_GATE_OUTPUT: lambda: _check_gate_output_produceable(repo_root),
         _INV_PRE_COMMIT: lambda: _check_pre_commit_scope(repo_root, feature_id),
         _INV_REUSE_FIRST: lambda: _check_reuse_first_or_design_skip(
@@ -1226,10 +1137,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Declare a dispatch lane (RC4-b). `bugfix` skips the 5 "
             "feature-readiness invariants (slice-plan, scenario-tags, "
-            "AT-review, reuse-first, sustainability) and enforces ONLY the 2 "
-            "mechanical safety guards — gated by a strict --lane-justification "
-            "(anti-abuse). Absent/not `bugfix`: all 7 invariants enforced "
-            "byte-identical."
+            "reuse-first, prefactoring, sustainability) and enforces ONLY the "
+            "2 mechanical safety guards — gated by a strict "
+            "--lane-justification (anti-abuse). AT review is not a readiness "
+            "invariant at all -- carpaccio's assertion 5 (exit 45) "
+            "hard-requires it unconditionally, every lane. Absent/not "
+            "`bugfix`: all 7 invariants enforced byte-identical."
         ),
     )
     parser.add_argument(
@@ -1239,9 +1152,12 @@ def _build_parser() -> argparse.ArgumentParser:
             "Justification for a `--lane bugfix` dispatch. Must NAME the defect "
             "+ a regression test (a NEW test, OR an EXISTING test that covers "
             "the behavior) in any naming convention -- `test_<name>` OR "
-            "`-- regression test: <name>` -- the safety mechanism for the "
-            "skipped at_review_verdict gate. Vacuous justifications are REFUSED "
-            "fail-closed."
+            "`-- regression test: <name>` -- the safety mechanism for the 5 "
+            "skipped feature-readiness invariants (slice-plan, scenario-tags, "
+            "reuse-first, prefactoring, sustainability). AT review itself is "
+            "not among them -- carpaccio's assertion 5 (exit 45) hard-requires "
+            "it unconditionally, every lane. Vacuous justifications are "
+            "REFUSED fail-closed."
         ),
     )
     parser.add_argument(
@@ -1422,7 +1338,6 @@ def main(argv: list[str] | None = None) -> int:
             regression_test_file=regression_test_file,
         )
     )
-    report.invariants.append(_check_at_review_verdict(repo_root, feature_id, slice_id))
     report.invariants.append(_check_gate_output_produceable(repo_root))
     report.invariants.append(_check_pre_commit_scope(repo_root, feature_id))
     report.invariants.append(_check_reuse_first_or_design_skip(repo_root, feature_id))

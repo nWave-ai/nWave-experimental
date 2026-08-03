@@ -8,13 +8,15 @@ reads the public stdout-JSON + exit-code contract. The SUT is the CLI surface,
 not the in-process Python module.
 
 The composition arms a real tmp_path `repo_root` workspace whose feature-delta
-SATISFIES the five pre-existing first-dispatch invariants (slice-plan heading,
-@slice-NN scenario tags, AT-review ledger record, gate-output-produceable
-`.nwave/`, pre-commit scope). This isolates the NEW 6th invariant
-(`reuse_first_or_design_skip`) as the only variable: any refusal of an
-otherwise-complete workspace is attributable to the reuse-first/design-skip
-dimension alone, and the AT cross-checks that the five pre-existing verdicts are
-unchanged (additive aggregate, friction #57 single-invocation preserved).
+SATISFIES the four pre-existing first-dispatch invariants (slice-plan heading,
+@slice-NN scenario tags, gate-output-produceable `.nwave/`, pre-commit scope --
+the AT-review ledger record invariant that used to sit here was DELETED,
+fix-readiness-carpaccio-disagree: it duplicated carpaccio's own fail-closed
+block). This isolates the NEW invariant (`reuse_first_or_design_skip`) as the
+only variable: any refusal of an otherwise-complete workspace is attributable
+to the reuse-first/design-skip dimension alone, and the AT cross-checks that
+the four pre-existing verdicts are unchanged (additive aggregate, friction #57
+single-invocation preserved).
 
 Active-RED today: the gate ships five invariants only. A workspace with all five
 satisfied + no Reuse Analysis + no witness currently CLEARS (exit 0); the

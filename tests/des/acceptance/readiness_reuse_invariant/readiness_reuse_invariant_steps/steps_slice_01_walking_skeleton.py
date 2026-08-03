@@ -2,9 +2,15 @@
 
 The readiness gate REFUSES a feature-delta carrying neither a `## Reuse
 Analysis` section nor a `## Wave: DESIGN / [REF] Design Skipped` witness, with
-the net-new 6th invariant `reuse_first_or_design_skip` FAILED and the five
-pre-existing invariants unchanged. Also covers the two DESIGN-flagged tokens
-(malformed-reuse-analysis, unjustified-create-new) -> ABSENT/refuse degrade-LOUD.
+the net-new `reuse_first_or_design_skip` invariant FAILED and the (now four,
+post fix-readiness-carpaccio-disagree) pre-existing invariants unchanged. Also
+covers the two DESIGN-flagged tokens (malformed-reuse-analysis,
+unjustified-create-new) -> ABSENT/refuse degrade-LOUD.
+
+The step text below still literally reads "the five pre-existing ..." -- that
+string is the Gherkin `.feature` contract (crafter does not edit `.feature`
+files); the PYTHON side it drives now asserts over the 4 surviving members of
+`PRE_EXISTING_INVARIANTS` only.
 
 Mandate-13 (S2 driving-port-only): step modules import ONLY the composition root
 (from conftest fixture) + `domain_types`. ZERO `from des.<domain|application|

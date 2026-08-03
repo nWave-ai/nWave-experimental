@@ -52,27 +52,32 @@ class InvariantStatus(str, Enum):
 class FirstDispatchInvariantId(str, Enum):
     """The first-dispatch invariants the readiness gate verifies.
 
-    The first five are the pre-existing cascade (friction #57). REUSE_FIRST is
-    the net-new 6th invariant this feature adds -- additive to the same
+    The first four are the pre-existing cascade (friction #57). REUSE_FIRST is
+    a net-new invariant this feature adds -- additive to the same
     single-invocation aggregate (friction #57 single-JSON-line contract
     preserved). The id literal MUST match the gate's `_INV_REUSE_FIRST`
     constant value `reuse_first_or_design_skip`.
+
+    NOTE (fix-readiness-carpaccio-disagree): this mirror used to also carry an
+    `AT_REVIEW_VERDICT = "at_review_verdict"` member as a 5th pre-existing
+    invariant. The gate DELETED that invariant (it duplicated, advisory and
+    rigor-gated, the question `des.cli.carpaccio_slice_gate` assertion 5 asks
+    unconditionally) -- removed here too so this mirror stays in lock-step
+    with the gate it mirrors.
     """
 
     SLICE_PLAN_SECTION = "slice_plan_section"
     SCENARIO_SLICE_TAGS = "scenario_slice_tags"
-    AT_REVIEW_VERDICT = "at_review_verdict"
     GATE_OUTPUT_PRODUCEABLE = "gate_output_produceable"
     PRE_COMMIT_SCOPE = "pre_commit_scope"
     REUSE_FIRST = "reuse_first_or_design_skip"
 
 
-# The five PRE-EXISTING invariants -- the slice-01 contract asserts these stay
-# unchanged when the additive 6th invariant lands.
+# The four PRE-EXISTING invariants -- the slice-01 contract asserts these stay
+# unchanged when the additive REUSE_FIRST invariant lands.
 PRE_EXISTING_INVARIANTS: tuple[FirstDispatchInvariantId, ...] = (
     FirstDispatchInvariantId.SLICE_PLAN_SECTION,
     FirstDispatchInvariantId.SCENARIO_SLICE_TAGS,
-    FirstDispatchInvariantId.AT_REVIEW_VERDICT,
     FirstDispatchInvariantId.GATE_OUTPUT_PRODUCEABLE,
     FirstDispatchInvariantId.PRE_COMMIT_SCOPE,
 )

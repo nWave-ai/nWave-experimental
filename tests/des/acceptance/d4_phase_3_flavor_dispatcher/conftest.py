@@ -472,15 +472,19 @@ class ReadinessGateComposition:
              with `@slice-01`. (Vacuously satisfied when no feature files
              exist, so the structural author is optional; we author one
              to exercise the positive path explicitly.)
-          3. AT_REVIEW_VERDICT -- a ledger record at
-             `.nwave/telemetry/atdd-pure/{feature_id}.jsonl` carrying an
-             APPROVED ATReviewVerdict for the slice.
-          4. GATE_OUTPUT_PRODUCEABLE -- `.nwave/` directory presence in
+          3. GATE_OUTPUT_PRODUCEABLE -- `.nwave/` directory presence in
              the repo_root (already created by the fixture).
-          5. PRE_COMMIT_SCOPE -- structurally satisfied when no untagged
+          4. PRE_COMMIT_SCOPE -- structurally satisfied when no untagged
              RED scaffolds exist (vacuously true under tmp_path).
-          6. REUSE_FIRST_OR_DESIGN_SKIP -- a `## Reuse Analysis` section
+          5. REUSE_FIRST_OR_DESIGN_SKIP -- a `## Reuse Analysis` section
              carrying a no-overlap exemption marker (reuse leg present).
+
+        NOTE (fix-readiness-carpaccio-disagree): the gate USED to also carry
+        an `AT_REVIEW_VERDICT` invariant (satisfied here by writing an
+        APPROVED `ATReviewVerdict` ledger record below); that invariant was
+        DELETED from the gate as a rigor-gated duplicate of carpaccio's own
+        fail-closed AT-review block. The ledger write below is now inert
+        w.r.t. this gate -- left in place as harmless setup, not asserted on.
         """
         import json
 

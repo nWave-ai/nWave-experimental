@@ -87,7 +87,6 @@ LANE_PROFILES: dict[str, LaneProfile] = {
         skipped_invariants=(
             "slice_plan_section",
             "scenario_slice_tags",
-            "at_review_verdict",
             "reuse_first_or_design_skip",
             # A prefactoring-lane dispatch IS the recorded @prefactoring slice
             # doing the assessed reshaping work -- checking its OWN
@@ -160,7 +159,6 @@ LANE_PROFILES: dict[str, LaneProfile] = {
         skipped_invariants=(
             "slice_plan_section",
             "scenario_slice_tags",
-            "at_review_verdict",
             "reuse_first_or_design_skip",
             # Mirrors the prefactoring lane: a charter dispatch is phaseless,
             # non-code-facing, and writes no design -- it has no Prefactoring

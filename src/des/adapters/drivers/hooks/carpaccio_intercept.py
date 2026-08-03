@@ -1444,12 +1444,18 @@ _BUGFIX_LANE_HINT = (
 #: The readiness invariants whose failure MAY mean "this dispatch carries no
 #: feature-delta by design" -- the only shape for which the bugfix-lane escape
 #: above is honest advice.
+#:
+#: NOTE (fix-readiness-carpaccio-disagree): this used to also carry
+#: "at_review_verdict" -- the readiness gate DELETED that invariant (it
+#: duplicated, advisory and rigor-gated, the question carpaccio's own
+#: assertion 5 asks unconditionally), so the id can never again appear in a
+#: readiness-gate `invariants[].id`. Removed here so this set carries no
+#: orphan member.
 _FEATURE_DELTA_CEREMONY_INVARIANTS = frozenset(
     {
         "slice_plan_section",
         "reuse_first_or_design_skip",
         "sustainability",
-        "at_review_verdict",
     }
 )
 

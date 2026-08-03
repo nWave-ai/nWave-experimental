@@ -1,28 +1,34 @@
 """RC4-b: a declared bugfix lane skips the heavy feature-readiness ceremony.
 
 Root cause (docs/feedback/des-spine-ceremony-cost-attack-plan.md, RC4 fix-ask #1):
-the readiness gate `verify_readiness_pre_dispatch` enforces the SAME 8 feature-readiness
+the readiness gate `verify_readiness_pre_dispatch` enforces the SAME 7 feature-readiness
 invariants for EVERY atdd_pure DELIVER dispatch — a 10-line bugfix pays the full
-slice-plan + scenario-tags + AT-review + reuse-first + prefactoring + sustainability
-ceremony, which is disproportionate (Ale 2026-06-26: "valore quando serve un processo
-rigoroso, niente cerimonie inutili").
+slice-plan + scenario-tags + reuse-first + prefactoring + sustainability ceremony,
+which is disproportionate (Ale 2026-06-26: "valore quando serve un processo rigoroso,
+niente cerimonie inutili").
 
 Cure (RC4-b, lane-keyed, ADD-not-mutate; skip-set + anti-abuse corroborated cross-tier
 by Tsunami Q-10): a dispatch may declare a `DES-LANE: bugfix` lane. When declared WITH
 a non-vacuous justification that NAMES the defect + the regression-test, the gate SKIPS
-the 6 feature-readiness invariants `{slice_plan_section, scenario_slice_tags,
-at_review_verdict, reuse_first_or_design_skip, prefactoring_assessment, sustainability}`
-(the `prefactoring_assessment` leg joined the skip-set with
-prefactoring-enforcement-wiring, mirroring `reuse_first_or_design_skip` exactly) and
-enforces ONLY the 2 mechanical safety guards `{gate_output_produceable,
-pre_commit_scope}` — and emits a LOUD, durable `lane` audit record naming the skip +
-the justification.
+the 5 feature-readiness invariants `{slice_plan_section, scenario_slice_tags,
+reuse_first_or_design_skip, prefactoring_assessment, sustainability}` (the
+`prefactoring_assessment` leg joined the skip-set with prefactoring-enforcement-wiring,
+mirroring `reuse_first_or_design_skip` exactly) and enforces ONLY the 2 mechanical
+safety guards `{gate_output_produceable, pre_commit_scope}` — and emits a LOUD, durable
+`lane` audit record naming the skip + the justification.
 
-ANTI-ABUSE (fail-closed, the safety mechanism for the one skipped quality gate
-`at_review_verdict`): a `DES-LANE: bugfix` with an EMPTY or VACUOUS justification (one
-that does NOT name a regression-test) is REFUSED — the lane cannot become the shortcut
-to skip AT review on a real feature mislabeled as a bugfix. Default (no lane marker) =
-all 8 enforced, byte-identical.
+ANTI-ABUSE (fail-closed, the safety mechanism for the 5 skipped feature-readiness
+invariants): a `DES-LANE: bugfix` with an EMPTY or VACUOUS justification (one that does
+NOT name a regression-test) is REFUSED — the lane cannot become the shortcut to skip
+feature-readiness ceremony on a real feature mislabeled as a bugfix. Default (no lane
+marker) = all 7 enforced, byte-identical.
+
+NOTE (fix-readiness-carpaccio-disagree): this gate used to also own an 8th invariant,
+`at_review_verdict`, and the bugfix lane used to skip it as a 6th member of this
+skip-set. It was DELETED (not merely un-skipped) because it asked exactly the question
+`des.cli.carpaccio_slice_gate` assertion 5 (exit 45) asks, but as an advisory,
+rigor-gated duplicate — carpaccio's block is the one surviving, unconditional voice on
+AT review, for every lane including bugfix.
 """
 
 from __future__ import annotations
@@ -38,12 +44,11 @@ from des.cli import verify_readiness_pre_dispatch as gate
 _FEATURE_ID = "synthetic-bugfix-lane-feature"
 _SLICE_ID = "slice-01"
 
-# The 6 feature-readiness invariants the bugfix lane skips, and the 2 it keeps.
-_SKIPPED_SIX = frozenset(
+# The 5 feature-readiness invariants the bugfix lane skips, and the 2 it keeps.
+_SKIPPED_FIVE = frozenset(
     {
         "slice_plan_section",
         "scenario_slice_tags",
-        "at_review_verdict",
         "reuse_first_or_design_skip",
         "prefactoring_assessment",
         "sustainability",
@@ -93,17 +98,17 @@ def _invariant_ids(report: dict) -> set[str]:
     return {inv["id"] for inv in report.get("invariants", [])}
 
 
-def test_no_lane_runs_all_eight(tmp_path: Path) -> None:
-    """Regression-lock: no DES-LANE marker → all 8 invariants enforced (byte-stable)."""
+def test_no_lane_runs_all_seven(tmp_path: Path) -> None:
+    """Regression-lock: no DES-LANE marker → all 7 invariants enforced (byte-stable)."""
     _, report = _run(tmp_path)
     ids = _invariant_ids(report)
-    assert ids >= _SKIPPED_SIX | _KEPT_TWO, (
-        "the default path (no lane) must enforce all 8 feature-readiness invariants "
+    assert ids >= _SKIPPED_FIVE | _KEPT_TWO, (
+        "the default path (no lane) must enforce all 7 feature-readiness invariants "
         f"byte-identically. observed invariant ids={sorted(ids)}"
     )
 
 
-def test_bugfix_lane_skips_the_six_feature_readiness(tmp_path: Path) -> None:
+def test_bugfix_lane_skips_the_five_feature_readiness(tmp_path: Path) -> None:
     """A bugfix lane with a valid justification runs ONLY the 2 mechanical guards."""
     _, report = _run(
         tmp_path, "--lane", "bugfix", "--lane-justification", _VALID_JUSTIFICATION
@@ -111,7 +116,7 @@ def test_bugfix_lane_skips_the_six_feature_readiness(tmp_path: Path) -> None:
     ids = _invariant_ids(report)
     assert ids == set(_KEPT_TWO), (
         "a DES-LANE: bugfix dispatch with a valid (defect + regression-test) "
-        "justification must SKIP the 6 feature-readiness invariants and run ONLY the 2 "
+        "justification must SKIP the 5 feature-readiness invariants and run ONLY the 2 "
         f"mechanical guards {sorted(_KEPT_TWO)}. observed={sorted(ids)}"
     )
 
@@ -124,12 +129,12 @@ def test_bugfix_lane_emits_loud_audit_record(tmp_path: Path) -> None:
     lane = report.get("lane")
     assert isinstance(lane, dict), (
         "the bugfix-lane skip must emit a LOUD audit record (`lane` object) — the "
-        "anti-abuse logging is the safety mechanism for the skipped AT review. "
-        f"observed report keys={sorted(report)}"
+        "anti-abuse logging is the safety mechanism for the skipped feature-readiness "
+        f"ceremony. observed report keys={sorted(report)}"
     )
     assert lane.get("lane") == "bugfix"
     assert _VALID_JUSTIFICATION in (lane.get("justification") or "")
-    assert set(lane.get("skipped") or []) == set(_SKIPPED_SIX), (
+    assert set(lane.get("skipped") or []) == set(_SKIPPED_FIVE), (
         "the lane record must NAME the skipped invariants for the audit trail. "
         f"observed skipped={lane.get('skipped')}"
     )
@@ -153,7 +158,7 @@ def test_bugfix_lane_vacuous_justification_refused(tmp_path: Path) -> None:
     assert code != 0 and report.get("verdict") == "refused", (
         "a DES-LANE: bugfix whose justification does NOT name a regression-test must "
         "FAIL CLOSED (refused) — Tsunami Q-10 anti-abuse: the strict justification is "
-        "the safety mechanism for the one skipped quality gate (at_review_verdict). "
+        "the safety mechanism for the 5 skipped feature-readiness invariants. "
         f"observed code={code}, verdict={report.get('verdict')}"
     )
 
@@ -206,7 +211,7 @@ def test_lane_justification_rejects_vague_justification_naming_no_test() -> None
     """NEGATIVE-AT: a justification that references no regression-test in ANY
     naming convention must still be REFUSED -- the language-agnostic fix must
     not turn the predicate into a rubber stamp for the skipped
-    `at_review_verdict` gate."""
+    feature-readiness invariants."""
     assert not gate._lane_justification_names_defect_and_test(_VACUOUS_JUSTIFICATION), (
         "a vague justification referencing no regression-test in any naming "
         f"convention must still be rejected. justification={_VACUOUS_JUSTIFICATION!r}"

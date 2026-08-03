@@ -4,7 +4,8 @@
 # @slice-04
 # @slice-05
 # @slice-06
-"""Acceptance tests -- `des verify-gate-armed-state` (DISTILL, slice-02 + slice-03 + slice-04 + slice-05 + slice-06).
+# @slice-07
+"""Acceptance tests -- `des verify-gate-armed-state` (DISTILL, slice-02 + slice-03 + slice-04 + slice-05 + slice-06 + slice-07).
 
 @contract-shape:bounded-change
 
@@ -181,6 +182,66 @@ scope here: the pre-commit/CI/2-hop indirection resolver (slice-05, already
 shipped independently) and the reviewed INDETERMINATE baseline-diff
 (slice-07) -- unaffected by this slice.
 
+SCOPE FENCE (slice-07, decision #4 baseline-diff + decision #5 pre-commit
+wiring completion): pre-slice-07 an INDETERMINATE population is always a
+WARNING annotation -- exit 0, never blocking (feature-delta.md's own CLI
+contract: "a NEW INDETERMINATE (a WARNING annotation, not a hard failure,
+... until slice-07 lands it as fail-closed)"). Static surfaces alone can
+never manufacture a genuine NOT-ARMED verdict (decision #4 -- every
+catalogued gate self-declares `host_visibility`), so the honest closure is
+NOT a new hard tier -- it is a REVIEWED, checked-in baseline
+(`nWave/gates/_armed_state_baseline.json`) that tracks which INDETERMINATE
+gate_ids have already been looked at and human-excused-by-inaction, and
+fails LOUD the moment a gate_id resolves indeterminate that is absent from
+that baseline (a genuine new gap, or a baseline that fell behind -- either
+way, never silent). This slice adds: (1) a stdlib-only (F-D-09, `json` is
+stdlib) reviewed-baseline reader, `_load_armed_state_baseline(repo_root:
+Path) -> frozenset[str] | None`, parsing
+`nWave/gates/_armed_state_baseline.json` (a JSON object
+`{"schema_version": 1, "indeterminate": [...]}`) -- returns `None` when the
+file is ABSENT (graceful pre-adoption: the fail-closed check stays UNARMED,
+matching today's WARNING-only behaviour byte-for-byte -- adopting the
+baseline is an explicit act, never an implicit consequence of upgrading
+this tool), returns the frozenset of reviewed gate_ids when present and
+parseable, and raises `ArmedStateBaselineMalformedError` (a NEW subclass of
+`ArmedStateInputUnavailableError`) when present but unparseable -- never
+silently treated as absent; (2) a pure diff function,
+`new_unreviewed_indeterminate_gates(indeterminate: Iterable[str], baseline:
+frozenset[str]) -> list[str]` (`@contract-shape:pure-function`), the sorted
+set-difference -- the PARTITION closure obligation: every currently-
+indeterminate gate_id lands in EXACTLY one of {reviewed, new-unreviewed},
+and the two buckets conserve back to the whole population; (3) `main()`
+grows two new JSON verdict keys, `reviewed_baseline_present: bool` and
+`new_indeterminate: list[str]`, and its exit-code branch: when the reviewed
+baseline is ABSENT, behaviour is UNCHANGED from pre-slice-07 (exit 0,
+indeterminate is a WARNING) -- this slice deliberately does NOT introduce a
+distinct third exit-code value for "structurally unreadable input" versus
+"new unreviewed indeterminate" (both already return a non-zero exit under
+the existing `ArmedStateInputUnavailableError` handling and this slice's
+new refusal path alike; every existing degrade-LOUD AT in this file already
+asserts `!= 0`, never a pinned numeric value, and narrowing that now would
+be unrequested scope creep against six already-shipped slices with no
+DoD row demanding it -- see the feature-delta's own DoD row 7, which only
+requires "fails LOUD" / "proceeds", never a specific code); when the
+reviewed baseline is PRESENT and every currently-indeterminate gate_id is
+baseline-listed, the command proceeds (exit 0, `new_indeterminate: []`);
+when the reviewed baseline is PRESENT and >=1 currently-indeterminate
+gate_id is ABSENT from it, the command fails LOUD (non-zero exit,
+`new_indeterminate` names the offending gate_id(s)). (4) decision #5's
+pre-commit wiring completion: `.pre-commit-config.yaml` grows a real hook
+entry invoking `verify-gate-armed-state`, mirroring the sibling
+`verify-catalog-coherence` hook's shape (fast, `<1s`, files-scoped,
+`language: system`) -- this is production/infra wiring, so (matching how
+DISTILL never hand-authored the slice-02 catalog/registry rows either) this
+slice's ATs assert the row's PRESENCE on the real shipped file rather than
+authoring it. Out of scope here: `dormant:`'s schema shape (unchanged,
+Locked Decision L-4); retroactive per-gate annotation of any of the 78
+catalogued gates (the baseline snapshot is generated data, reviewed once at
+GREEN time over the real repo's current indeterminate population, never
+hand-authored per-gate); the telemetry axis (decision #4's deferred half,
+tracked as a named follow-on Mikado node, permanently out of THIS feature's
+scope).
+
 Contract under test (DOES NOT EXIST YET -- active-RED by design):
 `src/des/cli/verify_gate_armed_state.py:main(argv: list[str] | None) -> int`
 -- same CLI contract family as `verify_catalog_coherence.py` (`--repo-root`,
@@ -203,7 +264,12 @@ slice-05's DISTILL dispatch): `_precommit_ci_indirection_gate_ids` and
 requires (RED at slice-06's DISTILL dispatch): `_prose_surface_text(repo_root:
 Path) -> str`, plus its wiring into `_gate_states_for_repo` -- see the SCOPE
 FENCE (slice-06) paragraph above for the exact shape and the two correctness
-boundaries.
+boundaries. Slice-07 additionally requires (RED at slice-07's DISTILL
+dispatch): `_load_armed_state_baseline`, `new_unreviewed_indeterminate_gates`,
+`ArmedStateBaselineMalformedError`, `main()`'s two new JSON verdict keys
+(`reviewed_baseline_present`, `new_indeterminate`), and a `.pre-commit-
+config.yaml` hook entry -- see the SCOPE FENCE (slice-07) paragraph above for
+the exact shapes.
 
 Active-RED scaffolding (P1-P4, `nw-distill-red-scaffolding`): the module is
 absent today, so every in-process test hides its import inside a helper
@@ -620,6 +686,72 @@ def _assert_armed_state_inputs_supports_slice05_field() -> None:
         )
 
 
+def _import_new_unreviewed_indeterminate_gates():
+    """Presence-probe (P1+P3) for slice-07's pure baseline-diff function
+    (decision #4) -- the gate_ids resolving 'indeterminate' that are absent
+    from the reviewed baseline (`nWave/gates/_armed_state_baseline.json`)."""
+    if importlib.util.find_spec(_PROMOTED_MODULE) is None:
+        raise AssertionError(
+            f"MISSING_FUNCTIONALITY: `importlib.util.find_spec({_PROMOTED_MODULE!r})` "
+            "resolved to None -- src/des/cli/verify_gate_armed_state.py does not "
+            "exist yet (slice-02 must land first)."
+        )
+    import importlib as _importlib
+
+    module = _importlib.import_module(_PROMOTED_MODULE)
+    fn = getattr(module, "new_unreviewed_indeterminate_gates", None)
+    if fn is None:
+        raise AssertionError(
+            "MISSING_FUNCTIONALITY: des.cli.verify_gate_armed_state has no "
+            "`new_unreviewed_indeterminate_gates` function yet -- slice-07's "
+            "reviewed-baseline diff (decision #4) has not been implemented. "
+            "WHY: a maintainer must see an unreviewed NEW indeterminate gate "
+            "fail LOUD while a baseline-listed one proceeds -- this pure "
+            "function is the diff that decides which is which. HOW: "
+            "implement `new_unreviewed_indeterminate_gates(indeterminate: "
+            "Iterable[str], baseline: frozenset[str]) -> list[str]` "
+            "returning the sorted gate_ids present in `indeterminate` but "
+            "absent from `baseline` (set difference); empty list means "
+            "every currently-indeterminate gate is already reviewed."
+        )
+    return fn
+
+
+def _import_armed_state_baseline_reader():
+    """Presence-probe (P1+P3) for slice-07's stdlib-only reviewed-baseline
+    reader (decision #4) -- parses `nWave/gates/_armed_state_baseline.json`
+    (a JSON object `{"schema_version": 1, "indeterminate": [...]}`)."""
+    if importlib.util.find_spec(_PROMOTED_MODULE) is None:
+        raise AssertionError(
+            f"MISSING_FUNCTIONALITY: `importlib.util.find_spec({_PROMOTED_MODULE!r})` "
+            "resolved to None -- src/des/cli/verify_gate_armed_state.py does not "
+            "exist yet (slice-02 must land first)."
+        )
+    import importlib as _importlib
+
+    module = _importlib.import_module(_PROMOTED_MODULE)
+    fn = getattr(module, "_load_armed_state_baseline", None)
+    if fn is None:
+        raise AssertionError(
+            "MISSING_FUNCTIONALITY: des.cli.verify_gate_armed_state has no "
+            "`_load_armed_state_baseline` reader yet -- slice-07's reviewed "
+            "INDETERMINATE baseline (decision #4) has not been implemented. "
+            "WHY: the fail-closed diff needs a real reader over "
+            "nWave/gates/_armed_state_baseline.json to know what was "
+            "already reviewed. HOW: implement `_load_armed_state_baseline"
+            "(repo_root: Path) -> frozenset[str] | None`, stdlib-only JSON "
+            "parse (json is stdlib -- F-D-09 is unaffected): return `None` "
+            "when the file is absent (graceful pre-adoption -- the "
+            "fail-closed check stays UNARMED, matching today's WARNING-only "
+            "behaviour byte-for-byte), return the frozenset of reviewed "
+            "gate_ids under its `indeterminate` key when present and "
+            "parseable, and raise `ArmedStateBaselineMalformedError` (a new "
+            "subclass of `ArmedStateInputUnavailableError`) when present but "
+            "unparseable -- never silently treat malformed as absent."
+        )
+    return fn
+
+
 # ---------------------------------------------------------------------------
 # Throwaway repo-tree builders (mirror the real `nWave/gates/` layout
 # minimally). The promoted reducer's CURRENT (unchanged) decision rule reads
@@ -674,6 +806,26 @@ def _write_malformed_catalog(repo_root: Path) -> None:
     gates_dir.mkdir(parents=True, exist_ok=True)
     (gates_dir / "_catalog.yaml").write_text(
         "gates: [this is: not, valid: yaml: at all\n", encoding="utf-8"
+    )
+
+
+def _write_baseline_file(repo_root: Path, gate_ids: list[str]) -> None:
+    """Writes a reviewed INDETERMINATE baseline (decision #4, slice-07) at
+    `nWave/gates/_armed_state_baseline.json` -- the checked-in, git-diffable
+    data file `_load_armed_state_baseline` reads."""
+    gates_dir = repo_root / "nWave" / "gates"
+    gates_dir.mkdir(parents=True, exist_ok=True)
+    payload = {"schema_version": 1, "indeterminate": sorted(gate_ids)}
+    (gates_dir / "_armed_state_baseline.json").write_text(
+        json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def _write_malformed_baseline_file(repo_root: Path) -> None:
+    gates_dir = repo_root / "nWave" / "gates"
+    gates_dir.mkdir(parents=True, exist_ok=True)
+    (gates_dir / "_armed_state_baseline.json").write_text(
+        "{not: valid json,,,\n", encoding="utf-8"
     )
 
 
@@ -2282,4 +2434,258 @@ def test_prose_surface_reader_finds_des_verb_mentions_across_agents_skills_and_t
     )
     assert "des task-only-gate" in text, (
         f"the reader must scan nWave/tasks/nw/*.md -- got text={text!r}"
+    )
+
+
+# ===========================================================================
+# 10. SLICE-07 NEW -- reviewed INDETERMINATE baseline-diff (decision #4) +
+#     pre-commit wiring completion (decision #5). Covers: R18, R19, R20, R21.
+# ===========================================================================
+
+
+def test_new_unreviewed_indeterminate_gates_partitions_indeterminate_into_reviewed_and_new() -> (
+    None
+):
+    """Pure-function law (`@contract-shape:pure-function`; PARTITION closure
+    obligation, `nw-test-design-mandates`): the baseline diff must CONSERVE
+    -- every currently-indeterminate gate_id lands in EXACTLY one of two
+    disjoint buckets, {reviewed (in the baseline)} or {new-unreviewed
+    (absent from the baseline)}, and the two buckets union back to the
+    whole indeterminate population.
+
+    # covers: R18
+    """
+    new_unreviewed_indeterminate_gates = _import_new_unreviewed_indeterminate_gates()
+
+    indeterminate = ["alpha-gate", "beta-gate", "gamma-gate"]
+    baseline = frozenset({"alpha-gate", "gamma-gate"})
+
+    result = new_unreviewed_indeterminate_gates(indeterminate, baseline)
+
+    assert result == ["beta-gate"], (
+        "expected exactly the gate_ids absent from the reviewed baseline, "
+        f"got {result!r}"
+    )
+    reviewed = set(indeterminate) & baseline
+    assert set(result).isdisjoint(reviewed), (
+        "a gate_id must never appear in BOTH the reviewed and "
+        f"new-unreviewed buckets: result={result!r}, reviewed="
+        f"{sorted(reviewed)!r}"
+    )
+    assert set(result) | reviewed == set(indeterminate), (
+        "the two buckets must CONSERVE -- their union must equal the whole "
+        f"indeterminate population: result={result!r}, reviewed="
+        f"{sorted(reviewed)!r}, indeterminate={indeterminate!r}"
+    )
+
+
+def test_baseline_listed_indeterminate_gate_proceeds_while_an_unreviewed_one_fails_loud(
+    tmp_path: Path, capsys
+) -> None:
+    """HEADLINE regression (feature-delta.md slice-07 Value statement,
+    decision #4): a maintainer sees an unreviewed NEW indeterminate gate
+    fail LOUD, while a baseline-listed one proceeds -- closing the
+    telemetry-axis deferral honestly instead of silently collapsing to
+    WIRED. Two sub-checks bundled in ONE scenario (mirrors the walking
+    skeleton's own bundling of its two named root kinds): (a) a repo mixing
+    one baseline-listed and one brand-new indeterminate gate must fail
+    LOUD, naming ONLY the new one; (b) once the SAME baseline is extended
+    to cover both, the identical repo proceeds with exit 0.
+
+    # covers: R19
+    """
+    main = _import_verify_gate_armed_state()
+
+    # (a) mixed: one reviewed, one brand-new.
+    repo_root = tmp_path / "repo"
+    _write_catalog_and_per_gate_files(
+        repo_root,
+        [
+            {"gate_id": "reviewed-gap-gate", "host_visibility": []},
+            {"gate_id": "brand-new-gap-gate", "host_visibility": []},
+        ],
+    )
+    _write_baseline_file(repo_root, ["reviewed-gap-gate"])
+
+    exit_code = main(["--repo-root", str(repo_root)])
+    captured = capsys.readouterr()
+    verdict = _verdict_from(
+        captured.out,
+        command=f"main(['--repo-root', {str(repo_root)!r}]) (mixed baseline)",
+    )
+    assert "new_indeterminate" in verdict, (
+        "MISSING_FUNCTIONALITY: the JSON verdict has no 'new_indeterminate' "
+        f"key yet -- slice-07's baseline-diff population is missing: {verdict}"
+    )
+    assert verdict["new_indeterminate"] == ["brand-new-gap-gate"], (
+        "only the gate ABSENT from the reviewed baseline must be named as "
+        f"new-unreviewed: {verdict}"
+    )
+    assert "reviewed-gap-gate" in verdict.get("indeterminate", []), (
+        "a baseline-listed gate must still be VISIBLE under the "
+        f"indeterminate population, just not blocking: {verdict}"
+    )
+    assert exit_code != 0, (
+        "an unreviewed NEW indeterminate gate must fail LOUD (non-zero "
+        f"exit) -- got {exit_code}: {verdict}"
+    )
+
+    # (b) same repo, baseline now covers BOTH -- must proceed.
+    _write_baseline_file(repo_root, ["reviewed-gap-gate", "brand-new-gap-gate"])
+
+    exit_code_after = main(["--repo-root", str(repo_root)])
+    captured_after = capsys.readouterr()
+    verdict_after = _verdict_from(
+        captured_after.out,
+        command=f"main(['--repo-root', {str(repo_root)!r}]) (fully-reviewed baseline)",
+    )
+    assert verdict_after.get("new_indeterminate") == [], (
+        "once every currently-indeterminate gate is baseline-listed, "
+        f"nothing must remain flagged as new-unreviewed: {verdict_after}"
+    )
+    assert exit_code_after == 0, (
+        "a fully baseline-reviewed indeterminate population must proceed "
+        f"(exit 0) -- got {exit_code_after}: {verdict_after}"
+    )
+
+
+def test_a_missing_reviewed_baseline_file_does_not_hard_fail_and_reports_every_indeterminate_as_a_warning(
+    tmp_path: Path, capsys
+) -> None:
+    """Graceful pre-adoption (decision #4): a `--repo-root` with NO reviewed
+    baseline file at all must behave EXACTLY as before this slice --
+    indeterminate is a WARNING, never a hard block. Adopting the
+    fail-closed check is an explicit act (creating the reviewed baseline
+    file), never an implicit consequence of upgrading to this version of
+    the tool -- this is the regression guard proving decision #4's
+    baseline-diff cannot retroactively hard-fail every pre-existing
+    checkout that never adopted it.
+
+    # covers: R20
+    """
+    main = _import_verify_gate_armed_state()
+    repo_root = tmp_path / "repo"
+    _write_catalog_and_per_gate_files(
+        repo_root, [{"gate_id": "unreviewed-checkout-gate", "host_visibility": []}]
+    )
+    # deliberately no _armed_state_baseline.json written.
+
+    exit_code = main(["--repo-root", str(repo_root)])
+    captured = capsys.readouterr()
+    verdict = _verdict_from(
+        captured.out,
+        command=f"main(['--repo-root', {str(repo_root)!r}]) (no baseline adopted)",
+    )
+    assert "reviewed_baseline_present" in verdict, (
+        "MISSING_FUNCTIONALITY: the JSON verdict has no "
+        f"'reviewed_baseline_present' key yet: {verdict}"
+    )
+    assert verdict["reviewed_baseline_present"] is False, (
+        f"no _armed_state_baseline.json was written -- must report absent: {verdict}"
+    )
+    assert verdict.get("new_indeterminate") == [], (
+        "with no reviewed baseline adopted, nothing is flagged as "
+        f"new-unreviewed (the fail-closed check stays unarmed): {verdict}"
+    )
+    assert "unreviewed-checkout-gate" in verdict.get("indeterminate", []), (
+        f"the gate must still be visibly named under indeterminate: {verdict}"
+    )
+    assert exit_code == 0, (
+        "a repo that never adopted the reviewed baseline must proceed "
+        f"exactly as before this slice -- got exit {exit_code}: {verdict}"
+    )
+
+
+@pytest.mark.negative_at
+def test_a_malformed_reviewed_baseline_file_degrades_loud_never_silently_coherent(
+    tmp_path: Path, capsys
+) -> None:
+    """Degrade-LOUD (decision #4): a present-but-unparseable
+    `_armed_state_baseline.json` must never crash with a raw traceback and
+    must never be silently treated as an absent (unarmed) baseline -- an
+    unreadable trust surface must never resolve to a fabricated pass.
+
+    # covers: R20
+    """
+    main = _import_verify_gate_armed_state()
+    repo_root = tmp_path / "repo"
+    _write_catalog_and_per_gate_files(
+        repo_root, [{"gate_id": "malformed-baseline-gate", "host_visibility": []}]
+    )
+    _write_malformed_baseline_file(repo_root)
+
+    try:
+        exit_code = main(["--repo-root", str(repo_root)])
+    except Exception as exc:
+        pytest.fail(
+            "degrade-LOUD violation: a malformed _armed_state_baseline.json "
+            f"must return a non-zero exit + diagnostic, not raise "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+    captured = capsys.readouterr()
+    combined_output = captured.out + captured.err
+    assert exit_code != 0, (
+        "degrade-LOUD violation: a malformed reviewed baseline must NOT "
+        f"silently resolve a passing verdict -- got exit {exit_code}"
+    )
+    assert "Traceback" not in combined_output, (
+        "degrade-LOUD violation: a malformed baseline crashed with a "
+        f"traceback instead of a diagnostic verdict:\n{combined_output}"
+    )
+    assert "_armed_state_baseline.json" in combined_output, (
+        "the diagnostic must NAME the unreadable file so a maintainer knows "
+        f"exactly what to fix, without guessing: {combined_output}"
+    )
+
+
+def test_armed_state_baseline_reader_returns_none_when_absent_and_the_reviewed_frozenset_when_present(
+    tmp_path: Path,
+) -> None:
+    """Reader-level proof (mirrors `_wave_gate_out_gate_ids`'s
+    direct-reader discipline): the reviewed-baseline reader distinguishes
+    "never adopted" (returns `None`) from "adopted, reviewed set is X"
+    (returns the frozenset) -- the caller's exit-code branch is what turns
+    that distinction into WARNING-vs-fail-closed behaviour, never this
+    reader alone.
+
+    # covers: R18
+    """
+    reader = _import_armed_state_baseline_reader()
+    repo_root = tmp_path / "repo"
+    (repo_root / "nWave" / "gates").mkdir(parents=True)
+
+    absent_result = reader(repo_root)
+    assert absent_result is None, (
+        "an absent _armed_state_baseline.json must resolve None (never an "
+        "empty frozenset, which would be indistinguishable from a "
+        f"reviewed-but-empty baseline): got {absent_result!r}"
+    )
+
+    _write_baseline_file(repo_root, ["known-gate-a", "known-gate-b"])
+    present_result = reader(repo_root)
+    assert present_result == frozenset({"known-gate-a", "known-gate-b"}), (
+        "a present, well-formed baseline must resolve its reviewed "
+        f"gate_ids as a frozenset: got {present_result!r}"
+    )
+
+
+def test_gate_is_wired_into_the_real_precommit_config() -> None:
+    """Decision #5 (pre-commit wiring completion): `.pre-commit-config.yaml`
+    must carry a real hook entry invoking `verify-gate-armed-state`,
+    mirroring the sibling `verify-catalog-coherence` hook's shape (fast,
+    files-scoped, `language: system`) -- reads the REAL shipped file as
+    DATA, no import (protocol-driver contract: assert a shipped artifact).
+
+    # covers: R21
+    """
+    precommit_path = _REPO_ROOT / ".pre-commit-config.yaml"
+    text = precommit_path.read_text(encoding="utf-8")
+    assert "verify-gate-armed-state" in text, (
+        "MISSING_FUNCTIONALITY: .pre-commit-config.yaml has no hook entry "
+        "invoking verify-gate-armed-state yet. Add one mirroring the "
+        "sibling verify-catalog-coherence hook (id: verify-gate-armed-state, "
+        "entry: uv run python -m des.cli verify-gate-armed-state, language: "
+        "system, files-scoped to nWave/gates/ + .pre-commit-config.yaml + "
+        "the prose surfaces, stages: [pre-commit])."
     )

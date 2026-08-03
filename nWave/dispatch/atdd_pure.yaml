@@ -125,7 +125,7 @@ profiles:
       guard_kind: GREEN_TO_GREEN
       at_requirement: EXEMPT
       feature_readiness: false
-      skipped_invariants: [slice_plan_section, scenario_slice_tags, at_review_verdict,
+      skipped_invariants: [slice_plan_section, scenario_slice_tags,
                            reuse_first_or_design_skip, sustainability]
       annotation_token: prefactoring
       requires: []
@@ -154,7 +154,7 @@ profiles:
       guard_kind: NONE
       at_requirement: EXEMPT
       feature_readiness: false
-      skipped_invariants: [slice_plan_section, scenario_slice_tags, at_review_verdict,
+      skipped_invariants: [slice_plan_section, scenario_slice_tags,
                            reuse_first_or_design_skip, sustainability]
       annotation_token: charter
       requires: []

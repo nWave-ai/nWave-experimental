@@ -51,17 +51,21 @@ class InvariantStatus(str, Enum):
 class ReadinessInvariantId(str, Enum):
     """The readiness invariants the gate verifies.
 
-    The first six are the pre-existing cascade (friction #57 + the reuse-first
-    slice). SUSTAINABILITY is the net-new 7th invariant the gate-wiring step adds
-    -- additive to the same single-invocation aggregate (the friction #57
+    The first five are the pre-existing cascade (friction #57 + the reuse-first
+    slice). SUSTAINABILITY is a net-new invariant the gate-wiring step adds --
+    additive to the same single-invocation aggregate (the friction #57
     single-JSON-line contract preserved). The id literal the gate emits is
     EXPECTED to be `sustainability`; the typed projection tolerates its absence
     at HEAD (active-RED: the 7th invariant does not yet exist).
+
+    NOTE (fix-readiness-carpaccio-disagree): this enum used to also carry an
+    `AT_REVIEW_VERDICT = "at_review_verdict"` member -- unused by any step or
+    assertion in this AT scope (grep-confirmed inert), removed alongside the
+    gate's own deletion of that invariant so the mirror carries no orphan id.
     """
 
     SLICE_PLAN_SECTION = "slice_plan_section"
     SCENARIO_SLICE_TAGS = "scenario_slice_tags"
-    AT_REVIEW_VERDICT = "at_review_verdict"
     GATE_OUTPUT_PRODUCEABLE = "gate_output_produceable"
     PRE_COMMIT_SCOPE = "pre_commit_scope"
     REUSE_FIRST = "reuse_first_or_design_skip"

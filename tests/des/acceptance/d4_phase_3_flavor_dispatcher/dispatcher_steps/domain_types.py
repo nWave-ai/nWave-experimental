@@ -121,15 +121,21 @@ class InvariantStatus(str, Enum):
 
 
 class FirstDispatchInvariantId(str, Enum):
-    """The five first-dispatch invariants the readiness gate verifies.
+    """The four first-dispatch invariants the readiness gate verifies (this
+    AT scope's slice; the live gate carries more -- see
+    `verify_readiness_pre_dispatch._ALL_INVARIANTS`).
 
     Each invariant corresponds to one cascading friction empirically observed
     during first-dispatch of a NEW feature (friction #57 enumeration).
+
+    NOTE (fix-readiness-carpaccio-disagree): this enum used to also carry an
+    `AT_REVIEW_VERDICT = "at_review_verdict"` member -- unused by any step in
+    this AT scope (grep-confirmed), removed alongside the gate's own deletion
+    of that invariant.
     """
 
     SLICE_PLAN_SECTION = "slice_plan_section"
     SCENARIO_SLICE_TAGS = "scenario_slice_tags"
-    AT_REVIEW_VERDICT = "at_review_verdict"
     GATE_OUTPUT_PRODUCEABLE = "gate_output_produceable"
     PRE_COMMIT_SCOPE = "pre_commit_scope"
 
