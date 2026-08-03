@@ -1063,7 +1063,289 @@ def _diff_git_state(before: dict[str, object], after: dict[str, object]) -> list
 _GUARD_RESTORE_IN_PROGRESS = False
 
 
-def _atomic_restore_git_state(project_root: Path, before: dict[str, object]) -> None:
+# ---------------------------------------------------------------------------
+# Config-key classification (RCA fix-test-suite-mutates-shared-git-identity,
+# Root Cause B / P2): the shared-common-dir exemption above decides on the
+# DIFF-KIND DESIGNATION ("config" changed -> skip everything). That is wrong
+# granularity: identity keys (user.name/user.email/...) are NEVER legitimately
+# written by a concurrent sibling worktree and must always be restored+failed,
+# while branch.*/remote.*/... tracking keys ARE legitimately written by a
+# sibling's `git push -u` / `git remote add` and must survive byte-for-byte.
+# These helpers classify on the KEY (the PROPERTY), never on the shared/
+# exclusive designation.
+# ---------------------------------------------------------------------------
+
+_CONFIG_SECTION_RE = re.compile(
+    r'^\[\s*([A-Za-z0-9._-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]$'
+)
+_CONFIG_ENTRY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9-]*)\s*(?:=\s*(.*))?$")
+
+# SELF-OWNED: identity keys. No sibling worktree ever legitimately writes
+# these — always restore + fail, even when the common dir is shared.
+_CONFIG_SELF_OWNED_EXACT_KEYS = {"user.name", "user.email", "user.signingkey"}
+_CONFIG_SELF_OWNED_PREFIXES = ("author.", "committer.")
+
+# SIBLING-LEGITIMATE: keys a concurrently-running sibling worktree writes as
+# normal operation (`git push -u`, `git remote add`, `pre-commit install`).
+# Never restore, never fail — a wholesale restore clobbering these is the
+# exact 2026-07-20 harm the sharing exemption exists to prevent.
+_CONFIG_SIBLING_LEGITIMATE_EXACT_KEYS = {"core.hookspath"}
+_CONFIG_SIBLING_LEGITIMATE_PREFIXES = (
+    "branch.",
+    "remote.",
+    "submodule.",
+    "extensions.",
+    "pull.",
+    "push.",
+)
+
+
+def _is_self_owned_config_key(fq_key: str) -> bool:
+    """True iff ``fq_key`` (lower-cased section+key) is a git identity key."""
+    return fq_key in _CONFIG_SELF_OWNED_EXACT_KEYS or fq_key.startswith(
+        _CONFIG_SELF_OWNED_PREFIXES
+    )
+
+
+def _is_sibling_legitimate_config_key(fq_key: str) -> bool:
+    """True iff ``fq_key`` is a key a concurrent sibling worktree legitimately
+    writes (branch tracking, remotes, submodules, hook path, ...)."""
+    return fq_key in _CONFIG_SIBLING_LEGITIMATE_EXACT_KEYS or fq_key.startswith(
+        _CONFIG_SIBLING_LEGITIMATE_PREFIXES
+    )
+
+
+def _parse_git_config_keys(raw: bytes) -> dict[str, list[str]]:
+    """Parse ``.git/config`` bytes into a ``{fully-qualified-key: [values]}``
+    map.
+
+    Bounded line-based parser for the git config format — deliberately NOT
+    ``configparser``: git config is not INI. It has quoted subsections
+    (``[branch "feature/x"]`` — the ``.`` inside the quoted part is not a key
+    separator), valueless boolean keys (``bare``), repeated keys (multivars —
+    e.g. several ``remote.origin.fetch`` lines), and a dotted ``[section.sub]``
+    form. ``configparser`` mishandles several of these silently, which would
+    be a silent-wrong defeating the point of this fix.
+
+    Section and key are lower-cased (git is case-insensitive for both);
+    subsection is kept case-sensitive (git is case-sensitive there).
+    Multivar keys keep every value, in order — a comparison must never
+    collapse two values into one.
+
+    Pure, read-only. Used for CLASSIFICATION only — never for restore. The
+    restore path (``_restore_identity_config_keys``) edits the CURRENT
+    file's lines directly so untouched sibling entries survive byte-for-byte;
+    it does not reserialize through this parser.
+    """
+    result: dict[str, list[str]] = {}
+    section = ""
+    subsection = ""
+    text = raw.decode("utf-8", errors="replace")
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line.startswith(";"):
+            continue
+        section_match = _CONFIG_SECTION_RE.match(line)
+        if section_match:
+            section = section_match.group(1).lower()
+            sub = section_match.group(2)
+            if sub is not None:
+                subsection = sub
+            elif "." in section:
+                section, _, subsection = section.partition(".")
+            else:
+                subsection = ""
+            continue
+        entry_match = _CONFIG_ENTRY_RE.match(line)
+        if not entry_match:
+            continue
+        key = entry_match.group(1).lower()
+        value = entry_match.group(2)
+        value = "true" if value is None else value.strip()
+        fq_key = f"{section}.{subsection}.{key}" if subsection else f"{section}.{key}"
+        result.setdefault(fq_key, []).append(value)
+    return result
+
+
+def _classify_config_key_changes(
+    before_keys: dict[str, list[str]], after_keys: dict[str, list[str]]
+) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, list[str]]]:
+    """Bucket every CHANGED config key into (self_owned, sibling_legitimate,
+    unattributable) — the granularity fix for Root Cause B.
+
+    A key is "changed" when its value list differs between ``before_keys``
+    and ``after_keys`` (added, removed, or value changed). Buckets on the
+    fully-qualified KEY (the property), never on the shared/exclusive
+    designation. Returned dicts map fq_key -> the AFTER value list (``[]``
+    when the key was removed) — for message-building; the restore path reads
+    ``before_keys`` separately for the values to splice back.
+    """
+    self_owned: dict[str, list[str]] = {}
+    sibling_legitimate: dict[str, list[str]] = {}
+    unattributable: dict[str, list[str]] = {}
+    for fq_key in sorted(set(before_keys) | set(after_keys)):
+        before_values = before_keys.get(fq_key, [])
+        after_values = after_keys.get(fq_key, [])
+        if before_values == after_values:
+            continue
+        if _is_self_owned_config_key(fq_key):
+            self_owned[fq_key] = after_values
+        elif _is_sibling_legitimate_config_key(fq_key):
+            sibling_legitimate[fq_key] = after_values
+        else:
+            unattributable[fq_key] = after_values
+    return self_owned, sibling_legitimate, unattributable
+
+
+def _restore_identity_config_keys(
+    common_dir: Path,
+    before_keys: dict[str, list[str]],
+    self_owned_fq_keys: set[str],
+) -> None:
+    """Splice SELF-OWNED identity keys back to their pre-test values.
+
+    Reads the config at RESTORE TIME (never the stale ``before`` snapshot
+    bytes) and rewrites ONLY the lines whose fully-qualified key is in
+    ``self_owned_fq_keys`` — every other byte, including a sibling's
+    concurrently-written branch/remote entries, survives untouched. This is
+    a key-scoped splice, never the wholesale ``write_bytes(before["config"])``
+    that made the blanket restore unsafe under sharing in the first place.
+
+    Atomic: writes to a temp file in the same directory then ``os.replace``
+    (atomic rename on POSIX) so no reader ever observes a partially-written
+    config.
+    """
+    config_path = common_dir / "config"
+    if not config_path.is_file():
+        return
+    current_text = config_path.read_text(encoding="utf-8", errors="replace")
+    lines = current_text.splitlines(keepends=True)
+
+    section = ""
+    subsection = ""
+    handled: set[str] = set()
+    output: list[str] = []
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith(";"):
+            output.append(raw_line)
+            continue
+        section_match = _CONFIG_SECTION_RE.match(stripped)
+        if section_match:
+            section = section_match.group(1).lower()
+            sub = section_match.group(2)
+            if sub is not None:
+                subsection = sub
+            elif "." in section:
+                section, _, subsection = section.partition(".")
+            else:
+                subsection = ""
+            output.append(raw_line)
+            continue
+        entry_match = _CONFIG_ENTRY_RE.match(stripped)
+        if not entry_match:
+            output.append(raw_line)
+            continue
+        original_key = entry_match.group(1)
+        fq_key = (
+            f"{section}.{subsection}.{original_key.lower()}"
+            if subsection
+            else f"{section}.{original_key.lower()}"
+        )
+        if fq_key not in self_owned_fq_keys:
+            output.append(raw_line)
+            continue
+        handled.add(fq_key)
+        before_values = before_keys.get(fq_key, [])
+        if not before_values:
+            # Key did not exist pre-test — drop the polluting line entirely.
+            continue
+        indent_len = len(raw_line) - len(raw_line.lstrip(" \t"))
+        indent = raw_line[:indent_len]
+        newline = "\n" if raw_line.endswith("\n") else ""
+        output.append(f"{indent}{original_key} = {before_values[0]}{newline}")
+
+    # A self-owned key that existed pre-test but is now missing entirely
+    # (the polluting write deleted rather than changed it) must be
+    # re-appended so restore is complete either way.
+    missing = self_owned_fq_keys - handled
+    restorable_missing = {k for k in missing if before_keys.get(k)}
+    if restorable_missing:
+        if output and not output[-1].endswith("\n"):
+            output.append("\n")
+        output.append("[user]\n")
+        for fq_key in sorted(restorable_missing):
+            leaf_key = fq_key.rsplit(".", 1)[-1]
+            output.append(f"\t{leaf_key} = {before_keys[fq_key][0]}\n")
+
+    new_text = "".join(output)
+    tmp_path = config_path.with_name(config_path.name + ".nwave-restore-tmp")
+    tmp_path.write_text(new_text, encoding="utf-8")
+    tmp_path.replace(config_path)
+
+
+def _describe_shared_config_key_changes(
+    label: str, changes: dict[str, list[str]]
+) -> list[str]:
+    """Render ``fq_key: [values]`` lines for a WHAT/WHY/HOW message body."""
+    if not changes:
+        return []
+    lines = [f"{label}:"]
+    for fq_key in sorted(changes):
+        lines.append(f"    {fq_key} -> {changes[fq_key]!r}")
+    return lines
+
+
+def _build_shared_config_pollution_message(
+    self_owned: dict[str, list[str]],
+    unattributable: dict[str, list[str]],
+    common_dir: Path,
+) -> str:
+    """WHAT/WHY/HOW failure message for a shared-common-dir config-identity
+    (or unattributable-key) pollution — the message the corrective guard
+    must produce so the corruption is never a silent stderr-only warning
+    (RCA Root Cause C)."""
+    project_root_hint = common_dir.parent if common_dir.name == ".git" else common_dir
+    lines = ["GIT CONFIG POLLUTION — shared common .git", ""]
+    lines.extend(
+        _describe_shared_config_key_changes("IDENTITY keys changed", self_owned)
+    )
+    lines.extend(
+        _describe_shared_config_key_changes(
+            "UNATTRIBUTABLE keys changed (neither identity nor known "
+            "sibling-legitimate)",
+            unattributable,
+        )
+    )
+    lines.append("")
+    lines.append(f"    common dir: {common_dir}")
+    lines.append(
+        "WHY : this file is shared by every linked worktree of this "
+        "checkout (`git config --local` is NOT per-worktree unless "
+        "extensions.worktreeConfig is set). Identity keys are never "
+        "legitimately written by a concurrent sibling worktree, so any "
+        "change is attributable to THIS test; an unattributable key is "
+        "reported LOUD rather than silently assumed to be a sibling's."
+    )
+    if self_owned:
+        lines.append(
+            "HOW : identity keys have already been restored automatically "
+            "— confirm with: "
+            f"git -C {project_root_hint} config --local --get-regexp '^user\\.'"
+        )
+    lines.append(
+        "      Stop this test writing shared config: scope its git "
+        "subprocess to its own throwaway repo (`cwd=`/`-C <tmp_repo>`) "
+        "instead of inheriting the pinned repo-root cwd."
+    )
+    return "\n".join(lines)
+
+
+def _atomic_restore_git_state(
+    project_root: Path,
+    before: dict[str, object],
+    diff_kinds: list[str] | None = None,
+) -> dict[str, dict[str, list[str]]]:
     """Restore .git/{config,HEAD,refs/heads,refs/tags} from a snapshot.
 
     Direct file writes only — never invokes ``git`` as a subprocess
@@ -1093,6 +1375,26 @@ def _atomic_restore_git_state(project_root: Path, before: dict[str, object]) -> 
 
     Sets the recursion flag so any concurrent guard invocation skips its
     snapshot phase while the restore is in flight.
+
+    Return value (added for the granularity fix, RCA Root Cause B/P2):
+    a ``{"self_owned_restored": {}, "sibling_legitimate_changed": {},
+    "unattributable_changed": {}}`` report — always the wholesale-restore
+    shape (all empty) on the EXCLUSIVE path, since nothing there needs
+    per-key attribution. On the SHARED path the dicts are populated by
+    ``_classify_config_key_changes`` so the caller (``_git_pollution_guard``)
+    can decide whether to fail loudly. Existing callers that ignore the
+    return value are unaffected.
+
+    ``diff_kinds`` (optional, defaults to ``None`` for existing direct
+    callers that never had it to pass): the diff-kind list the CALLER
+    already computed (e.g. ``["config", "HEAD"]``). Used ONLY to report
+    accurately which of HEAD/refs were genuinely left untouched on the
+    SHARED path — config is reported separately (or not at all) because
+    its outcome (identity restored-and-failed / sibling-legitimate
+    survived untouched / unattributable failed) is never "skipped" in the
+    way HEAD/refs are. Passing ``None`` suppresses the HEAD/refs notice
+    entirely rather than guessing, so the message never claims a kind was
+    skipped when the caller didn't say so.
     """
     global _GUARD_RESTORE_IN_PROGRESS
     _GUARD_RESTORE_IN_PROGRESS = True
@@ -1100,13 +1402,52 @@ def _atomic_restore_git_state(project_root: Path, before: dict[str, object]) -> 
         common_dir = _resolve_git_common_dir(project_root)
         if _common_git_dir_is_shared(common_dir):
             # Shared common .git: a sibling worktree's legitimate change is
-            # indistinguishable from pollution; a direct-file restore would
-            # clobber it. Degrade to WARN-ONLY. Detection stays; only the
-            # destructive action is gated.
-            _warn_shared_common_dir_restore_skipped(
-                "config/HEAD/refs", None, common_dir
+            # indistinguishable from pollution for HEAD/refs; a direct-file
+            # restore of those would clobber it, so HEAD/refs stay
+            # WARN-ONLY/no-restore exactly as before this fix.
+            #
+            # config is different: identity keys (user.name/user.email/...)
+            # are NEVER legitimately written by a concurrent sibling, so they
+            # are restored via a KEY-SCOPED splice (never the wholesale
+            # write_bytes this branch used to perform) while
+            # sibling-legitimate keys (branch.*/remote.*/...) are left
+            # untouched byte-for-byte. RCA fix-test-suite-mutates-shared-
+            # git-identity, Root Cause B.
+            config_path = common_dir / "config"
+            before_config = before.get("config")
+            before_config_bytes = (
+                before_config if isinstance(before_config, bytes) else b""
             )
-            return
+            current_config_bytes = (
+                config_path.read_bytes() if config_path.is_file() else b""
+            )
+            before_keys = _parse_git_config_keys(before_config_bytes)
+            current_keys = _parse_git_config_keys(current_config_bytes)
+            self_owned, sibling_legitimate, unattributable = (
+                _classify_config_key_changes(before_keys, current_keys)
+            )
+            if self_owned:
+                _restore_identity_config_keys(common_dir, before_keys, set(self_owned))
+            # Report ONLY what was genuinely skipped: HEAD/refs, and only the
+            # kinds the caller says actually changed. config is NEVER folded
+            # into this "restore SKIPPED / WARN-ONLY" sentence — config's
+            # outcome (identity restored-and-failed, sibling-legitimate
+            # surviving untouched, or unattributable failed) is reported by
+            # the caller separately (``_build_shared_config_pollution_message``
+            # via ``pytest.fail``) or not at all when nothing was actionable.
+            # Conflating the two produced a message that claimed "restore
+            # SKIPPED" in the same breath as an identity restore that had
+            # just happened.
+            skipped_kinds = [kind for kind in (diff_kinds or []) if kind != "config"]
+            if skipped_kinds:
+                _warn_shared_common_dir_restore_skipped(
+                    "/".join(skipped_kinds), skipped_kinds, common_dir
+                )
+            return {
+                "self_owned_restored": self_owned,
+                "sibling_legitimate_changed": sibling_legitimate,
+                "unattributable_changed": unattributable,
+            }
         config_path = common_dir / "config"
         head_path = _resolve_head_path(project_root)
 
@@ -1164,6 +1505,11 @@ def _atomic_restore_git_state(project_root: Path, before: dict[str, object]) -> 
                     if packed_before.get(ref_name) == current_sha:
                         continue
                     ref_file.unlink(missing_ok=True)
+        return {
+            "self_owned_restored": {},
+            "sibling_legitimate_changed": {},
+            "unattributable_changed": {},
+        }
     finally:
         _GUARD_RESTORE_IN_PROGRESS = False
 
@@ -1182,6 +1528,21 @@ def _git_pollution_guard():
     Unlike ``guard_git_hooks`` which warns, this fixture uses
     ``pytest.fail()`` because config/HEAD/refs corruption — unlike hooks
     corruption — is immediately repo-breaking and must halt the suite.
+
+    Uses the project root recorded IN the ``before`` snapshot
+    (``before["project_root"]``) for every subsequent step — the "after"
+    snapshot, the common-dir resolution, and the restore call — rather
+    than re-reading the ``_PROJECT_ROOT`` module global at teardown. This
+    guard is itself driven directly (as a generator, via ``.__wrapped__``)
+    by the regression test for the granularity fix
+    (``tests/bugs/test_bug_git_pollution_guard_skips_identity_restore_when_
+    common_dir_shared.py``), which monkeypatches ``_PROJECT_ROOT`` for the
+    duration of the test; re-reading the global at teardown would make
+    THIS (ambient, real) instance of the same autouse fixture compare a
+    snapshot of the real project root against a snapshot of the
+    monkeypatched throwaway repo — a spurious cross-repo diff. Pinning to
+    the value captured at setup keeps this instance self-consistent
+    regardless of what a test does to the global mid-run.
     """
     if _GUARD_RESTORE_IN_PROGRESS:
         # Re-entry safety: never snapshot during a restore in flight.
@@ -1193,21 +1554,40 @@ def _git_pollution_guard():
     try:
         yield
     finally:
-        after = _compute_git_state_snapshot(_PROJECT_ROOT)
+        project_root = before.get("project_root")
+        if not isinstance(project_root, Path):
+            project_root = _PROJECT_ROOT
+        after = _compute_git_state_snapshot(project_root)
         diff = _diff_git_state(before, after)
         if diff:
-            common_dir = _resolve_git_common_dir(_PROJECT_ROOT)
+            common_dir = _resolve_git_common_dir(project_root)
             if _common_git_dir_is_shared(common_dir):
-                # Shared common .git: cannot attribute the diff to THIS test
-                # vs a sibling worktree's legitimate change. Degrade to
-                # WARN-ONLY — never restore (would clobber the sibling) and
-                # never fail (the diff is most likely not ours).
-                _warn_shared_common_dir_restore_skipped(
-                    "config/HEAD/refs", diff, common_dir
+                # Shared common .git: HEAD/refs stay WARN-ONLY/no-restore —
+                # a sibling worktree's legitimate advance there is
+                # indistinguishable from pollution, unchanged from before
+                # this fix. config is different (RCA Root Cause B): it is
+                # classified on the KEY, never on the shared/exclusive
+                # DESIGNATION. `_atomic_restore_git_state` key-scoped
+                # restores SELF-OWNED identity keys (user.name/user.email/
+                # ...) even when shared — no sibling worktree legitimately
+                # writes those — while SIBLING-LEGITIMATE keys (branch.*/
+                # remote.*/...) are left untouched byte-for-byte, and
+                # reports which bucket(s) changed so this guard can still
+                # fail loudly on identity/unattributable corruption.
+                restore_report = _atomic_restore_git_state(project_root, before, diff)
+                self_owned_restored = restore_report.get("self_owned_restored") or {}
+                unattributable_changed = (
+                    restore_report.get("unattributable_changed") or {}
                 )
+                if self_owned_restored or unattributable_changed:
+                    pytest.fail(
+                        _build_shared_config_pollution_message(
+                            self_owned_restored, unattributable_changed, common_dir
+                        )
+                    )
             else:
                 try:
-                    _atomic_restore_git_state(_PROJECT_ROOT, before)
+                    _atomic_restore_git_state(project_root, before)
                 finally:
                     pytest.fail(
                         f"Test corrupted host git state: {diff}. "
