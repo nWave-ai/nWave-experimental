@@ -42,26 +42,18 @@ cannot be read/decoded or declares zero ``@Test`` functions.
 
 from __future__ import annotations
 
-import hashlib
 import re
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from des.adapters.driven.runner.pytest_runner import (
-    _signal_kill_reason,
-    run_timeout_seconds,
-)
+from des.adapters.driven.runner.at_discovery import discover_ats_by_regex
+from des.adapters.driven.runner.scope_run import run_declared_scope
 from des.adapters.driven.runner.tool_discovery import resolve_tool
-from des.ports.test_runner_port import (
-    AtDiscoveryResult,
-    RunnerAdapterUnavailable,
-    RunVerdict,
-)
 
 
 if TYPE_CHECKING:
-    from des.ports.test_runner_port import RunnerAdapter
+    from des.ports.test_runner_port import AtDiscoveryResult, RunnerAdapter, RunVerdict
 
 
 # The gradlew binary name resolved at the head of the declared command.
@@ -95,55 +87,28 @@ def run_kotlin_scope(
 ) -> RunVerdict:
     """Shell the declared gradlew command in ``target_root``; map the exit code.
 
-    ``scoped_node_ids`` carries the feature's declared ``test_command`` tokens
-    (the per-runner scope, NOT node-ids). The leading token is the gradlew
-    binary resolved via the shared discovery scale; the rest is the subcommand
-    shelled as-is. Returns PASS/FAIL or raises ``RunnerAdapterUnavailable`` for
-    the single INDETERMINATE row (gradlew-absent). Unlike cargo there is NO
-    exit-4 empty-scope row.
+    Thin delegator (fix-runner-scope-discover-dedup slice-03): supplies only
+    gradlew's own default binary / known locations / install hint / tool
+    label to the SHARED ``scope_run.run_declared_scope`` (no env builder --
+    kotlin never builds one, mirroring its current behaviour byte-for-byte).
+    ``resolve_tool`` and ``subprocess`` are passed through BY REFERENCE (never
+    called here) so a monkeypatch of ``kotlin_runner.resolve_tool`` /
+    ``kotlin_runner.subprocess`` (pre-existing pinned regressions) still takes
+    effect: Python resolves those free variables from this module's own
+    globals at call time.
     """
-    binary = scoped_node_ids[0] if scoped_node_ids else _GRADLEW_NAME
-    subcommand = scoped_node_ids[1:]
-
-    resolution = resolve_tool(
-        binary,
-        GRADLE_KNOWN_LOCATIONS,
+    return run_declared_scope(
+        adapter,
+        target_root,
+        scoped_node_ids,
         base_dir=target_root,
+        default_binary=_GRADLEW_NAME,
+        known_locations=GRADLE_KNOWN_LOCATIONS,
         install_hint=GRADLE_INSTALL_HINT,
+        tool_label="gradlew",
+        resolve_tool_fn=resolve_tool,
+        subprocess_module=subprocess,
     )
-    if resolution.path is None:
-        raise RunnerAdapterUnavailable(adapter.name, reason=resolution.remediation)
-
-    try:
-        completed = subprocess.run(
-            [resolution.path, *subcommand],
-            capture_output=True,
-            text=True,
-            cwd=target_root,
-            timeout=run_timeout_seconds(),
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RunnerAdapterUnavailable(
-            adapter.name,
-            reason=(
-                f"the gradlew command did not complete within "
-                f"{run_timeout_seconds():.0f}s (a hanging/deadlocking run) -- "
-                "INDETERMINATE, never a silent unbounded hang; raise "
-                "NWAVE_GATE_RUN_TIMEOUT if this is a legitimate long run"
-            ),
-        ) from exc
-
-    kill_reason = _signal_kill_reason(completed.returncode)
-    if kill_reason is not None:
-        raise RunnerAdapterUnavailable(
-            adapter.name,
-            reason=(
-                f"the gradlew run was killed by the OS ({kill_reason}), not a "
-                "test failure -- INDETERMINATE, retry once memory/load recover"
-            ),
-        )
-
-    return RunVerdict(passed=completed.returncode == 0, runner=adapter.name)
 
 
 # ---------------------------------------------------------------------------
@@ -158,18 +123,6 @@ _KOTLIN_TEST_FN_RE = re.compile(
 )
 
 
-def _strip_kotlin_line_comments(source: str) -> str:
-    """Strip ``//``-to-EOL line comments before annotation matching.
-
-    Minimal robust line-scan (no Kotlin parser, no block-comment / string-
-    literal awareness -- deliberately out of scope): an ``@Test`` occurring
-    only inside a ``//`` line comment is text, never a real Kotlin annotation,
-    and must never satisfy ``_KOTLIN_TEST_FN_RE``. Newlines are preserved so
-    multi-line annotation-then-``fun`` matching is unaffected.
-    """
-    return "\n".join(line.split("//", 1)[0] for line in source.splitlines())
-
-
 def discover_kotlin_ats(
     adapter: RunnerAdapter,
     target_root: Path,
@@ -179,38 +132,16 @@ def discover_kotlin_ats(
     file carries.
 
     Line/regex scan (no Kotlin parser, no Python ``ast`` on ``.kt`` source) for
-    ``@Test``-attributed function names. Degrade-LOUD
-    (``RunnerAdapterUnavailable``, never a silently-empty discovery) when the
-    file cannot be read/decoded or has zero ``@Test`` functions.
+    ``@Test``-attributed function names. Delegates to the SHARED
+    ``at_discovery.discover_ats_by_regex`` (fix-runner-scope-discover-dedup),
+    supplying only ``_KOTLIN_TEST_FN_RE`` and this language's own zero-found
+    noun. Degrade-LOUD (``RunnerAdapterUnavailable``, never a silently-empty
+    discovery) when the file cannot be read/decoded or has zero ``@Test``
+    functions.
     """
     del target_root  # unused: AT-discovery scopes to the ONE declared file
-    try:
-        source = regression_test_file.read_bytes()
-    except OSError as exc:
-        raise RunnerAdapterUnavailable(
-            adapter.name, reason=f"cannot read {regression_test_file}: {exc}"
-        ) from exc
-    try:
-        text = source.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise RunnerAdapterUnavailable(
-            adapter.name,
-            reason=(
-                f"cannot read/decode {regression_test_file}: malformed "
-                f"(not valid UTF-8): {exc}"
-            ),
-        ) from exc
-    at_ids = _KOTLIN_TEST_FN_RE.findall(_strip_kotlin_line_comments(text))
-    if not at_ids:
-        raise RunnerAdapterUnavailable(
-            adapter.name,
-            reason=(
-                f"zero @Test functions found in {regression_test_file} "
-                "(malformed regression file)"
-            ),
-        )
-    return AtDiscoveryResult(
-        at_ids=tuple(at_ids), content_hash=hashlib.sha256(source).hexdigest()
+    return discover_ats_by_regex(
+        adapter, regression_test_file, _KOTLIN_TEST_FN_RE, "@Test functions"
     )
 
 

@@ -56,6 +56,7 @@ from des.cli.validate_feature_delta import (
     validate_slice_plan_content,
 )
 from des.domain.repo_path_resolver import feature_delta_path
+from des.runtime.packaged_asset import AssetOrigin, resolve_packaged_asset
 
 
 #: The one NEW verdict token this tool adds -- file-absence, upstream of
@@ -69,6 +70,13 @@ VERDICT_MISSING_FEATURE_DELTA = "missing-feature-delta"
 #: Degrade-LOUD token for an unreadable/absent charter template -- the one
 #: local asset this tool reads besides the feature-delta.
 VERDICT_MISSING_CHARTER_TEMPLATE = "missing-charter-template"
+
+#: Degrade-LOUD token for a charter template that DOES exist on both sides
+#: (the shipped/installed copy AND the operator's own checkout copy) but
+#: DISAGREES between them -- `resolve_packaged_asset` classifies this as
+#: AMBIGUOUS. Never silently prefer the installed copy (that is the exact
+#: defect this migration closes, Mikado D82): refuse LOUD naming both.
+VERDICT_AMBIGUOUS_CHARTER_TEMPLATE = "ambiguous-charter-template"
 
 #: Degrade-LOUD token (slice-03) for `--seed-mode bug-observable` invoked
 #: with a missing or blank `--observable` -- mirrors the naming convention of
@@ -463,25 +471,57 @@ def _load_template_skeleton_or_degrade(
     sibling-of-source-root shape relative to `__file__`. A CONSUMER repo (no
     `nWave/templates/` of its own) was missing this MODULE-RELATIVE lookup
     entirely, so it always degraded even though the shipped template was
-    findable. Tries the module-relative (shipped) location FIRST, then the
-    `repo_root`-relative location (kept as a fallback for a target that
-    carries its own copy) -- degrades LOUD, naming BOTH locations tried,
-    only when the template is found at NEITHER.
+    findable.
+
+    Migration (Mikado D82): resolving module-relative FIRST and falling back
+    to `repo_root`-relative only on read failure meant a `repo_root` that
+    carries its OWN, DIFFERENT copy of the template was never even compared
+    -- the module-relative (shipped/installed) copy silently won every time,
+    with no signal that the operator's own copy disagreed. Now routed
+    through the shared `resolve_packaged_asset` producer (same primitive
+    `wave_gate_stack_dispatch.resolve_stack` and `skill_normative_gate`
+    already use): the module-relative path is named `installed` explicitly
+    (not re-derived via `installed_package_root()`) so this stays anchored to
+    `__file__`, matching the pre-migration resolution shape byte-for-byte in
+    every non-divergent case. `repo_root` seeds the developer-checkout search
+    (`.git` adjacency). AMBIGUOUS -- both copies exist and their content
+    digests differ -- refuses LOUD naming both paths, never silently prefers
+    the installed one. An absent template on both sides keeps the original
+    degrade message, naming both locations tried (unchanged shape, so the
+    existing NEITHER-found regression pin keeps its exact wording).
 
     Returns:
         `(template_skeleton, None)` on success -- the caller proceeds.
-        `(None, exit_code)` when the template is unreadable at both
-        locations -- the caller MUST `return exit_code` immediately (the
-        degrade-LOUD payload has already been printed).
+        `(None, exit_code)` when the template is unreadable, or AMBIGUOUS,
+        at both/either location -- the caller MUST `return exit_code`
+        immediately (the degrade-LOUD payload has already been printed).
     """
     module_relative_path = Path(__file__).resolve().parents[3] / _TEMPLATE_RELATIVE_PATH
     repo_root_relative_path = repo_root / _TEMPLATE_RELATIVE_PATH
 
-    for template_path in (module_relative_path, repo_root_relative_path):
-        try:
-            template_content = template_path.read_text(encoding="utf-8")
-        except OSError:
-            continue
+    resolution = resolve_packaged_asset(
+        str(_TEMPLATE_RELATIVE_PATH), start=repo_root, installed=module_relative_path
+    )
+
+    if resolution.origin is AssetOrigin.AMBIGUOUS:
+        exit_code = _degrade(
+            feature_id,
+            VERDICT_AMBIGUOUS_CHARTER_TEMPLATE,
+            f"WHAT  {resolution.detail}, and this invocation named neither.\n"
+            f"WHY   scaffolding from the installed copy here would silently "
+            f"ignore a local template edit at {resolution.repo} the operator "
+            f"is actually working against -- the failure this refusal exists "
+            f"to prevent is a scaffold built from a template the operator did "
+            f"not intend.\n"
+            f"HOW   reconcile the two copies (sync one to match the other), "
+            f"then re-run des charter-scaffold. installed: "
+            f"{resolution.installed}, checkout: {resolution.repo}",
+        )
+        return None, exit_code
+
+    if resolution.is_usable:
+        assert resolution.path is not None
+        template_content = resolution.path.read_text(encoding="utf-8")
         return _extract_template_skeleton(template_content), None
 
     exit_code = _degrade(

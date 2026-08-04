@@ -1,96 +1,53 @@
-"""Port-parity + canonicalization-invariance contract test for the slice-04 port.
+"""Canonicalization-invariance + anti-laundering laws over the §5.3 digest core.
 
-slice-04 of oss-feature-end-emit-cli RELOCATES the §5.3 coverage-map verify core
-from the upstream script ``scripts/cli/verify_coverage_map.py`` into a new
-``src/des/application/coverage_map_verify_service`` module (reuse-by-relocation,
-DDD-8 / option (b)). Reuse-by-relocation has ONE failure mode the acceptance
-slice cannot catch: the ported copy SILENTLY DRIFTS from the upstream SSOT (a
-canonicalization step dropped, a refusal cause re-classified). The acceptance
-slice (``tests/des/acceptance/oss_feature_end_emit_cli``) drives the cycle and
-sees only PASS/REFUSE -- it cannot tell whether the ported digest equals the
-upstream digest byte-for-byte.
+HISTORY (why this file exists, and why its scope narrowed): slice-04 of
+oss-feature-end-emit-cli RELOCATED the §5.3 coverage-map verify core from the
+upstream script ``scripts/cli/verify_coverage_map.py`` into
+``src/des/application/coverage_map_verify_service`` (reuse-by-relocation,
+DDD-8 / option (b)). At that point TWO independently maintained copies of the
+core existed, and this file pinned PARITY between them -- the ported digest
+equal to the upstream digest, and the two verify entry points agreeing on a
+closed set of golden vectors.
 
-This is a CONTRACT test (not an acceptance test): it pins the PORT itself. It
-imports BOTH cores -- the upstream script core (the SSOT) and the ported
-``des.application`` core (the relocation target) -- and asserts they agree:
+AD-59 (ARCH_TECH_DEBT.md:527) then found the "two copies" premise itself was
+the defect: the scripts/ copy was never boundary-forced (scripts/ already
+legally imports from ``des.*``), so the two ~identical copies were folded --
+the CLI now imports the §5.3 core's functions directly from
+``des.application.coverage_map_verify_service`` (see
+``tests/des/unit/cli/test_verify_coverage_map_shares_mandatory_sections.py``
+for the object-identity pin proving the fold). Once there is exactly ONE core
+object, "parity between the ported copy and the upstream copy" is a
+tautology -- comparing a function to itself. The two tests that asserted
+exactly that (``test_ported_digest_matches_upstream_for_any_body`` and
+``test_ported_structural_and_digest_verdict_matches_upstream``) were DELETED
+here as vacuous, not merely disabled: a docstring describing a parity that no
+longer exists would teach the next reader a false contract.
 
-  1. **Digest parity (PBT, canonicalization-invariance LAW)** -- for ANY
-     well-formed coverage-map body Hypothesis generates, the ported core's §5.3
-     canonical digest EQUALS the upstream core's, AND is INVARIANT under the four
-     §5.3 normalizations {LF-normalization, trailing-whitespace strip, blank-line
-     collapse, feature-surface bullet reorder}, AND a body whose SIGNED content
-     differs yields a DIFFERENT digest (the anti-laundering law: you cannot edit
-     signed content without breaking the digest). This is the anti-laundering
-     invariant stated as a universal law over the unbounded body domain, not as
-     three examples -- the right paradigm for a pure layer-1 algorithm
-     (nw-property-based-testing; the falsifier-gate PASSES: the body domain is
-     unbounded and the invariant is value-independent).
+What survives, and why it is NOT vacuous: two of the original four tests
+state genuine laws about the §5.3 canonicalization algorithm itself, over the
+now-single core -- they hold regardless of how many copies of the core exist,
+because they never compared "ported" against "upstream" in the first place:
 
-  2. **Verdict parity (golden vectors)** -- over a closed set of golden
-     coverage-map vectors {signed-pass, unsigned, stale-digest, malformed}, the
-     ported verify entry point produces the SAME accept/refuse verdict + the SAME
-     refusal token as the upstream core. Closed-world finite set -> parametrize,
-     NOT PBT (falsifier-gate: finite + enumerable).
+  1. **Canonicalization-invariance law** -- the digest is INVARIANT under the
+     four §5.3-absorbed normalizations {LF-normalization, trailing-whitespace
+     strip, blank-line collapse, feature-surface bullet reorder}. A body and
+     its cosmetically-perturbed twin MUST hash identically.
+  2. **Anti-laundering law** -- editing SIGNED content (the four mandatory
+     sections excluding ``## Signoff``) MUST change the digest. You cannot
+     alter what was signed without invalidating the signature.
 
-Mandate-13 NOTE: this is NOT an acceptance test driving the feature through a
-port -- it is a drift-guard on the relocation. It legitimately imports the ported
-module (the SUT of THIS contract test IS the ported module's parity with its
-SSOT). It is layer-1/2 pure-function (stdlib digest algorithm), so PBT is
-permitted (Mandate 9: PBT full at layers 1-2). It lives under
-``tests/des/integration`` alongside the other contract/drift guards, NOT under
-the acceptance slice.
-
-RED-FOR-RIGHT-REASON (pre-DELIVER gate): the ported module does NOT exist yet, so
-the guarded import below fails the test with a SEMANTIC ``pytest.fail`` carrying a
-``MISSING_FUNCTIONALITY`` marker -- a RED classification, NOT a BROKEN
-``ImportError`` (Mandate 7: RED not BROKEN). Once DELIVER ports the core, the
-guard passes and the parity assertions become live.
+Both are stated as universal laws over the unbounded coverage-map-body domain
+via Hypothesis, not as fixed examples -- the falsifier-gate reasoning for a
+pure layer-1/2 algorithm applies regardless of how many call sites the
+algorithm has (nw-property-based-testing; Mandate 9: PBT full at layers 1-2).
 """
 
 from __future__ import annotations
 
-import importlib
-import sys
-from pathlib import Path
-
-import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-
-# The upstream §5.3 verify core -- the SSOT the port must match. It lives under
-# scripts/, so the scripts root is added to sys.path (the same way other
-# integration guards reach a scripts core). This import is the SSOT side of the
-# parity, NOT the SUT.
-_SCRIPTS_ROOT = Path(__file__).resolve().parents[3] / "scripts"
-if str(_SCRIPTS_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_ROOT))
-
-from cli import verify_coverage_map as _upstream
-
-
-# The ported module DESIGN target (DDD-8). Does not exist until DELIVER. The
-# guarded import keeps this RED (semantic fail), not BROKEN (ImportError).
-_PORTED_MODULE = "des.application.coverage_map_verify_service"
-
-
-def _ported():
-    """Import the ported verify core or fail RED with MISSING_FUNCTIONALITY.
-
-    Returns the ported module. When it does not exist yet (pre-DELIVER), fails
-    the test with a semantic message classified MISSING_FUNCTIONALITY -- a RED
-    signal the crafter clears by creating the module, never a BROKEN
-    infrastructure error.
-    """
-    try:
-        return importlib.import_module(_PORTED_MODULE)
-    except ModuleNotFoundError:
-        pytest.fail(
-            f"MISSING_FUNCTIONALITY: the ported verify core {_PORTED_MODULE!r} "
-            "does not exist yet (slice-04 DDD-8 relocates the §5.3 core here). "
-            "DELIVER must create it as a byte-for-byte relocation of the upstream "
-            "scripts/cli/verify_coverage_map.py §5.3 core.",
-        )
+from des.application import coverage_map_verify_service as _core
 
 
 # --- §5.3 well-formed coverage-map body strategy ------------------------------
@@ -171,32 +128,18 @@ def _perturb_non_signed(body: str) -> str:
     return "\r\n".join(out) + "\r\n\r\n"
 
 
-# --- 1. Digest parity + canonicalization-invariance LAW (PBT) -----------------
-
-
-@settings(max_examples=60, deadline=400)
-@given(body=_well_formed_coverage_map_body())
-def test_ported_digest_matches_upstream_for_any_body(body: str) -> None:
-    """The ported §5.3 digest EQUALS the upstream digest for ANY well-formed body."""
-    ported = _ported()
-    assert ported._compute_canonical_digest(
-        body
-    ) == _upstream._compute_canonical_digest(body)
-
-
 @settings(max_examples=60, deadline=400)
 @given(body=_well_formed_coverage_map_body())
 def test_ported_digest_invariant_under_canonicalized_perturbations(body: str) -> None:
-    """The ported digest is INVARIANT under the four §5.3-absorbed normalizations.
+    """The §5.3 digest is INVARIANT under the four canonicalization-absorbed
+    normalizations.
 
     {LF-normalization, trailing-whitespace strip, blank-line collapse,
     feature-surface bullet reorder} are exactly the perturbations §5.3 absorbs --
-    a body and its perturbed twin MUST yield the same canonical digest. This is
-    the law a drifted port would break.
+    a body and its perturbed twin MUST yield the same canonical digest.
     """
-    ported = _ported()
     perturbed = _perturb_non_signed(body)
-    assert ported._compute_canonical_digest(body) == ported._compute_canonical_digest(
+    assert _core._compute_canonical_digest(body) == _core._compute_canonical_digest(
         perturbed
     )
 
@@ -216,78 +159,11 @@ def test_ported_digest_changes_when_signed_content_changes(
     signed content without breaking the digest -- the core of why a `_pending_` /
     minted digest can never equal a real signature over edited content.
     """
-    ported = _ported()
     edited = body.replace(
         "## Feature surface declared\n",
         f"## Feature surface declared\n- {extra}-injected\n",
         1,
     )
-    assert ported._compute_canonical_digest(body) != ported._compute_canonical_digest(
+    assert _core._compute_canonical_digest(body) != _core._compute_canonical_digest(
         edited
     )
-
-
-# --- 2. Verdict parity over golden vectors (closed-world parametrize) ----------
-
-
-def _golden_signed_body() -> str:
-    """A genuinely-signed golden vector the verify core ACCEPTS."""
-    base = (
-        "# Coverage Map -- golden\n\n"
-        "## Feature surface declared\n- golden-surface\n\n"
-        "## NOT covered -- and why\n_none_\n\n"
-        "## Known residues carried forward\n_none_\n\n"
-        "## Negative-space completeness statement\nAll covered.\n\n"
-        "## Signoff\n- reviewed-content-digest: {digest}\n"
-    )
-    digest = _upstream._compute_canonical_digest(base.format(digest="_pending_"))
-    return base.format(digest=digest)
-
-
-def _golden_unsigned_body() -> str:
-    return _golden_signed_body().replace(
-        _upstream._extract_recorded_digest(_golden_signed_body()) or "x", "_pending_"
-    )
-
-
-def _golden_stale_body() -> str:
-    import hashlib
-
-    stale = hashlib.sha256(b"golden-stale").hexdigest()
-    signed = _golden_signed_body()
-    recorded = _upstream._extract_recorded_digest(signed) or "x"
-    return signed.replace(recorded, stale)
-
-
-# Closed, enumerable set of golden vectors -> parametrize, NOT PBT (falsifier-gate
-# §4-bis: finite + listable). Each maps to the upstream verdict the ported entry
-# point must reproduce: True = accepted, False = refused.
-_GOLDEN_VECTORS = {
-    "signed-pass": (_golden_signed_body, True),
-    "unsigned": (_golden_unsigned_body, False),
-    "stale-digest": (_golden_stale_body, False),
-}
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize("vector", sorted(_GOLDEN_VECTORS))
-def test_ported_structural_and_digest_verdict_matches_upstream(vector: str) -> None:
-    """The ported verify verdict EQUALS the upstream verdict over golden vectors.
-
-    For each golden coverage-map vector, the ported core's structural-complete +
-    recorded-digest-matches verdict (the digest leg of the verify pipeline) MUST
-    equal the upstream core's. A drifted port that re-classified any cause would
-    diverge here.
-    """
-    ported = _ported()
-    build_body, _ = _GOLDEN_VECTORS[vector]
-    body = build_body()
-
-    upstream_ok = _upstream._check_structural_completeness(body) and (
-        _upstream._extract_recorded_digest(body)
-        == _upstream._compute_canonical_digest(body)
-    )
-    ported_ok = ported._check_structural_completeness(body) and (
-        ported._extract_recorded_digest(body) == ported._compute_canonical_digest(body)
-    )
-    assert ported_ok == upstream_ok

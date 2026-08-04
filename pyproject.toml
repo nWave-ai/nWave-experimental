@@ -30,7 +30,7 @@ path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave"
-version = "4.0.0+atddpure.1622336"
+version = "4.0.0+atddpure.9689d60"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -110,7 +110,7 @@ dev = [
     "pytest-split>=0.11.0",
     "allure-pytest>=2.13.0",
     "respx>=0.20.0",
-    "hypothesis>=6.163.0",
+    "hypothesis>=6.164.0",
     # Mutation testing
     "cosmic-ray>=8.4.0",
     "mutmut>=3.6.0",

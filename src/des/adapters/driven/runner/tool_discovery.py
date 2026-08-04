@@ -118,4 +118,20 @@ def resolve_tool(
     return ToolResolution(rung="not-found", remediation=remediation)
 
 
-__all__ = ["ToolResolution", "resolve_tool"]
+def env_with_tool_dir(tool_path: str) -> dict[str, str]:
+    """A copied env with the resolved tool's own dir prepended to ``PATH``.
+
+    So a shelled tool finds its own toolchain siblings even when it was
+    resolved off PATH (the known-location rung). Consolidates the
+    byte-identical PATH-prepending body previously triplicated across
+    ``java_runner._env_with_mvn_dir`` / ``csharp_runner._env_with_dotnet_dir``
+    / ``go_runner._env_with_go_dir`` (fix-runner-scope-discover-dedup).
+    """
+    env = dict(os.environ)
+    tool_dir = str(Path(tool_path).parent)
+    existing = env.get("PATH", "")
+    env["PATH"] = tool_dir + os.pathsep + existing if existing else tool_dir
+    return env
+
+
+__all__ = ["ToolResolution", "env_with_tool_dir", "resolve_tool"]

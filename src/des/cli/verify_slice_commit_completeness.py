@@ -91,8 +91,15 @@ from des.cli.carpaccio_format import (
     parse_slice_plan,
 )
 from des.cli.human_surface import Verdict, print_human_summary
-from des.cli.run_contract_gate import _GATE_INDETERMINATE_EXIT_CODE, extract_gate_scope
+from des.cli.run_contract_gate import (
+    _GATE_INDETERMINATE_EXIT_CODE,
+    _commit_head_raced,
+    extract_gate_scope,
+)
 from des.cli.verify_deliver_integrity import _slice_commit_verified_slices
+from des.domain.gate_scope_trailer import (
+    PLACEHOLDER_GATE_SCOPE_DIGEST as _ALL_ZERO_GATE_SCOPE_DIGEST,
+)
 from des.domain.lane_profile import AtRequirement
 from des.domain.repo_path_resolver import feature_delta_path
 from des.domain.slice_id_trailer import (
@@ -109,16 +116,6 @@ from des.ports.test_runner_port import (
 from des.ports.test_runner_port import resolve as resolve_runner
 from des.runtime.interpreter import Capability, InterpreterUnavailable, des_spawn
 from des.runtime.spawn import GIT_TIMEOUT_ENV, git_timeout_seconds, spawn
-
-
-# The all-zero placeholder digest `des commit-slice` stamps on the FIRST
-# (pre-amend) commit, mirroring `commit_slice._PLACEHOLDER_DIGEST` (kept as
-# an independent module-level literal rather than a cross-import -- that
-# module already imports FROM this one, so importing back would cycle).
-# 64 zero-hex characters match the `Gate-Scope:` trailer's own well-formed
-# shape (`extract_gate_scope`'s `[0-9a-f]{64}` regex matches it cleanly) yet
-# unmistakably attest nothing real.
-_ALL_ZERO_GATE_SCOPE_DIGEST = "0" * 64
 
 
 def _gate_scope_seal_intact(commit_message: str) -> bool:
@@ -423,41 +420,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Explicitly select a discovered governed historical declaration.",
     )
     return parser
-
-
-def _commit_head_raced(
-    repo: Path, expected_head: str | None
-) -> dict[str, object] | None:
-    """Detect a HEAD that has raced off the pinned ``expected_head`` SHA (M9 / F3).
-
-    Returns a `CommitHeadRaced` payload when HEAD has moved off the pinned SHA;
-    None when HEAD still matches (or no `--expected-head` was given, so no race
-    check runs). Under a concurrent amend/rebase the HEAD the gate was launched
-    against can move before the gate inspects it -- a stale verdict. Re-reading
-    HEAD makes the race detectable and fail-closed.
-    """
-    if expected_head is None:
-        return None
-    try:
-        current = _git(repo, "rev-parse", "HEAD").strip()
-    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
-        return {
-            "event": "CommitHeadRaced",
-            "pinned_sha": expected_head,
-            "current_sha": "",
-            "error": f"cannot re-read HEAD to verify the pinned SHA: {exc}",
-        }
-    if current == expected_head:
-        return None
-    return {
-        "event": "CommitHeadRaced",
-        "pinned_sha": expected_head,
-        "current_sha": current,
-        "error": (
-            "HEAD moved during the G_COMMIT exit gate "
-            f"(pinned {expected_head}, now {current}); re-run the gate"
-        ),
-    }
 
 
 def _emit(payload: dict[str, object]) -> None:

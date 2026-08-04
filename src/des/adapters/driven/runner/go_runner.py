@@ -39,16 +39,12 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from des.adapters.driven.runner.pytest_runner import (
-    _signal_kill_reason,
-    run_timeout_seconds,
-)
-from des.adapters.driven.runner.tool_discovery import resolve_tool
-from des.ports.test_runner_port import RunnerAdapterUnavailable, RunVerdict
+from des.adapters.driven.runner.scope_run import run_declared_scope
+from des.adapters.driven.runner.tool_discovery import env_with_tool_dir, resolve_tool
 
 
 if TYPE_CHECKING:
-    from des.ports.test_runner_port import RunnerAdapter
+    from des.ports.test_runner_port import RunnerAdapter, RunVerdict
 
 
 # The go binary name resolved at the head of the declared command.
@@ -81,68 +77,27 @@ def run_go_scope(
 ) -> RunVerdict:
     """Shell the declared go command in ``target_root``; map the exit code.
 
-    ``scoped_node_ids`` carries the feature's declared ``test_command`` tokens
-    (the per-runner scope, NOT node-ids). The leading token is the go binary
-    resolved via the shared discovery scale; the rest is the subcommand shelled
-    as-is. Returns PASS/FAIL or raises ``RunnerAdapterUnavailable`` for the single
-    INDETERMINATE row (go-absent). Unlike cargo there is NO exit-4 empty-scope row.
+    Thin delegator (fix-runner-scope-discover-dedup slice-03): supplies only
+    go's own default binary / known locations / install hint / tool label /
+    env builder to the SHARED ``scope_run.run_declared_scope``. ``resolve_tool``
+    and ``subprocess`` are passed through BY REFERENCE (never called here) so
+    a monkeypatch of ``go_runner.resolve_tool`` / ``go_runner.subprocess``
+    (pre-existing pinned regressions) still takes effect: Python resolves
+    those free variables from this module's own globals at call time.
     """
-    binary = scoped_node_ids[0] if scoped_node_ids else _GO_NAME
-    subcommand = scoped_node_ids[1:]
-
-    resolution = resolve_tool(
-        binary,
-        GO_KNOWN_LOCATIONS,
+    return run_declared_scope(
+        adapter,
+        target_root,
+        scoped_node_ids,
         base_dir=target_root,
+        default_binary=_GO_NAME,
+        known_locations=GO_KNOWN_LOCATIONS,
         install_hint=GO_INSTALL_HINT,
+        tool_label="go",
+        env_builder=env_with_tool_dir,
+        resolve_tool_fn=resolve_tool,
+        subprocess_module=subprocess,
     )
-    if resolution.path is None:
-        raise RunnerAdapterUnavailable(adapter.name, reason=resolution.remediation)
-
-    try:
-        completed = subprocess.run(
-            [resolution.path, *subcommand],
-            capture_output=True,
-            text=True,
-            cwd=target_root,
-            env=_env_with_go_dir(resolution.path),
-            timeout=run_timeout_seconds(),
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RunnerAdapterUnavailable(
-            adapter.name,
-            reason=(
-                f"the go command did not complete within "
-                f"{run_timeout_seconds():.0f}s (a hanging/deadlocking run) -- "
-                "INDETERMINATE, never a silent unbounded hang; raise "
-                "NWAVE_GATE_RUN_TIMEOUT if this is a legitimate long run"
-            ),
-        ) from exc
-
-    kill_reason = _signal_kill_reason(completed.returncode)
-    if kill_reason is not None:
-        raise RunnerAdapterUnavailable(
-            adapter.name,
-            reason=(
-                f"the go run was killed by the OS ({kill_reason}), not a "
-                "test failure -- INDETERMINATE, retry once memory/load recover"
-            ),
-        )
-
-    return RunVerdict(passed=completed.returncode == 0, runner=adapter.name)
-
-
-def _env_with_go_dir(go_path: str) -> dict[str, str]:
-    """A copied env with the resolved go's dir prepended to ``PATH``.
-
-    So the shelled go finds its own toolchain siblings even when the resolved go
-    was found off PATH (the known-location rung).
-    """
-    env = dict(os.environ)
-    go_dir = str(Path(go_path).parent)
-    existing = env.get("PATH", "")
-    env["PATH"] = go_dir + os.pathsep + existing if existing else go_dir
-    return env
 
 
 __all__ = ["GO_KNOWN_LOCATIONS", "run_go_scope"]

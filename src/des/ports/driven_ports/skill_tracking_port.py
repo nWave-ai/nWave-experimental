@@ -3,7 +3,7 @@
 Abstract interface defining how the application layer logs skill load events.
 
 Defined by: Application layer observability requirements.
-Implemented by: JsonlSkillTracker (infrastructure adapter), NullSkillTracker (no-op).
+Implemented by: JsonlSkillTracker (infrastructure adapter).
 """
 
 from abc import ABC, abstractmethod

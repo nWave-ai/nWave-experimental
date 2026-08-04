@@ -1,10 +1,16 @@
 # Dispatch SSOT — atdd_pure mode.
 #
 # THE single source for "what an atdd_pure dispatch must contain". Consumed by:
-#   - `des dispatch`               (RENDERS a dispatch from this)
+#   - `des dispatch`               (reads `profiles.full.sections` + `profiles.lane.*`
+#                                   to select a dispatch's section set; section bodies
+#                                   are rendered from dispatch.py, not from this file)
 #   - atdd_pure_prompt_validator   (CHECKS a dispatch against this — via the
 #                                   LANE_PROFILES projection, drift-checked)
-#   - skills nw-execute/nw-deliver (POINT here via dispatch-ref; no inline template)
+#   - skills nw-execute/nw-deliver (NOT YET — nw-execute still carries its own inline
+#                                   copy of the dispatch prompt. Replacing that copy
+#                                   with a dispatch-ref pointer is the TARGET, not
+#                                   today's state; owned by the pinned-lifecycle epic
+#                                   F-DES-ATDD-PURE-DISPATCH-LIFECYCLE)
 #
 # Generator and checker share ONE source → they cannot drift. The operator supplies
 # only the fuzzy fills ({intent}, task specifics); the SYSTEM produces the checked
@@ -15,96 +21,23 @@
 version: 1
 mode: atdd_pure
 
-# The DES-* marker set, in emission order. `value` = literal; `placeholder` = filled.
-markers:
-  - {key: "DES-VALIDATION", value: "required"}
-  - {key: "DES-PROJECT-ID", placeholder: "{feature_id}"}
-  - {key: "DES-MODE", value: "atdd_pure"}
-  - {key: "DES-PHASE", placeholder: "{phase}"}
-  - {key: "DES-SLICE", placeholder: "{slice}"}
-  - {key: "DES-WAVE", value: "deliver"}
-  # lane dispatches additionally emit (appended by the lane profile, see `profiles.lane`):
-  #   DES-LANE + DES-LANE-JUSTIFICATION (when the lane sets requires: [lane_justification])
-
-# The canonical ordered section set + each section's scaffold template.
-# Placeholders: {feature_id} {slice} {phase} {agent} {command} {lane_title} {intent}
-# {task_context} {design_context} {boundary} — filled by the renderer.
+# The canonical ordered section id set — each entry is an `id` only; section
+# BODIES are rendered from dispatch.py using placeholders {feature_id} {slice}
+# {phase} {agent} {command} {lane_title} {intent} {task_context} {design_context}
+# {boundary}, not from a field in this file (see header above).
 sections:
   - id: DES_METADATA
-    template: |
-      Slice: {slice}
-      Feature: {feature_id}
-      Phase: {phase}
-      Command: {command}
   - id: AGENT_IDENTITY
-    template: |
-      Agent: {agent}
   - id: SKILL_LOADING
-    template: |
-      Before starting, read your skill files for methodology guidance.
-      Skills path: ~/.claude/skills/nw-{skill-name}/SKILL.md
-      Always load at phase entry: nw-tdd-methodology, nw-quality-framework.
-      In atdd_pure mode also load nw-crafter-discipline-atdd-pure at phase entry.
-      At A_GREEN ALSO load the paradigm-appropriate code-design catalog -- nw-code-design-oo
-      (Object Calisthenics + RPP anti-smell taxonomy + effect isolation) for an OO project, or
-      nw-code-design-fp for an FP project -- so production code is written smell-free by construction.
-      Do NOT load nw-refactor (E_BATCH_REFACTOR phase only) or nw-mutation-test (project-DEPRECATED,
-      FR-1) at A_GREEN -- they are phase-inappropriate noise here, not write-time skills.
-      Resolve structural facts via mcp__tsunami__* (callers_of / reads_of), never ad-hoc grep.
   - id: TASK_CONTEXT
-    template: |
-      {task_context}
   - id: DESIGN_CONTEXT
-    template: |
-      {design_context}
   - id: ATDD_PURE_PHASES
-    template: |
-      atdd_pure per-slice cycle (ADR-028 D6). This dispatch executes the phase named in
-      the DES-PHASE marker.
-      - A_GREEN: activate the slice's DISTILL-authored ATs and implement the MINIMUM
-        production code that turns them GREEN. Do NOT author tests. No defensive code
-        beyond AT-driven need.
-      - {intent}
   - id: QUALITY_GATES
-    template: |
-      - All the slice's ATs pass before commit (RAW summary, -n0; check `uptime`, pause if load>10).
-        Run tests via the PROJECT'S resolved runner (e.g. `uv run python -m pytest`), NEVER a bare
-        `python` -- the target box may have no `python` on PATH (target-machine-agnostic mandate).
-      - No new tests authored by the crafter (DISTILL owns AT authorship).
-      - Coverage maintained or improved.
-      - src/des/** must NOT import scripts.* (F-D-09). ruff + mypy clean on touched files.
   - id: AT_COMPLETION_LEDGER
-    template: |
-      atdd_pure records phase outcomes to the AT-completion ledger
-      (.nwave/telemetry/atdd-pure/{feature_id}.jsonl) — the crafter does not hand-write it.
-      Do NOT commit (the orchestrator drives commit / EXAMINE / feature-end).
   - id: RECORDING_INTEGRITY
-    template: |
-      Do not fake green. State the RAW pass/fail explicitly. NEVER weaken, skip, or rewrite
-      a DISTILL-authored AT — if one cannot be satisfied, escalate to nw-acceptance-designer,
-      do not edit it.
   - id: BOUNDARY_RULES
-    template: |
-      {boundary}
-      Stay within the slice's value statement — do NOT implement adjacent slices.
   - id: TERMINATING_RUN
-    template: |
-      Report: files created/modified (paths); RAW pass/fail of the slice's ATs; ruff+mypy
-      clean; confirmation of zero test edits.
   - id: TIMEOUT_INSTRUCTION
-    template: |
-      Target ~60 turns -- a run needs room to seal, run static checks, and REPORT after the
-      last command; too small a budget kills the agent between the work and its confirmation
-      (observed ~6x: work done, closing step lost). Machine load-sensitive (`uptime`; pause if
-      load>10). STOP after the ATs are green + non-regression confirmed. Do NOT commit.
-      A finished report is not a delivered one: your final message IS the return value, so
-      SEND it (SendMessage) as the last act of the run. Going idle holding a written report
-      delivers nothing -- the same "closing step lost" failure the turn budget above guards,
-      reached by the other route. If a mandate arrives for work you have ALREADY done, do not
-      redo it: reply with the EVIDENCE (commit sha, file, ledger record) so the orchestrator
-      can verify the artifact instead of the status -- messages and status pings arrive out of
-      order with the work, so a nudge often means the orchestrator looked too early, not that
-      you failed.
 
 # Section-SELECTION profiles. `full` = every section. `review` = full minus the 5
 # implementation-only sections (a read-only review writes no code). `lane.*` rows are

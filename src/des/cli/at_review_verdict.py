@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Literal
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
+from des.adapters.driven.runner import at_discovery, cargo_runner
 from des.cli._identity_args import meaningful_identity
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import GateError
@@ -252,27 +253,11 @@ def record_review_outcome(
 # ---------------------------------------------------------------------------
 # rust-regression AT-discovery mode (B-1 bugfix, sister-reported gap) -- the
 # Rust mirror of pytest-regression's "one test_* function = one AT", for a
-# bugfix's Rust `.rs` regression-test file. Kept local to this module (not
-# `carpaccio_format`) per the bugfix slice's boundary: line/regex scan on the
-# `#[test]` attribute, no Rust parser, no Python `ast` on `.rs` source.
+# bugfix's Rust `.rs` regression-test file. Reuses the SHARED scan primitives
+# (fix-runner-scope-discover-dedup slice-04) -- cargo_runner's own
+# regex and at_discovery.strip_line_comments, by object identity -- rather
+# than an independent, byte-identical copy.
 # ---------------------------------------------------------------------------
-
-_RUST_TEST_FN_RE = re.compile(
-    r"#\[test\]\s*(?:#\[[^\]]*\]\s*)*"
-    r"(?:pub\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+(\w+)"
-)
-
-
-def _strip_rust_line_comments(source: str) -> str:
-    """Strip ``//``-to-EOL line comments before attribute matching.
-
-    Minimal robust line-scan (no Rust parser, no block-comment / string-
-    literal awareness -- deliberately out of scope): a ``#[test]`` occurring
-    only inside a ``//`` line comment is text, never a real Rust attribute,
-    and must never satisfy ``_RUST_TEST_FN_RE``. Newlines are preserved so
-    multi-line attribute-then-``fn`` matching is unaffected.
-    """
-    return "\n".join(line.split("//", 1)[0] for line in source.splitlines())
 
 
 def _malformed_rust_regression_file(detail: str) -> GateError:
@@ -291,10 +276,13 @@ def _count_rust_regression_ats(regression_test_file: Path) -> list[str]:
     ``count_pytest_regression_ats``'s module-level ``test_*`` counting.
 
     Line/regex scan (no Rust parser, no Python ``ast`` on ``.rs`` source) for
-    ``#[test]``-attributed function names -- the Rust community idiom
-    (descriptive names, not ``test_``-prefixed). Raises ``GateError`` exit 2
+    test-attributed function names -- the Rust community idiom (descriptive
+    names, not ``test_``-prefixed). Reuses ``cargo_runner._RUST_TEST_FN_RE``
+    and ``at_discovery.strip_line_comments`` by object identity
+    (fix-runner-scope-discover-dedup slice-04) instead of an independent
+    copy of the same pattern/idiom. Raises ``GateError`` exit 2
     (``MalformedInput``, ``cause="the rust regression-test file"``) when the
-    file cannot be read or has zero ``#[test]`` functions -- never a
+    file cannot be read or has zero matching functions -- never a
     silently-empty ``at_ids`` list.
     """
     try:
@@ -303,10 +291,12 @@ def _count_rust_regression_ats(regression_test_file: Path) -> list[str]:
         raise _malformed_rust_regression_file(
             f"cannot read/decode {regression_test_file}: {exc}"
         ) from exc
-    at_ids = _RUST_TEST_FN_RE.findall(_strip_rust_line_comments(source))
+    at_ids = cargo_runner._RUST_TEST_FN_RE.findall(
+        at_discovery.strip_line_comments(source)
+    )
     if not at_ids:
         raise _malformed_rust_regression_file(
-            f"zero #[test] functions found in {regression_test_file}"
+            f"zero matching test functions found in {regression_test_file}"
         )
     return at_ids
 

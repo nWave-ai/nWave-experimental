@@ -166,7 +166,6 @@ from des.cli.run_contract_gate import (
     _DigestRouteResult,
     _maybe_route_digest_through_runner,
     build_tier_exit_verdict,
-    extract_gate_scope,
 )
 from des.cli.verify_deliver_integrity import (
     _declared_slice_plan_slice_ids,
@@ -184,6 +183,15 @@ from des.domain.examine_verdict_signing import charter_seal as _charter_seal
 from des.domain.expectation_charter_mapping import CharterObligation
 from des.domain.expectation_charter_mapping import (
     latest_declared_obligation as _latest_declared_obligation,
+)
+from des.domain.gate_scope_trailer import (
+    GATE_SCOPE_TRAILER_RE as _GATE_SCOPE_LINE_RE,
+)
+from des.domain.gate_scope_trailer import (
+    PLACEHOLDER_GATE_SCOPE_DIGEST as _PLACEHOLDER_DIGEST,
+)
+from des.domain.gate_scope_trailer import (
+    has_gate_scope_prefixed_line as _has_gate_scope_prefixed_line,
 )
 from des.domain.repo_path_resolver import feature_delta_path as _feature_delta_path
 from des.domain.slice_id_trailer import extract_slice_ids
@@ -288,17 +296,6 @@ _DEGRADE_REASON_INTERPRETER_UNAVAILABLE = "gate_scope_interpreter_unavailable"
 # scope at all" from "a runner resolved but its own enumerate degraded LOUD".
 _DEGRADE_REASON_RUNNER_UNAVAILABLE = "gate_scope_runner_unavailable"
 
-
-# The placeholder digest stamped on the FIRST (pre-amend) commit. 64 zero-hex
-# matches the ``Gate-Scope:`` trailer shape (``[0-9a-f]{64}``) so the commit is
-# well-formed, yet is unmistakably a placeholder. It is replaced in step 4 by
-# the real committed-scope digest of the resulting HEAD.
-_PLACEHOLDER_DIGEST = "0" * 64
-
-# Matches a ``Gate-Scope:`` trailer line (anchored, full-line) for replacement
-# during the amend. Mirrors run_contract_gate._GATE_SCOPE_TRAILER_RE but is
-# multiline-anchored for an in-place message rewrite.
-_GATE_SCOPE_LINE_RE = re.compile(r"^Gate-Scope:.*$", re.MULTILINE)
 
 # Matches a ``Reviewed-by:`` trailer line (multiline-anchored). Presence in the
 # operator-supplied ``--message`` means the operator hand-stamped the trailer --
@@ -2311,12 +2308,18 @@ def main(argv: list[str] | None = None) -> int:
     if not args.message.strip():
         _emit({"event": "MalformedInput", "error": "--message must be non-empty"})
         return 2
-    if extract_gate_scope(args.message) is not None:
+    if _has_gate_scope_prefixed_line(args.message):
         _emit(
             {
                 "event": "MalformedInput",
                 "error": "--message must NOT contain a Gate-Scope: trailer -- it "
-                "is appended mechanically",
+                "is appended mechanically. WHAT: a line in --message starts with "
+                "'Gate-Scope:'. WHY: this trailer is stamped mechanically by "
+                "commit-slice itself after the commit lands -- a caller-supplied "
+                "one would be silently absorbed into the mechanical trailer "
+                "block and could shadow or corrupt the real digest. HOW: "
+                "remove the 'Gate-Scope:' line from --message; the trailer is "
+                "appended for you.",
             }
         )
         return 2

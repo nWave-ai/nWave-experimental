@@ -295,64 +295,6 @@ def when_gate_verifies_against_artifact(
     box["result"] = gate.run_gate_cli_directly()
 
 
-@when("the feature-end cycle reaches the walking-skeleton gate")
-def when_feature_end_reaches_gate(
-    gate: WalkingSkeletonGateComposition, box: dict[str, object]
-) -> None:
-    box["result"] = gate.run_feature_end_gate()
-
-
-@when("the feature-end gate attempts to verify the walking skeleton")
-def when_feature_end_attempts_verify(
-    gate: WalkingSkeletonGateComposition, box: dict[str, object]
-) -> None:
-    box["result"] = gate.run_feature_end_gate()
-
-
-@when("the feature-end gate verifies the walking skeleton")
-def when_feature_end_verifies(
-    gate: WalkingSkeletonGateComposition, box: dict[str, object]
-) -> None:
-    box["result"] = gate.run_feature_end_gate()
-
-
-@when(
-    "the feature-end gate verifies the walking skeleton without an explicit "
-    "tier request"
-)
-def when_verify_no_tier_request(
-    gate: WalkingSkeletonGateComposition, box: dict[str, object]
-) -> None:
-    box["result"] = gate.run_feature_end_gate(tier_request=None)
-
-
-@when(
-    "the feature-end gate verifies the walking skeleton with the container "
-    "tier requested"
-)
-def when_verify_t2_requested(
-    gate: WalkingSkeletonGateComposition, box: dict[str, object]
-) -> None:
-    box["result"] = gate.run_feature_end_gate(tier_request=Tier.T2)
-
-
-@when("the feature-end gate verifies the walking skeleton again")
-def when_verify_again(
-    gate: WalkingSkeletonGateComposition, box: dict[str, object]
-) -> None:
-    box["result"] = gate.run_feature_end_gate()
-
-
-@when(
-    "the feature-end cycle reaches a gate that self-classifies the feature as "
-    "not applicable"
-)
-def when_gate_self_classifies_na(
-    gate: WalkingSkeletonGateComposition, box: dict[str, object]
-) -> None:
-    box["result"] = gate.run_feature_end_gate()
-
-
 @when("the done-gate evaluates whether the feature can be marked done")
 def when_done_gate_evaluates(
     gate: WalkingSkeletonGateComposition, box: dict[str, object]
@@ -1041,13 +983,3 @@ def given_artifact_os_path_defect(
 @given("a real container runtime is available")
 def given_real_container_runtime(gate: WalkingSkeletonGateComposition) -> None:
     gate.set_environment_capability(TIER_CAPABILITY_BY_PHRASE["Docker available"])
-
-
-@when(
-    "the container runner installs the delivered artifact into a clean image "
-    "and runs the walking-skeleton test"
-)
-def when_container_runner_runs(
-    gate: WalkingSkeletonGateComposition, box: dict[str, object]
-) -> None:
-    box["result"] = gate.run_feature_end_gate(tier_request=Tier.T2)

@@ -31,12 +31,15 @@ from des.domain.wave_dispatch_profile import WAVE_DISPATCH_PROFILES
 from des.ports.driver_ports.validator_port import ValidationResult, ValidatorPort
 
 
-# The atdd_pure dispatch mandatory section set — matched verbatim to the T-A
-# template in nWave/skills/nw-execute/SKILL.md (the
-# ATDD-PURE-DISPATCH-TEMPLATE:BEGIN/:END block). Distinct from the classic
-# 9-section set: ATDD_PURE_PHASES replaces TDD_PHASES, AT_COMPLETION_LEDGER
-# replaces OUTCOME_RECORDING, plus SKILL_LOADING / DESIGN_CONTEXT /
-# TERMINATING_RUN. No DES-STEP-ID, no execution-log sections.
+# The atdd_pure dispatch mandatory section set — its authority is
+# `profiles.full.sections` in `nWave/dispatch/atdd_pure.yaml`, enforced by
+# `des.application.dispatch_lane_ssot.check_lane_profile_drift`'s top-level
+# drift assertion (a desync here is caught, not shipped silently). Distinct
+# from the classic 9-section set: ATDD_PURE_PHASES replaces TDD_PHASES,
+# AT_COMPLETION_LEDGER replaces OUTCOME_RECORDING, plus SKILL_LOADING /
+# DESIGN_CONTEXT / TERMINATING_RUN. No DES-STEP-ID, no execution-log sections.
+# Stays a LITERAL tuple here (validator domain purity, no yaml import) —
+# the YAML is the SSOT for its CONTENT, this tuple is the runtime copy.
 ATDD_PURE_MANDATORY_SECTIONS: tuple[str, ...] = (
     "DES_METADATA",
     "AGENT_IDENTITY",

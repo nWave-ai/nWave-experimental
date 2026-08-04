@@ -337,60 +337,6 @@ class WalkingSkeletonGateComposition:
 
     # --- When-side service methods (the gate invocations) -------------------
 
-    def run_feature_end_gate(self, *, tier_request: Tier | None = None) -> GateResult:
-        """Invoke the walking-skeleton gate via the feature-end SubagentStop branch.
-
-        Layer 3 (subprocess / FS acceptance): the production
-        `WalkingSkeletonFeatureEndGate` application service is driven directly
-        -- the feature-end branch's gate step -- over the real
-        `AtCompletionLedger` driven adapter. The build / install driven ports
-        are in-memory doubles staging the synthetic feature into a clean
-        prefix, so facet-1 entry-point presence is genuinely exercised without
-        the layer-5 `pip wheel` round-trip (slice-01 owns that vertical).
-        """
-        from des.application.walking_skeleton_feature_end_gate import (
-            WalkingSkeletonFeatureEndGate,
-        )
-        from des.domain.tier_ladder import (
-            TierCapability as ProductionTierCapability,
-        )
-        from des.domain.walking_skeleton_gate import (
-            FeatureUnderGate,
-            WalkingSkeletonAt,
-            WalkingSkeletonGate,
-        )
-
-        feature = FeatureUnderGate(
-            feature_root=self._feature_root,
-            entry_points=tuple(self._entry_points()),
-            ships_installer_artifact=_SHIP_INSTALLER_SHAPES.__contains__(self._shape),
-            walking_skeleton_at=WalkingSkeletonAt(
-                present=self._at_present, passes=self._at_passes
-            ),
-        )
-        gate = WalkingSkeletonGate(
-            artifact_builder=_StagingArtifactBuilder(),
-            staged_installer=_StagingInstaller(),
-        )
-        feature_end = WalkingSkeletonFeatureEndGate(gate, self._ledger())
-        verdict = feature_end.run(
-            feature,
-            ProductionTierCapability(self._capability.value),
-            self.deliver_dir / "ws-prefix",
-        )
-        outcome = verdict.outcome
-        return GateResult(
-            verdict=GateVerdict(outcome.verdict.value),
-            tier_of_record=Tier(outcome.tier_of_record.value),
-            exit_code=outcome.exit_code,
-            facet_violation=(
-                FacetViolationKind(outcome.facet_violation.value)
-                if outcome.facet_violation is not None
-                else None
-            ),
-            diagnostic=outcome.diagnostic,
-        )
-
     def _entry_points(self) -> list[str]:
         """The staged-prefix-relative entry points the @walking-skeleton AT invokes.
 

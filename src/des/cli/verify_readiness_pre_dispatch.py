@@ -86,7 +86,6 @@ from des.cli.axis_b_levers import (
 from des.cli.carpaccio_format import (
     GateError,
     _no_scenarios_rejection,
-    _red_seal_is_fresh,
     _slice_scenarios,
     parse_scenarios,
     parse_slice_plan,
@@ -108,6 +107,7 @@ from des.cli.validate_feature_delta import (
     validate_reuse_analysis_content,
     validate_sustainability_content,
 )
+from des.cli.verify_red_green import red_seal_fresh
 from des.domain import repo_path_resolver
 from des.domain.feature_delta_source import (
     FEATURE_DELTA_ABSENT,
@@ -411,7 +411,7 @@ def _pytest_regression_seal_clears_ownership(
     """
     if at_kind not in _REGRESSION_AT_KINDS or not regression_test_file:
         return False
-    return _red_seal_is_fresh(repo_root, repo_root / regression_test_file)
+    return red_seal_fresh(repo_root, repo_root / regression_test_file)
 
 
 def _scenario_tags_pytest_escape_remediation(

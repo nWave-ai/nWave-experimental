@@ -42,8 +42,6 @@ agree byte-for-byte (AT3 row f -- the golden-fixture probe).
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import re
 import sys
 from pathlib import Path
@@ -56,9 +54,18 @@ from des.adapters.driven.ledger.coverage_map_signoff_writer import (
 )
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.application.coverage_map_verify_service import (
-    MANDATORY_SECTIONS_IN_ORDER as _MANDATORY_SECTIONS_IN_ORDER,
+    _check_structural_completeness,
+    _compute_canonical_digest,
+    _extract_attested_class_ids,
+    _extract_recorded_digest,
+    _load_omission_class_ids,
 )
 from des.cli.human_surface import Verdict, print_human_summary
+
+
+# AD-59 fold (ARCH_TECH_DEBT.md:527): these 5 pure functions of the §5.3 verify
+# core are imported from the service, not redefined here -- the CLI and the
+# service share the SAME function objects, so the two can no longer drift.
 
 
 # Slice-06 touchpoint dispatch table -- maps the CLI `--touchpoint` value to
@@ -80,12 +87,6 @@ def _emit_touchpoint_heartbeat(touchpoint: str, project_root: Path) -> None:
     method_name = _TOUCHPOINT_HEARTBEAT_DISPATCH[touchpoint]
     ledger = AtCompletionLedger(_DEFAULT_FEATURE_ID, project_root)
     getattr(ledger, method_name)()
-
-
-# _MANDATORY_SECTIONS_IN_ORDER is imported above from
-# des.application.coverage_map_verify_service -- techdebt.md's
-# coverage-map-verify-cli-runtime-dup row: this CLI used to redefine the same
-# tuple, which could silently drift from the ported service core.
 
 
 # Refusal tokens -- the structured cause-of-refusal SSOT the CLI emits on
@@ -185,194 +186,6 @@ def _classify_coverage_map_read(coverage_map_path: Path) -> str:
         return coverage_map_path.read_text(encoding="utf-8")
     except (FileNotFoundError, UnicodeDecodeError):
         return _CoverageMapReadResult.MALFORMED
-
-
-def _check_structural_completeness(body: str) -> bool:
-    """Return True iff every mandatory section is present and in fixed order."""
-    last_index = -1
-    for heading in _MANDATORY_SECTIONS_IN_ORDER:
-        idx = body.find(heading)
-        if idx < 0 or idx <= last_index:
-            return False
-        last_index = idx
-    return True
-
-
-def _extract_recorded_digest(body: str) -> str | None:
-    """Return the recorded digest hex from the ``## Signoff`` block, or None."""
-    match = _DIGEST_LINE_PATTERN.search(body)
-    if match is None:
-        return None
-    return match.group(1)
-
-
-def _load_omission_class_ids(omission_classes_path: Path) -> tuple[str, ...] | None:
-    """Return the class-ids declared in `omission-classes.json`, or ``None``.
-
-    ``None`` -- the file is absent, unreadable, or cannot be parsed as JSON
-    with the expected `omission-classes:` list shape. The caller must treat
-    ``None`` as `MalformedInput` exit 2 (RC-G1 non-empty floor, §4.1a).
-
-    An empty list `[]` is parseable but returns an empty tuple -- the
-    caller MUST refuse a zero-class file with `MalformedInput`, never a
-    vacuous zero-class pass.
-    """
-    if not omission_classes_path.is_file():
-        return None
-    try:
-        text = omission_classes_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
-    try:
-        document = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(document, dict):
-        return None
-    classes = document.get("omission-classes")
-    if not isinstance(classes, list):
-        return None
-    ids: list[str] = []
-    for entry in classes:
-        if not isinstance(entry, dict):
-            return None
-        class_id = entry.get("id")
-        if not isinstance(class_id, str) or not class_id.strip():
-            return None
-        ids.append(class_id)
-    return tuple(ids)
-
-
-def _extract_attested_class_ids(body: str) -> tuple[str, ...]:
-    """Extract the `omission-classes-attested:` list from the `## Signoff` block.
-
-    Returns the class-ids the human attested, in document order. The list
-    is parsed as a YAML sub-document so the shape contract is the same as
-    the imported list -- `- <class-id>` bullets under the
-    `omission-classes-attested:` key.
-
-    Returns an empty tuple when the key is absent OR the value is an empty
-    list. The caller distinguishes "absent" from "present-but-empty" via
-    the presence of the `- omission-classes-attested:` line itself, which
-    the slice-05 contract requires alongside any non-vacuous signoff.
-    """
-    in_signoff = False
-    in_attested = False
-    attested: list[str] = []
-    for raw in body.split("\n"):
-        line = raw.rstrip()
-        if line.startswith("## Signoff"):
-            in_signoff = True
-            continue
-        if line.startswith("## ") and in_signoff:
-            in_signoff = False
-            in_attested = False
-            continue
-        if not in_signoff:
-            continue
-        stripped = line.strip()
-        if stripped.startswith("- omission-classes-attested:"):
-            # Inline `[]` empty-list shape.
-            tail = stripped.split(":", 1)[1].strip()
-            in_attested = tail != "[]"
-            continue
-        if in_attested:
-            if stripped.startswith("- "):
-                attested.append(stripped[2:].strip())
-                continue
-            if stripped.startswith("-"):
-                # Another top-level signoff field -- end of attested block.
-                in_attested = False
-    return tuple(attested)
-
-
-def _select_signed_sections(body: str) -> str:
-    """Return the four signed sections concatenated in L1 order.
-
-    Excludes ``## Signoff`` (cannot digest the field carrying the digest).
-    Headings of unknown sections are dropped silently.
-    """
-    chunks: dict[str, str] = {}
-    current_heading: str | None = None
-    buffer: list[str] = []
-    for line in body.split("\n"):
-        if line.startswith("## "):
-            if current_heading is not None:
-                chunks[current_heading] = "\n".join(buffer)
-            current_heading = line.rstrip()
-            buffer = [current_heading]
-        else:
-            buffer.append(line)
-    if current_heading is not None:
-        chunks[current_heading] = "\n".join(buffer)
-    signed = _MANDATORY_SECTIONS_IN_ORDER[:-1]  # exclude ## Signoff
-    return "\n".join(chunks.get(heading, "") for heading in signed)
-
-
-def _sort_feature_surface_lines(selected: str) -> str:
-    """Sort domain bullet lines under ``## Feature surface declared``."""
-    out_lines: list[str] = []
-    in_feature_surface = False
-    feature_surface_bullets: list[str] = []
-    for line in selected.split("\n"):
-        if line.startswith("## Feature surface declared"):
-            in_feature_surface = True
-            out_lines.append(line)
-            continue
-        if line.startswith("## ") and in_feature_surface:
-            out_lines.extend(sorted(feature_surface_bullets))
-            feature_surface_bullets = []
-            in_feature_surface = False
-            out_lines.append(line)
-            continue
-        if in_feature_surface and line.startswith("- "):
-            feature_surface_bullets.append(line)
-        else:
-            out_lines.append(line)
-    if in_feature_surface and feature_surface_bullets:
-        out_lines.extend(sorted(feature_surface_bullets))
-    return "\n".join(out_lines)
-
-
-def _collapse_blank_runs(text: str) -> str:
-    """Collapse blank-line runs to one; strip leading + trailing blank lines."""
-    collapsed: list[str] = []
-    prev_blank = False
-    for line in text.split("\n"):
-        if line == "":
-            if not prev_blank:
-                collapsed.append(line)
-            prev_blank = True
-        else:
-            collapsed.append(line)
-            prev_blank = False
-    while collapsed and collapsed[0] == "":
-        collapsed.pop(0)
-    while collapsed and collapsed[-1] == "":
-        collapsed.pop()
-    return "\n".join(collapsed)
-
-
-def _compute_canonical_digest(body: str) -> str:
-    """§5.3 canonicalization: select signed sections + normalize + sha256.
-
-    7-step ordered sequence:
-      1. Select the four signed sections (exclude ``## Signoff``).
-      2. Normalize line endings to LF.
-      3. Strip trailing whitespace on every line.
-      4. Collapse blank-line runs to a single blank line; strip leading
-         and trailing blank lines.
-      5. Sort domain lines under ``## Feature surface declared`` byte-wise
-         ascending; other sections preserve order (after 2-4 normalization).
-      6. Encode UTF-8 (no BOM).
-      7. SHA256, lowercase hex.
-    """
-    selected = _select_signed_sections(body)
-    selected = selected.replace("\r\n", "\n").replace("\r", "\n")
-    selected = "\n".join(line.rstrip(" \t") for line in selected.split("\n"))
-    selected = _collapse_blank_runs(selected)
-    selected = _sort_feature_surface_lines(selected)
-    return hashlib.sha256(selected.encode("utf-8")).hexdigest()
 
 
 def _commit_trailer_path(feature_root: Path) -> Path:

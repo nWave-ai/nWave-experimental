@@ -76,7 +76,17 @@ from des.application.feature_at_files import (
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_slice_gate import _feature_tag_files
 from des.cli.human_surface import Verdict, print_human_summary
+from des.domain.commit_trailer_append import (
+    is_trailer_shaped_line,
+    last_paragraph_lines,
+)
 from des.domain.gate_outcome import GateVerdict
+from des.domain.gate_scope_trailer import (
+    GATE_SCOPE_TRAILER_RE as _GATE_SCOPE_TRAILER_RE,
+)
+from des.domain.gate_scope_trailer import (
+    PLACEHOLDER_GATE_SCOPE_DIGEST as _ALL_ZERO_GATE_SCOPE_DIGEST,
+)
 from des.domain.slice_id_trailer import SLICE_TAG_RE
 from des.ports.driven_ports.committed_scope_port import (
     CommittedFileSet,
@@ -154,19 +164,6 @@ def _record_outcome(repo: Path, outcome: GateVerdict) -> None:
 # marker is referenced ONLY by ``_full_suite_marker_args`` (the feature-end
 # full-suite argv builder), so the per-slice RUN functions never wire it.
 _FULL_SUITE_MARKER = "unit or integration or acceptance"
-
-_GATE_SCOPE_TRAILER_RE = re.compile(r"^Gate-Scope:\s*([0-9a-f]{64})\s*$")
-
-# The all-zero placeholder digest `des commit-slice` stamps on the FIRST
-# (pre-amend) commit -- mirrors `commit_slice._PLACEHOLDER_DIGEST` (kept as an
-# independent module-level literal, not a cross-import, to avoid coupling this
-# module to `commit_slice`'s own module-load order). RCA fix-null-gate-scope-
-# exit-gate finding #1: a placeholder trailer is well-formed (matches
-# `_GATE_SCOPE_TRAILER_RE` cleanly) yet attests nothing -- it is NOT the same
-# class of problem as a genuine mismatch (a real digest that no longer agrees
-# with a fresh collect), so `_mode_verify_gate_scope` classifies it under its
-# OWN honest `reason="unsealed"`, distinct from `reason="mismatch"`.
-_ALL_ZERO_GATE_SCOPE_DIGEST = "0" * 64
 
 # A Gherkin `@slice-NN` tag -- the carpaccio slice scoping anchor (DDD-5).
 # Imported from the domain SSOT (fix-slice-id-grammar-drift-ssot) so a
@@ -1965,13 +1962,43 @@ def _assert_parity(scope: _CollectedScope) -> None:
         )
 
 
+# git's own `cherry-pick -x` tail -- the ONE non-`Key: value` line the
+# trailer-block reader tolerates after a `Gate-Scope:` line (EXAMINE find,
+# fix-gate-scope-constants-dedup: 17/564 Gate-Scope-bearing commits in this
+# repo's own history carry exactly this line after their trailer).
+_CHERRY_PICK_LINE_RE = re.compile(r"^\(cherry picked from commit [0-9a-f]{7,40}\)$")
+
+
 def extract_gate_scope(commit_message: str) -> str | None:
-    """Return the digest carried by a `Gate-Scope:` commit trailer, if any."""
-    for line in commit_message.splitlines():
-        match = _GATE_SCOPE_TRAILER_RE.match(line.strip())
-        if match:
-            return match.group(1)
-    return None
+    """Return the digest carried by a `Gate-Scope:` commit trailer, if any.
+
+    The matching line must sit in the message's FINAL TRAILER BLOCK: the
+    last paragraph (``last_paragraph_lines``) counts as one only when every
+    line in it is trailer-shaped (``is_trailer_shaped_line`` -- the SAME
+    predicate ``append_mechanical_trailer_block`` uses on the write side) or
+    is git's own cherry-pick tail. A `Gate-Scope:` line sitting mid-body,
+    with non-trailer prose following it, is therefore treated as absent --
+    and so is a trailer block carrying MORE THAN ONE `Gate-Scope:` line:
+    with two candidates nobody can tell which one attests the commit, so
+    refusing is the only honest answer (EXAMINE finds,
+    fix-gate-scope-constants-dedup).
+    """
+    paragraph = last_paragraph_lines(commit_message)
+    if paragraph is None:
+        return None
+    if not all(
+        is_trailer_shaped_line(line) or _CHERRY_PICK_LINE_RE.match(line)
+        for line in paragraph
+    ):
+        return None
+    matches = [
+        match.group(1)
+        for line in paragraph
+        if (match := _GATE_SCOPE_TRAILER_RE.match(line.strip()))
+    ]
+    if len(matches) != 1:
+        return None
+    return matches[0]
 
 
 # The env var that overrides the contract-suite RUN worker count.
@@ -2478,6 +2505,27 @@ def _mode_verify_gate_scope(repo: Path, commit: str, at_kind: str | None = None)
     OTHER (e.g. cargo) lockfile-resolved runner. Every other ``--at-kind``
     (default / ``gherkin``) keeps the EXISTING runner-routed behavior.
     """
+    # GDP-1: validate the repo/commit are READABLE before resolving a test
+    # runner or computing a digest -- mirrors verify_slice_commit_completeness's
+    # identical git-log read + exception handling (EXAMINE find,
+    # fix-gate-scope-constants-dedup): a nonexistent --repo used to reach
+    # test_runner_port's lockfile scan first and crash with a bare
+    # FileNotFoundError from `target_root.iterdir()`. Reading the commit
+    # message here, first, degrades a nonexistent --repo to the SAME
+    # MalformedInput/exit-2 shape `verify-slice-commit` already uses on the
+    # identical input, instead of a bare traceback.
+    try:
+        commit_message = _git(repo, "log", "-1", "--format=%B", commit)
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        _emit(
+            {
+                "event": "MalformedInput",
+                "error": f"cannot read commit {commit!r}: {exc}",
+            }
+        )
+        return 2
+    declared = extract_gate_scope(commit_message)
+
     if at_kind != "pytest-regression":
         route = _maybe_route_digest_through_runner(repo)
         if isinstance(route, _DigestRouteDegrade):
@@ -2494,9 +2542,6 @@ def _mode_verify_gate_scope(repo: Path, commit: str, at_kind: str | None = None)
     if isinstance(fresh_result, _CommittedScopeRefusal):
         return fresh_result.exit_code
     fresh = fresh_result.digest
-
-    commit_message = _git(repo, "log", "-1", "--format=%B", commit)
-    declared = extract_gate_scope(commit_message)
 
     if declared is None:
         _emit(

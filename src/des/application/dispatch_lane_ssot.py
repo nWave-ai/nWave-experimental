@@ -27,6 +27,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from des.application.atdd_pure_prompt_validator import ATDD_PURE_MANDATORY_SECTIONS
 from des.domain.lane_profile import LANE_PROFILES
 
 
@@ -143,6 +144,20 @@ def check_lane_profile_drift(repo_root: Path) -> list[str]:
     live_lane_ids = set(LANE_PROFILES)
 
     drift: list[str] = []
+
+    full_sections_set = set(full_sections)
+    mandatory_sections_set = set(ATDD_PURE_MANDATORY_SECTIONS)
+    if full_sections_set != mandatory_sections_set:
+        only_in_yaml = tuple(
+            s for s in full_sections if s not in mandatory_sections_set
+        )
+        only_in_live = tuple(
+            s for s in ATDD_PURE_MANDATORY_SECTIONS if s not in full_sections_set
+        )
+        drift.append(
+            "ATDD_PURE_MANDATORY_SECTIONS and profiles.full.sections differ: "
+            f"only-in-YAML={only_in_yaml!r} only-in-live={only_in_live!r}"
+        )
 
     for lane_id in sorted(yaml_lane_ids - live_lane_ids):
         drift.append(

@@ -65,3 +65,32 @@ def append_mechanical_trailer_block(message: str, trailer_block: str) -> str:
     )
     separator = "\n" if last_paragraph_is_trailer_shaped else "\n\n"
     return f"{stripped}{separator}{trailer_block}"
+
+
+def is_trailer_shaped_line(line: str) -> bool:
+    """Whether *line* matches the `Key: value` trailer shape `_TRAILER_LINE_RE`
+    defines -- exposed so a trailer READER (e.g.
+    ``run_contract_gate.extract_gate_scope``) can apply the SAME shape
+    predicate this module's WRITER (``append_mechanical_trailer_block``)
+    already uses, instead of a second, drifting copy of the regex.
+    """
+    return bool(_TRAILER_LINE_RE.match(line))
+
+
+def last_paragraph_lines(message: str) -> list[str] | None:
+    """The message's final blank-line-delimited paragraph, split into lines.
+
+    ``None`` when the message is a single paragraph -- mirrors
+    ``append_mechanical_trailer_block``'s own ``has_prior_paragraph`` gate:
+    a message with no blank line before its tail has no established
+    body/trailer split yet, no matter what its last paragraph looks like.
+    """
+    stripped = message.rstrip("\n")
+    lines = stripped.split("\n")
+    end = len(lines)
+    start = end
+    while start > 0 and lines[start - 1].strip() != "":
+        start -= 1
+    if start == 0:
+        return None
+    return lines[start:end]

@@ -84,6 +84,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 from des.application.atdd_pure_prompt_validator import (
     ATDD_PURE_MANDATORY_SECTIONS,
     AtddPurePromptValidator,
@@ -913,3 +915,853 @@ def test_dispatch_advisory_is_silent_when_no_wave_floor_is_armed(
         "no wave floor is armed under this cwd -- stderr must carry no "
         f"wave-floor advisory; got stderr={result.stderr!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# AT-7 -- slice-01 SSOT content-parity merge
+# (dispatch-template-ssot-reconciliation, mikado D12)
+#
+# Design: docs/feature/dispatch-template-ssot-reconciliation/design/
+#         dispatch-template-ssot-reconciliation-design.md, section 3 (the
+#         per-section reconciliation table) + Decisions 3/4.
+# Feature delta: docs/feature/dispatch-template-ssot-reconciliation/
+#                feature-delta.md, Slice Plan row slice-01.
+#
+# THE POINT: a real `des dispatch` render for the CODE-FACING crafter path
+# (--phase A_GREEN, no --lane) is content-poorer today than either
+# `nWave/dispatch/atdd_pure.yaml`'s unread `sections[].template` or the
+# hand-authored `nw-execute/SKILL.md` block for 7 of the 12 canonical
+# sections (DES_METADATA, SKILL_LOADING, QUALITY_GATES, AT_COMPLETION_LEDGER,
+# BOUNDARY_RULES, TERMINATING_RUN, TIMEOUT_INSTRUCTION) -- verified absent
+# below, section by section, against the actual production strings in
+# `nWave/dispatch/atdd_pure.yaml` and `nw-execute/SKILL.md:218-326`. Slice-01
+# merges that content into `dispatch.py::_section_body`'s crafter branch
+# WITHOUT flattening the role branching every OTHER agent/lane/wave already
+# renders correctly (examiner, charter product-owner, phaseless authoring
+# wave, armed middle slot) -- the second half of every AT below (or its own
+# dedicated sibling AT) pins that those branches are UNCHANGED.
+#
+# Driving surface: SAME hermetic subprocess boundary as AT-1..AT-6 above
+# (`python -m des.cli.__main__ dispatch`).
+#
+# CONTRACT_SHAPE: bounded-change (finite, closed-world SSOT-rendering merge --
+# example-based, no PBT).
+#
+# covers: F-dispatch-template-ssot-reconciliation (D12, slice-01)
+# ---------------------------------------------------------------------------
+
+_SECTION_PATTERN_CACHE: dict[str, re.Pattern[str]] = {}
+
+
+def _section_text(prompt: str, section_id: str) -> str:
+    """Extract one `# {section_id}` section body verbatim (mirrors
+    `_design_context_section`, generalized to any section id)."""
+    pattern = _SECTION_PATTERN_CACHE.get(section_id)
+    if pattern is None:
+        pattern = re.compile(
+            rf"# {re.escape(section_id)}\n(.*?)(?=\n# [A-Z_]+\n|\Z)", re.DOTALL
+        )
+        _SECTION_PATTERN_CACHE[section_id] = pattern
+    match = pattern.search(prompt)
+    assert match is not None, f"no {section_id!r} section found in prompt:\n{prompt}"
+    return match.group(1)
+
+
+def _run_crafter_dispatch(feature_id: str = "demo") -> subprocess.CompletedProcess[str]:
+    """The CODE-FACING crafter path this slice's merges target: a plain
+    `--phase A_GREEN` dispatch, no `--lane`, default `--wave` (deliver)."""
+    return _run_dispatch(
+        "--mode",
+        "atdd_pure",
+        "--project-id",
+        feature_id,
+        "--slice",
+        "slice-01",
+        "--phase",
+        "A_GREEN",
+        "--intent",
+        "merge the dispatch-template-ssot-reconciliation content",
+    )
+
+
+# --- half 1: the crafter path gains the merged content (RED today) --------
+
+
+def test_crafter_skill_loading_gains_the_yaml_merged_content() -> None:
+    """SKILL_LOADING (crafter/`_DEFAULT_SKILL_LOADING`) must gain, from
+    `atdd_pure.yaml` (design §3 row 3), the four items verified ABSENT from
+    today's 2-line body: the `nw-crafter-discipline-atdd-pure` load
+    instruction, the OO/FP code-design catalog directive, the tsunami-first
+    mandate, and the `nw-refactor`/`nw-mutation-test` exclusion.
+
+    FAILS TODAY: `_DEFAULT_SKILL_LOADING` carries none of these four items
+    (verified: `grep -c` for each phrase across `src/des/cli/dispatch.py`
+    returns zero).
+    """
+    result = _run_crafter_dispatch()
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    skill_loading = _section_text(result.stdout, "SKILL_LOADING")
+
+    assert "nw-crafter-discipline-atdd-pure" in skill_loading, (
+        "SKILL_LOADING must load nw-crafter-discipline-atdd-pure at phase "
+        f"entry (design §3 row 3) -- got:\n{skill_loading}"
+    )
+    assert (
+        "nw-code-design-oo" in skill_loading and "nw-code-design-fp" in skill_loading
+    ), (
+        "SKILL_LOADING must carry the OO/FP paradigm-appropriate code-design "
+        f"catalog directive (design §3 row 3) -- got:\n{skill_loading}"
+    )
+    assert "mcp__tsunami__" in skill_loading, (
+        "SKILL_LOADING must carry the tsunami-first structural-fact mandate "
+        f"(design §3 row 3) -- got:\n{skill_loading}"
+    )
+    assert "nw-refactor" in skill_loading and "nw-mutation-test" in skill_loading, (
+        "SKILL_LOADING must carry the nw-refactor/nw-mutation-test "
+        f"phase-inappropriateness exclusion (design §3 row 3) -- got:\n{skill_loading}"
+    )
+
+
+def test_crafter_quality_gates_gains_the_runner_agnostic_and_wiring_check_content() -> (
+    None
+):
+    """QUALITY_GATES (crafter, `runs_tests=True`) must gain, from
+    `atdd_pure.yaml` PLUS `nw-execute/SKILL.md` (design §3 row 7), the
+    runner-agnostic mandate, the `uptime`/load>10 pause, the `src/des/**`
+    import ban (F-D-09), the ruff+mypy-clean bullet, and the Skill-only
+    wiring-check bullet.
+
+    FAILS TODAY: the crafter's QUALITY_GATES body is
+    "All the slice's ATs pass before commit. No new tests authored by the
+    crafter.\\n" -- none of the five items below are present (verified).
+    """
+    result = _run_crafter_dispatch()
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    quality_gates = _section_text(result.stdout, "QUALITY_GATES")
+
+    assert "uv run python -m pytest" in quality_gates, (
+        "QUALITY_GATES must name the project's resolved runner (design §3 "
+        f"row 7, runner-agnostic mandate) -- got:\n{quality_gates}"
+    )
+    assert "NEVER a bare" in quality_gates and "python" in quality_gates, (
+        "QUALITY_GATES must forbid a bare `python` invocation (target-"
+        f"machine-agnostic mandate) -- got:\n{quality_gates}"
+    )
+    assert "load>10" in quality_gates, (
+        "QUALITY_GATES must carry the `uptime`/load>10 pause bullet -- "
+        f"got:\n{quality_gates}"
+    )
+    assert "scripts" in quality_gates and "F-D-09" in quality_gates, (
+        "QUALITY_GATES must carry the src/des/** must NOT import scripts.* "
+        f"(F-D-09) bullet -- got:\n{quality_gates}"
+    )
+    assert "ruff" in quality_gates and "mypy" in quality_gates, (
+        f"QUALITY_GATES must carry the ruff+mypy-clean bullet -- got:\n{quality_gates}"
+    )
+    assert "Wiring check" in quality_gates, (
+        "QUALITY_GATES must carry the Skill-only wiring-check bullet -- "
+        f"got:\n{quality_gates}"
+    )
+    assert "files_to_modify" in quality_gates and "git diff" in quality_gates, (
+        "the wiring-check bullet must name files_to_modify + git diff -- "
+        f"got:\n{quality_gates}"
+    )
+
+
+def test_crafter_at_completion_ledger_gains_ledger_path_and_corrected_commit_ownership() -> (
+    None
+):
+    """AT_COMPLETION_LEDGER (crafter) must gain the Skill's ledger-path +
+    "records of truth" detail (design §3 row 8), corrected per Decision 4:
+    the crafter commits via `des commit-slice` -- NEVER the superseded
+    "orchestrator drives commit" claim the YAML carries, and never a stale
+    `G_COMMIT` (legacy 7-phase) reference.
+
+    FAILS TODAY: the crafter's AT_COMPLETION_LEDGER body is "Record phase
+    outcomes to the AT-completion ledger.\\n" -- none of the positive items
+    below are present (verified).
+    """
+    feature_id = "probe-ledger-merge"
+    result = _run_crafter_dispatch(feature_id)
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    ledger = _section_text(result.stdout, "AT_COMPLETION_LEDGER")
+
+    assert ".nwave/telemetry/atdd-pure/" in ledger, (
+        f"AT_COMPLETION_LEDGER must name the ledger path -- got:\n{ledger}"
+    )
+    assert "records of truth" in ledger.lower(), (
+        f"AT_COMPLETION_LEDGER must carry the 'records of truth' detail "
+        f"(design §3 row 8) -- got:\n{ledger}"
+    )
+    assert "des commit-slice" in ledger, (
+        "AT_COMPLETION_LEDGER must correctly name the crafter committing "
+        f"via `des commit-slice` (Decision 4) -- got:\n{ledger}"
+    )
+    assert "orchestrator drives commit" not in ledger.lower(), (
+        "AT_COMPLETION_LEDGER must NOT carry the superseded "
+        "'orchestrator drives commit' claim (Decision 4 names this WRONG) "
+        f"-- got:\n{ledger}"
+    )
+    assert "G_COMMIT" not in ledger, (
+        "AT_COMPLETION_LEDGER must not carry a stale legacy 7-phase "
+        f"G_COMMIT reference (Decision 2) -- got:\n{ledger}"
+    )
+
+
+def test_crafter_boundary_rules_gains_the_four_concrete_skill_rules() -> None:
+    """BOUNDARY_RULES (crafter, `runs_tests=True`) must gain the 4 concrete
+    Skill-only rules named in design §3 row 10: the files_to_modify scope,
+    the no-roadmap/no-step-log-in-atdd_pure rule, the no-AT-authorship rule,
+    and the no-E_BATCH_REFACTOR/deep-review-here rule -- ON TOP OF the
+    existing "stay within the slice's value statement" sentence (superset,
+    never a replacement).
+
+    FAILS TODAY: the crafter's BOUNDARY_RULES body is "Stay within slice
+    {slice}'s value statement.\\n" -- none of the four items below are
+    present (verified).
+    """
+    result = _run_crafter_dispatch()
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    boundary = _section_text(result.stdout, "BOUNDARY_RULES")
+
+    assert "files_to_modify" in boundary, (
+        f"BOUNDARY_RULES must name the files_to_modify scope rule -- got:\n{boundary}"
+    )
+    assert "roadmap" in boundary.lower() and "step log" in boundary.lower(), (
+        "BOUNDARY_RULES must name the no-roadmap/no-step-log-in-atdd_pure "
+        f"rule -- got:\n{boundary}"
+    )
+    assert "acceptance test" in boundary.lower() and (
+        "do not author" in boundary.lower() or "not author" in boundary.lower()
+    ), f"BOUNDARY_RULES must name the no-AT-authorship rule -- got:\n{boundary}"
+    assert "E_BATCH_REFACTOR" in boundary, (
+        "BOUNDARY_RULES must name the no-E_BATCH_REFACTOR/deep-review-here "
+        f"rule -- got:\n{boundary}"
+    )
+    assert "slice-01" in boundary and "value statement" in boundary, (
+        "the pre-existing 'stay within the slice's value statement' "
+        f"sentence must remain (superset, never replaced) -- got:\n{boundary}"
+    )
+
+
+def test_crafter_terminating_run_gains_the_run_slice_ats_mandate() -> None:
+    """TERMINATING_RUN (crafter) must gain the Skill-only `des run-slice-ats`
+    terminating-run mandate (design §3 row 11): the command itself, the
+    `--entering-slice` flag, and the explicit antipattern-avoidance phrase
+    ("NEVER a crafter-picked, language-specific subset") -- ON TOP OF the
+    existing "report files created/modified" sentence.
+
+    FAILS TODAY: the crafter's TERMINATING_RUN body is "Report files
+    created/modified; RAW pass/fail of the slice's ATs.\\n" -- none of the
+    items below are present (verified).
+    """
+    result = _run_crafter_dispatch()
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    terminating = _section_text(result.stdout, "TERMINATING_RUN")
+
+    assert "des run-slice-ats" in terminating, (
+        f"TERMINATING_RUN must name `des run-slice-ats` -- got:\n{terminating}"
+    )
+    assert "--entering-slice" in terminating, (
+        f"TERMINATING_RUN must name the --entering-slice flag -- got:\n{terminating}"
+    )
+    assert "language-specific subset" in terminating, (
+        "TERMINATING_RUN must explicitly forbid a crafter-picked, "
+        f"language-specific subset -- got:\n{terminating}"
+    )
+    assert "Report files created/modified" in terminating, (
+        "the pre-existing 'report files created/modified' sentence must "
+        f"remain (superset, never replaced) -- got:\n{terminating}"
+    )
+
+
+def test_crafter_timeout_instruction_gains_the_sendmessage_and_verbatim_evidence_mandates() -> (
+    None
+):
+    """TIMEOUT_INSTRUCTION (crafter) must gain, from `atdd_pure.yaml`
+    (design §3 row 12), the SendMessage-is-the-return-value mandate and the
+    verbatim-evidence-on-repeat mandate -- ON TOP OF the existing
+    `_NO_BACKGROUND_TURN_CLOSE` constant (superset, never a replacement).
+
+    FAILS TODAY: neither mandate's text is present in the crafter's
+    TIMEOUT_INSTRUCTION body (verified).
+    """
+    result = _run_crafter_dispatch()
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    timeout = _section_text(result.stdout, "TIMEOUT_INSTRUCTION")
+
+    assert "SendMessage" in timeout, (
+        "TIMEOUT_INSTRUCTION must carry the SendMessage-is-the-return-value "
+        f"mandate -- got:\n{timeout}"
+    )
+    assert "return value" in timeout.lower(), (
+        f"TIMEOUT_INSTRUCTION must say the final message IS the return "
+        f"value -- got:\n{timeout}"
+    )
+    assert "already done" in timeout.lower() and "evidence" in timeout.lower(), (
+        "TIMEOUT_INSTRUCTION must carry the verbatim-evidence-on-repeat "
+        f"mandate (reply with evidence for work already done) -- got:\n{timeout}"
+    )
+    assert "Never end your turn waiting for a background job" in timeout, (
+        "the pre-existing _NO_BACKGROUND_TURN_CLOSE constant must remain "
+        f"(superset, never replaced) -- got:\n{timeout}"
+    )
+
+
+def test_crafter_des_metadata_restores_a_command_line() -> None:
+    """DES_METADATA (crafter) must gain a `Command:` line back (design §3
+    row 1 + Decision 3): DERIVED from the already-declared `--wave`/`--lane`,
+    never a new `--command` CLI flag -- this AT pins only the non-negotiable
+    behavioural requirement (the line exists and is non-empty for a
+    dispatch whose wave IS honestly derivable, i.e. `deliver`), leaving the
+    EXACT command string to the crafter (Decision 3 also permits omitting
+    the line entirely for a wave/lane pair with no honest derivation).
+
+    FAILS TODAY: the crafter's DES_METADATA body is "Slice: ...\\nFeature:
+    ...\\nPhase: A_GREEN\\n" -- no `Command:` line at all (verified).
+    """
+    result = _run_crafter_dispatch()
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    des_metadata = _section_text(result.stdout, "DES_METADATA")
+
+    assert re.search(r"(?m)^Command: \S", des_metadata) is not None, (
+        "DES_METADATA must restore a non-empty `Command:` line for a "
+        f"dispatch whose wave (deliver) is honestly derivable -- got:\n{des_metadata}"
+    )
+
+
+# --- half 2: every OTHER role branch keeps rendering its own body ----------
+# (currently GREEN -- these pin TODAY's correct behavior so the crafter-path
+# merge above cannot flatten the role branching while making it pass; per
+# the standing mandate "pin the correct behaviour of neighbouring branches.")
+
+
+def test_examiner_unarmed_dispatch_body_is_unperturbed_by_the_crafter_merge(
+    tmp_path: Path,
+) -> None:
+    """The examiner's UNARMED C_REVIEWER_AUDIT dispatch (no charter
+    directory for the feature) must keep rendering its own
+    non-code-facing SKILL_LOADING/QUALITY_GATES/DESIGN_CONTEXT bodies
+    UNCHANGED -- none of the crafter-path merge content belongs here.
+    """
+    result = subprocess.run(
+        _dispatch_argv(
+            "--mode",
+            "atdd_pure",
+            "--project-id",
+            "probe-examiner-unarmed",
+            "--slice",
+            "slice-01",
+            "--phase",
+            "C_REVIEWER_AUDIT",
+        ),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_isolated_dispatch_env(),
+        cwd=str(tmp_path),
+    )
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    prompt = result.stdout
+
+    skill_loading = _section_text(prompt, "SKILL_LOADING")
+    assert skill_loading == (
+        "No technical or code-reasoning skills to load -- examining is not "
+        "implementation, and code-reasoning knowledge corrupts the examiner's "
+        "epistemology.\n"
+    ), f"examiner SKILL_LOADING must stay unchanged -- got:\n{skill_loading}"
+
+    quality_gates = _section_text(prompt, "QUALITY_GATES")
+    assert quality_gates == (
+        "There are no tests to run and no ATs to author. Exercise the real "
+        "product surface directly and form a verdict on what you observed.\n"
+    ), f"examiner QUALITY_GATES must stay unchanged -- got:\n{quality_gates}"
+
+    design_context = _section_text(prompt, "DESIGN_CONTEXT")
+    assert design_context.startswith(
+        "N/A -- this dispatch is non-code-facing by ROLE INTENT"
+    ), f"examiner DESIGN_CONTEXT must stay non-code-facing -- got:\n{design_context}"
+
+
+def test_charter_product_owner_dispatch_body_is_unperturbed_by_the_crafter_merge(
+    tmp_path: Path,
+) -> None:
+    """The charter-authoring product-owner (`--lane charter`) must keep
+    rendering its own SKILL_LOADING/QUALITY_GATES/DESIGN_CONTEXT bodies
+    UNCHANGED -- in particular it must never gain the crafter's TDD/quality
+    skill-loading, which the RCA this branch exists to fix explicitly
+    forbade (nw-tdd-methodology corrupts the charter-authoring epistemology).
+    """
+    result = subprocess.run(
+        _dispatch_argv(
+            "--mode",
+            "atdd_pure",
+            "--project-id",
+            "probe-charter-lane",
+            "--slice",
+            "slice-01",
+            "--lane",
+            "charter",
+        ),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_isolated_dispatch_env(),
+        cwd=str(tmp_path),
+    )
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    prompt = result.stdout
+
+    skill_loading = _section_text(prompt, "SKILL_LOADING")
+    assert skill_loading == (
+        "Load nw-expectation-charter for charter-authoring competence -- no "
+        "code-reasoning or TDD/quality-framework skills; charter authoring is "
+        "not implementation.\n"
+    ), (
+        f"charter product-owner SKILL_LOADING must stay unchanged -- got:\n{skill_loading}"
+    )
+    assert "nw-tdd-methodology" not in skill_loading, (
+        "charter product-owner must NEVER gain the crafter's TDD skill-"
+        f"loading -- got:\n{skill_loading}"
+    )
+
+    design_context = _section_text(prompt, "DESIGN_CONTEXT")
+    assert design_context.startswith(
+        "N/A -- this dispatch is non-code-facing by ROLE INTENT"
+    ), (
+        f"charter product-owner DESIGN_CONTEXT must stay non-code-facing -- got:\n{design_context}"
+    )
+
+
+def test_phaseless_authoring_wave_dispatch_body_is_unperturbed_by_the_crafter_merge(
+    tmp_path: Path,
+) -> None:
+    """A phaseless authoring-wave dispatch (`--wave design`, no `--phase`,
+    no `--lane`) must keep rendering its OWN QUALITY_GATES/BOUNDARY_RULES
+    bodies UNCHANGED (the "the {wave} wave's own gate stack decides this
+    dispatch..." / "Produce only the {wave} wave's artifacts..." bodies) --
+    the crafter-path merge must never leak into a wave that writes no code
+    and runs no tests.
+    """
+    result = subprocess.run(
+        _dispatch_argv(
+            "--mode",
+            "atdd_pure",
+            "--project-id",
+            "probe-design-wave",
+            "--slice",
+            "feature-end",
+            "--wave",
+            "design",
+        ),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_isolated_dispatch_env(),
+        cwd=str(tmp_path),
+    )
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    prompt = result.stdout
+
+    quality_gates = _section_text(prompt, "QUALITY_GATES")
+    assert quality_gates == (
+        "The design wave's own gate stack decides this dispatch "
+        "(see nWave/waves/design.yaml for the authoritative gate-ids and "
+        "the output contract). Author the wave's [REF] sections; run no "
+        "tests and write no production code.\n"
+    ), f"design-wave QUALITY_GATES must stay unchanged -- got:\n{quality_gates}"
+
+    boundary = _section_text(prompt, "BOUNDARY_RULES")
+    assert boundary == (
+        "Produce only the design wave's artifacts. Do NOT implement, "
+        "and do NOT pre-empt a downstream wave's decisions.\n"
+    ), f"design-wave BOUNDARY_RULES must stay unchanged -- got:\n{boundary}"
+
+
+def test_armed_middle_slot_dispatch_body_is_unperturbed_by_the_crafter_merge(
+    tmp_path: Path,
+) -> None:
+    """A C_REVIEWER_AUDIT dispatch ARMED by a slice-mapped expectation
+    charter must keep rendering `_armed_middle_slot_section_body`'s
+    charter-only envelope UNCHANGED -- SKILL_LOADING and QUALITY_GATES stay
+    the charter-only prose; TASK_CONTEXT names the charter path -- none of
+    the crafter-path merge content belongs in this envelope either.
+    """
+    feature_id = "probe-armed-middle-slot"
+    charter_dir = tmp_path / "docs" / "product" / "expectations" / feature_id
+    charter_dir.mkdir(parents=True)
+    (charter_dir / "the-outcome.md").write_text(
+        "# Some Charter\n\nSpec rows: slice-01\n", encoding="utf-8"
+    )
+
+    result = subprocess.run(
+        _dispatch_argv(
+            "--mode",
+            "atdd_pure",
+            "--project-id",
+            feature_id,
+            "--slice",
+            "slice-01",
+            "--phase",
+            "C_REVIEWER_AUDIT",
+        ),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_isolated_dispatch_env(),
+        cwd=str(tmp_path),
+    )
+    assert result.returncode == 0, (
+        f"expected exit 0; got {result.returncode}. "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    prompt = result.stdout
+
+    skill_loading = _section_text(prompt, "SKILL_LOADING")
+    assert skill_loading == (
+        "Your only specification is the named expectation charter. "
+        "Do not load technical or code-reasoning skills.\n"
+    ), f"armed middle slot SKILL_LOADING must stay unchanged -- got:\n{skill_loading}"
+
+    quality_gates = _section_text(prompt, "QUALITY_GATES")
+    assert quality_gates == (
+        "Exercise the real product surface directly; do not substitute "
+        "an implementation review for observation.\n"
+    ), f"armed middle slot QUALITY_GATES must stay unchanged -- got:\n{quality_gates}"
+
+    task_context = _section_text(prompt, "TASK_CONTEXT")
+    assert "the-outcome.md" in task_context, (
+        f"armed middle slot TASK_CONTEXT must name the charter path -- got:\n{task_context}"
+    )
+    assert "Walk the promised outcome through the real surface" in task_context, (
+        "armed middle slot TASK_CONTEXT must keep its charter-only "
+        f"instruction -- got:\n{task_context}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AT-8 -- slice-02 SSOT reconciliation: dead-field removal + render invariance
+# (dispatch-template-ssot-reconciliation, mikado D12)
+#
+# Design: docs/feature/dispatch-template-ssot-reconciliation/design/
+#         dispatch-template-ssot-reconciliation-design.md §4 (Component
+#         decomposition -- markers[]/sections[].template RETIRED) + §7 Slice
+#         Plan row 2. Feature delta:
+#         docs/feature/dispatch-template-ssot-reconciliation/feature-delta.md,
+#         DISCUSS DoD item 2 + Slice Plan row slice-02.
+#
+# THE POINT: `nWave/dispatch/atdd_pure.yaml`'s `sections[].template` field and
+# top-level `markers:` block are VERIFIED dead -- `dispatch.py:40` imports
+# ONLY `_read_full_sections` (profiles.full.sections) from
+# `dispatch_lane_ssot`, never a `template` key reader; `_read_marker_syntax`
+# reads `vendors.yaml`, never this file's `markers:` block. Confirmed
+# empirically (2026-08-03): stripping both fields from a working copy leaves
+# every rendered dispatch shape below byte-identical but for the one
+# genuinely non-deterministic marker (`DES-CAUSAL-ID`, `uuid.uuid4().hex` --
+# `dispatch.py:1346`). The header comment mislabels both fields as
+# consumed ("RENDERS a dispatch from this" / "filled by the renderer");
+# `sections[].id` entries MUST survive -- `profiles.full.sections` genuinely
+# reads them (AT-3 above already locks that).
+#
+# Reuse: this file already owns `_DISPATCH_YAML` (the real-file fixture),
+# `_read_full_sections` (imported for AT-3), and the subprocess driving-port
+# helpers (`_dispatch_argv`/`_dispatch_env`/`_isolated_dispatch_env`) AT-3/
+# AT-5/AT-7 already drive the identical SSOT through -- extended here rather
+# than a parallel harness.
+# `test_lane_profile_dispatch_ssot_drift_check.py` drift-checks
+# `profiles.lane` vs `LANE_PROFILES` -- a DIFFERENT YAML block entirely; not
+# the right home for a `sections[].template`/`markers:` deletion assertion.
+#
+# CONTRACT_SHAPE: bounded-change (finite, closed-world YAML-shape + render-
+# diff over a hand-authored SSOT file -- example-based, no PBT).
+#
+# covers: F-dispatch-template-ssot-reconciliation (D12, slice-02)
+# ---------------------------------------------------------------------------
+
+_DEAD_FIELD_TOKENS: tuple[str, ...] = ("template:", "markers:")
+
+_CAUSAL_ID_LINE_PATTERN = re.compile(r"<!-- DES-CAUSAL-ID : [0-9a-f]{32} -->")
+
+
+def _header_comment_block(text: str) -> str:
+    """The file's leading contiguous `#`-prefixed comment block, ending at
+    the first non-comment, non-blank line (`version: 1`) -- the prose the
+    DoD's "header comment must claim only what is true" targets."""
+    lines: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("#"):
+            lines.append(line)
+        elif line.strip() == "":
+            continue
+        else:
+            break
+    return "\n".join(lines)
+
+
+def test_slice02_dispatch_ssot_yaml_sheds_dead_fields_but_keeps_section_ids() -> None:
+    """(property 1) `nWave/dispatch/atdd_pure.yaml` must carry NO
+    `sections[].template` field and NO `markers:` block, and its header
+    comment must no longer claim `des dispatch` consumes either --
+    `sections[].id` entries SURVIVE because `profiles.full.sections`
+    genuinely reads them (AT-3 above).
+
+    FAILS TODAY: the real committed file still declares 12 `template: |`
+    block scalars plus a `markers:` block (verified), and its header claims
+    `des dispatch` "RENDERS a dispatch from this" while a sibling comment
+    calls `sections[].template` "each section's scaffold template ...
+    filled by the renderer" -- both fields are verified zero-reader dead
+    weight (see the module docstring above).
+    """
+    text = _DISPATCH_YAML.read_text(encoding="utf-8")
+
+    for token in _DEAD_FIELD_TOKENS:
+        assert token not in text, (
+            f"nWave/dispatch/atdd_pure.yaml must carry no {token!r} -- "
+            "verified zero readers (dispatch.py:40 imports only "
+            "_read_full_sections; _read_marker_syntax reads vendors.yaml, "
+            f"never this file's markers: block). Found {token!r} in the "
+            "committed YAML."
+        )
+
+    parsed = yaml.safe_load(text)
+    section_ids = [section["id"] for section in parsed["sections"]]
+    assert section_ids == list(_read_full_sections(text)), (
+        "sections[].id entries must survive the deletion, in the SAME "
+        f"order profiles.full.sections declares -- got {section_ids!r}"
+    )
+    assert len(section_ids) == 12, (
+        f"expected all 12 canonical section ids to survive; got {section_ids!r}"
+    )
+
+    header = _header_comment_block(text).lower()
+    for false_claim_token in ("template", "markers"):
+        assert false_claim_token not in header, (
+            "the header comment must no longer claim des dispatch consumes "
+            f"a {false_claim_token!r} field it no longer carries -- header "
+            f"block:\n{_header_comment_block(text)}"
+        )
+
+
+def _strip_dead_yaml_fields(text: str) -> str:
+    """Programmatically strip the top-level `markers:` block and every
+    `template: |` block-scalar entry from a dispatch SSOT YAML text --
+    mirrors exactly what slice-02 does to the real file, applied to a
+    disposable working copy so this AT never depends on whether the real
+    repo's file has been edited yet (it works identically before AND after)."""
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.rstrip("\n") == "markers:":
+            i += 1
+            while i < len(lines) and (
+                lines[i].startswith("  ")
+                or lines[i].startswith("#")
+                or lines[i].strip() == ""
+            ):
+                i += 1
+            continue
+        out.append(line)
+        i += 1
+    text = "".join(out)
+
+    lines = text.splitlines(keepends=True)
+    out = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.strip() == "template: |":
+            indent = len(line) - len(line.lstrip(" "))
+            i += 1
+            while i < len(lines):
+                nxt = lines[i]
+                if nxt.strip() == "":
+                    i += 1
+                    continue
+                nxt_indent = len(nxt) - len(nxt.lstrip(" "))
+                if nxt_indent > indent:
+                    i += 1
+                    continue
+                break
+            continue
+        out.append(line)
+        i += 1
+    return "".join(out)
+
+
+def _mask_volatile_markers(prompt: str) -> str:
+    """Mask the one genuinely non-deterministic marker (`DES-CAUSAL-ID`,
+    `uuid.uuid4().hex` per dispatch.py:1346) so two renders of otherwise
+    identical input compare byte-identical."""
+    return _CAUSAL_ID_LINE_PATTERN.sub("<!-- DES-CAUSAL-ID : MASKED -->", prompt)
+
+
+#: A representative sample of dispatch shapes spanning the role/lane
+#: branches AT-1/AT-2/AT-7 already exercise (plain crafter, bugfix lane,
+#: prefactoring lane, charter lane, phaseless authoring wave) -- broad enough
+#: that a field genuinely read by ANY branch would surface a divergence.
+_INVARIANCE_DISPATCH_SHAPES: tuple[tuple[str, ...], ...] = (
+    (
+        "--mode",
+        "atdd_pure",
+        "--project-id",
+        "demo",
+        "--slice",
+        "slice-01",
+        "--phase",
+        "A_GREEN",
+        "--intent",
+        "probe render invariance",
+    ),
+    (
+        "--mode",
+        "atdd_pure",
+        "--project-id",
+        "demo",
+        "--slice",
+        "slice-01",
+        "--phase",
+        "A_GREEN",
+        "--lane",
+        "bugfix",
+        "--defect",
+        "probe defect",
+        "--regression-test",
+        "test_probe",
+    ),
+    (
+        "--mode",
+        "atdd_pure",
+        "--project-id",
+        "demo",
+        "--slice",
+        "slice-01",
+        "--phase",
+        "A_GREEN",
+        "--lane",
+        "prefactoring",
+    ),
+    (
+        "--mode",
+        "atdd_pure",
+        "--project-id",
+        "demo",
+        "--slice",
+        "slice-01",
+        "--lane",
+        "charter",
+    ),
+    (
+        "--mode",
+        "atdd_pure",
+        "--project-id",
+        "demo",
+        "--slice",
+        "feature-end",
+        "--wave",
+        "design",
+    ),
+)
+
+
+def _render_all_shapes(workspace: Path) -> list[str]:
+    """Render every `_INVARIANCE_DISPATCH_SHAPES` entry against `workspace`
+    (via `--repo-root`) and return the masked stdout for each, in order."""
+    renders = []
+    for shape in _INVARIANCE_DISPATCH_SHAPES:
+        result = subprocess.run(
+            _dispatch_argv(*shape, "--repo-root", str(workspace)),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=_isolated_dispatch_env(),
+            cwd=str(workspace),
+        )
+        assert result.returncode == 0, (
+            f"expected exit 0 for shape {shape!r} against {workspace}; got "
+            f"{result.returncode}. stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        renders.append(_mask_volatile_markers(result.stdout))
+    return renders
+
+
+def test_slice02_dispatch_render_is_byte_identical_before_and_after_the_yaml_deletion(
+    tmp_path: Path,
+) -> None:
+    """(property 2, render-invariance) `des dispatch` must render BYTE-
+    IDENTICAL output (modulo the DES-CAUSAL-ID per-invocation uuid, masked
+    above) for every dispatch shape in `_INVARIANCE_DISPATCH_SHAPES`,
+    comparing a render taken BEFORE the dead-field deletion against one taken
+    AFTER -- both captured from the SAME `--repo-root` workspace, so only the
+    YAML mutation (never a path/cwd/agent-resolution difference) can explain
+    a divergence. This is the mechanical proof the two fields were truly
+    unread: it holds NOW (they are dead already, per the module docstring
+    above) and must keep holding once slice-02 physically deletes them from
+    the real file -- the render is unperturbed either way.
+
+    Deliberately NOT hand-transcribed expected bytes and NOT a committed
+    golden file (the deletion could silently invalidate a golden fixture) --
+    the baseline is captured fresh, inside this test, from whatever
+    `des dispatch` currently emits against a disposable working copy.
+    """
+    dispatch_dir = tmp_path / "nWave" / "dispatch"
+    dispatch_dir.mkdir(parents=True)
+    yaml_path = dispatch_dir / "atdd_pure.yaml"
+    yaml_path.write_text(_DISPATCH_YAML.read_text(encoding="utf-8"), encoding="utf-8")
+    vendors_src = _REPO_ROOT / "nWave" / "dispatch" / "vendors.yaml"
+    (dispatch_dir / "vendors.yaml").write_text(
+        vendors_src.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    before_renders = _render_all_shapes(tmp_path)
+
+    mutated_text = _strip_dead_yaml_fields(yaml_path.read_text(encoding="utf-8"))
+    for token in _DEAD_FIELD_TOKENS:
+        assert token not in mutated_text, (
+            f"fixture bug: _strip_dead_yaml_fields must remove {token!r} "
+            f"from the working copy -- mutated text:\n{mutated_text}"
+        )
+    yaml_path.write_text(mutated_text, encoding="utf-8")
+
+    after_renders = _render_all_shapes(tmp_path)
+
+    for shape, before, after in zip(
+        _INVARIANCE_DISPATCH_SHAPES, before_renders, after_renders, strict=True
+    ):
+        assert before == after, (
+            "des dispatch must render byte-identical output before/after "
+            f"deleting sections[].template + markers: for shape {shape!r} "
+            "-- this is the proof the fields were truly unread.\n"
+            f"BEFORE:\n{before}\nAFTER:\n{after}"
+        )

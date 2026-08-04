@@ -305,6 +305,19 @@ gates:
     entry_function: main
     language_neutral_contract: true
 
+  # f-dispatch-template-ssot-reconciliation slice-04: the dispatch-ref
+  # coherence gate. ADDITIVE (not yet wired against nw-execute/SKILL.md or any
+  # always-on gate stack). An operator-direct CLI gate (host_visibility: cli)
+  # wired here as the 1:1 catalog mirror of the _REGISTRY row + the per-gate
+  # file verify-dispatch-ref-coherence.yaml. Reuses the wave-contract
+  # coherence gate's concept (pointer + registry + no-inline-restatement,
+  # git-free) -- not its list-diff algorithm (design Decision 5).
+  - gate_id: verify-dispatch-ref-coherence
+    responsibility: "Git-free dispatch-ref coherence gate: verify a skill's prose carries a valid dispatch-ref: mode=<mode> lane=<lane> pointer resolving against nWave/dispatch/atdd_pure.yaml (top-level mode: key + profiles.lane.<lane> entry), and restates no dispatch section body inline (>=2 consecutive canonical section-id bullet items); emits a §17 GateVerdict (PASS/FAIL/INDETERMINATE -- the five existing verdicts, no sixth). An unreadable skill file or registry degrades LOUD to INDETERMINATE (Invariant 2), never a silent pass."
+    module: des.cli.verify_dispatch_ref_coherence
+    entry_function: main
+    language_neutral_contract: true
+
   # f-design-devops-review-gate slice-01: the per-wave review-verdict gate carried
   # to DESIGN (DISCUSS parity). 1:1 mirror of the two new _REGISTRY rows; each has
   # a matching per-gate file (record-design-review.yaml / verify-design-review.yaml)

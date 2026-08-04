@@ -759,9 +759,25 @@ def _read_marker_syntax(ssot_dir: Path) -> str:
 
 #: Default SKILL_LOADING body -- code-facing agents (the crafter, the
 #: acceptance-designer) load TDD/quality methodology skills.
+#: Content-parity merge (dispatch-template-ssot-reconciliation design §3
+#: row 3, base=YAML `sections[].template`): the `nw-crafter-discipline-
+#: atdd_pure` load instruction, the OO/FP paradigm-appropriate code-design
+#: catalog directive, the tsunami-first structural-fact mandate, and the
+#: `nw-refactor`/`nw-mutation-test` phase-inappropriateness exclusion --
+#: all verified absent from the prior 2-line body.
 _DEFAULT_SKILL_LOADING = (
     "Before starting, read your skill files for methodology guidance.\n"
-    "Always load at phase entry: nw-tdd-methodology, nw-quality-framework.\n"
+    "Always load at phase entry: nw-tdd-methodology, nw-quality-framework, "
+    "nw-crafter-discipline-atdd-pure.\n"
+    "At A_GREEN ALSO load the paradigm-appropriate code-design catalog -- "
+    "nw-code-design-oo (Object Calisthenics + RPP anti-smell taxonomy + "
+    "effect isolation) for an OO project, or nw-code-design-fp for an FP "
+    "project -- so production code is written smell-free by construction.\n"
+    "Do NOT load nw-refactor (E_BATCH_REFACTOR phase only) or "
+    "nw-mutation-test (project-DEPRECATED, FR-1) at A_GREEN -- they are "
+    "phase-inappropriate noise here, not write-time skills.\n"
+    "Resolve structural facts via mcp__tsunami__* (callers_of / reads_of), "
+    "never ad-hoc grep.\n"
 )
 
 #: SKILL_LOADING body for the examiner -- NO technical/code-reasoning skills
@@ -1067,6 +1083,32 @@ def _design_context_body(
     return f"Design reference: docs/feature/{feature_id}/feature-delta.md\n"
 
 
+#: DES_METADATA `Command:` line derivation (dispatch-template-ssot-
+#: reconciliation design §3 row 1, Decision 3): DERIVED from the
+#: already-declared wave/lane -- never a new CLI flag -- and OMITTED
+#: (never guessed) when no honest derivation exists. `/nw-execute` is the
+#: per-slice DELIVER dispatch command (matches the pre-existing DES_METADATA
+#: convention already fixtured across the suite, e.g.
+#: tests/des/acceptance/conftest.py); `/nw-bugfix` is the bugfix-lane
+#: command (nWave/tasks/nw/bugfix.md). No other wave/lane has a verified
+#: command convention yet -- those are honestly omitted, not guessed.
+_WAVE_COMMANDS: dict[str, str] = {
+    "deliver": "/nw-execute",
+    "feature-end": "/nw-execute",
+}
+_LANE_COMMANDS: dict[str, str] = {
+    "bugfix": "/nw-bugfix",
+}
+
+
+def _command_line(wave: str, lane: str | None) -> str:
+    """Render the DES_METADATA `Command:` line, or "" when no honest
+    derivation exists from the declared wave/lane (Decision 3 -- never
+    guess)."""
+    command = (_LANE_COMMANDS.get(lane) if lane else None) or _WAVE_COMMANDS.get(wave)
+    return f"Command: {command}\n" if command else ""
+
+
 def _section_body(
     section_id: str,
     *,
@@ -1123,6 +1165,7 @@ def _section_body(
             # NO phase -- print the wave instead of an empty `Phase:` label,
             # which reads as a dropped field rather than an absent one.
             + (f"Phase: {phase}\n" if phase else f"Wave: {wave}\n")
+            + _command_line(wave, lane)
         ),
         "AGENT_IDENTITY": f"Agent: {agent}\n",
         "SKILL_LOADING": _skill_loading_body(agent),
@@ -1146,8 +1189,18 @@ def _section_body(
             if agent in _NON_CODE_FACING_AGENTS
             else (
                 (
-                    "All the slice's ATs pass before commit. No new tests authored "
-                    "by the crafter.\n"
+                    "All the slice's ATs pass before commit (RAW summary, -n0; "
+                    "check `uptime`, pause if load>10). Run tests via the "
+                    "PROJECT'S resolved runner (e.g. `uv run python -m "
+                    "pytest`), NEVER a bare `python` -- the target box may "
+                    "have no `python` on PATH (target-machine-agnostic "
+                    "mandate).\n"
+                    "No new tests authored by the crafter (DISTILL owns AT "
+                    "authorship).\n"
+                    "src/des/** must NOT import scripts.* (F-D-09). ruff + "
+                    "mypy clean on touched files.\n"
+                    "Wiring check: every production file in files_to_modify "
+                    "must appear in `git diff --name-only`.\n"
                 )
                 if runs_tests
                 else (
@@ -1159,13 +1212,28 @@ def _section_body(
             )
         ),
         "AT_COMPLETION_LEDGER": (
-            "Record phase outcomes to the AT-completion ledger.\n"
+            "atdd_pure records phase outcomes to the AT-completion ledger "
+            f"(.nwave/telemetry/atdd-pure/{feature_id}.jsonl) -- the crafter "
+            "does not hand-write it. Each slice records the at_ids it "
+            "satisfied and the implementation files those ATs drove -- these "
+            "are the records of truth for the slice. The crafter -- not the "
+            "orchestrator -- commits the slice via `des commit-slice`.\n"
         ),
         "RECORDING_INTEGRITY": (
             "Do not fake green. Never weaken, skip, or rewrite a DISTILL-authored AT.\n"
         ),
         "BOUNDARY_RULES": (
-            f"Stay within slice {slice_id}'s value statement.\n"
+            (
+                f"Stay within slice {slice_id}'s value statement.\n"
+                "Only modify files within this slice's files_to_modify.\n"
+                "atdd_pure mode: there is no roadmap or step log -- do not "
+                "read or create either; the slice's ATs are the work unit.\n"
+                "Do NOT author acceptance tests -- AT authorship belongs to "
+                "nw-acceptance-designer.\n"
+                "Do NOT run E_BATCH_REFACTOR or the deep review here -- they "
+                "belong to the feature-end cycle, not this per-slice "
+                "dispatch.\n"
+            )
             if runs_tests
             else (
                 f"Produce only the {wave} wave's artifacts. Do NOT implement, "
@@ -1175,7 +1243,16 @@ def _section_body(
         "TERMINATING_RUN": (
             _NON_CODE_FACING_TERMINATING_RUN
             if agent in _NON_CODE_FACING_AGENTS
-            else "Report files created/modified; RAW pass/fail of the slice's ATs.\n"
+            else (
+                "Report files created/modified; RAW pass/fail of the "
+                "slice's ATs.\n"
+                "After any code modification, end with a terminating run of "
+                "the slice's own AT suite via `des run-slice-ats --repo . "
+                "--entering-slice <s>` -- NEVER a crafter-picked, "
+                "language-specific subset; see nw-crafter-discipline-atdd-"
+                "pure's Terminating Test Run section for the full "
+                "rationale.\n"
+            )
         ),
         "TIMEOUT_INSTRUCTION": (
             (
@@ -1185,7 +1262,12 @@ def _section_body(
                     "Target ~60 turns -- a crafter/AT run needs room to seal, run "
                     "static checks, and REPORT after the last command; too small a "
                     "budget kills the agent between the work and its confirmation. "
-                    "STOP after the ATs are green.\n"
+                    "STOP after the ATs are green. A finished report is not a "
+                    "delivered one: your final message IS the return value, "
+                    "so SEND it (SendMessage) as the last act of the run. If "
+                    "a mandate arrives for work you have ALREADY done, do "
+                    "not redo it: reply with the EVIDENCE (commit sha, "
+                    "file, ledger record) instead of the status.\n"
                     if runs_tests
                     else (
                         f"Target ~60 turns. STOP once the {wave} wave's artifacts are "

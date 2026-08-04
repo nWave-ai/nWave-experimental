@@ -38,8 +38,8 @@ from des.application.feature_at_files import (
     feature_tag_files as _feature_tag_files,
 )
 from des.cli.pytest_bdd_detection import module_level_scenarios_call
-from des.cli.verify_red_green import _content_sha as _red_seal_content_sha
 from des.cli.verify_red_green import _seal_path as _red_green_seal_path
+from des.cli.verify_red_green import red_seal_fresh
 from des.domain.lane_profile import LANE_PROFILES, AtRequirement, LaneProfile
 from des.domain.slice_id_trailer import SLICE_TAG_RE
 from des.domain.telemetry_paths import LedgerFamily, ledger_path
@@ -1107,45 +1107,6 @@ def _predecessor_attested_at_total(
     return total
 
 
-def _red_seal_is_fresh(repo: Path, regression_test_file: Path) -> bool:
-    """True iff a ``RedObserved`` seal (P0.2, ``verify-red-green
-    --record-red``) is on record for ``regression_test_file`` AND its recorded
-    ``content_sha256`` matches the file's CURRENT bytes AND it witnessed >=1
-    failing test.
-
-    The single extracted locus for the content-bound freshness FACT
-    (fix-readiness-gate-at-kind-blind-scenario-tags) -- pulled out of
-    :func:`_red_seal_net_new_at_names` so a second caller needing ONLY the
-    boolean freshness predicate (never the AT-name delta) reuses this instead
-    of hand-rolling a second staleness rule. Mirrors
-    ``carpaccio_slice_gate._red_seal_fresh``'s semantics exactly (same
-    content-sha + witnessed-failure contract, over RESOLVED paths so the
-    slug/hash can never diverge from the producer, which also resolves both).
-    Degrades ``False`` -- never a silent pass -- on every malformed, absent,
-    outside-repo, or stale input.
-    """
-    try:
-        seal = _red_green_seal_path(repo.resolve(), regression_test_file.resolve())
-    except ValueError:
-        return False  # regression file outside the repo -- no resolvable slug
-    if not seal.is_file():
-        return False
-    try:
-        record = json.loads(seal.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    if not isinstance(record, dict):
-        return False
-    outcomes = record.get("outcomes")
-    if not isinstance(outcomes, dict) or "fail" not in outcomes.values():
-        return False
-    try:
-        current_sha = _red_seal_content_sha(regression_test_file)
-    except OSError:
-        return False
-    return record.get("content_sha256") == current_sha
-
-
 def _red_seal_net_new_at_names(
     repo: Path, regression_test_file: Path
 ) -> set[str] | None:
@@ -1172,9 +1133,10 @@ def _red_seal_net_new_at_names(
     recorded leave the seal no longer describing the file, and the caller
     falls back to the whole-file charge rather than letting the additions ride
     in unseen. The freshness half of this check now delegates to
-    :func:`_red_seal_is_fresh` (the single extracted locus for that fact).
+    :func:`des.cli.verify_red_green.red_seal_fresh` (the single PUBLIC locus
+    for that fact).
     """
-    if not _red_seal_is_fresh(repo, regression_test_file):
+    if not red_seal_fresh(repo, regression_test_file):
         return None
     try:
         seal = _red_green_seal_path(repo, regression_test_file)

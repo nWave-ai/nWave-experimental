@@ -359,3 +359,106 @@ def test_yaml_missing_profiles_lane_block_returns_diagnostic_not_raise(
         "the diagnostic must clearly name the missing profiles.lane block. "
         f"result={result!r}"
     )
+
+
+# --- AT-9/10 (slice-03, feature dispatch-template-ssot-reconciliation, mikado D12) --
+#
+# `check_lane_profile_drift` gains a SECOND drift assertion (design §Slice 3): compare
+# `atdd_pure_prompt_validator.ATDD_PURE_MANDATORY_SECTIONS` against the already-parsed
+# `_read_full_sections()` result -- the last unguarded section-ID list gains a guard,
+# so a future edit that desynchronises the validator's mandatory-section tuple from
+# `nWave/dispatch/atdd_pure.yaml`'s `profiles.full.sections` is caught, not shipped
+# silently. Contract is UNCHANGED (property 3): `-> list[str]` ALWAYS, every hostile
+# input degrading LOUD to a diagnostic entry, never a raised exception -- already
+# proven by AT-6/7/8 above, which exercise the SAME entry point before the new
+# comparison ever runs (a wholly missing/malformed YAML never reaches it); those three
+# tests ARE the property-3 regression net for this slice, so no duplicate is added
+# here -- a future edit that starts consulting ATDD_PURE_MANDATORY_SECTIONS before the
+# file-existence/parse guards would regress AT-6/7/8, not go unnoticed.
+#
+# Both new tests drive the SAME `check_lane_profile_drift` entry point with the SAME
+# temp-repo-copy fixture already established by AT-2/AT-3 -- no parallel harness.
+
+
+def test_mandatory_sections_matches_full_sections_for_the_real_ssot() -> None:
+    """Property (2): on trunk TODAY, `ATDD_PURE_MANDATORY_SECTIONS`
+    (`des.application.atdd_pure_prompt_validator`) and `nWave/dispatch/atdd_pure.yaml`'s
+    `profiles.full.sections` are already byte-faithful (slice-01/02 of this same
+    feature already reconciled the content stores) -- so no diagnostic entry naming
+    the two out of sync may appear against the REAL, unmodified repo tree.
+
+    This is a DEDICATED assertion for the new comparison, isolated from AT-1's
+    whole-check `drift == []` -- a future LANE-only regression must not be able to
+    mask a genuine ATDD_PURE_MANDATORY_SECTIONS / profiles.full.sections divergence
+    (or the reverse) behind unrelated noise, and vice versa.
+
+    Expected to be GREEN both before and after slice-03 lands: the check does not
+    exist yet today (RED for AT-10 below), but the two lists it will compare already
+    agree on trunk, so this property is not something slice-03 must MAKE true -- only
+    something it must not accidentally break while adding the new comparison.
+    """
+    drift = check_lane_profile_drift(_REPO_ROOT)
+    assert not any(
+        "ATDD_PURE_MANDATORY_SECTIONS" in entry or "mandatory section" in entry.lower()
+        for entry in drift
+    ), (
+        "ATDD_PURE_MANDATORY_SECTIONS and profiles.full.sections must agree on the "
+        f"shipped repo tree today -- no diagnostic naming them out of sync may appear. "
+        f"drift={drift}"
+    )
+
+
+def test_mandatory_sections_diverging_from_full_sections_is_named(
+    tmp_path: Path,
+) -> None:
+    """Property (1): renaming the YAML's `profiles.full.sections` last entry
+    (`TIMEOUT_INSTRUCTION` -> `PHANTOM_SECTION_XYZ`) in a TMP working copy -- never
+    the real repo tree, never the real `ATDD_PURE_MANDATORY_SECTIONS` tuple -- must
+    be caught and NAMED on both directions in one message: the phantom id the YAML
+    now carries that the live tuple never declared (only-in-YAML), and the real id
+    the live tuple still declares that the YAML no longer carries (only-in-live).
+
+    This is the injected-divergence proof: the assertion is never made against a
+    hand-written expectation of what the message says, only against the mismatch the
+    check must discover on its own from the real (mutated) inputs.
+
+    The rename cascades into the existing per-lane `required_sections` comparison too
+    (every lane's projected section list loses `TIMEOUT_INSTRUCTION` and gains
+    `PHANTOM_SECTION_XYZ`, since no lane's `drop_sections` names either) -- that
+    cascade is expected and tolerated; the discriminating assertion below requires an
+    entry that ALSO names the top-level comparison explicitly (`ATDD_PURE_MANDATORY_
+    SECTIONS` / `profiles.full.sections`), so a bare lane-cascade entry alone cannot
+    satisfy it -- the new assertion must exist as its own, distinctly-named check.
+    """
+    workspace = _working_copy_dispatch_dir(tmp_path)
+    yaml_path = workspace / "nWave" / "dispatch" / "atdd_pure.yaml"
+    text = yaml_path.read_text(encoding="utf-8")
+    assert "TIMEOUT_INSTRUCTION]" in text, (
+        "fixture assumption: the shipped profiles.full.sections list ends with "
+        "TIMEOUT_INSTRUCTION -- update this fixture if the SSOT's section-id list "
+        "changes."
+    )
+    mutated = text.replace("TIMEOUT_INSTRUCTION]", "PHANTOM_SECTION_XYZ]", 1)
+    yaml_path.write_text(mutated, encoding="utf-8")
+
+    drift = check_lane_profile_drift(workspace)
+
+    assert drift != [], (
+        "a working copy whose profiles.full.sections renames TIMEOUT_INSTRUCTION to "
+        "PHANTOM_SECTION_XYZ -- diverging from the live ATDD_PURE_MANDATORY_SECTIONS "
+        "tuple -- must be reported as drift, never silently accepted."
+    )
+    assert any(
+        "PHANTOM_SECTION_XYZ" in entry
+        and "TIMEOUT_INSTRUCTION" in entry
+        and (
+            "ATDD_PURE_MANDATORY_SECTIONS" in entry or "profiles.full.sections" in entry
+        )
+        for entry in drift
+    ), (
+        "the drift report must carry a TOP-LEVEL entry (distinct from any per-lane "
+        "cascade) that explicitly names ATDD_PURE_MANDATORY_SECTIONS / "
+        "profiles.full.sections AND both diverging ids in one message -- "
+        "'PHANTOM_SECTION_XYZ' (only-in-YAML) and 'TIMEOUT_INSTRUCTION' "
+        f"(only-in-live). drift={drift}"
+    )

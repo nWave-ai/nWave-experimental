@@ -287,6 +287,15 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.verify_wave_contract_coherence",
         "main",
     ),
+    # f-dispatch-template-ssot-reconciliation slice-04: the dispatch-ref
+    # coherence gate -- holds the no-inline-restatement rule for skill prose
+    # against the dispatch SSOT (nWave/dispatch/atdd_pure.yaml). Additive:
+    # not yet wired against nw-execute/SKILL.md or any always-on gate stack.
+    _SubcommandRow(
+        "verify-dispatch-ref-coherence",
+        "des.cli.verify_dispatch_ref_coherence",
+        "main",
+    ),
     # f-design-devops-review-gate slice-01: the per-wave review-verdict gate
     # carried to DESIGN (DISCUSS parity). record-design-review is the PRODUCER
     # (writes BOTH approved + needs-revision, O-4); verify-design-review is the

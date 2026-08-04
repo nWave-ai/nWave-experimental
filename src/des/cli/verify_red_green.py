@@ -227,6 +227,42 @@ def _content_sha(test_file: Path) -> str:
     return hashlib.sha256(test_file.read_bytes()).hexdigest()
 
 
+def red_seal_fresh(repo: Path, regression_test_file: Path) -> bool:
+    """A ``RedObserved`` seal (P0.2) exists and matches the CURRENT content.
+
+    The single PUBLIC locus for the content-bound freshness FACT (N2 dedup,
+    fix-runner-helpers-dedup): previously duplicated AST-identical as
+    ``carpaccio_format._red_seal_is_fresh`` and
+    ``carpaccio_slice_gate._red_seal_fresh``, both of which reused this
+    module's ``_seal_path``/``_content_sha`` via aliasing anyway. Freshness =
+    the recorded ``content_sha256`` equals the file's current sha256 (any
+    post-RED edit voids the evidence) AND the seal witnessed >=1 failing test
+    (a seal without a witnessed RED proves nothing and never clears).
+    Degrades ``False`` -- never a silent pass -- on every malformed, absent,
+    outside-repo, or stale input.
+    """
+    try:
+        seal = _seal_path(repo.resolve(), regression_test_file.resolve())
+    except ValueError:
+        return False  # the regression file is not under the repo root
+    if not seal.is_file():
+        return False
+    try:
+        record = json.loads(seal.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(record, dict):
+        return False
+    outcomes = record.get("outcomes")
+    if not isinstance(outcomes, dict) or "fail" not in outcomes.values():
+        return False
+    try:
+        current_sha = _content_sha(regression_test_file)
+    except OSError:
+        return False
+    return record.get("content_sha256") == current_sha
+
+
 def _run_and_collect(
     repo: Path, test_file: Path, run_cmd: tuple[str, ...]
 ) -> dict[str, str] | int:
@@ -450,6 +486,7 @@ def _record_red(
             },
             indent=2,
         )
+        + "\n"
     )
     _emit(
         {
@@ -510,7 +547,28 @@ def _verify_green(
         return outcomes
     red_outcomes: dict[str, str] = record["outcomes"]
     was_red = {t for t, o in red_outcomes.items() if o == "fail"}
-    still_failing = sorted(t for t in was_red if outcomes.get(t, "fail") == "fail")
+    uncomparable = sorted(t for t in was_red if t not in outcomes)
+    if uncomparable:
+        return _indeterminate(
+            what=(
+                f"{len(uncomparable)} recorded red id(s) absent from this "
+                f"run's outcomes: {', '.join(uncomparable)}"
+            ),
+            why=(
+                "the recorded id(s) did not run in THIS verifying run at "
+                "all, so the two runs are not comparable and nothing was "
+                "re-witnessed either way -- a common cause is a "
+                "--record-red --run-cmd that composes test ids differently "
+                "than the --verify-green --run-cmd (e.g. a pytest plugin "
+                "rewriting classname/name between the two invocations)."
+            ),
+            how=(
+                "re-record RED with the SAME --run-cmd you are about to use "
+                "for --verify-green, or re-run --verify-green with the "
+                "--run-cmd that was used at --record-red."
+            ),
+        )
+    still_failing = sorted(t for t in was_red if outcomes.get(t) == "fail")
     if still_failing:
         _emit(
             {

@@ -4,13 +4,14 @@ The ``@feature-{id}`` resolver: given a repo and a feature id, return every
 ``.feature`` file authored for that feature, wherever DISTILL placed it.
 
 This is application-layer logic -- it orchestrates a filesystem walk (``rglob``)
-and reads file contents -- so it lives above the domain but below the CLI.
-``run_contract_gate``, ``carpaccio_slice_gate``, ``carpaccio_precheck`` (CLI
-driving ports) and ``slice_at_completeness`` (application) all import it from
-here. It previously lived in ``des.cli.carpaccio_format`` and was imported
-DOWNWARD by the application layer, inverting the hexagonal layering (AD-05 /
-the AD-22 application->CLI cycle). The CLI may depend on the application layer;
-the reverse is illegal.
+and reads file contents -- so it lives above the domain but below the CLI. Its
+8 real consumers: ``subagent_stop_service``, ``slice_at_completeness``,
+``carpaccio_format``, ``verify_spec_coverage``, ``carpaccio_slice_gate``,
+``verify_deliver_entry_contract``, ``carpaccio_precheck``, and
+``run_contract_gate`` all import it from here. It previously lived in
+``des.cli.carpaccio_format`` and was imported DOWNWARD by the application
+layer, inverting the hexagonal layering (AD-05 / the AD-22 application->CLI
+cycle). The CLI may depend on the application layer; the reverse is illegal.
 
 Pure-read, stdlib-only (no ``import yaml``) per the DES-bundle contract: it
 reads the filesystem and mutates nothing.
@@ -21,6 +22,7 @@ from __future__ import annotations
 import fnmatch
 import itertools
 import os
+import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -161,7 +163,7 @@ def feature_tagged_test_files(repo: Path, feature_id: str) -> list[Path]:
         dirnames[:] = [d for d in dirnames if d not in EXCLUDED_SEARCH_DIRS]
         for filename in filenames:
             path = Path(dirpath) / filename
-            if wanted in _file_head_window(path):
+            if wanted in _declared_tag_text(path):
                 matched.add(path)
     return sorted(matched)
 
@@ -189,6 +191,101 @@ def _file_head_window(path: Path) -> str:
             return "".join(itertools.islice(handle, _HEAD_SCAN_LINES))
     except (OSError, UnicodeError):
         return ""
+
+
+def _declared_tag_text(path: Path) -> str:
+    """The DECLARED-tag-bearing text of ``path``'s bounded head window
+    (ADR-001) -- never the raw window, never a raise, never a mutation.
+
+    Same ``_HEAD_SCAN_LINES`` bound as ``_file_head_window``. Per-format
+    dispatch, since the DECLARED-vs-CITED discriminant lives in a different
+    grammar plane per format: ``.py`` keeps only ``COMMENT`` token text
+    (discarding ``STRING`` token text -- docstrings/literals, the CITATION
+    construct for this format); every other suffix keeps only tag-line-
+    grammar lines (the entire stripped line -- OR its content after an
+    optional single leading line-comment marker ``#``/``//``/``--``, the
+    DA-3 cross-language comment-tag idiom already shipped for non-``.py``
+    source files such as ``.rs``/``.go`` -- is one or more whitespace-
+    separated ``@``-prefixed tokens; indentation-independent by
+    construction), and for ``.md`` additionally excludes such lines found
+    inside a fenced code block (```` ``` ````) -- Markdown's own quotation
+    construct for illustrative examples.
+    """
+    window = _file_head_window(path)
+    if not window:
+        return ""
+    if path.suffix == ".py":
+        return _declared_comment_text(window)
+    return _declared_tag_lines(window, track_fences=path.suffix == ".md")
+
+
+def _declared_comment_text(window: str) -> str:
+    """Tokenize ``window`` and keep only ``COMMENT`` token text, discarding
+    ``STRING`` token text (docstrings/literals -- the CITATION construct for
+    ``.py``). A truncation-induced tokenizer error (a multi-line string open
+    past the bounded window) is caught; the comments collected before the
+    error stand -- never a raise, never a fallback to the raw window."""
+    lines = iter(window.splitlines(keepends=True))
+    comments: list[str] = []
+    try:
+        for tok in tokenize.generate_tokens(lambda: next(lines, "")):
+            if tok.type == tokenize.COMMENT:
+                comments.append(tok.string)
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        pass
+    return "\n".join(comments)
+
+
+def _declared_tag_lines(window: str, *, track_fences: bool) -> str:
+    """Keep only lines whose entire stripped content is one or more
+    whitespace-separated ``@``-prefixed tokens (the tag-line grammar). When
+    ``track_fences`` is set (``.md``), additionally exclude such lines found
+    while a fenced code block (```` ``` ````) is open."""
+    declared: list[str] = []
+    inside_fence = False
+    for raw in window.splitlines():
+        stripped = raw.strip()
+        if track_fences and stripped.startswith("```"):
+            inside_fence = not inside_fence
+            continue
+        if track_fences and inside_fence:
+            continue
+        if _is_tag_line(stripped):
+            declared.append(stripped)
+    return "\n".join(declared)
+
+
+#: Recognized single-line-comment markers whose remainder, if itself a pure
+#: tag line, is a DECLARATION -- the DA-3 cross-language comment-tag idiom
+#: (``tests/des/acceptance/agnostic_at_discovery/test_slice_02_discover_at_kind.py``
+#: already ships ``.rs``/``.go`` fixtures tagged this way). A marker followed
+#: by prose (multiple non-tag words) stays a CITATION -- discussing a tag in
+#: a comment is never a declaration.
+_LINE_COMMENT_MARKERS = ("#", "//", "--")
+
+
+def _is_tag_line(stripped: str) -> bool:
+    """True iff ``stripped`` is a DECLARED tag line: either its entire
+    content is one or more whitespace-separated ``@``-prefixed tokens, or a
+    single recognized line-comment marker is immediately followed by content
+    that is ITSELF entirely such tokens."""
+    if not stripped:
+        return False
+    if _is_pure_tag_line(stripped):
+        return True
+    for marker in _LINE_COMMENT_MARKERS:
+        if stripped.startswith(marker):
+            return _is_pure_tag_line(stripped[len(marker) :].strip())
+    return False
+
+
+def _is_pure_tag_line(candidate: str) -> bool:
+    """True iff ``candidate`` is one or more whitespace-separated tokens
+    that each start with ``@`` and carry at least one character after it."""
+    if not candidate:
+        return False
+    tokens = candidate.split()
+    return all(len(tok) > 1 and tok.startswith("@") for tok in tokens)
 
 
 def _file_feature_tags(path: Path) -> tuple[str, ...]:
@@ -270,7 +367,7 @@ def resolve_test_file_attribution(path: Path) -> TestFileAttribution:
     ``finditer`` asymmetry that made a shared multi-slice file resolve to
     only its first-declared slice.
     """
-    window = _file_head_window(path)
+    window = _declared_tag_text(path)
     slice_ids = tuple(match.group(1) for match in _SLICE_SUBTAG_RE.finditer(window))
     slice_id = slice_ids[0] if slice_ids else None
     covers = tuple(match.group(1) for match in _COVERS_SUBTAG_RE.finditer(window))

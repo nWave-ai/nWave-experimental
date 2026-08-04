@@ -90,8 +90,7 @@ from des.cli.carpaccio_format import (
 )
 from des.cli.human_surface import Verdict, print_human_summary
 from des.cli.verify_negative_at import _scan_file as _scan_negative_at_file
-from des.cli.verify_red_green import _content_sha as _red_seal_content_sha
-from des.cli.verify_red_green import _seal_path as _red_green_seal_path
+from des.cli.verify_red_green import red_seal_fresh
 from des.domain.at_review_signing import (
     canonical_at_review_json,
 )
@@ -656,42 +655,9 @@ def _mechanical_seal_satisfied(repo: Path, regression_test_file: Path) -> bool:
     carrying zero negative ATs) -- a ``False`` here falls back to the verdict
     path's rejection, never a silent clear.
     """
-    if not _red_seal_fresh(repo, regression_test_file):
+    if not red_seal_fresh(repo, regression_test_file):
         return False
     return _negative_at_satisfied(regression_test_file)
-
-
-def _red_seal_fresh(repo: Path, regression_test_file: Path) -> bool:
-    """A ``RedObserved`` seal (P0.2) exists and matches the CURRENT content.
-
-    Reuses ``verify_red_green``'s own seal-path + content-sha helpers over
-    RESOLVED paths (the seal producer resolves both) so the slug and the hash
-    can never diverge from the producer. Freshness = the recorded
-    ``content_sha256`` equals the file's current sha256 (any post-RED edit
-    voids the evidence -- the same tamper semantics as the verdict path) AND
-    the seal witnessed >=1 failing test (a seal without a witnessed RED
-    proves nothing and never clears).
-    """
-    try:
-        seal = _red_green_seal_path(repo.resolve(), regression_test_file.resolve())
-    except ValueError:
-        return False  # the regression file is not under the repo root
-    if not seal.is_file():
-        return False
-    try:
-        record = json.loads(seal.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    if not isinstance(record, dict):
-        return False
-    outcomes = record.get("outcomes")
-    if not isinstance(outcomes, dict) or "fail" not in outcomes.values():
-        return False
-    try:
-        current_sha = _red_seal_content_sha(regression_test_file)
-    except OSError:
-        return False
-    return record.get("content_sha256") == current_sha
 
 
 def _negative_at_satisfied(regression_test_file: Path) -> bool:

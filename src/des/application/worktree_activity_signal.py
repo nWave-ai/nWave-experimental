@@ -7,12 +7,22 @@ values -- this module is where the I/O and the name-matching that PRODUCE
 them live.
 
 ACTIVITY AXIS (`read_activity_age_seconds`). Seconds since a worktree's own
-`.git` HEAD or index was last written, the second liveness signal the
-Sentinel needs because `/proc`-based process-cwd liveness is structurally
-blind for most of an LLM agent's life (it is waiting on the model between
-tool calls, not running a process). Read-only `stat()` calls; degrades to
-`Indeterminate` -- never a guessed number -- when the gitdir cannot be
-resolved or its files cannot be stat'd.
+`.git` HEAD was last written, the second liveness signal the Sentinel needs
+because `/proc`-based process-cwd liveness is structurally blind for most of
+an LLM agent's life (it is waiting on the model between tool calls, not
+running a process). Read-only `stat()` calls; degrades to `Indeterminate` --
+never a guessed number -- when the gitdir cannot be resolved or `HEAD`
+cannot be stat'd.
+
+D85: `.git/index` is deliberately EXCLUDED from this axis. `git status
+--porcelain` -- which the Sentinel's own dirty-state axis runs on every
+sweep -- rewrites `index`'s mtime as a side effect, so a young `index`
+reading is evidence about the INSTRUMENT's own probe, never about the
+worktree; folding it in (the original `min(HEAD, index)` shape) let the
+tool's own read disguise itself as fresh developer activity and
+permanently hide abandoned worktrees. `HEAD` is not written by any probe
+the Sentinel runs. See `docs/feature/fix-sentinel-activity-self-
+contamination/feature-delta.md` (decision D85-1).
 
 DECLARED-OWNERSHIP AXIS (`resolve_declared_ownership`). Two sources, tried
 in order:
@@ -147,15 +157,22 @@ def _mtime_age_seconds(p: Path, *, now: float) -> int | None:
 def read_activity_age_seconds(
     path: Path, *, now: float | None = None
 ) -> int | Indeterminate:
-    """Seconds since `path`'s own `.git` HEAD or index was last written --
-    the younger (more recent) of the two, since either one changing is
-    evidence of a write.
+    """Seconds since `path`'s own `.git` HEAD was last written.
+
+    D85: `.git/index` is deliberately NOT part of this axis. `index` is
+    rewritten by `git status --porcelain` -- which the Sentinel's own
+    dirty-state axis runs every sweep -- so a young `index` reading is
+    evidence about the INSTRUMENT's own probe, never about the worktree.
+    `HEAD` is not written by any probe the Sentinel runs, so it is the only
+    observable this axis may read. Contaminable set declared HERE, at the
+    read, per D85-2 -- not in a comment elsewhere the next change could
+    silently drop.
 
     `path` may be a linked worktree (`.git` is a FILE naming `gitdir: ...`)
     or the main checkout (`.git` is the directory itself); both are
     resolved to the real per-worktree gitdir before stat'ing. Returns
     `Indeterminate` -- never a fabricated age -- when `.git` is absent,
-    malformed, or neither file is stat'able; a caller must not read
+    malformed, or `HEAD` cannot be stat'd; a caller must not read
     `Indeterminate` as "very old" or "very new".
     """
     now = time.time() if now is None else now
@@ -174,16 +191,7 @@ def read_activity_age_seconds(
     except OSError as exc:
         return Indeterminate(f"could not read {gitfile}: {exc}")
 
-    ages = [
-        age
-        for age in (
-            _mtime_age_seconds(gitdir / "HEAD", now=now),
-            _mtime_age_seconds(gitdir / "index", now=now),
-        )
-        if age is not None
-    ]
-    if not ages:
-        return Indeterminate(
-            f"neither {gitdir / 'HEAD'} nor {gitdir / 'index'} could be stat'd"
-        )
-    return min(ages)
+    head_age = _mtime_age_seconds(gitdir / "HEAD", now=now)
+    if head_age is None:
+        return Indeterminate(f"{gitdir / 'HEAD'} could not be stat'd")
+    return head_age
