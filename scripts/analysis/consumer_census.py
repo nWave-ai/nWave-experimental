@@ -70,6 +70,10 @@ TEXT_SUFFIXES = {
     ".feature",
     ".cfg",
     ".txt",
+    # Shipped templates are installed onto an operator's machine and can carry a
+    # command invocation exactly as a skill does. Found 2026-08-06 by the
+    # NOT-EXAMINED reporting the moment it was added, which is the point of it.
+    ".template",
 }
 
 
@@ -119,6 +123,34 @@ CHANNELS: tuple[Channel, ...] = (
         r"\b{stem}\b",
     ),
     Channel("pre-commit/CI", (".pre-commit-config.yaml", ".github"), r"\b{stem}\b"),
+    # Shipped guidance is an EXECUTION channel, not documentation. A skill, task,
+    # template or agent file that tells an agent to run `des feature-end run` is
+    # a consumer in exactly the way an import is: delete the verb and the
+    # instruction becomes a lie on an installed machine.
+    #
+    # This channel was missing when the instrument was first committed, and the
+    # gap was found by independent review 2026-08-06, not by the instrument. It
+    # matters more than its size suggests: the six guidance consumers that
+    # reclassified `cli/feature_end` from DELETE to BOUNDARY live HERE, so the
+    # census could not see the evidence its own conclusion depended on. They were
+    # found by an ad-hoc scan instead, which is luck, not method.
+    #
+    # It needs the KEBAB alias, not only the module stem: guidance never writes
+    # `feature_end`, it writes the operator-facing `des feature-end run`. A
+    # channel added here with the underscore pattern alone would report clean and
+    # be just as blind.
+    #
+    # A hit here is a CANDIDATE, never a proven invocation, and the count must not
+    # be reported as one. Measured on `feature_end` 2026-08-06: 24 files match, of
+    # which 6 actually instruct `des feature-end ...` and 18 merely discuss
+    # feature-end RECORDS -- prose that stays true after the verb dies. This
+    # channel is deliberately tuned for recall, because a missed instruction ships
+    # a lie to an operator while a surplus candidate only costs a reading.
+    Channel(
+        "shipped guidance",
+        ("nWave/skills", "nWave/tasks", "nWave/templates", "nWave/agents"),
+        r"\b{stem}\b|\b{kebab}\b",
+    ),
     Channel("test import", ("tests",), r"^[ \t]*(?:from|import)[ \t]+[\w.]*\b{stem}\b"),
     Channel("test other", ("tests",), r"\b{stem}\b", subtract="test import"),
 )
@@ -128,18 +160,34 @@ CHANNELS: tuple[Channel, ...] = (
 class ChannelResult:
     hits: int = 0
     files: set[str] = field(default_factory=set)
+    #: Files under this channel's roots that the census did NOT read, because
+    #: their suffix is outside TEXT_SUFFIXES. An empty `files` is only an
+    #: absence claim over what was actually examined.
+    unexamined: list[str] = field(default_factory=list)
 
 
-def _iter_text_files(root: Path):
+def _iter_text_files(root: Path, unexamined: list[str] | None = None):
+    """Yield the files this census actually reads under `root`.
+
+    Anything whose suffix is not in TEXT_SUFFIXES is NOT examined -- including
+    every extensionless file, which is where an executable hook or a launcher
+    would live. That is a deliberate scope, but a silent one is indistinguishable
+    from a clean result, so callers may pass `unexamined` to collect what was
+    skipped and report it alongside the finding.
+    """
     if root.is_file():
         yield root
         return
     if not root.is_dir():
         return
     for path in root.rglob("*"):
-        if not path.is_file() or path.suffix not in TEXT_SUFFIXES:
+        if not path.is_file():
             continue
         if SKIP_DIR_NAMES & set(path.parts):
+            continue
+        if path.suffix not in TEXT_SUFFIXES:
+            if unexamined is not None:
+                unexamined.append(path.relative_to(REPO).as_posix())
             continue
         yield path
 
@@ -149,7 +197,7 @@ def _scan(pattern: str, roots: tuple[str, ...], exclude: set[str]) -> ChannelRes
     compiled = re.compile(pattern, re.MULTILINE)
     result = ChannelResult()
     for root_name in roots:
-        for path in _iter_text_files(REPO / root_name):
+        for path in _iter_text_files(REPO / root_name, result.unexamined):
             relative = path.relative_to(REPO).as_posix()
             if relative in exclude:
                 continue
@@ -188,7 +236,15 @@ def census(stem: str) -> dict[str, ChannelResult]:
         if channel.subtract:
             exclude |= results[channel.subtract].files
         results[channel.name] = _scan(
-            channel.pattern.format(stem=re.escape(stem)), channel.roots, exclude
+            channel.pattern.format(
+                stem=re.escape(stem),
+                # The operator-facing spelling of the same thing. Every channel
+                # gets it whether or not its pattern uses it, so adding a
+                # kebab-aware channel later needs no change here.
+                kebab=re.escape(stem.replace("_", "-")),
+            ),
+            channel.roots,
+            exclude,
         )
     for channel in CHANNELS:
         outcome = results[channel.name]
@@ -202,6 +258,19 @@ def census(stem: str) -> dict[str, ChannelResult]:
             print(f"                       {relative}")
         if len(outcome.files) > 6:
             print(f"                       ... +{len(outcome.files) - 6} more")
+
+    # An absence is a claim about the instrument. Say how wide the claim is.
+    unexamined = sorted({p for r in results.values() for p in r.unexamined})
+    if unexamined:
+        print(
+            f"\n  NOT EXAMINED: {len(unexamined)} file(s) under these roots have a "
+            f"suffix outside TEXT_SUFFIXES and were never read. An empty channel "
+            f"above is an absence claim over the examined files ONLY."
+        )
+        for relative in unexamined[:8]:
+            print(f"                {relative}")
+        if len(unexamined) > 8:
+            print(f"                ... +{len(unexamined) - 8} more")
     return results
 
 
@@ -234,6 +303,21 @@ def _self_test() -> int:
     ):
         if expected not in named:
             failures.append(f"imported-name form missed: {expected}")
+
+    # The shipped-guidance regression, pinned by the counterexample that exposed
+    # it. `des feature-end run` is instructed by six installed guidance files;
+    # before this channel existed the census reported the module clean, and the
+    # consumers that reclassified it BOUNDARY were found by an ad-hoc scan
+    # instead. Asserted on the KEBAB spelling, because the underscore stem does
+    # not appear in guidance at all -- a channel matching only the stem would
+    # pass this test's roots while remaining exactly as blind.
+    guidance = census("feature_end")["shipped guidance"].files
+    for expected in (
+        "nWave/skills/nw-deliver/SKILL.md",
+        "nWave/tasks/nw/continue.md",
+    ):
+        if expected not in guidance:
+            failures.append(f"shipped-guidance channel missed: {expected}")
 
     # The other-lane regression, pinned the same way. Every reported path must
     # belong to THIS tree: a hit under `.claude/worktrees/<lane>/` is another
