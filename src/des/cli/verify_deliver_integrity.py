@@ -748,9 +748,25 @@ def _verify_atdd_pure(
     # over a full suite that never ran is refused on record-ABSENCE (the gate
     # reads the leg's ledger record, never a pytest exit code; AT-A2 read/write
     # split). 6th sibling of the env-e2e / walking-skeleton / coverage-map
-    # heartbeat pattern. This set is held EQUAL to
-    # `nWave/flavors/atdd_pure.yaml feature_end_required_records` (AT-A6): a
-    # single-location edit would silently re-open the half-wired hole.
+    # heartbeat pattern.
+    #
+    # 2026-08-06: this set WAS "held EQUAL to
+    # `nWave/flavors/atdd_pure.yaml feature_end_required_records` (AT-A6)", with
+    # the warning that "a single-location edit would silently re-open the
+    # half-wired hole". Both halves of that claim are now false and the prose is
+    # corrected rather than deleted, because the way it failed is the lesson.
+    # `tests/build/f_nonbypassable_attestation/test_arch_required_sets_equal.py`
+    # NO LONGER EXISTS -- its only surviving trace is an orphan .pyc in that
+    # directory's __pycache__. With nothing checking, the sets had already
+    # drifted: `WalkingSkeletonTierVerified` is here and absent from the YAML.
+    # The hole is not at risk of re-opening; it has been open since the guard
+    # was deleted.
+    #
+    # No replacement guard is added, deliberately. This whole required-record
+    # done-gate is condemned in the DES-simplification mission, which forbids
+    # repairing DRY/SSOT defects inside a condemned subsystem rather than
+    # deleting the responsibility whole. Edit BOTH locations by hand until then,
+    # and expect no tool to tell you if you forget.
     #
     # techdebt drain (event-name-constants-split-port-adapter): unlike other
     # call sites, "EnvironmentalE2eGateRan" here MUST stay a plain string
@@ -766,7 +782,6 @@ def _verify_atdd_pure(
         "EBatchRefactorCompleted",
         "EnvironmentalE2eGateRan",
         "FeatureEndReviewVerdict",
-        "FullSuiteLegRan",
         "WalkingSkeletonGateRan",
         "WalkingSkeletonTierVerified",
     }

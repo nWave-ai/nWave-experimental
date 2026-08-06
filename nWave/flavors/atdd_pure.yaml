@@ -190,7 +190,6 @@ lifecycle_events:
         - EBatchRefactorCompleted
         - EnvironmentalE2eGateRan
         - FeatureEndReviewVerdict
-        - FullSuiteLegRan
         - WalkingSkeletonGateRan
       # fix-na-marker-reconcile-drift slice-01: the ONE shared source for which
       # NotApplicable (NA) marker reconciles which required record above --
