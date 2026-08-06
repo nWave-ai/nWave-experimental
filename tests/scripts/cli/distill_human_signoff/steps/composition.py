@@ -1262,10 +1262,10 @@ class HumanSignoffComposition:
         """Find call-sites resolving to the ledger writer outside the allowlist.
 
         The allowlist itself lives in
-        ``src.des.adapters.driven.ledger.coverage_map_signoff_writer._ENGINE_CALLER_ALLOWLIST``;
+        ``des.adapters.driven.ledger.coverage_map_signoff_writer._ENGINE_CALLER_ALLOWLIST``;
         AT3 (b) asserts every caller's dotted module path is in that set.
         """
-        from src.des.adapters.driven.ledger.coverage_map_signoff_writer import (
+        from des.adapters.driven.ledger.coverage_map_signoff_writer import (
             _ENGINE_CALLER_ALLOWLIST,
         )
 

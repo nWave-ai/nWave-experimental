@@ -91,38 +91,18 @@ def test_resolution_is_stable_under_case_and_separator_noise(name: str) -> None:
     assert resolve_phase(noisy).canonical == resolve_phase(name).canonical
 
 
-def test_the_outcome_discriminates_across_a_second_module_identity() -> None:
-    """The law that the FIRST version of this contract change got wrong.
-
-    Returning the outcome removes the `except` identity coupling only if callers
-    ask the OUTCOME. The first attempt had the CLI branch on
-    `resolution.kind is PhaseResolutionKind.UNKNOWN` -- an identity comparison on
-    an enum member, which is the same coupling in new syntax. CI caught it as an
-    unknown phase ACCEPTED with exit 0.
-
-    This pins the difference. The same source file is importable under a second
-    module name in this tree, producing distinct class and enum objects; a
-    resolution built by one side must still be discriminated correctly by the
-    property, while the cross-module enum comparison is shown to be exactly the
-    unreliable thing.
-    """
-    import src.des.domain.atdd_pure_phases as twin
-
-    from des.domain.atdd_pure_phases import PhaseResolutionKind as CanonicalKind
-
-    assert twin.PhaseResolutionKind is not CanonicalKind, (
-        "this repository no longer exposes the same module under two identities, "
-        "so this regression can no longer be reproduced -- if that is deliberate, "
-        "delete this test with the reason; do not weaken it"
-    )
-
-    twin_resolution = twin.resolve_phase("TOTALLY_BOGUS_PHASE")
-
-    # What a caller must rely on: the outcome answers about itself.
-    assert twin_resolution.is_unknown is True
-    assert twin_resolution.is_routing is False
-    assert twin_resolution.is_canonical is False
-
-    # What a caller must NOT rely on, demonstrated rather than asserted in prose:
-    # the cross-module identity comparison answers False for the TRUE case.
-    assert (twin_resolution.kind is CanonicalKind.UNKNOWN) is False
+# The twin-identity regression that stood here was DELETED 2026-08-06, on its own
+# instruction. It reproduced the defect by importing this module under the second
+# `src.des` identity, and asserted that identity existed -- so it could only pass
+# while the tree still permitted the condition. It no longer does: independent
+# review established the dual identity is an artefact of the pytest path, not a
+# supported runtime topology (no production module imports the `src`-prefixed
+# name, and the installer rewrites it away), and the two test files that reached
+# for it were converted. `tests/meta/test_no_test_imports_the_src_prefixed_package.py`
+# now guards the CAUSE for every module in the tree rather than this symptom in
+# one of them.
+#
+# What survives, and why it is not now ceremony: `resolve_phase` still RETURNS
+# its third outcome instead of raising. That is better design independently of
+# import topology -- an unrecognised name is an expected result, not an
+# exceptional one -- and the four properties above are what pin it.
