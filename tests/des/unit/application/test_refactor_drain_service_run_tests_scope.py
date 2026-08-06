@@ -26,11 +26,11 @@ from unittest.mock import Mock
 
 import des.application.refactor_drain_service as drain_module
 from des.application.refactor_drain_service import RefactorDrainService
-from des.domain.earned_verdict import TestRun
 from des.domain.refactor.green_to_green import (
     GreenToGreenVerdict,
     classify_green_to_green,
 )
+from des.domain.test_run import TestRun
 from des.ports.driven_ports.impacted_test_selector_port import ImpactedTestSelection
 
 

@@ -394,6 +394,73 @@ Corollary — **an instrument you run repeatedly is production code.** A report 
 or before every decision does not get to live as an unversioned scratch script: it needs a home, a
 history, and a test, because a defect in it is a defect in every decision downstream of it.
 
+Corollary — **the guidance corpus is an instrument, and it is usually the one that failed.**
+The rows above read naturally as being about measurements and receipts. They are not limited to
+them: a skill, mandate, agent spec or command prose that let a defect through is a defective
+instrument in exactly the same sense, and the repair is to change that prose — never a resolution
+to remember harder next time.
+
+> **After a defect is fixed, which prompt would have prevented it — and did you change that
+> prompt, or only the code?** Answering "the fix is obvious now, anyone would catch it" is the
+> wrong answer: the next author arrives with less context than you have at this moment, which is
+> the only moment the rule is cheap to write. **If no existing rule would have caught it, add or
+> sharpen one where its consumer already loads it; if one exists and did not fire, the defect is
+> in its phrasing or its placement, and that is what to repair.**
+
+Two constraints keep this from becoming prose inflation, and both come from rules already here:
+
+- **Extend before you mint** (`gate:design-principles-gdp-10-parsimony`). Ask whether a more
+  general existing rule already covers the case. A new numbered principle for something a
+  corollary can carry is the ceremony that clause exists to refuse.
+- **Ship the counterexample with the rule** (row 4 above, applied to prose). A normative sentence
+  without the dated case that generated it erodes at the first rewrite: the next editor sees an
+  assertion with no cost attached and trims it. The anchor is what makes the rule survive.
+
+This is deliberately blame-free and forward-facing. The question is never who wrote the test or the
+component that broke — it is which instruction, had it existed, would have made the class
+unwritable. Empirical anchor, 2026-08-06: three CI-only failures across three suites turned out to
+be one class (a test inheriting ambient host state rather than declaring it), and the durable
+output of that day was not the three fixes but the mandate and the two design clauses that make the
+class visible at authoring time.
+
+---
+
+## `contract:declared-inputs-not-ambient-reads` — what does this READ that nobody passed it? (STANDING)
+
+Paradigm-independent, and it applies to a component, a function and a test alike.
+
+> **List everything the behaviour is gated on, then ask which of those it RECEIVES and which it
+> goes and reads.** Answering "it works on my machine and in CI" is the wrong answer — that is
+> two samples of one environment class, and the gate is invisible in both. **If any gate is read
+> rather than received, lift it into the contract** — a parameter, an injected capability, an
+> explicit override — and keep the ambient lookup as a default the caller may state, never as the
+> only source.
+
+The gates worth walking, as one list so it cannot drift between copies: **host or platform
+presence · `$HOME` · a resolved config directory · cwd · `PATH` · environment variables · the
+clock · locale · network reachability**.
+
+Why it is not a style preference:
+
+- A component whose result depends on state absent from its inputs takes a different branch in a
+  different environment and reports honestly about a question nobody asked it.
+- Its tests are the first casualty. They pass on the author's machine, on any machine that
+  resembles it, **and because a sibling test created the state first** — which makes them
+  order-dependent with nothing in the source saying so. A `tmp_path` fixture is not evidence:
+  isolating the filesystem is not isolating the environment.
+- A property test cannot reach the cases ambient state is silently fixing, so the generator looks
+  thorough while the interesting partition is unreachable.
+
+Empirical anchor, 2026-08-06: `NWaveInstaller.effective_target_platforms` resolves the target host
+by ambient detection, lazily at first use. Three separate suites reached a no-host early return on
+CI instead of the behaviour they asserted; each was repaired by declaring the platform, and each
+took several refuted hypotheses to diagnose, because a component that reads ambient state gives no
+signal about WHICH state it read.
+
+Consumers: `nw-code-design-oo` and `nw-code-design-fp` (design-time, per paradigm) and the
+Algebraic Analysis Before the Scenario mandate in `nw-test-design-mandates` (authoring-time).
+They reference this clause; they do not restate the list.
+
 ---
 
 ## `provenance:a-count-without-a-sender-is-not-attributable` — name who wrote the record before it becomes evidence (STANDING)

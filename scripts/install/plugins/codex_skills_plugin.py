@@ -14,8 +14,10 @@ so uninstall() can remove only nWave skills without touching user-created ones.
 import json
 import os
 import shutil
+from collections import Counter
 from hashlib import sha256
 from pathlib import Path
+from stat import S_ISDIR, S_ISREG
 
 from scripts.install.plugins.base import (
     InstallationPlugin,
@@ -23,6 +25,7 @@ from scripts.install.plugins.base import (
     PluginResult,
 )
 from scripts.shared.agent_catalog import detect_command_skills, load_public_agents
+from scripts.shared.frontmatter import parse_frontmatter_file
 from scripts.shared.platform_contracts import CODEX_SKILL_FORBIDDEN_FIELDS
 from scripts.shared.skill_distribution import (
     enumerate_skills,
@@ -32,6 +35,7 @@ from scripts.shared.skill_path_rewrite import rewrite_host_paths
 
 
 _MANIFEST_FILENAME = ".nwave-manifest.json"
+_ATTESTED_LEGACY_SKILLS_METADATA_KEY = "_nwave_codex_attested_legacy_skills"
 
 # The first public Codex installer (manifest version 1.0) omitted these two
 # command skills.  This is deliberately a closed historical set: newly added
@@ -49,39 +53,34 @@ _V1_OMITTED_PUBLIC_COMMAND_SKILL_DIGESTS = {
 # they must never be regenerated from today's source tree.  It remains a
 # separate profile from the two-skill bridge above because the historical
 # renderings for their overlapping names differ.
-_V1_INCOMPLETE_MANIFEST_SKILL_DIGESTS = {
-    "nw-buddy": "bc0d60b68de55abc36e8e273e729a36887f3808b4b6369ba58dbced76df2d0bb",
-    "nw-bugfix": "0ca4c2438ded122439db8ead2abbaf0f5522ba35e5fd091855e866476a328b55",
-    "nw-continue": "1fe801835ab0800b9e9c8fde3bef10b561aab9e84c55079acd888b526b24d86a",
-    "nw-deliver": "ac8def71068d07bd072f9a18317ded0a206d77797335a38e77489d29d4ddfd8c",
-    "nw-design": "b7b43b7189cff072c94517a8fab3e5b2688ec8386e7bbd0d4fb15b2553ded306",
-    "nw-devops": "a902b5d9b876411f2b73cf1fec3f6fb8681f70ec19155d500290eeaa8eb49f71",
-    "nw-diagram": "5e4f3231f3b68ba4d1af796ff31c7fc80d6db2d7cc8f0558e2fb6a3f98d0bd98",
-    "nw-discover": "98daa12c8ffdc3dae9c3e5b3452f9afc107207e568ee495a8ea8f95bfdaa3b7f",
-    "nw-discuss": "93d94f1d5a02293eab210028c0eb1fc4a143924dc7fd0e2c6331022a83d8f2fa",
-    "nw-diverge": "95de6f0a9ab9235768bf902c0726d1284127796ce10e6377e71f2870bec114c3",
-    "nw-document": "df6ddadeee36257d79806da2349a442f18c4597e39dbd2fe0f7ee8e1905e0be0",
-    "nw-execute": "12472465a632d881592b391d4665ab48231ecbc0d3527898e53c5c65527402dd",
-    "nw-fast-forward": "3c5c450e4b1a07ff5f886c40c6cc8b4db3abfaa227acfb2a4f3c39ff46e8d68f",
-    "nw-finalize": "8e92edd03e10e14b3795714fc24bcfd8ac1c87e7d4c05a7865e4008cfe21a47b",
-    "nw-forge": "019ec548e58da0640d82b989365041bfb079ada2e9396c781f7a4de500bc399a",
-    "nw-hotspot": "94c30ad58319bddf587a65696d269184fb5ab336584e3a4d1763a3a2e760f546",
-    "nw-mikado": "9279af248efa74789f1ebf03d3ecd97bacd96c77adbd60dfe86ac30bb06fe7e9",
-    "nw-new": "0747cf3379c1f311fa5ddfdcb4f16c62320995cca997e0c07256caa3729c75c9",
-    "nw-optimize-tests": "051b21677ae1506852393832c0903e1b9b34a658ea9fde3ad1db3ac5d3338e21",
-    "nw-research": "87be14adc1430ddd1b042f41023799a2b2f87c57d0e08fdfb6fbad1d821902be",
-    "nw-review": "e5233e5218bdc2d9408b81e9c0dbfd57939ad8b3ca7a280945eb9d7de7c24623",
-    "nw-rigor": "f0683d0c8118c189bc6d3b2c1f5499e4dd2ae8c310fc43a2ed69b809f18f219b",
-    "nw-roadmap": "afbe4234a6d4c4c40a96c336e0b85528e968f258922af3021050b3dfd6c248f2",
-    "nw-root-why": "3e3f460531b46c3e780cc992f81d8bb229784983a01f49c766d75e9b94b07f68",
-    "nw-spike": "51f0c0b27c941ef1f2e3613aecde8afad3db6e60c44b1f49fe2219d05598868c",
-    "nw-throughput": "6fbe991edc39410df327803ceb3a1c5e48f9e55e08573de1870ff71b6378cfed",
-    "nw-update": "c6c39bac491e1fc852c06e3e760c36ea992d62cb617f2c41a11fff3048d2060a",
-}
-
-_V1_OMITTED_SKILL_PROFILES = (
-    _V1_OMITTED_PUBLIC_COMMAND_SKILL_DIGESTS,
-    _V1_INCOMPLETE_MANIFEST_SKILL_DIGESTS,
+_V1_INCOMPLETE_MANIFEST_SKILL_DIGEST_PROFILE = (
+    "bc0d60b68de55abc36e8e273e729a36887f3808b4b6369ba58dbced76df2d0bb",
+    "0ca4c2438ded122439db8ead2abbaf0f5522ba35e5fd091855e866476a328b55",
+    "1fe801835ab0800b9e9c8fde3bef10b561aab9e84c55079acd888b526b24d86a",
+    "ac8def71068d07bd072f9a18317ded0a206d77797335a38e77489d29d4ddfd8c",
+    "b7b43b7189cff072c94517a8fab3e5b2688ec8386e7bbd0d4fb15b2553ded306",
+    "a902b5d9b876411f2b73cf1fec3f6fb8681f70ec19155d500290eeaa8eb49f71",
+    "5e4f3231f3b68ba4d1af796ff31c7fc80d6db2d7cc8f0558e2fb6a3f98d0bd98",
+    "98daa12c8ffdc3dae9c3e5b3452f9afc107207e568ee495a8ea8f95bfdaa3b7f",
+    "93d94f1d5a02293eab210028c0eb1fc4a143924dc7fd0e2c6331022a83d8f2fa",
+    "95de6f0a9ab9235768bf902c0726d1284127796ce10e6377e71f2870bec114c3",
+    "df6ddadeee36257d79806da2349a442f18c4597e39dbd2fe0f7ee8e1905e0be0",
+    "12472465a632d881592b391d4665ab48231ecbc0d3527898e53c5c65527402dd",
+    "3c5c450e4b1a07ff5f886c40c6cc8b4db3abfaa227acfb2a4f3c39ff46e8d68f",
+    "8e92edd03e10e14b3795714fc24bcfd8ac1c87e7d4c05a7865e4008cfe21a47b",
+    "019ec548e58da0640d82b989365041bfb079ada2e9396c781f7a4de500bc399a",
+    "94c30ad58319bddf587a65696d269184fb5ab336584e3a4d1763a3a2e760f546",
+    "9279af248efa74789f1ebf03d3ecd97bacd96c77adbd60dfe86ac30bb06fe7e9",
+    "0747cf3379c1f311fa5ddfdcb4f16c62320995cca997e0c07256caa3729c75c9",
+    "051b21677ae1506852393832c0903e1b9b34a658ea9fde3ad1db3ac5d3338e21",
+    "87be14adc1430ddd1b042f41023799a2b2f87c57d0e08fdfb6fbad1d821902be",
+    "e5233e5218bdc2d9408b81e9c0dbfd57939ad8b3ca7a280945eb9d7de7c24623",
+    "f0683d0c8118c189bc6d3b2c1f5499e4dd2ae8c310fc43a2ed69b809f18f219b",
+    "afbe4234a6d4c4c40a96c336e0b85528e968f258922af3021050b3dfd6c248f2",
+    "3e3f460531b46c3e780cc992f81d8bb229784983a01f49c766d75e9b94b07f68",
+    "51f0c0b27c941ef1f2e3613aecde8afad3db6e60c44b1f49fe2219d05598868c",
+    "6fbe991edc39410df327803ceb3a1c5e48f9e55e08573de1870ff71b6378cfed",
+    "c6c39bac491e1fc852c06e3e760c36ea992d62cb617f2c41a11fff3048d2060a",
 )
 
 
@@ -111,39 +110,81 @@ def legacy_v1_omitted_command_skills(
         return None
 
     listed = set(manifest["installed_skills"])
-    candidates = {
-        candidate.name: candidate
+    if skills_dir.is_symlink() or not skills_dir.is_dir():
+        return None
+
+    candidates = [
+        candidate
         for candidate in skills_dir.glob("nw-*")
         if candidate.name not in listed
-    }
+    ]
 
-    # Exact membership is part of each fingerprint.  A small test/bootstrap
-    # manifest may already list a member of the historical profile, but the
-    # complete profile must still be present and byte-proven before any of its
-    # remaining members are adopted.  This never promotes a discovered name:
-    # the only returned names are the static profile's unlisted members.
-    for profile in _V1_OMITTED_SKILL_PROFILES:
-        unlisted_profile = set(profile) - listed
-        if not unlisted_profile or set(candidates) != unlisted_profile:
+    def trusted_skill(candidate: Path, expected_digest: str) -> bool:
+        skill = candidate / "SKILL.md"
+        try:
+            metadata, _ = parse_frontmatter_file(skill)
+            return (
+                candidate.name.startswith("nw-")
+                and Path(candidate.name).name == candidate.name
+                and not candidate.is_symlink()
+                and candidate.is_dir()
+                and list(candidate.iterdir()) == [skill]
+                and not skill.is_symlink()
+                and skill.is_file()
+                and sha256(skill.read_bytes()).hexdigest() == expected_digest
+                and isinstance(metadata, dict)
+                and metadata.get("name") == candidate.name
+            )
+        except OSError:
+            return False
+
+    # Exact membership is part of the name-bound bridge fingerprint.  A small
+    # test/bootstrap manifest may already list a member of the historical
+    # profile, but the complete profile must still be present and byte-proven
+    # before any of its remaining members are adopted.
+    named_profile = _V1_OMITTED_PUBLIC_COMMAND_SKILL_DIGESTS
+    named_omissions = set(named_profile) - listed
+    if (
+        named_omissions
+        and {candidate.name for candidate in candidates} == named_omissions
+    ):
+        if all(
+            trusted_skill(skills_dir / name, digest)
+            for name, digest in named_profile.items()
+        ):
+            return named_omissions
+
+    # The incomplete-manifest profile deliberately binds a *closed payload
+    # multiset*, not dead historical command names.  Its content binds each
+    # candidate back to its own directory through parsed frontmatter.
+    # A member can already be catalogued by the incomplete manifest.  It is
+    # still part of the 27-payload attestation, but only its unlisted peers
+    # become omissions.  Every unlisted nw-* directory must belong to the
+    # closed payload; otherwise it remains foreign.
+    if (
+        len(_V1_INCOMPLETE_MANIFEST_SKILL_DIGEST_PROFILE) != 27
+        or len(set(_V1_INCOMPLETE_MANIFEST_SKILL_DIGEST_PROFILE)) != 27
+    ):
+        return None
+    payload_candidates: list[tuple[Path, str]] = []
+    for candidate in skills_dir.glob("nw-*"):
+        skill = candidate / "SKILL.md"
+        try:
+            digest = sha256(skill.read_bytes()).hexdigest()
+        except OSError:
             continue
-        for name, expected_digest in profile.items():
-            candidate = skills_dir / name
-            skill = candidate / "SKILL.md"
-            try:
-                trusted = (
-                    not candidate.is_symlink()
-                    and candidate.is_dir()
-                    and list(candidate.iterdir()) == [skill]
-                    and not skill.is_symlink()
-                    and skill.is_file()
-                    and sha256(skill.read_bytes()).hexdigest() == expected_digest
-                )
-            except OSError:
-                trusted = False
-            if not trusted:
-                break
-        else:
-            return unlisted_profile
+        if digest in _V1_INCOMPLETE_MANIFEST_SKILL_DIGEST_PROFILE and trusted_skill(
+            candidate, digest
+        ):
+            payload_candidates.append((candidate, digest))
+    payload_names = {candidate.name for candidate, _ in payload_candidates}
+    if (
+        len(payload_candidates) == len(_V1_INCOMPLETE_MANIFEST_SKILL_DIGEST_PROFILE)
+        and Counter(digest for _, digest in payload_candidates)
+        == Counter(_V1_INCOMPLETE_MANIFEST_SKILL_DIGEST_PROFILE)
+        and {candidate.name for candidate in candidates} == payload_names - listed
+    ):
+        return payload_names - listed
     return None
 
 
@@ -262,6 +303,125 @@ def _read_manifest(target_dir: Path) -> dict | None:
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
+def _safe_skill_name(name: object) -> bool:
+    """Return whether *name* is a non-traversing Codex skill basename."""
+    return isinstance(name, str) and bool(name) and Path(name).name == name
+
+
+def _read_owned_skill_manifest(
+    target_dir: Path,
+) -> tuple[bytes | None, dict | None, set[str]]:
+    """Strictly read the ownership manifest before an install mutates disk.
+
+    A manifest name is an ownership claim only after its own shape is trusted.
+    This is intentionally narrower than ``_read_manifest``'s compatibility
+    reader, because refresh reconciliation can delete stale directories.
+    """
+    manifest_path = target_dir / _MANIFEST_FILENAME
+    if not (manifest_path.exists() or manifest_path.is_symlink()):
+        return None, None, set()
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise ValueError(f"unsafe Codex skills manifest: {manifest_path}")
+    try:
+        manifest_bytes = manifest_path.read_bytes()
+        document = json.loads(manifest_bytes.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"unreadable Codex skills manifest: {manifest_path}") from exc
+    names = document.get("installed_skills") if isinstance(document, dict) else None
+    if not (
+        isinstance(document, dict)
+        and set(document) == {"installed_skills", "version"}
+        and document.get("version") == "1.0"
+        and isinstance(names, list)
+        and all(_safe_skill_name(name) for name in names)
+        and len(names) == len(set(names))
+    ):
+        raise ValueError(f"untrusted Codex skills manifest: {manifest_path}")
+    return manifest_bytes, document, set(names)
+
+
+def _safe_stale_skill_dir(target_dir: Path, name: str) -> Path:
+    """Validate a manifest/attestation-owned stale directory before removal."""
+    if not _safe_skill_name(name):
+        raise ValueError(f"unsafe stale Codex skill name: {name!r}")
+    if target_dir.is_symlink() or not target_dir.is_dir():
+        raise ValueError(f"unsafe Codex skills directory: {target_dir}")
+    skill_dir = target_dir / name
+    if (
+        skill_dir.parent != target_dir
+        or skill_dir.is_symlink()
+        or not skill_dir.is_dir()
+    ):
+        raise ValueError(f"unsafe stale Codex skill directory: {skill_dir}")
+    try:
+        if any(child.is_symlink() for child in skill_dir.rglob("*")):
+            raise ValueError(f"unsafe stale Codex skill directory: {skill_dir}")
+    except OSError as exc:
+        raise ValueError(
+            f"unreadable stale Codex skill directory: {skill_dir}"
+        ) from exc
+    return skill_dir
+
+
+def _skill_tree_fingerprint(
+    target_dir: Path, name: str
+) -> tuple[tuple[object, ...], ...]:
+    """Return a stable, identity- and byte-sensitive safe-tree fingerprint."""
+
+    def snapshot_once() -> tuple[tuple[object, ...], ...]:
+        skill_dir = _safe_stale_skill_dir(target_dir, name)
+        try:
+            paths = [skill_dir, *sorted(skill_dir.rglob("*"))]
+            fingerprint: list[tuple[object, ...]] = []
+            for path in paths:
+                if path.is_symlink():
+                    raise ValueError(f"unsafe Codex skill tree entry: {path}")
+                before = path.stat(follow_symlinks=False)
+                relative = (
+                    "." if path == skill_dir else path.relative_to(skill_dir).as_posix()
+                )
+                if S_ISDIR(before.st_mode):
+                    kind = "directory"
+                    digest = ""
+                elif S_ISREG(before.st_mode):
+                    kind = "file"
+                    digest = sha256(path.read_bytes()).hexdigest()
+                else:
+                    raise ValueError(f"unsafe Codex skill tree entry: {path}")
+                after = path.stat(follow_symlinks=False)
+                identity = (
+                    before.st_dev,
+                    before.st_ino,
+                    before.st_mode,
+                    before.st_size,
+                    before.st_mtime_ns,
+                )
+                if identity != (
+                    after.st_dev,
+                    after.st_ino,
+                    after.st_mode,
+                    after.st_size,
+                    after.st_mtime_ns,
+                ):
+                    raise ValueError(
+                        f"Codex skill tree changed while inspected: {path}"
+                    )
+                fingerprint.append((relative, kind, *identity, digest))
+            return tuple(fingerprint)
+        except (OSError, ValueError) as exc:
+            if isinstance(exc, ValueError):
+                raise
+            raise ValueError(f"unreadable Codex skill tree: {skill_dir}") from exc
+
+    first = snapshot_once()
+    second = snapshot_once()
+    if first != second:
+        raise ValueError(
+            f"Codex skill tree changed while inspected: {target_dir / name}"
+        )
+    return first
+
+
 class CodexSkillsPlugin(InstallationPlugin):
     """Plugin for installing nWave Skills into Codex CLI's SKILL.md format."""
 
@@ -334,9 +494,6 @@ class CodexSkillsPlugin(InstallationPlugin):
                     message="No skills to install (source directory not found)",
                 )
 
-            target_dir = _codex_skills_dir()
-            target_dir.mkdir(parents=True, exist_ok=True)
-
             public_agents = (
                 set()
                 if context.dev_mode
@@ -358,13 +515,103 @@ class CodexSkillsPlugin(InstallationPlugin):
                 entries, public_agents, ownership_map, command_skills
             )
 
+            # Snapshot the desired catalogue before looking at mutable target
+            # state.  The manifest is the ownership oracle; historical
+            # omissions are a separate, preflight-attested capability.
+            desired_entries = tuple(entries)
+            desired_names = {entry.name for entry in desired_entries}
+            if len(desired_names) != len(desired_entries) or not all(
+                _safe_skill_name(name) for name in desired_names
+            ):
+                raise ValueError("invalid desired Codex skill catalogue")
+
+            target_dir = _codex_skills_dir()
+            if target_dir.exists() or target_dir.is_symlink():
+                if target_dir.is_symlink() or not target_dir.is_dir():
+                    raise ValueError(f"unsafe Codex skills directory: {target_dir}")
+
+            (
+                old_manifest_bytes,
+                old_manifest,
+                old_manifest_names,
+            ) = _read_owned_skill_manifest(target_dir)
+            preflight_capability = context.metadata.get(
+                _ATTESTED_LEGACY_SKILLS_METADATA_KEY, frozenset()
+            )
+            if not isinstance(preflight_capability, (set, frozenset)) or not all(
+                _safe_skill_name(name) for name in preflight_capability
+            ):
+                raise ValueError("invalid Codex legacy-skill capability")
+            preflight_capability = set(preflight_capability)
+            reattested_omissions = (
+                legacy_v1_omitted_command_skills(target_dir, old_manifest)
+                if old_manifest is not None
+                else None
+            )
+            observed_omissions = (
+                set() if reattested_omissions is None else reattested_omissions
+            )
+            if observed_omissions != preflight_capability:
+                raise ValueError(
+                    "Codex legacy-skill attestation changed after preflight"
+                )
+
+            previous_owned = old_manifest_names | observed_omissions
+            initial_desired_fingerprints: dict[str, tuple[tuple[object, ...], ...]] = {}
+            for name in sorted(desired_names):
+                desired_dir = target_dir / name
+                if desired_dir.exists() or desired_dir.is_symlink():
+                    if name not in previous_owned:
+                        raise ValueError(
+                            f"foreign or untracked Codex skill collision: {desired_dir}"
+                        )
+                    initial_desired_fingerprints[name] = _skill_tree_fingerprint(
+                        target_dir, name
+                    )
+            stale_names = previous_owned - desired_names
+            initial_stale_fingerprints = {
+                name: _skill_tree_fingerprint(target_dir, name)
+                for name in sorted(stale_names)
+            }
+            attested_tree_fingerprints = {
+                name: _skill_tree_fingerprint(target_dir, name)
+                for name in sorted(observed_omissions)
+            }
+
+            target_dir.mkdir(parents=True, exist_ok=True)
+
             installed_names: list[str] = []
             installed_files: list[Path] = []
 
-            for entry in entries:
+            for entry in desired_entries:
                 skill_target_dir = target_dir / entry.name
-                if skill_target_dir.exists():
+                if entry.name in initial_desired_fingerprints:
+                    (
+                        replacement_manifest_bytes,
+                        replacement_manifest,
+                        replacement_manifest_names,
+                    ) = _read_owned_skill_manifest(target_dir)
+                    if (
+                        replacement_manifest_bytes != old_manifest_bytes
+                        or replacement_manifest != old_manifest
+                        or replacement_manifest_names != old_manifest_names
+                    ):
+                        raise ValueError(
+                            "Codex skills manifest changed before desired replacement"
+                        )
+                    if (
+                        _skill_tree_fingerprint(target_dir, entry.name)
+                        != initial_desired_fingerprints[entry.name]
+                    ):
+                        raise ValueError(
+                            "manifest-owned desired Codex skill changed before "
+                            f"replacement: {entry.name}"
+                        )
                     shutil.rmtree(skill_target_dir)
+                elif skill_target_dir.exists() or skill_target_dir.is_symlink():
+                    raise ValueError(
+                        f"foreign or untracked Codex skill collision: {skill_target_dir}"
+                    )
 
                 if entry.source_path.is_dir():
                     shutil.copytree(entry.source_path, skill_target_dir)
@@ -381,7 +628,72 @@ class CodexSkillsPlugin(InstallationPlugin):
 
                 installed_names.append(entry.name)
                 installed_files.append(target_file)
+                if entry.name in attested_tree_fingerprints:
+                    # Preserve the attested chain of custody across this
+                    # installer's authorized replacement of a desired legacy
+                    # payload.  Final validation still reads the live tree.
+                    attested_tree_fingerprints[entry.name] = _skill_tree_fingerprint(
+                        target_dir, entry.name
+                    )
 
+            # Do not delete a stale owned directory until every desired skill
+            # was copied and rendered.  Re-read every ownership witness from
+            # the live target and require exact agreement with the initial
+            # snapshot immediately before path-based deletion.
+            (
+                current_manifest_bytes,
+                current_manifest,
+                current_manifest_names,
+            ) = _read_owned_skill_manifest(target_dir)
+            if (
+                current_manifest_bytes != old_manifest_bytes
+                or current_manifest != old_manifest
+                or current_manifest_names != old_manifest_names
+            ):
+                raise ValueError("Codex skills manifest changed during installation")
+
+            current_attested_names: set[str] = set()
+            for name, expected in attested_tree_fingerprints.items():
+                if _skill_tree_fingerprint(target_dir, name) != expected:
+                    raise ValueError(
+                        f"attested Codex skill changed during installation: {name}"
+                    )
+                current_attested_names.add(name)
+            if (
+                current_attested_names != preflight_capability
+                or current_attested_names != observed_omissions
+            ):
+                raise ValueError(
+                    "Codex legacy-skill attestation changed before removal"
+                )
+            current_unlisted_non_desired = {
+                path.name
+                for path in target_dir.glob("nw-*")
+                if path.name not in current_manifest_names
+                and path.name not in desired_names
+            }
+            if current_unlisted_non_desired != observed_omissions - desired_names:
+                raise ValueError("Codex legacy-skill candidates changed before removal")
+
+            current_stale_names = (
+                current_manifest_names | current_attested_names
+            ) - desired_names
+            if current_stale_names != stale_names:
+                raise ValueError("Codex stale-skill set changed during installation")
+
+            for name in sorted(current_stale_names):
+                if (
+                    _skill_tree_fingerprint(target_dir, name)
+                    != initial_stale_fingerprints[name]
+                ):
+                    raise ValueError(
+                        f"stale Codex skill changed during installation: {name}"
+                    )
+                # This last identity/content validation is immediately before
+                # the destructive, path-based operation.  rmtree itself has
+                # no directory-handle API, so a residual race remains between
+                # this check and its first filesystem operation.
+                shutil.rmtree(_safe_stale_skill_dir(target_dir, name))
             _write_manifest(target_dir, installed_names)
 
             context.logger.info(

@@ -47,12 +47,16 @@ _LAUNCHER_FILENAME = "nwave_claude_code_hook_adapter_launcher.py"
 # Event key used by Codex (verified against developers.openai.com/codex/hooks
 # and codex-rs/hooks/schema/generated/pre-tool-use.command.*.schema.json).
 _PRE_TOOL_USE_EVENT = "PreToolUse"
+# Retained only to remove exact payloads written by older releases.  New
+# installs never register a SessionStart hook.
 _SESSION_START_EVENT = "SessionStart"
 _SESSION_START_MATCHER = "startup|resume|clear|compact"
 _SESSION_START_SUBCOMMAND = "session-start"
 _CODEX_HOST_PROVENANCE_ARGUMENT = "--host-provenance=codex"
 _SESSION_START_LAUNCHER_FILENAME = "nwave_orchestrator_affordance_launcher.py"
-_RUNTIME_RESOLVER_RELATIVE_PATH = Path("nWave/hooks/orchestrator_affordance_refresh.py")
+_LEGACY_RUNTIME_RESOLVER_RELATIVE_PATH = Path(
+    "nWave/hooks/orchestrator_affordance_refresh.py"
+)
 
 # Observed from the running codex-cli 0.145.0 host on 2026-07-26.  The
 # installer must bind a matcher to what the host actually emits, not to a
@@ -216,16 +220,8 @@ def _write_launcher(launcher_path: Path, python_path: str, pythonpath: str) -> N
 
 
 def _runtime_resolver_path() -> Path:
-    """Return the resolver shipped with the host-neutral nWave runtime.
-
-    This is deliberately not ``~/.claude`` and never a development checkout:
-    the same public candidate must serve a Codex-only user after its source
-    tree has gone away.
-    """
-    # DES code lives in ~/.nwave/runtime/des while its sibling nWave assets
-    # deliberately live at ~/.nwave/nWave.  Runtime assets are a peer of the
-    # code runtime, not a child of it.
-    return host_neutral_runtime_dir().parent / _RUNTIME_RESOLVER_RELATIVE_PATH
+    """Historical resolver path, retained solely for exact upgrade cleanup."""
+    return host_neutral_runtime_dir().parent / _LEGACY_RUNTIME_RESOLVER_RELATIVE_PATH
 
 
 def _session_start_launcher_source(
@@ -853,17 +849,6 @@ class CodexDESPlugin(InstallationPlugin):
             pythonpath = resolve_des_lib_path_for_spawn()
             launcher_path = codex_dir / _LAUNCHER_FILENAME
             session_start_launcher_path = codex_dir / _SESSION_START_LAUNCHER_FILENAME
-            resolver_path = _runtime_resolver_path()
-            if not resolver_path.is_file() or resolver_path.is_symlink():
-                raise FileNotFoundError(
-                    "WHAT: Codex SessionStart cannot install because its "
-                    f"host-neutral resolver is absent: {resolver_path}. "
-                    "WHY: registering a hook whose installed implementation "
-                    "does not exist would silently deprive Codex-only users "
-                    "of standing-loop/parallelism/drain guidance. "
-                    "HOW: install the DES runtime assets from the same public "
-                    "candidate before registering Codex hooks."
-                )
             hooks_path = codex_dir / _HOOKS_FILENAME
             existing_doc = _read_hooks(hooks_path)
             manifest_path = codex_dir / _MANIFEST_FILENAME
@@ -875,9 +860,6 @@ class CodexDESPlugin(InstallationPlugin):
                 legacy_manifest, hooks_path, existing_doc
             )
             _write_launcher(launcher_path, python_path, pythonpath)
-            _write_session_start_launcher(
-                session_start_launcher_path, python_path, pythonpath, resolver_path
-            )
 
             doc = _remove_nwave_hooks(
                 existing_doc, launcher_path, legacy_direct_command
@@ -887,14 +869,33 @@ class CodexDESPlugin(InstallationPlugin):
                 session_start_launcher_path,
                 subcommand=_SESSION_START_SUBCOMMAND,
             )
+            # Upgrade cleanup: remove only the generated SessionStart launcher
+            # whose historical manifest and exact bytes prove nWave ownership.
+            try:
+                session_launcher_is_owned = (
+                    isinstance(legacy_manifest, dict)
+                    and legacy_manifest.get("session_start_launcher_file")
+                    == str(session_start_launcher_path)
+                    and isinstance(legacy_manifest.get("python_path"), str)
+                    and isinstance(legacy_manifest.get("pythonpath"), str)
+                    and isinstance(legacy_manifest.get("resolver_script_file"), str)
+                    and session_start_launcher_path.is_file()
+                    and not session_start_launcher_path.is_symlink()
+                    and session_start_launcher_path.read_text(encoding="utf-8")
+                    == _session_start_launcher_source(
+                        legacy_manifest["python_path"],
+                        legacy_manifest["pythonpath"],
+                        legacy_manifest["resolver_script_file"],
+                    )
+                )
+            except (OSError, UnicodeDecodeError):
+                session_launcher_is_owned = False
+            if session_launcher_is_owned:
+                session_start_launcher_path.unlink()
             doc.setdefault("hooks", {})
             pretool_list = doc["hooks"].setdefault(_PRE_TOOL_USE_EVENT, [])
             new_entry = _build_launcher_hook_entry(launcher_path)
             pretool_list.append(new_entry)
-            session_start = doc["hooks"].setdefault(_SESSION_START_EVENT, [])
-            session_start.append(
-                _build_session_start_hook_entry(session_start_launcher_path)
-            )
 
             hooks_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
 
@@ -903,8 +904,6 @@ class CodexDESPlugin(InstallationPlugin):
                 "python_path": python_path,
                 "pythonpath": pythonpath,
                 "launcher_file": str(launcher_path),
-                "session_start_launcher_file": str(session_start_launcher_path),
-                "resolver_script_file": str(resolver_path),
             }
             manifest_path.write_text(
                 json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
@@ -920,7 +919,6 @@ class CodexDESPlugin(InstallationPlugin):
                     hooks_path,
                     manifest_path,
                     launcher_path,
-                    session_start_launcher_path,
                 ],
             )
 
@@ -977,20 +975,24 @@ class CodexDESPlugin(InstallationPlugin):
             current_manifest_is_owned = (
                 isinstance(manifest, dict)
                 and set(manifest)
-                == {
-                    "hooks_file",
-                    "python_path",
-                    "pythonpath",
-                    "launcher_file",
-                    "session_start_launcher_file",
-                    "resolver_script_file",
-                }
+                in (
+                    {
+                        "hooks_file",
+                        "python_path",
+                        "pythonpath",
+                        "launcher_file",
+                    },
+                    {
+                        "hooks_file",
+                        "python_path",
+                        "pythonpath",
+                        "launcher_file",
+                        "session_start_launcher_file",
+                        "resolver_script_file",
+                    },
+                )
                 and manifest.get("hooks_file") == str(hooks_path)
                 and manifest.get("launcher_file") == str(launcher_path)
-                and manifest.get("session_start_launcher_file")
-                == str(session_start_launcher_path)
-                and manifest.get("resolver_script_file")
-                == str(_runtime_resolver_path())
                 and isinstance(manifest.get("python_path"), str)
                 and manifest["python_path"]
                 and isinstance(manifest.get("pythonpath"), str)
@@ -1010,7 +1012,13 @@ class CodexDESPlugin(InstallationPlugin):
                     pass
 
             session_start_launcher_is_owned = False
-            if current_manifest_is_owned:
+            if (
+                current_manifest_is_owned
+                and manifest.get("session_start_launcher_file")
+                == str(session_start_launcher_path)
+                and manifest.get("resolver_script_file")
+                == str(_runtime_resolver_path())
+            ):
                 try:
                     session_start_launcher_is_owned = (
                         session_start_launcher_path.is_file()
@@ -1141,7 +1149,6 @@ class CodexDESPlugin(InstallationPlugin):
             errors: list[str] = []
             launcher_path = codex_dir / _LAUNCHER_FILENAME
             session_start_launcher_path = codex_dir / _SESSION_START_LAUNCHER_FILENAME
-            resolver_path = _runtime_resolver_path()
 
             hooks_path = codex_dir / _HOOKS_FILENAME
             if not hooks_path.exists():
@@ -1194,21 +1201,9 @@ class CodexDESPlugin(InstallationPlugin):
                         command, session_start_launcher_path
                     )
                 ]
-                if (
-                    len(current_session_commands) != 1
-                    or legacy_session_commands
-                    or len(current_session_commands) + len(legacy_session_commands) != 1
-                ):
+                if current_session_commands or legacy_session_commands:
                     errors.append(
-                        "Expected exactly one nWave SessionStart affordance hook"
-                    )
-                elif not _command_targets_launcher(
-                    current_session_commands[0],
-                    session_start_launcher_path,
-                    _SESSION_START_SUBCOMMAND,
-                ):
-                    errors.append(
-                        "SessionStart affordance hook does not target canonical launcher"
+                        "Retired nWave SessionStart hook remains in hooks.json"
                     )
 
             manifest_path = codex_dir / _MANIFEST_FILENAME
@@ -1221,23 +1216,13 @@ class CodexDESPlugin(InstallationPlugin):
                     errors.append("DES manifest launcher path is not canonical")
                 if not launcher_path.is_file():
                     errors.append("DES canonical launcher is missing")
-                if manifest.get("session_start_launcher_file") != str(
-                    session_start_launcher_path
-                ):
-                    errors.append(
-                        "DES manifest SessionStart launcher path is not canonical"
-                    )
-                if manifest.get("resolver_script_file") != str(resolver_path):
-                    errors.append("DES manifest resolver path is not canonical")
                 if (
-                    not session_start_launcher_path.is_file()
-                    or session_start_launcher_path.is_symlink()
+                    "session_start_launcher_file" in manifest
+                    or "resolver_script_file" in manifest
                 ):
-                    errors.append("Codex SessionStart launcher is missing or unsafe")
-                if not resolver_path.is_file() or resolver_path.is_symlink():
-                    errors.append(
-                        "Host-neutral affordance resolver is missing or unsafe"
-                    )
+                    errors.append("DES manifest retains retired SessionStart state")
+                if session_start_launcher_path.exists():
+                    errors.append("Retired Codex SessionStart launcher remains")
 
             if errors:
                 return PluginResult(

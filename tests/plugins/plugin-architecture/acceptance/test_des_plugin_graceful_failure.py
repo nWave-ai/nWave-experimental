@@ -209,9 +209,7 @@ def no_partial_des_files_installed():
     # No DES scripts should be installed
     if target_scripts.exists():
         des_scripts = [
-            f
-            for f in target_scripts.iterdir()
-            if f.name in ["check_stale_phases.py", "scope_boundary_check.py"]
+            f for f in target_scripts.iterdir() if f.name == "scope_boundary_check.py"
         ]
         assert len(des_scripts) == 0, f"Partial DES scripts found: {des_scripts}"
 

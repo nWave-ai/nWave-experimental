@@ -155,8 +155,8 @@ class TotalAtAdvisoryComposition:
 
     def then_threshold_reads_rigor_cascade(self, sentinel: int) -> None:
         """AT-6: the @property reads the value from the des-config.json `rigor.`
-        cascade (project -> global -> @property default), mirroring
-        rigor_tdd_phases."""
+        cascade (project -> global -> @property default), matching the other
+        rigor-backed scalar settings."""
         assert self._read_threshold() == sentinel, (
             "rigor_feature_total_at_advisory_threshold must read the value from "
             "the des-config.json `rigor.feature_total_at_advisory_threshold` "

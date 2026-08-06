@@ -58,7 +58,6 @@ def test_atdd_pure_flavor_parsed_structure_is_pinned() -> None:
         "dispatch.pre",
         "subagent.stop",
         "commit.pre",
-        "session.init",
     ]
 
     # f-nonbypassable-attestation slice-05 (DDD-8): dispatch.pre legitimately
@@ -103,8 +102,6 @@ def test_atdd_pure_flavor_parsed_structure_is_pinned() -> None:
 
     # `require_reviewed_by: false` must coerce to a Python bool, not "false".
     assert events["commit.pre"][0]["args"]["require_reviewed_by"] is False
-    # A gate with no args stays a bare gate dict.
-    assert events["session.init"][0] == {"gate_id": "health-check", "on_failure": "log"}
 
 
 def test_classic_flavor_is_absent_instead_of_parseable() -> None:

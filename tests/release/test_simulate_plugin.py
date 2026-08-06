@@ -1,7 +1,7 @@
 """Tests for simulate_plugin — plugin build simulation (step 02-02).
 
 Validates that simulate_plugin() builds a plugin in a temp directory,
-checks hooks.json for 5 event types, verifies agent/skill counts,
+checks hooks.json for the active event types, verifies agent/skill counts,
 and reports PASS/FAIL via StepResult.
 """
 
@@ -11,21 +11,19 @@ import json
 import tempfile
 from pathlib import Path
 
-from scripts.release.simulate import Status, simulate_plugin
+from scripts.release.simulate import EXPECTED_HOOK_EVENT_TYPES, Status, simulate_plugin
 
 
 # ---------------------------------------------------------------------------
 # Helpers: build a minimal valid plugin directory
 # ---------------------------------------------------------------------------
 
-EXPECTED_EVENT_TYPES = frozenset(
-    ["PreToolUse", "PostToolUse", "SubagentStop", "SessionStart", "SubagentStart"]
-)
+EXPECTED_EVENT_TYPES = EXPECTED_HOOK_EVENT_TYPES
 
 
 def _create_minimal_plugin(plugin_dir: Path, *, agent_count: int = 23) -> None:
     """Create a minimal valid plugin structure for testing."""
-    # hooks.json with 5 event types
+    # hooks.json with every currently active event type
     hooks_dir = plugin_dir / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
     hooks_config = {
@@ -81,7 +79,7 @@ class TestSimulatePluginAcceptance:
 
         assert result.status == Status.PASS
         assert result.name == "Plugin build"
-        assert "5 event types" in result.message
+        assert f"{len(EXPECTED_EVENT_TYPES)} event types" in result.message
         assert "23 agents" in result.message
 
     def test_temp_directory_is_cleaned_up(self, monkeypatch, tmp_path):
@@ -126,7 +124,7 @@ class TestSimulatePluginHooksValidation:
     """Unit: hooks.json must have exactly 5 event types."""
 
     def test_missing_event_type_returns_fail(self, monkeypatch):
-        """hooks.json with only 4 event types should FAIL."""
+        """hooks.json missing one active event type should FAIL."""
 
         def fake_build(config, *, version_override=None):
             from scripts.build_plugin import BuildResult
@@ -136,7 +134,7 @@ class TestSimulatePluginHooksValidation:
             # Remove one event type from hooks.json
             hooks_path = plugin_dir / "hooks" / "hooks.json"
             data = json.loads(hooks_path.read_text())
-            del data["hooks"]["SessionStart"]
+            del data["hooks"][next(iter(EXPECTED_EVENT_TYPES))]
             hooks_path.write_text(json.dumps(data))
             return BuildResult(
                 output_dir=plugin_dir,

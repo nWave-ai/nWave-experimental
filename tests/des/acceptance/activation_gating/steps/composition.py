@@ -43,7 +43,6 @@ from tests.des.acceptance.activation_gating.steps.domain_types import (
     GlobalMode,
     HookEnvelope,
     MarkerState,
-    PriorUseEvidence,
 )
 
 
@@ -133,40 +132,6 @@ class ActivationGatingComposition:
         enabled = marker is MarkerState.ENABLED
         path.write_text(json.dumps({"enabled_for_repo": enabled}), encoding="utf-8")
 
-    def given_prior_use_evidence(self, evidence: PriorUseEvidence) -> None:
-        """Lay down exactly one prior-use signal (or none / the bare-config decoy)."""
-        root = self.project_root
-        if evidence is PriorUseEvidence.NONE:
-            return
-        if evidence is PriorUseEvidence.BARE_DES_CONFIG:
-            (root / ".nwave").mkdir(parents=True, exist_ok=True)
-            (root / ".nwave" / "des-config.json").write_text("{}", encoding="utf-8")
-            return
-        if evidence is PriorUseEvidence.AUDIT_LOG_NONEMPTY:
-            # Real JsonlAuditLogWriter shape (OQ-3): .nwave/des/logs/audit-YYYY-MM-DD.log
-            logs = root / ".nwave" / "des" / "logs"
-            logs.mkdir(parents=True, exist_ok=True)
-            (logs / "audit-2026-06-18.log").write_text(
-                '{"event":"phase_entered","timestamp":"2026-06-18T00:00:00Z"}\n',
-                encoding="utf-8",
-            )
-            return
-        if evidence is PriorUseEvidence.EXECUTION_LOG:
-            d = root / "docs" / "feature" / "some-feature"
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "execution-log.json").write_text("{}", encoding="utf-8")
-            return
-        if evidence is PriorUseEvidence.DELIVER_DIR:
-            (root / "docs" / "feature" / "some-feature" / "deliver").mkdir(
-                parents=True, exist_ok=True
-            )
-            return
-        if evidence is PriorUseEvidence.FEATURE_DELTA:
-            d = root / "docs" / "feature" / "some-feature"
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "feature-delta.md").write_text("# delta\n", encoding="utf-8")
-            return
-
     def given_root_gitignore(self, variant: GitignoreVariant) -> None:
         self.root_gitignore_path.write_text(_GITIGNORE_LINES[variant], encoding="utf-8")
 
@@ -226,7 +191,7 @@ class ActivationGatingComposition:
     def dispatch_hook(self, envelope: HookEnvelope) -> None:
         """Drive a hook through the real ``hook_router.main()`` gate (DDD-5/6/9).
 
-        The router buffers stdin, resolves activation, exempts SessionStart,
+        The router buffers stdin, resolves activation,
         adopts-and-proceeds on pre-task, else allow/exit-0 when inactive. The
         composition records the observable gate outcome + the bytes the handler
         actually saw (rewind contract).

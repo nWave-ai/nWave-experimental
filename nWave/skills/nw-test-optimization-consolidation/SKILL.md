@@ -48,8 +48,8 @@ Audit: tests using the fixture must not mutate it. If any test mutates, scope ca
 When same-file tests benefit from a shared expensive fixture, add `@pytest.mark.xdist_group("name")` so the scheduler keeps them on the same worker. Fixture setup runs once per worker instead of once per test.
 
 ```python
-@pytest.mark.xdist_group("update_check_http_server")
-class TestUpdateCheckService:
+@pytest.mark.xdist_group("expensive_http_server")
+class TestRemoteVersionService:
     # All methods share the HTTP server fixture, scheduled to one worker
     ...
 ```

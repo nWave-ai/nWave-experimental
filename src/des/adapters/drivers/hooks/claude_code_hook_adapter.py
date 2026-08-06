@@ -9,7 +9,6 @@ All handler logic lives in dedicated modules:
 - subagent_stop_handler.py — SubagentStop (step completion validation)
 - post_tool_use_handler.py — PostToolUse (failure notification injection)
 - pre_write_handler.py     — PreWrite/PreEdit (session guard)
-- session_start_handler.py — SessionStart (update check)
 - subagent_start_handler.py — SubagentStart (agent lifecycle)
 
 Routing lives in hook_router.py. This facade re-exports handler functions
@@ -33,9 +32,6 @@ if __name__ == "__main__":
         sys.path.insert(0, project_root)
 
 # Re-export handler functions for backward compatibility with tests
-from des.adapters.drivers.hooks.deliver_progress_handler import (  # noqa: F401
-    handle_deliver_progress,
-)
 from des.adapters.drivers.hooks.hook_router import main
 from des.adapters.drivers.hooks.post_tool_use_handler import (  # noqa: F401
     handle_post_tool_use,
@@ -51,9 +47,6 @@ from des.adapters.drivers.hooks.pre_write_handler import (  # noqa: F401
 from des.adapters.drivers.hooks.service_factory import (  # noqa: F401
     create_pre_tool_use_service,
     create_subagent_stop_service,
-)
-from des.adapters.drivers.hooks.session_start_handler import (  # noqa: F401
-    handle_session_start,
 )
 from des.adapters.drivers.hooks.subagent_start_handler import (  # noqa: F401
     handle_subagent_start,

@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import hashlib
 import json
 import re
 import sys
@@ -35,7 +34,6 @@ from pathlib import Path
 from typing import Literal
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
-from des.adapters.driven.runner import at_discovery, cargo_runner
 from des.cli._identity_args import meaningful_identity
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import GateError
@@ -250,75 +248,11 @@ def record_review_outcome(
 # the gate's scenario parser, keeping the producer and consumer derivations DRY.
 
 
-# ---------------------------------------------------------------------------
-# rust-regression AT-discovery mode (B-1 bugfix, sister-reported gap) -- the
-# Rust mirror of pytest-regression's "one test_* function = one AT", for a
-# bugfix's Rust `.rs` regression-test file. Reuses the SHARED scan primitives
-# (fix-runner-scope-discover-dedup slice-04) -- cargo_runner's own
-# regex and at_discovery.strip_line_comments, by object identity -- rather
-# than an independent, byte-identical copy.
-# ---------------------------------------------------------------------------
-
-
-def _malformed_rust_regression_file(detail: str) -> GateError:
-    return GateError(
-        2,
-        {
-            "event": "MalformedInput",
-            "cause": "the rust regression-test file",
-            "error": detail,
-        },
-    )
-
-
-def _count_rust_regression_ats(regression_test_file: Path) -> list[str]:
-    """AT ids for ``at_kind="rust-regression"`` -- the Rust mirror of
-    ``count_pytest_regression_ats``'s module-level ``test_*`` counting.
-
-    Line/regex scan (no Rust parser, no Python ``ast`` on ``.rs`` source) for
-    test-attributed function names -- the Rust community idiom (descriptive
-    names, not ``test_``-prefixed). Reuses ``cargo_runner._RUST_TEST_FN_RE``
-    and ``at_discovery.strip_line_comments`` by object identity
-    (fix-runner-scope-discover-dedup slice-04) instead of an independent
-    copy of the same pattern/idiom. Raises ``GateError`` exit 2
-    (``MalformedInput``, ``cause="the rust regression-test file"``) when the
-    file cannot be read or has zero matching functions -- never a
-    silently-empty ``at_ids`` list.
-    """
-    try:
-        source = regression_test_file.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        raise _malformed_rust_regression_file(
-            f"cannot read/decode {regression_test_file}: {exc}"
-        ) from exc
-    at_ids = cargo_runner._RUST_TEST_FN_RE.findall(
-        at_discovery.strip_line_comments(source)
-    )
-    if not at_ids:
-        raise _malformed_rust_regression_file(
-            f"zero matching test functions found in {regression_test_file}"
-        )
-    return at_ids
-
-
-def _rust_regression_content_hash(regression_test_file: Path) -> str:
-    """Content-seal for ``at_kind="rust-regression"`` -- sha256 over the raw
-    ``.rs`` source bytes, the Rust mirror of ``pytest_regression_content_hash``.
-    """
-    try:
-        source = regression_test_file.read_bytes()
-    except OSError as exc:
-        raise _malformed_rust_regression_file(
-            f"cannot read {regression_test_file}: {exc}"
-        ) from exc
-    return hashlib.sha256(source).hexdigest()
-
-
 def _slice_at_derivation(
     repo_root: Path,
     feature_id: str,
     slice_id: str,
-    at_kind: Literal["gherkin", "pytest-regression", "rust-regression"] = "gherkin",
+    at_kind: Literal["gherkin", "pytest-regression"] = "gherkin",
     regression_test_file: Path | None = None,
     *,
     allow_empty_gherkin_scenarios: bool = False,
@@ -340,13 +274,9 @@ def _slice_at_derivation(
     ``at_ids`` + a sha256 over the regression file's raw source text for the
     content hash.
 
-    ``at_kind="rust-regression"`` (B-1 bugfix) mirrors ``pytest-regression`` for
-    a Rust ``.rs`` regression-test file: ``#[test]``-attributed function names
-    for ``at_ids`` + a sha256 over the raw source bytes for the content hash.
-
     Raises ``ValueError`` (a programming-contract violation, never a
-    ``GateError``) when ``at_kind`` is ``"pytest-regression"`` or
-    ``"rust-regression"`` and ``regression_test_file=None`` -- only the CLI's
+    ``GateError``) when ``at_kind`` is ``"pytest-regression"`` and
+    ``regression_test_file=None`` -- only the CLI's
     own arg-parsing can mis-wire this combination.
 
     ``at_kind="gherkin"`` with ZERO scenarios tagged ``@{slice_id}`` (bugfix
@@ -362,10 +292,7 @@ def _slice_at_derivation(
     ``record_review_outcome``'s own ``robustness_declaration``/
     ``robustness_at_scope`` gating).
     """
-    if (
-        at_kind in ("pytest-regression", "rust-regression")
-        and regression_test_file is None
-    ):
+    if at_kind == "pytest-regression" and regression_test_file is None:
         raise ValueError(
             f"_slice_at_derivation: at_kind={at_kind!r} requires regression_test_file"
         )
@@ -384,12 +311,6 @@ def _slice_at_derivation(
             regression_test_file
         )
         return at_ids, at_content_hash
-    if at_kind == "rust-regression":
-        assert regression_test_file is not None  # guarded above
-        at_ids = _count_rust_regression_ats(regression_test_file)
-        at_content_hash = _rust_regression_content_hash(regression_test_file)
-        return at_ids, at_content_hash
-
     from des.cli import carpaccio_format, carpaccio_slice_gate
 
     scenarios = carpaccio_slice_gate.parse_scenarios(
@@ -693,25 +614,23 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--at-kind",
-        choices=["gherkin", "pytest-regression", "rust-regression"],
+        choices=["gherkin", "pytest-regression"],
         default="gherkin",
         help=(
             "AT-discovery mode (ADR-001, fix-pre-push-hook-dual-installer-"
-            "collision; 'rust-regression' added B-1). 'gherkin' (default) "
+            "collision). 'gherkin' (default) "
             "derives (at_ids, at_content_hash) from .feature Scenario blocks "
             "-- existing callers see byte-identical behavior. "
             "'pytest-regression' AST-counts module-level test_* functions in "
-            "--regression-test-file. 'rust-regression' regex-counts #[test] "
-            "functions in a .rs --regression-test-file."
+            "--regression-test-file."
         ),
     )
     parser.add_argument(
         "--regression-test-file",
         default=None,
         help=(
-            "Repo-relative path to a plain-pytest or Rust regression-test "
-            "file. Required iff --at-kind is pytest-regression or "
-            "rust-regression."
+            "Repo-relative path to a plain-pytest regression-test file. "
+            "Required iff --at-kind is pytest-regression."
         ),
     )
     return parser.parse_args(sys.argv[1:] if argv is None else list(argv))
@@ -747,12 +666,9 @@ def main(argv: list[str] | None = None) -> int:
             raise _refuse_meaningless_identity("slice-id")
         if args.reviewer_agent_id is None:
             raise _refuse_meaningless_identity("reviewer-agent-id")
-        if (
-            at_kind in ("pytest-regression", "rust-regression")
-            and regression_test_file is None
-        ):
+        if at_kind == "pytest-regression" and regression_test_file is None:
             # Only the CLI's own arg-parsing can mis-wire this combination
-            # (ADR-001 DD-7; extended B-1 for rust-regression):
+            # (ADR-001 DD-7):
             # `_slice_at_derivation` raises `ValueError` on it (a
             # programming-contract violation), so the CLI shell enforces it
             # itself as a `GateError` diagnostic before that function is ever

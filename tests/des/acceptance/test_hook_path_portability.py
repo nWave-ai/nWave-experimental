@@ -553,12 +553,7 @@ class TestHookInstallIdempotency:
         idempotent_after targets PATH-prepend semantics; for list-deduplication
         the direct count assertions are clearer and sufficient.
 
-        slice-02 + slice-04 of atdd-spine-ledger-enforcement-gate-v2 lifted
-        the SubagentStop count from 2 -> 3 (added spine-detector entry) and
-        PreToolUse from 4 -> 6 (added 2 Bash spine-ledger entries). Bash
-        entries DO duplicate by matcher when multiple registrations are
-        present (Claude Code matcher-coexistence design); the duplication
-        check is on (matcher + command) tuple, NOT on matcher alone.
+        Bash entries may share a matcher but must remain command-deduplicated.
         """
         plugin = DESPlugin()
 
@@ -578,8 +573,7 @@ class TestHookInstallIdempotency:
         assert matchers.count("Agent") == 1, f"Duplicate Agent hooks: {matchers}"
         assert matchers.count("Write") == 1, f"Duplicate Write hooks: {matchers}"
         assert matchers.count("Edit") == 1, f"Duplicate Edit hooks: {matchers}"
-        # Bash: 3 distinct commands (execution-log + spine-ledger dev-mode +
-        # spine-ledger gate-installed). No duplicates -- count by command.
+        # Bash entries may share the matcher but must have distinct commands.
         bash_commands = [
             hook["command"]
             for entry in pre_hooks
@@ -590,9 +584,8 @@ class TestHookInstallIdempotency:
             f"Duplicate Bash commands across PreToolUse entries: {bash_commands}"
         )
 
-        # Exactly 3 SubagentStop entries (subagent-stop + deliver-progress +
-        # subagent-stop-spine-detector) and 1 PostToolUse, post-slice-04.
-        assert len(config["hooks"]["SubagentStop"]) == 3
+        # The normal stop hook remains singular.
+        assert len(config["hooks"]["SubagentStop"]) == 1
         assert len(config["hooks"]["PostToolUse"]) == 1
 
 

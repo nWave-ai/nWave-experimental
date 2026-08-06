@@ -91,17 +91,17 @@ class TestSharedRulesReferences:
     def test_new_references_shared_rules(self):
         """new.md must reference shared rules for feature ID derivation."""
         content = (COMMANDS_DIR / "new.md").read_text(encoding="utf-8")
-        assert "wizard-shared-rules.md" in content
+        assert "nw-wizard-shared-rules/SKILL.md" in content
 
     def test_continue_references_shared_rules(self):
         """continue.md must reference shared rules for wave detection."""
         content = (COMMANDS_DIR / "continue.md").read_text(encoding="utf-8")
-        assert "wizard-shared-rules.md" in content
+        assert "nw-wizard-shared-rules/SKILL.md" in content
 
     def test_fast_forward_references_shared_rules(self):
         """fast-forward.md must reference shared rules."""
         content = (COMMANDS_DIR / "fast-forward.md").read_text(encoding="utf-8")
-        assert "wizard-shared-rules.md" in content
+        assert "nw-wizard-shared-rules/SKILL.md" in content
 
 
 class TestFastForwardNaming:

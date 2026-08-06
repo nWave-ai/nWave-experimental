@@ -2,9 +2,9 @@
 the EXACT import the installed `des` shim performs, not an unrelated module.
 
 Defect (defects.md, `the-installer-verifies-an-import-different-from-the-one-
-its-own-shim-will-use`): `DESPlugin.verify()` probed `from des.application
-import DESOrchestrator` while the shim (`nWave/scripts/des/des`) actually
-executes `from des.cli.__main__ import main`. Because the two packages are
+its-own-shim-will-use`): `DESPlugin.verify()` must probe the same
+`from des.cli.__main__ import main` entry point the shim
+(`nWave/scripts/des/des`) executes. Because the two packages are
 copied independently and can diverge (`cli/` historically 10/87 files vs.
 `application/` 26/46), the probe can report success while `des --help`
 exits 1 on the installed copy.

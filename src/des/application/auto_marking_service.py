@@ -15,18 +15,14 @@ composition adapts it to the test-domain ``AdoptionResult`` at the boundary
 from __future__ import annotations
 
 import json
-import os
 from enum import Enum
 from pathlib import Path
-
-from des.domain.repo_path_resolver import FEATURE_DELTA_FILENAME
 
 
 class AdoptionTrigger(Enum):
     """Which auto-marking trigger fired (DDD-7)."""
 
-    PRIOR_USE = "prior-use"  # Trigger 1, SessionStart
-    REAL_FEATURE_USE = "real-feature-use"  # Trigger 2, pre-task nw-* dispatch
+    REAL_FEATURE_USE = "real-feature-use"  # pre-task nw-* dispatch
 
 
 class AdoptionOutcome(Enum):
@@ -79,60 +75,7 @@ class AutoMarkingService:
         return DESConfig(cwd=project_root).enabled_for_repo is not None
 
     def _evidence_warrants(self, project_root: Path, trigger: AdoptionTrigger) -> bool:
-        if trigger is AdoptionTrigger.REAL_FEATURE_USE:
-            return True
-        return self._has_prior_use(project_root)
-
-    def _has_prior_use(self, project_root: Path) -> bool:
-        """Trigger-1 prior-use predicate (DDD-8; OQ-3 corrected audit-log path)."""
-        if self._audit_log_nonempty(project_root):
-            return True
-        feature_dir = project_root / "docs" / "feature"
-        return (
-            any(feature_dir.glob("*/execution-log.json"))
-            or any(feature_dir.glob(f"*/{FEATURE_DELTA_FILENAME}"))
-            or any(p.is_dir() for p in feature_dir.glob("*/deliver"))
-        )
-
-    def _audit_log_nonempty(self, project_root: Path) -> bool:
-        """Non-empty ``<audit_dir>/audit-*.log`` (honors env / des-config override)."""
-        for logs_dir in self._audit_log_dirs(project_root):
-            for log in logs_dir.glob("audit-*.log"):
-                try:
-                    if log.stat().st_size > 0:
-                        return True
-                except OSError:
-                    continue
-        return False
-
-    def _audit_log_dirs(self, project_root: Path) -> list[Path]:
-        """Candidate audit-log dirs: env override, des-config override, default."""
-
-        candidates: list[Path] = []
-        env_dir = os.environ.get("DES_AUDIT_LOG_DIR")
-        if env_dir:
-            candidates.append(Path(env_dir))
-        configured = self._configured_audit_dir(project_root)
-        if configured is not None:
-            candidates.append(configured)
-        candidates.append(project_root / ".nwave" / "des" / "logs")
-        return candidates
-
-    def _configured_audit_dir(self, project_root: Path) -> Path | None:
-        des_config = project_root / ".nwave" / "des-config.json"
-        try:
-            data = json.loads(des_config.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return None
-        # Valid non-dict JSON (``null``, ``[]``, ``123``) would crash ``.get``;
-        # its ``except`` only catches parse/IO errors, not a wrong-shaped value.
-        if not isinstance(data, dict):
-            return None
-        configured = data.get("audit_log_dir")
-        if not configured:
-            return None
-        path = Path(configured)
-        return path if path.is_absolute() else project_root / path
+        return trigger is AdoptionTrigger.REAL_FEATURE_USE
 
     # ---- writes (fail-open) ----
 

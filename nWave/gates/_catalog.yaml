@@ -18,27 +18,9 @@
 version: "1.0.0"
 
 gates:
-  - gate_id: log-phase
-    responsibility: "Append a phase event to the per-feature execution-log (classic-mode only)."
-    module: des.cli.log_phase
-    entry_function: main
-    language_neutral_contract: true
-
-  - gate_id: init-log
-    responsibility: "Initialize a per-feature execution-log skeleton at DELIVER start (classic-mode only)."
-    module: des.cli.init_log
-    entry_function: main
-    language_neutral_contract: true
-
   - gate_id: verify-integrity
     responsibility: "Verify the deliver execution-log records all required phase events for the feature."
     module: des.cli.verify_deliver_integrity
-    entry_function: main
-    language_neutral_contract: true
-
-  - gate_id: roadmap
-    responsibility: "Render or validate a classic-mode roadmap.json file."
-    module: des.cli.roadmap
     entry_function: main
     language_neutral_contract: true
 
@@ -156,27 +138,9 @@ gates:
     entry_function: main
     language_neutral_contract: true
 
-  - gate_id: doctor
-    responsibility: "Operator-facing diagnostic command summarising install state, hook registration, ledger health."
-    module: des.cli.doctor
-    entry_function: main
-    language_neutral_contract: true
-
-  - gate_id: runner-probe
-    responsibility: "Report supported/unsupported/indeterminate per declared runner against the live probed environment (QW5)."
-    module: des.cli.runner_probe
-    entry_function: main
-    language_neutral_contract: true
-
   - gate_id: verify-readiness-pre-dispatch
     responsibility: "Verify the 6 cascading first-dispatch invariants (slice plan section, slice tags per scenario, AT-review verdict ledger record, gate output produceable, pre-commit pytest scope, reuse-first analysis or DESIGN-skip witness) in one invocation; closes friction #57."
     module: des.cli.verify_readiness_pre_dispatch
-    entry_function: main
-    language_neutral_contract: true
-
-  - gate_id: verify-slice-ledger-evidence
-    responsibility: "Read-only aggregator: scan spine-ledger audit log, emit JSON report of cumulative event counts (slice_commits_verified, carpaccio_gates_cleared, bypasses_detected, bypasses_used) since --since=<date>; closes platform-architect critical-4 (observability aggregator gap, F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2 slice-04 FINAL)."
-    module: des.cli.verify_slice_ledger_evidence
     entry_function: main
     language_neutral_contract: true
 
@@ -221,12 +185,6 @@ gates:
   - gate_id: record-at-review-verdict
     responsibility: "Record a keyless AT-review verdict (ATReviewVerdict, ADR-029 D5 producer): on APPROVED appends one record carrying the reviewer identity, the AT-set binding and the content seal (no hmac_sha256, no signing key) that the carpaccio slice gate reads at DELIVER entry; on NEEDS_REVISION writes nothing (the slice loops back to DISTILL)."
     module: des.cli.at_review_verdict
-    entry_function: main
-    language_neutral_contract: true
-
-  - gate_id: mode-locus-gate
-    responsibility: "Layer-A mode guardrail (mode-registry-single-locus slice-05): refuse any naked mode literal (atdd_pure / workflow.mode unconditional; classic in declaration shapes per BARE_CLASSIC_RULE) in nWave/{skills,agents,tasks} outside a GENERATED region or a <!-- mode-ref-ok --> allow-marker, naming each offender file+line."
-    module: des.cli.mode_locus_gate
     entry_function: main
     language_neutral_contract: true
 
@@ -277,7 +235,7 @@ gates:
     language_neutral_contract: true
 
   - gate_id: verify-test-runner
-    responsibility: "Per-language test-runner port driver: run a REAL test invocation over a target directory and emit one nwave.test_result.v1 envelope whose counts are byte-faithful to what ran (failed>0 on a failing target), or a fail-safe nwave.earned_verdict.v1 ABSTAIN when the named runner cannot be invoked (never a fabricated green). The CLI contract is language-neutral (--runner parameterizes the language); the pytest default is the adapter's implementation choice, not a contract constraint."
+    responsibility: "Per-language test-runner port driver: run a REAL test invocation over a target directory and emit one nwave.test_result.v1 envelope whose counts are byte-faithful to what ran (failed>0 on a failing target), or an explicit nwave.test_observation.v1 unobserved outcome when the named runner cannot be invoked (never a fabricated green). The CLI contract is language-neutral (--runner parameterizes the language); the pytest default is the adapter's implementation choice, not a contract constraint."
     module: des.cli.run_tests
     entry_function: main
     language_neutral_contract: true
@@ -285,12 +243,6 @@ gates:
   - gate_id: verify-wave-dispatch
     responsibility: "Wave-dispatch guard: verify an Agent/Task dispatch enters its wave on-spine before it fires -- a wave-OWNER agent dispatched WITHOUT a matching DES-WAVE marker is BLOCKED (exit 1) unless a form-valid skip witness or a fresh session pre-grant concedes it; reviewers / exempt agents ALLOW. Composed onto dispatch.pre (fail-open: only exit 1 blocks) so the guard FIRES, closing the wave-level silent-entry hole (the exemption that let DISCUSS/DESIGN/DEVOPS/DISTILL be entered off-spine). A thin CLI driver over the pure wave_dispatch_guard_policy, mirroring verify-readiness-pre-dispatch."
     module: des.cli.verify_wave_dispatch
-    entry_function: main
-    language_neutral_contract: true
-
-  - gate_id: run-slice-ats
-    responsibility: "Slice-scoped EXECUTOR (the acceleration): genuinely RUN only the entering slice's acceptance tests at commit (a real execution, not a collect-only walk) and project the outcome onto the GateVerdict SSOT -- a RED slice AT vetoes (FAIL, exit 1), a green slice PASSes (exit 0). The spine, not a git hook, is the commit-time test authority; the whole-tree run moves to feature-end. The CLI contract is language-neutral (the slice RUN routes through the resolved per-language runner); the pytest run-facet is the dogfood adapter's implementation choice, not a contract constraint."
-    module: des.cli.run_slice_ats
     entry_function: main
     language_neutral_contract: true
 
@@ -438,18 +390,6 @@ gates:
     entry_function: main
     language_neutral_contract: true
 
-  # gate-armed-state-derivation slice-02 (EXTEND-as-promotion): the
-  # coherence_offenders reducer promoted from
-  # tests/build/f_nonbypassable_attestation/test_arch_catalog_gate_wiring.py
-  # into a first-class, catalogued des CLI gate mirroring
-  # verify-catalog-coherence's shape. 1:1 mirror of the new _REGISTRY row;
-  # matching per-gate file verify-gate-armed-state.yaml.
-  - gate_id: verify-gate-armed-state
-    responsibility: "Derives whether each catalogued gate is wired into a real invocation surface (flavor gate_id row / live-hook module reference / operator-direct cli|git-hook host_visibility) or dormant-excused, and names any authored-but-unwired gate. Filesystem + regex only (no import, no git); degrades LOUD (non-zero + diagnostic, never a traceback) on a missing nWave/gates/ directory or malformed _catalog.yaml."
-    module: des.cli.verify_gate_armed_state
-    entry_function: main
-    language_neutral_contract: true
-
   # check-contract-shape-declarations slice-01 (GDP-4/6): the PRODUCING tool
   # for Principle 11's three mechanical Contract-Shape checks over an explicit
   # caller-scoped --files list. 1:1 mirror of the new _REGISTRY row; matching
@@ -466,16 +406,6 @@ gates:
   - gate_id: charter-scaffold
     responsibility: "Reads a feature's `## Wave: DISCUSS / [REF] Slice Plan` table and generates an expectation-charter scaffold (Intent pre-filled from the Value statement verbatim, using nWave/templates/expectation-charter.md as the skeleton) for each OBSERVABLE slice (Annotation NOT @infrastructure/@prefactoring); skips @infrastructure/@prefactoring rows. Idempotent (never overwrites); degrades LOUD (non-zero + JSON verdict/detail) on a missing/malformed feature-delta or absent Slice Plan. Reuses the existing Slice-Plan parser (des.cli.validate_feature_delta) -- no parallel table parser. Filesystem-only, no git."
     module: des.cli.charter_scaffold
-    entry_function: main
-    language_neutral_contract: true
-
-  # feature-end-certifies-real-consumers slice-01 (GDP-1/5): the PRODUCING
-  # tool for the two feature-end certification preconditions. 1:1 mirror of
-  # the new _REGISTRY row; matching per-gate file
-  # feature-end-preconditions-scaffold.yaml.
-  - gate_id: feature-end-preconditions-scaffold
-    responsibility: "Generates the two feature-end certification preconditions the real gates already consume: (a) --target environmental-e2e appends a feature's `## Environmental E2E\\n- test: <path>\\n` block when absent (idempotent no-op otherwise; degrades LOUD on a missing feature-delta or a non-existent --e2e-test path); (b) --target demo-recipe writes `.nwave/demo-recipe.json` ONLY when a src+tests layout AND a pyproject.toml [tool.poe.tasks] install/build/test convention are BOTH confidently detected (GDP-6, conservative -- never guesses; degrades LOUD otherwise, naming the recipe schema to hand-author). Idempotent (never overwrites); JSON verdict {target, written, verdict, detail}. Filesystem-only, no git."
-    module: des.cli.feature_end_preconditions_scaffold
     entry_function: main
     language_neutral_contract: true
 
@@ -641,7 +571,7 @@ gates:
     responsibility: "Historical regression-file backfill PRODUCER (fix-shipped-regression-file-backfill): validates a SHIPPED slice, a real ancestor --commit, and the declared file's presence in that commit's tree, then appends ONE RegressionFileHistoricalBackfill record to the per-feature AtCompletionLedger -- consumed by _shipped_and_entering_regression_files as a second resolution tier, after the stored declaration and before the naming-convention glob. Refuses a duplicate backfill for the same (feature-id, slice-id) unless --override is passed."
     module: des.cli.backfill_regression_file
     entry_function: main
-    language_neutral_contract: true
+    language_neutral_contract: false
 
   # des-saturated-scheduler slice-01 (DD-D1): the plan-only "what can run
   # now" scheduling query, plus its policy-projection coherence check. Both

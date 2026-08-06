@@ -143,6 +143,56 @@ class TestDESHookIdempotence:
         )
 
     @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")
+    def test_upgrade_removes_retired_spine_ledger_hooks_when_current_hooks_match(
+        self, _mock_python, plugin: DESPlugin, install_context: InstallContext
+    ):
+        """Upgrade removes exact DES legacy payloads without claiming user hooks."""
+        result = plugin._install_des_hooks(install_context)
+        assert result.success, result.message
+
+        settings_file = install_context.claude_dir / "settings.json"
+        settings = json.loads(settings_file.read_text())
+        lyra_entry = {
+            "matcher": "Bash",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": (
+                        "# lyra-hook:protocol-observer\n"
+                        "echo spine_ledger_gate "
+                        "spine_ledger_pre_commit_hook "
+                        "spine_ledger_subagent_stop_detector "
+                        "pre-bash-spine-ledger subagent-stop-spine-detector"
+                    ),
+                }
+            ],
+        }
+        settings["hooks"]["PreToolUse"].append(lyra_entry)
+        settings["hooks"]["PreToolUse"].append(
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": plugin._RETIRED_HOOK_COMMANDS[0],
+                    }
+                ],
+            }
+        )
+        settings_file.write_text(json.dumps(settings, indent=2))
+
+        result = plugin._install_des_hooks(install_context)
+        assert result.success, result.message
+        reconciled = json.loads(settings_file.read_text())
+        commands = [
+            hook["command"]
+            for entry in reconciled["hooks"]["PreToolUse"]
+            for hook in entry.get("hooks", [])
+        ]
+        assert lyra_entry["hooks"][0]["command"] in commands
+        assert plugin._RETIRED_HOOK_COMMANDS[0] not in commands
+
+    @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")
     def test_install_over_mixed_format_hooks_produces_no_duplicates(
         self, _mock_python, plugin: DESPlugin, install_context: InstallContext
     ):
@@ -258,45 +308,16 @@ class TestDESHookIdempotence:
         assert len(non_des) == 1, f"Expected 1 preserved user entry, got {non_des}"
         assert "load_persona.py" in non_des[0]["hooks"][0]["command"]
 
-        # Two DES UserPromptSubmit entries register (fix-orchestrator-affordance-
-        # refresh-independent added the standalone stdlib-only refresh alongside
-        # the wave-active anchor adapter entry). Both carry a DES marker, both
-        # matcher-less.
+        # UserPromptSubmit is user-owned.  The installer must not recreate a
+        # retired DES writer alongside the persona entry.
         des = [e for e in entries if shared_hooks.is_des_hook_entry(e)]
-        assert len(des) == 2, f"Expected 2 DES UserPromptSubmit entries, got {des}"
-
-        # The wave-active anchor entry: correct adapter command shape, no matcher.
-        anchor = [
-            e
-            for e in des
-            if e["hooks"][0]["command"].endswith(
-                "-m des.adapters.drivers.hooks.claude_code_hook_adapter "
-                "user-prompt-submit"
-            )
-        ]
-        assert len(anchor) == 1, f"Expected 1 wave-active anchor entry, got {anchor}"
-        anchor_command = anchor[0]["hooks"][0]["command"]
-        assert "PYTHONPATH=" in anchor_command and "lib/python" in anchor_command
-        assert "/.venv/" not in anchor_command, "Project-local .venv must not leak"
-        assert "matcher" not in anchor[0], "UserPromptSubmit has no tool matcher"
-
-        # The standalone orchestrator-affordance refresh entry: shell command
-        # invoking the shipped script directly, matcher-less.
-        standalone = [
-            e
-            for e in des
-            if "orchestrator_affordance_refresh" in e["hooks"][0]["command"]
-        ]
-        assert len(standalone) == 1, (
-            f"Expected 1 standalone affordance-refresh entry, got {standalone}"
-        )
-        assert "matcher" not in standalone[0], "UserPromptSubmit has no tool matcher"
+        assert not des
 
         # Idempotence: second install does not duplicate any entry
         plugin._install_des_hooks(install_context)
         settings = json.loads(settings_file.read_text())
         entries = settings["hooks"]["UserPromptSubmit"]
-        assert len(entries) == 3, f"Expected persona + 2 DES entries, got {entries}"
+        assert entries == [persona_entry]
 
     @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")
     def test_install_after_python_path_change_replaces_hooks(

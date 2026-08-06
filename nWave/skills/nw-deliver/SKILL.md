@@ -1,6 +1,6 @@
 ---
 name: nw-deliver
-description: "Orchestrates the full DELIVER wave end-to-end (roadmap > execute-all > finalize). Use when all prior waves are complete and the feature is ready for implementation."
+description: "Orchestrates the current DELIVER wave end-to-end. Use when all prior waves are complete and the feature is ready for implementation."
 user-invocable: true
 argument-hint: '[feature-description] - Example: "Implement user authentication with JWT"'
 ---
@@ -90,8 +90,8 @@ Wave-specific signal: a DELIVER wave recording `choice = "expand"` for `retrospe
 ## CRITICAL BOUNDARY RULES
 
 1. **NEVER implement steps directly.** ALL implementation MUST be delegated to the selected crafter (@nw-software-crafter or @nw-functional-software-crafter per step 1.5) via Task tool with DES markers. You are ORCHESTRATOR — coordinate, not implement.
-2. **NEVER write phase entries to execution-log.json.** Only the crafter subagent that performed TDD work may append entries.
-3. **Extract step context from roadmap.json ONLY for Task prompt.** Grep roadmap for step_id ~50 lines context, extract (name|criteria|files_to_modify) per `nWave/templates/roadmap-schema.json`, pass in DES template.
+2. **Use the selected workflow's evidence carrier.** The current spine records the AT-completion ledger and commit trailers; do not create a parallel step log.
+3. **Use the feature delta and acceptance tests as the work contract.** Extract each slice from the `[REF] Slice Plan` and its DISTILL-authored ATs.
 
 **DES monitoring is non-negotiable.** Circumventing DES — faking step IDs, omitting markers, or writing log entries manually — is a **violation that invalidates the delivery**. DES detects unmonitored steps and flags them; finalize **blocks** until every flagged step is re-executed through a properly instrumented Task. There is no workaround: unverified steps cannot pass integrity verification, and the delivery cannot be finalized. Without DES monitoring, nWave cannot **verify** TDD phase compliance. For non-deliver tasks (docs, research, one-off edits): `<!-- DES-ENFORCEMENT : exempt -->`.
 
@@ -101,7 +101,7 @@ Before any phase work, read `.nwave/config.yaml` key `workflow.mode`. The DELIVE
 
 
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
-- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+- `atdd_pure` — Per-slice AT-first loop; AT-completion ledger + commit trailers are the authority.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
@@ -112,7 +112,7 @@ Reference: ADR-028 D1/D2/D3/D5 · ADR-027 per-slice DELIVER sequence (carried fo
 
 This spine is roadmap-free and execution-log-free. It creates **no roadmap.json** and **no execution-log.json**. Decomposition is carried by the feature-delta `## Wave: DISCUSS / [REF] Slice Plan` table; audit is carried by the AT-completion ledger + commit trailers.
 
-**Setup (atdd_pure).** Parse input, derive `feature-id`. In place of the skipped `des init-log` step, provision the AT-completion ledger directory: <!-- mode-ref-ok -->
+**Setup (atdd_pure).** Parse input, derive `feature-id`, then provision the AT-completion ledger directory: <!-- mode-ref-ok -->
 
 ```
 mkdir -p .nwave/telemetry/atdd-pure/
@@ -133,7 +133,7 @@ These are the floor at feature-end; naming them at DELIVER-open is the proactive
 1. Read the next `pending` slice from the feature-delta `[REF] Slice Plan` table; read its `Class` column.
 2. **`Class = C`** — run the carpaccio slice gate as the DES `entry_gate` in place of Phase 1 roadmap creation, before the first `A_GREEN` dispatch:
    `des carpaccio-slice-gate --feature-id {feature-id} --entering-slice {slice-NN}`.
-   Exit 0 → dispatch the per-slice 3-phase DELIVER sequence (see §ATDD-Pure DELIVER Sequence). Exit 44/45 → halt with the gate payload.
+   Exit 0 → dispatch the per-slice DELIVER sequence (see §ATDD-Pure DELIVER Sequence). Exit 44/45 → halt with the gate payload.
 3. **`Class = P`** — the carpaccio entry_gate is SKIPPED; the spine runs the coherence check for the slice instead (see slice-04 spine routing note at the carpaccio entry_gate), then a single D_REFACTOR_COMMIT commit.
 4. At the slice's D_REFACTOR_COMMIT commit, flip the slice plan row `pending → shipped`; advance to the next slice. The feature is complete when every slice row is `shipped`.
 
@@ -163,7 +163,7 @@ The feature-end cycle has five steps, in order:
 
    **Haiku panel (throughput).** This step MAY fan out as parallel Haiku reviewers, each on a distinct lens (correctness / AT-density-completeness / security / architecture-coherence), plus an adversarial verify pass (majority-refute kills a contested finding), synthesized by the orchestrator into the single verdict. Wall-clock = the slowest lens (~3-5 min) vs. a serial pass (~10-15 min); cost stays Haiku throughout. Per-slice EXAMINE stays Vera-Haiku unchanged (already v2) — this note is feature-end-scope only. Aligns with the standing rule: never Opus for an audit, reviewers run Haiku.
 4. **Final integrity verification** — one final integrity pass. FIRST, the whole-tree full contract run, run once here: `run_contract_gate --repo .` (the full whole-tree run that per-slice `D_REFACTOR_COMMIT` no longer runs); fix any cross-slice or cross-feature regression before the feature is declared done. THEN the integrity pass via `des verify-integrity` (mode-aware, D4): the AT-completion ledger (every `.feature` scenario greened), the slice plan (every row `shipped`), the commit-trailer chain. As part of this step the DES sequencer runs `verify_environmental_e2e --mode run` (the cross-tree environmental-e2e gate floor — `des verify-environmental-e2e` console script, fix-oss-environmental-e2e-gate) and appends its `EnvironmentalE2eGateRan` heartbeat + `EnvironmentalE2eVerified` verdict to the AT-completion ledger; the done-gate blocks declaring the feature done unless both records are present (residuality RM-1 / R10).
-5. **Archive + cleanup (`/nw-finalize`)** — once `FeatureEndReviewVerdict` (or `EBatchRefactorCompleted`) is signed, `/nw-deliver` composes `/nw-finalize @{reviewer-agent} "{feature-id}"` to archive the evolution doc, migrate lasting design docs to permanent directories, and remove `docs/feature/{feature-id}/` with user approval. Certify (`feature-end`) THEN archive+cleanup (`finalize`) — the feature is CLOSED, not merely attested. `nw-finalize` owns its own Pre-Dispatch Gate (atdd_pure branch: every Slice-Plan row `shipped` + a signed `FeatureEndReviewVerdict`/`EBatchRefactorCompleted` record) and Phases A-D; this step only sequences the call, it does not re-specify the procedure. <!-- mode-ref-ok -->
+5. **Archive + session cleanup (`/nw-finalize`)** — once feature completion evidence is current, `/nw-deliver` composes `/nw-finalize @{reviewer-agent} "{feature-id}"` to create the evolution summary, copy lasting design docs to permanent directories, preserve `docs/feature/{feature-id}/` as living history, and remove only explicitly user-approved session artifacts. Certify (`feature-end`) THEN archive (`finalize`) — the feature is CLOSED, not merely attested. `nw-finalize` owns its completion-evidence check and archive procedure; this step only sequences the call, it does not re-specify it. <!-- mode-ref-ok -->
 
 The carpaccio `entry_gate` and the `D_REFACTOR_COMMIT` `exit_gate` stay strictly per-slice — the feature-end cycle is a final pass *after* the last slice's exit gate; it adds no per-slice gate and removes none.
 
@@ -274,7 +274,6 @@ Before dispatching any agent, read the rigor profile from `.nwave/des-config.jso
 | `reviewer_model` | Pass as `model` parameter to reviewer Task invocations. If `"skip"`, skip Phase 4 entirely. |
 | `review_enabled` | If `false`, skip Phase 4 (Adversarial Review). |
 | `double_review` | If `true`, run Phase 4 twice with separate review scopes. |
-| `tdd_phases` | Pass to crafter in DES template. Replace `# TDD_PHASES` section with the configured phases. The 3-phase canon (ADR-025) is `[RED, GREEN, COMMIT]`; legacy 5-phase contract is `[PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]`. If lean profile (`[RED_UNIT, GREEN]` legacy or `[RED, GREEN]` canon), omit setup/commit instructions accordingly. |
 | `refactor_pass` | If `false`, skip Phase 3 (Complete Refactoring). |
 | `mutation_enabled` | Deprecated (FR-1, CLAUDE.md § Mutation Testing Strategy): the config default is `false` and Phase 5 is SKIPPED unless this is explicitly set `true` for an opt-in run — the inverse of "runs unless disabled". |
 

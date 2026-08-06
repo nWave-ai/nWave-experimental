@@ -107,14 +107,6 @@ def when_evaluate(
     outcome_box["outcome"] = composition.evaluate()
 
 
-@when("the real PreToolUse hook processes the dispatch")
-def when_drive_real_hook(
-    composition: CarpaccioInterceptComposition,
-    outcome_box: dict[str, InterceptOutcome],
-) -> None:
-    outcome_box["outcome"] = composition.drive_real_pre_tool_use_hook()
-
-
 # --- Then --------------------------------------------------------------------
 
 

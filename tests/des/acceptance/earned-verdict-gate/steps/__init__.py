@@ -1,1 +1,1 @@
-"""Shared step vocabulary + composition root for earned-verdict-gate."""
+"""Step package for the retained TestRunnerPort acceptance scenarios."""

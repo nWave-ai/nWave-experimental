@@ -16,8 +16,7 @@ THE DEFECT THE LEVERS MUST FIX (verified 2026-06-24, Tsunami atoms + grep on
   * ``check_unwired_entry`` -> ``CodeFactChain(root=_SRC_DES)`` (line 114);
     ``check_integration_per_adapter`` / ``check_contract_per_port`` ->
     ``_enumerate_*`` over ``_SRC_DES`` (lines 219, 225); ``check_non_ws_spawn`` ->
-    ``scan_spawn_sites(_TESTS, ...)`` (line 491); ``_suite_covers_production_lines``
-    -> ``tests_dir = repo / "tests"`` (line 545); ``count_error_path_scenarios`` ->
+    ``scan_spawn_sites(_TESTS, ...)`` (line 491); ``count_error_path_scenarios`` ->
     ``tests_dir = repo / "tests"`` (line 622).
   * The lever entry functions take NO source/tests-dir argument; no discovery
     mechanism (testpaths / .nwave / --source-dir / --tests-dir / resolve) exists.

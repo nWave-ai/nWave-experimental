@@ -68,11 +68,7 @@ Feature: The DISTILL dispatch is marker-enforced and DELIVER leaves a symmetric 
       | is missing its project identifier                            |
       | is scoped to a single slice instead of the whole feature     |
 
-  @slice-02 @driving_port @real-io @contract-shape:bounded-change
-  Scenario: A verified slice commit leaves a symmetric DELIVER completion record
-    Given an atdd_pure crafter has committed a complete slice commit
-    And the crafter returns from the DELIVER commit phase
-    When the SubagentStop hook processes the crafter return
-    Then the DELIVER-exit gate records a verified slice commit
-    And the DELIVER-exit gate writes a DELIVER phase-completed record for that slice
-    And the DELIVER-exit hook exits with code zero
+  # The DELIVER-exit symmetry scenario that stood here asserted that the U2
+  # per-slice commit exit gate records a verified slice commit and writes a
+  # WorkflowPhaseCompletedGCommit record. That gate is gone: a returning
+  # crafter is no longer intercepted, and no hook writes those records.

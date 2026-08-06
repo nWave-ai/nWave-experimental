@@ -60,7 +60,6 @@ PUBLIC_SHARED_SKILLS: frozenset[str] = frozenset(
         "nw-jtbd-opportunity-scoring",
         "nw-jtbd-workflow-selection",
         "nw-persona-jtbd-analysis",
-        "nw-roadmap-design",
         "nw-spike-methodology",
         "nw-speculative-dispatch",
         "nw-tdd-cross-language",

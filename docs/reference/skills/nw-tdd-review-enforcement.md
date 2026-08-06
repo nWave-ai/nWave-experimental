@@ -1,6 +1,6 @@
 # nw-tdd-review-enforcement
 
-Test design mandate enforcement, test budget validation, TDD phase validation (3-phase canon per ADR-025), and external validity checks for the software crafter reviewer
+Test design mandate enforcement, test budget validation, active-workflow slice-evidence validation, and external validity checks for the software crafter reviewer
 
 **Used by:** [nw-software-crafter-reviewer](../agents/nw-software-crafter-reviewer.md)
 

@@ -101,6 +101,7 @@ Mandate numbers are an **SSOT-internal index**, defined in exactly one place —
 | 13 | Driving-Port-Only Boundary | composition-contract |
 | 14 | Contract Shape Classification | composition-contract |
 | 15 | Dormant-Seam Reconciliation | composition-contract |
+| 16 | Algebraic Analysis Before the Scenario | scenario-design |
 
 ## LANGUAGE CONVENTION FRAME (read FIRST — overrides all examples in the modules)
 

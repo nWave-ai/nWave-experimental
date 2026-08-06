@@ -33,6 +33,7 @@ _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
+from scripts.install.plugins.des_plugin import _canonical_tree_hash  # noqa: E402
 from scripts.shared.agent_catalog import (  # noqa: E402
     build_ownership_map,
     detect_command_skills,
@@ -171,8 +172,8 @@ class DistBuilder:
         this is the layout ``des_plugin.py``'s ``_install_nwave_runtime_assets``
         reads for a prebuilt (PyPI/pipx) install via ``framework_source / <subdir>``.
         Without this, a consumer install never receives
-        ``nWave/data/orchestrator-affordance/`` (or flavors/schemas/dispatch/waves/
-        framework-catalog.yaml) -- every atdd_pure runtime lookup against those
+        ``nWave/flavors/`` (or schemas/dispatch/waves/framework-catalog.yaml) --
+        every atdd_pure runtime lookup against those
         assets silently degrades on a pipx-installed nwave-ai.
         """
         count = 0
@@ -265,6 +266,26 @@ class DistBuilder:
         for cache_dir in dst.rglob("__pycache__"):
             if cache_dir.is_dir():
                 shutil.rmtree(cache_dir)
+
+        # A public wheel has no durable source checkout to compare against, but
+        # the runtime freshness gate still requires its install-manifest shape.
+        # Write a reproducible wheel sentinel after import rewriting; an empty
+        # source tree selects the customer-install (proceed) branch while the
+        # tree hash continues to detect edits when a host installer writes its
+        # own, source-aware manifest.
+        wheel_manifest = {
+            "schema_version": 1,
+            "installed_version": self.version,
+            "installed_at_iso": "1970-01-01T00:00:00Z",
+            "source_tree": "",
+            "source_commit": "",
+            "source_dirty": False,
+            "source_kind": "wheel",
+            "tree_hash": _canonical_tree_hash(dst),
+        }
+        (dst / "_install_manifest.json").write_text(
+            json.dumps(wheel_manifest, indent=2, sort_keys=True), encoding="utf-8"
+        )
 
         # Hatch normalizes equivalent source keys in a force-include map, so
         # one physical source cannot reliably serve two wheel destinations.

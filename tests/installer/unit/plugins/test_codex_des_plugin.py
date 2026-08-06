@@ -231,49 +231,9 @@ class TestInstallWritesHooksJsonAndManifest:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         launcher = Path(manifest["launcher_file"])
         assert str(launcher) in shlex.split(command)
-        session = doc["hooks"].get("SessionStart")
-        assert isinstance(session, list) and len(session) == 1
-        session_command = session[0]["hooks"][0]["command"]
-        session_launcher = Path(manifest["session_start_launcher_file"])
-        assert shlex.split(session_command) == [
-            sys.executable,
-            str(session_launcher),
-            "session-start",
-            "--host-provenance=codex",
-        ]
-        assert manifest["resolver_script_file"].endswith(
-            "nWave/hooks/orchestrator_affordance_refresh.py"
-        )
-
-    def test_installed_session_start_hook_emits_only_the_affordance_envelope(
-        self, tmp_path, monkeypatch
-    ):
-        """A Codex-only installation invokes its installed standing-loop hook."""
-        context = _make_context(tmp_path)
-        codex_dir = tmp_path / "home" / ".codex"
-        codex_dir.mkdir(parents=True)
-        _patch_codex_config_dir(monkeypatch, codex_dir)
-        _patch_path_resolvers(monkeypatch)
-        assert CodexDESPlugin().install(context).success is True
-
-        document = json.loads((codex_dir / "hooks.json").read_text(encoding="utf-8"))
-        command = document["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-        completed = subprocess.run(
-            command,
-            shell=True,
-            text=True,
-            capture_output=True,
-            timeout=10,
-            check=False,
-        )
-        assert completed.returncode == 0, completed.stderr
-        envelope = json.loads(completed.stdout)
-        assert envelope == {
-            "hookSpecificOutput": {
-                "hookEventName": "SessionStart",
-                "additionalContext": "standing-loop catalogue available",
-            }
-        }
+        assert "SessionStart" not in doc["hooks"]
+        assert "session_start_launcher_file" not in manifest
+        assert "resolver_script_file" not in manifest
 
     def test_launcher_hook_builder_has_no_fixture_specific_magic_branch(self):
         """CONTRACT_SHAPE: unbounded-preservation
@@ -571,15 +531,7 @@ class TestInstallWritesHooksJsonAndManifest:
         ]
         assert len(nwave_entries) == 1, "nWave DES entry must not duplicate"
         assert len(user_entries) == 1, "User hook must be preserved"
-        session_entries = [
-            e
-            for e in final_doc["hooks"]["SessionStart"]
-            if any(
-                "nwave_orchestrator_affordance_launcher" in h.get("command", "")
-                for h in e.get("hooks", [])
-            )
-        ]
-        assert len(session_entries) == 1, "SessionStart affordance must not duplicate"
+        assert "SessionStart" not in final_doc["hooks"]
 
     def test_reinstall_replaces_launcher_owned_hook_after_interpreter_change(
         self, tmp_path, monkeypatch
@@ -874,7 +826,7 @@ class TestSessionStartReinstallReconciliation:
             document = json.loads(hooks_path.read_text(encoding="utf-8"))
             commands = [
                 hook["command"]
-                for group in document["hooks"]["SessionStart"]
+                for group in document["hooks"].get("SessionStart", [])
                 for hook in group["hooks"]
             ]
             return {
@@ -898,7 +850,7 @@ class TestSessionStartReinstallReconciliation:
             after,
             universe=set(before),
             expected={
-                "session_start.current_nwave_count": set_to(1),
+                "session_start.current_nwave_count": set_to(0),
                 "session_start.legacy_nwave_present": set_to(False),
             },
         )
@@ -953,7 +905,7 @@ class TestSessionStartReinstallReconciliation:
 
         hooks_path = codex_dir / "hooks.json"
         document = json.loads(hooks_path.read_text(encoding="utf-8"))
-        document["hooks"]["SessionStart"].append(
+        document["hooks"].setdefault("SessionStart", []).append(
             {
                 "matcher": "startup",
                 "hooks": [{"type": "command", "command": legacy_command}],

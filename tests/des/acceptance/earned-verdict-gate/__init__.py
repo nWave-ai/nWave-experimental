@@ -1,1 +1,1 @@
-"""Acceptance suite for oss-earned-verdict-gate (slice-01 — CORE verdict)."""
+"""Acceptance suite for the retained TestRunnerPort surface."""

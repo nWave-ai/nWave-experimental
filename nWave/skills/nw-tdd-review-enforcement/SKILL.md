@@ -1,13 +1,19 @@
 ---
 name: nw-tdd-review-enforcement
-description: Test design mandate enforcement, test budget validation, TDD phase validation (3-phase canon per ADR-025), and external validity checks for the software crafter reviewer
+description: Test design mandate enforcement, test budget validation, active-workflow slice-evidence validation, and external validity checks for the software crafter reviewer
 user-invocable: false
 disable-model-invocation: true
 ---
 
 # TDD Review Enforcement
 
-Domain knowledge for reviewing TDD implementations against 5 test design mandates, test budget, TDD phase compliance (3-phase canon per ADR-025), and external validity.
+Domain knowledge for reviewing TDD implementations against 5 test design mandates, test budget, active-workflow slice evidence, and external validity.
+
+---
+
+## Language-Agnostic Application
+
+These mandates apply to every implementation language and test framework. Test names, assertion syntax, and framework mechanisms shown below are illustrative examples, not required forms; use the repository's native data-driven or parameterization mechanism.
 
 ---
 
@@ -46,8 +52,8 @@ Severity: Blocker. Convert to integration test.
 ### Mandate 5: Parametrized Input Variations
 Input variations of same behavior use parametrized tests, not duplicates.
 
-Violations: test_valid_email_1/test_valid_email_2 | copy-pasted tests with only inputs changed
-Severity: High. Consolidate into @pytest.mark.parametrize.
+Violations: separately named tests that differ only in input data | copy-pasted tests with only inputs changed
+Severity: High. Consolidate using the framework's data-driven or parameterized-test mechanism.
 
 ---
 
@@ -88,41 +94,63 @@ Required: delete internal tests, consolidate via parametrize, re-submit
 
 ---
 
-## TDD Phase Validation (3-phase canon, ADR-025)
+## Active-Workflow Slice Evidence Validation
 
 
 
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
-- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+- `atdd_pure` — Per-slice AT-first loop; AT-completion ledger + commit trailers are the authority.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
 
 
-### Phase Checks
-- Completeness: all phases present per the schema version in use (Blocker if missing) | Outcomes: all PASS (Blocker if FAIL)
-- Sequential execution: correct order by timestamps | Test discipline: 100% green after GREEN, COMMIT
+### Evidence Checks
+
+| Evidence | Reviewer checks | Failure |
+|----------|-----------------|---------|
+| Feature Delta Slice Plan | Active row declares the slice's value and target paths | BLOCKER |
+| Executable ATs | Slice-owned ATs are executable and green through their declared driving surface | BLOCKER |
+| Parent-to-commit diff | Changed production paths stay within the Slice Plan; test changes retain behavioral assertions | BLOCKER |
+| Commit attestation | The accepted slice commit carries its valid trailer and completion attestation | BLOCKER |
+| EXAMINE outcome | Apply the route-specific requirement below when the charter gate is armed | BLOCKER |
+
+### Attestation Routes
+
+No universal three-record checklist exists. Select the route from the Slice Plan and AT kind; do not demand evidence that its guard does not produce.
+
+| Route | Entry evidence | Completion evidence |
+|-------|----------------|---------------------|
+| Ordinary AT review | Approved, current `ATReviewVerdict` for the slice's executable AT set | Valid accepted commit and `SliceCommitVerified` |
+| `pytest-regression` mechanical seal | Fresh, content-bound `RedObserved` plus satisfied negative-AT mandate for the declared regression file; an approved `ATReviewVerdict` remains an alternative | Valid accepted commit and `SliceCommitVerified` |
+| `GREEN_TO_GREEN` prefactoring | Guard proves suite green before and after the accepted commit and no test path changed; it bypasses AT-review evidence | Valid accepted commit and `SliceCommitVerified` |
+
+`CarpaccioGateCleared` is gate output when applicable, not a universal reviewer-record requirement.
+
+### EXAMINE Routes
+
+When the charter gate is armed, an ordinary observable slice requires a fresh PASS `ExamineVerdictRecorded` bound to the current charter. `@coupled` is distinct: record or verify `ExamineDeferredToFeatureEnd`; it owes feature-end examination, not a per-slice PASS. `@infrastructure` and `@prefactoring` are distinct permanent exemptions: record or verify `ExamineExemptNonObservableSlice`; they are not deferred. If the gate is unarmed, report `UNARMED`, never invent an EXAMINE obligation.
 
 ### Quality Gates
 
-| Gate | Description | Phase (3-phase canon) | Legacy phase (5-phase) |
-|------|-------------|-----------------------|------------------------|
-| G1 | Exactly one acceptance test active | RED | PREPARE |
-| G2 | Acceptance test fails for valid reason | RED | RED_ACCEPTANCE |
-| G3 | Unit test fails on assertion (when authored) | RED | RED_UNIT |
-| G4 | No mocks inside hexagon | RED | RED_UNIT |
-| G5 | Business language in tests | GREEN | GREEN |
-| G6 | All tests green | GREEN | GREEN |
-| G7 | 100% passing before commit | COMMIT | COMMIT |
-| G8 | Test count within budget | RED | RED_UNIT |
-| G9 | No test modifications to accommodate implementation | GREEN | GREEN |
+| Gate | Description | Evidence surface |
+|------|-------------|------------------|
+| G1 | Slice-owned ATs are declared by the active Slice Plan | Feature Delta + executable ATs |
+| G2 | AT outcomes validate the declared value through a driving surface | Executable ATs |
+| G3 | Assertions validate observable outcomes | Executable ATs + diff |
+| G4 | No mocks inside the hexagon | Tests + diff |
+| G5 | Tests use business language | Tests |
+| G6 | Required ATs and relevant tests are green | Executable runs |
+| G7 | Applicable entry route and accepted commit are attested for this slice | Gate-defined route evidence + accepted-commit attestation |
+| G8 | Test count is within budget | AC + tests |
+| G9 | Existing test assertions were not weakened to fit implementation | Parent-to-commit diff |
 
 Gates G2, G4, G7, G8, G9 are Blockers if not verified.
 
 Note: Review/refactoring quality verified at deliver-level Phase 4 (Adversarial Review).
 
 ### Walking Skeleton Override
-When `is_walking_skeleton: true`: don't flag missing unit tests | verify exactly one E2E test | thinnest slice OK (hardcoded values) | unit-test authoring inside RED may be skipped (3-phase canon) or RED_UNIT/GREEN entries SKIPPED with "NOT_APPLICABLE: walking skeleton" (5-phase legacy logs).
+When the active Slice Plan identifies the walking skeleton: don't flag missing unit tests | verify the declared E2E AT proves installed wiring | use the Slice Plan's declared target paths, applicable attestation route, commit evidence, and EXAMINE outcome.
 
 ---
 
@@ -142,13 +170,13 @@ Question: "If I follow these steps, will the feature WORK or just EXIST?"
 ```
 EXTERNAL VALIDITY CHECK: FAILED
 
-Issue: All 6 acceptance tests import des.validator.TemplateValidator directly.
-No test imports des.orchestrator.DESOrchestrator (the entry point).
+Issue: All 6 acceptance tests import an internal validator directly.
+No test uses the declared application entry point.
 
-Consequence: Tests pass, coverage is 100%, but TemplateValidator is never
-called in production because DESOrchestrator doesn't use it.
+Consequence: Tests pass, coverage is 100%, but the validator is never
+called in production because the application entry point does not use it.
 
-Required: update acceptance test to invoke through entry point, wire component.
+Required: update the acceptance test to invoke through the entry point, then wire the component.
 ```
 
 ---
@@ -161,17 +189,17 @@ The single worst TDD violation: modifying a test to make it pass instead of fixi
 
 | Signal | How to Detect | Severity |
 |--------|---------------|----------|
-| Test + implementation changed in same commit | Git diff shows test file edits alongside production code edits during GREEN phase | BLOCKER |
-| Assertion weakened | `assertEquals(expected, actual)` changed to `assertNotNull(actual)` or `assertTrue(result)` | BLOCKER |
-| Expectations reduced | Test previously checked 5 fields, now checks 1-2 | BLOCKER |
-| Test deleted or skipped | `@skip`, `@pytest.mark.skip`, `@Disabled`, `xfail`, entire test method removed | BLOCKER |
-| Deferred fix comments | `# TODO: fix later`, `# temporarily relaxed`, `# workaround`, `# adjusted for now` in test files | BLOCKER |
-| Assertion count decreased | Previous commit had N assertions, current has fewer for same test | BLOCKER |
+| Test + implementation changed in one slice | Parent-to-commit diff contains both classes | Inspect |
+| Assertion weakened | A specific outcome assertion becomes a weaker predicate; syntax shown is illustrative, not exhaustive | BLOCKER |
+| Expectations reduced | Same behavioral claim retains materially less checked outcome | BLOCKER |
+| Test deleted or skipped | Any skip/xfail/disable mechanism or removed behavioral case; syntax varies by framework | BLOCKER |
+| Deferred-fix rationale | Comment or metadata admits a temporary relaxation | BLOCKER |
+| Assertion count decreased | Fewer assertions for the same behavioral claim; inspect semantics, not count alone | BLOCKER |
 
 ### Review Procedure
 
-1. Compare test files at start of RED phase vs end of GREEN phase
-2. If any test file was modified during GREEN: flag for detailed inspection
+1. Compare the slice commit with its parent; scope the diff to the active Feature Delta Slice Plan.
+2. If an existing test changed with production code, flag it for detailed inspection.
 3. Check each modification against the signals table above
 4. If modification is purely additive (new assertions, new test methods): PASS
 5. If modification weakens, removes, or relaxes any existing assertion: BLOCKER -- reject immediately
@@ -180,7 +208,7 @@ The single worst TDD violation: modifying a test to make it pass instead of fixi
 
 - Renaming test methods for clarity (no assertion changes)
 - Adding new assertions to existing tests (strengthening, not weakening)
-- Fixing a genuine test bug identified and approved by product owner (requires `ESCALATION_NEEDED` marker in execution log)
+- Correcting an AT defect only after the owning DISTILL/requirements authority updates the Feature Delta and AT contract; the reviewer records NEEDS_REVISION, never treats an implementation review as approval to rewrite the contract
 - Parametrization refactoring that preserves all original assertions
 
 ### Example Finding
@@ -189,47 +217,47 @@ The single worst TDD violation: modifying a test to make it pass instead of fixi
 TEST MODIFICATION DETECTION: BLOCKER
 
 File: tests/unit/test_order_service.py
-Commit: abc123 (GREEN phase)
+Commit: accepted slice commit `abc123`
 
-Before (RED phase):
+Parent commit:
   assert result.total == Decimal("150.00")
   assert result.tax == Decimal("15.00")
   assert result.items == 3
   assert result.status == OrderStatus.CONFIRMED
 
-After (GREEN phase):
+Accepted slice commit:
   assert result is not None  # <-- weakened from 4 specific assertions to existence check
 
 Verdict: REJECTED. Implementation could not satisfy the original assertions.
 The crafter modified the test instead of fixing the implementation.
-Required: revert test to RED-phase version, fix implementation to satisfy original assertions.
+Required: restore the behavioral assertion, then fix the implementation to satisfy it.
 ```
 
 ---
 
 ## Fixture Theater Detection (ALWAYS BLOCKER)
 
-Acceptance tests pass because test fixtures implement the expected behavior directly, rather than exercising production code through the driving port. The tests verify the correct outcome from the wrong source. This is a form of Testing Theater where the entire GREEN phase is fraudulent -- no production code was changed.
+Acceptance tests pass because fixtures implement the expected behavior directly, rather than exercising production code through the driving port. The tests verify the correct outcome from the wrong source.
 
 ### Detection Signals
 
 | Signal | How to Detect | Severity |
 |--------|---------------|----------|
-| No production files in git diff | `git diff --name-only` after GREEN shows only test files, none of the `files_to_modify` entries | BLOCKER |
+| No production files in scoped diff | Parent-to-commit diff contains only test/fixture paths while direct inspection shows fixtures create the outcome | BLOCKER |
 | Given steps create end-state | Test Given/Arrange steps construct the expected output directly instead of setting up preconditions for production code | BLOCKER |
 | Fixture implements behavior | Test helper/fixture contains domain logic that should live in production code | BLOCKER |
-| RED-to-GREEN without production changes | Acceptance test flips from failing to passing but `git diff --stat` shows zero production file changes | BLOCKER |
+| Outcome produced by fixture | Driving-surface observation fails when fixture behavior is removed | BLOCKER |
 
 ### Review Procedure
 
-1. After GREEN phase, run `git diff --name-only` and compare against `files_to_modify` from the roadmap step
-2. Every file listed in `files_to_modify` MUST appear in the diff (excluding test files). If any production file is missing: BLOCKER
+1. Compare the commit's diff with the active Feature Delta Slice Plan declared target paths.
+2. Every changed production path MUST be declared there. A declared target that is untouched is investigation evidence, not by itself a blocker.
 3. Apply the **deletion test**: "If I revert ALL changes to test files and fixtures, does the acceptance test still pass with ONLY the production code changes?" If yes: production code is doing the work (PASS). If the test cannot pass without fixture changes: BLOCKER
 4. Inspect test Given/Arrange sections for domain logic that belongs in production code
 
 ### Legitimate Exceptions (Not Violations)
 
-- Step explicitly tagged as test-only (e.g., `files_to_modify` lists only test files)
+- A Slice Plan row whose declared target paths are test-only
 - Documentation-only steps where no production code is expected
 - Hash update steps where the production change is a constant update in a test file
 
@@ -238,20 +266,19 @@ Acceptance tests pass because test fixtures implement the expected behavior dire
 ```
 FIXTURE THEATER DETECTION: BLOCKER
 
-Step: 02-01 (implement gitignore support in DES plugin)
-Files to modify: [src/des/adapters/.../des_plugin.py]
+Slice Plan target paths: [src/application/adapters/plugin_installer]
 
-git diff --name-only after GREEN:
-  tests/des/acceptance/test_plugin_gitignore.py  (fixture modified)
+Parent-to-accepted-commit diff:
+  tests/acceptance/test_plugin_installation  (fixture modified)
   tests/conftest.py                               (helper added)
 
-Missing from diff: src/des/adapters/.../des_plugin.py
+Untouched declared target: src/application/adapters/plugin_installer
 
 Verdict: REJECTED. Agent modified test fixtures to produce expected state
-instead of implementing production code in des_plugin.py.
+instead of implementing production code in the declared adapter.
 The acceptance test passes because the fixture creates the expected output,
-not because the driving port (DESPlugin.install()) produces it.
-Required: revert fixture changes, implement production code in des_plugin.py.
+not because the declared driving port produces it.
+Required: revert fixture changes, implement production code in the declared adapter.
 ```
 
 ---
@@ -262,27 +289,28 @@ When a crafter gets stuck, the correct action is to escalate -- not to silently 
 
 ### What to Check
 
-2. **Three-attempt rule**: evidence of at least 3 distinct implementation attempts before any test change (check GREEN phase attempts in execution log)
-3. **Product owner approval**: any requirement-driven test change must reference explicit PO approval (e.g., `po_approved: true` or `requirement_change: {ticket}` in execution log)
+1. **Contract mismatch**: an AT or requirement appears wrong/incomplete for the Feature Delta Slice Plan. Return `NEEDS_REVISION` to the owning DISTILL/requirements authority; do not accept a test rewrite as implementation evidence.
+2. **Implementation mismatch**: the declared AT is executable but fails. Return `NEEDS_REVISION` with the failing AT, diff, and Slice Plan row; retain the AT contract.
+3. **Attestation mismatch**: gate-defined route evidence, accepted-commit attestation, or charter-armed EXAMINE outcome is missing or invalid. Return `NEEDS_REVISION`; the slice remains unattested.
 
 ### Escalation Failures
 
 | Failure | Detection | Severity |
 |---------|-----------|----------|
-| Silent test modification | No escalation marker + test weakened | BLOCKER |
-| Insufficient attempts | Fewer than 3 GREEN attempts before test change | BLOCKER |
-| Missing PO approval | Test changed for "requirement change" without PO reference | BLOCKER |
-| Proper escalation | `ESCALATION_NEEDED` marker present, 3+ attempts logged | PASS (reviewer verifies test change validity) |
+| Silent test modification | Parent-to-commit diff weakens an existing assertion | BLOCKER |
+| Contract mismatch | Test change lacks a matching Feature Delta and AT-contract revision by its owner | BLOCKER |
+| Attestation mismatch | Required route evidence, accepted-commit attestation, or armed EXAMINE PASS is absent or invalid | BLOCKER |
+| Proper escalation | `NEEDS_REVISION` identifies the owning authority and the concrete Slice Plan, AT, diff, or attestation defect | PASS |
 
 ---
 
 ## Approval Decision Logic
 
 ### Approved
-All required phases present per schema version (3-phase canon: RED/GREEN/COMMIT; legacy 5-phase: PREPARE/RED_ACCEPTANCE/RED_UNIT/GREEN/COMMIT), all PASS, all gates satisfied (G1-G9), zero defects, budget met, no internal class tests, no test modifications, no testing theater.
+The active-workflow Slice Plan is coherent with executable ATs; required ATs are green; the parent-to-accepted-commit diff is within declared scope and free of test weakening or fixture theater; G1-G9 pass; the declared attestation route and accepted-commit evidence attest the slice; a charter-armed observable slice has current EXAMINE PASS.
 
 ### Rejected
-Missing phases | any FAIL | any defect | budget exceeded | internal class tested | test modified to accommodate implementation (G9) | testing theater detected | silent test modification without escalation. Zero tolerance.
+Missing or incoherent Slice Plan evidence | failing executable AT | undeclared production path | invalid route or accepted-commit attestation | missing armed EXAMINE PASS | any defect | budget exceeded | internal class tested | test modified to accommodate implementation (G9) | testing theater detected.
 
 ### Escalation
->2 review iterations | persistent gate failures | unresolved architectural violations | crafter properly escalated (ESCALATION_NEEDED marker present with 3+ attempts). Escalate to tech lead.
+Persistent implementation failure | unresolved architectural violation | a contract mismatch that requires the owning requirements authority | an attestation failure that cannot be repaired by the slice owner. Escalate with the concrete Slice Plan row, AT result, diff, route evidence, accepted-commit attestation, or EXAMINE evidence.

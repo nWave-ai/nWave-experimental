@@ -34,4 +34,4 @@ Feature: Flavor schema + log defaults + host-bridge events (slice-03)
     When the events vocabulary is parsed
     Then at least 9 abstract events are declared
     And every event lists hosts dict with keys claude-code, codex, opencode, git-hook
-    And the events include "dispatch.pre", "session.init", "slice.committed", "commit.pre"
+    And the events include "dispatch.pre", "slice.committed", "commit.pre"

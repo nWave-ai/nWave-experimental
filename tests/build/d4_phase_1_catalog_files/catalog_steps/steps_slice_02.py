@@ -221,11 +221,11 @@ def then_internal_matches_stem(per_gate_comp) -> None:
     assert not mismatches, f"Filename/gate_id mismatches: {mismatches}"
 
 
-@then("exactly 2 gates are language-bound")
-def then_count_2_bound(per_gate_comp) -> None:
-    assert len(per_gate_comp.language_bound) == 2, (
-        f"language_bound count={len(per_gate_comp.language_bound)}, expected 2; "
-        f"found: {per_gate_comp.language_bound}"
+@then(parsers.parse("exactly {expected:d} gates are language-bound"))
+def then_count_bound(per_gate_comp, expected: int) -> None:
+    assert len(per_gate_comp.language_bound) == expected, (
+        f"language_bound count={len(per_gate_comp.language_bound)}, "
+        f"expected {expected}; found: {per_gate_comp.language_bound}"
     )
 
 

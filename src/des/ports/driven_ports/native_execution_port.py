@@ -39,8 +39,7 @@ class NativeExecutionReceipt:
 
 
 class NativeExecutionPort(Protocol):
-    def execute(self, command: NativeCommand) -> NativeExecutionReceipt:
-        ...
+    def execute(self, command: NativeCommand) -> NativeExecutionReceipt: ...
 
 
 __all__ = [

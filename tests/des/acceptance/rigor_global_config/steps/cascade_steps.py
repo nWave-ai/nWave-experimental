@@ -235,7 +235,7 @@ def given_global_no_rigor(ctx: dict[str, Any]) -> None:
     """Global config exists but has no rigor key."""
     write_global_config(
         ctx["global_config_path"],
-        {"update_check": {"frequency": "daily"}},
+        {"user_preferences": {"frequency": "daily"}},
     )
 
 
@@ -377,19 +377,6 @@ def then_reviewer_model_is(ctx: dict[str, Any], expected: str) -> None:
     assert ctx["des_config"].rigor_reviewer_model == expected
 
 
-@then("the active TDD phases are the canonical 3-phase cycle")
-def then_canonical_tdd_phases(ctx: dict[str, Any]) -> None:
-    """Verify canonical 3-phase TDD cycle is active (ADR-025 default).
-
-    F6 sweep (2026-05-18): renamed from "full 5-phase cycle" and inverted
-    assertion from LEGACY_PHASES to CANONICAL_PHASES. Default rigor profile
-    follows ADR-025 canonical (RED/GREEN/COMMIT). Legacy 5-phase only via
-    explicit rigor.tdd_phases override.
-    """
-    expected = ("RED", "GREEN", "COMMIT")
-    assert ctx["des_config"].rigor_tdd_phases == expected
-
-
 @then("double review is disabled")
 def then_double_review_disabled(ctx: dict[str, Any]) -> None:
     """Verify double review is off."""
@@ -438,11 +425,6 @@ def then_valid_rigor_settings(ctx: dict[str, Any]) -> None:
     # rigor_reviewer_model: always a non-empty string
     assert isinstance(config.rigor_reviewer_model, str)
     assert len(config.rigor_reviewer_model) > 0
-
-    # rigor_tdd_phases: always a tuple of strings
-    assert isinstance(config.rigor_tdd_phases, tuple)
-    assert len(config.rigor_tdd_phases) > 0
-    assert all(isinstance(p, str) for p in config.rigor_tdd_phases)
 
     # rigor_review_enabled: always a boolean
     assert isinstance(config.rigor_review_enabled, bool)

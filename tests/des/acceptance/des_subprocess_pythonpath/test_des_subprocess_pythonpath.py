@@ -17,7 +17,7 @@ migrating the ~18 inline spawn sites to it.
 
 Mandate-13: the SUT is driven exclusively through the real surfaces via the
 composition root (arch-walk over the real tree, the real ``des_spawn`` helper, a
-real hermetic ``python -m des.cli.roadmap --help`` subprocess). No production
+real hermetic ``python -m des.cli.verify_deliver_integrity --help`` subprocess). No production
 module is imported directly in the step bodies. Mandate-8: the AC-3 step asserts
 the by-construction coupling as a Universe-bound state delta over the
 port-exposed observables (argv0, pythonpath-has-des-root).
@@ -98,7 +98,7 @@ def _given_des_stripped_host(world: dict[str, object]) -> None:
     world["subcommand"] = SANCTIONED_SUBCOMMAND
 
 
-@when("a gate spawns the read-only roadmap command through the centralized helper")
+@when("a gate spawns the read-only integrity command through the centralized helper")
 def _when_spawn_child(
     composition: SubprocessPythonpathComposition, world: dict[str, object]
 ) -> None:

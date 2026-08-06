@@ -81,15 +81,6 @@ from des.domain.wave_active import (
 )
 from des.ports.driven_ports.wave_active_store import WaveActiveReader
 from des.ports.driver_ports.pre_tool_use_port import HookDecision, PreToolUseInput
-from des.ports.driver_ports.validator_port import ValidationResult, ValidatorPort
-
-
-class _AllowAllValidator(ValidatorPort):
-    """Trivial classic prompt validator -- never reached by the S2 collision path,
-    wired only to satisfy the required constructor argument."""
-
-    def validate_prompt(self, prompt: str) -> ValidationResult:
-        return ValidationResult(errors=[], task_invocation_allowed=True)
 
 
 def _arm_floor(
@@ -118,7 +109,6 @@ def _dispatch(root: Path, prompt: str, *, subagent_type: str = "child") -> HookD
     mirrors production + the matching-wave-child regression test's composition)."""
     service = PreToolUseService(
         marker_parser=DesMarkerParser(),
-        prompt_validator=_AllowAllValidator(),
         audit_writer=NullAuditLogWriter(),
         time_provider=SystemTimeProvider(),
         wave_active_reader=WaveActiveFilesystemStore(),

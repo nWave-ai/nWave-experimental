@@ -45,12 +45,11 @@ Feature: Hook Protocol Conformance
     Then the hook exits with code 0
     And stdout is completely empty
 
-  @e2e @hook-protocol
-  Scenario: SubagentStop block produces structured JSON on stdout
-    Given a completed DES agent whose step validation fails
-    When the SubagentStop hook processes the completion
-    Then the hook exits with code 0
-    And stdout contains a block decision with a reason
+  # The SubagentStop block scenario that stood here drove the retired classic
+  # execution-log carrier (executionLogPath / projectId / stepId).  That carrier
+  # refuses CLASSIC_MODE_REMOVED, so the scenario asserted a protocol the product
+  # no longer has.  "A block decision is structured JSON on stdout" is still
+  # exercised by the PreWrite block scenario below, on a live carrier.
 
   # ---------------------------------------------------------------------------
   # PreWrite scenarios

@@ -1,6 +1,6 @@
 """Unit tests for `des.cli._scaffold_core` -- the shared exists-decision +
 verdict-envelope primitives the scaffold family (charter-scaffold,
-examine-fixture, feature-end-preconditions-scaffold, flavor-scaffold) now
+examine-fixture, flavor-scaffold) now
 imports instead of hand-rolling (D49, mikado 2026-07-29)."""
 
 from __future__ import annotations

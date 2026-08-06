@@ -472,7 +472,10 @@ class DevopsReviewGateComposition:
         return ALLOWS clean where a BLOCK is expected.
         """
         from des.adapters.drivers.hooks import service_factory
-        from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
+        from des.ports.driver_ports.subagent_stop_port import (
+            SubagentStopContext,
+            SubagentStopReturnKind,
+        )
 
         prev_cwd = Path.cwd()
         try:
@@ -480,11 +483,9 @@ class DevopsReviewGateComposition:
             service = service_factory.create_subagent_stop_service()
             decision = service.validate(
                 SubagentStopContext(
-                    execution_log_path="",
                     project_id=self.feature_id,
-                    step_id="",
+                    return_kind=SubagentStopReturnKind.ATDD_PURE,
                     cwd=str(self.repo_dir),
-                    mode="atdd_pure",
                     slice_id="slice-02",
                     atdd_pure_phase="D_REFACTOR_COMMIT",
                 )

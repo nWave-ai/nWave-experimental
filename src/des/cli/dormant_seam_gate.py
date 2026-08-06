@@ -449,7 +449,7 @@ def _is_entry_points_header(header: str) -> bool:
     """True iff a TOML section header names a ``project.entry-points`` (sub)table.
 
     The dotted header may quote its trailing group segment
-    (``project.entry-points."nwave.lang.adapter"``); the quotes are stripped before
+    (``project.entry-points."acme.adapter"``); the quotes are stripped before
     the prefix match so a quoted-group section is recognised. A header that is not a
     ``project.entry-points`` (sub)table (``[project]``, ``[build-system]``, ...)
     closes any open entry-point section.

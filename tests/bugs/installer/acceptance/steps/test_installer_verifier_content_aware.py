@@ -238,6 +238,17 @@ def when_invoke_validate(scenario_state: _ScenarioState):
 
     # Pre-instantiation patches: PathUtils.get_claude_config_dir +
     # get_project_root drive every path NWaveInstaller resolves at __init__.
+    #
+    # platform_override is NOT optional here. validate_installation gates the
+    # whole agents/commands/templates block on `"claude_code" in
+    # target_platforms`, and `effective_target_platforms` is evaluated LAZILY -
+    # inside validate_installation, therefore OUTSIDE the patch block below.
+    # Without an explicit platform it falls through to ambient host detection
+    # against the real environment: a developer box has ~/.claude or a host
+    # binary on PATH and the block runs, a CI runner has neither, the block is
+    # skipped entirely, the verifier returns True, and this scenario reads that
+    # skip as "drift not caught". The scenario is about drift REPORTING, not
+    # about host discovery, so it states the platform it means.
     with (
         patch(
             "scripts.install.install_nwave.PathUtils.get_claude_config_dir",
@@ -248,7 +259,7 @@ def when_invoke_validate(scenario_state: _ScenarioState):
             return_value=scenario_state._project_root,
         ),
     ):
-        installer = NWaveInstaller(dry_run=True)
+        installer = NWaveInstaller(dry_run=True, platform_override={"claude_code"})
 
     # Replace the installer logger with our capture so the verifier's drift
     # messages are observable. dry_run=True ensures no real Logger file is

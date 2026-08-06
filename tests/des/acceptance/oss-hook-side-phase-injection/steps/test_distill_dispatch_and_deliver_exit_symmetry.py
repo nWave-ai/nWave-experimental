@@ -26,15 +26,12 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from .slice02_composition import (
     DistillDispatchGateComposition,
     DistillDispatchOutcome,
-    GCommitExitGateComposition,
-    GCommitExitOutcome,
 )
 from .slice02_domain_types import (
     DEFECTIVE_DISPATCH_SHAPE_BY_PHRASE,
     DISTILL_DISPATCH_BLOCK_EVENT_BY_PHRASE,
     DispatchVerdict,
     DistillDispatchShape,
-    GCommitOutcome,
 )
 
 
@@ -50,19 +47,7 @@ def distill_dispatch(tmp_path: Path) -> DistillDispatchGateComposition:
 
 
 @pytest.fixture
-def g_commit_exit(tmp_path: Path) -> GCommitExitGateComposition:
-    comp = GCommitExitGateComposition(tmp_path)
-    comp.init_repo()
-    return comp
-
-
-@pytest.fixture
 def dispatch_holder() -> dict[str, DistillDispatchOutcome]:
-    return {}
-
-
-@pytest.fixture
-def g_commit_holder() -> dict[str, GCommitExitOutcome]:
     return {}
 
 
@@ -118,49 +103,3 @@ def _then_dispatch_exit_two(
     dispatch_holder: dict[str, DistillDispatchOutcome],
 ) -> None:
     assert dispatch_holder["result"].exit_code == 2
-
-
-# --- AT-3: G-DELIVER-EXIT symmetry (SubagentStop G_COMMIT) --------------------
-
-
-@given("an atdd_pure crafter has committed a complete slice commit")
-def _given_complete_slice_commit(g_commit_exit: GCommitExitGateComposition) -> None:
-    g_commit_exit.make_complete_slice_commit()
-
-
-@given("the crafter returns from the DELIVER commit phase")
-def _given_g_commit_return(g_commit_exit: GCommitExitGateComposition) -> None:
-    g_commit_exit.write_g_commit_return_transcript()
-
-
-@when("the SubagentStop hook processes the crafter return")
-def _when_subagent_stop_runs(
-    g_commit_exit: GCommitExitGateComposition,
-    g_commit_holder: dict[str, GCommitExitOutcome],
-) -> None:
-    g_commit_holder["result"] = g_commit_exit.run_subagent_stop_hook()
-
-
-@then("the DELIVER-exit gate records a verified slice commit")
-def _then_slice_commit_verified(
-    g_commit_holder: dict[str, GCommitExitOutcome],
-) -> None:
-    result = g_commit_holder["result"]
-    assert result.outcome == GCommitOutcome.VERIFIED
-    assert result.slice_commit_verified_emitted is True
-
-
-@then("the DELIVER-exit gate writes a DELIVER phase-completed record for that slice")
-def _then_phase_completed_g_commit(
-    g_commit_holder: dict[str, GCommitExitOutcome],
-) -> None:
-    result = g_commit_holder["result"]
-    assert result.phase_completed_g_commit_emitted is True
-    assert result.phase_completed_g_commit_slice_id == "slice-02"
-
-
-@then("the DELIVER-exit hook exits with code zero")
-def _then_g_commit_exit_zero(
-    g_commit_holder: dict[str, GCommitExitOutcome],
-) -> None:
-    assert g_commit_holder["result"].exit_code == 0

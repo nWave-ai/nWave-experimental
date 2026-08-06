@@ -89,11 +89,8 @@ def _write_shared_multi_slice_at(
     rel_dir: str,
 ) -> None:
     """A single pytest-collectible AT file head-tagged with SEVERAL
-    `@slice-NN` lines in one head-comment block -- the real-world shape
-    (`gate-armed-state-derivation`) `_narrow_to_shipped_entering_pytest`
-    (fix-multi-slice-shared-at-file) exists to resolve correctly: every
-    qualifying tag must contribute to `collected_slice_tags`, not only the
-    first-declared one.
+    `@slice-NN` lines in one head-comment block. Every qualifying tag must
+    contribute to `collected_slice_tags`, not only the first-declared one.
     """
     scope_dir = project_dir / rel_dir
     scope_dir.mkdir(parents=True, exist_ok=True)
@@ -206,10 +203,7 @@ def test_shared_multi_slice_at_file_contributes_only_qualifying_tags(
     slice-04 itself) is tagged `@slice-04` only -- the entering slice must
     itself own an AT somewhere in the feature for `_mode_feature_scoped`'s
     `empty-intersection` precondition to pass (M-8 floor: refuse when the
-    entering slice has genuinely zero AT anywhere), exactly mirroring the
-    real-world shape (`gate-armed-state-derivation`) where the full
-    slice-02..slice-07 range is jointly covered by several files, not
-    necessarily one contiguous window per file. Entering `slice-04`:
+    entering slice has genuinely zero AT anywhere). Entering `slice-04`:
     `slice-02` and `slice-03` qualify (<= 4) on the shared file; `slice-06`
     does not (> 4); `slice-04` qualifies on its own dedicated file. Before
     the fix, `resolve_test_file_attribution.slice_id` (the `.search()`-based

@@ -18,11 +18,9 @@ caller with the same feature-agnostic shape
 (`des/cli/verify_deliver_integrity.py:448`). `feature_id` is omitted
 (``None``) on these two feature-agnostic modes.
 
-Two terminating paths exercised here, deterministically, without spawning a
-real nested pytest collection (`_collect_scope_with_marker_fallback` and
-`_maybe_route_digest_through_runner` are monkeypatched -- the same technique
-`test_run_contract_gate_collect_memo.py` already uses on this module's
-collection internals):
+Two terminating paths are exercised deterministically without spawning a real
+nested pytest collection: `_collect_scope_with_marker_fallback` is
+monkeypatched, as in `test_run_contract_gate_collect_memo.py`.
 
   * `--collect-only --print-digest` on a canned successful scope -> exit 0 ->
     outcome=PASS.
@@ -75,9 +73,6 @@ def test_print_digest_pass_records_outcome_in_the_ledger(
     """A successful `--collect-only --print-digest` run appends exactly one
     `GateOutcomeRecorded` record naming this gate with `outcome=PASS`, without
     changing the existing exit-code/stdout contract (sibling-branch pin)."""
-    monkeypatch.setattr(
-        run_contract_gate, "_maybe_route_digest_through_runner", lambda repo: None
-    )
     canned = run_contract_gate._CollectedScope(
         node_ids=["tests/fixture_repo/test_x.py::test_ok"], collected_count=1
     )
@@ -144,9 +139,6 @@ def test_a_run_never_writes_two_outcome_records_for_one_invocation(
     """One invocation writes exactly one outcome record, never a duplicate --
     control pinning the once-per-terminating-path shape DDD-5's criterion
     names ("exactly one record")."""
-    monkeypatch.setattr(
-        run_contract_gate, "_maybe_route_digest_through_runner", lambda repo: None
-    )
     canned = run_contract_gate._CollectedScope(
         node_ids=["tests/fixture_repo/test_x.py::test_ok"], collected_count=1
     )

@@ -65,27 +65,7 @@ class TestWalkingSkeletonValidDispatch:
     """
 
     def test_valid_des_markers_allowed(self, tmp_path):
-        """Adapter allows dispatch when DES markers are present."""
-        # Create a minimal execution log so the adapter finds a valid project
-        des_dir = tmp_path / ".des"
-        des_dir.mkdir()
-        exec_log = des_dir / "execution-log.json"
-        exec_log.write_text(
-            json.dumps(
-                {
-                    "schema_version": "4.0",
-                    "feature_id": "my-feature",
-                    "steps": [
-                        {
-                            "step_id": "step-01",
-                            "name": "Walking skeleton",
-                            "status": "in_progress",
-                            "phases": [],
-                        }
-                    ],
-                }
-            )
-        )
+        """Adapter allows dispatch from a workspace with no retired carrier."""
 
         cc_json = {
             "tool_name": "Agent",
@@ -115,6 +95,10 @@ class TestWalkingSkeletonValidDispatch:
         # Allow path: silent exit 0, no stdout (Claude Code protocol)
         assert result.stdout.strip() == "", (
             f"Allow path should produce no stdout. Got: {result.stdout!r}"
+        )
+        assert not (tmp_path / ".des" / "execution-log.json").exists(), (
+            "a supported dispatch must not require or recreate the retired "
+            "execution-log carrier"
         )
 
 

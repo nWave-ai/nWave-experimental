@@ -63,101 +63,29 @@ _BASH_EXECUTION_LOG_GUARD = (
     ".get('tool_input',{}).get('command',''))\"); "
     "echo \"$CMD\" | grep -q 'execution-log' || exit 0; "
     'echo "$CMD" | grep -qE '
-    "'des\\.cli\\.(log_phase|init_log|verify_deliver_integrity)|"
-    "des +(log-phase|init-log|verify-integrity)' && exit 0; "
+    "'des\\.cli\\.verify_deliver_integrity|des +verify-integrity' && exit 0; "
     'echo \'{"decision":"block","reason":"Direct modification of '
     "execution-log.json via Bash is blocked.\\n"
     "To read it, use the Read tool.\\n"
-    "To modify it, use the des log-phase subcommand.\"}'; "
+    "This retired artifact must not be recreated or modified.\"}'; "
     "exit 2"
-)
-
-# Pure-shell wrapper around the spine-ledger PreToolUse hook (slice-02 of
-# atdd-spine-ledger-enforcement-gate-v2). The shell wrapper buffers stdin
-# (the hook event JSON), greps the bash command for `^git commit` as a
-# shell-fast-path (avoiding a Python interpreter startup on every non-
-# commit Bash invocation), and only then invokes the Python entry point.
-#
-# Matcher coexistence: this entry is registered as a NEW HookEvent ADJACENT
-# to `_BASH_EXECUTION_LOG_GUARD` (do NOT modify the existing guard). Claude
-# Code's PreToolUse protocol permits multiple registrations per
-# (event, matcher) tuple; execution is registration-ordered; ANY hook
-# returning `{decision: block}` blocks the tool invocation. The execution-
-# log guard does NOT block git-commit commands (its `grep -q 'execution-log'`
-# test fails on a git-commit command line, so it exits 0 silently). The
-# spine-ledger hook's block decision therefore wins by construction.
-#
-# Stdin is consumed twice: once by the shell to grep the command, once by
-# the Python hook to parse the full event payload. Both reads see the same
-# buffered `$INPUT` so the Python hook's stdin carries the original event.
-#
-# The `$HOME` placeholder is the installed-artifact root. When the installer
-# plugin registers this entry (slice-04), it substitutes the real path; in
-# dev mode the entry is invoked via `python -m scripts.hooks.spine_ledger_pre_commit_hook`
-# directly through the repo root.
-_BASH_SPINE_LEDGER_PRE_COMMIT_HOOK = (
-    "# des-hook:pre-bash-spine-ledger\n"
-    "INPUT=$(cat); "
-    'CMD=$(echo "$INPUT" | python3 -c '
-    '"import sys,json; print(json.load(sys.stdin)'
-    ".get('tool_input',{}).get('command',''))\"); "
-    "echo \"$CMD\" | grep -qE '^\\s*git\\s+commit\\b' || exit 0; "
-    'echo "$INPUT" | python3 -m scripts.hooks.spine_ledger_pre_commit_hook'
-)
-
-# Pure-shell wrapper around the spine-ledger gate as a SECOND PreToolUse/Bash
-# entry, slice-04 of atdd-spine-ledger-enforcement-gate-v2. This entry is the
-# defense-in-depth companion to `_BASH_SPINE_LEDGER_PRE_COMMIT_HOOK`: it
-# invokes the production gate script DIRECTLY (rather than through the
-# pre-commit-hook wrapper) so the gate's verdict-emission contract is
-# observable even when the wrapper script is absent or being upgraded.
-#
-# It deliberately does NOT reference `spine_ledger_pre_commit_hook` in its
-# command text: the PreToolUse/Bash count must reach 6 post-slice-04 per
-# AT-3 pin, while AT-1 demands EXACTLY ONE entry textually naming
-# `spine_ledger_pre_commit_hook` (the slice-02 wrapper). This second entry
-# satisfies "+1 PreToolUse" without colliding with AT-1's substring filter.
-#
-# Uses module-import form (`python3 -m scripts.hooks.spine_ledger_gate`)
-# mirroring the slice-02 entry's pattern — does NOT bake `$HOME` into the
-# shell command so it remains valid in BOTH installer-path AND plugin-bundle
-# distribution modes (plugin bundle adds `scripts/hooks/` to sys.path via
-# its discovery wrapper; installer ships the same package at the deployed
-# location). The DES_HOOKS list in `des_plugin.py` ensures the script files
-# arrive at `<claude_dir>/scripts/` so the operator's PATH/sys.path can
-# resolve the module at runtime.
-_BASH_SPINE_LEDGER_GATE_INSTALLED = (
-    "# des-hook:pre-bash-spine-ledger-gate-installed\n"
-    "INPUT=$(cat); "
-    'CMD=$(echo "$INPUT" | python3 -c '
-    '"import sys,json; print(json.load(sys.stdin)'
-    ".get('tool_input',{}).get('command',''))\"); "
-    "echo \"$CMD\" | grep -qE '^\\s*git\\s+commit\\b' || exit 0; "
-    "python3 -m scripts.hooks.spine_ledger_gate "
-    "--commit-msg-file .git/COMMIT_EDITMSG "
-    "--ledger-root .nwave/telemetry/atdd-pure "
-    "--target-root . >/dev/null 2>&1 || true"
 )
 
 # Pure-shell wrapper around the git-stash guard PreToolUse hook (slice-01 of
 # fix-crafter-stash-structural-mitigation). The shell wrapper buffers stdin
 # (the hook event JSON), greps the bash command for `^\s*git\s+stash\b` as a
 # shell-fast-path (avoiding a Python interpreter startup on every non-stash
-# Bash invocation), and only then invokes the Python entry point. Mirrors the
-# `_BASH_SPINE_LEDGER_PRE_COMMIT_HOOK` pattern exactly.
+# Bash invocation), and only then invokes the Python entry point.
 #
-# Matcher coexistence: this entry is the 4th PreToolUse/Bash registration,
-# ADJACENT to the execution-log guard + the two spine-ledger entries (do NOT
-# modify any existing entry). Claude Code's PreToolUse protocol permits
+# Matcher coexistence: Claude Code's PreToolUse protocol permits
 # multiple registrations per (event, matcher) tuple; execution is
 # registration-ordered; ANY hook returning `{decision: block}` blocks the tool
 # invocation. The git-stash guard greps for `^git stash` only -- orthogonal to
-# the execution-log grep, the `^git commit` grep, and the best-effort gate -- so
-# a `git stash push` matches ONLY this guard and its block decision wins by
-# construction; the other three exit 0 silently on a `git stash` command.
+# the execution-log grep and the other independent guards -- so a `git stash
+# push` matches only this guard and its block decision wins by construction.
 #
-# Uses module-import form (`python3 -m scripts.hooks.git_stash_guard`) mirroring
-# the spine-ledger entries -- does NOT bake `$HOME` into the shell command so it
+# Uses module-import form (`python3 -m scripts.hooks.git_stash_guard`) and does
+# not bake `$HOME` into the shell command, so it
 # remains valid in BOTH installer-path AND plugin-bundle distribution modes. The
 # DES_HOOKS list in `des_plugin.py` ships the script file to the operator's
 # `~/.claude/scripts/` tree so the module resolves at runtime.
@@ -176,14 +104,12 @@ _BASH_GIT_STASH_GUARD = (
 # (cheap pre-filter; the Python hook does the precise tokenized detection) and
 # only then invokes the Python entry point. Mirrors `_BASH_GIT_STASH_GUARD`.
 #
-# Matcher coexistence: this entry is the 5th PreToolUse/Bash registration,
-# ADJACENT to the execution-log guard + the two spine-ledger entries + the
-# git-stash guard (do NOT modify any existing entry). Claude Code's PreToolUse
+# Matcher coexistence: Claude Code's PreToolUse
 # protocol permits multiple registrations per (event, matcher) tuple; execution
 # is registration-ordered; ANY hook returning `{decision: block}` blocks the
 # tool invocation. The no-verify guard fires ONLY on a real git verify-bypass
 # flag (`--no-verify` / `--no-gpg-sign`, or `-n` on `git commit`); its block
-# decision is orthogonal to the other four Bash entries, which grep different
+# decision is orthogonal to the other Bash entries, which grep different
 # command shapes and exit 0 silently on a plain bypass commit.
 #
 # The reminder is durable across installs because it lives in the DES HOOK_EVENTS
@@ -217,9 +143,8 @@ _BASH_NO_VERIFY_REMINDER = (
 # re-checks with `shlex`) and only then invokes the Python entry point.
 #
 # Matcher coexistence: this entry joins the existing PreToolUse/Bash roster
-# ADJACENT to the other five (execution-log guard, the two spine-ledger
-# entries, the git-stash guard, the no-verify reminder) -- do NOT modify any
-# existing entry. Claude Code permits multiple registrations per (event,
+# alongside the independent execution-log, git-stash, and no-verify guards.
+# Claude Code permits multiple registrations per (event,
 # matcher) tuple; execution is registration-ordered; ANY hook returning
 # `{decision: block}` blocks the tool invocation. This guard greps for
 # `git worktree remove` only -- orthogonal to every other Bash entry's grep,
@@ -239,143 +164,10 @@ _BASH_WORKTREE_REMOVAL_GUARD = (
     'echo "$INPUT" | python3 -m scripts.hooks.worktree_removal_guard'
 )
 
-# Standalone, spine-independent orchestrator-affordance refresh (fix-
-# orchestrator-affordance-refresh-independent). Unlike the DES-runtime-coupled
-# refresh in session_start_handler.py / user_prompt_submit_handler.py (which
-# depend on `des` being importable and, for SessionStart, on
-# `matcher="startup"` -- never firing on resume/clear/compact), this script
-# is stdlib-only, imports zero `des` module, and resolves its assets relative
-# to its own `Path(__file__)`. Ships flat to `<claude_dir>/scripts/` via
-# `DESPlugin.DES_HOOKS` (installer) and lives under the plugin bundle's
-# `scripts/` (plugin distribution).
-#
-# The command is a python `-c` discovery one-liner rather than a bare
-# `$HOME/...` path or a `-m scripts.hooks.X` module import, for three reasons:
-#   1. The SAME shell_command string is emitted VERBATIM into BOTH the
-#      installer settings.json AND the plugin bundle (`generate_hook_config`
-#      copies `shell_command` as-is for both distributions). A literal `$HOME`
-#      would leak into the plugin bundle, whose hook commands MUST resolve via
-#      `CLAUDE_PLUGIN_ROOT`, never `$HOME` -- so a bare `$HOME/...` path fails
-#      the plugin-relative invariant (test_des_bundle_steps).
-#   2. `python3 -m scripts.hooks.X` resolves the module via cwd, which at hook
-#      runtime is the USER's project, not the nWave install -> ModuleNotFoundError
-#      on a fresh target (RCA Branch F). The discovery one-liner instead
-#      `runpy.run_path`s the script by its resolved ABSOLUTE path, so cwd is
-#      irrelevant.
-#   3. Reading `HOME` / `CLAUDE_PLUGIN_ROOT` from `os.environ` INSIDE the python
-#      one-liner (never the literal shell token `$HOME`) keeps the command
-#      string free of `$HOME` / `~/` while still resolving the real install
-#      location. Mirrors the existing `_PLUGIN_DISCOVERY_SCRIPT` pattern in
-#      build_plugin.py.
-#
-# Discovery order matches build_plugin's: CLAUDE_PLUGIN_ROOT/scripts (plugin
-# hook env), then the plugin cache glob, then ~/.claude/scripts (installer).
-# `runpy.run_path(..., run_name="__main__")` runs the stdlib-only script with
-# `__file__` set to its real absolute path, so the script's asset resolution
-# (`Path(__file__).parent.parent / lib / nWave / data / ...`) lands on the
-# shipped assets. Script-not-found degrades LOUD (stderr), never a silent no-op.
-#
-# `matcher=None` on BOTH entries: SessionStart fires on
-# startup|resume|clear|compact (the exact gap this fixes); UserPromptSubmit
-# self-gates internally on a 900-second sentinel (see the script's own
-# docstring), so no PreToolUse-style shell fast-path is needed here.
-_STANDALONE_ORCHESTRATOR_AFFORDANCE_DISCOVERY = (
-    "import os,sys,runpy;"
-    "from pathlib import Path;"
-    "n='orchestrator_affordance_refresh.py';"
-    "r=os.environ.get('CLAUDE_PLUGIN_ROOT','');"
-    "h=os.environ.get('HOME','');"
-    "c=[Path(r)/'scripts'/n] if r else [];"
-    "c+=sorted(Path(h).joinpath('.claude/plugins/cache').glob('*/nw/*/scripts/'+n)) if h else [];"
-    "c+=[Path(h)/'.claude'/'scripts'/n] if h else [];"
-    "s=next((p for p in c if p.exists()),None);"
-    "sys.argv=[n,'{event}'];"
-    "runpy.run_path(str(s),run_name='__main__') if s "
-    "else sys.stderr.write('[orchestrator-affordance-refresh] script not found\\n')"
-)
-
-
-def _standalone_orchestrator_affordance_command(event: str) -> str:
-    """Build the des-free discovery command for the standalone refresh hook."""
-    one_liner = _STANDALONE_ORCHESTRATOR_AFFORDANCE_DISCOVERY.format(event=event)
-    return (
-        "# des-hook:orchestrator-affordance-refresh-standalone\n"
-        'python3 -c "' + one_liner + '"'
-    )
-
-
-_STANDALONE_ORCHESTRATOR_AFFORDANCE_REFRESH_SESSION_START = (
-    _standalone_orchestrator_affordance_command("SessionStart")
-)
-_STANDALONE_ORCHESTRATOR_AFFORDANCE_REFRESH_USER_PROMPT_SUBMIT = (
-    _standalone_orchestrator_affordance_command("UserPromptSubmit")
-)
-
-# Pure-shell wrapper around the slice-03 spine-ledger SubagentStop detector,
-# slice-04 of atdd-spine-ledger-enforcement-gate-v2. Mirrors the slice-02
-# module-import pattern (`python3 -m
-# scripts.hooks.spine_ledger_subagent_stop_detector`) — does NOT bake `$HOME`
-# into the shell command so it remains valid in BOTH installer-path AND
-# plugin-bundle distribution modes.
-_SUBAGENT_STOP_SPINE_LEDGER_DETECTOR_INSTALLED = (
-    "# des-hook:subagent-stop-spine-detector\n"
-    "INPUT=$(cat); "
-    'echo "$INPUT" | python3 -m scripts.hooks.spine_ledger_subagent_stop_detector'
-)
-
-# Harness-neutral declare-done backstop -- the git pre-push done-gate
-# (f-nonbypassable-attestation slice-01, DDD-2). The terminal "declare a feature
-# done" action in the dogfood is a `git push`; this is the missing harness-neutral
-# surface that auto-fires the SAME portable done-gate core (`des verify-integrity`
-# / `verify_deliver_integrity`) on the terminal push, INDEPENDENT of the
-# Claude-Code F_FINAL_REVIEW SubagentStop the incident's hand-dispatch never
-# reached. It adds NO new decision logic -- a thin DDD-7 shim that REUSES
-# `des_declare_done_pre_push` (which delegates to `verify_deliver_integrity.main`)
-# and PROPAGATES its veto (a non-zero exit aborts the push).
-#
-# RETIRED (fix-pre-push-hook-dual-installer-collision RCA, slice-01): the
-# `_GIT_PRE_PUSH_DECLARE_DONE_BACKSTOP` shim template + `render_pre_push_backstop_shim`
-# that used to render it into `.git/hooks/pre-push` (chaining any pre-existing
-# hook aside) are REMOVED -- that second writer of the SAME file
-# `pre-commit install` also writes tripped `verify-hooks`'s foreign-hook
-# detector. RCA: docs/analysis/root-cause-analysis-pre-push-hook-dual-installer-collision.md
-# The backstop's BEHAVIOR is unchanged and still fires -- it is now a `local`
-# `stages: [pre-push]` hook in `.pre-commit-config.yaml`, so `pre-commit install`
-# is the SOLE writer of `.git/hooks/pre-push`.
-#
-# The pre-push backstop's Python entry module (the DDD-7 thin shim that delegates
-# to the portable `verify_deliver_integrity` done-gate). The DES plugin still
-# ships this script alongside the other DES_HOOKS (deployed to
-# ~/.claude/scripts/) so the `.pre-commit-config.yaml` local hook can invoke it.
-GIT_PRE_PUSH_BACKSTOP_SCRIPT = "des_declare_done_pre_push.py"
-
-
 # Canonical hook event definitions -- the ONLY place these are defined.
 # Order matters: PreToolUse/Agent must come before Write/Edit guards. The
-# spine-ledger PreToolUse/Bash entries are registered AFTER the execution-log
-# guard (registration order = Claude Code execution order); the spine-ledger
-# entries can block git-commit commands lacking ledger evidence while the
-# execution-log guard silently approves them.
-#
-# Slice-04 (FINAL of F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2): 2 new entries
-# joined the registry -- PreToolUse/Bash for the installed-path spine-ledger
-# GATE (#5 -> #6 PreToolUse; uses gate script directly so AT-1's substring
-# filter on `spine_ledger_pre_commit_hook` still matches exactly the slice-02
-# entry), and SubagentStop for the installed-path spine-ledger detector
-# (#2 -> #3 SubagentStop). Total grew 10 -> 12.
-#
-# slice-01 of fix-crafter-stash-structural-mitigation: 1 new entry joins --
-# PreToolUse/Bash for the git-stash guard (4th Bash entry; #6 -> #7 PreToolUse;
-# greps `^git stash`, orthogonal to the other three Bash entries). Total grows
-# 12 -> 13.
-#
-# slice-04 amendment of nwave-flow-v2-enforcement (post-install smoke finding
-# #2): 1 new entry joins -- UserPromptSubmit for the wave-active anchor
-# (`hook_router` dispatches action `user-prompt-submit` to
-# `user_prompt_submit_handler.handle_user_prompt_submit`). The handler is a
-# deterministic no-op on non-`/nw-<wave>` prompts (NoWaveActive, zero writes),
-# so firing on every prompt is safe. No matcher (UserPromptSubmit has no tool
-# matcher). Total grows 13 -> 14; event types 5 -> 6.
+# Each registration is independently useful; avoid introducing a protocol chain
+# that makes a normal coding action depend on historical workflow bookkeeping.
 #
 # --no-verify reminder guard (Ale 2026-06-26): 1 new entry joins -- PreToolUse/
 # Bash for the lean verify-bypass reminder (5th Bash entry; #7 -> #8 PreToolUse;
@@ -383,16 +175,6 @@ GIT_PRE_PUSH_BACKSTOP_SCRIPT = "des_declare_done_pre_push.py"
 # orthogonal to the other four Bash entries). Lives in the SSOT so the reminder
 # survives the install-time settings.json rewrite that drops manual hook edits.
 # Total grows 14 -> 15.
-#
-# fix-orchestrator-affordance-refresh-independent: the standalone SessionStart
-# registration is the sole SessionStart surface.  It is stdlib-only and emits a
-# compact read-only orientation.  The UserPromptSubmit registration remains the
-# 900-second rich refresh surface.  Do not add a DES-runtime SessionStart entry:
-# it performs maintenance and would make a session open mutate maintainer state.
-# sessionstart-cross-host-contract (6a3e057e4): removed the legacy DES-runtime
-# SessionStart entry (matcher="startup", action="session-start") -- the
-# standalone registration above is now the sole SessionStart surface. Total
-# 17 -> 16 (offsetting the two additions above, net unchanged from 17).
 #
 # fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29): 1 new entry
 # joins -- PreToolUse/Bash for the worktree-removal liveness guard (6th Bash
@@ -402,7 +184,6 @@ GIT_PRE_PUSH_BACKSTOP_SCRIPT = "des_declare_done_pre_push.py"
 # `git worktree lock`, or the target's branch carries unmerged commits --
 # closing the incident where a clean `git status` was mistaken for "safe to
 # remove" while a lane's pytest run was still live inside the worktree.
-# Total grows 16 -> 17.
 HOOK_EVENTS: tuple[HookEvent, ...] = (
     HookEvent(event="PreToolUse", matcher="Agent", action="pre-task"),
     HookEvent(event="PreToolUse", matcher="Write", action="pre-write", is_guard=True),
@@ -412,18 +193,6 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
         matcher="Bash",
         action="pre-bash",
         shell_command=_BASH_EXECUTION_LOG_GUARD,
-    ),
-    HookEvent(
-        event="PreToolUse",
-        matcher="Bash",
-        action="pre-bash-spine-ledger",
-        shell_command=_BASH_SPINE_LEDGER_PRE_COMMIT_HOOK,
-    ),
-    HookEvent(
-        event="PreToolUse",
-        matcher="Bash",
-        action="pre-bash-spine-ledger-gate-installed",
-        shell_command=_BASH_SPINE_LEDGER_GATE_INSTALLED,
     ),
     HookEvent(
         event="PreToolUse",
@@ -445,27 +214,7 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
     ),
     HookEvent(event="PostToolUse", matcher="Agent", action="post-tool-use"),
     HookEvent(event="SubagentStop", matcher=None, action="subagent-stop"),
-    HookEvent(event="SubagentStop", matcher=None, action="deliver-progress"),
-    HookEvent(
-        event="SubagentStop",
-        matcher=None,
-        action="subagent-stop-spine-detector",
-        shell_command=_SUBAGENT_STOP_SPINE_LEDGER_DETECTOR_INSTALLED,
-    ),
     HookEvent(event="SubagentStart", matcher=None, action="subagent-start"),
-    HookEvent(event="UserPromptSubmit", matcher=None, action="user-prompt-submit"),
-    HookEvent(
-        event="SessionStart",
-        matcher=None,
-        action="orchestrator-affordance-refresh-standalone",
-        shell_command=_STANDALONE_ORCHESTRATOR_AFFORDANCE_REFRESH_SESSION_START,
-    ),
-    HookEvent(
-        event="UserPromptSubmit",
-        matcher=None,
-        action="orchestrator-affordance-refresh-standalone",
-        shell_command=_STANDALONE_ORCHESTRATOR_AFFORDANCE_REFRESH_USER_PROMPT_SUBMIT,
-    ),
 )
 
 # The distinct event types DES registers (for validation).

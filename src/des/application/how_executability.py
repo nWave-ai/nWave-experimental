@@ -31,14 +31,10 @@ from __future__ import annotations
 import ast
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from des.runtime.interpreter import python_for
 from des.runtime.spawn import spawn
-
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 #: Dict keys and keyword arguments that carry a GDP-3 HOW payload. Two names

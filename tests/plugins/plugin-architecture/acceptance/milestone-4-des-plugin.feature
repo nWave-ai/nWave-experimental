@@ -44,28 +44,12 @@ Feature: DES Plugin Integration
 
     Given DESPlugin installation is complete
 
-    When I run subprocess import test: "python3 -c 'import sys; sys.path.insert(0, \"~/.claude/lib/python\"); from des.application import DESOrchestrator; print(\"DES OK\")'"
+    When I run subprocess import test: "python3 -c 'import sys; sys.path.insert(0, \"~/.claude/lib/python\"); from des.cli.__main__ import main; print(\"DES CLI OK\")'"
 
     Then the import succeeds without errors
-    And the output contains "DES OK"
+    And the output contains "DES CLI OK"
     And DES module is functional and accessible
-    And DESOrchestrator class can be instantiated
-
-  @milestone-4 @phase-4 @priority-high
-  Scenario: DES scripts are executable and functional
-    # Based on: architecture-decisions.md GAP-PREREQ-01 - DES scripts
-    # Integration checkpoint: line 131 (DES scripts executable)
-
-    Given DESPlugin installation is complete
-    And DES scripts are installed at "~/.claude/scripts/"
-
-    When I check file permissions on check_stale_phases.py
-    And I check file permissions on scope_boundary_check.py
-
-    Then both scripts have executable permissions (chmod +x)
-    And both scripts can be executed: "python3 ~/.claude/scripts/check_stale_phases.py"
-    And scripts execute without import errors
-    And scripts output help or status messages correctly
+    And DES CLI entry point is callable
 
   @milestone-4 @phase-4 @error-handling
   Scenario: DESPlugin fails gracefully when prerequisites missing

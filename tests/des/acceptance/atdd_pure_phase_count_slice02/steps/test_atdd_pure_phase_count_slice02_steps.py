@@ -15,13 +15,9 @@ from typing import TYPE_CHECKING
 
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from .domain_types import CommitStepWord
-
 
 if TYPE_CHECKING:
     from .composition import (
-        CommitGateOutcome,
-        CommitStepGateComposition,
         PhaseResolveComposition,
         ResolutionResult,
     )
@@ -131,52 +127,4 @@ def _then_routing_not_rejected(resolution: ResolutionResult) -> None:
         f"routing marker {resolution.input_name!r} was rejected as unknown "
         f"(exit={resolution.exit_code}); it must be recognised as a routing "
         f"event, distinct from an unknown-phase rejection"
-    )
-
-
-# --- Hook commit-gate routing (C3 re-key, Layer-4 wiring_e2e) ----------------
-
-
-@given(
-    "a returning delivery agent in a workspace with no verified slice commit",
-    target_fixture="gate",
-)
-def _given_returning_agent(
-    commit_step_gate: CommitStepGateComposition,
-) -> CommitStepGateComposition:
-    return commit_step_gate
-
-
-@when(
-    "the agent reports it has finished the canonical commit step",
-    target_fixture="last_outcome",
-)
-def _when_finished_canonical(gate: CommitStepGateComposition) -> CommitGateOutcome:
-    return gate.report_finished_commit_step(CommitStepWord.CANONICAL)
-
-
-@when(
-    "the agent reports it has finished the legacy commit step",
-    target_fixture="last_outcome",
-)
-def _when_finished_legacy(gate: CommitStepGateComposition) -> CommitGateOutcome:
-    return gate.report_finished_commit_step(CommitStepWord.LEGACY)
-
-
-@then("the feature-end commit gate stops the agent from closing the slice")
-def _then_commit_gate_blocks(last_outcome: CommitGateOutcome) -> None:
-    # A message may name a cause only when it has observed it. These two
-    # failure shapes are NOT the same claim and must not share a sentence:
-    # no parseable decision document (the composition never got a verdict to
-    # read -- report the observation, not a routing diagnosis) vs. a verdict
-    # WAS observed and it simply was not a block (report exactly that verdict).
-    assert last_outcome.decision_found, (
-        f"the commit step word {last_outcome.word!r}: no parseable decision "
-        f"document was found in the hook's stdout -- raw stdout was "
-        f"{last_outcome.raw_stdout!r}"
-    )
-    assert last_outcome.blocked, (
-        f"the commit step word {last_outcome.word!r}: the hook returned "
-        f"decision={last_outcome.decision!r} event={last_outcome.event!r} "
-        f"instead of blocking (decision='block', event='SliceCommitBlocked')"
     )

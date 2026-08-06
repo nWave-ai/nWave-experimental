@@ -98,10 +98,9 @@ class TestDESPluginInitialization:
         assert plugin.dependencies == ["templates", "utilities"]
 
     def test_des_plugin_defines_expected_scripts(self):
-        """DESPlugin should define the expected DES scripts."""
+        """DESPlugin should ship only the live scope-boundary check."""
         plugin = DESPlugin()
-        assert "check_stale_phases.py" in plugin.DES_SCRIPTS
-        assert "scope_boundary_check.py" in plugin.DES_SCRIPTS
+        assert plugin.DES_SCRIPTS == ["scope_boundary_check.py"]
 
     def test_des_plugin_defines_expected_templates(self):
         """DESPlugin should define the expected DES templates."""
@@ -205,30 +204,6 @@ class TestDESPluginVerifyModuleImport:
 class TestDESPluginVerifyScripts:
     """Unit tests for DESPlugin.verify() script presence validation."""
 
-    def test_verify_fails_when_check_stale_phases_missing(
-        self, des_installed_via_symlink: InstallContext
-    ):
-        """verify() should fail if check_stale_phases.py is missing."""
-        plugin = DESPlugin()
-        install_context = des_installed_via_symlink
-
-        # Create scripts directory but only scope_boundary_check.py
-        scripts_dir = install_context.claude_dir / "scripts"
-        scripts_dir.mkdir(parents=True, exist_ok=True)
-        (scripts_dir / "scope_boundary_check.py").touch()
-        # Missing: check_stale_phases.py
-
-        # Create templates
-        templates_dir = install_context.claude_dir / "templates"
-        templates_dir.mkdir(parents=True, exist_ok=True)
-        for template in plugin.DES_TEMPLATES:
-            (templates_dir / template).touch()
-
-        result = plugin.verify(install_context)
-
-        assert not result.success
-        assert any("check_stale_phases.py" in error for error in result.errors)
-
     def test_verify_fails_when_scope_boundary_check_missing(
         self, des_installed_via_symlink: InstallContext
     ):
@@ -236,10 +211,9 @@ class TestDESPluginVerifyScripts:
         plugin = DESPlugin()
         install_context = des_installed_via_symlink
 
-        # Create scripts directory but only check_stale_phases.py
+        # Create scripts directory without the required scope-boundary script.
         scripts_dir = install_context.claude_dir / "scripts"
         scripts_dir.mkdir(parents=True, exist_ok=True)
-        (scripts_dir / "check_stale_phases.py").touch()
         # Missing: scope_boundary_check.py
 
         # Create templates

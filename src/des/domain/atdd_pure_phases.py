@@ -42,10 +42,6 @@ FeatureId = FeatureName
 # ADR-027 §Decision: workflow_mode opt-in dispatch selector.
 WorkflowMode = Literal["atdd_pure"]
 
-# Plan v3 §4.1: cohort pre-assignment drives SLO calibration.
-Cohort = Literal["S", "M", "L", "XL"]
-
-
 # ---------------------------------------------------------------------------
 # Phase enum + routing-exit sentinel
 # ---------------------------------------------------------------------------
@@ -233,25 +229,101 @@ class UnknownPhaseName(Exception):
 ROUTING_SEAM: str = "__ROUTING_SEAM__"
 
 
-def resolve_phase(name: str) -> str:
+class PhaseResolutionKind(Enum):
+    """Which of the three resolution outcomes occurred."""
+
+    CANONICAL = "canonical"
+    ROUTING = "routing"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class PhaseResolution:
+    """The outcome of resolving a phase name, as DATA rather than control flow.
+
+    All three outcomes are returned. None is thrown, and that is the point: an
+    ``except`` clause matches on class IDENTITY, so a raised outcome couples the
+    caller to the exact module object the raiser was loaded from. Where the same
+    package is reachable by more than one path -- a source tree plus an installed
+    runtime, a test harness that adjusts ``sys.path`` -- that identity is not
+    guaranteed, the ``except`` silently fails to match, and a handled outcome
+    escapes as a crash.
+
+    Measured, 2026-08-06: CI reported `UnknownPhaseName` propagating out of
+    `des.cli.phases._resolve` from the line INSIDE its own `try`, with the
+    matching `except` on the very next line. Returning the outcome removes the
+    coupling entirely, so the failure class cannot recur regardless of how the
+    module came to be loaded twice.
+
+    Illegal combinations are unrepresentable by construction: only CANONICAL
+    carries a phase, and it always carries one.
+    """
+
+    kind: PhaseResolutionKind
+    requested: str
+    canonical: str | None = None
+
+    def __post_init__(self) -> None:
+        has_phase = self.canonical is not None
+        if (self.kind is PhaseResolutionKind.CANONICAL) != has_phase:
+            raise ValueError(
+                f"PhaseResolution({self.kind}) carries canonical="
+                f"{self.canonical!r}: only CANONICAL has a phase, and always has one"
+            )
+
+    # Discriminators, deliberately evaluated HERE. `kind is
+    # PhaseResolutionKind.X` compares enum-member IDENTITY, which is exactly the
+    # coupling the returned outcome exists to remove: where the module is loaded
+    # twice, a caller's `PhaseResolutionKind.UNKNOWN` is a different object from
+    # the one inside this instance and the comparison silently answers False.
+    #
+    # Measured 2026-08-06: the first version of this change had `phases.py`
+    # branch on `resolution.kind is PhaseResolutionKind.UNKNOWN`. CI then
+    # reported an unknown phase ACCEPTED with exit 0 -- the same defect the
+    # `except` had, in new syntax. Identity comparison is safe only inside the
+    # module that owns both sides, so callers ask these questions instead of
+    # touching the enum.
+
+    @property
+    def is_canonical(self) -> bool:
+        """Whether the name resolved to a canonical phase (carried in `canonical`)."""
+        return self.kind is PhaseResolutionKind.CANONICAL
+
+    @property
+    def is_routing(self) -> bool:
+        """Whether the name is the retired routing marker: recognised, no phase."""
+        return self.kind is PhaseResolutionKind.ROUTING
+
+    @property
+    def is_unknown(self) -> bool:
+        """Whether the name was refused -- never a silent map to a wrong phase."""
+        return self.kind is PhaseResolutionKind.UNKNOWN
+
+
+def resolve_phase(name: str) -> PhaseResolution:
     """Resolve a (possibly legacy) phase name to its canonical phase.
 
     Read-only replay reader (mirrors the per-log dispatch precedent in
-    ``validator.py:_resolve_active_phases``). THREE outcomes:
+    ``validator.py:_resolve_active_phases``). THREE outcomes, all RETURNED:
 
-    * a canonical name (or a legacy alias) -> the canonical phase name;
-    * the retired routing marker ``D_GAP_ROUTING`` -> ``ROUTING_SEAM`` (the
-      routing/seam outcome — recognised, but no canonical phase);
-    * any other name -> raises ``UnknownPhaseName`` (the typed-error contract;
-      never a silent map to a wrong phase).
+    * a canonical name (or a legacy alias) -> ``CANONICAL`` with the phase;
+    * the retired routing marker ``D_GAP_ROUTING`` -> ``ROUTING`` (recognised,
+      but no canonical phase);
+    * any other name -> ``UNKNOWN`` (refused outright; never a silent map to a
+      wrong phase).
+
+    The docstring previously described three outcomes while returning two and
+    throwing the third. That asymmetry was the defect -- see ``PhaseResolution``.
     """
     normalised = name.strip().upper().replace("-", "_")
     if normalised in _CANONICAL_NAMES and normalised not in _NON_DELIVER_NAMES:
-        return normalised
+        return PhaseResolution(PhaseResolutionKind.CANONICAL, name, normalised)
     if normalised in LEGACY_PHASE_ALIASES:
         canonical = LEGACY_PHASE_ALIASES[normalised]
-        return ROUTING_SEAM if canonical is None else canonical
-    raise UnknownPhaseName(f"unknown phase name: {name!r}")
+        if canonical is None:
+            return PhaseResolution(PhaseResolutionKind.ROUTING, name)
+        return PhaseResolution(PhaseResolutionKind.CANONICAL, name, canonical)
+    return PhaseResolution(PhaseResolutionKind.UNKNOWN, name)
 
 
 # The three-link canonical transition map (architect §Sequencing / ADR-001).
@@ -622,7 +694,6 @@ __all__ = [
     "AcceptanceTestGapIdentified",
     "AgentName",
     "ArchitectureScopeMissDetected",
-    "Cohort",
     "DeliverBlocker",
     "DeliverTimeoutExceeded",
     "FeatureId",
@@ -630,6 +701,8 @@ __all__ = [
     "PhaseCReviewerVerdict",
     "PhaseExit",
     "PhaseFReviewerVerdict",
+    "PhaseResolution",
+    "PhaseResolutionKind",
     "Severity",
     "SpecificationAmbiguityDetected",
     "StepId",

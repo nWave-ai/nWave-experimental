@@ -454,8 +454,8 @@ def des_spawn(
     false-DONE (a child that lost ``des`` from its path) cannot recur.
 
     By default the child runs ``-m <module> <args...>``
-    (``des_spawn(cap, "des.cli.roadmap", "--help")`` ->
-    ``[python_for(cap), "-m", "des.cli.roadmap", "--help"]``). Pass ``script=``
+    (``des_spawn(cap, "des.cli.health_check", "--help")`` ->
+    ``[python_for(cap), "-m", "des.cli.health_check", "--help"]``). Pass ``script=``
     for the ``-c <inline-script>`` form (``module_args`` must then be empty).
 
     Caller kwargs (``cwd``, ``capture_output``, ``text``, ``timeout``,

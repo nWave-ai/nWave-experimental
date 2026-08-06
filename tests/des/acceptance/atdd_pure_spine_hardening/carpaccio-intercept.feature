@@ -28,13 +28,9 @@ Feature: The carpaccio entry gate is an unskippable PreToolUse intercept
   #     AtddPureHookInternalError block (decision:block + non-zero exit_code),
   #     never the bare exit-1 / status:error path.
 
-  @wiring_e2e @walking_skeleton @slice-01 @driving_port @contract-shape:state-mutation
-  Scenario: A defective atdd_pure crafter dispatch is blocked at the PreToolUse boundary
-    Given an atdd_pure feature with an integrity-checked AT-completion ledger
-    And a crafter dispatch into slice-01 carrying an atdd_pure dispatch missing its slice marker
-    When the real PreToolUse hook processes the dispatch
-    Then the dispatch is blocked
-    And the block names the AtddPureMarkerSetIncomplete event
+  # The PreToolUse walking-skeleton scenario that stood here required the U1 branch
+  # to block a defective dispatch. That branch is gone; the scenarios below drive
+  # intercept_atdd_pure_dispatch directly, which no hook reaches any more.
 
   @slice-01 @driving_port @property @contract-shape:state-mutation
   Scenario Outline: The U1 intercept classifies and gates an atdd_pure dispatch

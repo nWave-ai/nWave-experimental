@@ -9,7 +9,7 @@ misattributed commits and a corrupted ``Step-Id:`` audit chain.
 ``des-commit`` makes the commit critical section safe:
 
 1. Holds an exclusive ``fcntl.flock(LOCK_EX)`` (same idiom as
-   ``des.cli.log_phase``; degrades to no-lock on Windows) so concurrent callers
+   the retired execution-log writer; degrades to no-lock on Windows) so concurrent callers
    serialize and never collide on ``.git/index.lock``.
 2. Builds the commit from a **temporary index** seeded with HEAD plus ONLY the
    owned paths (``git read-tree HEAD`` then ``git add -A -- <owned>`` against a

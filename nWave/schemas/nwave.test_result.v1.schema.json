@@ -7,7 +7,7 @@
     "mirror": "src/des/data/schemas/ (SF tier) — copies MUST be content-identical",
     "ip_boundary": "concept + language-agnostic architecture + this contract = allowed cross-tree exchange; gate implementation is tier-specific (OSS=hooks, SF=sequencer)"
   },
-  "_description": "Output of TestRunnerPort: the RUN result (counts + exit) of a single test invocation in the target language. Per-language adapter emits this; verdict is NOT computed here. seam_id does NOT belong here (it belongs to nwave.earned_verdict.v1). 'error' is SINGULAR for byte-identity with the SF pytest-plugin emission.",
+  "_description": "Output of TestRunnerPort: the observed counts and exit code of one test invocation in the target language. A runner that cannot start emits nwave.test_observation.v1 instead; it is never represented as a passing result. 'error' is SINGULAR for byte-identity with the SF pytest-plugin emission.",
   "fields": {
     "schema": "nwave.test_result.v1",
     "runner": "pytest|jest|go-test|cargo",

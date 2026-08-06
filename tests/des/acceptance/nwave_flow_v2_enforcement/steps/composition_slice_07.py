@@ -488,7 +488,10 @@ class DiscussGateComposition:
         """
         assert self._project_root is not None
         from des.adapters.drivers.hooks import service_factory
-        from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
+        from des.ports.driver_ports.subagent_stop_port import (
+            SubagentStopContext,
+            SubagentStopReturnKind,
+        )
 
         prev_cwd = Path.cwd()
         prev_env = os.environ.get("DES_PROJECT_DIR")
@@ -500,11 +503,9 @@ class DiscussGateComposition:
             service = service_factory.create_subagent_stop_service()
             decision = service.validate(
                 SubagentStopContext(
-                    execution_log_path="",
                     project_id=_FEATURE_ID,
-                    step_id="",
+                    return_kind=SubagentStopReturnKind.ATDD_PURE,
                     cwd=str(self._project_root),
-                    mode="atdd_pure",
                     slice_id="slice-07",
                     atdd_pure_phase="D_REFACTOR_COMMIT",
                 )

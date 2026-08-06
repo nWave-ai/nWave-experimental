@@ -101,9 +101,11 @@ class TestTemplateRendering:
         # Must export the default plugin function
         assert "export default function nwaveDES" in template
 
-        # Must register both hook types
+        # Must register the tool hook. "session.created" is deliberately absent:
+        # it carried the session ceremony deleted in 22ea19309, and a plugin that
+        # registers it again would be re-introducing that ceremony.
         assert '"tool.execute.before"' in template
-        assert '"session.created"' in template
+        assert '"session.created"' not in template
 
         # Must have the translation function
         assert "function translateEvent" in template

@@ -34,17 +34,17 @@ import sys
 from collections import Counter, OrderedDict
 from pathlib import Path
 
+from des.domain.repo_path_resolver import FEATURE_DELTA_FILENAME
+
 
 def _bucket(target: str) -> str:
     """Name the argument a path belongs to. Path heuristics, see caveat 2."""
     t = target.replace("\\", "/")
-    if "/orchestrator-affordance/" in t:
-        return "orchestrator-affordance"
     if t.endswith("/SKILL.md"):
         return "skill CORE files"
     if "/skills/" in t:
         return "other files under /skills/"
-    if t.endswith("feature-delta.md"):
+    if t.endswith(FEATURE_DELTA_FILENAME):
         return "feature-delta"
     if "/src/" in t or "/scripts/" in t:
         return "production source"

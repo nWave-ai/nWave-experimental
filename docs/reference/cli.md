@@ -586,7 +586,6 @@ The following console scripts are available for DES (Deterministic Execution Sys
 - **des-log-phase** — Inspect DES task-prompt phase logs.
 - **des-init-log** — Initialize a fresh DES audit log.
 - **des-verify-integrity** — Verify DES audit-log integrity.
-- **des-roadmap** — Display DES phase roadmap.
 - **des-health-check** — Check DES runtime health.
 
 ---

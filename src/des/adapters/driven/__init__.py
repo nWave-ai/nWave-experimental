@@ -21,8 +21,6 @@ from des.adapters.driven.task_invocation.mocked_task_adapter import (
     MockedTaskAdapter,
 )
 from des.adapters.driven.time.system_time import SystemTimeProvider
-from des.adapters.driven.validation.git_scope_checker import GitScopeChecker
-from des.ports.driven_ports.scope_checker import ScopeCheckResult
 
 
 # Backward compatibility aliases
@@ -34,14 +32,11 @@ __all__ = [
     "ClaudeCodeTaskAdapter",
     # Config adapters
     "EnvironmentConfigAdapter",
-    "GitScopeChecker",
     "InMemoryConfigAdapter",
     "MockedTaskAdapter",
     # Filesystem adapters
     "RealFileSystem",
     "RealFilesystem",  # Backward compatibility
-    # Validation adapters
-    "ScopeCheckResult",
     # Logging adapters
     "SilentLogger",
     "StructuredLogger",

@@ -2,9 +2,8 @@
 
 Implements DDD-1..DDD-11 of fix-des-single-entry-point-consolidation feature.
 
-The dispatcher is a pure-function fan-out over the subcommand registry
-(_REGISTRY below — the same SSOT mirrored in tests/des/acceptance/
-single_entry_point/steps/domain_types.py:SUBCOMMAND_TABLE). Each row maps
+The dispatcher is a pure-function fan-out over the subcommand registry.
+Each row maps
 the operator-visible kebab-case name to its importable module path. argparse
 discovers subcommands from the registry; ``des --help`` advertises every
 name without per-subcommand prose duplication (each module owns its own
@@ -36,17 +35,11 @@ class _SubcommandRow:
     function_name: str
 
 
-# The subcommand registry — SSOT for the dispatcher. Mirrors
-# tests/des/acceptance/single_entry_point/steps/domain_types.py SUBCOMMAND_TABLE
-# (the executable test mirror). Filesystem-grounded against src/des/cli/*.py
-# (excluding __init__.py and __main__.py) as of 2026-05-23.
+# The subcommand registry is the dispatcher's single source of truth.
 _REGISTRY: tuple[_SubcommandRow, ...] = (
     _SubcommandRow("loop", "des.cli.loop", "main"),
-    _SubcommandRow("log-phase", "des.cli.log_phase", "main"),
-    _SubcommandRow("init-log", "des.cli.init_log", "main"),
     _SubcommandRow("resolve-workflow-mode", "des.cli.resolve_workflow_mode", "main"),
     _SubcommandRow("verify-integrity", "des.cli.verify_deliver_integrity", "main"),
-    _SubcommandRow("roadmap", "des.cli.roadmap", "main"),
     _SubcommandRow("health-check", "des.cli.health_check", "main"),
     _SubcommandRow("verify-commit-trailers", "des.cli.verify_commit_trailers", "main"),
     _SubcommandRow(
@@ -79,11 +72,7 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.check_slice_at_completeness",
         "main",
     ),
-    _SubcommandRow("doctor", "des.cli.doctor", "main"),
     # QW5 (mikado.md:47): the runner-capability probe report -- records
-    # supported/unsupported/indeterminate per declared runner against the
-    # LIVE probed environment, never a static reference.
-    _SubcommandRow("runner-probe", "des.cli.runner_probe", "main"),
     _SubcommandRow(
         "verify-readiness-pre-dispatch",
         "des.cli.verify_readiness_pre_dispatch",
@@ -96,11 +85,6 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     _SubcommandRow(
         "verify-wave-dispatch",
         "des.cli.verify_wave_dispatch",
-        "main",
-    ),
-    _SubcommandRow(
-        "verify-slice-ledger-evidence",
-        "des.cli.verify_slice_ledger_evidence",
         "main",
     ),
     _SubcommandRow(
@@ -227,7 +211,6 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.record_examine_verdict",
         "main",
     ),
-    _SubcommandRow("mode-locus-gate", "des.cli.mode_locus_gate", "main"),
     _SubcommandRow(
         "mode-registry-completeness",
         "des.cli.mode_registry_completeness",
@@ -268,13 +251,6 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     _SubcommandRow("gate-design-at-coherence", "des.cli.gate_g", "main"),
     _SubcommandRow("self-attest", "des.cli.self_attest", "main"),
     _SubcommandRow("verify-test-runner", "des.cli.run_tests", "main"),
-    # f-spine-runs-tests-not-git-hooks slice-01 (THE ACCELERATION, DDD-1/AT-A1):
-    # the slice-scoped EXECUTOR that genuinely RUNS only the entering slice's
-    # acceptance tests at commit (a real execution, not a collect-only walk) and
-    # vetoes on a RED slice AT -- the commit-time test authority that supersedes
-    # the whole-tree run-contract-gate per slice. Wiring this row is what makes
-    # `run_slice_ats` reachable (no longer dead code).
-    _SubcommandRow("run-slice-ats", "des.cli.run_slice_ats", "main"),
     # f-wave-contract-coherence slice-02: the git-free wave-contract coherence
     # gate -- verifies wave prose carries valid gates-ref/outputs-ref pointers,
     # restates nothing inline, and the referenced wave resolves in both SSOTs
@@ -368,17 +344,6 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.verify_catalog_coherence",
         "main",
     ),
-    # gate-armed-state-derivation slice-02 (EXTEND-as-promotion): promotes
-    # the coherence_offenders reducer (previously living inside
-    # tests/build/f_nonbypassable_attestation/test_arch_catalog_gate_wiring.py)
-    # into a first-class, catalogued des CLI gate mirroring
-    # verify-catalog-coherence's shape. Pure move + wiring, zero
-    # verdict-logic change.
-    _SubcommandRow(
-        "verify-gate-armed-state",
-        "des.cli.verify_gate_armed_state",
-        "main",
-    ),
     # check-contract-shape-declarations slice-01 (GDP-4/6): the PRODUCING tool
     # for Principle 11's three mechanical Contract-Shape checks (CONTRACT_SHAPE
     # docstring / acceptance Outcome-anchor / banned-regex name) over an
@@ -393,17 +358,6 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # (Intent pre-filled from the Value statement verbatim), idempotent,
     # degrade-LOUD on a missing/malformed feature-delta or absent Slice Plan.
     _SubcommandRow("charter-scaffold", "des.cli.charter_scaffold", "main"),
-    # feature-end-certifies-real-consumers slice-01 (GDP-1/5): the PRODUCING
-    # tool for the two feature-end certification preconditions -- a
-    # feature's `## Environmental E2E` block, and the project's
-    # `.nwave/demo-recipe.json` -- so verify-environmental-e2e and
-    # verify-fresh-clone have something honest generated for them instead of
-    # hand-authored tribal knowledge nobody produces.
-    _SubcommandRow(
-        "feature-end-preconditions-scaffold",
-        "des.cli.feature_end_preconditions_scaffold",
-        "main",
-    ),
     # blast-radius-measured-tier slice-01 (GDP-1/5): the PRODUCING tool for the
     # measured S/M/L change-tier -- real files/lines measures over --paths,
     # boundary/consumer honestly not-yet-wired in slice-01 (explicit reasons

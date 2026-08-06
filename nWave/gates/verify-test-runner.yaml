@@ -15,9 +15,10 @@ responsibility: |
   directory and emit one nwave.test_result.v1 envelope whose passed/failed/
   collected/exit_code counts are byte-faithful to what actually ran (a failing
   target surfaces failed>0 -- the anti-theater witness, counts cannot be a
-  hard-coded green template). When the named runner cannot be invoked, emit a
-  fail-safe nwave.earned_verdict.v1 ABSTAIN (reason: runner-absent) IN PLACE of a
-  run -- never a fabricated passing result for a run that never happened.
+  hard-coded green template). When the named runner cannot be invoked, emit an
+  explicit nwave.test_observation.v1 result (`observation: unobserved`,
+  `reason: runner-absent`) -- never a fabricated passing result for a run that
+  never happened.
 module: des.cli.run_tests
 entry_function: main
 language_neutral_contract: true
@@ -30,7 +31,7 @@ failure_modes:
     remediation: "Pass --target <dir> and --out <path>; the runner needs a target to run and an envelope path to emit to."
   - error_class: RunnerAbsent
     exit_code: 2
-    remediation: "The named runner is not invokable in this interpreter; the port emits a fail-safe ABSTAIN envelope rather than fabricate a green. Install/select an invokable runner and retry."
+    remediation: "The named runner is not invokable in this interpreter; the port emits an explicit unobserved outcome rather than fabricate a green. Install/select an invokable runner and retry."
 
 idempotency: side-effects-explicit
 

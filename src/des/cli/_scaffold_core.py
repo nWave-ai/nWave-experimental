@@ -2,14 +2,15 @@
 2026-07-29 -- Ale-ratified unification: "queste sono tutte violazioni di
 SSOT ... va unificato in modo da estendere e gestirlo UN SOLO POSTO").
 
-Four ``des`` subcommands are all "the producing tool for an artifact another
+Three ``des`` subcommands are all "the producing tool for an artifact another
 gate consumes" (GDP-4/5): ``charter-scaffold``, ``examine-fixture``,
-``feature-end-preconditions-scaffold``, ``flavor-scaffold``. Each was written
-separately and copy-pastes the same two decisions:
+``flavor-scaffold``. Each was written separately and copy-pasted the same two
+decisions (a fourth, ``feature-end-preconditions-scaffold``, has since been
+deleted):
 
-1. **What to do when the target already exists** -- ``charter-scaffold`` and
-   ``feature-end-preconditions-scaffold`` skip silently (idempotent no-op,
-   ``accepted`` verdict); ``flavor-scaffold`` refuses unless ``--force``;
+1. **What to do when the target already exists** -- ``charter-scaffold``
+   skips silently (idempotent no-op, ``accepted`` verdict);
+   ``flavor-scaffold`` refuses unless ``--force``;
    ``examine-fixture`` unconditionally destroys and rebuilds (its target is a
    disposable fixture repo, not a document a human fills in). These are not
    four different bugs -- they are ONE decision (skip / refuse / rebuild)
@@ -18,10 +19,9 @@ separately and copy-pastes the same two decisions:
    hand-rolling the branch.
 
 2. **How a verdict token becomes a JSON stdout line + an exit code.**
-   ``charter_scaffold._degrade`` and ``feature_end_preconditions_scaffold._emit``
-   both printed a payload dict containing a ``verdict`` key and returned ``0``
-   when it equalled ``VERDICT_ACCEPTED``, ``1`` otherwise -- independently
-   derived, byte-identical decision. ``emit_scaffold_verdict`` is now the one
+   ``charter_scaffold._degrade`` printed a payload dict containing a
+   ``verdict`` key and returned ``0`` when it equalled ``VERDICT_ACCEPTED``,
+   ``1`` otherwise -- a decision each scaffold re-derived byte-identically. ``emit_scaffold_verdict`` is now the one
    place that mapping lives.
 
 WHAT THIS DOES **NOT** UNIFY. ``flavor-scaffold``'s success/refuse output is
@@ -56,7 +56,7 @@ from typing import Literal
 #: ``--force`` escape hatch) -- no other policy is affected by ``force``.
 ExistsPolicy = Literal["skip", "refuse", "rebuild"]
 
-#: The verdict token `charter_scaffold` / `feature_end_preconditions_scaffold`
+#: The verdict token `charter_scaffold`
 #: (and, for its new failure path, `examine_fixture`) already share via
 #: `des.cli.validate_feature_delta.VERDICT_ACCEPTED`. Re-declared here as the
 #: plain string literal (not imported) to keep this module free of a
@@ -108,7 +108,7 @@ def emit_scaffold_verdict(
 
     The ONE place a `des.cli` scaffold generator maps its verdict token to an
     exit code -- `charter_scaffold._degrade` and
-    `feature_end_preconditions_scaffold._emit` independently re-derived this
+    each scaffold's private `_emit` independently re-derived this
     exact mapping before this module existed (D49, mikado 2026-07-29).
     """
     print(json.dumps(payload))

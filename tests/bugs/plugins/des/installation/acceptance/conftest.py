@@ -9,19 +9,12 @@ to discover feature files and step definitions.
 from .steps.conftest import (
     claude_config_dir,
     clean_env,
-    clean_settings_file,
-    des_plugin,
     env_with_audit_log_dir,
-    install_context,
     installed_des_path,
     project_root,
-    settings_with_duplicates,
-    settings_with_mixed_hooks,
-    settings_with_old_format_hook,
     temp_claude_dir,
     temp_project_dir,
     test_context,
-    test_logger,
 )
 
 
@@ -29,19 +22,12 @@ from .steps.conftest import (
 __all__ = [
     "claude_config_dir",
     "clean_env",
-    "clean_settings_file",
-    "des_plugin",
     "env_with_audit_log_dir",
-    "install_context",
     "installed_des_path",
     "project_root",
-    "settings_with_duplicates",
-    "settings_with_mixed_hooks",
-    "settings_with_old_format_hook",
     "temp_claude_dir",
     "temp_project_dir",
     "test_context",
-    "test_logger",
 ]
 
 

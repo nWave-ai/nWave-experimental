@@ -70,7 +70,6 @@ from des.cli import verify_wave_dispatch
 from des.domain.des_marker_parser import DesMarkerParser
 from des.domain.wave_active import WaveActiveRecord, WaveProvenance
 from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
-from des.ports.driver_ports.validator_port import ValidationResult, ValidatorPort
 from tests.common.in_process_cli import run_cli_in_process
 from tests.env_parity import seed_dev_checkout_marker
 
@@ -99,19 +98,6 @@ _OWNER_WAVE: dict[str, str] = {
 _SESSION_ID = "sess-ssot-0001"
 _PROBE_FEATURE_ID = "probe"
 _WAVE_SKIP_HEADING_TEMPLATE = "## Wave: {wave} / [REF] Wave Skipped"
-
-
-class _AllowAllValidator(ValidatorPort):
-    """A trivial classic prompt validator.
-
-    The collision path (``not markers.is_des_task`` -> the AT-3 WAVE_MARKER_BYPASS
-    branch) NEVER calls ``validate_prompt`` -- the service returns its decision
-    before Step 5. This stub is wired only to satisfy the required ctor arg; if it
-    were ever reached it would allow (so it can never MASK the AT-3 verdict).
-    """
-
-    def validate_prompt(self, prompt: str) -> ValidationResult:
-        return ValidationResult(errors=[], task_invocation_allowed=True)
 
 
 @pytest.fixture
@@ -295,7 +281,6 @@ class ExemptionReconcileComposition:
         assert self._root is not None
         service = PreToolUseService(
             marker_parser=DesMarkerParser(),
-            prompt_validator=_AllowAllValidator(),
             audit_writer=NullAuditLogWriter(),
             time_provider=SystemTimeProvider(),
             wave_active_reader=WaveActiveFilesystemStore(),

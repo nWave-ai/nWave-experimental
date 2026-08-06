@@ -32,7 +32,7 @@ The nWave methodology implements a systematic approach to software development t
 ### 🔧 Specialist Agents (Standalone & Collaborative)
 
 7. **systematic-refactorer** → Essential for Level 1-6 refactoring
-8. **mikado-refactoring-specialist-enhanced** → Complex refactoring roadmaps
+8. **mikado-refactoring-specialist-enhanced** → Complex refactoring dependency maps
 9. **root-cause-analyzer** → Debugging, post-mortem, problem research
 10. **architecture-diagram-manager** → Visual architecture maintenance & updates
 
@@ -51,7 +51,7 @@ The nWave methodology implements a systematic approach to software development t
 
 ### Specialist Commands
 
-- `/nw-mikado [target] [options]` - Complex refactoring roadmaps
+- `/nw-mikado [target] [options]` - Complex refactoring dependency maps
 - `/nw-root-why [problem-description]` - Root cause analysis & debugging
 - `/nw-diagram [scope] [action]` - Architecture diagram management
 
@@ -75,7 +75,7 @@ Complete greenfield project development with full visual architecture lifecycle.
 
 ### Brownfield Integration
 
-Legacy system enhancement with visual refactoring roadmaps and systematic improvement.
+Legacy system enhancement with visual dependency maps and systematic improvement.
 
 ### Rapid Prototyping
 
@@ -115,8 +115,7 @@ The architecture-diagram-manager provides complete visual architecture lifecycle
 /nw-devops "user-authentication"
 /nw-distill "User can register and login securely"
 /nw-deliver "Implement user authentication with JWT"
-  # Automatically: roadmap → execute all steps → finalize
-  # Quality gates: 3 + 3N reviews (e.g., 10 steps = 33 reviews)
+  # Executes the selected delivery workflow with its declared quality gates
 ```
 
 **Option 2: Manual Granular Control (Advanced)**
@@ -125,16 +124,6 @@ The architecture-diagram-manager provides complete visual architecture lifecycle
 /nw-discover "User authentication market research"
 /nw-discuss "User registration requirements"
 /nw-design "JWT authentication architecture"
-
-# DELIVER wave - manual orchestration
-/nw-roadmap @solution-architect "Implement user authentication"
-
-# Execute individual steps with 11-phase TDD
-/nw-execute @software-crafter "docs/feature/user-authentication/steps/01-01.json"
-/nw-execute @software-crafter "docs/feature/user-authentication/steps/01-02.json"
-# ... (repeat for all steps)
-
-/nw-finalize @platform-architect "user-authentication"
 
 # DELIVER wave
 /nw-deliver "user-authentication"

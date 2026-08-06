@@ -473,7 +473,6 @@ class BackupManager:
             "hooks.json",
             ".nwave-des-manifest.json",
             "nwave_claude_code_hook_adapter_launcher.py",
-            "nwave_orchestrator_affordance_launcher.py",
         )
         if (
             not skills_dir.exists()

@@ -10,11 +10,7 @@ These tests would have caught the original bug where:
 
 Test Budget: 3 distinct behaviors x 2 = 6 max unit tests.
 Behaviors:
-  1. Plugin hooks cover all required event types with correct matchers
-     (post slice-04 of atdd-spine-ledger-enforcement-gate-v2: PreToolUse
-     has 6 entries; the Bash matcher hosts the execution-log guard, the
-     spine-ledger pre-commit hook dev-mode form, AND the spine-ledger
-     gate-installed form)
+  1. Plugin hooks cover all required event types with correct matchers.
   2. Plugin hooks use "Agent" matcher, never "Task"
   3. Plugin Write/Edit hooks have guard commands
 """
@@ -40,29 +36,14 @@ class TestPluginHookCorrectness:
         assert set(hook_config.keys()) == HOOK_EVENT_TYPES
 
     def test_pretooluse_has_agent_write_edit_bash_matchers(self, hook_config: dict):
-        """PreToolUse has exactly 9 entries: Agent, Write, Edit, Bash x 6 (not Task).
-
-        slice-02 of atdd-spine-ledger-enforcement-gate-v2 added a NEW Bash
-        entry (spine-ledger pre-commit hook, dev-mode form) adjacent to the
-        execution-log guard. slice-04 added a SECOND spine-ledger Bash entry
-        (gate-installed form). slice-01 of
-        fix-crafter-stash-structural-mitigation added a FOURTH Bash entry
-        (git-stash guard). 817a7b21e wired a FIFTH Bash entry (the --no-verify
-        reminder guard, ``pre-bash-no-verify-reminder``).
-        fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29) wired
-        a SIXTH Bash entry (the worktree-removal liveness guard,
-        ``pre-bash-worktree-removal-guard``). Claude Code permits multiple
-        entries per (event, matcher).
-        """
+        """PreToolUse has 7 entries: Agent, Write, Edit, Bash x 4 (not Task)."""
         pre_tool_use = hook_config["PreToolUse"]
-        assert len(pre_tool_use) == 9
+        assert len(pre_tool_use) == 7
         matchers = [e.get("matcher") for e in pre_tool_use]
         assert matchers == [
             "Agent",
             "Write",
             "Edit",
-            "Bash",
-            "Bash",
             "Bash",
             "Bash",
             "Bash",

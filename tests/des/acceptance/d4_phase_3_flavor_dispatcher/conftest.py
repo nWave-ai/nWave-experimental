@@ -54,7 +54,7 @@ invocation. The slice-02 composition does NOT import `DesMarkerParser` /
 `AtCompletionLedger` / any internal helper — prompt authoring builds the
 M3-marker text via the public `DES-MODE:atdd_pure` / `DES-PHASE:...` /
 `Slice-Id: slice-NN` format documented in
-`docs/feature/single-entry-point/distill/des-marker-format.md`.
+the dispatcher's marker-format contract.
 
 Step modules (`dispatcher_steps/steps_*.py`) invoke ONLY each composition's
 methods — they never import from `des.domain.*` / `des.application.*` /

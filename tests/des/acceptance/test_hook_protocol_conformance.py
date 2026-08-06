@@ -204,50 +204,6 @@ def given_non_des_agent_completion(ctx: dict[str, Any], tmp_path: Path) -> None:
     )
 
 
-@given("a completed DES agent whose step validation fails")
-def given_des_agent_validation_failure(ctx: dict[str, Any], tmp_path: Path) -> None:
-    """Prepare stdin for SubagentStop with DES markers but incomplete phases.
-
-    Uses the direct DES protocol (executionLogPath, projectId, stepId) to
-    trigger validation. The execution log has no phase events, so validation
-    will fail (incomplete TDD phases).
-    """
-    # Create a minimal execution-log.json with no phase events for the step
-    execution_log_path = (
-        tmp_path
-        / "docs"
-        / "feature"
-        / "test-project"
-        / "deliver"
-        / "execution-log.json"
-    )
-    execution_log_path.parent.mkdir(parents=True, exist_ok=True)
-    execution_log = {
-        "feature_id": "test-project",
-        "schema_version": "3.0",
-        "events": [],
-    }
-    execution_log_path.write_text(json.dumps(execution_log))
-
-    # Activation gate (nwave-project-activation-gating): hooks only run in an
-    # activated project. A project mid-DELIVER is, by definition, active — mark
-    # it so the SubagentStop validation runs (the block assertion is unchanged).
-    marker = tmp_path / ".nwave" / "local-config.json"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(json.dumps({"enabled_for_repo": True}))
-
-    ctx["hook_command"] = "subagent-stop"
-    ctx["stdin"] = json.dumps(
-        {
-            "executionLogPath": str(execution_log_path),
-            "projectId": "test-project",
-            "stepId": "01-01",
-            "stop_hook_active": False,
-            "cwd": str(tmp_path),
-        }
-    )
-
-
 # ---------------------------------------------------------------------------
 # Given steps — PreWrite
 # ---------------------------------------------------------------------------

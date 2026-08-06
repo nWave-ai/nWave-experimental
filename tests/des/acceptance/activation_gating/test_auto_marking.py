@@ -1,9 +1,4 @@
-"""Auto-marking binding — project-activation-gating (DISTILL scaffold).
-
-Two triggers (prior-use at session start; real agent dispatch), the
-bare-config false-positive guard, the sticky opt-out, and the read-only
-fail-open path. SKIPPED until DELIVER.
-"""
+"""Auto-marking binding — project-activation-gating (DISTILL scaffold)."""
 
 from pytest_bdd import scenarios
 

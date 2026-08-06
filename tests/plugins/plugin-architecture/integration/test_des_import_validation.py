@@ -101,14 +101,14 @@ def installed_des_context(clean_test_directory, project_root, test_logger):
 
 
 class TestDESModuleImportValidation:
-    """Integration tests for DES module importability after installation."""
+    """Integration tests for the installed DES CLI entry point."""
 
     def test_des_module_import_succeeds_in_subprocess(self, installed_des_context):
         """
-        Verify DES module can be imported via subprocess.
+        Verify the installed runtime entry point can be imported via subprocess.
 
         Acceptance Criteria (from feature file):
-        - Subprocess import test: python3 -c 'from des.application import DESOrchestrator'
+        - Subprocess import test: python3 -c 'from des.cli.__main__ import main'
         """
         lib_python = installed_des_context.claude_dir / "lib" / "python"
 
@@ -116,8 +116,8 @@ class TestDESModuleImportValidation:
         import_cmd = (
             f"import sys; "
             f"sys.path.insert(0, {lib_python_str!r}); "
-            f"from des.application import DESOrchestrator; "
-            f"print('DES OK')"
+            f"from des.cli.__main__ import main; "
+            f"print('DES CLI OK')"
         )
 
         result = subprocess.run(
@@ -132,40 +132,38 @@ class TestDESModuleImportValidation:
             f"stdout: {result.stdout}\n"
             f"stderr: {result.stderr}"
         )
-        assert "DES OK" in result.stdout, (
-            f"Expected 'DES OK' in output, got: {result.stdout}"
+        assert "DES CLI OK" in result.stdout, (
+            f"Expected 'DES CLI OK' in output, got: {result.stdout}"
         )
 
-    def test_des_orchestrator_can_be_instantiated(self, installed_des_context):
+    def test_des_cli_entrypoint_is_callable(self, installed_des_context):
         """
-        Verify DESOrchestrator class can be instantiated.
-
-        This tests that the DES module is not only importable but functional.
+        Verify the installed CLI entry point is callable.
         """
         lib_python = installed_des_context.claude_dir / "lib" / "python"
 
         lib_python_str = str(lib_python)
-        instantiate_cmd = (
+        entrypoint_cmd = (
             f"import sys; "
             f"sys.path.insert(0, {lib_python_str!r}); "
-            f"from des.application import DESOrchestrator; "
-            f"o = DESOrchestrator.__new__(DESOrchestrator); "
-            f"print('Instantiation OK')"
+            f"from des.cli.__main__ import main; "
+            f"assert callable(main); "
+            f"print('CLI entry point OK')"
         )
 
         result = subprocess.run(
-            [sys.executable, "-c", instantiate_cmd],
+            [sys.executable, "-c", entrypoint_cmd],
             capture_output=True,
             text=True,
             timeout=10,
         )
 
         assert result.returncode == 0, (
-            f"DESOrchestrator instantiation failed.\n"
+            f"DES CLI entry point validation failed.\n"
             f"stdout: {result.stdout}\n"
             f"stderr: {result.stderr}"
         )
-        assert "Instantiation OK" in result.stdout
+        assert "CLI entry point OK" in result.stdout
 
 
 @pytest.mark.skipif(
@@ -174,26 +172,6 @@ class TestDESModuleImportValidation:
 )
 class TestDESScriptExecutablePermissions:
     """Integration tests for DES script executable permissions."""
-
-    def test_check_stale_phases_has_executable_permission(self, installed_des_context):
-        """
-        Verify check_stale_phases.py has executable permissions (chmod +x).
-
-        Acceptance Criteria (from feature file):
-        - DES scripts have executable permissions (chmod +x)
-        """
-        script_path = (
-            installed_des_context.claude_dir / "scripts" / "check_stale_phases.py"
-        )
-
-        assert script_path.exists(), f"Script not found: {script_path}"
-
-        mode = script_path.stat().st_mode
-        is_executable = bool(mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH))
-
-        assert is_executable, (
-            f"check_stale_phases.py is not executable. Mode: {oct(mode)}"
-        )
 
     def test_scope_boundary_check_has_executable_permission(
         self, installed_des_context
@@ -228,52 +206,6 @@ class TestDESScriptExecution:
             else str(lib_python)
         )
         return env
-
-    def test_check_stale_phases_executes_without_import_error(
-        self, installed_des_context
-    ):
-        """
-        Verify check_stale_phases.py executes without import errors.
-
-        The script should either succeed or fail gracefully with
-        "DES module not available" message (which is expected since
-        DES components like StaleExecutionDetector may not exist).
-        """
-        script_path = (
-            installed_des_context.claude_dir / "scripts" / "check_stale_phases.py"
-        )
-        lib_python = installed_des_context.claude_dir / "lib" / "python"
-
-        env = self._create_pythonpath_env(lib_python)
-
-        result = subprocess.run(
-            [sys.executable, str(script_path)],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            env=env,
-        )
-
-        # Script should not crash with import error for des.application
-        assert (
-            "Traceback" not in result.stderr or "des.application" not in result.stderr
-        ), (
-            f"Script crashed with DES import error.\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-
-        valid_outputs = [
-            "No stale phases detected",
-            "DES module not available",
-            "stale phase check skipped",
-        ]
-        output = result.stdout + result.stderr
-
-        assert result.returncode == 0 or any(msg in output for msg in valid_outputs), (
-            f"Script did not execute properly.\n"
-            f"Return code: {result.returncode}\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
-        )
 
     def test_scope_boundary_check_executes_without_import_error(
         self, installed_des_context

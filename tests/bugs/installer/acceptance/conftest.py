@@ -34,10 +34,6 @@ def pytest_configure(config: pytest.Config) -> None:
     )
     config.addinivalue_line(
         "markers",
-        "bug-roadmap-schema-drift: Bug — roadmap.json skeleton/validator drift from schema source-of-truth",
-    )
-    config.addinivalue_line(
-        "markers",
         "property-test: scenario expresses a system property (PBT framing)",
     )
     config.addinivalue_line(

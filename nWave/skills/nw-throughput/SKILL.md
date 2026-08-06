@@ -13,10 +13,9 @@ that fan-out — answer it from evidence, not from memory of having answered it 
 
 ## Are the standing loops actually armed right now — and are they routing the DRAINS too?
 
-The standing consolidation loops are ON by default (the human opts OUT). They are session-scoped:
-a restart, crash, or killed session disarms ALL of them SILENTLY, so re-check with the real tool
-(`CronList`/`TaskList`) on every SessionStart and re-arm what is missing — a remembered "I armed
-them" describes a session that may no longer exist.
+Standing consolidation loops require an explicit host scheduler. Re-check with the real tool
+(`CronList`/`TaskList`) at the start of each managed delivery run and re-arm what is missing — a
+remembered "I armed them" describes a session that may no longer exist.
 
 Is throughput only parallel swarm delivery? No — the loops also route the two DRAINS, and both are
 first-class throughput work, not a side chore:
@@ -165,9 +164,9 @@ reconstructed from ambiguous git state on every single pass?
 
 Is the agent classifying an ambiguous dependency actually Luna — Vera's economical model
 tier — and only when deterministic facts are insufficient? She may not invent work,
-liveness, capacity, or override the snapshot. Has the Sentinel run at SessionStart and at
-least every 30 minutes while the host session is alive? The periodic pass is observation
-only — has it stayed that way, never turning missing host scheduling into a hidden
+liveness, capacity, or override the snapshot. Has the Sentinel run when explicitly invoked or
+by a declared host scheduler? The periodic pass is observation only — has it stayed that way,
+never turning missing host scheduling into a hidden
 resident process? When an unknown could change a lane's safety, slicing, architecture, or
 feasibility, has the Sentinel named the unknown and routed it to a bounded `nw-spike`
 before scheduling? The spike answers `SUPPORTED`, `REFUTED`, or `INDETERMINATE`; it is not

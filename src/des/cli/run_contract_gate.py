@@ -54,20 +54,6 @@ from des.adapters.driven.git.committed_scope_adapter import GitCommittedScopeAda
 from des.adapters.driven.git.git_subprocess import git_text as _git
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.adapters.driven.output.stdout_output import StdoutOutput
-from des.adapters.driven.runner.pytest_runner import (
-    pytest_interpreter,
-    run_pytest_reaped,
-    run_timeout_seconds,
-)
-from des.adapters.driven.runner.reentrancy_guard import (
-    is_routing_active_for,
-    routing_active_for,
-)
-from des.adapters.driven.runner.runner_json import read_runner_json
-from des.adapters.driven.runner.runner_registry import (
-    GLOBAL_REGISTRY,
-    seed_runner_registry,
-)
 from des.application.feature_at_files import (
     feature_tagged_test_files,
     is_pytest_collectible,
@@ -90,18 +76,15 @@ from des.domain.gate_scope_trailer import (
 from des.domain.slice_id_trailer import SLICE_TAG_RE
 from des.ports.driven_ports.committed_scope_port import (
     CommittedFileSet,
-    Indeterminate,
 )
-from des.ports.test_runner_port import (
-    RunnerAdapter,
-    RunnerAdapterUnavailable,
-    RunnerResolutionContext,
-    UnrecognizedRunner,
-)
-from des.ports.test_runner_port import resolve as resolve_runner
 from des.runtime.interpreter import (
     InterpreterUnavailable,
     can_import,
+)
+from des.runtime.test_execution import (
+    pytest_interpreter,
+    run_pytest_reaped,
+    run_timeout_seconds,
 )
 
 
@@ -158,8 +141,8 @@ def _record_outcome(repo: Path, outcome: GateVerdict) -> None:
 #
 # slice-05 / C10 allocation (§V.B): this marker is the FEATURE-END full-suite
 # scope, run ONCE at feature-end -- NOT at every commit-slice. The per-commit
-# -slice gate path runs the entering slice's ATs ONLY (``run_slice_ats``, the
-# ATs@slice allocation), or the collect-only digest (``--collect-only`` /
+# -slice gate path uses the entering slice's declared acceptance-test scope, or
+# the collect-only digest (``--collect-only`` /
 # ``--verify-gate-scope``); it does NOT execute this whole-tree marker. The
 # marker is referenced ONLY by ``_full_suite_marker_args`` (the feature-end
 # full-suite argv builder), so the per-slice RUN functions never wire it.
@@ -727,11 +710,8 @@ def _run_collect_worker(
     when it is ``None``. This is the one seam that owns the pytest argv
     (DDD-12), so feature-scoped collection adds NO third call site.
 
-    The worker interpreter is resolved through ``pytest_interpreter()`` -- the
-    pytest run-facet boundary (``des.adapters.driven.runner.pytest_runner``),
-    NOT an inline ``python_for`` call in gate logic: the python-hardcode lives
-    behind the runner-adapter boundary (the genericità mandate), and the F-21
-    boundary contract still holds -- if no candidate can import pytest,
+    The worker interpreter is resolved through ``pytest_interpreter()`` in the
+    shared bounded-process helper. If no candidate can import pytest,
     ``InterpreterUnavailable`` is raised rather than a bare
     ``ModuleNotFoundError`` surfacing one frame later.
 
@@ -1093,10 +1073,9 @@ def _run_arch_invariant_set(repo: Path, arch_paths: list[Path]) -> _ArchVerdict:
     ``--run`` branch (DDD-12 -- the single pytest-argv owner; no new spawn site).
     The only effect (running pytest) stays inside the worker subprocess boundary,
     the same isolation as ``_collect_scope``. The worker interpreter is resolved
-    through ``pytest_interpreter()`` -- the pytest run-facet boundary (the
-    runner-adapter, never an inline ``python_for`` call in gate logic), so the
-    F-21 boundary holds and the python-hardcode stays behind the port (never raw
-    ``sys.executable``).
+    through ``pytest_interpreter()`` in the shared bounded-process helper, so
+    the capability check remains explicit rather than using raw
+    ``sys.executable``.
 
     Maps the worker's run-outcome marker line to an ``_ArchVerdict``: pytest exit
     0/5 is GREEN, any other exit is a RED arch run. ``collected_count`` carries
@@ -2142,11 +2121,7 @@ def _run_contract_suite(repo: Path, *, junit_xml_path: Path | None = None) -> in
 
     ``junit_xml_path`` (fix-feature-end-refusal-names-failing-tests), when
     given, adds ``--junit-xml=<path>`` so this (marker-scoped) run persists a
-    JUnit XML report. Only the UNROUTED fallback path (no registered
-    ``ContractGatePort`` facet) ever passes this -- the registered-facet path
-    sources its JUnit report from ``facet.run_suite`` instead (the whole-suite,
-    unmarked run that actually drives the refusal verdict), never from this
-    marker-scoped parity call.
+    JUnit XML report for the direct marker-scoped run.
 
     Parallel-by-default via pytest-xdist (``-n auto``). MEASURED (not the
     originally-claimed ~30min->~6min): at full-suite scale (8084 items) the
@@ -2225,11 +2200,6 @@ def _mode_print_digest(repo: Path) -> int:
     scope -- it no longer computes its own secondary agnostic collect (that
     would now be a wasteful double-collect on top of the seam's own).
     """
-    route = _maybe_route_digest_through_runner(repo)
-    if isinstance(route, _DigestRouteDegrade):
-        return route.exit_code
-    if isinstance(route, _DigestRouteResult):
-        return _emit_runner_aware_digest(route)
     try:
         scope = _collect_scope_with_marker_fallback(repo)
         _assert_parity(scope)
@@ -2397,11 +2367,6 @@ def _mode_committed_scope_digest(repo: Path) -> int:
     `health.gate.committed-scope.indeterminate` event and REFUSES (exit 2) --
     never silently fingerprinting the working tree (AT-3, degrade-LOUD).
     """
-    route = _maybe_route_digest_through_runner(repo)
-    if isinstance(route, _DigestRouteDegrade):
-        return route.exit_code
-    if isinstance(route, _DigestRouteResult):
-        return _emit_runner_aware_digest(route)
     result = _committed_scope_digest_value(repo, "HEAD")
     if isinstance(result, _CommittedScopeRefusal):
         return result.exit_code
@@ -2460,9 +2425,8 @@ def _warn_committed_scope_indeterminate(reason: str) -> None:
       operator can never read an unqualified green PASS while the portable
       Gate-Scope digest silently degraded to null. Emitted ONLY on this
       degrade path -- a pinnable git tree keeps its unqualified PASS line.
-      Shared machinery: BOTH suite-run legs (the legacy ``_mode_run_suite``
-      path and the routed ``_maybe_route_through_registered_contract_gate``
-      leg) call THIS helper -- no fork.
+      The direct suite-run path calls this helper; no alternate routed leg
+      exists.
     """
     line = json.dumps(
         {
@@ -2497,20 +2461,15 @@ def _mode_verify_gate_scope(repo: Path, commit: str, at_kind: str | None = None)
     absent / not a work-tree inherits the committed-scope LOUD INDETERMINATE
     refusal (exit 2) rather than silently fingerprinting the working tree.
 
-    ``at_kind == "pytest-regression"`` (fix-runner-resolves-per-scope-language
-    slice-01) SKIPS the whole-tree runner-routing seam -- mirrors
-    ``commit_slice._committed_scope_digest_or_degrade_reason``'s own carve-out,
-    so a pytest-regression slice's digest is re-derived through the SAME
-    pytest-native path Step 3 used to pin it, never coerced through the repo's
-    OTHER (e.g. cargo) lockfile-resolved runner. Every other ``--at-kind``
-    (default / ``gherkin``) keeps the EXISTING runner-routed behavior.
+    The digest is re-derived through the same Python collection path used to
+    pin it, regardless of the accepted ``--at-kind`` value.
     """
-    # GDP-1: validate the repo/commit are READABLE before resolving a test
-    # runner or computing a digest -- mirrors verify_slice_commit_completeness's
+    # GDP-1: validate the repo/commit are READABLE before computing a digest --
+    # mirrors verify_slice_commit_completeness's
     # identical git-log read + exception handling (EXAMINE find,
     # fix-gate-scope-constants-dedup): a nonexistent --repo used to reach
-    # test_runner_port's lockfile scan first and crash with a bare
-    # FileNotFoundError from `target_root.iterdir()`. Reading the commit
+    # collection used to run before this check and crash on an invalid path.
+    # Reading the commit
     # message here, first, degrades a nonexistent --repo to the SAME
     # MalformedInput/exit-2 shape `verify-slice-commit` already uses on the
     # identical input, instead of a bare traceback.
@@ -2526,12 +2485,6 @@ def _mode_verify_gate_scope(repo: Path, commit: str, at_kind: str | None = None)
         return 2
     declared = extract_gate_scope(commit_message)
 
-    if at_kind != "pytest-regression":
-        route = _maybe_route_digest_through_runner(repo)
-        if isinstance(route, _DigestRouteDegrade):
-            return route.exit_code
-        if isinstance(route, _DigestRouteResult):
-            return _verify_runner_aware_digest(repo, commit, route)
     # pytest-regression collects marker-agnostically so the committed regression
     # test on a marker-less target repo is not deselected into a vacuous digest
     # (mirrors the produce leg in commit_slice._committed_scope_digest_or_degrade_reason).
@@ -2664,11 +2617,9 @@ def _mode_run_suite(
     """Default mode: run the whole-tree contract suite + emit a digest.
 
     ``junit_xml_path`` (fix-feature-end-refusal-names-failing-tests): when
-    given, requests a persisted JUnit XML report of the run that DRIVES the
-    pass/fail verdict -- the registered-facet's ``run_suite`` when a
-    ``ContractGatePort`` facet is routed, else this function's own fallback
-    ``_run_contract_suite`` call. Omitted (``None``, the default) is a
-    byte-identical no-op -- zero behaviour change for every existing caller.
+    given, requests a persisted JUnit XML report of the run that drives the
+    pass/fail verdict. Omitted (``None``, the default) is a byte-identical
+    no-op -- zero behaviour change for every existing caller.
 
     Emits the single-line JSON ``ContractGateResult`` event on BOTH stdout
     (the pre-existing machine-readable contract — DISCUSS row 4: no breaking
@@ -2692,32 +2643,16 @@ def _mode_run_suite(
     fail-closed REFUSE (exit 2) belongs to the verify role, not the producer.
     A genuinely untrustworthy collection still fails closed (exit 2).
 
-    ``at_kind == "pytest-regression"`` (fix-reverify-slice-commit-at-kind)
-    SKIPS the whole-tree runner-routing seam entirely -- mirrors
-    ``_mode_verify_gate_scope``'s own carve-out (fix-runner-resolves-per-
-    scope-language slice-01) -- so a pytest-regression slice's suite run
-    is never coerced through the repo's OTHER (e.g. cargo) lockfile-resolved
-    runner. Every other ``--at-kind`` (default / ``gherkin``) keeps the
-    EXISTING runner-routed behavior byte-identical.
+    The suite runs through the explicit Python command path for every accepted
+    ``--at-kind`` value.
     """
-    routed_registered = _maybe_route_through_registered_contract_gate(
-        repo, junit_xml_path=junit_xml_path
-    )
-    if routed_registered is not None:
-        return routed_registered
-    if at_kind != "pytest-regression":
-        routed = _maybe_route_through_runner_whole_tree(repo)
-        if routed is not None:
-            return routed
     if at_kind == "pytest-regression":
         # A pytest-regression slice pins its digest through the SAME
         # pytest-native, marker-agnostic committed-scope path Step 3 used
         # (``markers=None``), and makes the committed scope git-REQUIRED
         # (fail-closed): a tree that cannot be pinned to a commit yields a
-        # Refusal returned early below, so the suite-run never routes through
-        # the repo's OTHER (e.g. cargo) lockfile-resolved runner nor
-        # certifies an unpinnable tree. Every other ``at_kind`` (default /
-        # ``gherkin``) keeps the EXISTING degrade-LOUD quiet path byte-for-byte.
+        # Refusal returned early below, so the suite never certifies an
+        # unpinnable tree.
         committed: (
             _CommittedScopeDigest
             | _CommittedScopeIndeterminate
@@ -2877,9 +2812,7 @@ def _slice_feature_dir(repo: Path, entering_slice: str) -> Path | None:
     tests_dir = repo / "tests"
     if not tests_dir.is_dir():
         return None
-    # gherkin-scope: REPAIRED-as-one-arm -- one arm of the OR
-    # `des.cli.run_slice_ats.main` composes at its own call site (falls back
-    # to the pytest-tag oracle `feature_files_for_slice` when this is None).
+    # Gherkin scope is one arm of the feature's acceptance-test discovery.
     for feature_file in sorted(tests_dir.rglob("*.feature")):
         if _feature_carries_slice_tag(feature_file, entering_slice):
             return feature_file.parent
@@ -3220,7 +3153,7 @@ def _feature_scope_malformed(
     ``exit_code`` defaults to 2 (malformed input, the behaviour every existing
     caller relies on byte-for-byte). DDD-CERT-5's selector-coverage refusal is
     the one caller that passes ``exit_code=_GATE_INDETERMINATE_EXIT_CODE`` (3)
-    -- a passing cargo run over the WRONG scope is an honest INDETERMINATE
+    -- a passing command over the WRONG scope is an honest INDETERMINATE
     (the gate could not certify the entering slice), never a generic
     malformed-input 2.
 
@@ -3239,661 +3172,6 @@ def _feature_scope_malformed(
     payload.update(_explain_and_guide(reason))
     _emit(payload)
     return exit_code
-
-
-# The runner token a Cargo.toml target resolves to (test_runner_port._REGISTRY).
-_CARGO_RUNNER = "cargo-test"
-
-# The runner token a pyproject.toml / pytest.ini target resolves to -- the
-# nWave-dev dogfood runner, one row among equals (never the universal executor).
-_PYTEST_RUNNER = "pytest"
-
-# The net-new whole-tree runner-resolution event (ADR-FLOW-011). Emitted at each
-# whole-tree mode's preamble BEFORE any run/digest leg, so the resolution is
-# observable regardless of the resolved runner's availability (cargo may be
-# absent in the env). Routed to STDERR so the bare-digest stdout contract of
-# ``_mode_print_digest`` stays byte-identical on the pytest path.
-_WHOLE_TREE_RESOLVED_EVENT = "WholeTreeRunnerResolved"
-
-# The LOUD health event a whole-tree mode emits when the target resolves no
-# trustworthy runner (unrecognized / polyglot root / a recognized non-pytest
-# runner with no whole-tree run facet wired in this slice) -- degrade-LOUD, never
-# a silent pytest fall-through on a non-Python target (the genericita mandate).
-_WHOLE_TREE_RUNNER_INDETERMINATE_EVENT = "health.gate.whole-tree-runner.indeterminate"
-
-# The whole-tree cargo RUN tokens: the WHOLE crate, NO feature ``-E`` filter (the
-# feature-scoped path filters by ``binary(/<snake_feature_id>/)``; the whole-tree
-# run executes the crate's entire test set). The leading ``cargo`` token is
-# resolved by the cargo run-facet's discovery scale (WSL2 GOTCHA #1).
-_CARGO_WHOLE_TREE_COMMAND: tuple[str, ...] = ("cargo", "nextest", "run")
-
-
-def _cargo_scope_command(
-    repo: Path, feature_id: str
-) -> tuple[tuple[str, ...], dict[str, object] | None]:
-    """The cargo ``test_command`` tokens to drive feature-scoped (slice-03 §V.B).
-
-    An OPTIONAL ``runner.json`` override is consulted FIRST -- a present
-    ``test_command`` OVERRIDES the convention-derived selector. With NO
-    ``runner.json`` (the NORMAL zero-config case) the selector is DERIVED from the
-    feature-id by CONVENTION: ``binary(/<snake_feature_id>/)`` over the FULL snake
-    id (kebab ``-`` -> snake ``_``), the ``binary()`` axis (NOT ``test()``, NOT a
-    prefix, NOT whole-crate).
-
-    Returns the resolved command tokens PLUS the ``runner.json`` override dict
-    when one was consulted (``None`` for the zero-config convention-derived
-    path). The caller threads the override through to
-    ``_cargo_selector_covers_entering_slice`` -- an override's coverage is
-    judged by its OWN declared ``slice`` binding, never by a token scan (#106).
-    """
-    override = read_runner_json(feature_id, repo)
-    if override is not None and override.get("test_command"):
-        return tuple(str(override["test_command"]).split()), override
-    snake_feature_id = feature_id.replace("-", "_")
-    selector = f"binary(/{snake_feature_id}/)"
-    return ("cargo", "nextest", "run", "-E", selector), None
-
-
-def _cargo_selector_covers_entering_slice(
-    repo: Path,
-    feature_id: str,
-    entering_slice: str,
-    command: tuple[str, ...],
-    override: dict[str, object] | None,
-) -> bool:
-    """DDD-CERT-5: the SAME M-8 tag-intersection floor ``_mode_feature_scoped``
-    already enforces on the pytest path, applied to the resolved cargo
-    ``test_command`` (convention-derived or ``runner.json``-overridden).
-
-    Resolves the entering slice's ``@slice-NN``-tagged scenario set from the
-    feature's ``.feature`` files (reusing ``_feature_tag_files``/``_slice_tags``,
-    the EXACT resolvers ``_mode_feature_scoped`` calls at 2858-2868) -- proving
-    the feature legitimately owns the entering slice.
-
-    Two DISTINCT coverage proofs past that floor, keyed on whether the
-    override DECLARES its own ``slice`` binding (#106):
-
-    * **Override present AND declares ``slice``**: ``read_runner_json``
-      already binds the file to THIS feature by PATH
-      (``docs/feature/<feature_id>/runner.json`` -- it can never belong to
-      another feature), and the file's own ``slice`` field states which
-      entering slice it targets -- trust it directly: matching
-      ``entering_slice`` -> covers; mismatched -> refuses (a stale/wrong-slice
-      override). Scanning the override's command tokens for the convention's
-      ``snake_feature_id`` would be self-defeating here: ``runner.json``
-      exists PRECISELY for targets whose binaries BREAK that convention
-      (§V.B) -- requiring the token would reject the escape hatch for the
-      exact case it was built to serve.
-    * **No override, OR an override that does NOT declare ``slice``**: the
-      only structural link between a free-text cargo selector and the
-      feature is the ``snake_feature_id`` token ``_cargo_scope_command``'s
-      zero-config selector itself derives, so coverage requires the resolved
-      command to reference it -- the only mechanical way to tell a
-      genuinely-covering selector from one naming an unrelated binary/test
-      filter (#99, DDD-CERT-5's original pin -- a ``runner.json`` that
-      opts into a custom binary but never states WHICH slice it targets
-      still has to prove coverage by naming the feature).
-
-    ZERO ``.feature`` FILES (genericita, gate-scope-digest-runner-agnostic
-    slice-01): a target that owns NO ``.feature`` file at all for this
-    feature -- a pure-Rust dogfood target with no Gherkin authored, distinct
-    from a feature that DOES own ``.feature`` files but none tag the entering
-    slice -- has no Gherkin tag floor to apply. Unlike the pytest path (where
-    ``.feature`` files ARE the scope-definition mechanism, so zero of them
-    means a genuinely vacuous scope), the cargo run-facet's OWN non-vacuity
-    guards (``list_cargo_scope`` / ``run_cargo_scope`` -- empty enumerate,
-    no-binary-match, untrustworthy listing all raise
-    ``RunnerAdapterUnavailable``) are the real safety net here. Coverage is
-    therefore trivially satisfied so the caller proceeds to dispatch cargo
-    and let ITS verdict (or degrade) decide -- never a Gherkin-shaped refusal
-    on a target that never had Gherkin to check.
-    """
-    feature_files = _feature_tag_files(repo, feature_id)
-    if not feature_files:
-        return True
-    collected_slice_tags: set[str] = set()
-    for feature_file in feature_files:
-        collected_slice_tags |= _slice_tags(feature_file)
-    if entering_slice not in collected_slice_tags:
-        return False
-    if override is not None and override.get("slice") is not None:
-        return override["slice"] == entering_slice
-    snake_feature_id = feature_id.replace("-", "_")
-    return any(snake_feature_id in token for token in command)
-
-
-def _maybe_route_through_cargo(
-    repo: Path, feature_id: str, entering_slice: str
-) -> int | None:
-    """Route a Cargo target through cargo feature-scoped; else return ``None``.
-
-    slice-03 wiring point #1: seed the runner registry, RESOLVE the target's
-    runner, and -- when it is the cargo run-facet -- DERIVE/read the cargo
-    test_command, run it via the registry-resolved facet, and map the verdict.
-    Returns the gate exit code (the cargo path handled it), or ``None`` to fall
-    through to the EXISTING pytest path UNCHANGED (a pytest / INDETERMINATE
-    target).
-    """
-    seed_runner_registry()
-    resolution = resolve_runner(
-        repo, RunnerResolutionContext(feature_id=feature_id, repo=repo)
-    )
-    if not isinstance(resolution, RunnerAdapter) or resolution.name != _CARGO_RUNNER:
-        return None
-
-    command, override = _cargo_scope_command(repo, feature_id)
-
-    # DDD-CERT-5 (target-machine-agnostic, GDP-1): the selector-coverage floor
-    # is a STATIC, zero-cargo check -- it fires BEFORE dispatching cargo, so the
-    # refusal is reachable on a Python-only box (CI/CD, no cargo installed) and
-    # never spends a cargo run the refusal makes pointless. A non-covering
-    # selector refuses immediately (INDETERMINATE, exit 3) WITHOUT calling the
-    # run-facet at all; the covering path proceeds to dispatch exactly as before
-    # (its cargo run degrades LOUD when cargo is absent).
-    if not _cargo_selector_covers_entering_slice(
-        repo, feature_id, entering_slice, command, override
-    ):
-        return _feature_scope_malformed(
-            feature_id,
-            "selector-does-not-cover-entering-slice",
-            "the resolved cargo test_command "
-            f"{' '.join(command)!r} does not exercise the entering slice "
-            f"{entering_slice!r}'s AT -- a passing cargo run over the wrong "
-            "selector-coverage scope must never be honored as coverage",
-            exit_code=_GATE_INDETERMINATE_EXIT_CODE,
-            entering_slice=entering_slice,
-            runner=resolution.name,
-        )
-
-    try:
-        verdict = resolution.run(repo, command)
-    except RunnerAdapterUnavailable as exc:
-        return _feature_scope_malformed(
-            feature_id,
-            "runner-indeterminate",
-            f"the cargo run-facet could not produce a trustworthy verdict: {exc}",
-            entering_slice=entering_slice,
-            runner=resolution.name,
-        )
-
-    if not verdict.passed:
-        return _feature_scope_malformed(
-            feature_id,
-            "cargo-red",
-            "the feature-scoped cargo run reported a RED verdict -- the slice "
-            "breaks its own cargo tests",
-            entering_slice=entering_slice,
-            runner=verdict.runner,
-        )
-
-    _emit(
-        {
-            "event": "FeatureScopeCleared",
-            "feature_id": feature_id,
-            "entering_slice": entering_slice,
-            "runner": verdict.runner,
-        }
-    )
-    return 0
-
-
-def _maybe_route_through_registered_contract_gate(
-    repo: Path, *, junit_xml_path: Path | None = None
-) -> int | None:
-    """Route through a REGISTERED ``contract_gate`` facet; else return ``None``.
-
-    ``junit_xml_path`` (fix-feature-end-refusal-names-failing-tests): forwarded
-    to ``facet.run_suite`` ONLY when given (never as an unconditional ``None``
-    kwarg), so a test double implementing the pre-existing single-arg
-    ``run_suite(self, repo)`` shape keeps working unchanged when no caller
-    requests a JUnit report. This is the whole-suite, UNMARKED run that
-    DRIVES the returned pass/fail verdict -- the correct JUnit source (never
-    the marker-scoped ``_run_contract_suite`` parity call below, which can
-    disagree with this run about which tests even exist in scope).
-
-    unified-language-adapter-registry slice-01 (ADR-ULAR-001 prefactoring, C5),
-    extended in slice-02 (C8/C11): sprout-and-fall-through seam mirroring
-    ``_maybe_route_through_cargo``'s EXACT shape -- seed the registry, RESOLVE
-    the target's runner, and look up a ``ContractGatePort`` facet under the
-    resolved TOOL-NAME (``resolution.name``, e.g. ``"pytest"``) -- never
-    ``target_language`` (DDD-U5). A lockfile-less target (``UnrecognizedRunner``)
-    is treated as an implicit Python/pytest tree for lookup purposes, mirroring
-    the existing ``UnrecognizedRunner``-as-pytest treatment already proven in
-    ``_maybe_route_through_runner_whole_tree`` / ``_maybe_route_digest_through_runner``.
-    Returns the gate exit code when a facet is registered and handles the
-    suite; ``None`` when no facet is registered for the resolved tool-name (the
-    case for EVERY target until a plugin registers one), so the caller falls
-    through to the EXISTING hardcoded pytest path UNCHANGED.
-
-    On a routed call, emits the SAME ``ContractGateResult`` JSON event shape the
-    fallback path (``_mode_run_suite``) already emits, PLUS the additive
-    ``routed_via_registered_adapter: true`` field (feature-delta ``[REF] Open
-    questions`` resolution) -- additive, back-compatible with every existing
-    consumer. ``pytest_exit_code`` is the SAME verbatim ``_run_contract_suite``
-    invocation the fallback path runs (DDD-U3 wraps-verbatim, byte-identical
-    parity with the unregistered leg on the SAME target); ``passed`` is the
-    registered facet's OWN verdict (the adapter's real pytest run against the
-    target's own suite, independent of nWave-dev's dogfood marker scope).
-
-    PARITY fix (fix-adapter-route-preserves-gate-contracts): a routed call now
-    carries the SAME surrounding duties the unregistered fallback leg performs
-    -- it is a WRAP of the facet verdict, never a fork of the legacy gate
-    contract surface:
-
-    * ``gate_scope_digest`` -- the COMMITTED-scope digest of HEAD (the SAME
-      ``_committed_scope_digest_quiet`` seam ``_mode_run_suite`` calls), not a
-      hardcoded ``None``. git-absent degrades LOUD (the existing
-      ``_warn_committed_scope_indeterminate`` marker) and stamps no digest,
-      exactly mirroring the fallback leg -- never silently fingerprinting a
-      working tree.
-    * the human-readable ``print_human_summary`` PASS/FAIL line -- the routed
-      leg is reached from the SAME CLI entry point a human operator/CI hook
-      invokes, so it owes the same operator-facing surface as the fallback leg.
-    """
-    resolution = resolve_runner(repo, None)
-    if isinstance(resolution, RunnerAdapter):
-        tool_name = resolution.name
-    elif isinstance(resolution, UnrecognizedRunner):
-        tool_name = _PYTEST_RUNNER
-    else:
-        return None
-    facet = GLOBAL_REGISTRY.lookup_contract_gate(tool_name)
-    if facet is None:
-        # Lazy seed: only discover entry-point facets when none is already
-        # registered under this tool-name, so a caller-registered facet
-        # (e.g. a test double) is never silently clobbered by re-discovery.
-        seed_runner_registry()
-        facet = GLOBAL_REGISTRY.lookup_contract_gate(tool_name)
-    if facet is None:
-        return None
-    if is_routing_active_for(repo):
-        print(
-            "health.gate.lang-adapter.reentrancy-skipped: routing already "
-            f"active for {repo} -- skipping to avoid self-recursion",
-            file=sys.stderr,
-        )
-        return None
-    # PARITY: the routed leg owes the SAME whole-tree resolution preamble the
-    # fall-through legs emit (`_maybe_route_through_runner_whole_tree` /
-    # `_maybe_route_digest_through_runner`) -- the resolution fact must stay
-    # observable regardless of which leg handles the run. `routed` keeps its
-    # documented meaning ("routed to a NON-pytest runner"): the pytest facet
-    # runs the target's pytest contract, so routed=False on a pytest target.
-    _emit_whole_tree_resolved(
-        tool_name,
-        routed=tool_name != _PYTEST_RUNNER,
-        digest_degraded=False,
-    )
-    with routing_active_for(repo):
-        try:
-            verdict = (
-                facet.run_suite(repo, junit_xml_path=junit_xml_path)
-                if junit_xml_path is not None
-                else facet.run_suite(repo)
-            )
-        except InterpreterUnavailable as exc:
-            # D3 (slice-02 regression): the facet resolves its interpreter
-            # via `python_for(None, repo_root=repo)` (capability-agnostic --
-            # see `PythonContractGateAdapter`), so `exc.capability` is
-            # `None` here. Relabel to the "pytest" contract this route
-            # certifies WHILE preserving `exc.repo_root` -- so the rich
-            # repo/venv/remedy message slice-02 restored survives alongside
-            # the correct capability.
-            return _emit_interpreter_unavailable(
-                InterpreterUnavailable("pytest", exc.probed, repo_root=exc.repo_root)
-            )
-    pytest_exit_code = _run_contract_suite(repo)
-    committed = _committed_scope_digest_quiet(repo, "HEAD")
-    if isinstance(committed, _CommittedScopeRefusal):
-        return committed.exit_code
-    digest: str | None
-    if isinstance(committed, _CommittedScopeDigest):
-        digest = committed.digest
-    else:
-        _warn_committed_scope_indeterminate(committed.reason)
-        digest = None
-    event_payload = json.dumps(
-        {
-            "event": "ContractGateResult",
-            "passed": verdict.passed,
-            "pytest_exit_code": pytest_exit_code,
-            "gate_scope_digest": digest,
-            "routed_via_registered_adapter": True,
-        }
-    )
-    print(event_payload)
-    print(event_payload, file=sys.stderr)
-    human_verdict = Verdict.PASS if verdict.passed else Verdict.FAIL
-    summary = (
-        "contract gate succeeded"
-        if verdict.passed
-        else f"contract gate FAILED (pytest exit {pytest_exit_code})"
-    )
-    print_human_summary(human_verdict, summary)
-    return 0 if verdict.passed else 1
-
-
-def _emit_whole_tree_resolved(
-    runner: str, *, routed: bool, digest_degraded: bool
-) -> None:
-    """Emit the ``WholeTreeRunnerResolved`` event at a whole-tree mode preamble.
-
-    Routed to STDERR (not stdout) so ``_mode_print_digest``'s bare-digest stdout
-    contract stays byte-identical on the pytest path; the subprocess driving port
-    reads the COMBINED channels, so the event is observable regardless. Carries
-    the three resolution facts the ATs assert on: the resolved ``runner`` identity,
-    whether the whole-tree run was ``routed`` to a non-pytest runner, and whether
-    the ``digest`` leg degraded to no-digest (D6 -- no non-pytest enumerate facet).
-
-    ``what``/``why``/``how`` (RCA Branch B item b.4, fix-reverify-slice-commit-
-    at-kind) match the sibling ``BuildTierResourceWait``/``BuildTierRefused``
-    events -- this preamble is the earliest, ALWAYS-present seam of a whole-tree
-    run, so it is where a blocked reverify's terminal ``SliceReverifyBlocked``
-    payload gets its routing reason from, instead of an empty-output hang.
-    """
-    print(
-        json.dumps(
-            {
-                "event": _WHOLE_TREE_RESOLVED_EVENT,
-                "runner": runner,
-                "routed": routed,
-                "digest_degraded": digest_degraded,
-                "what": "whole-tree runner resolution",
-                "why": (
-                    f"the whole-tree contract gate resolved runner {runner!r} "
-                    f"({'routed to a non-pytest runner' if routed else 'the default pytest path'}"
-                    f"{', digest leg degraded to no-digest' if digest_degraded else ''})"
-                ),
-                "how": (
-                    "pass --at-kind pytest-regression to force the pytest-native "
-                    "path on a Python-only slice inside a polyglot repo, or "
-                    "provide a runner.json declaring the intended test_command "
-                    "if this resolution is wrong"
-                ),
-            }
-        ),
-        file=sys.stderr,
-    )
-
-
-def _degrade_whole_tree_runner_indeterminate(reason: str) -> int:
-    """Emit the LOUD whole-tree-runner INDETERMINATE marker and refuse (exit 3).
-
-    The degrade-LOUD channel for a whole-tree target that resolves no trustworthy
-    runner (unrecognized / polyglot root, or a recognized non-pytest runner with
-    no whole-tree run facet wired in this slice). NEVER a silent pytest
-    fall-through on a non-Python target (the genericita mandate), and -- because it
-    names a runner reason rather than touching the pytest seam -- NEVER the #73
-    ``InterpreterUnavailable`` symptom.
-    """
-    _emit(
-        {
-            "event": _WHOLE_TREE_RUNNER_INDETERMINATE_EVENT,
-            "outcome": "indeterminate",
-            "reason": reason,
-            "error": (
-                "the whole-tree contract gate could not resolve a trustworthy "
-                "runner for the target -- INDETERMINATE, never a silent pytest "
-                f"fall-through on a non-Python target: {reason}"
-            ),
-        }
-    )
-    return _GATE_INDETERMINATE_EXIT_CODE
-
-
-def _run_whole_tree_through_runner(repo: Path, resolution: RunnerAdapter) -> int:
-    """RUN the whole crate through the resolved non-pytest runner; map the verdict.
-
-    The DIGEST leg degrades LOUD to no-digest (D6 slice-01: the non-pytest
-    enumerate facet is not built yet -- the preamble event already announced
-    ``digest_degraded=True``). cargo absent / empty-scope raises
-    ``RunnerAdapterUnavailable`` -> degrade LOUD INDETERMINATE naming the runner
-    (still proves #73 fixed: the gate resolved the runner and refused, it did NOT
-    crash on pytest's ``InterpreterUnavailable``). A legit RED -> exit 1.
-    """
-    try:
-        verdict = resolution.run(repo, _CARGO_WHOLE_TREE_COMMAND)
-    except RunnerAdapterUnavailable as exc:
-        return _degrade_whole_tree_runner_indeterminate(
-            f"the {resolution.name!r} run-facet could not produce a trustworthy "
-            f"whole-tree verdict: {exc}"
-        )
-    _emit(
-        {
-            "event": "WholeTreeContractGateResult",
-            "passed": verdict.passed,
-            "runner": verdict.runner,
-            "gate_scope_digest": None,
-        }
-    )
-    return 0 if verdict.passed else 1
-
-
-@dataclass(frozen=True)
-class _DigestRouteDegrade:
-    """A non-pytest digest target that could not enumerate -- propagate the code.
-
-    The enumerate facet has ALREADY emitted the LOUD whole-tree-runner INDETERMINATE
-    event (cargo absent / empty-scope / no enumerate facet); the caller only
-    propagates ``exit_code``.
-    """
-
-    exit_code: int
-
-
-@dataclass(frozen=True)
-class _DigestRouteResult:
-    """A non-pytest runner's whole-tree digest + its runner provenance (D5).
-
-    The runner-aware digest the enumerate facet produced, plus WHICH runner
-    enumerated it -- the proof the digest is runner-aware, never a fabricated pytest
-    node-id digest over a non-Python tree.
-    """
-
-    digest: str
-    runner: str
-    node_id_count: int
-
-
-def _maybe_route_digest_through_runner(
-    repo: Path,
-) -> _DigestRouteDegrade | _DigestRouteResult | None:
-    """Resolve the whole-tree target's runner for a DIGEST mode (slice-02 D5).
-
-    The digest-leg mirror of ``_maybe_route_through_runner_whole_tree`` (the RUN
-    leg): seed the registry, RESOLVE the target's runner, and emit the
-    ``WholeTreeRunnerResolved`` preamble. For a non-pytest runner the digest is
-    derived through that runner's OWN enumerate facet (``list_scope``) -- the real
-    cross-runner digest that RETIRES the slice-01 D6 ``digest_degraded=True``
-    placeholder for the digest modes.
-
-    * pytest -> emit (routed=False, digest_degraded=False) and return ``None``: the
-      EXISTING pytest digest path runs UNCHANGED (byte-identical, zero regression).
-    * cargo-test -> emit (routed=True, digest_degraded=False -- the enumerate facet
-      IS wired) and enumerate via ``list_scope``. A real digest ->
-      ``_DigestRouteResult``; cargo absent / empty-scope -> degrade LOUD
-      INDETERMINATE (``_DigestRouteDegrade``), never a fabricated pytest digest and
-      never ``InterpreterUnavailable`` on the non-Python target.
-    * Indeterminate / a recognized runner with no enumerate facet -> degrade LOUD.
-    """
-    seed_runner_registry()
-    resolution = resolve_runner(repo, None)
-    if isinstance(resolution, RunnerAdapter) and resolution.name == _PYTEST_RUNNER:
-        _emit_whole_tree_resolved(_PYTEST_RUNNER, routed=False, digest_degraded=False)
-        return None
-    if isinstance(resolution, RunnerAdapter) and resolution.name == _CARGO_RUNNER:
-        _emit_whole_tree_resolved(_CARGO_RUNNER, routed=True, digest_degraded=False)
-        return _digest_whole_tree_through_runner(repo, resolution)
-    if isinstance(resolution, UnrecognizedRunner):
-        # UNRECOGNIZED (0 lockfiles) -- NOT ambiguous (D9). A lockfile-less Python
-        # tree must FALL BACK to the existing pytest-collect digest path (pre-#73
-        # behaviour), never degrade-LOUD exit-3. Only AMBIGUOUS (the bare
-        # ``Indeterminate``, below) degrades.
-        _emit_whole_tree_resolved(_PYTEST_RUNNER, routed=False, digest_degraded=False)
-        return None
-    reason = (
-        resolution.reason
-        if isinstance(resolution, Indeterminate)
-        else (
-            f"the resolved runner {resolution.name!r} has no whole-tree enumerate "
-            "facet wired in this slice"
-        )
-    )
-    return _DigestRouteDegrade(_degrade_whole_tree_runner_indeterminate(reason))
-
-
-def _digest_whole_tree_through_runner(
-    repo: Path, resolution: RunnerAdapter
-) -> _DigestRouteDegrade | _DigestRouteResult:
-    """Enumerate the resolved non-pytest runner's whole-tree scope -> a digest (D5).
-
-    Calls the runner's OWN enumerate facet (``list_scope``) and digests the node-id
-    set through the runner-agnostic ``compute_gate_scope_digest``. The runner binary
-    absent / empty-scope raises ``RunnerAdapterUnavailable`` -> degrade LOUD
-    INDETERMINATE naming the runner (still proves the digest leg is runner-aware: it
-    routed to the runner's enumerate facet and refused, it did NOT fabricate a pytest
-    digest nor crash on ``InterpreterUnavailable``).
-    """
-    try:
-        scope = resolution.list_scope(repo)
-    except RunnerAdapterUnavailable as exc:
-        return _DigestRouteDegrade(
-            _degrade_whole_tree_runner_indeterminate(
-                f"the {resolution.name!r} enumerate facet could not produce a "
-                f"trustworthy whole-tree digest: {exc}"
-            )
-        )
-    return _DigestRouteResult(
-        digest=compute_gate_scope_digest(list(scope.node_ids)),
-        runner=scope.runner,
-        node_id_count=len(set(scope.node_ids)),
-    )
-
-
-def _emit_runner_aware_digest(route: _DigestRouteResult) -> int:
-    """Print a non-pytest runner's whole-tree digest + its provenance event (D5).
-
-    The bare digest goes to stdout (the callers' ``.strip()`` capture contract); the
-    ``GateScopeDigest`` event -- carrying the ``runner`` provenance that proves WHICH
-    runner's enumerate facet the node-id set came from -- goes to stderr.
-    """
-    print(route.digest)
-    print(
-        json.dumps(
-            {
-                "event": "GateScopeDigest",
-                "runner": route.runner,
-                "gate_scope_digest": route.digest,
-                "node_id_count": route.node_id_count,
-            }
-        ),
-        file=sys.stderr,
-    )
-    return 0
-
-
-def _verify_runner_aware_digest(
-    repo: Path, commit: str, route: _DigestRouteResult
-) -> int:
-    """Verify a non-pytest runner's re-derived digest against the commit trailer.
-
-    The verify counterpart of ``_emit_runner_aware_digest`` (D5): the fresh digest is
-    RE-DERIVED through the runner's OWN enumerate facet (``route.digest``), then
-    compared to the commit's ``Gate-Scope:`` trailer exactly as the pytest path does
-    -- so a non-pytest commit's trailer is verified against a runner-aware
-    re-derivation, never a fabricated pytest digest.
-    """
-    commit_message = _git(repo, "log", "-1", "--format=%B", commit)
-    declared = extract_gate_scope(commit_message)
-    if declared is None:
-        _emit(
-            {
-                "event": "GateScopeUnverified",
-                "commit": commit,
-                "runner": route.runner,
-                "reason": "absent",
-                "error": (
-                    "commit carries no Gate-Scope: trailer -- the contract "
-                    "gate scope is unverified"
-                ),
-            }
-        )
-        return 1
-    if declared != route.digest:
-        _emit(
-            {
-                "event": "GateScopeUnverified",
-                "commit": commit,
-                "runner": route.runner,
-                "reason": "mismatch",
-                "declared_digest": declared,
-                "fresh_digest": route.digest,
-                "error": (
-                    "commit Gate-Scope: digest does not match a fresh "
-                    "runner-aware enumerate digest -- the terminating run was "
-                    "narrower than the contract"
-                ),
-            }
-        )
-        return 1
-    _emit(
-        {
-            "event": "GateScopeVerified",
-            "commit": commit,
-            "runner": route.runner,
-            "gate_scope_digest": route.digest,
-        }
-    )
-    return 0
-
-
-def _maybe_route_through_runner_whole_tree(repo: Path) -> int | None:
-    """Resolve the whole-tree target's runner; route a non-pytest target through it.
-
-    The whole-tree mirror of ``_maybe_route_through_cargo`` (ADR-FLOW-011 D3):
-    seed the runner registry, RESOLVE the target's runner from its lockfile(s),
-    and emit the ``WholeTreeRunnerResolved`` event at the preamble -- BEFORE any
-    run/digest leg -- so the resolution is observable even when the resolved
-    runner's binary is absent in the env.
-
-    Whole-tree resolution passes NO feature context (``feature=None``): a
-    single-lockfile target takes the fast-path, while a POLYGLOT root has no
-    feature to disambiguate by and degrades LOUD INDETERMINATE naming the
-    competing lockfiles (D2) -- never a silent first-lockfile pick.
-
-    * pytest -> emit (routed=False) and return ``None``: the EXISTING pytest path
-      runs UNCHANGED (byte-identical Python, zero regression).
-    * cargo-test -> emit (routed=True, digest_degraded=True) and RUN the whole
-      crate through the resolved cargo run-facet (``cargo nextest run``, no
-      feature filter); the digest leg degrades LOUD to no-digest. Never
-      ``pytest.main()``, never ``InterpreterUnavailable`` on the non-Python target.
-    * Indeterminate, or a recognized non-pytest runner with no whole-tree run
-      facet in this slice -> degrade LOUD INDETERMINATE; never silent pytest.
-    """
-    seed_runner_registry()
-    resolution = resolve_runner(repo, None)
-    if isinstance(resolution, RunnerAdapter) and resolution.name == _PYTEST_RUNNER:
-        _emit_whole_tree_resolved(_PYTEST_RUNNER, routed=False, digest_degraded=False)
-        return None
-    if isinstance(resolution, RunnerAdapter) and resolution.name == _CARGO_RUNNER:
-        _emit_whole_tree_resolved(_CARGO_RUNNER, routed=True, digest_degraded=True)
-        return _run_whole_tree_through_runner(repo, resolution)
-    if isinstance(resolution, UnrecognizedRunner):
-        # UNRECOGNIZED (0 lockfiles) -- NOT ambiguous (D9). A lockfile-less Python
-        # tree must FALL BACK to the existing ``-m full_suite`` pytest run path
-        # (pre-#73 behaviour), never degrade-LOUD exit-3. Only AMBIGUOUS (the bare
-        # ``Indeterminate``, below) degrades.
-        _emit_whole_tree_resolved(_PYTEST_RUNNER, routed=False, digest_degraded=False)
-        return None
-    reason = (
-        resolution.reason
-        if isinstance(resolution, Indeterminate)
-        else (
-            f"the resolved runner {resolution.name!r} has no whole-tree run facet "
-            "wired in this slice"
-        )
-    )
-    return _degrade_whole_tree_runner_indeterminate(reason)
 
 
 def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> int:
@@ -3918,17 +3196,9 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
     A zero-collected or empty-intersection scope is ``malformed`` (exit 2),
     never a vacuous pass.
 
-    RUNNER-RESOLUTION SHORT-CIRCUIT (slice-03, feature-delta §V.A): the runner is
-    RESOLVED from the target FIRST, before the pytest-bound collection below. A
-    Rust (Cargo.toml) target resolves the cargo run-facet and is routed through
-    cargo feature-scoped -- it NEVER reaches the pytest worker (the pytest-on-a
-    -crate zero-collected bug this feature fixes). Any non-cargo target (pytest /
-    INDETERMINATE) falls through to the EXISTING pytest path UNCHANGED.
+    This gate is explicitly Python-only. A non-Python project must provide its
+    own project command outside this retired generic runner surface.
     """
-    cargo_verdict = _maybe_route_through_cargo(repo, feature_id, entering_slice)
-    if cargo_verdict is not None:
-        return cargo_verdict
-
     feature_files = _feature_tag_files(repo, feature_id)
     if feature_files:
         collected_slice_tags: set[str] = set()
@@ -3979,7 +3249,7 @@ def _mode_feature_scoped(repo: Path, feature_id: str, entering_slice: str) -> in
         # SAME convention ADR-AAD-001 and gap 1 of this repair already treat
         # as first-class). Composes the SAME resolvers, never a Gherkin-
         # shaped refusal for a target that never had Gherkin to check
-        # (mirrors the cargo run-facet's own zero-.feature carve-out above).
+        # (mirrors the zero-.feature carve-out above).
         pytest_at_files = _pytest_only_at_files(repo, feature_id)
         if not pytest_at_files:
             return _feature_scope_malformed(
@@ -4227,15 +3497,7 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="at_kind",
         default=None,
         choices=(None, "gherkin", "pytest-regression"),
-        help=(
-            "The acceptance-test kind the digest re-derivation must honor "
-            "(fix-runner-resolves-per-scope-language slice-01). "
-            "'pytest-regression' skips the whole-tree runner-routing seam "
-            "(_maybe_route_digest_through_runner) so a Rust-primary repo's "
-            "cargo lockfile never hijacks a Python-only slice's re-verified "
-            "digest. Omitted / 'gherkin' keeps the EXISTING runner-routed "
-            "--verify-gate-scope behavior byte-identical."
-        ),
+        help=("The acceptance-test kind recorded with the Python collection path."),
     )
     parser.add_argument(
         "--expected-head",
@@ -4253,16 +3515,6 @@ def _build_parser() -> argparse.ArgumentParser:
             "Drive the in-process active-RED exemplar route: emit the "
             "in-process-routed verdict token through the injected OutputPort. "
             "The reference route proving the gate entry is wired in-process."
-        ),
-    )
-    parser.add_argument(
-        "--run-suite",
-        action="store_true",
-        help=(
-            "Run the coverage-on-executed-path lever (at-in-process-port-default "
-            "slice-03): FLAG an acceptance test whose driven entry executes zero "
-            "production lines (coverage theater). Emits the structured event "
-            "CoverageOnExecutedPathFlagged."
         ),
     )
     parser.add_argument(
@@ -4334,63 +3586,6 @@ def _mode_inprocess_exemplar(repo: Path, output: OutputPort) -> int:
     return 0
 
 
-def _resolve_runner_name(repo: Path) -> str:
-    """The target's resolved runner name, defaulting to ``pytest`` when unresolved.
-
-    Threads the per-language runner (#73 runner-resolution) into the
-    coverage-on-executed-path lever so it stays target-aware: a Rust/cargo target
-    resolves to ``cargo-test`` (the lever then CLEARS NOT_APPLICABLE), a Python
-    target to ``pytest`` (the theater scan runs unchanged). An INDETERMINATE
-    resolution (no recognized lockfile — e.g. a hermetic tmp Python workspace the
-    AT drives) defaults to ``pytest``, preserving the existing Python behaviour.
-    """
-    resolution = resolve_runner(repo, None)
-    if isinstance(resolution, RunnerAdapter):
-        return resolution.name
-    return _PYTEST_RUNNER
-
-
-def _mode_coverage_on_executed_path(repo: Path, output: OutputPort) -> int:
-    """The lever-3 coverage-on-executed-path role (at-in-process-port-default slice-03).
-
-    Drives the shared ``check_coverage_on_executed_path`` lever over the driven
-    workspace and emits its structured verdict through the injected ``OutputPort``.
-    A workspace whose ATs execute zero ``src/des`` production lines is FLAGGED as
-    coverage theater (event ``CoverageOnExecutedPathFlagged``); git-free. Returns
-    1 when the theater flag fires, 0 when the suite covers production lines.
-    """
-    from des.cli.axis_b_levers import check_coverage_on_executed_path
-
-    lever = check_coverage_on_executed_path(repo, runner=_resolve_runner_name(repo))
-    if not lever.flagged:
-        # A NOT_APPLICABLE clear (non-pytest target) carries a loud
-        # structured_event — surface it (degrade-LOUD), never a silent "Clean".
-        if lever.structured_event:
-            _emit(
-                {
-                    "event": lever.structured_event,
-                    "repo": str(repo),
-                    "remediation": lever.remediation,
-                },
-                output,
-            )
-            return 0
-        _emit(
-            {"event": "CoverageOnExecutedPathClean", "repo": str(repo)},
-            output,
-        )
-        return 0
-    _emit(
-        {
-            "event": lever.structured_event,
-            "target": lever.target,
-            "remediation": lever.remediation,
-        },
-        output,
-    )
-    return 1
-
-
 def main(argv: list[str] | None = None, output: OutputPort | None = None) -> int:
     """Run the canonical ATDD-pure contract gate in the requested role.
 
@@ -4406,9 +3601,6 @@ def main(argv: list[str] | None = None, output: OutputPort | None = None) -> int
 
     if args.inprocess_exemplar:
         return _mode_inprocess_exemplar(repo, output)
-
-    if args.run_suite:
-        return _mode_coverage_on_executed_path(repo, output)
 
     if args.verify_gate_scope:
         if not args.commit:

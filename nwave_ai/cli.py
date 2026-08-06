@@ -23,10 +23,10 @@ def _prefer_current_distribution() -> None:
 # otherwise supply a stale namespace-package ``scripts`` implementation.
 _prefer_current_distribution()
 
-from nwave_ai.doctor.context import DoctorContext
-from nwave_ai.doctor.formatter import render_human, render_json
-from nwave_ai.doctor.runner import run_doctor
-from scripts.install.attribution_utils import (
+from nwave_ai.doctor.context import DoctorContext  # noqa: E402
+from nwave_ai.doctor.formatter import render_human, render_json  # noqa: E402
+from nwave_ai.doctor.runner import run_doctor  # noqa: E402
+from scripts.install.attribution_utils import (  # noqa: E402
     migrate_legacy_hook,
     migrate_legacy_settings_attribution,
     read_attribution_preference,
@@ -36,7 +36,7 @@ from scripts.install.attribution_utils import (
     write_attribution_preference,
     write_global_config,
 )
-from scripts.shared.install_paths import GLOBAL_CONFIG_FILENAME
+from scripts.shared.install_paths import GLOBAL_CONFIG_FILENAME  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -250,32 +250,6 @@ def _get_config_dir() -> Path:
     return Path.home() / ".nwave"
 
 
-def _record_package_manager(config_dir: Path) -> None:
-    """Persist the detected package manager into global config after install.
-
-    Runs inside the nwave-ai process, so ``sys.executable`` is the install
-    interpreter and ``detect_pm`` is reliable here -- unlike at ``/nw-update``
-    time, where the skill shells out via an unrelated ambient ``python3``.
-    Recording it now lets ``/nw-update`` read a trustworthy value later
-    (via ``resolve_nwave_pm``).
-
-    Best-effort: a detection/write failure must never fail the install.
-    """
-    try:
-        from des.adapters.driven.package_managers.package_manager_detector import (
-            detect_pm,
-        )
-
-        pm = detect_pm(Path(sys.executable))
-        config = read_global_config(config_dir)
-        install_block = config.get("install", {})
-        install_block["package_manager"] = pm
-        config["install"] = install_block
-        write_global_config(config_dir, config)
-    except Exception:
-        pass  # Never block install on PM recording.
-
-
 def _extract_target_flag(
     args: list[str],
 ) -> tuple[Path | None, list[str], str | None]:
@@ -430,7 +404,6 @@ def _handle_install(args: list[str]) -> int:
 
     _announce_density_upgrade(config_dir, outcome)
 
-    _record_package_manager(config_dir)
     return 0
 
 
@@ -843,10 +816,9 @@ def _resolve_installer() -> tuple[list[str], str] | None:
     """Pick a Python package installer for `nwave-ai plugin install`.
 
     Delegates toolchain identity to the shared
-    ``des...package_manager_detector.detect_pm`` so the CLI and the
-    ``/nw-update`` self-update flow agree on which manager owns nwave-ai
-    (including honoring the ``NWAVE_INSTALLER`` override). When the detector
-    cannot identify the owner, falls back to a uv-first PATH scan.
+    ``des...package_manager_detector.detect_pm`` (including honoring the
+    ``NWAVE_INSTALLER`` override). When the detector cannot identify the owner,
+    falls back to a uv-first PATH scan.
 
     Returns:
         ``(cmd_prefix, tool_name)`` where ``cmd_prefix`` is the argv prefix

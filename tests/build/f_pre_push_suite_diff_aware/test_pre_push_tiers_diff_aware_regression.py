@@ -44,7 +44,10 @@ PRE_COMMIT_CONFIG = PROJECT_ROOT / ".pre-commit-config.yaml"
 DIFF_AWARE_HOOK_IDS = ("pytest-quick-tiers", "pytest-e2e")
 
 #: Hooks that MUST stay always-on (cheap and/or semantically always-relevant).
-ALWAYS_ON_HOOK_IDS = ("pytest-fast-gate", "des-declare-done-pre-push")
+#: ``des-declare-done-pre-push`` was the second entry here until the feature-end
+#: done-gate it fired was removed: a push is no longer refused for a ledger
+#: record set. ``pytest-fast-gate`` is the remaining always-on contract.
+ALWAYS_ON_HOOK_IDS = ("pytest-fast-gate",)
 
 #: Docs-only, test-irrelevant paths: the exclude allowlist MUST match these,
 #: so a push touching only them natively skips the suite tiers.
@@ -185,9 +188,8 @@ def test_always_on_hooks_keep_always_run(hook_id: str) -> None:
     """The cheap / semantically-always-relevant hooks stay ``always_run``.
 
     The diff-aware fix applies ONLY to the two expensive suite tiers. If
-    ``pytest-fast-gate`` or ``des-declare-done-pre-push`` loses
-    ``always_run: true``, the always-on safety contract erodes silently --
-    restore the flag on that hook.
+    ``pytest-fast-gate`` loses ``always_run: true``, the always-on safety
+    contract erodes silently -- restore the flag on that hook.
     """
     hook = _hook(hook_id)
     assert hook.get("always_run") is True, (

@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nwave.ai/schemas/thin-delivery-contract.schema.json",
+  "title": "ThinDeliveryContract",
+  "description": "Validates the immutable, host-neutral authority for one opt-in thin delivery slice.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema-version",
+    "delivery-id",
+    "repository",
+    "outcome",
+    "targets",
+    "paradigm",
+    "acceptance-tests",
+    "verification-scope",
+    "applicability",
+    "budget"
+  ],
+  "properties": {
+    "schema-version": { "const": "1.0" },
+    "delivery-id": { "$ref": "#/$defs/id" },
+    "repository": { "$ref": "#/$defs/repository" },
+    "outcome": { "$ref": "#/$defs/nonEmptyText" },
+    "targets": { "$ref": "#/$defs/targets" },
+    "paradigm": { "enum": ["functional", "object_oriented"] },
+    "acceptance-tests": { "$ref": "#/$defs/evidence" },
+    "verification-scope": { "$ref": "#/$defs/verificationScope" },
+    "applicability": { "$ref": "#/$defs/applicability" },
+    "budget": { "$ref": "#/$defs/budget" },
+    "correction-reference": { "$ref": "#/$defs/correctionReference" }
+  },
+  "$defs": {
+    "nonEmptyText": {
+      "type": "string",
+      "minLength": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "repositoryRelativePath": {
+      "type": "string",
+      "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+$"
+    },
+    "declaredImportReference": {
+      "type": "string",
+      "pattern": "^@?[A-Za-z0-9_-]+(?:(?:::|/|\\.)[A-Za-z0-9_-]+)*$"
+    },
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "commandToken": {
+      "type": "string",
+      "minLength": 1
+    },
+    "command": {
+      "description": "One argv vector. The first token is the executable; every later token is passed through literally, never re-parsed as shell syntax.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/commandToken" }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["worktree", "base-revision"],
+      "properties": {
+        "worktree": { "const": "." },
+        "base-revision": {
+          "type": "string",
+          "pattern": "^git-(?:sha1:[a-f0-9]{40}|sha256:[a-f0-9]{64})$"
+        }
+      }
+    },
+    "targets": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/repositoryRelativePath" },
+      "additionalProperties": { "$ref": "#/$defs/targetPlan" }
+    },
+    "targetPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate",
+        "overlap",
+        "decision",
+        "justification",
+        "declared-imports",
+        "contract-shape",
+        "boundary"
+      ],
+      "properties": {
+        "candidate": { "$ref": "#/$defs/repositoryRelativePath" },
+        "overlap": { "$ref": "#/$defs/nonEmptyText" },
+        "decision": { "enum": ["EXTEND", "CREATE_NEW"] },
+        "justification": { "$ref": "#/$defs/nonEmptyText" },
+        "declared-imports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/declaredImportReference" }
+        },
+        "contract-shape": {
+          "enum": ["pure-function", "bounded-change", "unbounded-preservation"]
+        },
+        "boundary": { "$ref": "#/$defs/boundary" }
+      }
+    },
+    "boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "failure-behavior",
+        "substrate-lie",
+        "substrate-probe",
+        "double-blind-spot"
+      ],
+      "properties": {
+        "failure-behavior": { "$ref": "#/$defs/nonEmptyText" },
+        "substrate-lie": { "$ref": "#/$defs/nonEmptyText" },
+        "substrate-probe": { "$ref": "#/$defs/nonEmptyText" },
+        "double-blind-spot": { "$ref": "#/$defs/nonEmptyText" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "digest"],
+      "properties": {
+        "locator": { "$ref": "#/$defs/repositoryRelativePath" },
+        "digest": { "$ref": "#/$defs/sha256Digest" }
+      }
+    },
+    "verificationScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commands"],
+      "properties": {
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/command" }
+        }
+      }
+    },
+    "applicability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["independent-review", "examine"],
+      "properties": {
+        "independent-review": { "type": "boolean" },
+        "examine": { "type": "boolean" }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token-limit", "wall-clock-minutes"],
+      "properties": {
+        "token-limit": { "type": "integer", "minimum": 1 },
+        "wall-clock-minutes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "correctionReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation-digest", "reason"],
+      "properties": {
+        "observation-digest": { "$ref": "#/$defs/sha256Digest" },
+        "reason": { "$ref": "#/$defs/nonEmptyText" }
+      }
+    }
+  }
+}

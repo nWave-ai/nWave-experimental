@@ -1,22 +1,8 @@
+"""DES application services.
+
+Application modules are imported at their concrete module path.  This package
+intentionally performs no eager re-exports, so importing a sibling service
+does not revive retired facade dependencies.
 """
-DES Application Layer - Use cases and orchestration.
 
-Exports all application-layer services and orchestrator.
-"""
-
-from des.application.config_loader import ConfigLoader
-from des.application.invocation_limits_validator import (
-    InvocationLimitsResult,
-    InvocationLimitsValidator,
-)
-from des.application.orchestrator import DESOrchestrator
-from des.application.validator import TDDPhaseValidator
-
-
-__all__ = [
-    "ConfigLoader",
-    "DESOrchestrator",
-    "InvocationLimitsResult",
-    "InvocationLimitsValidator",
-    "TDDPhaseValidator",
-]
+__all__: list[str] = []

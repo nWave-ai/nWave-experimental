@@ -43,7 +43,6 @@ from des.cli.verify_red_green import red_seal_fresh
 from des.domain.lane_profile import LANE_PROFILES, AtRequirement, LaneProfile
 from des.domain.slice_id_trailer import SLICE_TAG_RE
 from des.domain.telemetry_paths import LedgerFamily, ledger_path
-from des.ports.test_runner_port import AT_KIND_SUFFIX_MAP as _AT_DISCOVERY_SUFFIX_RUNNER
 
 
 if TYPE_CHECKING:
@@ -66,7 +65,6 @@ __all__ = [
     "is_slice_coupled",
     "mark_feature_end_sealed",
     "mark_slice_status_shipped",
-    "native_regression_at_discovery",
     "read_feature_files",
 ]
 
@@ -1238,70 +1236,6 @@ def pytest_regression_content_hash(regression_test_file: Path) -> str:
     return hashlib.sha256(source).hexdigest()
 
 
-# ---------------------------------------------------------------------------
-# native-regression AT-discovery mode (fix-rust-regression-at-kind-wiring) --
-# resolves (at_ids, content_hash) through the unified AT-discovery port
-# facet-pair (``des.ports.test_runner_port.RunnerAdapter.discover_ats``)
-# instead of a per-language hand-rolled scanner. The runner is resolved from
-# the regression file's OWN suffix -- mirrors ``verify_slice_commit_
-# completeness._routes_through_runner_port``'s suffix-keyed decision -- NEVER
-# an operator-declared per-language flag. ``_AT_DISCOVERY_SUFFIX_RUNNER`` is
-# an IMPORT of the ``des.ports.test_runner_port.AT_KIND_SUFFIX_MAP`` SSOT
-# (ADR-AAD-001 DA-5) -- not an independently-defined literal.
-# ---------------------------------------------------------------------------
-
-
-def _no_at_detector_for_language(regression_test_file: Path, detail: str) -> GateError:
-    return GateError(
-        2,
-        {
-            "event": "MalformedInput",
-            "cause": "the regression-test file",
-            "error": f"no AT detector for this language -- {detail}",
-            "how": (
-                f"{regression_test_file} has no wired AT-discovery facet; "
-                f"recognized suffixes: {sorted(_AT_DISCOVERY_SUFFIX_RUNNER)!r}"
-            ),
-        },
-    )
-
-
-def native_regression_at_discovery(regression_test_file: Path) -> tuple[list[str], str]:
-    """Derive ``(at_ids, at_content_hash)`` for ``at_kind="native-regression"``.
-
-    Resolves the at-discovery runner from ``regression_test_file``'s suffix,
-    seeds the runner registry, and dispatches through ``RunnerAdapter.
-    discover_ats`` -- the SAME unified port facet-pair
-    ``discover_pytest_ats``/``discover_cargo_ats`` register under
-    (fix-rust-regression-at-kind-wiring). An unrecognized suffix, or a
-    ``RunnerAdapterUnavailable`` degrade from the facet itself (unreadable/
-    malformed/zero-AT file), raises ``GateError`` exit 2 naming "no AT
-    detector for this language" -- degrade-LOUD, never a silent pytest
-    fallback on a non-Python target.
-    """
-    from des.adapters.driven.runner.runner_registry import seed_runner_registry
-    from des.ports.test_runner_port import RunnerAdapter, RunnerAdapterUnavailable
-
-    runner_name = _AT_DISCOVERY_SUFFIX_RUNNER.get(regression_test_file.suffix)
-    if runner_name is None:
-        raise _no_at_detector_for_language(
-            regression_test_file,
-            f"unrecognized suffix {regression_test_file.suffix!r}",
-        )
-    seed_runner_registry()
-    adapter = RunnerAdapter(name=runner_name)
-    try:
-        discovery = adapter.discover_ats(
-            regression_test_file.parent, regression_test_file
-        )
-    except RunnerAdapterUnavailable as exc:
-        raise _no_at_detector_for_language(
-            regression_test_file,
-            f"the {runner_name!r} at-discovery facet refused: {exc}",
-        ) from exc
-    return list(discovery.at_ids), discovery.content_hash
-
-
 def _has_fixture_decorator(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     return any(
         _decorator_name(dec) in ("fixture", "pytest.fixture")
@@ -1414,7 +1348,7 @@ def check_carpaccio(
     scenarios: list[Scenario],
     entering_slice: str,
     slice_max: int,
-    at_kind: Literal["gherkin", "pytest-regression", "native-regression"] = "gherkin",
+    at_kind: Literal["gherkin", "pytest-regression"] = "gherkin",
     regression_test_file: Path | None = None,
     *,
     repo: Path | None = None,
@@ -1457,16 +1391,11 @@ def check_carpaccio(
     (gherkin mode only -- a pytest-regression AT carries no ``@coupled``-tag
     vocabulary, so the escape never applies in that mode).
     """
-    if (
-        at_kind in ("pytest-regression", "native-regression")
-        and regression_test_file is None
-    ):
+    if at_kind == "pytest-regression" and regression_test_file is None:
         raise ValueError(
             f"check_carpaccio: at_kind={at_kind!r} requires regression_test_file"
         )
-    if at_kind in ("pytest-regression", "native-regression") and _slice_scenarios(
-        scenarios, entering_slice
-    ):
+    if at_kind == "pytest-regression" and _slice_scenarios(scenarios, entering_slice):
         # A selected regression file may coexist with Gherkin scenarios owned
         # by other slices, but never with a second AT-discovery route for the
         # slice entering delivery.
@@ -1512,20 +1441,6 @@ def check_carpaccio(
             entering_slice,
             slice_max,
             at_count,
-            all_coupled=all_coupled,
-            slice_max_source=slice_max_source,
-        )
-    if at_kind == "native-regression":
-        assert regression_test_file is not None  # guarded above
-        at_ids, _content_hash = native_regression_at_discovery(regression_test_file)
-        _check_walking_skeleton_first(plan)
-        _check_value_annotation(plan)
-        all_coupled = bool(_COUPLED_TAG_RE.search(entering_row.annotation))
-        return _check_slice_size_count(
-            plan,
-            entering_slice,
-            slice_max,
-            len(at_ids),
             all_coupled=all_coupled,
             slice_max_source=slice_max_source,
         )

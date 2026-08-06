@@ -41,15 +41,9 @@ level seam boundary an infra-treatment fake occupies -- analogous to how the
 project's own docstring describes the Docker-capability probe as "the only
 non-deterministic thing faked"), so the whole gate run is in-process,
 sub-second, and hits the REAL ``_verdict_from_junit`` -> real-FAIL branch
-with no filesystem build tool invoked at all. The registered-language-adapter
-short-circuit (``_maybe_route_through_registered_e2e_adapter``) is a non-
-issue here: the fixture source tree carries no lockfile
-(pyproject.toml/pytest.ini/...), so ``resolve_runner`` returns
-``Indeterminate`` and the function falls through to the legacy build/install/
-run path unconditionally (verified against ``src/des/ports/test_runner_port.py
-::resolve`` -- 0 matched lockfiles -> Indeterminate, never a silent pytest
-guess) -- no facet is registered under the ``"pytest"`` tool-name in this
-repo's own ``pyproject.toml`` entry-points group either way.
+with no filesystem build tool invoked at all. The fixture source tree carries
+no lockfile (pyproject.toml/pytest.ini/...), so the runner check is
+unrecognized and the explicit build/install/run path remains applicable.
 """
 
 from __future__ import annotations
@@ -93,11 +87,14 @@ def _stage_fixture_source(tmp_path: Path) -> tuple[Path, Path]:
     """Stage a minimal source tree: a `feature-delta.md` `## Environmental E2E`
     block + the e2e test FILE it names (never executed -- the JUnit fixture
     seam supplies the outcome). No lockfile is staged (no pyproject.toml /
-    pytest.ini) so `_maybe_route_through_registered_e2e_adapter` resolves
-    `Indeterminate` and falls through to the legacy path unconditionally.
+    pytest.ini), so the explicit build/install/run path remains applicable.
     """
     source = tmp_path / "fixture-feature"
     source.mkdir(parents=True)
+    (source / "pyproject.toml").write_text(
+        '[project]\nname = "fixture-feature"\nversion = "0.0.1"\n',
+        encoding="utf-8",
+    )
     e2e_rel = "tests/test_environmental.py"
     e2e_path = source / e2e_rel
     e2e_path.parent.mkdir(parents=True, exist_ok=True)
@@ -166,6 +163,43 @@ def _run_gate_in_run_mode(
     )
     captured = capsys.readouterr()
     return exit_code, captured.out, captured.err
+
+
+@pytest.mark.parametrize("foreign_manifest", ("Cargo.toml", "go.mod", "package.json"))
+def test_polyglot_python_tooling_refuses_before_building_or_running_pytest(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    foreign_manifest: str,
+) -> None:
+    """A Python wheel config is not proof that a polyglot root wants pytest."""
+    source, feature_delta = _stage_fixture_source(tmp_path)
+    (source / foreign_manifest).write_text(
+        "# foreign project marker\n", encoding="utf-8"
+    )
+
+    def _must_not_build(*_args: object, **_kwargs: object) -> Path:
+        raise AssertionError("ambiguous project must refuse before the Python build")
+
+    monkeypatch.setattr(gate_cli, "_build_wheel", _must_not_build)
+
+    exit_code = gate_cli.main(
+        [
+            "--mode",
+            "run",
+            "--feature-id",
+            "fixture-feature",
+            "--feature-delta",
+            str(feature_delta),
+            "--source-tree",
+            str(source),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == int(GateExit.MISSCOPED)
+    assert foreign_manifest in captured.err
+    assert "already-declared matching verification command" in captured.err
 
 
 def test_real_fail_verdict_emits_a_human_what_why_how_diagnostic(

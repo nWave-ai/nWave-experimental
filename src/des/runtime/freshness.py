@@ -1,7 +1,7 @@
 """des.runtime.freshness — the runtime freshness gate (§1).
 
 Fires at the import-time of ``des.cli`` (composition root §1.5): every
-unified ``des`` console-script invocation (``des roadmap``, ``des init-log``,
+unified ``des`` console-script invocation (``des verify-integrity``,
 ``des <subcommand>``, ...) pays one process-startup probe that the installed
 copy of DES is consistent with the source-of-truth it is supposed to enforce.
 When the probe REFUSES, the process exits 78 (``EX_CONFIG``) with a

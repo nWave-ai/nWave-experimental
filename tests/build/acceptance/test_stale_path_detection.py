@@ -30,7 +30,6 @@ class TestDESRecoverySuggestionsReferenceSkillPaths:
     @pytest.mark.parametrize(
         "source_file",
         [
-            "src/des/application/validator.py",
             "src/des/domain/des_enforcement_policy.py",
             "src/des/domain/marker_completeness_policy.py",
         ],

@@ -9,9 +9,8 @@ dispatches:
 
   Fast-path (non-git-stash Bash):
     Regex-match `^\\s*git\\s+stash\\b` on the command. If NO match, exit 0
-    silently -- a bare Python early-exit before any filesystem work. Mirrors
-    the shell-fast-path promise of `spine_ledger_pre_commit_hook.py`: the
-    HOOK_EVENTS registration greps the command BEFORE spawning the
+    silently -- a bare Python early-exit before any filesystem work. The
+    HOOK_EVENTS registration greps the command before spawning the
     interpreter, and this Python entry point repeats the discriminator so the
     decision is unambiguous even when invoked directly.
 
@@ -30,7 +29,7 @@ dispatches:
   Kill-switch (ALLOW + audit):
     When the command IS a mutating `git stash` AND `NWAVE_GIT_STASH_ALLOW` is
     set to a truthy value (any non-empty string that is not `0`/`false`/`no`/
-    `off`, case-insensitive -- mirrors `spine_ledger_gate._bypass_env_active`),
+    `off`, case-insensitive),
     the hook APPROVES (exit 0) and emits one audited `GitStashBypassUsed`
     event (JSONL) to `<target>/.nwave/des/logs/audit-{today}.log`. The event
     carries the `command` field so the operator sees which stash invocation
@@ -41,10 +40,8 @@ pre-commit framework's INTERNAL `git stash` ("Stashing unstaged files") is a
 subprocess spawned BY the pre-commit binary, NOT a Claude `Bash` tool
 invocation, so it is never intercepted by this PreToolUse hook.
 
-Stdlib-only (no PyYAML, no third-party deps). Mirrors the pattern of
-`scripts/hooks/spine_ledger_pre_commit_hook.py` (PreToolUse/Bash hook,
-JSON stdin, block decision) and `scripts/hooks/spine_ledger_gate.py`
-(kill-switch truthy check + `_emit_bypass_event` audit emission).
+Stdlib-only (no PyYAML, no third-party deps). Uses the standard PreToolUse/Bash
+protocol: JSON stdin, block decision, and audited kill-switch bypasses.
 
 Hook protocol contract (Claude Code PreToolUse on Bash):
     stdin = {"tool_name": "Bash", "tool_input": {"command": "...", ...}, ...}
@@ -60,8 +57,7 @@ Test-harness env-var contract (slice-01 ATs):
         hook locates the audit-log dir without relying on Path.cwd().
 
 In production (no target-root override), the hook uses `Path.cwd()` as the
-target root and `<target>/.nwave/des/logs/` as the audit-log dir, mirroring
-`spine_ledger_gate.py`'s defaults.
+target root and `<target>/.nwave/des/logs/` as the audit-log dir.
 """
 
 from __future__ import annotations
@@ -80,7 +76,7 @@ _ALLOW_ENV = "NWAVE_GIT_STASH_ALLOW"
 
 # Test-harness env var so the hook locates the target tree (audit-log dir)
 # without relying on Path.cwd(). Production leaves it unset and falls back to
-# Path.cwd() -- mirrors spine_ledger_pre_commit_hook._target_root.
+# Path.cwd().
 _TARGET_ROOT_ENV = "NWAVE_GIT_STASH_GUARD_TARGET_ROOT"
 
 _AUDIT_LOG_DIR_RELPATH = Path(".nwave") / "des" / "logs"
@@ -103,7 +99,7 @@ _READ_ONLY_SUBCOMMANDS = frozenset({"list", "show"})
 _HELP_FLAGS = frozenset({"--help", "-h"})
 
 # Falsy env-var spellings that DO NOT activate the kill-switch, mirroring
-# standard shell conventions for boolean flags (and spine_ledger_gate).
+# standard shell conventions for boolean flags.
 _FALSY_ENV_VALUES = frozenset({"0", "false", "no", "off"})
 
 # Block reason: names the safe alternative AND the bypass mechanism so the
@@ -122,7 +118,7 @@ def _read_hook_event() -> dict[str, object]:
     Returns `{}` if stdin is empty or malformed; the caller treats this as a
     non-actionable event (approve silently). The hook fails OPEN on protocol
     violations -- a malformed event is a Claude Code bug, not an operator
-    violation. Mirrors spine_ledger_pre_commit_hook._read_hook_event.
+    violation.
     """
     raw = sys.stdin.read()
     if not raw.strip():
@@ -193,8 +189,8 @@ def _allow_env_active() -> bool:
     """True when NWAVE_GIT_STASH_ALLOW is set to a truthy value.
 
     Truthy = any non-empty string that is not one of `_FALSY_ENV_VALUES`
-    (case-insensitive). Mirrors spine_ledger_gate._bypass_env_active so an
-    operator who exports the var with any non-zero value gets the bypass.
+    (case-insensitive), so an operator who exports the var with any non-zero
+    value gets the bypass.
     """
     raw = os.environ.get(_ALLOW_ENV, "")
     if not raw:
@@ -218,8 +214,7 @@ def _emit_bypass_event(target_root: Path, command: str, session_id: str) -> None
     """Append one GitStashBypassUsed event to today's audit log (JSONL format).
 
     The directory is created on demand so the first bypass on a clean target
-    succeeds. The event carries the git-stash command + session id. Mirrors
-    spine_ledger_gate._emit_bypass_event.
+    succeeds. The event carries the git-stash command + session id.
     """
     log_path = _audit_log_path(target_root)
     log_path.parent.mkdir(parents=True, exist_ok=True)

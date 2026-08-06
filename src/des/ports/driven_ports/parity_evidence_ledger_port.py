@@ -38,11 +38,9 @@ class EvidenceWriteReceipt:
 
 
 class ParityEvidenceLedgerPort(Protocol):
-    def append(self, evidence: EvidenceEnvelope) -> EvidenceWriteReceipt:
-        ...
+    def append(self, evidence: EvidenceEnvelope) -> EvidenceWriteReceipt: ...
 
-    def records_for(self, subject: ParitySubject) -> tuple[EvidenceEnvelope, ...]:
-        ...
+    def records_for(self, subject: ParitySubject) -> tuple[EvidenceEnvelope, ...]: ...
 
 
 __all__ = [

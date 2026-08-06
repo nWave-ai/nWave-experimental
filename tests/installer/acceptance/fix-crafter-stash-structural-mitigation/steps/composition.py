@@ -2,9 +2,8 @@
 
 Wires the PRODUCTION git-stash guard hook script as a real Python subprocess
 (Layer 3 driving port per Mandate-13) against a tmp_path target tree. The hook
-is a STANDALONE PreToolUse/Bash guard — unlike the spine-ledger pre-commit hook
-(slice-02 of atdd-spine-ledger-enforcement-gate-v2), it does NOT spawn a second
-gate subprocess: it IS the gate. It inspects `tool_input.command`, blocks
+is a STANDALONE PreToolUse/Bash guard: it does not spawn a second gate
+subprocess; it is the gate. It inspects `tool_input.command`, blocks
 mutating `git stash` invocations, honours the `NWAVE_GIT_STASH_ALLOW` kill-switch
 (emitting an audited `GitStashBypassUsed` event), and passes through everything
 else.
@@ -24,12 +23,10 @@ delegate to `GitStashGuardFixture` methods and never inline logic (Mandate-12
 criterion 3: ≤2 statements per step body, final statement is a composition
 method call, zero control flow in step bodies).
 
-STANDALONE (no inheritance): per dispatch invariant 2, `GitStashGuardFixture` is
-a fresh fixture with NO subclassing of the spine-ledger `KillSwitchFixture`
-hierarchy. The two features share a hook-protocol SHAPE (Claude Code PreToolUse
-JSON stdin → JSON-decision stdout + exit code) but not a fixture lineage; the
-git-stash guard's audit-event name (`GitStashBypassUsed`) and kill-switch env
-var (`NWAVE_GIT_STASH_ALLOW`) are distinct from the spine-ledger gate's.
+STANDALONE (no inheritance): `GitStashGuardFixture` is a fresh fixture. It uses
+the hook-protocol shape (Claude Code PreToolUse JSON stdin → JSON-decision
+stdout + exit code), with its own audit-event name (`GitStashBypassUsed`) and
+kill-switch env var (`NWAVE_GIT_STASH_ALLOW`).
 
 RED-for-the-right-reason: the target script `scripts/hooks/git_stash_guard.py`
 does NOT EXIST YET (the crafter lands it in DELIVER). When
@@ -68,8 +65,7 @@ _ALLOW_ENV = "NWAVE_GIT_STASH_ALLOW"
 
 # Test-harness env var so the hook locates the target tree (audit-log dir)
 # without relying on Path.cwd(). Production leaves it unset and falls back to
-# Path.cwd() — mirrors the spine-ledger NWAVE_SPINE_LEDGER_GATE_TARGET_ROOT
-# contract.
+# Path.cwd().
 _TARGET_ROOT_ENV = "NWAVE_GIT_STASH_GUARD_TARGET_ROOT"
 
 _AUDIT_LOG_DIR_RELPATH = Path(".nwave") / "des" / "logs"
@@ -134,7 +130,7 @@ class GitStashGuardFixture:
 
     Each instance is bound to one tmp_path target tree (passed in). The fixture
     exposes composition methods that step bodies invoke; no business logic is
-    inlined in any step. STANDALONE — no inheritance from spine-ledger fixtures.
+    inlined in any step. STANDALONE — no inheritance from another fixture.
 
     The hook protocol contract (Claude Code PreToolUse on Bash):
 

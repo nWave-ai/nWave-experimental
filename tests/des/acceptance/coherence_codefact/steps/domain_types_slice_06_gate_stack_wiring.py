@@ -227,7 +227,7 @@ class DrivenVerdict:
 
     ``verdict``      -- the §17 GateVerdict token the driven subcommand emitted
                         (from gate-G's envelope / self-attest's classification /
-                        the runner port's earned-verdict-or-test-result status).
+                        the runner port's test-result-or-unobserved status).
                         ``None`` when the subcommand is unregistered / emitted no
                         verdict-shaped result (the active-RED signal).
     ``exit_code``    -- the process exit code (verbatim passthrough, DDD-6) — a

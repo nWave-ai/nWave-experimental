@@ -114,7 +114,9 @@ Every expansion choice emits a `DocumentationDensityEvent` (dataclass at `src/de
 
 Wave-specific signal: DEVOPS/DISTILL consuming a lean DESIGN feature-delta — downstream `--expand` requests for trade-off or evolution scenarios indicate the `[REF]` baseline was insufficient. Full emission rules: `nWave/skills/nw-density-resolution-contract/SKILL.md`.
 
-## Reuse Analysis (Discovery Flow step 5 — the gate-parsed contract)
+## Reuse Analysis
+
+Discovery Flow step 5 — the gate-parsed contract.
 
 Referenced as step 5 of the Discovery Flow (`nw-design-discovery-flow`); the contract stays in this core because it is AT-pinned to this file. Before designing ANY new component, search the existing codebase for components with overlapping responsibilities. For each overlap, decide "extend existing" or "justify new". Output a table:
 
@@ -133,7 +135,7 @@ envelope. The orchestrator MUST NOT repair the missing sections after handoff.
 ```
 | Existing Component | File | Overlap | Decision | Justification |
 |-------------------|------|---------|----------|---------------|
-| DESOrchestrator | src/des/application/orchestrator.py | Phase iteration, gate eval | EXTEND | Adding dispatch branch is ~15 LOC vs 200 LOC new class |
+| PreToolUseService | src/des/application/pre_tool_use_service.py | Agent-invocation gate evaluation | EXTEND | Add a narrowly-scoped policy branch only when the driving-port contract requires it |
 ```
 
 Rules:
@@ -390,7 +392,7 @@ Context files: see `nw-design-prior-wave-reading` (Prior Wave Consultation) + pr
 - diagram_format: mermaid (C4)
 - stress_analysis: {true if --residuality flag, false otherwise}
 
-**SKILL_LOADING**: Read your skill files at `~/.claude/skills/nw-{skill-name}/SKILL.md`. At Phase 4, always load: `nw-architecture-patterns`, `nw-architectural-styles-tradeoffs`. Do NOT load `nw-roadmap-design` during DESIGN wave -- roadmap creation belongs to the DELIVER wave (`/nw-roadmap` or `/nw-deliver`). Then follow your Skill Loading Strategy table for phase-specific skills.
+**SKILL_LOADING**: Read your skill files at `~/.claude/skills/nw-{skill-name}/SKILL.md`. At Phase 4, always load: `nw-architecture-patterns`, `nw-architectural-styles-tradeoffs`. Then follow your Skill Loading Strategy table for phase-specific skills.
 
 ## Success Criteria
 

@@ -20,7 +20,6 @@ try:
         NWAVE_MANAGED_COMMIT,
         remove_settings_attribution,
     )
-    from scripts.install.install_des_hooks import DESHookInstaller
     from scripts.install.install_nwave import print_logo
     from scripts.install.install_utils import (
         BackupManager,
@@ -38,7 +37,6 @@ except ImportError:
         NWAVE_MANAGED_COMMIT,
         remove_settings_attribution,
     )
-    from install_des_hooks import DESHookInstaller
     from install_nwave import print_logo
     from install_utils import (
         BackupManager,
@@ -552,19 +550,39 @@ class NWaveUninstaller:
                 self.logger.info("  ✅ No old nWave backup directories found")
 
     def remove_des_hooks(self) -> None:
-        """Remove DES hooks from Claude Code settings."""
+        """Remove installer-owned DES hooks from Claude Code settings.
+
+        ``DESPlugin`` is the sole writer and cleanup authority for this
+        surface.  The former standalone hook installer was a second writer
+        with substring-based ownership detection, so it could delete a
+        neighbouring user or Lyra hook merely because its command happened to
+        contain a DES-looking fragment.
+        """
         if self.dry_run:
             self.logger.info("  🚨 [DRY RUN] Would remove DES hooks from settings.json")
             return
 
         with self.logger.progress_spinner("  🚧 Removing DES hooks..."):
-            des_installer = DESHookInstaller(self.claude_config_dir)
-            success = des_installer.uninstall()
+            try:
+                from scripts.install.plugins.base import InstallContext
+                from scripts.install.plugins.des_plugin import DESPlugin
+            except ImportError:
+                from plugins.base import InstallContext
+                from plugins.des_plugin import DESPlugin
 
-            if success:
+            context = InstallContext(
+                claude_dir=self.claude_config_dir,
+                scripts_dir=self.claude_config_dir / "scripts",
+                templates_dir=self.claude_config_dir / "templates",
+                logger=self.logger,
+                target_platforms={"claude_code"},
+            )
+            result = DESPlugin()._uninstall_des_hooks(context)
+
+            if result.success:
                 self.logger.info("  🗑️ Removed DES hooks from settings.json")
             else:
-                self.logger.warn("  ⚠️ DES hooks not found (may not be installed)")
+                self.logger.warn(f"  ⚠️ DES hook removal: {result.message}")
 
     def remove_copilot_des_hooks(self) -> None:
         """Remove the nWave DES hook config from the Copilot CLI hooks dir.
@@ -631,31 +649,18 @@ class NWaveUninstaller:
             self.logger.warn(f"  ⚠️ OpenCode DES shim removal: {result.message}")
 
     def remove_des_hook_scripts(self) -> None:
-        """Remove DES spine-ledger hook scripts from ~/.claude/scripts/.
-
-        slice-04 of F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2: the installer
-        propagates 3 spine-ledger hook scripts to `<claude_dir>/scripts/`
-        via `DESPlugin.DES_HOOKS`; clean uninstall MUST remove them so the
-        operator's `~/.claude/scripts/` tree does not accumulate orphan
-        files when nWave is removed.
-
-        Mirrors `remove_des_hooks` semantics: skip in dry-run, log per-script
-        removal, warn when none found.
-        """
+        """Remove current and retired installer-owned DES hook scripts."""
         if self.dry_run:
-            self.logger.info(
-                "  🚨 [DRY RUN] Would remove DES spine-ledger hook scripts"
-            )
+            self.logger.info("  🚨 [DRY RUN] Would remove DES hook scripts")
             return
 
-        # SSOT: read the canonical list from DESPlugin.DES_HOOKS so a single
-        # `DES_HOOKS = [...]` edit drives BOTH install propagation AND
-        # uninstall cleanup (no parallel hand-maintained list to drift).
+        # Current scripts come from the canonical install list. The small
+        # retired list is intentional migration cleanup for old installations.
         from scripts.install.plugins.des_plugin import DESPlugin
 
         scripts_dir = self.claude_config_dir / "scripts"
         removed_count = 0
-        for hook_script_name in DESPlugin.DES_HOOKS:
+        for hook_script_name in (*DESPlugin.DES_HOOKS, *DESPlugin.RETIRED_HOOK_SCRIPTS):
             hook_script_path = scripts_dir / hook_script_name
             if hook_script_path.exists():
                 hook_script_path.unlink()
@@ -663,9 +668,7 @@ class NWaveUninstaller:
                 self.logger.info(f"  🗑️ Removed DES hook script: {hook_script_name}")
 
         if removed_count == 0:
-            self.logger.info(
-                "  ✅ No DES spine-ledger hook scripts to remove (already clean)"
-            )
+            self.logger.info("  ✅ No DES hook scripts to remove (already clean)")
 
     def _has_flat_nw_residue(self, noun: str) -> bool:
         """True if any flat nw-* entry survives under ~/.claude/{noun}/.

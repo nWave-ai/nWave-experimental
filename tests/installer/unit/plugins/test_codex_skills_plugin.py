@@ -27,6 +27,7 @@ from nwave_ai.state_delta import assert_state_delta, set_to
 
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.codex_skills_plugin import CodexSkillsPlugin
+from scripts.shared.skill_path_rewrite import rewrite_host_paths as render_for_codex
 
 
 if TYPE_CHECKING:
@@ -360,6 +361,257 @@ class TestInstallCopiesSkills:
             (codex_skills_dir / ".nwave-manifest.json").read_text(encoding="utf-8")
         )
         assert manifest["installed_skills"] == ["nw-alpha", "nw-beta"]
+
+    def test_install_reconciles_manifest_owned_stale_skill_without_touching_user_sibling(
+        self, tmp_path, monkeypatch
+    ):
+        """A refresh removes only stale entries explicitly owned by its old manifest.
+
+        GIVEN: a well-formed old manifest owns the desired ``nw-alpha`` and
+               obsolete ``nw-obsolete`` skills, beside a user-owned sibling
+        WHEN: the desired source now contains only ``nw-alpha``
+        THEN: the desired skill is refreshed, the obsolete owned skill is removed,
+              the manifest names exactly the desired set, and the user bytes stay
+              untouched.
+        """
+        skills = {"nw-alpha": "---\nname: nw-alpha\ndescription: fresh\n---\nfresh\n"}
+        context, _, _ = _make_context(tmp_path, skills=skills)
+        codex_skills_dir = tmp_path / "home" / ".agents" / "skills"
+        codex_config_dir = tmp_path / "home" / ".codex"
+        codex_config_dir.mkdir(parents=True)
+        _patch_codex_dirs(monkeypatch, codex_skills_dir, codex_config_dir)
+
+        owned_desired = codex_skills_dir / "nw-alpha" / "SKILL.md"
+        owned_desired.parent.mkdir(parents=True)
+        owned_desired.write_bytes(b"old nWave alpha bytes\n")
+        obsolete = codex_skills_dir / "nw-obsolete" / "SKILL.md"
+        obsolete.parent.mkdir()
+        obsolete.write_bytes(b"old nWave obsolete bytes\n")
+        user_sibling = codex_skills_dir / "my-local-skill" / "SKILL.md"
+        user_sibling.parent.mkdir()
+        user_sibling.write_bytes(b"user-owned skill bytes\n")
+        user_bytes = user_sibling.read_bytes()
+        (codex_skills_dir / ".nwave-manifest.json").write_text(
+            json.dumps(
+                {
+                    "installed_skills": ["nw-alpha", "nw-obsolete"],
+                    "version": "1.0",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = CodexSkillsPlugin().install(context)
+
+        assert result.success is True, result.message
+        assert owned_desired.read_text(encoding="utf-8") == skills["nw-alpha"]
+        assert not obsolete.parent.exists(), (
+            "WHAT: the manifest-owned stale skill survived refresh. WHY: the old "
+            "ownership set was not reconciled against the desired set. HOW: remove "
+            "only stale entries proven by the old manifest after desired writes."
+        )
+        assert json.loads(
+            (codex_skills_dir / ".nwave-manifest.json").read_text(encoding="utf-8")
+        ) == {"installed_skills": ["nw-alpha"], "version": "1.0"}
+        assert user_sibling.read_bytes() == user_bytes
+
+    def test_failed_desired_render_keeps_stale_asset_and_old_manifest(
+        self, tmp_path, monkeypatch
+    ):
+        """Failure on the second desired render retains stale ownership state."""
+        skills = {
+            "nw-alpha": "---\nname: nw-alpha\ndescription: fresh a\n---\nfresh a\n",
+            "nw-beta": (
+                "---\nname: nw-beta\ndescription: fresh b\n---\n"
+                "Read ~/.claude/skills/nw-beta/SKILL.md.\n"
+            ),
+        }
+        context, _, _ = _make_context(tmp_path, skills=skills)
+        codex_skills_dir = tmp_path / "home" / ".agents" / "skills"
+        codex_config_dir = tmp_path / "home" / ".codex"
+        codex_config_dir.mkdir(parents=True)
+        _patch_codex_dirs(monkeypatch, codex_skills_dir, codex_config_dir)
+
+        first_desired = codex_skills_dir / "nw-alpha" / "SKILL.md"
+        first_desired.parent.mkdir(parents=True)
+        first_desired.write_bytes(b"old alpha bytes\n")
+        second_desired = codex_skills_dir / "nw-beta" / "SKILL.md"
+        second_desired.parent.mkdir()
+        second_desired.write_bytes(b"old beta bytes\n")
+        stale = codex_skills_dir / "nw-obsolete" / "SKILL.md"
+        stale.parent.mkdir(parents=True)
+        stale.write_bytes(b"old nWave obsolete bytes\n")
+        manifest_path = codex_skills_dir / ".nwave-manifest.json"
+        old_manifest = (
+            b'{\n  "installed_skills": ["nw-alpha", "nw-beta", "nw-obsolete"],\n'
+            b'  "version": "1.0"\n}\n'
+        )
+        manifest_path.write_bytes(old_manifest)
+        stale_bytes = stale.read_bytes()
+        render_attempts: list[str] = []
+
+        def fail_second_render(content: str, host: str) -> str:
+            render_attempts.append(content)
+            if len(render_attempts) == 2:
+                raise OSError("injected second desired render failure")
+            return render_for_codex(content, host)
+
+        monkeypatch.setattr(
+            "scripts.install.plugins.codex_skills_plugin.rewrite_host_paths",
+            fail_second_render,
+        )
+
+        result = CodexSkillsPlugin().install(context)
+
+        assert result.success is False
+        assert len(render_attempts) == 2
+        assert first_desired.read_text(encoding="utf-8") == skills["nw-alpha"], (
+            "WHAT: the first desired write did not complete before the injected "
+            "second-render failure. WHY: this scenario must cross the first write "
+            "boundary before exercising failure ordering. HOW: render in source order."
+        )
+        assert second_desired.read_text(encoding="utf-8") == skills["nw-beta"], (
+            "WHAT: the copied second desired asset was unexpectedly rolled back. WHY: "
+            "the installer currently guarantees stale/manifest ordering, not rollback "
+            "of desired partial writes. HOW: preserve that limitation explicitly."
+        )
+        assert stale.read_bytes() == stale_bytes, (
+            "WHAT: a desired-render failure deleted a stale owned asset. WHY: stale "
+            "deletion ran before all desired writes succeeded. HOW: write every desired "
+            "skill before reconciling old ownership."
+        )
+        assert manifest_path.read_bytes() == old_manifest, (
+            "WHAT: a failed refresh published a new manifest. WHY: that would certify "
+            "a partially written desired set. HOW: write the manifest last."
+        )
+
+    def test_replaced_stale_directory_refuses_without_deleting_foreign_bytes(
+        self, tmp_path, monkeypatch
+    ):
+        """A stale directory swapped after validation is not safe to delete."""
+        skills = {"nw-alpha": "---\nname: nw-alpha\ndescription: fresh\n---\nfresh\n"}
+        context, _, _ = _make_context(tmp_path, skills=skills)
+        codex_skills_dir = tmp_path / "home" / ".agents" / "skills"
+        codex_config_dir = tmp_path / "home" / ".codex"
+        codex_config_dir.mkdir(parents=True)
+        _patch_codex_dirs(monkeypatch, codex_skills_dir, codex_config_dir)
+
+        stale_dir = codex_skills_dir / "nw-obsolete"
+        stale = stale_dir / "SKILL.md"
+        stale.parent.mkdir(parents=True)
+        stale.write_bytes(b"previously owned stale bytes\n")
+        manifest_path = codex_skills_dir / ".nwave-manifest.json"
+        old_manifest = (
+            b'{\n  "installed_skills": ["nw-obsolete"],\n  "version": "1.0"\n}\n'
+        )
+        manifest_path.write_bytes(old_manifest)
+
+        displaced_owned_dir = tmp_path / "validated-stale-before-swap"
+        replacement = stale_dir / "SKILL.md"
+        replacement_bytes = b"foreign replacement bytes\n"
+        swapped = False
+
+        def swap_after_validation(content: str, host: str) -> str:
+            nonlocal swapped
+            if not swapped:
+                stale_dir.rename(displaced_owned_dir)
+                stale_dir.mkdir()
+                replacement.write_bytes(replacement_bytes)
+                swapped = True
+            return render_for_codex(content, host)
+
+        monkeypatch.setattr(
+            "scripts.install.plugins.codex_skills_plugin.rewrite_host_paths",
+            swap_after_validation,
+        )
+
+        result = CodexSkillsPlugin().install(context)
+
+        assert swapped is True
+        assert result.success is False, (
+            "WHAT: install accepted a stale directory replaced after validation. "
+            "WHY: the deletion target identity changed during desired rendering. "
+            "HOW: revalidate the stale directory immediately before deletion."
+        )
+        assert replacement.read_bytes() == replacement_bytes, (
+            "WHAT: refusal deleted or changed the replacement directory. WHY: its "
+            "bytes are foreign to the validated ownership witness. HOW: leave the "
+            "replacement untouched when final validation detects the swap."
+        )
+        assert manifest_path.read_bytes() == old_manifest, (
+            "WHAT: a TOCTOU refusal published a new manifest. WHY: that would certify "
+            "an installation whose stale ownership reconciliation did not complete. "
+            "HOW: retain the old manifest on refusal."
+        )
+
+    def test_replaced_desired_directory_refuses_without_deleting_foreign_bytes(
+        self, tmp_path, monkeypatch
+    ):
+        """A manifest-owned desired target swapped before replacement stays foreign.
+
+        The fingerprint wrapper is a deterministic boundary seam: it replaces
+        the directory after the initial owned-tree snapshot and before production's
+        immediate pre-delete revalidation. It is not a race or a timing probe.
+        """
+        from scripts.install.plugins import codex_skills_plugin
+
+        skills = {"nw-alpha": "---\nname: nw-alpha\ndescription: fresh\n---\nfresh\n"}
+        context, _, _ = _make_context(tmp_path, skills=skills)
+        codex_skills_dir = tmp_path / "home" / ".agents" / "skills"
+        codex_config_dir = tmp_path / "home" / ".codex"
+        codex_config_dir.mkdir(parents=True)
+        _patch_codex_dirs(monkeypatch, codex_skills_dir, codex_config_dir)
+
+        desired_dir = codex_skills_dir / "nw-alpha"
+        owned_skill = desired_dir / "SKILL.md"
+        desired_dir.mkdir(parents=True)
+        owned_skill.write_bytes(b"previously owned desired bytes\n")
+        manifest_path = codex_skills_dir / ".nwave-manifest.json"
+        old_manifest = (
+            b'{\n  "installed_skills": ["nw-alpha"],\n  "version": "1.0"\n}\n'
+        )
+        manifest_path.write_bytes(old_manifest)
+
+        displaced_owned_dir = tmp_path / "validated-desired-before-swap"
+        replacement = desired_dir / "SKILL.md"
+        replacement_bytes = b"foreign desired replacement bytes\n"
+        original_fingerprint = codex_skills_plugin._skill_tree_fingerprint
+        swapped = False
+
+        def swap_after_initial_fingerprint(target_dir, name):
+            nonlocal swapped
+            fingerprint = original_fingerprint(target_dir, name)
+            if name == "nw-alpha" and not swapped:
+                desired_dir.rename(displaced_owned_dir)
+                desired_dir.mkdir()
+                replacement.write_bytes(replacement_bytes)
+                swapped = True
+            return fingerprint
+
+        monkeypatch.setattr(
+            "scripts.install.plugins.codex_skills_plugin._skill_tree_fingerprint",
+            swap_after_initial_fingerprint,
+        )
+
+        result = CodexSkillsPlugin().install(context)
+
+        assert swapped is True
+        assert result.success is False, (
+            "WHAT: install accepted a desired directory replaced after validation. "
+            "WHY: the replacement delete targeted a foreign tree. HOW: revalidate "
+            "the desired target immediately before rmtree."
+        )
+        assert replacement.read_bytes() == replacement_bytes, (
+            "WHAT: refusal deleted or changed the foreign desired replacement. "
+            "WHY: its bytes are outside the validated ownership witness. HOW: leave "
+            "the replacement untouched when final validation detects the swap."
+        )
+        assert manifest_path.read_bytes() == old_manifest, (
+            "WHAT: a desired-target TOCTOU refusal published a new manifest. WHY: "
+            "that would certify a replacement after its ownership witness changed. "
+            "HOW: retain the old manifest on refusal."
+        )
 
 
 class TestVerify:

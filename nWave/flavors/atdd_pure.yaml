@@ -74,8 +74,8 @@ skill_load_set:
 # the mode prose. docgen projects these into `GENERATED:mode-descriptor`
 # regions; the registry is the sole author, assets carry projections only.
 descriptor: >
-  Per-slice carpaccio loop; no roadmap.json / execution-log.json;
-  AT-completion ledger + commit trailers are the audit.
+  Per-slice AT-first loop; AT-completion ledger + commit trailers are the
+  authority.
 deliver_phase_shape: "A_GREEN -> EXAMINE -> COMMIT"
 
 lifecycle_events:
@@ -219,12 +219,6 @@ lifecycle_events:
         commit: HEAD
         require_reviewed_by: false  # Phase 5 will flip to true
       on_failure: warn
-
-  # Session init (Claude Code SessionStart / Codex session_start /
-  # OpenCode session.created). Distribution boundary check ships Phase 5.
-  session.init:
-    - gate_id: health-check
-      on_failure: log
 
 # f-distill-wiring-to-registry slice-01 (DDD-3, MOVE-completion): the dormant
 # ``wave_gate_stacks`` block is REMOVED. Its last co-tenant -- the ``distill``

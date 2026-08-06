@@ -97,7 +97,7 @@ class TestValidateInstallationPluginVerification:
             '{"installed_agents": ["nw-public-agent"], "version": "1.0"}'
         )
         (codex_home / "hooks.json").write_text('{"hooks": {}}')
-        (codex_home / ".nwave-des-manifest.json").write_text('{}')
+        (codex_home / ".nwave-des-manifest.json").write_text("{}")
 
         registry = MagicMock()
         registry.verify_all.return_value = {
@@ -112,9 +112,7 @@ class TestValidateInstallationPluginVerification:
             ),
         }
 
-        with patch.object(
-            installer, "_create_plugin_registry", return_value=registry
-        ):
+        with patch.object(installer, "_create_plugin_registry", return_value=registry):
             assert installer._validate_codex_installation() is True
 
     def _build_installer_with_mocks(self, tmp_path):

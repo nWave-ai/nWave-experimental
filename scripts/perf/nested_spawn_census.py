@@ -63,7 +63,6 @@ _NESTED_MARKERS = (
     "_collect_scope_worker",
     "run-contract-gate",
     "run_contract_gate",
-    "run-slice-ats",
     "feature-end",
 )
 

@@ -10,22 +10,21 @@ These tests MUST fail if claude_code_hook_adapter.py is deleted or not reference
 State-delta migration summary
 ------------------------------
 CONVERTED (0 tests) — no filesystem-mutating tests present:
-  All 12 tests operate on read-only or in-memory surfaces:
+  All 11 tests operate on read-only or in-memory surfaces:
     - TestHookAdapterReference: module existence + import checks (filesystem read,
       no write). hasattr() and callable() assertions have no state slot to capture.
-    - TestHookInstallerConfiguration: installer source-code text assertions (file
-      read, no write). "assert substring in source" has no before/after delta.
+    - TestHookInstallerConfiguration: canonical plugin source-code text assertions
+      (file read, no write). "assert substring in source" has no before/after delta.
     - TestHookConfigurationIntegrity: reads real ~/.claude/settings.json (skips if
       absent). No install action is exercised — no state transition occurs.
     - TestHookAdapterFunctionality: in-memory stdin/stdout redirections via StringIO.
       Protocol decisions are returned as values, not written to disk. The
       state-delta paradigm targets filesystem slots; there are none here.
 
-KEPT as-is (12 tests) — state-delta adds no hidden-mutation value:
+KEPT as-is (11 tests) — state-delta adds no hidden-mutation value:
   - test_hook_adapter_module_exists: filesystem existence assertion
   - test_hook_adapter_is_importable: import + hasattr assertions
   - test_hook_adapter_has_main_entry_point: callable + SystemExit assertion
-  - test_standalone_installer_references_hook_adapter: text search in source file
   - test_plugin_installer_references_hook_adapter: text search in source file
   - test_hook_command_format_is_correct: text search in source file
   - test_global_settings_json_has_des_hooks: read-only settings.json inspection
@@ -33,13 +32,13 @@ KEPT as-is (12 tests) — state-delta adds no hidden-mutation value:
   - test_hook_adapter_accepts_schema_v2_input: hasattr assertion
   - test_pre_tool_use_reads_tool_input_from_top_level: in-memory stdin/stdout
   - test_pre_tool_use_blocks_incomplete_des_prompt: in-memory stdin/stdout
-  - test_hook_adapter_rejects_missing_required_fields: in-memory stdin/stdout
+  - test_subagent_stop_refuses_execution_log_carrier_as_classic: in-memory stdin/stdout
 
 Hidden mutations found: none — no filesystem-mutating SUT code exercised here.
   Hook adapter tests have lower hit rate than filesystem-mutation tests, confirming
   Tier A #1 insight.
 
-Tests: 12 total. Hit rate update: 5/11 files exposed hidden mutations.
+Tests: 11 total. Hit rate update: 5/11 files exposed hidden mutations.
 """
 
 import json
@@ -107,34 +106,6 @@ class TestHookAdapterReference:
 
 class TestHookInstallerConfiguration:
     """Test that hook installer references claude_code_hook_adapter correctly."""
-
-    def test_standalone_installer_references_hook_adapter(self):
-        """MUST FAIL if install_des_hooks.py doesn't reference claude_code_hook_adapter.
-
-        Verifies the standalone installer script configures hooks correctly.
-        """
-        installer_path = (
-            Path(__file__).parent.parent.parent.parent
-            / "scripts/install/install_des_hooks.py"
-        )
-
-        assert installer_path.exists(), "Installer script not found"
-
-        with open(installer_path, encoding="utf-8") as f:
-            installer_code = f.read()
-
-        # CRITICAL: Installer MUST reference claude_code_hook_adapter
-        assert "claude_code_hook_adapter" in installer_code, (
-            "Installer does not reference claude_code_hook_adapter!\n"
-            "Hooks will fail with 'module not found' error.\n"
-            "Update DES_PRETOOLUSE_HOOK and DES_SUBAGENT_STOP_HOOK constants."
-        )
-
-        # Verify both hook types reference the adapter
-        assert installer_code.count("claude_code_hook_adapter") >= 2, (
-            "Expected at least 2 references to claude_code_hook_adapter "
-            "(one for PreToolUse, one for SubagentStop)"
-        )
 
     def test_plugin_installer_references_hook_adapter(self):
         """MUST FAIL if des_plugin.py doesn't reference claude_code_hook_adapter.
@@ -216,8 +187,7 @@ class TestHookConfigurationIntegrity:
             config = json.load(f)
 
         assert "hooks" in config, (
-            "No hooks in ~/.claude/settings.json!\n"
-            "Run: python3 scripts/install/install_des_hooks.py --install"
+            "No hooks in ~/.claude/settings.json!\nRun: nwave-ai install"
         )
 
         hooks = config["hooks"]
@@ -230,13 +200,12 @@ class TestHookConfigurationIntegrity:
         des_stop = [h for h in stop_hooks if self._is_des_hook_entry(h)]
 
         assert len(des_pre) > 0, (
-            "No DES PreToolUse hook in ~/.claude/settings.json!\n"
-            "Run: python3 scripts/install/install_des_hooks.py --install"
+            "No DES PreToolUse hook in ~/.claude/settings.json!\nRun: nwave-ai install"
         )
 
         assert len(des_stop) > 0, (
             "No DES SubagentStop hook in ~/.claude/settings.json!\n"
-            "Run: python3 scripts/install/install_des_hooks.py --install"
+            "Run: nwave-ai install"
         )
 
         # Verify Claude Code v2 nested format (required for hooks to fire)
@@ -348,11 +317,9 @@ class TestHookAdapterFunctionality:
 
         A DES-marked prompt without an explicit DES-MODE is "incomplete" under
         the current architecture too: PreToolUseService Step 4b treats a
-        missing DES-MODE as DISPATCH_MODE_UNRESOLVED rather than falling back
-        to the now-retired classic TemplateValidator's 9-mandatory-section
-        check (T-C / F-DES-ATDD-PURE-DISPATCH-LIFECYCLE -- "missing mode is
-        never a legacy fallback"). The prompt-validator port is still wired
-        but unreachable for a mode-absent dispatch by design.
+        missing DES-MODE as DISPATCH_MODE_UNRESOLVED (T-C /
+        F-DES-ATDD-PURE-DISPATCH-LIFECYCLE -- "missing mode is never a legacy
+        fallback").
         """
         import sys
         from io import StringIO
@@ -393,33 +360,28 @@ class TestHookAdapterFunctionality:
             sys.stdin = original_stdin
             sys.stdout = original_stdout
 
-    def test_hook_adapter_rejects_missing_required_fields(self):
-        """Test that hook adapter validates Schema v2.0 required fields.
-
-        This is a unit test verifying the adapter's input validation.
-        """
+    def test_subagent_stop_refuses_execution_log_carrier_as_classic(self):
+        """An execution-log-shaped return is a retired classic carrier."""
         import sys
         from io import StringIO
 
         from des.adapters.drivers.hooks import claude_code_hook_adapter
 
-        # Mock stdin with missing fields
-        test_input = json.dumps(
-            {"executionLogPath": "/tmp/log.yaml"}
-        )  # Missing projectId, stepId
+        # An execution-log path is itself an explicit retired carrier.
+        test_input = json.dumps({"executionLogPath": "/tmp/log.yaml"})
 
         original_stdin = sys.stdin
         original_stdout = sys.stdout
         try:
             sys.stdin = StringIO(test_input)
-            sys.stdout = StringIO()
+            sys.stdout = captured = StringIO()
 
             exit_code = claude_code_hook_adapter.handle_subagent_stop()
 
-            # Should fail (exit 1) due to missing required fields
-            assert exit_code == 1, (
-                "Expected error exit code for missing required fields"
-            )
+            assert exit_code == 2
+            output = json.loads(captured.getvalue())
+            assert output["outcome"] == "CLASSIC_MODE_REMOVED"
+            assert output["reason_code"] == "MIGRATION_REQUIRED"
         finally:
             sys.stdin = original_stdin
             sys.stdout = original_stdout

@@ -89,14 +89,12 @@ def given_project_no_rigor(ctx: dict[str, Any]) -> None:
     ctx["initial_project_config"] = read_json_file(ctx["project_config_path"])
 
 
-@given(
-    parsers.parse('the global config file has an update check frequency of "{freq}"')
-)
-def given_global_with_update_check(ctx: dict[str, Any], freq: str) -> None:
+@given(parsers.parse('the global config file has a user preference of "{freq}"'))
+def given_global_with_user_preference(ctx: dict[str, Any], freq: str) -> None:
     """Global config with non-rigor data."""
     write_global_config(
         ctx["global_config_path"],
-        {"update_check": {"frequency": freq}},
+        {"user_preferences": {"frequency": freq}},
     )
     ctx["initial_global_config"] = read_json_file(ctx["global_config_path"])
 
@@ -251,15 +249,11 @@ def then_global_not_modified(ctx: dict[str, Any]) -> None:
         assert data == initial
 
 
-@then(
-    parsers.parse(
-        'the global config file still has update check frequency "{expected}"'
-    )
-)
-def then_global_update_check_preserved(ctx: dict[str, Any], expected: str) -> None:
+@then(parsers.parse('the global config file still has user preference "{expected}"'))
+def then_global_user_preference_preserved(ctx: dict[str, Any], expected: str) -> None:
     """Verify non-rigor keys are preserved in global config."""
     data = read_json_file(ctx["global_config_path"])
-    assert data["update_check"]["frequency"] == expected
+    assert data["user_preferences"]["frequency"] == expected
 
 
 @then("the project config still has audit logging enabled")

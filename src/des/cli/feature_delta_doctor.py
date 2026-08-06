@@ -41,8 +41,6 @@ import sys
 from pathlib import Path
 from typing import TypedDict
 
-import yaml
-
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.carpaccio_format import (
     SLICE_PLAN_CANONICAL_COLUMNS,
@@ -307,6 +305,48 @@ def _module_to_repo_path(module: str) -> str:
     return f"{root}/{rest.replace('.', '/')}.py"
 
 
+def _scalar_field(raw: str, key: str) -> str | None:
+    """The value of a top-level ``<key>: <value>`` line, or None.
+
+    Column-0 only, so a nested key of the same name in another block cannot be
+    mistaken for the document-level one.
+    """
+    for line in raw.splitlines():
+        if line.startswith(f"{key}:"):
+            value = line[len(key) + 1 :].strip().strip("\"'")
+            return value or None
+    return None
+
+
+def _block_list_field(raw: str, key: str) -> list[str]:
+    """The items of a top-level ``<key>:`` block list, or an empty list.
+
+    Each item begins with an indented ``- `` and may continue over further
+    indented lines; continuation lines are folded into the item with a single
+    space, matching how a YAML parser folds a plain multi-line scalar. The
+    block ends at the next column-0 line.
+    """
+    items: list[str] = []
+    current: list[str] = []
+    inside = False
+    for line in raw.splitlines():
+        if not inside:
+            inside = line.startswith(f"{key}:")
+            continue
+        if line.strip() and not line[0].isspace():
+            break
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            if current:
+                items.append(" ".join(current).strip("\"'"))
+            current = [stripped[2:].strip()]
+        elif stripped and current:
+            current.append(stripped)
+    if current:
+        items.append(" ".join(current).strip("\"'"))
+    return [item for item in items if item]
+
+
 def _gate_input_assumptions_by_path(
     repo_root: Path,
 ) -> dict[str, tuple[str, list[str]]]:
@@ -315,7 +355,12 @@ def _gate_input_assumptions_by_path(
     repo-relative file path -- so a Reuse Analysis File cell can be looked up
     directly. Fails-open (empty dict) on a missing directory or an
     unparseable gate file: this affordance is advisory (GDP-2), never a
-    reason to make the doctor itself unusable."""
+    reason to make the doctor itself unusable.
+
+    Read by a narrow stdlib line scan, not PyYAML: the DES-bundle contract
+    forbids ``import yaml`` in any bundled ``des`` module, and an executable
+    check asserts the bundle runs with no external package installed. Same
+    discipline as ``verify_catalog_coherence`` and ``carpaccio_format``."""
     gates_dir = repo_root / "nWave" / "gates"
     if not gates_dir.is_dir():
         return {}
@@ -324,17 +369,15 @@ def _gate_input_assumptions_by_path(
         if gate_file.name.startswith("_"):
             continue
         try:
-            data = yaml.safe_load(gate_file.read_text(encoding="utf-8"))
-        except Exception:
+            raw = gate_file.read_text(encoding="utf-8")
+        except OSError:
             continue
-        if not isinstance(data, dict):
-            continue
-        assumptions = data.get("input_assumptions")
-        module = data.get("module")
-        gate_id = data.get("gate_id")
+        gate_id = _scalar_field(raw, "gate_id")
+        module = _scalar_field(raw, "module")
+        assumptions = _block_list_field(raw, "input_assumptions")
         if not assumptions or not module or not gate_id:
             continue
-        result[_module_to_repo_path(module)] = (gate_id, list(assumptions))
+        result[_module_to_repo_path(module)] = (gate_id, assumptions)
     return result
 
 

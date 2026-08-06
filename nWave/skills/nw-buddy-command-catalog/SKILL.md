@@ -17,7 +17,7 @@ disable-model-invocation: true
 | `/nw-design` | DESIGN | system-designer, ddd-architect, solution-architect | Route to the right architect — system (scalability), domain (DDD), or application (components) |
 | `/nw-devops` | DEVOPS | platform-architect | CI/CD, infrastructure, observability, deployment strategy |
 | `/nw-distill` | DISTILL | acceptance-designer | Create executable acceptance tests (Given-When-Then) |
-| `/nw-deliver` | DELIVER | software-crafter | Full implementation: roadmap -> execute -> finalize |
+| `/nw-deliver` | DELIVER | software-crafter | Deliver a feature through small AT-first slices, independent EXAMINE, and integration |
 
 ## Routing Commands
 
@@ -31,10 +31,10 @@ disable-model-invocation: true
 
 | Command | Purpose | When to Use |
 |---------|---------|-------------|
-| `/nw-execute` | Run single roadmap step | Implementing one step at a time (learning mode) |
-| `/nw-review` | Expert review of artifacts | Quality check on roadmap, code, or step output |
+| `/nw-execute` | Run one active slice | Implementing one bounded slice at a time (learning mode) |
+| `/nw-review` | Expert review of artifacts | Quality check on a baseline, feature delta, task, or implementation |
 | `/nw-mutation-test` | Test suite effectiveness (DEPRECATED, FR-1) | Opt-in only — NOT a default step. Deprecated 2026-07-04: green ATs + EXAMINE (Vera) are the truth; a post-green mutation pass adds cost, not signal. Run explicitly only when you specifically want a mutmut kill-rate. |
-| `/nw-finalize` | Archive completed feature | After all steps pass — creates evolution document |
+| `/nw-finalize` | Archive completed feature | After the feature slices pass — creates an evolution document |
 
 ## Cross-Wave Commands (any time)
 
@@ -69,7 +69,7 @@ verifies — every hand-edit of a checked artifact is a producing tool you did n
 | `des dispatch --mode atdd_pure --project-id <id> --slice <s> --phase <p>` | GENERATES a compliant agent dispatch with its mandatory sections | Dispatching a crafter or reviewer. Hand-assembling the prompt is how a mandatory section goes missing | <!-- mode-ref-ok -->
 | ⚠️ `des next --feature-id <id>` | Projects the next legal step in the DELIVER loop | **PARTIAL — do not treat as authoritative.** It reads the markdown Status column, not the ledger. When it disagrees with `.nwave/telemetry/atdd-pure/<id>.jsonl`, believe the LEDGER, and never auto-run the `how` it prints |
 | `des refactor --pile <path> --agent-cmd '<cmd>' [--max-parallel N]` | Drains tech-debt items from a pile file (`techdebt.md` -> `paidtechdebt.md`), one item per isolated worktree+venv, with mandatory cleanup on success or failure | "My code needs cleanup" at scale — a hand-authored pile, not a single ad-hoc refactor (`/nw-refactor` for that). ⚠️ `--driver loop` is a known stub (parsed, never wired) — omit it, the default `python` driver is the only one that actually runs today. `des find` (auto-populating the pile) does not exist yet |
-| `des bugfix-pipeline-tick` / `des work-exhausted-tick` / `des consolidation-signal-tick` | The three autonomous-loop driving ports (bugfix pipeline, safe-work exhaustion escalation, trunk-health signal intake) | Debugging or manually draining the autonomous loop — normally auto-ticked once per SessionStart, no manual invocation needed for steady state |
+| `des bugfix-pipeline-tick` / `des work-exhausted-tick` / `des consolidation-signal-tick` | The three autonomous-loop driving ports (bugfix pipeline, safe-work exhaustion escalation, trunk-health signal intake) | Debugging or manually draining the autonomous loop. Invoke explicitly or schedule externally; no host lifecycle hook runs them automatically. |
 
 > For the full authoritative command reference, read `docs/reference/commands/index.md`.
 

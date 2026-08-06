@@ -101,7 +101,7 @@ def main() -> int:
 
     # GENERATED-region freshness leg (declared-facts-reachable-recorded
     # slice-04, DD-11): every GENERATED-marker-carrying asset (agents,
-    # commands, skills, orchestrator-affordance docs) must byte-match a
+    # commands and skills) must byte-match a
     # fresh re-render -- alongside the existing 3 legs above.
     asset_paths = docgen.scan(_ROOT)
     generated_projections = docgen.project_generated_regions(_ROOT, asset_paths)

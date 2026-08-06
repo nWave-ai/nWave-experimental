@@ -15,7 +15,6 @@ skills:
   - nw-code-analysis-port
   - nw-code-design-oo
   - nw-code-design-fp
-  - nw-roadmap-design
   - nw-cross-cutting-invariants
 ---
 
@@ -75,7 +74,6 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 | Stress Analysis | `~/.claude/skills/nw-stress-analysis/SKILL.md` | Only with `--residuality` flag |
 | Architecture Design | `~/.claude/skills/nw-code-design-oo/SKILL.md` | Project paradigm is OO (CLAUDE.md `object-oriented`) or unspecified — load at Architecture Design phase entry, before component boundary decisions |
 | Architecture Design | `~/.claude/skills/nw-code-design-fp/SKILL.md` | Project paradigm is FP (CLAUDE.md `functional` or `/nw-design --paradigm=fp`) — load at Architecture Design phase entry, before component boundary decisions |
-| Roadmap | `~/.claude/skills/nw-roadmap-design/SKILL.md` | Only when invoked via /nw-roadmap or /nw-deliver — never during DESIGN wave |
 
 ## Workflow
 
@@ -268,5 +266,4 @@ All commands require `*` prefix.
 - Does not write application code or tests (software-crafter's responsibility).
 - Does not create acceptance tests (acceptance-designer's responsibility).
 - Artifacts limited to `docs/product/architecture/` unless user explicitly approves.
-- Does not create roadmap.json during DESIGN wave. Roadmap creation belongs exclusively to DELIVER wave via /nw-roadmap or /nw-deliver.
 - Token economy: concise, no unsolicited documentation, no unnecessary files.

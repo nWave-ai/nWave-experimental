@@ -29,8 +29,8 @@ spare them:
     from the dataclass's fields; the `json.dumps` argument is never the
     function's own parameter by identity.
   * bespoke positional-argument emitters (`loop`,
-    `feature_end_preconditions_scaffold`, `walking_skeleton_done_gate`,
-    `earned_verdict_self_test`, `carpaccio_precheck`, `carpaccio_slice_gate`,
+    `walking_skeleton_done_gate`,
+    `carpaccio_precheck`, `carpaccio_slice_gate`,
     `run_contract_gate`) -- different arity, different body shape, or (for
     `run_contract_gate`) an already-more-evolved injectable-`OutputPort`
     signature.
@@ -149,9 +149,7 @@ def test_the_guard_spares_the_three_known_honest_variants():
         "walking_skeleton_gate.py": "_emit",
         "wave_clear.py": "_emit",
         "loop.py": "_emit",
-        "feature_end_preconditions_scaffold.py": "_emit",
         "walking_skeleton_done_gate.py": "_emit",
-        "earned_verdict_self_test.py": "_emit",
         "carpaccio_precheck.py": "_emit",
         "carpaccio_slice_gate.py": "_emit",
         "run_contract_gate.py": "_emit",

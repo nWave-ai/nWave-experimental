@@ -1,7 +1,7 @@
 """Generic JSON schema loader base — shared scaffolding SSOT.
 
 Holds the path-resolution + caching scaffolding once, previously copy-pasted
-across ``RoadmapSchemaLoader`` and ``TDDSchemaLoader`` (the roadmap docstring
+across schema-specific loaders such as ``TDDSchemaLoader`` (the subclass docstring
 literally read "Mirrors tdd_schema.py pattern"). The fragile 3-context
 path-resolution lives here verbatim; subclasses supply only the bundled
 schema FILENAME (via ``SCHEMA_FILENAME``) and the ``_parse_schema`` step

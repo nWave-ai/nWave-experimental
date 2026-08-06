@@ -31,7 +31,6 @@ import pytest
 
 from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
 from des.application.pre_tool_use_service import PreToolUseService
-from des.application.validator import TemplateValidator
 from des.domain.des_enforcement_policy import DesEnforcementPolicy
 from des.domain.des_marker_parser import DesMarkerParser
 from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
@@ -98,7 +97,6 @@ def _build_gate(
     writer = _CapturingAuditWriter()
     gate = PreToolUseService(
         marker_parser=DesMarkerParser(),
-        prompt_validator=TemplateValidator(),
         audit_writer=writer,
         time_provider=_FixedTime(),
         enforcement_policy=DesEnforcementPolicy(),

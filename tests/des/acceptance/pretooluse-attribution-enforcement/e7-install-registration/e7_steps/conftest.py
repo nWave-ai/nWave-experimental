@@ -3,8 +3,7 @@
 Redirects `Path.home()` and `$HOME` to a per-test `tmp_path` so the real
 `AttributionPlugin` and the real `attribution on|off` CLI resolve a sandboxed
 `~/.claude` and `~/.nwave` — NEVER the operator's real home. Precedent:
-`tests/des/unit/install/test_install_des_hooks.py` (`monkeypatch.setattr(Path,
-"home", ...)`) + `tests/installer/acceptance/*/conftest.py`.
+`tests/installer/acceptance/*/conftest.py`.
 """
 
 from __future__ import annotations

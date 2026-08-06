@@ -401,7 +401,7 @@ def copy_skills(
     Post-restructuring: source is nWave/skills/nw-*/SKILL.md (flat).
     Uses shared skill_distribution module for the enumerate -> filter -> copy pipeline.
     """
-    from scripts.shared.agent_catalog import build_ownership_map
+    from scripts.shared.agent_catalog import build_ownership_map, detect_command_skills
     from scripts.shared.skill_distribution import (
         copy_skills_to_target,
         enumerate_skills,
@@ -419,7 +419,10 @@ def copy_skills(
     ownership_map = build_ownership_map(agents_dir) if agents_dir.exists() else {}
 
     entries = enumerate_skills(source_dir)
-    filtered = filter_public_skills(entries, agents, ownership_map)
+    command_skills = detect_command_skills(source_dir)
+    filtered = filter_public_skills(
+        entries, agents, ownership_map, command_skills=command_skills
+    )
     skipped = len(entries) - len(filtered)
     count = copy_skills_to_target(filtered, dest_dir)
 
@@ -605,10 +608,7 @@ def copy_templates(config: BuildConfig, plugin_dir: Path) -> StepResult:
     dest_dir = plugin_dir / "scripts" / "templates"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    template_files = (
-        "step-tdd-cycle-schema.json",
-        "roadmap-schema.json",
-    )
+    template_files = ("step-tdd-cycle-schema.json",)
 
     count = 0
     for template_name in template_files:

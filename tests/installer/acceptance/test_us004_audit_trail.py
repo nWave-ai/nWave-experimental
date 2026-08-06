@@ -170,7 +170,7 @@ class TestAuditTrailForComplianceVerification:
         writer = JsonlAuditLogWriter(log_dir=str(tmp_path))
         initial_entries = [
             AuditEvent(
-                event_type="TASK_INVOCATION_STARTED",
+                event_type="HOOK_SUBAGENT_STOP_PASSED",
                 timestamp="2026-01-22T10:00:00.000Z",
                 data={},
             ),

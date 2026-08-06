@@ -337,12 +337,7 @@ TELEMETRY_DIR_RELPATH = telemetry_ledger_dir(Path(), LedgerFamily.ATDD_PURE)
 def active_feature_id(repo_root: Path) -> str | None:
     """The id of the single in-flight feature under ``repo_root``, if any.
 
-    fix-precommit-fabricates-vacuous-scaffold slice-01 (D_REFACTOR_COMMIT):
-    the ONE canonical home for a resolution rule that had drifted into three
-    verbatim reimplementations (``des.cli.run_slice_ats``,
-    ``scripts.hooks.des_declare_done_pre_push``,
-    ``scripts.hooks.spine_ledger_pre_commit_hook``) -- all three callers now
-    import this function instead of carrying their own copy.
+    The canonical home for resolving a single in-flight telemetry ledger.
 
     Contract: list the ``*.jsonl`` ledger stems under
     ``{repo_root}/.nwave/telemetry/atdd-pure/``. Exactly one on disk -> that

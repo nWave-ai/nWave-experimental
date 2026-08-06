@@ -21,7 +21,7 @@ Feature: A spawned des gate always finds des on the child path
   @slice-01 @contract-shape:bounded-change @real-io
   Scenario: A spawned child des command imports des under a des-stripped host
     Given a host where des is stripped from the import path
-    When a gate spawns the read-only roadmap command through the centralized helper
+    When a gate spawns the read-only integrity command through the centralized helper
     Then the child command imports des and succeeds
 
   @slice-01 @contract-shape:bounded-change @in-memory

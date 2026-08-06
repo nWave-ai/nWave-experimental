@@ -64,10 +64,8 @@ _ALLOWED_NON_SUBCOMMAND_MODULES: dict[str, str] = {
         "not itself a subcommand entry point."
     ),
     # Deliberately MODULE-DIRECT composition roots -- each module's own
-    # docstring documents it is invoked as `python -m des.cli.<name>` by a
-    # narrower subprocess harness that needs isolated-process semantics
-    # (test-runner / perturbation determinism), never through the `des`
-    # dispatcher.
+    # docstring documents why it is invoked with `python -m des.cli.<name>`
+    # rather than through the `des` dispatcher.
     "carpaccio_precheck": (
         "own docstring: 'Invoked MODULE-DIRECT against the "
         "des.cli.carpaccio_precheck module, NOT as a des dispatcher "
@@ -77,22 +75,6 @@ _ALLOWED_NON_SUBCOMMAND_MODULES: dict[str, str] = {
     "phases": (
         "own docstring: 'Module-direct invocation via the runtime "
         "interpreter's -m switch ... never the bare python console name'."
-    ),
-    "earned_verdict": (
-        "invoked as `python -m des.cli.earned_verdict` by the "
-        "earned-verdict-gate composition "
-        "(tests/des/acceptance/earned-verdict-gate/steps/composition.py) -- "
-        "an isolated-process, CORE-never-imported determinism requirement."
-    ),
-    "earned_verdict_self_test": (
-        "ditto earned_verdict -- invoked as "
-        "`python -m des.cli.earned_verdict_self_test` "
-        "(steps/composition_slice_04.py)."
-    ),
-    "inject_seam": (
-        "invoked as `python -m des.cli.inject_seam` by the earned-verdict-gate "
-        "composition (steps/composition_slice_03.py) -- same isolated-process "
-        "requirement as earned_verdict."
     ),
     "dormant_seam_gate": (
         "own docstring: 'an importable des.cli module run as a subprocess'; "

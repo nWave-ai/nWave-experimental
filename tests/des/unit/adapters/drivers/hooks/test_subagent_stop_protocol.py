@@ -27,8 +27,9 @@ KEPT as-is (10 tests) — no state-delta benefit:
     on a stateless function; no mutable universe to exploit.
   - test_non_des_subagent_allowed: exit-code + empty-stdout check only;
     single-slot, no hidden-mutation surface.
-  - test_des_subagent_with_valid_execution_log: exit-code + empty-stdout;
-    same rationale.
+  - test_classic_des_transcript_is_refused_without_consuming_execution_log:
+    parameterized refusal + execution-log byte-preservation check for both
+    legacy artifact bases.
   - test_block_response_contains_only_claude_code_recognized_fields:
     structural protocol allowlist check (set algebra on response.keys());
     state-delta does not improve the key-set constraint.
@@ -41,6 +42,8 @@ Tests: 12 total. Hit rate update: 5/10 files exposed hidden mutations.
 
 import json
 import os
+
+import pytest
 
 from des.adapters.drivers.hooks.claude_code_hook_adapter import (
     extract_des_context_from_transcript,
@@ -224,88 +227,15 @@ class TestSubagentStopWithClaudeCodeProtocol:
             f"Allow path should produce no output. Got: {captured}"
         )
 
-    def test_des_subagent_with_valid_execution_log(self, tmp_path, monkeypatch):
-        """DES agent with complete execution log should be allowed."""
-        import subprocess as sp
-
-        prompt = (
-            "<!-- DES-VALIDATION: required -->\n"
-            "<!-- DES-PROJECT-ID: test-project -->\n"
-            "<!-- DES-STEP-ID: 01-01 -->\n"
-            "Execute step"
-        )
-        transcript = _make_transcript(str(tmp_path), prompt)
-
-        # Create execution log at the expected path
-        deliver_dir = tmp_path / "docs" / "feature" / "test-project" / "deliver"
-        deliver_dir.mkdir(parents=True)
-        exec_log = deliver_dir / "execution-log.json"
-        exec_log.write_text(
-            json.dumps(
-                {
-                    "project_id": "test-project",
-                    "events": [
-                        "01-01|PREPARE|EXECUTED|PASS|2026-02-06T10:00:00Z",
-                        "01-01|RED_ACCEPTANCE|EXECUTED|PASS|2026-02-06T10:05:00Z",
-                        "01-01|RED_UNIT|EXECUTED|PASS|2026-02-06T10:10:00Z",
-                        "01-01|GREEN|EXECUTED|PASS|2026-02-06T10:20:00Z",
-                        "01-01|REVIEW|EXECUTED|PASS|2026-02-06T10:30:00Z",
-                        "01-01|REFACTOR_CONTINUOUS|SKIPPED|CHECKPOINT_PENDING: Minimal|2026-02-06T10:35:00Z",
-                        "01-01|COMMIT|EXECUTED|PASS|2026-02-06T11:00:00Z",
-                    ],
-                },
-                indent=2,
-            )
-        )
-
-        # Initialize git repo and create a commit with Step-Id + Task-Id trailers
-        # (Task-Id required by SF parity port -- step 01-01 -- AND-semantics)
-        sp.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
-        sp.run(
-            ["git", "config", "user.email", "test@test.com"],
-            cwd=str(tmp_path),
-            capture_output=True,
-        )
-        sp.run(
-            ["git", "config", "user.name", "Test"],
-            cwd=str(tmp_path),
-            capture_output=True,
-        )
-        sp.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
-        sp.run(
-            [
-                "git",
-                "commit",
-                "-m",
-                "feat: implement step\n\nStep-Id: 01-01\nTask-Id: test-project",
-            ],
-            cwd=str(tmp_path),
-            capture_output=True,
-        )
-
-        hook_input = self._make_hook_input(transcript, str(tmp_path))
-        monkeypatch.setattr("sys.stdin", __import__("io").StringIO(hook_input))
-
-        captured = []
-        monkeypatch.setattr("builtins.print", captured.append)
-
-        exit_code = handle_subagent_stop()
-
-        assert exit_code == 0
-        # Allow path: no stdout (Claude Code protocol)
-        assert len(captured) == 0, (
-            f"Allow path should produce no output. Got: {captured}"
-        )
-
-    def test_des_subagent_with_override_base_execution_log(self, tmp_path, monkeypatch):
-        """p2 regression: complete log under docs/nwave/feature → allowed.
-
-        The project namespaces artifacts under the standard nWave override
-        base. The hook reconstructs the path from cwd only; with the log under
-        docs/nwave/feature it must still resolve and allow the stop.
-        """
-        import subprocess as sp
-
+    @pytest.mark.parametrize(
+        "feature_base",
+        ["feature", "nwave/feature"],
+        ids=["default-base", "override-base"],
+    )
+    def test_classic_des_transcript_is_refused_without_consuming_execution_log(
+        self, tmp_path, monkeypatch, feature_base
+    ):
+        """A retired classic transcript is refused without reading either legacy log."""
         project_id = "test-project"
         prompt = (
             "<!-- DES-VALIDATION: required -->\n"
@@ -315,50 +245,11 @@ class TestSubagentStopWithClaudeCodeProtocol:
         )
         transcript = _make_transcript(str(tmp_path), prompt)
 
-        # Log lives under the OVERRIDE base, not docs/feature
-        override_dir = tmp_path / "docs" / "nwave" / "feature" / project_id / "deliver"
-        override_dir.mkdir(parents=True)
-        exec_log = override_dir / "execution-log.json"
-        exec_log.write_text(
-            json.dumps(
-                {
-                    "project_id": project_id,
-                    "events": [
-                        "01-01|PREPARE|EXECUTED|PASS|2026-02-06T10:00:00Z",
-                        "01-01|RED_ACCEPTANCE|EXECUTED|PASS|2026-02-06T10:05:00Z",
-                        "01-01|RED_UNIT|EXECUTED|PASS|2026-02-06T10:10:00Z",
-                        "01-01|GREEN|EXECUTED|PASS|2026-02-06T10:20:00Z",
-                        "01-01|REVIEW|EXECUTED|PASS|2026-02-06T10:30:00Z",
-                        "01-01|REFACTOR_CONTINUOUS|SKIPPED|CHECKPOINT_PENDING: Minimal|2026-02-06T10:35:00Z",
-                        "01-01|COMMIT|EXECUTED|PASS|2026-02-06T11:00:00Z",
-                    ],
-                },
-                indent=2,
-            )
-        )
-
-        sp.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
-        sp.run(
-            ["git", "config", "user.email", "test@test.com"],
-            cwd=str(tmp_path),
-            capture_output=True,
-        )
-        sp.run(
-            ["git", "config", "user.name", "Test"],
-            cwd=str(tmp_path),
-            capture_output=True,
-        )
-        sp.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
-        sp.run(
-            [
-                "git",
-                "commit",
-                "-m",
-                f"feat: implement step\n\nStep-Id: 01-01\nTask-Id: {project_id}",
-            ],
-            cwd=str(tmp_path),
-            capture_output=True,
-        )
+        deliver_dir = tmp_path / "docs" / feature_base / project_id / "deliver"
+        deliver_dir.mkdir(parents=True)
+        exec_log = deliver_dir / "execution-log.json"
+        log_bytes = b'{"classic": "must remain untouched"}\n'
+        exec_log.write_bytes(log_bytes)
 
         hook_input = self._make_hook_input(transcript, str(tmp_path))
         monkeypatch.setattr("sys.stdin", __import__("io").StringIO(hook_input))
@@ -368,7 +259,19 @@ class TestSubagentStopWithClaudeCodeProtocol:
 
         exit_code = handle_subagent_stop()
 
-        assert exit_code == 0
-        assert len(captured) == 0, (
-            f"Allow path should produce no output. Got: {captured}"
+        assert exit_code == 2
+        assert len(captured) == 1
+        response = json.loads(captured[0])
+        assert {
+            key: response[key] for key in ("outcome", "reason_code", "effective_mode")
+        } == {
+            "outcome": "CLASSIC_MODE_REMOVED",
+            "reason_code": "MIGRATION_REQUIRED",
+            "effective_mode": None,
+        }
+        assert "retired classic" in response["diagnostic"]
+        assert (
+            "des convert-to-atdd-pure --workspace <project-dir>"
+            in response["diagnostic"]
         )
+        assert exec_log.read_bytes() == log_bytes

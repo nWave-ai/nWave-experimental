@@ -65,16 +65,3 @@ class SeamPhase(str, Enum):
     """
 
     D_GAP_ROUTING = "D_GAP_ROUTING"
-
-
-class CommitStepWord(str, Enum):
-    """The phase-marker word a returning commit-step agent speaks to the hook.
-
-    The SubagentStop hook's commit exit-gate routes on this word (the C3
-    string-literal dispatch). slice-02 re-keys the dispatch so BOTH words route
-    to the gate: the canonical word is the one the runtime now speaks, the legacy
-    word is the historical name that must still replay onto the same gate.
-    """
-
-    CANONICAL = "D_REFACTOR_COMMIT"  # the word the runtime speaks post-reduction
-    LEGACY = "G_COMMIT"  # the historical word that must still route (alias)

@@ -146,8 +146,6 @@ EXPECTED_BULK_SKILLS = [
     "nw-research-methodology",
     "nw-review-output-format",
     "nw-review-workflow",
-    "nw-roadmap-design",
-    "nw-roadmap-review-checks",
     "nw-sd-case-studies",
     "nw-sd-framework",
     "nw-sd-patterns",
@@ -187,7 +185,7 @@ BULK_HASHES = {
     # + mode-ref-ok allow-markers): nw-buddy-project-reading,
     # nw-buddy-wave-knowledge, nw-tdd-methodology,
     # nw-tdd-review-enforcement, nw-test-design-mandates. From slice-05 on,
-    # the mode_locus_gate + docgen --check own this guard.
+    # docgen --check owns this guard.
     # Prior hash updated 2026-07-08: added Skill-addressing-tables (load-by-trigger)
     # section (directive).
     "nw-agent-creation-workflow": "d4e7abc894ce58ec342949f3c96d665d",
@@ -214,11 +212,12 @@ BULK_HASHES = {
     # of pipx-only.
     "nw-buddy": "720a5634d2f2f333c854f1ac07de2624",
     # Hash updated 2026-07-08: FR-1 mutation-test deprecation alignment (EXAMINE/Vera
-    # routing) + /nw-roadmap deprecation (classic-only, removed in v4) row framing.
+    # routing) row framing.
     # Prior hash updated 2026-07-21: added des refactor / des find / the 3
     # autonomous-loop tick CLIs to the discoverability catalog.
-    "nw-buddy-command-catalog": "df423f91f2090bb62965e623b1f76fe7",
-    "nw-buddy-project-reading": "2ad40ff04927d0f7ca0c9518cd7e9b5b",
+    # Hash updated 2026-08-05: explicit host scheduling after lifecycle cleanup.
+    "nw-buddy-command-catalog": "af0d665d96a2bcd48d4a44497a4523ee",
+    "nw-buddy-project-reading": "347e1b7d0687f076cc7b8fd5588240ea",
     "nw-buddy-ssot-knowledge": "7a801cc1b1ab7379a258f621a08a71f5",
     # Hash updated 2026-05-14: TDD 3-phase canon (ADR-025) propagation —
     # DELIVER wave description now cites 3-phase RED→GREEN→COMMIT with legacy fallback.
@@ -234,11 +233,11 @@ BULK_HASHES = {
     # Re-pinned 2026-07-06: mode-locus fix — the carpaccio-ceiling sentence's
     # `workflow.mode == atdd_pure` mention now carries a trailing
     # `<!-- mode-ref-ok -->` annotation (it is a legitimate referential mention,
-    # not a hand-restatement), per the mode_registry_single_locus bulk sweep.
+    # not a hand-restatement), per the retired bulk migration sweep.
     # Hash updated 2026-07-08: WS-17-A slice-03 mode-ref-ok marker on the
     # atdd_pure dispatch row (da2848759) — the captured baseline was not
     # re-pinned at the time; reconciled here (ZERO DEFECTS).
-    "nw-buddy-wave-knowledge": "3dbc21f4c1b46683da9691cbe3070075",
+    "nw-buddy-wave-knowledge": "3b8200d5f5d0364e61b7f2ccc10a2ca1",
     "nw-cialdini-outreach": "90aea943d1a2eb313561ecbd0f2c5915",
     "nw-cicd-and-deployment": "2195ace1646b4c0ced64070d57bb542a",
     "nw-cognitive-load-management": "3e06303c46182b62288a7bffeb342909",
@@ -363,11 +362,6 @@ BULK_HASHES = {
     "nw-research-methodology": "e4910ea40aefc82f421640138986f300",
     "nw-review-output-format": "459675d5bf34cb0e3385133bdba87f58",
     "nw-review-workflow": "caa53b43f091166167e49b98f40af1f8",
-    # Hash updated 2026-05-15: F-1 (fix-roadmap-json-drift, step 01-01) —
-    # examples aligned to roadmap-schema.json vocabulary (name | criteria |
-    # files_to_modify) to resolve schema-vs-implementation drift.
-    "nw-roadmap-design": "c1595008c448f43e567ebb374a4c31b0",
-    "nw-roadmap-review-checks": "9470251073ac44ffc154c57e53e867a5",
     "nw-sd-case-studies": "d55bf7d35ffe48db3a04425b3e8596c1",
     "nw-sd-framework": "4e5958639f9e4eb9117d581f165a7e5a",
     "nw-sd-patterns": "f7b924a26a499520b4eaaa4a0b23e20e",
@@ -401,7 +395,7 @@ BULK_HASHES = {
     # + mode-scoped execution-log prose for the roadmap-free spine.
     # Prior hash updated 2026-05-15: closed-source refs scrubbed (3ab776967).
     # Prior hash updated 2026-05-14: TDD 3-phase canon (ADR-025) propagation.
-    "nw-tdd-review-enforcement": "fd974d67c36a11af0eebcf904aef2d16",
+    "nw-tdd-review-enforcement": "bfdb0612f4d23fc9c43a65a25784db3c",
     # Hash updated 2026-06-08: ADR-GV-001 D8 — back-ported Mandates 12-15
     # into the SSOT + added the numbering-convention frame + Mandate Registry.
     # Hash updated 2026-06-17: decompose-and-recompose into 3 nw-test-design-mandates-*
@@ -411,7 +405,7 @@ BULK_HASHES = {
     # (COUNT->population / PARTITION->conservation / SILENCE->discriminator; methodology Cambio-1).
     # Hash updated 2026-07-26: add durable-outcome naming so delivery metadata
     # cannot become the public identifier of an acceptance test.
-    "nw-test-design-mandates": "5d3bdd8f2ec6af8c13af68a2ba16aeb9",
+    "nw-test-design-mandates": "c5d5ca7247981ea96443ffd4d5bc9118",
     "nw-test-organization-conventions": "b478170a1cccb0aac1811fa06daf0ba1",
     "nw-test-refactoring-catalog": "9dd4d17224b32058386f4413027253bd",
     "nw-tlaplus-verification": "39ba15e1845e237a9d2014c467aa56ff",

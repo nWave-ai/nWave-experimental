@@ -294,7 +294,7 @@ Both methods install the same components to your `~/.claude/` directory:
 ├── skills/nw-*/               # 197 agent skill files (flat layout)
 ├── scripts/                   # DES utilities
 ├── lib/python/des/            # DES runtime imported by hooks
-└── settings.json              # DES hooks (5 events: PreToolUse, SessionStart, SubagentStart, SubagentStop, PostToolUse)
+└── settings.json              # nWave-managed hooks (PreToolUse, SubagentStart, SubagentStop, PostToolUse)
 ```
 
 All agents and commands become available globally across all Claude Code projects.
@@ -416,14 +416,8 @@ The installer automatically backs up your configuration before updating, allowin
 
 Or enable auto-updates in Claude Code plugin settings.
 
-nWave checks for new versions when you open Claude Code. Control check frequency via `update_check.frequency` in `~/.nwave/des-config.json`:
-
-| Value | Behavior |
-|-------|----------|
-| `daily` | Check once per day |
-| `weekly` | Check once per week |
-| `every_session` | Check on every session start (default) |
-| `never` | Disable update checks |
+To update nWave, run the explicit upgrade command above and then rerun
+`nwave-ai install`.
 
 ## Uninstalling
 

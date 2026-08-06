@@ -2,8 +2,8 @@
 
 F-DES-INSTALL-SHIPS-NWAVE-RUNTIME-ASSETS — the installed des package resolves
 config siblings of lib/python at runtime (Path(__file__).parents[N] / "nWave" /
-...): carpaccio_intercept reads nWave/flavors/atdd_pure.yaml, log_persistence +
-doctor read nWave/data/, the tdd/roadmap loaders read nWave/templates +
+...): carpaccio_intercept reads nWave/flavors/atdd_pure.yaml, log_persistence
+reads nWave/data/, the tdd/roadmap loaders read nWave/templates +
 nWave/schemas, carpaccio_slice_gate reads nWave/framework-catalog.yaml. The
 installer shipped only the code (lib/python/des) and never these assets, so
 every atdd_pure dispatch crashed with a missing lib/nWave/flavors/atdd_pure.yaml.
@@ -23,22 +23,9 @@ def _context_with_nwave(base: Path) -> tuple[InstallContext, Path]:
     nwave = project_root / "nWave"
     (nwave / "flavors").mkdir(parents=True)
     (nwave / "flavors" / "atdd_pure.yaml").write_text("id: atdd_pure\n")
-    (nwave / "data").mkdir(parents=True)
-    (nwave / "data" / "language-adapter-ports.yaml").write_text("ports: []\n")
     (nwave / "templates").mkdir(parents=True)
     (nwave / "templates" / "step-tdd-cycle-schema.json").write_text("{}\n")
-    (nwave / "schemas").mkdir(parents=True)
-    (nwave / "schemas" / "atdd-pure-phase-sequence.schema.json").write_text("{}\n")
     (nwave / "framework-catalog.yaml").write_text("agents: []\n")
-    hooks = project_root / "scripts" / "hooks"
-    hooks.mkdir(parents=True)
-    (hooks / "orchestrator_affordance_refresh.py").write_text("print('hook')\n")
-    # R-8: the shared reconciliation seam ships as a sibling of the refresh
-    # hook, so `session_start_handler.py` can reach it via a dynamic import
-    # off this same installed `nWave/hooks/` directory.
-    (hooks / "orchestrator_affordance_resolution.py").write_text(
-        "ASSETS_KIND_INSTALLED_CLAUDE = 'installed-claude-scoped'\n"
-    )
 
     claude_dir = base / ".claude"
     claude_dir.mkdir(parents=True)
@@ -66,13 +53,9 @@ def test_runtime_assets_shipped_to_lib_nwave(tmp_path: Path) -> None:
     lib_nwave = claude_dir / "lib" / "nWave"
     # The load-bearing slot: the flavor the carpaccio_intercept resolves.
     assert (lib_nwave / "flavors" / "atdd_pure.yaml").is_file()
-    assert (lib_nwave / "data" / "language-adapter-ports.yaml").is_file()
     assert (lib_nwave / "templates" / "step-tdd-cycle-schema.json").is_file()
-    assert (lib_nwave / "schemas" / "atdd-pure-phase-sequence.schema.json").is_file()
     assert (lib_nwave / "framework-catalog.yaml").is_file()
-    assert (lib_nwave / "hooks" / "orchestrator_affordance_refresh.py").is_file()
-    # R-8: the shared resolution seam must ship alongside the refresh hook.
-    assert (lib_nwave / "hooks" / "orchestrator_affordance_resolution.py").is_file()
+    assert not (lib_nwave / "hooks").exists()
 
 
 def test_missing_nwave_source_skips_without_crash(tmp_path: Path) -> None:

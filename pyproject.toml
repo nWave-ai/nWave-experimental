@@ -19,7 +19,7 @@ build-backend = "hatchling.build"
 # Public PyPI wheel: patch_pyproject.py rewrites this entire section
 # to a narrower force-include map (see release-prod.yml). Dev/RC use
 # the wider map below; PyPI ships only nwave_ai + a curated subset.
-packages = ["src/des", "nwave_ai"]
+packages = ["src/des", "nwave_ai", "src/nwave_capture"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "scripts/install" = "scripts/install"
@@ -30,7 +30,7 @@ path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave"
-version = "4.0.0+atddpure.9689d60"
+version = "4.0.0+atddpure.e6eb706"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -168,26 +168,6 @@ Issues = "https://github.com/nWave-ai/nWave/issues"
 nwave-ai = "nwave_ai.cli:main"
 des = "des.cli.__main__:main"
 verify-environmental-e2e = "des.cli.verify_environmental_e2e:main"
-
-# F-LANGUAGE-ADAPTER-PLUGIN-INFRASTRUCTURE slice-02 substrate.
-# Per ADR-031 Option C the canonical plugin-discovery substrate is the
-# `nwave.lang.adapter` PyPI entry-points group. Slice-02 registers a single
-# in-tree conformance fixture (a dual-base plugin: InstallationPlugin +
-# LanguageAdapterPlugin) so the entry-points discovery has at least one
-# witness; slice-05a (Python) and slice-07 (TypeScript) add real per-language
-# plugins under the same group with the conformance check applying uniformly.
-#
-# M44 Option (a) registration path: the fixture lives under
-# `scripts/install/plugins/` (NOT `src/des/ports/`) because it cross-imports
-# both `des.ports.language_adapter_plugin` (pure ABC) AND
-# `scripts.install.plugins.base.InstallationPlugin`. The pure ABC under
-# `src/des/ports/` MUST NOT import from `scripts.*` (friction #38 + F-D-09).
-# Re-check with: python -m scripts.cli.validate_language_adapter_catalog --check-port-realization
-[project.entry-points."nwave.lang.adapter"]
-_conformance_fixture = "scripts.install.plugins._conformance_fixture_language_adapter:ConformanceFixtureLanguageAdapter"
-nwave-lang-rust = "scripts.install.plugins.nwave_lang_rust:NwaveLangRust"
-nwave-lang-python = "scripts.install.plugins.nwave_lang_python:NwaveLangPython"
-nwave-lang-typescript = "scripts.install.plugins.nwave_lang_typescript:NwaveLangTypescript"
 
 [tool.nwave]
 # Override floor for nwave-ai public version (PyPI + GitHub).

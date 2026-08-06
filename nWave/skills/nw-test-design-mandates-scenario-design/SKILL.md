@@ -1,6 +1,6 @@
 ---
 name: nw-test-design-mandates-scenario-design
-description: "Scenario-design mandates for acceptance tests — Hexagonal Boundary Enforcement (drive through driving ports, never internals), Business Language Abstraction (three abstraction layers), User Journey Completeness, Pure Function Extraction Before Fixtures, the 3 Pillars style backbone, and Walking Skeleton Strategy. Consult while shaping or judging a scenario's boundary, language, journey completeness, and fixture strategy. Canonical definitions; SSOT for these mandates."
+description: "Scenario-design mandates for acceptance tests — Hexagonal Boundary Enforcement (drive through driving ports, never internals), Business Language Abstraction (three abstraction layers), User Journey Completeness, Pure Function Extraction Before Fixtures, Algebraic Analysis Before the Scenario (name the law, find its narrowest surface, declare every gated input, prove the scenario can fail), the 3 Pillars style backbone, and Walking Skeleton Strategy. Consult while shaping or judging a scenario's boundary, language, journey completeness, and fixture strategy. Canonical definitions; SSOT for these mandates."
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -206,3 +206,75 @@ Within a story line, scenarios read as a sequence of state transitions: **the `G
 ### Pillar 3 — App as in production
 
 The SUT is built via the production composition root (style `WebApplicationFactory` or equivalent). Only **external / non-deterministic ports** (clock, email, SMS, push, payment, LLM, third-party APIs) are substituted by fakes/stubs. The app is never rebuilt by hand replicating the wiring. Tier B (state-machine PBT, Mandate 10) uses an `InMemoryComposition` root that honors the same interfaces — same vocabulary, different composition root.
+
+## Mandate 16: Algebraic Analysis Before the Scenario
+
+Do the analysis that a good bugfix would eventually force, at the moment the
+scenario is authored. It is the same analysis either way; only its price
+changes. Four questions, each paired with the imperative for its honest-no.
+
+**1. What law does this scenario protect?**
+
+> Name the property in one sentence — conservation, decomposition, a state
+> transition, an oracle, a metamorphic relation. If the honest answer is "it
+> checks that the feature works", **stop and name the law**: an unnamed law
+> cannot tell you which observations are missing, and the scenario will drift
+> into asserting whatever the implementation happens to do.
+
+**2. What is the narrowest surface that carries that law?**
+
+> Ask what the scenario must set up to observe it. If the answer is a whole
+> subsystem — every sibling component satisfied, the unrelated ones patched out —
+> **the law is being observed at the wrong altitude.** Push it down to the unit
+> that owns it (a pure function over declared inputs, property-tested), and keep
+> ONE example at the composition surface for the reporting/wiring claim. A
+> scenario that fabricates a world to observe a small law has a failure surface
+> as large as that world, and will break for reasons that have nothing to do with
+> the law.
+
+**3. Which inputs is the behaviour gated on — and does the scenario DECLARE
+every one of them?**
+
+> Walk the path from the driving port to the assertion and check it against the
+> gate list in `contract:declared-inputs-not-ambient-reads`
+> (`nw-cross-cutting-invariants` — one list, so it cannot drift between copies).
+> For each gate, ask whether the scenario states it or inherits it. Answering
+> "the fixture uses `tmp_path`, so it is hermetic" is the wrong answer:
+> isolating the filesystem is not isolating the environment. **If it inherits,
+> state it explicitly.**
+
+**4. How would you know this scenario can fail?**
+
+> Answering "it is green and the code is correct, so it is covered" is the wrong
+> answer — a scenario that cannot fail is green for free, and green-for-free is
+> indistinguishable from green-for-the-right-reason at the moment you read it.
+> **Watch it go red for the reason it exists.** Authoring RED-first, the initial
+> failure IS that evidence, provided you read WHY it failed: a collection or
+> import error is not the law failing. Once it has gone green — after a refactor,
+> or when the scenario predates the defect it now guards — re-inject the defect
+> and watch it go red again. **Record which observations died and which
+> survived**: laws that constrain shape correctly survive a content defect, and
+> a suite where everything dies to everything is as uninformative as one where
+> nothing does.
+>
+> This is a single deliberate check per scenario, at authoring time, on the
+> defect the scenario names. It is NOT mutation testing, which this project
+> disables as a routine gate (`CLAUDE.md` § Mutation Testing Strategy) — no
+> generated mutants, no kill-rate, no scheduled run.
+
+**Order-independence is part of the contract.** Before calling a scenario done,
+run it ALONE in a fresh process. Passing only in file order is a defect of the
+scenario, not a quirk of the runner: CI shards and parallel workers redistribute
+tests, so a sibling's side effect is not a dependency you may rely on.
+
+Design-time twins: the same two questions are stated for the architect and the
+crafter in `nw-code-design-oo` and `nw-code-design-fp` (declared inputs at the
+boundary; enumerate the outcomes before choosing the return type). Reaching
+this mandate first, read those next.
+
+Empirical anchor, 2026-08-06: three CI-only failures, three different suites, one
+class — each scenario inherited host/platform state instead of declaring it, and
+one of them additionally drove an entire installer to observe a single
+byte-comparison. Fixing them by declaring the input took minutes; finding them
+cost four refuted hypotheses each, because a scenario that reads ambient state
+gives no signal about WHICH state it read.

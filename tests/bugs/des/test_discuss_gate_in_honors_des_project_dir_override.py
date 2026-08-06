@@ -38,9 +38,7 @@ reads apart):
 
 The dispatch prompt is deliberately markerless: `markers.wave` is sourced from
 the armed floor (never the prompt), so a markerless entering dispatch reaches
-the gate-IN branch (checked before the `is_des_task` branch) and, on a gate-IN
-PASS, falls straight through to the S1 allow -- no classic prompt validator is
-reached on either path (`_UnreachedValidator` documents that).
+the gate-IN branch and, on a gate-IN PASS, falls through to the S1 allow.
 
 RED before the fix: the gate-IN reads the COMPLETE `shared_cwd_root` SSOT via
 `Path.cwd()` -> PASS -> ALLOW. GREEN after: it reads the INCOMPLETE
@@ -69,27 +67,10 @@ from des.application.pre_tool_use_service import PreToolUseService
 from des.domain.des_marker_parser import DesMarkerParser
 from des.domain.wave_active import WaveActiveRecord, WaveProvenance
 from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
-from des.ports.driver_ports.validator_port import ValidationResult, ValidatorPort
 
 
 _SSOT_MD_DOCS: tuple[str, ...] = ("vision.md", "backlog.md", "glossary.md")
 _JOBS_DOC = "jobs.yaml"
-
-
-class _UnreachedValidator(ValidatorPort):
-    """Classic prompt validator that must never be reached by this path.
-
-    Both the gate-IN VETO (fixed) and the gate-IN PASS -> S1 allow (buggy)
-    branches resolve BEFORE Step 5's classic `validate_prompt` -- reaching this
-    means the test built the wrong scenario, not a legitimate outcome.
-    """
-
-    def validate_prompt(self, prompt: str) -> ValidationResult:
-        raise AssertionError(
-            "classic prompt validation must not be reached: a markerless "
-            "wave-entering discuss dispatch resolves at the gate-IN veto or the "
-            "S1 allow, before Step 5"
-        )
 
 
 def _write_product_docs(root: Path, docs: tuple[str, ...]) -> None:
@@ -136,7 +117,6 @@ def test_discuss_gate_in_reads_isolated_root_not_shared_cwd(
 
     service = PreToolUseService(
         marker_parser=DesMarkerParser(),
-        prompt_validator=_UnreachedValidator(),
         audit_writer=NullAuditLogWriter(),
         time_provider=SystemTimeProvider(),
         wave_active_reader=WaveActiveFilesystemStore(),

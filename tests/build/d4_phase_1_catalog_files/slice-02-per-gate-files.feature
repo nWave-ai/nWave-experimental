@@ -36,8 +36,8 @@ Feature: Per-gate YAML files validate against GateContractFull schema (slice-02)
     Then no gate declares a different value in the catalog than in its per-gate file
 
   @driving_port @in-process @real-io @slice-02 @contract-shape:pure-function @regression-pin
-  Scenario: language_neutral_contract:false count equals 2 (env-e2e + contract-gate)
+  Scenario: the language-bound gate set is exactly the three declared gates
     Given the per-gate files loaded from "nWave/gates/"
     When language_neutral_contract:false entries are enumerated
-    Then exactly 2 gates are language-bound
-    And the language-bound set equals "verify-environmental-e2e, run-contract-gate"
+    Then exactly 3 gates are language-bound
+    And the language-bound set equals "verify-environmental-e2e, run-contract-gate, backfill-regression-file"

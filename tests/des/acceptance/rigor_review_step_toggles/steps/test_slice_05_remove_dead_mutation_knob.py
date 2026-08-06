@@ -37,10 +37,9 @@ RED strategy (explicit, per the slice-05 task):
   (b) RED because the literal token ``mutation_enabled`` appears 5x in the
       shipped guide (``nw-rigor/SKILL.md`` L31/220/240/274/391) -> ``assert
       "mutation_enabled" not in text`` fails with a semantic AssertionError.
-  No schema scenario: no config schema lists the token (confirmed ZERO in
-  ``step-tdd-cycle-schema.json`` + ``atdd-pure-phase-sequence.schema.json``)
-  -> an absence-assertion there would be a vacuous green, not active-RED, so
-  it is intentionally omitted.
+  No schema scenario: the remaining config schema does not list the token, so
+  an absence-assertion there would be vacuous green rather than active-RED and
+  is intentionally omitted.
 
 Resolution/observation is a pure read (config/file in -> presence out,
 nothing mutated): @contract-shape:pure-function. No observable state mutates

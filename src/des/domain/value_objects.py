@@ -258,7 +258,7 @@ class CommandName:
 
     # SSOT: commands that require full DES validation. The single canonical
     # source consulted by is_validation_command and imported by the
-    # application layer (prompt_rendering_service, orchestrator).
+    # application layer renderers.
     VALIDATION_COMMANDS = ["/nw-execute", "/nw-develop"]
 
     def __post_init__(self) -> None:

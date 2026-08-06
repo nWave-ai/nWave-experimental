@@ -3,8 +3,7 @@
 Driving-port-only (Mandate-13). Each lever is driven through the REAL gate entry
 ``main(argv)`` --- ``des.cli.verify_readiness_pre_dispatch.main`` (lever-1 wiring,
 L3 integration-per-adapter, L4 contract-per-port), ``des.cli.carpaccio_slice_gate
-.main`` (ZOMBIES-zero sad-path floor), ``des.cli.run_contract_gate.main``
-(lever-3 coverage-on-executed-path) --- called IN-PROCESS (a direct function
+.main`` (ZOMBIES-zero sad-path floor) --- called IN-PROCESS (a direct function
 call, stdout/stderr captured), NEVER a ``subprocess.run([sys.executable, ...])``
 fork. This honours THIS feature's own Locked Decision: subprocess-e2e is reserved
 for ``@walking_skeleton``; every other AT drives in-process. The slice-03 ATs are
@@ -30,7 +29,6 @@ seams this slice's DESIGN pins are ABSENT (verified 2026-06-24):
     per-language detector callable / NO structured-event flag surface. So driving
     it for a non-WS test spawn produces no flag -> the named RED.
   * ``carpaccio_slice_gate.main`` has NO ZOMBIES-zero sad-path floor.
-  * ``run_contract_gate.main`` has NO coverage-on-executed-path lever.
   * the F821 re-wire (pre-commit + un-suppressing ``pyproject.toml:377-382``) and
     the target-aware NOT_APPLICABLE-on-non-Python behaviour do not exist.
 
@@ -76,10 +74,7 @@ a different surface shape):
      (un-suppressing the 6 per-file ignores) flags an undefined name; on a
      non-Python target it emits ``health.gate.f821-unavailable.indeterminate`` and
      CLEARS as NOT_APPLICABLE (never ruff-hardcoded as a hard requirement).
-  A6 (lever-3 coverage): driving ``run_contract_gate.main`` for the slice's ATs
-     asserts the driven entry's production lines were actually executed; an AT
-     whose entry shows zero production-line coverage is flagged as theater.
-  A7 (ZOMBIES-zero): ``carpaccio_slice_gate.main`` gains a non-vacuity floor on
+  A6 (ZOMBIES-zero): ``carpaccio_slice_gate.main`` gains a non-vacuity floor on
      the slice's error-path AT count; a slice with zero sad-path ATs => flagged.
 
 The named flag tokens (A1..A7) are the structured events the Then asserts on;
@@ -100,7 +95,6 @@ from pathlib import Path
 # P1: import ONLY stable, always-present gate entries. NEVER an absent lever
 # helper or a not-yet-created detector callable.
 from des.cli.carpaccio_slice_gate import main as carpaccio_main
-from des.cli.run_contract_gate import main as contract_gate_main
 from des.cli.verify_readiness_pre_dispatch import main as readiness_main
 
 from .domain_types_slice_03 import GateVerdict, LeverObservable, SpawnDetectorOutcome
@@ -114,7 +108,6 @@ _EVENT_ADAPTER_INTEGRATION_MISSING = "AdapterIntegrationMissing"
 _EVENT_PORT_CONTRACT_MISSING = "PortContractMissing"
 _EVENT_NON_WS_SPAWN_FLAGGED = "NonWalkingSkeletonSpawnFlagged"
 _EVENT_UNDEFINED_NAME_FLAGGED = "UndefinedNameFlagged"
-_EVENT_COVERAGE_THEATER_FLAGGED = "CoverageOnExecutedPathFlagged"
 _EVENT_ZOMBIES_MISSING_FLAGGED = "SadPathFloorFlagged"
 
 # The readiness-invariant ids the new levers add to the report (absent at HEAD).
@@ -258,24 +251,6 @@ class EnforcementLeverComposition:
             flagged=flagged,
             structured_event=_EVENT_PORT_CONTRACT_MISSING if flagged else "",
             flagged_target=(inv or {}).get("remediation", "") if flagged else "",
-            forked_interpreter=False,
-            verdict=GateVerdict.REFUSED if exit_code != 0 else GateVerdict.CLEARED,
-            captured_output=captured,
-            exit_code=exit_code,
-        )
-
-    def drive_lever3_coverage(self) -> None:
-        """Drive the contract-gate suite-run for an AT that touches zero prod lines.
-
-        At HEAD ``run_contract_gate.main`` has no coverage-on-executed-path lever,
-        so a coverage-theater AT is NOT flagged: ``flagged`` is False -> the RED.
-        """
-        argv = ["--repo", str(self._repo_root), "--run-suite"]
-        exit_code, captured = self._drive_in_process(contract_gate_main, argv)
-        flagged = _EVENT_COVERAGE_THEATER_FLAGGED in captured
-        self._observable = LeverObservable(
-            flagged=flagged,
-            structured_event=_EVENT_COVERAGE_THEATER_FLAGGED if flagged else "",
             forked_interpreter=False,
             verdict=GateVerdict.REFUSED if exit_code != 0 else GateVerdict.CLEARED,
             captured_output=captured,

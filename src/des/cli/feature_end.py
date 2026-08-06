@@ -2,8 +2,8 @@
 
 slice-02 of oss-feature-end-emit-cli (DDD-7 RATIFIED 2026-06-03). The single
 ``des feature-end <verb>`` entry point under the one ``des.cli.__main__``
-dispatcher, consolidating the feature-end surface (AD-26 1:1 catalog mirror,
-``single_entry_point`` contract). Today it carries one verb:
+dispatcher, consolidating the feature-end surface (AD-26 1:1 catalog mirror).
+Today it carries one verb:
 
   des feature-end sign --repo . --feature-id <id> --reviewer-agent-id <agent>
                        --verdict {APPROVED|REJECTED} [--finding <text> ...]

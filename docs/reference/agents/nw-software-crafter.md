@@ -1,6 +1,6 @@
 # nw-software-crafter
 
-DELIVER wave - SLIM scope (implementation + refactor expert). Crafter implements production code to satisfy ATs authored by acceptance-designer (DISTILL). Does NOT author tests. Phase protocol follows the active workflow mode, projected from the mode registry into this spec. NOT hand-dispatchable — production code travels the DES spine. PREFER `des dispatch` and pass its envelope VERBATIM (fast and deterministic — it emits the complete marker triple for you, no hand-assembly); the wave commands `/nw-deliver` and `/nw-bugfix` drive it as well. A bare Agent/Task dispatch of this agent is refused by the spine guard. For analysis, measurement or investigation pick a different agent — this one is for implementation only.
+DELIVER wave - SLIM scope (implementation + refactor expert). Crafter implements production code to satisfy ATs authored by acceptance-designer (DISTILL). Does NOT author tests. Phase protocol follows the active workflow mode, projected from the mode registry into this spec. Accepts exactly either the current DES `atdd_pure` envelope or a validated two-header thin DeliveryContract authority; bare Agent/Task dispatch is refused. For current `atdd_pure`, prefer `des dispatch` and pass its envelope VERBATIM; `/nw-deliver` and `/nw-bugfix` also drive it. For analysis, measurement or investigation pick a different agent — this one is for implementation only.
 
 **Wave:** DELIVER
 **Model:** sonnet
@@ -14,12 +14,9 @@ DELIVER wave - SLIM scope (implementation + refactor expert). Crafter implements
 - [`/nw-design`](../commands/index.md)
 - [`/nw-distill`](../commands/index.md)
 - [`/nw-execute`](../commands/index.md)
-- [`/nw-finalize`](../commands/index.md)
 - [`/nw-mikado`](../commands/index.md)
 - [`/nw-mutation-test`](../commands/index.md)
 - [`/nw-refactor`](../commands/index.md)
-- [`/nw-review`](../commands/index.md)
-- [`/nw-roadmap`](../commands/index.md)
 - [`/nw-spike`](../commands/index.md)
 
 ## Skills
@@ -32,6 +29,7 @@ DELIVER wave - SLIM scope (implementation + refactor expert). Crafter implements
 - [nw-hexagonal-testing](../skills/nw-hexagonal-testing.md) — 5-layer agent output validation, I/O contract specification, vertical slice development, and test doubles policy with per-layer examples
 - [nw-legacy-refactoring-ddd](../skills/nw-legacy-refactoring-ddd.md) — DDD-guided legacy refactoring patterns -- strangler fig, bubble context, ACL migration, 14 tactical/strategic/infrastructure patterns, and incremental monolith-to-microservices methodology
 - [nw-mikado-method](../skills/nw-mikado-method.md) — Enhanced Mikado Method for complex architectural refactoring - systematic dependency discovery, tree-based planning, and bottom-up execution
+- [nw-mutation-test](../skills/nw-mutation-test.md) — Runs feature-scoped mutation testing to validate test suite quality. Use after implementation to verify tests catch real bugs (kill rate >= 80%).
 - [nw-production-safety](../skills/nw-production-safety.md) — Agent safety boundaries - input validation, output filtering, scope constraints, and document creation policy
 - [nw-progressive-refactoring](../skills/nw-progressive-refactoring.md) — Progressive L1-L6 refactoring hierarchy, 22 code smell taxonomy, atomic transformations, test code smells, and Fowler refactoring catalog
 - [nw-quality-framework](../skills/nw-quality-framework.md) — Quality gates - 11 commit readiness gates, build/test protocol, validation checkpoints, and quality metrics

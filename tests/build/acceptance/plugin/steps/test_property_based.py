@@ -79,17 +79,18 @@ def test_property_rewrite_preserves_non_des_imports(content: str):
 # ---------------------------------------------------------------------------
 
 
-def test_property_hook_config_always_five_events():
-    """generate_hook_config always produces exactly 6 event keys with expected names."""
+def test_property_hook_config_event_keys():
+    """generate_hook_config produces exactly the declared event keys.
+
+    SessionStart and UserPromptSubmit were the session-ceremony anchors and went
+    with it (22ea19309); a reappearance here means the ceremony came back.
+    """
     config = generate_hook_config()
-    assert len(config) == 6
     assert set(config.keys()) == {
         "PreToolUse",
         "PostToolUse",
         "SubagentStop",
-        "SessionStart",
         "SubagentStart",
-        "UserPromptSubmit",
     }
     # Every event must have at least one entry with a non-empty command
     for event, entries in config.items():

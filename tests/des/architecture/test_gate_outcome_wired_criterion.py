@@ -17,8 +17,8 @@ Two wiring SHAPES are recognised, both measured against real code, never
 guessed (GDP-8 -- decide on the property, never a designation that matches
 only one shape):
 
-  * `call_kwarg` -- the 5 named CLI gates (run-contract-gate, run-slice-ats,
-    validate-feature-delta, mode-locus-gate, verify-deliver-entry-contract)
+  * `call_kwarg` -- the named CLI gates (run-contract-gate,
+    validate-feature-delta, verify-deliver-entry-contract)
     each call `AtCompletionLedger.append_gate_event(..., outcome=<value>)`
     at their own terminating path.
   * `dict_literal` -- the 4 RM-1 heartbeat-leg families (environmental-e2e,

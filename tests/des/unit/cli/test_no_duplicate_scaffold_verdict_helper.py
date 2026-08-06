@@ -1,6 +1,6 @@
 """Guard against a fifth hand-rolled scaffold-verdict CLI reappearing (D49,
 mikado 2026-07-29). Four `des.cli` scaffold generators (charter-scaffold,
-examine-fixture, feature-end-preconditions-scaffold, flavor-scaffold) used to
+examine-fixture, flavor-scaffold) used to
 independently re-derive the same "print a verdict-envelope dict as JSON, map
 its `verdict` field to an exit code" shape -- collapsed into
 `des.cli._scaffold_core.emit_scaffold_verdict`. Nothing mechanical stopped a
@@ -16,7 +16,7 @@ differently-named fifth copy and watches it go red.
 
 WHAT THIS DOES **NOT** FLAG. `charter_scaffold._degrade` /
 `_emit_single_scaffold_result` / `_run_slice_plan`'s tail, and
-`feature_end_preconditions_scaffold._emit`, now all call
+each scaffold's private `_emit`, now all call
 `emit_scaffold_verdict` directly (a single `return emit_scaffold_verdict(
 {...})` statement) -- they do NOT re-derive the print+ternary shape, so the
 guard does not (and should not) flag them; see
@@ -160,9 +160,8 @@ def test_no_des_cli_module_reimplements_the_scaffold_verdict_shape():
 
 
 def test_the_guard_spares_the_migrated_scaffold_callers():
-    """Locks in that `charter_scaffold` and `feature_end_preconditions_scaffold`
-    -- which now DELEGATE to `emit_scaffold_verdict` rather than reimplement
-    it -- are never flagged. A regression here would mean the guard started
+    """Locks in that `charter_scaffold` -- which DELEGATES to
+    `emit_scaffold_verdict` rather than reimplementing it -- is never flagged. A regression here would mean the guard started
     matching a `return emit_scaffold_verdict(...)` call as if it were the
     reimplemented shape (over-firing), or silently stopped scanning these
     modules at all (under-firing)."""
@@ -171,7 +170,6 @@ def test_the_guard_spares_the_migrated_scaffold_callers():
         "src/des/cli/charter_scaffold.py:_degrade",
         "src/des/cli/charter_scaffold.py:_emit_single_scaffold_result",
         "src/des/cli/charter_scaffold.py:_run_slice_plan",
-        "src/des/cli/feature_end_preconditions_scaffold.py:_emit",
     }
     assert offenders & spared == set(), (
         f"the guard flagged migrated (non-reimplementing) caller(s): {offenders & spared}"

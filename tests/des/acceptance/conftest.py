@@ -2,7 +2,7 @@
 pytest configuration and fixtures for DES hook enforcement acceptance tests.
 
 This module provides test fixtures following hexagonal architecture principles:
-- Tests interact with DRIVING PORTS (DESOrchestrator, CLI adapters)
+- Tests interact with driving ports (PreToolUseService and CLI adapters)
 - Internal components accessed only through entry points
 - FakeTimeProvider enables deterministic timestamp testing
 """
@@ -13,29 +13,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
-
-
-@pytest.fixture(autouse=True)
-def _silence_probe_acceptance(request):
-    """Silence substrate probe in acceptance tests that don't test probe behavior.
-
-    Prevents real run_probe() from emitting advisory output that would
-    corrupt stdout assertions in update-check and housekeeping tests.
-
-    Tests marked with @pytest.mark.probe_test opt out and patch run_probe
-    themselves to verify probe advisory output.
-    """
-    if request.node.get_closest_marker("probe_test"):
-        yield
-        return
-    with patch(
-        "des.adapters.drivers.hooks.session_start_handler.run_probe",
-        return_value="",
-    ):
-        yield
 
 
 class FakeTimeProvider:
@@ -445,14 +424,6 @@ def hook_adapter_cli():
         / "hooks"
         / "claude_code_hook_adapter.py"
     )
-
-
-@pytest.fixture
-def installer_cli():
-    """Return path to installer CLI script."""
-    # Return absolute path to work correctly even when working directory changes
-    project_root = Path(__file__).parent.parent.parent.parent
-    return project_root / "scripts" / "install" / "install_des_hooks.py"
 
 
 def run_cli_command(

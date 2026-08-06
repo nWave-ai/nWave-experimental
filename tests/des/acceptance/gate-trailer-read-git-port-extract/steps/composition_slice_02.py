@@ -14,7 +14,7 @@ through the slice-01 subprocess black box, because ``main()`` HARDCODES
 no env/flag selects a non-git source. The honest seam is the gate core's PUBLIC
 DESIGN-INTENDED INJECTION POINT:
 
-    ``_verify_atdd_pure(project_dir, roadmap_path, feature_id, trailer_port=<fake>)``
+    ``_verify_atdd_pure(project_dir, feature_id, trailer_port=<fake>)``
 
 -- the driving-side-consumed driven-port boundary the DESIGN composition-root
 wiring exists for. A FAKE ``CommitTrailerReadPort`` honoring the SAME interface is
@@ -362,7 +362,7 @@ class GitFreeCoreComposition:
         """Drive the production `_verify_atdd_pure` with the fake non-git port.
 
         The gate core's PUBLIC injection seam: `_verify_atdd_pure(project_dir,
-        roadmap_path, feature_id, trailer_port=<fake>)`. The core prints its
+        feature_id, trailer_port=<fake>)`. The core prints its
         single-line JSON verdict events to stdout and returns the exit code; both
         are captured here as the observable verdict surface. NO git is involved --
         the fake port supplies the trailer stream directly.
@@ -370,12 +370,10 @@ class GitFreeCoreComposition:
         from des.cli.verify_deliver_integrity import _verify_atdd_pure
 
         project = self._require_project()
-        roadmap_path = project / "roadmap.json"  # absent -- atdd_pure is roadmap-free
         buffer = io.StringIO()
         with redirect_stdout(buffer):
             self._exit_code = _verify_atdd_pure(
                 project,
-                roadmap_path,
                 str(_FEATURE_ID),
                 trailer_port=self._require_port(),
             )

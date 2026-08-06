@@ -239,15 +239,15 @@ class EvidenceInput:
     def __post_init__(self) -> None:
         state = ParityEvidenceState(self.kind)
         if state is ParityEvidenceState.DEGRADED:
-            if not self.policy_id or self.reason is not None or self.remediation is not None:
+            if (
+                not self.policy_id
+                or self.reason is not None
+                or self.remediation is not None
+            ):
                 raise ValueError("DEGRADED requires only a non-empty policy_id")
             return
         if state in {ParityEvidenceState.INDETERMINATE, ParityEvidenceState.FAILED}:
-            if (
-                self.policy_id is not None
-                or not self.reason
-                or not self.remediation
-            ):
+            if self.policy_id is not None or not self.reason or not self.remediation:
                 raise ValueError(
                     f"{state.value} requires reason/remediation and no policy_id"
                 )
@@ -362,8 +362,12 @@ def close_population(
     declared_items = set(declared_sequence)
     if len(declared_sequence) != len(declared_items):
         return InventoryVerdict(
-            False, len(declared_items), 0, "declared inventory contains duplicates",
-            "item identity is not unique", "deduplicate the declared manifest",
+            False,
+            len(declared_items),
+            0,
+            "declared inventory contains duplicates",
+            "item identity is not unique",
+            "deduplicate the declared manifest",
         )
     canonical_buckets: dict[ParityEvidenceState, frozenset[str]] = {}
     accounted: set[str] = set()
@@ -375,9 +379,12 @@ def close_population(
             )
         except ValueError:
             return InventoryVerdict(
-                False, len(declared_items), len(accounted),
+                False,
+                len(declared_items),
+                len(accounted),
                 "inventory contains an unknown evidence bucket",
-                f"unknown bucket={raw_state!r}", "use only ParityEvidenceState buckets",
+                f"unknown bucket={raw_state!r}",
+                "use only ParityEvidenceState buckets",
             )
         sequence = tuple(items)
         current = set(sequence)

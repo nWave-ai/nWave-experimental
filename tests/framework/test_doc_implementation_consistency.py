@@ -6,9 +6,7 @@ drift fails CI immediately, not in user reports.
 
 Asserts that the documented default canon (declared in
 ``nWave/templates/step-tdd-cycle-schema.json:canon_migration.default_for_new_logs``)
-matches the runtime defaults exposed by:
-1. ``TDDSchemaLoader().load().tdd_phases`` (active phase list getter)
-2. ``DESConfig().rigor_tdd_phases`` (fallback default tuple)
+matches ``TDDSchemaLoader().load().tdd_phases`` for legacy schema consumers.
 
 Generalizes the pattern shipped in ``test_skill_command_consistency.py`` (#52,
 commit 0d8803030): same architectural family — fitness function for the
@@ -16,9 +14,9 @@ doc-claims-vs-impl-default drift class. Parametrize allows future extension to
 additional invariants without churning the test structure.
 
 Empirical anchor: RCA at docs/feature/fix-des-canon-default-migration/. Schema
-claims ``default_for_new_logs == "v5"`` (3-phase canon per ADR-025) but both
-runtime defaults still return the legacy 5-phase list — drift that the prior
-test suite cemented rather than exposed (RC-D).
+claims ``default_for_new_logs == "v5"`` (3-phase canon per ADR-025) but the
+schema loader returned the legacy 5-phase list — drift that the prior test
+suite cemented rather than exposed (RC-D).
 """
 
 from __future__ import annotations
@@ -26,9 +24,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
-from des.adapters.driven.config.des_config import DESConfig
 from des.domain.tdd_schema import CANONICAL_PHASES, LEGACY_PHASES, TDDSchemaLoader
 
 
@@ -36,17 +31,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "nWave" / "templates" / "step-tdd-cycle-schema.json"
 ADR_025_PATH = REPO_ROOT / "docs" / "architecture" / "ADR-025-3-phase-tdd-canon.md"
 
-# Bidirectional crossref locations: files that MUST cite "ADR-025" so any reader
-# of those modules can resolve the canonical decision record. Closes RC-C from
-# RCA (docs/feature/fix-des-canon-default-migration/discuss/wave-decisions.md):
-# previously the ADR file was missing, so every cite from these locations was
-# a broken reference. Step 01-04 (F5) authors the ADR + locks both directions.
+# Bidirectional crossref locations: remaining schema/canon implementations that
+# MUST cite "ADR-025" so readers can resolve the canonical decision record.
 ADR_025_BACKLINK_LOCATIONS: tuple[Path, ...] = (
     REPO_ROOT / "src" / "des" / "domain" / "tdd_schema.py",
-    REPO_ROOT / "src" / "des" / "application" / "validator.py",
     REPO_ROOT / "nWave" / "skills" / "nw-tdd-methodology-cycle" / "SKILL.md",
-    REPO_ROOT / "nWave" / "skills" / "nw-deliver" / "SKILL.md",
-    REPO_ROOT / "nWave" / "skills" / "nw-rigor" / "SKILL.md",
 )
 
 # Required ADR template sections (per nWave ADR precedent ADR-PLAT-001..006 +
@@ -103,45 +92,11 @@ def test_schema_default_canon_matches_documented_intent() -> None:
     )
 
 
-def test_des_config_rigor_phases_default_matches_documented_intent() -> None:
-    """DESConfig().rigor_tdd_phases must default to the documented canon.
-
-    When the project has no ``.nwave/des-config.json`` and no global rigor
-    overrides, ``rigor_tdd_phases`` returns its hardcoded fallback tuple.
-    That fallback is what every greenfield project sees on first run — it
-    MUST match the documented canon, otherwise new projects start on the
-    legacy canon while the schema claims v5.
-    """
-    documented = _documented_default_phases()
-    runtime = DESConfig(
-        config_path=Path("/nonexistent/des-config.json"),
-        global_config_path=Path("/nonexistent/global-config.json"),
-    ).rigor_tdd_phases
-    assert runtime == documented, (
-        f"Doc-impl drift detected: schema documents default_for_new_logs as "
-        f"phases={documented!r} (v5 canonical per ADR-025), but "
-        f"DESConfig().rigor_tdd_phases falls back to {runtime!r} "
-        f"(legacy v4 5-phase). Greenfield projects must default to the "
-        f"documented canon."
-    )
-
-
-@pytest.mark.parametrize(
-    "invariant_name",
-    [
-        "schema_default_canon",
-        "des_config_rigor_phases",
-    ],
-)
-def test_documented_canon_is_a_recognised_version(invariant_name: str) -> None:
+def test_documented_canon_is_a_recognised_version() -> None:
     """Sanity gate: the schema's documented canon resolves to a known phase set.
 
-    Parametrized over the invariant labels for future extension — when a third
-    surface (e.g. orchestrator default, agent template) needs the same parity
-    check, add the label here and write a focused test above. Keeps the
-    fitness function generic and extensible without test inflation.
+    Future schema versions must be added explicitly to the mapping above.
     """
-    del invariant_name  # label is documentation; resolution is shared
     documented = _documented_default_phases()
     assert documented in (CANONICAL_PHASES, LEGACY_PHASES), (
         f"Schema documented default resolved to {documented!r}, which is "

@@ -267,9 +267,7 @@ def test_python_for_resolves_consumer_venv_not_the_outer_interpreter(
 # 1.5. D1 BLOCKER — run_contract_gate.py's 3 unthreaded pytest_interpreter()
 #      call sites (:446 _collect_scope_uncached, :634
 #      _resolve_arch_run_interpreter, :1671 _run_contract_suite) sit on the
-#      DEFAULT plain-consumer `des commit-slice` path -- no
-#      `register_contract_gate("pytest")` facet exists, so a plain consumer
-#      repo falls through to these. Section 1 above exercises `python_for`
+#      DEFAULT plain-consumer `des commit-slice` path. Section 1 above exercises `python_for`
 #      directly and never reaches these sites; these witnesses close that
 #      gap by spying on `run_contract_gate.pytest_interpreter` and asserting
 #      it is called WITH `repo_root=<repo being gated>`.
@@ -334,8 +332,7 @@ def test_run_contract_suite_threads_repo_root_to_pytest_interpreter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """:1671 -- ``_run_contract_suite`` (the verdict-driving full-suite RUN
-    every plain consumer repo falls through to -- no
-    ``register_contract_gate("pytest")`` facet exists by default) must
+    every plain consumer repo falls through to) must
     resolve with ``repo_root=<repo being gated>``. Today it calls
     ``pytest_interpreter()`` bare, so ``passed = suite_code == 0`` is
     decided by the INSTALLED interpreter's collection of the CONSUMER
@@ -351,8 +348,8 @@ def test_run_contract_suite_threads_repo_root_to_pytest_interpreter(
         "defect #79 site :1671 (_run_contract_suite, the verdict-driving "
         "full-suite RUN): pytest_interpreter() was called with "
         f"repo_root={calls!r}, expected [{tmp_path!r}] -- this is the "
-        "DEFAULT path a plain consumer `des commit-slice` falls through to "
-        "(no registered pytest ContractGatePort facet), so this is the "
+        "DEFAULT path a plain consumer `des commit-slice` falls through to, "
+        "so this is the "
         "sharpest reproduction of defect #79's claimed-fixed symptom."
     )
 

@@ -87,9 +87,6 @@ def isolated_project_with_scripts_only(
     # Create nWave/scripts/des/ with scripts AND shims
     scripts_dir = isolated_root / "nWave" / "scripts" / "des"
     scripts_dir.mkdir(parents=True, exist_ok=True)
-    (scripts_dir / "check_stale_phases.py").write_text(
-        "#!/usr/bin/env python3\n# check stale phases\n"
-    )
     (scripts_dir / "scope_boundary_check.py").write_text(
         "#!/usr/bin/env python3\n# scope boundary check\n"
     )

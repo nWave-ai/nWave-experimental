@@ -7,7 +7,7 @@ call (criterion 3) and carry no inline logic.
 This module imports NO not-yet-created production name -- it is pure value-object
 declaration, collection-safe at HEAD (DESIGN P1). The levers' production seams
 (the new readiness invariants, the widened spawn-lint, the per-language
-spawn-detector, the F821 re-wire, the coverage check, the ZOMBIES-zero floor) are
+spawn-detector, the F821 re-wire, the ZOMBIES-zero floor) are
 all reached at RUNTIME inside the in-process gate call, never imported here.
 """
 
@@ -40,7 +40,7 @@ class LeverObservable:
     internal struct field.
 
     * ``flagged`` -- True iff the gate FLAGGED the lever's violation (the spawn,
-      the unwired entry, the missing-coverage, the missing sad-path).
+      the unwired entry, the missing sad-path).
     * ``flagged_target`` -- the symbol/file/AT the gate named in the flag (for the
       Then to assert the RIGHT thing was flagged, not a coincidental other one).
     * ``structured_event`` -- the event token the gate emitted (the machine-

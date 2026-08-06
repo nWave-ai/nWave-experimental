@@ -21,7 +21,7 @@ lifted to the registry level). Checks:
 
 Pure read (Mandate 8): the gate rewrites nothing. Stdlib-only (the flavor files
 are parsed by the SSOT ``des._internal.subset_parser``, NEVER PyYAML — the DES
-bundle hygiene contract). Git-free. Modelled on the cohort_classifier shape:
+bundle hygiene contract). Git-free. Implemented as an argparse CLI:
 argparse + a small dataclass + pure check functions + a thin ``main``.
 
 Exit codes: 0 = registry complete | 1 = ``--root`` / flavors dir invalid

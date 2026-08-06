@@ -93,6 +93,42 @@ class TestSkillDistributionPipeline:
         assert not (target / "nw-private-skill").exists()
 
 
+class TestPluginBuilderCommandSkills:
+    """The plugin builder preserves user-facing command skills."""
+
+    def test_copies_detected_command_skill_without_agent_ownership(
+        self, tmp_path: Path
+    ) -> None:
+        """A public command remains available even when no agent owns it."""
+        from scripts.build_plugin import BuildConfig, copy_skills
+
+        nwave_dir = tmp_path / "nWave"
+        command_skill = nwave_dir / "skills" / "nw-review"
+        command_skill.mkdir(parents=True)
+        (command_skill / "SKILL.md").write_text(
+            "---\n"
+            "name: nw-review\n"
+            "description: Review command\n"
+            "user-invocable: true\n"
+            "---\n",
+            encoding="utf-8",
+        )
+        (nwave_dir / "agents").mkdir()
+
+        config = BuildConfig(
+            source_root=tmp_path,
+            nwave_dir=nwave_dir,
+            des_dir=tmp_path / "src" / "des",
+            pyproject_path=tmp_path / "pyproject.toml",
+            output_dir=tmp_path / "plugin",
+        )
+
+        result = copy_skills(config, config.output_dir, {"public-agent"})
+
+        assert result.success
+        assert (config.output_dir / "skills" / "nw-review" / "SKILL.md").is_file()
+
+
 # ---------------------------------------------------------------------------
 # detect_layout
 # ---------------------------------------------------------------------------

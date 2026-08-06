@@ -4,14 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from .composition import CommitStepGateComposition, PhaseResolveComposition
+from .composition import PhaseResolveComposition
 
 
 @pytest.fixture
 def phase_resolver() -> PhaseResolveComposition:
     return PhaseResolveComposition()
-
-
-@pytest.fixture
-def commit_step_gate() -> CommitStepGateComposition:
-    return CommitStepGateComposition()

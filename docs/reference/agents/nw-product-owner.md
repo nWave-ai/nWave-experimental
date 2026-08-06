@@ -13,8 +13,6 @@ Conducts UX journey design and requirements gathering with BDD acceptance criter
 - [`/nw-discover`](../commands/index.md)
 - [`/nw-discuss`](../commands/index.md)
 - [`/nw-diverge`](../commands/index.md)
-- [`/nw-finalize`](../commands/index.md)
-- [`/nw-roadmap`](../commands/index.md)
 
 ## Skills
 

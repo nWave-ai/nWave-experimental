@@ -25,7 +25,7 @@ and ``importlib.metadata`` reads the *upgraded* version — which is exactly the
 asymmetry this check relies on (live version moves, recorded version does not).
 The rare exception is an extraordinary venv recreation (e.g. a Python minor-
 version bump that forces ``pipx reinstall``): the baked interpreter path can go
-stale, the hook fails to launch, and ``substrate_probe`` returns "" — no
+stale, the hook fails to launch, and no advisory is produced — no
 advisory. That degraded path is silent-but-safe and consistent with the fail-
 open contract; a subsequent ``nwave-ai install`` repairs both the path and the
 recorded version.

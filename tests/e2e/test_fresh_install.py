@@ -8,15 +8,15 @@ miss: a machine where ~/.claude/lib/python/des/ is absent passes every stat
 assertion while des-log-phase fails with ImportError at runtime.
 
 CONTRACT (post fix-des-single-entry-point-consolidation, commit 35a5d02bb):
-The installer was consolidated from 5 standalone ``des-*`` shims to ONE ``des``
-dispatcher; the 5 former shims are now SUBCOMMANDS reachable as ``des <sub>``.
-The 5 legacy shims are actively DELETED on install (LEGACY_DES_SHIMS).
+The installer was consolidated from 4 standalone ``des-*`` shims to ONE ``des``
+dispatcher; the 4 former shims are now SUBCOMMANDS reachable as ``des <sub>``.
+The 4 legacy shims are actively DELETED on install (LEGACY_DES_SHIMS).
 
 The authoritative contract is:
     1. The single ``des`` dispatcher is deployed to ~/.claude/bin/ with mode 0o755
     2. shutil.which("des", path=<env.PATH from settings>) is non-None
     3. ``des <subcommand> --help`` exits 0 for each consolidated capability
-       (log-phase, init-log, verify-integrity, roadmap, health-check)
+       (log-phase, init-log, verify-integrity, health-check)
     4. nwave-ai doctor exits 0 with all runtime-critical checks green
     5. doctor JSON output conforms to the expected schema (name/passed/message/remediation)
     6. Installed skills contain no PYTHONPATH= pattern (issue #36 real runtime check)
@@ -84,15 +84,14 @@ _CONTAINER_SRC = "/src"
 # Source SSOT: scripts/install/plugins/des_plugin.py:DES_SHIMS == ["des"].
 _EXPECTED_SHIMS = ["des"]
 
-# The 5 capabilities that USED to be standalone ``des-*`` shims and are now
+# The 4 capabilities that USED to be standalone ``des-*`` shims and are now
 # subcommands of the single ``des`` dispatcher.  Names mirror the operator-
 # visible kebab-case rows in src/des/cli/__main__.py:_REGISTRY (the dispatcher
-# SSOT) — these are the exact stems the 5 former shims consolidated into.
+# SSOT) — these are the exact stems the 4 former shims consolidated into.
 _CONSOLIDATED_SUBCOMMANDS = [
     "log-phase",
     "init-log",
     "verify-integrity",
-    "roadmap",
     "health-check",
 ]
 
@@ -102,7 +101,6 @@ _LEGACY_SHIMS = [
     "des-log-phase",
     "des-init-log",
     "des-verify-integrity",
-    "des-roadmap",
     "des-health-check",
 ]
 
@@ -245,7 +243,7 @@ class TestFreshInstallShimsDeployed:
         assert not errors, "\n\n".join(errors)
 
     def test_legacy_standalone_shims_removed(self, fresh_install_container) -> None:
-        """The 5 legacy ``des-*`` standalone shims must NOT be present.
+        """The 4 legacy ``des-*`` standalone shims must NOT be present.
 
         The consolidation actively deletes the pre-consolidation shims on install
         (des_plugin.py:LEGACY_DES_SHIMS).  A regression that re-introduced them
@@ -333,7 +331,7 @@ class TestFreshInstallShimCallable:
 @pytest.mark.e2e
 @requires_docker
 class TestFreshInstallAllShimsCallable:
-    """Runtime-level: all 5 consolidated capabilities exit 0 via ``des <sub> --help``."""
+    """Runtime-level: all 4 consolidated capabilities exit 0 via ``des <sub> --help``."""
 
     @pytest.mark.parametrize("subcommand", _CONSOLIDATED_SUBCOMMANDS)
     def test_shim_help_exits_zero(
@@ -342,7 +340,7 @@ class TestFreshInstallAllShimsCallable:
         """Each consolidated capability must exit 0 when invoked as
         ``des <subcommand> --help``.
 
-        Iterates the SUBCOMMAND names (the 5 former shims, now subcommands of the
+        Iterates the SUBCOMMAND names (the 4 former shims, now subcommands of the
         single dispatcher).  A capability passes the stat check (the ``des``
         binary exists, mode 755) but fails here when the Python import chain is
         broken — e.g. des/ absent from lib/python/, a stale PYTHONPATH reference,

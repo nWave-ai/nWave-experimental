@@ -186,7 +186,7 @@ Context files: see Prior Wave Consultation above.
 - diagram_format: mermaid (C4)
 - stress_analysis: {true if --residuality flag, false otherwise}
 
-**SKILL_LOADING**: Read your skill files at `~/.claude/skills/nw/solution-architect/`. At Phase 4, always load: `architecture-patterns.md`, `architectural-styles-tradeoffs.md`. Do NOT load `roadmap-design.md` during DESIGN wave -- roadmap creation belongs to the DELIVER wave (`/nw-roadmap` or `/nw-deliver`). Then follow your Skill Loading Strategy table for phase-specific skills.
+**SKILL_LOADING**: Read your skill files at `~/.claude/skills/nw/solution-architect/`. At Phase 4, always load: `architecture-patterns.md`, `architectural-styles-tradeoffs.md`. Then follow your Skill Loading Strategy table for phase-specific skills.
 
 ## Progress Tracking
 

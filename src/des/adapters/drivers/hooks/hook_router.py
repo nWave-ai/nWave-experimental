@@ -9,34 +9,16 @@ Entry point: python3 -m des.adapters.drivers.hooks.claude_code_hook_adapter <com
 import io
 import json
 import sys
-from argparse import ArgumentParser
-from dataclasses import asdict
-from pathlib import Path
 
 from des.adapters.drivers.hooks.activation_gate import apply_gate
-from des.adapters.drivers.hooks.deliver_progress_handler import handle_deliver_progress
 from des.adapters.drivers.hooks.post_tool_use_handler import handle_post_tool_use
 from des.adapters.drivers.hooks.pre_tool_use_handler import handle_pre_tool_use
 from des.adapters.drivers.hooks.pre_write_handler import handle_pre_write
-from des.adapters.drivers.hooks.session_start_handler import handle_session_start
 from des.adapters.drivers.hooks.subagent_start_handler import handle_subagent_start
 from des.adapters.drivers.hooks.subagent_stop_handler import (
     extract_des_context_from_transcript,
     handle_subagent_stop,
 )
-from des.adapters.drivers.hooks.user_prompt_submit_handler import (
-    handle_user_prompt_submit,
-)
-
-
-def _session_start_host_provenance(arguments: list[str]) -> str | None:
-    """Accept only the installer-owned Codex provenance argument."""
-    parser = ArgumentParser(add_help=False)
-    parser.add_argument("--host-provenance")
-    parsed, unknown = parser.parse_known_args(arguments)
-    if unknown or parsed.host_provenance != "codex":
-        return None
-    return "codex"
 
 
 def _is_atdd_pure_subagent_stop(stdin_text: str) -> bool:
@@ -76,37 +58,13 @@ def main() -> None:
     command = command.replace("_", "-")
     # Activation gate (ADR-AG-001): buffer stdin at the top, before any handler
     # reads it, so the gate can resolve the project and re-inject the bytes
-    # byte-identically. Inactive non-SessionStart commands exit 0 (allow, never
-    # block) inside apply_gate. SessionStart is exempt (always dispatches). The
+    # byte-identically. Inactive commands exit 0 (allow, never block) inside
+    # apply_gate. The
     # read is defensive (fail-open): an unreadable stdin yields an empty buffer.
     try:
         buffered_stdin = sys.stdin.read()
     except (OSError, ValueError):
         buffered_stdin = ""
-
-    # ``deliver-progress`` is a retired-state carrier.  Resolve workflow
-    # authority before the activation gate reads local-config or the handler
-    # inspects a transcript/roadmap/log.  A legacy selector is a refusal, never
-    # permission to enter the old progress tracker.
-    if command == "deliver-progress":
-        try:
-            envelope = json.loads(buffered_stdin)
-            cwd = envelope.get("cwd") if isinstance(envelope, dict) else None
-            if isinstance(cwd, str):
-                from des.application.workflow_mode import resolve_workflow_selection
-
-                selection = resolve_workflow_selection(Path(cwd))
-                if not selection.selected:
-                    print(json.dumps(asdict(selection)))
-                    sys.exit(1)
-        except (json.JSONDecodeError, OSError, ValueError):
-            # WHAT: stdin envelope is malformed JSON, unreadable, or "cwd"
-            # is not a usable value.
-            # WHY: this legacy-selector check is defensive/fail-open (see
-            # comment above -- a bad envelope must not block routing).
-            # HOW: safe to continue -- routing proceeds without resolving
-            # workflow selection for this deliver-progress call.
-            pass
 
     # A valid atdd_pure return is an evidence boundary even in a clean
     # temporary project.  Classic returns retain the activation gate, so an
@@ -123,20 +81,12 @@ def main() -> None:
         exit_code = handle_pre_tool_use()
     elif command == "subagent-stop":
         exit_code = handle_subagent_stop()
-    elif command == "deliver-progress":
-        exit_code = handle_deliver_progress()
     elif command == "post-tool-use":
         exit_code = handle_post_tool_use()
     elif command in ("pre-write", "pre-edit"):
         exit_code = handle_pre_write()
-    elif command == "session-start":
-        exit_code = handle_session_start(
-            host_provenance=_session_start_host_provenance(sys.argv[2:])
-        )
     elif command == "subagent-start":
         exit_code = handle_subagent_start()
-    elif command == "user-prompt-submit":
-        exit_code = handle_user_prompt_submit()
     else:
         print(json.dumps({"status": "error", "reason": f"Unknown command: {command}"}))
         exit_code = 1

@@ -10,7 +10,6 @@ Use for review and critique tasks - Platform design, CI/CD pipeline, infrastruct
 ## Commands
 
 - [`/nw-distill`](../commands/index.md)
-- [`/nw-review`](../commands/index.md)
 
 ## Skills
 

@@ -30,7 +30,6 @@ scripts/
 │   ├── install_nwave.py               # Main installer
 │   ├── uninstall_nwave.py             # Framework removal
 │   ├── verify_nwave.py                # Installation verification
-│   ├── install_des_hooks.py           # DES hook installer
 │   ├── plugins/                       # Modular installation plugins
 │   └── README.md                      # Detailed installation docs
 │

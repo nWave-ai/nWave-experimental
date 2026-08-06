@@ -83,16 +83,6 @@ async function invokeDESAdapter(
 
 export default function nwaveDES(_ctx: Plugin) {
   return {
-    "session.created": async (_event: Record<string, unknown>) => {
-      // Invoke Python adapter for session housekeeping
-      try {
-        await invokeDESAdapter("session-start", {});
-      } catch (err) {
-        // Fail-open: session start must never block
-        console.error(`[nWave DES] Session start error (fail-open): ${err}`);
-      }
-    },
-
     "tool.execute.before": async (input: { tool: string; args: Record<string, unknown> }, output: Record<string, unknown>) => {
       // Filter: skip tools not relevant to DES
       const translated = translateEvent(input.tool, output.args ?? {});

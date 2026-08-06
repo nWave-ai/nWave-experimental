@@ -244,26 +244,12 @@ def test_wheel_resolves_required_runtime_asset_file(
 # ---------------------------------------------------------------------------
 
 
-def test_wheel_resolves_orchestrator_affordance_content(resolved_runtime_assets_root):
-    """`nWave/data/orchestrator-affordance/*.md` resolves through a pipx install.
-
-    This is the concrete victim named in the charter: without it, the
-    SessionStart orchestrator-affordance injection is silently inert on every
-    PyPI install. RED today because "data" is entirely absent from the
-    force-include map, so `resolved_runtime_assets_root / "data"` never exists.
-    """
-    affordance_dir = resolved_runtime_assets_root / "data" / "orchestrator-affordance"
-    assert affordance_dir.is_dir(), (
-        f"nWave/data/orchestrator-affordance/ does not resolve at {affordance_dir} "
-        "through the simulated pipx layout -- the affordance content this "
-        "bugfix exists to protect is unresolvable on a PyPI install"
-    )
-    affordance_md_files = list(affordance_dir.glob("*.md"))
-    assert len(affordance_md_files) >= 1, (
-        f"nWave/data/orchestrator-affordance/ resolved at {affordance_dir} but "
-        "carries zero *.md files -- the affordance content itself did not "
-        "make it through the simulated pipx layout"
-    )
+# The orchestrator-affordance content test that stood here protected
+# nWave/data/orchestrator-affordance/*.md through a simulated pipx install. Those
+# markdown assets were deleted with the session ceremony (22ea19309) and the
+# directory is now empty, so the test asserted the shipping of a payload that no
+# longer exists. The generic runtime-asset scenarios above still cover the
+# force-include map itself.
 
 
 @pytest.mark.parametrize("hook_name", REQUIRED_RUNTIME_HOOKS)
@@ -381,9 +367,17 @@ def test_materialized_wheel_never_changes_flat_or_nested_data_population(
         fake_site_packages,
         source_root=source_root,
     )
+    # Conservation is asserted over whatever the CURRENT source manifest holds,
+    # never over a named directory. The assertion that stood here required
+    # `orchestrator-affordance/` to appear, and its tracked content was deleted
+    # with the session ceremony (22ea19309) - git does not track an empty
+    # directory, so a fresh checkout has no such path and the assertion fails.
+    # It survived locally only because untracked hook residue happened to sit
+    # under that directory: green for a reason unrelated to the property.
+    # `assert source_manifest` stays as the anti-vacuity pin - conservation over
+    # an empty manifest would pass while proving nothing.
     source_manifest = _file_manifest(source_data)
     assert source_manifest
-    assert any(path.startswith("orchestrator-affordance/") for path in source_manifest)
 
     for destination in required_destinations:
         materialized_manifest = _file_manifest(fake_site_packages / destination)

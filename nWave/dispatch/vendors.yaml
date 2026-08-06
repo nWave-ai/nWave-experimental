@@ -20,7 +20,6 @@ vendors:
     # a wave/spine command is referenced as a slash command "/nw-refactor".
     command_ref: "/{command}"
     instruction_surface: skill          # SKILL.md files + /nw-* commands
-    injection_event: SessionStart       # matcher startup|clear|compact (using-nwave-spine)
 
   codex:
     status: todo-verify                 # additive: verify against developers.openai.com/codex before shipping
@@ -28,7 +27,6 @@ vendors:
     marker_syntax: "# DES-{key}: {value}"   # TODO-verify — Codex has no HTML-comment convention
     command_ref: "{command}"                # TODO-verify — Codex command invocation form
     instruction_surface: developer_instructions   # ~/.codex/config.toml [ ... ] TOML
-    injection_event: hooks_json         # ~/.codex/hooks.json (see codex_des_plugin.py)
 
   copilot_cli:
     status: todo-verify
@@ -36,7 +34,6 @@ vendors:
     marker_syntax: "# DES-{key}: {value}"   # TODO-verify
     command_ref: "{command}"                # TODO-verify
     instruction_surface: todo-verify
-    injection_event: todo-verify        # see copilot_des_plugin.py (no separate runtime marker per its docstring)
 
   opencode:
     status: todo-verify
@@ -44,4 +41,3 @@ vendors:
     marker_syntax: "# DES-{key}: {value}"   # TODO-verify
     command_ref: "{command}"                # TODO-verify
     instruction_surface: todo-verify
-    injection_event: todo-verify

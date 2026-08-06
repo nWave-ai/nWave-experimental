@@ -121,10 +121,7 @@ DES_SHIMS_FLOOR = frozenset(
         "classify_features",
         "convert_to_atdd_pure",
         "health_check",
-        "init_log",
-        "log_phase",
         "reverify_slice_commit",
-        "roadmap",
         "run_contract_gate",
         "verify_commit_trailers",
         "verify_deliver_integrity",
@@ -190,11 +187,8 @@ def _robust_rmtree(path: Path) -> None:
 # packaging-path, RCA: three independent re-derivations of this same path
 # had drifted -- `_get_hook_scripts_source_dir` and `_install_des_hook_
 # scripts` each hand-rolled a FLAT-only probe that can never match a wheel
-# install, silently shipping ZERO spine-ledger hook scripts -- including
-# `orchestrator_affordance_refresh.py` -- to `~/.claude/scripts/`, which is
-# exactly where the installed Claude Code SessionStart command's discovery
-# one-liner (`hook_definitions._STANDALONE_ORCHESTRATOR_AFFORDANCE_
-# DISCOVERY`) looks for it).
+# install, silently shipping zero independent hook scripts to
+# `~/.claude/scripts/`.
 def _resolve_hook_scripts_source_dir(context: InstallContext) -> Path:
     """Return the one true source directory for `scripts/hooks/*.py`.
 
@@ -203,9 +197,8 @@ def _resolve_hook_scripts_source_dir(context: InstallContext) -> Path:
     proven correct in `DESPlugin._install_nwave_runtime_assets`):
 
       1. PyPI/pipx wheel -- NESTED under `framework_source/nWave/hooks/`.
-         `patch_pyproject.py`'s force-include ships
-         `orchestrator_affordance_refresh.py` to
-         `nWave/nWave/hooks/orchestrator_affordance_refresh.py`, one level
+         `patch_pyproject.py`'s force-include ships required hook scripts to
+         `nWave/nWave/hooks/`, one level
          deeper than `framework_source` itself, which already resolves to
          `site-packages/nWave/` on a pipx install.
       2. GitHub-release `dist/` tarball -- FLAT under
@@ -261,53 +254,16 @@ class DESPlugin(InstallationPlugin):
 
     # DES scripts installed to ~/.claude/scripts/
     DES_SCRIPTS = [
-        "check_stale_phases.py",
         "scope_boundary_check.py",
     ]
 
-    # DES spine-ledger hook scripts installed to ~/.claude/scripts/
-    # (slice-04 of F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2: propagate the 3
-    # spine-ledger hook scripts shipped under `scripts/hooks/` to the
-    # customer's `~/.claude/scripts/` tree so the installed HOOK_EVENTS
-    # entries that reference `$HOME/.claude/scripts/spine_ledger_*.py` find
-    # the script files on the operator's target machine. Mirrors the
-    # `DES_SCRIPTS` list pattern; sourced from
-    # `<framework_source>/scripts/hooks/` at install time.
+    # Independent DES hook scripts installed to ~/.claude/scripts/.
     DES_HOOKS = [
-        "spine_ledger_gate.py",
-        "spine_ledger_pre_commit_hook.py",
-        "spine_ledger_subagent_stop_detector.py",
         "git_stash_guard.py",
         # --no-verify reminder guard (Ale 2026-06-26): the lean PreToolUse/Bash
         # hook (wired via hook_definitions._BASH_NO_VERIFY_REMINDER) that blocks
         # a git verify-bypass with an imperative reminder to get human agreement.
         "no_verify_reminder.py",
-        # f-nonbypassable-attestation slice-01 (DDD-2): the harness-neutral
-        # declare-done backstop, delegating to the portable
-        # `verify_deliver_integrity` done-gate. Deployed here (to
-        # ~/.claude/scripts/) so the `.pre-commit-config.yaml` `local`
-        # `stages: [pre-push]` hook (fix-pre-push-hook-dual-installer-
-        # collision, slice-01) can invoke it -- `pre-commit install` is the
-        # SOLE writer of `.git/hooks/pre-push`; this script deployment is
-        # unrelated to that file.
-        shared_hooks.GIT_PRE_PUSH_BACKSTOP_SCRIPT,
-        # fix-orchestrator-affordance-refresh-independent: the standalone,
-        # stdlib-only, `des`-import-free orchestrator-affordance refresh
-        # hook (wired via hook_definitions._STANDALONE_ORCHESTRATOR_
-        # AFFORDANCE_REFRESH_{SESSION_START,USER_PROMPT_SUBMIT}). Ships
-        # flat to ~/.claude/scripts/ so it resolves independent of whether
-        # the `des` package is importable in the target session.
-        "orchestrator_affordance_refresh.py",
-        # R-8 (RCA docs/feature/fix-affordance-resolver-prefers-stale-copy/
-        # rca.md, Root Cause E): the shared, stdlib-only resolution seam
-        # (`scripts/hooks/orchestrator_affordance_resolution.py`) the
-        # standalone hook above delegates its reconciliation DECISION to.
-        # Shipped flat here too so it lands as a same-directory sibling of
-        # `orchestrator_affordance_refresh.py` at ~/.claude/scripts/ --
-        # ALSO shipped via `_NWAVE_RUNTIME_HOOK_FILES` below so
-        # `session_start_handler.py` can reach it via a dynamic
-        # `importlib` load off the installed nWave runtime tree.
-        "orchestrator_affordance_resolution.py",
         # fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29):
         # the PreToolUse/Bash hook (wired via hook_definitions.
         # _BASH_WORKTREE_REMOVAL_GUARD) that refuses `git worktree remove`
@@ -318,6 +274,57 @@ class DESPlugin(InstallationPlugin):
         # yeses) with a decision on the PROPERTY (GDP-8).
         "worktree_removal_guard.py",
     ]
+
+    # Exact files shipped by the retired spine-ledger protocol. Keep this small
+    # migration list until upgrades have had a chance to remove old artifacts;
+    # it is intentionally not part of DES_HOOKS, so no fresh install can revive
+    # the protocol.
+    RETIRED_HOOK_SCRIPTS = (
+        "spine_ledger_gate.py",
+        "spine_ledger_pre_commit_hook.py",
+        "spine_ledger_subagent_stop_detector.py",
+    )
+    # These are the complete command strings emitted by the retired shared
+    # hook registry.  Upgrade cleanup deliberately uses equality, rather than
+    # token matching: hooks.json is user-owned outside the entries installed by
+    # this plugin, so a Lyra or user hook may legitimately mention a retired
+    # protocol while doing something unrelated.
+    _RETIRED_HOOK_COMMANDS = (
+        "# des-hook:pre-bash-spine-ledger\n"
+        "INPUT=$(cat); "
+        'CMD=$(echo "$INPUT" | python3 -c '
+        '"import sys,json; print(json.load(sys.stdin)'
+        ".get('tool_input',{}).get('command',''))\"); "
+        "echo \"$CMD\" | grep -qE '^\\s*git\\s+commit\\b' || exit 0; "
+        'echo "$INPUT" | python3 -m scripts.hooks.spine_ledger_pre_commit_hook',
+        "# des-hook:pre-bash-spine-ledger-gate-installed\n"
+        "INPUT=$(cat); "
+        'CMD=$(echo "$INPUT" | python3 -c '
+        '"import sys,json; print(json.load(sys.stdin)'
+        ".get('tool_input',{}).get('command',''))\"); "
+        "echo \"$CMD\" | grep -qE '^\\s*git\\s+commit\\b' || exit 0; "
+        "python3 -m scripts.hooks.spine_ledger_gate "
+        "--commit-msg-file .git/COMMIT_EDITMSG "
+        "--ledger-root .nwave/telemetry/atdd-pure "
+        "--target-root . >/dev/null 2>&1 || true",
+        "# des-hook:subagent-stop-spine-detector\n"
+        "INPUT=$(cat); "
+        'echo "$INPUT" | python3 -m scripts.hooks.spine_ledger_subagent_stop_detector',
+    )
+    # Retired lifecycle event arrays are intentionally outside HOOK_EVENTS:
+    # fresh installs never recreate them.  Upgrade/uninstall still visit only
+    # these two historical arrays to remove entries this installer emitted.
+    _RETIRED_LIFECYCLE_EVENTS = ("SessionStart", "UserPromptSubmit")
+    # SHA-256 values of the two complete historical standalone-affordance
+    # commands (SessionStart and UserPromptSubmit).  Equality of the digest is
+    # deliberately stricter than the normal DES marker classifier: an entry
+    # merely mentioning the old script remains user-owned.
+    _RETIRED_AFFORDANCE_COMMAND_DIGESTS = frozenset(
+        {
+            "4968a29b5dd45962f95dda193b6aa6ec1312550060c22b0acba00ae8fc44298d",
+            "fdf22c1f420b78ddec5c3993f316c713ea08a6e1e94567d060a4dc132df0f0f8",
+        }
+    )
     # Asset-family key for the DES scripts list in the shared
     # .nwave-manifest.json mechanism (scripts/shared/skill_distribution.py).
     SCRIPTS_MANIFEST_KEY = SCRIPTS_FAMILY_KEY
@@ -336,7 +343,6 @@ class DESPlugin(InstallationPlugin):
         "des-commit",
         "des-init-log",
         "des-verify-integrity",
-        "des-roadmap",
         "des-health-check",
     )
 
@@ -352,7 +358,6 @@ class DESPlugin(InstallationPlugin):
     DES_TEMPLATES = [
         ".pre-commit-config-nwave.yaml",
         ".des-audit-README.md",
-        "roadmap-schema.json",
     ]
 
     # Hook command template - substituted at install time:
@@ -421,8 +426,7 @@ class DESPlugin(InstallationPlugin):
                     f"Required shims: {', '.join(self.DES_SHIMS)}"
                 )
 
-        # Check for DES spine-ledger hook scripts (slice-04 of
-        # F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2)
+        # Check for the independently useful DES hook scripts.
         hooks_source_dir = self._get_hook_scripts_source_dir(context)
         if hooks_source_dir.exists():
             missing_hooks = []
@@ -432,7 +436,7 @@ class DESPlugin(InstallationPlugin):
                     missing_hooks.append(hook_name)
             if missing_hooks:
                 errors.append(
-                    f"Missing DES spine-ledger hook scripts: {', '.join(missing_hooks)}. "
+                    f"Missing DES hook scripts: {', '.join(missing_hooks)}. "
                     f"Required hooks: {', '.join(self.DES_HOOKS)}"
                 )
 
@@ -481,14 +485,7 @@ class DESPlugin(InstallationPlugin):
         return Path("nWave/scripts/des")
 
     def _get_hook_scripts_source_dir(self, context: InstallContext) -> Path:
-        """Get the source directory for DES spine-ledger hook scripts.
-
-        Slice-04 of F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2: the
-        `scripts/hooks/` directory under `framework_source` (dist tarball or
-        wheel) or under `project_root` (dev checkout) carries the
-        spine-ledger hook scripts. Delegates to the single authority --
-        see `_resolve_hook_scripts_source_dir` for the three-layout probe.
-        """
+        """Get the source directory for independently useful DES hook scripts."""
         return _resolve_hook_scripts_source_dir(context)
 
     def install(self, context: InstallContext) -> PluginResult:
@@ -533,8 +530,7 @@ class DESPlugin(InstallationPlugin):
             if not scripts_result.success:
                 return scripts_result
 
-            # Install DES spine-ledger hook scripts (slice-04 of
-            # F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2)
+            # Install the independently useful DES hook scripts.
             hook_scripts_result = self._install_des_hook_scripts(context)
             if not hook_scripts_result.success:
                 return hook_scripts_result
@@ -759,17 +755,7 @@ class DESPlugin(InstallationPlugin):
         "waves",
     )
     _NWAVE_RUNTIME_ASSET_FILES = ("framework-catalog.yaml",)
-    # A host-neutral SessionStart hook must be executable from the installed
-    # runtime, not from a Claude-scoped copy or the source checkout.  Keep the
-    # source script canonical under scripts/hooks; this list declares the small
-    # subset that belongs beside the runtime assets for non-Claude hosts.
-    # R-8: `orchestrator_affordance_resolution.py` ships alongside it so
-    # `session_start_handler.py` can dynamically load the shared
-    # reconciliation seam off this same installed `nWave/hooks/` directory.
-    _NWAVE_RUNTIME_HOOK_FILES = (
-        "orchestrator_affordance_refresh.py",
-        "orchestrator_affordance_resolution.py",
-    )
+    _NWAVE_RUNTIME_HOOK_FILES: tuple[str, ...] = ()
 
     def _install_nwave_runtime_assets(
         self, *, context: InstallContext, using_prebuilt: bool
@@ -1324,26 +1310,23 @@ class DESPlugin(InstallationPlugin):
             )
 
     def _install_des_hook_scripts(self, context: InstallContext) -> PluginResult:
-        """Install spine-ledger hook scripts to ~/.claude/scripts/.
-
-        Slice-04 of F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2: propagates each
-        script in `DES_HOOKS` from the single-authority `scripts/hooks/`
-        source directory (see `_resolve_hook_scripts_source_dir`) to the
-        operator's `<claude_dir>/scripts/` tree. Mirrors `_install_des_scripts`
-        1:1.
-
-        The installed scripts are referenced by the slice-04 HOOK_EVENTS
-        entries via `$HOME/.claude/scripts/spine_ledger_*.py` -- when the
-        scripts are absent from the target tree at install time, the hook
-        commands in settings.json would resolve to missing files; this
-        method closes that gap mechanically by mirroring the propagation
-        contract `DES_SCRIPTS` already honours for non-hook utilities.
-        """
+        """Install the independent DES hook scripts to ~/.claude/scripts/."""
         try:
             source_dir = _resolve_hook_scripts_source_dir(context)
 
             target_dir = context.claude_dir / "scripts"
             target_dir.mkdir(parents=True, exist_ok=True)
+
+            # An upgrade may find files from the withdrawn protocol even when
+            # every current hook is already present. Remove only exact
+            # installer-owned names; user scripts remain untouched.
+            for script_name in self.RETIRED_HOOK_SCRIPTS:
+                retired = target_dir / script_name
+                if retired.exists() and not context.dry_run:
+                    retired.unlink()
+                    context.logger.info(
+                        f"  🗑️ Removed retired DES hook script: {script_name}"
+                    )
 
             installed = []
             for script_name in self.DES_HOOKS:
@@ -1359,14 +1342,14 @@ class DESPlugin(InstallationPlugin):
             return PluginResult(
                 success=True,
                 plugin_name="des",
-                message=f"Installed {len(installed)} DES spine-ledger hook scripts",
+                message=f"Installed {len(installed)} DES hook scripts",
             )
 
         except Exception as e:
             return PluginResult(
                 success=False,
                 plugin_name="des",
-                message=f"DES spine-ledger hook scripts install failed: {e}",
+                message=f"DES hook scripts install failed: {e}",
             )
 
     def _install_git_pre_push_backstop(self, context: InstallContext) -> PluginResult:
@@ -1443,8 +1426,7 @@ class DESPlugin(InstallationPlugin):
 
         WHY THIS EXISTS: eight runtime modules read `nWave/data/` -- log
         persistence defaults, the coverage-map digest fixtures, the flavor
-        dispatcher's tables, `des doctor`, and the orchestrator-affordance
-        catalogue the standing-loop injection hook consumes. None of it was
+        dispatcher's tables and `des doctor`. None of it was
         ever copied to the operator's tree, so every one of those reads
         resolved against a directory that exists only in a development
         checkout. The installed CONSUMER was being deployed without the DATA
@@ -1477,8 +1459,7 @@ class DESPlugin(InstallationPlugin):
                         f"{source_dir}. "
                         "WHY: eight runtime modules read it (log-persistence "
                         "defaults, coverage-map fixtures, flavor dispatcher "
-                        "tables, des doctor, and the orchestrator-affordance "
-                        "catalogue the standing-loop hook injects) -- without "
+                        "tables and des doctor) -- without "
                         "it they resolve against a path that does not exist on "
                         "the target machine. "
                         "HOW: reinstall from a source tree that ships nWave/data/, "
@@ -1638,6 +1619,20 @@ class DESPlugin(InstallationPlugin):
         except Exception:
             return "0.0.0"
 
+    @classmethod
+    def _is_retired_lifecycle_hook_entry(
+        cls, entry: dict[str, Any], *, legacy_adapter_command: str
+    ) -> bool:
+        """Recognize only exact installer-owned retired lifecycle commands."""
+        commands = [entry.get("command", "")]
+        commands.extend(hook.get("command", "") for hook in entry.get("hooks", []))
+        return any(
+            command == legacy_adapter_command
+            or hashlib.sha256(command.encode("utf-8")).hexdigest()
+            in cls._RETIRED_AFFORDANCE_COMMAND_DIGESTS
+            for command in commands
+        )
+
     def _install_des_hooks(self, context: InstallContext) -> PluginResult:
         """Install DES hooks into settings.json (global config).
 
@@ -1677,6 +1672,43 @@ class DESPlugin(InstallationPlugin):
             desired_hooks = shared_hooks.generate_hook_config(
                 _installer_command, guard_command_fn=_installer_guard_command
             )
+
+            def _is_retired_hook_entry(entry: dict[str, Any]) -> bool:
+                """Match only commands emitted by the withdrawn DES registry.
+
+                Settings entries belong to their author unless they exactly
+                match one of the historical installer payloads above.
+                """
+                commands = [entry.get("command", "")]
+                commands.extend(
+                    hook.get("command", "") for hook in entry.get("hooks", [])
+                )
+                return any(
+                    command in self._RETIRED_HOOK_COMMANDS for command in commands
+                )
+
+            retired_hook_removed = False
+            legacy_user_prompt_command = self._generate_hook_command(
+                context, "user-prompt-submit"
+            )
+            for event, entries in config["hooks"].items():
+                if not isinstance(entries, list):
+                    continue
+                retained = [
+                    entry
+                    for entry in entries
+                    if not _is_retired_hook_entry(entry)
+                    and not (
+                        event in self._RETIRED_LIFECYCLE_EVENTS
+                        and self._is_retired_lifecycle_hook_entry(
+                            entry,
+                            legacy_adapter_command=legacy_user_prompt_command,
+                        )
+                    )
+                ]
+                if len(retained) != len(entries):
+                    config["hooks"][event] = retained
+                    retired_hook_removed = True
 
             # Check if hooks already exist with correct format.
             # Both command AND matcher must match on the SAME entry to count
@@ -1726,7 +1758,12 @@ class DESPlugin(InstallationPlugin):
             if version_changed:
                 config["nwave_hook_version"] = hook_version
 
-            if all_up_to_date and not env_changed and not version_changed:
+            if (
+                all_up_to_date
+                and not env_changed
+                and not version_changed
+                and not retired_hook_removed
+            ):
                 context.logger.info("  ✅ DES hooks up-to-date")
                 return PluginResult(
                     success=True,
@@ -1734,19 +1771,21 @@ class DESPlugin(InstallationPlugin):
                     message="DES hooks already installed",
                 )
 
-            if all_up_to_date and (env_changed or version_changed):
+            if all_up_to_date and (
+                env_changed or version_changed or retired_hook_removed
+            ):
                 # Only env / version stamp needs updating, hooks are fine. The
                 # single `_save_settings` write keeps the version stamp atomic
                 # with the (unchanged) hook arrays already in `config`.
                 if not context.dry_run:
                     self._save_settings(settings_file, config, context)
                 context.logger.info(
-                    "  ✅ DES hooks up-to-date + env/nwave_hook_version stamped"
+                    "  ✅ DES hooks up-to-date + configuration/retired-hook cleanup applied"
                 )
                 return PluginResult(
                     success=True,
                     plugin_name="des",
-                    message="DES hooks up-to-date, env + version stamp configured",
+                    message="DES hooks up-to-date, configuration and retired hooks reconciled",
                 )
 
             # Remove any existing DES hooks (both old flat and new nested format)
@@ -1779,11 +1818,6 @@ class DESPlugin(InstallationPlugin):
                 message=f"DES hooks install failed: {e}",
             )
 
-    _DEFAULT_UPDATE_CHECK_CONFIG = {
-        "frequency": "daily",
-        "skipped_versions": [],
-    }
-
     _DEFAULT_DES_CONFIG = {
         "audit_logging_enabled": True,
         "audit_log_dir": ".nwave/des/logs",
@@ -1813,34 +1847,13 @@ class DESPlugin(InstallationPlugin):
         absent, and an existing block is never overwritten. All pre-existing keys
         are preserved (read-modify-write).
         """
-        existing = self._read_json_config(config_file)
-
         # Ensure .gitignore on every install/upgrade (migration for existing installs)
         self._ensure_gitignore(config_file.parent)
 
-        added: list[str] = []
-        if "update_check" not in existing:
-            existing["update_check"] = self._DEFAULT_UPDATE_CHECK_CONFIG
-            added.append("update_check")
-
-        if not added:
-            context.logger.info("  ✅ DES config already exists")
-            return PluginResult(
-                success=True,
-                plugin_name="des",
-                message="DES config already exists",
-            )
-
-        added_summary = ", ".join(added)
-        if not context.dry_run:
-            self._write_json_config(config_file, existing)
-            context.logger.info(
-                f"  ✅ DES config migrated ({added_summary} added): {config_file}"
-            )
         return PluginResult(
             success=True,
             plugin_name="des",
-            message=f"DES config migrated ({added_summary} added) at {config_file}",
+            message="DES config already exists",
         )
 
     @staticmethod
@@ -1865,10 +1878,7 @@ class DESPlugin(InstallationPlugin):
         self, config_file: Path, nwave_dir: Path, context: InstallContext
     ) -> PluginResult:
         """Create des-config.json with default settings."""
-        default_config = {
-            **self._DEFAULT_DES_CONFIG,
-            "update_check": self._DEFAULT_UPDATE_CHECK_CONFIG,
-        }
+        default_config = self._DEFAULT_DES_CONFIG
         if context.dry_run:
             context.logger.info(f"  🚨 [DRY RUN] Would create {config_file}")
         else:
@@ -1886,8 +1896,7 @@ class DESPlugin(InstallationPlugin):
         """Bootstrap .nwave/des-config.json with default settings.
 
         Creates the config file if it doesn't exist. If it already exists
-        and lacks the update_check key, adds it without overwriting any other
-        keys (migration path). If update_check already present, no changes made.
+        and otherwise preserves its user-owned content unchanged.
 
         The config lives in the project directory (.nwave/), not ~/.claude,
         because audit log paths are project-relative.
@@ -2201,9 +2210,8 @@ class DESPlugin(InstallationPlugin):
                     script_path.unlink()
                     context.logger.info(f"  🗑️ Removed DES script: {script_name}")
 
-            # 3b. Remove DES spine-ledger hook scripts (slice-04 of
-            # F-ATDD-SPINE-LEDGER-ENFORCEMENT-GATE-v2)
-            for hook_script_name in self.DES_HOOKS:
+            # 3b. Remove current and retired installer-owned hook scripts.
+            for hook_script_name in (*self.DES_HOOKS, *self.RETIRED_HOOK_SCRIPTS):
                 hook_script_path = scripts_dir / hook_script_name
                 if hook_script_path.exists():
                     hook_script_path.unlink()
@@ -2259,12 +2267,25 @@ class DESPlugin(InstallationPlugin):
 
             # Remove only DES hooks, preserve everything else
             if "hooks" in config:
+                legacy_user_prompt_command = self._generate_hook_command(
+                    context, "user-prompt-submit"
+                )
                 for event in self.HOOK_EVENTS:
                     if event in config["hooks"]:
                         config["hooks"][event] = [
                             h
                             for h in config["hooks"][event]
                             if not shared_hooks.is_des_hook_entry(h)
+                        ]
+                for event in self._RETIRED_LIFECYCLE_EVENTS:
+                    if event in config["hooks"]:
+                        config["hooks"][event] = [
+                            hook
+                            for hook in config["hooks"][event]
+                            if not self._is_retired_lifecycle_hook_entry(
+                                hook,
+                                legacy_adapter_command=legacy_user_prompt_command,
+                            )
                         ]
 
             self._save_settings(settings_file, config, context)

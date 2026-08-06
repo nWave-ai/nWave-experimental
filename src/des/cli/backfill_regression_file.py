@@ -26,9 +26,7 @@ CLI contract (pinned by ``tests/bugs/des/test_historical_regression_file_backfil
         --feature-id <id>             (required)
         --slice-id <id>               (required -- the SHIPPED slice being backfilled)
         --regression-test-file <path> (required, repo-relative)
-        --at-kind {pytest-regression,native-regression,rust-regression}  (required;
-                                        'rust-regression' normalizes to
-                                        'native-regression', mirroring commit_slice.py)
+        --at-kind {pytest-regression}  (required)
         --commit <commit-ish>         (required -- where this file was genuinely shipped)
         --reason <text>               (required, non-empty human justification)
         --override                    (flag, default off)
@@ -110,12 +108,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--at-kind",
         dest="at_kind",
         required=True,
-        choices=("pytest-regression", "native-regression", "rust-regression"),
-        help=(
-            "The acceptance-test kind the backfilled file attests. "
-            "'rust-regression' is an accepted ALIAS of 'native-regression', "
-            "normalized right after parsing -- never a second code path."
-        ),
+        choices=("pytest-regression",),
+        help="The acceptance-test kind the backfilled file attests.",
     )
     parser.add_argument(
         "--commit",
@@ -183,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
     commit = args.commit
     reason_text = args.reason
     override = bool(args.override)
-    at_kind = "native-regression" if args.at_kind == "rust-regression" else args.at_kind
+    at_kind = args.at_kind
 
     if reason_text is None or not reason_text.strip():
         return _refuse(

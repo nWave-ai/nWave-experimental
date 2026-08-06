@@ -162,6 +162,53 @@ rawInput
    standard `bind` short-circuits on the first.
 3. **Document effects in signatures** — `Result` for errors, `Async` for I/O,
    `Option` for missing data; the signature is the contract.
+4. **Declared inputs — what does this function READ that nobody passed it?**
+
+   The FP reading of `contract:declared-inputs-not-ambient-reads` (SSOT:
+   `nw-cross-cutting-invariants` — the gate list and the anchor live there).
+
+   > For every gate that clause lists, decide in the **signature**: a parameter,
+   > a reader environment, an injected capability — with the ambient lookup kept
+   > as a default the caller may state.
+
+   A function whose result depends on state absent from its arguments **is not
+   pure**, whatever its body looks like, and no amount of `Result` in the return
+   type recovers that. It also cannot be property-tested honestly: the generator
+   cannot reach the cases the ambient state is silently fixing, so the suite looks
+   thorough while the interesting partition is unreachable.
+
+   Test-side mirror: the Algebraic Analysis Before the Scenario mandate
+   (`nw-test-design-mandates`), its declared-inputs question.
+
+5. **Count the outcomes before you choose the return type.**
+
+   > **How many outcomes does this operation have — and does its signature carry
+   > every one of them?** Answering "it returns the value and raises on the bad
+   > case" is the wrong answer: that is N-1 outcomes in the type and one in the
+   > control flow. **If any outcome is not in the return type, put it there** —
+   > a sum type with one case per outcome, illegal combinations unconstructible.
+
+   Raising is a control-transfer effect, so an operation that raises is not
+   total. Two costs, and the second is the one that bites in a polyglot host:
+
+   - **Composition.** A raising step cannot be `bind`-ed. Every caller needs an
+     imperative wrapper and the railway degrades to one track with hidden exits.
+   - **Identity.** `except`/`catch` matches on the error's *class identity*. Where
+     the same module is reachable by more than one path — a source tree plus an
+     installed runtime, a harness that adjusts the import path, a plugin cache —
+     that identity is not guaranteed, the handler fails to match, and a *handled*
+     outcome escapes as a crash in an environment nobody tested. A returned sum
+     type has no identity to mismatch.
+
+   Keep raising for a **programming error** — a broken precondition, an
+   import-time drift guard — where crashing IS the correct outcome and no handler
+   is meant to cross a module boundary.
+
+   Empirical anchor 2026-08-06 (`des.cli.phases`): a resolver documented three
+   outcomes, returned two and threw the third. CI showed the exception escaping
+   the `try` whose very next line was the matching `except`. Returning all three
+   closed the class WITHOUT establishing why the module had loaded twice — and a
+   fix that does not depend on that answer is a design fix, not a patch.
 
 ## Cross-cutting invariants (load them — they are not restated here)
 

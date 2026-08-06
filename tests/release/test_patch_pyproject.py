@@ -12,6 +12,7 @@ BDD scenario mapping:
 
 import posixpath
 import shutil
+from pathlib import Path
 
 import pytest
 import tomllib
@@ -152,6 +153,54 @@ class TestBuildTargetRewrite:
         # Should NOT include nWave/ as a whole (avoids broken symlinks)
         lines = content.splitlines()
         assert not any(line.strip() == '"nWave" = "nWave"' for line in lines)
+
+    @pytest.mark.negative_at
+    def test_capture_contract_package_is_projected_to_its_public_wheel_destination(
+        self,
+    ):
+        """The release patch keeps both public Python package projections.
+
+        CONTRACT_SHAPE: pure-function
+        """
+        # covers: R1
+        patched_text, _ = _patch_wheel_packages(
+            '[tool.hatch.build.targets.wheel]\npackages = ["nWave"]\n',
+            "nwave_ai",
+        )
+        force_include = tomllib.loads(patched_text)["tool"]["hatch"]["build"][
+            "targets"
+        ]["wheel"]["force-include"]
+
+        assert {
+            "lib/python/des": "des",
+            "src/nwave_capture": "nwave_capture",
+        }.items() <= force_include.items(), (
+            "WHAT: the release wheel omits a public Python package projection. "
+            "WHY: installed users need both the des command and the independent "
+            "nwave_capture study contract. HOW: add both source-to-destination "
+            "entries to _patch_wheel_packages."
+        )
+
+    @pytest.mark.negative_at
+    def test_development_and_rc_wheel_projects_capture_with_existing_packages(self):
+        """The repository wheel includes capture without dropping current packages.
+
+        CONTRACT_SHAPE: pure-function
+        """
+        # covers: R1
+        repository_root = Path(__file__).resolve().parents[2]
+        project = tomllib.loads((repository_root / "pyproject.toml").read_text())
+        packages = set(
+            project["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
+        )
+
+        assert {"src/des", "nwave_ai", "src/nwave_capture"} <= packages, (
+            "WHAT: the development/RC wheel package list omits an existing public "
+            "package or the neutral capture contract. WHY: non-PyPI candidates must "
+            "ship des, nwave_ai, and nwave_capture together. HOW: add "
+            "src/nwave_capture to [tool.hatch.build.targets.wheel].packages without "
+            f"removing current entries; observed={sorted(packages)}"
+        )
 
     def test_public_catalog_never_has_single_destination_or_broad_include(self):
         """The public catalog ships at both consumer-visible wheel locations.

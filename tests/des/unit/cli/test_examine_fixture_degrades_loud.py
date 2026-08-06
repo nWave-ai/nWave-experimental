@@ -7,7 +7,7 @@ Unified under `des.cli._scaffold_core.ScaffoldDegradeError` +
 `emit_scaffold_verdict`, this is the strict improvement Ale required
 alongside the scaffold-family unification: examine-fixture now inherits the
 SAME JSON degrade-LOUD channel `charter-scaffold` /
-`feature-end-preconditions-scaffold` already use.
+`charter-scaffold` already uses.
 
 The SUCCESS path (the full fixture-driving JSON payload) is untouched and
 covered by

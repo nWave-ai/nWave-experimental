@@ -26,14 +26,13 @@ def _stage_healthy_claude(base: Path) -> Path:
     claude_dir = base / ".claude"
     claude_dir.mkdir(parents=True)
 
-    # Create bin/ with all 5 shims
+    # Create bin/ with all 4 shims
     bin_dir = claude_dir / "bin"
     bin_dir.mkdir()
     for shim in (
         "des-log-phase",
         "des-init-log",
         "des-verify-integrity",
-        "des-roadmap",
         "des-health-check",
     ):
         shim_path = bin_dir / shim

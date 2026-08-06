@@ -85,3 +85,19 @@ def test_no_shell_shebangs_in_des_scripts() -> None:
     assert not violations, (
         f"Shell scripts found (zero-shell policy violation): {violations}"
     )
+
+
+def test_shim_floor_excludes_retired_execution_log_commands() -> None:
+    """The installer floor cannot preserve a dead classic command by name."""
+    from scripts.install.plugins.des_plugin import DES_SHIMS_FLOOR
+
+    assert "log_phase" not in DES_SHIMS_FLOOR, (
+        "WHAT: DES_SHIMS_FLOOR retains log_phase. "
+        "WHY: the installer would preserve a retired execution-log writer. "
+        "HOW: remove log_phase from the frozen shim floor."
+    )
+    assert "init_log" not in DES_SHIMS_FLOOR, (
+        "WHAT: DES_SHIMS_FLOOR retains init_log. "
+        "WHY: the installer would preserve a retired classic command. "
+        "HOW: remove init_log from the frozen shim floor."
+    )

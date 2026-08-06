@@ -176,7 +176,7 @@ Designs rollback first (migration revert|feature flag kill switch|previous image
 
 ### Example 6: *deliver Command (DEVOPS Wave)
 `*deliver "Implement JWT authentication"`
-Loads `deliver-orchestration` skill, executes 9-phase workflow. Tracks in `.deliver-progress.json` for resume capability. Stops if review fails after 2 attempts.
+Loads `deliver-orchestration` skill and executes the delivery workflow. Resume evidence comes from the feature-delta Slice Plan, AT-completion ledger, and commit trailers. Stops if review fails after 2 attempts.
 
 ## Commands
 

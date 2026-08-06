@@ -76,12 +76,11 @@ from scripts.install.plugins.des_plugin import DESPlugin
 
 _SHIM_NAMES = ["des"]
 
-_DES_SCRIPTS = ["check_stale_phases.py", "scope_boundary_check.py"]
+_DES_SCRIPTS = ["scope_boundary_check.py"]
 
 _DES_TEMPLATES = [
     ".pre-commit-config-nwave.yaml",
     ".des-audit-README.md",
-    "roadmap-schema.json",
 ]
 
 

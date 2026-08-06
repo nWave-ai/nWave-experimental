@@ -201,18 +201,6 @@ FEATURES = [
         # gate never FIRES -> NOT honestly DONE until wired. (catalogued != wired.)
         "wired_modules": ["verify-deliver-entry-contract"],
     },
-    {
-        "id": "f-spine-runs-tests-not-git-hooks",
-        "dir": "f-spine-runs-tests-not-git-hooks",
-        "planned_slices": 4,
-        # audit 2026-06-19 exposed FALSE-DONE: run-slice-ats was catalogued +
-        # crafter-skill PROSE only, the hook script untracked + uninstalled.
-        # REMEDIATED 2026-06-20 (swarm T4): the commit-msg hook is now committed +
-        # wired into .pre-commit-config.yaml as an installed entry, and the wired
-        # check gained `_hook_installed` (above) so file-presence alone no longer
-        # credits -- the install manifest entry is now required. (catalogued != wired.)
-        "wired_modules": ["run-slice-ats"],
-    },
     # Designed 2026-06-17 (ADR-FLOW-006; review Opus iter-2 APPROVED). The
     # canonical wave-contract registry substrate (gates-ref/outputs-ref + the two
     # SSOTs: gate_stack + output_contract); DISCUSS is its worked example. Newly
@@ -390,15 +378,7 @@ _GATE_STACK_LIVE_RESOLVED = {
     "verify-devops-review": ("devops", "gate-out", "verify-devops-review"),
 }
 
-# Hook-class modules whose firing surface is an INSTALLED git hook, not a wave
-# gate-stack. The honest signal is the `.pre-commit-config.yaml` ENTRY that
-# installs the hook -- NOT the mere presence of the hook .py file in
-# scripts/hooks/ (audit 2026-06-20, swarm T4 FALSE-DONE: an untracked,
-# uninstalled hook file false-credited `_term_wired` via the scripts/hooks glob).
-# Value = the hook-script basename the install manifest must reference as an entry.
-_HOOK_INSTALLED = {
-    "run-slice-ats": "run_slice_ats_precommit",
-}
+_HOOK_INSTALLED: dict[str, str] = {}
 
 
 def _hook_installed(token: str) -> bool:

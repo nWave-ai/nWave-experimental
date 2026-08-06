@@ -525,7 +525,7 @@ def test_refusal_still_self_explains_with_an_actionable_how(tmp_path: Path) -> N
     regression_rel = "tests/regression/test_self_explain_fixture.py"
     _write_pytest_regression_fixture(repo / regression_rel)
 
-    exit_code, stdout, stderr = _run_record_at_review_verdict(
+    exit_code, stdout, _stderr = _run_record_at_review_verdict(
         repo,
         _base_argv(
             feature_id=feature_id,

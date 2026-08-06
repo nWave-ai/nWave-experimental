@@ -142,9 +142,16 @@ def then_events_hosts(s3_comp) -> None:
     assert not missing, f"Events missing host keys: {missing}"
 
 
-@then(parsers.parse('the events include "{e1}", "{e2}", "{e3}", "{e4}"'))
-def then_events_include(s3_comp, e1: str, e2: str, e3: str, e4: str) -> None:
+@then(parsers.re(r'the events include (?P<quoted_ids>".+")'))
+def then_events_include(s3_comp, quoted_ids: str) -> None:
+    """Accepts any number of quoted event ids.
+
+    The step used to take exactly four placeholders, so removing one event from
+    the scenario left it unmatched and pytest-bdd raised
+    StepDefinitionNotFoundError -- a wiring failure that reads nothing like the
+    vocabulary change that caused it.
+    """
+    expected = {part.strip().strip('"') for part in quoted_ids.split(",")}
     event_ids = {e["id"] for e in s3_comp.get("host_bridge")["events"]}
-    expected = {e1, e2, e3, e4}
     missing = expected - event_ids
     assert not missing, f"Missing event ids: {missing}"

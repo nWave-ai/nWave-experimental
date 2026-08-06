@@ -10,7 +10,7 @@ argument-hint: '[profile] - Optional: lean, standard, thorough, exhaustive, cust
 
 ## Overview
 
-Select a quality-vs-token-consumption profile and persist it under the `rigor` key in `~/.nwave/global-config.json` (global) or `.nwave/des-config.json` (project). All wave commands read it to set agent models, review policy, TDD phases, and mutation testing. You (the main Claude instance) run this directly — no subagent delegation.
+Select a quality-vs-token-consumption profile and persist it under the `rigor` key in `~/.nwave/global-config.json` (global) or `.nwave/des-config.json` (project). All wave commands read it to set agent models, review policy, examination depth, and refactoring effort. The executable-AT delivery floor is fixed, not a profile choice. You (the main Claude instance) run this directly — no subagent delegation.
 
 ## Methodology — Load the Skill (SSOT)
 

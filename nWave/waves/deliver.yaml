@@ -22,12 +22,8 @@ wave: deliver
 # with no authored AT module, or post-freeze drift). An unreadable feature-delta
 # degrades LOUD to INDETERMINATE (Invariant 2), never a false freeze.
 #
-# gate-out: EMPTY. DELIVER's exit attestation is NOT a wave gate-out stack — it is
-# the feature-end cycle (`des feature-end run` → walking-skeleton + env-e2e +
-# coverage + full-suite + FullSuiteLegRan + FeatureEnd records). The per-slice
-# acceptance-test RUN (f-spine-runs-tests-not-git-hooks / ADR-FLOW-005) fires on
-# the COMMIT path (a pre-commit hook firing surface), NOT on a wave SubagentStop
-# return — so it is not a DELIVER gate-out row.
+# gate-out: EMPTY. DELIVER's exit attestation is not represented by a wave
+# gate-out stack.
 gate_stack:
   gate-in:
     - gate_id: verify-deliver-entry-contract

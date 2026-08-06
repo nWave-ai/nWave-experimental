@@ -39,10 +39,8 @@ from typing import NewType
 # A kebab-case feature identifier (e.g. "atdd-pure-demo").
 FeatureId = NewType("FeatureId", str)
 
+
 # A carpaccio slice identifier (e.g. "slice-01").
-SliceId = NewType("SliceId", str)
-
-
 class DispatchVerdict(str, Enum):
     """The user-observable verdict of the G-DISTILL-PRE PreToolUse gate.
 
@@ -79,21 +77,6 @@ class DistillDispatchShape(str, Enum):
     COMPLETE = "complete"
     PROJECT_ID_MISSING = "project-id-missing"
     SLICE_SCOPED = "slice-scoped"
-
-
-class GCommitOutcome(str, Enum):
-    """The user-observable verdict of the G-DELIVER-EXIT SubagentStop gate.
-
-    VERIFIED -- the crafter's slice commit passes the completeness + contract
-                gates; the gate allows AND now leaves BOTH a
-                ``SliceCommitVerified`` and a ``WorkflowPhaseCompletedGCommit``
-                ledger record (the symmetric DELIVER-exit success terminal).
-    BLOCKED  -- the gate refused the commit (a wrong-path signal AT-3 asserts
-                against -- a complete commit must reach VERIFIED, never BLOCKED).
-    """
-
-    VERIFIED = "verified"
-    BLOCKED = "blocked"
 
 
 # Gherkin-phrase -> typed-value lookups (Mandate-12 criterion 3: no control

@@ -17,9 +17,7 @@ five names that command happens to want; a wrong guess is a rejected
 invocation and a wasted round trip.
 
 ``add_repo_root_argument`` declares ALL FIVE names on ONE ``add_argument``
-call, so every subcommand accepts the root under every spelling. The
-precedent is already in the tree: ``run_slice_ats.py`` aliased
-``--repo-root``/``--repo`` on one call before this module existed.
+call, so every subcommand accepts the root under every spelling.
 
 WHY THIS IS COMPATIBLE, not a rename. ``argparse`` derives ``dest`` from the
 FIRST long option string, so passing a subcommand's CURRENT canonical name as
@@ -35,10 +33,10 @@ and ``default=Path.cwd()`` evaluated at parser-build time -- plus three
 hand-rolled reimplementations of the SSOT. That divergence is a separate
 defect; do not read this module as having closed it.
 
-``--project-dir`` is DELIBERATELY NOT an alias. The same spelling names a
-FEATURE directory on ``des log-phase`` (joined with ``execution-log.json``)
-and ``des init-log``, but the repo root on ``des resolve-workflow-mode``. One
-name, two concepts -- aliasing it would conflate them.
+``--project-dir`` is DELIBERATELY NOT an alias. The same spelling formerly
+named a feature directory for retired execution-log commands, but it names the
+repo root on ``des resolve-workflow-mode``. One name, two concepts -- aliasing
+it would conflate them.
 
 Two ``scripts/release/`` modules are likewise out of scope: there ``--repo``
 is a GitHub ``owner/repo`` SLUG, not a filesystem path

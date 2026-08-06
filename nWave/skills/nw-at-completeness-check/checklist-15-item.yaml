@@ -261,7 +261,7 @@ structural_invariants:
     framing_attack: >
       Witnessing MUST count INDIRECT wiring (entry-point discovery / registry / DI)
       as valid coverage — a seam reached via registry/entry-point/DI is witnessed even
-      with NO literal direct call-site or protocol call (nwave.lang.adapter entry-point
+      with NO literal direct call-site or protocol call (registry entry-point
       discovery wires modules with no direct call-site by design). A naive
       name/protocol match reintroduces a false-positive class on every
       registry-dispatched symbol. Binding-resolved reach, never a grep.

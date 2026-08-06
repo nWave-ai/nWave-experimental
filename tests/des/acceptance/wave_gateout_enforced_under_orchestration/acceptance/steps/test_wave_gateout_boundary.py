@@ -1,4 +1,4 @@
-"""pytest-bdd binding for wave-gateout slice-06 (fail-closed boundary + regression).
+"""pytest-bdd binding for the wave-gateout fail-closed boundary.
 
 Drives the REAL ``handle_subagent_stop`` hook entry (Layer 3 composition) through the
 production composition root with a constructed return on stdin. Step bodies delegate to
@@ -9,8 +9,8 @@ MIXED RED/green classification (reported per scenario):
   * AT-13 (out-of-vocab wave) / AT-14 (no project id) -> ACTIVE-RED: the fail-closed
     boundary does not exist at HEAD (an unresolvable DES return is silently allowed).
     They RUN and fail for the right reason (the hook allows where it must block).
-  * AT-15 (non-DES) / AT-16 (classic) -> GREEN-on-keystone regression-locks (the
-    existing passthrough-allow + the byte-stable classic pipeline).
+  * AT-15 (non-DES) -> GREEN-on-keystone regression-lock (the existing
+    passthrough-allow).
 """
 
 from __future__ import annotations
@@ -58,23 +58,12 @@ def _given_non_des(boundary: WaveBoundaryComposition) -> None:
     boundary.given_return_under_orchestration()
 
 
-@given("a return carries the classic execution-log identifiers")
-def _given_classic(boundary: WaveBoundaryComposition) -> None:
-    # No transcript provisioning -- the classic protocol is direct-DES fields only.
-    pass
-
-
 # ---- When --------------------------------------------------------------------
 
 
 @when("the orchestration return is evaluated at the wave boundary")
 def _when_return_evaluated(boundary: WaveBoundaryComposition) -> None:
     boundary.when_orchestration_return_evaluated()
-
-
-@when("the classic return is evaluated at the wave boundary")
-def _when_classic_evaluated(boundary: WaveBoundaryComposition) -> None:
-    boundary.when_classic_return_evaluated()
 
 
 # ---- Then --------------------------------------------------------------------
@@ -88,8 +77,3 @@ def _then_refused(boundary: WaveBoundaryComposition) -> None:
 @then("the wave closure is allowed")
 def _then_allowed(boundary: WaveBoundaryComposition) -> None:
     boundary.then_wave_closure_allowed()
-
-
-@then("the classic pipeline blocks on the missing execution log")
-def _then_classic_blocks(boundary: WaveBoundaryComposition) -> None:
-    boundary.then_classic_path_blocks_on_missing_log()

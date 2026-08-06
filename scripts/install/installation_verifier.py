@@ -40,8 +40,6 @@ except ImportError:
     from error_codes import VERIFY_FAILED
     from install_utils import PathUtils
 
-from scripts.shared.install_paths import host_neutral_runtime_dir
-
 
 @dataclass
 class VerificationResult:

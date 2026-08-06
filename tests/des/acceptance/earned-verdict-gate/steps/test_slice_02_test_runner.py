@@ -23,7 +23,7 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from .composition_slice_02 import RunnerComposition
-from .domain_types import REASON_BY_PHRASE, TARGET_HEALTH_BY_PHRASE
+from .domain_types import TARGET_HEALTH_BY_PHRASE
 
 
 scenarios("../slice-02-test-runner-port.feature")
@@ -74,7 +74,7 @@ def when_run_target(runner_composition: RunnerComposition) -> None:
     runner_composition.result = runner_composition.run_target()
 
 
-# --- Then: assert on the emitted test_result.v1 (or the ABSTAIN signal) -------
+# --- Then: assert on the emitted test_result.v1 or unobserved outcome ----------
 
 
 @then("the emitted run result conforms to the test-result contract")
@@ -107,14 +107,14 @@ def then_reports_nonzero_exit(runner_composition: RunnerComposition) -> None:
     assert (runner_composition.result.exit_code or 0) != 0
 
 
-@then("the emitted result is a fail-safe abstain")
-def then_is_abstain(runner_composition: RunnerComposition) -> None:
-    assert runner_composition.emitted_is_fail_safe_abstain() is True
+@then("the emitted result is explicitly unobserved")
+def then_is_unobserved(runner_composition: RunnerComposition) -> None:
+    assert runner_composition.emitted_is_unobserved() is True
 
 
-@then(parsers.parse('the abstain reason is "{reason}"'))
-def then_abstain_reason(runner_composition: RunnerComposition, reason: str) -> None:
-    assert runner_composition.result.reason == REASON_BY_PHRASE[reason]
+@then(parsers.parse('the unobserved reason is "{reason}"'))
+def then_unobserved_reason(runner_composition: RunnerComposition, reason: str) -> None:
+    assert runner_composition.result.reason == reason
 
 
 @then("no passing run result is fabricated")

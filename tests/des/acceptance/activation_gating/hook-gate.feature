@@ -24,12 +24,6 @@ Feature: nWave hooks run only in active projects and never block an inactive one
     When a "PRE_TOOL_USE" hook fires
     Then the hook is dispatched to its handler
 
-  @contract-shape:bounded-change
-  Scenario: The session-start event always runs even in an inactive project
-    Given the project marker is "ABSENT"
-    When a "SESSION_START" hook fires
-    Then the hook is dispatched to its handler
-
   @contract-shape:unbounded-preservation
   Scenario: The handler reads the same hook input the gate received
     Given the project marker is "ENABLED"

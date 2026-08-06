@@ -5,7 +5,7 @@ Module-form usage strings (`python -m des.cli.X`, `PYTHONPATH=src python -m des.
 were leaking from `src/des/` runtime CLI emit into the agent context, causing
 Claude to generalize the module form as canonical. Under multi-env setups
 (uv install nwave-ai + poetry project), module form fails because `des` is
-in the pipx venv only — entry-point form (`des-roadmap`, `des-init-log`,
+in the pipx venv only — entry-point form (`des-init-log`,
 `des-log-phase`, `des-verify-integrity`, `des-health-check`) works
 env-agnostically via PATH.
 
@@ -58,10 +58,10 @@ def test_src_des_runtime_has_no_module_form_invocations() -> None:
     155 parametrized cases (one per file) into a single set-difference assertion
     that reports the full violation map in the failure message.
 
-    Module-form strings (e.g. `python -m des.cli.roadmap`) leaked from runtime
+    Module-form strings (e.g. `python -m des.cli.verify_deliver_integrity`) leaked from runtime
     emit cause Claude to generalize the form, breaking multi-env users
     (uv install + poetry/conda/venv project). Use entry-point form instead:
-    `des-roadmap`, `des-init-log`, `des-log-phase`, `des-verify-integrity`,
+    `des-init-log`, `des-log-phase`, `des-verify-integrity`,
     `des-health-check` (declared in pyproject.toml under `[project.scripts]`).
 
     Shape choice (Lyra 2026-05-18 after PBT-pilot falsification): set-difference
@@ -84,6 +84,6 @@ def test_src_des_runtime_has_no_module_form_invocations() -> None:
             for path, hits in violations.items()
             for n, text in hits
         )
-        + "\n\nUse entry-point form instead (e.g. `des-roadmap` not `python -m des.cli.roadmap`)."
+        + "\n\nUse entry-point form instead (e.g. `des verify-integrity` not `python -m des.cli.verify_deliver_integrity`)."
         + "\nDeclared entry points: pyproject.toml [project.scripts]."
     )

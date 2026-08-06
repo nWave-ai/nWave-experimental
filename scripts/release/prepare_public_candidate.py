@@ -1,9 +1,8 @@
 """Prepare the immutable public-candidate handoff the installed-journey lane consumes.
 
-WHY THIS EXISTS AS A SEPARATE SERVICE. The public walking skeleton
-(`tests/des/acceptance/classic_explicit_only/test_classic_explicit_only_public_journey.py`)
-must examine the RELEASE CANDIDATE, not a convenient substitute built from source
-during the test. So the test refuses to build, download, or alter anything: it is
+WHY THIS EXISTS AS A SEPARATE SERVICE. The public walking skeleton must examine
+the RELEASE CANDIDATE, not a convenient substitute built from source during the
+test. So the test refuses to build, download, or alter anything: it is
 handed an immutable manifest and verifies the bytes against their declared digest
 before installing them offline. Something outside the test therefore has to
 produce that manifest, and this is it. See

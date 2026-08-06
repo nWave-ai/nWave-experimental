@@ -162,16 +162,12 @@ class TestPluginMarketplace:
         )
         assert "YES" in out, f"hooks.json missing 'hooks' envelope key.\n{out}"
 
-    def test_hooks_json_has_all_5_event_types(
+    def test_hooks_json_has_all_active_event_types(
         self, plugin_marketplace_container
     ) -> None:
-        expected = {
-            "PreToolUse",
-            "PostToolUse",
-            "SubagentStop",
-            "SessionStart",
-            "SubagentStart",
-        }
+        from scripts.shared.hook_definitions import HOOK_EVENT_TYPES
+
+        expected = set(HOOK_EVENT_TYPES)
         _code, out = exec_in_container(
             plugin_marketplace_container,
             [

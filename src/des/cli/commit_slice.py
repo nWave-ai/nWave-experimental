@@ -162,9 +162,6 @@ from des.cli.record_examine_verdict import examine_ledger_path as _examine_ledge
 from des.cli.run_contract_gate import (
     _committed_scope_digest_value,
     _CommittedScopeDigest,
-    _DigestRouteDegrade,
-    _DigestRouteResult,
-    _maybe_route_digest_through_runner,
     build_tier_exit_verdict,
 )
 from des.cli.verify_deliver_integrity import (
@@ -288,14 +285,6 @@ def _run_worktree_cleanup_sweep(repo: Path) -> None:
 # when no pytest interpreter resolves on this machine (a non-Python target). The
 # first value the carpaccio-honest AT pins; degrade-LOUD keeps the taxonomy open.
 _DEGRADE_REASON_INTERPRETER_UNAVAILABLE = "gate_scope_interpreter_unavailable"
-
-# The honest free-text degrade reason recorded when the resolved NON-pytest
-# runner (e.g. cargo-test) cannot produce a trustworthy enumerate -- the
-# runner-agnostic sibling of `_DEGRADE_REASON_INTERPRETER_UNAVAILABLE` (F-gate-
-# scope-digest-runner-agnostic slice-01). Distinguishes "no runner resolved a
-# scope at all" from "a runner resolved but its own enumerate degraded LOUD".
-_DEGRADE_REASON_RUNNER_UNAVAILABLE = "gate_scope_runner_unavailable"
-
 
 # Matches a ``Reviewed-by:`` trailer line (multiline-anchored). Presence in the
 # operator-supplied ``--message`` means the operator hand-stamped the trailer --
@@ -1400,8 +1389,6 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=(
             "gherkin",
             "pytest-regression",
-            "native-regression",
-            "rust-regression",
         ),
         help=(
             "The acceptance-test kind the slice's E2 leg attests (default: "
@@ -1409,13 +1396,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "into the Step-6 verify_slice_commit_completeness fold-in so a "
             "real pytest-regression commit runs the BEHAVIORAL (not gherkin/ "
             "feature-scoped-contract) E2 path -- see "
-            "verify_slice_commit_completeness.py for the attestation itself. "
-            "'native-regression' (fix-rust-regression-at-kind-wiring) routes "
-            "the Step-3 digest through the runner seam keyed on --regression-"
-            "test-file's OWN suffix, agreeing with E2's execution routing. "
-            "'rust-regression' (rust-regression-at-kind-semi-wired) is an "
-            "accepted ALIAS of 'native-regression', normalized right after "
-            "parsing -- never a second code path."
+            "verify_slice_commit_completeness.py for the attestation itself."
         ),
     )
     parser.add_argument(
@@ -1893,70 +1874,13 @@ def _committed_scope_digest_or_degrade_reason(
     at_kind: str | None = None,
     regression_test_file: Path | None = None,
 ) -> tuple[str, None] | tuple[None, str]:
-    """Step 3's committed-scope digest, routed through the runner seam FIRST.
-
-    Mirrors the SAME runner-resolution seam the digest CLI modes already use
-    (``_maybe_route_digest_through_runner`` -> ``--committed-scope-digest`` /
-    ``--print-digest`` / ``--verify-gate-scope``), so a cargo-test (or any
-    future non-pytest) target earns a runner-derived digest instead of the
-    pytest-native one -- never a vacuous pytest digest over a Rust tree
-    (F-gate-scope-digest-runner-agnostic slice-01).
-
-    ``at_kind == "pytest-regression"`` (fix-runner-resolves-per-scope-language
-    slice-01) SKIPS the whole-tree runner seam entirely: a pytest-regression
-    slice is Python-specific by construction (it declares its OWN
-    ``--regression-test-file``), so routing its digest through the repo's
-    OTHER lockfile-resolved runner (e.g. cargo on a Rust-primary repo) is
-    never correct -- that repo-root lockfile scan has no awareness of which
-    language THIS slice actually touched, and an empty cargo scope would
-    degrade a genuinely-passing Python slice to indeterminate.
-
-    ``at_kind == "native-regression"`` (fix-rust-regression-at-kind-wiring,
-    Branch C closure) routes on ``regression_test_file``'s OWN suffix --
-    mirroring ``verify_slice_commit_completeness._routes_through_runner_
-    port``'s execution-leg decision, so the digest leg can never contradict
-    what E2 actually ran: a non-``.py`` file ALWAYS routes through the
-    runner seam (never falls through to the Python-native path, even on a
-    ``None``/pytest resolution -- a Rust file earning a Python digest is
-    the exact defect this closes); a genuine ``.py`` file keeps the EXISTING
-    marker-agnostic Python-native path, the runner seam never consulted.
-    Every other ``--at-kind`` (default ``gherkin``) keeps the EXISTING
-    runner-routed behavior unchanged.
-
-    * pytest / lockfile-less target -- the runner seam returns ``None`` (its
-      OWN unchanged fall-through contract): falls through to the EXISTING
-      ``_committed_scope_digest_value`` pytest path, byte-identical to before.
-    * a resolved non-pytest runner (e.g. cargo-test) -- its OWN enumerate
-      facet already produced the digest (``_DigestRouteResult``); used as-is.
-    * either leg degrading (``RunnerAdapterUnavailable`` / no interpreter) --
-      returns ``(None, reason)``; the reason names WHICH leg degraded so the
-      caller mints the honest ``SliceCommitIndeterminate`` record, never a
-      fabricated digest.
-    """
-    if at_kind == "native-regression" and regression_test_file is not None:
-        if regression_test_file.suffix != ".py":
-            route = _maybe_route_digest_through_runner(repo)
-            if isinstance(route, _DigestRouteResult):
-                return route.digest, None
-            return None, _DEGRADE_REASON_RUNNER_UNAVAILABLE
-        digest_result = _committed_scope_digest_value(repo, "HEAD", markers=None)
-    elif at_kind != "pytest-regression":
-        route = _maybe_route_digest_through_runner(repo)
-        if isinstance(route, _DigestRouteResult):
-            return route.digest, None
-        if isinstance(route, _DigestRouteDegrade):
-            return None, _DEGRADE_REASON_RUNNER_UNAVAILABLE
-        digest_result = _committed_scope_digest_value(repo, "HEAD")
-    else:
-        # pytest-regression: collect MARKER-AGNOSTICALLY. The committed
-        # regression test on an arbitrary target repo (no auto-marking
-        # conftest applying the contract markers) would otherwise be
-        # DESELECTED by the default marker filter -> an empty scope hashed
-        # to the vacuous sha256('') digest. Marker-agnostic collection
-        # digests the real committed Python scope (the "digest over the
-        # committed tree" this docstring promises), and the verify leg
-        # (_mode_verify_gate_scope, same --at-kind) mirrors it exactly.
-        digest_result = _committed_scope_digest_value(repo, "HEAD", markers=None)
+    """Return Step 3's committed Python scope digest or an honest refusal."""
+    del regression_test_file
+    digest_result = (
+        _committed_scope_digest_value(repo, "HEAD", markers=None)
+        if at_kind == "pytest-regression"
+        else _committed_scope_digest_value(repo, "HEAD")
+    )
     if isinstance(digest_result, _CommittedScopeDigest):
         return digest_result.digest, None
     return None, _DEGRADE_REASON_INTERPRETER_UNAVAILABLE
@@ -1972,8 +1896,8 @@ def _call_committed_scope_digest_or_degrade_reason(
     "single-locus constraint"): several PRE-EXISTING regression ATs (e.g.
     ``test_indeterminate_seal_affordance_how_key.py``'s Site B) monkeypatch
     ``_committed_scope_digest_or_degrade_reason`` with the LEGACY 2-positional
-    -argument stub shape that predates the ``regression_test_file`` parameter
-    (fix-rust-regression-at-kind-wiring). Calling a 2-arg stub with 3
+    -argument stub shape that predates the ``regression_test_file`` parameter.
+    Calling a 2-arg stub with 3
     positional arguments raises ``TypeError`` -- introspect the CURRENTLY
     bound callable's arity (picks up a monkeypatch, since the module-level
     name is resolved at call time) and fall back to the legacy 2-arg call
@@ -2001,12 +1925,8 @@ def _verify(repo: Path, at_kind: str | None = None) -> int:
     stub, no reimplementation). A clean exit 0 here is the acceptance proof: the
     produced commit verifies with NO manual amend.
 
-    ``at_kind`` is forwarded as ``--at-kind`` so the re-derived digest mirrors
-    Step 3's own routing decision (``_committed_scope_digest_or_degrade_reason``)
-    -- a pytest-regression slice's digest was pinned WITHOUT the whole-tree
-    runner seam, so its re-verification must skip that seam too, or a
-    Rust-primary repo's cargo route would refuse a genuinely-verified Python
-    digest it never produced.
+    ``at_kind`` is forwarded so re-verification uses the same Python
+    collection selection as Step 3.
     """
     from des.cli.run_contract_gate import main as run_contract_gate_main
 
@@ -2171,8 +2091,7 @@ def _rerun_command(args: argparse.Namespace, feature_id: str) -> str:
 
     Pins ``sys.executable`` so the command runs the SAME interpreter that is
     emitting it, never a possibly-stale ``des`` shim resolved off PATH
-    (slice-01's ``run_slice_ats._rerun_command`` discipline, reused). Every
-    argument is shell-quoted: a repo path containing a space would otherwise
+    Every argument is shell-quoted: a repo path containing a space would otherwise
     print a command that silently parses into the wrong arguments.
     """
     parts = [
@@ -2266,14 +2185,6 @@ def _missing_feature_id_refusal(
 def main(argv: list[str] | None = None) -> int:
     """Produce a correct-by-construction slice commit (stage->commit->amend->verify)."""
     args = _build_parser().parse_args(argv)
-    # rust-regression-at-kind-semi-wired: 'rust-regression' is a CLI-facing
-    # ALIAS of 'native-regression', normalized here (before any downstream
-    # `args.at_kind` read) so every consumer of this Namespace -- including
-    # the preflight verify_slice_commit_completeness fold-in built from THIS
-    # args object -- sees the SAME unified 'native-regression' value.
-    if args.at_kind == "rust-regression":
-        args.at_kind = "native-regression"
-
     # `--repo ""` normalizes to None (meaningful_identity) rather than
     # `Path("")`, which Python silently resolves to `.` -- i.e. a blank --repo
     # used to retarget the command at whatever directory the caller happened to
@@ -2560,7 +2471,7 @@ def main(argv: list[str] | None = None) -> int:
             "--commit",
             shadow_sha,
         ]
-        if args.at_kind in ("pytest-regression", "native-regression"):
+        if args.at_kind == "pytest-regression":
             preflight_argv.extend(
                 [
                     "--at-kind",
@@ -2650,21 +2561,17 @@ def main(argv: list[str] | None = None) -> int:
 
     # Step 3: the committed-scope digest of the RESULTING HEAD. This now
     # includes the slice's previously-untracked AT files -- the whole point.
-    # Routed through the SAME runner-resolution seam the digest CLI modes use
-    # (cargo-test target -> a runner-derived digest, never a vacuous pytest
-    # one); git absent / not a work-tree / an un-enumerable runner scope emits
-    # the LOUD INDETERMINATE event (exit 2 propagated as 1 -- the commit
-    # landed but is un-verifiable).
+    # Git absence or an uncollectable Python scope emits the LOUD
+    # INDETERMINATE event (exit 2 propagated as 1 -- the commit landed but is
+    # un-verifiable).
     digest, degrade_reason = _call_committed_scope_digest_or_degrade_reason(
         repo, args.at_kind, regression_test_file
     )
     if digest is None:
         assert degrade_reason is not None  # the tuple contract: exactly one is set
-        # The committed-scope machinery (pytest OR runner leg) already emitted
+        # The committed-scope machinery already emitted
         # its LOUD event. The commit LANDED at step 2 carrying its Slice-Id
-        # trailer, but the digest could not be pinned (a non-Python target
-        # with no resolvable pytest interpreter, OR a resolved non-pytest
-        # runner whose enumerate facet degraded). DDD-6: instead of returning
+        # trailer, but the digest could not be pinned. DDD-6: instead of returning
         # record-less -- which wedges the successor slice ("predecessor has no
         # honest record") -- route the degrade to MINT the honest
         # SliceCommitIndeterminate record (the SAME SSOT mint
@@ -2701,8 +2608,8 @@ def main(argv: list[str] | None = None) -> int:
                     "slice_ids": slice_ids,
                     "reason": degrade_reason,
                     "error": "the committed-scope digest could not be established "
-                    "(no resolvable interpreter, or the resolved runner's "
-                    "enumerate facet was untrustworthy) -- recorded an honest "
+                    "(no resolvable Python interpreter or untrustworthy "
+                    "collection) -- recorded an honest "
                     "SliceCommitIndeterminate (unverified here), never a "
                     "fabricated pass",
                     "how": _INDETERMINATE_NO_EXAMINE_RESCUE_HOW,
@@ -2774,7 +2681,7 @@ def main(argv: list[str] | None = None) -> int:
             "--commit",
             "HEAD",
         ]
-        if args.at_kind in ("pytest-regression", "native-regression"):
+        if args.at_kind == "pytest-regression":
             fold_in_argv.extend(
                 [
                     "--at-kind",

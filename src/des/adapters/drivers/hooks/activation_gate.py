@@ -1,17 +1,10 @@
 """Activation gate for hook_router.main() (ADR-AG-001).
 
 The gate sits at the single hook dispatch point: buffer stdin, parse ``cwd``,
-re-inject via ``io.StringIO`` (DDD-6), exempt SessionStart (DDD-5),
-adopt-and-proceed on pre-task ``nw-*`` dispatch (DDD-9), else allow/exit-0
-when inactive — NEVER exit-2 from the gate. On an inactive project,
-``user-prompt-submit`` additionally fires ONLY the hourly
-orchestrator-affordance session-hygiene refresh directly before exiting
-(mirrors SessionStart's own injection, ``orchestrator-affordance-hourly-refresh``)
-without ever dispatching the full handler — so the wave-active anchor's
-``arm()`` write stays gated on the project's own activation resolution
-(deep-review finding, DDD-9). Fail-open: empty / invalid-JSON / missing-``cwd``
-stdin resolves normally (defaults to inactive under opt-in) and exits 0; the
-gate never raises.
+re-inject via ``io.StringIO`` (DDD-6), adopt-and-proceed on pre-task ``nw-*``
+dispatch, else allow/exit-0 when inactive — NEVER exit-2 from the gate.
+Fail-open: empty / invalid-JSON / missing-``cwd`` stdin resolves normally
+(defaults to inactive under opt-in) and exits 0; the gate never raises.
 
 ``run_gate`` is the testable seam the acceptance composition drives. It returns
 a ``GateRun`` recording the observable outcome, the bytes the handler saw (the
@@ -40,22 +33,6 @@ class GateOutcome(Enum):
     ADOPTED_AND_DISPATCHED = "adopted-and-dispatched"  # pre-task detect-and-adopt
 
 
-_SESSION_START = "session-start"
-_USER_PROMPT_SUBMIT = "user-prompt-submit"
-# Commands exempt from activation gating entirely — dispatched unconditionally,
-# regardless of the project's active/inactive resolution. SessionStart adopts
-# existing projects silently (DDD-5). UserPromptSubmit is intentionally NOT
-# exempt (deep-review finding, scope-creep DDD-9, reloop after the round-2
-# EXAMINE fix): an unconditional exemption freed the ENTIRE
-# handle_user_prompt_submit dispatch on an inactive project -- including
-# CommandLiteralWaveActiveAnchor.on_prompt_submitted's arm() write, which has
-# no activation check of its own -- bypassing the controlled adoption path.
-# Instead, on an inactive project, apply_gate fires ONLY the hourly
-# orchestrator-affordance session-hygiene refresh directly (see the
-# ``_USER_PROMPT_SUBMIT`` branch below) and never reaches the full handler,
-# so the wave-active anchor stays exactly as gated as it was before the
-# refresh feature existed.
-_ACTIVATION_EXEMPT_COMMANDS = (_SESSION_START,)
 _PRE_TASK_COMMANDS = ("pre-task", "pre-tool-use")
 _NW_AGENT_PREFIX = "nw-"
 
@@ -86,9 +63,6 @@ def run_gate(*, envelope: Any, project_root: Path, global_config_path: Path) -> 
     handler_stdin = envelope.raw  # buffered stdin, re-injected verbatim (DDD-6)
     command = _command_token(envelope)
 
-    if command in _ACTIVATION_EXEMPT_COMMANDS:
-        return GateRun(GateOutcome.DISPATCHED, handler_stdin, 0)
-
     if _is_active(project_root, global_config_path):
         return GateRun(GateOutcome.DISPATCHED, handler_stdin, 0)
 
@@ -105,14 +79,9 @@ def apply_gate(command: str, stdin_text: str) -> str | None:
     Returns the re-injectable stdin text when the command should dispatch (the
     caller re-injects it as ``sys.stdin`` and runs the handler), or calls
     ``sys.exit(0)`` when the project is inactive (allow without blocking).
-    SessionStart and UserPromptSubmit are always dispatched (the latter for its
-    session-hygiene hourly affordance refresh, gated internally on its own
-    sentinel — not on activation). Fail-open: any read/parse problem resolves
-    to inactive under the default and exits 0.
+    Fail-open: any read/parse problem resolves to inactive under the default
+    and exits 0.
     """
-    if command in _ACTIVATION_EXEMPT_COMMANDS:
-        return stdin_text
-
     # Missing/invalid cwd in the envelope falls back to the process cwd (Claude
     # Code always invokes hooks inside the project dir); resolution then runs
     # normally and only silences genuinely inactive projects.
@@ -123,9 +92,6 @@ def apply_gate(command: str, stdin_text: str) -> str | None:
     if command in _PRE_TASK_COMMANDS and _stdin_is_nw_agent(stdin_text):
         _adopt(project_root)
         return stdin_text
-
-    if command == _USER_PROMPT_SUBMIT:
-        _refresh_orchestrator_affordance_only(project_root)
 
     sys.exit(0)
 
@@ -166,23 +132,6 @@ def _is_nw_agent_dispatch(envelope: Any, command: str) -> bool:
         return False
     subagent = getattr(envelope, "subagent_type", None)
     return bool(subagent) and str(subagent).startswith(_NW_AGENT_PREFIX)
-
-
-def _refresh_orchestrator_affordance_only(project_root: Path) -> None:
-    """Fire ONLY the hourly orchestrator-affordance refresh for an inactive
-    project's ``user-prompt-submit`` -- without dispatching the full handler,
-    and therefore without ever reaching
-    ``CommandLiteralWaveActiveAnchor.on_prompt_submitted`` / its ``arm()``
-    write (deep-review finding, DDD-9: that write stays gated on the
-    project's own activation resolution, unaffected by this refresh path).
-    Mirrors SessionStart's own activation exemption for the refresh content
-    only, never for the wave-active anchor.
-    """
-    from des.adapters.drivers.hooks.user_prompt_submit_handler import (
-        _maybe_refresh_orchestrator_affordance,
-    )
-
-    _maybe_refresh_orchestrator_affordance(project_root)
 
 
 def _adopt(project_root: Path) -> None:

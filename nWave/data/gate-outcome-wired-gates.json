@@ -10,24 +10,8 @@
       "note": "single call site (_record_outcome) invokes AtCompletionLedger.append_gate_event(..., outcome=outcome)."
     },
     {
-      "gate": "run-slice-ats",
-      "module": "src/des/cli/run_slice_ats.py",
-      "shape": "call_kwarg",
-      "functions": null,
-      "slice": "slice-04",
-      "note": "single call site (_record_outcome) invokes AtCompletionLedger.append_gate_event(..., outcome=outcome)."
-    },
-    {
       "gate": "validate-feature-delta",
       "module": "src/des/cli/validate_feature_delta.py",
-      "shape": "call_kwarg",
-      "functions": null,
-      "slice": "slice-04",
-      "note": "single call site (_record_outcome) invokes AtCompletionLedger.append_gate_event(..., outcome=outcome)."
-    },
-    {
-      "gate": "mode-locus-gate",
-      "module": "src/des/cli/mode_locus_gate.py",
       "shape": "call_kwarg",
       "functions": null,
       "slice": "slice-04",

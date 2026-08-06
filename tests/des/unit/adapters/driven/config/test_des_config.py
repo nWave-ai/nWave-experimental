@@ -167,6 +167,24 @@ class TestDESConfigEnvVarOverride:
 class TestDESConfigRigorDefaults:
     """Test DESConfig rigor properties default to 'standard' profile values."""
 
+    def test_tdd_phases_are_not_a_public_rigor_config_axis(self, tmp_path):
+        """Active workflow, not rigor config, owns the TDD phase sequence."""
+        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(
+            json.dumps({"rigor": {"tdd_phases": ["GREEN"]}}),
+            encoding="utf-8",
+        )
+
+        from des.adapters.driven.config.des_config import DESConfig
+
+        cfg = DESConfig(
+            config_path=config_file,
+            global_config_path=tmp_path / "no-global-config.json",
+        )
+
+        assert not hasattr(cfg, "rigor_tdd_phases")
+
     def test_no_rigor_key_defaults_to_standard(self, tmp_path):
         """All rigor properties return standard defaults when no rigor key in config."""
         config_file = tmp_path / ".nwave" / "des-config.json"
@@ -187,10 +205,6 @@ class TestDESConfigRigorDefaults:
         assert cfg.rigor_review_enabled is True
         assert cfg.rigor_double_review is False
         assert cfg.rigor_refactor_pass is True
-        # F6 sweep (2026-05-18): default rigor_tdd_phases follows ADR-025
-        # canonical (RED/GREEN/COMMIT). Legacy 5-phase only via explicit
-        # rigor.tdd_phases override (see TestDESConfigRigorExplicitProfiles).
-        assert cfg.rigor_tdd_phases == ("RED", "GREEN", "COMMIT")
 
     def test_missing_config_file_defaults_to_standard(self, tmp_path):
         """All rigor properties return standard defaults when config file missing."""
@@ -204,9 +218,6 @@ class TestDESConfigRigorDefaults:
 
         assert cfg.rigor_profile == "standard"
         assert cfg.rigor_agent_model == "sonnet"
-        # F6 sweep (2026-05-18): default rigor_tdd_phases follows ADR-025
-        # canonical (RED/GREEN/COMMIT).
-        assert cfg.rigor_tdd_phases == ("RED", "GREEN", "COMMIT")
 
     def test_partial_rigor_fills_missing_with_standard_defaults(self, tmp_path):
         """Missing rigor sub-keys get standard defaults."""
@@ -240,7 +251,6 @@ class TestDESConfigRigorExplicitProfiles:
                         "profile": "lean",
                         "agent_model": "haiku",
                         "reviewer_model": "haiku",
-                        "tdd_phases": ["GREEN", "COMMIT"],
                         "review_enabled": False,
                         "double_review": False,
                         "refactor_pass": False,
@@ -257,7 +267,6 @@ class TestDESConfigRigorExplicitProfiles:
         assert cfg.rigor_profile == "lean"
         assert cfg.rigor_agent_model == "haiku"
         assert cfg.rigor_reviewer_model == "haiku"
-        assert cfg.rigor_tdd_phases == ("GREEN", "COMMIT")
         assert cfg.rigor_review_enabled is False
         assert cfg.rigor_double_review is False
         assert cfg.rigor_refactor_pass is False
@@ -273,13 +282,6 @@ class TestDESConfigRigorExplicitProfiles:
                         "profile": "exhaustive",
                         "agent_model": "opus",
                         "reviewer_model": "opus",
-                        "tdd_phases": [
-                            "PREPARE",
-                            "RED_ACCEPTANCE",
-                            "RED_UNIT",
-                            "GREEN",
-                            "COMMIT",
-                        ],
                         "review_enabled": True,
                         "double_review": True,
                         "refactor_pass": True,
@@ -296,32 +298,9 @@ class TestDESConfigRigorExplicitProfiles:
         assert cfg.rigor_profile == "exhaustive"
         assert cfg.rigor_agent_model == "opus"
         assert cfg.rigor_reviewer_model == "opus"
-        assert cfg.rigor_tdd_phases == (
-            "PREPARE",
-            "RED_ACCEPTANCE",
-            "RED_UNIT",
-            "GREEN",
-            "COMMIT",
-        )
         assert cfg.rigor_review_enabled is True
         assert cfg.rigor_double_review is True
         assert cfg.rigor_refactor_pass is True
-
-    def test_rigor_tdd_phases_returns_tuple_not_list(self, tmp_path):
-        """rigor_tdd_phases always returns a tuple even when config has a list."""
-        config_file = tmp_path / ".nwave" / "des-config.json"
-        config_file.parent.mkdir(parents=True, exist_ok=True)
-        config_file.write_text(
-            json.dumps({"rigor": {"tdd_phases": ["GREEN", "COMMIT"]}}),
-            encoding="utf-8",
-        )
-
-        from des.adapters.driven.config.des_config import DESConfig
-
-        cfg = DESConfig(config_path=config_file)
-
-        assert isinstance(cfg.rigor_tdd_phases, tuple)
-        assert cfg.rigor_tdd_phases == ("GREEN", "COMMIT")
 
 
 class TestDESConfigHousekeepingDefaults:

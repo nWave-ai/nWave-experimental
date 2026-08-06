@@ -11,11 +11,11 @@ argument-hint: '[profile] - Optional: lean, standard, thorough, exhaustive, cust
 
 ## Overview
 
-Interactive command to select a quality-vs-token-consumption profile. Persists choice to either `~/.nwave/global-config.json` (global scope) or `.nwave/des-config.json` (project scope) under the `rigor` key. All wave commands read this config to adjust agent models, review policy, and TDD phases.
+Interactive command to select a quality-vs-token-consumption profile. Persists choice to either `~/.nwave/global-config.json` (global scope) or `.nwave/des-config.json` (project scope) under the `rigor` key. All wave commands read this config to adjust agent models, review policy, examination depth, and refactoring effort.
 
 You (the main Claude instance) run this directly. No subagent delegation.
 
-**Note on TDD phase canons (dual-canon, ADR-025, 2026-05-07)**: the canonical TDD cycle is **3-phase v5** (`RED, GREEN, COMMIT`) as described in `nw-tdd-methodology`. The **legacy 5-phase v4** (`PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT`) is preserved for backward-compat audit-log replay of pre-2026-05-07 commits. The `.nwave/des-config.json` `tdd_phases` field accepts BOTH canons: writers of new logs may emit v5; the validator + schema (`step-tdd-cycle-schema.json`) dispatch on `schema_version` (`"5.0"` → canonical, anything else → legacy). The profile table below shows both canons side-by-side: pick v5 for new features, keep v4 only when extending a feature whose audit log was started under the legacy canon.
+Every delivery uses the same fixed floor: consume an upstream executable acceptance test, implement the smallest design-conformant change that makes it pass, refactor proportionately, and independently review or EXAMINE observable behaviour. Profiles do not select workflow phases or retain phase history.
 
 ## Profile Mappings (Single Source of Truth)
 
@@ -25,12 +25,10 @@ You (the main Claude instance) run this directly. No subagent delegation.
 | reviewer_model     | skip                                  | haiku                                                                        | sonnet                                                                       | opus                                                                         | haiku                                                                        |
 | review_enabled     | false                                 | true                                                                         | true                                                                         | true                                                                         | true                                                                         |
 | double_review      | false                                 | false                                                                        | true                                                                         | true                                                                         | false                                                                        |
-| tdd_phases (v5 canonical, ADR-025)    | [RED, GREEN]                          | [RED, GREEN, COMMIT]                                                         | [RED, GREEN, COMMIT]                                                         | [RED, GREEN, COMMIT]                                                         | [RED, GREEN, COMMIT]                                                         |
-| tdd_phases (v4 legacy, audit-replay)  | [RED_UNIT, GREEN]                     | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           | [PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT]                           |
 | refactor_pass      | false                                 | true                                                                         | true                                                                         | true                                                                         | true                                                                         |
 | examine_swarm_n    | 1                                     | 1                                                                           | 3                                                                           | 5                                                                           | 1                                                                           |
 
-**v2 evolution notes (evidence-by-execution migration, 2026-07-03) — the rigor axes shifted with the flow; ADD-not-mutate, so the legacy keys keep resolving for their 9 consumers:**
+**v2 evolution notes (evidence-by-execution migration, 2026-07-03) — the rigor axes shifted with the flow:**
 - `examine_swarm_n` (NEW): how many independent User-Examiners ("Vera") walk each slice's expectation charter at the DELIVER EXAMINE step. `1` = one exam; `≥3` = swarm, and **divergence between the session logs is itself a signal** (a charter that different examiners read differently is under-specified). The examiner runs on **haiku** (its work is walk/observe/describe, not code reasoning — model pinned in the `nw-user-examiner` agent, not a rigor knob).
 - `reviewer_model` is now the **FEATURE-END** deep-review model (P2.2). The per-slice code-reading `C_REVIEWER_AUDIT` is REPLACED by the EXAMINE step (execution-observation) — see nw-deliver. `reviewer_model` is retained (backward-compat + the feature-end review), not deleted.
 - `agent_model` is **UNCAPPED** — `thorough`/`exhaustive` legitimately offer `opus` for the user's high-stakes choice (vision principle 4). (The no-opus/fable rule governs Lyra's *own* migration dispatches + defaults, not the product ceiling.)
@@ -69,7 +67,7 @@ If JSON is invalid -> backup as `.nwave/des-config.json.bak`, reset config to `{
 
 Display current profile (from `config.rigor.profile`) or "none set" if absent.
 
-Brief explanation: "Rigor profiles control how much quality infrastructure nWave applies per wave: agent models, review depth, TDD phases. Higher rigor = better guarantees, higher token cost."
+Brief explanation: "Rigor profiles control how much quality infrastructure nWave applies per wave: agent models, review and examination depth, refactoring effort. Higher rigor = stronger optional assurance and higher token cost; the executable-AT floor remains fixed."
 
 #### Step 1.5: Scope Selection
 
@@ -98,7 +96,6 @@ Display this table:
 | Agent     | haiku  | sonnet   | opus     | opus       | *yours* |
 | Reviewer  | --     | haiku    | sonnet   | opus       | haiku   |
 | Review    | no     | yes      | double   | double     | yes     |
-| TDD       | R->G   | 5-phase  | 5-phase  | 5-phase    | 5-phase |
 | Refactor  | no     | yes      | yes      | yes        | yes     |
 +-----------+--------+----------+----------+------------+---------+
 | Est. cost | lowest | moderate | higher   | highest    | varies  |
@@ -130,13 +127,11 @@ Show the detail view for the selected profile. Render in a code block for visual
 ```
 WHAT YOU GET:
   - Haiku agent (fastest, cheapest)
-  - RED -> GREEN TDD (skip PREPARE, RED_ACCEPTANCE, COMMIT phases)
+  - The fixed executable-AT delivery floor
 
 WHAT YOU LOSE:
   - No code review
-  - No PREPARE phase (no test fixture setup)
-  - No RED_ACCEPTANCE phase (no acceptance tests)
-  - No COMMIT phase (no refactoring pass)
+  - No dedicated refactoring pass
 
 WHEN TO USE:
   Config changes, documentation, simple bug fixes, spikes/prototypes
@@ -149,9 +144,8 @@ ESTIMATED IMPACT:
 ```
 WHAT YOU GET:
   - Sonnet agent (balanced quality/speed)
-  - Full 5-phase TDD (PREPARE -> RED_ACCEPTANCE -> RED_UNIT -> GREEN -> COMMIT)
   - Haiku reviewer (cost-effective review)
-  - Refactoring pass in COMMIT phase
+  - Dedicated proportional refactoring pass
 
 WHAT'S NOT INCLUDED:
   - No double review (single pass only)
@@ -170,8 +164,7 @@ WHAT YOU GET:
   - Opus agent (strongest reasoning)
   - Sonnet reviewer (deeper review analysis)
   - Double review (two independent review passes)
-  - Full 5-phase TDD
-  - Refactoring pass
+  - Dedicated proportional refactoring pass
 
 WHAT IT COSTS:
   Higher token cost | Slower per step
@@ -185,8 +178,7 @@ WHEN TO USE:
 WHAT YOU GET:
   - Opus agent and opus reviewer (strongest at every stage)
   - Double review (two independent review passes)
-  - Full 5-phase TDD
-  - Refactoring pass
+  - Dedicated proportional refactoring pass
 
 WHAT IT COSTS:
   Highest token cost | Slowest per step
@@ -200,9 +192,8 @@ WHEN TO USE:
 WHAT YOU GET:
   - Your session model for agents (nWave inherits, does not override)
   - Haiku reviewer
-  - Full 5-phase TDD
   - Single review pass
-  - Refactoring pass
+  - Dedicated proportional refactoring pass
 
 WHAT THIS MEANS:
   nWave respects your model choice and controls the process around it.
@@ -231,13 +222,12 @@ Ask user to confirm via AskUserQuestion:
      "profile": "{selected}",
      "agent_model": "...",
      "reviewer_model": "...",
-     "tdd_phases": [...],
      "review_enabled": true/false,
      "double_review": true/false,
      "refactor_pass": true/false
    }
    ```
-5. Write back to `{target_file}`, preserving all other top-level keys (audit_logging_enabled, skill_tracking, update_check, etc.)
+5. Write back to `{target_file}`, preserving all other top-level keys (audit_logging_enabled, skill_tracking, etc.)
 
 #### Step 7: Summary
 
@@ -250,7 +240,6 @@ Rigor profile saved: {name}
   +-----------------------+---------------------------------------------------+
   | agent_model           | {value}                                           |
   | reviewer_model        | {value}                                           |
-  | tdd_phases            | {value}                                           |
   | review_enabled        | {value}                                           |
   | double_review         | {value}                                           |
   | refactor_pass         | {value}                                           |
@@ -284,7 +273,6 @@ Switching from {current} -> {target}:
   agent_model:      sonnet -> haiku
   reviewer_model:   haiku -> skip
   review_enabled:   true -> false
-  tdd_phases:       5-phase -> R->G
   refactor_pass:    true -> false
 ```
 
@@ -293,8 +281,7 @@ If downgrading (moving to a less rigorous profile), highlight what user will los
 ```
 You will LOSE:
   - Code review (reviewer_model: skip)
-  - PREPARE, RED_ACCEPTANCE, COMMIT phases
-  - Refactoring pass
+  - Dedicated refactoring pass
 ```
 
 If no current profile is set, show the target profile settings without diff.
@@ -357,29 +344,17 @@ Options:
 
 Only show this question if reviewer_model is not "skip". If "skip", set double_review = false automatically.
 
-#### Step 5: TDD Phases
-
-Ask via AskUserQuestion:
-```
-Which TDD phases should agents execute?
-```
-Options:
-1. Full 5-phase (Recommended) — PREPARE, RED_ACCEPTANCE, RED_UNIT, GREEN, COMMIT
-2. Minimal (RED→GREEN) — RED_UNIT and GREEN only (fastest, skips setup and refactoring)
-
-#### Step 6: Refactoring Pass
+#### Step 5: Refactoring Pass
 
 Ask via AskUserQuestion:
 ```
 Include a dedicated refactoring pass after implementation?
 ```
 Options:
-1. Yes (Recommended) — L1-L4 refactoring in COMMIT phase
-2. No — skip refactoring pass
+1. Yes (Recommended) — a dedicated proportional refactoring pass after the AT is green
+2. No — use only the fixed delivery floor's inline cleanup
 
-Only show if TDD phases is "Full 5-phase". If minimal, set refactor_pass = false automatically.
-
-#### Step 7: Summary + Confirm
+#### Step 6: Summary + Confirm
 
 Display the assembled profile:
 
@@ -390,7 +365,6 @@ Custom profile:
   | agent_model           | {value}                                           |
   | reviewer_model        | {value}                                           |
   | double_review         | {value}                                           |
-  | tdd_phases            | {value}                                           |
   | refactor_pass         | {value}                                           |
   +-----------------------+---------------------------------------------------+
 ```
@@ -400,7 +374,7 @@ Ask to confirm via AskUserQuestion:
 2. Start over (return to Step 2)
 3. Cancel (exit without saving)
 
-#### Step 8: Save + Summary
+#### Step 7: Save + Summary
 
 Same as Mode 1 Steps 6 and 7. Uses `{target_file}` from Step 1.5. Save with `"profile": "custom"`.
 
@@ -435,7 +409,7 @@ No current profile set. Shows comparison table, user picks "standard", sees deta
 ```
 /nw-rigor lean
 ```
-Current profile is "standard". Shows diff: loses review, loses PREPARE/COMMIT phases, loses refactoring pass. Agent drops from sonnet to haiku. User confirms. Config updated.
+Current profile is "standard". Shows diff: loses review and the dedicated refactoring pass. Agent drops from sonnet to haiku. User confirms. Config updated.
 
 ### Example 3: Quick switch up
 ```
@@ -447,7 +421,7 @@ Current profile is "standard". Shows diff: sonnet->opus agent, haiku->sonnet rev
 ```
 /nw-rigor custom
 ```
-Walks through 5 questions: agent model (opus), reviewer (haiku), double review (no), TDD (full 5-phase), refactoring (yes). Saves as custom profile with opus agent, haiku reviewer, single review, full TDD, and refactoring — a combination no preset offers.
+Walks through 4 questions: agent model (opus), reviewer (haiku), double review (no), refactoring (yes). Saves as custom profile with opus agent, haiku reviewer, single review, and dedicated refactoring — a combination no preset offers.
 
 ### Example 5: Invalid profile name
 ```

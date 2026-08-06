@@ -183,12 +183,6 @@ def hooks_register_subagent_stop(build_result: dict[str, Any]):
     assert "SubagentStop" in _get_registered_events(build_result)
 
 
-@then("the hook configuration registers a handler for session startup")
-def hooks_register_session_start(build_result: dict[str, Any]):
-    """Verify SessionStart hook is registered."""
-    assert "SessionStart" in _get_registered_events(build_result)
-
-
 # hooks_use_plugin_root is defined in conftest.py (shared with walking-skeleton)
 
 
@@ -229,16 +223,6 @@ def tdd_schema_exists(build_result: dict[str, Any]):
         plugin_dir.rglob("*tdd*schema*")
     )
     assert len(found) > 0, "TDD cycle schema template not found in plugin"
-
-
-@then("the roadmap schema template exists in the plugin")
-def roadmap_schema_exists(build_result: dict[str, Any]):
-    """Verify roadmap schema is bundled."""
-    plugin_dir = build_result["plugin_dir"]
-    found = list(plugin_dir.rglob("roadmap-schema.json")) or list(
-        plugin_dir.rglob("*roadmap*schema*")
-    )
-    assert len(found) > 0, "Roadmap schema template not found in plugin"
 
 
 # des_importable is defined in conftest.py (shared with walking-skeleton)
@@ -313,17 +297,19 @@ def rewritten_file_valid_python(build_result: dict[str, Any]):
             pytest.fail(f"Syntax error in rewritten DES file {py_file.name}: {exc}")
 
 
-@then("the configuration contains handlers for all six DES event types")
-def hooks_have_all_six_events(build_result: dict[str, Any]):
-    """Property: all event types present in hook config."""
+@then("the configuration contains handlers for every DES event type")
+def hooks_have_every_event(build_result: dict[str, Any]):
+    """Property: the registered event set is exactly the declared one.
+
+    SessionStart and UserPromptSubmit are absent by design: they carried the
+    session ceremony deleted in 22ea19309, and nothing registers them now.
+    """
     registered_events = set(_get_registered_events(build_result))
     expected_events = {
         "PreToolUse",
         "PostToolUse",
         "SubagentStop",
-        "SessionStart",
         "SubagentStart",
-        "UserPromptSubmit",
     }
     assert registered_events == expected_events, (
         f"Missing events: {expected_events - registered_events}, "

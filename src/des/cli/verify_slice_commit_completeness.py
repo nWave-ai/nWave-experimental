@@ -74,8 +74,6 @@ from des.adapters.driven.logging.at_completion_ledger import (
     AtCompletionLedger,
     LedgerIntegrityViolation,
 )
-from des.adapters.driven.runner.runner_json import read_runner_json
-from des.adapters.driven.runner.runner_registry import seed_runner_registry
 from des.application.slice_at_completeness import (
     _regression_file_glob_candidates,
     canonical_regression_test_path,
@@ -108,12 +106,6 @@ from des.domain.slice_id_trailer import (
     extract_slice_ids,
 )
 from des.domain.telemetry_paths import LedgerFamily, ledger_path
-from des.ports.test_runner_port import (
-    RunnerAdapter,
-    RunnerAdapterUnavailable,
-    RunnerResolutionContext,
-)
-from des.ports.test_runner_port import resolve as resolve_runner
 from des.runtime.interpreter import Capability, InterpreterUnavailable, des_spawn
 from des.runtime.spawn import GIT_TIMEOUT_ENV, git_timeout_seconds, spawn
 
@@ -157,107 +149,6 @@ def _gate_scope_seal_intact(commit_message: str) -> bool:
 # unchanged) so every existing import site
 # (``from des.cli.verify_slice_commit_completeness import
 # _GATE_INDETERMINATE_EXIT_CODE``) keeps resolving to the identical value.
-
-
-# The regression-collection leg's runner-aware whole-tree run convention, keyed
-# by the resolved runner name (verify-slice-commit-runner-aware-collection,
-# slice-01, sister of Bug B pt.2). A committed feature-dir ``runner.json``
-# ``test_command`` OVERRIDES this (the SAME override
-# ``run_contract_gate._cargo_scope_command`` consults for the Gherkin/
-# feature-scoped path); with none, a KNOWN runner falls back to its whole-tree
-# convention -- ``cargo nextest run`` auto-discovers every ``tests/*.rs``
-# integration target, so the declared ``--regression-test-file`` is exercised
-# without needing a feature-scoped selector. A runner absent from this table
-# has no established regression-run convention in this feature -- the caller
-# degrades LOUD INDETERMINATE rather than guessing a command shape.
-_REGRESSION_RUNNER_WHOLE_TREE_COMMAND: dict[str, tuple[str, ...]] = {
-    "cargo-test": ("cargo", "nextest", "run"),
-}
-
-
-def _routes_through_runner_port(
-    repo: Path, feature_id: str, regression_test_file: str
-) -> bool:
-    """Whether the E2 regression collection leg routes through the runner-port.
-
-    PINNED CONTRACT: the declared ``--regression-test-file`` is NON-Python
-    (extension not ``.py``), OR the feature-dir declares a committed
-    ``runner.json`` ``test_command`` override -- either signal alone is
-    sufficient. A ``.py`` file with no override keeps the EXISTING
-    pytest-native collection path byte-identical (the regression guard).
-    """
-    if Path(regression_test_file).suffix != ".py":
-        return True
-    override = read_runner_json(feature_id, repo)
-    return override is not None and bool(override.get("test_command"))
-
-
-def _regression_runner_command(
-    repo: Path, feature_id: str, runner_name: str
-) -> tuple[str, ...] | None:
-    """The runner command to RUN the declared regression-test-file, or ``None``.
-
-    A committed ``runner.json`` ``test_command`` OVERRIDES; with none, a KNOWN
-    runner (``_REGRESSION_RUNNER_WHOLE_TREE_COMMAND``) falls back to its
-    whole-tree convention. ``None`` means this runner has no established
-    regression-run convention in this feature -- the caller degrades LOUD
-    INDETERMINATE.
-    """
-    override = read_runner_json(feature_id, repo)
-    if override is not None and override.get("test_command"):
-        return tuple(str(override["test_command"]).split())
-    return _REGRESSION_RUNNER_WHOLE_TREE_COMMAND.get(runner_name)
-
-
-def _run_regression_gate_via_runner(
-    repo: Path, feature_id: str
-) -> tuple[int, str | None, str | None]:
-    """Run E2 for a regression-test-file through the runner-port (non-Python).
-
-    Mirrors ``run_contract_gate._maybe_route_through_cargo`` (the PROVEN
-    Gherkin/feature-scoped precedent composing the SAME seam): seed the
-    runner registry, RESOLVE the target's runner, derive/read its run
-    command, and map the verdict. Returns ``(exit_code, reason, diagnostic)``
-    -- ``reason``/``diagnostic`` are non-``None`` ONLY on an INDETERMINATE
-    exit, naming the RUNNER as the cause (never the pytest-native
-    uncollectible literal -- that diagnostic means the pytest collector ran,
-    which never happens on this leg).
-    """
-    seed_runner_registry()
-    resolution = resolve_runner(
-        repo, RunnerResolutionContext(feature_id=feature_id, repo=repo)
-    )
-    if not isinstance(resolution, RunnerAdapter):
-        reason = getattr(resolution, "reason", "no recognized test-runner resolved")
-        return (
-            _GATE_INDETERMINATE_EXIT_CODE,
-            "regression_runner_unresolvable",
-            "no test-runner resolved for the declared --regression-test-file's "
-            f"target -- {reason} -- recorded an honest SliceCommitIndeterminate "
-            "(unverified here), never coerced through the pytest-native "
-            "collector on a non-Python target",
-        )
-    command = _regression_runner_command(repo, feature_id, resolution.name)
-    if command is None:
-        return (
-            _GATE_INDETERMINATE_EXIT_CODE,
-            "regression_runner_unresolvable",
-            f"the resolved runner {resolution.name!r} has no known regression-run "
-            "convention in this feature -- recorded an honest "
-            "SliceCommitIndeterminate (unverified here), never a fabricated pass",
-        )
-    try:
-        verdict = resolution.run(repo, command)
-    except RunnerAdapterUnavailable as exc:
-        return (
-            _GATE_INDETERMINATE_EXIT_CODE,
-            "regression_runner_unavailable",
-            f"the {resolution.name!r} runner could not produce a trustworthy "
-            f"verdict for the declared --regression-test-file: {exc} -- recorded "
-            "an honest SliceCommitIndeterminate (unverified here), never a "
-            "fabricated pass",
-        )
-    return (0 if verdict.passed else 1, None, None)
 
 
 # DDD-3 identity guarantee: re-export the pure-function SSOT symbols so the
@@ -339,8 +230,6 @@ def _build_parser() -> argparse.ArgumentParser:
             "gherkin",
             "pytest-regression",
             "pytest-regression-aggregate",
-            "native-regression",
-            "rust-regression",
         ),
         help=(
             "The acceptance-test kind the slice's E2 leg attests (default: "
@@ -349,15 +238,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "gate -- which cannot resolve a pytest-regression bugfix's "
             "structure -- with a BEHAVIORAL attestation: it actually runs "
             "--regression-test-file on the committed tree and uses its exit "
-            "code as the E2 verdict. 'native-regression' "
-            "(fix-rust-regression-at-kind-wiring) is the SAME behavioral "
-            "attestation for a non-Python regression file (e.g. `.rs`) -- "
-            "it routes through the SAME runner-port seam "
-            "`_routes_through_runner_port` already resolves for a "
-            "pytest-regression file whose suffix is not `.py`. "
-            "'rust-regression' (rust-regression-at-kind-semi-wired) is an "
-            "accepted ALIAS of 'native-regression', normalized right after "
-            "parsing -- never a second code path."
+            "code as the E2 verdict."
         ),
     )
     parser.add_argument(
@@ -727,8 +608,6 @@ def _run_regression_gate(
                 "fabricated pass"
             ),
         )
-    if _routes_through_runner_port(repo, feature_id, regression_test_file):
-        return _run_regression_gate_via_runner(repo, feature_id)
     try:
         completed = des_spawn(
             "pytest",
@@ -1964,19 +1843,9 @@ def _run_verify_checks(
     # introspection (zero .feature files) instead of unconditionally routing
     # into the gherkin scope resolver, which would refuse `zero-collected`
     # for a reason unrelated to the operator's code.
-    # native-regression (fix-rust-regression-at-kind-wiring): the SAME
-    # behavioral-attestation dispatch as pytest-regression, for a non-Python
-    # regression file. Never inferred (unlike pytest-regression's RC1 Fix B
-    # below) -- native-regression is always an explicit operator declaration,
-    # so an operator who declares it without --regression-test-file gets the
-    # clean "requires --regression-test-file" refusal further down, never a
-    # guessed Python file.
     is_pytest_regression = args.at_kind == "pytest-regression"
     is_pytest_regression_aggregate = args.at_kind == "pytest-regression-aggregate"
-    is_native_regression = args.at_kind == "native-regression"
-    is_regression_attestation = (
-        is_pytest_regression or is_pytest_regression_aggregate or is_native_regression
-    )
+    is_regression_attestation = is_pytest_regression or is_pytest_regression_aggregate
     regression_test_file = args.regression_test_file
     if not is_regression_attestation and regression_test_file is None:
         inferred_file, refusal_payload = _infer_pytest_regression_at_kind(
@@ -3620,13 +3489,6 @@ def main(argv: list[str] | None = None) -> int:
     """
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = _build_parser().parse_args(raw_argv)
-    # rust-regression-at-kind-semi-wired: 'rust-regression' is a CLI-facing
-    # ALIAS of 'native-regression', normalized here (before any downstream
-    # `args.at_kind` read) so this entry point -- and `commit_slice.py`'s
-    # preflight fold-in, which reuses this SAME `_build_parser` -- reuse the
-    # SAME unified 'native-regression' AT-discovery path, never a second one.
-    if args.at_kind == "rust-regression":
-        args.at_kind = "native-regression"
     repo = Path(args.repo)
 
     if args.register_historical_prefactoring_aggregate:

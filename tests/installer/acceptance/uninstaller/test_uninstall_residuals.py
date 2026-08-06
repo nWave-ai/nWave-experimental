@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import importlib
 import io
+import json
 import os
 import subprocess
 import sys
@@ -149,6 +150,32 @@ def post_uninstall_state(tmp_path_factory) -> dict:
         nw_skill_dirs_pre = sorted(claude_config_dir.glob("skills/nw-*"))
         lib_des_pre = (claude_config_dir / "lib" / "python" / "des").exists()
 
+        # These are deliberately close to retired DES lifecycle commands, but
+        # belong to Lyra and to the operator.  Drive the real uninstaller CLI
+        # through this state: it must not use a broad marker/substring sweep.
+        settings_path = claude_config_dir / "settings.json"
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        hooks = settings.setdefault("hooks", {})
+        hooks["SessionStart"] = [
+            {
+                "hooks": [
+                    {"type": "command", "command": "python3 -m lyra.session_start"}
+                ]
+            },
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": (
+                            "# des-hook:orchestrator-affordance-refresh-standalone\n"
+                            "python3 /opt/operator/session_start.py --keep"
+                        ),
+                    }
+                ]
+            },
+        ]
+        settings_path.write_text(json.dumps(settings), encoding="utf-8")
+
         # Uninstall
         sys.argv = ["uninstall_nwave.py", "--force"]
         sys.stdout = devnull
@@ -172,6 +199,7 @@ def post_uninstall_state(tmp_path_factory) -> dict:
             "lib_des_pre": lib_des_pre,
             "lib_des_post": lib_des_post,
             "settings_text_post": settings_text,
+            "settings_post": json.loads(settings_text) if settings_text else {},
         }
     finally:
         sys.stdout = sys.__stdout__
@@ -206,16 +234,38 @@ class TestUninstallResiduals:
         )
 
     def test_no_residual_des_hooks_in_settings(self, post_uninstall_state):
-        """settings.json must contain no DES hook patterns post-uninstall."""
-        text = post_uninstall_state["settings_text_post"]
-        if not text:
-            return  # No settings.json → trivially clean
+        """The active hook events contain no installer-owned DES commands."""
+        hooks = post_uninstall_state["settings_post"].get("hooks", {})
         forbidden_patterns = [
             "des-hook:",
             "des.adapters.drivers.hooks.claude_code_hook_adapter",
         ]
-        found = [p for p in forbidden_patterns if p in text]
+        active_hook_text = json.dumps(
+            {
+                event: hooks.get(event, [])
+                for event in (
+                    "PreToolUse",
+                    "SubagentStart",
+                    "SubagentStop",
+                    "PostToolUse",
+                )
+            }
+        )
+        found = [p for p in forbidden_patterns if p in active_hook_text]
         assert not found, f"Uninstall left DES hook patterns in settings.json: {found}"
+
+    def test_real_uninstall_preserves_lyra_and_near_miss_lifecycle_hooks(
+        self, post_uninstall_state
+    ):
+        """The CLI cleanup keeps entries it did not write exactly."""
+        session_entries = post_uninstall_state["settings_post"]["hooks"]["SessionStart"]
+        commands = [entry["hooks"][0]["command"] for entry in session_entries]
+
+        assert commands == [
+            "python3 -m lyra.session_start",
+            "# des-hook:orchestrator-affordance-refresh-standalone\n"
+            "python3 /opt/operator/session_start.py --keep",
+        ]
 
     def test_uninstall_exit_code_zero(self, post_uninstall_state):
         """Uninstall reports success even with residuals — sanity check on exit code."""

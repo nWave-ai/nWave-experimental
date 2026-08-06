@@ -14,16 +14,12 @@ Two emissions:
     from the actual pytest run. A genuinely-failing target therefore surfaces
     ``failed > 0`` -- this is the anti-theater witness: the counts cannot be a
     hard-coded green template, they vary with the target.
-  * a fail-safe ABSTAIN -> when the named runner cannot be invoked, the port
-    emits a ``nwave.earned_verdict.v1``-shaped ABSTAIN envelope
-    (``status: "ABSTAIN"``, ``reason: "runner-absent"``) IN PLACE of a run. It
-    MUST NOT fabricate a passing ``test_result.v1`` for a run that never
-    happened -- a fabricated green is the exact theater the whole gate exists to
-    prevent.
+  * an explicit non-observation -> when the named runner cannot be invoked,
+    the port emits ``nwave.test_observation.v1`` with
+    ``observation: "unobserved"`` and ``reason: "runner-absent"``. It MUST NOT
+    fabricate a passing ``test_result.v1`` for a run that never happened.
 
-LANGUAGE_BOUND adapter: the pytest runner literal lives HERE (catalog #1,
-correct). It is never leaked into the target-blind verdict CORE
-(``des.domain.earned_verdict``), which branches on counts alone.
+LANGUAGE_BOUND adapter: the pytest runner literal lives HERE (catalog #1).
 """
 
 from __future__ import annotations
@@ -36,13 +32,13 @@ from pathlib import Path
 
 
 TEST_RESULT_SCHEMA = "nwave.test_result.v1"
-EARNED_VERDICT_SCHEMA = "nwave.earned_verdict.v1"
+TEST_OBSERVATION_SCHEMA = "nwave.test_observation.v1"
 
 # The runner this adapter implements. ``--runner`` defaults here; any other
-# value names a runner this adapter cannot invoke -> fail-safe ABSTAIN.
+# value names a runner this adapter cannot invoke -> explicit non-observation.
 _PYTEST_RUNNER = "pytest"
 _RUNNER_ABSENT_REASON = "runner-absent"
-_ABSTAIN_STATUS = "ABSTAIN"
+_UNOBSERVED = "unobserved"
 
 
 class _CountCollector:
@@ -105,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     """Run the target through the test-runner port. Returns a process exit code."""
     args = _parse_args(argv)
     if not _runner_is_invokable(args.runner):
-        _write_envelope(args.out, _abstain_envelope())
+        _write_envelope(args.out, _unobserved_envelope(args.runner))
         return 2
     collector = _CountCollector()
     exit_code = _run_pytest(args.target, collector)
@@ -127,7 +123,7 @@ def _runner_is_invokable(runner: str) -> bool:
 
     This adapter implements pytest, run in-process via ``pytest.main``. A runner
     name this adapter does not implement, or a pytest that is not importable in
-    this interpreter, cannot be invoked -> the fail-safe ABSTAIN path. The check
+    this interpreter, cannot be invoked -> the explicit unobserved path. The check
     is real (an actual import probe), not a hard-coded allow-list.
     """
     if runner != _PYTEST_RUNNER:
@@ -177,16 +173,12 @@ def _test_result_envelope(
     }
 
 
-def _abstain_envelope() -> dict[str, object]:
-    """Assemble the fail-safe ABSTAIN envelope for an un-invokable runner.
-
-    A ``nwave.earned_verdict.v1``-shaped ABSTAIN emitted IN PLACE of a run: no
-    ``test_result.v1`` is produced, so the gate can never read a never-executed
-    target as green (``reason: "runner-absent"``).
-    """
+def _unobserved_envelope(runner: str) -> dict[str, object]:
+    """Describe an uninvokable runner without inventing a successful run."""
     return {
-        "schema": EARNED_VERDICT_SCHEMA,
-        "status": _ABSTAIN_STATUS,
+        "schema": TEST_OBSERVATION_SCHEMA,
+        "runner": runner,
+        "observation": _UNOBSERVED,
         "reason": _RUNNER_ABSENT_REASON,
     }
 

@@ -172,15 +172,11 @@ def scan(root: Path, *, public_only: bool = False) -> dict[str, list[Path]]:
     templates = sorted(
         p for p in (nwave / "templates").glob("*.yaml") if not p.name.startswith(".")
     )
-    orchestrator_affordance = sorted(
-        (nwave / "data" / "orchestrator-affordance").glob("*.md")
-    )
     return {
         "agents": agents,
         "commands": commands,
         "skills": skills,
         "templates": templates,
-        "orchestrator_affordance": orchestrator_affordance,
     }
 
 
@@ -902,7 +898,6 @@ def project_generated_regions(
         *asset_paths["agents"],
         *asset_paths["commands"],
         *asset_paths["skills"],
-        *asset_paths["orchestrator_affordance"],
     ]
     projections: list[AssetProjection] = []
     for path in files:

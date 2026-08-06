@@ -37,7 +37,6 @@ from tests.des.acceptance.activation_gating.steps.domain_types import (
     HookCommand,
     HookEnvelope,
     MarkerState,
-    PriorUseEvidence,
     SubagentType,
 )
 
@@ -73,7 +72,6 @@ def _by_name(enum_cls):
 EXTRA_TYPES = {
     "GlobalMode": _by_name(GlobalMode),
     "MarkerState": _by_name(MarkerState),
-    "PriorUseEvidence": _by_name(PriorUseEvidence),
     "GitignoreVariant": _by_name(GitignoreVariant),
     "AdoptionTrigger": _by_name(AdoptionTrigger),
     "HookCommand": _by_name(HookCommand),
@@ -106,16 +104,6 @@ def Given_global_mode(composition, mode: GlobalMode) -> None:
 )
 def Given_marker(composition, marker: MarkerState) -> None:
     composition.given_marker(marker)
-
-
-@given(
-    parsers.parse(
-        'the project shows "{evidence:PriorUseEvidence}" prior-use',
-        extra_types=EXTRA_TYPES,
-    ),
-)
-def Given_prior_use(composition, evidence: PriorUseEvidence) -> None:
-    composition.given_prior_use_evidence(evidence)
 
 
 @given(

@@ -1,10 +1,10 @@
-"""Fast-gate CLI --help contract tests for all 5 DES CLI modules.
+"""Fast-gate CLI --help contract tests for supported DES CLI modules.
 
 Asserts that every DES CLI entry point accepts --help (and -h) and signals
 success (exit code 0). Two compliant implementation patterns exist:
 
 - argparse-based CLIs: raise SystemExit(0) via parser.parse_args(['--help'])
-- Custom-parser CLIs: return 0 directly (e.g., verify_deliver_integrity, roadmap)
+- Custom-parser CLIs: return 0 directly (e.g., verify_deliver_integrity)
 
 Both patterns are compliant. The test captures either and asserts zero exit.
 Any module that exits with a non-zero code or raises an unexpected exception
@@ -19,10 +19,7 @@ import pytest
 
 
 _DES_CLI_MODULES = [
-    "des.cli.log_phase",
-    "des.cli.init_log",
     "des.cli.verify_deliver_integrity",
-    "des.cli.roadmap",
     "des.cli.health_check",
 ]
 

@@ -255,7 +255,7 @@ These ship as part of the **nwave-pro** enterprise bundle (deferred — contact 
 | Read stage cascade | `nw-tdd-methodology::Empirical efficacy framework` |
 | Python canonical implementation | `nwave_ai.state_delta` (matcher.py + predicates.py) |
 | Python pilot example | `tests/state_delta/integration/test_pilot_bug48.py` (D-12 Part A + B) |
-| Roadmap directive (architects) | `nw-roadmap::Test paradigm mandate` |
+| Design directive (architects) | `nw-design::Development Paradigm Selection` |
 
 For language-specific PBT library docs, see official:
 - fast-check: `https://fast-check.dev/`

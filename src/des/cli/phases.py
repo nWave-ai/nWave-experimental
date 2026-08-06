@@ -32,8 +32,6 @@ import sys
 from des.domain.atdd_pure_phases import (
     CANONICAL_PHASES,
     CANONICAL_TRANSITIONS,
-    ROUTING_SEAM,
-    UnknownPhaseName,
     resolve_phase,
 )
 
@@ -63,16 +61,18 @@ def _resolve(name: str) -> int:
     * an unknown name -> a typed-error message on stderr, non-zero exit (never a
       silent map to a wrong phase).
     """
-    try:
-        canonical = resolve_phase(name)
-    except UnknownPhaseName as exc:
-        sys.stderr.write(f"{exc}\n")
+    resolution = resolve_phase(name)
+    # Ask the outcome, never compare its enum member here: `is` on an enum
+    # member is an identity check across a module boundary, the very coupling
+    # this contract removed from the `except` it replaced.
+    if resolution.is_unknown:
+        sys.stderr.write(f"unknown phase name: {resolution.requested!r}\n")
         return 1
-    if canonical == ROUTING_SEAM:
+    if resolution.is_routing:
         json.dump({"routing": True, "canonical": None}, sys.stdout)
         sys.stdout.write("\n")
         return 0
-    json.dump({"canonical": canonical}, sys.stdout)
+    json.dump({"canonical": resolution.canonical}, sys.stdout)
     sys.stdout.write("\n")
     return 0
 

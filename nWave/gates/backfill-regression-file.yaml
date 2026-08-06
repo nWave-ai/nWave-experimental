@@ -22,11 +22,11 @@ responsibility: |
   `_shipped_and_entering_regression_files`
   (verify_slice_commit_completeness.py) reads this record back as its SECOND
   resolution tier -- after the slice's own stored declaration, before the
-  naming-convention glob -- for ANY at-kind sharing this mechanism
-  (pytest-regression, native-regression).
+  naming-convention glob -- for the only currently supported at-kind,
+  pytest-regression.
 module: des.cli.backfill_regression_file
 entry_function: main
-language_neutral_contract: true
+language_neutral_contract: false
 
 log_events:
   - RegressionFileBackfillRecorded

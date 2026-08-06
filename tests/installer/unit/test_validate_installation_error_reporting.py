@@ -24,7 +24,17 @@ class _InstallerTestHelper:
 
     @staticmethod
     def build_installer(tmp_path, platform_override=None):
-        """Build an NWaveInstaller with filesystem mocked."""
+        """Build an NWaveInstaller with filesystem mocked.
+
+        `platform_override` defaults to claude_code rather than to ambient
+        detection: these tests are about validate_installation's error
+        REPORTING, not about host discovery, and an undeclared target makes the
+        outcome depend on what the machine running the suite happens to have
+        installed. A test wanting a different target states it (see the
+        copilot-only cases below).
+        """
+        if platform_override is None:
+            platform_override = {"claude_code"}
         # Create minimal catalog to satisfy fail-closed load_public_agents
         project_dir = tmp_path / "project" / "nWave"
         project_dir.mkdir(parents=True)

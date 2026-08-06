@@ -132,6 +132,14 @@ def test_extract_claims_ignores_a_backtick_name_with_no_known_suffix() -> None:
     assert claims == ()
 
 
+def test_extract_claims_ignores_an_event_shaped_python_type_reference() -> None:
+    """A type name is not a claim that a durable record with that name emits."""
+    claims = extract_claims(
+        "the ledger outcome is typed `GateVerdict` and records its value", "f.md"
+    )
+    assert claims == ()
+
+
 # --- compute_declared_events (end-to-end over a fixture tree) --------------
 
 

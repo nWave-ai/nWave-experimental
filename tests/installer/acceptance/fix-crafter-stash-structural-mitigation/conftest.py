@@ -6,9 +6,8 @@ state per test so AT-2 (kill-switch set) does not leak the bypass into AT-1
 of the precondition.
 
 The conftest is placed at the feature root (sibling of the .feature file)
-rather than under steps/ — mirrors the atdd-spine-ledger-enforcement-gate-v2 +
-fix-hmac-bootstrap-installer precedent and avoids a pytest plugin-name
-collision with sibling features that also carry a steps/conftest.py.
+rather than under steps to avoid a pytest plugin-name collision with sibling
+features that also carry a steps/conftest.py.
 
 RED-for-the-right-reason: the production driving port for slice-01 is the
 script `scripts/hooks/git_stash_guard.py`. That script does NOT EXIST YET

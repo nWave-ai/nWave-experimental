@@ -60,7 +60,7 @@ class PreToolUseService(PreToolUsePort):
       4. Validate marker completeness via MarkerCompletenessPolicy
          - If invalid: log HOOK_PRE_TOOL_USE_BLOCKED, return block
          - If orchestrator mode: log HOOK_PRE_TOOL_USE_ALLOWED, return allow
-      5. Validate prompt structure via ValidatorPort
+      5. Validate the explicit atdd_pure dispatch through its dedicated validator
          - If invalid: log HOOK_PRE_TOOL_USE_BLOCKED, return block
          - If valid: log HOOK_PRE_TOOL_USE_ALLOWED, return allow
 
@@ -86,7 +86,6 @@ class PreToolUseService(PreToolUsePort):
     def __init__(
         self,
         marker_parser: DesMarkerParser,
-        prompt_validator: ValidatorPort,
         audit_writer: AuditLogWriter,
         time_provider: TimeProvider,
         enforcement_policy: DesEnforcementPolicy | None = None,
@@ -97,7 +96,6 @@ class PreToolUseService(PreToolUsePort):
         deliverable_type: str | None = None,
     ) -> None:
         self._marker_parser = marker_parser
-        self._prompt_validator = prompt_validator
         self._audit_writer = audit_writer
         self._time_provider = time_provider
         self._enforcement_policy = enforcement_policy
@@ -407,18 +405,17 @@ class PreToolUseService(PreToolUsePort):
         # Step 3: refactor/find dispatch routing (D8, des-refactor-fixer-swarm
         # slice-03; reordered ahead of marker completeness by
         # bugfix-refactor-dispatch-mode-recognition-order). A DES-MODE:refactor
-        # or DES-MODE:find dispatch is spine-recognized (allowed) rather than
-        # forced through marker completeness or the classic Step 5
-        # TemplateValidator -- mirrors how atdd_pure recognition (Step 2b
-        # above) already runs before completeness for the same reason. MUST
+        # or DES-MODE:find dispatch is recognized (allowed) rather than forced
+        # through marker completeness. This mirrors how atdd_pure recognition
+        # (Step 2b above) already runs before completeness for the same reason. MUST
         # run BEFORE the completeness check below: MarkerCompletenessPolicy
         # treats any non-atdd_pure mode as "classic" and demands DES-STEP-ID,
         # a marker a refactor/find dispatch never carries (D8: "no
         # per-dispatch DES-EXEMPT hand-typed justification required") -- if
         # completeness ran first it would refuse the exact dispatch this
-        # recognition exists to allow. A markerless classic dispatch (no
-        # DES-MODE) is unaffected -- both classifiers return 'absent' and
-        # completeness/Step 5 still fire.
+        # recognition exists to allow. A markerless dispatch (no DES-MODE) is
+        # unaffected -- both classifiers return 'absent' and falls through to
+        # the terminal unresolved-mode refusal.
         if (
             classify_refactor_dispatch(markers) == "valid"
             or classify_find_dispatch(markers) == "valid"

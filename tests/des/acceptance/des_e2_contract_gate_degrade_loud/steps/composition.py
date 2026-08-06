@@ -49,8 +49,8 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-import des.adapters.driven.runner.pytest_runner as _pytest_runner
 import des.runtime.interpreter as _interp
+import des.runtime.test_execution as _test_execution
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.adapters.drivers.hooks.carpaccio_intercept import (
     intercept_atdd_pure_dispatch,
@@ -103,7 +103,7 @@ def _force_interpreter_absent() -> Iterator[None]:
     bound the raising stub). In-process every module is ALREADY imported, so the
     name-bound copies must be patched directly: ``interpreter.python_for`` (the
     ``des_spawn`` path verify-slice-commit reaches) AND
-    ``pytest_runner.python_for`` (the ``pytest_interpreter`` path
+    ``test_execution.python_for`` (the ``pytest_interpreter`` path
     run_contract_gate's feature-scoped collection reaches). Both restored in
     ``finally`` — shared-process safe. Every resolution path hits the
     absent-interpreter seam deterministically, never an environment accident.
@@ -118,14 +118,14 @@ def _force_interpreter_absent() -> Iterator[None]:
         raise InterpreterUnavailable(str(capability or "pytest"), ["<forced-absent>"])
 
     prior_interp = _interp.python_for
-    prior_runner = _pytest_runner.python_for
+    prior_runner = _test_execution.python_for
     _interp.python_for = _raise  # type: ignore[assignment]
-    _pytest_runner.python_for = _raise  # type: ignore[assignment]
+    _test_execution.python_for = _raise  # type: ignore[assignment]
     try:
         yield
     finally:
         _interp.python_for = prior_interp
-        _pytest_runner.python_for = prior_runner
+        _test_execution.python_for = prior_runner
 
 
 @contextlib.contextmanager

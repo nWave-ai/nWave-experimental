@@ -58,11 +58,11 @@ class HookCommand(Enum):
     """The hook command dispatched through ``hook_router.main()``.
 
     Names mirror ``hook_definitions.py`` / ``hook_router.py`` argv tokens.
-    ``SESSION_START`` is the gate-exempt command (DDD-5); ``PRE_TASK`` is the
-    adopt-and-proceed command (DDD-9).
+    ``PRE_TASK`` is the adopt-and-proceed command (DDD-9). ``SESSION_START``
+    is gone: the router has no session-start command since the session
+    ceremony was deleted (22ea19309).
     """
 
-    SESSION_START = "session-start"
     PRE_TASK = "pre-task"
     PRE_TOOL_USE = "pre-tool-use"
     POST_TOOL_USE = "post-tool-use"
@@ -80,26 +80,10 @@ class GateOutcome(Enum):
     ADOPTED_AND_DISPATCHED = "adopted-and-dispatched"  # pre-task detect-and-adopt
 
 
-class PriorUseEvidence(Enum):
-    """A single prior-use signal under the project root (DDD-8 / ADR-AG-003).
-
-    ``BARE_DES_CONFIG`` is the named false-positive guard: it must NOT count as
-    evidence (DISCUSS L5). ``NONE`` is the empty fixture.
-    """
-
-    AUDIT_LOG_NONEMPTY = "audit-log-nonempty"
-    EXECUTION_LOG = "execution-log"
-    DELIVER_DIR = "deliver-dir"
-    FEATURE_DELTA = "feature-delta"
-    BARE_DES_CONFIG = "bare-des-config"
-    NONE = "none"
-
-
 class AdoptionTrigger(Enum):
     """Which auto-marking trigger fired (DDD-7)."""
 
-    PRIOR_USE = "prior-use"  # Trigger 1, SessionStart
-    REAL_FEATURE_USE = "real-feature-use"  # Trigger 2, pre-task nw-* dispatch
+    REAL_FEATURE_USE = "real-feature-use"  # pre-task nw-* dispatch
 
 
 class AdoptionResult(Enum):

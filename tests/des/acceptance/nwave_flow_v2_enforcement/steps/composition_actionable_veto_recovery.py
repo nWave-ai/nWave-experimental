@@ -101,10 +101,10 @@ _FIX_TOKENS_BY_SITE: dict[VetoSite, tuple[str, ...]] = {
     ),
     # Discriminating-only token per the §22.0 oracle-specificity finding: the
     # shared "section"/"add" tokens are dropped so a generic "add a section"
-    # recovery cannot falsely satisfy BOTH prompt-invalid sites -- the classic
-    # site must name "mandatory" (the 9-section classic schema), the atdd_pure
-    # site must name "atdd_pure".
-    VetoSite.CLASSIC_PROMPT_INVALID: ("mandatory",),
+    # recovery cannot falsely satisfy BOTH prompt-invalid sites -- the retired
+    # prompt site must name the explicit replacement marker, while the
+    # atdd_pure-invalid site must name the active mode itself.
+    VetoSite.CLASSIC_PROMPT_INVALID: ("des-mode: atdd_pure",),
     VetoSite.ATDD_PURE_DISPATCH_DEFECTIVE: (
         "des-phase",
         "des-slice",
@@ -228,7 +228,10 @@ class ActionableRecoveryComposition:
         """Drive the REAL SubagentStopService.validate via the production composition root."""
         assert self._project_root is not None
         from des.adapters.drivers.hooks import service_factory
-        from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
+        from des.ports.driver_ports.subagent_stop_port import (
+            SubagentStopContext,
+            SubagentStopReturnKind,
+        )
 
         prev_cwd = Path.cwd()
         prev_env = os.environ.get("DES_PROJECT_DIR")
@@ -240,11 +243,9 @@ class ActionableRecoveryComposition:
             service = service_factory.create_subagent_stop_service()
             decision = service.validate(
                 SubagentStopContext(
-                    execution_log_path="",
                     project_id=_GATE_OUT_FEATURE_ID,
-                    step_id="",
+                    return_kind=SubagentStopReturnKind.ATDD_PURE,
                     cwd=str(self._project_root),
-                    mode="atdd_pure",
                     slice_id="slice-01",
                     atdd_pure_phase="D_REFACTOR_COMMIT",
                 )

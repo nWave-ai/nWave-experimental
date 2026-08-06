@@ -96,9 +96,6 @@ def _render_flavor_yaml(flavor_id: str, display_name: str) -> str:
         "  regions).\n"
         'deliver_phase_shape: "RED -> GREEN -> COMMIT"\n'
         "lifecycle_events:\n"
-        "  session.init:\n"
-        f"    - gate_id: {_PLACEHOLDER_GATE_ID}\n"
-        "      on_failure: log\n"
         "  # Customize: add dispatch.pre / subagent.stop / commit.pre rows\n"
         "  # as this flavor's gate composition requires (see atdd_pure.yaml\n"
         "  # / classic.yaml for worked examples).\n"

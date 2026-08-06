@@ -12,7 +12,7 @@ This gate is feature-scoped implicitly (the target path is conventionally
 `docs/feature/{feature_id}/feature-delta.md`) but has no explicit repo-root
 argument at all -- the singleton-shape ledger
 (`AtCompletionLedger(project_root=...)`) is the reuse target, same as
-`run-contract-gate` and `mode-locus-gate`. The target's own PARENT repo root
+`run-contract-gate` and other ledger-producing commands. The target's own PARENT repo root
 is resolved by walking up from the target file (the fixture below plants the
 target at that exact conventional path so the eventual production code can
 resolve both the repo root and, best-effort, the feature id from the path

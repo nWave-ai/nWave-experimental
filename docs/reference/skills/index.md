@@ -222,7 +222,7 @@
 
 ## nw-deliver
 
-- [nw-deliver](nw-deliver.md) — Orchestrates the full DELIVER wave end-to-end (roadmap > execute-all > finalize). Use when all prior waves are complete and the feature is ready for implementation.
+- [nw-deliver](nw-deliver.md) — Orchestrates the current DELIVER wave end-to-end. Use when all prior waves are complete and the feature is ready for implementation.
 
 ## nw-deliver-atdd-pure-slice-gates
 
@@ -374,7 +374,7 @@
 
 ## nw-execute
 
-- [nw-execute](nw-execute.md) — Dispatches one unit of DELIVER work to a specialized agent for TDD execution. Use to run one carpaccio slice of the ATDD-pure workflow.
+- [nw-execute](nw-execute.md) — Dispatches one unit of DELIVER work to a specialized agent for executable-AT delivery. Use to run one carpaccio slice of the ATDD-pure workflow.
 
 ## nw-expectation-charter
 
@@ -386,7 +386,7 @@
 
 ## nw-finalize
 
-- [nw-finalize](nw-finalize.md) — Archives a completed feature to docs/evolution/, migrates lasting artifacts to permanent directories, and cleans up the temporary workspace. Use after all implementation steps pass.
+- [nw-finalize](nw-finalize.md) — Archives a completed feature to docs/evolution/, migrates lasting artifacts to permanent directories, preserves the feature workspace, and cleans session artifacts. Use after completion evidence passes.
 
 ## nw-five-whys-methodology
 
@@ -598,7 +598,7 @@
 
 ## nw-review
 
-- [nw-review](nw-review.md) — Dispatches an expert reviewer agent to critique workflow artifacts. Use when a roadmap, implementation, or step needs quality review before proceeding.
+- [nw-review](nw-review.md) — Dispatches an expert reviewer for a baseline, feature delta, task, or implementation. Use before relying on an artifact's quality verdict.
 
 ## nw-review-output-format
 
@@ -611,18 +611,6 @@
 ## nw-rigor
 
 - [nw-rigor](nw-rigor.md) — Selects a quality-vs-token-consumption profile (lean, standard, thorough, exhaustive, custom, inherit) and persists it globally (~/.nwave/global-config.json) or per-project (.nwave/des-config.json). Use when tuning how much rigor wave commands apply.
-
-## nw-roadmap
-
-- [nw-roadmap](nw-roadmap.md) — Creates a phased roadmap.json for a feature goal with acceptance criteria and TDD steps. Use when planning implementation steps before execution.
-
-## nw-roadmap-design
-
-- [nw-roadmap-design](nw-roadmap-design.md) — Roadmap concision rules, step decomposition efficiency, AC abstraction guidelines, and step-to-scenario mapping. Load when creating implementation roadmaps.
-
-## nw-roadmap-review-checks
-
-- [nw-roadmap-review-checks](nw-roadmap-review-checks.md) — Roadmap-specific validation checks for architecture reviews. Load when reviewing roadmaps for implementation readiness.
 
 ## nw-root-why
 
@@ -718,7 +706,7 @@
 
 ## nw-tdd-review-enforcement
 
-- [nw-tdd-review-enforcement](nw-tdd-review-enforcement.md) — Test design mandate enforcement, test budget validation, TDD phase validation (3-phase canon per ADR-025), and external validity checks for the software crafter reviewer
+- [nw-tdd-review-enforcement](nw-tdd-review-enforcement.md) — Test design mandate enforcement, test budget validation, active-workflow slice-evidence validation, and external validity checks for the software crafter reviewer
 
 ## nw-test-design-mandates
 
@@ -734,7 +722,7 @@
 
 ## nw-test-design-mandates-scenario-design
 
-- [nw-test-design-mandates-scenario-design](nw-test-design-mandates-scenario-design.md) — Scenario-design mandates for acceptance tests — Hexagonal Boundary Enforcement (drive through driving ports, never internals), Business Language Abstraction (three abstraction layers), User Journey Completeness, Pure Function Extraction Before Fixtures, the 3 Pillars style backbone, and Walking Skeleton Strategy. Consult while shaping or judging a scenario's boundary, language, journey completeness, and fixture strategy. Canonical definitions; SSOT for these mandates.
+- [nw-test-design-mandates-scenario-design](nw-test-design-mandates-scenario-design.md) — Scenario-design mandates for acceptance tests — Hexagonal Boundary Enforcement (drive through driving ports, never internals), Business Language Abstraction (three abstraction layers), User Journey Completeness, Pure Function Extraction Before Fixtures, Algebraic Analysis Before the Scenario (name the law, find its narrowest surface, declare every gated input, prove the scenario can fail), the 3 Pillars style backbone, and Walking Skeleton Strategy. Consult while shaping or judging a scenario's boundary, language, journey completeness, and fixture strategy. Canonical definitions; SSOT for these mandates.
 
 ## nw-test-optimization
 
@@ -767,10 +755,6 @@
 ## nw-tr-review-criteria
 
 - [nw-tr-review-criteria](nw-tr-review-criteria.md) — Review dimensions and scoring for root cause analysis quality assessment
-
-## nw-update
-
-- [nw-update](nw-update.md) — Queues a deferred self-update of nwave-ai. Writes a PendingUpdateFlag that the SessionStart hook replays on the next Claude Code launch, so the current session is not interrupted. Falls back to manual instructions when the package manager cannot be detected.
 
 ## nw-user-story-mapping
 

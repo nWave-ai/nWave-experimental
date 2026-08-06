@@ -17,7 +17,7 @@ check, mirroring how atdd_pure recognition already runs earlier in the same
 method.
 
 Driving port: the real ``PreToolUseService`` wired through its PRODUCTION
-composition (real ``DesMarkerParser`` + ``TemplateValidator`` + enforcement /
+composition (real ``DesMarkerParser`` + enforcement /
 completeness policies, null I/O adapters) -- mirrors
 ``tests/des/refactor/test_slice_03_service_non_classic_routing.py``.
 """
@@ -30,7 +30,6 @@ import pytest
 
 from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
 from des.application.pre_tool_use_service import PreToolUseService
-from des.application.validator import TemplateValidator
 from des.domain.des_enforcement_policy import DesEnforcementPolicy
 from des.domain.des_marker_parser import DesMarkerParser
 from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
@@ -49,11 +48,10 @@ class _FixedTime:
 
 
 def _build_gate() -> PreToolUseService:
-    """Production composition of the DES PreToolUse gate with null I/O adapters
-    (real parser / validator / enforcement / completeness policies)."""
+    """Production composition with the real parser and routing policies,
+    plus null audit/time adapters."""
     return PreToolUseService(
         marker_parser=DesMarkerParser(),
-        prompt_validator=TemplateValidator(),
         audit_writer=NullAuditLogWriter(),
         time_provider=_FixedTime(),
         enforcement_policy=DesEnforcementPolicy(),
@@ -126,22 +124,24 @@ def test_atdd_pure_mode_dispatch_without_complete_markers_still_fails_closed() -
     )
 
 
-def test_classic_dispatch_with_no_mode_marker_still_fails_closed_without_step_id() -> (
-    None
-):
-    """Control case (examiner-confirmed correct behavior, must stay unchanged):
-    a classic dispatch (no DES-MODE at all) missing DES-STEP-ID is still
-    refused -- the reorder must not weaken classic completeness enforcement.
+def test_des_dispatch_with_no_mode_marker_is_refused_as_unresolved() -> None:
+    """An otherwise complete DES dispatch without a mode terminates at the
+    explicit unresolved-mode refusal, never at retired prompt validation.
     """
     gate = _build_gate()
 
     decision = gate.validate(
-        PreToolUseInput(prompt=_dispatch_prompt(mode=None, step_id=None))
+        PreToolUseInput(prompt=_dispatch_prompt(mode=None, step_id="slice-01"))
     )
 
     assert decision.action == "block", (
-        "a classic (no DES-MODE) dispatch missing DES-STEP-ID must still be "
+        "a DES dispatch with no DES-MODE must be "
         f"blocked; got {decision.action!r} ({decision.reason!r})"
+    )
+    assert "DISPATCH_MODE_UNRESOLVED" in (decision.reason or ""), (
+        "an otherwise complete DES dispatch with no mode must terminate at the "
+        "unresolved-mode refusal rather than a retired prompt validator; got "
+        f"{decision.reason!r}"
     )
 
 

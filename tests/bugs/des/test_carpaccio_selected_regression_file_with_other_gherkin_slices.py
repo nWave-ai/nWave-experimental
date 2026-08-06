@@ -24,13 +24,6 @@ from des.cli.verify_red_green import _seal_path
 _FEATURE_ID = "selected-regression-file-with-other-slices"
 _PYTEST_REGRESSION_REL = "tests/regression/test_selected_check.py"
 _VALID_REGRESSION = "def test_selected_check_rejects_bad_input():\n    assert True\n"
-_NATIVE_REGRESSION_REL = "tests/regression/selected_check.rs"
-_VALID_NATIVE_REGRESSION = (
-    "#[test]\n"
-    "fn selected_check_rejects_bad_input() {\n"
-    "    assert!(true);\n"
-    "}\n"
-)
 
 
 def _make_repo(
@@ -79,7 +72,9 @@ def _write_fresh_red_seal(repo: Path, regression_file: str) -> None:
         json.dumps(
             {
                 "test_file": regression_file,
-                "content_sha256": hashlib.sha256(regression_path.read_bytes()).hexdigest(),
+                "content_sha256": hashlib.sha256(
+                    regression_path.read_bytes()
+                ).hexdigest(),
                 "outcomes": {"selected::test_selected_check_rejects_bad_input": "fail"},
             }
         ),
@@ -87,34 +82,18 @@ def _write_fresh_red_seal(repo: Path, regression_file: str) -> None:
     )
 
 
-def _write_approved_native_verdict(repo: Path, regression_file: str) -> None:
-    regression_path = repo / regression_file
-    ledger = repo / ".nwave" / "telemetry" / "atdd-pure" / f"{_FEATURE_ID}.jsonl"
-    ledger.parent.mkdir(parents=True, exist_ok=True)
-    ledger.write_text(
-        json.dumps(
-            {
-                "event": "ATReviewVerdict",
-                "slice_id": "slice-04",
-                "verdict": "APPROVED",
-                "at_ids": ["AT-1"],
-                "at_content_hash": hashlib.sha256(regression_path.read_bytes()).hexdigest(),
-            }
-        ),
-        encoding="utf-8",
-    )
-
-
 def _run_gate(
-    repo: Path, capsys: pytest.CaptureFixture[str], *, at_kind: str, regression_file: str | None
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    at_kind: str,
+    regression_file: str | None,
 ) -> tuple[int, dict[str, object]]:
     argv = [
         "--feature-id",
         _FEATURE_ID,
         "--entering-slice",
-        "slice-04"
-        if at_kind in ("pytest-regression", "native-regression")
-        else "slice-01",
+        "slice-04" if at_kind == "pytest-regression" else "slice-01",
         "--repo-root",
         str(repo),
         "--at-kind",
@@ -149,20 +128,6 @@ def _run_gate(
             (0, "SliceCleared", None),
         ),
         (
-            _VALID_NATIVE_REGRESSION,
-            _NATIVE_REGRESSION_REL,
-            "native-regression",
-            "slice-01",
-            (0, "SliceCleared", None),
-        ),
-        (
-            _VALID_NATIVE_REGRESSION,
-            _NATIVE_REGRESSION_REL,
-            "native-regression",
-            "slice-04",
-            (2, "MalformedInput", "mixed AT-discovery mode"),
-        ),
-        (
             _VALID_REGRESSION,
             _PYTEST_REGRESSION_REL,
             "pytest-regression",
@@ -193,8 +158,6 @@ def _run_gate(
     ],
     ids=(
         "pytest-with-other-journey",
-        "native-with-other-journey",
-        "native-with-same-journey",
         "pytest-with-same-journey",
         "missing-selected-file",
         "malformed-selected-file",
@@ -225,21 +188,21 @@ def test_selected_regression_file_respects_gherkin_discovery_boundaries(
     )
     if regression_source == _VALID_REGRESSION and at_kind == "pytest-regression":
         _write_fresh_red_seal(repo, regression_file or _PYTEST_REGRESSION_REL)
-    if at_kind == "native-regression":
-        assert regression_file is not None
-        _write_approved_native_verdict(repo, regression_file)
-
     exit_code, payload = _run_gate(
         repo, capsys, at_kind=at_kind, regression_file=regression_file
     )
     expected_exit, expected_event, expected_reason = expected
 
-    assert (exit_code, payload.get("event"), payload.get("cause") or payload.get("reason")) == (
+    assert (
+        exit_code,
+        payload.get("event"),
+        payload.get("cause") or payload.get("reason"),
+    ) == (
         expected_exit,
         expected_event,
         expected_reason,
     ), (
-        "the explicit pytest/native regression file must be assessed when another "
+        "the explicit pytest regression file must be assessed when another "
         "slice owns Gherkin scenarios, but must refuse mixed discovery when its own "
         "slice has a Gherkin AT; missing or malformed selected files must remain "
         "unusable and the Gherkin route must keep its review behaviour. The observed "

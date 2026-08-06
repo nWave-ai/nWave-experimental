@@ -10,9 +10,7 @@ Extracted from claude_code_hook_adapter.py as part of P4 decomposition.
 import contextlib
 import io
 import json
-import os
 import re
-import subprocess
 import sys
 import time
 import uuid
@@ -20,7 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from des._internal import subset_parser
 from des.adapters.driven.filesystem.wave_active_filesystem_store import (
     WaveActiveFilesystemStore,
 )
@@ -29,8 +26,7 @@ from des.adapters.driven.logging.audit_events import (
     EventType,
 )
 from des.adapters.driven.time.system_time import SystemTimeProvider
-from des.adapters.drivers.hooks import des_task_signal, hook_protocol, service_factory
-from des.adapters.drivers.hooks.execution_log_resolver import resolve_execution_log_path
+from des.adapters.drivers.hooks import hook_protocol, service_factory
 from des.adapters.drivers.hooks.hook_protocol import (
     EXIT_CODE_TO_DECISION,
     STDERR_CAPTURE_MAX_CHARS,
@@ -51,24 +47,13 @@ from des.application.decision_table_traceability_gate import (
     DecisionTableParser,
     DecisionTableTraceabilityGate,
 )
-from des.application.feature_end_na_marker_reconciliation import (
-    feature_end_na_marker_reconciles,
-)
-from des.domain.atdd_pure_phases import COMMIT_GATE_PHASES as _COMMIT_GATE_PHASES
-from des.domain.atdd_pure_phases import (
-    FEATURE_END_RETURN_PHASE as _FEATURE_END_RETURN_PHASE,
-)
 from des.domain.des_marker_parser import DesMarkerParser
 from des.domain.repo_path_resolver import (
     feature_delta_path as _feature_delta_path,
 )
 from des.domain.wave_active import WAVE_VOCABULARY, WaveActiveRecord
-from des.ports.driven_ports.at_completion_ledger_port import (
-    ENVIRONMENTAL_E2E_GATE_RAN,
-)
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 from des.ports.driver_ports.pre_tool_use_port import HookDecision
-from des.runtime.interpreter import des_spawn
 
 
 # ---------------------------------------------------------------------------
@@ -276,10 +261,10 @@ def extract_des_context_from_transcript(transcript_path: str) -> dict[str, Any] 
 class _AtddPureResolvedContext:
     """Resolved DES context for an atdd_pure dispatch return (T-C).
 
-    Unlike the classic 5-tuple, an atdd_pure return carries NO
-    execution_log_path and NO step_id -- atdd_pure is execution-log-free.
-    The slice is identified by ``slice_id``; ``effective_cwd`` is retained for
-    audit emission and future (T-G) trailer verification.
+    The handler converts this shape into a ``SubagentStopContext`` with
+    ``return_kind=ATDD_PURE``. The slice is identified by ``slice_id``;
+    ``effective_cwd`` is retained for audit emission and future (T-G) trailer
+    verification.
     """
 
     project_id: str
@@ -320,11 +305,10 @@ class _WaveOnlyResolvedContext:
     """Resolved DES context for a wave-only Agent()-dispatch return (WGO-001).
 
     The shape an ``Agent()``-dispatched wave-agent (e.g. a DESIGN architect)
-    return carries: a ``DES-WAVE`` marker + a ``DES-PROJECT-ID`` marker, but NO
-    classic execution-log step identifier and NO atdd_pure markers. Unlike the
-    classic 5-tuple it carries NO execution_log_path and NO step_id -- wave-only
-    is execution-log-free (like atdd_pure). It routes straight into
-    ``SubagentStopService.validate`` so the EXISTING wave review-verdict gate-out
+    return carries: a ``DES-WAVE`` marker + a ``DES-PROJECT-ID`` marker, with no
+    atdd_pure markers. The handler converts this shape into a
+    ``SubagentStopContext`` with ``return_kind=WAVE_ONLY``. It routes straight
+    into ``SubagentStopService.validate`` so the EXISTING wave review-verdict gate-out
     (which runs at validate Step -1, before any execution-log read) fires. The
     feature_id comes from the marker (the floor carries no project_id).
     """
@@ -424,8 +408,7 @@ def _detect_transcript_inaccessible(
 def _resolve_des_context(
     hook_input: dict[str, Any],
 ) -> (
-    tuple[str, str, str, str | None, str]
-    | _AtddPureResolvedContext
+    _AtddPureResolvedContext
     | _WaveOnlyResolvedContext
     | _WaveOnlyUnresolved
     | _TranscriptInaccessible
@@ -433,24 +416,9 @@ def _resolve_des_context(
 ):
     """Resolve DES context from hook input.
 
-    Supports two protocols:
-    1. Direct DES format (CLI testing): {"executionLogPath", "projectId", "stepId"}
-    2. Claude Code protocol (live hooks): {"agent_transcript_path", "cwd", ...}
-
-    Path-resolution priority for the Claude Code protocol:
-      - validated DES-PROJECT-ROOT marker  >  hook_input["cwd"]  (fallback)
-
-    Validation (project_root_validator): absolute path + exists + git work tree
-    + git-common-dir matches fallback cwd. Invalid marker degrades to cwd.
+    Supports the active Claude Code protocol: {"agent_transcript_path", "cwd", ...}.
 
     Returns:
-        On success: (execution_log_path, project_id, step_id, project_root_marker,
-                     effective_cwd)
-            project_root_marker is the raw marker value when present (regardless
-            of validation outcome), None otherwise. Used for audit-log emission.
-            effective_cwd is the resolved working directory (validated marker
-            value or hook_input cwd fallback). Used for git-trailer commit
-            verification.
         On error/passthrough: (None, response_dict, exit_code)
     """
     execution_log_path = hook_input.get("executionLogPath")
@@ -460,26 +428,7 @@ def _resolve_des_context(
     uses_direct_des_protocol = execution_log_path or project_id or step_id
 
     if uses_direct_des_protocol:
-        if not (execution_log_path and project_id and step_id):
-            return (
-                None,
-                {
-                    "status": "error",
-                    "reason": "Missing required fields: executionLogPath, projectId, and stepId are all required",
-                },
-                1,
-            )
-        if not Path(execution_log_path).is_absolute():
-            return (
-                None,
-                {
-                    "status": "error",
-                    "reason": f"executionLogPath must be absolute (got: {execution_log_path})",
-                },
-                1,
-            )
-        # Direct DES protocol has no cwd / no marker — use empty effective_cwd
-        return execution_log_path, project_id, step_id, None, ""
+        return None, _classic_mode_removed_payload(), 2
 
     # Claude Code protocol - extract DES context from transcript
     agent_transcript_path = hook_input.get("agent_transcript_path")
@@ -521,11 +470,9 @@ def _resolve_des_context(
 
     raw_marker = des_context.get("project_root")
 
-    # atdd_pure dispatch (T-C): no execution-log to resolve. Marker-aware
-    # effective cwd is still computed (for audit / future trailer checks),
-    # but the resolved context carries an empty execution_log_path and
-    # empty step_id -- the SubagentStop service keys on mode == "atdd_pure"
-    # and skips ExecutionLogReader entirely.
+    # atdd_pure dispatch (T-C): marker-aware effective cwd is still computed
+    # for audit / future trailer checks. The resolved shape is later converted
+    # to the typed ``ATDD_PURE`` return kind.
     if des_context.get("mode") == "atdd_pure":
         project_id = des_context["project_id"]
         effective_cwd = cwd
@@ -543,37 +490,7 @@ def _resolve_des_context(
             causal_id=des_context.get("causal_id"),
         )
 
-    project_id = des_context["project_id"]
-    step_id = des_context["step_id"]
-
-    # Marker-aware effective cwd: validate marker → use; else fall back to cwd
-    effective_cwd = cwd
-    if raw_marker:
-        validated = validate_project_root(raw_marker, cwd)
-        if validated is not None:
-            effective_cwd = str(validated)
-
-    try:
-        from pathlib import Path as _Path
-
-        resolved = resolve_execution_log_path(
-            project_id,
-            cwd=_Path(effective_cwd),
-        )
-        execution_log_path = str(resolved)
-    except (FileNotFoundError, ValueError) as exc:
-        # No log found or ambiguous — fall back to deliver/ path so downstream
-        # validation produces a meaningful "not found" error message.
-        execution_log_path = os.path.join(
-            effective_cwd,
-            "docs",
-            "feature",
-            project_id,
-            "deliver",
-            "execution-log.json",
-        )
-        _ = exc  # error surfaced by SubagentStopService when log not found
-    return execution_log_path, project_id, step_id, raw_marker, effective_cwd
+    return None, _classic_mode_removed_payload(), 2
 
 
 def _resolve_wave_only_context(
@@ -862,10 +779,10 @@ def _to_audit_event(event: AgentUsageObservedEvent) -> AuditEvent:
 
 def _join_keys_from_resolved_context(
     des_context_result: (
-        tuple[str, str, str, str | None, str]
-        | _AtddPureResolvedContext
+        _AtddPureResolvedContext
         | _WaveOnlyResolvedContext
         | _WaveOnlyUnresolved
+        | _TranscriptInaccessible
         | tuple[None, dict[str, Any], int]
     ),
 ) -> tuple[str | None, str | None, str | None]:
@@ -878,8 +795,7 @@ def _join_keys_from_resolved_context(
 
     * ``_AtddPureResolvedContext``  -> project_id, slice_id, atdd_pure_phase
     * ``_WaveOnlyResolvedContext``  -> project_id, None, declared_wave
-    * classic 5-tuple               -> project_id (element [1]), None, None
-    * ``_WaveOnlyUnresolved`` / any non-DES tuple -> None, None, None
+    * unresolved, inaccessible, or error/passthrough shapes -> None, None, None
     """
     if isinstance(des_context_result, _AtddPureResolvedContext):
         return (
@@ -891,10 +807,6 @@ def _join_keys_from_resolved_context(
         return (des_context_result.project_id, None, des_context_result.declared_wave)
     if isinstance(des_context_result, _WaveOnlyUnresolved):
         return (None, None, None)
-    if isinstance(des_context_result, tuple) and des_context_result[0] is not None:
-        # classic 5-tuple: (execution_log_path, project_id, step_id, raw_marker, effective_cwd)
-        project_id = des_context_result[1]
-        return (project_id, None, None)
     return (None, None, None)
 
 
@@ -943,112 +855,8 @@ def _classic_mode_removed_payload() -> dict[str, object]:
 
 
 # ---------------------------------------------------------------------------
-# atdd_pure gate-intercept shared helpers (U2/U4 -- slice-02/slice-04)
+# atdd_pure return-path shared helpers
 # ---------------------------------------------------------------------------
-
-# Each spine gate CLI is a pure-function / pytest-collection invocation; the
-# explicit subprocess timeout is the ADR-030 D5 fail-stuck discipline -- a
-# timeout or signal-kill is treated identically to a non-zero exit (block).
-# U2 (G_COMMIT) gates are fast; the U4 feature-end walking-skeleton e2e needs a
-# wider budget.
-G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS = 120
-FEATURE_END_GATE_SUBPROCESS_TIMEOUT_SECONDS = 300
-
-# The per-slice commit exit-gate (U2) and the feature-end terminal gate (U4)
-# route a returning atdd_pure agent by the phase word it carries. Both routing
-# subsets are imported from the phase-identity SSOT (``atdd_pure_phases``):
-# ``_COMMIT_GATE_PHASES`` (canonical D_REFACTOR_COMMIT + legacy G_COMMIT replay)
-# and ``_FEATURE_END_RETURN_PHASE`` (the F_FINAL_REVIEW reviewer return). They
-# are no longer restated as bare literals here — single-sourced in the enum
-# module so a vocabulary change propagates once.
-
-
-def _run_gate_subprocess(
-    module: str, args: list[str], repo: Path, timeout_seconds: int
-) -> int:
-    """Run a spine gate CLI as a subprocess; return its exit code.
-
-    A timeout or signal-kill is mapped to a non-zero exit (block) per the
-    ADR-030 D5 fail-stuck discipline. The single subprocess-invocation helper
-    the U2 G_COMMIT gates and the U4 feature-end gate both delegate to.
-    """
-    completed = des_spawn(
-        None,
-        module,
-        *args,
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-    )
-    return completed.returncode
-
-
-# oss-spine-watchdog downstream-logic test seam (bugfix-oss-spine-watchdog-in-memory):
-# a colon-separated "precheck:e1:e2" exit-code triple that, when set, REPLACES the
-# 3 real gate-subprocess forks below with the given codes. Sibling of
-# NWAVE_U2_FORCE_GATE_TIMEOUT / NWAVE_U2_FORCE_HANDLER_FAULT — env-gated, unset in
-# production, so a production run always forks the 3 real gate subprocesses. Exists
-# because a downstream-logic AT (bounded-block counting, terminal-coherence) asserts
-# on the COUNTING/TERMINAL state machine that CONSUMES precheck/E1/E2 codes, not on
-# the gate mechanism that PRODUCES them — that mechanism is slice-01/05 territory,
-# which still forks for real (faking THAT proof would defeat the feature).
-_FORCE_GATE_CODES_ENV = "NWAVE_U2_FORCE_GATE_CODES"
-
-
-def _resolve_g_commit_gate_codes(
-    repo: Path, pinned_sha: str, feature_id: str | None
-) -> tuple[int, int, int]:
-    """Resolve the precheck/E1/E2 exit codes — forced (test seam) or real (forked).
-
-    Returns `(precheck_code, e1_code, e2_code)`. When `_FORCE_GATE_CODES_ENV` is
-    unset (always true in production) this forks the 3 real gate subprocesses,
-    exactly as before this seam existed. A forced precheck code of 2 (collection
-    crash) short-circuits E1/E2 with sentinel `-1` codes, mirroring the real
-    precheck-crash short-circuit the caller applies below.
-    """
-    forced = os.environ.get(_FORCE_GATE_CODES_ENV)
-    if forced is not None:
-        precheck_str, e1_str, e2_str = forced.split(":")
-        return int(precheck_str), int(e1_str), int(e2_str)
-    precheck_code = _run_gate_subprocess(
-        "des.cli.run_contract_gate",
-        ["--repo", str(repo), "--collect-only"],
-        repo,
-        G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS,
-    )
-    if precheck_code == 2:
-        return precheck_code, -1, -1
-    e1_code = _run_gate_subprocess(
-        "des.cli.verify_slice_commit_completeness",
-        [
-            "--repo",
-            str(repo),
-            "--commit",
-            pinned_sha,
-            "--expected-head",
-            pinned_sha,
-            "--scope-feature-id",
-            str(feature_id),
-        ],
-        repo,
-        G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS,
-    )
-    e2_code = _run_gate_subprocess(
-        "des.cli.run_contract_gate",
-        [
-            "--repo",
-            str(repo),
-            "--commit",
-            pinned_sha,
-            "--verify-gate-scope",
-            "--expected-head",
-            pinned_sha,
-        ],
-        repo,
-        G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS,
-    )
-    return precheck_code, e1_code, e2_code
 
 
 def _emit_atdd_pure_block(reason: str, event: str, **extra: object) -> int:
@@ -1057,9 +865,6 @@ def _emit_atdd_pure_block(reason: str, event: str, **extra: object) -> int:
     SubagentStop blocks via `{"decision":"block"}` + exit 0 -- exit 2 makes
     Claude Code ignore stdout, and a bare exit 1 is an *error* (no decision
     body), which for an atdd_pure branch is fail-OPEN. Always exit 0 here.
-
-    The single block-emission helper the U2 G_COMMIT and U4 feature-end
-    intercepts both delegate to.
     """
     payload: dict[str, object] = {"decision": "block", "reason": reason, "event": event}
     payload.update(extra)
@@ -1070,9 +875,6 @@ def _emit_atdd_pure_block(reason: str, event: str, **extra: object) -> int:
 # The bounded-block terminal bound (oss-spine-watchdog slice-02, RCA root #68):
 # terminate ON the Nth identical block, so N-1 priors precede the terminating
 # invocation. N=3 (DISCUSS D-4 / DESIGN OQ-3).
-_BOUNDED_BLOCK_N = 3
-
-
 # ---------------------------------------------------------------------------
 # Watchdog terminal-event vocabulary -- ONE SSOT (oss-spine-watchdog R-69-E)
 # ---------------------------------------------------------------------------
@@ -1095,9 +897,10 @@ _BOUNDED_BLOCK_N = 3
 _EVENT_SLICE_COMMIT_BLOCKED_TERMINAL = "SliceCommitBlockedTerminal"
 _EVENT_STALE_AGENT_CLOSED = "StaleAgentClosed"
 _EVENT_COLLECTION_CRASH_TERMINAL = "CollectionCrashTerminal"
-# The completed terminal emitted at the G_COMMIT gate boundary (a member of the
+# The completed terminal `des commit-slice` writes (a member of the
 # no-double-close recognized set, but NOT routed through the watchdog terminal
-# helper -- it is the verified-commit success record):
+# helper -- it is the verified-commit success record). Read here, never written:
+# no hook emits it any more.
 _EVENT_SLICE_COMMIT_VERIFIED = "SliceCommitVerified"
 
 # autonomous-consolidation-and-bugfix-loops slice-01 (D-1/D-8): the paired
@@ -1179,209 +982,6 @@ def _emit_terminating_indeterminate(
 # gate `block_reason` -- the concrete diagnostic that surfaces the REAL
 # underlying gate failure the terminal stopped re-firing on. Names in the
 # `des` single-entry-point registry (`src/des/cli/__main__.py`), not invented.
-_BOUNDED_BLOCK_HOW_COMMANDS: dict[str, str] = {
-    "slice-commit-completeness": "des verify-slice-commit",
-    "contract-gate": "des run-contract-gate",
-}
-
-
-def _bounded_block_how_text(block_reason: str) -> str:
-    """The HOW-to-recover + human-escalation clause (GDP-3/GDP-4) for a
-    bounded-block terminal.
-
-    Maps the resolved gate `block_reason` to the concrete `des <subcommand>`
-    diagnostic an operator can run to see the real, underlying gate failure
-    directly. `gate-timeout` has no mapped diagnostic command (a subprocess
-    timeout, not a gate verdict) -- say so honestly rather than fabricate one
-    (GDP-6 no silent-wrong). Always closes with an explicit human-escalation
-    statement: the bounded-block terminal hands the decision to a human, it
-    never auto-recovers.
-    """
-    command = _BOUNDED_BLOCK_HOW_COMMANDS.get(block_reason)
-    if command is not None:
-        how = f"HOW: run `{command}` to see the underlying gate failure directly."
-    else:
-        how = (
-            f"HOW: no diagnostic command is mapped for reason={block_reason!r} "
-            "(a subprocess timeout, not a gate verdict) -- inspect the "
-            "G_COMMIT gate subprocess logs directly."
-        )
-    return f"{how} A human must decide the next step (manual intervention required)."
-
-
-def _emit_bounded_block_terminal(
-    resolved: _AtddPureResolvedContext, block_reason: str
-) -> int:
-    """Emit the terminating INDETERMINATE for a bounded-block terminal (slice-02).
-
-    The Nth identical `(slice_id, pinned_commit_sha, block_reason)` exit-gate
-    block terminates the re-fire loop (RCA #68) instead of re-emitting another
-    `{decision:block}`. The terminal is:
-
-      * NON-block -- NO `{"decision":"block"}` body on stdout, so Claude Code
-        reaches a terminal Stop rather than re-firing the agent forever; and
-      * LOUD + DURABLE -- routed through the shared
-        `_emit_terminating_indeterminate` (slice-04 coherence fix): a durable
-        `SliceCommitBlockedTerminal` ledger record (DDD-5 / DV-1; KPI-2 "the 3rd
-        block paired with a terminal record") PLUS a `sys.__stderr__` warning
-        that NAMES the bound, never a silent allow.
-      * NAMES HOW + ESCALATES (fix-bounded-block-names-how, GDP-3/GDP-4): the
-        diagnostic and the durable record both carry the SAME concrete
-        `des <subcommand>` recovery command plus an explicit human-escalation
-        statement, so a post-mortem operator sees the HOW without watching the
-        session live.
-
-    Always exit 0 (the SubagentStop protocol: a non-zero exit would invert the
-    contract and red CI -- the terminal is loud via stderr + durable record,
-    never via exit code).
-    """
-    slice_id = resolved.slice_id
-    how_and_escalation = _bounded_block_how_text(block_reason)
-    _emit_terminating_indeterminate(
-        resolved.project_id,
-        resolved.effective_cwd,
-        slice_id,
-        _EVENT_SLICE_COMMIT_BLOCKED_TERMINAL,
-        f"INDETERMINATE: bounded-block terminal -- {_BOUNDED_BLOCK_N} identical "
-        f"exit-gate blocks for (slice={slice_id}, pinned commit, reason="
-        f"{block_reason}); terminating the agent to break the re-fire loop "
-        f"(no progress across {_BOUNDED_BLOCK_N} attempts). {how_and_escalation}",
-        extra_fields={"how_to_recover": how_and_escalation},
-    )
-    return 0
-
-
-def _prior_identical_block_count(
-    resolved: _AtddPureResolvedContext, pinned_sha: str, block_reason: str
-) -> int:
-    """Count prior identical `SliceCommitBlocked` records (fail-closed to block).
-
-    Reads `count_slice_commit_blocked` from the SAME ledger the block emission
-    writes (same `(project_id, effective_cwd)` construction), so the count sees
-    the prior identical-key blocks. Fail-closed: if the slice is unidentified or
-    the ledger read raises (a corrupt / unreadable ledger -- M7 raises rather
-    than undercounting), return -1 so the caller takes the existing
-    `{decision:block}` path. The bounded-block terminal must NEVER fire on a
-    count-read error -- terminating-on-error would kill a legitimate agent.
-    """
-    if not resolved.slice_id:
-        return -1
-    try:
-        from des.adapters.driven.logging.at_completion_ledger import (
-            AtCompletionLedger,
-        )
-
-        ledger = AtCompletionLedger(
-            resolved.project_id, Path(resolved.effective_cwd or ".")
-        )
-        return ledger.count_slice_commit_blocked(
-            resolved.slice_id, pinned_sha, block_reason
-        )
-    except Exception:
-        # Fail-closed: degrade to the existing block, never terminate on error.
-        return -1
-
-
-# ---------------------------------------------------------------------------
-# U2 — G_COMMIT exit-gate SubagentStop intercept (slice-02 / ADR-030 D2)
-# ---------------------------------------------------------------------------
-
-
-def _resolve_head_sha(repo: Path) -> str:
-    """Resolve ``git rev-parse HEAD`` once, in ``repo`` (M9 SHA-pinning).
-
-    The G_COMMIT exit gates run against this pinned SHA rather than a moving
-    ``HEAD`` reference -- under a concurrent amend/rebase the ``HEAD`` U2
-    resolved can move before the gates inspect it; pinning makes the verdict
-    deterministic against one commit.
-    """
-    completed = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS,
-    )
-    return completed.stdout.strip()
-
-
-def _emit_g_commit_ledger_event(
-    resolved: _AtddPureResolvedContext,
-    event: str,
-    *,
-    pinned_commit_sha: str | None = None,
-    block_reason: str | None = None,
-) -> None:
-    """Emit a SliceCommitVerified / SliceCommitBlocked record into the U3 ledger.
-
-    Consumes the slice-03 `AtCompletionLedger.append_gate_event` API as-is for
-    the verified record. For a `SliceCommitBlocked` record the bounded-block
-    terminal (oss-spine-watchdog slice-02) threads the resolved `pinned_commit_sha`
-    AND the `block_reason` as extra fields so the bounded-block count
-    (`count_slice_commit_blocked`) can match identical-key priors -- the
-    `verdict_hash` precedent (extra fields are hashed into `record_hash`, M7).
-    A `SliceCommitVerified` emission threads neither, so its record is byte-
-    equivalent to before.
-
-    Fail-open on the audit emission itself -- a ledger write failure must not
-    change the gate verdict.
-    """
-    if not resolved.slice_id:
-        return
-    try:
-        from des.adapters.driven.logging.at_completion_ledger import (
-            AtCompletionLedger,
-        )
-
-        ledger = AtCompletionLedger(
-            resolved.project_id, Path(resolved.effective_cwd or ".")
-        )
-        if pinned_commit_sha is None and block_reason is None:
-            ledger.append_gate_event(event=event, slice_id=resolved.slice_id)
-            return
-        fields: dict[str, object] = {
-            "event": event,
-            "slice_id": resolved.slice_id,
-        }
-        if pinned_commit_sha is not None:
-            fields["pinned_commit_sha"] = pinned_commit_sha
-        if block_reason is not None:
-            fields["block_reason"] = block_reason
-        ledger._append_record(fields)
-    except Exception:
-        # Fail-open: the gate verdict already stands; ledger emission is audit.
-        pass
-
-
-def _emit_g_commit_phase_completed(resolved: _AtddPureResolvedContext) -> None:
-    """Emit the symmetric `WorkflowPhaseCompletedGCommit` DELIVER-exit terminal.
-
-    slice-02 (oss-hook-side-phase-injection): a verified slice commit now leaves
-    BOTH a `SliceCommitVerified` (the existing gate-boundary record) AND a
-    `WorkflowPhaseCompletedGCommit` success terminal (SF ADR-016 symmetry, the
-    DELIVER-exit mirror of slice-01's DISTILL-exit `WorkflowPhaseCompletedDistill`).
-    Additive -- it never replaces `SliceCommitVerified`.
-
-    Fail-open on the audit emission itself -- a ledger-write failure must not
-    change the gate verdict (mirror of `_emit_g_commit_ledger_event`).
-    """
-    if not resolved.slice_id:
-        return
-    try:
-        from des.adapters.driven.logging.at_completion_ledger import (
-            AtCompletionLedger,
-        )
-
-        ledger = AtCompletionLedger(
-            resolved.project_id, Path(resolved.effective_cwd or ".")
-        )
-        ledger.append_workflow_phase_completed_g_commit(resolved.slice_id)
-    except Exception:
-        # Fail-open: the gate verdict already stands; ledger emission is audit.
-        pass
-
-
 # ---------------------------------------------------------------------------
 # Stale-agent timeout terminal (oss-spine-watchdog slice-03, #68 P2-E)
 # ---------------------------------------------------------------------------
@@ -1595,178 +1195,8 @@ def _maybe_emit_stale_agent_closed(
         return False
 
 
-def _handle_g_commit_exit_gate(
-    resolved: _AtddPureResolvedContext,
-    hook_input: dict[str, object],
-    hook_id: str,
-) -> int:
-    """Run the U2 G_COMMIT exit gate for a returning atdd_pure crafter.
-
-    Runs the slice-commit completeness gate (E1) and the contract gate (E2)
-    against a pinned ``HEAD`` SHA. On either failure the orchestrator is
-    blocked via `{"decision":"block"}` + exit 0; a verified commit is allowed.
-    The whole branch body is wrapped in a try/except (M1): any exception is an
-    `AtddPureHookInternalError` block + exit 0, never the bare exit-1 path.
-
-    F-07: a multi-`Slice-Id` batched commit is accepted -- U2 adds no
-    commit-scope logic, it delegates to `verify_slice_commit_completeness`,
-    whose E1 verdict already verifies every listed slice.
-    """
-    try:
-        # M1 test seam: an injected fault exercises the fail-closed except path.
-        if os.environ.get("NWAVE_U2_FORCE_HANDLER_FAULT") == "1":
-            raise RuntimeError("injected G_COMMIT intercept fault")
-
-        repo = Path(resolved.effective_cwd or hook_input.get("cwd", "") or ".")
-
-        log_hook_invoked(
-            "subagent_stop_g_commit_intercept",
-            {
-                "mode": "atdd_pure",
-                "project_id": resolved.project_id,
-                "slice_id": resolved.slice_id,
-                "atdd_pure_phase": resolved.atdd_pure_phase,
-            },
-            hook_id=hook_id,
-        )
-
-        pinned_sha = _resolve_head_sha(repo)
-
-        # slice-06 test seam (R-69-F): force a real `subprocess.TimeoutExpired`
-        # from inside the gate try-block AFTER `pinned_sha` is resolved, so the
-        # REAL `except subprocess.TimeoutExpired` branch fires deterministically
-        # and fast (a real 120s timeout against
-        # `G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS` is infeasible in tests and the
-        # constant has no override). Sibling of the `NWAVE_U2_FORCE_HANDLER_FAULT`
-        # seam at the top of this try -- env-gated, default off in production.
-        if os.environ.get("NWAVE_U2_FORCE_GATE_TIMEOUT") == "1":
-            raise subprocess.TimeoutExpired(
-                cmd="des.cli.run_contract_gate",
-                timeout=G_COMMIT_GATE_SUBPROCESS_TIMEOUT_SECONDS,
-            )
-
-        # slice-05 (BLOCKER-1, R-69-D): wire slice-01's collection precheck INTO
-        # the gate BEFORE E2. A real collection crash on the committed contract
-        # suite makes `run_contract_gate --collect-only` abort (exit 2 -- the #68
-        # root). When that happens, TERMINATE via the slice-04 shared
-        # `_emit_terminating_indeterminate` (durable terminal record + loud stderr
-        # + non-block), short-circuiting BEFORE E2 so the crash does NOT flow into
-        # the `{decision:block}` re-fire branch the harness loops on. The precheck
-        # runs no-skip (D-7): `_run_gate_subprocess` forwards the handler's own
-        # env, which carries NO `NWAVE_FRESHNESS=skip`, so collection runs on the
-        # real installed tree. This is the contract-suite collection concern
-        # (concern 2), DISTINCT from the install-freshness gate (concern 1) -- no
-        # new freshness path is introduced. Fail-safe direction: terminate ONLY on
-        # the clean exit-2 collection-crash signal; any other code (clean collect 0,
-        # ordinary failure 1) proceeds to E1/E2 unchanged, so a working agent is
-        # never spuriously collection-terminated (AT-03 discriminator). A timeout
-        # raises and is caught by the outer handler -> fail-toward-block.
-        # M9 / F3: the pinned SHA is passed BOTH as `--commit` (the commit to
-        # inspect) and `--expected-head` (the SHA to race-check against). Each
-        # CLI re-reads HEAD and fails closed `CommitHeadRaced` if HEAD has moved
-        # off the pinned SHA during the exit gate (a concurrent amend/rebase).
-        # slice-03 (Seam A): scope E1's `.feature` completeness scan to the
-        # committing feature via `--scope-feature-id`, so a co-resident feature
-        # sharing this slice number on the tree is not cross-bound into this
-        # commit's check. `--scope-feature-id` keeps the legacy E1-only verdict
-        # shape and writes NO ledger record -- the hook stays the sole author of
-        # the SliceCommitVerified record below (E1 runs once, one record). This
-        # is deliberately NOT `--feature-id`, which would flip E1 into the
-        # verify-then-record seam (a second contract run + a duplicate record).
-        precheck_code, e1_code, e2_code = _resolve_g_commit_gate_codes(
-            repo, pinned_sha, resolved.project_id
-        )
-        if precheck_code == 2:
-            slice_id = resolved.slice_id
-            _emit_terminating_indeterminate(
-                resolved.project_id,
-                resolved.effective_cwd,
-                slice_id,
-                _EVENT_COLLECTION_CRASH_TERMINAL,
-                f"INDETERMINATE: collection-crash terminal -- the committed "
-                f"contract suite for slice={slice_id} crashes on collection "
-                f"(run_contract_gate --collect-only exit 2); terminating the agent "
-                f"to break the re-fire loop instead of re-firing on a phantom hang "
-                f"the walking skeleton exists to kill.",
-            )
-            return 0
-
-        if e1_code == 0 and e2_code == 0:
-            _emit_g_commit_ledger_event(resolved, _EVENT_SLICE_COMMIT_VERIFIED)
-            # slice-02: leave the symmetric DELIVER-exit success terminal
-            # ALONGSIDE SliceCommitVerified (SF ADR-016 symmetry, additive).
-            _emit_g_commit_phase_completed(resolved)
-            return 0
-
-        failed = "slice-commit-completeness" if e1_code != 0 else "contract-gate"
-
-        # slice-02 bounded-block terminal (RCA #68): before re-emitting the
-        # block, count prior identical `(slice, pinned_sha, reason)` blocks. On
-        # the Nth identical block (count of priors == N-1) terminate the agent
-        # loud (a non-block INDETERMINATE) instead of re-firing it forever. A
-        # new SHA or a different reason RESETS the count (D-4). The count read is
-        # fail-closed: any read error degrades to the existing block (NEVER
-        # terminate on a count-read error -- that would kill a legitimate agent).
-        if (
-            _prior_identical_block_count(resolved, pinned_sha, failed)
-            == _BOUNDED_BLOCK_N - 1
-        ):
-            return _emit_bounded_block_terminal(resolved, failed)
-
-        _emit_g_commit_ledger_event(
-            resolved,
-            "SliceCommitBlocked",
-            pinned_commit_sha=pinned_sha,
-            block_reason=failed,
-        )
-        return _emit_atdd_pure_block(
-            f"G_COMMIT exit gate rejected {resolved.slice_id}: "
-            f"{failed} gate failed (e1={e1_code}, e2={e2_code})",
-            "SliceCommitBlocked",
-        )
-    except subprocess.TimeoutExpired as exc:
-        # slice-06 (R-69-F): a gate-subprocess timeout is a COUNTABLE block, keyed
-        # on `(slice, pinned_sha, "gate-timeout")` -- mirror the normal block path
-        # above so a timeout-driven re-fire loop on the SAME commit terminates at
-        # N=3 like any other block (instead of looping unbounded because the prior
-        # fieldless emit could never match the count key). `pinned_sha` is resolved
-        # before any gate subprocess runs, so it is in scope here. "gate-timeout"
-        # is a distinct reason from "contract-gate"/"slice-commit-completeness", so
-        # timeout blocks form their own count bucket. The count read fails closed to
-        # block on error (never terminate on a count-read error).
-        if (
-            _prior_identical_block_count(resolved, pinned_sha, "gate-timeout")
-            == _BOUNDED_BLOCK_N - 1
-        ):
-            return _emit_bounded_block_terminal(resolved, "gate-timeout")
-
-        _emit_g_commit_ledger_event(
-            resolved,
-            "SliceCommitBlocked",
-            pinned_commit_sha=pinned_sha,
-            block_reason="gate-timeout",
-        )
-        return _emit_atdd_pure_block(
-            f"G_COMMIT exit-gate invocation timed out: {exc}",
-            "GateInvocationTimeout",
-        )
-    except Exception as exc:
-        # M1 fail-closed: an atdd_pure-branch exception is a block, never the
-        # generic bare-exit-1 path (which carries no decision body).
-        return _emit_atdd_pure_block(
-            f"G_COMMIT exit-gate handler error: {exc}",
-            "AtddPureHookInternalError",
-        )
-
-
-# ---------------------------------------------------------------------------
-# U4 — feature-end terminal SubagentStop intercept (slice-04 / ADR-030 D4)
-# ---------------------------------------------------------------------------
-
 # The closed status vocabulary of the markdown `[REF] Slice Plan` `Status`
 # column (M12 fail-closed parse contract).
-_SLICE_PLAN_STATUS_VOCABULARY = frozenset({"pending", "shipped"})
-
 # G-DISTILL-EXIT mechanical-seal route (bug #94): the `[REF] Slice Plan`
 # Annotation-cell token that names the regression-test file backing a
 # pytest-regression bugfix slice, so `_mechanical_seal_cleared_slices` can
@@ -1947,318 +1377,6 @@ def _bugfix_lane_mechanical_seal_clears(
     return _mechanical_seal_satisfied(repo, repo / regression_test_file)
 
 
-def _markdown_shipped_slices(repo: Path, feature_id: str) -> frozenset[str]:
-    """The set of slice ids whose markdown `Status` cell is `shipped` (M12).
-
-    The markdown fallback -- reached ONLY when the AT-completion ledger is
-    fully absent (a pre-U3 feature). Fail-closed: any row whose `Status` cell
-    is absent or outside the closed `{pending, shipped}` vocabulary raises
-    `_SlicePlanParseUnresolved` -- never "assume shipped".
-    """
-    shipped: set[str] = set()
-    for slice_id, raw_status in _parse_slice_plan_rows(repo, feature_id):
-        status = (raw_status or "").strip().lower()
-        if status not in _SLICE_PLAN_STATUS_VOCABULARY:
-            raise _SlicePlanParseUnresolved(
-                f"slice {slice_id} has an unrecognised Status cell "
-                f"{raw_status!r}; expected one of "
-                f"{sorted(_SLICE_PLAN_STATUS_VOCABULARY)}"
-            )
-        if status == "shipped":
-            shipped.add(slice_id)
-    return frozenset(shipped)
-
-
-def _resolve_shipped_slice_set(
-    repo: Path, feature_id: str
-) -> tuple[frozenset[str], frozenset[str]]:
-    """Resolve (planned_slices, shipped_slices) for the feature-end check.
-
-    Primary path -- the U3 AT-completion ledger under the M7 fail-closed read
-    contract: `verified_slices()` is "shipped". M12 fallback -- when the ledger
-    file is fully ABSENT, parse the markdown `[REF] Slice Plan` `Status` column.
-    A ledger present-but-corrupt raises `LedgerIntegrityViolation` (NOT a
-    fallback) -- propagated to the caller's try/except.
-    """
-    from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
-
-    planned = _slice_plan_slice_ids(repo, feature_id)
-    ledger = AtCompletionLedger(feature_id, repo)
-    if ledger.ledger_path().is_file():
-        # Ledger present -- `verified_slices()` reads under the M7 integrity
-        # contract; a corrupt ledger raises LedgerIntegrityViolation here.
-        return planned, ledger.verified_slices()
-    # Ledger fully absent (pre-U3 feature) -- M12 markdown fallback only.
-    return planned, _markdown_shipped_slices(repo, feature_id)
-
-
-# The feature-end cycle records U4 asserts before a feature is closeable (F1).
-# fix-oss-environmental-e2e-gate slice-02 (DESIGN / Where the Gate Lives RES-2):
-# `EnvironmentalE2eGateRan` is the heartbeat the DELIVER feature-end
-# orchestration step emits BEFORE `verify_environmental_e2e --mode run`
-# returns. Its absence from the ledger means the env-e2e sub-step was skipped
-# -- the U4 enforcer surfaces a missing-record block computed in the separate
-# SubagentStop subprocess, independent of whether the gate itself ran.
-# fix-walking-skeleton-feature-end-wiring slice-01: `WalkingSkeletonGateRan`
-# is the heartbeat the walking-skeleton gate emits on entry. Its absence from
-# the ledger means the walking-skeleton sub-step was skipped -- mirror of the
-# env-e2e wiring, 5th sibling of the pre-7af95a3d2 shipped-but-unread class.
-# fix-distill-signoff-feature-end-wiring slice-01: the two coverage-map
-# touchpoint heartbeats (`CoverageMapVerifiedAtDistillExit` +
-# `CoverageMapVerifiedAtDeliverExit`) emitted by the slice-06 gate are also
-# required -- closes the named residue F-SLICE-06-U4-CONSUMER-MISSING from
-# Gate D slice-06 commit `a8c9dc9d8` ("the gate emits the heartbeats but
-# the consumer does not yet enforce them").
-# f-nonbypassable-attestation slice-01 (DDD-4): `FullSuiteLegRan` is the
-# feature-end full-suite leg's heartbeat. Its absence means the full suite never
-# ran at feature-end -- the done-gate refuses on record-ABSENCE (6th sibling of
-# the env-e2e / walking-skeleton / coverage-map heartbeat pattern). This frozenset
-# is the absent-flavor FALLBACK; the live SSOT is `atdd_pure.yaml
-# feature_end_required_records` (read by `_feature_end_required_records`), held
-# EQUAL to it + to `verify_deliver_integrity.py:required` (AT-A6).
-# fix-ws-done-gate-na-reconciliation slice-01: `WalkingSkeletonGateRan` alone
-# only proves the gate was ENTERED -- a walking skeleton that ran and FAILED
-# still leaves the heartbeat behind, so this frozenset used to let a FAILED
-# walking skeleton close (the hole this fix closes; `walking_skeleton_done_
-# gate.py` asserted the stronger PASS record correctly but had zero production
-# callers). `WalkingSkeletonTierVerified` is the PASS-only trust anchor (RM-3);
-# it is now ALSO required here, reconciled for a legitimately-NA feature by
-# the `WalkingSkeletonNotApplicable` marker via `feature_end_na_marker_
-# reconciles()` in `_missing_feature_end_cycle_records` below.
-_REQUIRED_FEATURE_END_RECORDS = frozenset(
-    {
-        "CoverageMapVerifiedAtDeliverExit",
-        "CoverageMapVerifiedAtDistillExit",
-        "EBatchRefactorCompleted",
-        ENVIRONMENTAL_E2E_GATE_RAN,
-        "FeatureEndReviewVerdict",
-        "FullSuiteLegRan",
-        "WalkingSkeletonGateRan",
-        "WalkingSkeletonTierVerified",
-    }
-)
-
-
-# The lifecycle event + flavor keys the feature-end required-records profile is
-# sourced from. The `subagent.stop` composition's `feature_end_required_records`
-# field is the YAML home of the profile (gate-composition SSOT, DDD-1/DDD-3): the
-# `_REQUIRED_FEATURE_END_RECORDS` frozenset above is the absent-flavor fallback,
-# but the shipped `nWave/flavors/atdd_pure.yaml` carries the same six so the YAML
-# is the single source (representation 3 -> 1).
-_ATDD_PURE_FLAVOR_ID = "atdd_pure"
-_SUBAGENT_STOP_EVENT_ID = "subagent.stop"
-_FEATURE_END_REQUIRED_RECORDS_FIELD = "feature_end_required_records"
-
-# The shipped flavor directory, resolved the same way `carpaccio_intercept.py`
-# resolves it (`Path(__file__).resolve().parents[5]/nWave/flavors`). The
-# `NWAVE_FLAVORS_DIR` env override points the gate-composition lookup at an
-# alternate flavor directory (the SSOT override seam slice-04 wires).
-_SHIPPED_FLAVORS_DIR = Path(__file__).resolve().parents[5] / "nWave" / "flavors"
-
-
-def _feature_end_required_records() -> frozenset[str]:
-    """The feature-end required-records profile the subagent.stop composition declares.
-
-    Gate-composition SSOT (DDD-1/DDD-3): the profile is sourced from the flavor
-    YAML's `subagent.stop` composition (`feature_end_required_records` field),
-    NOT the hardcoded `_REQUIRED_FEATURE_END_RECORDS` frozenset. The
-    `NWAVE_FLAVORS_DIR` env override selects the flavor directory; the shipped
-    `nWave/flavors/` governs when it is unset. The frozenset is the absent-field
-    fallback so a flavor without the field preserves today's six.
-    """
-    flavors_dir = Path(os.environ.get("NWAVE_FLAVORS_DIR") or str(_SHIPPED_FLAVORS_DIR))
-    flavor_doc = subset_parser.load_file(flavors_dir / f"{_ATDD_PURE_FLAVOR_ID}.yaml")
-    lifecycle_events = flavor_doc.get("lifecycle_events", {})
-    composition = lifecycle_events.get(_SUBAGENT_STOP_EVENT_ID, [])
-    for gate_spec in composition:
-        if _FEATURE_END_REQUIRED_RECORDS_FIELD in gate_spec:
-            return frozenset(gate_spec[_FEATURE_END_REQUIRED_RECORDS_FIELD])
-    return _REQUIRED_FEATURE_END_RECORDS
-
-
-def _missing_feature_end_cycle_records(repo: Path, feature_id: str) -> frozenset[str]:
-    """The required feature-end cycle records absent from the U3 ledger (F1).
-
-    slice-05 revision (Finding 1): "every slice shipped" is NOT sufficient for
-    feature-end -- a feature with zero refactor + zero deep review would pass.
-    The feature-end cycle must have written an `EBatchRefactorCompleted` record
-    AND a `FeatureEndReviewVerdict` record (carrying the reviewer verdict_hash).
-    Returns the set of required records still missing -- empty when the cycle
-    is complete.
-
-    fix-oss-environmental-e2e-gate slice-02: extended with
-    `EnvironmentalE2eGateRan` -- a feature-end cycle that did not record the
-    env-e2e gate heartbeat is mechanically blocked here as the env-e2e
-    sub-step having been skipped.
-
-    fix-walking-skeleton-feature-end-wiring slice-01: extended with
-    `WalkingSkeletonGateRan` -- a feature-end cycle that did not record the
-    walking-skeleton gate heartbeat is mechanically blocked here as the
-    walking-skeleton sub-step having been skipped.
-
-    fix-distill-signoff-feature-end-wiring slice-01: extended with the two
-    coverage-map touchpoint heartbeats (`CoverageMapVerifiedAtDistillExit` +
-    `CoverageMapVerifiedAtDeliverExit`) -- a feature-end cycle that did not
-    record either touchpoint heartbeat is mechanically blocked here.
-    Closes the named residue F-SLICE-06-U4-CONSUMER-MISSING from Gate D
-    slice-06 commit `a8c9dc9d8`.
-
-    Read under the M7 fail-closed integrity contract -- a corrupt ledger raises
-    `LedgerIntegrityViolation`, propagated to the caller's try/except.
-    """
-    from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
-
-    ledger = AtCompletionLedger(feature_id, repo)
-    recorded = ledger.feature_end_events()
-    env_events = ledger.environmental_e2e_events()
-    walking_skeleton = ledger.walking_skeleton_events()
-    coverage_map = ledger.coverage_map_touchpoint_events()
-    # f-nonbypassable-attestation slice-01 (DDD-4): the full-suite leg's
-    # FullSuiteLegRan heartbeat (or its FullSuiteLegNotApplicable NA marker, which
-    # reconciles the requirement for a target repo with no collectable contract
-    # suite -- genericità, never a fake pass). Mirrors the CLI done-gate.
-    full_suite = ledger.full_suite_leg_events()
-    all_recorded = recorded | env_events | walking_skeleton | coverage_map | full_suite
-    # fix-na-marker-reconcile-drift slice-01: the NA-marker -> required-record
-    # reconciliation is read from the ONE shared source
-    # (`feature_end_na_marker_reconciles`, `des.application.
-    # feature_end_na_marker_reconciliation`) -- the SAME function the
-    # `verify_deliver_integrity` CLI mirror consults below. Before this fix
-    # only the full-suite leg was reconciled here (inline special-case); the
-    # two coverage-map markers were absent, permanently blocking
-    # F_FINAL_REVIEW for any repo with inactive coverage-map adoption even
-    # though the CLI already permitted the identical ledger.
-    reconciled = {
-        required_name
-        for na_marker, required_name in feature_end_na_marker_reconciles().items()
-        if na_marker in all_recorded
-    }
-    return _feature_end_required_records() - (all_recorded | reconciled)
-
-
-def _handle_feature_end_gate(
-    resolved: _AtddPureResolvedContext,
-    hook_input: dict[str, object],
-    hook_id: str,
-) -> int:
-    """Run the U4 feature-end terminal gate for a returning F_FINAL_REVIEW agent.
-
-    Detection: the returning agent is in the `F_FINAL_REVIEW` phase AND all
-    planned slices are shipped (derived from the U3 ledger under the M7
-    fail-closed read contract -- M12 markdown fallback only on a fully-absent
-    ledger; a corrupt ledger blocks with `LedgerIntegrityViolation`).
-
-    On all-slices-shipped: run the feature-end integrity gate
-    (`verify_deliver_integrity`) -- a non-zero exit blocks the feature as
-    un-closeable. Until the last slice is shipped the F_FINAL_REVIEW return is
-    not a feature-end return -- it falls through to the generic atdd_pure path.
-
-    The whole branch body is wrapped in a try/except (M1): any exception is an
-    `AtddPureHookInternalError` block + exit 0, never the bare exit-1 path.
-    """
-    from des.adapters.driven.logging.at_completion_ledger import (
-        LedgerIntegrityViolation,
-    )
-
-    try:
-        # M1 test seam: an injected fault exercises the fail-closed except path.
-        if os.environ.get("NWAVE_U4_FORCE_HANDLER_FAULT") == "1":
-            raise RuntimeError("injected feature-end intercept fault")
-
-        cwd = hook_input.get("cwd", "")
-        repo = Path(
-            resolved.effective_cwd or (cwd if isinstance(cwd, str) else "") or "."
-        )
-        feature_id = resolved.project_id
-
-        log_hook_invoked(
-            "subagent_stop_feature_end_intercept",
-            {
-                "mode": "atdd_pure",
-                "project_id": feature_id,
-                "slice_id": resolved.slice_id,
-                "atdd_pure_phase": resolved.atdd_pure_phase,
-            },
-            hook_id=hook_id,
-        )
-
-        planned, shipped = _resolve_shipped_slice_set(repo, feature_id)
-
-        # Not all slices shipped yet -- this F_FINAL_REVIEW return is not a
-        # feature-end return. Fall through to the generic atdd_pure handler.
-        if not planned or not planned.issubset(shipped):
-            return _handle_atdd_pure_return(resolved, hook_input, hook_id)
-
-        # Feature-end cycle assertion (F1 -- slice-05 revision): every slice
-        # being shipped is NOT sufficient. The feature-end cycle (E_BATCH_
-        # REFACTOR + deep review) must have left its machine records in the
-        # ledger. Absent either, the cycle never ran -- block fail-closed.
-        missing_cycle = _missing_feature_end_cycle_records(repo, feature_id)
-        if missing_cycle:
-            return _emit_atdd_pure_block(
-                f"feature-end cycle incomplete for {feature_id}: the "
-                f"AT-completion ledger is missing the {sorted(missing_cycle)} "
-                "record(s) -- the feature-end batch refactor and/or deep "
-                "review never ran",
-                "FeatureEndCycleIncomplete",
-                feature_id=feature_id,
-                missing=sorted(missing_cycle),
-            )
-
-        # Feature-end: every planned slice is shipped. Run the integrity gate.
-        # `verify_deliver_integrity` resolves workflow.mode and the
-        # AT-completion ledger from its `project_dir` argument -- the repo root
-        # (the `.nwave/config.yaml` + `.nwave/telemetry/` live there).
-        integrity_code = _run_gate_subprocess(
-            "des.cli.verify_deliver_integrity",
-            [str(repo)],
-            repo,
-            FEATURE_END_GATE_SUBPROCESS_TIMEOUT_SECONDS,
-        )
-        if integrity_code != 0:
-            return _emit_atdd_pure_block(
-                f"feature-end integrity gate rejected {feature_id}: "
-                f"verify_deliver_integrity exited {integrity_code}",
-                "FeatureEndGateRejected",
-            )
-        return 0
-
-    except LedgerIntegrityViolation as exc:
-        # M12: a corrupt ledger is a hard block, NEVER a silent degrade to the
-        # markdown fallback or an undercount.
-        return _emit_atdd_pure_block(
-            f"the AT-completion ledger failed its integrity contract: {exc}",
-            "LedgerIntegrityViolation",
-            feature_id=resolved.project_id,
-            detail=exc.detail,
-        )
-    except _SlicePlanParseUnresolved as exc:
-        return _emit_atdd_pure_block(
-            f"the markdown slice-plan Status column could not be parsed: {exc}",
-            "SlicePlanParseUnresolved",
-            feature_id=resolved.project_id,
-        )
-    except FileNotFoundError as exc:
-        return _emit_atdd_pure_block(
-            f"the feature-delta is missing for feature-end verification: {exc}",
-            "FeatureEndGatePreconditionUnmet",
-            missing="feature-delta-absent",
-        )
-    except subprocess.TimeoutExpired as exc:
-        return _emit_atdd_pure_block(
-            f"feature-end gate invocation timed out: {exc}",
-            "GateInvocationTimeout",
-            gate="verify_deliver_integrity",
-        )
-    except Exception as exc:
-        # M1 fail-closed: an atdd_pure-branch exception is a block, never the
-        # generic bare-exit-1 path (which carries no decision body).
-        return _emit_atdd_pure_block(
-            f"feature-end intercept handler error: {exc}",
-            "AtddPureHookInternalError",
-        )
-
-
 # ---------------------------------------------------------------------------
 # G-DISTILL-EXIT gate SubagentStop intercept
 # (oss-hook-side-phase-injection slice-01 / D1 keystone)
@@ -2395,7 +1513,7 @@ def _handle_distill_exit_gate(
     never dispatches the reviewer (Claude Code hooks cannot spawn agents).
 
     Decision table (C5):
-      denominator = `_slice_plan_slice_ids` (the SAME U4 resolves)
+      denominator = `_slice_plan_slice_ids`
       numerator   = `ledger.approved_review_verdict_slices()` UNION
                     `_mechanical_seal_cleared_slices(missing, resolved.at_kind)`
                     (bug #94: the mechanical-seal route -- a fresh
@@ -2414,7 +1532,7 @@ def _handle_distill_exit_gate(
       - a planned slice neither signed nor mechanically sealed -> block
         `DistillExitVerdictIncomplete`
       - unparseable slice-plan     -> fail-closed block `SlicePlanParseUnresolved`
-        (never a vacuous "zero planned slices" pass, mirror of U4)
+        (never a vacuous "zero planned slices" pass)
       - NO feature-delta.md at all (bugfix lane, ADR-025) AND the return is
         mechanical-seal-eligible for its OWN declared regression-test-file
         (`_bugfix_lane_mechanical_seal_clears`) -> emit
@@ -2622,15 +1740,17 @@ def _handle_atdd_pure_return(
 ) -> int:
     """Dispatch an atdd_pure crafter return to the SubagentStop service (T-C).
 
-    The atdd_pure return is execution-log-free: no execution-log path, no
-    step id, no signal-file step lifecycle to resolve. The handler builds an
-    atdd_pure-shaped SubagentStopContext (mode == "atdd_pure") and delegates;
-    the service skips ExecutionLogReader entirely.
+    The handler builds a ``SubagentStopContext`` with
+    ``return_kind=ATDD_PURE`` and delegates to the corresponding live service
+    path.
 
     Returns the hook exit code: 0 on allow, 0-with-JSON on block (exit 0 so
     Claude Code processes the block JSON).
     """
-    from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
+    from des.ports.driver_ports.subagent_stop_port import (
+        SubagentStopContext,
+        SubagentStopReturnKind,
+    )
 
     turns_used, tokens_used = _extract_execution_stats(hook_input)
 
@@ -2665,13 +1785,11 @@ def _handle_atdd_pure_return(
     service = service_factory.create_subagent_stop_service()
     decision = service.validate(
         SubagentStopContext(
-            execution_log_path="",
             project_id=resolved.project_id,
-            step_id="",
+            return_kind=SubagentStopReturnKind.ATDD_PURE,
             cwd=resolved.effective_cwd or hook_input.get("cwd", ""),
             turns_used=turns_used,
             tokens_used=tokens_used,
-            mode="atdd_pure",
             slice_id=resolved.slice_id,
             atdd_pure_phase=resolved.atdd_pure_phase,
         ),
@@ -2751,18 +1869,19 @@ def _handle_wave_only_return(
 ) -> int:
     """Dispatch a wave-only Agent()-dispatch return into validate (WGO-001).
 
-    The wave-only return is execution-log-free (like atdd_pure): no
-    execution-log path, no step id. The handler builds a wave-only-shaped
-    SubagentStopContext (execution_log_path == "" AND step_id == "") and
-    delegates; the service's wave-only guard runs the EXISTING wave
-    review-verdict gate-out at Step -1 (it keys on the active floor wave +
+    The handler builds a ``SubagentStopContext`` with
+    ``return_kind=WAVE_ONLY`` and delegates; the service's wave-only path runs
+    the EXISTING wave review-verdict gate-out at Step -1 (it keys on the active floor wave +
     feature-delta, never on the execution log) and NEVER reads an execution log.
 
     Returns the hook exit code: 0 on allow, 0-with-{decision:block}-body on a
     refusal (exit 0 so Claude Code processes the block JSON -- exit 2 ignores
     stdout; subagent_stop_handler.py block protocol).
     """
-    from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
+    from des.ports.driver_ports.subagent_stop_port import (
+        SubagentStopContext,
+        SubagentStopReturnKind,
+    )
 
     log_hook_invoked(
         "subagent_stop_resolved",
@@ -2777,20 +1896,13 @@ def _handle_wave_only_return(
     service = service_factory.create_subagent_stop_service()
     decision = service.validate(
         SubagentStopContext(
-            execution_log_path="",
             project_id=resolved.project_id,
-            step_id="",
+            return_kind=SubagentStopReturnKind.WAVE_ONLY,
             cwd=resolved.effective_cwd,
             # fix-floor-auto-close-cross-wave: thread the returning agent identity
             # so the cross-wave auto-close fires on this LIVE path when the owner
             # terminally returns (WAVE_OWNERS[subagent_type] == active wave).
             subagent_type=resolved.subagent_type,
-            # mode defaults to "atdd_pure" (SubagentStopContext), which would
-            # route this wave-only return into _validate_atdd_pure at Step -0.5
-            # instead of the wave-only close-floor + allow path this dispatch
-            # exists to reach (the docstring above) -- this is a genuinely
-            # wave-only, not atdd_pure, return.
-            mode="classic",
         ),
         hook_id=hook_id,
     )
@@ -2905,9 +2017,9 @@ def _handle_transcript_inaccessible(
     the legitimate marker-free silent allow (a readable transcript with no
     DES markers, AT5) and the absent-key silent allow (no promise was ever
     made, AT6/RCA Q5). For a genuine atdd_pure return, an unreadable
-    transcript means DES cannot verify whether the G_COMMIT / feature-end /
-    D_DISTILL exit gate was satisfied -- rca.md WHY 1B (a gate BYPASS, not
-    merely missing operator feedback).
+    transcript means DES cannot verify whether the D_DISTILL exit gate was
+    satisfied -- rca.md WHY 1B (a gate BYPASS, not merely missing operator
+    feedback).
 
     Unlike the sibling ``_handle_wave_only_unresolved``, this NEVER emits a
     ``{"decision": "block"}`` body -- not even on the first fire (AT7). A
@@ -3021,57 +2133,14 @@ def handle_subagent_stop() -> int:
                 stage=_usage_stage,
             )
 
-            # A stop context that DECLARES the retired spine is refused before
-            # signal or log handling; read-only replay stays outside this live
-            # hook path.
-            #
-            # The discriminator is what the PROJECT DECLARES, not the shape of
-            # the resolved context. Refusing every tuple-shaped context treated
-            # "carries a project/step pair" as "is classic" -- a designation,
-            # not the property -- and the tuple form is the ordinary return for
-            # dispatches that were never classic at all. That reading refused
-            # normal subagent stops with a message about a mode they never
-            # requested, and the operator had no way to tell the two apart.
-            if (
-                isinstance(des_context_result, tuple)
-                and des_context_result[0] is not None
-            ):
-                from des.application.workflow_mode import resolve_workflow_selection
-
-                cwd = hook_input.get("cwd")
-                declares_classic = False
-                if cwd:
-                    try:
-                        selection = resolve_workflow_selection(Path(cwd))
-                        declares_classic = selection.outcome == "CLASSIC_MODE_REMOVED"
-                    except Exception:
-                        declares_classic = False
-                if declares_classic:
-                    print(json.dumps(_classic_mode_removed_payload()))
-                    exit_code = 2
-                    return exit_code
-
             # atdd_pure dispatch return (T-C): execution-log-free path.
             if isinstance(des_context_result, _AtddPureResolvedContext):
                 _emit_causal_envelope(des_context_result)
-                # U2 (slice-02): a crafter returning from the per-slice commit
-                # phase is intercepted by the exit-gate branch. After the 7→3
-                # reduction the canonical word is "D_REFACTOR_COMMIT"; the legacy
-                # "G_COMMIT" word still routes here (lossless replay). U4
-                # (slice-04): a F_FINAL_REVIEW return is intercepted by the
-                # feature-end branch (which itself falls through to the generic
-                # handler until every planned slice is shipped). Other atdd_pure
-                # phases fall through to the generic atdd_pure return handler.
-                if des_context_result.atdd_pure_phase in _COMMIT_GATE_PHASES:
-                    exit_code = _handle_g_commit_exit_gate(
-                        des_context_result, hook_input, hook_id
-                    )
-                    return exit_code
-                if des_context_result.atdd_pure_phase == _FEATURE_END_RETURN_PHASE:
-                    exit_code = _handle_feature_end_gate(
-                        des_context_result, hook_input, hook_id
-                    )
-                    return exit_code
+                # The U2 per-slice commit exit gate and the U4 feature-end gate
+                # that used to intercept here are gone: a returning agent is no
+                # longer blocked on E1/E2 completeness, a Gate-Scope trailer, a
+                # SliceCommitVerified record or a feature-end record set. CI and
+                # independent review remain the terminal evidence.
                 if des_context_result.atdd_pure_phase == "D_DISTILL":
                     exit_code = _handle_distill_exit_gate(
                         des_context_result, hook_input, hook_id
@@ -3124,6 +2193,8 @@ def handle_subagent_stop() -> int:
             if des_context_result[0] is None:
                 # Error or non-DES passthrough -- log it for diagnostics
                 _, response, exit_code = des_context_result
+                if response.get("outcome") == "CLASSIC_MODE_REMOVED":
+                    print(json.dumps(response))
                 log_hook_invoked(
                     "subagent_stop_passthrough",
                     {
@@ -3138,92 +2209,6 @@ def handle_subagent_stop() -> int:
                     hook_id=hook_id,
                 )
                 return exit_code
-            (
-                execution_log_path,
-                project_id,
-                step_id,
-                raw_marker,
-                effective_cwd,
-            ) = des_context_result
-
-            # Audit enrichment (Rex pre-req #5): record the resolved
-            # execution-log path and the DES-PROJECT-ROOT marker value so
-            # post-hoc analysis can trace why a particular log was chosen.
-            log_hook_invoked(
-                "subagent_stop_resolved",
-                {
-                    "agent_type": hook_input.get("agent_type"),
-                    "agent_id": hook_input.get("agent_id"),
-                    "execution_log_path": execution_log_path,
-                    "des_project_root_marker": raw_marker,
-                    "project_id": project_id,
-                    "step_id": step_id,
-                },
-                hook_id=hook_id,
-            )
-
-            # Read task_start_time and task_correlation_id from signal BEFORE removing it
-            task_start_time = ""
-            signal_data = des_task_signal.read_signal(
-                project_id=project_id, step_id=step_id
-            )
-            if signal_data:
-                task_start_time = signal_data.get("created_at", "")
-                task_correlation_id = signal_data.get("task_correlation_id")
-
-            # Clean up DES task signal (subagent finished)
-            des_task_signal.remove_signal(project_id=project_id, step_id=step_id)
-
-            # Delegate to application service
-            from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
-
-            stop_hook_active = bool(hook_input.get("stop_hook_active", False))
-            # Pass effective_cwd for commit verification: validated DES-PROJECT-
-            # ROOT marker (worktree) when present, else hook_input cwd. This
-            # ensures the commit-verifier inspects the repo where the crafter
-            # actually committed, not the orchestrator's startup CWD.
-            cwd = effective_cwd or hook_input.get("cwd", "")
-            service = service_factory.create_subagent_stop_service()
-            decision = service.validate(
-                SubagentStopContext(
-                    execution_log_path=execution_log_path,
-                    project_id=project_id,
-                    step_id=step_id,
-                    stop_hook_active=stop_hook_active,
-                    cwd=cwd,
-                    task_start_time=task_start_time,
-                    turns_used=turns_used,
-                    tokens_used=tokens_used,
-                    # This branch is reached only after the atdd_pure /
-                    # wave-only shapes have already been ruled out above --
-                    # it is the direct-DES classic pipeline. mode defaults to
-                    # "atdd_pure" (SubagentStopContext), which would make
-                    # SubagentStopService.validate() short-circuit into
-                    # _validate_atdd_pure and skip the entire classic Step-1
-                    # execution-log pipeline this call exists to reach.
-                    mode="classic",
-                ),
-                hook_id=hook_id,
-            )
-
-            # Track skill loads from sub-agent transcript (fail-open)
-            transcript_path = hook_input.get("agent_transcript_path")
-            if transcript_path:
-                _maybe_track_skill_loads(transcript_path)
-
-            # Translate HookDecision to protocol response
-            if decision.action == "allow":
-                exit_code = 0
-                return exit_code
-
-            response = _build_block_notification(
-                project_id, step_id, execution_log_path, decision
-            )
-            print(json.dumps(response))
-            # Exit 0 so Claude Code processes the JSON (exit 2 ignores stdout)
-            exit_code = 0
-            return exit_code
-
     except Exception as e:
         # Fail-closed: any error blocks execution via stderr + exit 1
         stderr_capture = stderr_buffer.getvalue()[:STDERR_CAPTURE_MAX_CHARS]

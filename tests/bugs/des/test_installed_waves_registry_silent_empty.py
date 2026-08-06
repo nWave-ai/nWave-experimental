@@ -82,7 +82,10 @@ from des.adapters.drivers.hooks import service_factory
 from des.application import wave_gate_stack_dispatch as wgs
 from des.domain.wave_active import WaveActiveRecord, WaveProvenance
 from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
-from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
+from des.ports.driver_ports.subagent_stop_port import (
+    SubagentStopContext,
+    SubagentStopReturnKind,
+)
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -124,11 +127,9 @@ def _subagent_stop_context(
     *, project_id: str, cwd: Path, slice_id: str
 ) -> SubagentStopContext:
     return SubagentStopContext(
-        execution_log_path="",
         project_id=project_id,
-        step_id="",
+        return_kind=SubagentStopReturnKind.ATDD_PURE,
         cwd=str(cwd),
-        mode="atdd_pure",
         slice_id=slice_id,
         atdd_pure_phase="D_REFACTOR_COMMIT",
     )

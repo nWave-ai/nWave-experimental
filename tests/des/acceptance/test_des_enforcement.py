@@ -39,7 +39,6 @@ def _build_pre_tool_use_service() -> PreToolUseService:
     """Build PreToolUseService with real domain logic and null I/O adapters."""
     return PreToolUseService(
         marker_parser=DesMarkerParser(),
-        prompt_validator=_make_template_validator(),
         audit_writer=NullAuditLogWriter(),
         time_provider=FakeTimeProvider(
             datetime(2026, 2, 12, 10, 0, 0, tzinfo=timezone.utc)
@@ -47,13 +46,6 @@ def _build_pre_tool_use_service() -> PreToolUseService:
         enforcement_policy=DesEnforcementPolicy(),
         completeness_policy=MarkerCompletenessPolicy(),
     )
-
-
-def _make_template_validator():
-    """Create TemplateValidator (real validation, no I/O)."""
-    from des.application.validator import TemplateValidator
-
-    return TemplateValidator()
 
 
 def _make_valid_des_prompt(
@@ -252,7 +244,6 @@ class TestStepIdEnforcement:
         spy = SpyAuditWriter()
         service = PreToolUseService(
             marker_parser=DesMarkerParser(),
-            prompt_validator=_make_template_validator(),
             audit_writer=spy,
             time_provider=FakeTimeProvider(
                 datetime(2026, 2, 12, 10, 0, 0, tzinfo=timezone.utc)

@@ -8,10 +8,6 @@ body to stdout). The composition root builds a real git repository carrying a
 real feature-delta `[REF] Slice Plan` and a real U3 AT-completion ledger,
 invokes the hook as a subprocess (`@wiring_e2e`), and reads back the decision.
 
-The skew-classifier surface is exercised directly against the production
-`_classify_hook_version_skew` -- a layer 1-2 pure-domain function (Mandate 9
-PBT-eligible; the slice exercises it example-pinned over the 5-row M13 table).
-
 The only test doubles are the absent ones: there are none. The git repo, the
 feature-delta, the ledger JSONL, the transcript JSONL, and the hook subprocess
 are all real I/O.
@@ -307,17 +303,3 @@ class FeatureEndInterceptComposition:
             decision_event=decision_event,
             exit_code=completed.returncode,
         )
-
-
-def classify_skew(installed: str | None, checkout: str) -> str:
-    """Classify hook-version skew via the production D6/M5 classifier.
-
-    Returns the skew case string -- `"none"` when the classifier returns None
-    (no skew), else one of `"behind"` / `"ahead"` / `"stamp-absent"`.
-    """
-    from des.adapters.drivers.hooks.session_start_handler import (
-        _classify_hook_version_skew,
-    )
-
-    case = _classify_hook_version_skew(installed, checkout)
-    return case if case is not None else "none"

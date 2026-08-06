@@ -87,7 +87,7 @@ _DEFAULT_FEATURE_ID = "examine-fixture-demo"
 
 #: Degrade-LOUD verdict tokens (D49) -- this tool's previously-uncaught
 #: failure modes, now routed through the SAME JSON verdict vocabulary
-#: charter-scaffold / feature-end-preconditions-scaffold already use.
+#: charter-scaffold already uses.
 VERDICT_GIT_OPERATION_FAILED = "git-operation-failed"
 VERDICT_LEDGER_WRITE_FAILED = "ledger-write-failed"
 #: fix-null-gate-scope-exit-gate slice-01: the entering slice's HEAD commit
@@ -409,8 +409,8 @@ def main(argv: list[str] | None = None) -> int:
     D49: a git/ledger failure previously raised an UNCAUGHT exception --
     `ScaffoldDegradeError` is now caught here and turned into the shared
     JSON degrade-LOUD verdict envelope (`emit_scaffold_verdict`, the SAME
-    vocabulary charter-scaffold / feature-end-preconditions-scaffold already
-    use), non-zero exit -- never a raw traceback.
+    vocabulary charter-scaffold uses), non-zero exit -- never a raw
+    traceback.
     """
     args = _build_parser().parse_args(argv)
     try:

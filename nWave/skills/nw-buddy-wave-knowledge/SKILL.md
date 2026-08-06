@@ -71,16 +71,16 @@ Each wave has a slash command (`/nw-<wave>`) and a primary agent. Waves run top-
 - **Primary agent**: acceptance-designer.
 - **Inputs**: DISCUSS stories and DESIGN architecture.
 - **Outputs**: `tests/acceptance/` files with Given-When-Then scenarios as active-RED scaffolds (run + raise AssertionError — no @skip, per ADR-GV-001 D6; atdd_pure: current slice only, future slices absent from disk), plus a delivery slice plan. <!-- mode-ref-ok -->
-- **Typical artifacts**: feature files or test classes with BDD scenarios, a delivery roadmap in `docs/feature/<name>/roadmap.md`.
+- **Typical artifacts**: feature files or test classes with current active-RED BDD scenarios, plus a feature-delta declaring `## Wave: DISCUSS` and its Slice Plan.
 - **Common questions**: "what are the test scenarios?", "what's the delivery plan?"
 
 ### 7. DELIVER
 
 - **Purpose**: implement the feature using Outside-In TDD, step by step, until all DISTILL scenarios pass.
 - **Primary agent**: software-crafter.
-- **Inputs**: DISTILL output — scenarios and roadmap.
+- **Inputs**: DISTILL output — current active-RED scenarios and the feature-delta Slice Plan.
 - **Outputs**: working, tested, committed code.
-- **Typical artifacts**: commits following the TDD 3-phase canon (RED -> GREEN -> COMMIT, ADR-025 2026-05-07; legacy 5-phase PREPARE -> RED_ACCEPTANCE -> RED_UNIT -> GREEN -> COMMIT preserved for pre-2026-05-07 audit-log replay), updated tests, updated source files.
+- **Typical artifacts**: commits following `A_GREEN -> EXAMINE -> COMMIT`, ledger records and commit trailers, updated tests, updated source files.
 - **Common questions**: "is this feature done?", "what step are we on?", "is the test suite green?"
 
 ## Carpaccio slice-size ceiling and the `@coupled` escape
@@ -153,8 +153,8 @@ When a user asks something, the buddy identifies which wave owns the question an
 | "What are the user stories?" | DISCUSS | story docs / backlog |
 | "How will the module be shaped?" | DESIGN | architecture doc, ADRs |
 | "What's the CI plan?" | DEVOPS | CI workflows, runbooks |
-| "What are the test scenarios?" | DISTILL | feature files, roadmap |
-| "What step are we on?" | DELIVER | commits, test suite, roadmap |
+| "What are the test scenarios?" | DISTILL | current active-RED ATs, feature-delta Slice Plan |
+| "What step are we on?" | DELIVER | ledger, Slice Plan, commit trailers |
 
 If the user's question spans multiple waves (e.g., "what's this feature and how does it work?"), answer with contributions from each relevant wave, in order.
 
@@ -167,7 +167,7 @@ Signals:
 - **DISCUSS**: user is talking about stories, acceptance criteria, user needs.
 - **DESIGN**: user is asking about components, layers, boundaries, trade-offs.
 - **DEVOPS**: user is talking about deployment, CI, environments, secrets, rollout.
-- **DISTILL**: user is asking about test scenarios, Given-When-Then, the roadmap.
+- **DISTILL**: user is asking about current active-RED test scenarios, Given-When-Then, the Slice Plan.
 - **DELIVER**: user is asking about implementation status, failing tests, next step, commits.
 
 If unsure, ask.

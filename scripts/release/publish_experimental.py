@@ -2,16 +2,17 @@
 """Publish the atdd_pure preview to the EXPERIMENTAL channel.
 
 SEGREGATED from the prod/rc/dev release train (Ale 2026-06-07): this is a
-standalone publisher for ONE branch (`feature/atdd-pure-staging`) to ONE private
-target (`nWave-ai/nWave-experimental`). It is wired into NO workflow, creates NO
-git tag, and touches NO shared release script except the privacy gate.
+standalone publisher for ONE branch (`feature/atdd-pure-staging`) to ONE PUBLIC
+target (`nWave-ai/nWave-experimental`). It is wired only to the experimental
+workflow, creates NO git tag, and touches NO shared release script except the
+privacy gate.
 
 Why it exists
 -------------
 The atdd_pure version lives on `feature/atdd-pure-staging` (the OSS de-facto
-trunk until release), NOT on master. We want access-controlled PREVIEW of it
-without contaminating beta/prod/rc or the PyPI version namespace. The target repo
-is PRIVATE, so access == repo collaborators.
+trunk until release), NOT on master. We want a PUBLIC PREVIEW of it without
+contaminating beta/prod/rc or the PyPI version namespace. The target repository
+is PUBLIC.
 
 Anti-contamination invariants (the whole point)
 -----------------------------------------------
@@ -20,15 +21,15 @@ Anti-contamination invariants (the whole point)
 * Publishes the COMMITTED tree (`git archive <ref>`), never the dirty working
   tree, and never mutates this repo's `.git` (no worktree add, no config writes
   — safe under the shared-.git multi-worktree setup).
-* NO PyPI / TestPyPI (public, un-access-controllable, pollutes the version
-  sequence). Preview install is from the private repo only.
+* NO PyPI / TestPyPI (pollutes the version sequence). Preview installation is
+  from the public experimental repository only.
 * NO `v*` tag on nwave-dev (tags wake the dev/rc/prod train).
 * Version is stamped with a PEP 440 LOCAL label `+atddpure.<shortsha>` so it can
   never collide with the real dev/rc/prod version sequence.
-* Reuses the canonical fail-closed privacy gate `strip_private_agents.py` as the
-  SSOT (invoked as a subprocess, not imported) — segregating the *channel* must
-  not mean duplicating the *privacy contract*, or private agents would leak to
-  preview users on divergence.
+* Reuses the canonical fail-closed `strip_private_agents.py` gate as the SSOT
+  (invoked as a subprocess, not imported) — segregating the *channel* must not
+  mean duplicating the stripping contract, or restricted agents would leak to
+  public preview users on divergence.
 
 Usage
 -----
@@ -58,7 +59,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 STRIP_SCRIPT = REPO_ROOT / "scripts" / "release" / "strip_private_agents.py"
 
 # rsync filter — mirrors release-prod.yml's exclude/include block verbatim so the
-# experimental tree carries the SAME public surface as a prod sync (private
+# experimental tree carries the SAME public surface as a prod sync (restricted
 # agents are then removed by strip_private_agents). `.git`/`.git*` are excluded so
 # the TARGET's own .git survives the --delete.
 RSYNC_FILTER: tuple[str, ...] = (
@@ -293,7 +294,7 @@ def main() -> int:
     sha = short_sha(args.ref)
     full_sha = capture(["git", "rev-parse", args.ref], cwd=REPO_ROOT)
     print(f"source: {branch} @ {sha} ({full_sha})")
-    print(f"target: {TARGET_SLUG}@{TARGET_BRANCH}  (PRIVATE)")
+    print(f"target: {TARGET_SLUG}@{TARGET_BRANCH}  (PUBLIC)")
     print(f"mode:   {'PUSH' if args.push else 'DRY RUN (no push)'}")
 
     if not STRIP_SCRIPT.is_file():
@@ -313,7 +314,7 @@ def main() -> int:
         print("\n[2/5] clone experimental target")
         run(["gh", "repo", "clone", TARGET_SLUG, str(target), "--", "--depth", "1"])
 
-        # 4) rsync the public surface + strip private agents (fail-closed) -
+        # 4) rsync the public surface + strip restricted agents (fail-closed) -
         print("\n[3/5] rsync public surface (prod filter) + --delete --delete-excluded")
         rsync_exit = run(
             [
@@ -331,7 +332,7 @@ def main() -> int:
             print(f"ERROR: rsync failed ({rsync_exit})", file=sys.stderr)
             return 1
 
-        print("\n[4/5] strip private agents (canonical fail-closed SSOT)")
+        print("\n[4/5] strip restricted agents (canonical fail-closed SSOT)")
         run([sys.executable, str(STRIP_SCRIPT), str(target)])
 
         stamp_experimental_version(target, sha)
@@ -379,10 +380,7 @@ def main() -> int:
             f"\n✅ PUBLISHED to {TARGET_SLUG}@{TARGET_BRANCH} "
             f"(commit {pushed}) — atdd-pure preview @ {sha}"
         )
-        print(
-            f"   Preview access = collaborators on the PRIVATE repo "
-            f"https://github.com/{TARGET_SLUG}"
-        )
+        print(f"   Preview access = PUBLIC repository https://github.com/{TARGET_SLUG}")
     return 0
 
 

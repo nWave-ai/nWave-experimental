@@ -10,10 +10,7 @@ bug where one path had stale matchers or missing hooks.
 Test Budget: 4 distinct behaviors x 2 = 8 max unit tests.
 Behaviors:
   1. Both paths produce hooks for all 5 event types
-  2. Both paths produce 5 PreToolUse entries with identical matchers
-     (post slice-02 of atdd-spine-ledger-enforcement-gate-v2: Bash matcher
-     hosts BOTH the execution-log guard AND the spine-ledger pre-commit
-     hook; Claude Code permits multiple entries per (event, matcher))
+  2. Both paths produce identical PreToolUse matchers.
   3. The (event, matcher, action) triples are identical between plugin and installer
   4. Write/Edit hooks use guard commands in both paths
 """
@@ -82,35 +79,16 @@ class TestHookParityPluginVsInstaller:
         assert set(plugin_config.keys()) == HOOK_EVENT_TYPES
         assert set(installer_config.keys()) == HOOK_EVENT_TYPES
 
-    def test_both_paths_produce_six_pretooluse_entries(
+    def test_both_paths_produce_independent_pretooluse_entries(
         self, plugin_config: dict, installer_config: dict
     ):
-        """Both paths produce 9 PreToolUse entries: Agent, Write, Edit, Bash x 6.
-
-        slice-02 of atdd-spine-ledger-enforcement-gate-v2 added a NEW Bash
-        entry (spine-ledger PreToolUse hook, dev-mode form) adjacent to the
-        execution-log guard. slice-04 added a SECOND spine-ledger Bash entry
-        (gate-installed form, calling the gate script directly). slice-01 of
-        fix-crafter-stash-structural-mitigation added a FOURTH Bash entry
-        (git-stash guard). 817a7b21e wired a FIFTH Bash entry (the --no-verify
-        reminder guard, ``pre-bash-no-verify-reminder``).
-        fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29) wired
-        a SIXTH Bash entry (the worktree-removal liveness guard,
-        ``pre-bash-worktree-removal-guard``). Claude Code's PreToolUse
-        protocol permits multiple registrations per (event, matcher) tuple;
-        execution is registration-ordered; "any block wins" semantic. All
-        six Bash entries appear in registration order: execution-log guard,
-        spine-ledger dev-mode, spine-ledger gate-installed, git-stash guard,
-        no-verify reminder, worktree-removal guard.
-        """
+        """Both paths produce 7 PreToolUse entries: Agent, Write, Edit, Bash x 4."""
         plugin_matchers = [e.get("matcher") for e in plugin_config["PreToolUse"]]
         installer_matchers = [e.get("matcher") for e in installer_config["PreToolUse"]]
         expected = [
             "Agent",
             "Write",
             "Edit",
-            "Bash",
-            "Bash",
             "Bash",
             "Bash",
             "Bash",

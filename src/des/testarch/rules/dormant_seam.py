@@ -10,9 +10,7 @@ identity, the set of resolved call-site identities) the composition-root CLI
 realizes; the AST walk + the delta read + the call-site resolution all live in the
 imperative shell.
 
-The binding-resolved cross-product shape REUSES the
-``detect_per_plugin_capability_conformance`` pattern
-(``registry_conformance.py``, DESIGN Reuse R1): the detector consumes
+The binding-resolved cross-product shape consumes
 fully-resolved plain-data surfaces (a symbol's module-qualified identity and the
 set of call-site target identities -- resolved bindings, not bare names), so an
 entry-point-dispatched symbol whose binding was resolved into a call-site is NOT

@@ -38,16 +38,11 @@ git check-ignore .nwave/local-config.json
 # (no output = NOT ignored; marker is tracked)
 ```
 
-### Special case: SessionStart hook is always active
-
-One hook is exempt from the activation gate: the `SessionStart` hook. It runs update checks, housekeeping, and adoption detection even in unmarked (inactive) repos. Other hooks (pre-tool-use, subagent-stop, deliver-progress, post-tool-use) respect the gate.
-
 ### Silent auto-marking (backward compatibility)
 
-An unmarked repo gets adopted automatically (marker written `{"enabled_for_repo": true}`) in two cases:
-
-1. **At session start** if there is prior nWave use evidence (non-empty audit log, prior feature directories).
-2. **On the first dispatch of any `nw-*` agent** in that repo.
+An unmarked repo gets adopted automatically (marker written
+`{"enabled_for_repo": true}`) on the first dispatch of an `nw-*` agent in that
+repo.
 
 This ensures repos with existing nWave work are not left inactive unexpectedly. Once you write an explicit marker (`true` or `false`), auto-marking stops — your choice is sticky.
 

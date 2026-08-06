@@ -149,10 +149,8 @@ _INV_SUSTAINABILITY = "sustainability"
 # rather than a Gherkin @slice-NN tag (fix-readiness-gate-at-kind-blind-
 # scenario-tags). Mirrors `carpaccio_intercept._REGRESSION_AT_KINDS` (the
 # module-level constant both runners there share) -- this gate's OWN parser
-# accepts the same three kinds via `--at-kind`.
-_REGRESSION_AT_KINDS = frozenset(
-    {"pytest-regression", "native-regression", "rust-regression"}
-)
+# accepts the same regression kind via `--at-kind`.
+_REGRESSION_AT_KINDS = frozenset({"pytest-regression"})
 
 _ALL_INVARIANTS = (
     _INV_SLICE_PLAN,
@@ -465,7 +463,7 @@ def _check_scenario_slice_tags(
           feature-wide "nothing untagged" check).
       (c) regression-seal escape (fix-readiness-gate-at-kind-blind-scenario-
           tags): when the ENTERING slice's `at_kind` is a regression kind
-          (`pytest-regression` / `native-regression` / `rust-regression`) AND
+          (``pytest-regression``) AND
           its named `regression_test_file` carries a FRESH, content-matching
           RED seal, leg (b) below is satisfied for THIS slice WITHOUT
           requiring a `.feature` file. The escape is earned by EVIDENCE, never
@@ -1165,8 +1163,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="gherkin",
         help=(
             "Declare the entering slice's AT kind (fix-readiness-gate-at-"
-            "kind-blind-scenario-tags). `pytest-regression` / "
-            "`native-regression` / `rust-regression` let the "
+            "kind-blind-scenario-tags). `pytest-regression` lets the "
             "scenario_slice_tags invariant clear on a FRESH, content-matching "
             "RED seal for --regression-test-file instead of requiring a "
             "`.feature` scenario. Defaults to `gherkin` -- byte-identical to "
@@ -1178,8 +1175,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "The regression test file the RED->GREEN mechanical seal is "
-            "recorded for (paired with `--at-kind pytest-regression` / "
-            "`native-regression` / `rust-regression`). Path relative to "
+            "recorded for (paired with `--at-kind pytest-regression`). Path relative to "
             "--repo-root. Record the seal with `des verify-red-green "
             "--record-red --test-file <path>` before this gate can clear on "
             "it -- declaring the kind alone never substitutes for the seal."

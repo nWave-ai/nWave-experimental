@@ -49,7 +49,6 @@ from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli._emit_json import emit_json_line as _emit
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.domain.telemetry_paths import TelemetrySubtree, subtree_dir
-from des.ports import test_runner_port
 
 
 _SEAL_DIR = subtree_dir(Path(), TelemetrySubtree.RED_GREEN)
@@ -100,59 +99,32 @@ def _has_tool_uv_table(pyproject: Path) -> bool:
     return any(line.strip() == "[tool.uv]" for line in text.splitlines())
 
 
-class _UnsupportedRunnerLayout(Exception):
-    """Raised by ``_default_run_cmd`` when ``test_runner_port.resolve`` matches
-    a REGISTERED, RECOGNIZED runner (e.g. ``cargo-test``, ``vitest``,
-    ``go-test``) that verify-red-green has no pytest-style run-cmd template
-    for. Distinct from an UNRECOGNIZED layout (zero matched lockfiles at
-    all), which keeps the legacy Python-assumed pytest fallback -- see
-    ``_default_run_cmd``. Caught in ``main`` and turned into a loud REFUSAL
-    (exit 1), never a silent fall-through to pytest.
-    """
+_NON_PYTHON_ROOT_MANIFESTS = ("Cargo.toml", "go.mod", "package.json")
 
-    def __init__(self, runner: str) -> None:
-        self.runner = runner
-        super().__init__(
-            f"resolved runner {runner!r} has no verify-red-green run-cmd template"
+
+def _default_python_eligibility(repo: Path, test_file: Path) -> str | None:
+    """Return why the implicit pytest command is unsafe, else ``None``.
+
+    The default is deliberately narrow: a Python test path plus Python project
+    configuration is enough only when the root does not also declare another
+    language.  A polyglot root has no honest implicit runner after the generic
+    resolver's removal.
+    """
+    if test_file.suffix != ".py":
+        return f"the declared test path is not Python: {test_file.name}"
+    if not ((repo / "pyproject.toml").is_file() or (repo / "pytest.ini").is_file()):
+        return "the project declares neither pyproject.toml nor pytest.ini"
+    foreign = [name for name in _NON_PYTHON_ROOT_MANIFESTS if (repo / name).is_file()]
+    if foreign:
+        return (
+            "the project is ambiguous: Python configuration coexists with "
+            + ", ".join(foreign)
         )
+    return None
 
 
 def _default_run_cmd(repo: Path) -> tuple[str, ...]:
-    """Derive the DEFAULT runner command from the TARGET ``repo``'s test-runner
-    layout (filesystem-only, no shelling out -- GDP-7).
-
-    Delegates layout RESOLUTION to the existing closed-union registry
-    ``des.ports.test_runner_port.resolve`` (never a private, hand-rolled,
-    open-ended if/elif chain) -- the SAME registry the contract gate already
-    consumes:
-
-    * resolves to the ``pytest`` runner (``pyproject.toml`` / ``pytest.ini``)
-      -> layer the Python-env run-prefix (uv/poetry/pipenv) on top, exactly as
-      before -- orthogonal to *which* runner, not a competing resolver.
-      ``sys.executable`` binds to the interpreter that LAUNCHED
-      verify-red-green, not the target repo's environment -- on a
-      uv/poetry/pipenv target repo that runs pytest in the WRONG env, so the
-      manifest-derived prefix always runs in the target's own environment.
-    * resolves to a DIFFERENT recognized runner (``cargo-test``, ``vitest``,
-      ``go-test``, ...) -> verify-red-green has no run-cmd template for it;
-      raises ``_UnsupportedRunnerLayout`` so ``main`` can REFUSE loud instead
-      of silently reaching pytest against a non-Python target.
-    * resolves to NOTHING (``Indeterminate`` / ``UnrecognizedRunner`` -- zero
-      matched lockfiles) -> preserves the legacy behavior: assume a
-      lockfile-less Python repo and fall back to the unchanged
-      ``_DEFAULT_RUN_CMD`` (current sys.executable -m pytest form).
-
-    An explicit ``--run-cmd`` always wins over this derivation (see ``main``).
-    """
-    resolution = test_runner_port.resolve(repo)
-    if (
-        isinstance(resolution, test_runner_port.RunnerAdapter)
-        and resolution.name != "pytest"
-    ):
-        raise _UnsupportedRunnerLayout(resolution.name)
-    # Either resolved to "pytest", or Indeterminate/UnrecognizedRunner (no
-    # matched lockfile at all) -- both keep the legacy Python-assumed pytest
-    # fallback (unchanged behavior for the plain-repo case).
+    """Derive the default command for an explicitly Python project only."""
     return _pytest_default_run_cmd(repo)
 
 
@@ -180,41 +152,6 @@ def _indeterminate(what: str, why: str, how: str, cmd: object = None) -> int:
     _emit(payload)
     print(f"⚠ INDETERMINATE — {what}. {why} Fix: {how}")
     return _EXIT_INDETERMINATE
-
-
-def _unsupported_layout_refusal(exc: _UnsupportedRunnerLayout) -> int:
-    """REFUSE loud (exit 1) for a resolved runner verify-red-green has no
-    run-cmd template for -- names the incapacity, the resolved layout, and
-    the ``--run-cmd`` escape hatch (GDP-3/GDP-4), never a silent pytest
-    fall-through against a non-Python target."""
-    what = (
-        f"no verify-red-green run-cmd template for the resolved runner {exc.runner!r}"
-    )
-    why = (
-        "des.ports.test_runner_port.resolve() recognized this target's "
-        f"layout (runner={exc.runner!r}) but verify-red-green only carries "
-        "a pytest-style run-cmd template -- running pytest against this "
-        "target would silently mis-execute (empty/false results), not "
-        "witness the developer's tests."
-    )
-    how = (
-        "pass --run-cmd '<runner invocation> {test_file} {junit_out}' "
-        "explicitly (verify-red-green is runner-agnostic via JUnit XML -- "
-        "pytest, cargo-nextest, and vitest all emit it)."
-    )
-    cmd = [f"<no run-cmd template for runner={exc.runner!r}>"]
-    _emit(
-        {
-            "event": "RedGreenRefused",
-            "phase": "layout",
-            "what": what,
-            "why": why,
-            "how": how,
-            "cmd": cmd,
-        }
-    )
-    print(f"✗ REFUSED — {what}. {why} Fix: {how}")
-    return _EXIT_REFUSED
 
 
 def _seal_path(repo: Path, test_file: Path) -> Path:
@@ -677,10 +614,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.run_cmd:
         run_cmd = tuple(shlex.split(args.run_cmd))
     else:
-        try:
-            run_cmd = _default_run_cmd(repo)
-        except _UnsupportedRunnerLayout as exc:
-            return _unsupported_layout_refusal(exc)
+        ineligible = _default_python_eligibility(repo, test_file)
+        if ineligible is not None:
+            return _indeterminate(
+                what="no default test command for this project",
+                why=(
+                    "verify-red-green only supplies an implicit pytest command for "
+                    f"an unambiguous Python test layout; {ineligible}."
+                ),
+                how=(
+                    "run this project's already-declared focused test command "
+                    "outside verify-red-green; this CLI will not infer pytest."
+                ),
+            )
+        run_cmd = _default_run_cmd(repo)
     if args.record_red:
         return _record_red(
             repo,

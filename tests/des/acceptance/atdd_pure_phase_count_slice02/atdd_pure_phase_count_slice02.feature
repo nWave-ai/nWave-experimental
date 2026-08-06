@@ -47,10 +47,6 @@ Feature: The delivery runtime speaks the canonical three-phase vocabulary
     And the routing event carries no canonical phase
     And the routing event is not rejected as unknown
 
-  @slice-02 @coupled @wiring_e2e @real-io @contract-shape:bounded-change
-  Scenario: A returning commit step is gated whether it speaks the canonical or legacy word
-    Given a returning delivery agent in a workspace with no verified slice commit
-    When the agent reports it has finished the canonical commit step
-    Then the feature-end commit gate stops the agent from closing the slice
-    When the agent reports it has finished the legacy commit step
-    Then the feature-end commit gate stops the agent from closing the slice
+  # The commit-gating scenario that stood here asserted that a returning agent is
+  # stopped from closing a slice with no verified slice commit. That gate is gone;
+  # the phase-word routing this feature owns is still covered by the scenarios above.

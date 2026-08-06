@@ -35,10 +35,10 @@ Feature: Pre-commit test scoping isolates a staged test file to its own feature 
 
   @error @us-isolate-sibling-red-scaffold @real-io @contract-shape:pure-function @slice-01
   Scenario: A staged file under a feature directory does not pull in a sibling feature's tree
-    Given the staged file list is exactly "tests/des/acceptance/fix_robustness_pbt_density_gate/walking-skeleton.feature"
-    And the directories "tests/des/acceptance/fix_robustness_pbt_density_gate" and "tests/des/cli/fix_contract_gate_digest_undercount" both exist on disk
+    Given the staged file list is exactly "tests/des/acceptance/declared_facts/test_slice_01_at_review_both_outcomes.py"
+    And the directories "tests/des/acceptance/declared_facts" and "tests/des/cli/fix_contract_gate_digest_undercount" both exist on disk
     When the resolver computes the targeted test directories
-    Then the resulting scope contains "tests/des/acceptance/fix_robustness_pbt_density_gate/"
+    Then the resulting scope contains "tests/des/acceptance/declared_facts/"
     And the resulting scope does not contain "tests/des/cli/fix_contract_gate_digest_undercount/"
     And the resulting scope does not contain "tests/des/"
 

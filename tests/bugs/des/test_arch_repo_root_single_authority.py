@@ -3,7 +3,7 @@ is the SOLE authority for resolving the target repo root -- a hand-rolled
 duplicate is refused, named file+line, WHAT/WHY/HOW.
 
 Companion to ``test_repo_root_resolution_ssot.py`` (which pins the two
-BEHAVIOURAL drift axes on the three known offenders). This module pins the
+BEHAVIOURAL drift axes on the known offenders). This module pins the
 STRUCTURAL invariant: nothing outside the SSOT re-implements its contract.
 
 DETECTION -- two independent, property-keyed rules (not a hand-picked file
@@ -33,11 +33,9 @@ SCOPE -- ``src/`` + ``scripts/`` only, excluding ``.venv``, ``node_modules``,
 ``tests/`` is DELIBERATELY excluded (not merely skipped by directory-name
 convention, but a considered exclusion): dozens of test step-composition
 files define a LOCAL ``_repo_root()`` helper to locate THIS checkout for
-fixture setup (e.g. ``tests/des/acceptance/*/steps/composition*.py``), and
-``tests/scripts/cli/test_cohort_classifier.py`` directly reads/writes
-``os.environ["NWAVE_REPO_ROOT"]`` as PART OF exercising the CLI under test --
-neither is a production reimplementation of repo-root resolution; scanning
-them would fire on test fixtures, not defects.
+fixture setup (e.g. ``tests/des/acceptance/*/steps/composition*.py``). These
+are not production reimplementations of repo-root resolution; scanning them
+would fire on test fixtures, not defects.
 
 DELIBERATELY NOT FLAGGED (considered and excluded, not silently omitted):
 ``scripts/docgen.py:1243`` (``args.root or Path(__file__).resolve()
@@ -48,17 +46,16 @@ read ``NWAVE_REPO_ROOT`` and are not named "repo root" -- they resolve a
 DIFFERENT concept (the dev-only build/install tooling's own checkout root,
 which never runs installed and so is correct-by-construction to resolve via
 ``__file__``). Flagging them would force this bugfix's scope past its
-diagnosed causal-id (three CLI modules duplicating ``resolve_repo_root``'s
+diagnosed causal-id (CLI modules duplicating ``resolve_repo_root``'s
 env-var contract) into unrelated build tooling. Recorded here explicitly
 per the "decide on the property, never the designation" gate discipline --
 this is a reasoned exclusion, not an allowlist that quietly swallows a
 violation; a follow-up widening this guard to the build-script family is a
 separate, explicit decision.
 
-RED now: ``scan_for_offenders(REPO_ROOT)`` names the three known offenders
-(``src/des/cli/mode_locus_gate.py``, ``src/des/cli/mode_registry_
-completeness.py``, ``scripts/cli/cohort_classifier.py``). GREEN once the
-crafter routes all three through ``resolve_repo_root`` -- and this guard
+RED now: ``scan_for_offenders(REPO_ROOT)`` names the known offender
+(``src/des/cli/mode_registry_completeness.py``). GREEN once the crafter routes it through
+``resolve_repo_root`` -- and this guard
 stays armed against a FOURTH.
 """
 
@@ -340,9 +337,7 @@ def test_whole_tree_has_zero_hand_rolled_repo_root_reimplementations() -> None:
     """The live-repo guard: nothing outside the SSOT duplicates
     ``resolve_repo_root``'s contract.
 
-    RED now: names the three known offenders (mode_locus_gate.py,
-    mode_registry_completeness.py, cohort_classifier.py). GREEN once the
-    crafter routes all three through
+    RED now: names the known offender (mode_registry_completeness.py). GREEN once the crafter routes it through
     ``des.domain.repo_path_resolver.resolve_repo_root`` -- and stays armed
     against a fourth.
     """

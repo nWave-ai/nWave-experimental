@@ -1,45 +1,9 @@
-"""
-DES (Deterministic Execution System) - Post-execution validation and phase tracking.
+"""DES runtime package.
 
-This package provides deterministic validation hooks that fire when sub-agents complete
-execution, ensuring phase progression is tracked accurately and deviations are detected.
-
-Follows hexagonal architecture with:
-  - Domain: Core business logic and entities
-  - Application: Use cases and orchestration
-  - Ports: Abstract interfaces (driver and driven)
-  - Adapters: Concrete implementations (drivers and driven)
-
-Core Components:
-  - DESOrchestrator: Main DES coordination engine
-  - TimeoutMonitor: Domain entity for timeout management
-  - ConfigPort: Configuration abstractions
-  - HookPort/ValidatorPort: Driver port abstractions
-  - TemplateValidator: Driver implementations
-  - EnvironmentConfigAdapter/InMemoryConfigAdapter: Driven implementations
-
-For backward compatibility, this module re-exports all key classes and interfaces --
-LAZILY (PEP 562). Importing ``des`` itself pulls in nothing but this module: a name is
-resolved, and its layer imported, only when someone actually asks for it.
-
-Why lazy matters here, measured 2026-07-25: the eager form cost 111ms on every
-``import des.cli.dispatch`` (45ms of it the DRIVEN ADAPTERS, dragged in by the root
-package alone) against a 30-40ms bare interpreter. Every ``des`` command paid it before
-doing any work, and so did every test touching the package -- with a 55ms median test,
-three CLI invocations were enough to push a test over one second. Re-exports written
-"for backward compatibility" are a convenience; charging the whole system's import cost
-to every caller of any part of it is not the price that convenience is worth.
-
-It also restored the declared layering in the only way that matters at runtime: touching
-the root package no longer loads filesystem/git/logging drivers, so the domain can be
-used without dragging the edge in behind it.
-
-New code should import from the specific layer packages:
-  - from des.domain import TimeoutMonitor, TurnCounter
-  - from des.application import DESOrchestrator, TemplateValidator
-  - from des.ports.driver_ports import HookPort, ValidatorPort
-  - from des.ports.driven_ports import ConfigPort, FileSystemPort, TimeProvider
-  - from des.adapters.driven import EnvironmentConfigAdapter
+The supported executable entry point is ``des.cli.__main__.main``.  The root
+package keeps a small set of lazy compatibility exports for still-supported
+domain, port, and adapter types; it no longer exposes the retired prompt
+validator/orchestrator facade.
 """
 
 from __future__ import annotations
@@ -66,12 +30,6 @@ _EXPORTS: dict[str, str] = {
     "ConfigLoader": "des.application.config_loader",
     "InvocationLimitsResult": "des.application.invocation_limits_validator",
     "InvocationLimitsValidator": "des.application.invocation_limits_validator",
-    "DESOrchestrator": "des.application.orchestrator",
-    "TDDPhaseValidator": "des.application.validator",
-    "TemplateValidator": "des.application.validator",
-    # Domain
-    "TimeoutMonitor": "des.domain",
-    "TurnCounter": "des.domain",
     # Driven ports
     "ConfigPort": "des.ports.driven_ports",
     "FileSystemPort": "des.ports.driven_ports",
@@ -86,7 +44,6 @@ _EXPORTS: dict[str, str] = {
 #: Backward-compatibility aliases: old public name -> current export name. Resolved
 #: through ``_EXPORTS`` too, so an alias cannot outlive the thing it aliases.
 _ALIASES: dict[str, str] = {
-    "RealValidator": "TemplateValidator",
     "RealFilesystem": "RealFileSystem",
     "SystemTime": "SystemTimeProvider",
 }
@@ -104,14 +61,6 @@ if TYPE_CHECKING:  # pragma: no cover - import-time cost is the whole point at r
         StructuredLogger,
         SystemTimeProvider,
     )
-    from des.application.config_loader import ConfigLoader
-    from des.application.invocation_limits_validator import (
-        InvocationLimitsResult,
-        InvocationLimitsValidator,
-    )
-    from des.application.orchestrator import DESOrchestrator
-    from des.application.validator import TDDPhaseValidator, TemplateValidator
-    from des.domain import TimeoutMonitor, TurnCounter
     from des.ports.driven_ports import (
         ConfigPort,
         FileSystemPort,

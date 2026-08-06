@@ -30,10 +30,10 @@ Feature: Rigor profile scope selection
   # --- Read-modify-write preserves other keys ---
 
   Scenario: Global save preserves existing non-rigor keys in global config
-    Given the global config file has an update check frequency of "weekly"
+    Given the global config file has a user preference of "weekly"
     When rigor profile "standard" is saved with scope "global"
     Then the global config file contains rigor profile "standard"
-    And the global config file still has update check frequency "weekly"
+    And the global config file still has user preference "weekly"
 
   Scenario: Project save preserves existing non-rigor keys in project config
     Given the project config has audit logging enabled

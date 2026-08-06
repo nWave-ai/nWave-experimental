@@ -12,9 +12,8 @@ no YAML I/O in the domain (D1/D2) -- projected + drift-checked from OUTSIDE
 the domain). Mirrors the docgen `GENERATED:mode-descriptor` Layer-C
 agreement-leg pattern (`scripts/docgen.py::check_registry_runtime_agreement`
 -- registry says X, the running system says Y, name the disagreement, empty
-list = fresh/in-sync); see also the mode-registry-single-locus slice-02/05
-precedent (`tests/des/acceptance/mode_registry_single_locus/`), which
-established the same projection-vs-literal shape for `nWave/flavors/*.yaml`.
+list = fresh/in-sync); a retired migration sweep established the same
+projection-vs-literal shape for `nWave/flavors/*.yaml`.
 
 Driving port (Mandate 16, no-direct-domain-testing): every AT below drives
 `des.application.dispatch_lane_ssot.check_lane_profile_drift(repo_root)` -- a

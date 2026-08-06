@@ -81,7 +81,7 @@ the SEAM, never a line number):
      GateVerdict-shaped result — gate-G returns ``GateGEnvelope.verdict``;
      self-attest returns ``SelfAttestVerdict.verdict``; the runner emits a
      ``nwave.test_result.v1`` (a real run -> a verdict derivable from
-     passed/failed) or a ``nwave.earned_verdict.v1`` ABSTAIN. This composition
+     passed/failed) or a ``nwave.test_observation.v1`` unobserved outcome. This composition
      reads the verdict token from stdout / the emitted ``--out`` envelope; if
      DELIVER shapes the CLI output differently, update ``_read_driven_verdict``.
 """
@@ -461,10 +461,10 @@ class GateStackWiringComposition:
 
         Tries, in order: a JSON envelope on stdout carrying a ``verdict`` /
         ``status`` field; the emitted ``--out`` envelope (the runner port's
-        ``nwave.test_result.v1`` / ``nwave.earned_verdict.v1``); a bare verdict
-        token in stdout. Maps the runner's test-result/earned-verdict onto a §17
-        token (a real run with failed==0 -> PASS; failed>0 -> FAIL; an ABSTAIN ->
-        INDETERMINATE) so all three modules speak the LOCKED five.
+        ``nwave.test_result.v1`` / ``nwave.test_observation.v1``); a bare verdict
+        token in stdout. Maps the runner's test result/unobserved outcome onto a
+        §17 token (a real run with failed==0 -> PASS; failed>0 -> FAIL; an
+        unobserved runner -> INDETERMINATE) so all three modules speak the LOCKED five.
         """
         token = GateStackWiringComposition._verdict_from_stdout(stdout)
         if token is not None:
@@ -496,16 +496,19 @@ class GateStackWiringComposition:
     def _verdict_from_runner_envelope(out_path: Path) -> str | None:
         """Map the runner port's emitted envelope onto a §17 verdict token.
 
-        ``nwave.earned_verdict.v1`` ABSTAIN -> INDETERMINATE (the mechanism could
-        not run); ``nwave.test_result.v1`` with failed==0 -> PASS, failed>0 ->
-        FAIL. The runner DRIVES a real run (run_tests.main) -- this maps its honest
-        emission onto the LOCKED five.
+        ``nwave.test_observation.v1`` with ``observation: unobserved`` maps to
+        INDETERMINATE (the runner could not run); ``nwave.test_result.v1`` with
+        failed==0 -> PASS, failed>0 -> FAIL. The runner DRIVES a real run
+        (run_tests.main) -- this maps its honest emission onto the LOCKED five.
         """
         try:
             payload = json.loads(out_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
-        if payload.get("status") == "ABSTAIN":
+        if (
+            payload.get("schema") == "nwave.test_observation.v1"
+            and payload.get("observation") == "unobserved"
+        ):
             return "indeterminate"
         if payload.get("schema") == "nwave.test_result.v1":
             failed = payload.get("failed", 0)

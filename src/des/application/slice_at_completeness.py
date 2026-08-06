@@ -55,9 +55,6 @@ from des.application.feature_at_files import (
     resolve_test_file_attribution,
 )
 from des.domain.slice_id_trailer import SLICE_TAG_RE
-from des.ports.test_runner_port import (
-    AT_KIND_SUFFIX_MAP as _NATIVE_REGRESSION_SUFFIX_RUNNER,
-)
 
 
 if TYPE_CHECKING:
@@ -243,49 +240,6 @@ class AtCompletenessOutcome:
     verifiable: bool
 
 
-#: Suffix -> runner name for the native-regression fourth evidence source.
-#: ``_NATIVE_REGRESSION_SUFFIX_RUNNER`` is an IMPORT of the promoted
-#: ``des.ports.test_runner_port.AT_KIND_SUFFIX_MAP`` SSOT (ADR-AAD-001 DA-5)
-#: -- the SAME suffix-keyed resolution ``_routes_through_runner_port`` and
-#: ``commit_slice._committed_scope_digest_or_degrade_reason`` already use --
-#: not an independently-defined literal. Importing the ports-layer constant
-#: keeps this module behind the CLI layer (DDD-1/DDD-9, this module's
-#: docstring): the SSOT lives in ``des.ports``, not ``des.cli.carpaccio_
-#: format``, so this import crosses no CLI-layer boundary.
-
-
-def _native_regression_at_evidence_exists(
-    repo: Path, regression_test_file: str
-) -> bool:
-    """True iff the declared native-regression file yields >=1 REAL discovered
-    AT via the unified ``RunnerAdapter.discover_ats`` facet-pair
-    (fix-rust-regression-at-kind-wiring).
-
-    NEVER a blind accept-without-verify (the charter oracle: "no tool may
-    accept the flag while being structurally unable to read/verify
-    underlying tests") -- an unresolvable suffix, a missing file, or a
-    ``RunnerAdapterUnavailable`` degrade from the facet itself (unreadable,
-    malformed, zero discovered ATs) all return ``False``: this is evidence
-    the caller MAY add, never evidence it fabricates.
-    """
-    file_path = repo / regression_test_file
-    if not file_path.is_file():
-        return False
-    runner_name = _NATIVE_REGRESSION_SUFFIX_RUNNER.get(file_path.suffix)
-    if runner_name is None:
-        return False
-    from des.adapters.driven.runner.runner_registry import seed_runner_registry
-    from des.ports.test_runner_port import RunnerAdapter, RunnerAdapterUnavailable
-
-    seed_runner_registry()
-    adapter = RunnerAdapter(name=runner_name)
-    try:
-        discovery = adapter.discover_ats(file_path.parent, file_path)
-    except RunnerAdapterUnavailable:
-        return False
-    return bool(discovery.at_ids)
-
-
 def missing_at_files(
     repo: Path,
     commit: str,
@@ -352,20 +306,6 @@ def missing_at_files(
     reach E2, which is the sole authority on presence/pass/fail/indeterminate
     for that file.
 
-    ``at_kind == "native-regression"`` (fix-rust-regression-at-kind-wiring)
-    is the SAME fourth evidence source for a non-Python regression file (e.g.
-    a Rust ``.rs`` file) -- but unlike pytest-regression's blind path-trust,
-    this is NEVER accepted on the declared path alone: the charter oracle
-    ("no tool may accept the flag while being structurally unable to
-    read/verify underlying tests") requires ACTUALLY extracting AT evidence
-    through the unified ``RunnerAdapter.discover_ats`` facet-pair
-    (``register_at_discovery``/``lookup_at_discovery``,
-    ``runner_registry.py``) before counting the file as evidence. A declared
-    file that cannot be read, or that genuinely carries zero discoverable
-    ATs, contributes NO evidence here -- ``verifiable`` stays keyed on
-    whatever ``feature_files_for_slice`` found, never inflated by an
-    unverified declaration.
-
     ``verifiable`` is False when zero AT candidates were found for this
     (slice_id, feature_id) at all AND no pytest-regression file was declared
     -- distinct from a genuine "verified everything, nothing missing" pass.
@@ -407,9 +347,6 @@ def missing_at_files(
         )
 
     at_files = feature_files_for_slice(repo, slice_id, feature_id)
-    if at_kind == "native-regression" and regression_test_file:
-        if _native_regression_at_evidence_exists(repo, regression_test_file):
-            at_files = sorted({*at_files, regression_test_file})
     in_commit = files_in_commit(repo, commit)
     declared_regression = at_kind == "pytest-regression" and bool(regression_test_file)
     if declared_regression and regression_test_file in in_commit:

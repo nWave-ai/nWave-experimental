@@ -4,11 +4,11 @@ The single SSOT for extracting the ``slice-NN`` identities a commit message
 carries. This is pure-function domain logic -- a regex over a string with no
 filesystem, subprocess, or CLI dependency -- so it lives in the domain layer.
 
-The CLI driving port (``des.cli.verify_slice_commit_completeness``) and the
-hook adapters (``carpaccio_intercept``, ``earned_verdict_commit_gate_hook``)
-all import these helpers from here. Previously they lived in the CLI module and
-were imported DOWNWARD by the adapters, inverting the hexagonal layering
-(AD-05). Domain logic must never live in the drivers layer.
+The CLI driving port (``des.cli.verify_slice_commit_completeness``) and hook
+adapters (including ``carpaccio_intercept``) import these helpers from here.
+Previously they lived in the CLI module and were imported DOWNWARD by adapters,
+inverting the hexagonal layering (AD-05). Domain logic must never live in the
+drivers layer.
 """
 
 from __future__ import annotations

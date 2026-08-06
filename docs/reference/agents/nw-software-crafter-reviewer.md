@@ -1,16 +1,11 @@
 # nw-software-crafter-reviewer
 
-Use for review and critique tasks. AT-density-completeness audit is PRIMARY at Phase C_REVIEWER_AUDIT and Phase F_FINAL_REVIEW per ADR-027; code-quality and TDD-discipline review are secondary. Runs on Haiku for cost efficiency.
+Use for review and critique tasks. The AT-density-completeness audit is primary whenever the active workflow requests it; code-quality and TDD-discipline review are secondary. Runs on Haiku for cost efficiency.
 
 **Wave:** DELIVER
 **Model:** sonnet
 **Max turns:** 25
-**Tools:** Read, Glob, Grep, Task, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
-
-## Commands
-
-- [`/nw-deliver`](../commands/index.md)
-- [`/nw-review`](../commands/index.md)
+**Tools:** Read, Glob, Grep, Task, Bash
 
 ## Skills
 
@@ -19,4 +14,4 @@ Use for review and critique tasks. AT-density-completeness audit is PRIMARY at P
 - [nw-code-analysis-port](../skills/nw-code-analysis-port.md) — KNOWLEDGE — resolve code facts (who-calls-X / where-defined-or-read / call-graph / change-scope / file-atoms) THROUGH the nWave vendor-neutral CodeFactPort, preferring Tsunami, then AST, with grep as last resort and degrading LOUD. Trigger: any time an agent designs, writes, analyzes, or reviews code or tests and needs a structural code fact.
 - [nw-sc-review-dimensions](../skills/nw-sc-review-dimensions.md) — Reviewer critique dimensions for peer review - implementation bias detection, test quality validation, completeness checks, and priority validation
 - [nw-tdd-methodology](../skills/nw-tdd-methodology.md) — Deep knowledge for Outside-In TDD - double-loop architecture, ATDD integration, port-to-port testing, walking skeletons, and test doubles policy
-- [nw-tdd-review-enforcement](../skills/nw-tdd-review-enforcement.md) — Test design mandate enforcement, test budget validation, TDD phase validation (3-phase canon per ADR-025), and external validity checks for the software crafter reviewer
+- [nw-tdd-review-enforcement](../skills/nw-tdd-review-enforcement.md) — Test design mandate enforcement, test budget validation, active-workflow slice-evidence validation, and external validity checks for the software crafter reviewer

@@ -490,12 +490,9 @@ def test_run_contract_gate_verify_gate_scope_never_crashes_on_missing_repo(
     """`--repo` pointing at a path that does not exist must degrade LOUD --
     a structured refusal -- never a bare, uncaught traceback.
 
-    RED for the right reason: today `--verify-gate-scope` on a nonexistent
-    `--repo` raises `FileNotFoundError` from
-    `test_runner_port._unrecognized_reason` (`target_root.iterdir()` on a
-    path that does not exist), propagating uncaught through
-    `_maybe_route_digest_through_runner` / `_mode_verify_gate_scope` /
-    `main`. The sibling command `des verify-slice-commit` already handles
+    RED for the right reason: a nonexistent `--repo` used to raise a bare
+    `FileNotFoundError` before `_mode_verify_gate_scope` / `main` could emit
+    a refusal. The sibling command `des verify-slice-commit` already handles
     the IDENTICAL input cleanly (`{"event": "MalformedInput", ...}`, exit
     2) -- `run-contract-gate` must match that discipline instead of
     crashing.

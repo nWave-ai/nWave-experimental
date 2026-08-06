@@ -247,7 +247,7 @@ def entering_lane_gate_run(
 def test_a_green_slice_clears_though_another_lanes_architecture_test_is_failing(
     entering_lane_gate_run: tuple[int, str, list[dict[str, object]], Path],
 ) -> None:
-    exit_code, stdout, events, repo = entering_lane_gate_run
+    exit_code, _stdout, events, _repo = entering_lane_gate_run
 
     assert exit_code == 0, (
         "BUG REPRODUCED: a slice whose OWN scope is fully green must clear the "

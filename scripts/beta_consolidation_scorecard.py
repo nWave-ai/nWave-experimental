@@ -318,15 +318,6 @@ _MEMBERS: tuple[Member, ...] = (
         done_signature="feature_end_cycle_service spawns via des_spawn (env) + WS-gate _load_manifest absent->None + _delta_derived_feature_under_gate computes applicability from the git-delta (manifest-optional, ADR-098); regression ATs present",
     ),
     Member(
-        mid="C7",
-        title="F-COHORT-GATE-PREAUTHORING-CHICKEN-EGG — Phase-0 cohort gate works on a fresh (pre-authoring) feature",
-        tier="SHOULD",
-        predicate=lambda: _file_contains(
-            "scripts/cli/cohort_classifier.py", "Test Placement"
-        ),
-        done_signature="cohort_classifier counts candidate-ATs from the feature-delta [REF] Test Placement prose (pre-authoring)",
-    ),
-    Member(
         mid="C8",
         title="F-SUBAGENT-STOP-RESOLVER-FALSE-BLOCKS-QUOTED-MARKERS — fenced/quoted markers do not false-block a read-only return",
         tier="SHOULD",
@@ -396,33 +387,6 @@ _MEMBERS: tuple[Member, ...] = (
         done_signature="the 3 handoff frictions (file-tag discovery, slice-tag mandate, verdict round-trip) each have a NAMED closing AT (live-green preservation guards)",
     ),
     # ---- MULTILANG (D8): the language-adapter cohort, post-interface ----------
-    Member(
-        mid="C12",
-        title="F-M42 — LanguageAdapterPlugin layering fixed (no src/des import from scripts/)",
-        tier="MULTILANG",
-        # DONE (already implemented; verified 2026-06-23): the file defines its
-        # OWN ABC (class LanguageAdapterPlugin(ABC)), intentionally decoupled from
-        # scripts.install.plugins.base.InstallationPlugin. The original predicate
-        # `not contains "from scripts.install"` was DOCSTRING-NAIVE — it tripped on
-        # the docstring's historical mention of the rejected M42 attempt, not a real
-        # import (the file has ZERO scripts imports). STRONGER + docstring-immune
-        # signature: the own-ABC class + no LINE-START scripts import. The no-import
-        # is independently ENFORCED by the passing arch-test
-        # tests/build/test_des_no_dev_root_imports.py (1 passed) + the
-        # F_LANGUAGE_ADAPTER_PLUGIN_INFRASTRUCTURE AT suite (11 passed). Reviewed diff.
-        predicate=lambda: (
-            _file_exists("src/des/ports/language_adapter_plugin.py")
-            and _file_contains(
-                "src/des/ports/language_adapter_plugin.py",
-                "class LanguageAdapterPlugin(ABC)",
-            )
-            and not _file_contains(
-                "src/des/ports/language_adapter_plugin.py",
-                "\nfrom scripts.",
-            )
-        ),
-        done_signature="language_adapter_plugin.py defines its OWN ABC (class LanguageAdapterPlugin(ABC)), no line-start scripts import; no-dev-root-import arch-test + ABC AT suite pass; installed-package-safe",
-    ),
     Member(
         mid="C13",
         title="Multi-lang TestRunner adapters — JS/TS run-facet adapter realized",

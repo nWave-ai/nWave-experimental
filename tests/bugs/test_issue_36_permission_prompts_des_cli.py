@@ -39,13 +39,11 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 _SKILL_FILES = [
     _REPO_ROOT / "nWave" / "skills" / "nw-execute" / "SKILL.md",
     _REPO_ROOT / "nWave" / "skills" / "nw-deliver" / "SKILL.md",
-    _REPO_ROOT / "nWave" / "skills" / "nw-roadmap" / "SKILL.md",
 ]
 
 _TASK_FILES = [
     _REPO_ROOT / "nWave" / "tasks" / "nw" / "deliver.md",
     _REPO_ROOT / "nWave" / "tasks" / "nw" / "execute.md",
-    _REPO_ROOT / "nWave" / "tasks" / "nw" / "roadmap.md",
 ]
 
 # Pattern covering both $HOME and ~ variants
@@ -64,7 +62,7 @@ _BANNED_PATTERN_TILDE = re.compile(
 _SHIM_DIR = Path.home() / ".claude" / "bin"
 # Single-entry-point consolidation (fix-des-single-entry-point-consolidation):
 # the five legacy per-CLI shims (des-log-phase / des-init-log /
-# des-verify-integrity / des-roadmap / des-health-check) were RETIRED in favour
+# des-verify-integrity / des-health-check) were RETIRED in favour
 # of one `des` shim that dispatches subcommands (`des log-phase`, `des
 # verify-integrity`, …). The installer ships only `des` (DES_SHIMS == ["des"])
 # and deletes the legacy shims on upgrade (LEGACY_DES_SHIMS). Issue #36's intent
@@ -79,7 +77,6 @@ _RETIRED_SHIMS = [
     "des-log-phase",
     "des-init-log",
     "des-verify-integrity",
-    "des-roadmap",
     "des-health-check",
 ]
 

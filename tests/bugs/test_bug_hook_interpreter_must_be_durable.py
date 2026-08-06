@@ -28,9 +28,9 @@ in ``scripts/shared/install_paths.py`` that rejects anything rooted under
    -- git ``prepare-commit-msg`` shim
 3. ``scripts/shared/install_paths.py`` ``resolve_python_command_for_spawn``
    -- Copilot / Codex / OpenCode hook configs
-4. ``scripts/install/install_des_hooks.py`` ``DESHookInstaller._add_des_hooks``
-   -- ``~/.claude/settings.json`` (legacy hook path) -- has **no guard at
-   all** today, not even the ``.venv`` check.
+The withdrawn standalone hook installer was a fourth writer.  It has no
+runtime surface now; the canonical ``DESPlugin`` is the only Claude hook
+writer.
 
 ``is_durable_interpreter_path`` does not exist yet. Every assertion below is
 driven through the four PUBLIC resolvers exactly as a real install exercises
@@ -52,26 +52,16 @@ import pytest
 from scripts.install.attribution_utils import (
     _resolve_python_path as attribution_resolve_python_path,
 )
-from scripts.install.install_des_hooks import DESHookInstaller
 from scripts.install.plugins.des_plugin import DESPlugin
 from scripts.shared.install_paths import resolve_python_command_for_spawn
 
 
 # ---------------------------------------------------------------------------
-# The four write sites (RCA docs/feature/fix-hook-interpreter-durability/
+# The three write sites (RCA docs/feature/fix-hook-interpreter-durability/
 # rca.md §4). Each callable reproduces exactly what the real installer does
 # with the currently-monkeypatched sys.executable, and returns the string
 # that ends up persisted to disk.
 # ---------------------------------------------------------------------------
-
-
-def _install_des_hooks_command(tmp_path: Path) -> str:
-    """Drive write site #4 -- the one with NO guard at all today."""
-    installer = DESHookInstaller(config_dir=tmp_path)
-    config: dict = {}
-    installer._ensure_hooks_structure(config)
-    installer._add_des_hooks(config)
-    return config["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
 
 
 _SITES: dict[str, Callable[[Path], str]] = {
@@ -83,9 +73,6 @@ _SITES: dict[str, Callable[[Path], str]] = {
     ),
     "install_paths.resolve_python_command_for_spawn (copilot/codex/opencode)": (
         lambda tmp_path: resolve_python_command_for_spawn()
-    ),
-    "install_des_hooks.DESHookInstaller._add_des_hooks (NO guard today)": (
-        _install_des_hooks_command
     ),
 }
 
@@ -126,9 +113,7 @@ def test_temp_rooted_interpreter_is_never_persisted(
     incident. Only rejecting anything rooted under ``tempfile.gettempdir()``
     (never hardcoded ``/tmp`` -- honest on any platform) catches it.
 
-    Every one of the four write sites must independently honour this
-    property. ``install_des_hooks`` has no guard whatsoever today, so its
-    parametrized case is expected to fail hardest.
+    Every hook-artifact writer must independently honour this property.
     """
     tmp_dir, fake_python = _make_alive_temp_interpreter()
     try:

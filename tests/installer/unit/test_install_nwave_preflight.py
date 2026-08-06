@@ -15,6 +15,18 @@ from scripts.install.error_codes import ENV_NO_VENV
 from scripts.install.preflight_checker import CheckResult
 
 
+#: `main()` refuses before preflight when no AI coding host is discoverable,
+#: and host detection reads the AMBIENT environment. Without an explicit platform
+#: these tests passed only because an earlier test in the same process had created
+#: the Claude config directory as a side effect -- measured 2026-08-06: the first
+#: test in this file saw detection empty, every later one saw it populated. Under
+#: pytest-split + xdist the tests are distributed across workers, so a test can land
+#: where no sibling created it, `main()` returns at the no-host refusal, and the
+#: behaviour under test is never reached. These tests are about preflight failure
+#: reporting, not host discovery, so they state the platform they mean.
+_ARGV_WITH_PLATFORM = ["install_nwave.py", "--platform", "claude-code"]
+
+
 class TestInstallNwavePreflightIntegration:
     """Tests for install_nwave.py preflight integration."""
 
@@ -121,7 +133,7 @@ class TestInstallNwavePreflightIntegration:
                 # ACT
                 from scripts.install.install_nwave import main
 
-                with patch.object(sys, "argv", ["install_nwave.py"]):
+                with patch.object(sys, "argv", _ARGV_WITH_PLATFORM):
                     exit_code = main()
 
         # ASSERT
@@ -163,7 +175,7 @@ class TestInstallNwavePreflightIntegration:
                 # ACT
                 from scripts.install.install_nwave import main
 
-                with patch.object(sys, "argv", ["install_nwave.py"]):
+                with patch.object(sys, "argv", _ARGV_WITH_PLATFORM):
                     main()
 
         # ASSERT
@@ -207,7 +219,7 @@ class TestInstallNwavePreflightIntegration:
                 # ACT
                 from scripts.install.install_nwave import main
 
-                with patch.object(sys, "argv", ["install_nwave.py"]):
+                with patch.object(sys, "argv", _ARGV_WITH_PLATFORM):
                     main()
 
         # ASSERT

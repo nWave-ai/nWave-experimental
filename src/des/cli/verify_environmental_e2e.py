@@ -41,20 +41,11 @@ import shlex
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from xml.etree import ElementTree
 
 from des.adapters.driven.e2e.pytest_e2e_runner import run_pytest_against_installed
-from des.adapters.driven.runner.reentrancy_guard import (
-    is_routing_active_for,
-    routing_active_for,
-)
-from des.adapters.driven.runner.runner_registry import (
-    GLOBAL_REGISTRY,
-    seed_runner_registry,
-)
 from des.cli.human_surface import Verdict, print_human_summary
 from des.domain.environmental_e2e import (
     GateExit,
@@ -68,8 +59,6 @@ from des.domain.environmental_e2e import (
     serialize_results_record,
     write_deferral_marker,
 )
-from des.ports.test_runner_port import RunnerAdapter
-from des.ports.test_runner_port import resolve as resolve_runner
 from des.runtime.interpreter import des_spawn
 
 
@@ -77,74 +66,24 @@ _CLI_VERSION = "1.0.0"
 
 _E2E_BLOCK_HEADER_RE = re.compile(r"^##\s+Environmental\s+E2E\s*$", re.MULTILINE)
 _E2E_TEST_LINE_RE = re.compile(r"^\s*-\s*test:\s*(?P<path>\S+)\s*$", re.MULTILINE)
+_NON_PYTHON_ROOT_MANIFESTS = ("Cargo.toml", "go.mod", "package.json")
 
 
-@dataclass(frozen=True)
-class _FacetMissingForResolvedRunner:
-    """DDD-CERT-7 disambiguation marker -- NOT a legitimate fall-through.
-
-    Distinguishes cause (b) (a REAL, KNOWN non-pytest ``RunnerAdapter``
-    resolved, but no ``environmental_e2e`` facet is registered for it) from
-    cause (a) (``resolve_runner`` did not resolve a known ``RunnerAdapter`` at
-    all -- the legitimate implicit-Python-tree fallthrough, UNCHANGED,
-    returns plain ``None``). The caller (``_run_mode``) reads ``runner_name``
-    to emit an honest ``GateVerdict.MISSCOPED`` naming the gap, instead of
-    silently falling through to ``_build_wheel`` against the wrong toolchain.
-    """
-
-    runner_name: str
-
-
-def _maybe_route_through_registered_e2e_adapter(
-    repo: Path, e2e_abs: Path
-) -> int | None | _FacetMissingForResolvedRunner:
-    """Route through a REGISTERED ``environmental_e2e`` facet; else ``None``.
-
-    unified-language-adapter-registry slice-01 (ADR-ULAR-001 prefactoring, C6):
-    sprout-and-fall-through seam mirroring ``run_contract_gate.py``'s
-    ``_maybe_route_through_cargo`` shape -- seed the registry, RESOLVE the
-    target's runner, and look up an ``EnvironmentalE2EPort`` facet under the
-    resolved TOOL-NAME (never ``target_language``, DDD-U5). Returns ``None``
-    when ``resolve_runner`` did not resolve a known ``RunnerAdapter`` at all
-    (the legitimate implicit-Python-tree fallthrough -- UNCHANGED), so the
-    caller falls through to the EXISTING build/install/run path. Returns a
-    ``_FacetMissingForResolvedRunner`` (DDD-CERT-7) when a REAL, KNOWN
-    non-pytest runner resolved but no facet is registered for it -- an
-    illegitimate cause the caller must confess as ``MISSCOPED``, never fall
-    through to a Python wheel build against the wrong toolchain. This file
-    imported no runner-resolution mechanism before this seam (Tsunami
-    re-verified, 0 prior call sites) -- this is 1 NEW call site of the
-    EXISTING ``resolve()`` function, not a new resolution component.
-    """
-    seed_runner_registry()
-    resolution = resolve_runner(repo, None)
-    if not isinstance(resolution, RunnerAdapter):
-        return None
-    facet = GLOBAL_REGISTRY.lookup_environmental_e2e(resolution.name)
-    if facet is None:
-        return _FacetMissingForResolvedRunner(runner_name=resolution.name)
-    if is_routing_active_for(repo):
-        print(
-            "health.gate.lang-adapter.reentrancy-skipped: routing already "
-            f"active for {repo} -- skipping to avoid self-recursion",
-            file=sys.stderr,
+def _python_e2e_eligibility(source_tree: Path, e2e_path: Path) -> str | None:
+    """Return why the shipped Python E2E path is unsafe, else ``None``."""
+    if e2e_path.suffix != ".py":
+        return f"the declared environmental test is not Python: {e2e_path.name}"
+    if not (source_tree / "pyproject.toml").is_file():
+        return "the source tree has no pyproject.toml for the Python wheel"
+    foreign = [
+        name for name in _NON_PYTHON_ROOT_MANIFESTS if (source_tree / name).is_file()
+    ]
+    if foreign:
+        return (
+            "the source tree is ambiguous: pyproject.toml coexists with "
+            + ", ".join(foreign)
         )
-        return None
-    try:
-        with routing_active_for(repo):
-            with tempfile.TemporaryDirectory(
-                prefix="env-e2e-registered-"
-            ) as work_dir_str:
-                work_dir = Path(work_dir_str)
-                artifact = facet.build(repo)
-                prefix = _resolve_clean_prefix(None)
-                facet.install(artifact, prefix)
-                junit_path = work_dir / "junit.xml"
-                facet.run_against_installed(e2e_abs, prefix, junit_path, work_dir)
-                verdict, _collected = _verdict_from_junit(junit_path, [])
-    except NotImplementedError:
-        return None
-    return 0 if verdict is GateVerdict.PASS else 1
+    return None
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -308,9 +247,7 @@ def _run_e2e_against_installed(
     """Run pytest on the e2e test with PYTHONPATH=prefix, write JUnit XML.
 
     Delegates to the shared `pytest_e2e_runner.run_pytest_against_installed`
-    (DDD-02) -- the same implementation
-    `PythonEnvironmentalE2EAdapter.run_against_installed` uses via the
-    registered-facet routing path (D4: one implementation, no duplication).
+    so the CLI owns one real Python E2E execution path.
     """
     run_pytest_against_installed(e2e_path, prefix, junit_path, work_dir)
 
@@ -431,17 +368,13 @@ def _emit_misscoped(mode: str, feature_id: str) -> None:
     )
 
 
-def _emit_misscoped_facet(mode: str, feature_id: str, runner_name: str) -> None:
-    """Print the L1.4 misscoped token for a resolved-but-unfaceted runner.
+def _emit_misscoped_python_only(mode: str, feature_id: str, detail: str) -> None:
+    """Print the L1.4 misscoped token outside the shipped Python-only path.
 
-    DDD-CERT-7: distinct cause from ``_emit_misscoped`` (an absent
-    ``## Environmental E2E`` block). Here the block IS present and a REAL,
-    KNOWN non-pytest runner resolved (``cargo-test``/``go-test``/``vitest``),
-    but no ``environmental_e2e`` facet is registered for it -- confesses the
-    coverage gap honestly (naming the missing runner, GDP-3 what/why/how)
-    rather than silently falling through to a Python wheel build against the
-    wrong toolchain. Reuses the EXISTING frozen ``GateVerdict.MISSCOPED``
-    (exit 3) -- no 5th L1.4 exit value.
+    Distinct cause from ``_emit_misscoped`` (an absent ``## Environmental
+    E2E`` block). Here the block is present but the shipped Python path cannot
+    honestly infer pytest for the declared test/layout. Reuses the existing
+    frozen ``GateVerdict.MISSCOPED`` (exit 3) -- no 5th L1.4 exit value.
     """
     token = StdoutToken(
         mode=mode,
@@ -456,18 +389,16 @@ def _emit_misscoped_facet(mode: str, feature_id: str, runner_name: str) -> None:
     )
     _emit_token(token)
     print(
-        f"diagnostic: no environmental-e2e facet is registered for runner "
-        f"{runner_name!r}; build a "
-        f"{runner_name!r}-targeted EnvironmentalE2EAdapter per the "
-        "unified-language-adapter-registry pattern, or declare "
+        f"diagnostic: environmental e2e supports the Python/pytest path only; "
+        f"{detail}. Run the project's already-declared matching verification "
+        "command outside this CLI, or declare "
         "`walking_skeleton_applicable: false` for this feature",
         file=sys.stderr,
     )
     print_human_summary(
         Verdict.DEGRADED,
         f"environmental e2e {mode} misscoped for {feature_id} "
-        f"(no environmental-e2e facet registered for runner {runner_name!r} "
-        "-- gate not applicable to this language yet)",
+        f"(outside the shipped Python/pytest path: {detail})",
     )
 
 
@@ -528,7 +459,7 @@ def _emit_unbuilt_mode(mode: str, feature_id: str) -> None:
 
     Bugfix `fix-verify-authored-mode-not-implemented`: distinct cause from
     `_emit_misscoped` (an absent `## Environmental E2E` block) and
-    `_emit_misscoped_facet` (an unregistered runner facet) -- here the MODE
+    `_emit_misscoped_runner` (a known unsupported runner) -- here the MODE
     itself has no shipped implementation yet. Names the mode (WHAT), states
     plainly it is not implemented (WHY), and points at `--mode run` -- the
     one mode this CLI ships today (HOW) -- so the refusal removes the wall
@@ -622,14 +553,14 @@ def _run_mode(args: argparse.Namespace) -> int:
     source_tree = _resolve_source_tree(args)
     e2e_abs = (source_tree / e2e_rel).resolve()
 
-    routed_registered = _maybe_route_through_registered_e2e_adapter(
-        source_tree, e2e_abs
-    )
-    if isinstance(routed_registered, _FacetMissingForResolvedRunner):
-        _emit_misscoped_facet("run", args.feature_id, routed_registered.runner_name)
+    ineligible = _python_e2e_eligibility(source_tree, e2e_abs)
+    if ineligible is not None:
+        _emit_misscoped_python_only(
+            "run",
+            args.feature_id,
+            ineligible,
+        )
         return int(GateExit.MISSCOPED)
-    if routed_registered is not None:
-        return routed_registered
 
     with tempfile.TemporaryDirectory(prefix="env-e2e-build-") as build_outdir_str:
         build_outdir = Path(build_outdir_str)

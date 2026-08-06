@@ -6,9 +6,8 @@ parser (the standalone DES bundle must stay PyYAML-free).
 
 This is application-layer logic -- it reads a config file from the filesystem --
 so it lives above the domain but below the CLI. The CLI driving ports
-(``init_log``, ``verify_deliver_integrity``) and the hook adapter
-(``session_start_handler``) all import these helpers from here. They previously
-lived in ``des.cli.init_log`` and were imported DOWNWARD by the adapter,
+(``verify_deliver_integrity``) import these helpers from here. They previously
+lived in a CLI command module and were imported DOWNWARD by the adapter,
 inverting the hexagonal layering (AD-05). The CLI may depend on the application
 layer; the reverse is illegal.
 """

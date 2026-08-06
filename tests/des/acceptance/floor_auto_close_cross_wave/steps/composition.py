@@ -20,29 +20,19 @@ it because the composition ``os.chdir``'s into that root for the validate call
 (the service reads the floor via ``WaveActiveReader.read(cwd)``), then restores
 the cwd.
 
-ACTIVE-RED / live-green split (atdd_pure -- NOT @skip):
-  * AC-1 cross-wave-close is ACTIVE-RED: at HEAD ``SubagentStopService`` consumes
-    only a read-only ``WaveActiveReader`` and its ``SubagentStopContext`` carries
-    NO ``subagent_type`` -- so nothing closes the floor on the owner's terminal
-    PASS. The floor is read back STILL_ARMED and the AC-1 Then (expecting CLEARED)
-    fires a semantic AssertionError. GREEN requires DELIVER to (a) add a
-    ``subagent_type`` field to ``SubagentStopContext``, (b) inject a
-    ``WaveActiveWriter`` into the service, (c) chain ``clear()`` off the attested
-    gate-OUT PASS when ``WAVE_OWNERS[subagent_type] == active_wave``.
-  * AC-3 non-terminal-no-close is ALSO active-RED-safe: a non-owner return must
-    leave the floor armed; at HEAD nothing closes anyway, so it ALREADY holds (a
-    live-green guard that the eventual owner-gating must not regress).
+Regression split:
+  * AC-1 cross-wave-close passes the owner's identity through an explicit
+    ``WAVE_ONLY`` return; the attested gate-OUT PASS closes the active floor.
+  * AC-3 non-terminal-no-close passes a non-owner identity through the same
+    typed return and leaves the floor armed.
   * AC-2 in-wave-persist + AC-4 gate-OUT-veto-unchanged are live-green regression
     guards: they assert behaviors the current code ALREADY exhibits (an in-wave
     PreToolUse dispatch never touches the floor; a review-verdict veto blocks and
     leaves the floor armed), pinning the invariants the close must not break.
 
-Step bodies delegate here (Mandate-15, no logic in step bodies). The contract the
-AT declares -- the ``subagent_type`` field on ``SubagentStopContext`` -- is built
-defensively: if the field is absent at HEAD the context is built without it (so
-collection does NOT error), the close cannot identify the owner, and AC-1 fails
-for the RIGHT reason (the floor stays armed), never on a ``TypeError`` at
-construction.
+Step bodies delegate here (Mandate-15, no logic in step bodies). The composition
+constructs the closed return shape explicitly: ``WAVE_ONLY`` plus the returning
+agent identity, project, and working directory.
 """
 
 from __future__ import annotations
@@ -69,7 +59,10 @@ from des.domain.wave_active import (
     WaveProvenance,
 )
 from des.ports.driver_ports.pre_tool_use_port import HookDecision, PreToolUseInput
-from des.ports.driver_ports.subagent_stop_port import SubagentStopContext
+from des.ports.driver_ports.subagent_stop_port import (
+    SubagentStopContext,
+    SubagentStopReturnKind,
+)
 from tests.env_parity import seed_dev_checkout_marker
 
 from .domain_types import (
@@ -291,7 +284,6 @@ class FloorAutoCloseComposition:
         assert self._root is not None
         service = PreToolUseService(
             marker_parser=DesMarkerParser(),
-            prompt_validator=_AllowAllValidator(),
             audit_writer=NullAuditLogWriter(),
             time_provider=SystemTimeProvider(),
             wave_active_reader=WaveActiveFilesystemStore(),
@@ -327,12 +319,9 @@ class FloorAutoCloseComposition:
     def _run_subagent_stop(self) -> HookDecision:
         """Run the production-wired SubagentStopService over a wave-only return.
 
-        A wave-only / terminal return is execution-log-free (``execution_log_path``
-        == "" AND ``step_id`` == ""): the service runs the attested gate-OUT then
-        allows. The ``subagent_type`` -- the owner identity the close gates on --
-        is threaded into the context IF the field exists (the contract this AT
-        declares); at HEAD the field is absent so the context is built without it
-        and nothing can identify the owner (AC-1 fails for the right reason).
+        The typed ``WAVE_ONLY`` discriminator routes the return through the
+        attested gate-OUT. ``subagent_type`` carries the owner identity used by
+        the floor-close decision.
         """
         assert self._root is not None
         service = service_factory.create_subagent_stop_service()
@@ -373,9 +362,7 @@ class FloorAutoCloseComposition:
         assert self._floor_outcome() is FloorOutcome.CLEARED, (
             "the wave-active floor MUST be CLEARED (NoWaveActive) after the wave "
             "OWNER returns through the attested gate-OUT with PASS -- the "
-            "cross-wave auto-close. At HEAD the SubagentStopService consumes only "
-            "a read-only WaveActiveReader and its SubagentStopContext carries no "
-            "subagent_type, so nothing closes the floor on the terminal PASS; the "
+            "cross-wave auto-close; the "
             f"floor is read back STILL_ARMED. {self._observed()}"
         )
 
@@ -416,49 +403,16 @@ class FloorAutoCloseComposition:
 # --- module helpers (Mandate-15: no logic in step bodies) --------------------
 
 
-class _AllowAllValidator:
-    """A trivial classic prompt validator for the in-wave PreToolUse path.
-
-    The in-wave AT-3 branch returns before Step 5 (the validator), so this stub is
-    never reached; it allows if it ever were, so it can never MASK the floor
-    observable AC-2 asserts.
-    """
-
-    def validate_prompt(self, prompt: str):
-        from des.ports.driver_ports.validator_port import ValidationResult
-
-        return ValidationResult(errors=[], task_invocation_allowed=True)
-
-
 def _build_subagent_stop_context(
     *, project_id: str, cwd: str, subagent_type: str
 ) -> SubagentStopContext:
-    """Build a wave-only SubagentStopContext, threading ``subagent_type`` if it exists.
-
-    The owner identity (the field the close gates on) is the contract this AT
-    declares. If ``SubagentStopContext`` does not yet carry a ``subagent_type``
-    field (HEAD), the context is built WITHOUT it -- so collection never errors --
-    and the close cannot identify the owner, making AC-1 fail for the right reason
-    (a semantic AssertionError on the STILL_ARMED floor, NOT a TypeError).
-    """
-    import dataclasses
-
-    field_names = {f.name for f in dataclasses.fields(SubagentStopContext)}
-    base = {
-        "execution_log_path": "",
-        "project_id": project_id,
-        "step_id": "",
-        "cwd": cwd,
-        # mode defaults to "atdd_pure" (SubagentStopContext), which would route
-        # this wave-only context into _validate_atdd_pure at Step -0.5 instead
-        # of the wave-only close-floor + allow path this AT drives -- this is
-        # a genuinely wave-only, not atdd_pure, return (mirrors the production
-        # fix in subagent_stop_handler.py's _handle_wave_only_return).
-        "mode": "classic",
-    }
-    if "subagent_type" in field_names:
-        base["subagent_type"] = subagent_type
-    return SubagentStopContext(**base)
+    """Build the explicit wave-only return consumed by the gate-OUT service."""
+    return SubagentStopContext(
+        project_id=project_id,
+        return_kind=SubagentStopReturnKind.WAVE_ONLY,
+        cwd=cwd,
+        subagent_type=subagent_type,
+    )
 
 
 def _value_bearing_feature_delta() -> str:

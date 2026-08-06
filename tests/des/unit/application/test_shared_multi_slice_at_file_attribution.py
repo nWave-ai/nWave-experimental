@@ -1,11 +1,10 @@
 """Regression AT: a shared multi-slice pytest AT file must resolve EVERY
 declared slice, not only the first one its head-comment block names.
 
-RCA (verified twice independently). Real shape in the wild
-(``tests/des/acceptance/test_verify_gate_armed_state.py`` of feature
-``gate-armed-state-derivation``)::
+RCA (verified twice independently). A shared acceptance file can declare
+several slices in one head-comment block::
 
-    # @feature-gate-armed-state-derivation
+    # @feature-an-example-feature
     # @slice-02
     # @slice-03
     # @slice-04
@@ -66,8 +65,7 @@ from des.application.slice_at_completeness import (
 _FEATURE_ID = "fix-multi-slice-shared-at-file"
 _OTHER_FEATURE_ID = "fix-other-feature-shares-slice-tag"
 
-#: The real-world shape (gate-armed-state-derivation): ONE shared pytest AT
-#: file declaring SEVERAL slices in its head-comment block.
+#: One shared pytest AT file declaring several slices in its head-comment block.
 _SHARED_SLICE_IDS = (
     "slice-02",
     "slice-03",

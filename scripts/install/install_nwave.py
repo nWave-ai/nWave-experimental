@@ -104,6 +104,32 @@ def _files_content_equal(source: Path, target: Path) -> bool:
     return _file_md5(source) == _file_md5(target)
 
 
+def verify_directory_content(
+    source_dir: Path, target_dir: Path
+) -> tuple[int, list[str]]:
+    """Partition a source directory's files by whether the target matches them.
+
+    Returns ``(matched, drifted)``: how many source files have byte-identical
+    counterparts under ``target_dir``, and the sorted names of those that do
+    not. A file missing from the target counts as drifted, not as absent --
+    `_files_content_equal` already collapses missing and different into the
+    same "not synced" answer, because both reach the operator as the same
+    stale-install symptom.
+
+    Pure over the two directories: no logging, no verdict, no installer state.
+    That is the point. The law it makes testable is decomposition ---
+    ``matched + len(drifted) == number of source files``, and ``drifted`` is
+    exactly the set failing `_files_content_equal` --- which previously could
+    only be observed by driving the whole verifier, and therefore only by first
+    satisfying every unrelated component it also checks.
+    """
+    source_files = sorted(f for f in source_dir.iterdir() if f.is_file())
+    drifted = [
+        f.name for f in source_files if not _files_content_equal(f, target_dir / f.name)
+    ]
+    return len(source_files) - len(drifted), drifted
+
+
 # Bootstrap sys.path BEFORE the import block below, so the `scripts.install.*`
 # package imports resolve identically whether this file is run as a bare script
 # (`python scripts/install/install_nwave.py`) or as a module
@@ -145,7 +171,10 @@ try:
     from scripts.install.plugins.base import InstallContext
     from scripts.install.plugins.codex_agents_plugin import CodexAgentsPlugin
     from scripts.install.plugins.codex_des_plugin import CodexDESPlugin
-    from scripts.install.plugins.codex_skills_plugin import CodexSkillsPlugin
+    from scripts.install.plugins.codex_skills_plugin import (
+        _ATTESTED_LEGACY_SKILLS_METADATA_KEY,
+        CodexSkillsPlugin,
+    )
     from scripts.install.plugins.commands_plugin import CommandsPlugin
     from scripts.install.plugins.copilot_des_plugin import CopilotDESPlugin
     from scripts.install.plugins.des_plugin import DESPlugin
@@ -184,7 +213,10 @@ except ImportError:
     from plugins.base import InstallContext
     from plugins.codex_agents_plugin import CodexAgentsPlugin
     from plugins.codex_des_plugin import CodexDESPlugin
-    from plugins.codex_skills_plugin import CodexSkillsPlugin
+    from plugins.codex_skills_plugin import (
+        _ATTESTED_LEGACY_SKILLS_METADATA_KEY,
+        CodexSkillsPlugin,
+    )
     from plugins.commands_plugin import CommandsPlugin
     from plugins.copilot_des_plugin import CopilotDESPlugin
     from plugins.des_plugin import DESPlugin
@@ -238,31 +270,6 @@ def _get_version() -> str:
 __version__ = _get_version()
 
 
-# Interpreter-path markers that identify a package-manager tool venv. Mirrors
-# scripts/install/preflight_checker.TOOL_VENV_PATH_MARKERS — kept local to avoid
-# a cross-module import for two string constants.
-_PM_PATH_MARKERS: tuple[tuple[str, str], ...] = (
-    ("/pipx/venvs/", "pipx"),
-    ("/uv/tools/", "uv"),
-)
-
-
-def _detect_package_manager() -> str | None:
-    """Best-effort: which PM installed this package, inferred from sys.executable.
-
-    The installer runs from the tool venv that owns ``nwave-ai``, so its
-    interpreter path reveals the manager (``pipx`` venvs live under
-    ``/pipx/venvs/``, ``uv`` tools under ``/uv/tools/``). Returns None when the
-    path matches neither (e.g. a plain pip/venv or system install) — the caller
-    then simply omits the key rather than guessing.
-    """
-    exe = sys.executable or ""
-    for marker, name in _PM_PATH_MARKERS:
-        if marker in exe:
-            return name
-    return None
-
-
 def _detect_installed_version() -> str | None:
     """Return the live ``nwave-ai`` package version, or None when unavailable.
 
@@ -282,16 +289,13 @@ def _detect_installed_version() -> str | None:
 def record_install_metadata(
     global_config_path: Path,
     installed_version: str,
-    package_manager: str | None,
 ) -> None:
     """Record install provenance into the global config (read-modify-write).
 
     Writes ``install.installed_version`` — the anchor the doctor
     ``VersionSyncCheck`` compares against the live package version to flag a
     package upgraded without re-running install — and, when known,
-    ``install.package_manager`` (consumed by ``/nw-update``). All unrelated keys
-    are preserved; a None ``package_manager`` never erases a previously recorded
-    one.
+    All unrelated keys are preserved.
 
     Best-effort: any failure is swallowed. A metadata write must never fail the
     install itself.
@@ -311,8 +315,6 @@ def record_install_metadata(
             dict(existing_install) if isinstance(existing_install, dict) else {}
         )
         install_block["installed_version"] = installed_version
-        if package_manager is not None:
-            install_block["package_manager"] = package_manager
         current["install"] = install_block
 
         global_config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -415,8 +417,10 @@ class NWaveInstaller:
         self._platform_override = platform_override
         # The install must have one target truth.  In particular, auto mode
         # cannot install a detected Codex target and later reconstruct a
-        # Claude-only validation set from the original CLI override.
-        self._effective_target_platforms: set[str] | None = None
+        # Claude-only validation set from the original CLI override.  Resolved
+        # HERE rather than at first use, so the ambient read happens where the
+        # caller still controls the environment.
+        self._effective_target_platforms: set[str] = self._resolve_target_platforms()
         self.script_dir = Path(__file__).parent
         self.project_root = PathUtils.get_project_root(self.script_dir)
         self.claude_config_dir = PathUtils.get_claude_config_dir()
@@ -442,6 +446,7 @@ class NWaveInstaller:
         # re-running glob/sort logic in the test step (see DWD-09).
         self.last_restored_from: Path | None = None
         self._codex_backup_dir: Path | None = None
+        self._attested_legacy_codex_skill_names: frozenset[str] = frozenset()
 
     @property
     def _legacy_codex_dev_adoption_enabled(self) -> bool:
@@ -461,19 +466,31 @@ class NWaveInstaller:
     def effective_target_platforms(self) -> frozenset[str]:
         """Return the authoritative targets for this installer invocation.
 
-        Platform detection is intentionally lazy so construction remains
-        side-effect free, but it is cached at first use.  Every downstream
-        stage therefore consumes the exact same explicit or detected set.
+        Resolved once, AT CONSTRUCTION (`_resolve_target_platforms`), so every
+        downstream stage consumes the same set and the caller can see the
+        decision being made. Reading it here is a plain lookup with no fallback.
         """
-        cached_target_platforms = getattr(self, "_effective_target_platforms", None)
-        if cached_target_platforms is None:
-            if self._platform_override is not None:
-                self._effective_target_platforms = set(self._platform_override)
-            else:
-                self._effective_target_platforms = {
-                    platform.value for platform in detect_target_platforms()
-                }
         return frozenset(self._effective_target_platforms)
+
+    def _resolve_target_platforms(self) -> set[str]:
+        """Decide the target set: the caller's declaration, else the environment.
+
+        Deliberately eager. This used to resolve lazily at first use, which put
+        the ambient read deep inside `validate_installation()` -- OUTSIDE the
+        window in which a caller, or a test, controls the environment. A caller
+        that wanted to declare the platform could still be overtaken by
+        detection, and three test suites passed only because a sibling had
+        created a host directory first (2026-08-06).
+
+        Construction stays free of SIDE EFFECTS: this reads the environment, it
+        writes nothing. Reading at construction is the point -- it is where the
+        caller is still in charge. See `contract:declared-inputs-not-ambient-reads`
+        (`nw-cross-cutting-invariants`): the ambient lookup is the default the
+        caller may state, never the only source.
+        """
+        if self._platform_override is not None:
+            return set(self._platform_override)
+        return {platform.value for platform in detect_target_platforms()}
 
     def create_backup(self) -> None:
         """Create backup of existing installation, then enforce retention.
@@ -642,6 +659,9 @@ class NWaveInstaller:
         target-directory creation, and plugin dispatch so a refusal leaves the
         complete user state untouched.
         """
+        # The capability is per preflight pass.  A failed or later unrelated
+        # preflight must never leave a previous discovery available to install.
+        self._attested_legacy_codex_skill_names = frozenset()
         if "codex" not in self.effective_target_platforms:
             return True
 
@@ -1155,7 +1175,10 @@ class NWaveInstaller:
             )
 
         self._report_ownership_preflight_errors(errors)
-        return not errors
+        if errors:
+            return False
+        self._attested_legacy_codex_skill_names = frozenset(attested_legacy_skills)
+        return True
 
     _OWNERSHIP_PREFLIGHT_SAMPLE_LIMIT = 5
 
@@ -1432,6 +1455,9 @@ class NWaveInstaller:
             dry_run=self.dry_run,
             dev_mode=self.dev_mode,
             target_platforms=target_platforms,
+            metadata={
+                _ATTESTED_LEGACY_SKILLS_METADATA_KEY: self._attested_legacy_codex_skill_names
+            },
         )
 
         self.logger.info("  📑 Installing Context...")
@@ -1678,15 +1704,10 @@ class NWaveInstaller:
             templates_source = self.framework_source / "templates"
             templates_target = self.claude_config_dir / "templates"
             if templates_source.exists():
-                tmpl_files = [f for f in templates_source.iterdir() if f.is_file()]
-                tmpl_drifted: list[str] = []
-                tmpl_matched = 0
-                for f in tmpl_files:
-                    if _files_content_equal(f, templates_target / f.name):
-                        tmpl_matched += 1
-                    else:
-                        tmpl_drifted.append(f.name)
-                tmpl_expected = len(tmpl_files)
+                tmpl_matched, tmpl_drifted = verify_directory_content(
+                    templates_source, templates_target
+                )
+                tmpl_expected = tmpl_matched + len(tmpl_drifted)
                 tmpl_ok = _component_synced(tmpl_matched, tmpl_expected)
                 if not tmpl_ok:
                     all_synced = False
@@ -1939,8 +1960,8 @@ def show_installation_summary(
     codex_only = target_platforms == {"codex"}
     logger.info("")
     logger.info(f"  🎉 nWave v{__version__} installed and healthy!")
-    if target_dir is not None and not (
-        target_platforms and "codex" in target_platforms
+    if target_dir is not None and (
+        target_platforms is None or target_platforms == {"claude_code"}
     ):
         logger.info(f"  📂 Installed to: {target_dir}")
     logger.info("")
@@ -2124,6 +2145,18 @@ def main():
         adopt_legacy_codex_dev=args.adopt_legacy_codex_dev,
     )
 
+    # Auto-detection must never guess a host.  In particular, defaulting an
+    # empty result to Claude mutates a configuration the operator may not use.
+    # Refuse before title/preflight/backup/install surfaces so this path has no
+    # filesystem write effect; an explicit --platform remains authoritative.
+    if not installer.effective_target_platforms:
+        print(
+            "No supported AI coding host was detected; rerun with "
+            "--platform claude-code, opencode, codex, copilot, or all.",
+            file=sys.stderr,
+        )
+        return 2
+
     # Codex has no Claude backup or restore surface.  Keep its explicit
     # restore command a no-op without consulting any retired runtime state.
     if args.restore and installer.effective_target_platforms == {"codex"}:
@@ -2230,8 +2263,8 @@ def main():
         return 0
 
     if installer.validate_installation():
-        # Record install provenance (machine-scoped ~/.nwave, like update-check
-        # state) so the doctor VersionSyncCheck can later detect a package
+        # Record install provenance (machine-scoped ~/.nwave) so the doctor
+        # VersionSyncCheck can later detect a package
         # upgraded without re-running install. Best-effort; never fails the run.
         #
         # Known limitation: the record is keyed to the machine, NOT the install
@@ -2244,7 +2277,6 @@ def main():
             record_install_metadata(
                 Path.home() / ".nwave" / "global-config.json",
                 installed_version=installed_version,
-                package_manager=_detect_package_manager(),
             )
 
         installer.logger.info("")

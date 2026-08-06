@@ -23,9 +23,7 @@ REQUIRED_HOOK_TYPES = [
     "PreToolUse",
     "PostToolUse",
     "SubagentStop",
-    "SessionStart",
     "SubagentStart",
-    "UserPromptSubmit",
 ]
 
 
@@ -62,24 +60,6 @@ def test_fails_when_hook_type_missing(context: DoctorContext) -> None:
     assert result.passed is False
     assert "SubagentStop" in result.message
     assert result.remediation is not None
-
-
-def test_fails_when_userpromptsubmit_missing(context: DoctorContext) -> None:
-    """UserPromptSubmit is a real, always-installed hook event (the wave-active
-    anchor / persona-reload mechanism, registered in
-    scripts/shared/hook_definitions.py) -- its absence must fail this check,
-    not silently pass as 'all required hooks registered'."""
-    hooks = {
-        hook: [{"matcher": "", "hooks": [{"type": "command", "command": "x"}]}]
-        for hook in REQUIRED_HOOK_TYPES
-        if hook != "UserPromptSubmit"
-    }
-    _write_settings(context, hooks)
-
-    check = HooksRegisteredCheck()
-    result = check.run(context)
-    assert result.passed is False
-    assert "UserPromptSubmit" in result.message
 
 
 def test_fails_gracefully_when_settings_absent(context: DoctorContext) -> None:

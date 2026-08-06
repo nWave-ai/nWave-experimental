@@ -287,34 +287,6 @@ def mocked_time_provider():
 
 
 @pytest.fixture
-def mocked_hook():
-    """
-    Mocked subagent stop hook for testing without real hook behavior.
-
-    Returns:
-        MockedSubagentStopHook: Hook that returns predefined results
-    """
-    from tests.des.adapters.mocked_hook import MockedSubagentStopHook
-
-    return MockedSubagentStopHook()
-
-
-@pytest.fixture
-def mocked_validator():
-    """
-    Mocked template validator for testing without real validation.
-
-    Returns:
-        MockedTemplateValidator: Validator returning passing results by default
-    """
-    from tests.des.adapters.mocked_validator import (
-        MockedTemplateValidator,
-    )
-
-    return MockedTemplateValidator()
-
-
-@pytest.fixture
 def tmp_project_root(tmp_path):
     """
     Temporary project root directory for acceptance and e2e tests.
@@ -354,52 +326,3 @@ def minimal_step_file(tmp_project_root):
     }
     step_file.write_text(json.dumps(minimal_step_data, indent=2))
     return step_file
-
-
-@pytest.fixture
-def des_orchestrator(
-    in_memory_filesystem, mocked_hook, mocked_validator, mocked_time_provider
-):
-    """
-    DES orchestrator with all mocked adapters for unit testing.
-
-    Uses in-memory filesystem, mocked time, mocked hook, and mocked validator for:
-    - Zero real filesystem operations
-    - Deterministic time behavior
-    - Fast test execution (<1 second)
-    - Predictable validation results
-
-    Returns:
-        DESOrchestrator: Configured orchestrator with mocked dependencies
-    """
-    from des.application.orchestrator import DESOrchestrator
-
-    return DESOrchestrator(
-        hook=mocked_hook,
-        validator=mocked_validator,
-        filesystem=in_memory_filesystem,
-        time_provider=mocked_time_provider,
-    )
-
-
-@pytest.fixture
-def scenario_des_orchestrator(mocked_hook, mocked_validator, mocked_time_provider):
-    """
-    DES orchestrator for E2E scenario testing.
-
-    Uses real filesystem for E2E tests (unlike unit tests) to support
-    tempfile-based test scenarios. Still uses mocked time, hook, and validator
-    for deterministic behavior.
-
-    Returns:
-        DESOrchestrator: Configured orchestrator with real filesystem
-    """
-    from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
-    from des.application.orchestrator import DESOrchestrator
-
-    return DESOrchestrator(
-        hook=mocked_hook,
-        validator=mocked_validator,
-        filesystem=RealFileSystem(),
-        time_provider=mocked_time_provider,
-    )

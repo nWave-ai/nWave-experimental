@@ -130,11 +130,11 @@ class TestDetectBothPlatforms:
         assert len(platforms) == 2
 
 
-class TestDetectNothingDefaultsToClaudeCode:
-    """Verify default to Claude Code when no platform signals found."""
+class TestDetectNothingReturnsEmpty:
+    """An ambiguous environment must not silently select a host."""
 
-    def test_detect_nothing_defaults_to_claude_code(self, monkeypatch, tmp_path):
-        """detect_target_platforms() defaults to {CLAUDE_CODE} when nothing detected."""
+    def test_detect_nothing_returns_empty_set(self, monkeypatch, tmp_path):
+        """detect_target_platforms() leaves host choice to the CLI operator."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.delenv("CLAUDE_CODE", raising=False)
         monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
@@ -145,7 +145,7 @@ class TestDetectNothingDefaultsToClaudeCode:
 
         platforms = detect_target_platforms()
 
-        assert platforms == {TargetPlatform.CLAUDE_CODE}
+        assert platforms == set()
 
 
 class TestTargetPlatformEnum:

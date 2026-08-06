@@ -30,6 +30,8 @@ import shlex
 import sys
 from pathlib import Path
 
+import pytest
+
 from des.cli import verify_red_green as vrg
 
 
@@ -162,3 +164,30 @@ def test_explicit_run_cmd_overrides_manifest_derivation_passthrough(
     assert tokens[0] == "custom-runner"
     assert "uv" not in tokens
     assert "run" not in tokens
+
+
+@pytest.mark.parametrize("foreign_manifest", ("Cargo.toml", "go.mod", "package.json"))
+def test_default_refuses_ambiguous_polyglot_root_even_with_python_tooling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    foreign_manifest: str,
+) -> None:
+    """A Python tool file cannot authorize inferred pytest in a polyglot root."""
+    repo = _uv_repo(tmp_path)
+    (repo / foreign_manifest).write_text("# foreign project marker\n")
+    (repo / "test_x.py").write_text("def test_x(): pass\n")
+
+    def _must_not_run(*_args: object, **_kwargs: object) -> int:
+        raise AssertionError("ambiguous layout must refuse before launching pytest")
+
+    monkeypatch.setattr(vrg, "_run_and_collect", _must_not_run)
+
+    exit_code = vrg.main(
+        ["--repo", str(repo), "--test-file", "test_x.py", "--record-red"]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 2
+    assert foreign_manifest in output
+    assert "will not infer pytest" in output

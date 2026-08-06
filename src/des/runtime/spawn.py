@@ -50,7 +50,7 @@ THE THREE DUTIES no object in the tree owned (RCA §7):
    rather than default because reaping needs a new SESSION, and a new session
    also detaches the child from the terminal's foreground process group — an
    interactive command's Ctrl-C would stop reaching its own child. Same pattern,
-   same rationale, as ``pytest_runner.run_pytest_reaped`` (``:125-186``).
+   same rationale as the bounded test-execution helper.
 
 And duty 4, from the standing what/why/how rule: a fired bound EXPLAINS ITSELF —
 what timed out, why, and the env override to reach for — never a bare
@@ -186,13 +186,10 @@ def default_timeout_seconds() -> float:
     today is a full test suite, so that is the number to inherit. Callers with a
     shorter tier pass their own ``timeout=``.
 
-    Imported inside the call, not at module scope, to keep the SSOT single
-    (``run_timeout_seconds`` lives in the run-facet adapter by existing
-    convention) without creating the import cycle a module-level import would:
-    ``pytest_runner`` imports ``des.runtime.interpreter``, which imports this
-    module.
+    Imported inside the call to avoid coupling process helpers to the broader
+    runtime import surface.
     """
-    from des.adapters.driven.runner.pytest_runner import run_timeout_seconds
+    from des.runtime.test_execution import run_timeout_seconds
 
     return run_timeout_seconds()
 
@@ -406,9 +403,8 @@ def _reap_process_group(pid: int) -> None:
     ``ProcessLookupError`` (the group is already empty) is the success case.
 
     The pattern, and its reasoning, are inherited from
-    ``pytest_runner._reap_process_group`` (``:101-113``) rather than imported:
-    that helper is private to the run-facet adapter, and importing an adapter
-    from ``des.runtime`` would invert the layering and close an import cycle.
+    the bounded test-execution helper. This local copy keeps generic process
+    spawning independent from test-command execution.
     """
     with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
         os.killpg(pid, signal.SIGKILL)

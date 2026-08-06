@@ -390,9 +390,9 @@ def des_functional():
     pass
 
 
-@then("DESOrchestrator class can be instantiated")
-def des_orchestrator_instantiable():
-    """Verify DESOrchestrator can be instantiated."""
+@then("DES CLI entry point is callable")
+def des_cli_entrypoint_callable():
+    """Verify the supported DES CLI entry point is callable."""
     pass
 
 

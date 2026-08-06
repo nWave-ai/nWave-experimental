@@ -27,8 +27,7 @@ same CLI surface and are DELIBERATELY left alone:
   ``wave_clear.ClearFloorOutcome``) -- different input type, not a payload
   dict.
 * bespoke positional-argument emitters (``loop``,
-  ``feature_end_preconditions_scaffold``, ``walking_skeleton_done_gate``,
-  ``earned_verdict_self_test``, ``carpaccio_precheck``, ``carpaccio_slice_gate``,
+  ``walking_skeleton_done_gate``, ``carpaccio_precheck``, ``carpaccio_slice_gate``,
   ``run_contract_gate``) -- genuinely different call shapes, several already
   more evolved than a plain print (``run_contract_gate`` accepts an
   injectable ``OutputPort``).

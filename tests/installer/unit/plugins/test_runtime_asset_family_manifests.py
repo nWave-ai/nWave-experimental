@@ -70,7 +70,7 @@ _UTILITY_SCRIPTS = ["install_nwave_target_hooks.py", "validate_step_file.py"]
 _UTILITY_SOURCE_CONTENT = '__version__ = "99.0.0"\n'
 _RETIRED_UTILITY_POOL = ["legacy_migration_helper.py", "old_tool.py"]
 _PERSONAL_SCRIPT_POOL = ["my_backup_tool.py", "team_helper.py"]
-_DES_SCRIPT_NAMES = ["check_stale_phases.py", "scope_boundary_check.py"]
+_DES_SCRIPT_NAMES = ["scope_boundary_check.py"]
 
 
 def _write_doc(target_dir: Path, doc: dict) -> None:

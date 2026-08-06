@@ -316,7 +316,9 @@ def detect_target_platforms() -> set[TargetPlatform]:
       `copilot` binary in PATH
 
     Returns:
-        Set of detected platforms. Defaults to {CLAUDE_CODE} if nothing detected.
+        Set of detected platforms, which is empty when no supported host is
+        discoverable. The command entry point refuses that ambiguous case and
+        tells the operator to select one explicitly with ``--platform``.
     """
     platforms: set[TargetPlatform] = set()
 
@@ -331,9 +333,5 @@ def detect_target_platforms() -> set[TargetPlatform]:
 
     if _detect_copilot():
         platforms.add(TargetPlatform.COPILOT_CLI)
-
-    # Default to Claude Code if nothing detected
-    if not platforms:
-        platforms.add(TargetPlatform.CLAUDE_CODE)
 
     return platforms

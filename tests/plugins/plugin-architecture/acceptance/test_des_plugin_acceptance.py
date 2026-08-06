@@ -117,10 +117,8 @@ def des_scripts_exist(path: str, project_root: Path):
     assert des_scripts.exists(), f"DES scripts not found: {des_scripts}"
 
     # Verify key scripts exist
-    check_stale = des_scripts / "check_stale_phases.py"
     scope_check = des_scripts / "scope_boundary_check.py"
 
-    assert check_stale.exists(), f"check_stale_phases.py not found: {check_stale}"
     assert scope_check.exists(), f"scope_boundary_check.py not found: {scope_check}"
 
     pytest.des_scripts_path = des_scripts
@@ -262,10 +260,8 @@ def des_scripts_copied(path: str):
     target_path = context.claude_dir / "scripts"
 
     # Check DES scripts are copied
-    check_stale = target_path / "check_stale_phases.py"
     scope_check = target_path / "scope_boundary_check.py"
 
-    assert check_stale.exists(), f"check_stale_phases.py not found: {check_stale}"
     assert scope_check.exists(), f"scope_boundary_check.py not found: {scope_check}"
 
 

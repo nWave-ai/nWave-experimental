@@ -7,14 +7,25 @@ helpers, and observe the complete isolated user state.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import shlex
 import subprocess
 import sys
+import tarfile
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
+
+from scripts.shared.agent_catalog import (
+    build_ownership_map,
+    detect_command_skills,
+    load_public_agents,
+)
+from scripts.shared.frontmatter import parse_frontmatter
+from scripts.shared.skill_distribution import enumerate_skills, filter_public_skills
 
 
 REPO = Path(__file__).resolve().parents[4]
@@ -62,32 +73,22 @@ def _run(home: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.mark.parametrize(
-    ("platform", "detect_claude"),
-    [
-        ("codex", False),
-        ("auto", False),
-        ("auto", True),
-        ("all", True),
-    ],
-    ids=["explicit-codex", "auto-codex", "auto-mixed", "all"],
-)
-def test_codex_including_install_never_uses_legacy_claude_runtime_migration(
-    tmp_path: Path, platform: str, detect_claude: bool
+def test_explicit_codex_install_never_uses_legacy_claude_runtime_migration(
+    tmp_path: Path,
 ) -> None:
-    """Codex integration leaves legacy Claude runtime migration out of every plan.
+    """Codex-only installation leaves legacy Claude runtime migration out of its plan.
 
     This is intentionally a Codex-integration boundary, not a new specification
     for ordinary Claude installation.  It asserts only that the new path neither
     relocates pre-existing Claude bytes nor treats the retired migration
-    receipt/journal as live control state.  Existing Claude behavior outside
-    those artifacts remains out of scope.
+    receipt/journal as live control state. An explicit Codex target must also
+    leave the entire Claude tree untouched. Mixed and all-platform installs do
+    target Claude, whose installer-owned ``lib/python/des`` runtime is replaced
+    on upgrade; that behavior belongs to Claude installation contracts.
     """
     home = tmp_path / "home"
     codex = home / ".codex"
     codex.mkdir(parents=True)
-    if detect_claude:
-        (home / ".claude").mkdir()
     hooks_path = codex / "hooks.json"
     old_pythonpath = "/legacy/nwave/lib/python"
     old_des_command = (
@@ -155,30 +156,23 @@ def test_codex_including_install_never_uses_legacy_claude_runtime_migration(
     receipt.write_bytes(b"foreign retired migration receipt\n")
     journal.write_bytes(b"foreign retired migration journal\n")
 
-    result = _run(home, "install", "--yes", "--platform", platform)
+    result = _run(home, "install", "--yes", "--platform", "codex")
 
     assert result.returncode == 0, (
-        "WHAT: a Codex-inclusive installation was refused by retired Claude-runtime "
+        "WHAT: an explicit Codex installation was refused by retired Claude-runtime "
         f"migration state. Observed stdout/stderr:\n{result.stdout}{result.stderr}\n"
-        "WHY: Codex has no migration or restore lifecycle, including from auto and "
-        "mixed/all selections. HOW: omit legacy runtime preflight/recovery entirely."
+        "WHY: Codex has no migration or restore lifecycle. HOW: omit legacy runtime "
+        "preflight/recovery entirely."
     )
     assert legacy_des.read_bytes() == legacy_des_before, (
         "WHAT: the Codex integration relocated or changed a pre-existing Claude DES "
         "extension. WHY: the retired migration has no authority over Claude runtime "
         "bytes. HOW: leave legacy Claude runtime content in place."
     )
-    if platform == "codex":
-        assert claude_config.read_bytes() == claude_config_before, (
-            "WHAT: an explicit Codex installation changed Claude configuration. WHY: "
-            "Codex-only must not activate Claude configuration handling."
-        )
-    else:
-        assert json.loads(claude_config.read_text())["user_setting"] == "keep", (
-            "WHAT: a Codex-inclusive mixed/all installation discarded a Claude user "
-            "setting. WHY: normal Claude configuration enrichment must preserve user "
-            "values. HOW: merge rather than replace the existing configuration."
-        )
+    assert claude_config.read_bytes() == claude_config_before, (
+        "WHAT: an explicit Codex installation changed Claude configuration. WHY: "
+        "Codex-only must not activate Claude configuration handling."
+    )
     assert receipt.read_bytes() == b"foreign retired migration receipt\n"
     assert journal.read_bytes() == b"foreign retired migration journal\n"
     assert json.loads(config.read_text())["custom"] == {"allowed-outside-claude": True}
@@ -188,6 +182,24 @@ def test_codex_including_install_never_uses_legacy_claude_runtime_migration(
 
 def _install(home: Path, platform: str = "codex") -> subprocess.CompletedProcess[str]:
     return _run(home, "install", "--yes", "--platform", platform)
+
+
+def _current_codex_desired_skill_names(*, dev: bool) -> set[str]:
+    """Derive the final Codex skill catalogue from the current source policy."""
+    skills_source = REPO / "nWave" / "skills"
+    entries = enumerate_skills(skills_source)
+    if dev:
+        return {entry.name for entry in entries}
+
+    return {
+        entry.name
+        for entry in filter_public_skills(
+            entries,
+            load_public_agents(REPO / "nWave"),
+            build_ownership_map(REPO / "nWave" / "agents"),
+            detect_command_skills(skills_source),
+        )
+    }
 
 
 def _legacy_codex_launcher_source(python_path: str, pythonpath: str) -> str:
@@ -302,39 +314,38 @@ def _seed_legacy_direct_hook_with_orphan_launcher(
 _V1_CODEX_BOOTSTRAP_REVISION = "02749ab6f"
 _V1_CANDIDATE_PROFILE_REVISION = "a365196b1"
 
-# Captured from the actual v1 Codex candidate.  This is deliberately a closed
-# profile: adding a new command skill must not make it adoptable just because
-# it has an ``nw-`` name.  Update this table only after reviewing the candidate
-# release whose rendered hashes changed.
-_V1_CANDIDATE_UNLISTED_PUBLIC_SKILL_DIGESTS = {
-    "nw-buddy": "bc0d60b68de55abc36e8e273e729a36887f3808b4b6369ba58dbced76df2d0bb",
-    "nw-bugfix": "0ca4c2438ded122439db8ead2abbaf0f5522ba35e5fd091855e866476a328b55",
-    "nw-continue": "1fe801835ab0800b9e9c8fde3bef10b561aab9e84c55079acd888b526b24d86a",
-    "nw-deliver": "ac8def71068d07bd072f9a18317ded0a206d77797335a38e77489d29d4ddfd8c",
-    "nw-design": "b7b43b7189cff072c94517a8fab3e5b2688ec8386e7bbd0d4fb15b2553ded306",
-    "nw-devops": "a902b5d9b876411f2b73cf1fec3f6fb8681f70ec19155d500290eeaa8eb49f71",
-    "nw-diagram": "5e4f3231f3b68ba4d1af796ff31c7fc80d6db2d7cc8f0558e2fb6a3f98d0bd98",
-    "nw-discover": "98daa12c8ffdc3dae9c3e5b3452f9afc107207e568ee495a8ea8f95bfdaa3b7f",
-    "nw-discuss": "93d94f1d5a02293eab210028c0eb1fc4a143924dc7fd0e2c6331022a83d8f2fa",
-    "nw-diverge": "95de6f0a9ab9235768bf902c0726d1284127796ce10e6377e71f2870bec114c3",
-    "nw-document": "df6ddadeee36257d79806da2349a442f18c4597e39dbd2fe0f7ee8e1905e0be0",
-    "nw-execute": "12472465a632d881592b391d4665ab48231ecbc0d3527898e53c5c65527402dd",
-    "nw-fast-forward": "3c5c450e4b1a07ff5f886c40c6cc8b4db3abfaa227acfb2a4f3c39ff46e8d68f",
-    "nw-finalize": "8e92edd03e10e14b3795714fc24bcfd8ac1c87e7d4c05a7865e4008cfe21a47b",
-    "nw-forge": "019ec548e58da0640d82b989365041bfb079ada2e9396c781f7a4de500bc399a",
-    "nw-hotspot": "94c30ad58319bddf587a65696d269184fb5ab336584e3a4d1763a3a2e760f546",
-    "nw-mikado": "9279af248efa74789f1ebf03d3ecd97bacd96c77adbd60dfe86ac30bb06fe7e9",
-    "nw-new": "0747cf3379c1f311fa5ddfdcb4f16c62320995cca997e0c07256caa3729c75c9",
-    "nw-optimize-tests": "051b21677ae1506852393832c0903e1b9b34a658ea9fde3ad1db3ac5d3338e21",
-    "nw-research": "87be14adc1430ddd1b042f41023799a2b2f87c57d0e08fdfb6fbad1d821902be",
-    "nw-review": "e5233e5218bdc2d9408b81e9c0dbfd57939ad8b3ca7a280945eb9d7de7c24623",
-    "nw-rigor": "f0683d0c8118c189bc6d3b2c1f5499e4dd2ae8c310fc43a2ed69b809f18f219b",
-    "nw-roadmap": "afbe4234a6d4c4c40a96c336e0b85528e968f258922af3021050b3dfd6c248f2",
-    "nw-root-why": "3e3f460531b46c3e780cc992f81d8bb229784983a01f49c766d75e9b94b07f68",
-    "nw-spike": "51f0c0b27c941ef1f2e3613aecde8afad3db6e60c44b1f49fe2219d05598868c",
-    "nw-throughput": "6fbe991edc39410df327803ceb3a1c5e48f9e55e08573de1870ff71b6378cfed",
-    "nw-update": "c6c39bac491e1fc852c06e3e760c36ea992d62cb617f2c41a11fff3048d2060a",
-}
+# Captured from the actual v1 Codex candidate.  The profile remains closed by
+# payload rather than by names that may later leave the product.  Names are
+# recovered only from the pinned revision and must agree with frontmatter.
+_V1_CANDIDATE_UNLISTED_PUBLIC_SKILL_DIGEST_PROFILE = (
+    "bc0d60b68de55abc36e8e273e729a36887f3808b4b6369ba58dbced76df2d0bb",
+    "0ca4c2438ded122439db8ead2abbaf0f5522ba35e5fd091855e866476a328b55",
+    "1fe801835ab0800b9e9c8fde3bef10b561aab9e84c55079acd888b526b24d86a",
+    "ac8def71068d07bd072f9a18317ded0a206d77797335a38e77489d29d4ddfd8c",
+    "b7b43b7189cff072c94517a8fab3e5b2688ec8386e7bbd0d4fb15b2553ded306",
+    "a902b5d9b876411f2b73cf1fec3f6fb8681f70ec19155d500290eeaa8eb49f71",
+    "5e4f3231f3b68ba4d1af796ff31c7fc80d6db2d7cc8f0558e2fb6a3f98d0bd98",
+    "98daa12c8ffdc3dae9c3e5b3452f9afc107207e568ee495a8ea8f95bfdaa3b7f",
+    "93d94f1d5a02293eab210028c0eb1fc4a143924dc7fd0e2c6331022a83d8f2fa",
+    "95de6f0a9ab9235768bf902c0726d1284127796ce10e6377e71f2870bec114c3",
+    "df6ddadeee36257d79806da2349a442f18c4597e39dbd2fe0f7ee8e1905e0be0",
+    "12472465a632d881592b391d4665ab48231ecbc0d3527898e53c5c65527402dd",
+    "3c5c450e4b1a07ff5f886c40c6cc8b4db3abfaa227acfb2a4f3c39ff46e8d68f",
+    "8e92edd03e10e14b3795714fc24bcfd8ac1c87e7d4c05a7865e4008cfe21a47b",
+    "019ec548e58da0640d82b989365041bfb079ada2e9396c781f7a4de500bc399a",
+    "94c30ad58319bddf587a65696d269184fb5ab336584e3a4d1763a3a2e760f546",
+    "9279af248efa74789f1ebf03d3ecd97bacd96c77adbd60dfe86ac30bb06fe7e9",
+    "0747cf3379c1f311fa5ddfdcb4f16c62320995cca997e0c07256caa3729c75c9",
+    "051b21677ae1506852393832c0903e1b9b34a658ea9fde3ad1db3ac5d3338e21",
+    "87be14adc1430ddd1b042f41023799a2b2f87c57d0e08fdfb6fbad1d821902be",
+    "e5233e5218bdc2d9408b81e9c0dbfd57939ad8b3ca7a280945eb9d7de7c24623",
+    "f0683d0c8118c189bc6d3b2c1f5499e4dd2ae8c310fc43a2ed69b809f18f219b",
+    "afbe4234a6d4c4c40a96c336e0b85528e968f258922af3021050b3dfd6c248f2",
+    "3e3f460531b46c3e780cc992f81d8bb229784983a01f49c766d75e9b94b07f68",
+    "51f0c0b27c941ef1f2e3613aecde8afad3db6e60c44b1f49fe2219d05598868c",
+    "6fbe991edc39410df327803ceb3a1c5e48f9e55e08573de1870ff71b6378cfed",
+    "c6c39bac491e1fc852c06e3e760c36ea992d62cb617f2c41a11fff3048d2060a",
+)
 
 
 def _render_codex_skill(source: str) -> bytes:
@@ -353,6 +364,53 @@ def _render_codex_skill(source: str) -> bytes:
     ):
         rendered = rendered.replace(legacy_path, codex_path)
     return rendered.encode("utf-8")
+
+
+@lru_cache(maxsize=1)
+def _pinned_v1_candidate_profile() -> dict[str, str]:
+    """Recover the closed historical payload profile with path/name binding."""
+    closed_digests = set(_V1_CANDIDATE_UNLISTED_PUBLIC_SKILL_DIGEST_PROFILE)
+    assert len(_V1_CANDIDATE_UNLISTED_PUBLIC_SKILL_DIGEST_PROFILE) == 27
+    assert len(closed_digests) == 27
+
+    archive = subprocess.run(
+        [
+            "git",
+            "archive",
+            "--format=tar",
+            _V1_CANDIDATE_PROFILE_REVISION,
+            "nWave/skills",
+        ],
+        cwd=REPO,
+        capture_output=True,
+        check=True,
+    ).stdout
+    selected: list[tuple[str, str]] = []
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as historical:
+        for member in historical.getmembers():
+            path = Path(member.name)
+            if not member.isfile() or path.name != "SKILL.md":
+                continue
+            asset = historical.extractfile(member)
+            assert asset is not None
+            source = asset.read().decode("utf-8")
+            digest = hashlib.sha256(_render_codex_skill(source)).hexdigest()
+            if digest not in closed_digests:
+                continue
+
+            name = path.parent.name
+            metadata, _ = parse_frontmatter(source)
+            assert metadata is not None and metadata.get("name") == name, (
+                "WHAT: a closed historical payload is not bound to its path name. "
+                "WHY: digest membership alone cannot authorize relocation. HOW: "
+                "require historical frontmatter name and directory name to agree."
+            )
+            selected.append((name, digest))
+
+    assert len(selected) == 27
+    assert len({name for name, _ in selected}) == 27
+    assert {digest for _, digest in selected} == closed_digests
+    return dict(selected)
 
 
 def _render_v1_codex_skill(source: str) -> bytes:
@@ -409,22 +467,24 @@ def _pinned_v1_candidate_codex_skill(name: str) -> bytes:
     return _render_codex_skill(source)
 
 
-def _assert_actual_v1_candidate_profile_matches_pinned_source() -> None:
+def _assert_actual_v1_candidate_profile_matches_pinned_source() -> dict[str, str]:
     """Make candidate/profile drift an explicit test-review event.
 
-    This deliberately compares a closed name-and-hash table with source assets;
-    it never discovers a new eligible name from the source tree.
+    The opaque digest profile is closed.  Names are recovered only by matching
+    those payloads in the fixed revision and verifying their frontmatter paths.
     """
+    profile = _pinned_v1_candidate_profile()
     observed = {
         name: hashlib.sha256(_pinned_v1_candidate_codex_skill(name)).hexdigest()
-        for name in _V1_CANDIDATE_UNLISTED_PUBLIC_SKILL_DIGESTS
+        for name in profile
     }
-    assert observed == _V1_CANDIDATE_UNLISTED_PUBLIC_SKILL_DIGESTS, (
+    assert observed == profile, (
         "WHAT: the candidate's fixed v1 omission profile no longer matches pinned "
         "candidate revision a365196b1. WHY: historical ownership admission is a "
         "reviewed byte contract, not dynamic name discovery. HOW: explicitly review "
         "and update the closed profile for a new candidate release."
     )
+    return profile
 
 
 def _seed_v1_codex_bootstrap(
@@ -629,14 +689,8 @@ def test_reinstall_after_interpreter_change_keeps_one_current_des_hook(
         for handler in group.get("hooks", [])
         if "nwave_claude_code_hook_adapter_launcher" in handler.get("command", "")
     ]
-    session_start = [
-        handler
-        for group in current["SessionStart"]
-        for handler in group.get("hooks", [])
-        if "nwave_orchestrator_affordance_launcher" in handler.get("command", "")
-    ]
     assert len(pretool) == 1
-    assert len(session_start) == 1
+    assert "SessionStart" not in current
 
 
 def test_codex_only_install_has_no_claude_activation_surface(tmp_path: Path) -> None:
@@ -1068,7 +1122,6 @@ def test_explicit_codex_upgrade_adopts_only_byte_proven_v1_public_command_omissi
     before_omitted = {
         name: (skills / name / "SKILL.md").read_bytes() for name in omitted
     }
-    before_manifest = json.loads((skills / ".nwave-manifest.json").read_text())
 
     args = ["install", "--yes", "--platform", "codex"]
     if dev:
@@ -1086,25 +1139,33 @@ def test_explicit_codex_upgrade_adopts_only_byte_proven_v1_public_command_omissi
     adopted = json.loads((skills / ".nwave-manifest.json").read_text())[
         "installed_skills"
     ]
-    assert set(before_manifest["installed_skills"]) | set(omitted) <= set(adopted)
+    desired_names = _current_codex_desired_skill_names(dev=dev)
+    assert set(adopted) == desired_names
     for name in omitted:
-        installed = (skills / name / "SKILL.md").read_bytes()
         assert before_omitted[name] == _pinned_v1_codex_public_skill(name)
-        assert before_omitted[name] != _current_codex_public_skill(name), (
-            "WHAT: a current source rendering was accepted as historic v1 proof. "
-            "WHY: ownership must be pinned to the historical installer asset. HOW: "
-            "compare omitted bytes against the fixed v1 source revision."
-        )
-        assert installed == _current_codex_public_skill(name), (
-            "WHAT: the refresh did not retain the exact installer-owned public "
-            f"skill bytes for {name}. WHY: adoption is a hash witness, not a name "
-            "claim. HOW: overwrite only the byte-proven v1 command candidate with "
-            "the installer rendering."
-        )
-        assert (
-            hashlib.sha256(installed).digest()
-            != hashlib.sha256(before_omitted[name]).digest()
-        )
+        if name in desired_names:
+            installed = (skills / name / "SKILL.md").read_bytes()
+            assert before_omitted[name] != _current_codex_public_skill(name), (
+                "WHAT: a current source rendering was accepted as historic v1 proof. "
+                "WHY: ownership must be pinned to the historical installer asset. HOW: "
+                "compare omitted bytes against the fixed v1 source revision."
+            )
+            assert installed == _current_codex_public_skill(name), (
+                "WHAT: the refresh did not retain the exact installer-owned public "
+                f"skill bytes for {name}. WHY: adoption is a hash witness, not a name "
+                "claim. HOW: overwrite only the byte-proven v1 command candidate with "
+                "the installer rendering."
+            )
+            assert (
+                hashlib.sha256(installed).digest()
+                != hashlib.sha256(before_omitted[name]).digest()
+            )
+        else:
+            assert not (skills / name).exists(), (
+                "WHAT: an attested historical skill outside the current desired "
+                "catalogue survived upgrade. WHY: attestation grants safe removal, "
+                "not permanent installation. HOW: reconcile it against the desired set."
+            )
     assert user_skill.read_bytes() == b"user-owned skill bytes\n"
     assert hooks_path.is_file() and des_manifest.is_file(), (
         "WHAT: the corroborating v1 DES state was not upgraded to native Codex "
@@ -1144,10 +1205,10 @@ def test_actual_v1_omission_profile_is_adopted_only_as_the_complete_reviewed_set
     tmp_path: Path, dev: bool
 ) -> None:
     """The actual candidate's closed 27-skill omission profile upgrades publicly."""
-    _assert_actual_v1_candidate_profile_matches_pinned_source()
+    historical_profile = _assert_actual_v1_candidate_profile_matches_pinned_source()
     home = tmp_path / "home"
     skills, _, _ = _seed_v1_codex_bootstrap(home, omitted_public_skills=())
-    for name in _V1_CANDIDATE_UNLISTED_PUBLIC_SKILL_DIGESTS:
+    for name in historical_profile:
         skill = skills / name / "SKILL.md"
         skill.parent.mkdir(exist_ok=True)
         skill.write_bytes(_pinned_v1_candidate_codex_skill(name))
@@ -1160,66 +1221,42 @@ def test_actual_v1_omission_profile_is_adopted_only_as_the_complete_reviewed_set
     assert result.returncode == 0, result.stdout + result.stderr
     manifest = json.loads((skills / ".nwave-manifest.json").read_text())
     installed = set(manifest["installed_skills"])
-    public_profile = set(_V1_CANDIDATE_UNLISTED_PUBLIC_SKILL_DIGESTS)
-    assert public_profile <= installed
-    if not dev:
-        # UPDATED 2026-07-27 (stale-literal repair, not a behavior regression):
-        # this pinned 201, set by d07aa112f (2026-07-25 20:19), the commit
-        # that authored this test. Commit aa46b6c03 (2026-07-25 21:51, ~90
-        # minutes later, "classic stops being selectable") deliberately
-        # removed nw-deliver-classic-orchestration and nw-deliver-orchestration
-        # from nWave/skills/ as part of the ADR-025 classic-mode retirement --
-        # dropping both the public and dev skill counts by exactly 2, which a
-        # `git log --diff-filter=D` on nWave/skills/nw-*/SKILL.md confirms
-        # (plus an unrelated third removal, nw-crafter-discipline-atdd-pure,
-        # dated after 201/279 were pinned but before the count observed here,
-        # netting to -2 overall -- verified empirically, not assumed: a
-        # temporary instrumented run measured 199/277 against the current
-        # tree). Nobody updated this literal after the removal landed. Re-pin
-        # to the current, correct count; if a future skill addition/removal
-        # changes it again, review and update deliberately -- this literal is
-        # a closed, reviewed pin by design (see the docstring on
-        # `_assert_actual_v1_candidate_profile_matches_pinned_source`), not a
-        # self-adjusting count.
-        assert len(installed) == 199, (
-            "WHAT: upgrade did not write the complete 199-skill public candidate "
-            "manifest. WHY: the historical profile must refresh to the complete "
-            "public installation, not merely retain its old 174-entry record."
-        )
-        assert "nw-adoption-funnel-analysis" not in installed, (
-            "WHAT: public install leaked a private-only skill. WHY: public and dev "
-            "catalogs deliberately have different visibility boundaries."
-        )
-    else:
-        expected_dev = {
-            path.name
-            for path in (REPO / "nWave" / "skills").iterdir()
-            if path.is_dir()
-            and path.name.startswith("nw-")
-            and (path / "SKILL.md").is_file()
-        }
-        assert installed == expected_dev
-        # UPDATED 2026-07-27, same stale-literal repair as the public branch
-        # above (279 -> 277, same -2 delta, same root cause: aa46b6c03).
-        assert len(installed) == 277
-        assert "nw-adoption-funnel-analysis" in installed, (
-            "WHAT: dev install omitted a private-only source skill. WHY: --dev is "
-            "the explicitly private-inclusive catalog, while public remains filtered."
-        )
+    desired_names = _current_codex_desired_skill_names(dev=dev)
+    historical_names = set(historical_profile)
+    removed_historical_names = historical_names - desired_names
+
+    assert installed == desired_names, (
+        "WHAT: the final manifest differs from the current desired Codex catalogue. "
+        "WHY: historical attestation grants refresh authority but does not extend the "
+        "new installation set. HOW: publish exactly the current source/catalogue set."
+    )
+    assert {
+        path.name
+        for path in skills.iterdir()
+        if path.is_dir()
+        and path.name.startswith("nw-")
+        and (path / "SKILL.md").is_file()
+    } == desired_names
+    assert all(not (skills / name).exists() for name in removed_historical_names), (
+        "WHAT: an attested historical skill absent from the current desired catalogue "
+        "survived upgrade. WHY: stale ownership must be reconciled after refresh. "
+        "HOW: delete the attested stale member before publishing the manifest."
+    )
 
 
 def test_one_byte_drift_in_actual_v1_profile_refuses_before_any_write(
     tmp_path: Path,
 ) -> None:
     """One changed byte among the closed candidate names is not ownership proof."""
-    _assert_actual_v1_candidate_profile_matches_pinned_source()
+    historical_profile = _assert_actual_v1_candidate_profile_matches_pinned_source()
     home = tmp_path / "home"
     skills, _, _ = _seed_v1_codex_bootstrap(home, omitted_public_skills=())
-    for name in _V1_CANDIDATE_UNLISTED_PUBLIC_SKILL_DIGESTS:
+    for name in historical_profile:
         skill = skills / name / "SKILL.md"
         skill.parent.mkdir(exist_ok=True)
         skill.write_bytes(_pinned_v1_candidate_codex_skill(name))
-    drifted = skills / "nw-buddy" / "SKILL.md"
+    drifted_name = sorted(historical_profile)[0]
+    drifted = skills / drifted_name / "SKILL.md"
     drifted.write_bytes(drifted.read_bytes() + b"x")
     before = _tree_state(home)
 
@@ -1227,6 +1264,43 @@ def test_one_byte_drift_in_actual_v1_profile_refuses_before_any_write(
 
     assert result.returncode != 0
     assert _tree_state(home) == before
+
+
+def test_exact_historical_skill_payload_cannot_be_relocated_under_another_safe_name(
+    tmp_path: Path,
+) -> None:
+    """Historical bytes are evidence only at their original frontmatter name."""
+    historical_profile = _assert_actual_v1_candidate_profile_matches_pinned_source()
+    home = tmp_path / "home"
+    skills, _, _ = _seed_v1_codex_bootstrap(home, omitted_public_skills=())
+    for name in historical_profile:
+        skill = skills / name / "SKILL.md"
+        skill.parent.mkdir(exist_ok=True)
+        skill.write_bytes(_pinned_v1_candidate_codex_skill(name))
+
+    original_name = sorted(historical_profile)[0]
+    original = skills / original_name
+    relocated = skills / f"{original_name}-relocated"
+    original.rename(relocated)
+    metadata, _ = parse_frontmatter(
+        (relocated / "SKILL.md").read_text(encoding="utf-8")
+    )
+    assert metadata is not None and metadata.get("name") == original_name
+    before = _tree_state(home)
+
+    result = _run(home, "install", "--yes", "--platform", "codex")
+
+    assert result.returncode != 0, (
+        "WHAT: exact historical bytes were adopted from a different safe directory. "
+        "WHY: a digest alone does not authorize relocation; the embedded skill name "
+        "must bind the payload to its directory. HOW: reject before installation "
+        "whenever a historical witness is not at its frontmatter name."
+    )
+    assert _tree_state(home) == before, (
+        "WHAT: a rejected relocated witness changed user state. WHY: historical "
+        "ownership must be decided before any installer mutation. HOW: keep the "
+        "complete home tree byte-identical on refusal."
+    )
 
 
 @pytest.mark.parametrize("dev", [False, True], ids=["public", "dev"])

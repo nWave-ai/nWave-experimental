@@ -76,7 +76,6 @@ def mock_project(tmp_path):
     # nWave/scripts/des/ — DES utility scripts
     des_scripts_dir = tmp_path / "nWave" / "scripts" / "des"
     des_scripts_dir.mkdir(parents=True)
-    (des_scripts_dir / "check_stale_phases.py").write_text("# stale phases checker")
     (des_scripts_dir / "scope_boundary_check.py").write_text("# scope boundary check")
 
     # nWave/framework-catalog.yaml (must include agents section for strict mode)
@@ -97,27 +96,16 @@ def mock_project(tmp_path):
         '    description: "Researcher"\n'
     )
 
-    # src/des/ — DES module with imports to rewrite
+    # src/des/ — supported CLI entry point with imports to rewrite
     des_module = tmp_path / "src" / "des"
     des_module.mkdir(parents=True)
     (des_module / "__init__.py").write_text('"""DES module."""\n')
-    (des_module / "application").mkdir()
-    (des_module / "application" / "__init__.py").write_text(
-        "from src.des.application.orchestrator import DESOrchestrator\n"
+    (des_module / "cli").mkdir()
+    (des_module / "cli" / "__init__.py").write_text("")
+    (des_module / "cli" / "__main__.py").write_text(
+        "from src.des.cli.health_check import main\n"
     )
-    (des_module / "application" / "orchestrator.py").write_text(
-        "from src.des.adapters.driven.config import load_config\n"
-        "\n"
-        "class DESOrchestrator:\n"
-        "    pass\n"
-    )
-    (des_module / "adapters").mkdir()
-    (des_module / "adapters" / "__init__.py").write_text("")
-    (des_module / "adapters" / "driven").mkdir()
-    (des_module / "adapters" / "driven" / "__init__.py").write_text("")
-    (des_module / "adapters" / "driven" / "config.py").write_text(
-        "import src.des.adapters\n\ndef load_config():\n    return {}\n"
-    )
+    (des_module / "cli" / "health_check.py").write_text("def main():\n    return 0\n")
 
     # pyproject.toml — version source
     (tmp_path / "pyproject.toml").write_text(
@@ -218,13 +206,28 @@ class TestDistStructureValidator:
     def test_dist_has_des_scripts(self, built_dist):
         """dist/scripts/des/ has expected DES scripts."""
         des_scripts = built_dist / "scripts" / "des"
-        assert (des_scripts / "check_stale_phases.py").exists()
         assert (des_scripts / "scope_boundary_check.py").exists()
 
     def test_dist_has_des_module(self, built_dist):
         """dist/lib/python/des/ has __init__.py (importable module)."""
         des_module = built_dist / "lib" / "python" / "des"
         assert (des_module / "__init__.py").exists()
+
+    def test_dist_des_module_has_portable_freshness_manifest(self, built_dist):
+        """A public wheel can run DES after its build directory disappears."""
+        public_des = built_dist / "lib" / "python" / "des"
+        bundled_des = built_dist / "lib" / "nwave-runtime" / "des"
+        public_manifest = json.loads(
+            (public_des / "_install_manifest.json").read_text(encoding="utf-8")
+        )
+        bundled_manifest = json.loads(
+            (bundled_des / "_install_manifest.json").read_text(encoding="utf-8")
+        )
+
+        assert public_manifest == bundled_manifest
+        assert public_manifest["source_kind"] == "wheel"
+        assert public_manifest["source_tree"] == ""
+        assert public_manifest["tree_hash"].startswith("sha256:")
 
     def test_dist_has_utility_scripts(self, built_dist):
         """dist/scripts/ has utility scripts."""
@@ -288,15 +291,9 @@ class TestDistDESImportRewriting:
 
     def test_des_imports_rewritten_correctly(self, built_dist):
         """Rewritten imports use 'des.' prefix (not 'src.des.')."""
-        orchestrator = (
-            built_dist / "lib" / "python" / "des" / "application" / "orchestrator.py"
-        )
-        content = orchestrator.read_text()
-        assert "from des.adapters.driven.config" in content
-
-        init = built_dist / "lib" / "python" / "des" / "application" / "__init__.py"
-        content = init.read_text()
-        assert "from des.application.orchestrator" in content
+        entrypoint = built_dist / "lib" / "python" / "des" / "cli" / "__main__.py"
+        content = entrypoint.read_text()
+        assert "from des.cli.health_check import main" in content
 
 
 # ---------------------------------------------------------------------------

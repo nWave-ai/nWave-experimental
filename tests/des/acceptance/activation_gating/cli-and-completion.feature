@@ -64,11 +64,3 @@ Feature: The nwave-ai CLI is the single source of truth for activation
     When shell completion is generated for "ZSH"
     Then the completion lists exactly the published activation commands
     And the completion omits any internal hook vocabulary
-
-  @contract-shape:bounded-change
-  Scenario: An existing project is migrated silently on its first session
-    Given the project marker is "ABSENT"
-    And the project shows "EXECUTION_LOG" prior-use
-    When the session adopts the project via "PRIOR_USE"
-    Then the adoption outcome is "ADOPTED"
-    And the project marker is written

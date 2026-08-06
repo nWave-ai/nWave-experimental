@@ -30,6 +30,11 @@ def configured_installer(tmp_path):
         installer.dry_run = False
         installer.dev_mode = False
         installer._platform_override = {"claude_code"}
+        # This fixture stubs __init__ away, so nothing resolves the target set
+        # the way a real construction does. State it here, matching the override
+        # above: NWaveInstaller resolves its targets ONCE, in __init__, so an
+        # object built without __init__ has to supply what __init__ would have.
+        installer._effective_target_platforms = {"claude_code"}
         installer.claude_config_dir = tmp_path / "claude"
         installer.project_root = tmp_path
         installer.framework_source = tmp_path / "nWave"
@@ -38,6 +43,7 @@ def configured_installer(tmp_path):
         installer.logger.progress_spinner.return_value.__enter__ = Mock()
         installer.logger.progress_spinner.return_value.__exit__ = Mock()
         installer.backup_manager = Mock()
+        installer._attested_legacy_codex_skill_names = frozenset()
 
         # Create minimal source structure
         installer.framework_source.mkdir(parents=True, exist_ok=True)

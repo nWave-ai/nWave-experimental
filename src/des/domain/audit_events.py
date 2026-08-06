@@ -26,10 +26,6 @@ from typing import Any
 class EventType(Enum):
     """Audit event type categories."""
 
-    # TASK_INVOCATION events
-    TASK_INVOCATION_STARTED = "TASK_INVOCATION_STARTED"
-    TASK_INVOCATION_VALIDATED = "TASK_INVOCATION_VALIDATED"
-
     # PHASE events
     PHASE_STARTED = "PHASE_STARTED"
 

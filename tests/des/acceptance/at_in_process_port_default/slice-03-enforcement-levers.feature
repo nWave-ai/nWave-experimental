@@ -6,7 +6,7 @@ Feature: A gate mechanically flags a non-walking-skeleton acceptance test that s
   executable; slice-02 flipped the methodology default to in-process-port. But a
   documented default that no machine enforces silently regresses the first time a
   maintainer forgets it (the des_spawn lesson). This slice ships the enforcement:
-  five AXIS-B levers, added to the EXISTING gates (logic intact), that mechanically
+  AXIS-B levers, added to the EXISTING gates (logic intact), that mechanically
   FLAG a non-walking-skeleton acceptance test which forks an interpreter, an entry
   reached by no real dispatch, a production path the test claims to drive but never
   executes, and a slice with no sad-path coverage. The levers are
@@ -27,15 +27,15 @@ Feature: A gate mechanically flags a non-walking-skeleton acceptance test that s
   # never a bare exit code. lever-1 wiring / L3 integration-per-adapter / L4
   # contract-per-port live as NEW invariants in `verify_readiness_pre_dispatch.main`
   # (REFUSED verdict). lever-2 F821 lives in pre-commit (target-aware
-  # NOT_APPLICABLE on non-Python). lever-3 coverage-on-executed-path lives in
-  # `run_contract_gate.main`. ZOMBIES-zero lives in `carpaccio_slice_gate.main`.
+  # NOT_APPLICABLE on non-Python). ZOMBIES-zero lives in
+  # `carpaccio_slice_gate.main`.
   # The spawn-overuse detector is per-language, AST/CodeFactPort-based, git-free,
   # degrade-LOUD.
   #
   # Driving port (Architecture-of-Reference / Infra Policy "Driving", the inverted
   # default this very feature ships): the REAL gate entries
   # `verify_readiness_pre_dispatch.main(argv)` / `carpaccio_slice_gate.main(argv)`
-  # / `run_contract_gate.main(argv)` driven IN-PROCESS with stdout/stderr captured
+  # driven IN-PROCESS with stdout/stderr captured
   # -- NOT a `python -m` subprocess. These slice-03 ATs are themselves the proof
   # that the enforcement levers can be driven in-process (eating the feature's own
   # dog food: subprocess-e2e is reserved for @walking_skeleton; everything else
@@ -88,14 +88,6 @@ Feature: A gate mechanically flags a non-walking-skeleton acceptance test that s
     Then the contract-per-port lever flags the uncontracted port
     And the contract-per-port lever emits its structured flag event on the captured output
     And the contract-per-port lever drove the gate without forking an interpreter
-
-  @slice-03 @coupled @driving_port @real-io @contract-shape:bounded-change
-  Scenario: The coverage-on-executed-path lever flags an acceptance test that drives no production line
-    Given the maintainer has a real repo the enforcement gates can run against
-    When the maintainer drives the coverage-on-executed-path lever in-process
-    Then the coverage-on-executed-path lever flags the coverage-theater test
-    And the coverage-on-executed-path lever emits its structured flag event on the captured output
-    And the coverage-on-executed-path lever drove the gate without forking an interpreter
 
   @slice-03 @coupled @driving_port @real-io @error @contract-shape:unbounded-preservation
   Scenario: The sad-path-floor lever flags a slice with zero error-path acceptance tests

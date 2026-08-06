@@ -6,16 +6,7 @@ for both distribution paths (plugin and installer).
 
 Test Budget: 10 distinct behaviors x 2 = 20 max unit tests.
 Behaviors:
-  1. Hook events define all 14 required registrations (7 PreToolUse + 7 others)
-     -- slice-02 of atdd-spine-ledger-enforcement-gate-v2 added the spine-
-     ledger PreToolUse/Bash dev-mode entry adjacent to the execution-log
-     guard (9 -> 10); slice-04 added the installed-path PreToolUse/Bash
-     entry (#5 -> #6 PreToolUse) AND the installed-path SubagentStop
-     spine-detector entry (#2 -> #3 SubagentStop), total 10 -> 12;
-     slice-01 of fix-crafter-stash-structural-mitigation added the git-stash
-     guard PreToolUse/Bash entry (#6 -> #7 PreToolUse), total 12 -> 13;
-     slice-04 amendment of nwave-flow-v2-enforcement added the
-     UserPromptSubmit wave-active anchor entry, total 13 -> 14.
+  1. Hook events define the fixed independent registrations.
   2. Hook event types cover all 6 distinct event types
   3. generate_hook_config produces correct structure for standard hooks
   4. generate_hook_config uses guard_command_fn for guard hooks
@@ -47,43 +38,9 @@ from scripts.shared.hook_definitions import (
 class TestHookEventDefinitions:
     """Verify the canonical hook event definitions are complete and correct."""
 
-    def test_defines_all_twelve_hook_registrations(self):
-        """All 17 hook registrations are defined.
-
-        slice-02 of atdd-spine-ledger-enforcement-gate-v2 added the
-        ("PreToolUse", "Bash", "pre-bash-spine-ledger") dev-mode entry
-        adjacent to the existing execution-log guard, raising the PreToolUse
-        count from 4 to 5 and total from 9 to 10. slice-04 (FINAL) added
-        the installed-path forms: ("PreToolUse", "Bash",
-        "pre-bash-spine-ledger-gate-installed") which invokes the gate
-        directly, and ("SubagentStop", None,
-        "subagent-stop-spine-detector"), raising PreToolUse 5 -> 6,
-        SubagentStop 2 -> 3, total 10 -> 12. slice-01 of
-        fix-crafter-stash-structural-mitigation added the
-        ("PreToolUse", "Bash", "pre-bash-git-stash-guard") entry (greps
-        `^git stash`, orthogonal to the other Bash entries), raising
-        PreToolUse 6 -> 7, total 12 -> 13. slice-04 amendment of
-        nwave-flow-v2-enforcement added the ("UserPromptSubmit", None,
-        "user-prompt-submit") wave-active anchor entry, total 13 -> 14.
-        The --no-verify reminder guard (Ale 2026-06-26) added the 5th
-        PreToolUse/Bash entry (#7 -> #8 PreToolUse), total 14 -> 15.
-        fix-orchestrator-affordance-refresh-independent added 2 standalone
-        entries -- SessionStart (matcher=None, standalone) and
-        UserPromptSubmit (matcher=None, standalone) -- total 15 -> 17.
-        sessionstart-cross-host-contract (6a3e057e4) then removed the legacy
-        DES-runtime SessionStart entry (matcher="startup", action=
-        "session-start"): the standalone SessionStart registration is now
-        the sole SessionStart surface, so the DES-runtime entry would
-        duplicate it and make a session open mutate maintainer state.
-        Total 17 -> 16.
-        fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29) added
-        the 6th PreToolUse/Bash entry (#8 -> #9 PreToolUse): the
-        worktree-removal liveness guard, greps `git worktree remove`,
-        orthogonal to every other Bash entry's grep. Total 16 -> 17.
-        Matcher coexistence: Claude Code permits multiple entries per
-        (event, matcher) tuple.
-        """
-        assert len(HOOK_EVENTS) == 17
+    def test_defines_independent_hook_registrations(self):
+        """The shared definition contains only the current independent hooks."""
+        assert len(HOOK_EVENTS) == 10
 
         # Verify exact event/matcher/action triples
         events_matchers = [(h.event, h.matcher, h.action) for h in HOOK_EVENTS]
@@ -91,12 +48,6 @@ class TestHookEventDefinitions:
         assert ("PreToolUse", "Write", "pre-write") in events_matchers
         assert ("PreToolUse", "Edit", "pre-edit") in events_matchers
         assert ("PreToolUse", "Bash", "pre-bash") in events_matchers
-        assert ("PreToolUse", "Bash", "pre-bash-spine-ledger") in events_matchers
-        assert (
-            "PreToolUse",
-            "Bash",
-            "pre-bash-spine-ledger-gate-installed",
-        ) in events_matchers
         assert ("PreToolUse", "Bash", "pre-bash-git-stash-guard") in events_matchers
         assert (
             "PreToolUse",
@@ -105,33 +56,21 @@ class TestHookEventDefinitions:
         ) in events_matchers
         assert ("PostToolUse", "Agent", "post-tool-use") in events_matchers
         assert ("SubagentStop", None, "subagent-stop") in events_matchers
-        assert ("SubagentStop", None, "deliver-progress") in events_matchers
-        assert ("SubagentStop", None, "subagent-stop-spine-detector") in events_matchers
+        assert ("SubagentStop", None, "deliver-progress") not in events_matchers
         assert ("SessionStart", "startup", "session-start") not in events_matchers
         assert ("SubagentStart", None, "subagent-start") in events_matchers
-        assert ("UserPromptSubmit", None, "user-prompt-submit") in events_matchers
-        assert (
-            "SessionStart",
-            None,
-            "orchestrator-affordance-refresh-standalone",
-        ) in events_matchers
-        assert (
-            "UserPromptSubmit",
-            None,
-            "orchestrator-affordance-refresh-standalone",
-        ) in events_matchers
+        assert ("UserPromptSubmit", None, "user-prompt-submit") not in events_matchers
+        assert not any(event == "SessionStart" for event, _, _ in events_matchers)
 
-    def test_hook_event_types_covers_five_distinct_types(self):
-        """HOOK_EVENT_TYPES contains exactly the 6 Claude Code event types."""
+    def test_hook_event_types_excludes_retired_session_and_prompt_hooks(self):
+        """Only active hook events are registered by the installer."""
         assert (
             frozenset(
                 {
                     "PreToolUse",
                     "PostToolUse",
                     "SubagentStop",
-                    "SessionStart",
                     "SubagentStart",
-                    "UserPromptSubmit",
                 }
             )
             == HOOK_EVENT_TYPES
@@ -167,30 +106,16 @@ class TestGenerateHookConfig:
         config = generate_hook_config(self._simple_command)
         assert set(config.keys()) == HOOK_EVENT_TYPES
 
-    def test_pretooluse_has_eight_entries(self):
-        """PreToolUse has 9 entries: Agent, Write, Edit, Bash x 6.
-
-        slice-02 of atdd-spine-ledger-enforcement-gate-v2 added a NEW Bash
-        entry adjacent to the execution-log guard (4 -> 5). slice-04 added
-        the installed-path Bash entry (5 -> 6). slice-01 of
-        fix-crafter-stash-structural-mitigation added the git-stash guard
-        Bash entry (6 -> 7). The --no-verify reminder guard (Ale 2026-06-26)
-        added the 5th Bash entry (7 -> 8). fix-worktree-removal-liveness-guard
-        (Ale-authorised 2026-07-29) added the 6th Bash entry (8 -> 9). All 6
-        Bash entries share the same matcher; Claude Code's PreToolUse
-        protocol executes them in registration order ("any block wins"
-        semantic).
-        """
+    def test_pretooluse_has_independent_entries(self):
+        """PreToolUse has Agent, Write, Edit and four independent Bash hooks."""
         config = generate_hook_config(self._simple_command)
         pre_tool_use = config["PreToolUse"]
-        assert len(pre_tool_use) == 9
+        assert len(pre_tool_use) == 7
         matchers = [e.get("matcher") for e in pre_tool_use]
         assert matchers == [
             "Agent",
             "Write",
             "Edit",
-            "Bash",
-            "Bash",
             "Bash",
             "Bash",
             "Bash",
@@ -250,9 +175,9 @@ class TestGenerateHookConfig:
         assert bash_entry["hooks"][0]["command"] == _BASH_EXECUTION_LOG_GUARD
 
     def test_entries_without_matcher_omit_matcher_key(self):
-        """SubagentStop, SubagentStart and UserPromptSubmit entries have no matcher key."""
+        """Subagent lifecycle entries have no matcher key."""
         config = generate_hook_config(self._simple_command)
-        for event in ("SubagentStop", "SubagentStart", "UserPromptSubmit"):
+        for event in ("SubagentStop", "SubagentStart"):
             for entry in config[event]:
                 assert "matcher" not in entry
 
@@ -297,17 +222,12 @@ class TestBashExecutionLogGuard:
         """Shell command uses grep -qE (ERE) for portability."""
         assert "grep -qE" in _BASH_EXECUTION_LOG_GUARD
 
-    def test_shell_command_allows_des_cli_commands(self):
-        """Shell command contains allow pattern for all 3 approved des.cli commands."""
-        assert "des.cli.log_phase" in _BASH_EXECUTION_LOG_GUARD or (
-            "log_phase" in _BASH_EXECUTION_LOG_GUARD
-        )
-        assert "des.cli.init_log" in _BASH_EXECUTION_LOG_GUARD or (
-            "init_log" in _BASH_EXECUTION_LOG_GUARD
-        )
-        assert "des.cli.verify_deliver_integrity" in _BASH_EXECUTION_LOG_GUARD or (
-            "verify_deliver_integrity" in _BASH_EXECUTION_LOG_GUARD
-        )
+    def test_shell_command_has_no_retired_execution_log_allow_pattern(self):
+        """The guard never treats retired execution-log commands as approved writers."""
+        assert "log_phase" not in _BASH_EXECUTION_LOG_GUARD
+        assert "init_log" not in _BASH_EXECUTION_LOG_GUARD
+        assert "des log-phase" not in _BASH_EXECUTION_LOG_GUARD
+        assert "des init-log" not in _BASH_EXECUTION_LOG_GUARD
 
     def test_shell_command_blocks_with_correct_json(self):
         """Shell command outputs valid JSON block response with decision=block."""
@@ -353,29 +273,26 @@ class TestBashGuardIntegration:
         output = json.loads(result.stdout)
         assert output["decision"] == "block"
 
-    def test_allow_des_cli_log_phase(self):
-        """Command with `des log-phase` exits 0 (approved CLI, post-slice-03)."""
+    @pytest.mark.parametrize(
+        "command",
+        (
+            "des log-phase --phase RED execution-log.json",
+            "des init-log --project-dir . execution-log.json",
+        ),
+        ids=("log-phase", "init-log"),
+    )
+    def test_blocks_retired_execution_log_commands(self, command: str):
+        """Removed execution-log commands receive the same block as direct writes."""
         result = self._run_guard(
             {
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": "des log-phase --phase RED execution-log.json"
+                    "command": command,
                 },
             }
         )
-        assert result.returncode == 0
-
-    def test_allow_des_cli_init_log(self):
-        """Command with `des init-log` exits 0 (approved CLI, post-slice-03)."""
-        result = self._run_guard(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": "des init-log --project-dir . execution-log.json",
-                },
-            }
-        )
-        assert result.returncode == 0
+        assert result.returncode == 2
+        assert json.loads(result.stdout)["decision"] == "block"
 
     def test_allow_des_cli_verify_deliver_integrity(self):
         """Command with `des verify-integrity` exits 0 (approved CLI, post-slice-03)."""

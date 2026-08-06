@@ -78,6 +78,58 @@ bounded-change (declared mutation set), or unbounded-preservation (must return a
 Plan, never mutate). A driving port that "only reads" must not expose write
 methods — split read/write into separate ports.
 
+### Declared inputs at the boundary
+
+The OO reading of `contract:declared-inputs-not-ambient-reads` (SSOT:
+`nw-cross-cutting-invariants` — the gate list and the anchor live there, not
+here). It is `Capability injection` above restated as a review question, because
+that pattern is easy to agree with and easy not to apply.
+
+> **What does this component read that nobody passed it?** For every gate the
+> clause lists, decide at the boundary: a constructor parameter, an injected
+> capability, or an explicit override — with the ambient lookup kept as a default
+> the caller may state.
+
+Resolve it **where the caller can see it**. A gate resolved lazily, at first use
+deep inside a method, is read outside the window in which the caller — or a test
+— controls the environment, so even a caller that wanted to declare it cannot.
+
+Test-side mirror: the Algebraic Analysis Before the Scenario mandate
+(`nw-test-design-mandates`), its declared-inputs question.
+
+### Enumerate the outcomes before choosing the return type
+
+> **How many outcomes does this operation have — and does its signature carry
+> every one of them?** "It returns the value and raises on the bad case" is the
+> wrong answer: that is N-1 outcomes in the type and one in the control flow.
+> **If any outcome is not in the return type, put it there** — a value the caller
+> branches on, with the illegal combinations unconstructible (enforce in the
+> constructor: only the outcome that carries a payload may carry one, and it
+> always does).
+
+Why this is a design rule, not a style preference: `except` matches on class
+**identity**, so a raised outcome couples the caller to the exact module object
+the raiser was loaded from. Where the same package is reachable by more than one
+path — a source tree plus an installed runtime, a harness that adjusts
+`sys.path`, a plugin cache — that identity is not guaranteed. The `except` then
+fails to match and a *handled* outcome escapes as a crash, in an environment
+nobody was testing.
+
+Keep `raise` for what it is good at: a **programming error** (a broken
+precondition, an import-time drift guard) where crashing is the correct outcome
+and no `except` is meant to cross a module boundary to catch it.
+
+FP states the canonical form of the same rule — a total function into a sum type
+(`nw-code-design-fp` § Railway, "Count the outcomes before you choose the return
+type"). This is its OO translation.
+
+Empirical anchor, 2026-08-06 (`des.cli.phases`): CI reported `UnknownPhaseName`
+propagating out of `_resolve` from the line INSIDE its own `try`, with the
+matching `except` on the next line. `resolve_phase` documented three outcomes,
+returned two, threw the third. Returning all three closed the failure class
+*without* establishing why the module loaded twice — a fix that does not depend
+on that answer is a design fix rather than a patch.
+
 ## Cross-cutting invariants (load them — they are not restated here)
 
 Paradigm- and role-independent rules live in ONE shipped home: `nw-cross-cutting-invariants`.

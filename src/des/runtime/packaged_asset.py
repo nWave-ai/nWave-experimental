@@ -13,7 +13,7 @@ worktree>'` on the very same run. It knows where you are and reads elsewhere.
 Measured on this machine, 2026-07-29: of nine module-relative packaged-asset
 defaults, four differ between the installed tree and the repo
 (`skill-normative-clauses.json` 9 clauses vs 12, `nWave/flavors` at two call
-sites, `orchestrator-affordance`), one is byte-identical, four are absent on
+sites), one is byte-identical, four are absent on
 the installed side.
 
 The rule this module implements

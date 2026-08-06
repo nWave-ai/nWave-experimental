@@ -7,10 +7,12 @@ silent dropping of a target when a new platform is added (or removed).
 
 from __future__ import annotations
 
+import sys
 from types import SimpleNamespace
 
 import pytest
 
+from scripts.install import install_nwave
 from scripts.install.install_nwave import NWaveInstaller, _resolve_platform_override
 
 
@@ -81,3 +83,37 @@ def test_create_manifest_receives_the_authoritative_effective_targets(monkeypatc
     installer.create_manifest()
 
     assert received["target_platforms"] == frozenset({"codex"})
+
+
+def test_main_refuses_undetected_host_before_any_install_surface(monkeypatch, capsys):
+    """Auto mode fails loud rather than writing an arbitrary host configuration."""
+
+    def no_host_is_detected() -> set[object]:
+        return set()
+
+    monkeypatch.setattr(install_nwave, "detect_target_platforms", no_host_is_detected)
+    monkeypatch.setattr(sys, "argv", ["install_nwave.py"])
+    monkeypatch.setattr(
+        install_nwave,
+        "show_title_panel",
+        lambda *_args, **_kwargs: pytest.fail("title panel must not run"),
+    )
+    monkeypatch.setattr(
+        install_nwave.PreflightChecker,
+        "run_all_checks",
+        lambda *_args, **_kwargs: pytest.fail("preflight must not run"),
+    )
+    monkeypatch.setattr(
+        install_nwave.NWaveInstaller,
+        "create_backup",
+        lambda *_args, **_kwargs: pytest.fail("backup must not run"),
+    )
+    monkeypatch.setattr(
+        install_nwave.NWaveInstaller,
+        "install_framework",
+        lambda *_args, **_kwargs: pytest.fail("installation must not run"),
+    )
+
+    assert install_nwave.main() == 2
+
+    assert "--platform" in capsys.readouterr().err

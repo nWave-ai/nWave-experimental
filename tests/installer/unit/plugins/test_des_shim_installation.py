@@ -118,14 +118,13 @@ def _make_context_from_dirpath(base: Path) -> tuple[InstallContext, Path, Path]:
     shims_dir.mkdir(parents=True)
     for name in SHIM_NAMES:
         (shims_dir / name).write_text(f"#!/usr/bin/env python3\n# {name}\n")
-    for script in ["check_stale_phases.py", "scope_boundary_check.py"]:
+    for script in ["scope_boundary_check.py"]:
         (shims_dir / script).write_text(f"# {script}\n")
     templates_dir = source_root / "templates"
     templates_dir.mkdir(parents=True)
     for template in [
         ".pre-commit-config-nwave.yaml",
         ".des-audit-README.md",
-        "roadmap-schema.json",
     ]:
         (templates_dir / template).write_text(f"# {template}\n")
     claude_dir = base / ".claude"
@@ -157,8 +156,8 @@ def _make_context(tmp_path: Path) -> tuple[InstallContext, Path, Path]:
     for name in SHIM_NAMES:
         (shims_dir / name).write_text(f"#!/usr/bin/env python3\n# {name}\n")
 
-    # Also stage the two required DES_SCRIPTS (same dir, same resolution path)
-    for script in ["check_stale_phases.py", "scope_boundary_check.py"]:
+    # Stage the required DES script (same dir, same resolution path).
+    for script in ["scope_boundary_check.py"]:
         (shims_dir / script).write_text(f"# {script}\n")
 
     # Stage DES_TEMPLATES
@@ -167,7 +166,6 @@ def _make_context(tmp_path: Path) -> tuple[InstallContext, Path, Path]:
     for template in [
         ".pre-commit-config-nwave.yaml",
         ".des-audit-README.md",
-        "roadmap-schema.json",
     ]:
         (templates_dir / template).write_text(f"# {template}\n")
 

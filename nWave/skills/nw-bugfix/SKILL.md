@@ -234,7 +234,7 @@ along one of two paths, against the already-authored, already-RED regression tes
 hand-written here):
 
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
-- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+- `atdd_pure` — Per-slice AT-first loop; AT-completion ledger + commit trailers are the authority.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 

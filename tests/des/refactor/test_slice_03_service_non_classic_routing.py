@@ -6,29 +6,17 @@
 @contract-shape:pure-function.
 
 Behavior (b) -- the PRODUCTION `PreToolUseService.validate` must RECOGNIZE a
-`DES-MODE: refactor` (resp. `find`) dispatch as a fixer/finder dispatch and NOT
-force it through the classic Step-5 nine-mandatory-section prompt-structure
-validation a markerless-classic crafter dispatch receives (feature-delta D8:
-"no per-dispatch DES-EXEMPT ... NOT forced through the classic-dispatch
-completeness check").
+`DES-MODE: refactor` (resp. `find`) dispatch as a fixer/finder dispatch and
+allow it without any retired prompt-structure dependency.
 
 Driving port: the real `PreToolUseService` wired through its PRODUCTION
-composition (real `DesMarkerParser` + `TemplateValidator` + enforcement /
+composition (real `DesMarkerParser` + enforcement /
 completeness policies, null I/O adapters) -- Pillar 3, mirrors the
 `_build_gate` idiom in
 `tests/des/acceptance/test_deliver_3phase_canon_gate.py`.
 
-RED-not-BROKEN (no production scaffold needed here): on CURRENT code a refactor
-dispatch carrying DES-VALIDATION + DES-PROJECT-ID + DES-STEP-ID but none of the
-nine classic sections (a) passes marker-completeness (classic branch, both
-identifiers present), (b) is NOT routed to the atdd_pure validator
-(`mode != atdd_pure` -> `classify_atdd_pure_dispatch` == 'absent'), and so (c)
-falls through to Step 5's classic `TemplateValidator`, which BLOCKS it for the
-missing sections -- the exact "forced through the classic completeness check"
-failure. The assertion pins the DESIRED post-slice outcome (ALLOW), so it fails
-RED on current code for a genuine business reason (block != allow), never a
-collection/import error. A_GREEN widens `validate` to recognize the two new
-classifier verdicts and allow such a dispatch.
+The preservation pair proves refactor/find remain executable while a DES
+dispatch with no explicit mode remains refused.
 
 covers: R-DES-REFACTOR-SLICE-03-SERVICE
 """
@@ -41,7 +29,6 @@ import pytest
 
 from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
 from des.application.pre_tool_use_service import PreToolUseService
-from des.application.validator import TemplateValidator
 from des.domain.des_enforcement_policy import DesEnforcementPolicy
 from des.domain.des_marker_parser import DesMarkerParser
 from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
@@ -62,11 +49,10 @@ class _FixedTime:
 
 
 def _build_gate() -> PreToolUseService:
-    """Production composition of the DES PreToolUse gate with null I/O adapters
-    (real parser / validator / enforcement / completeness policies)."""
+    """Production composition with the real parser and routing policies,
+    plus null audit/time adapters."""
     return PreToolUseService(
         marker_parser=DesMarkerParser(),
-        prompt_validator=TemplateValidator(),
         audit_writer=NullAuditLogWriter(),
         time_provider=_FixedTime(),
         enforcement_policy=DesEnforcementPolicy(),
@@ -76,12 +62,8 @@ def _build_gate() -> PreToolUseService:
 
 def _fixer_dispatch_prompt(mode: DispatchMode) -> str:
     """A fixer/finder-mode dispatch carrying DES-VALIDATION + DES-PROJECT-ID +
-    DES-STEP-ID (so it clears marker completeness and REACHES Step 5) but NONE of
-    the nine classic mandatory sections -- the exact shape the classic
-    ``TemplateValidator`` blocks on current code.
-
-    ``DispatchMode.ABSENT`` omits the DES-MODE line -> a markerless classic
-    dispatch (the preservation twin below).
+    DES-STEP-ID. ``DispatchMode.ABSENT`` omits the explicit mode for the
+    preservation twin below.
     """
     lines = ["<!-- DES-VALIDATION : required -->"]
     if mode is not DispatchMode.ABSENT:
@@ -99,16 +81,14 @@ def _fixer_dispatch_prompt(mode: DispatchMode) -> str:
 @pytest.mark.parametrize(
     "mode", [DispatchMode.REFACTOR, DispatchMode.FIND], ids=lambda m: m.value
 )
-def test_fixer_dispatch_is_recognized_not_forced_through_classic_completeness(
+def test_fixer_dispatch_is_recognized_without_retired_prompt_structure(
     mode: DispatchMode,
 ) -> None:
     """covers: R-DES-REFACTOR-SLICE-03-SERVICE
 
-    Given a `DES-MODE: refactor` / `find` dispatch carrying its DES markers but
-    NONE of the nine classic mandatory sections, When the production
-    `PreToolUseService` validates it, Then it is ALLOWED (spine-recognized as a
-    fixer/finder dispatch) -- never blocked for lacking the classic sections a
-    markerless crafter dispatch is held to.
+    Given a `DES-MODE: refactor` / `find` dispatch carrying its DES markers,
+    When the production `PreToolUseService` validates it, Then it is ALLOWED
+    without any retired prompt-structure dependency.
 
     CONTRACT_SHAPE: pure-function
     """
@@ -118,18 +98,14 @@ def test_fixer_dispatch_is_recognized_not_forced_through_classic_completeness(
 
     assert decision.action == "allow", (
         f"a DES-MODE:{mode.value} dispatch must be spine-recognized and allowed "
-        "without the nine classic mandatory sections; it was blocked with reason "
-        f"{decision.reason!r} -- i.e. forced through the classic-dispatch "
-        "completeness check (feature-delta D8 / AT-11)"
+        "without retired prompt structure; it was blocked with reason "
+        f"{decision.reason!r} (feature-delta D8 / AT-11)"
     )
 
 
-def test_a_markerless_classic_dispatch_never_bypasses_the_classic_sections() -> None:
-    """Preservation twin (negative oracle): a CLASSIC dispatch (no DES-MODE) that
-    lacks the nine mandatory sections must STILL be blocked -- the slice-03
-    widening recognizes refactor/find ONLY, it must not blanket-exempt every
-    dispatch from the classic completeness check. Expected GREEN both BEFORE and
-    AFTER A_GREEN (leak-guard companion to the RED pins above).
+def test_a_des_dispatch_without_mode_is_refused() -> None:
+    """Preservation twin: only recognized modes are executable; a DES dispatch
+    with no explicit mode remains refused.
 
     CONTRACT_SHAPE: pure-function
     """
@@ -140,7 +116,7 @@ def test_a_markerless_classic_dispatch_never_bypasses_the_classic_sections() -> 
     )
 
     assert decision.action == "block", (
-        "a markerless classic dispatch lacking the nine mandatory sections must "
-        f"still be blocked -- the widening is refactor/find-only; got "
+        "a DES dispatch without an explicit mode must be blocked; got "
         f"{decision.action!r} ({decision.reason!r})"
     )
+    assert "DISPATCH_MODE_UNRESOLVED" in (decision.reason or "")

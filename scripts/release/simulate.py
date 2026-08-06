@@ -17,6 +17,7 @@ from enum import Enum
 from pathlib import Path
 
 from scripts.build_plugin import BuildConfig, build
+from scripts.shared.hook_definitions import HOOK_EVENT_TYPES
 
 
 MINIMUM_WHEEL_SIZE_BYTES = 10_240
@@ -281,15 +282,16 @@ def simulate_tag_check(tag_name: str) -> StepResult:
 # Plugin build simulation (step 02-02)
 # ---------------------------------------------------------------------------
 
-EXPECTED_HOOK_EVENT_TYPES = frozenset(
-    ["PreToolUse", "PostToolUse", "SubagentStop", "SessionStart", "SubagentStart"]
-)
+# The simulated bundle must expose the active hook registry, not a historical
+# lifecycle shape.  Importing the registry keeps release validation aligned
+# with the generated hooks.json without recreating a second event catalogue.
+EXPECTED_HOOK_EVENT_TYPES = HOOK_EVENT_TYPES
 
 MINIMUM_AGENT_COUNT = 20
 
 
 def _validate_hooks_json(plugin_dir: Path) -> tuple[bool, str]:
-    """Validate hooks.json has all 5 expected event types.
+    """Validate hooks.json has every active event type.
 
     Returns (ok, message). Pure validation on filesystem content.
     """
@@ -401,7 +403,7 @@ def simulate_plugin(version: str) -> StepResult:
             status=Status.PASS,
             message=(
                 f"Plugin built and validated: "
-                f"5 event types, "
+                f"{len(EXPECTED_HOOK_EVENT_TYPES)} event types, "
                 f"{counts['agents']} agents, "
                 f"{counts['skills']} skills"
             ),

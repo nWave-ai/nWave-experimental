@@ -35,7 +35,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from des.domain.earned_verdict import TestRun, test_run_from_envelope
 from des.domain.refactor.entry_gate import (
     ENTRY_GATE_VERDICT_MISSING,
     EntryGateVerdict,
@@ -59,6 +58,7 @@ from des.domain.refactor.prompt_template import (
     load_prompt_template,
     render_prompt,
 )
+from des.domain.test_run import TestRun, test_run_from_envelope
 from des.ports.driven_ports.impacted_test_selector_port import (
     ImpactedTestSelection,
     SelectionOutcome,
@@ -127,10 +127,8 @@ def _is_harness_noise_path(path: str) -> bool:
     ``changed_paths`` carries a GENUINE change to narrow against for
     REPORTING; never passed to the real selector or used to compute the
     actual pytest target (see ``_selection_for_reporting``)."""
-    return (
-        path == _PROMPT_FILENAME
-        or path == _VENV_DIR_NAME
-        or path.startswith(f"{_VENV_DIR_NAME}/")
+    return path in (_PROMPT_FILENAME, _VENV_DIR_NAME) or path.startswith(
+        f"{_VENV_DIR_NAME}/"
     )
 
 
@@ -141,9 +139,9 @@ def _is_harness_noise_path(path: str) -> bool:
 #: process was ever spawned for it, so its passed/failed/exit_code carry no
 #: information about this worktree. Safe because
 #: ``classify_green_to_green`` decides SAFE/UNSAFE from the AFTER run's
-#: failure count alone and never reads ``before``.
+#: observation status plus failure count and never reads ``before``.
 _UNOBSERVED_PLACEHOLDER_RUN = TestRun(
-    runner="unobserved-placeholder", passed=0, failed=0, exit_code=0
+    runner="unobserved-placeholder", passed=0, failed=0, exit_code=0, observed=False
 )
 
 #: The reported ``test_target_scope`` for the two non-``NARROWED`` outcomes
@@ -893,10 +891,10 @@ class RefactorDrainService:
         ships to, and genericity is a standing mandate here) -- it is to
         never spawn pytest for this leg at all. ``classify_green_to_green``
         (``des.domain.refactor.green_to_green``) computes its SAFE/UNSAFE
-        verdict from the AFTER run's failure count ONLY -- its own docstring
-        says so explicitly -- so a baseline this cheap and this correct do
-        not conflict: the real baseline was never consulted by the verdict,
-        so there is nothing lost by not running it.
+        verdict from the AFTER run's observation status plus failure count --
+        its own docstring says so explicitly -- so a baseline this cheap and
+        this correct do not conflict: the real baseline was never consulted by
+        the verdict, so there is nothing lost by not running it.
 
         IMPORTANT for whoever reads ``DrainResult``/the ledger later: for
         this pre-agent call, the returned ``TestRun`` (``runner=

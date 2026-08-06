@@ -237,6 +237,18 @@ _SELF_EXEMPT_RE = re.compile(
 # `ProducerNames`).
 _DURABILITY_RE = re.compile(r"\bledger\b", re.IGNORECASE)
 
+# ``GateVerdict`` and similar names can satisfy the event-name suffix grammar
+# while the prose is plainly referring to a Python type, not claiming that a
+# ledger/event writer emits a record with that name.  Keep this narrow and
+# syntactic: it exempts only an immediate type annotation/reference, never a
+# phrase such as "the ledger records `GateVerdict`".
+_TYPE_REFERENCE_RE = re.compile(
+    r"\b(?:typed|type|enum|class|dataclass)\s+`([A-Z][a-zA-Z]*(?:"
+    + _EVENT_SUFFIX
+    + r"))`",
+    re.IGNORECASE,
+)
+
 _WINDOW_RADIUS_CHARS = 160
 
 
@@ -287,6 +299,9 @@ def extract_claims(markdown_source: str, file_label: str) -> tuple[Claim, ...]:
     claims: list[Claim] = []
     for lineno, line in enumerate(markdown_source.splitlines(), start=1):
         for match in _CLAIM_NAME_RE.finditer(line):
+            type_reference = _TYPE_REFERENCE_RE.search(line)
+            if type_reference and type_reference.group(1) == match.group(1):
+                continue
             start = max(0, match.start() - _WINDOW_RADIUS_CHARS)
             end = min(len(line), match.end() + _WINDOW_RADIUS_CHARS)
             local = line[start:end]

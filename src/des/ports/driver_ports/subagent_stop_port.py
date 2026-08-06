@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
 
 
@@ -18,28 +19,28 @@ if TYPE_CHECKING:
     from des.ports.driver_ports.pre_tool_use_port import HookDecision
 
 
+class SubagentStopReturnKind(Enum):
+    """The only supported SubagentStop return shapes."""
+
+    ATDD_PURE = "atdd_pure"
+    WAVE_ONLY = "wave_only"
+
+
 @dataclass(frozen=True)
 class SubagentStopContext:
     """Input context for subagent-stop validation.
 
     Attributes:
-        execution_log_path: Absolute path to execution-log.json. Empty under
-            ``mode == "atdd_pure"`` — atdd_pure produces no execution-log.
         project_id: Project identifier
-        step_id: Step identifier. Empty under ``mode == "atdd_pure"`` — an
-            atdd_pure dispatch is identified by ``slice_id``, not a step id.
-        stop_hook_active: True if SubagentStop already fired once (second attempt).
-            When True and validation fails, service allows to prevent infinite loops.
-        cwd: Working directory for git commit verification. Empty string skips
-            git verification (backward compatibility).
-        mode: Dispatch workflow mode (``"atdd_pure"`` only). The
-            mode discriminant for T-C: under ``"atdd_pure"`` the SubagentStop
-            validator takes a path that does NOT read an execution-log.json
-            (atdd_pure is roadmap-free / execution-log-free by design).
+        return_kind: Typed discriminator for the closed return set:
+            ``ATDD_PURE`` or ``WAVE_ONLY``.
+        cwd: Working directory used by the applicable return path.
+        turns_used: Optional observed turn count for an atdd_pure return.
+        tokens_used: Optional observed token count for an atdd_pure return.
         slice_id: Carpaccio slice identifier (e.g. ``"slice-02"``). Populated
-            for atdd_pure dispatches; None for classic.
+            for an ``ATDD_PURE`` return.
         atdd_pure_phase: The ATDD-pure phase value (A_GREEN..D_REFACTOR_COMMIT).
-            Populated for atdd_pure dispatches; None for classic.
+            Populated for an ``ATDD_PURE`` return.
         subagent_type: The returning agent's subagent_type (e.g. "nw-product-owner").
             The owner identity the cross-wave floor auto-close gates on: the
             wave-active floor closes on a terminal gate-OUT PASS ONLY when this
@@ -47,19 +48,13 @@ class SubagentStopContext:
             == active wave). Empty when the return is not a wave-owner dispatch.
     """
 
-    execution_log_path: str
     project_id: str
-    step_id: str
-    stop_hook_active: bool = False
+    return_kind: SubagentStopReturnKind
     cwd: str = ""
-    task_start_time: str = ""
     turns_used: int | None = None
     tokens_used: int | None = None
-    # --- atdd_pure dispatch discriminant (T-C / F-DES-ATDD-PURE-DISPATCH-LIFECYCLE)
-    mode: str = "atdd_pure"
     slice_id: str | None = None
     atdd_pure_phase: str | None = None
-    # --- cross-wave floor auto-close owner identity (fix-floor-auto-close-cross-wave)
     subagent_type: str = ""
 
 

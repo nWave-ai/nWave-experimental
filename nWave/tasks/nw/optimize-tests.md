@@ -74,7 +74,7 @@ Trim inventories the unit suite, runs md5sum cross-check, scans for anti-pattern
 ```
 /nw-optimize-tests lean-wave-documentation
 ```
-Trim resolves to `tests/<feature-id>/` paths from execution-log.json if available, otherwise scopes to test files referencing the feature-id. Plan focuses on intra-feature duplication.
+Trim resolves the test scope from the feature delta's DISTILL test placement and Slice Plan; if unavailable, it uses test files referencing the feature-id plus relevant git history. Plan focuses on intra-feature duplication.
 
 ### Example 3: Single fat file
 ```

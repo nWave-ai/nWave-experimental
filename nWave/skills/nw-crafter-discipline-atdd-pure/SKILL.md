@@ -24,7 +24,9 @@ Reference: plan v3 `docs/proposals/atdd-pure-workflow-restructure-v3-2026-05-19.
 ### Inputs
 - `.feature` files + step definitions (DISTILL output, immutable to crafter)
 - Optional paired unit tests (PBT + state-delta) per `nw-test-design-mandates`
-- `files_to_modify` roadmap entry (architect-grounded per `feedback_architect_must_filesystem_ground_roadmap_2026_05_18`)
+- Active Feature Delta `[REF] Slice Plan` row and its declared target paths
+  (the atdd_pure mutation authority; paths and named symbols are
+  filesystem-grounded before work begins)
 
 ### Discipline
 1. Read **all** ATs end-to-end before writing one line of production code. Hold the AT contract in working memory (~50KB sustainable per spike-2 honest assessment).
@@ -40,7 +42,12 @@ Reference: plan v3 `docs/proposals/atdd-pure-workflow-restructure-v3-2026-05-19.
 Spike-2 (codex 20 BDD, M cohort): **160 LOC of defensive code** cut in Phase B because no AT asserted them. Phase A had originally written them out of habit — Phase B coverage report exposed them as dead.
 
 ### Exit gate
-All ATs pass (full suite, not smoke). Output: production code + diff scope confined to `files_to_modify` entries that have been **filesystem-grounded** (paths exist, named symbols are grep-findable in the cited files).
+All ATs pass (full suite, not smoke). Output: production code + a diff whose
+production paths are confined to the active Feature Delta Slice Plan's declared
+target paths. Before mutation, ground those paths in the filesystem (paths
+exist; named symbols are grep-findable in the cited files). After GREEN,
+compare `git diff --name-only` production paths to that selected authority and
+refuse any undeclared target.
 
 ---
 
@@ -115,13 +122,7 @@ This invariant is owned by the crafter/workflow, NOT delegated to pre-commit hoo
 
 Applies to every phase: Phase A exit gate (all ATs pass), Phase B exit gate (suite stays green after cuts), Phase E exit gate (single suite run after the batch). The rule is the union — every modification terminates in a green suite.
 
-**The per-slice-commit terminating run IS `run-slice-ats` — the SPINE runs the entering slice's ATs, NOT a git hook** (f-spine-runs-tests-not-git-hooks DDD-1, the §2B ATs@slice allocation). The terminating command is NOT a crafter-picked subset (`pytest tests/des/` or similar) — that is the exact RCA "verification narrower than the contract" defect (`docs/analysis/rca-slice-shipped-broken-verification-narrower-than-contract-2026-05-20.md`) — but it is ALSO no longer the whole-tree run at EVERY commit (the ~40-min mis-allocation). The canonical per-slice-commit terminating command is:
-
-```
-des run-slice-ats --repo . --entering-slice <s>
-```
-
-`run-slice-ats` genuinely RUNS only the entering slice's acceptance tests (scoped to its `@<s>` tag, slice-proportional, fast) and vetoes (FAIL) on a RED slice AT — the spine, not a git hook, is the commit-time test authority. The WHOLE-tree `pytest -m "unit or integration or acceptance"` run stays where the §2B allocation puts it: ONCE at **feature-end**, inside `feature_end_cycle_service._run_full_suite_leg` (the `des run-contract-gate --repo .` whole-tree run, emitting `FullSuiteLegRan`), NOT at every slice commit. The `G_COMMIT` commit MUST then carry a `Gate-Scope:` trailer holding the **committed-scope** digest of the commit's OWN tree. This is not skill text alone: the `G_COMMIT` DES `exit_gate` (E2) re-derives a fresh **committed-scope** digest via `run_contract_gate --verify-gate-scope --commit HEAD` (`git ls-tree` of HEAD's committed tree) and refuses the commit if the `Gate-Scope:` trailer is absent or mismatching — the skill prose and the mechanical exit gate are enforcement-paired, so a narrower terminating run is mechanically caught, not merely discouraged.
+**The per-slice terminating run is the project-declared focused test command, not a hook.** Do not invent a language-specific subset (`pytest tests/des/` or similar): use a command already declared by the project. If none is declared, report that limitation rather than guessing. The whole-tree suite belongs at feature-end, not every slice commit.
 
 ### Staging hygiene and commit subject (gate-affordance audit A1/A2, 2026-07-28)
 
@@ -230,7 +231,7 @@ If a prohibition appears blocking: stop, surface to operator with concrete diagn
 
 | Phase | Working memory load | Sustainable budget |
 |---|---|---|
-| Phase A | Full AT contract + paired unit test pinning + roadmap `files_to_modify` | ~50KB (spike-2 honest assessment) |
+| Phase A | Full AT contract + paired unit test pinning + Feature Delta Slice Plan declared target paths | ~50KB (spike-2 honest assessment) |
 | Phase B | Coverage report + production diff from Phase A | ~20KB (mechanical, list-driven) |
 | Phase E | Full production tree + test tree + L1-L6 transformation plan | ~80KB (batch refactor needs full context) |
 
@@ -246,7 +247,7 @@ Run mechanically before emitting any commit:
 2. ☐ Coverage ≥90% line + branch (or documented misses with justification).
 3. ☐ No surviving `try/except` without paired AT-justified anchor.
 4. ☐ No surviving defensive branch without paired AT.
-5. ☐ `git diff --name-only` confirms only files in roadmap `files_to_modify` were touched.
+5. ☐ Select the active Feature Delta Slice Plan declared target paths before mutation; `git diff --name-only` confirms every production path is declared there and refuses any undeclared target. If ATs changed RED→GREEN, at least one declared production target is present (otherwise Fixture Theater).
 6. ☐ Conventional commit message with `Step-Id:` trailer (per ADR-025 §3 commit gate).
 7. ☐ No prohibited bypass flags used — grep diff for `--no-verify` PLUS the TARGET language's own lint/type-check/test-skip/PBT-suppression markers from the per-language table above (Python's `# noqa`/`# type: ignore`/`@pytest.mark.skip`/`suppress_health_check` are ONE row of that table, not the universal set).
 8. ☐ Reviewer verdict-hash trailer present and valid (per plan v3 §8 keyless content-seal spec).
@@ -263,4 +264,4 @@ Any unchecked box blocks COMMIT. Surface diagnosis to operator; do not bypass.
 - **nw-at-completeness-check** — Phase C reviewer taxonomy (7-category C1-C7, plan v3 §6)
 - **nw-refactor** — L1-L6 transformation catalogue (unconditional batch-then-verify default per `feedback_refactor_batch_when_test_suite_slow_2026_05_19`)
 - **nw-code-analysis-port** — CodeFactPort resolution order (Tsunami -> AST -> grep, degrade-LOUD); powers Phase A step 3.5 reuse-before-create
-- **Memory anchors**: `feedback_refactor_batch_when_test_suite_slow_2026_05_19`, `feedback_load_skills_before_touching_code_2026_05_15`, `feedback_never_revert_user_work_unauthorized`, `feedback_atdd_ssot_via_types_services_dsl_2026_05_18`, `feedback_architect_must_filesystem_ground_roadmap_2026_05_18`
+- **Memory anchors**: `feedback_refactor_batch_when_test_suite_slow_2026_05_19`, `feedback_load_skills_before_touching_code_2026_05_15`, `feedback_never_revert_user_work_unauthorized`, `feedback_atdd_ssot_via_types_services_dsl_2026_05_18`

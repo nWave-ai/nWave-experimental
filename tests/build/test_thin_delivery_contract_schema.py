@@ -1,0 +1,395 @@
+"""Executable boundary for the host-neutral thin DeliveryContract schema.
+
+The schema proves the shape of declared authority only.  Admission remains
+responsible for comparing those declarations with the host diff, commands, and
+evidence; JSON Schema does not establish that cross-document conformance.
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+import pytest
+from jsonschema import Draft202012Validator, ValidationError
+
+
+SCHEMA_PATH = Path("nWave/schemas/thin-delivery-contract.schema.json")
+TARGET_PATH = "nWave/schemas/thin-delivery-contract.schema.json"
+
+
+def _target_plan() -> dict[str, Any]:
+    return {
+        "candidate": "nWave/schemas/component-manifest.schema.json",
+        "overlap": "Draft 2020-12 identity and closed-object vocabulary.",
+        "decision": "CREATE_NEW",
+        "justification": "The component manifest is feature-component-specific.",
+        "declared-imports": [],
+        "contract-shape": "bounded-change",
+        "boundary": {
+            "failure-behavior": "Reject malformed declared authority before routing.",
+            "substrate-lie": "Schema validity does not prove a host route exists.",
+            "substrate-probe": "Validate the declared contract with Draft 2020-12.",
+            "double-blind-spot": "A schema cannot observe the repository diff.",
+        },
+    }
+
+
+def _contract(paradigm: str) -> dict[str, Any]:
+    return {
+        "schema-version": "1.0",
+        "delivery-id": "thin-delivery-contract-schema",
+        "repository": {
+            "worktree": ".",
+            "base-revision": f"git-sha1:{'a' * 40}",
+        },
+        "outcome": "Validate one immutable delivery contract before direct role routing.",
+        "targets": {TARGET_PATH: _target_plan()},
+        "paradigm": paradigm,
+        "acceptance-tests": {
+            "locator": "tests/build/test_thin_delivery_contract_schema.py",
+            "digest": f"sha256:{'b' * 64}",
+        },
+        "verification-scope": {
+            "commands": [
+                [
+                    "uv",
+                    "run",
+                    "pytest",
+                    "tests/build/test_thin_delivery_contract_schema.py",
+                    "-q",
+                ]
+            ]
+        },
+        "applicability": {
+            "independent-review": True,
+            "examine": False,
+        },
+        "budget": {
+            "token-limit": 12000,
+            "wall-clock-minutes": 30,
+        },
+    }
+
+
+def _schema() -> dict[str, Any]:
+    return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def _validator() -> Draft202012Validator:
+    return Draft202012Validator(_schema())
+
+
+def _errors(contract: dict[str, Any]) -> list[ValidationError]:
+    return list(_validator().iter_errors(contract))
+
+
+def _resolve_local_ref(schema: dict[str, Any], node: dict[str, Any]) -> dict[str, Any]:
+    if "$ref" not in node:
+        return node
+    assert node["$ref"].startswith("#/$defs/")
+    return schema["$defs"][node["$ref"].removeprefix("#/$defs/")]
+
+
+def test_thin_delivery_contract_schema_identity_and_draft_are_valid() -> None:
+    schema = _schema()
+
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert (
+        schema["$id"] == "https://nwave.ai/schemas/thin-delivery-contract.schema.json"
+    )
+    Draft202012Validator.check_schema(schema)
+
+
+@pytest.mark.parametrize("paradigm", ["object_oriented", "functional"])
+def test_complete_thin_delivery_contract_validates(paradigm: str) -> None:
+    assert _errors(_contract(paradigm)) == []
+
+
+Mutation = Callable[[dict[str, Any]], None]
+
+
+def _remove_paradigm(contract: dict[str, Any]) -> None:
+    del contract["paradigm"]
+
+
+def _remove_evidence_locator(contract: dict[str, Any]) -> None:
+    del contract["acceptance-tests"]["locator"]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_path"),
+    [
+        (_remove_paradigm, ()),
+        (_remove_evidence_locator, ("acceptance-tests",)),
+    ],
+)
+def test_contract_rejects_missing_required_authority(
+    mutate: Mutation,
+    expected_path: tuple[str, ...],
+) -> None:
+    contract = copy.deepcopy(_contract("object_oriented"))
+    mutate(contract)
+
+    assert any(
+        tuple(error.absolute_path) == expected_path and error.validator == "required"
+        for error in _errors(contract)
+    )
+
+
+@pytest.mark.parametrize(
+    "invalid_target",
+    [
+        "/tmp/absolute-target.py",
+        "../traversal.py",
+        "src/des/../outside-target.py",
+        "src//empty-segment.py",
+        r"src\backslash-escape.py",
+        "tests/build/test_*.py",
+    ],
+)
+def test_contract_rejects_non_relative_or_pattern_target_keys(
+    invalid_target: str,
+) -> None:
+    contract = _contract("object_oriented")
+    contract["targets"] = {invalid_target: _target_plan()}
+
+    assert any(
+        tuple(error.absolute_path) == ("targets",) and error.validator == "pattern"
+        for error in _errors(contract)
+    )
+
+
+@pytest.mark.parametrize(
+    "repository_relative_path",
+    [
+        "__main__.py",
+        "_catalog.yaml",
+        ".github/workflows/ci.yml",
+        "crates/engine/src/main.rs",
+    ],
+)
+def test_contract_accepts_safe_language_agnostic_targets_and_candidates(
+    repository_relative_path: str,
+) -> None:
+    contract = _contract("object_oriented")
+    target_plan = _target_plan()
+    target_plan["candidate"] = repository_relative_path
+    contract["targets"] = {repository_relative_path: target_plan}
+
+    assert _errors(contract) == [], (
+        "WHAT: a safe repository-relative path was rejected. "
+        "WHY: repositoryRelativePath is coupled to Python-like segments. "
+        "HOW: accept safe dot/underscore and language-neutral segments while retaining "
+        "absolute, traversal, empty-segment, and backslash rejection."
+    )
+
+
+@pytest.mark.parametrize("declared_import", ["@scope/pkg", "crate::module", "My.App"])
+def test_contract_accepts_language_agnostic_declared_import_references(
+    declared_import: str,
+) -> None:
+    contract = _contract("functional")
+    contract["targets"][TARGET_PATH]["declared-imports"] = [declared_import]
+
+    assert _errors(contract) == [], (
+        "WHAT: a valid non-Python declared import was rejected. "
+        "WHY: declared-imports is constrained to Python module notation. "
+        "HOW: accept language-neutral references without weakening path validation."
+    )
+
+
+@pytest.mark.parametrize(
+    "declared_import",
+    [
+        "/absolute/import",
+        "../traversal",
+        "package..empty_segment",
+        r"package\\backslash_escape",
+        "package.*",
+    ],
+)
+def test_contract_rejects_unsafe_declared_import_references(
+    declared_import: str,
+) -> None:
+    contract = _contract("functional")
+    contract["targets"][TARGET_PATH]["declared-imports"] = [declared_import]
+
+    assert any(
+        tuple(error.absolute_path) == ("targets", TARGET_PATH, "declared-imports", 0)
+        and error.validator == "pattern"
+        for error in _errors(contract)
+    ), (
+        "WHAT: an unsafe declared import reference was accepted. "
+        "WHY: imports must not escape or expand outside their declared reference. "
+        "HOW: reject absolute, traversal, empty-segment, backslash, and glob references."
+    )
+
+
+def _remove_target_overlap(contract: dict[str, Any]) -> None:
+    del contract["targets"][TARGET_PATH]["overlap"]
+
+
+def _invalidate_target_decision(contract: dict[str, Any]) -> None:
+    contract["targets"][TARGET_PATH]["decision"] = "create-new"
+
+
+def _remove_target_contract_shape(contract: dict[str, Any]) -> None:
+    del contract["targets"][TARGET_PATH]["contract-shape"]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_path", "expected_validator"),
+    [
+        (_remove_target_overlap, ("targets", TARGET_PATH), "required"),
+        (_invalidate_target_decision, ("targets", TARGET_PATH, "decision"), "enum"),
+        (_remove_target_contract_shape, ("targets", TARGET_PATH), "required"),
+    ],
+)
+def test_contract_rejects_incomplete_or_invalid_target_plan(
+    mutate: Mutation,
+    expected_path: tuple[str, ...],
+    expected_validator: str,
+) -> None:
+    contract = copy.deepcopy(_contract("functional"))
+    mutate(contract)
+
+    assert any(
+        tuple(error.absolute_path) == expected_path
+        and error.validator == expected_validator
+        for error in _errors(contract)
+    )
+
+
+@pytest.mark.parametrize(
+    ("legacy_property", "container"),
+    [
+        ("allowed-paths", None),
+        ("reuse-decisions", None),
+        ("architecture-boundaries", None),
+        ("contract-shapes", None),
+        ("substrate-lies", None),
+        ("targets", "verification-scope"),
+    ],
+)
+def test_contract_rejects_parallel_target_authority(
+    legacy_property: str,
+    container: str | None,
+) -> None:
+    contract = _contract("object_oriented")
+    target = contract if container is None else contract[container]
+    target[legacy_property] = []
+    expected_path = () if container is None else (container,)
+
+    assert any(
+        tuple(error.absolute_path) == expected_path
+        and error.validator == "additionalProperties"
+        for error in _errors(contract)
+    )
+
+
+@pytest.mark.parametrize(
+    "shell_string_command",
+    [
+        "uv run pytest tests/build/test_thin_delivery_contract_schema.py -q",
+        "pytest 'tests/path with spaces/test_x.py'",
+        "make test && make lint",
+    ],
+)
+def test_contract_rejects_a_shell_string_verification_command(
+    shell_string_command: str,
+) -> None:
+    contract = _contract("object_oriented")
+    contract["verification-scope"]["commands"] = [shell_string_command]
+
+    assert any(
+        tuple(error.absolute_path) == ("verification-scope", "commands", 0)
+        and error.validator == "type"
+        for error in _errors(contract)
+    ), (
+        "WHAT: a verification command was accepted as a single shell string. "
+        "WHY: a string leaves word-splitting, quoting, and metacharacter handling "
+        "to whoever executes it, so the same declaration means different things. "
+        "HOW: declare each command as an argv vector, e.g. "
+        '["uv", "run", "pytest", "tests/path with spaces/test_x.py", "-q"].'
+    )
+
+
+@pytest.mark.parametrize(
+    ("commands", "expected_path", "expected_validator"),
+    [
+        ([[]], ("verification-scope", "commands", 0), "minItems"),
+        ([["uv", ""]], ("verification-scope", "commands", 0, 1), "minLength"),
+        ([], ("verification-scope", "commands"), "minItems"),
+    ],
+)
+def test_contract_rejects_empty_verification_argv(
+    commands: list[list[str]],
+    expected_path: tuple[str | int, ...],
+    expected_validator: str,
+) -> None:
+    contract = _contract("functional")
+    contract["verification-scope"]["commands"] = commands
+
+    assert any(
+        tuple(error.absolute_path) == expected_path
+        and error.validator == expected_validator
+        for error in _errors(contract)
+    ), (
+        "WHAT: an empty command vector or an empty token was accepted. "
+        "WHY: neither names an executable a host can run, so verification would "
+        "report success without executing anything. "
+        "HOW: every command needs at least one token and every token at least one "
+        "character."
+    )
+
+
+@pytest.mark.parametrize(
+    "literal_token",
+    [
+        "tests/path with spaces/test_x.py",
+        "-k=name and other",
+        "$HOME/not-expanded",
+        "a;b|c>d",
+        "*.py",
+    ],
+)
+def test_contract_accepts_a_literal_token_without_splitting_it(
+    literal_token: str,
+) -> None:
+    """A token stays one token.
+
+    The schema proves the DECLARATION is unambiguous: a path with spaces or a
+    metacharacter occupies exactly one argv slot and cannot be re-read as shell
+    syntax.  It does not prove the executor passes it through unchanged -- that
+    is an execution property and belongs to whoever runs the vector.
+    """
+    contract = _contract("object_oriented")
+    contract["verification-scope"]["commands"] = [
+        ["uv", "run", "pytest", literal_token]
+    ]
+
+    assert _errors(contract) == []
+    assert contract["verification-scope"]["commands"][0][3] == literal_token
+
+
+def test_targets_are_path_keyed_without_a_second_target_designation() -> None:
+    schema = _schema()
+    targets = _resolve_local_ref(schema, schema["properties"]["targets"])
+    target_plan = _resolve_local_ref(schema, targets["additionalProperties"])
+
+    assert "propertyNames" in targets
+    assert "target" not in target_plan["properties"]
+    assert "target" not in target_plan["required"]
+
+
+def test_schema_acceptance_does_not_claim_host_conformance() -> None:
+    contract = _contract("object_oriented")
+    contract["targets"] = {"src/declared-but-unobserved.py": _target_plan()}
+    contract["acceptance-tests"]["locator"] = "tests/declared-but-unobserved.py"
+
+    # Admission, not JSON Schema, must compare these declarations with the host.
+    assert _errors(contract) == []

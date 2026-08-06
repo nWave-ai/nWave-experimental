@@ -152,10 +152,6 @@ def test_cascade_always_produces_valid_rigor_types(
         assert isinstance(config.rigor_reviewer_model, str)
         assert len(config.rigor_reviewer_model) > 0
 
-        assert isinstance(config.rigor_tdd_phases, tuple)
-        assert len(config.rigor_tdd_phases) > 0
-        assert all(isinstance(phase, str) for phase in config.rigor_tdd_phases)
-
         assert isinstance(config.rigor_review_enabled, bool)
         assert isinstance(config.rigor_double_review, bool)
         assert isinstance(config.rigor_refactor_pass, bool)
@@ -195,7 +191,6 @@ def test_cascade_resolution_is_idempotent(
         assert config_a.rigor_profile == config_b.rigor_profile
         assert config_a.rigor_agent_model == config_b.rigor_agent_model
         assert config_a.rigor_reviewer_model == config_b.rigor_reviewer_model
-        assert config_a.rigor_tdd_phases == config_b.rigor_tdd_phases
         assert config_a.rigor_review_enabled == config_b.rigor_review_enabled
         assert config_a.rigor_double_review == config_b.rigor_double_review
         assert config_a.rigor_refactor_pass == config_b.rigor_refactor_pass

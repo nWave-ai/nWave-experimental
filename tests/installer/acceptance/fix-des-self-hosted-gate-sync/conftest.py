@@ -69,7 +69,7 @@ _FRESHNESS_PRODUCTION_FILES = (
 
 # Package-marker `__init__.py` files needed to make the synthetic des/ tree
 # a valid Python package hierarchy. Each is intentionally empty — the real
-# `des/__init__.py` pulls in DESOrchestrator + every adapter, which would
+# A root-package import can pull in lazy compatibility exports, which would
 # defeat the slice-01 contract of "the gate fires before anything heavy
 # loads".
 _PACKAGE_MARKERS = (

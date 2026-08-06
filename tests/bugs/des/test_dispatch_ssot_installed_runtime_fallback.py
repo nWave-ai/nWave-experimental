@@ -30,9 +30,8 @@ target; flag back to DISTILL if a specific choice below is wrong):
     the installed-runtime assets dir > the existing LOUD refusal (HOW updated
     to name both cures).
   * The installed-runtime assets dir is a NEW module-level constant,
-    `dispatch._INSTALLED_DISPATCH_ASSETS_DIR`, computed the SAME way
-    `session_start_handler.py`'s `_ORCHESTRATOR_AFFORDANCE_ASSETS_DIR` computes
-    its sibling-of-`lib/python` asset dir (`Path(__file__).resolve()
+    `dispatch._INSTALLED_DISPATCH_ASSETS_DIR`, computed from its
+    sibling-of-`lib/python` asset dir (`Path(__file__).resolve()
     .parents[N] / "nWave" / "dispatch"`). For `src/des/cli/dispatch.py`, N=3
     resolves to the checkout root in a DEV checkout (`src/des/cli/dispatch.py`
     -> parents[3] == repo root, verified empirically) AND to the installed

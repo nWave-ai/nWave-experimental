@@ -1,8 +1,0 @@
-{
-  "mutmut_ran": true,
-  "positive_control": {
-    "seeded": true,
-    "killed": true
-  },
-  "mutants": {}
-}

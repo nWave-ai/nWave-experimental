@@ -46,9 +46,8 @@ from scripts.build_dist import UTILITY_SCRIPTS  # noqa: E402
 # host-neutral targets alike) propagates to `~/.claude/scripts/` or
 # `~/.nwave/nWave/hooks/`; the wheel force-include map is derived from it
 # below so a wheel build cannot silently omit one of them (RCA:
-# fix-cross-host-sessionstart-packaging-path -- only
-# `orchestrator_affordance_refresh.py` was ever hand-listed here, so the
-# wheel shipped 1/8 DES_HOOKS scripts; once the install-time source-dir
+# fix-cross-host-sessionstart-packaging-path -- a prior hook-specific list
+# drifted from the installer source directory; once the install-time source-dir
 # resolution was fixed to actually find the nested wheel directory,
 # `validate_prerequisites` started (correctly) failing the install outright
 # on the other 7 missing scripts). `scripts/hooks/` also carries this repo's
@@ -251,6 +250,7 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
         '"scripts/shared" = "scripts/shared"\n'
         f"{utility_scripts_block}"
         '"lib/python/des" = "des"\n'
+        '"src/nwave_capture" = "nwave_capture"\n'
         '"lib/nwave-runtime/des" = "nWave/lib/python/des"\n'
     )
     new_text, count = wheel_section.subn(replacement, text_clean)

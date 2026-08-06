@@ -2255,80 +2255,6 @@ def test_standalone_copilot_hook_executes_from_its_installed_runtime(
 
 
 @pytest.mark.e2e_smoke
-def test_standalone_opencode_hook_executes_from_its_installed_runtime(
-    tmp_path: Path,
-    tmp_path_factory: Any,
-) -> None:
-    """C6: OpenCode's rendered Bun hook imports and runs DES after installation."""
-    _require_driving_port()
-    candidate = _assembled_candidate(tmp_path_factory)
-    consumer = tmp_path / "consumer"
-    consumer.mkdir()
-    installed = _clean_install_probe(
-        consumer,
-        wheel=candidate.wheel,
-        requirements_lock=candidate.wheel.parent
-        / "offline-wheelhouse"
-        / "requirements.lock",
-    )
-    venv = Path(installed["venv"])
-    binary_dir = venv / ("Scripts" if os.name == "nt" else "bin")
-    console = binary_dir / ("nwave-ai.exe" if os.name == "nt" else "nwave-ai")
-    opencode_home = tmp_path / "opencode-home"
-    environment = os.environ.copy()
-    environment.pop("PYTHONPATH", None)
-    environment.pop("PYTHONHOME", None)
-    environment.update(
-        {
-            "HOME": str(installed["fake_home"]),
-            "USERPROFILE": str(installed["fake_home"]),
-            "PATH": f"{binary_dir}{os.pathsep}{environment.get('PATH', '')}",
-            "PYTHONNOUSERSITE": "1",
-            "PIP_CONFIG_FILE": os.devnull,
-            "PIP_DISABLE_PIP_VERSION_CHECK": "1",
-            "PIP_NO_INDEX": "1",
-            "OPENCODE_CONFIG_DIR": str(opencode_home),
-        }
-    )
-    provisioned = _run(
-        [str(console), "install", "--yes", "--platform", "opencode"],
-        cwd=consumer,
-        env=environment,
-    )
-    _require(
-        provisioned.returncode == 0,
-        what=f"standalone OpenCode install failed: {provisioned.stderr or provisioned.stdout}",
-    )
-    shim = opencode_home / "plugins" / "nwave-des.ts"
-    rendered = shim.read_text(encoding="utf-8")
-    runtime_match = re.search(r'PYTHONPATH: "([^"]+)"', rendered)
-    _require(
-        runtime_match is not None,
-        what="OpenCode shim has no literal PYTHONPATH for its DES subprocess",
-    )
-    _require_hook_runtime(Path(runtime_match.group(1)), host="OpenCode")
-    harness = consumer / "run-nwave-opencode-hook.ts"
-    harness.write_text(
-        "import plugin from " + json.dumps(shim.as_posix()) + ";\n"
-        "const hooks = plugin({} as never);\n"
-        "await hooks['tool.execute.before'](\n"
-        "  { tool: 'write', args: {} },\n"
-        "  { args: { file_path: 'probe.txt', content: 'probe' } },\n"
-        ");\n"
-        "console.log('nwave-opencode-hook-executed');\n",
-        encoding="utf-8",
-    )
-    fired = _run(["bun", "run", str(harness)], cwd=consumer, env=environment)
-    _require(
-        fired.returncode == 0 and "nwave-opencode-hook-executed" in fired.stdout,
-        what=(
-            "installed OpenCode hook did not execute through Bun: "
-            f"{fired.stderr or fired.stdout}"
-        ),
-    )
-
-
-@pytest.mark.e2e_smoke
 def test_all_target_install_keeps_codex_and_copilot_hooks_on_one_runtime(
     tmp_path: Path,
     tmp_path_factory: Any,
@@ -2452,57 +2378,10 @@ def test_all_target_install_keeps_codex_and_copilot_hooks_on_one_runtime(
         ),
         what="installed Codex launcher did not persist paired hook audit evidence",
     )
-    # Codex parity also owes the operator its standing-loop / throughput
-    # affordance at SessionStart.  Execute the exact public-wheel command: a
-    # JSON key in hooks.json is not proof that the resolver shipped, resolves
-    # its host-neutral data, and keeps the hook protocol clean.
-    session_launcher_path = str(codex_manifest["session_start_launcher_file"])
-    session_entries = [
-        hook
-        for group in codex_hooks.get("hooks", {}).get("SessionStart", [])
-        for hook in group.get("hooks", [])
-        if session_launcher_path in hook.get("command", "")
-    ]
-    _require(
-        len(session_entries) == 1,
-        what=(
-            "Codex public wheel must install exactly one standing-loop "
-            f"SessionStart launcher, found {len(session_entries)}"
-        ),
-    )
-    resolver_path = Path(codex_manifest["resolver_script_file"])
-    _require(
-        resolver_path.is_file() and not resolver_path.is_symlink(),
-        what=(
-            "Codex SessionStart resolver is not a regular installed runtime "
-            f"artifact: {resolver_path}"
-        ),
-    )
-    fired_session_start = _run(
-        session_entries[0]["command"], cwd=consumer, env=environment, shell=True
-    )
-    _require(
-        fired_session_start.returncode == 0,
-        what=(
-            "installed Codex SessionStart launcher could not execute the "
-            f"packaged affordance resolver: {fired_session_start.stderr or fired_session_start.stdout}"
-        ),
-    )
-    try:
-        session_envelope = json.loads(fired_session_start.stdout)
-    except json.JSONDecodeError as exc:
-        raise AssertionError(
-            "installed Codex SessionStart launcher did not emit one parseable "
-            f"hook envelope: {fired_session_start.stdout!r}"
-        ) from exc
-    _require(
-        session_envelope.get("hookSpecificOutput", {}).get("hookEventName")
-        == "SessionStart"
-        and bool(
-            session_envelope.get("hookSpecificOutput", {}).get("additionalContext")
-        ),
-        what="Codex SessionStart did not inject the installed standing-loop affordance",
-    )
+    # The SessionStart standing-loop launcher assertions that stood here went with the
+    # session ceremony (22ea19309): the Codex manifest no longer carries
+    # session_start_launcher_file, and tests/installer/unit/plugins/test_codex_des_plugin.py
+    # pins that absence.
     copilot_config = json.loads(
         (copilot_home / "hooks" / "nwave-des.json").read_text(encoding="utf-8")
     )

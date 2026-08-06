@@ -3,17 +3,10 @@
 Usage:
     des verify-integrity <project-dir> [--feature-id <id>]
 
-The DELIVER spine is atdd_pure: roadmap-free and execution-log-free. The
-verifier validates the AT-completion ledger for the feature under finalize.
-A missing ledger is an integrity violation (exit 1), never a crash; a leftover
-roadmap.json is a WARNING. The feature-end cycle records (batch refactor + deep
-review + the gate heartbeats) must all be present before a feature is closeable.
-
-(f-finalize-verify-single-spine slice-01: the classic `workflow.mode == classic`
-roadmap/execution-log finalize leg, the `resolve_workflow_mode` dispatch, and the
-`--roadmap-only` mode were removed -- `_verify_atdd_pure` is now the whole body of
-`main()`. The `des verify-integrity` subcommand and the 0/1/2 exit-code
-contract are preserved byte-for-byte.)
+The DELIVER spine is atdd_pure. The verifier validates the AT-completion ledger
+for the feature under finalize. A missing ledger is an integrity violation
+(exit 1), never a crash. Feature-end records (batch refactor, deep review, and
+gate heartbeats) must all be present before a feature is closeable.
 
 Exit codes:
     0 = feature verified (ledger present, feature-end cycle complete)
@@ -50,7 +43,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="des verify-integrity",
         description=(
             "Verify deliver integrity for a feature before finalize. The "
-            "atdd_pure spine is roadmap-free: the verifier validates the "
+            "verifier validates the "
             "AT-completion ledger and the feature-end cycle records."
         ),
         epilog=(
@@ -63,10 +56,7 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         nargs="?",
         default=None,
-        help=(
-            "Path to the feature project root holding the .nwave/ ledger "
-            "substrate (atdd_pure spine is roadmap-free)."
-        ),
+        help=("Path to the feature project root holding the .nwave/ ledger substrate."),
     )
     add_repo_root_argument(
         parser,
@@ -76,8 +66,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Path to the project root holding the .nwave/ ledger substrate. An "
             "alias for the positional project_dir used by the consolidated "
-            "feature-end-cycle driving surface (atdd_pure spine is roadmap-free, "
-            "so the project root IS the verification target)."
+            "feature-end-cycle driving surface; the project root is the "
+            "verification target."
         ),
     )
     parser.add_argument(
@@ -464,23 +454,16 @@ def _verify_common_audit_log(project_dir: Path, feature_id: str | None) -> int |
 
 def _verify_atdd_pure(
     project_dir: Path,
-    roadmap_path: Path,
     feature_id: str | None = None,
     trailer_port: CommitTrailerReadPort | None = None,
 ) -> int:
     """Verify deliver integrity for an atdd_pure feature (ADR-028 D4.2).
 
-    The atdd_pure spine is roadmap-free and execution-log-free. `--roadmap-only`
-    and the execution-log cross-reference are no-ops here -- this branch never
-    inspects either artifact for verdict purposes. The verifier validates the
-    AT-completion ledger instead:
+    The verifier validates the AT-completion ledger:
 
     - present ledger -> proceed to the feature-end cycle assertion;
     - absent ledger  -> structured integrity-violation diagnostic (exit 1),
       never a crash;
-    - a leftover roadmap.json is the WRONG artifact for this spine, reported as
-      a WARNING -- never an error.
-
     slice-05 revision (Finding 1): a present ledger is no longer sufficient.
     The feature-end cycle must have written an `EBatchRefactorCompleted` record
     AND a `FeatureEndReviewVerdict` record -- absent either, the cycle (batch
@@ -686,11 +669,10 @@ def _verify_atdd_pure(
         # distinct `could-not-attribute` state (GDP-8), named and surfaced,
         # never silently dropped and never silently blamed on this feature.
         #
-        # A feature with NO Slice-Plan (classic / no feature-delta) offers no
-        # positive membership signal to filter on -- `declared` is then empty
-        # and the legacy unfiltered behavior is preserved byte-for-byte (this
-        # fix narrows attribution only where a real ownership signal exists;
-        # it never widens a refusal that passed before).
+        # If the Slice Plan is unavailable, there is no positive membership
+        # signal to filter on; `declared` is then empty and the conservative
+        # unfiltered behavior remains. This narrows attribution only where a
+        # real ownership signal exists.
         if candidate_unreconciled:
             declared = frozenset(
                 _declared_slice_plan_slice_ids(project_dir, resolved_feature_id)
@@ -738,13 +720,6 @@ def _verify_atdd_pure(
         # check COMPOSE: a feature with every slice reconciled while the batch
         # refactor + deep review never ran is NOT closeable. Fall through to
         # the feature-end-cycle check below rather than `return 0` here.
-
-    if roadmap_path.exists():
-        print(
-            f"Warning: a leftover roadmap.json is present at {roadmap_path}. "
-            "The atdd_pure spine is roadmap-free (ADR-028 D1); this stale "
-            "artifact is ignored and may be removed."
-        )
 
     # Finding 1: assert the feature-end cycle ran. The targeted feature id
     # (NOT the alphabetically-first glob match) drives the M7 fail-closed read.
@@ -903,8 +878,8 @@ def _verify_atdd_pure(
         return 1
 
     # Both checks cleared. With `Slice-Id:` commits this is the composed
-    # reconciliation verdict (`FeatureReconciled`); otherwise the classic
-    # plain-text trace verdict, unchanged.
+    # reconciliation verdict (`FeatureReconciled`); otherwise emit the
+    # plain-text trace verdict.
     if shipped:
         # Report the feature's OWN reconciled slices, not the cross-feature
         # git-history `shipped` over-count (F-VERIFY-INTEGRITY-RECONCILED-SLICES-
@@ -915,8 +890,8 @@ def _verify_atdd_pure(
         # -> it removes THIS feature's own slices, an under-count). For a slice-
         # plan feature the accurate set is its DECLARED slice-ids -- all
         # reconciled here, since any undelivered slice would have FAILED the
-        # truncation check above. A classic feature with no Slice-Plan falls back
-        # to `shipped` (its historical behaviour, unchanged).
+        # truncation check above. If no Slice Plan can be read, fall back to
+        # the shipped trailer set.
         declared = _declared_slice_plan_slice_ids(project_dir, resolved_feature_id)
         reconciled_ids = sorted(declared) if declared else sorted(shipped)
         verdict: dict[str, object] = {
@@ -934,18 +909,15 @@ def _verify_atdd_pure(
     print(
         f"All slices have a complete AT-completion ledger trace: {at_ledger_path} "
         "and the feature-end cycle recorded its refactor + review verdict "
-        "(atdd_pure: roadmap.json and execution-log.json cross-reference skipped)."
+        "(atdd_pure ledger and feature-end evidence verified)."
     )
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    # f-finalize-verify-single-spine slice-01: the integrity gate carries
-    # exactly ONE spine. The classic `workflow.mode == classic` finalize leg,
-    # the `resolve_workflow_mode` dispatch, and `--roadmap-only` were removed;
-    # `_verify_atdd_pure` is the whole body. The `des verify-integrity` subcommand
-    # and the 0/1/2 exit-code contract are preserved byte-for-byte (exit 2 is the
-    # argparse usage error below; exit 4 is the LOUD cannot-evaluate verdict).
+    # The integrity gate carries exactly one spine: `_verify_atdd_pure` is the
+    # whole body. Exit 2 is the argparse usage error below; exit 4 is the LOUD
+    # cannot-evaluate verdict.
     raw_args = sys.argv[1:] if argv is None else list(argv)
     parser = _build_parser()
     args = parser.parse_args(raw_args)
@@ -955,14 +927,11 @@ def main(argv: list[str] | None = None) -> int:
     project_dir = args.project_dir if args.project_dir is not None else args.repo
     if project_dir is None:
         parser.error("a project_dir positional or --repo is required")
-    roadmap_path = project_dir / "roadmap.json"
-
     # Composition root: default-wire the real git adapter and inject it down the
     # call chain (main -> _verify_atdd_pure -> _shipped_slices). The gate logic
     # stays git-free; git lives only behind GitCommitTrailerReadAdapter.
     return _verify_atdd_pure(
         project_dir,
-        roadmap_path,
         args.feature_id,
         trailer_port=GitCommitTrailerReadAdapter(),
     )

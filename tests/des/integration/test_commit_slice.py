@@ -306,7 +306,7 @@ def test_commit_slice_no_verify_commit_skips_hook_entirely(
 # RCA: `des commit-slice` historically did NOT stamp the `Reviewed-by:` trailer
 # -- it was hand-typed into `--message` by the crafter. When the agent forgot,
 # the commit landed with NO Reviewed-by, no error, verified:true (e.g. #73
-# slice-04 1998295b7, earned-verdict slice-04 05dbeb51f -- both had an APPROVED
+# slice-04 1998295b7 and a second historical slice -- both had an APPROVED
 # ATReviewVerdict in the ledger, yet no trailer). slice-03 of #73 (22bf4264)
 # DID carry it, because that agent remembered. The trailer carries the
 # ATReviewVerdict ledger record's `record_hash`. These tests pin the mechanical

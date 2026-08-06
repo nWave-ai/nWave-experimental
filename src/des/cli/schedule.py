@@ -10,6 +10,7 @@ from des.adapters.driven.logging.at_completion_ledger import (
     AtCompletionLedger,
     LedgerIntegrityViolation,
 )
+from des.domain.repo_path_resolver import feature_delta_path
 from des.domain.scheduling_policy import (
     SCHEDULING_POLICY,
     build_schedule_plan,
@@ -100,7 +101,7 @@ def schedule(argv: list[str] | None = None) -> int:
     except SystemExit as exc:
         return int(exc.code or 2)
     repo_root = Path(args.repo_root)
-    path = repo_root / "docs" / "feature" / args.feature_id / "feature-delta.md"
+    path = feature_delta_path(repo_root, args.feature_id)
     ledger = AtCompletionLedger(project_root=repo_root)
     try:
         records = ledger.read_records(feature_id=args.feature_id)

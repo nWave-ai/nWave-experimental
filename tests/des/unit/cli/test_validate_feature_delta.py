@@ -9,8 +9,7 @@ from __future__ import annotations
 
 # des:allow-module-form: this suite drives the registered `validate-feature-delta`
 # subcommand via `python -m des.cli.validate_feature_delta` as its hermetic
-# Layer-3 SUT -- P3-sanctioned per the rescoped single-entry-point migration gate
-# (docs/feature/single-entry-point/feature-delta.md slice-04, AT-07).
+# Layer-3 SUT.
 import json
 import os
 import subprocess

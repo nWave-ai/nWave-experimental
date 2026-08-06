@@ -31,7 +31,6 @@ from des.adapters.driven.logging.at_completion_ledger import (
     AtCompletionLedger,
     LedgerIntegrityViolation,
 )
-from des.adapters.driven.runner.pytest_runner import run_timeout_seconds
 from des.adapters.drivers.hooks.carpaccio_intercept import (
     _predecessor_slice,
     _slice_number,
@@ -42,6 +41,7 @@ from des.cli.verify_slice_commit_completeness import (
     files_in_commit,
 )
 from des.runtime.interpreter import des_spawn
+from des.runtime.test_execution import run_timeout_seconds
 
 
 if TYPE_CHECKING:

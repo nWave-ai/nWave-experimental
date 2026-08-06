@@ -108,13 +108,6 @@ def test_backward_compatibility_aliases_are_the_same_object() -> None:
     """An alias must BE the thing, not merely something like it."""
     import des
 
-    assert des.RealValidator is des.TemplateValidator, (
-        "WHAT: `des.RealValidator` is not `des.TemplateValidator`; "
-        "WHY: an alias resolved to a distinct object breaks `isinstance` and "
-        "identity checks in code that has used the old name for years; "
-        "HOW: resolve aliases through `_ALIASES` -> `_EXPORTS` so both names "
-        "reach the same attribute of the same module."
-    )
     assert des.RealFilesystem is des.RealFileSystem, (
         "WHAT: `des.RealFilesystem` is not `des.RealFileSystem`; "
         "WHY: the two spellings must denote one class, or a caller can hold two "

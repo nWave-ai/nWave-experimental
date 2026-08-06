@@ -131,12 +131,15 @@ def _stage_fixture_source(tmp_path: Path) -> tuple[Path, Path]:
     """Stage a minimal source tree: a `feature-delta.md` carrying a REAL
     `## Environmental E2E` block (the `verify-authored` happy path that
     triggers its diagnosed crash) + the e2e test file it names. No lockfile
-    is staged, so `_maybe_route_through_registered_e2e_adapter` resolves
-    Indeterminate and `--mode run` falls through to the legacy path -- same
-    staging shape as the sibling real-FAIL regression AT.
+    is staged, so `--mode run` keeps its explicit Python build/install path --
+    same staging shape as the sibling real-FAIL regression AT.
     """
     source = tmp_path / "fixture-feature"
     source.mkdir(parents=True)
+    (source / "pyproject.toml").write_text(
+        '[project]\nname = "fixture-feature"\nversion = "0.0.1"\n',
+        encoding="utf-8",
+    )
     e2e_rel = "tests/test_environmental.py"
     e2e_path = source / e2e_rel
     e2e_path.parent.mkdir(parents=True, exist_ok=True)

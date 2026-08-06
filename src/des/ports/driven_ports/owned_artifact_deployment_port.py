@@ -67,11 +67,9 @@ class RollbackReceipt:
 
 
 class OwnedArtifactDeploymentPort(Protocol):
-    def deploy(self, plan: DeploymentPlan) -> DeploymentReceipt:
-        ...
+    def deploy(self, plan: DeploymentPlan) -> DeploymentReceipt: ...
 
-    def rollback(self, receipt: DeploymentReceipt) -> RollbackReceipt:
-        ...
+    def rollback(self, receipt: DeploymentReceipt) -> RollbackReceipt: ...
 
 
 __all__ = [

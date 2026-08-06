@@ -7,7 +7,7 @@ gate to accept a 3-phase DELIVER prompt, so the documented canon is actually usa
 without hand-writing the legacy 5-phase contract.
 
 Drives the live gate (`PreToolUseService`) through the production composition — real
-`DesMarkerParser` + `TemplateValidator` + enforcement/completeness policies, null I/O
+`DesMarkerParser` + enforcement/completeness policies, null I/O
 — so the embedded `phase_execution_log` canon check is exercised exactly as the hook
 runs it (port-to-port mandate).
 
@@ -22,7 +22,6 @@ from datetime import datetime, timezone
 
 from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
 from des.application.pre_tool_use_service import PreToolUseService
-from des.application.validator import TemplateValidator
 from des.domain.des_enforcement_policy import DesEnforcementPolicy
 from des.domain.des_marker_parser import DesMarkerParser
 from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
@@ -38,7 +37,6 @@ def _build_gate() -> PreToolUseService:
     """Production composition of the DES PreToolUse gate with null I/O adapters."""
     return PreToolUseService(
         marker_parser=DesMarkerParser(),
-        prompt_validator=TemplateValidator(),
         audit_writer=NullAuditLogWriter(),
         time_provider=FakeTimeProvider(
             datetime(2026, 6, 17, 10, 0, 0, tzinfo=timezone.utc)

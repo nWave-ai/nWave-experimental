@@ -350,9 +350,8 @@ _VENDOR_ID = "claude_code"
 # module runs from: a dev checkout (src/des/cli/dispatch.py -> parents[3] ==
 # checkout root) and an installed tree (lib/python/des/cli/dispatch.py ->
 # parents[3] == <claude_dir>/lib). Mirrors the sibling-of-lib/python formula
-# `session_start_handler.py`'s `_ORCHESTRATOR_AFFORDANCE_ASSETS_DIR` uses for
-# its own asset dir (same pattern, different parents[N] for this module's
-# shallower path). Resolved fresh at import time -- never cached beyond that.
+# other runtime asset paths use. Resolved fresh at import time -- never cached
+# beyond that.
 _INSTALLED_DISPATCH_ASSETS_DIR = (
     Path(__file__).resolve().parents[3] / "nWave" / "dispatch"
 )
@@ -1247,11 +1246,9 @@ def _section_body(
                 "Report files created/modified; RAW pass/fail of the "
                 "slice's ATs.\n"
                 "After any code modification, end with a terminating run of "
-                "the slice's own AT suite via `des run-slice-ats --repo . "
-                "--entering-slice <s>` -- NEVER a crafter-picked, "
-                "language-specific subset; see nw-crafter-discipline-atdd-"
-                "pure's Terminating Test Run section for the full "
-                "rationale.\n"
+                "the project-declared focused test command. Do not invent a "
+                "language-specific subset; if no command is declared, report "
+                "that limitation rather than guessing.\n"
             )
         ),
         "TIMEOUT_INSTRUCTION": (

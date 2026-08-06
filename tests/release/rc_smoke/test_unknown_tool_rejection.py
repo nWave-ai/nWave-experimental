@@ -15,5 +15,7 @@ from scripts.release.rc_smoke.contracts import UnsupportedToolError, tool_contra
 
 def test_unregistered_smoke_target_is_rejected_with_a_readable_diagnostic() -> None:
     """A release engineer sees why an unknown target cannot start a lane."""
-    with pytest.raises(UnsupportedToolError, match="unsupported tool.*unregistered-cli"):
+    with pytest.raises(
+        UnsupportedToolError, match="unsupported tool.*unregistered-cli"
+    ):
         tool_contract("unregistered-cli")

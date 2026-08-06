@@ -228,9 +228,7 @@ class InterceptDecision:
         )
 
 
-_REGRESSION_AT_KINDS = frozenset(
-    {"pytest-regression", "native-regression", "rust-regression"}
-)
+_REGRESSION_AT_KINDS = frozenset({"pytest-regression"})
 
 
 def _real_carpaccio_runner(
@@ -255,13 +253,6 @@ def _real_carpaccio_runner(
     signature is UNCHANGED. With the default ``at_kind="gherkin"`` the des_spawn
     call is byte-identical to the pre-fix invocation -- zero blast-radius.
 
-    rust-regression-at-kind-semi-wired: the same threading now also covers
-    ``native-regression`` and its ``rust-regression`` alias (both consumed by
-    `des.cli.carpaccio_slice_gate`, which normalizes the alias itself) -- this
-    hook is the U1 dispatch-guard site the defect named; before this fix ANY
-    non-``pytest-regression`` regression kind was silently dropped here,
-    falling through to a default `gherkin` gate call that then false-rejects
-    a Rust/native-regression slice with `no-scenarios-for-slice`.
     """
 
     _at_kind_args: tuple[str, ...] = (

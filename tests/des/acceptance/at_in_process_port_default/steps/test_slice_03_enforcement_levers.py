@@ -18,8 +18,8 @@ Step bodies delegate to ``EnforcementLeverComposition``; no inline business logi
 (Mandate-12 criterion 3) --- each body is a typed accessor plus a composition call.
 
 active-RED scaffold (atdd_pure --- NOT @skip). At HEAD the gates ship NO lever-1
-wiring / L3 / L4 invariant, NO ZOMBIES-zero floor, NO coverage-on-executed-path
-lever, NO per-language spawn-detector flag surface, NO target-aware F821 re-wire.
+wiring / L3 / L4 invariant, NO ZOMBIES-zero floor, NO per-language spawn-detector
+flag surface, NO target-aware F821 re-wire.
 So every observable assertion RED-fails for the right reason (the lever's flag
 does not fire / the NOT_APPLICABLE reason is absent). DELIVER ships the levers to
 turn these GREEN. Collection imports ONLY the three stable ``main`` entries
@@ -79,11 +79,6 @@ def when_drive_l3(lever: EnforcementLeverComposition) -> None:
 @when("the maintainer drives the contract-per-port lever in-process")
 def when_drive_l4(lever: EnforcementLeverComposition) -> None:
     lever.drive_l4_port_contract()
-
-
-@when("the maintainer drives the coverage-on-executed-path lever in-process")
-def when_drive_lever3(lever: EnforcementLeverComposition) -> None:
-    lever.drive_lever3_coverage()
 
 
 @when(
@@ -220,38 +215,6 @@ def then_l4_event(lever: EnforcementLeverComposition) -> None:
 def then_l4_no_fork(lever: EnforcementLeverComposition) -> None:
     assert not lever.observable().forked_interpreter, (
         f"the contract-per-port lever must drive in-process, no fork. {lever.diag()}"
-    )
-
-
-# --- Then: lever-3 coverage-on-executed-path ----------------------------------
-
-
-@then("the coverage-on-executed-path lever flags the coverage-theater test")
-def then_lever3_flags(lever: EnforcementLeverComposition) -> None:
-    assert lever.observable().flagged, (
-        "the coverage-on-executed-path lever must FLAG an AT whose driven entry "
-        "shows zero production-line coverage (theater) --- but at HEAD "
-        f"run_contract_gate.main ships no coverage lever. {lever.diag()}"
-    )
-
-
-@then(
-    "the coverage-on-executed-path lever emits its structured flag event on the "
-    "captured output"
-)
-def then_lever3_event(lever: EnforcementLeverComposition) -> None:
-    assert lever.observable().structured_event == "CoverageOnExecutedPathFlagged", (
-        "the coverage lever must FLAG with a structured event on the captured "
-        f"output --- absent at HEAD. {lever.diag()}"
-    )
-
-
-@then(
-    "the coverage-on-executed-path lever drove the gate without forking an interpreter"
-)
-def then_lever3_no_fork(lever: EnforcementLeverComposition) -> None:
-    assert not lever.observable().forked_interpreter, (
-        f"the coverage lever must drive in-process, no fork. {lever.diag()}"
     )
 
 

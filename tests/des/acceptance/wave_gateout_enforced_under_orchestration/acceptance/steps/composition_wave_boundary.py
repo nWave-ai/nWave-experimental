@@ -1,6 +1,6 @@
-"""Composition root for wave-gateout slice-06 (fail-closed boundary + ADD-not-mutate).
+"""Composition root for the wave-gateout fail-closed boundary.
 
-WHAT slice-06 ASSERTS (the fail-closed boundary + the no-regression contract):
+WHAT this boundary ASSERTS:
 
   (1) FAIL-CLOSED on an UNRESOLVABLE DES return -- ACTIVE-RED at HEAD.
       A wave-agent return carrying a ``DES-WAVE`` marker that the wave-only resolver
@@ -23,14 +23,6 @@ WHAT slice-06 ASSERTS (the fail-closed boundary + the no-regression contract):
       stay allowed (the passthrough is byte-stable). This regression-lock pins that
       the fail-closed cure (1) does NOT over-reach and start blocking non-DES agents.
       GREEN today and after the cure.
-
-  (3) CLASSIC + atdd_pure context resolution -- ADD-not-mutate regression, GREEN.
-      The classic ({project_id, step_id}) and atdd_pure (mode==atdd_pure) resolution
-      paths stay byte-stable -- the wave-only fail-closed branch is an ADDED sibling,
-      never an in-place rewrite (port-invariant WD-5, F2 blast-radius). Asserted by a
-      classic execution-log return reaching the classic Step-1 pipeline (a
-      LogFileNotFound block, unchanged) -- proving the wave-only guard does NOT
-      hijack the classic path.
 
 DRIVING SURFACE (Mandate-13 driving-port-only -- REUSED from slice-01..05): the REAL
 ``handle_subagent_stop`` hook entry, driven as a subprocess
@@ -84,7 +76,7 @@ _GOVERNED_WAVE = "design"
 
 @dataclass
 class WaveBoundaryComposition:
-    """Drives the fail-closed boundary + the ADD-not-mutate regression for slice-06.
+    """Drives the fail-closed boundary.
 
     Operates on a tmp work-tree. The orchestration return is a stdin payload fed to
     the REAL ``subagent-stop`` hook subcommand; the marker subset is chosen per the
@@ -99,10 +91,7 @@ class WaveBoundaryComposition:
     def __post_init__(self) -> None:
         # ADR-AG-001 precondition: opt the synthetic project into DES governance
         # so the hook DISPATCHES into the production handler instead of the
-        # activation gate silencing it (exit 0) before the wave gate-out / classic
-        # pipeline runs. Covers the classic scenario too (its Given provisions no
-        # tree), since the direct-DES protocol carries no cwd and the gate falls
-        # back to the process cwd == this tmp tree.
+        # activation gate silencing it (exit 0) before the wave gate-out runs.
         activate_des_governance(self.repo_dir)
 
     # ---- paths --------------------------------------------------------------
@@ -194,35 +183,6 @@ class WaveBoundaryComposition:
             stdin=json.dumps(hook_input),
         )
 
-    def when_classic_return_evaluated(self) -> None:
-        """Drive the REAL subagent-stop hook with a CLASSIC direct-DES return.
-
-        The classic protocol carries executionLogPath + projectId + stepId (the
-        direct-DES fields, no transcript). It must route into the classic Step-1
-        pipeline unchanged -- the wave-only guard (step_id=='' AND
-        execution_log_path=='') must NOT hijack it. With a non-existent log the
-        classic path blocks with LogFileNotFound (byte-stable behavior).
-        """
-        missing_log = str(
-            self.repo_dir
-            / "docs"
-            / "feature"
-            / self.feature_id
-            / "deliver"
-            / "execution-log.json"
-        )
-        hook_input = {
-            "executionLogPath": missing_log,
-            "projectId": self.feature_id,
-            "stepId": "step-01",
-        }
-        self._hook_result = _run_module(
-            _HOOK_ADAPTER_MODULE,
-            [_SUBAGENT_STOP_COMMAND],
-            cwd=self.repo_dir,
-            stdin=json.dumps(hook_input),
-        )
-
     # ---- then ----------------------------------------------------------------
 
     def then_wave_closure_refused(self) -> None:
@@ -247,35 +207,6 @@ class WaveBoundaryComposition:
         does not over-reach and block non-DES agents (no block body on stdout).
         """
         self._assert_closure(WaveClosure.ALLOWED)
-
-    def then_classic_path_blocks_on_missing_log(self) -> None:
-        """The classic direct-DES path blocks on LogFileNotFound (ADD-not-mutate).
-
-        Regression-lock (green-on-keystone): a classic return (executionLogPath +
-        projectId + stepId) routes into the classic Step-1 pipeline UNCHANGED -- the
-        wave-only guard does NOT hijack it. With a non-existent log the classic path
-        emits its byte-stable ``Execution log not found`` block. The discriminating
-        observable is that the block reason is the CLASSIC log-not-found one, proving
-        the wave-only branch left the classic path byte-stable.
-        """
-        result = self._hook_result
-        assert result is not None, (
-            "the classic return must be evaluated (When) before asserting the "
-            "classic path stayed byte-stable (Then)"
-        )
-        reason = result.block_reason.lower()
-        assert (
-            result.closure is WaveClosure.REFUSED
-            and "execution log not found" in reason
-        ), (
-            "the classic direct-DES return (executionLogPath + projectId + stepId) "
-            "must route into the classic Step-1 pipeline UNCHANGED -- the wave-only "
-            "guard (step_id=='' AND execution_log_path=='') must not hijack it. With "
-            "a non-existent log the classic path blocks with 'Execution log not "
-            "found' (the byte-stable behavior the ADD-not-mutate invariant preserves)."
-            f" Observed closure {result.closure.value!r}, "
-            f"reason={result.block_reason[:300]!r}. {self._observed()}"
-        )
 
     # ---- assertion helpers ---------------------------------------------------
 

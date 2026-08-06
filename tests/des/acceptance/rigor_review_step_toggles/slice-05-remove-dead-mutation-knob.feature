@@ -12,8 +12,8 @@ Feature: Priya sees an honest rigor surface with no dead mutation knob
   #   (b) the nw-rigor SKILL.md profile table + Mode-3 Step-7 + comparison/detail
   #       views (5 literal "mutation_enabled" occurrences at HEAD: L31/220/240/
   #       274/391)
-  # No schema scenario: ZERO config-schema files (step-tdd-cycle-schema.json,
-  # atdd-pure-phase-sequence.schema.json) list the token -- confirmed by grep --
+  # No schema scenario: the remaining config schema does not list the token --
+  # confirmed by grep --
   # so an absence-assertion there would be a vacuous green, not active-RED, and
   # is intentionally omitted (would not fail today).
   #

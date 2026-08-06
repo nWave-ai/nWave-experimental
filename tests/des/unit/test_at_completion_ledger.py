@@ -414,12 +414,12 @@ def test_outcome_combines_with_gate_and_reason_without_interference(
     record = ledger.append_gate_event(
         event=_CARPACCIO_REJECTED,
         slice_id="slice-01",
-        gate="mode-locus-gate",
+        gate="synthetic-gate",
         reason="scan found zero families",
         outcome=GateVerdict.FAIL,
     )
 
-    assert record["gate"] == "mode-locus-gate"
+    assert record["gate"] == "synthetic-gate"
     assert record["reason"] == "scan found zero families"
     assert record["outcome"] == GateVerdict.FAIL
 

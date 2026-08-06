@@ -2,8 +2,9 @@
 # Based on: architecture-design.md - Roadmap Step 01-02
 # Acceptance Criteria:
 #   - DES module importable from plugin scripts/des/
-#   - hooks.json registers PreToolUse, PostToolUse, SubagentStop, SessionStart, SubagentStart,
-#     UserPromptSubmit (wave-active anchor, slice-04 amendment 87807932b)
+#   - hooks.json registers PreToolUse, PostToolUse, SubagentStop, SubagentStart.
+#     SessionStart and UserPromptSubmit were the session-ceremony anchors; both
+#     were deleted with that ceremony (22ea19309).
 #   - DES enforcement returns allow/block decisions with error messages on phase violations
 #   - DES runtime templates bundled in plugin
 # Date: 2026-02-27
@@ -40,7 +41,6 @@ Feature: DES Bundle with Hooks Generation
     Then the hook configuration registers a handler for tool validation
     And the hook configuration registers a handler for task completion
     And the hook configuration registers a handler for subagent lifecycle
-    And the hook configuration registers a handler for session startup
 
   Scenario: Hook commands use plugin-relative paths
     When the plugin assembler builds the plugin
@@ -52,7 +52,6 @@ Feature: DES Bundle with Hooks Generation
   Scenario: DES runtime templates are bundled in the plugin
     When the plugin assembler builds the plugin
     Then the TDD cycle schema template exists in the plugin
-    And the roadmap schema template exists in the plugin
 
   # --- Error Paths ---
 
@@ -89,4 +88,4 @@ Feature: DES Bundle with Hooks Generation
   Scenario: Hook configuration always contains all required event types
     Given any valid nWave source tree
     When the plugin assembler builds the plugin
-    Then the configuration contains handlers for all six DES event types
+    Then the configuration contains handlers for every DES event type

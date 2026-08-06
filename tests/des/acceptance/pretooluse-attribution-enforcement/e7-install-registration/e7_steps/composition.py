@@ -6,8 +6,7 @@ composition root over a sandboxed `~/.claude`):
   * `InstallComposition` drives the real `AttributionPlugin` install/uninstall
     lifecycle (the registration call site, Reuse row R7). It is the production
     plugin object (Pillar 3), wired to a sandboxed `~/.claude` + `~/.nwave` via a
-    redirected `Path.home()` (precedent: `tests/des/unit/install/`
-    `test_install_des_hooks.py`).
+    redirected `Path.home()`.
 
   * `CliComposition` drives the real `nwave-ai attribution on|off` handler (the
     post-install toggle, R7), the user-facing entry point for flipping the gate.

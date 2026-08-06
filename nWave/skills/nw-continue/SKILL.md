@@ -58,12 +58,12 @@ DELIVER progress detection branches on `workflow.mode` (read from `.nwave/config
 Per-mode descriptor + DELIVER phase shape, projected from the mode registry:
 
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
-- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+- `atdd_pure` — Per-slice AT-first loop; AT-completion ledger + commit trailers are the authority.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
-- Read `.develop-progress.json` if exists: check last failure point
-- Display: "DELIVER in progress: Steps 01-01 through 02-01 complete. Next: 02-02"
+- Read the feature-delta Slice Plan, AT-completion ledger, and commit trailers for current delivery evidence.
+- Display the first un-shipped slice or the feature-end outcome.
 
 **`atdd_pure` mode** — resume is driven by the AT-completion ledger using the **two-case cue** (ADR-028 D6). Read the slice plan and the ledger, then pick the case: <!-- mode-ref-ok -->
 

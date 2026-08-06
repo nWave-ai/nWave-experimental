@@ -337,9 +337,9 @@ commands:
     - acceptance_tests
     - test_scenarios
   deliver:
-    description: Orchestrates the full DELIVER wave end-to-end (roadmap > execute-all
-      > finalize). Use when all prior waves are complete and the feature is ready
-      for implementation.
+    description: Delivers feature-delta Slice Plan slices through AT-first implementation,
+      review/EXAMINE, and finalize. Use when prior waves are complete and the feature
+      is ready for implementation.
     argument_hint: '[feature-description] - Example: "Implement user authentication
       with JWT"'
     agents:
@@ -420,26 +420,17 @@ commands:
     outputs:
     - updated_diagrams
     - visual_architecture
-  roadmap:
-    description: Removed active workflow command. Historical roadmap data is available
-      only through the explicit migration or read-only replay path; atdd-pure uses
-      the feature-delta Slice Plan and per-slice acceptance tests.
-    argument_hint: '[agent] [goal-description] - Example: @solution-architect "Migrate
-      to microservices"'
-    outputs:
-    - roadmap_yaml
-    agents: []
   review:
-    description: Dispatches an expert reviewer agent to critique workflow artifacts.
-      Use when a roadmap, implementation, or step needs quality review before proceeding.
-    argument_hint: '[agent] [artifact-type] [artifact-path] - Example: @software-crafter
-      task "roadmap.json"'
+    description: Dispatches an expert reviewer for a baseline, feature delta, task,
+      or implementation.
+    argument_hint: '[agent] [artifact-type] [artifact-path] - Example: @<base-agent>
+      feature-delta "docs/feature-delta.md"'
     outputs:
     - review_report
     agents: []
   execute:
-    description: Dispatches one unit of DELIVER work to a specialized agent for TDD
-      execution. Active execution is one atdd-pure carpaccio slice.
+    description: Dispatches one unit of DELIVER work to a specialized agent for executable-AT
+      delivery. Active execution is one atdd-pure carpaccio slice.
     argument_hint: '[agent] [feature-id] [step-id] - Example: @nw-software-crafter
       "auth-upgrade" "01-01"'
     outputs:
@@ -447,9 +438,9 @@ commands:
     agents: []
   finalize:
     description: Archives a completed feature to docs/evolution/, migrates lasting
-      artifacts to permanent directories, and cleans up the temporary workspace. Use
-      after all implementation steps pass and mutation testing completes.
-    argument_hint: '[agent] [feature-id] - Example: @platform-architect "auth-upgrade"'
+      artifacts to permanent directories, and preserves the feature workspace as living
+      history. Use after current feature completion evidence passes.
+    argument_hint: '[agent] [feature-id] - Example: @nw-platform-architect "auth-upgrade"'
     outputs:
     - evolution_document
     agents: []
@@ -499,18 +490,6 @@ commands:
     outputs:
     - contextual_answer
     - command_recommendation
-  update:
-    description: Queues a deferred self-update of nwave-ai. Writes a PendingUpdateFlag
-      that the SessionStart hook replays on the next Claude Code launch, so the current
-      session is not interrupted. Falls back to manual instructions when the package
-      manager cannot be detected.
-    argument_hint: '[target-version] - Optional explicit version (e.g. 1.4.2). Defaults
-      to the latest version discovered by the periodic update check.'
-    agents: []
-    wave: CROSS_WAVE
-    outputs:
-    - pending_update_flag
-    - user_confirmation
   optimize-tests:
     description: Minimizes test count while preserving coverage. Detects byte-identical
       pairs, parametrize-inflation, language-guarantee tests, AST-shape tests, stale

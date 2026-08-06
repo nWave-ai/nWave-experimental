@@ -17,7 +17,10 @@ argument-hint: "[feature-id] - Optional: --threshold=[75|80|85] --language=[auto
 
 ## Overview
 
-Run mutation testing against implementation files from the current feature. Extracts targets from execution-log.json|generates feature-scoped configs|delegates to software-crafter. Uses cosmic-ray (Python)|PIT (Java)|Stryker (JS/TS/C#).
+Run mutation testing against implementation files from the current feature. Derives
+targets from the selected Slice Plan and changed production paths, generates
+feature-scoped configs, and delegates to software-crafter. Uses cosmic-ray
+(Python), PIT (Java), or Stryker (JS/TS/C#).
 
 ## Mutation Testing Strategy
 
@@ -25,18 +28,19 @@ Projects declare a strategy via `## Mutation Testing Strategy` in `CLAUDE.md`: `
 
 ## Context Files Required
 
-- `docs/feature/{feature-id}/deliver/execution-log.json` - Implementation file extraction
+- `docs/feature/{feature-id}/feature-delta.md` - Selected Slice Plan and declared production targets
 - `scripts/mutation/generate_scoped_configs.py` - Automated config generation (if available)
 
 ## Pre-Invocation
 
 Orchestrator performs before delegating:
 
-1. Read `execution-log.json`, extract implementation files from `completed_steps[].files_modified.implementation`
-2. Verify all extracted files exist on disk
-3. Detect project language from config files (pyproject.toml, pom.xml, package.json, etc.)
-4. Confirm test suite passes: run `pytest -x {test_scope}` (or equivalent)
-5. Ensure mutation venv exists for Python: `.venv-mutation/` with cosmic-ray installed
+1. Read the selected Slice Plan and collect its declared production targets
+2. Add changed production paths relevant to the selected slice
+3. Verify all collected files exist on disk
+4. Detect project language from config files (pyproject.toml, pom.xml, package.json, etc.)
+5. Confirm test suite passes: run `pytest -x {test_scope}` (or equivalent)
+6. Ensure mutation venv exists for Python: `.venv-mutation/` with cosmic-ray installed
 
 ## Agent Invocation
 
@@ -46,7 +50,7 @@ Execute mutation testing for project {feature-id}.
 
 **Context to pass inline (agent has no Skill access):**
 - Project ID
-- Implementation file list (from execution-log.json)
+- Implementation file list (from the selected Slice Plan and changed production paths)
 - Test scope path (e.g., `tests/des/`)
 - Kill rate threshold (default: 80%)
 - Language and tool selection
@@ -64,13 +68,13 @@ Execute mutation testing for project {feature-id}.
 ```bash
 /nw-mutation-test des-hook-enforcement tests/des/
 ```
-Reads execution-log.json, runs `generate_scoped_configs.py des-hook-enforcement`, delegates to software-crafter with per-component configs. Agent runs cosmic-ray, produces mutation-report.md.
+Reads the selected Slice Plan, runs `generate_scoped_configs.py des-hook-enforcement`, delegates to software-crafter with per-component configs. Agent runs cosmic-ray, produces mutation-report.md.
 
 ### Example 2: Python project without config generator
 ```bash
 /nw-mutation-test auth-upgrade tests/auth/
 ```
-Extracts files manually from execution-log.json, creates single cosmic-ray config with `module-path = [file1, file2, ...]` and `test-command = "pytest -x tests/auth/"`, delegates to agent.
+Collects targets from the selected Slice Plan and changed production paths, creates a single cosmic-ray config with `module-path = [file1, file2, ...]` and `test-command = "pytest -x tests/auth/"`, then delegates to an agent.
 
 ### Example 3: Non-Python project
 ```bash
@@ -84,7 +88,7 @@ The invoked agent MUST create a task list from its workflow phases at the start 
 
 ## Success Criteria
 
-- [ ] Implementation files extracted from execution-log.json
+- [ ] Implementation files derived from the selected Slice Plan and changed production paths
 - [ ] All implementation files verified on disk
 - [ ] Mutation testing executed without errors
 - [ ] Per-file breakdown in mutation-report.md

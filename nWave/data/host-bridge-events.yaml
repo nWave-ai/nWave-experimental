@@ -70,17 +70,6 @@ events:
       opencode: n/a (route to dispatch.post)
       git-hook: n/a
 
-  # Session lifecycle
-  - id: session.init
-    description: |
-      Fired at session start. Carries CWD + project root + operator context.
-      Distribution boundary check (Phase 5 D3 gate) fires here.
-    hosts:
-      claude-code: SessionStart
-      codex: session_start
-      opencode: session.created
-      git-hook: n/a
-
   # Slice lifecycle (atdd_pure flavor)
   - id: slice.entered
     description: |

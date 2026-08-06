@@ -137,7 +137,6 @@ from des.domain.des_marker_parser import DesMarkerParser
 from des.domain.wave_active import WaveActiveRecord, WaveProvenance
 from des.ports.driven_ports.wave_active_store import WaveActiveReader
 from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
-from des.ports.driver_ports.validator_port import ValidationResult, ValidatorPort
 
 
 # ---------------------------------------------------------------------------
@@ -217,22 +216,6 @@ def test_real_repo_scan_group_does_not_dominate_collected_items() -> None:
 # ---------------------------------------------------------------------------
 
 
-class _UnreachedValidator(ValidatorPort):
-    """Classic prompt validator that must never be reached by this path.
-
-    Both the S1 (no-wave, allow) and S2 (wave-active partial-context, block)
-    branches under test resolve BEFORE Step 5's `validate_prompt` call
-    (`pre_tool_use_service.py` lines ~184-260) -- reaching this is itself a
-    sign the test built the wrong scenario, not a legitimate outcome.
-    """
-
-    def validate_prompt(self, prompt: str) -> ValidationResult:
-        raise AssertionError(
-            "classic prompt validation must not be reached by a markerless "
-            "partial-context dispatch -- it resolves at S1/S2, before Step 5"
-        )
-
-
 @pytest.mark.negative_at
 def test_pre_tool_use_service_does_not_honor_des_project_dir_override(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -284,7 +267,6 @@ def test_pre_tool_use_service_does_not_honor_des_project_dir_override(
 
     service = PreToolUseService(
         marker_parser=DesMarkerParser(),
-        prompt_validator=_UnreachedValidator(),
         audit_writer=NullAuditLogWriter(),
         time_provider=SystemTimeProvider(),
         wave_active_reader=WaveActiveFilesystemStore(),

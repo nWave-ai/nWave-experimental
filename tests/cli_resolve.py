@@ -41,8 +41,7 @@ from __future__ import annotations
 # des:allow-module-form: this helper IS the legacy-shim driving-port resolver;
 # the `des-{shim}` / `python -m des.cli.<X>` tokens here are its OWN parameter
 # domain (docstring examples + the fallback it constructs), not migratable
-# callsites -- P3-sanctioned per the rescoped single-entry-point migration gate
-# (docs/feature/single-entry-point/feature-delta.md slice-04, AT-07/AT-08).
+# callsites.
 import shutil
 import subprocess
 import sys

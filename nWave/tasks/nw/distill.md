@@ -24,51 +24,19 @@ You (main Claude instance) = orchestrator: dispatch agents, enforce gates. Orche
 Per-mode descriptor + DELIVER phase shape, projected from the mode registry (never hand-written here):
 
 <!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
-- `atdd_pure` — Per-slice carpaccio loop; no roadmap.json / execution-log.json; AT-completion ledger + commit trailers are the audit.
+- `atdd_pure` — Per-slice AT-first loop; AT-completion ledger + commit trailers are the authority.
   Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
 <!-- GENERATED:mode-descriptor END -->
 
-| Mode | Cohort pre-assignment gate (Phase 0) | AT-completeness gate (Phase 2.5) | MAX-PBT mandate to Quinn | Mandate-12 step-reuse |
-|---|---|---|---|---|
-| `retired workflow` | skipped | advisory (warn on score) | recommended | informational |
-| `atdd_pure` | **MANDATORY** (BLOCKS on cohort ∉ {M}) | **MANDATORY** (re-author < 10/15) | **MANDATORY** | **target ≥4× informational** | <!-- mode-ref-ok -->
+| Mode | AT-completeness gate (Phase 2.5) | MAX-PBT mandate to Quinn | Mandate-12 step-reuse |
+|---|---|---|---|
+| `atdd_pure` | **MANDATORY** (re-author < 10/15) | **MANDATORY** | **target ≥4× informational** | <!-- mode-ref-ok -->
 
 Mid-feature mode switch is forbidden (per ADR-027).
 
 ## REVIEW GATE SUMMARY (read this first)
 
 After the acceptance designer produces scenarios, you MUST dispatch 4 parallel reviewers if scenario count exceeds 3 (Eclipse + Architect + Forge + Sentinel). Sentinel (`@nw-acceptance-designer-reviewer`) = structural-correctness reviewer — ALWAYS dispatches, even on fast-path or under `rigor.reviewer_model: "skip"` (which only skips scale-sensitive cost-driven reviewers). Single most important orchestration step in DISTILL. Procedure: dispatch designer -> count scenarios -> dispatch 4 reviewers in parallel -> AND-gate results -> handoff. Details: Phase 3 below.
-
-## Phase 0: Cohort Pre-Assignment Gate (plan v3 §4.1.bis)
-
-Runs BEFORE author dispatch. Mechanical, deterministic, cohort-keyed. Implementation: `scripts/cli/cohort_classifier.py` (core CLI per [[feedback_target_machine_independence_2026_05_15]] — NOT a pre-commit hook).
-
-
-**Procedure**:
-
-1. Count candidate ATs in `docs/feature/{feature-id}/feature-delta.md` `## Wave: DISTILL / [REF] Test Placement` section. Sources:
-   - Existing `.feature` scenarios (grep `^\s*Scenario(?: Outline)?:` in referenced files)
-   - Paired unit/property tests authored or earmarked for the feature
-2. Mechanical cohort rule: **S** at_count ≤ 10 · **M** 11-30 · **L** 31-80 · **XL** > 80.
-3. Gate decision:
-
-| Cohort | `--accept-pilot-scope-extension` | Outcome |
-|---|---|---|
-| `M` | — | emit `CohortAssigned(feature, cohort=M, at_count, scope_extension=False)`, proceed |
-| S / L / XL | absent | BLOCK exit 43 `COHORT_OUT_OF_PILOT_SCOPE`; emit `CohortAssignmentRejected(feature, cohort, at_count)`; halt sequencer |
-| S / L / XL | present | emit `CohortAssigned(feature, cohort, at_count, scope_extension=True, operator=<USER>)` + override entry in execution-log; proceed |
-
-**Dispatcher contract**: call CLI, never embed logic:
-
-```bash
-python scripts/cli/cohort_classifier.py \
-    --feature {feature-id} \
-    ${accept_pilot_scope_extension:+--accept-pilot-scope-extension} \
-    --emit-event CohortAssigned \
-    --workflow-mode atdd_pure  # <!-- mode-ref-ok -->
-```
-
-Exit 0 → proceed. Exit 43 → BLOCK + propagate `COHORT_OUT_OF_PILOT_SCOPE` to operator. Anti-pattern (forbidden): silently re-labelling an S-cohort feature as M to expand the pilot pool.
 
 ## Phase 1: Decisions and Context
 
@@ -384,7 +352,6 @@ Before completing DISTILL, produce `docs/feature/{feature-id}/distill/wave-decis
 - Test framework: {framework}
 - Integration approach: {approach}
 - Workflow mode: atdd_pure <!-- mode-ref-ok -->
-- Cohort: {S | M | L | XL} (at_count={N}, scope_extension={bool})
 - AT-completeness score: {N}/15 ({COMPLETE | ACCEPTABLE_WITH_DOCUMENTED_GAPS | INCOMPLETE})
 - Step-reuse ratio: {ratio} (target 4.0×, met={bool})
 
@@ -439,7 +406,6 @@ Invoked agent MUST create a task list from its workflow phases at execution star
 ## Success Criteria
 
 - [ ] Workflow mode resolved as atdd_pure <!-- mode-ref-ok -->
-- [ ] Cohort pre-assignment gate executed (atdd_pure only) — exit 0 or operator override recorded <!-- mode-ref-ok -->
 - [ ] All user stories have corresponding acceptance tests
 - [ ] Step methods call real production services (no mocks at acceptance level)
 - [ ] One-at-a-time implementation strategy established (@skip/@pending tags)
@@ -468,11 +434,5 @@ Orchestrator reads prior waves -> dispatches Quinn -> Quinn produces 2 regressio
 
 ### Example 3: Reviewer model skip (cost-driven)
 `.nwave/des-config.json` has `rigor.reviewer_model: "skip"`. Orchestrator dispatches Quinn -> scenarios produced -> Eclipse/Architect/Forge skipped on cost -> **Sentinel STILL dispatches** (structural-correctness reviewer never skips; silent skip masks Gherkin antipatterns) -> handoff to DELIVER on Sentinel approval.
-
-### Example 4: ATDD-pure M-cohort feature
-`.nwave/config.yaml` has `workflow.mode: atdd_pure`. Orchestrator runs cohort classifier on `codex-empirical-e2e-support` (at_count=18) -> cohort=M -> emit `CohortAssigned` -> dispatch Quinn with MAX-PBT mandate -> Quinn produces 6 parametrize-collapsed + 4 PBT + 2 example-based scenarios -> AT-completeness gate scores 11/15 (ACCEPTABLE_WITH_DOCUMENTED_GAPS: C2b + C7c gaps) -> C7c routes upstream (DEVOPS owns interruption contract) -> Phase 3 full review gate -> handoff to DELIVER with gap log. <!-- mode-ref-ok -->
-
-### Example 5: ATDD-pure S-cohort BLOCK
-`workflow.mode: atdd_pure`, feature has 7 ATs. Cohort classifier returns S, no `--accept-pilot-scope-extension` flag. Gate emits `CohortAssignmentRejected(feature, cohort=S, at_count=7)`, halts with exit 43 `COHORT_OUT_OF_PILOT_SCOPE`. Operator may rerun with `--accept-pilot-scope-extension` as a recorded override. <!-- mode-ref-ok -->
 
 DISTILL = the major synthesis point. DELIVER reads DISTILL output as its authoritative specification.

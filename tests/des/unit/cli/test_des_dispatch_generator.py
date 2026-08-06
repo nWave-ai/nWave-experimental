@@ -9,7 +9,7 @@ test_lane_profile_dispatch_ssot_drift_check.py` +
 regression suite for the GENERATOR itself: `des dispatch` must RENDER a
 dispatch prompt from the SAME SSOT (`nWave/dispatch/atdd_pure.yaml` +
 `LANE_PROFILES`) the EXISTING (unwired) renderer helpers in
-`src/des/application/prompt_rendering_service.py` and the EXISTING checker
+the retired prompt renderer and the existing checker
 (`AtddPurePromptValidator`) already consume -- so the generator and the
 checker share ONE source and cannot silently diverge (the system-pays
 principle, 2026-07-06: the SYSTEM produces the checked artifact, the operator
@@ -1156,17 +1156,8 @@ def test_crafter_boundary_rules_gains_the_four_concrete_skill_rules() -> None:
     )
 
 
-def test_crafter_terminating_run_gains_the_run_slice_ats_mandate() -> None:
-    """TERMINATING_RUN (crafter) must gain the Skill-only `des run-slice-ats`
-    terminating-run mandate (design §3 row 11): the command itself, the
-    `--entering-slice` flag, and the explicit antipattern-avoidance phrase
-    ("NEVER a crafter-picked, language-specific subset") -- ON TOP OF the
-    existing "report files created/modified" sentence.
-
-    FAILS TODAY: the crafter's TERMINATING_RUN body is "Report files
-    created/modified; RAW pass/fail of the slice's ATs.\\n" -- none of the
-    items below are present (verified).
-    """
+def test_crafter_terminating_run_uses_a_project_declared_command() -> None:
+    """TERMINATING_RUN refuses to invent a command after runner retirement."""
     result = _run_crafter_dispatch()
     assert result.returncode == 0, (
         f"expected exit 0; got {result.returncode}. "
@@ -1174,16 +1165,8 @@ def test_crafter_terminating_run_gains_the_run_slice_ats_mandate() -> None:
     )
     terminating = _section_text(result.stdout, "TERMINATING_RUN")
 
-    assert "des run-slice-ats" in terminating, (
-        f"TERMINATING_RUN must name `des run-slice-ats` -- got:\n{terminating}"
-    )
-    assert "--entering-slice" in terminating, (
-        f"TERMINATING_RUN must name the --entering-slice flag -- got:\n{terminating}"
-    )
-    assert "language-specific subset" in terminating, (
-        "TERMINATING_RUN must explicitly forbid a crafter-picked, "
-        f"language-specific subset -- got:\n{terminating}"
-    )
+    assert "project-declared focused test command" in terminating, terminating
+    assert "if no command is declared" in terminating, terminating
     assert "Report files created/modified" in terminating, (
         "the pre-existing 'report files created/modified' sentence must "
         f"remain (superset, never replaced) -- got:\n{terminating}"

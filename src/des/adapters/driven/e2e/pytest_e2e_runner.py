@@ -1,11 +1,7 @@
 """run_pytest_against_installed -- shared pytest-against-staged-prefix runner.
 
-Feature `implement-language-adapter-facets`, slice-03 (feature-delta.md Slice
-Plan row 3, components D3/D4). Extracted verbatim from
-`des.cli.verify_environmental_e2e._run_e2e_against_installed` (DDD-02): ONE
-implementation, shared by the CLI's own fallback path and by
-`PythonEnvironmentalE2EAdapter.run_against_installed` (the registered-facet
-routing path) -- no duplication (D4).
+Extracted from `des.cli.verify_environmental_e2e._run_e2e_against_installed`:
+the CLI's one real Python E2E execution path.
 
 Real I/O: a real pytest subprocess against a real staged install prefix.
 """
@@ -15,7 +11,7 @@ from __future__ import annotations
 import subprocess
 from typing import TYPE_CHECKING
 
-from des.adapters.driven.runner.pytest_runner import pytest_interpreter
+from des.runtime.test_execution import pytest_interpreter
 
 
 if TYPE_CHECKING:

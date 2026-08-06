@@ -209,35 +209,12 @@ def handle_pre_write() -> int:
 
             # --- Execution log guard: always block direct writes ---
             if file_path and file_path.endswith("execution-log.json"):
-                project_dir = (
-                    str(Path(file_path).parent) if file_path else "{project-dir}"
+                block_reason = (
+                    "execution-log.json belongs to a retired workflow and cannot be "
+                    "created or modified.\n\n"
+                    "Use the current atdd_pure delivery inputs: the selected feature "
+                    "delta and its acceptance tests. Do not recreate retired phase records."
                 )
-                tool_name = hook_input.get("tool_name", "")
-                if tool_name == "Write":
-                    block_reason = (
-                        "Direct creation of execution-log.json is blocked.\n\n"
-                        "Use the CLI to initialize the execution log:\n\n"
-                        f"  des init-log \\\n"
-                        f"    --project-dir {project_dir} \\\n"
-                        "    --feature-id {feature-id}\n\n"
-                        "IMPORTANT: The execution log must be created through the CLI "
-                        "to ensure correct schema."
-                    )
-                else:
-                    block_reason = (
-                        "Direct modification of execution-log.json is blocked.\n\n"
-                        "Use the CLI to record phase outcomes after executing the step:\n\n"
-                        f"  des log-phase \\\n"
-                        f"    --project-dir {project_dir} \\\n"
-                        "    --step-id {step-id} \\\n"
-                        "    --phase {phase} \\\n"
-                        "    --status EXECUTED \\\n"
-                        "    --data PASS\n\n"
-                        "IMPORTANT: The step must be executed and completed successfully "
-                        "BEFORE\n"
-                        "logging. The execution log records outcomes — it does not drive "
-                        "execution."
-                    )
                 _log_pre_write_decision(
                     hook_id=hook_id,
                     event_type="HOOK_PRE_WRITE_BLOCKED",

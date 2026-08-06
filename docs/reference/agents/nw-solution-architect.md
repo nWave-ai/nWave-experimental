@@ -9,13 +9,9 @@ Use for DESIGN wave - collaborates with user to define system architecture, comp
 
 ## Commands
 
-- [`/nw-deliver`](../commands/index.md)
 - [`/nw-design`](../commands/index.md)
 - [`/nw-diagram`](../commands/index.md)
 - [`/nw-discuss`](../commands/index.md)
-- [`/nw-finalize`](../commands/index.md)
-- [`/nw-review`](../commands/index.md)
-- [`/nw-roadmap`](../commands/index.md)
 - [`/nw-spike`](../commands/index.md)
 
 ## Skills
@@ -28,7 +24,6 @@ Use for DESIGN wave - collaborates with user to define system architecture, comp
 - [nw-cross-cutting-invariants](../skills/nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — paradigm-independent and role-independent rules that bind every architect and crafter (data justification, gate design GDP-1..9, self-explaining surfaces). SHIPPED home of these definitions; cite by clause id, never re-declare.
 - [nw-domain-driven-design](../skills/nw-domain-driven-design.md) — Strategic and tactical DDD patterns, bounded context discovery, context mapping, aggregate design rules, and decision frameworks for when to apply DDD
 - [nw-formal-verification-tlaplus](../skills/nw-formal-verification-tlaplus.md) — TLA+ and PlusCal for specifying distributed system invariants. Decision heuristics for when formal verification adds value, key patterns, state explosion management, and alternatives comparison.
-- [nw-roadmap-design](../skills/nw-roadmap-design.md) — Roadmap concision rules, step decomposition efficiency, AC abstraction guidelines, and step-to-scenario mapping. Load when creating implementation roadmaps.
 - [nw-sa-critique-dimensions](../skills/nw-sa-critique-dimensions.md) — Architecture quality critique dimensions for peer review. Load when invoking solution-architect-reviewer or performing self-review of architecture documents.
 - [nw-security-by-design](../skills/nw-security-by-design.md) — Security design principles, STRIDE threat modeling, OWASP Top 10 architectural mitigations, and secure patterns. Load when designing systems or reviewing architecture for security.
 - [nw-stress-analysis](../skills/nw-stress-analysis.md) — Advanced architecture stress analysis methodology for designing systems that survive unknown stresses. Load when --residuality flag is used or when designing high-uncertainty, mission-critical systems.

@@ -107,11 +107,20 @@ def test_dry_run_preview_is_side_effect_free_and_exits_zero(tmp_path):
     }
     sandboxed_env["HOME"] = str(fake_home)
     sandboxed_env["PYTHONDONTWRITEBYTECODE"] = "1"
+    # An explicit --platform, because the property under test is dry-run SAFETY,
+    # not host discovery. The sandbox above isolates only the HOME family, so two
+    # independent detection signal families survive it on a developer box -- host
+    # binaries on PATH, and CLAUDE_CONFIG_DIR -- while a CI runner has neither.
+    # Auto-detection then returns an empty set, the installer correctly refuses
+    # before any mutation (exit 2), and this test read that correct refusal as a
+    # dry-run defect. Naming the platform makes the test independent of ambient
+    # host presence; the no-host fail-before-mutation behaviour is a separate
+    # property with its own coverage and is deliberately not asserted here.
     returncode, stdout, stderr = run_python_snippet_in_process(
         fake_installer.read_text(encoding="utf-8"),
         cwd=str(tmp_path),
         env=sandboxed_env,
-        argv=[str(fake_installer), "--dry-run"],
+        argv=[str(fake_installer), "--dry-run", "--platform", "claude-code"],
         filename=str(fake_installer),
     )
 

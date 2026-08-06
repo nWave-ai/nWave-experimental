@@ -27,9 +27,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from io import StringIO
 from pathlib import Path
-from unittest.mock import patch
 
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.adapters.drivers.hooks.carpaccio_intercept import (
@@ -149,44 +147,3 @@ class CarpaccioInterceptComposition:
         )
 
     # --- driving-port invocation: walking skeleton (real hook) --------------
-
-    def drive_real_pre_tool_use_hook(self) -> InterceptOutcome:
-        """Drive the real PreToolUse hook via the Claude Code JSON stdin protocol.
-
-        This is the genuine @wiring_e2e path: it constructs the exact JSON
-        envelope Claude Code sends, feeds it on stdin to the production
-        `handle_pre_tool_use`, and reads the block decision off stdout.
-        """
-        from des.adapters.drivers.hooks.pre_tool_use_handler import (
-            handle_pre_tool_use,
-        )
-
-        prompt = _dispatch_prompt(self._shape, self._slice_id)
-        prompt += f"\n<!-- DES-PROJECT-ROOT : {self._project_root} -->\n"
-        hook_input = {
-            "tool_name": "Agent",
-            "tool_input": {
-                "subagent_type": "nw-software-crafter",
-                "prompt": prompt,
-                "description": "Dispatch crafter into slice-01",
-            },
-        }
-        stdin_data = json.dumps(hook_input)
-        with patch("sys.stdin", StringIO(stdin_data)):
-            with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
-                exit_code = handle_pre_tool_use()
-                stdout = mock_stdout.getvalue()
-
-        event = None
-        if stdout.strip():
-            payload = json.loads(stdout)
-            event = payload.get("event")
-            is_block = payload.get("decision") == "block"
-        else:
-            is_block = False
-        verdict = (
-            HookVerdict.BLOCKED
-            if (is_block or exit_code != 0)
-            else (HookVerdict.ALLOWED)
-        )
-        return InterceptOutcome(verdict=verdict, event=event, carpaccio_invoked=True)

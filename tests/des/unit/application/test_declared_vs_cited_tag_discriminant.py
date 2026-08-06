@@ -18,9 +18,8 @@ attribution.py`` quotes a real 6-slice tag block verbatim as an RCA example
 (indentation 4, inside a docstring exceeding the 20-line window), and
 ``test_slice_id_grammar_ssot.py`` mentions ``@slice-04a`` in a sentence at
 column 0 (also inside its docstring). Both false-positively attribute the
-citing file to slices it never claims, which cascades into
-``AtKindAmbiguous`` and blocks ``des check-slice-at-completeness`` /
-``carpaccio_slice_gate`` for ``gate-armed-state-derivation`` slice-07.
+citing file to slices it never claims, which corrupts downstream slice
+selection.
 
 Covers the 7 observable constraints (a)-(g) from feature-delta.md Wave
 DISCUSS [REF] Value:
@@ -34,16 +33,14 @@ DISCUSS [REF] Value:
              disappear as false positives (0 detected, was 6)
     R4 (d) -- the prose citation at column 0 in test_slice_id_grammar_ssot.py
              disappears as a false-positive slice attribution
-    R5 (e) -- discover_at_kind_for_slice(., gate-armed-state-derivation,
-             slice-07) resolves AtKindResolved (currently AtKindAmbiguous)
-    R6 (f) -- run_contract_gate._node_belongs_to_slice stops returning True
+    R5 (e) -- run_contract_gate._node_belongs_to_slice stops returning True
              for the citing files
-    R7 (g) -- the module docstring lists all 8 real consumers (doc
+    R6 (f) -- the module docstring lists all 8 real consumers (doc
              correction, non-code assertion)
 
 Driving surface (Mandate 16, Layer 3 composition-root default): every
 scenario drives the REAL, existing production module
-``des.application.feature_at_files`` (and, for R6, ``des.cli.
+``des.application.feature_at_files`` (and, for R5, ``des.cli.
 run_contract_gate._node_belongs_to_slice``, which composes
 ``resolve_test_file_attribution`` and has no isolated test seam of its own)
 directly -- the exact application-layer composition root this module's own
@@ -51,8 +48,8 @@ docstring names as the SSOT for 8 real consumers. No new CLI driving port is
 introduced by this fix (single-file, ADD-not-mutate per the design).
 
 Two of the fixture families below use REAL files already committed in this
-repo (``_CITING_SHARED_MULTI_SLICE``, ``_CITING_SLICE_ID_GRAMMAR``,
-``_REAL_AT_FILE``) rather than synthetic ``tmp_path`` reconstructions --
+repo (``_CITING_SHARED_MULTI_SLICE``, ``_CITING_SLICE_ID_GRAMMAR``) rather
+than synthetic ``tmp_path`` reconstructions --
 these are the exact two confuted false positives the design measured
 empirically against; pinning the real files (not a lookalike copy) is the
 regression witness ADR-001's own "Validazione empirica" table used. The
@@ -65,14 +62,13 @@ validation table inspected.
 
 RED-for-right-reason (Mandate-7 / ADR-025): every production symbol imported
 below (``feature_tagged_test_files``, ``resolve_test_file_attribution``,
-``discover_at_kind_for_slice``, ``AtKindResolved``,
 ``run_contract_gate._node_belongs_to_slice``) already exists and is called
 exactly as production callers call it today -- the RED here is a genuine
 behavioral gap (a semantic ``AssertionError`` on the false-positive
 attribution), never an import/collection error. R1, R2 pin the SIBLING
 branches the fix must NOT flatten (Critical Rule: pin the correct behaviour
 of neighbouring branches) and are expected GREEN both before and after the
-fix -- R3-R6 are the active-RED assertions this slice makes GREEN.
+fix -- R3-R5 are the active-RED assertions this slice makes GREEN.
 """
 
 from __future__ import annotations
@@ -82,8 +78,6 @@ from pathlib import Path
 import pytest
 
 from des.application.feature_at_files import (
-    AtKindResolved,
-    discover_at_kind_for_slice,
     feature_tagged_test_files,
     resolve_test_file_attribution,
 )
@@ -91,10 +85,6 @@ from des.cli.run_contract_gate import _node_belongs_to_slice
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-_GATE_ARMED_FEATURE_ID = "gate-armed-state-derivation"
-_REAL_AT_FILE = (
-    _REPO_ROOT / "tests" / "des" / "acceptance" / "test_verify_gate_armed_state.py"
-)
 _CITING_SHARED_MULTI_SLICE = (
     _REPO_ROOT
     / "tests"
@@ -188,42 +178,7 @@ def test_slice_id_grammar_ssot_file_prose_citation_resolves_no_slice_ids() -> No
 
 
 # ---------------------------------------------------------------------------
-# R5 (e) -- discover_at_kind_for_slice resolves the real AT file for
-# gate-armed-state-derivation slice-07, no longer ambiguous against the
-# citing file.
-# ---------------------------------------------------------------------------
-
-
-def test_discover_at_kind_resolves_slice_07_for_gate_armed_state_derivation() -> None:
-    """# covers: R5
-
-    Today ``discover_at_kind_for_slice`` reports ``AtKindAmbiguous`` for
-    ``gate-armed-state-derivation``/``slice-07`` because the citing file
-    (quoting ``@feature-gate-armed-state-derivation`` / ``@slice-02``..
-    ``@slice-07`` verbatim in its RCA docstring, see R3) false-positively
-    joins the real AT file as a second candidate.
-    """
-    _require_fixture_file(_REAL_AT_FILE)
-    _require_fixture_file(_CITING_SHARED_MULTI_SLICE)
-
-    result = discover_at_kind_for_slice(_REPO_ROOT, _GATE_ARMED_FEATURE_ID, "slice-07")
-
-    assert isinstance(result, AtKindResolved), (
-        "expected AtKindResolved once the citing file "
-        f"{_CITING_SHARED_MULTI_SLICE.name!r} is no longer a false-positive "
-        f"candidate for slice-07 of {_GATE_ARMED_FEATURE_ID!r}; got "
-        f"{result!r} -- AtKindAmbiguous means the citing file's quoted tag "
-        "block is still counted as a second candidate"
-    )
-    assert result.regression_test_file == _REAL_AT_FILE, (
-        "the resolved AT file must be the real, declared AT "
-        f"({_REAL_AT_FILE}), not the citing file; got "
-        f"{result.regression_test_file}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# R6 (f) -- run_contract_gate._node_belongs_to_slice stops returning True for
+# R5 (e) -- run_contract_gate._node_belongs_to_slice stops returning True for
 # both citing files. Driven directly via resolve_test_file_attribution's
 # composed consumer, since _node_belongs_to_slice carries no isolated test
 # seam of its own (per dispatch instruction).
@@ -248,7 +203,7 @@ def test_discover_at_kind_resolves_slice_07_for_gate_armed_state_derivation() ->
 def test_node_belongs_to_slice_stops_false_positive_for_citing_files(
     citing_file: Path, entering_slice: str
 ) -> None:
-    """# covers: R6
+    """# covers: R5
 
     ``_node_belongs_to_slice`` composes ``is_pytest_collectible`` +
     ``resolve_test_file_attribution(path).slice_ids`` -- once R3/R4 close the
@@ -408,7 +363,7 @@ def test_pytest_file_tagged_after_its_docstring_stays_attributed(
 
 
 # ---------------------------------------------------------------------------
-# R7 (g) -- the module docstring lists all 8 real consumers (doc correction,
+# R6 (f) -- the module docstring lists all 8 real consumers (doc correction,
 # non-code assertion: the oracle IS the literal consumer name text since a
 # behavioral test cannot sensibly cover prose).
 # ---------------------------------------------------------------------------
@@ -438,7 +393,7 @@ _HISTORICAL_SELF_MENTION = "previously lived in ``des.cli.carpaccio_format``"
 
 @pytest.mark.parametrize("consumer_name", _REAL_CONSUMERS)
 def test_module_docstring_names_every_real_consumer(consumer_name: str) -> None:
-    """# covers: R7
+    """# covers: R6
 
     Non-code, doc-correction assertion (dispatch-named exception: prose
     cannot sensibly be covered by a behavioral oracle, so this pins the

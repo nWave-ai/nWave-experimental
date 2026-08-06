@@ -8,7 +8,7 @@ __post_init__` always set `claude_dir = home_dir / ".claude"`, ignoring both
 multi-profile machine (this repo's own documented claude/claude2/claude3
 setup), or after `nwave-ai install --target <path>`, doctor silently
 diagnosed the WRONG installation -- false FAIL and false PASS, with no
-warning. Same bug class as defect 2 (install_des_hooks.py) and defect 3
+warning. Same active-profile bug class as attribution CLI
 (attribution CLI): deciding on a fixed DESIGNATION instead of the active
 PROPERTY (GDP-8).
 

@@ -7,10 +7,6 @@ Falls back to safe defaults (audit logging ON) when file is missing or invalid.
 Rigor cascade: project config -> global config -> standard defaults.
 When a project has a "rigor" key, the entire global rigor block is ignored.
 
-update_check state (frequency, last_checked, skipped_versions) is machine-scoped
-and read from / written to the GLOBAL config only -- it is NOT per-project. See
-``_update_check`` and ``save_update_check_state``.
-
 Hexagonal Architecture:
 - DRIVEN ADAPTER: Implements configuration port (driven by business logic)
 - ON BY DEFAULT: Audit logging enabled unless explicitly disabled in config
@@ -19,20 +15,15 @@ Hexagonal Architecture:
 import json
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from des.domain.blast_radius import BlastRadiusConfigRejected, BlastRadiusThresholds
-from des.domain.nwave_dir_gitignore import ensure_nwave_gitignore
 from des.domain.nwave_root import resolve_nwave_root
 from des.domain.rigor.review_step_registry import (
     REVIEW_STEP_CATALOG,
     ResolvedReviewStepSet,
     ReviewStepResolver,
 )
-
-
-if TYPE_CHECKING:
-    from des.domain.pending_update_flag import PendingUpdateFlag
 
 
 # Closed set of declarable deliverable types (ADR-PST-002). A declared value
@@ -370,18 +361,6 @@ class DESConfig:
             return self._config_data["rigor"]
         return self._global_config_data.get("rigor", {})
 
-    def _update_check(self) -> dict:
-        """Return update_check sub-config from the GLOBAL config.
-
-        Update-check cadence/state (frequency, last_checked, skipped_versions)
-        is a per-machine concern -- "has this machine asked PyPI recently?" --
-        not a per-project one. It therefore lives in
-        ``~/.nwave/global-config.json``, independent of the working directory.
-        Storing it per-project caused sibling folders to gate independently and
-        a folder with a same-day timestamp to self-suppress the update banner.
-        """
-        return self._global_config_data.get("update_check", {})
-
     def _housekeeping(self) -> dict:
         """Return housekeeping sub-config dict, defaulting to empty dict."""
         return self._config_data.get("housekeeping", {})
@@ -416,21 +395,6 @@ class DESConfig:
         "asked several times per slice" grind.
         """
         return bool(self._rigor().get("human_authorization", False))
-
-    @property
-    def rigor_tdd_phases(self) -> tuple[str, ...]:
-        """Get TDD phases as tuple.
-
-        Default: canonical 3-phase (RED, GREEN, COMMIT) per ADR-025 (default
-        flip 2026-05-18). Existing projects with an explicit ``rigor.tdd_phases``
-        list in ``.nwave/des-config.json`` continue to override this default
-        unchanged (backward-compat preserved).
-        """
-        phases = self._rigor().get(
-            "tdd_phases",
-            ["RED", "GREEN", "COMMIT"],
-        )
-        return tuple(phases)
 
     @property
     def rigor_feature_total_at_advisory_threshold(self) -> int:
@@ -488,52 +452,6 @@ class DESConfig:
     def rigor_refactor_pass(self) -> bool:
         """Check if refactoring pass is enabled. Default: True."""
         return self._rigor().get("refactor_pass", True)
-
-    @property
-    def update_check_frequency(self) -> str | None:
-        """Get update check frequency.
-
-        Read from the GLOBAL config (machine-scoped; see ``_update_check``).
-        Returns None when the update_check key is entirely absent from the
-        global config (indicates first run — no config bootstrapped yet).
-        Returns 'daily' when the update_check key exists but frequency sub-key
-        is absent.
-        """
-        update_check = self._global_config_data.get("update_check")
-        if update_check is None:
-            return None  # key absent = first run, no global config yet
-        return update_check.get("frequency", "daily")
-
-    @property
-    def installed_package_manager(self) -> str | None:
-        """PM recorded at install time, from the GLOBAL config (machine-scoped).
-
-        ``~/.nwave/global-config.json`` -> ``install.package_manager``. Recorded
-        by ``nwave-ai install`` from its own interpreter, where detection is
-        reliable; consumed by ``/nw-update`` whose ambient interpreter is not.
-        Returns None when unrecorded (installed before this existed, or a pip
-        install with no PM marker).
-        """
-        return self._global_config_data.get("install", {}).get("package_manager")
-
-    @property
-    def update_check_last_checked(self) -> str | None:
-        """Get last update check timestamp (ISO 8601 UTC). Default: None."""
-        return self._update_check().get("last_checked", None)
-
-    @property
-    def update_check_skipped_versions(self) -> list[str]:
-        """Get list of versions skipped by user. Default: empty list."""
-        return self._update_check().get("skipped_versions", [])
-
-    @property
-    def update_check_latest_available(self) -> str | None:
-        """Latest version discovered by the last successful update check.
-
-        Recorded in the GLOBAL config update_check block and consumed by
-        ``/nw-update`` to resolve the upgrade target. None when never recorded.
-        """
-        return self._update_check().get("latest_available")
 
     @property
     def housekeeping_enabled(self) -> bool:
@@ -733,99 +651,3 @@ class DESConfig:
         if env is not None:
             return env.lower() in ("true", "1", "yes")
         return bool(self._config_data.get("log_enabled", False))
-
-    def save_update_check_state(
-        self,
-        last_checked: str,
-        skipped_versions: list[str],
-        frequency: str | None = None,
-        latest_available: str | None = None,
-    ) -> None:
-        """
-        Persist update check state to the GLOBAL config file.
-
-        Update-check state is machine-scoped (see ``_update_check``), so it is
-        written to ``~/.nwave/global-config.json`` rather than the project
-        config. Read-modify-write: preserves all other global config keys.
-        Creates update_check key when absent.
-
-        Args:
-            last_checked: ISO 8601 UTC timestamp of last check
-            skipped_versions: list of version strings user has skipped
-            frequency: if None, preserves existing frequency (or leaves default)
-            latest_available: latest version discovered by the check; when None,
-                any previously stored value is preserved. Consumed by
-                ``/nw-update`` to resolve the upgrade target without re-querying.
-        """
-        current_data: dict[str, Any] = {}
-        if self._global_config_path.exists():
-            try:
-                current_data = json.loads(
-                    self._global_config_path.read_text(encoding="utf-8")
-                )
-            except (json.JSONDecodeError, OSError):
-                current_data = {}
-
-        update_check = dict(current_data.get("update_check", {}))
-        update_check["last_checked"] = last_checked
-        update_check["skipped_versions"] = skipped_versions
-        if frequency is not None:
-            update_check["frequency"] = frequency
-        elif "frequency" not in update_check:
-            # Bootstrap default on first save (e.g. after first-run check)
-            update_check["frequency"] = "daily"
-        if latest_available is not None:
-            update_check["latest_available"] = latest_available
-
-        current_data["update_check"] = update_check
-
-        self._global_config_path.parent.mkdir(parents=True, exist_ok=True)
-        ensure_nwave_gitignore(self._global_config_path.parent)
-        self._global_config_path.write_text(
-            json.dumps(current_data, indent=2), encoding="utf-8"
-        )
-
-    # --- Pending update flag I/O (deferred self-update) ---
-
-    @property
-    def pending_update_path(self) -> Path:
-        """Path to the pending-update flag file (~/.nwave/pending-update.json)."""
-        return Path.home() / ".nwave" / "pending-update.json"
-
-    def save_pending_update_state(self, flag: "PendingUpdateFlag") -> None:
-        """Persist PendingUpdateFlag to pending_update_path as JSON.
-
-        Creates the parent directory and the runtime ``.gitignore`` sentinel
-        (invariant: every time we touch ``~/.nwave/`` we ensure it is ignored).
-        """
-        path = self.pending_update_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        ensure_nwave_gitignore(path.parent)
-        path.write_text(json.dumps(flag.to_dict(), indent=2), encoding="utf-8")
-
-    def read_pending_update(self) -> "PendingUpdateFlag | None":
-        """Read pending-update flag. Returns None if missing or invalid JSON."""
-        from des.domain.pending_update_flag import PendingUpdateFlag
-
-        path = self.pending_update_path
-        if not path.exists():
-            return None
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            return PendingUpdateFlag.from_dict(payload)
-        except (json.JSONDecodeError, OSError, KeyError, ValueError):
-            return None
-
-    def clear_pending_update(self) -> None:
-        """Remove the pending-update flag file. Idempotent (no error if absent)."""
-        path = self.pending_update_path
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            # WHAT: flag file already absent (never created, or removed by
-            # a concurrent caller).
-            # WHY: this method is documented idempotent -- "no error if
-            # absent" (see method docstring).
-            # HOW: safe to continue -- the post-condition (no flag file)
-            # already holds.
-            pass

@@ -13,12 +13,20 @@ CLAUDE_ACTIVATION = {"agents", "commands", "skills", "attribution"}
 CODEX_ARTIFACTS = {"codex-skills", "codex-agents", "codex-des"}
 
 
-def _installer(tmp_path: Path, monkeypatch, platform: str) -> NWaveInstaller:
+def _installer(tmp_path: Path, monkeypatch, platform: str | set[str]) -> NWaveInstaller:
+    """Build an installer whose target set is DECLARED, never detected.
+
+    Accepts a set so a caller wanting several targets states them at
+    construction. Reassigning `_platform_override` afterwards does not work and
+    must not be attempted: the target set is resolved once, in `__init__`, so the
+    ambient read happens where the caller controls the environment.
+    """
     monkeypatch.setattr(
         "scripts.install.install_utils.PathUtils.get_claude_config_dir",
         lambda: tmp_path / ".claude",
     )
-    subject = NWaveInstaller(platform_override={platform})
+    targets = {platform} if isinstance(platform, str) else set(platform)
+    subject = NWaveInstaller(platform_override=targets)
     subject.claude_config_dir = tmp_path / ".claude"
     subject.framework_source = tmp_path / "framework"
     subject.project_root = tmp_path / "project"
@@ -109,12 +117,12 @@ def test_all_platform_health_composes_codex_validation(
 
     Outcome anchor: an all-platform install is healthy only when Codex is usable.
     """
-    subject = _installer(tmp_path, monkeypatch, "codex")
-    subject._platform_override = {"claude_code", "codex"}
+    subject = _installer(tmp_path, monkeypatch, {"claude_code", "codex"})
     codex_validation_calls = 0
 
-    def broken_codex_surface() -> bool:
+    def broken_codex_surface(*, verify_plugins: bool = True) -> bool:
         nonlocal codex_validation_calls
+        assert verify_plugins is False
         codex_validation_calls += 1
         return False
 

@@ -6,11 +6,10 @@ and emits audit events through hook_protocol.
 
 Extracted from claude_code_hook_adapter.py as part of P4 decomposition.
 
-U1 (slice-01 of F-DES-ATDD-PURE-HOOK-GATES -- ADR-030 D1): before the classic
-service path, the handler runs the carpaccio entry-gate intercept for atdd_pure
-dispatches. The carpaccio gate runs whether or not the orchestrating LLM chose
-to run it. The entire U1 branch is fail-closed (M1) -- any exception inside it
-surfaces as an `AtddPureHookInternalError` block, never the bare exit-1 path.
+The U1 carpaccio entry-gate intercept that used to run here is gone: a dispatch
+is no longer refused by a hook for slice order, readiness, or marker
+completeness. Reuse, architecture conformance and AT-first are practices carried
+in the dispatch itself, not preconditions a hook re-litigates.
 """
 
 import contextlib
@@ -22,14 +21,6 @@ from pathlib import Path
 
 from des.adapters.driven.time.system_time import SystemTimeProvider
 from des.adapters.drivers.hooks import des_task_signal, hook_protocol, service_factory
-from des.adapters.drivers.hooks.carpaccio_intercept import (
-    InterceptDecision,
-    intercept_atdd_pure_dispatch,
-)
-from des.adapters.drivers.hooks.earned_verdict_commit_gate_hook import (
-    evaluate_commit_gate,
-    is_git_commit,
-)
 from des.adapters.drivers.hooks.hook_protocol import (
     EXIT_CODE_TO_DECISION,
     STDERR_CAPTURE_MAX_CHARS,
@@ -37,9 +28,6 @@ from des.adapters.drivers.hooks.hook_protocol import (
     log_hook_error,
     log_hook_invoked,
     read_and_parse_stdin,
-)
-from des.adapters.drivers.hooks.project_root_validator import (
-    resolve_declared_project_root,
 )
 from des.application.commit_attribution_service import CommitAttributionService
 from des.application.wave_activation_service import WaveActivationService
@@ -91,18 +79,6 @@ def _classic_prompt_refusal(prompt: str) -> dict[str, object] | None:
     if DesMarkerParser().parse(prompt).mode == "classic":
         return _classic_mode_removed_payload()
     return None
-
-
-def _atdd_pure_intercept_block(decision: InterceptDecision) -> dict[str, str]:
-    """Render the `{decision:block}` body for a U1 intercept block."""
-    payload = {
-        "decision": "block",
-        "event": decision.event or "AtddPureHookInternalError",
-        "reason": decision.reason or "atdd_pure dispatch blocked by the U1 gate",
-    }
-    if decision.how:
-        payload["how"] = decision.how
-    return payload
 
 
 def _distill_dispatch_block(reason: str) -> dict[str, str]:
@@ -162,92 +138,6 @@ def _evaluate_distill_dispatch_gate(prompt: str) -> tuple[str, dict[str, str] | 
         )
 
     return ("allow", None)
-
-
-def _evaluate_u1_intercept(
-    prompt: str, subagent_type: str = ""
-) -> dict[str, str] | None:
-    """Run the U1 carpaccio intercept, fail-closed (M1).
-
-    Returns the `{decision:block}` body when the dispatch must be blocked, or
-    None when the dispatch is allowed.  Unresolved and legacy carriers are
-    refused at their public boundary.
-
-    The U1 decision itself is M1-wrapped inside `intercept_atdd_pure_dispatch`.
-    This function adds a second, defence-in-depth try/except so an exception in
-    marker parsing or project-root resolution is also surfaced as an
-    `AtddPureHookInternalError` block -- NEVER the bare `exit 1` /
-    `{status:error}` path. An atdd_pure-branch exception is fail-closed.
-
-    slice-05 (DDD-8): `subagent_type` (from the Task tool_input) is threaded into
-    the intercept so the wave-dispatch guard composed on `dispatch.pre` can look
-    up the dispatched agent's wave->owner entry. It is best-effort + fail-OPEN: an
-    absent subagent_type makes the guard treat the dispatch as a non-owner ->
-    ALLOW, never a block.
-    """
-    try:
-        markers = DesMarkerParser().parse(prompt)
-        if markers.mode != "atdd_pure":
-            return None
-
-        feature_id = markers.feature_id or markers.project_id
-        if not feature_id:
-            return {
-                "decision": "block",
-                "event": "AtddPureMarkerSetIncomplete",
-                "reason": (
-                    "atdd_pure dispatch prompt is missing a DES-PROJECT-ID "
-                    "marker -- the carpaccio gate needs the feature id"
-                ),
-            }
-
-        project_root = resolve_nwave_root()
-        if markers.project_root:
-            resolution = resolve_declared_project_root(
-                markers.project_root, str(Path.cwd())
-            )
-            if not resolution.resolved:
-                # THE THIRD STATE: a root was DECLARED and did not resolve.
-                # Falling back to the cwd here would run every downstream gate
-                # against a tree the dispatch never named -- and the operator
-                # would read a refusal about files "missing" from a tree they
-                # did not choose. Substituting one tree for another in silence
-                # is the same defect as reading the wrong tree, in its worse
-                # form. Refuse, and say which rule refused.
-                return {
-                    "decision": "block",
-                    "event": "AtddPureProjectRootUnresolvable",
-                    "reason": (
-                        f"DES-PROJECT-ROOT declared but unusable "
-                        f"({resolution.reason}) -- {resolution.detail}. This "
-                        f"dispatch is NOT being re-pointed at the current "
-                        f"directory ({Path.cwd()}): a gate that silently swaps "
-                        f"the tree it reads would refuse this dispatch for "
-                        f"files missing from a tree you never named. Fix: "
-                        f"re-generate the envelope with `des dispatch "
-                        f"--repo-root <project-root>` from a path that exists "
-                        f"and belongs to this repository, or drop the "
-                        f"DES-PROJECT-ROOT marker to dispatch against the "
-                        f"current directory deliberately."
-                    ),
-                }
-            project_root = resolution.path or project_root
-
-        decision = intercept_atdd_pure_dispatch(
-            prompt=prompt,
-            feature_id=feature_id,
-            project_root=project_root,
-            subagent_type=subagent_type,
-        )
-        if decision.is_block:
-            return _atdd_pure_intercept_block(decision)
-        return None
-    except Exception as exc:
-        return {
-            "decision": "block",
-            "event": "AtddPureHookInternalError",
-            "reason": f"U1 carpaccio intercept raised: {exc!s}",
-        }
 
 
 def _peek_wave_entering(
@@ -445,24 +335,7 @@ def handle_pre_tool_use() -> int:
             # Diagnostic: confirm hook was invoked
             tool_input = hook_input.get("tool_input", {})
 
-            # NET-NEW Bash-commit ordering (slice-04 fix + ADR-CA-006 D4). On a
-            # Bash event the earned-verdict commit gate is the FIRST authority on
-            # the git-commit path: a theater commit must be DENIED before the
-            # cosmetic attribution rewrite can run (deny-wins). Only on gate
-            # allow / abstain / non-commit Bash does the path fall through to the
-            # commit-attribution mutation unchanged.
             if hook_input.get("tool_name") == "Bash":
-                command = tool_input.get("command", "")
-                if is_git_commit(command):
-                    commit_decision = evaluate_commit_gate(command)
-                    if (
-                        commit_decision is not None
-                        and commit_decision.get("decision") == "block"
-                    ):
-                        print(json.dumps(commit_decision))
-                        exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
-                        return exit_code
-                # gate allowed / abstained / non-commit Bash -> attribution may proceed
                 mutation_exit = emit_commit_attribution_mutation(tool_input)
                 if mutation_exit is not None:
                     exit_code = mutation_exit
@@ -521,20 +394,6 @@ def handle_pre_tool_use() -> int:
                     except Exception as clear_exc:
                         _log_wave_entry_clear_failed(clear_exc, hook_id)
                 exit_code = 0
-                return exit_code
-
-            # U1 -- carpaccio entry gate as a PreToolUse intercept.
-            # Runs before the classic service path. An atdd_pure dispatch is
-            # recognised positively (M3); a defective marker set, a rejected
-            # slice, or an out-of-order slice blocks; the entire branch is
-            # fail-closed (M1) -- any exception inside it is surfaced as an
-            # AtddPureHookInternalError block, never the bare exit-1 path.
-            atdd_pure_block = _evaluate_u1_intercept(
-                prompt, tool_input.get("subagent_type", "") or ""
-            )
-            if atdd_pure_block is not None:
-                print(json.dumps(atdd_pure_block))
-                exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
                 return exit_code
 
             # slice-07c (F3 NORMATIVO): this adapter is the composition seat of
