@@ -1,9 +1,13 @@
 @feature-d4-phase-1-catalog-files
-Feature: Gate-contract catalog YAML mirrors _REGISTRY (D4 Phase 1 slice-01)
+Feature: Gate-contract catalog YAML mirrors catalogued _REGISTRY rows (D4 Phase 1 slice-01)
 
   As nWave maintainer iterating on the gate catalog
-  I want `nWave/gates/_catalog.yaml` to be a machine-readable mirror of
-  the production gate registry at `src/des/cli/__main__.py:_REGISTRY`
+  I want `nWave/gates/_catalog.yaml` to be a machine-readable 1:1 mirror of
+  the CATALOGUED-GATE subset of the production gate registry at
+  `src/des/cli/__main__.py:_REGISTRY` (every row whose `catalogued_gate`
+  classification is True, the default when the keyword is omitted --
+  a row marked `catalogued_gate=False`, e.g. `code-fact`, is a non-gate
+  public tool and is never required to have a catalog/per-gate mirror)
   So that workflow-flavor configs (D7 Phase 2) reference gates by id
   with mechanical schema validation
   And drift between catalog and registry produces a CI-fail (closes H4
@@ -22,7 +26,7 @@ Feature: Gate-contract catalog YAML mirrors _REGISTRY (D4 Phase 1 slice-01)
     Then validation succeeds with zero errors
 
   @driving_port @in-process @real-io @slice-01 @contract-shape:pure-function
-  Scenario: Catalog gate_id set matches registry name set exactly
+  Scenario: Catalog gate_id set matches registry catalogued-gate name set exactly
     Given the gate catalog loaded from "nWave/gates/_catalog.yaml"
     And the production _REGISTRY loaded from `src.des.cli.__main__`
     When the row counts are compared

@@ -115,17 +115,19 @@ class CodeFactChain:
         ``None`` (the loud skip is already recorded; the gate proceeds, C8).
         """
         for tier in (self._ast, self._floor):
-            if self._covers(tier, descriptor.id):
+            if self._covers(tier, descriptor.id, request):
                 result = tier.query(descriptor, request)
                 self._record_scope_health(tier)
                 return result
         return None
 
     @staticmethod
-    def _covers(tier: object, capability_id: str) -> bool:
+    def _covers(tier: object, capability_id: str, request: dict[str, object]) -> bool:
         """True iff ``tier``'s ``probe`` manifest lists ``capability_id`` as ``ok``."""
         probe = getattr(tier, "probe", None)
-        manifest = probe() if callable(probe) else ()
+        if not callable(probe):
+            return False
+        manifest = probe(request) if isinstance(tier, AstAdapter) else probe()
         return any(
             entry.get("capability_id") == capability_id and entry.get("ok")
             for entry in manifest

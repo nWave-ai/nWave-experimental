@@ -1,18 +1,21 @@
-"""Acceptance test: SubagentStart hook reminder references real skill paths.
+"""Acceptance test: SubagentStart hook reminder resolves skills by name.
 
-Behavioral contract (TC-4 from RCA issue #37):
-  After a full install, the path pattern mentioned in the additionalContext
-  for any nw-* agent must match at least one directory in ~/.claude/skills/.
+Behavioral contract (activation-routing-before-mutation, D3-analog): the
+`~/.claude/skills/...` literal path this reminder used to hardcode is invalid
+under any non-default `CLAUDE_CONFIG_DIR` (the isolated-install shape every
+pilot arm and `nwave-ai install --target` produces) — the same defect class
+`root_activation_context.py`'s D3 fix already closed for the root reminder.
+This test pins the successor contract: the reminder must name skills by NAME
+and point at the Skill tool as the resolution mechanism, never a literal
+home-relative path.
 
-This test validates OUTCOME: any path the hook mentions must be satisfiable
-by the flat topical skill layout, not the old per-agent layout.
+It catches future regressions where the reminder text regains a hardcoded
+path or drops the Skill-tool framing.
 
-It catches future regressions where path text and filesystem diverge.
-
-Given: A ~/.claude/skills/ directory containing at least one nw-<skill>/ dir
-When:  _build_reminder_message("nw-software-crafter") is called
-Then:  Every path pattern referenced in the message resolves to an existing dir
-And:   The message does NOT reference the old wrong per-agent path pattern
+Given: `_build_reminder_message("nw-software-crafter")` is called
+Then:  The message does NOT contain a `~/.claude/skills` literal path
+And:   The message names the Skill tool as the resolution mechanism
+And:   Any nw-<skill> example token named in the message is a real skill
 """
 
 import re
@@ -41,34 +44,15 @@ def mock_skills_root(tmp_path: Path) -> Path:
 
 
 class TestHookReminderPathsMatchRealLayout:
-    """TC-4: Hook reminder paths must be satisfiable by the installed skill layout."""
+    """D3-analog: hook reminder resolves skills by name, not a hardcoded path."""
 
-    def test_reminder_references_flat_layout_path_pattern(self) -> None:
-        """Reminder message references the flat layout path, not the old per-agent path.
-
-        Given: A skills root with topical nw-<skill>/ directories
-        When:  _build_reminder_message is called for nw-software-crafter
-        Then:  The message references ~/.claude/skills/nw-<skill> prefix (flat layout)
-        And:   The message does NOT reference ~/.claude/skills/nw/ (old wrong layout)
-        """
-        from des.adapters.drivers.hooks.subagent_start_handler import (
-            _build_reminder_message,
-        )
-
-        msg = _build_reminder_message("nw-software-crafter")
-
-        # Must reference the flat layout pattern
-        assert "~/.claude/skills/nw-" in msg, (
-            f"Reminder must reference flat layout '~/.claude/skills/nw-<skill>' "
-            f"but got: {msg!r}"
-        )
-
-    def test_reminder_does_not_reference_old_per_agent_path(self) -> None:
-        """Reminder must NOT emit the old broken per-agent subdirectory path.
+    def test_reminder_does_not_hardcode_a_home_relative_skill_path(self) -> None:
+        """Reminder must not hardcode `~/.claude/...` -- invalid under an
+        isolated CLAUDE_CONFIG_DIR (mirrors root_activation_context.py's D3 fix).
 
         Given: handler is invoked for nw-software-crafter
         When:  _build_reminder_message is called
-        Then:  The message does NOT contain ~/.claude/skills/nw/nw- (old wrong path)
+        Then:  The message does NOT contain a literal ~/.claude path
         """
         from des.adapters.drivers.hooks.subagent_start_handler import (
             _build_reminder_message,
@@ -76,9 +60,29 @@ class TestHookReminderPathsMatchRealLayout:
 
         msg = _build_reminder_message("nw-software-crafter")
 
-        assert "~/.claude/skills/nw/nw-" not in msg, (
-            f"Reminder must not reference old per-agent path '~/.claude/skills/nw/nw-*' "
-            f"but got: {msg!r}"
+        assert "~/.claude" not in msg, (
+            f"Reminder must not hardcode a ~/.claude-relative path -- it is "
+            f"invalid under an isolated CLAUDE_CONFIG_DIR. Got: {msg!r}"
+        )
+
+    def test_reminder_names_the_skill_tool_as_the_resolution_mechanism(self) -> None:
+        """Reminder must point at the Skill tool, which resolves by name against
+        whatever config dir is active -- the D3 remedy pattern already
+        established for the root reminder.
+
+        Given: handler is invoked for nw-software-crafter
+        When:  _build_reminder_message is called
+        Then:  The message names the Skill tool as how to load skills
+        """
+        from des.adapters.drivers.hooks.subagent_start_handler import (
+            _build_reminder_message,
+        )
+
+        msg = _build_reminder_message("nw-software-crafter")
+
+        assert "Skill tool" in msg, (
+            f"Reminder must name the Skill tool as the resolution mechanism. "
+            f"Got: {msg!r}"
         )
 
     def test_example_skills_listed_in_reminder_exist_in_flat_layout(

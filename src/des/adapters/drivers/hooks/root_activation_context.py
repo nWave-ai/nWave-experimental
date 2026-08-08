@@ -14,11 +14,14 @@ process:
   sub-agent (the gap the Agent-only wiring left open).
 
 No new hook is registered here -- this is a pure, testable predicate + message
-builder wired into each handler's existing non-blocking allow path (see
+builder wired into each handler's existing allow path (see
 `pre_tool_use_handler.py`'s `decision.warning` sibling branch, and
-`pre_write_handler.py`'s allow branch). It never sequences, gates, or persists
-anything: a skipped reminder is not an error, and a printed one never changes
-the allow/block decision.
+`pre_write_handler.py`'s allow branch). Building the reminder text never
+gates or persists anything on its own: a skipped reminder is not an error.
+But the underlying observation this module exposes (`is_nwave_adjacent_write`)
+also feeds `pre_write_handler.py`'s activation-routing-before-mutation gate,
+which DOES block a pertinent Write/Edit when no `Skill(nw-mode-select)` call
+has been observed -- so root context is not merely advisory end-to-end.
 """
 
 from __future__ import annotations
@@ -41,7 +44,7 @@ _MODE_ALREADY_EXPLICIT_PHRASES = (
 
 ROOT_MODE_SELECT_REMINDER = (
     "nw-mode-select available: before continuing this nWave-adjacent work, "
-    "consider ~/.claude/skills/nw-mode-select/SKILL.md to choose human "
+    "invoke the nw-mode-select skill (Skill tool) to choose human "
     "(project each stage, wait for GO) or auto (ask once, then run) and to "
     "classify the work S/M/L -- unless the mode is already explicit in this "
     "conversation."
@@ -116,8 +119,12 @@ def build_root_write_mode_select_context(
       markers elsewhere -- re-surfacing here would be noise, not orientation);
     - the file is not nWave-adjacent (see `is_nwave_adjacent_write`).
 
-    Best-effort only: the caller wires this into its allow path and must
-    never let it influence the block/allow decision itself.
+    Best-effort only: THIS reminder text never changes the block/allow
+    decision. But a non-None return also marks the write as the one case
+    where `pre_write_handler.py`'s activation-routing-before-mutation gate
+    applies -- that gate DOES block the write when no `Skill(nw-mode-select)`
+    call has been observed in the transcript, so the caller's overall
+    allow/block outcome is not independent of this predicate.
     """
     if session_active:
         return None

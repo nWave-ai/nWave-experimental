@@ -3,7 +3,8 @@
 Tests the service through its public API (track_from_transcript), verifying
 observable outcomes at the driven port boundary (SkillTrackingPort).
 
-Test Budget: 3 behaviors x 2 = 6 max. Actual: 4 tests (1 parametrized).
+Test Budget: skill tracking 3 behaviors x 2 = 6 max; mode selection has
+4 semantic partitions x 1 = 4 max. Actual: 9 test functions (4 parametrized).
 
 Behaviors:
 1. Extracts skill loads from JSONL transcript with Read + skill paths
@@ -15,7 +16,10 @@ import json
 
 import pytest
 
-from des.application.skill_tracking_service import SkillTrackingService
+from des.application.skill_tracking_service import (
+    SkillTrackingService,
+    mode_select_observed_before_mutation,
+)
 from des.domain.skill_load_event import SkillLoadEvent
 from des.ports.driven_ports.skill_tracking_port import SkillTrackingPort
 from tests.des.adapters.mocked_time import MockedTimeProvider
@@ -31,9 +35,11 @@ class InMemorySkillTracker(SkillTrackingPort):
         self.events.append(event)
 
 
-def _write_transcript(tmp_path, lines: list[dict]) -> str:
+def _write_transcript(
+    tmp_path, lines: list[dict], filename: str = "transcript.jsonl"
+) -> str:
     """Write JSONL transcript lines to a temp file, return path."""
-    transcript = tmp_path / "transcript.jsonl"
+    transcript = tmp_path / filename
     with open(transcript, "w", encoding="utf-8") as f:
         for line in lines:
             f.write(json.dumps(line) + "\n")
@@ -210,3 +216,178 @@ class TestTranscriptTrackingFailOpen:
 
         assert len(events) == 1
         assert events[0].skill_name == "tdd-methodology"
+
+
+class TestModeSelectObservedBeforeMutation:
+    """mode_select_observed_before_mutation recognises an actual
+    `Skill(nw-mode-select)` tool_use, fails closed otherwise."""
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Skill",
+                            "input": {"skill": "nw-mode-select"},
+                        }
+                    ]
+                },
+            },
+            {
+                "type": "tool_use",
+                "name": "Skill",
+                "input": {"skill": "nw-mode-select"},
+            },
+            {
+                "type": "content_block",
+                "content_block": {
+                    "type": "tool_use",
+                    "name": "Skill",
+                    "input": {"skill": "nw-mode-select"},
+                },
+            },
+        ],
+        ids=["real_assistant", "direct_tool_use", "content_block"],
+    )
+    def test_true_for_supported_authoritative_call_shapes(
+        self, tmp_path, line: dict
+    ) -> None:
+        """A real assistant call and supported trace shapes authorize mutation.
+
+        CONTRACT_SHAPE: bounded-change
+        """
+        transcript_path = _write_transcript(
+            tmp_path,
+            [line],
+        )
+
+        assert mode_select_observed_before_mutation(transcript_path) is True
+
+    @pytest.mark.parametrize(
+        "line,reason",
+        [
+            (
+                {"type": "text", "text": "I will invoke nw-mode-select next."},
+                "prose_mention_not_a_tool_call",
+            ),
+            (
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "Skill",
+                                "input": {"skill": "nw-mode-select"},
+                            }
+                        ]
+                    },
+                },
+                "user_event_is_not_authoritative",
+            ),
+            (
+                {
+                    "type": "system",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "Skill",
+                                "input": {"skill": "nw-mode-select"},
+                            }
+                        ]
+                    },
+                },
+                "system_event_is_not_authoritative",
+            ),
+            (
+                {
+                    "type": "tool_use",
+                    "name": "Read",
+                    "input": {
+                        "file_path": "/repo/nWave/skills/nw-mode-select/SKILL.md"
+                    },
+                },
+                "read_of_unrelated_file_not_skill_call",
+            ),
+            (
+                {
+                    "type": "tool_use",
+                    "name": "Skill",
+                    "input": {"skill": "nw-bugfix"},
+                },
+                "other_skill_name",
+            ),
+            (
+                {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}},
+                "unrelated_tool",
+            ),
+        ],
+        ids=[
+            "prose_mention_not_a_tool_call",
+            "user_event_is_not_authoritative",
+            "system_event_is_not_authoritative",
+            "read_of_unrelated_file_not_skill_call",
+            "other_skill_name",
+            "unrelated_tool",
+        ],
+    )
+    def test_false_for_unauthorized_or_non_call_entries(
+        self, tmp_path, line: dict, reason: str
+    ) -> None:
+        """Only an authoritative mode-select Skill call satisfies the gate.
+
+        CONTRACT_SHAPE: bounded-change
+        """
+        transcript_path = _write_transcript(tmp_path, [line])
+
+        assert mode_select_observed_before_mutation(transcript_path) is False
+
+    @pytest.mark.parametrize(
+        "available", [False, True], ids=["unavailable", "malformed"]
+    )
+    def test_false_for_malformed_or_unavailable_transcript(
+        self, tmp_path, available: bool
+    ) -> None:
+        """Unavailable and malformed evidence both fail closed.
+
+        CONTRACT_SHAPE: bounded-change
+        """
+        transcript = tmp_path / "mode-select-transcript.jsonl"
+        if available:
+            transcript.write_text("not-json\nalso not json\n", encoding="utf-8")
+
+        assert mode_select_observed_before_mutation(str(transcript)) is False
+
+    def test_true_when_call_present_among_other_noise(self, tmp_path) -> None:
+        """Deterministic/irrelevant-event invariance: unrelated events before
+        and after the real call do not change the outcome.
+
+        CONTRACT_SHAPE: bounded-change
+        """
+        transcript_path = _write_transcript(
+            tmp_path,
+            [
+                {"type": "text", "text": "Starting work."},
+                {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}},
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "Skill",
+                                "input": {"skill": "nw-mode-select"},
+                            }
+                        ]
+                    },
+                },
+                {"type": "tool_use", "name": "Read", "input": {"file_path": "/x.py"}},
+            ],
+        )
+
+        assert mode_select_observed_before_mutation(transcript_path) is True

@@ -15,11 +15,23 @@ take before you start real work, using only instructions you execute yourself.
 If the user already said "human", "auto", "direct", "just do it", "walk me
 through it", or otherwise pinned a mode in this conversation, do NOT re-ask.
 Re-deriving a mode the user already stated is friction, not safety.
+**A generic authorization to act autonomously counts as `auto`**: phrases
+like "work autonomously", "make reasonable choices/decisions", or "use your
+best judgment" pin the mode exactly as explicitly as the literal word
+"auto" — proceed as auto without asking again, same as any other
+already-explicit mode.
 **Direct mode is always available and must stay explicit**: if the user's
 intent is a single small, unambiguous, already-scoped action, name it as
 "direct mode" in your reply and proceed — never silently promote a direct ask
 into a human-on-the-loop or auto workflow, and never record it anywhere; it is
 a conversational choice, not a state.
+
+**An explicit mode still invokes this skill for M/L/undetermined work**: a
+mode pinned in conversation removes only the re-ask question in Step 3, it
+never removes the requirement to load and follow this skill. Every route
+classified M, L, or undetermined invokes `nw-mode-select` (the Skill tool)
+before dispatch, even when human/auto was already stated — only a
+self-contained S skips this skill entirely.
 
 ## Step 2 — Classify size (S/M/L)
 
@@ -46,7 +58,11 @@ classification with no reason is a guess, not a decision.
 | L | human-on-the-loop by default | Large/uncertain shape defaults to staged human review; auto is only offered if the user explicitly overrides. |
 
 Never infer "auto" for an L-classified request from silence — silence on an L
-request means ask, not assume.
+request means ask, not assume. Silence or the absence of a reply channel
+never manufactures authorization, on M or L: an unattended or headless
+session with no reply forthcoming still asks and waits; it does not default
+to auto. Only an explicit phrase already given by the user (Step 1) pins the
+mode without asking.
 
 ## Human-on-the-loop: what "project to HTML" means here
 
@@ -69,19 +85,20 @@ infrastructure.
 Auto mode asks for authorization exactly once — naming what you are about to
 do and its blast radius — then executes with minimal further interaction: no
 per-stage HTML, no rich intermediate documentation, just the working diff and
-a short end-of-run summary. Auto mode is still governed by every existing
-nWave/DES rule that already applies to your actions (spine dispatch,
-destructive-action confirmation, etc.) — this skill changes ONLY the
-human-interaction cadence, never what is safe to do unattended.
+a short end-of-run summary. After classification, delegate explicit Auto M/L
+to `nw-auto`; that skill is the sole route authority. Do not restate or execute
+its M/L algorithm here, and do not route Auto through `nw-deliver`,
+`nw-distill`, or a generic wave command. Direct S and Human routes are
+unchanged.
 
 ## What this skill is explicitly NOT
 
 - Not a sequencer, not a state machine, not a new CLI verb.
 - Not a ledger or receipt system — direct-mode and auto-mode choices are
   conversational, never persisted as a workflow record.
-- Not a fork of the wave spine (`/nw-*`) — if the classified work already
-  maps onto a wave command, use that command; this skill only decides
-  WHETHER and HOW to interact with the human before you do, not what runs.
+- Not a fork of the wave spine (`/nw-*`). Human-on-the-loop may continue through
+  its existing wave route; direct S remains direct. Auto M/L delegates only to
+  `nw-auto` as stated above.
 - Not a new gate — a hook that surfaces this skill (SubagentStart's existing
   `additionalContext` reminder) is non-blocking and reused as-is; this skill
   adds no hook code of its own.

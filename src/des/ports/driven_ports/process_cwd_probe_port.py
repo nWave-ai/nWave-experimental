@@ -15,7 +15,7 @@ ABSENCE degrades LOUD (`Indeterminate`, REUSED from `committed_scope_port`
 -- the same degrade-LOUD VO every sibling port reuses) -- never a silent
 "nothing found" that gets read as "safe to remove".
 
-Mirrors the established `CommitDiffPort` / `CommitTreePathPort` shape
+Mirrors the established `CommitDiffPort` shape
 (abstract driven port in `ports/`, a real adapter in `adapters/driven/`):
 the domain layer defines WHAT liveness means; the adapter decides HOW to
 read it off the host.

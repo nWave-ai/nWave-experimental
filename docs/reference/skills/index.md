@@ -100,6 +100,10 @@
 
 - [nw-authoritative-sources](nw-authoritative-sources.md) — Domain-specific authoritative source databases, search strategies by topic category, and source freshness rules
 
+## nw-auto
+
+- [nw-auto](nw-auto.md) — Thin prompt-level router for explicitly authorized Auto M/L work: reuse the acceptance-designer, paradigm crafter, independent examiner, and Git evidence without creating another controller.
+
 ## nw-bdd-methodology
 
 - [nw-bdd-methodology](nw-bdd-methodology.md) — BDD patterns for acceptance test design - Given-When-Then structure, scenario writing rules, pytest-bdd implementation, anti-patterns, and living documentation
@@ -543,6 +547,38 @@
 ## nw-par-review-criteria
 
 - [nw-par-review-criteria](nw-par-review-criteria.md) — Quality dimensions and review checklist for devop reviews
+
+## nw-pbt-dotnet
+
+- [nw-pbt-dotnet](nw-pbt-dotnet.md) — .NET property-based testing with FsCheck, CsCheck, and fsharp-hedgehog frameworks
+
+## nw-pbt-erlang-elixir
+
+- [nw-pbt-erlang-elixir](nw-pbt-erlang-elixir.md) — Erlang/Elixir property-based testing with PropEr, PropCheck, and StreamData frameworks
+
+## nw-pbt-go
+
+- [nw-pbt-go](nw-pbt-go.md) — Go property-based testing with rapid and gopter frameworks
+
+## nw-pbt-haskell
+
+- [nw-pbt-haskell](nw-pbt-haskell.md) — Haskell property-based testing with QuickCheck and Hedgehog frameworks
+
+## nw-pbt-jvm
+
+- [nw-pbt-jvm](nw-pbt-jvm.md) — JVM property-based testing with jqwik, ScalaCheck, and ZIO Test frameworks
+
+## nw-pbt-python
+
+- [nw-pbt-python](nw-pbt-python.md) — Python property-based testing with Hypothesis framework, strategies, and pytest integration
+
+## nw-pbt-rust
+
+- [nw-pbt-rust](nw-pbt-rust.md) — Rust property-based testing with proptest, quickcheck, and bolero frameworks
+
+## nw-pbt-typescript
+
+- [nw-pbt-typescript](nw-pbt-typescript.md) — TypeScript/JavaScript property-based testing with fast-check framework and arbitraries
 
 ## nw-pdr-review-criteria
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import tempfile
 import textwrap
 from pathlib import Path
@@ -491,6 +493,45 @@ class TestIntegration:
     def test_full_pipeline_succeeds(self, real_root: Path):
         pages = run_pipeline(real_root, real_root / "docs" / "generated")
         assert len(pages) > 5
+
+    def test_standalone_entrypoint_uses_worktree_public_skill_projection(
+        self, real_root: Path, tmp_path: Path
+    ) -> None:
+        """Direct script execution resolves this worktree's shared catalog.
+
+        CONTRACT_SHAPE: bounded-change
+        """
+        expected_public_shared = {
+            "nw-auto",
+            "nw-pbt-dotnet",
+            "nw-pbt-erlang-elixir",
+            "nw-pbt-go",
+            "nw-pbt-haskell",
+            "nw-pbt-jvm",
+            "nw-pbt-python",
+            "nw-pbt-rust",
+            "nw-pbt-typescript",
+        }
+        output_dir = tmp_path / "reference"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(real_root / "scripts" / "docgen.py"),
+                "--root",
+                str(real_root),
+                "--output-dir",
+                str(output_dir),
+            ],
+            cwd=real_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        assert result.returncode == 0, result.stderr
+        generated = {path.stem for path in (output_dir / "skills").glob("*.md")}
+        assert expected_public_shared <= generated
 
     def test_artifact_counts_match_source(self, real_root: Path):
         from scripts.docgen import scan

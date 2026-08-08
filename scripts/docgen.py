@@ -21,16 +21,22 @@ from typing import TypedDict
 import yaml
 
 
-# Ensure project root is in sys.path when invoked as standalone script
+# Ensure THIS worktree's project root wins when invoked as a standalone script.
+# Editable environments may already append the worktree root after site-packages;
+# membership alone is therefore insufficient: ``scripts.shared`` would resolve
+# the stale installed projection/filter catalog before the local SSOT.
 _project_root = str(Path(__file__).resolve().parent.parent)
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
+if _project_root in sys.path:
+    sys.path.remove(_project_root)
+sys.path.insert(0, _project_root)
 # Also expose src/ so `des` resolves under bare python3 (pre-push hooks run
 # `language: system` outside the uv venv). Guarded: src/ exists only in the
 # dev repo — docgen.py never ships (absent from build_dist.py UTILITY_SCRIPTS
 # and both wheel force-include maps), so installed layouts are unaffected.
 _project_src = str(Path(_project_root) / "src")
-if Path(_project_src).is_dir() and _project_src not in sys.path:
+if Path(_project_src).is_dir():
+    if _project_src in sys.path:
+        sys.path.remove(_project_src)
     sys.path.insert(0, _project_src)
 
 from des._internal import subset_parser  # noqa: E402

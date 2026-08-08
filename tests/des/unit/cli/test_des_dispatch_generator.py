@@ -82,6 +82,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
@@ -987,42 +988,142 @@ def _run_crafter_dispatch(feature_id: str = "demo") -> subprocess.CompletedProce
 # --- half 1: the crafter path gains the merged content (RED today) --------
 
 
-def test_crafter_skill_loading_gains_the_yaml_merged_content() -> None:
-    """SKILL_LOADING (crafter/`_DEFAULT_SKILL_LOADING`) must gain, from
-    `atdd_pure.yaml` (design §3 row 3), the four items verified ABSENT from
-    today's 2-line body: the `nw-crafter-discipline-atdd-pure` load
-    instruction, the OO/FP code-design catalog directive, the tsunami-first
-    mandate, and the `nw-refactor`/`nw-mutation-test` exclusion.
+def _run_design_wave_dispatch(tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    """A phaseless authoring-wave dispatch (`--wave design`) -- resolves to
+    `nw-solution-architect` via `_WAVE_AGENTS`, never the crafter."""
+    return subprocess.run(
+        _dispatch_argv(
+            "--mode",
+            "atdd_pure",
+            "--project-id",
+            "probe-skill-loading-design-wave",
+            "--slice",
+            "feature-end",
+            "--wave",
+            "design",
+        ),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_isolated_dispatch_env(),
+        cwd=str(tmp_path),
+    )
 
-    FAILS TODAY: `_DEFAULT_SKILL_LOADING` carries none of these four items
-    (verified: `grep -c` for each phrase across `src/des/cli/dispatch.py`
-    returns zero).
+
+def _run_distill_dispatch() -> subprocess.CompletedProcess[str]:
+    """A `D_DISTILL` phase dispatch -- resolves to `nw-acceptance-designer`
+    via `_PHASE_AGENTS`. Code-facing, but never the crafter."""
+    return _run_dispatch(
+        "--mode",
+        "atdd_pure",
+        "--project-id",
+        "probe-skill-loading-distill",
+        "--slice",
+        "slice-01",
+        "--phase",
+        "D_DISTILL",
+    )
+
+
+#: ROOT CAUSE (graphify-proved, 2026-08-08): the retired `_DEFAULT_SKILL_
+#: LOADING` constant hardcoded the software-crafter's OWN skill list and was
+#: the fallback SKILL_LOADING body for EVERY agent this generator resolves
+#: that is not one of the two non-code-facing overrides (examiner, charter
+#: product-owner) -- including `nw-solution-architect` (design wave) and
+#: `nw-acceptance-designer` (D_DISTILL), agents whose own `nWave/agents/
+#: *.md` Skill Loading table names none of those crafter skills. The prior
+#: exact-prose test below (`test_crafter_skill_loading_gains_the_yaml_
+#: merged_content`) enshrined that leak by asserting the crafter's list
+#: verbatim; it is REPLACED by the role-neutral properties below: every
+#: code-facing agent's SKILL_LOADING must point at ITS OWN spec file by
+#: name, never at another role's file or skill list.
+_CODE_FACING_SKILL_LOADING_PROBES: dict[
+    str, Callable[[], subprocess.CompletedProcess[str]]
+] = {
+    "nw-software-crafter": _run_crafter_dispatch,
+    "nw-acceptance-designer": _run_distill_dispatch,
+}
+
+#: A crafter-only skill name that used to leak into every role's
+#: SKILL_LOADING body via the retired hardcoded default -- never any role's
+#: table but the crafter's own.
+_CRAFTER_ONLY_SKILLS: tuple[str, ...] = (
+    "nw-crafter-discipline-atdd-pure",
+    "nw-code-design-oo",
+    "nw-code-design-fp",
+    "nw-refactor",
+    "nw-mutation-test",
+)
+
+
+def test_skill_loading_points_each_code_facing_agent_at_its_own_spec_file() -> None:
+    """Each code-facing dispatch's SKILL_LOADING must name ONLY the resolved
+    agent's own spec file (`{agent}.md`) as the skill-loading SSOT, emit the
+    `[SKILL LOADED]` observability marker instruction, and never name
+    another probed role's spec file or a crafter-only skill (the exact
+    defect the retired `_DEFAULT_SKILL_LOADING` body caused).
     """
-    result = _run_crafter_dispatch()
+    rendered: dict[str, str] = {}
+    for agent, run in _CODE_FACING_SKILL_LOADING_PROBES.items():
+        result = run()
+        assert result.returncode == 0, (
+            f"expected exit 0 for {agent}; got {result.returncode}. "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        rendered[agent] = _section_text(result.stdout, "SKILL_LOADING")
+
+    for agent, skill_loading in rendered.items():
+        assert f"{agent}.md" in skill_loading, (
+            f"{agent}'s SKILL_LOADING must point at its own spec file -- "
+            f"got:\n{skill_loading}"
+        )
+        assert "[SKILL LOADED]" in skill_loading, (
+            f"{agent}'s SKILL_LOADING must require the observable "
+            f"`[SKILL LOADED]` marker -- got:\n{skill_loading}"
+        )
+        for other_agent in rendered:
+            if other_agent != agent:
+                assert f"{other_agent}.md" not in skill_loading, (
+                    f"{agent}'s SKILL_LOADING must never name {other_agent}'s "
+                    f"spec file -- got:\n{skill_loading}"
+                )
+        for skill in _CRAFTER_ONLY_SKILLS:
+            if agent != "nw-software-crafter":
+                assert skill not in skill_loading, (
+                    f"{agent}'s SKILL_LOADING must never name the "
+                    f"crafter-only skill {skill!r} -- got:\n{skill_loading}"
+                )
+
+
+def test_skill_loading_design_wave_points_at_the_architect_never_the_crafter(
+    tmp_path: Path,
+) -> None:
+    """A `--wave design` dispatch resolves to `nw-solution-architect`
+    (`_WAVE_AGENTS`) -- its SKILL_LOADING must point at
+    `nw-solution-architect.md`, never at the crafter's spec file or any
+    crafter-only skill (the exact leak the retired hardcoded default caused
+    for every non-special-cased agent).
+    """
+    result = _run_design_wave_dispatch(tmp_path)
     assert result.returncode == 0, (
         f"expected exit 0; got {result.returncode}. "
         f"stdout={result.stdout!r} stderr={result.stderr!r}"
     )
     skill_loading = _section_text(result.stdout, "SKILL_LOADING")
 
-    assert "nw-crafter-discipline-atdd-pure" in skill_loading, (
-        "SKILL_LOADING must load nw-crafter-discipline-atdd-pure at phase "
-        f"entry (design §3 row 3) -- got:\n{skill_loading}"
+    assert "nw-solution-architect.md" in skill_loading, (
+        f"design-wave SKILL_LOADING must point at nw-solution-architect.md -- "
+        f"got:\n{skill_loading}"
     )
-    assert (
-        "nw-code-design-oo" in skill_loading and "nw-code-design-fp" in skill_loading
-    ), (
-        "SKILL_LOADING must carry the OO/FP paradigm-appropriate code-design "
-        f"catalog directive (design §3 row 3) -- got:\n{skill_loading}"
+    assert "nw-software-crafter.md" not in skill_loading, (
+        f"design-wave SKILL_LOADING must never point at the crafter's spec "
+        f"file -- got:\n{skill_loading}"
     )
-    assert "mcp__tsunami__" in skill_loading, (
-        "SKILL_LOADING must carry the tsunami-first structural-fact mandate "
-        f"(design §3 row 3) -- got:\n{skill_loading}"
-    )
-    assert "nw-refactor" in skill_loading and "nw-mutation-test" in skill_loading, (
-        "SKILL_LOADING must carry the nw-refactor/nw-mutation-test "
-        f"phase-inappropriateness exclusion (design §3 row 3) -- got:\n{skill_loading}"
-    )
+    for skill in _CRAFTER_ONLY_SKILLS:
+        assert skill not in skill_loading, (
+            f"design-wave SKILL_LOADING must never name the crafter-only "
+            f"skill {skill!r} -- got:\n{skill_loading}"
+        )
 
 
 def test_crafter_quality_gates_gains_the_runner_agnostic_and_wiring_check_content() -> (

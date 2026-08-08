@@ -172,6 +172,17 @@ def read_and_parse_stdin(
     return StdinParseResult(hook_input=hook_input)
 
 
+def extract_transcript_path(hook_input: dict) -> str | None:
+    """Validated optional ``transcript_path`` from a raw hook_input dict.
+
+    The raw dict from ``StdinParseResult.hook_input`` is preserved as-is for
+    every existing caller; this is a side reader, not a wrapper. Returns the
+    path only when present and a non-empty string, else None.
+    """
+    value = hook_input.get("transcript_path")
+    return value if isinstance(value, str) and value else None
+
+
 # ---------------------------------------------------------------------------
 # Diagnostic event loggers
 # ---------------------------------------------------------------------------

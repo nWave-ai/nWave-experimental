@@ -1055,13 +1055,20 @@ class TestCodexHookPayloadCompatibility:
     These tests document both behaviours so future adapters know the exact gap.
     """
 
-    def _invoke_pre_tool_use_handler(self, payload: dict) -> tuple[int, str]:
+    def _invoke_pre_tool_use_handler(
+        self, payload: dict, tmp_path: Path
+    ) -> tuple[int, str]:
         """Run handle_pre_tool_use() with a custom stdin payload.
 
         Patches:
         - sys.stdin: supplies the JSON payload
         - hook_protocol._audit_writer_factory: returns NullAuditLogWriter
         - service_factory.create_pre_tool_use_service: returns allow-all stub
+        - des_task_signal.DES_DELIVER_SESSION_FILE: an active-session marker,
+          bypassing the root activation-routing-before-mutation gate (added
+          after this test was written) — orthogonal to the payload-shape
+          parsing this test targets. Same technique the K3-A gate's own test
+          suite uses (test_k3a_additional_context_channel.py).
 
         Returns:
             (exit_code, stdout_text)
@@ -1070,7 +1077,11 @@ class TestCodexHookPayloadCompatibility:
         from unittest.mock import MagicMock, patch
 
         from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
-        from des.adapters.drivers.hooks import hook_protocol, service_factory
+        from des.adapters.drivers.hooks import (
+            des_task_signal,
+            hook_protocol,
+            service_factory,
+        )
         from des.adapters.drivers.hooks.pre_tool_use_handler import handle_pre_tool_use
         from des.ports.driver_ports.pre_tool_use_port import HookDecision
 
@@ -1082,6 +1093,9 @@ class TestCodexHookPayloadCompatibility:
         allow_decision = HookDecision(action="allow", reason="stub allow")
         stub_service = MagicMock()
         stub_service.validate.return_value = allow_decision
+
+        session_file = tmp_path / "deliver-session.json"
+        session_file.write_text("{}", encoding="utf-8")
 
         with (
             patch("sys.stdin", io.StringIO(stdin_data)),
@@ -1096,6 +1110,7 @@ class TestCodexHookPayloadCompatibility:
                 "create_pre_tool_use_service",
                 return_value=stub_service,
             ),
+            patch.object(des_task_signal, "DES_DELIVER_SESSION_FILE", session_file),
         ):
             try:
                 exit_code = handle_pre_tool_use()
@@ -1104,7 +1119,7 @@ class TestCodexHookPayloadCompatibility:
 
         return exit_code, captured_stdout.getvalue()
 
-    def test_codex_pretooluse_payload_accepted_by_des_adapter(self):
+    def test_codex_pretooluse_payload_accepted_by_des_adapter(self, tmp_path):
         """
         GIVEN: A Codex-shaped PreToolUse payload (no transcript_path field)
         WHEN: The DES adapter's handle_pre_tool_use() processes it
@@ -1127,14 +1142,16 @@ class TestCodexHookPayloadCompatibility:
             # NOTE: transcript_path deliberately absent (Codex doesn't send it)
         }
 
-        exit_code, stdout_text = self._invoke_pre_tool_use_handler(codex_payload)
+        exit_code, stdout_text = self._invoke_pre_tool_use_handler(
+            codex_payload, tmp_path
+        )
 
         assert exit_code == 0, (
             f"DES adapter must allow Codex-shaped PreToolUse payload; "
             f"got exit_code={exit_code}, stdout={stdout_text!r}"
         )
 
-    def test_claude_code_pretooluse_payload_still_accepted(self):
+    def test_claude_code_pretooluse_payload_still_accepted(self, tmp_path):
         """
         GIVEN: A Claude Code-shaped PreToolUse payload (with transcript_path)
         WHEN: The DES adapter's handle_pre_tool_use() processes it
@@ -1149,7 +1166,9 @@ class TestCodexHookPayloadCompatibility:
             "transcript_path": "/home/user/.claude/projects/proj/transcript.jsonl",
         }
 
-        exit_code, _stdout = self._invoke_pre_tool_use_handler(claude_code_payload)
+        exit_code, _stdout = self._invoke_pre_tool_use_handler(
+            claude_code_payload, tmp_path
+        )
 
         assert exit_code == 0, (
             "Claude Code PreToolUse payload must still be accepted after Codex work"

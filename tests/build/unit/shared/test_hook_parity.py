@@ -22,10 +22,16 @@ import pytest
 from scripts.build_plugin import generate_hook_config as plugin_generate_hook_config
 from scripts.shared.hook_definitions import (
     HOOK_EVENT_TYPES,
+    HOOK_EVENTS,
 )
 from scripts.shared.hook_definitions import (
     generate_hook_config as shared_generate_hook_config,
 )
+
+
+_EXPECTED_PRETOOLUSE_MATCHERS = [
+    h.matcher for h in HOOK_EVENTS if h.event == "PreToolUse"
+]
 
 
 def _stub_command(action: str) -> str:
@@ -82,20 +88,11 @@ class TestHookParityPluginVsInstaller:
     def test_both_paths_produce_independent_pretooluse_entries(
         self, plugin_config: dict, installer_config: dict
     ):
-        """Both paths produce 7 PreToolUse entries: Agent, Write, Edit, Bash x 4."""
+        """Both paths produce the PreToolUse matcher sequence declared in HOOK_EVENTS."""
         plugin_matchers = [e.get("matcher") for e in plugin_config["PreToolUse"]]
         installer_matchers = [e.get("matcher") for e in installer_config["PreToolUse"]]
-        expected = [
-            "Agent",
-            "Write",
-            "Edit",
-            "Bash",
-            "Bash",
-            "Bash",
-            "Bash",
-        ]
-        assert plugin_matchers == expected
-        assert installer_matchers == expected
+        assert plugin_matchers == _EXPECTED_PRETOOLUSE_MATCHERS
+        assert installer_matchers == _EXPECTED_PRETOOLUSE_MATCHERS
 
     def test_event_matcher_pairs_identical_between_paths(
         self, plugin_config: dict, installer_config: dict

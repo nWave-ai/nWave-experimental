@@ -54,6 +54,7 @@ class TestHookEventDefinitions:
             "Bash",
             "pre-bash-worktree-removal-guard",
         ) in events_matchers
+        assert ("PreToolUse", "Bash", "pre-tool-use") in events_matchers
         assert ("PostToolUse", "Agent", "post-tool-use") in events_matchers
         assert ("SubagentStop", None, "subagent-stop") in events_matchers
         assert ("SubagentStop", None, "deliver-progress") not in events_matchers
@@ -121,6 +122,23 @@ class TestGenerateHookConfig:
             "Bash",
             "Bash",
         ]
+
+    def test_neutral_bash_reaches_portable_pre_tool_use_handler(self):
+        """Installed config binds Bash to the shipped module handler.
+
+        CONTRACT_SHAPE: bounded-change
+        """
+        config = generate_hook_config(self._simple_command)
+
+        portable_root_gates = [
+            entry
+            for entry in config["PreToolUse"]
+            if entry.get("matcher") == "Bash"
+            and entry["hooks"][0]["command"] == "python3 -m des.hook pre-tool-use"
+        ]
+
+        assert len(portable_root_gates) == 1
+        assert "scripts.hooks" not in portable_root_gates[0]["hooks"][0]["command"]
 
     def test_each_entry_has_hooks_array_with_command(self):
         """Every entry has a hooks array with type=command and non-empty command."""
@@ -196,11 +214,34 @@ class TestBuildGuardCommand:
         cmd = build_guard_command("python3 -m des.hook pre-write")
         assert "execution-log" in cmd
 
-    def test_guard_command_buffers_stdin(self):
-        """Guard command captures stdin into INPUT variable."""
+    def test_guard_command_buffers_stdin_without_the_dash_unsafe_echo_reemission(self):
+        """Guard command captures stdin into INPUT once, then re-emits it to
+        the downstream command.
+
+        Was pinned to `'echo "$INPUT"' in cmd` -- i.e. to the literal
+        re-emission mechanism that WAS the D1 defect
+        (k3a-hook-payload-dash-safety): dash's builtin `echo` expands
+        backslash escapes in its argument, so a real Edit's `old_string`/
+        `new_string` (riddled with `\\n`) got corrupted before any handler
+        saw it. That assertion could never fail no matter how badly `$INPUT`
+        was re-emitted, as long as SOME `echo "$INPUT"` text existed in the
+        template -- pinning the vulnerable string is how this class stayed
+        invisible. Now asserts the property (INPUT captured once, still
+        referenced downstream) plus a regression guard against
+        REINTRODUCING the known-vulnerable form, rather than pinning one
+        specific safe implementation forever. Byte-preservation itself is
+        proven by execution under real `/bin/sh` in
+        `tests/hooks/test_dash_shell_json_corruption_regression.py`
+        (`TestBuildGuardCommandBytePreservation`), which this static check
+        does not attempt to duplicate.
+        """
         cmd = build_guard_command("python3 -m des.hook pre-write")
         assert "INPUT=$(cat)" in cmd
-        assert 'echo "$INPUT"' in cmd
+        assert '"$INPUT"' in cmd
+        assert 'echo "$INPUT"' not in cmd, (
+            'guard command re-introduced the dash-unsafe `echo "$INPUT"` '
+            "re-emission -- see k3a-hook-payload-dash-safety D1"
+        )
 
 
 class TestBashExecutionLogGuard:

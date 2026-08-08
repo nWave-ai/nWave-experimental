@@ -101,9 +101,12 @@ def test_subagent_start_hook_reused_unmodified_and_still_fail_open() -> None:
 
 
 def test_skill_is_reachable_from_the_reminder_message_naming_convention() -> None:
-    """The reused hook tells agents to load ~/.claude/skills/nw-<name>/SKILL.md —
-    confirm nw-mode-select fits that exact addressable path shape."""
+    """The reused hook tells agents to load skills by NAME via the Skill tool
+    (D3-analog fix: a hardcoded ~/.claude-relative path is invalid under an
+    isolated CLAUDE_CONFIG_DIR) — confirm nw-mode-select fits the addressable
+    flat nw-<name>/SKILL.md layout the Skill tool's own resolver expects."""
     hook_source = HOOK_PATH.read_text(encoding="utf-8")
-    assert "skills/nw-<skill-name>/SKILL.md" in hook_source
+    assert "~/.claude" not in hook_source
+    assert "Skill tool" in hook_source
     assert SKILL_PATH.parent.name == "nw-mode-select"
     assert SKILL_PATH.name == "SKILL.md"

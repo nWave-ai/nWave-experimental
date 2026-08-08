@@ -8,9 +8,8 @@ captured") because its callers never needed lock state. Rather than widen
 that shared parser's contract for one new caller (two sibling changes
 extending the same parsed shape can silently break an unrelated caller's
 assumption of what fields are populated), this adapter carries its OWN
-narrow, single-purpose porcelain parse -- mirroring how `CommitDiffPort` /
-`CommitTreePathPort` each own a narrow git read rather than widening a
-shared one.
+narrow, single-purpose porcelain parse -- mirroring how `CommitDiffPort`
+owns a narrow git read rather than widening a shared one.
 
 `has_unmerged_commits` reuses `is_merged_contribution` (already shipped in
 `git_subprocess.py` for the worktree-cleanup sweep) rather than re-deriving

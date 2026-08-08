@@ -15,7 +15,7 @@ predicate (`des.domain.worktree_anti_rot_triage`) stays git-free and git
 enters ONLY behind this read-only driven port, degrading LOUD
 (`Indeterminate`, reused from `committed_scope_port`) -- never silent.
 
-Mirrors `CommitDiffPort` / `CommitTreePathPort`: abstract port here, real
+Mirrors `CommitDiffPort`: abstract port here, real
 adapter in `adapters/driven/git/`.
 """
 

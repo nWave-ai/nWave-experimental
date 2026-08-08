@@ -193,6 +193,65 @@ class TestDESHookIdempotence:
         assert plugin._RETIRED_HOOK_COMMANDS[0] not in commands
 
     @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")
+    def test_upgrade_removes_retired_no_verify_hook_and_preserves_user_hook(
+        self, _mock_python, plugin: DESPlugin, install_context: InstallContext
+    ):
+        """CONTRACT_SHAPE: bounded-change. Exact retirement preserves user hooks."""
+        result = plugin._install_des_hooks(install_context)
+        assert result.success, result.message
+
+        settings_file = install_context.claude_dir / "settings.json"
+        settings = json.loads(settings_file.read_text())
+        retired_command = next(
+            command
+            for command in plugin._RETIRED_HOOK_COMMANDS
+            if command.startswith("# des-hook:pre-bash-no-verify-reminder\n")
+        )
+        user_command = (
+            "# user-hook:no-verify-observer\necho scripts.hooks.no_verify_reminder"
+        )
+        user_hook = {
+            "type": "command",
+            "command": user_command,
+            "timeout": 17,
+        }
+        settings["hooks"]["PreToolUse"].append(
+            {
+                "matcher": "Bash",
+                "user_metadata": {"owner": "user"},
+                "hooks": [
+                    {"type": "command", "command": retired_command},
+                    user_hook,
+                ],
+            }
+        )
+        settings_file.write_text(json.dumps(settings, indent=2))
+
+        result = plugin._install_des_hooks(install_context)
+        assert result.success, result.message
+        reconciled = json.loads(settings_file.read_text())
+        commands = [
+            hook["command"]
+            for entry in reconciled["hooks"]["PreToolUse"]
+            for hook in entry.get("hooks", [])
+        ]
+        assert retired_command not in commands
+        user_entries = [
+            entry
+            for entry in reconciled["hooks"]["PreToolUse"]
+            if any(
+                hook.get("command") == user_command for hook in entry.get("hooks", [])
+            )
+        ]
+        assert user_entries == [
+            {
+                "matcher": "Bash",
+                "user_metadata": {"owner": "user"},
+                "hooks": [user_hook],
+            }
+        ]
+
+    @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")
     def test_install_over_mixed_format_hooks_produces_no_duplicates(
         self, _mock_python, plugin: DESPlugin, install_context: InstallContext
     ):

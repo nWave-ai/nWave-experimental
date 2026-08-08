@@ -522,16 +522,6 @@ gates:
     entry_function: main
     language_neutral_contract: true
 
-  # lane-seal-refuses-premature, part B (fix-slice-seal-carries-commit-sha):
-  # 1:1 mirror of the _REGISTRY row added in b8bcb6ad4. Backfilled by the
-  # arm-coherence catalog-coherence gate-arming pass (2026-07-29) -- this row
-  # was missing since the row's own commit, silently drifting the catalog.
-  - gate_id: verify-seal-provenance
-    responsibility: "For every SliceCommitVerified record of --feature-id, audits whether the slice's AT file(s) existed as blobs in the commit_sha the record attests -- a record whose AT postdates its own seal is a proven PREMATURE attestation; a record predating commit_sha's existence is INDETERMINATE, never silently trusted. Pure read: no ledger mutation."
-    module: des.cli.verify_seal_provenance
-    entry_function: main
-    language_neutral_contract: true
-
   # declared-facts-reachable-recorded slice-07 (DD-12): 1:1 mirror of the
   # _REGISTRY row added in df0b49b3a. Backfilled by the arm-coherence
   # catalog-coherence gate-arming pass (2026-07-29) -- this row was missing

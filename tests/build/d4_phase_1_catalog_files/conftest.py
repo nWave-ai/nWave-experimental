@@ -49,7 +49,7 @@ class CatalogComposition:
     def load_registry(self) -> None:
         from des.cli.__main__ import _REGISTRY
 
-        self._registry_names = [row.name for row in _REGISTRY]
+        self._registry_names = [row.name for row in _REGISTRY if row.catalogued_gate]
 
     def validate(self) -> None:
         import jsonschema

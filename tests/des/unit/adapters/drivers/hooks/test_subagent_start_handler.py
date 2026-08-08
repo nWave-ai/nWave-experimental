@@ -160,12 +160,26 @@ class TestAdditionalContextMessageFormat:
         out = capsys.readouterr().out.strip()
         payload = json.loads(out)
         msg = payload["additionalContext"]
-        # Must be an imperative reminder referencing the flat topical skill layout
+        # Must be an imperative reminder that resolves skills by NAME via the
+        # Skill tool (D3-analog: a hardcoded ~/.claude-relative path is invalid
+        # under an isolated CLAUDE_CONFIG_DIR).
         assert "MANDATORY" in msg
         assert "nw-solution-architect" in msg
-        # Flat layout: nw-<skill-name>/SKILL.md — NOT old per-agent subdirs
-        assert "~/.claude/skills/nw-" in msg
-        assert "~/.claude/skills/nw/nw-" not in msg
+        assert "Skill tool" in msg
+        assert "~/.claude" not in msg
+
+    def test_additional_context_does_not_force_reloading_already_loaded_skills(self):
+        """B5: reminder is idempotent -- it must not instruct the agent to
+        reload a skill already loaded in the current session; it names the
+        already-loaded skills as exempt rather than repeating an unconditional
+        reload mandate."""
+        from des.adapters.drivers.hooks.subagent_start_handler import (
+            _build_reminder_message,
+        )
+
+        msg = _build_reminder_message("nw-software-crafter")
+        assert "Load any relevant skill not already loaded this session" in msg
+        assert "already loaded this session do not need to be reloaded" in msg
 
 
 class TestSubagentStartHandlerFailOpen:

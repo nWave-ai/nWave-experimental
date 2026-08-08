@@ -4,6 +4,8 @@
 
 Epic and feature work in this project flows through nWave's wave-based methodology. Use the `/nw-*` slash commands to guide work end-to-end.
 
+**Before any tool call — including read-only discovery, not just your first mutating call (Write/Edit/Agent) — establish and state your route: posture (`human` / `auto` / `direct`), size (S/M/L), one observable reason for that size, and the path you are taking.** Route first, then explore: once the route is stated, use bounded, read-only discovery to fill gaps in your own understanding. An unambiguous, self-contained S may state `direct + S + reason` and proceed straight to the fix, without invoking `nw-mode-select` or a wave. Everything else — M, L, or undetermined size — invokes the `nw-mode-select` skill (Skill tool) first, unless the route is already explicit in this conversation (a generic autonomous-execution authorization counts as explicit `auto`; do not ask again) — an explicit mode still gets sized S/M/L, it only skips the re-ask. For undetermined-shape new work with no prior wave artifacts, invoke `nw-new` first: it recommends the correct starting wave instead of guessing directly at `/nw-deliver`.
+
 The seven waves are:
 - `/nw-discover` — explore the market and problem space
 - `/nw-diverge` — compare design directions and approaches
@@ -15,28 +17,10 @@ The seven waves are:
 
 **Mandatory floor**: DISTILL → DELIVER. Every feature must include acceptance tests and test-driven code. The five upstream waves are optional; start where your knowledge is incomplete.
 
-**Never hand-roll feature work** bypassing the spine. Use `/nw-deliver` in full, including its feature-end cycle. This ensures your work goes through the quality gates, TDD discipline, and peer review that define nWave.
+**Never hand-roll feature work** bypassing the spine — not even under a tight budget. For Auto mode on M/L work, load the `nw-auto` skill directly — never `/nw-deliver` first, and never in parallel with it; `nw-auto` owns the fixed floor end-to-end — `nw-acceptance-designer` authors the thin contract and acceptance tests, one paradigm-appropriate crafter implements, one independent examiner verifies — cheaper than hand-implementing and self-checking the same work, not "the full pipeline." You orchestrate this handoff; you never substitute for any of the three roles by authoring the contract, the acceptance tests, or the examiner's verdict yourself. A tight budget shrinks context and documentation; it never skips these roles. For Human mode, `/nw-deliver` carries this same floor plus staged review; its feature-end cycle runs once per feature (not once per slice, and not a second multi-agent round) to re-verify the whole tree — see `/nw-deliver` for the mechanics. Auto mode has no separate feature-end cycle: `nw-auto`'s own examiner verdict is the re-verification.
 
 If you need to continue work from a previous session or pick up where another developer left off, use `/nw-continue` to see the current state and next steps.
 
-### Help Us Improve nWave — Local Feedback Log
-
-nWave is in **active development**. Your experience shapes the official release.
-
-After each wave, log your observations in `.nwave/beta-feedback.md` (this file is local to your project and git-ignorable). Capture:
-
-- **Methodology friction**: Did the wave feel unclear? Did a command reject something without explaining why? Did the output mislead you? (Describe the tool's behavior, not your specific project.)
-- **Time spent per wave**: How long did DISCUSS, DESIGN, DISTILL, DELIVER take? Realistic timelines help us tune defaults.
-- **Token and cost consumption**: Approximate tokens and cost per wave. We're optimizing for efficiency.
-
-Format is free-form — describe what happened and what confused you in plain language.
-
-**Share feedback manually** via GitHub Issues on the experimental repo (use the `feedback` or `beta` label) or email. Nothing is auto-transmitted.
-
 ### Privacy — Non-Negotiable
 
-Your feedback log must contain **ZERO project content, code, secrets, user details, or identifying information**. Document how nWave behaved ("the DESIGN gate took 47 minutes on a 600-line microservice module"), never what you built ("OAuth2 flow for the medical patient portal").
-
-Before sharing the log, review it and remove any accidental project detail. The goal is to describe the *tool's behavior* so we can improve it for everyone — no project context needs to leave your machine.
-
-See [PRIVACY.md](../../PRIVACY.md) for nWave's complete privacy policy. The same guarantees apply to this beta: local-only storage, no telemetry, no automatic transmission of any kind.
+nWave is in **active development** and runs entirely local: no telemetry, no automatic transmission of any kind. See [PRIVACY.md](../../PRIVACY.md) for the complete policy. Feedback on nWave itself is welcome via GitHub Issues on the experimental repo, at your discretion — never a required step of doing the work.

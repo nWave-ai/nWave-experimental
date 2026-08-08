@@ -11,20 +11,28 @@ build-tier catalog suite (`tests/build/d4_phase_1_catalog_files/`) catches
 only in a full run. This module is the FAST (<1s) explicit/CI/feature-end
 check for the same drift: it compares three sets --
 
-  (a) CLI registry subcommand names   (`_SubcommandRow.name` in `_REGISTRY`)
+  (a) CATALOGUED CLI registry subcommand names (`_SubcommandRow.name` in
+      `_REGISTRY` whose `catalogued_gate` classification is True -- the
+      default when the keyword is omitted; a row is excluded only by an
+      explicit `catalogued_gate=False`, e.g. `code-fact`, a read-only query
+      surface with no PASS/FAIL verdict and nothing to reconcile)
   (b) catalog gate_ids                (`nWave/gates/_catalog.yaml` gates[].gate_id)
   (c) per-gate `.yaml` files          (`nWave/gates/*.yaml` minus meta files)
 
 -- and on any mismatch reports each drifting id + the concrete HOW to fix it
 (add the missing catalog row / per-gate file / registry row). Exit 0 when the
-three sets are coherent.
+three sets are coherent -- coherent here means 1:1 for the CATALOGUED-GATE
+subset of the registry, not the whole registry.
 
-Filesystem + regex only (GDP-7 agnostic): the registry is parsed as TEXT from
-`<repo_root>/src/des/cli/__main__.py` -- never imported -- so this module can
-evaluate an arbitrary `--repo-root` (including throwaway fixture trees) without
-executing that tree's Python. Degrade-LOUD (GDP-6) on THREE surfaces, never a
-traceback and never a silent pass: (1) a missing/unreadable nWave-dev CLI
-registry (`--repo-root` is not an nWave-dev checkout), (2) a missing/unreadable
+Filesystem + stdlib `ast` only (GDP-7 agnostic): the registry is PARSED (never
+imported/executed) from `<repo_root>/src/des/cli/__main__.py`, so this module
+can evaluate an arbitrary `--repo-root` (including throwaway fixture trees)
+without executing that tree's Python. `ast.parse` (not a regex) is what lets
+this module read the `catalogued_gate` keyword argument honestly -- a
+line-oriented regex cannot see keyword arguments spanning a wrapped call.
+Degrade-LOUD (GDP-6) on THREE surfaces, never a traceback and never a silent
+pass: (1) a missing/unreadable/unparseable nWave-dev CLI registry
+(`--repo-root` is not an nWave-dev checkout), (2) a missing/unreadable
 `nWave/gates/` directory (same cause), and (3) a missing/malformed
 `_catalog.yaml`. All three raise a `CoherenceInputUnavailableError` (subclass
 `CatalogMalformedError` for surface 3) that `main()` renders as a single
@@ -43,6 +51,7 @@ block-list shape and enough to detect a structurally malformed catalog
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
@@ -52,7 +61,6 @@ from pathlib import Path
 from des.cli._repo_root_arg import add_repo_root_argument
 
 
-_SUBCOMMAND_ROW_NAME_RE = re.compile(r'_SubcommandRow\(\s*"([^"]+)"')
 _GATES_BLOCK_MARKER_RE = re.compile(r"^gates:\s*$", re.MULTILINE)
 _GATE_ID_ENTRY_RE = re.compile(
     r'^\s*-\s*gate_id:\s*"?([a-z0-9][a-z0-9-]*)"?\s*$', re.MULTILINE
@@ -81,6 +89,9 @@ class CoherenceResult:
     per-gate-without-catalog-entry.
     """
 
+    #: Only the CATALOGUED-GATE subset of `_REGISTRY` names (`catalogued_gate`
+    #: True, the default). A row with an explicit `catalogued_gate=False` is a
+    #: non-gate public tool and never appears here or in any drift list.
     registry_names: frozenset[str]
     catalog_gate_ids: frozenset[str]
     per_gate_stems: frozenset[str]
@@ -112,12 +123,76 @@ class CoherenceResult:
         )
 
 
+def _is_subcommand_row_call(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_SubcommandRow"
+    )
+
+
+def _string_literal(node: ast.expr | None) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _row_name(call: ast.Call) -> str | None:
+    if call.args:
+        return _string_literal(call.args[0])
+    for keyword in call.keywords:
+        if keyword.arg == "name":
+            return _string_literal(keyword.value)
+    return None
+
+
+def _row_is_catalogued_gate(call: ast.Call) -> bool:
+    """True unless the row carries an explicit ``catalogued_gate=False``.
+
+    Mirrors `_SubcommandRow.catalogued_gate`'s own default (True) so an
+    omitted classification -- the overwhelming majority of rows -- keeps
+    meaning exactly what it always meant: a real gate.
+
+    Raises `CoherenceInputUnavailableError` when the classification is
+    passed as a bare 4th POSITIONAL argument instead of the
+    `catalogued_gate=` keyword: a positional value here is invisible to this
+    keyword-only inspection and would otherwise fall straight through to the
+    `True` default even when the author meant `False` -- silently
+    mis-classifying a non-gate public tool as a real gate. Ambiguous, so
+    this refuses to guess and names the row explicitly instead.
+    """
+    if len(call.args) >= 4:
+        row_name = _row_name(call) or "<unnamed row>"
+        raise CoherenceInputUnavailableError(
+            f"row '{row_name}' passes its catalogued_gate classification as "
+            "a bare 4th positional argument instead of the catalogued_gate="
+            " keyword -- ambiguous, refusing to guess. Rewrite it as "
+            f'_SubcommandRow("{row_name}", ..., catalogued_gate=<bool>) '
+            "using the keyword form."
+        )
+    for keyword in call.keywords:
+        if keyword.arg != "catalogued_gate":
+            continue
+        if isinstance(keyword.value, ast.Constant) and isinstance(
+            keyword.value.value, bool
+        ):
+            return keyword.value.value
+    return True
+
+
 def _parse_registry_names(repo_root: Path) -> frozenset[str]:
-    """Regex-parse `_SubcommandRow("<name>", ...)` occurrences (no import).
+    """AST-parse catalogued-gate `_SubcommandRow(...)` names (no import).
+
+    Uses `ast.parse` rather than a regex so a `catalogued_gate=False` keyword
+    argument -- however the call is wrapped across lines -- is read
+    correctly; only rows whose `catalogued_gate` classification is True
+    (the default when the keyword is omitted) are returned, since those are
+    the only rows `nWave/gates/_catalog.yaml` is obligated to mirror.
 
     Raises `CoherenceInputUnavailableError` when the nWave-dev CLI registry
-    module can't be read -- the common case being `repo_root` is not an
-    nWave-dev checkout at all (bare dir, unrelated project, missing path).
+    module can't be read or fails to parse as Python -- the common case
+    being `repo_root` is not an nWave-dev checkout at all (bare dir,
+    unrelated project, missing path).
     """
     main_py = repo_root / "src" / "des" / "cli" / "__main__.py"
     try:
@@ -127,7 +202,21 @@ def _parse_registry_names(repo_root: Path) -> frozenset[str]:
             "cannot read the nWave-dev CLI registry module -- this "
             "repo_root does not look like an nWave-dev checkout"
         ) from exc
-    return frozenset(_SUBCOMMAND_ROW_NAME_RE.findall(text))
+    try:
+        tree = ast.parse(text, filename=str(main_py))
+    except SyntaxError as exc:
+        raise CoherenceInputUnavailableError(
+            f"cannot parse {main_py} as Python: {exc} -- this repo_root's "
+            "CLI registry module is not valid Python"
+        ) from exc
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not _is_subcommand_row_call(node) or not _row_is_catalogued_gate(node):
+            continue
+        name = _row_name(node)
+        if name is not None:
+            names.add(name)
+    return frozenset(names)
 
 
 def _parse_catalog_gate_ids(repo_root: Path) -> frozenset[str]:

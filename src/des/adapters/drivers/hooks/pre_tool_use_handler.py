@@ -24,6 +24,7 @@ from des.adapters.drivers.hooks import des_task_signal, hook_protocol, service_f
 from des.adapters.drivers.hooks.hook_protocol import (
     EXIT_CODE_TO_DECISION,
     STDERR_CAPTURE_MAX_CHARS,
+    extract_transcript_path,
     log_hook_completed,
     log_hook_error,
     log_hook_invoked,
@@ -33,6 +34,7 @@ from des.adapters.drivers.hooks.root_activation_context import (
     build_root_mode_select_context,
 )
 from des.application.commit_attribution_service import CommitAttributionService
+from des.application.skill_tracking_service import mode_select_observed_before_mutation
 from des.application.wave_activation_service import WaveActivationService
 from des.domain.atdd_pure_phases import ATDDPurePhase
 from des.domain.des_marker_parser import DesMarkerParser
@@ -339,6 +341,35 @@ def handle_pre_tool_use() -> int:
             tool_input = hook_input.get("tool_input", {})
 
             if hook_input.get("tool_name") == "Bash":
+                if (
+                    not hook_input.get("agent_id")
+                    and not hook_input.get("agent_type")
+                    and not des_task_signal.DES_DELIVER_SESSION_FILE.exists()
+                ):
+                    transcript_path = extract_transcript_path(hook_input)
+                    observed = False
+                    try:
+                        observed = bool(
+                            transcript_path
+                            and mode_select_observed_before_mutation(transcript_path)
+                        )
+                    except Exception:
+                        observed = False
+                    if not observed:
+                        print(
+                            json.dumps(
+                                {
+                                    "decision": "block",
+                                    "reason": (
+                                        "Invoke nw-mode-select before the "
+                                        "first mutation."
+                                    ),
+                                }
+                            )
+                        )
+                        exit_code = 2
+                        return exit_code
+
                 mutation_exit = emit_commit_attribution_mutation(tool_input)
                 if mutation_exit is not None:
                     exit_code = mutation_exit
@@ -508,7 +539,15 @@ def handle_pre_tool_use() -> int:
                                     "hookSpecificOutput": {
                                         "hookEventName": "PreToolUse",
                                         "permissionDecision": "allow",
-                                        "permissionDecisionReason": root_context,
+                                        # D2: permissionDecisionReason explains
+                                        # a permission decision; the installed
+                                        # runtime's own hook doc (Claude Code
+                                        # 2.1.224) documents only
+                                        # additionalContext as "Text injected
+                                        # into model context" -- that is the
+                                        # channel the reminder must use to be
+                                        # seen at all.
+                                        "additionalContext": root_context,
                                     }
                                 }
                             )

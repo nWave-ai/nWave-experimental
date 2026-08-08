@@ -260,10 +260,6 @@ class DESPlugin(InstallationPlugin):
     # Independent DES hook scripts installed to ~/.claude/scripts/.
     DES_HOOKS = [
         "git_stash_guard.py",
-        # --no-verify reminder guard (Ale 2026-06-26): the lean PreToolUse/Bash
-        # hook (wired via hook_definitions._BASH_NO_VERIFY_REMINDER) that blocks
-        # a git verify-bypass with an imperative reminder to get human agreement.
-        "no_verify_reminder.py",
         # fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29):
         # the PreToolUse/Bash hook (wired via hook_definitions.
         # _BASH_WORKTREE_REMOVAL_GUARD) that refuses `git worktree remove`
@@ -310,6 +306,13 @@ class DESPlugin(InstallationPlugin):
         "# des-hook:subagent-stop-spine-detector\n"
         "INPUT=$(cat); "
         'echo "$INPUT" | python3 -m scripts.hooks.spine_ledger_subagent_stop_detector',
+        "# des-hook:pre-bash-no-verify-reminder\n"
+        "INPUT=$(cat); "
+        "CMD=$(printf '%s' \"$INPUT\" | python3 -c "
+        '"import sys,json; print(json.load(sys.stdin)'
+        ".get('tool_input',{}).get('command',''))\"); "
+        "printf '%s' \"$CMD\" | grep -qE '\\bgit\\b' || exit 0; "
+        "printf '%s' \"$INPUT\" | python3 -m scripts.hooks.no_verify_reminder",
     )
     # Retired lifecycle event arrays are intentionally outside HOOK_EVENTS:
     # fresh installs never recreate them.  Upgrade/uninstall still visit only
@@ -1673,19 +1676,30 @@ class DESPlugin(InstallationPlugin):
                 _installer_command, guard_command_fn=_installer_guard_command
             )
 
-            def _is_retired_hook_entry(entry: dict[str, Any]) -> bool:
-                """Match only commands emitted by the withdrawn DES registry.
+            def _without_retired_hook_commands(
+                entry: dict[str, Any],
+            ) -> dict[str, Any] | None:
+                """Remove only exact commands emitted by the withdrawn registry.
 
                 Settings entries belong to their author unless they exactly
-                match one of the historical installer payloads above.
+                match one of the historical installer payloads above. A nested
+                entry may contain unrelated sibling hooks, so preserve those
+                hooks and all entry metadata; drop the entry only when empty.
                 """
-                commands = [entry.get("command", "")]
-                commands.extend(
-                    hook.get("command", "") for hook in entry.get("hooks", [])
-                )
-                return any(
-                    command in self._RETIRED_HOOK_COMMANDS for command in commands
-                )
+                if entry.get("command", "") in self._RETIRED_HOOK_COMMANDS:
+                    return None
+
+                hooks = entry.get("hooks", [])
+                retained_hooks = [
+                    hook
+                    for hook in hooks
+                    if hook.get("command", "") not in self._RETIRED_HOOK_COMMANDS
+                ]
+                if len(retained_hooks) == len(hooks):
+                    return entry
+                if not retained_hooks:
+                    return None
+                return {**entry, "hooks": retained_hooks}
 
             retired_hook_removed = False
             legacy_user_prompt_command = self._generate_hook_command(
@@ -1694,21 +1708,26 @@ class DESPlugin(InstallationPlugin):
             for event, entries in config["hooks"].items():
                 if not isinstance(entries, list):
                     continue
-                retained = [
-                    entry
-                    for entry in entries
-                    if not _is_retired_hook_entry(entry)
-                    and not (
+                retained = []
+                for entry in entries:
+                    reconciled = _without_retired_hook_commands(entry)
+                    if reconciled is None:
+                        retired_hook_removed = True
+                        continue
+                    if (
                         event in self._RETIRED_LIFECYCLE_EVENTS
                         and self._is_retired_lifecycle_hook_entry(
-                            entry,
+                            reconciled,
                             legacy_adapter_command=legacy_user_prompt_command,
                         )
-                    )
-                ]
-                if len(retained) != len(entries):
+                    ):
+                        retired_hook_removed = True
+                        continue
+                    if reconciled != entry:
+                        retired_hook_removed = True
+                    retained.append(reconciled)
+                if retained != entries:
                     config["hooks"][event] = retained
-                    retired_hook_removed = True
 
             # Check if hooks already exist with correct format.
             # Both command AND matcher must match on the SAME entry to count

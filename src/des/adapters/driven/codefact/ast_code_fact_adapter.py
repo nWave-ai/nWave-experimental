@@ -119,9 +119,14 @@ class AstAdapter:
             return self._similar_responsibility(request)
         return self._answer(payload={"sites": []}, reason_code=None)
 
-    def probe(self) -> list[dict[str, object]]:
+    def probe(
+        self, request: dict[str, object] | None = None
+    ) -> list[dict[str, object]]:
         """Per-capability manifest (ADR-LA-001 §3): the structural tier honors the
-        stable core at ``approx`` confidence.
+        stable core at ``approx`` confidence when the target contains Python
+        source.  A non-Python target is not a Python-AST capability: reporting
+        ``ok`` there would mask the language-agnostic textual floor with an
+        honestly empty but operationally misleading structural answer.
 
         ``query.adr-section`` is a prose capability the structural tier degrades to
         a textual presence check (the parser has no notion of an ADR heading); the
@@ -129,12 +134,15 @@ class AstAdapter:
         ``never-wired`` / ``atoms-in-file``) are answered by parsing. Every entry
         honestly declares its ``approx`` confidence — never inflated.
         """
+        available = bool(self._iter_files())
+        if request is not None:
+            available = available and self._request_is_python_scoped(request)
         return [
             {
                 "capability_id": capability_id,
                 "stability": "stable",
                 "contract_version": "1.0.0",
-                "ok": True,
+                "ok": available,
             }
             for capability_id in sorted(
                 {
@@ -156,6 +164,29 @@ class AstAdapter:
                 }
             )
         ]
+
+    def _request_is_python_scoped(self, request: dict[str, object]) -> bool:
+        """Whether Python AST can honestly cover this request's observed scope.
+
+        A mixed repository may contain Python and another language.  For a
+        symbol/anchor request, any occurrence in a non-Python file means the
+        Python parser cannot claim the whole observed fact, so negotiation must
+        continue to the textual floor.  Subject-free queries (currently atoms)
+        require an all-Python scope for the same reason.
+
+        This is conservative by design: the floor declares ``noisy`` rather
+        than letting a precise-but-partial Python answer masquerade as the
+        repository-wide result.
+        """
+        non_python_files = [
+            path for path in self._scope.files("*.*") if path.suffix != ".py"
+        ]
+        if not non_python_files:
+            return True
+        subject = self._symbol_of(request)
+        if not subject:
+            return False
+        return not any(subject in self._read(path) for path in non_python_files)
 
     # -- capability realizations (structural, via the delegated parser) ----
 

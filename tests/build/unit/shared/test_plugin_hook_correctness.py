@@ -20,7 +20,12 @@ from __future__ import annotations
 import pytest
 
 from scripts.build_plugin import generate_hook_config
-from scripts.shared.hook_definitions import HOOK_EVENT_TYPES
+from scripts.shared.hook_definitions import HOOK_EVENT_TYPES, HOOK_EVENTS
+
+
+_EXPECTED_PRETOOLUSE_MATCHERS = [
+    h.matcher for h in HOOK_EVENTS if h.event == "PreToolUse"
+]
 
 
 class TestPluginHookCorrectness:
@@ -36,19 +41,11 @@ class TestPluginHookCorrectness:
         assert set(hook_config.keys()) == HOOK_EVENT_TYPES
 
     def test_pretooluse_has_agent_write_edit_bash_matchers(self, hook_config: dict):
-        """PreToolUse has 7 entries: Agent, Write, Edit, Bash x 4 (not Task)."""
+        """PreToolUse matches the HOOK_EVENTS-declared sequence (not Task)."""
         pre_tool_use = hook_config["PreToolUse"]
-        assert len(pre_tool_use) == 7
+        assert len(pre_tool_use) == len(_EXPECTED_PRETOOLUSE_MATCHERS)
         matchers = [e.get("matcher") for e in pre_tool_use]
-        assert matchers == [
-            "Agent",
-            "Write",
-            "Edit",
-            "Bash",
-            "Bash",
-            "Bash",
-            "Bash",
-        ]
+        assert matchers == _EXPECTED_PRETOOLUSE_MATCHERS
 
     @pytest.mark.parametrize("matcher", ["Write", "Edit"])
     def test_guard_hooks_contain_session_check(self, hook_config: dict, matcher: str):

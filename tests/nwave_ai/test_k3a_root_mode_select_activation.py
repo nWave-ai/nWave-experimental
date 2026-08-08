@@ -96,6 +96,32 @@ def test_reminder_stays_conditional_not_a_mandate() -> None:
     assert "unless" in ROOT_MODE_SELECT_REMINDER
 
 
+def test_reminder_does_not_hardcode_a_home_relative_skill_path() -> None:
+    """D3 (k3a-root-activation-evidence-report.md Section 4.4): the reminder
+    named a literal `~/.claude/skills/nw-mode-select/SKILL.md` path. Under any
+    non-default `CLAUDE_CONFIG_DIR` -- what every isolated install produces --
+    that literal path need not exist, so a model that followed it literally
+    would read a missing file. The reminder must resolve the skill by NAME
+    (the `Skill` tool's own resolution, which Claude Code makes
+    config-dir-aware) rather than by a hardcoded filesystem path.
+    """
+    assert "~/.claude" not in ROOT_MODE_SELECT_REMINDER, (
+        "D3: reminder must not hardcode a ~/.claude-relative path -- it fails "
+        "under an isolated CLAUDE_CONFIG_DIR install"
+    )
+    assert "SKILL.md" not in ROOT_MODE_SELECT_REMINDER, (
+        "D3: reminder must not name a literal SKILL.md path at all -- "
+        "reference the skill by name so the harness resolves it"
+    )
+
+
+def test_reminder_names_the_skill_tool_as_the_resolution_mechanism() -> None:
+    """The reminder must point at invoking the skill BY NAME (the `Skill`
+    tool resolves it against whatever CLAUDE_CONFIG_DIR is active), not at a
+    path the reminder-emitting hook has no way to compute correctly."""
+    assert "Skill tool" in ROOT_MODE_SELECT_REMINDER
+
+
 # --- 4. fail-open + hook preservation stay intact ---------------------------
 
 

@@ -23,16 +23,33 @@ import argparse
 import importlib
 import inspect
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
 class _SubcommandRow:
-    """One row of the dispatcher's subcommand registry."""
+    """One row of the dispatcher's subcommand registry.
+
+    ``catalogued_gate`` classifies whether this subcommand is a coercive
+    gate mirrored into ``nWave/gates/_catalog.yaml`` (+ its per-gate file).
+    Defaults True: the registry's original, and still overwhelming, shape is
+    "every row is a gate" — an omitted classification must keep meaning
+    exactly what it always meant, so a real gate added without the keyword
+    still drifts loud on the catalog check. Only an explicit
+    ``catalogued_gate=False`` marks a row as a non-gate public tool (e.g.
+    ``code-fact``, a read-only query surface) that `des verify-catalog-
+    coherence` must not require a catalog/per-gate mirror for.
+
+    ``catalogued_gate`` is keyword-only: a bare positional 4th argument is
+    invalid Python by construction (``TypeError``), not merely a style
+    nit -- it removes the ambiguous positional form the static verifier
+    (`des verify-catalog-coherence`) would otherwise have to guess about.
+    """
 
     name: str
     module_path: str
     function_name: str
+    catalogued_gate: bool = field(kw_only=True, default=True)
 
 
 # The subcommand registry is the dispatcher's single source of truth.
@@ -57,7 +74,6 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     _SubcommandRow("classify-features", "des.cli.classify_features", "main"),
     _SubcommandRow("convert-to-atdd-pure", "des.cli.convert_to_atdd_pure", "main"),
     _SubcommandRow("reverify-slice-commit", "des.cli.reverify_slice_commit", "main"),
-    _SubcommandRow("verify-seal-provenance", "des.cli.verify_seal_provenance", "main"),
     _SubcommandRow(
         "verify-environmental-e2e",
         "des.cli.verify_environmental_e2e",
@@ -395,6 +411,13 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
         "des.cli.find_similar_responsibility",
         "main",
     ),
+    # Public vendor-neutral code-analysis projection.  The adapters and
+    # negotiation already live behind CodeFactChain; this row makes that one
+    # read-only port reachable to installed agents without requiring an
+    # external Graphify or Tsunami binary. catalogued_gate=False: this is a
+    # read-only query surface, not a coercive gate -- it has no PASS/FAIL
+    # verdict and nothing to reconcile into nWave/gates/_catalog.yaml.
+    _SubcommandRow("code-fact", "des.cli.code_fact", "main", catalogued_gate=False),
     # des-next-loop-projection slice-01 (F-56 generalization): read-only
     # advisory projection of the next legal atdd_pure DELIVER-loop step --
     # composes the Slice Plan + AT-completion ledger + phase order + gate/

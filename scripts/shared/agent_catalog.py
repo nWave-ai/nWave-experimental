@@ -54,11 +54,25 @@ class CatalogParseError(ValueError):
 # uncatalogued public-methodology skill is not private work.
 PUBLIC_SHARED_SKILLS: frozenset[str] = frozenset(
     {
+        # Auto microkernel (2026-08-08): loaded by the installed product's
+        # hook spine directly, not via any owning public agent's frontmatter
+        # skills list -- same load-bearing pattern as above.
+        "nw-auto",
         "nw-density-resolution-contract",
         "nw-jtbd-core",
         "nw-jtbd-interviews",
         "nw-jtbd-opportunity-scoring",
         "nw-jtbd-workflow-selection",
+        # Language PBT deep dives are selected exactly one-at-a-time by the
+        # acceptance-designer's loading table, not frontmatter-preloaded.
+        "nw-pbt-dotnet",
+        "nw-pbt-erlang-elixir",
+        "nw-pbt-go",
+        "nw-pbt-haskell",
+        "nw-pbt-jvm",
+        "nw-pbt-python",
+        "nw-pbt-rust",
+        "nw-pbt-typescript",
         "nw-persona-jtbd-analysis",
         "nw-spike-methodology",
         "nw-speculative-dispatch",

@@ -66,6 +66,7 @@ class _SubcommandRow:
     name: str
     module_path: str
     function_name: str
+    catalogued_gate: bool = True
 
 
 _REGISTRY: tuple[_SubcommandRow, ...] = (
@@ -74,15 +75,45 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
 '''
 
 
-def _write_registry(repo_root: Path, names: list[str]) -> None:
+def _write_registry(
+    repo_root: Path, names: list[str], *, non_gate_names: frozenset[str] = frozenset()
+) -> None:
+    """Write a throwaway `__main__.py`; `non_gate_names` get `catalogued_gate=False`."""
     cli_dir = repo_root / "src" / "des" / "cli"
     cli_dir.mkdir(parents=True, exist_ok=True)
-    rows = "\n".join(
-        f'    _SubcommandRow("{name}", "des.cli.{name.replace("-", "_")}", "main"),'
-        for name in names
-    )
+    rows = []
+    for name in names:
+        module = f"des.cli.{name.replace('-', '_')}"
+        classification = ", catalogued_gate=False" if name in non_gate_names else ""
+        rows.append(
+            f'    _SubcommandRow("{name}", "{module}", "main"{classification}),'
+        )
     (cli_dir / "__main__.py").write_text(
-        _MAIN_PY_TEMPLATE.format(rows=rows), encoding="utf-8"
+        _MAIN_PY_TEMPLATE.format(rows="\n".join(rows)), encoding="utf-8"
+    )
+
+
+def _write_registry_with_positional_classification(
+    repo_root: Path, names: list[str], positional_false_name: str
+) -> None:
+    """Write a throwaway `__main__.py` where `positional_false_name`'s row passes
+    its `catalogued_gate=False` classification as the bare 4th POSITIONAL
+    argument (`_SubcommandRow("id", "mod", "main", False)`) instead of the
+    keyword form every other fixture writer in this file uses. `_SubcommandRow`
+    is a plain dataclass, so this positional call is valid, semantically
+    equivalent Python -- a registry author reasonably could write it this way.
+    """
+    cli_dir = repo_root / "src" / "des" / "cli"
+    cli_dir.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for name in names:
+        module = f"des.cli.{name.replace('-', '_')}"
+        if name == positional_false_name:
+            rows.append(f'    _SubcommandRow("{name}", "{module}", "main", False),')
+        else:
+            rows.append(f'    _SubcommandRow("{name}", "{module}", "main"),')
+    (cli_dir / "__main__.py").write_text(
+        _MAIN_PY_TEMPLATE.format(rows="\n".join(rows)), encoding="utf-8"
     )
 
 
@@ -287,4 +318,161 @@ def test_main_does_not_silently_pass_on_malformed_catalog(tmp_path, capsys):
     )
     assert combined_output.strip(), (
         "expected a non-empty diagnostic message on malformed catalog, got empty output"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Scenario 5 -- POSITIVE: an explicit catalogued_gate=False row (a non-gate
+# public tool, e.g. `code-fact`) absent from the catalog is coherent -- it is
+# never required to have a catalog row or per-gate file.
+# ---------------------------------------------------------------------------
+
+
+def test_explicit_non_gate_public_tool_absent_from_catalog_is_coherent(
+    tmp_path, capsys
+):
+    main = _import_verify_catalog_coherence()
+    repo_root = tmp_path / "repo"
+    non_gate_id = "code-fact"
+    _write_registry(
+        repo_root, [*_BASE_IDS, non_gate_id], non_gate_names=frozenset({non_gate_id})
+    )
+    _write_catalog(repo_root, _BASE_IDS)
+    _write_per_gate_files(repo_root, _BASE_IDS)
+
+    exit_code = main(["--repo-root", str(repo_root)])
+
+    captured = capsys.readouterr()
+    verdict = json.loads(captured.out)
+    assert exit_code == 0, (
+        "a catalogued_gate=False row absent from the catalog must NOT drift "
+        f"-- it is a non-gate public tool, not a gate: {captured.out}"
+    )
+    assert verdict["verdict"] == "coherent", verdict
+    assert non_gate_id not in verdict.get("drifting_ids", []), verdict
+
+
+# ---------------------------------------------------------------------------
+# Scenario 6 -- POSITIVE: a default-classified (catalogued_gate omitted, i.e.
+# True) command absent from the catalog is STILL drift -- proves the default
+# stayed "every row is a gate" after the ast-based parser replaced the regex.
+# ---------------------------------------------------------------------------
+
+
+def test_default_catalogued_command_absent_from_catalog_is_still_drift(
+    tmp_path, capsys
+):
+    main = _import_verify_catalog_coherence()
+    repo_root = tmp_path / "repo"
+    drifting_id = "new-real-gate"
+    _write_registry(repo_root, [*_BASE_IDS, drifting_id])  # no non_gate_names
+    _write_catalog(repo_root, _BASE_IDS)
+    _write_per_gate_files(repo_root, _BASE_IDS)
+
+    exit_code = main(["--repo-root", str(repo_root)])
+
+    captured = capsys.readouterr()
+    verdict = json.loads(captured.out)
+    assert exit_code != 0, (
+        "a row with an omitted catalogued_gate keyword must default to a "
+        f"real gate and drift when absent from the catalog: {captured.out}"
+    )
+    assert drifting_id in verdict.get("drifting_ids", []), verdict
+
+
+# ---------------------------------------------------------------------------
+# Scenario 7 -- NEGATIVE AT: an unparseable CLI registry module (the ast.parse
+# input) degrades LOUD, never silently passes and never crashes with a raw
+# traceback -- the malformed-input floor extended to the switch from regex to
+# `ast.parse`.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.negative_at
+def test_main_does_not_silently_pass_on_unparseable_registry_module(tmp_path, capsys):
+    main = _import_verify_catalog_coherence()
+    repo_root = tmp_path / "repo"
+    cli_dir = repo_root / "src" / "des" / "cli"
+    cli_dir.mkdir(parents=True, exist_ok=True)
+    (cli_dir / "__main__.py").write_text(
+        "_REGISTRY = (\n    this is not valid python (((\n", encoding="utf-8"
+    )
+    _write_catalog(repo_root, _BASE_IDS)
+    _write_per_gate_files(repo_root, _BASE_IDS)
+
+    try:
+        exit_code = main(["--repo-root", str(repo_root)])
+    except Exception as exc:
+        pytest.fail(
+            "degrade-LOUD violation: an unparseable CLI registry module must "
+            f"return a non-zero exit + diagnostic, not raise {type(exc).__name__}: "
+            f"{exc}"
+        )
+
+    captured = capsys.readouterr()
+    combined_output = captured.out + captured.err
+    assert exit_code != 0, (
+        "degrade-LOUD violation: an unparseable CLI registry module must NOT "
+        f"produce a silent PASS (exit 0); got {exit_code}"
+    )
+    assert "Traceback" not in combined_output, (
+        "degrade-LOUD violation: an unparseable registry module crashed with "
+        f"a raw traceback instead of a diagnostic verdict:\n{combined_output}"
+    )
+    assert combined_output.strip(), (
+        "expected a non-empty diagnostic message on an unparseable registry "
+        "module, got empty output"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Scenario 8 -- RED regression (against ea1038976): a `catalogued_gate`
+# classification passed as the bare 4th POSITIONAL argument (not the
+# `catalogued_gate=` keyword) must NOT be silently treated as the True
+# default. `_row_is_catalogued_gate` (verify_catalog_coherence.py) only
+# inspects `call.keywords` -- a positional False is invisible to it and
+# falls straight through to `return True`, so a row the author intended as
+# `catalogued_gate=False` (a non-gate public tool) is silently mis-classified
+# as a real gate. Strongest fix: reject the ambiguous positional form loudly
+# (indeterminate + diagnostic naming it) rather than guess. Written against
+# the public `main()` verdict/diagnostic surface, never the AST internals.
+# ---------------------------------------------------------------------------
+
+
+def test_positional_catalogued_gate_classification_is_not_silently_defaulted(
+    tmp_path, capsys
+):
+    main = _import_verify_catalog_coherence()
+    repo_root = tmp_path / "repo"
+    positional_false_name = "code-fact"
+    _write_registry_with_positional_classification(
+        repo_root, [*_BASE_IDS, positional_false_name], positional_false_name
+    )
+    _write_catalog(repo_root, _BASE_IDS)
+    _write_per_gate_files(repo_root, _BASE_IDS)
+
+    try:
+        exit_code = main(["--repo-root", str(repo_root)])
+    except Exception as exc:
+        pytest.fail(
+            "degrade-LOUD violation: an ambiguous positional catalogued_gate "
+            f"classification must return a non-zero exit + diagnostic, not "
+            f"raise {type(exc).__name__}: {exc}"
+        )
+
+    captured = capsys.readouterr()
+    combined_output = captured.out + captured.err
+    assert exit_code != 0, (
+        "an ambiguous positional catalogued_gate classification must not be "
+        f"silently accepted as the True default: {combined_output}"
+    )
+    assert "Traceback" not in combined_output, (
+        "degrade-LOUD violation: a positional catalogued_gate classification "
+        f"crashed with a raw traceback instead of a diagnostic:\n{combined_output}"
+    )
+    assert "positional" in combined_output.lower() or (
+        "keyword" in combined_output.lower()
+    ), (
+        "expected the diagnostic to name the ambiguous positional "
+        f"catalogued_gate classification explicitly, got: {combined_output}"
     )

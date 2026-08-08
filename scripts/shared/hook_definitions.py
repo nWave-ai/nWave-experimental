@@ -58,13 +58,13 @@ class HookEvent:
 _BASH_EXECUTION_LOG_GUARD = (
     "# des-hook:pre-bash\n"
     "INPUT=$(cat); "
-    'CMD=$(echo "$INPUT" | python3 -c '
+    "CMD=$(printf '%s' \"$INPUT\" | python3 -c "
     '"import sys,json; print(json.load(sys.stdin)'
     ".get('tool_input',{}).get('command',''))\"); "
-    "echo \"$CMD\" | grep -q 'execution-log' || exit 0; "
-    'echo "$CMD" | grep -qE '
+    "printf '%s' \"$CMD\" | grep -q 'execution-log' || exit 0; "
+    "printf '%s' \"$CMD\" | grep -qE "
     "'des\\.cli\\.verify_deliver_integrity|des +verify-integrity' && exit 0; "
-    'echo \'{"decision":"block","reason":"Direct modification of '
+    'printf \'%s\\n\' \'{"decision":"block","reason":"Direct modification of '
     "execution-log.json via Bash is blocked.\\n"
     "To read it, use the Read tool.\\n"
     "This retired artifact must not be recreated or modified.\"}'; "
@@ -92,40 +92,11 @@ _BASH_EXECUTION_LOG_GUARD = (
 _BASH_GIT_STASH_GUARD = (
     "# des-hook:pre-bash-git-stash-guard\n"
     "INPUT=$(cat); "
-    'CMD=$(echo "$INPUT" | python3 -c '
+    "CMD=$(printf '%s' \"$INPUT\" | python3 -c "
     '"import sys,json; print(json.load(sys.stdin)'
     ".get('tool_input',{}).get('command',''))\"); "
-    "echo \"$CMD\" | grep -qE '^\\s*git\\s+stash\\b' || exit 0; "
-    'echo "$INPUT" | python3 -m scripts.hooks.git_stash_guard'
-)
-
-# Pure-shell wrapper around the --no-verify reminder guard (lean reminder,
-# Ale 2026-06-26). The shell fast-path greps the bash command for a `git` token
-# (cheap pre-filter; the Python hook does the precise tokenized detection) and
-# only then invokes the Python entry point. Mirrors `_BASH_GIT_STASH_GUARD`.
-#
-# Matcher coexistence: Claude Code's PreToolUse
-# protocol permits multiple registrations per (event, matcher) tuple; execution
-# is registration-ordered; ANY hook returning `{decision: block}` blocks the
-# tool invocation. The no-verify guard fires ONLY on a real git verify-bypass
-# flag (`--no-verify` / `--no-gpg-sign`, or `-n` on `git commit`); its block
-# decision is orthogonal to the other Bash entries, which grep different
-# command shapes and exit 0 silently on a plain bypass commit.
-#
-# The reminder is durable across installs because it lives in the DES HOOK_EVENTS
-# SSOT (carrying the `# des-hook:` marker) — a manual settings.json edit would be
-# dropped on the next install (the gotcha this entry fixes). Uses module-import
-# form (no `$HOME`) so it is valid in BOTH installer-path AND plugin-bundle
-# distribution modes; `des_plugin.py:DES_HOOKS` ships `no_verify_reminder.py` to
-# the operator's `~/.claude/scripts/hooks/` tree so the module resolves at runtime.
-_BASH_NO_VERIFY_REMINDER = (
-    "# des-hook:pre-bash-no-verify-reminder\n"
-    "INPUT=$(cat); "
-    'CMD=$(echo "$INPUT" | python3 -c '
-    '"import sys,json; print(json.load(sys.stdin)'
-    ".get('tool_input',{}).get('command',''))\"); "
-    "echo \"$CMD\" | grep -qE '\\bgit\\b' || exit 0; "
-    'echo "$INPUT" | python3 -m scripts.hooks.no_verify_reminder'
+    "printf '%s' \"$CMD\" | grep -qE '^\\s*git\\s+stash\\b' || exit 0; "
+    "printf '%s' \"$INPUT\" | python3 -m scripts.hooks.git_stash_guard"
 )
 
 # Pure-shell wrapper around the worktree-removal guard
@@ -143,7 +114,7 @@ _BASH_NO_VERIFY_REMINDER = (
 # re-checks with `shlex`) and only then invokes the Python entry point.
 #
 # Matcher coexistence: this entry joins the existing PreToolUse/Bash roster
-# alongside the independent execution-log, git-stash, and no-verify guards.
+# alongside the independent execution-log and git-stash guards.
 # Claude Code permits multiple registrations per (event,
 # matcher) tuple; execution is registration-ordered; ANY hook returning
 # `{decision: block}` blocks the tool invocation. This guard greps for
@@ -157,11 +128,11 @@ _BASH_NO_VERIFY_REMINDER = (
 _BASH_WORKTREE_REMOVAL_GUARD = (
     "# des-hook:pre-bash-worktree-removal-guard\n"
     "INPUT=$(cat); "
-    'CMD=$(echo "$INPUT" | python3 -c '
+    "CMD=$(printf '%s' \"$INPUT\" | python3 -c "
     '"import sys,json; print(json.load(sys.stdin)'
     ".get('tool_input',{}).get('command',''))\"); "
-    "echo \"$CMD\" | grep -qE 'git\\s+worktree\\s+remove' || exit 0; "
-    'echo "$INPUT" | python3 -m scripts.hooks.worktree_removal_guard'
+    "printf '%s' \"$CMD\" | grep -qE 'git\\s+worktree\\s+remove' || exit 0; "
+    "printf '%s' \"$INPUT\" | python3 -m scripts.hooks.worktree_removal_guard"
 )
 
 # Canonical hook event definitions -- the ONLY place these are defined.
@@ -169,16 +140,9 @@ _BASH_WORKTREE_REMOVAL_GUARD = (
 # Each registration is independently useful; avoid introducing a protocol chain
 # that makes a normal coding action depend on historical workflow bookkeeping.
 #
-# --no-verify reminder guard (Ale 2026-06-26): 1 new entry joins -- PreToolUse/
-# Bash for the lean verify-bypass reminder (5th Bash entry; #7 -> #8 PreToolUse;
-# greps `\bgit\b` fast-path then the Python hook tokenizes for a real bypass flag,
-# orthogonal to the other four Bash entries). Lives in the SSOT so the reminder
-# survives the install-time settings.json rewrite that drops manual hook edits.
-# Total grows 14 -> 15.
-#
 # fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29): 1 new entry
-# joins -- PreToolUse/Bash for the worktree-removal liveness guard (6th Bash
-# entry; #8 -> #9 PreToolUse; greps `git worktree remove`, orthogonal to every
+# joins -- PreToolUse/Bash for the worktree-removal liveness guard (4th Bash
+# entry; #6 -> #7 PreToolUse; greps `git worktree remove`, orthogonal to every
 # other Bash entry's grep). Blocks a `git worktree remove` while a live
 # process's cwd is inside the target, the target carries an explicit
 # `git worktree lock`, or the target's branch carries unmerged commits --
@@ -203,15 +167,13 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
     HookEvent(
         event="PreToolUse",
         matcher="Bash",
-        action="pre-bash-no-verify-reminder",
-        shell_command=_BASH_NO_VERIFY_REMINDER,
-    ),
-    HookEvent(
-        event="PreToolUse",
-        matcher="Bash",
         action="pre-bash-worktree-removal-guard",
         shell_command=_BASH_WORKTREE_REMOVAL_GUARD,
     ),
+    # Universal root mode-selection gate. Unlike the specialised Bash guards
+    # above, this uses the distribution's portable DES module command so the
+    # existing pre_tool_use handler is reached on every installed Bash event.
+    HookEvent(event="PreToolUse", matcher="Bash", action="pre-tool-use"),
     HookEvent(event="PostToolUse", matcher="Agent", action="post-tool-use"),
     HookEvent(event="SubagentStop", matcher=None, action="subagent-stop"),
     HookEvent(event="SubagentStart", matcher=None, action="subagent-start"),
@@ -287,13 +249,13 @@ def build_guard_command(python_cmd: str) -> str:
     """
     return (  # noqa: UP032 — .format() required for shell template with literal braces
         "INPUT=$(cat); "
-        "echo \"$INPUT\" | grep -q 'execution-log\\.json' && "
-        '{{ echo "$INPUT" | {python_cmd}; exit $?; }}; '
+        "printf '%s' \"$INPUT\" | grep -q 'execution-log\\.json' && "
+        "{{ printf '%s' \"$INPUT\" | {python_cmd}; exit $?; }}; "
         "test -f .nwave/des/deliver-session.json && "
-        '{{ echo "$INPUT" | {python_cmd}; exit $?; }}; '
-        'echo "$INPUT" | grep -qE \'"file_path"[[:space:]]*:[[:space:]]*"[^"]*'
+        "{{ printf '%s' \"$INPUT\" | {python_cmd}; exit $?; }}; "
+        'printf \'%s\' "$INPUT" | grep -qE \'"file_path"[[:space:]]*:[[:space:]]*"[^"]*'
         "(/src/|/nWave/|/tests/|/scripts/)' && "
-        '{{ echo "$INPUT" | {python_cmd}; exit $?; }}; '
+        "{{ printf '%s' \"$INPUT\" | {python_cmd}; exit $?; }}; "
         "exit 0"
     ).format(python_cmd=python_cmd)
 

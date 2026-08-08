@@ -158,6 +158,19 @@ class TestIsPublicSkill:
         public_agents = {"only-one-agent"}
         assert is_public_skill("nw-canary", public_agents) is True
 
+    def test_nw_auto_public_with_no_owning_agent(self):
+        # nw-auto is the Auto microkernel: load-bearing public orchestration
+        # skill with no owning public agent (PUBLIC_SHARED_SKILLS entry).
+        # Must stay public even with a nonempty public-agent set, an
+        # ownership_map that doesn't mention it, and no command_skills entry.
+        public_agents = {"only-one-agent"}
+        ownership_map: dict[str, set[str]] = {}
+        command_skills: set[str] = set()
+        assert (
+            is_public_skill("nw-auto", public_agents, ownership_map, command_skills)
+            is True
+        )
+
     def test_reviewer_skill_explicitly_in_catalog(self):
         public_agents = {"software-crafter", "software-crafter-reviewer"}
         assert is_public_skill("software-crafter-reviewer", public_agents) is True

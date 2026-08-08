@@ -30,11 +30,11 @@ MERGE/RESUME/DEFER/REMOVE), and `INDETERMINATE` (could not verify) -- BLOCKS
 until a human authorises the override.
 
 A STANDALONE Claude Code PreToolUse/Bash hook, mirroring the shape of
-`scripts/hooks/git_stash_guard.py` and `scripts/hooks/no_verify_reminder.py`
-(tokenized command parsing -- a raw regex would false-negative on a `git
-worktree remove` buried after a `&&`, and false-positive on the phrase
-appearing inside a quoted commit message). On a match it collects the four
-evidence signals the triage predicate consumes -- through `ProcessCwdProbePort`
+`scripts/hooks/git_stash_guard.py` (tokenized command parsing -- a raw regex
+would false-negative on a `git worktree remove` buried after a `&&`, and
+false-positive on the phrase appearing inside a quoted commit message). On a
+match it collects the four evidence signals the triage predicate consumes --
+through `ProcessCwdProbePort`
 (a live process's cwd inside the target) and `WorktreeRemovalSafetyPort`
 (`git worktree lock`, dirty state, unmerged commits) -- then asks
 `triage_worktree` for a receipt.

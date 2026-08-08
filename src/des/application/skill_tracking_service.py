@@ -23,26 +23,40 @@ if TYPE_CHECKING:
     from des.ports.driven_ports.time_provider_port import TimeProvider
 
 
-def extract_tool_call(entry: dict) -> dict | None:
-    """Extract a tool_use dict from a transcript entry.
+def extract_tool_calls(entry: dict) -> list[dict]:
+    """Extract every tool_use dict from a transcript entry.
 
-    Stateless parse of the captured-trace JSONL shape. Supports two formats:
+    Stateless parse of the captured-trace JSONL shape. Supports three formats:
     - Direct: {"type": "tool_use", "name": "Read", "input": {...}}
     - Content block: {"type": "content_block", "content_block": {"type": "tool_use", ...}}
+    - Real Claude Code transcript:
+      {"type": "assistant", "message": {"content": [{"type": "tool_use", ...}, ...]}}
+      — the actual shape SubagentStop/PreToolUse transcripts carry, mirroring the
+      normalization `subagent_stop_handler.py::_normalize_message_content` already
+      applies to the sibling text-content case.
 
-    Returns the tool_use dict (with 'name' and 'input' keys), or None.
+    Returns the tool_use dicts (each with 'name' and 'input' keys); empty when none.
 
     Module-level so any consumer of the trace-JSONL shape (the skill tracker, the
     nw-agent-evals deterministic graders) reuses ONE parser — no parallel parser.
     """
     entry_type = entry.get("type", "")
     if entry_type == "tool_use":
-        return entry
+        return [entry]
     if entry_type == "content_block":
         block = entry.get("content_block", {})
-        if block.get("type") == "tool_use":
-            return block
-    return None
+        return [block] if block.get("type") == "tool_use" else []
+    if entry_type != "assistant":
+        return []
+    message = entry.get("message", {})
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, list):
+        return [
+            block
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "tool_use"
+        ]
+    return []
 
 
 def read_transcript_tool_calls(transcript_path: str) -> list[dict]:
@@ -61,10 +75,28 @@ def read_transcript_tool_calls(transcript_path: str) -> list[dict]:
                 entry = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            tool_call = extract_tool_call(entry)
-            if tool_call is not None:
-                tool_calls.append(tool_call)
+            tool_calls.extend(extract_tool_calls(entry))
     return tool_calls
+
+
+def mode_select_observed_before_mutation(transcript_path: str) -> bool:
+    """True iff the transcript contains an actual `Skill(nw-mode-select)` call.
+
+    Only a real `Skill` tool_use whose input selects `nw-mode-select` counts —
+    prose mentioning the skill, a `Read` of an unrelated file, and other
+    `Skill` names are all false. Fails closed (False) when the transcript is
+    missing, unreadable, or not valid UTF-8/JSONL text, since the caller uses
+    this to decide whether a mutation may proceed.
+    """
+    try:
+        tool_calls = read_transcript_tool_calls(transcript_path)
+    except (OSError, UnicodeDecodeError):
+        return False
+    return any(
+        tc.get("name") == "Skill"
+        and tc.get("input", {}).get("skill") == "nw-mode-select"
+        for tc in tool_calls
+    )
 
 
 class SkillTrackingService:
@@ -233,12 +265,12 @@ class SkillTrackingService:
         """
         return read_transcript_tool_calls(transcript_path)
 
-    def _extract_tool_call(self, entry: dict) -> dict | None:
-        """Extract tool_use dict from a transcript entry.
+    def _extract_tool_calls(self, entry: dict) -> list[dict]:
+        """Extract tool_use dicts from a transcript entry.
 
         Delegates to the module-level shared parser.
         """
-        return extract_tool_call(entry)
+        return extract_tool_calls(entry)
 
     def _filter_skill_reads(self, tool_calls: list[dict]) -> list[dict]:
         """Filter to only Read calls targeting skill files."""

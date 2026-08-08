@@ -5,7 +5,7 @@ Use for DISTILL wave — designs E2E acceptance tests from user stories and arch
 **Wave:** DISTILL
 **Model:** sonnet
 **Max turns:** 45
-**Tools:** Read, Write, Edit, Bash, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+**Tools:** Read, Write, Edit, Bash, Glob, Grep, Task
 
 ## Commands
 

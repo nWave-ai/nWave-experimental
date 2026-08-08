@@ -756,34 +756,37 @@ def _read_marker_syntax(ssot_dir: Path) -> str:
     return marker_syntax
 
 
-#: Default SKILL_LOADING body -- code-facing agents (the crafter, the
-#: acceptance-designer) load TDD/quality methodology skills.
-#: Content-parity merge (dispatch-template-ssot-reconciliation design §3
-#: row 3, base=YAML `sections[].template`): the `nw-crafter-discipline-
-#: atdd_pure` load instruction, the OO/FP paradigm-appropriate code-design
-#: catalog directive, the tsunami-first structural-fact mandate, and the
-#: `nw-refactor`/`nw-mutation-test` phase-inappropriateness exclusion --
-#: all verified absent from the prior 2-line body.
-_DEFAULT_SKILL_LOADING = (
-    "Before starting, read your skill files for methodology guidance.\n"
-    "Always load at phase entry: nw-tdd-methodology, nw-quality-framework, "
-    "nw-crafter-discipline-atdd-pure.\n"
-    "At A_GREEN ALSO load the paradigm-appropriate code-design catalog -- "
-    "nw-code-design-oo (Object Calisthenics + RPP anti-smell taxonomy + "
-    "effect isolation) for an OO project, or nw-code-design-fp for an FP "
-    "project -- so production code is written smell-free by construction.\n"
-    "Do NOT load nw-refactor (E_BATCH_REFACTOR phase only) or "
-    "nw-mutation-test (project-DEPRECATED, FR-1) at A_GREEN -- they are "
-    "phase-inappropriate noise here, not write-time skills.\n"
-    # TEMPORARY (Ale, 2026-08-07): the Tsunami MCP surface is disabled, so an
-    # envelope prescribing `mcp__tsunami__*` would send every dispatched agent
-    # at a tool that no longer mounts -- a rejection-by-absence with no message.
-    # graphify is the interim tier-1; `nw-code-analysis-port` carries the WHY
-    # once, so this line names only the tool. Restore when Tsunami returns.
-    "Resolve structural facts with graphify (`graphify explain <symbol>` names "
-    "the callers and readers of a node), never ad-hoc grep. Do NOT call "
-    "mcp__tsunami__* -- that surface is temporarily disabled.\n"
-)
+#: Role-neutral SKILL_LOADING body for every code-facing agent with no
+#: dedicated override below. Points the resolved agent at ITS OWN
+#: ``nWave/agents/{agent}.md`` Skill Loading table -- the role-owned SSOT
+#: every agent spec already declares ("dispatch envelopes may REMIND but
+#: never override it") -- rather than restating any role's skill list here.
+#: REPLACES a body that hardcoded the software-crafter's OWN list
+#: (`nw-crafter-discipline-atdd-pure`, the OO/FP code-design catalogs,
+#: `nw-refactor`/`nw-mutation-test`) as the fallback for EVERY agent this
+#: generator resolves and does not special-case -- including
+#: `nw-solution-architect` (design wave) and `nw-acceptance-designer`
+#: (D_DISTILL), neither of which names a single one of those crafter skills
+#: in its own table. Measured 2026-08-07 on a real DISTILL dispatch: handed
+#: the crafter's list, the acceptance-designer read ZERO SKILL.md files and
+#: emitted zero `[SKILL LOADED]` markers across 95 tool calls -- a role
+#: handed another role's baseline loads nothing at all rather than
+#: substituting its own.
+def _default_skill_loading_body(agent: str) -> str:
+    """Role-neutral SKILL_LOADING reminder: point ``agent`` at its own spec
+    file by name, never at a skill list owned by this generator."""
+    return (
+        f"Your Skill Loading table in {agent}.md is the SSOT for what to "
+        "load -- this section only reminds you to obey it. Load by "
+        "phase-trigger with the Read tool, by exact path, BEFORE any other "
+        "work, and emit `[SKILL LOADED] {skill-name}` for each so the load "
+        "is observable rather than asserted.\n"
+        "Resolve structural facts through `nw-code-analysis-port`, using the "
+        "provider-neutral executable form `des code-fact query.* SUBJECT "
+        "--root ROOT`; replace `query.*`, `SUBJECT`, and `ROOT` with the "
+        "bounded fact request. Never prescribe or depend on a provider.\n"
+    )
+
 
 #: SKILL_LOADING body for the examiner -- NO technical/code-reasoning skills
 #: (RCA fix-po-charter-dispatch-marker-lane, Face B: handing her
@@ -810,54 +813,33 @@ _CHARTER_SKILL_LOADING = (
     "not implementation.\n"
 )
 
-#: SKILL_LOADING body for the acceptance-designer. It is code-FACING, so it was
-#: falling through to ``_DEFAULT_SKILL_LOADING`` -- whose body is crafter-only:
-#: it names ``nw-crafter-discipline-atdd-pure`` and tells the reader what to
-#: load "at A_GREEN", a phase the designer never runs, and it names not one
-#: test-design skill. Measured 2026-08-07 on a real DISTILL dispatch: the
-#: designer read ZERO SKILL.md files and emitted zero ``[SKILL LOADED]``
-#: markers across 95 tool calls, while the crafter on the same feature loaded
-#: all four skills its (matching) body named. Handed a list belonging to
-#: another role, the agent loaded nothing at all rather than substituting its
-#: own -- so the test-design skills sat at catalogued, never loaded.
-#:
-#: The agent spec is still the SSOT (``nw-acceptance-designer.md``: "dispatch
-#: envelopes may REMIND but never override it"). This body is the REMINDER,
-#: and its job is to point AT that table rather than compete with it.
-_ACCEPTANCE_DESIGNER_SKILL_LOADING = (
-    "Your Skill Loading table in nw-acceptance-designer.md is the SSOT -- this "
-    "section only reminds you to obey it. Load by phase-trigger with the Read "
-    "tool, by exact path, BEFORE any other work, and emit `[SKILL LOADED] "
-    "{name}` for each so the load is observable rather than asserted.\n"
-    "Always at start: nw-cross-cutting-invariants, nw-test-design-mandates.\n"
-    "Before authoring scenarios for a compositional or stateful surface ALSO "
-    "load nw-algebraic-design-protocol -- the observation set decides what the "
-    "suite can conclude, so it is chosen before the first scenario, not after.\n"
-    "When the behaviour under test is a law over a domain rather than a "
-    "handful of cases ALSO load nw-property-based-testing plus the "
-    "language-appropriate companion (nw-pbt-python for a Python target) -- an "
-    "example-based suite pins ONE inhabitant and says nothing about the class.\n"
-    "Do NOT load nw-crafter-discipline-atdd-pure or the code-design catalogs: "
-    "you author tests, you do not implement, and A_GREEN is not your phase.\n"
-    "Resolve structural facts with graphify (`graphify explain <symbol>`), "
-    "never ad-hoc grep. Do NOT call mcp__tsunami__* -- temporarily disabled.\n"
-)
+#: The acceptance-designer is code-FACING, so it carries no override here:
+#: it falls through to ``_default_skill_loading_body`` like every other
+#: code-facing agent. Its OWN table (``nw-acceptance-designer.md``) is the
+#: SSOT for the algebra/certainty/PBT/language-selection rows -- restating
+#: any of them here would be the exact competing-writer defect this whole
+#: rewrite removes (see ``_default_skill_loading_body``'s docstring for the
+#: measured 2026-08-07 regression this used to work around with a bespoke,
+#: skill-listing override).
 
-#: Agent -> SKILL_LOADING body override. The examiner and the charter-authoring
-#: product-owner are NON-CODE-FACING (they consult the SAME
-#: ``_NON_CODE_FACING_AGENTS`` SSOT set); the acceptance-designer IS
-#: code-facing and overrides for a different reason -- see its body above.
-#: ``agent`` not in this map falls through to ``_DEFAULT_SKILL_LOADING``.
-_NON_CODE_FACING_SKILL_LOADING: dict[str, str] = {
+#: Agent -> SKILL_LOADING body override for the two agents that are
+#: NON-CODE-FACING BY ROLE INTENT (the SAME ``_NON_CODE_FACING_AGENTS`` SSOT
+#: set) -- their bodies must actively WITHHOLD code-reasoning/TDD skills, a
+#: constraint the generic pointer-to-spec body cannot express. Every other
+#: agent, ``agent`` not in this map included, falls through to
+#: ``_default_skill_loading_body``.
+_SKILL_LOADING_OVERRIDES: dict[str, str] = {
     _EXAMINER_AGENT: _EXAMINER_SKILL_LOADING,
     "nw-product-owner": _CHARTER_SKILL_LOADING,
-    "nw-acceptance-designer": _ACCEPTANCE_DESIGNER_SKILL_LOADING,
 }
 
 
 def _skill_loading_body(agent: str) -> str:
     """SKILL_LOADING section body, keyed on the resolved dispatch agent."""
-    return _NON_CODE_FACING_SKILL_LOADING.get(agent, _DEFAULT_SKILL_LOADING)
+    override = _SKILL_LOADING_OVERRIDES.get(agent)
+    if override is not None:
+        return override
+    return _default_skill_loading_body(agent)
 
 
 #: DESIGN_CONTEXT body for every NON-CODE-FACING agent -- NO path/word naming

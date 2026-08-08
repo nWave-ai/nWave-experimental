@@ -61,7 +61,7 @@ INPUT: "{bug-description}"
       └─ A_GREEN → EXAMINE → COMMIT — the same DoD as /nw-execute; examine is NEVER skipped
 
 LANE MAP — the throughput doctrine is NOT restated here. Its SSOT is the `nw-throughput` skill
-  (`~/.claude/skills/nw-throughput/SKILL.md`) — LOAD IT; this map only names where THIS workflow's
+  (invoke it by name via the Skill tool) — LOAD IT; this map only names where THIS workflow's
   phases fall inside it. (A previous restatement here DRIFTED from that SSOT and taught the opposite:
   it put the crafter inside the serialized lane and banned worktrees outright. Point, never restate.)
   ☁️ cloud  (fan out over N defects, ~0 box cost — the SSOT's "run every LLM stage concurrently"):
@@ -79,6 +79,15 @@ LANE MAP — the throughput doctrine is NOT restated here. Its SSOT is the `nw-t
 ```
 
 ## Execution Steps
+
+### Phase -1: Mode & Size Selection (before anything else)
+
+Before Phase 0-worktree or any other step, invoke the `nw-mode-select` skill
+(Skill tool) to choose human-on-the-loop vs auto and to classify this bugfix
+S/M/L — unless the mode is already explicit in this conversation. State the
+classification and its one observable reason before proceeding. This is the
+same decision nw-mode-select governs everywhere else in nWave; nw-bugfix does
+not re-derive or restate its logic, only invokes it first.
 
 ### Phase 0-worktree: create the isolated worktree BEFORE anything touches the tree
 
@@ -128,8 +137,8 @@ temptation. GDP-1 (fire the guard early) + GDP-5 (cost on the system, not the op
 Dispatch a FRESH `@nw-product-owner` context (never inline by this orchestrator). Give it
 ONLY value-side inputs: the bug's OBSERVABLE (what a user sees/does that is currently wrong —
 the symptom) plus the human's original bug description verbatim. NEVER the RCA's causal chain
-or a fix diff — at t=0 neither exists. The PO loads
-`~/.claude/skills/nw-expectation-charter/SKILL.md` (Disqualification Rule + authoring steps
+or a fix diff — at t=0 neither exists. The PO invokes the `nw-expectation-charter`
+skill (Skill tool; Disqualification Rule + authoring steps
 are SSOT'd there) and writes one short file under
 `docs/product/expectations/fix-{bug-summary}/{intent-name}.md` naming how a demanding user
 checks the fix from the outside (CLI/HTTP/browser, no source reading). Cheap (a paragraph),
@@ -139,7 +148,7 @@ they are exactly the failure modes a fix-focused mind omits.
 
 ### Phase 1: Root Cause Analysis
 
-**Skill loading**: The troubleshooter loads its skills from `~/.claude/skills/nw-{skill}/SKILL.md`:
+**Skill loading**: The troubleshooter loads its skills by name via the Skill tool:
 - `nw-five-whys-methodology` — core investigation methodology
 - `nw-investigation-techniques` — systematic debugging patterns
 - `nw-post-mortem-framework` — structured incident analysis

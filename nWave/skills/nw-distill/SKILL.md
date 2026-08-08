@@ -5,7 +5,7 @@ user-invocable: true
 argument-hint: '[story-id] - Optional: --test-framework=[cucumber|specflow|pytest-bdd] --integration=[real-services|mocks]'
 ---
 
-> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: graphify-first (`graphify explain <symbol>`), declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
+> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill and its CodeFactPort surface, using bounded `des code-fact` queries. Degrade LOUD when the port cannot answer; never substitute an ad-hoc repository search for a structural fact.
 
 <!-- gates-ref: distill -->
 <!-- outputs-ref: distill -->
@@ -19,6 +19,14 @@ This skill does not re-enumerate the gate stack inline; it POINTS at the registr
 Acceptance-designer methodology. Orchestrator owns flow (agent dispatch, review gate, handoff); this skill owns the DISTILL-specific orchestration knowledge and ROUTES the deep domain knowledge to narrow modules.
 
 This core holds the cross-cutting DISTILL concerns — identity (ADR-025 authorship, language frame), the density-aware output contract, the 3-source induction map, the gate-G coherence rubric, and the mandatory final wave review gate — and COMPOSES the narrow `nw-distill-*` modules plus the `nw-test-design-mandates-*` family. The canonical definitions of test mechanics (Mandates 8-15, PBT/Universe, two-tier, polyglot, DSL, dormant-seam) live in the mandate family — this core does not re-inline them.
+
+## Auto entry (root reads this FIRST — terminal branch)
+
+**If posture is Auto (per `nw-mode-select`)**: root loads `nw-auto` instead of this skill — the thin Auto M/L prompt router for the acceptance-designer -> crafter -> examiner -> Git-evidence floor and its blocker/stop contract. Root's Auto-path reading of this skill terminates HERE; nothing below this heading is Auto's procedure.
+
+## Human-only ceremony (Human-on-the-loop path — Auto never reads past this heading)
+
+Everything from here to the end of this file — Composition, Language Convention Frame, Output Tiers, Charter Scaffold, the induction map, the gate-G rubric, the `docs/feature/{id}/...` artifact tree, `des` CLI commands, the Final Wave Review Gate and its human-checkpoint `AskUserQuestion` holds, Outputs — is the Human-on-the-loop path's operating manual. It is never the Auto-dispatched acceptance-designer's procedure, and it is not a checklist for root to work through itself under Auto.
 
 ## Composition (load by trigger)
 

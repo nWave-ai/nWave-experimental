@@ -32,7 +32,7 @@ Contract asserted (slice-01 core, both halves — they are inseparable):
      ``framework-catalog.yaml`` survives into the wheel; zero privately-owned
      skill directory survives.
   2. SURVIVAL — every load-bearing public skill in
-     ``scripts.shared.agent_catalog.PUBLIC_SHARED_SKILLS`` (the 11 skills with
+     ``scripts.shared.agent_catalog.PUBLIC_SHARED_SKILLS`` (the skills with
      no owning public agent that public installs still depend on) survives.
 
 Expected result on the current tree: see the module docstring's "Pipeline
@@ -178,7 +178,7 @@ class TestSlice01WheelPrivateArtifactContract:
     ) -> None:
         """Every PUBLIC_SHARED_SKILLS entry survives the build (no dangling refs).
 
-        The privacy strip removes private work; it must NOT drop the 11
+        The privacy strip removes private work; it must NOT drop the
         load-bearing public skills that have no owning public agent but that
         public installs depend on. Dropping them ships a public package with
         a dangling skill reference (RCA Q4). Privacy and survival are the two

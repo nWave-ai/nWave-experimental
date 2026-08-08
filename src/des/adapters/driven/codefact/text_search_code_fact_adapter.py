@@ -39,12 +39,34 @@ from des.ports.code_fact_port import (
 # textually. Language-agnostic enough for the C-family / Python; the floor never
 # pretends to a parser's precision (that is the AstAdapter's ``approx`` tier).
 _ATOM_DEFINITION = re.compile(
-    r"^\s*(?:def|class|func|fn)\s+([A-Za-z_]\w*)", re.MULTILINE
+    r"^\s*(?:export\s+)?(?:async\s+)?(?:def|class|func|fn|function)\s+"
+    r"([A-Za-z_]\w*)",
+    re.MULTILINE,
 )
 
 # A source file the floor scans. Kept broad (the floor is language-agnostic);
 # the textual scan tolerates non-source files (they simply contribute no atoms).
 _SOURCE_GLOB = "*.*"
+
+
+def _strip_own_declaration(text: str, callable_name: str) -> str:
+    """Remove every `_ATOM_DEFINITION` span declaring exactly ``callable_name``.
+
+    The single definition observation/SSOT: a call-site scan must never count
+    a symbol's own declaration against itself, for every atom form
+    `_ATOM_DEFINITION` recognizes (not a second, independently-drifting
+    grammar). Only spans whose captured name matches ``callable_name`` are
+    stripped -- an unrelated declaration elsewhere is left untouched.
+    """
+    pieces: list[str] = []
+    cursor = 0
+    for match in _ATOM_DEFINITION.finditer(text):
+        if match.group(1) != callable_name:
+            continue
+        pieces.append(text[cursor : match.start()])
+        cursor = match.end()
+    pieces.append(text[cursor:])
+    return "".join(pieces)
 
 
 class TextSearchAdapter:
@@ -181,23 +203,27 @@ class TextSearchAdapter:
     def _call_sites(self, callable_name: str) -> list[str]:
         """Every textual ``<callable_name>(`` call SITE, one entry per occurrence.
 
-        A definition line (``def flush`` / ``class flush``) is NOT a call-site;
-        a ``.flush(`` or bare ``flush(`` usage is. Name matching only (the floor's
-        declared-``noisy`` limitation, ADR-LA-001 Consequences). A file with N
-        distinct occurrences contributes N entries here — never collapsed to one
-        entry per FILE containing a call (D1: `consumer_counts` counts call
-        sites, not files; the AST tier applies the same rule).
+        A declaration line is NOT a call-site; a ``.flush(`` or bare ``flush(``
+        usage is. The declaration observation is `_ATOM_DEFINITION` itself (the
+        single SSOT for "what counts as a declaration") — its captured symbol
+        is compared to ``callable_name`` and only a matching declaration span is
+        stripped before the call pattern scans, so every declaration form the
+        floor claims as an atom (``def``/``class``/``func``/``fn``/``function``,
+        with ``export``/``async`` prefixes) is honored language-agnostically,
+        never just the subset a second, drifted grammar happened to recognize.
+        Name matching only (the floor's declared-``noisy`` limitation, ADR-LA-001
+        Consequences). A file with N distinct occurrences contributes N entries
+        here — never collapsed to one entry per FILE containing a call (D1:
+        `consumer_counts` counts call sites, not files; the AST tier applies the
+        same rule).
         """
         if not callable_name:
             return []
         call_pattern = re.compile(rf"(?<![\w.]){re.escape(callable_name)}\s*\(")
-        definition_pattern = re.compile(
-            rf"^\s*(?:def|class|func|fn)\s+{re.escape(callable_name)}\b", re.MULTILINE
-        )
         hits: list[str] = []
         for source_file in self._iter_files():
             text = self._read(source_file)
-            without_defs = definition_pattern.sub("", text)
+            without_defs = _strip_own_declaration(text, callable_name)
             hits.extend(
                 f"{source_file}:{match.start()}"
                 for match in call_pattern.finditer(without_defs)

@@ -66,16 +66,16 @@ class TreeScope:
     def files(self, glob_pattern: str) -> list[Path]:
         """Every file matching ``glob_pattern`` under ``root``, walked ONCE.
 
-        A single file root (no directory to walk) is returned as-is, exclusion-
-        exempt — mirrors the pre-fix single-file behaviour of both tiers. A
-        repeat call with the SAME ``glob_pattern`` reuses the cached result
-        instead of re-walking the tree.
+        A single file root (no directory to walk) is returned only when it
+        matches ``glob_pattern``.  Returning a ``.ts`` file for ``*.py`` would
+        falsely advertise Python-AST coverage.  A repeat call with the SAME
+        ``glob_pattern`` reuses the cached result instead of re-walking.
         """
         cached = self._file_cache.get(glob_pattern)
         if cached is not None:
             return cached
         if self._root.is_file():
-            walked = [self._root]
+            walked = [self._root] if self._root.match(glob_pattern) else []
         else:
             walked = [
                 path

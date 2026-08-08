@@ -34,6 +34,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 
 from des.adapters.drivers.hooks.hook_router import main as _hook_router_main
@@ -222,6 +223,33 @@ class HookResult:
         return set(payload["hookSpecificOutput"]["updatedInput"].keys())
 
 
+def _mode_select_observed_transcript_path() -> str:
+    """A JSONL transcript recording an actual `Skill(nw-mode-select)` call.
+
+    The activation-routing-before-mutation gate (pre_tool_use_handler.py)
+    blocks every Bash call at an activated root until the transcript shows
+    this call was made -- orthogonal to the commit-attribution rewrite this
+    feature exercises. One process-wide fixture file satisfies the gate so
+    every scenario here reaches `emit_commit_attribution_mutation` unchanged.
+    """
+    fd, path = tempfile.mkstemp(suffix=".jsonl")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(
+            json.dumps(
+                {
+                    "type": "tool_use",
+                    "name": "Skill",
+                    "input": {"skill": "nw-mode-select"},
+                }
+            )
+            + "\n"
+        )
+    return path
+
+
+_MODE_SELECT_TRANSCRIPT_PATH = _mode_select_observed_transcript_path()
+
+
 @dataclass
 class HookAdapterComposition:
     """Drives the real `pre-tool-use` hook adapter through subprocess.
@@ -259,7 +287,13 @@ class HookAdapterComposition:
         only (``des`` is already importable in-process) -- a no-op here.
         """
         tool_input = {"command": str(command), **self.extra_tool_input}
-        payload = json.dumps({"tool_name": "Bash", "tool_input": tool_input})
+        payload = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": tool_input,
+                "transcript_path": _MODE_SELECT_TRANSCRIPT_PATH,
+            }
+        )
         # Mirror the dispatch cwd into DES_PROJECT_DIR so `resolve_nwave_root()`
         # (now consulted by activation_gate.apply_gate) resolves the SAME
         # ambient cwd this call runs under, not the per-test isolation root the

@@ -20,6 +20,7 @@ from des.adapters.drivers.hooks import des_task_signal, hook_protocol
 from des.adapters.drivers.hooks.hook_protocol import (
     EXIT_CODE_TO_DECISION,
     STDERR_CAPTURE_MAX_CHARS,
+    extract_transcript_path,
     log_hook_completed,
     log_hook_error,
     log_hook_invoked,
@@ -28,6 +29,7 @@ from des.adapters.drivers.hooks.hook_protocol import (
 from des.adapters.drivers.hooks.root_activation_context import (
     build_root_write_mode_select_context,
 )
+from des.application.skill_tracking_service import mode_select_observed_before_mutation
 from des.domain.session_guard_policy import SessionGuardPolicy
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 from des.runtime.interpreter import des_spawn
@@ -267,37 +269,58 @@ def handle_pre_write() -> int:
             else:
                 # Determine allow reason for diagnostics
                 allow_reason = "no_session" if not session_active else "policy_allowed"
+
+                # K3-A root activation: root modifying a file directly (Write/
+                # Edit) never dispatches a sub-agent, so it never reaches the
+                # PreToolUse/Agent reminder either. `root_context` non-None
+                # identifies an activated nWave project root (nWave-adjacent
+                # path, no active deliver session) -- the only case where the
+                # mode-select gate below applies. Once mode selection is
+                # observed the write proceeds silently; the reminder must not
+                # be injected again on every mutation.
+                root_context = None
+                try:
+                    root_context = build_root_write_mode_select_context(
+                        file_path=file_path,
+                        session_active=session_active,
+                    )
+                except Exception:
+                    root_context = None
+
+                is_root_invocation = not hook_input.get(
+                    "agent_id"
+                ) and not hook_input.get("agent_type")
+                if root_context and is_root_invocation:
+                    transcript_path = extract_transcript_path(hook_input)
+                    observed = False
+                    try:
+                        observed = bool(
+                            transcript_path
+                            and mode_select_observed_before_mutation(transcript_path)
+                        )
+                    except Exception:
+                        observed = False
+                    if not observed:
+                        _log_pre_write_decision(
+                            hook_id=hook_id,
+                            event_type="HOOK_PRE_WRITE_BLOCKED",
+                            file_path=file_path,
+                            reason="mode_select_not_observed",
+                        )
+                        response = {
+                            "decision": "block",
+                            "reason": "Invoke nw-mode-select before the first mutation.",
+                        }
+                        print(json.dumps(response))
+                        exit_code = 2
+                        return exit_code
+
                 _log_pre_write_decision(
                     hook_id=hook_id,
                     event_type="HOOK_PRE_WRITE_ALLOWED",
                     file_path=file_path,
                     reason=allow_reason,
                 )
-                # K3-A root activation: root modifying a file directly (Write/
-                # Edit) never dispatches a sub-agent, so it never reaches the
-                # PreToolUse/Agent reminder either. Best-effort, sibling of the
-                # allow decision above -- never changes it. Guarded by its own
-                # try/except so any failure here degrades to silence, not a
-                # blocked write.
-                try:
-                    root_context = build_root_write_mode_select_context(
-                        file_path=file_path,
-                        session_active=session_active,
-                    )
-                    if root_context:
-                        print(
-                            json.dumps(
-                                {
-                                    "hookSpecificOutput": {
-                                        "hookEventName": "PreToolUse",
-                                        "permissionDecision": "allow",
-                                        "permissionDecisionReason": root_context,
-                                    }
-                                }
-                            )
-                        )
-                except Exception:
-                    pass  # best-effort reminder must never break the write
                 exit_code = 0
                 return exit_code
 
