@@ -28,15 +28,21 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from des.application import feature_end_cycle_service as _fecs
-from des.application.feature_end_cycle_service import (
-    CycleIndeterminate,
-    CycleRefusal,
-    CycleSuccess,
-    FullSuiteLegIndeterminate,
-)
 from des.cli.verify_deliver_integrity import _undelivered_slice_plan_slices
+
+
+if TYPE_CHECKING:
+    # Annotation-only since 2026-08-06: the runtime `isinstance` checks that
+    # needed these at import time belonged to the shared full-suite leg, which
+    # this module no longer runs.
+    from des.application.feature_end_cycle_service import (
+        CycleIndeterminate,
+        CycleRefusal,
+        CycleSuccess,
+    )
 
 
 # Module-qualified access (never `from ... import _run_full_suite_leg` /
@@ -376,20 +382,11 @@ def run_feature_end_batch(
     if ineligible is not None:
         return ineligible
 
-    batch_key = _batch_artifact_key([spec.feature_id for spec in specs])
-    full_suite = _fecs._run_full_suite_leg(repo_root=repo_root, feature_id=batch_key)
-    if isinstance(full_suite, CycleRefusal):
-        return BatchRefused(
-            full_suite.error,
-            failing_tests=full_suite.failing_tests,
-            failing_count=full_suite.failing_count,
-            junit_artifact=full_suite.junit_artifact,
-        )
-    if isinstance(full_suite, FullSuiteLegIndeterminate):
-        return BatchIndeterminate(
-            "the feature-end batch's shared full-suite leg is INDETERMINATE: "
-            + full_suite.reason
-        )
+    # The shared full-suite leg ran HERE until 2026-08-06 -- one whole-tree
+    # `des run-contract-gate` invocation for the whole batch, whose outcome was
+    # then threaded into every member cycle. It duplicated CI, and it was this
+    # vertical's largest hold on the condemned run-contract provider. CI is now
+    # the terminal whole-tree evidence; the batch runs only the per-feature legs.
 
     members: list[tuple[str, CycleSuccess | CycleIndeterminate | CycleRefusal]] = []
     for spec in specs:
@@ -399,7 +396,6 @@ def run_feature_end_batch(
             feature_dir=spec.feature_dir,
             reviewer_agent_id=spec.reviewer_agent_id,
             verdict=spec.verdict,
-            shared_full_suite=full_suite,
         )
         members.append((spec.feature_id, outcome))
     return BatchCompleted(members=tuple(members))

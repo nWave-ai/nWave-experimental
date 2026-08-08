@@ -1,40 +1,35 @@
 @feature-fix-carpaccio-slice-plan-parser-unify
-Feature: One tolerant slice-plan parser shared by the carpaccio entry gate and the hook
+Feature: One tolerant slice-plan parser for the carpaccio entry gate
   As a spine driver whose feature-delta carries a well-formed slice plan
-  I want the carpaccio entry gate and the subagent-stop hook to parse it identically
-    through ONE tolerant parser
-  So that a 3-column / H3-heading / escaped-pipe plan is not falsely rejected by one
-    path while accepted by the other
+  I want the carpaccio entry gate to parse the supported markdown forms
+  So that a 3-column / H3-heading / escaped-pipe plan is not falsely rejected
 
-  # C10 of consolidation-for-wider-beta-testing. Two divergent slice-plan
-  # parsers split the SAME artifact: the CLI carpaccio_slice_gate parser
-  # (src/des/cli/carpaccio_format.py::parse_slice_plan) is strict -- H2-only
+  # C10 of consolidation-for-wider-beta-testing. The CLI carpaccio_slice_gate
+  # reads the artifact through the public parser
+  # (src/des/cli/carpaccio_format.py::parse_slice_plan), which was strict -- H2-only
   # heading, raw-| split, requires exactly 5 columns -- and REJECTS a 3-column
-  # plan that the hook parser
-  # (src/des/adapters/drivers/hooks/subagent_stop_handler.py::_parse_slice_plan_rows
-  # :1299, len(cells) >= 3) ACCEPTS. The entry gate is thus non-functional for the
-  # canonical plan while the exit gate (hook) accepts it. Both are GFM-naive: an H3
+  # plan. An H3
   # heading yields SectionMissing and a GFM-escaped `\|` in a cell is miscounted as
-  # a column boundary (MalformedInput). The fix replaces both with ONE tolerant
+  # a column boundary (MalformedInput). The fix provides one tolerant
   # `parse_slice_plan_rows(text)` in carpaccio_format (H2-H4 heading-tolerant,
   # escaped-`\|` un-escaping, column-tolerant: slice-id col + value next col,
-  # extra columns ignored), to which BOTH paths delegate.
+  # extra columns ignored).
   #
   # atdd_pure: AC-1/2/3 are ACTIVE-RED (they RUN and raise AssertionError -- the
-  # shared tolerant parser does not exist; both real parsers diverge / miscount /
+  # shared tolerant parser does not exist; the public parser miscounts /
   # SectionMissing at HEAD). AC-4 is a live-green preservation guard (the 5-col H2
   # plan the shipped deltas use already parses; the fix must not break it). The
-  # scenarios drive the REAL carpaccio_slice_gate parser and the REAL hook parser
+  # scenarios drive the REAL public carpaccio_slice_gate parser
   # over hermetic feature-delta texts crafted under pytest tmp_path -- never this
   # repo's own deltas.
 
   @slice-01 @US-01 @contract-shape:bounded-change
-  Scenario: A 3-column slice plan parses identically through the entry gate and the hook
+  Scenario: A 3-column slice plan parses through the entry gate
     Given a feature-delta whose slice plan is a 3-column table with columns "Slice", "Value statement" and "Status"
     And the plan declares slices "slice-01" and "slice-02"
-    When the carpaccio entry-gate parser and the subagent-stop hook parser each read the plan
-    Then both parsers extract the slice-id set "slice-01, slice-02"
-    And neither parser rejects the 3-column plan
+    When the carpaccio entry-gate parser reads the plan
+    Then the parser extracts the slice-id set "slice-01, slice-02"
+    And the parser accepts the 3-column plan
 
   @slice-01 @US-01 @contract-shape:bounded-change
   Scenario: A slice-plan cell containing an escaped pipe keeps its slice-id and value intact

@@ -11,6 +11,8 @@ skills:
   - nw-tdd-methodology
   - nw-at-completeness-check
   - nw-code-analysis-port
+  - nw-algebraic-design-protocol
+  - nw-certainty-by-construction
 ---
 
 # nw-software-crafter-reviewer
@@ -96,6 +98,8 @@ Every frontmatter skill routed by its current name (A07 zero orphans both ways):
 | Phase | Load | Trigger |
 |-------|------|---------|
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
+| a law or invariant with exceptions, or a refactor where the representation change could change meaning | `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` | state the equivalence claim BEFORE changing the representation, and protect it on both sides |
+| making an invalid state unrepresentable, or introducing a canonical form | `~/.claude/skills/nw-certainty-by-construction/SKILL.md` | return evidence rather than a Boolean, and calibrate the claim to what the language actually guarantees |
 | Startup (any mode) | `~/.claude/skills/nw-sc-review-dimensions/SKILL.md` | Always |
 | Startup (any mode) | `~/.claude/skills/nw-adversarial-refutation/SKILL.md` | Always — the falsification POSTURE (assume-wrong, default-to-refuted, diverse lenses, exhibited counterexample) applied to every dimension |
 | Startup (any mode) | `~/.claude/skills/nw-tdd-review-enforcement/SKILL.md` | Always |

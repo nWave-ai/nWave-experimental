@@ -212,10 +212,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "environmental-e2e gates (leaving their genuine heartbeat records), "
             "then sign the deep-review verdict and emit the EBatchRefactorCompleted "
             "+ FeatureEndReviewVerdict records. A failed gate fail-closes the "
-            "cycle (anti-theater); no record is emitted. Sealing MULTIPLE "
-            "features that share one clean whole-tree pass? See "
-            "'des feature-end run-batch' -- it pays the full-suite cost ONCE "
-            "for the whole set instead of once per invocation."
+            "cycle (anti-theater); no record is emitted."
         ),
     )
     add_repo_root_argument(
@@ -247,19 +244,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run_batch = verbs.add_parser(
         "run-batch",
-        help=(
-            "Run the feature-end cycle over a SET of features, paying the "
-            "whole-tree full-suite cost ONCE for the whole batch."
-        ),
+        help="Run the feature-end cycle over a manifest-declared set of features.",
         description=(
             "Run the feature-end cycle over a manifest-declared SET of "
-            "features. The whole-tree full-suite leg runs EXACTLY ONCE for "
-            "the whole batch (D-3); every other leg, sign, and emit still "
-            "run PER FEATURE, and each feature still emits its OWN "
-            "FeatureEnd records. A malformed manifest refuses before any "
-            "gate is dispatched (GDP-1). A RED shared suite refuses the "
-            "WHOLE batch with zero member cycles run and zero FeatureEnd "
-            "records for any feature (D-4) -- never bisected."
+            "features. Each member is evaluated through the feature-end cycle "
+            "and emits its own FeatureEnd records. A malformed manifest or "
+            "ineligible member refuses before any member cycle is dispatched; "
+            "otherwise the command emits every member outcome and returns the "
+            "worst-outcome exit code."
         ),
     )
     run_batch.add_argument(

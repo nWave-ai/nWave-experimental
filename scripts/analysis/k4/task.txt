@@ -1,0 +1,23 @@
+You are in a checkout of healthchecks, an open-source cron-job monitoring service built with Django. Implement the following feature in this codebase.
+
+FEATURE — maintenance windows
+
+An operator can declare recurring maintenance windows on a check. Two things must hold:
+
+1. While a check is inside one of its maintenance windows, a failure must not deliver a notification on any channel.
+2. The outage must still be visible in that check's own history, so that afterwards an operator can see what broke and when.
+
+CONTRACT — this part is fixed, because other systems integrate against it
+
+The management API v3 check representation gains one field:
+
+  "maintenance_windows": [ { "schedule": "0 2 * * SUN", "duration": 3600 } ]
+
+  schedule  a recurrence expression, interpreted in the check's timezone
+  duration  the window length, in seconds
+
+It must be readable via GET and writable via POST and PUT on the existing check endpoints.
+
+Everything not stated above is your decision: where windows are stored, how recurrence and timezones are handled, how and where suppression happens, and how the work is structured and verified.
+
+Deliver this as production code for a codebase other people maintain.

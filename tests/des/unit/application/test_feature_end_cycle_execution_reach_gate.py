@@ -42,7 +42,6 @@ from des.application.feature_end_cycle_service import (
     CycleIndeterminate,
     CycleRefusal,
     CycleSuccess,
-    FullSuiteLegNotApplicable,
     run_feature_end_cycle,
 )
 
@@ -98,13 +97,6 @@ def _stub_non_execution_reach_legs(monkeypatch) -> None:
         svc,
         "_run_coverage_map_verify_leg",
         lambda *, ledger, repo_root, feature_id, feature_dir: None,
-    )
-    monkeypatch.setattr(
-        svc,
-        "_run_full_suite_leg",
-        lambda *, repo_root, feature_id=None: FullSuiteLegNotApplicable(
-            "stubbed: no contract suite in this hermetic fixture"
-        ),
     )
 
 

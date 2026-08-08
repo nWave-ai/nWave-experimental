@@ -265,8 +265,18 @@ def build_guard_command(python_cmd: str) -> str:
     The guard:
     1. Buffers stdin (hook input JSON)
     2. If the target is execution-log.json, always invokes Python (unconditional)
-    3. Otherwise, checks for deliver-session.json -- exits 0 if absent (fast path)
-    4. If present, invokes Python for full DES enforcement
+    3. If a deliver-session.json is active, invokes Python for full DES
+       enforcement
+    4. Otherwise (no active session), invokes Python ONLY when the target path
+       looks nWave-adjacent (`src/`, `nWave/`, `tests/`, `scripts/`) -- a
+       coarse, over-inclusive shell-level pre-filter; the authoritative
+       pertinence check (which also excludes `.nwave/**`) lives in
+       `root_activation_context.is_nwave_adjacent_write` and runs inside
+       Python. This lets K3-A's root-activation reminder reach root's own
+       direct Write/Edit (no sub-agent dispatch, no deliver session) without
+       spawning Python on irrelevant writes (telemetry, unrelated repos).
+    5. Otherwise, exits 0 (fast path, unchanged for irrelevant/out-of-tree
+       writes)
 
     Args:
         python_cmd: The full Python command string (PYTHONPATH=... python3 -m ...)
@@ -279,8 +289,12 @@ def build_guard_command(python_cmd: str) -> str:
         "INPUT=$(cat); "
         "echo \"$INPUT\" | grep -q 'execution-log\\.json' && "
         '{{ echo "$INPUT" | {python_cmd}; exit $?; }}; '
-        "test -f .nwave/des/deliver-session.json || exit 0; "
-        'echo "$INPUT" | {python_cmd}'
+        "test -f .nwave/des/deliver-session.json && "
+        '{{ echo "$INPUT" | {python_cmd}; exit $?; }}; '
+        'echo "$INPUT" | grep -qE \'"file_path"[[:space:]]*:[[:space:]]*"[^"]*'
+        "(/src/|/nWave/|/tests/|/scripts/)' && "
+        '{{ echo "$INPUT" | {python_cmd}; exit $?; }}; '
+        "exit 0"
     ).format(python_cmd=python_cmd)
 
 

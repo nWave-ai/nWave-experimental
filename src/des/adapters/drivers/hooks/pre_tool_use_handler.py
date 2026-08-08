@@ -29,6 +29,9 @@ from des.adapters.drivers.hooks.hook_protocol import (
     log_hook_invoked,
     read_and_parse_stdin,
 )
+from des.adapters.drivers.hooks.root_activation_context import (
+    build_root_mode_select_context,
+)
 from des.application.commit_attribution_service import CommitAttributionService
 from des.application.wave_activation_service import WaveActivationService
 from des.domain.atdd_pure_phases import ATDDPurePhase
@@ -488,6 +491,28 @@ def handle_pre_tool_use() -> int:
                             }
                         )
                     )
+                else:
+                    # K3-A root activation: the root/orchestrator never gets a
+                    # SubagentStart event (only spawned sub-agents do), so this
+                    # is the one already-registered, already-executed hook that
+                    # fires in root's own process at dispatch time. Best-effort,
+                    # never changes the allow decision above.
+                    root_context = build_root_mode_select_context(
+                        prompt=prompt,
+                        subagent_type=tool_input.get("subagent_type"),
+                    )
+                    if root_context:
+                        print(
+                            json.dumps(
+                                {
+                                    "hookSpecificOutput": {
+                                        "hookEventName": "PreToolUse",
+                                        "permissionDecision": "allow",
+                                        "permissionDecisionReason": root_context,
+                                    }
+                                }
+                            )
+                        )
                 exit_code = 0
                 return exit_code
             else:

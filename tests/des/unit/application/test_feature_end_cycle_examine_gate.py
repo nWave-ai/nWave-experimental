@@ -37,12 +37,27 @@ from pathlib import Path
 
 from des.application import feature_end_cycle_service as svc
 from des.application.feature_end_cycle_service import (
+    CoverageMapLegRan,
     CycleRefusal,
     CycleSuccess,
-    FullSuiteLegRan,
     run_feature_end_cycle,
 )
 from des.cli.record_examine_verdict import record_examine_verdict
+
+
+def _coverage_map_leg_ran(*, ledger, repo_root, feature_id, feature_dir):
+    """The leg that now carries `leg_census.ran >= 1` in these fixtures.
+
+    Until 2026-08-06 that was the full-suite leg, stubbed to `FullSuiteLegRan`.
+    It is gone -- it duplicated CI and held the condemned run-contract provider
+    alive -- so a leg NONE of these tests measures takes its place. The census
+    folds by name suffix, so any surviving `*LegRan` counts identically.
+
+    A named function, not a lambda: it must accept the leg's keyword-only
+    signature, which is exactly what ruff's PLW0108 "just inline the call"
+    suggestion would break.
+    """
+    return CoverageMapLegRan()
 
 
 _FEATURE_ID = "feat-examine-gate"
@@ -86,12 +101,7 @@ def _stub_upstream_legs(monkeypatch) -> None:
     monkeypatch.setattr(
         svc,
         "_run_coverage_map_verify_leg",
-        lambda *, ledger, repo_root, feature_id, feature_dir: None,
-    )
-    monkeypatch.setattr(
-        svc,
-        "_run_full_suite_leg",
-        lambda *, repo_root, feature_id=None: FullSuiteLegRan(pytest_exit_code=0),
+        _coverage_map_leg_ran,
     )
 
 

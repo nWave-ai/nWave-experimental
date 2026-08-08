@@ -67,6 +67,36 @@ class AgentUsageByFeatureReport:
     named this feature_id" (never a guess), distinct from "records exist but
     none attributed cleanly". The caller renders `0` as could-not-verify."""
 
+    unreadable_file_count: int = 0
+    """Log files this scan could not read at all (OSError/PermissionError).
+
+    Their records are absent from every total above, so a non-zero value means
+    the totals are a LOWER BOUND, never the measured truth. Before 2026-08-06
+    these files were skipped with a bare `continue`: a corpus whose logs were
+    unreadable reported byte-identically to a corpus that genuinely held no
+    matching event, which is the silent-wrong GDP-6 forbids and the exact claim
+    the capture spec requires -- "capture failures are distinguishable from
+    genuine zero eligible events". A probe with three corpora (genuinely empty /
+    one unreadable file holding 3 events / 3 corrupt records) returned the same
+    report for all three; see `tests/des/unit/adapters/
+    test_agent_usage_capture_failure_is_not_zero.py`."""
+
+    undecodable_line_count: int = 0
+    """Lines that were read but were not valid JSON, for the same reason.
+
+    Counted separately from `unreadable_file_count` because they fail at a
+    different boundary and a caller may reasonably treat them differently: a
+    whole missing file is a capture outage, a scattering of corrupt lines is a
+    writer defect."""
+
+    @property
+    def capture_is_complete(self) -> bool:
+        """True only when nothing was lost on the way in.
+
+        Ask THIS before reading a total as a measurement. A `False` here turns
+        every figure in this report into a lower bound."""
+        return self.unreadable_file_count == 0 and self.undecodable_line_count == 0
+
 
 class JsonlAuditLogReader(AuditLogReader):
     """Reads audit events from JSONL files.
@@ -192,11 +222,16 @@ class JsonlAuditLogReader(AuditLogReader):
         stage_groups: dict[str | None, dict[str, dict[str, int]]] = {}
         unattributed_by_stage: dict[str | None, int] = {}
         total_scanned = 0
+        unreadable_files = 0
+        undecodable_lines = 0
 
         for log_file in sorted(self._log_dir.glob("audit-*.log")):
             try:
                 lines = log_file.read_text(encoding="utf-8").splitlines()
             except (OSError, PermissionError):
+                # NOT a bare skip: a file we could not read is a capture
+                # failure, and its records are missing from every total below.
+                unreadable_files += 1
                 continue
             for line in lines:
                 line = line.strip()
@@ -205,6 +240,7 @@ class JsonlAuditLogReader(AuditLogReader):
                 try:
                     entry = json.loads(line)
                 except json.JSONDecodeError:
+                    undecodable_lines += 1
                     continue
                 if entry.get("event") != _AGENT_USAGE_EVENT:
                     continue
@@ -255,4 +291,6 @@ class JsonlAuditLogReader(AuditLogReader):
             feature_id=feature_id,
             stages=stages,
             total_records_scanned=total_scanned,
+            unreadable_file_count=unreadable_files,
+            undecodable_line_count=undecodable_lines,
         )

@@ -25,6 +25,9 @@ from des.adapters.drivers.hooks.hook_protocol import (
     log_hook_invoked,
     read_and_parse_stdin,
 )
+from des.adapters.drivers.hooks.root_activation_context import (
+    build_root_write_mode_select_context,
+)
 from des.domain.session_guard_policy import SessionGuardPolicy
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 from des.runtime.interpreter import des_spawn
@@ -270,6 +273,31 @@ def handle_pre_write() -> int:
                     file_path=file_path,
                     reason=allow_reason,
                 )
+                # K3-A root activation: root modifying a file directly (Write/
+                # Edit) never dispatches a sub-agent, so it never reaches the
+                # PreToolUse/Agent reminder either. Best-effort, sibling of the
+                # allow decision above -- never changes it. Guarded by its own
+                # try/except so any failure here degrades to silence, not a
+                # blocked write.
+                try:
+                    root_context = build_root_write_mode_select_context(
+                        file_path=file_path,
+                        session_active=session_active,
+                    )
+                    if root_context:
+                        print(
+                            json.dumps(
+                                {
+                                    "hookSpecificOutput": {
+                                        "hookEventName": "PreToolUse",
+                                        "permissionDecision": "allow",
+                                        "permissionDecisionReason": root_context,
+                                    }
+                                }
+                            )
+                        )
+                except Exception:
+                    pass  # best-effort reminder must never break the write
                 exit_code = 0
                 return exit_code
 

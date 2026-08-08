@@ -45,13 +45,21 @@ from typing import TYPE_CHECKING
 
 from des.application import feature_end_cycle_service as svc
 from des.application.feature_end_cycle_service import (
+    CoverageMapLegRan,
     CycleRefusal,
     CycleSuccess,
-    FullSuiteLegNotApplicable,
-    FullSuiteLegRan,
     run_feature_end_cycle,
 )
 from des.runtime.interpreter import des_spawn
+
+
+def _coverage_map_leg_ran(*, ledger, repo_root, feature_id, feature_dir):
+    """Carries `leg_census.ran >= 1` now that the full-suite leg is deleted.
+
+    Named rather than a lambda: it must accept the leg's keyword-only
+    signature, which is what ruff's PLW0108 "inline the call" suggestion breaks.
+    """
+    return CoverageMapLegRan()
 
 
 if TYPE_CHECKING:
@@ -137,13 +145,6 @@ class FeatureEndP0GateComposition:
             "_run_coverage_map_verify_leg",
             lambda *, ledger, repo_root, feature_id, feature_dir: None,
         )
-        self.monkeypatch.setattr(
-            svc,
-            "_run_full_suite_leg",
-            lambda *, repo_root, feature_id=None: FullSuiteLegNotApplicable(
-                "stubbed: no contract suite in this hermetic acceptance fixture"
-            ),
-        )
 
     def _seed_feature_dir(self, repo_root: Path) -> Path:
         """A minimal feature-dir with NO feature-delta.md (no Slice-Plan ->
@@ -208,16 +209,17 @@ class FeatureEndP0GateComposition:
             json.dumps({"scripts": {"build": "tsc"}})
         )
         self._stage(repo_root)
-        # A WARN outcome folds into leg_census.warned, NOT leg_census.ran
-        # (only DocCoherenceLegRan does) -- force full-suite to a genuine
-        # FullSuiteLegRan (overriding `_stub_sibling_legs`'s NotApplicable)
-        # so leg_census.ran >= 1 and the cycle does not ALSO trip the
-        # unrelated zero-observed-checks charter (leg_census.ran == 0 ->
-        # CycleIndeterminate, ADR-GV-002 D1/D3, pinned elsewhere).
+        # A WARN outcome folds into leg_census.warned, NOT leg_census.ran, so
+        # ONE leg must genuinely run or the cycle ALSO trips the unrelated
+        # zero-observed-checks charter (leg_census.ran == 0 ->
+        # CycleIndeterminate, ADR-GV-002 D1/D3, pinned elsewhere). That role
+        # belonged to the full-suite leg until 2026-08-06; the coverage-map
+        # leg carries it now. The census folds by name suffix, so any
+        # surviving `*LegRan` witnesses it identically.
         self.monkeypatch.setattr(
             svc,
-            "_run_full_suite_leg",
-            lambda *, repo_root, feature_id=None: FullSuiteLegRan(0),
+            "_run_coverage_map_verify_leg",
+            _coverage_map_leg_ran,
         )
 
     # --- When ------------------------------------------------------------------

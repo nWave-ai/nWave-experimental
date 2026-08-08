@@ -46,13 +46,18 @@ empirically the longest DISTILL phases are spent reading production code to chec
 NOT writing Gherkin (sister dogfood 2026-07-04 — 4 of 7 slices needed zero new code because an
 existing mechanism already covered them; the cost was DISCOVERING that).
 
-- **Query** "what already covers behaviour X?": `mcp__tsunami__feature_analyze` returns
-  `{files, tests, coverage}` for a named feature — the direct what-covers-what answer; add
-  `reads_of` / `callers_of` for a specific symbol or load-bearing seam.
-- **Fallback (no Tsunami installed)**: the SAME `nw-code-analysis-port` degrades LOUD — generic AST
+- **Query** "what already covers behaviour X?": `graphify explain "<symbol>"` names every
+  caller and reader of a load-bearing seam, each with file and line, which is the
+  what-covers-what answer for a specific symbol; `graphify path "A" "B"` shows how one
+  reaches the other. **There is no graphify equivalent of the old
+  `mcp__tsunami__feature_analyze`** (`{files, tests, coverage}` for a NAMED FEATURE) —
+  that surface is temporarily disabled, so a feature-level coverage question has no
+  tier-1 answer today. Say so and take the fallback; do not assemble one from `explain`
+  output and present it as the same fact.
+- **Fallback (no graph built, or the question is feature-level)**: the SAME `nw-code-analysis-port` degrades LOUD — generic AST
   (defs / refs / test-imports of the symbol) → grep (last resort, tagged `noisy`). The guidance is
   identical whichever tier answers; only the confidence label changes. Never leave the developer
-  without an answer because Tsunami is absent.
+  without an answer because the top tier is absent.
 - **Outcome**: already covered → REUSE the existing AT (Mandate-12), do NOT author a duplicate;
   genuinely uncovered → author the induced scenario. Either way the decision is a CITED code-fact
   (feature/test names), not a hunch from a manual read.

@@ -6,15 +6,18 @@ Runs the same validation checks as GitHub Actions CI/CD pipelines locally.
 This allows catching issues before pushing to remote.
 
 Usage:
-    python scripts/local_ci.py [--verbose] [--fast]
+    python scripts/local_ci.py [--verbose] [--fast] [--python-quality]
 
 Options:
     --verbose    Show detailed output
     --fast       Skip slower checks (build validation)
+    --python-quality
+                 Run only the shared read-only Ruff lint and format contract
     --help       Show this help message
 """
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -279,47 +282,34 @@ class LocalCIValidator:
         else:
             self.tests_failed += 1
 
-    def validate_python_linting(self) -> None:
-        """Run Python linting with Ruff."""
-        self.print_header("6. Python Linting (Ruff)")
+    @staticmethod
+    def _ruff_prefix() -> list[str] | None:
+        """Resolve Ruff without changing the commands checked by every consumer."""
+        if shutil.which("ruff"):
+            return ["ruff"]
+        if shutil.which("uv"):
+            return ["uv", "run", "--frozen", "ruff"]
+        return None
 
-        try:
-            subprocess.run(["uv", "--version"], capture_output=True, check=True)
-            self.run_command(
-                ["uv", "run", "poe", "lint"],
-                "Ruff linting passed",
+    def validate_python_quality(self) -> None:
+        """Run the read-only Ruff contract shared by local hooks and CI."""
+        self.print_header("6. Python Quality (Ruff)")
+        prefix = self._ruff_prefix()
+        if prefix is None:
+            self.print_error(
+                "Ruff is unavailable; install project dependencies with uv sync"
             )
-        except FileNotFoundError:
-            # Fall back to direct ruff if uv not available
-            try:
-                subprocess.run(["ruff", "--version"], capture_output=True, check=True)
-                self.run_command(
-                    ["ruff", "check", "src/", "scripts/", "tests/"],
-                    "Ruff linting passed",
-                )
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                self.print_warning("Ruff not available - install with: uv sync")
-
-    def validate_python_formatting(self) -> None:
-        """Check Python formatting with Ruff."""
-        self.print_header("7. Python Formatting Check (Ruff)")
-
-        try:
-            subprocess.run(["uv", "--version"], capture_output=True, check=True)
-            self.run_command(
-                ["uv", "run", "poe", "format-check"],
-                "Ruff formatting check passed",
-            )
-        except FileNotFoundError:
-            # Fall back to direct ruff if uv not available
-            try:
-                subprocess.run(["ruff", "--version"], capture_output=True, check=True)
-                self.run_command(
-                    ["ruff", "format", "--check", "src/", "scripts/", "tests/"],
-                    "Ruff formatting check passed",
-                )
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                self.print_warning("Ruff not available - install with: uv sync")
+            self.tests_failed += 1
+            return
+        scope = ["src/", "scripts/", "tests/"]
+        self.run_command(
+            [*prefix, "check", *scope, "--exit-non-zero-on-fix"],
+            "Ruff linting passed",
+        )
+        self.run_command(
+            [*prefix, "format", "--check", "--diff", *scope],
+            "Ruff formatting check passed",
+        )
 
     def validate_security(self) -> None:
         """Run basic security validation."""
@@ -451,8 +441,7 @@ class LocalCIValidator:
         self.run_python_tests()
         self.validate_build()
         self.validate_shell_scripts()
-        self.validate_python_linting()
-        self.validate_python_formatting()
+        self.validate_python_quality()
         self.validate_security()
         self.validate_nwave_framework()
         self.validate_documentation()
@@ -479,11 +468,21 @@ def main():
         action="store_true",
         help="Skip slower checks (build validation)",
     )
+    parser.add_argument(
+        "--python-quality",
+        action="store_true",
+        help="Run only the shared read-only Ruff lint and format contract",
+    )
 
     args = parser.parse_args()
 
     validator = LocalCIValidator(verbose=args.verbose, fast_mode=args.fast)
-    success = validator.run_all_validations()
+    if args.python_quality:
+        validator.validate_python_quality()
+        validator.print_summary()
+        success = validator.tests_failed == 0
+    else:
+        success = validator.run_all_validations()
 
     sys.exit(0 if success else 1)
 

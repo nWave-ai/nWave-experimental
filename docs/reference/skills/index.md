@@ -80,6 +80,10 @@
 
 - [nw-agent-testing](nw-agent-testing.md) — 5-layer testing approach for agent validation including adversarial testing, security validation, and prompt injection resistance
 
+## nw-algebraic-design-protocol
+
+- [nw-algebraic-design-protocol](nw-algebraic-design-protocol.md) — The METHOD for finding a design — name observations and equality before constructors, then follow any contradiction to the type or observation that causes it. Use when a design decision is contested, a law has exceptions, a census or model keeps producing wrong answers, or a representation change must preserve meaning. Complements nw-fp-algebra-driven-design, which catalogues the structures; this says how to arrive at one and what to do when it breaks.
+
 ## nw-architectural-styles-tradeoffs
 
 - [nw-architectural-styles-tradeoffs](nw-architectural-styles-tradeoffs.md) — Architectural style selection decision matrices, trade-off analysis, structural enforcement rules, and combination patterns. Load when choosing or evaluating architecture styles.
@@ -136,13 +140,17 @@
 
 - [nw-canary](nw-canary.md) — Canary skill for auto-injection detection
 
+## nw-certainty-by-construction
+
+- [nw-certainty-by-construction](nw-certainty-by-construction.md) — Turn a stable domain claim into a construction boundary so the invalid state cannot be built, and state honestly what remains unguarded. Use when a requirement says an invalid state or transition must not occur, when values need a canonical form, or when a rewrite/cache/optimisation must preserve meaning. Complements nw-fp-domain-modeling, which shows the encodings; this decides whether to encode, how strong the claim really is, and what obligation is left over.
+
 ## nw-cicd-and-deployment
 
 - [nw-cicd-and-deployment](nw-cicd-and-deployment.md) — CI/CD pipeline design methodology, deployment strategies, GitHub Actions patterns, and branch/release strategies. Load when designing pipelines or deployment workflows.
 
 ## nw-code-analysis-port
 
-- [nw-code-analysis-port](nw-code-analysis-port.md) — KNOWLEDGE — resolve code facts (who-calls-X / where-defined-or-read / call-graph / change-scope / file-atoms) THROUGH the nWave vendor-neutral CodeFactPort, preferring Tsunami, then AST, with grep as last resort and degrading LOUD. Trigger: any time an agent designs, writes, analyzes, or reviews code or tests and needs a structural code fact.
+- [nw-code-analysis-port](nw-code-analysis-port.md) — KNOWLEDGE — resolve code facts (who-calls-X / where-defined-or-read / call-graph / change-scope / file-atoms) THROUGH the nWave vendor-neutral CodeFactPort, preferring graphify (Tsunami temporarily disabled), then AST, with grep as last resort and degrading LOUD. Trigger: any time an agent designs, writes, analyzes, or reviews code or tests and needs a structural code fact.
 
 ## nw-code-design-fp
 
@@ -499,6 +507,10 @@
 ## nw-mikado-method
 
 - [nw-mikado-method](nw-mikado-method.md) — Enhanced Mikado Method for complex architectural refactoring - systematic dependency discovery, tree-based planning, and bottom-up execution
+
+## nw-mode-select
+
+- [nw-mode-select](nw-mode-select.md) — Choose human-on-the-loop vs auto mode for a piece of work, classify it S/M/L, and pick the matching path before starting. Load at the START of any nWave-adjacent task, before dispatch, when the mode/size has not already been declared by the user in this conversation.
 
 ## nw-mutation-test
 

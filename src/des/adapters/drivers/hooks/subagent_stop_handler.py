@@ -18,9 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from des.adapters.driven.filesystem.wave_active_filesystem_store import (
-    WaveActiveFilesystemStore,
-)
 from des.adapters.driven.logging.audit_events import (
     AgentUsageObservedEvent,
     EventType,
@@ -42,16 +39,8 @@ from des.adapters.drivers.hooks.skill_tracking_hooks import (
 from des.adapters.drivers.hooks.token_usage_extractor import (
     extract_token_usage_events,
 )
-from des.application.decision_table_traceability_gate import (
-    ClauseIdFeatureParser,
-    DecisionTableParser,
-    DecisionTableTraceabilityGate,
-)
 from des.domain.des_marker_parser import DesMarkerParser
-from des.domain.repo_path_resolver import (
-    feature_delta_path as _feature_delta_path,
-)
-from des.domain.wave_active import WAVE_VOCABULARY, WaveActiveRecord
+from des.domain.wave_active import WAVE_VOCABULARY
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 from des.ports.driver_ports.pre_tool_use_port import HookDecision
 
@@ -59,26 +48,6 @@ from des.ports.driver_ports.pre_tool_use_port import HookDecision
 # ---------------------------------------------------------------------------
 # Cross-wave-child exit symmetry (fix-po-charter-dispatch-marker-lane)
 # ---------------------------------------------------------------------------
-
-
-def _returning_inside_a_different_active_wave(repo: Path) -> bool:
-    """True when the ACTIVE wave floor names a wave OTHER than ``distill``.
-
-    RCA fix-po-charter-dispatch-marker-lane §4a/§7: the ONLY envelope that
-    passes PreToolUse entry for a non-code-facing spine sub-dispatch (a PO
-    charter, an examiner walk) issued INSIDE another wave's floor borrows the
-    ``D_DISTILL`` + ``feature-end`` declaration. A genuine feature-wide
-    DISTILL-wave completion returns while ``distill`` itself is the active
-    wave (or no wave floor is armed -- the pre-wave-active-tracking
-    baseline); a ``D_DISTILL``-phase return arriving while a DIFFERENT wave
-    (e.g. ``deliver``) is active is, by construction, a cross-wave-child
-    sub-dispatch that borrowed the declaration -- never a real feature-wide
-    DISTILL exit. The active wave is reader-sourced (never self-reported);
-    an absent/unreadable floor is NOT treated as cross-wave-child (fails
-    toward the existing, already-verified gate behaviour).
-    """
-    state = WaveActiveFilesystemStore().read(repo)
-    return isinstance(state, WaveActiveRecord) and state.wave != "distill"
 
 
 # ---------------------------------------------------------------------------
@@ -859,19 +828,6 @@ def _classic_mode_removed_payload() -> dict[str, object]:
 # ---------------------------------------------------------------------------
 
 
-def _emit_atdd_pure_block(reason: str, event: str, **extra: object) -> int:
-    """Print a `{decision:block}` body and return exit 0 (handler block protocol).
-
-    SubagentStop blocks via `{"decision":"block"}` + exit 0 -- exit 2 makes
-    Claude Code ignore stdout, and a bare exit 1 is an *error* (no decision
-    body), which for an atdd_pure branch is fail-OPEN. Always exit 0 here.
-    """
-    payload: dict[str, object] = {"decision": "block", "reason": reason, "event": event}
-    payload.update(extra)
-    print(json.dumps(payload))
-    return 0
-
-
 # The bounded-block terminal bound (oss-spine-watchdog slice-02, RCA root #68):
 # terminate ON the Nth identical block, so N-1 priors precede the terminating
 # invocation. N=3 (DISCUSS D-4 / DESIGN OQ-3).
@@ -1207,106 +1163,6 @@ def _maybe_emit_stale_agent_closed(
 # imported at point of use below rather than re-declared here.
 
 
-class _SlicePlanParseUnresolved(Exception):
-    """Raised when the markdown slice-plan `Status` column fails M12 parsing."""
-
-
-def _parse_slice_plan_rows(repo: Path, feature_id: str) -> list[tuple[str, str]]:
-    """Parse the feature-delta `[REF] Slice Plan` into ``(slice_id, status)`` rows.
-
-    Delegates to the ONE tolerant slice-plan parser shared with the carpaccio
-    CLI entry gate (``des.cli.carpaccio_format.parse_slice_plan_rows``) so the
-    entry gate and this exit gate parse the SAME plan identically -- no
-    two-parser divergence (C10). Tolerant of an H2-H4 heading, a GFM-escaped
-    ``\\|`` in a cell, and a 3- or 5-column table.
-
-    Raises ``FileNotFoundError`` when the feature-delta is absent;
-    ``_SlicePlanParseUnresolved`` when no slice-plan table is found.
-    """
-    from des.cli import carpaccio_format
-
-    text = _feature_delta_path(repo, feature_id).read_text(encoding="utf-8")
-    try:
-        parsed_rows = carpaccio_format.parse_slice_plan_rows(text)
-    except carpaccio_format.GateError as exc:
-        raise _SlicePlanParseUnresolved(str(exc)) from exc
-    return [(row.slice_id, row.status) for row in parsed_rows]
-
-
-def _slice_plan_slice_ids(repo: Path, feature_id: str) -> frozenset[str]:
-    """The set of slice ids declared in the feature-delta `[REF] Slice Plan`.
-
-    Reused as the denominator of the "all slices shipped" check -- every slice
-    id in the plan must carry a terminal `SliceCommitVerified` ledger record.
-    """
-    return frozenset(
-        slice_id for slice_id, _status in _parse_slice_plan_rows(repo, feature_id)
-    )
-
-
-def _mechanical_seal_cleared_slices(
-    repo: Path, feature_id: str, missing: frozenset[str], at_kind: str | None = None
-) -> frozenset[str]:
-    """Slices in ``missing`` that clear G-DISTILL-EXIT via the mechanical-seal
-    route (bug #94), mirroring the DELIVER-entry `check_at_review` mechanical-
-    seal route (`carpaccio_slice_gate.py`) for a `pytest-regression` bugfix
-    slice that carries valid mechanical evidence instead of a signed
-    `ATReviewVerdict`.
-
-    Only rows already in ``missing`` are considered (a verdict-signed slice
-    needs no further evidence). A slice clears here when its `[REF] Slice
-    Plan` Annotation cell carries a `@regression-test-file:<path>` token AND
-    `carpaccio_slice_gate._mechanical_seal_satisfied` -- the EXACT predicate
-    the DELIVER-entry gate already trusts (SSOT, reused not duplicated) --
-    is ``True`` for that file: a fresh, content-bound `RedObserved` seal PLUS
-    a satisfied negative-AT mandate.
-
-    Fail-closed on every degraded input: no annotation token, an unparseable
-    slice-plan (the caller already parsed it once via `_slice_plan_slice_ids`
-    so this only re-degrades to an empty clear-set, never a crash), or a
-    stale/absent seal all resolve to "not cleared" -- never a blanket bypass.
-
-    D1 (deep-review finding, HIGH/blocking): ``at_kind`` gates the WHOLE route
-    identically to the sibling DELIVER-entry check
-    (`carpaccio_slice_gate.py:490`, ``if at_kind != "pytest-regression":
-    ... return None`` -- the mechanical branch is unreachable for any other
-    kind). Here, an EXPLICIT non-``"pytest-regression"`` value (a returning
-    acceptance-designer positively declaring a Gherkin-kind dispatch via the
-    echoed DES-AT-KIND marker) blocks the mechanical-seal route entirely --
-    it never applies to a Gherkin-kind slice regardless of annotation/seal
-    content. ``at_kind is None`` (the marker absent from the transcript --
-    the pre-D1, byte-identical default for a dispatch that never carried this
-    marker) proceeds with the existing per-slice annotation+seal check
-    unchanged.
-    """
-    if not missing:
-        return frozenset()
-    if at_kind is not None and at_kind != "pytest-regression":
-        return frozenset()
-    from des.cli import carpaccio_format
-    from des.cli.carpaccio_slice_gate import _mechanical_seal_satisfied
-
-    try:
-        text = _feature_delta_path(repo, feature_id).read_text(encoding="utf-8")
-        rows = carpaccio_format.parse_slice_plan_rows(text)
-    except (FileNotFoundError, carpaccio_format.GateError):
-        return frozenset()
-
-    cleared: set[str] = set()
-    for row in rows:
-        if row.slice_id not in missing:
-            continue
-        match = carpaccio_format.REGRESSION_TEST_FILE_ANNOTATION_RE.search(
-            row.annotation
-        )
-        if match is None:
-            continue
-        regression_test_file = repo / match.group(1)
-        if _mechanical_seal_satisfied(repo, regression_test_file):
-            cleared.add(row.slice_id)
-    return frozenset(cleared)
-
-
 # fix-distill-exit-bugfix-lane-degrade: the DES-REGRESSION-TEST-FILE marker a
 # returning D_DISTILL agent echoes on ITS OWN transcript, mirroring
 # `carpaccio_intercept.py`'s identically-named marker (dispatch-prompt side)
@@ -1321,416 +1177,10 @@ _TRANSCRIPT_REGRESSION_TEST_FILE_PATTERN = re.compile(
 )
 
 
-def _transcript_regression_test_file(agent_transcript_path: str | None) -> str | None:
-    """The raw DES-REGRESSION-TEST-FILE marker value on the RETURNING agent's
-    own transcript, or None when the marker is absent (or no transcript path
-    is available). First match wins -- the bugfix-lane degrade below only
-    ever needs a single, unambiguous file.
-    """
-    if not agent_transcript_path:
-        return None
-    for entry in _read_transcript_entries(agent_transcript_path):
-        message = entry.get("message", {})
-        if not isinstance(message, dict):
-            continue
-        content = _strip_fenced_regions(
-            _normalize_message_content(message.get("content", ""))
-        )
-        match = _TRANSCRIPT_REGRESSION_TEST_FILE_PATTERN.search(content)
-        if match is not None:
-            return match.group(1)
-    return None
-
-
-def _bugfix_lane_mechanical_seal_clears(
-    repo: Path, *, at_kind: str | None, agent_transcript_path: str | None
-) -> bool:
-    """True when a D_DISTILL return with NO feature-delta.md still clears
-    G-DISTILL-EXIT via the mechanical-seal route (bug #94 alignment).
-
-    A bugfix lane carries no `feature-delta.md` BY DESIGN (ADR-025 SLIM-
-    crafter discipline) -- there is no `[REF] Slice Plan` Annotation cell to
-    carry a `@regression-test-file:<path>` token for
-    `_mechanical_seal_cleared_slices` to discover. The DES-REGRESSION-TEST-
-    FILE marker on the RETURNING transcript is the only place left for that
-    discovery to live for this lane.
-
-    Fail-closed on every degraded input, mirroring
-    `_mechanical_seal_cleared_slices`'s own discipline: an absent or explicit
-    non-`"pytest-regression"` ``at_kind`` (no marker at all, or an explicit
-    declaration of a different kind such as ``"gherkin"``), a missing
-    DES-REGRESSION-TEST-FILE marker, or an unsatisfied seal (stale/absent
-    `RedObserved` evidence, or an unsatisfied negative-AT mandate) all return
-    False -- the caller then re-raises the original `FileNotFoundError` into
-    the unchanged, fail-closed `SlicePlanParseUnresolved` block. This is
-    never a blanket "no feature-delta.md -> pass": only an EXPLICIT
-    mechanical-seal-eligible declaration backed by a genuinely satisfied seal
-    clears.
-    """
-    if at_kind != "pytest-regression":
-        return False
-    regression_test_file = _transcript_regression_test_file(agent_transcript_path)
-    if regression_test_file is None:
-        return False
-    from des.cli.carpaccio_slice_gate import _mechanical_seal_satisfied
-
-    return _mechanical_seal_satisfied(repo, repo / regression_test_file)
-
-
 # ---------------------------------------------------------------------------
 # G-DISTILL-EXIT gate SubagentStop intercept
 # (oss-hook-side-phase-injection slice-01 / D1 keystone)
 # ---------------------------------------------------------------------------
-
-
-def _witnessing_at_path(repo: Path, feature_file: Path) -> str | None:
-    """Resolve the executable AT module a ``.feature`` carrier witnesses.
-
-    The behavioral witness-check (slice-03) RUNS the AT module, not the
-    ``.feature`` text. Convention (the DISTILL substrate): a carrier
-    ``g-<name>.feature`` sits beside its executable ``test_g_<name>.py`` in the
-    same directory. Returns the sibling ``test_*.py`` module path RELATIVE to
-    the repo (the adapter copies + runs it from there), or ``None`` when no
-    runnable AT module sibling exists.
-
-    A carrier WITHOUT a runnable AT module sibling falls back to the slice-01
-    syntactic verdict (witnessed-by-name): there is no AT to run the
-    differential against, so the gate does NOT downgrade it. This preserves the
-    slice-01/02 contract (a name-matched clause with only a carrier `.feature`
-    stays silent) while slice-03's fixtures -- which DO plant runnable AT
-    modules -- get the behavioral check.
-    """
-    stem = feature_file.stem  # e.g. "g-dt-genuine"
-    if stem.startswith("g-"):
-        candidate = feature_file.with_name(f"test_g_{stem[2:]}.py")
-        if candidate.is_file():
-            return str(candidate.relative_to(repo))
-    siblings = sorted(feature_file.parent.glob("test_*.py"))
-    if siblings:
-        return str(siblings[0].relative_to(repo))
-    return None
-
-
-def _run_decision_table_traceability_gate(repo: Path, feature_id: str) -> None:
-    """Warn-loud on decision-table clauses with no witnessing AT (slice-01).
-
-    oss-upstream-gate-pair-traceability slice-01: the SYNTACTIC join. Reads the
-    feature-delta decision-table + every ``.feature`` ``# clause:`` carrier under
-    the repo, and emits a LOUD warning to the real process stderr naming each
-    clause-ID that no acceptance test witnesses, adjacent to the
-    ``unwitnessed-no-at`` token.
-
-    NON-HALTING (DT-5 / the OSS hooks-only invariant): this gate only WARNS. It
-    never blocks, never raises into the caller. The whole body is wrapped in a
-    fail-open try/except so a traceability fault can never disturb the
-    DISTILL->DELIVER move -- the existing verdict-completeness check downstream
-    is the only halting authority on this boundary.
-
-    The warning is written to ``sys.__stderr__`` (the interpreter's original
-    stderr), NOT ``sys.stderr``: the SubagentStop handler runs under a
-    ``contextlib.redirect_stderr`` whose buffer is discarded on the allow path,
-    so a loud warning must address the real fd-2 to reach the operator.
-    """
-    try:
-        delta_path = _feature_delta_path(repo, feature_id)
-        if not delta_path.is_file():
-            return
-        clauses = DecisionTableParser().parse(delta_path.read_text(encoding="utf-8"))
-        if not clauses:
-            return
-        feature_texts: list[str] = []
-        runnable_feature_files: list[tuple[str, str]] = []
-        # gherkin-scope: the clause-carrier `# clause:` tag is structurally
-        # bound to a Gherkin `.feature` file (the `g-<name>.feature` carrier
-        # convention `_witnessing_at_path` documents) -- there is no pytest-
-        # side equivalent of a "carrier" to discover here.
-        for feature_file in repo.rglob("*.feature"):
-            if not feature_file.is_file():
-                continue
-            text = feature_file.read_text(encoding="utf-8")
-            feature_texts.append(text)
-            at_path = _witnessing_at_path(repo, feature_file)
-            if at_path is not None:
-                runnable_feature_files.append((at_path, text))
-        parser = ClauseIdFeatureParser()
-        witnessed = parser.witnessed_clause_ids(feature_texts)
-        # slice-03: upgrade the syntactic join to an EARNED behavioral verdict
-        # via the isolated-copy differential witness-check (ADR-001). The port
-        # is language-bound; the gate verdict logic stays pure. Non-halting.
-        from des.adapters.driven.witness.perturbation_witness_adapter import (
-            PerturbationWitnessAdapter,
-        )
-
-        clause_targets = parser.clause_targets(runnable_feature_files)
-        witness_port = PerturbationWitnessAdapter(repo)
-        result = DecisionTableTraceabilityGate().evaluate_with_witness(
-            clauses, witnessed, clause_targets, witness_port
-        )
-        if result.verdict == "warn":
-            print(result.warning, file=sys.__stderr__, flush=True)
-        # slice-02 DT-10: record the traceability verdict in the AT-completion
-        # ledger so the hand-off leaves a durable audit trail. A "warn" verdict
-        # (>=1 unwitnessed clause) appends `DecisionTableTraceabilityWarned`; a
-        # clean (all-witnessed) pass appends `DecisionTableTraceabilityVerified`.
-        # The `…Verified` branch is symmetric but unwitnessed at slice-02 (no
-        # slice-02 AT drives it) -- a minimal emit, not an over-built fixture.
-        # Feature-scoped (slice_id="") via the legacy per-feature ledger
-        # construction the DT-10 read-back resolves from.
-        verdict_event = (
-            "DecisionTableTraceabilityWarned"
-            if result.verdict == "warn"
-            else "DecisionTableTraceabilityVerified"
-        )
-        from des.adapters.driven.logging.at_completion_ledger import (
-            AtCompletionLedger,
-        )
-
-        AtCompletionLedger(feature_id, repo).append_gate_event(
-            event=verdict_event,
-            slice_id="",
-        )
-    except Exception:
-        # Fail-open: the traceability gate is non-halting; a fault here must
-        # never block the DISTILL->DELIVER move (DT-5). A ledger-write failure
-        # is swallowed here too, so DT-10's append can never halt the gate.
-        pass
-
-
-def _handle_distill_exit_gate(
-    resolved: _AtddPureResolvedContext,
-    hook_input: dict[str, object],
-    hook_id: str,
-) -> int:
-    """Run the G-DISTILL-EXIT gate for a returning acceptance-designer (D_DISTILL).
-
-    The gate refuses the DISTILL->DELIVER transition until every planned slice
-    carries EITHER a signed `ATReviewVerdict` OR valid mechanical-seal
-    evidence (bug #94), and on success leaves a durable
-    `WorkflowPhaseCompletedDistill` ledger record (the symmetric SUCCESS
-    terminal, SF ADR-016).
-
-    HARD INVARIANT (hook-can't-spawn-agent): the gate only BLOCKS / EMITS -- it
-    never dispatches the reviewer (Claude Code hooks cannot spawn agents).
-
-    Decision table (C5):
-      denominator = `_slice_plan_slice_ids`
-      numerator   = `ledger.approved_review_verdict_slices()` UNION
-                    `_mechanical_seal_cleared_slices(missing, resolved.at_kind)`
-                    (bug #94: the mechanical-seal route -- a fresh
-                    `RedObserved` seal + satisfied negative-AT mandate for
-                    the slice's declared `@regression-test-file`, reusing
-                    `carpaccio_slice_gate._mechanical_seal_satisfied`, the
-                    SAME predicate the DELIVER-entry gate already trusts).
-                    D1: the route is gated on `resolved.at_kind` -- an
-                    EXPLICIT non-`"pytest-regression"` DES-AT-KIND marker on
-                    the returning transcript (e.g. `"gherkin"`) blocks the
-                    WHOLE route fail-closed, mirroring the DELIVER-entry
-                    sibling (`carpaccio_slice_gate.py:490`); an absent marker
-                    proceeds unchanged (byte-identical pre-D1 behavior).
-      - planned subset-of (verdict-signed UNION mechanical-seal-cleared) -> emit
-        `WorkflowPhaseCompletedDistill` + allow
-      - a planned slice neither signed nor mechanically sealed -> block
-        `DistillExitVerdictIncomplete`
-      - unparseable slice-plan     -> fail-closed block `SlicePlanParseUnresolved`
-        (never a vacuous "zero planned slices" pass)
-      - NO feature-delta.md at all (bugfix lane, ADR-025) AND the return is
-        mechanical-seal-eligible for its OWN declared regression-test-file
-        (`_bugfix_lane_mechanical_seal_clears`) -> emit
-        `WorkflowPhaseCompletedDistill` + allow (fix-distill-exit-bugfix-
-        lane-degrade: aligns this denominator read with
-        `_mechanical_seal_cleared_slices`'s existing degrade on the SAME
-        missing file); any other missing-file combination still falls
-        through to the unchanged `SlicePlanParseUnresolved` block
-
-    The whole branch body is wrapped in a try/except (M1): any exception is an
-    `AtddPureHookInternalError` block + exit 0, never the bare exit-1 path.
-    A block emits exit 0 (SubagentStop protocol -- exit 2 makes Claude Code
-    ignore stdout).
-    """
-    from des.adapters.driven.logging.at_completion_ledger import (
-        AtCompletionLedger,
-        LedgerIntegrityViolation,
-    )
-
-    try:
-        cwd = hook_input.get("cwd", "")
-        repo = Path(
-            resolved.effective_cwd or (cwd if isinstance(cwd, str) else "") or "."
-        )
-        feature_id = resolved.project_id
-
-        # Cross-wave-child exit symmetry (RCA fix-po-charter-dispatch-marker-
-        # lane §4a/§7): a borrowed D_DISTILL declaration on a return arriving
-        # while a DIFFERENT wave is active is never a genuine feature-wide
-        # DISTILL completion -- verifying it against a slice plan the
-        # feature-id legitimately never had traps the agent in a rejection
-        # loop it cannot honestly escape. The honest declaration is exempt at
-        # EXIT exactly as it is at ENTRY (symmetric fix).
-        if _returning_inside_a_different_active_wave(repo):
-            log_hook_invoked(
-                "subagent_stop_distill_exit_intercept",
-                {
-                    "mode": "atdd_pure",
-                    "project_id": feature_id,
-                    "slice_id": resolved.slice_id,
-                    "atdd_pure_phase": resolved.atdd_pure_phase,
-                    "cross_wave_child_exempt": True,
-                },
-                hook_id=hook_id,
-            )
-            return 0
-
-        log_hook_invoked(
-            "subagent_stop_distill_exit_intercept",
-            {
-                "mode": "atdd_pure",
-                "project_id": feature_id,
-                "slice_id": resolved.slice_id,
-                "atdd_pure_phase": resolved.atdd_pure_phase,
-            },
-            hook_id=hook_id,
-        )
-
-        # oss-upstream-gate-pair-traceability slice-01: run the decision-table
-        # <-> AT traceability gate ONE CONCERN EARLIER than the
-        # verdict-completeness check. It only WARNS-loud (non-halting, DT-5) --
-        # it cannot block, so the existing verdict gate below is unchanged.
-        _run_decision_table_traceability_gate(repo, feature_id)
-
-        try:
-            planned = _slice_plan_slice_ids(repo, feature_id)
-        except FileNotFoundError:
-            # fix-distill-exit-bugfix-lane-degrade: a bugfix lane carries NO
-            # feature-delta.md BY DESIGN (ADR-025 SLIM-crafter discipline) --
-            # `_mechanical_seal_cleared_slices` a few lines below ALREADY
-            # degrades gracefully on this SAME missing file, but this read
-            # (the "planned" denominator) fires FIRST and, unchecked, would
-            # crash into `SlicePlanParseUnresolved` before that branch is
-            # ever reached. Align the two loci: when the returning agent is
-            # mechanical-seal-eligible for its OWN declared regression-test-
-            # file, the absence of a slice-plan is the EXPECTED shape for
-            # this lane, not an error -- clear DISTILL-exit directly. Any
-            # other combination (no at_kind, an explicit non-pytest-
-            # regression at_kind, no marker, or an unsatisfied seal) is fail-
-            # closed by `_bugfix_lane_mechanical_seal_clears` and re-raises
-            # the original error into the unchanged block below.
-            transcript_path = hook_input.get("agent_transcript_path")
-            if _bugfix_lane_mechanical_seal_clears(
-                repo,
-                at_kind=resolved.at_kind,
-                agent_transcript_path=(
-                    transcript_path if isinstance(transcript_path, str) else None
-                ),
-            ):
-                ledger = AtCompletionLedger(feature_id, repo)
-                ledger.append_workflow_phase_completed_distill()
-                return 0
-            raise
-
-        ledger = AtCompletionLedger(feature_id, repo)
-        # APPROVED-only numerator (declared-facts-reachable-recorded slice-01
-        # DD-1 follow-up, D04a): since commit 0303ecea5 a NEEDS_REVISION
-        # verdict also appends an ATReviewVerdict record, so the any-verdict
-        # `review_verdict_slices()` would silently count a REJECTED slice as
-        # "signed". `approved_review_verdict_slices()` is the completeness
-        # gate's own predicate; see its docstring for the full history.
-        verdict_signed = ledger.approved_review_verdict_slices()
-
-        missing = planned - verdict_signed
-        if missing:
-            missing = missing - _mechanical_seal_cleared_slices(
-                repo, feature_id, missing, resolved.at_kind
-            )
-
-        # fix-distill-exit-jit-scope-probe: per-slice JIT authoring (atdd_pure
-        # canonical, nw-distill Mandate 4) deliberately leaves later slices
-        # absent from disk until their turn -- they can never carry a signed
-        # verdict, so a still-missing slice with NO discoverable `.feature`/
-        # pytest AT artifact anywhere (`feature_files_for_slice` empty) is
-        # JIT-not-yet-reached, not a review omission. The feature's FIRST
-        # planned slice is excluded from this carve-out: it is always the
-        # slice this DISTILL return is FOR, so it must carry direct evidence
-        # even when nothing was authored for it either (a genuinely empty
-        # return is never "not yet reached"). A slice that IS present on disk
-        # (even a scaffold-only `@skip` carrier) never qualifies -- a file's
-        # mere presence is not a review, and it must stay in `missing`.
-        excluded_slices: frozenset[str] = frozenset()
-        if missing:
-            from des.application.slice_at_completeness import (
-                feature_files_for_slice,
-            )
-
-            plan_rows = _parse_slice_plan_rows(repo, feature_id)
-            plan_order = [slice_id for slice_id, _status in plan_rows]
-            plan_status = {
-                slice_id: (status or "").strip().lower()
-                for slice_id, status in plan_rows
-            }
-            first_planned_slice = plan_order[0] if plan_order else None
-            # A slice is carved out of `missing` as JIT-not-yet-reached ONLY
-            # when its plan `Status` is `pending` -- a `shipped` slice claims
-            # delivery and so MUST carry a signed verdict (the
-            # oss-hook-side-phase-injection keystone: a planned slice missing
-            # its review keeps DISTILL open, regardless of disk presence).
-            # Disk-absence alone is ambiguous -- it cannot tell a legitimately
-            # deferred `pending` slice from a `shipped`-but-unreviewed omission
-            # -- so the `pending` status is the discriminating signal; the
-            # first planned slice and any slice with a discoverable artifact
-            # still never qualify.
-            excluded_slices = frozenset(
-                slice_id
-                for slice_id in missing
-                if slice_id != first_planned_slice
-                and plan_status.get(slice_id) == "pending"
-                and not feature_files_for_slice(repo, slice_id, feature_id)
-            )
-            missing = missing - excluded_slices
-
-        if missing:
-            return _emit_atdd_pure_block(
-                f"DISTILL exit refused for {feature_id}: the {sorted(missing)} "
-                "planned slice(s) have no signed acceptance-test review "
-                "verdict and no valid mechanical-seal evidence (fresh "
-                "RedObserved seal + satisfied negative-AT mandate for a "
-                "declared @regression-test-file)",
-                "DistillExitVerdictIncomplete",
-                feature_id=feature_id,
-                missing=sorted(missing),
-            )
-
-        # Complete verdict set -- emit the symmetric success terminal and allow.
-        ledger.append_workflow_phase_completed_distill(
-            validated_slices=sorted(planned - excluded_slices),
-            excluded_slices=sorted(excluded_slices),
-        )
-        return 0
-
-    except LedgerIntegrityViolation as exc:
-        return _emit_atdd_pure_block(
-            f"the AT-completion ledger failed its integrity contract: {exc}",
-            "LedgerIntegrityViolation",
-            feature_id=resolved.project_id,
-            detail=exc.detail,
-        )
-    except _SlicePlanParseUnresolved as exc:
-        return _emit_atdd_pure_block(
-            f"the feature-delta slice plan could not be parsed: {exc}",
-            "SlicePlanParseUnresolved",
-            feature_id=resolved.project_id,
-        )
-    except FileNotFoundError as exc:
-        return _emit_atdd_pure_block(
-            f"the feature-delta is missing for DISTILL-exit verification: {exc}",
-            "SlicePlanParseUnresolved",
-            feature_id=resolved.project_id,
-        )
-    except Exception as exc:
-        # M1 fail-closed: an atdd_pure-branch exception is a block, never the
-        # generic bare-exit-1 path (which carries no decision body).
-        return _emit_atdd_pure_block(
-            f"DISTILL-exit gate handler error: {exc}",
-            "AtddPureHookInternalError",
-        )
 
 
 def _handle_atdd_pure_return(
@@ -2141,11 +1591,14 @@ def handle_subagent_stop() -> int:
                 # longer blocked on E1/E2 completeness, a Gate-Scope trailer, a
                 # SliceCommitVerified record or a feature-end record set. CI and
                 # independent review remain the terminal evidence.
-                if des_context_result.atdd_pure_phase == "D_DISTILL":
-                    exit_code = _handle_distill_exit_gate(
-                        des_context_result, hook_input, hook_id
-                    )
-                    return exit_code
+                #
+                # G-DISTILL-EXIT joined them 2026-08-06. It refused the
+                # DISTILL->DELIVER transition until every planned slice carried
+                # a signed ATReviewVerdict OR mechanical-seal evidence -- the
+                # same shape as U2/U4: a hook re-litigating, from ledger
+                # records, work the returning agent had already done. AT-first
+                # and independent review survive as PRACTICES; a returning
+                # acceptance-designer now takes the ordinary atdd_pure return.
                 exit_code = _handle_atdd_pure_return(
                     des_context_result, hook_input, hook_id
                 )

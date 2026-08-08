@@ -5,7 +5,7 @@ user-invocable: true
 argument-hint: '[story-id] - Optional: --test-framework=[cucumber|specflow|pytest-bdd] --integration=[real-services|mocks]'
 ---
 
-> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: Tsunami-first via the `mcp__tsunami__*` tools, declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
+> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: graphify-first (`graphify explain <symbol>`), declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
 
 <!-- gates-ref: distill -->
 <!-- outputs-ref: distill -->

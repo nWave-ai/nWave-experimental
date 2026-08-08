@@ -7,7 +7,7 @@
 > - **Token usage is materially higher than a plain coding session.** This preview runs delivery in parallel (see *Parallel delivery*, below) — concurrent lanes mean concurrent contexts, each reasoning independently. Parallelism buys wall-clock time; it costs tokens.
 > - **Standing loops don't survive a restart.** A restart, a crash, or a killed session disarms nWave's background disciplines (see *Standing loops*, below) silently — nothing will tell you they stopped. They should re-arm in the next session and say so; if a session starts and nobody mentions them, ask: *"check the standing loops and tell me which are active."* That one sentence is the whole recovery.
 
-**Build:** atdd-pure preview @ `0b6deff` (source `feature/atdd-pure-staging` `0b6deff45032bacf3f2ce067330fd83e06e1a32a`)
+**Build:** atdd-pure preview @ `d04ffc5` (source `feature/atdd-pure-staging` `d04ffc5f4d74616e13fbba4764dad8765af57ed8`)
 
 ---
 
@@ -85,7 +85,7 @@ A few worth knowing:
 ```bash
 des next                  # read-only: what the delivery loop says to do next
 des blast-radius          # how big a change really is, measured, not guessed
-des feature-end run       # close one feature (run-batch closes several on one full-suite run)
+des feature-end run       # close one feature
 des refactor --pile       # work through a tech-debt pile, one item per worktree
 des --help                # the full command list
 ```

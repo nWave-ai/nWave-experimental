@@ -55,13 +55,21 @@ from pathlib import Path
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.application import feature_end_cycle_service as svc
 from des.application.feature_end_cycle_service import (
+    CoverageMapLegRan,
     CycleIndeterminate,
     CycleRefusal,
     CycleSuccess,
-    FullSuiteLegNotApplicable,
-    FullSuiteLegRan,
     run_feature_end_cycle,
 )
+
+
+def _coverage_map_leg_ran(*, ledger, repo_root, feature_id, feature_dir):
+    """Carries `leg_census.ran >= 1` now that the full-suite leg is deleted.
+
+    Named rather than a lambda: it must accept the leg's keyword-only
+    signature, which is what ruff's PLW0108 "inline the call" suggestion breaks.
+    """
+    return CoverageMapLegRan()
 
 
 _FEATURE_ID = "feat-doc-coherence-warns-not-blocks"
@@ -138,34 +146,22 @@ def _stub_non_doc_coherence_legs(monkeypatch) -> None:
     monkeypatch.setattr(
         svc,
         "_run_coverage_map_verify_leg",
-        lambda *, ledger, repo_root, feature_id, feature_dir: None,
+        _coverage_map_leg_ran,
     )
 
 
 def _stub_full_suite_ran(monkeypatch) -> None:
-    """Force the full-suite leg to a genuine ``FullSuiteLegRan`` so
+    """Force a surviving leg to a genuine ``*LegRan`` so
     ``leg_census.ran >= 1`` REGARDLESS of how the doc-coherence WARN outcome
     folds into the census -- isolates these tests from the unrelated
     ``leg_census.ran == 0`` -> ``CycleIndeterminate`` charter
     (ADR-GV-002 D1/D3, already pinned elsewhere)."""
-    monkeypatch.setattr(
-        svc,
-        "_run_full_suite_leg",
-        lambda *, repo_root, feature_id=None: FullSuiteLegRan(pytest_exit_code=0),
-    )
 
 
 def _stub_full_suite_not_applicable(monkeypatch) -> None:
     """Force the full-suite leg NA -- used by the exit-2 pin, where the
     cycle-level outcome (``CycleIndeterminate``) is asserted directly and does
     not depend on ``leg_census.ran``."""
-    monkeypatch.setattr(
-        svc,
-        "_run_full_suite_leg",
-        lambda *, repo_root, feature_id=None: FullSuiteLegNotApplicable(
-            "stubbed: no contract suite in this hermetic fixture"
-        ),
-    )
 
 
 def _run_cycle(repo_root: Path, feature_dir: Path, feature_id: str = _FEATURE_ID):
@@ -360,12 +356,25 @@ def test_doc_coherence_no_docs_at_all_stays_not_applicable_regression(
 def test_other_leg_refusal_still_hard_refuses_cycle_scope_creep_guard(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """PIN (already GREEN, unchanged) -- SCOPE CREEP GUARD: a genuinely
-    different, unrelated feature-end gate (here: the full-suite leg, on a
-    seeded FAILING marked test) must still hard-refuse the cycle exactly as
-    before. Only the doc-coherence leg became advisory; every other leg keeps
-    its full teeth (charter negative oracle #4)."""
+    """PIN -- SCOPE CREEP GUARD: a genuinely different, unrelated feature-end
+    gate must still hard-refuse the cycle exactly as before. Only the
+    doc-coherence leg became advisory; every other leg keeps its full teeth
+    (charter negative oracle #4).
+
+    Retargeted 2026-08-06: the unrelated gate WAS the full-suite leg, driven by
+    a seeded FAILING marked test. That leg is deleted -- it duplicated CI and
+    held the condemned run-contract provider alive -- so the fresh-clone leg
+    plays the same role here. The property under test never was the full-suite
+    leg; it is that ONE leg going advisory does not disarm the others, and any
+    surviving leg witnesses it."""
     _stub_non_doc_coherence_legs(monkeypatch)
+    monkeypatch.setattr(
+        svc,
+        "_run_fresh_clone_gate",
+        lambda *, ledger, repo_root, feature_id: CycleRefusal(
+            "seeded unrelated-leg refusal: fresh-clone"
+        ),
+    )
     repo_root = tmp_path / "other-leg-fails"
     repo_root.mkdir(parents=True)
     _seed_pytest_project(repo_root, _MARKED_RUNNABLE_FAILING_TEST_BODY)
@@ -374,8 +383,8 @@ def test_other_leg_refusal_still_hard_refuses_cycle_scope_creep_guard(
     result = _run_cycle(repo_root, feature_dir)
 
     assert isinstance(result, CycleRefusal), (
-        "a genuinely failing, UNRELATED gate (full-suite) must still "
-        f"hard-refuse the cycle -- doc-coherence going advisory must not "
-        f"leak into any other leg: {result!r}"
+        "a genuinely refusing, UNRELATED gate must still hard-refuse the cycle "
+        f"-- doc-coherence going advisory must not leak into any other leg: "
+        f"{result!r}"
     )
-    assert "full-suite" in result.error
+    assert "fresh-clone" in result.error

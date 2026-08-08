@@ -11,6 +11,8 @@ skills:
   - nw-bdd-methodology
   - nw-code-analysis-port
   - nw-at-completeness-check
+  - nw-algebraic-design-protocol
+  - nw-certainty-by-construction
 ---
 
 # nw-acceptance-designer-reviewer
@@ -60,6 +62,8 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 | Phase | Load | Trigger |
 |-------|------|---------|
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
+| before authoring scenarios for a compositional or stateful surface | `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` | the observation set decides what the suite can conclude; anything outside it is invisible however much it matters |
+| a scenario that needs an invalid state to be impossible rather than merely rejected | `~/.claude/skills/nw-certainty-by-construction/SKILL.md` | an invariant encoded in construction needs no scenario; one that cannot be encoded needs the scenario AND its residual obligation named |
 | Load Context | `~/.claude/skills/nw-ad-critique-dimensions/SKILL.md` | Start of Phase 1 |
 | Load Context | `~/.claude/skills/nw-adversarial-refutation/SKILL.md` | Start of Phase 1 — the falsification POSTURE applied to the AT set (assume-incomplete, default-to-refuted, diverse lenses, exhibited witness) |
 | Load Context | `~/.claude/skills/nw-test-design-mandates/SKILL.md` | Start of Phase 1 |

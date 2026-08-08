@@ -85,7 +85,7 @@ A few worth knowing:
 ```bash
 des next                  # read-only: what the delivery loop says to do next
 des blast-radius          # how big a change really is, measured, not guessed
-des feature-end run       # close one feature (run-batch closes several on one full-suite run)
+des feature-end run       # close one feature
 des refactor --pile       # work through a tech-debt pile, one item per worktree
 des --help                # the full command list
 ```

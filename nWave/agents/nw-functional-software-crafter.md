@@ -28,6 +28,8 @@ skills:
   - nw-fp-kotlin
   - nw-code-analysis-port
   - nw-cross-cutting-invariants
+  - nw-algebraic-design-protocol
+  - nw-certainty-by-construction
 ---
 
 # nw-functional-software-crafter
@@ -144,6 +146,8 @@ re-render with `python scripts/docgen.py`:
 |-------|------|---------|
 | ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
+| a law or invariant with exceptions, or a refactor where the representation change could change meaning | `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` | state the equivalence claim BEFORE changing the representation, and protect it on both sides |
+| making an invalid state unrepresentable, or introducing a canonical form | `~/.claude/skills/nw-certainty-by-construction/SKILL.md` | return evidence rather than a Boolean, and calibrate the claim to what the language actually guarantees |
 | PREPARE | `~/.claude/skills/nw-tdd-methodology/SKILL.md` | Phase 2 PREPARE — load now (TDD canon) |
 | PREPARE | `~/.claude/skills/nw-quality-framework/SKILL.md` | Phase 2 PREPARE — load now (quality gates) |
 | PREPARE | `~/.claude/skills/nw-fp-principles/SKILL.md` | Phase 2 PREPARE — load now (FP principles + anti-patterns) |

@@ -67,13 +67,18 @@ import pytest
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.application import feature_end_cycle_service as svc
 from des.application.feature_end_cycle_service import (
+    CoverageMapLegRan,
     CycleRefusal,
-    FullSuiteLegRan,
     run_feature_end_cycle,
 )
 from des.cli.commit_slice import main as commit_slice_main
 from des.cli.record_examine_verdict import record_examine_verdict
 from tests.charter_fixtures import filled_charter
+
+
+def _coverage_map_leg_ran(*, ledger, repo_root, feature_id, feature_dir):
+    """Carries `leg_census.ran >= 1` now that the full-suite leg is deleted."""
+    return CoverageMapLegRan()
 
 
 _COUPLED_JUSTIFICATION = (
@@ -445,12 +450,7 @@ def _stub_upstream_legs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         svc,
         "_run_coverage_map_verify_leg",
-        lambda *, ledger, repo_root, feature_id, feature_dir: None,
-    )
-    monkeypatch.setattr(
-        svc,
-        "_run_full_suite_leg",
-        lambda *, repo_root, feature_id=None: FullSuiteLegRan(pytest_exit_code=0),
+        _coverage_map_leg_ran,
     )
 
 

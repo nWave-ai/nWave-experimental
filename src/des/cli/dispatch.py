@@ -775,8 +775,14 @@ _DEFAULT_SKILL_LOADING = (
     "Do NOT load nw-refactor (E_BATCH_REFACTOR phase only) or "
     "nw-mutation-test (project-DEPRECATED, FR-1) at A_GREEN -- they are "
     "phase-inappropriate noise here, not write-time skills.\n"
-    "Resolve structural facts via mcp__tsunami__* (callers_of / reads_of), "
-    "never ad-hoc grep.\n"
+    # TEMPORARY (Ale, 2026-08-07): the Tsunami MCP surface is disabled, so an
+    # envelope prescribing `mcp__tsunami__*` would send every dispatched agent
+    # at a tool that no longer mounts -- a rejection-by-absence with no message.
+    # graphify is the interim tier-1; `nw-code-analysis-port` carries the WHY
+    # once, so this line names only the tool. Restore when Tsunami returns.
+    "Resolve structural facts with graphify (`graphify explain <symbol>` names "
+    "the callers and readers of a node), never ad-hoc grep. Do NOT call "
+    "mcp__tsunami__* -- that surface is temporarily disabled.\n"
 )
 
 #: SKILL_LOADING body for the examiner -- NO technical/code-reasoning skills
@@ -804,12 +810,48 @@ _CHARTER_SKILL_LOADING = (
     "not implementation.\n"
 )
 
-#: Agent -> SKILL_LOADING body override for every NON-CODE-FACING agent.
-#: Consults the SAME ``_NON_CODE_FACING_AGENTS`` SSOT set; ``agent`` not in
-#: this map falls through to ``_DEFAULT_SKILL_LOADING``.
+#: SKILL_LOADING body for the acceptance-designer. It is code-FACING, so it was
+#: falling through to ``_DEFAULT_SKILL_LOADING`` -- whose body is crafter-only:
+#: it names ``nw-crafter-discipline-atdd-pure`` and tells the reader what to
+#: load "at A_GREEN", a phase the designer never runs, and it names not one
+#: test-design skill. Measured 2026-08-07 on a real DISTILL dispatch: the
+#: designer read ZERO SKILL.md files and emitted zero ``[SKILL LOADED]``
+#: markers across 95 tool calls, while the crafter on the same feature loaded
+#: all four skills its (matching) body named. Handed a list belonging to
+#: another role, the agent loaded nothing at all rather than substituting its
+#: own -- so the test-design skills sat at catalogued, never loaded.
+#:
+#: The agent spec is still the SSOT (``nw-acceptance-designer.md``: "dispatch
+#: envelopes may REMIND but never override it"). This body is the REMINDER,
+#: and its job is to point AT that table rather than compete with it.
+_ACCEPTANCE_DESIGNER_SKILL_LOADING = (
+    "Your Skill Loading table in nw-acceptance-designer.md is the SSOT -- this "
+    "section only reminds you to obey it. Load by phase-trigger with the Read "
+    "tool, by exact path, BEFORE any other work, and emit `[SKILL LOADED] "
+    "{name}` for each so the load is observable rather than asserted.\n"
+    "Always at start: nw-cross-cutting-invariants, nw-test-design-mandates.\n"
+    "Before authoring scenarios for a compositional or stateful surface ALSO "
+    "load nw-algebraic-design-protocol -- the observation set decides what the "
+    "suite can conclude, so it is chosen before the first scenario, not after.\n"
+    "When the behaviour under test is a law over a domain rather than a "
+    "handful of cases ALSO load nw-property-based-testing plus the "
+    "language-appropriate companion (nw-pbt-python for a Python target) -- an "
+    "example-based suite pins ONE inhabitant and says nothing about the class.\n"
+    "Do NOT load nw-crafter-discipline-atdd-pure or the code-design catalogs: "
+    "you author tests, you do not implement, and A_GREEN is not your phase.\n"
+    "Resolve structural facts with graphify (`graphify explain <symbol>`), "
+    "never ad-hoc grep. Do NOT call mcp__tsunami__* -- temporarily disabled.\n"
+)
+
+#: Agent -> SKILL_LOADING body override. The examiner and the charter-authoring
+#: product-owner are NON-CODE-FACING (they consult the SAME
+#: ``_NON_CODE_FACING_AGENTS`` SSOT set); the acceptance-designer IS
+#: code-facing and overrides for a different reason -- see its body above.
+#: ``agent`` not in this map falls through to ``_DEFAULT_SKILL_LOADING``.
 _NON_CODE_FACING_SKILL_LOADING: dict[str, str] = {
     _EXAMINER_AGENT: _EXAMINER_SKILL_LOADING,
     "nw-product-owner": _CHARTER_SKILL_LOADING,
+    "nw-acceptance-designer": _ACCEPTANCE_DESIGNER_SKILL_LOADING,
 }
 
 

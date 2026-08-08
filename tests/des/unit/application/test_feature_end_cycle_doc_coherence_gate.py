@@ -52,11 +52,25 @@ from pathlib import Path
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.application import feature_end_cycle_service as svc
 from des.application.feature_end_cycle_service import (
+    CoverageMapLegRan,
     CycleSuccess,
-    FullSuiteLegNotApplicable,
-    FullSuiteLegRan,
     run_feature_end_cycle,
 )
+
+
+def _coverage_map_leg_ran(*, ledger, repo_root, feature_id, feature_dir):
+    """The leg that now carries `leg_census.ran >= 1` in these fixtures.
+
+    Until 2026-08-06 that was the full-suite leg, stubbed to `FullSuiteLegRan`.
+    It is gone -- it duplicated CI and held the condemned run-contract provider
+    alive -- so a leg NONE of these tests measures takes its place. The census
+    folds by name suffix, so any surviving `*LegRan` counts identically.
+
+    A named function, not a lambda: it must accept the leg's keyword-only
+    signature, which is exactly what ruff's PLW0108 "just inline the call"
+    suggestion would break.
+    """
+    return CoverageMapLegRan()
 
 
 _FEATURE_ID = "feat-doc-coherence-gate"
@@ -119,14 +133,7 @@ def _stub_non_doc_coherence_legs(monkeypatch) -> None:
     monkeypatch.setattr(
         svc,
         "_run_coverage_map_verify_leg",
-        lambda *, ledger, repo_root, feature_id, feature_dir: None,
-    )
-    monkeypatch.setattr(
-        svc,
-        "_run_full_suite_leg",
-        lambda *, repo_root, feature_id=None: FullSuiteLegNotApplicable(
-            "stubbed: no contract suite in this hermetic fixture"
-        ),
+        _coverage_map_leg_ran,
     )
 
 
@@ -201,11 +208,6 @@ def test_doc_overstating_absent_code_warns_but_does_not_refuse_feature_end(
     # the unrelated zero-observed-checks charter (leg_census.ran == 0 ->
     # CycleIndeterminate, ADR-GV-002 D1/D3, pinned elsewhere). Mirrors
     # the regression AT's ``_stub_full_suite_ran``.
-    monkeypatch.setattr(
-        svc,
-        "_run_full_suite_leg",
-        lambda *, repo_root, feature_id=None: FullSuiteLegRan(0),
-    )
     repo_root = tmp_path / "planted"
     repo_root.mkdir(parents=True)
     # .gitignore is the runtime-state boundary the real gate now derives
@@ -344,7 +346,7 @@ def test_no_docs_at_all_stays_leg_not_applicable_regression(
     monkeypatch.setattr(
         svc,
         "_run_coverage_map_verify_leg",
-        lambda *, ledger, repo_root, feature_id, feature_dir: None,
+        _coverage_map_leg_ran,
     )
 
     leg_outcome = svc._run_doc_coherence_gate(

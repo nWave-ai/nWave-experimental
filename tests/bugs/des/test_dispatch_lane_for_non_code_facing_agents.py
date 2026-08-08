@@ -43,20 +43,15 @@ from __future__ import annotations
 
 import contextlib
 import io
-import json
 import uuid
 from pathlib import Path
 
 import pytest
 
-from des.adapters.driven.filesystem.wave_active_filesystem_store import (
-    WaveActiveFilesystemStore,
-)
 from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
-from des.adapters.drivers.hooks import service_factory, subagent_stop_handler
+from des.adapters.drivers.hooks import service_factory
 from des.application.atdd_pure_prompt_validator import _REVIEW_PROFILE_SECTIONS
 from des.cli import dispatch
-from des.domain.wave_active import WaveActiveRecord, WaveProvenance
 from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
 
 
@@ -354,72 +349,12 @@ def test_dispatch_guard_accepts_examiner_dispatch_without_architecture_citation(
 # ---------------------------------------------------------------------------
 
 
-def test_distill_exit_gate_does_not_misread_cross_wave_child_return(
-    tmp_path: Path, capsys
-) -> None:
-    """A charter/examine sub-dispatch returning inside an ACTIVE `deliver`
-    wave -- using the ONLY envelope that passes entry today (the borrowed
-    `DES-PHASE: D_DISTILL` + `DES-SLICE: feature-end` declaration, RCA §2
-    table) -- must NOT be treated by the SubagentStop DISTILL-exit check as
-    a completed whole-feature DISTILL. The honest declaration must be exempt
-    at EXIT as well as at ENTRY (RCA §4a).
-
-    NEGATIVE AT: no rejection loop -- the exit-gate handler must not demand
-    a slice plan from a `feature-delta.md` that legitimately does not exist
-    for this feature-id (this was never a real feature-wide DISTILL wave).
-
-    FAILS TODAY: `_handle_distill_exit_gate` unconditionally treats an
-    `atdd_pure_phase == "D_DISTILL"` + `slice_id == "feature-end"` return as
-    a real DISTILL-wave completion and calls `_slice_plan_slice_ids`, which
-    raises `FileNotFoundError` for a feature-id with no feature-delta.md --
-    caught and re-emitted as a `SlicePlanParseUnresolved` block, EVEN THOUGH
-    an active `deliver` wave floor (seeded below) is the exact positive
-    signal this was a cross-wave-child return, not a genuine DISTILL-wave
-    exit (RCA §4a: this is the SECOND, independent consumer of the same
-    borrowed envelope, beyond the PreToolUse entry gate).
-    """
-    feature_id = f"probe-exit-{uuid.uuid4().hex[:8]}"
-    (tmp_path / ".nwave" / "des").mkdir(parents=True, exist_ok=True)
-
-    # Seed an ACTIVE `deliver` wave floor -- the real signal (already read by
-    # the PreToolUse WAVE_MARKER_BYPASS hinge) that this D_DISTILL-phase
-    # return is happening INSIDE another wave's floor, not as a top-level
-    # DISTILL-wave completion.
-    store = WaveActiveFilesystemStore()
-    store.arm(
-        tmp_path,
-        WaveActiveRecord(
-            wave="deliver", provenance=WaveProvenance.COMMAND, entry_pending=False
-        ),
-    )
-
-    # No docs/feature/<feature_id>/feature-delta.md -- this was never a real
-    # feature-wide DISTILL wave (RCA §4a's exact live reproduction).
-    resolved = subagent_stop_handler._AtddPureResolvedContext(
-        project_id=feature_id,
-        slice_id="feature-end",
-        atdd_pure_phase="D_DISTILL",
-        project_root_marker=None,
-        effective_cwd=str(tmp_path),
-        at_kind=None,
-    )
-    hook_input: dict[str, object] = {"cwd": str(tmp_path)}
-
-    subagent_stop_handler._handle_distill_exit_gate(resolved, hook_input, "test-hook")
-    stdout = capsys.readouterr().out
-    payload: dict[str, object] = json.loads(stdout) if stdout.strip() else {}
-
-    assert payload.get("event") != "SlicePlanParseUnresolved", (
-        "a cross-wave-child return (charter/examine dispatch returning "
-        "inside an ACTIVE `deliver` wave floor, carrying the borrowed "
-        "D_DISTILL declaration) must NOT be misread as a completed "
-        "whole-feature DISTILL demanding a slice plan from a feature-delta "
-        f"that never existed for this feature-id. Observed block: {stdout!r}"
-    )
-    assert payload.get("decision") != "block", (
-        "the exit gate must not BLOCK a cross-wave-child return at all -- "
-        f"it must recognise the active deliver-wave floor. Observed: {stdout!r}"
-    )
+# DELETED 2026-08-06 with its subject: this NEGATIVE AT pinned that
+# `_handle_distill_exit_gate` must not misread a cross-wave child return
+# as a completed whole-feature DISTILL. The G-DISTILL-EXIT gate is gone --
+# a hook re-litigating, from ledger records, work the returning agent had
+# already done -- so there is no exit check left to misread anything. The
+# property is vacuous, not unprotected.
 
 
 # ---------------------------------------------------------------------------

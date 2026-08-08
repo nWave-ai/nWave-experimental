@@ -63,7 +63,7 @@ nWave does NOT use `codex exec` — agents are dispatched via the Claude Code **
 - **Transcript JSONL** — each sub-agent run writes a JSONL transcript; the hook payload exposes its path as `agent_transcript_path` (the same field `src/des/.../hooks/skill_tracking_hooks.py:maybe_track_skill_loads` and `deliver_progress_handler.py` already consume). Each line is one event: `tool_use` (name + input), `tool_result`, assistant text.
 - **What to parse from it**:
   - skill loaded? -> `Read` tool_use whose path matches `skills/.../SKILL.md` (this is exactly what `skill_tracking_hooks` scans for).
-  - expected tools run? -> tool_use `name` values (e.g. `mcp__tsunami__callers_of` present, `Grep` absent).
+  - expected tools run? -> tool_use `name` values (e.g. a `Bash` call running `graphify explain` present, `Grep` absent).
   - files created? -> `Write`/`Edit` tool_use inputs + the artifact on disk.
   - sequence? -> ordered list of tool_use names.
 - **Final message** — the agent's last assistant message is the eval's textual artifact (feeds the model-graded rubric).
@@ -78,14 +78,14 @@ Parse the trace, assert mechanically. nWave-specific, high-value signals:
 | Signal | Assertion | Why it matters |
 |---|---|---|
 | Right skill loaded | `Read` of the expected `SKILL.md` appears | skill that is catalogued but never loaded = inferior output |
-| Code analysis via Tsunami, not grep | `mcp__tsunami__callers_of` / `reads_of` present, `Grep` for the same intent absent | the standing Tsunami-first preference (degrade-LOUD if absent) |
+| Code analysis via the port, not grep | a `graphify explain` / `graphify path` Bash call present, `Grep` for the same intent absent | the standing port-first preference (degrade-LOUD if absent). **Assert on the CURRENT tier-1**: while Tsunami is disabled, an eval demanding `mcp__tsunami__*` fails the agent that did the right thing |
 | Typed verdict emitted | final message / artifact contains the agent's typed verdict shape (e.g. APPROVED/REJECTED/INDETERMINATE) | reviewer agents must not return prose-only |
 | Gate respected | no bypass marker; expected gate/step trailer present | off-spine dispatch guard |
 | Artifact structure | required sections present (grep the written file) | OUTCOME completeness |
 | Efficiency | tool_use count within a ceiling; no redundant re-reads | token economy |
 | Negative control | for `should_trigger=false`, the skill/tool was NOT invoked | guards against over-eager invocation |
 
-Bind to detectors/Tsunami where useful: e.g. assert the agent used `mcp__tsunami__never_wired` to prove wiring rather than asserting from a catalog entry (catalogued != wired).
+Bind to the code-fact tier where useful: e.g. assert the agent proved wiring from graph evidence rather than from a catalog entry (catalogued != wired). Note that `never-wired` and `adr-section` have **no graphify equivalent** while Tsunami is disabled — an eval must not demand a capability no mounted tier provides, or it grades the tooling rather than the agent.
 
 ## Qualitative grader (model-graded rubric)
 
@@ -148,15 +148,15 @@ Dataset rows (excerpt):
 
 ```csv
 id,prompt,should_trigger,expected_skill,expected_tools,expected_artifact,notes
-sa-01,"Design architecture for the handoff-state-algebra feature; write the ADR",true,nw-design-patterns,"mcp__tsunami__callers_of,Write","docs/**/adr-*.md",explicit design
-sa-02,"What ADRs exist for the gate layer?",true,,"mcp__tsunami__adr_section",,implicit code-fact lookup
+sa-01,"Design architecture for the handoff-state-algebra feature; write the ADR",true,nw-design-patterns,"Bash:graphify explain,Write","docs/**/adr-*.md",explicit design
+sa-02,"What ADRs exist for the gate layer?",true,,"Read,Glob",,implicit code-fact lookup - no tier-1 adr-section while Tsunami is disabled
 sa-03,"Rename this variable to camelCase",false,,,,negative control - not an architecture task
 ```
 
 Deterministic grader (over the captured trace + artifact):
 
 - PROCESS: `Read` of `nw-design-patterns/SKILL.md` present.
-- PROCESS: code facts came from `mcp__tsunami__callers_of`/`adr_section`, NOT `Grep`/`Bash grep`.
+- PROCESS: structural code facts came from `graphify explain`/`path`, NOT `Grep`/`Bash grep`.
 - OUTCOME: an `adr-*.md` was `Write`-n and on disk.
 - OUTCOME: artifact contains the required ADR sections (`## Context`, `## Decision`, `## Consequences`).
 - NEGATIVE (sa-03): architect did not author an ADR.

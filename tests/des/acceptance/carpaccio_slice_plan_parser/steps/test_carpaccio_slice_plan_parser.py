@@ -1,21 +1,18 @@
-"""Step definitions: one tolerant slice-plan parser shared by entry gate + hook.
+"""Step definitions for the public tolerant slice-plan parser.
 
 C10 of consolidation-for-wider-beta-testing. Layer 3 (FS / module-port
 acceptance). Example-only, no PBT machinery (Mandate 9/11).
 
-The two real parsers are driven through their public entry points over hermetic
-feature-delta texts crafted under pytest ``tmp_path`` -- never this repo's own
-deltas. No personal-hook home-directory path is read (the hermeticity guard at
-tests/meta/test_acceptance_hermeticity.py).
+The public parser is driven over hermetic feature-delta texts defined in this
+acceptance module and written only under pytest ``tmp_path``.
 
 Step bodies delegate to ``ParserComposition``; no inline parse logic
 (Mandate-15 criterion 3) -- each body is a typed lookup plus a composition call.
 
 Regression contract: AC-1/2/3 FAIL at HEAD and PASS once C10's tolerant
-``parse_slice_plan_rows`` lands and both paths delegate to it:
+``parse_slice_plan_rows`` lands:
   AC-1 -- the CLI entry-gate parser raises ``MalformedInput`` "must have 5
-          columns" on the 3-column plan while the hook parser accepts it; the
-          two disagree -> the equality assertion reds for the RIGHT reason.
+          columns" on the 3-column plan.
   AC-2 -- the escaped ``\\|`` is split as a column boundary -> the value cell is
           truncated / the row miscounted.
   AC-3 -- the H3 heading yields a missing slice-plan section.
@@ -41,8 +38,7 @@ _FEATURE_ID = FeatureId("carpaccio-parser-demo")
 
 
 # A 3-column slice plan (Slice | Value statement | Status) under an H2 heading.
-# The CLI entry-gate parser rejects this at HEAD (requires exactly 5 columns);
-# the hook parser accepts it (len(cells) >= 3) -- the divergence AC-1 pins.
+# The CLI entry-gate parser rejected this at HEAD (required exactly 5 columns).
 _DELTA_3COL = """\
 # Feature Delta: carpaccio parser demo
 
@@ -70,8 +66,8 @@ _DELTA_ESCAPED_PIPE = """\
 """
 
 
-# A 3-column slice plan under an H3 heading. At HEAD both parsers key on an
-# H2-only heading regex -> the section is reported missing.
+# A 3-column slice plan under an H3 heading. The old H2-only heading regex
+# reported this section missing.
 _DELTA_H3_HEADING = """\
 # Feature Delta: carpaccio parser demo
 
@@ -99,12 +95,6 @@ _DELTA_5COL = """\
 """
 
 
-_PARSER_BY_PHRASE = {
-    "carpaccio entry-gate parser": ParserUnderTest.ENTRY_GATE,
-    "subagent-stop hook parser": ParserUnderTest.EXIT_HOOK,
-}
-
-
 def _slice_id_set(phrase: str) -> tuple[SliceId, ...]:
     return tuple(SliceId(token.strip()) for token in phrase.split(","))
 
@@ -117,7 +107,7 @@ def composition(tmp_path: Path) -> ParserComposition:
 
 @pytest.fixture
 def results() -> dict[ParserUnderTest, ParseResult]:
-    """Carrier for each driven parser's observable result."""
+    """Carrier for the driven parser's observable result."""
     return {}
 
 
@@ -172,21 +162,6 @@ def given_declares_one_piped_slice(slice_id: str) -> None:
 # --- When --------------------------------------------------------------------
 
 
-@when(
-    "the carpaccio entry-gate parser and the subagent-stop hook parser each read the plan"
-)
-def when_both_parsers_read(
-    composition: ParserComposition,
-    results: dict[ParserUnderTest, ParseResult],
-) -> None:
-    results[ParserUnderTest.ENTRY_GATE] = composition.parse_with(
-        ParserUnderTest.ENTRY_GATE
-    )
-    results[ParserUnderTest.EXIT_HOOK] = composition.parse_with(
-        ParserUnderTest.EXIT_HOOK
-    )
-
-
 @when("the shared slice-plan parser reads the plan")
 def when_shared_parser_reads(
     composition: ParserComposition,
@@ -213,33 +188,12 @@ def when_entry_gate_reads(
 # --- Then --------------------------------------------------------------------
 
 
-@then(parsers.parse('both parsers extract the slice-id set "{slice_set}"'))
-def then_both_extract_set(
-    results: dict[ParserUnderTest, ParseResult], slice_set: str
-) -> None:
-    expected = _slice_id_set(slice_set)
-    entry = results[ParserUnderTest.ENTRY_GATE]
-    hook = results[ParserUnderTest.EXIT_HOOK]
-    assert entry.slice_ids == expected, (
-        "entry-gate parser must extract "
-        f"{expected!r}, got outcome={entry.outcome.value} ids={entry.slice_ids!r}"
+@then("the parser accepts the 3-column plan")
+def then_parser_accepts(results: dict[ParserUnderTest, ParseResult]) -> None:
+    result = results[ParserUnderTest.ENTRY_GATE]
+    assert result.outcome is ParseOutcome.PARSED, (
+        f"the entry parser must accept the plan, got {result.outcome.value}"
     )
-    assert hook.slice_ids == expected, (
-        "hook parser must extract "
-        f"{expected!r}, got outcome={hook.outcome.value} ids={hook.slice_ids!r}"
-    )
-    assert entry.slice_ids == hook.slice_ids, (
-        "the entry gate and the hook must agree on the SAME slice-id set "
-        f"(entry={entry.slice_ids!r} hook={hook.slice_ids!r})"
-    )
-
-
-@then("neither parser rejects the 3-column plan")
-def then_neither_rejects(results: dict[ParserUnderTest, ParseResult]) -> None:
-    for parser, result in results.items():
-        assert result.outcome is ParseOutcome.PARSED, (
-            f"{parser.value} must parse the 3-column plan, got {result.outcome.value}"
-        )
 
 
 @then(

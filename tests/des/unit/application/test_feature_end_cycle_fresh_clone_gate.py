@@ -41,11 +41,26 @@ from pathlib import Path
 from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.application import feature_end_cycle_service as svc
 from des.application.feature_end_cycle_service import (
+    CoverageMapLegRan,
     CycleRefusal,
     CycleSuccess,
-    FullSuiteLegNotApplicable,
     run_feature_end_cycle,
 )
+
+
+def _coverage_map_leg_ran(*, ledger, repo_root, feature_id, feature_dir):
+    """The leg that now carries `leg_census.ran >= 1` in these fixtures.
+
+    Until 2026-08-06 that was the full-suite leg, stubbed to `FullSuiteLegRan`.
+    It is gone -- it duplicated CI and held the condemned run-contract provider
+    alive -- so a leg NONE of these tests measures takes its place. The census
+    folds by name suffix, so any surviving `*LegRan` counts identically.
+
+    A named function, not a lambda: it must accept the leg's keyword-only
+    signature, which is exactly what ruff's PLW0108 "just inline the call"
+    suggestion would break.
+    """
+    return CoverageMapLegRan()
 
 
 _FEATURE_ID = "feat-fresh-clone-gate"
@@ -114,14 +129,7 @@ def _stub_non_fresh_clone_legs(monkeypatch) -> None:
     monkeypatch.setattr(
         svc,
         "_run_coverage_map_verify_leg",
-        lambda *, ledger, repo_root, feature_id, feature_dir: None,
-    )
-    monkeypatch.setattr(
-        svc,
-        "_run_full_suite_leg",
-        lambda *, repo_root, feature_id=None: FullSuiteLegNotApplicable(
-            "stubbed: no contract suite in this hermetic fixture"
-        ),
+        _coverage_map_leg_ran,
     )
 
 
@@ -267,7 +275,7 @@ def test_no_demo_recipe_stays_leg_not_applicable_regression(
     monkeypatch.setattr(
         svc,
         "_run_coverage_map_verify_leg",
-        lambda *, ledger, repo_root, feature_id, feature_dir: None,
+        _coverage_map_leg_ran,
     )
 
     leg_outcome = svc._run_fresh_clone_gate(
