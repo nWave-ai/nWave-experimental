@@ -362,7 +362,7 @@ def handle_pre_tool_use() -> int:
                                     "decision": "block",
                                     "reason": (
                                         "Invoke nw-mode-select before the "
-                                        "first mutation."
+                                        "first Bash/Write/Edit."
                                     ),
                                 }
                             )

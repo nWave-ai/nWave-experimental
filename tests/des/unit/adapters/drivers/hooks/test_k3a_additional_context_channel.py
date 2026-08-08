@@ -342,7 +342,10 @@ class TestPreToolUseBashModeSelectGate:
 
         assert exit_code == 2
         assert payload["decision"] == "block"
-        assert payload["reason"] == "Invoke nw-mode-select before the first mutation."
+        assert (
+            payload["reason"]
+            == "Invoke nw-mode-select before the first Bash/Write/Edit."
+        )
 
     @pytest.mark.parametrize(
         "agent_identity",

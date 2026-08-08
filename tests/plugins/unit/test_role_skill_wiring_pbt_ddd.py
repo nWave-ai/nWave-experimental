@@ -168,6 +168,55 @@ class TestThinAutoRoleRoutes:
             assert token in examiner_isolation
 
 
+class TestUserExaminerAutoRouteIsBoundedNotExhaustive:
+    """Auto EXAMINE samples equivalence classes instead of exhaustively re-probing."""
+
+    @staticmethod
+    def _route_text():
+        body = (AGENTS_DIR / "nw-user-examiner.md").read_text(encoding="utf-8")
+        return " ".join(
+            body[
+                body.index("## Route contract") : body.index("## Hard Boundary")
+            ].split()
+        )
+
+    def test_auto_route_bounds_positive_journeys_to_one_representative_each(self):
+        """CONTRACT_SHAPE: bounded-change. One probe per distinct positive journey, not per phrasing."""
+        route = self._route_text()
+        assert "one" in route and "representative" in route
+        assert "distinct positive user journey" in route
+
+    def test_auto_route_bounds_negative_rows_to_exactly_one_probe(self):
+        """CONTRACT_SHAPE: bounded-change. No repeated attempts at the same must-NOT-happen row."""
+        route = self._route_text()
+        assert "probe per explicit negative oracle row" in route
+        assert "never more than one attempt" in route
+
+    def test_auto_route_bounds_determinism_check_to_one_repeat_call(self):
+        """CONTRACT_SHAPE: bounded-change. Idempotency/determinism gets one repeat, not a sweep."""
+        route = self._route_text()
+        assert "repeated call" in route
+        assert "determinism" in route or "idempotency" in route
+
+    def test_auto_route_stops_at_first_fail(self):
+        """CONTRACT_SHAPE: bounded-change. No curiosity probing after a charter row is violated."""
+        route = self._route_text()
+        assert "STOP at the first FAIL" in route
+        assert "no curiosity probes" in route
+
+    def test_auto_route_declares_a_ten_call_target_with_named_excess(self):
+        """CONTRACT_SHAPE: bounded-change. Live overrun was 26 calls; the bound must be explicit and auditable."""
+        route = self._route_text()
+        assert "10 CLI/API tool calls" in route
+        assert "state in your report exactly which" in route
+
+    def test_auto_route_bound_does_not_leak_into_human_route(self):
+        """CONTRACT_SHAPE: bounded-change. Human route keeps richer exploration, unbounded."""
+        body = (AGENTS_DIR / "nw-user-examiner.md").read_text(encoding="utf-8")
+        assert "Auto route only" in body
+        assert "Human route below keeps its richer" in body
+
+
 class TestDddReviewerUsesCodeAnalysisPort:
     """Structural review evidence goes through the code-analysis port."""
 

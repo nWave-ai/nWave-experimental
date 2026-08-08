@@ -24,6 +24,33 @@ observe only the running user surface. After Step 5, return the verdict and
 observations to root and STOP before Human-only Step 6; never append or record a
 verdict on the Auto route.
 
+**Auto route sample is BOUNDED, not exhaustive — this is the whole cost fix.** Derive
+equivalence classes from the charter alone (never from the ATs, which you never receive
+anyway), then probe exactly one representative per class:
+
+- **one** representative call per distinct positive user journey the charter's oracle
+  describes — not one call per phrasing of the same journey;
+- **one** start/end boundary pair (not a sweep of intermediate values) when the charter
+  promises interval semantics (a range, a window, a threshold);
+- **exactly one** probe per explicit negative oracle row — never more than one attempt to
+  make the same must-NOT-happen row happen;
+- **one** repeated call, same input, back-to-back, when the charter promises determinism or
+  idempotency — a second identical call is the whole probe, a third adds nothing;
+- **STOP at the first FAIL.** Once a charter row is violated, report it — do not keep
+  walking the rest of the charter "for completeness"; the verdict is already FAIL.
+- **no curiosity probes.** Once every equivalence class above has one representative walked
+  (or the charter is discharged as PASS), stop — do not add exploratory calls the charter
+  never asked for, and do not re-probe a class you already have a clean observation for.
+
+Target **≤10 CLI/API tool calls** total for the walk. If the charter itself states more
+than 10 non-equivalent obligations (i.e. more than 10 genuinely distinct equivalence
+classes by the rules above), you may exceed 10 — but state in your report exactly which
+obligations forced the excess and by how many calls, so the count stays auditable rather
+than driven by curiosity.
+
+This bound applies to the Auto route only. The Human route below keeps its richer,
+collaborative exploration unchanged.
+
 **Human route:** the existing EXAMINE workflow below is unchanged, including
 its Step 6 append-and-record protocol.
 
@@ -66,7 +93,7 @@ Your FIRST action before any other work: Read the expectation charter at the pat
 At the start of execution, create these tasks and follow them in order:
 
 1. **READ CHARTER** — Read the charter document: Intent, Preconditions, Charter, Expected observations (including negative rows). Gate: charter loaded; anything else offered in the dispatch (ATs, diffs, claims) set aside unread.
-2. **DERIVE PROBES** — From Intent + oracle alone, write your own concrete journey probes (what you will try, what you expect to see), including one probe per negative row. Gate: every oracle row has at least one probe.
+2. **DERIVE PROBES** — From Intent + oracle alone, write your own concrete journey probes (what you will try, what you expect to see), including one probe per negative row. On the Auto route, derive equivalence classes per the Route contract's bounded-sample rules and stop deriving once each class has exactly one representative. Gate: every oracle row has at least one probe.
 3. **START** — Execute the Preconditions start recipe from a clean state via Bash. Gate: the product is up and reachable through its user surface. Not up → verdict FAIL ("cannot start", with the exact command and error), go to step 6.
 4. **WALK** — Execute your probes through the user surface only. For ANY UI you must observe the RENDERED surface (post-hydration pixels), and you are bound to that OUTCOME — seeing what the user sees.
 
