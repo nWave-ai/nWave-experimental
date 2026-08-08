@@ -38,14 +38,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from des.application.feature_end_batch_service import (
-    BatchIndeterminate,
-    BatchIneligible,
-    BatchManifestRefused,
-    BatchRefused,
-    parse_batch_manifest,
-    run_feature_end_batch,
-)
 from des.application.feature_end_cycle_service import (
     CycleIndeterminate,
     CycleRefusal,
@@ -242,31 +234,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="The deep-review decision: APPROVED or REJECTED.",
     )
 
-    run_batch = verbs.add_parser(
-        "run-batch",
-        help="Run the feature-end cycle over a manifest-declared set of features.",
-        description=(
-            "Run the feature-end cycle over a manifest-declared SET of "
-            "features. Each member is evaluated through the feature-end cycle "
-            "and emits its own FeatureEnd records. A malformed manifest or "
-            "ineligible member refuses before any member cycle is dispatched; "
-            "otherwise the command emits every member outcome and returns the "
-            "worst-outcome exit code."
-        ),
-    )
-    run_batch.add_argument(
-        "manifest",
-        help=(
-            "Path to a JSON array of {feature_id, feature_dir, "
-            "reviewer_agent_id, verdict} entries (>=1)."
-        ),
-    )
-    add_repo_root_argument(
-        run_batch,
-        "--repo",
-        required=True,
-        help="Path to the project root holding the .nwave/ ledger substrate.",
-    )
     return parser
 
 
@@ -302,11 +269,7 @@ def _member_cycle_payload(
     """The `FeatureEndCycleRefused` / `FeatureEndCycleIndeterminate` payload
     shape for one member's cycle outcome, parameterized by `verb`.
 
-    SSOT for the payload SHAPE both `_run_cycle` (verb "run") and `_run_batch`
-    (verb "run-batch", per member line) emit -- extracting the shared shape
-    guarantees the two verbs stay byte-identical on every field beyond `verb`
-    itself (D-1: `run-batch` over a single-entry manifest is indistinguishable
-    from the classic `run` close)."""
+    Shared payload builder for the live ``run`` cycle."""
     if isinstance(outcome, CycleRefusal):
         payload: dict[str, object] = {
             "event": "FeatureEndCycleRefused",
@@ -384,107 +347,11 @@ def _run_cycle(args: argparse.Namespace) -> int:
     return 0
 
 
-_MEMBER_EXIT_CODES = {
-    "FeatureEndCycleComplete": 0,
-    "FeatureEndCycleRefused": 2,
-    "FeatureEndCycleIndeterminate": 3,
-}
-
-
-def _run_batch(args: argparse.Namespace) -> int:
-    """Marshal args into the batch use-case, print JSON-lines, return the
-    worst-outcome-wins exit code (D-D9)."""
-    repo_root = Path(args.repo)
-    specs = parse_batch_manifest(Path(args.manifest))
-    if isinstance(specs, BatchManifestRefused):
-        _emit(
-            {
-                "event": "FeatureEndBatchManifestRefused",
-                "verb": "run-batch",
-                "error": specs.error,
-            }
-        )
-        return 2
-
-    outcome = run_feature_end_batch(repo_root, specs)
-    if isinstance(outcome, BatchIneligible):
-        _emit(
-            {
-                "event": "FeatureEndBatchIneligible",
-                "verb": "run-batch",
-                "feature_id": outcome.feature_id,
-                "error": outcome.error,
-            }
-        )
-        return 2
-
-    if isinstance(outcome, BatchRefused):
-        payload: dict[str, object] = {
-            "event": "FeatureEndBatchRefused",
-            "verb": "run-batch",
-            "error": outcome.error,
-        }
-        if outcome.failing_tests is not None:
-            payload["failing_tests"] = list(outcome.failing_tests)
-        if outcome.failing_count is not None:
-            payload["failing_count"] = outcome.failing_count
-        if outcome.junit_artifact is not None:
-            payload["junit_artifact"] = outcome.junit_artifact
-        _emit(payload)
-        return 2
-
-    if isinstance(outcome, BatchIndeterminate):
-        _emit(
-            {
-                "event": "FeatureEndBatchIndeterminate",
-                "verb": "run-batch",
-                "error": outcome.reason,
-            }
-        )
-        return 3
-
-    worst_exit = 0
-    succeeded = refused = indeterminate = 0
-    for feature_id, member_outcome in outcome.members:
-        if isinstance(member_outcome, (CycleRefusal, CycleIndeterminate)):
-            payload = _member_cycle_payload(
-                feature_id, member_outcome, verb="run-batch"
-            )
-        else:
-            _sync_feature_delta_on_feature_end(repo_root, feature_id)
-            payload = _member_cycle_success_payload(
-                feature_id, member_outcome, verb="run-batch"
-            )
-        _emit(payload)
-        member_exit = _MEMBER_EXIT_CODES[str(payload["event"])]
-        worst_exit = max(worst_exit, member_exit)
-        if payload["event"] == "FeatureEndCycleComplete":
-            succeeded += 1
-        elif payload["event"] == "FeatureEndCycleRefused":
-            refused += 1
-        else:
-            indeterminate += 1
-
-    _emit(
-        {
-            "event": "FeatureEndBatchComplete",
-            "verb": "run-batch",
-            "members": len(outcome.members),
-            "succeeded": succeeded,
-            "refused": refused,
-            "indeterminate": indeterminate,
-        }
-    )
-    return worst_exit
-
-
 def main(argv: list[str] | None = None) -> int:
     """Dispatch a `des feature-end <verb>` invocation to its handler."""
     args = _build_parser().parse_args(argv)
     if args.verb == "run":
         return _run_cycle(args)
-    if args.verb == "run-batch":
-        return _run_batch(args)
     return _run_sign(args)
 
 

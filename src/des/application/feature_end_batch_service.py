@@ -5,10 +5,8 @@ feature-delta Slice Plan row slice-01, Locked Decisions D-1/D-3,
 ADR-FEATURE-END-BATCH-001-shared-use-case-full-suite-hoist.md).
 
 DDD-7 sibling module (D-D3, Decisions Table): houses the batch-orchestration
-concern -- manifest parsing (structural validation only, GDP-1), running the
-whole-tree full-suite leg EXACTLY ONCE per batch, and fanning out each
-member's own cycle -- kept separate from `feature_end_cycle_service.py`
-(already 1875 lines) rather than growing that file further.
+concern that fans out each member's cycle. It stays separate from
+`feature_end_cycle_service.py` rather than growing that file further.
 
 REUSE, not rebuild (D-D2): `_run_full_suite_leg` (UNCHANGED) and
 `_run_feature_end_member_cycle` (the many-features-close-for-one-full-suite
@@ -18,16 +16,14 @@ exercise IDENTICAL machinery, closing the single/batch divergence risk by
 construction (ADR-FEATURE-END-BATCH-001).
 
 D-2 (locked): this module reads ONLY in-process function results (the shared
-leg's return value) and manifest JSON -- it never calls a `GitWorktreePort`
+leg's return value) -- it never calls a `GitWorktreePort`
 or reads/mutates worktree state. No driven port is added by this feature.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from des.application import feature_end_cycle_service as _fecs
@@ -35,6 +31,8 @@ from des.cli.verify_deliver_integrity import _undelivered_slice_plan_slices
 
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     # Annotation-only since 2026-08-06: the runtime `isinstance` checks that
     # needed these at import time belonged to the shared full-suite leg, which
     # this module no longer runs.
@@ -63,19 +61,6 @@ class FeatureEndBatchSpec:
     feature_dir: Path
     reviewer_agent_id: str | None
     verdict: str | None
-
-
-@dataclass(frozen=True)
-class BatchManifestRefused:
-    """The manifest failed STRUCTURAL validation ONLY (shape/type/duplicate-id,
-    D-D7/D-D8) -- raised BEFORE the shared full-suite leg is spent (GDP-1).
-
-    Deliberately does NOT check feature *readiness* (SliceCommitVerified /
-    deep-review / charter state) -- that is slice-02's eligibility precheck,
-    out of scope here (keeps the carpaccio boundary honest).
-    """
-
-    error: str
 
 
 @dataclass(frozen=True)
@@ -131,101 +116,6 @@ class BatchCompleted:
     """
 
     members: tuple[tuple[str, CycleSuccess | CycleIndeterminate | CycleRefusal], ...]
-
-
-_REQUIRED_KEYS = ("feature_id", "feature_dir", "reviewer_agent_id", "verdict")
-
-
-def parse_batch_manifest(
-    manifest_path: Path,
-) -> list[FeatureEndBatchSpec] | BatchManifestRefused:
-    """Parse + structurally validate a `run-batch` manifest (D-D7/D-D8, GDP-1).
-
-    Structural validation ONLY -- shape/type/duplicate-id. Never checks
-    feature readiness (slice-02's concern). A malformed manifest is refused
-    BEFORE the (expensive) shared full-suite leg is ever spent, naming WHAT
-    is wrong, WHY, and HOW to fix it (GDP-3).
-    """
-    try:
-        raw_text = manifest_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        return BatchManifestRefused(
-            f"cannot read manifest {str(manifest_path)!r}: {exc} -- WHAT: the "
-            "manifest file could not be opened; WHY: it is missing or "
-            "unreadable; HOW: pass a path to an existing, readable JSON "
-            "manifest file."
-        )
-    try:
-        payload = json.loads(raw_text)
-    except json.JSONDecodeError as exc:
-        return BatchManifestRefused(
-            f"manifest {str(manifest_path)!r} is not valid JSON: {exc} -- "
-            "WHAT: the manifest failed to parse; WHY: malformed JSON syntax; "
-            "HOW: fix the JSON syntax error the message names and re-run."
-        )
-    if not isinstance(payload, list) or not payload:
-        got = "an empty array" if isinstance(payload, list) else type(payload).__name__
-        return BatchManifestRefused(
-            f"manifest {str(manifest_path)!r} must be a non-empty JSON array "
-            f"of feature entries -- WHAT: the manifest's top-level shape is "
-            f"wrong (got {got}); WHY: run-batch needs >=1 feature entry to "
-            "batch; HOW: supply a JSON array with at least one "
-            "{feature_id, feature_dir, reviewer_agent_id, verdict} object."
-        )
-
-    specs: list[FeatureEndBatchSpec] = []
-    seen_feature_ids: dict[str, int] = {}
-    for index, entry in enumerate(payload):
-        if not isinstance(entry, dict):
-            return BatchManifestRefused(
-                f"manifest entry #{index} is not a JSON object -- WHAT: entry "
-                f"#{index} has shape {type(entry).__name__}; WHY: every "
-                "manifest entry must be an object with feature_id/"
-                "feature_dir/reviewer_agent_id/verdict; HOW: fix entry "
-                f"#{index} to be a JSON object with those 4 keys."
-            )
-        missing = [key for key in _REQUIRED_KEYS if key not in entry]
-        if missing:
-            named = entry.get("feature_id", f"entry #{index}")
-            return BatchManifestRefused(
-                f"manifest entry #{index} ({named!r}) is missing required "
-                f"field(s) {missing} -- WHAT: entry #{index} does not carry "
-                "every required key; WHY: run-batch needs feature_id, "
-                "feature_dir, reviewer_agent_id, and verdict on EVERY "
-                f"entry; HOW: add {missing} to entry #{index} ({named!r}) "
-                "in the manifest."
-            )
-        non_string = [key for key in _REQUIRED_KEYS if not isinstance(entry[key], str)]
-        if non_string:
-            named = entry.get("feature_id", f"entry #{index}")
-            return BatchManifestRefused(
-                f"manifest entry #{index} ({named!r}) has non-string "
-                f"value(s) for {non_string} -- WHAT: entry #{index}'s field "
-                f"types are wrong; WHY: every field must be a string; HOW: "
-                f"fix {non_string} on entry #{index} ({named!r}) to be "
-                "strings."
-            )
-        feature_id = entry["feature_id"]
-        if feature_id in seen_feature_ids:
-            first_index = seen_feature_ids[feature_id]
-            return BatchManifestRefused(
-                f"manifest has a duplicate feature_id {feature_id!r} at "
-                f"entries #{first_index} and #{index} -- WHAT: the same "
-                "feature_id appears twice; WHY: two entries could carry two "
-                "different verdicts for the same feature, an unreported "
-                "ambiguity; HOW: remove or merge the duplicate entry for "
-                f"{feature_id!r} (entries #{first_index}, #{index})."
-            )
-        seen_feature_ids[feature_id] = index
-        specs.append(
-            FeatureEndBatchSpec(
-                feature_id=feature_id,
-                feature_dir=Path(entry["feature_dir"]),
-                reviewer_agent_id=entry["reviewer_agent_id"],
-                verdict=entry["verdict"],
-            )
-        )
-    return specs
 
 
 def _batch_artifact_key(feature_ids: list[str]) -> str:
@@ -405,9 +295,7 @@ __all__ = [
     "BatchCompleted",
     "BatchIndeterminate",
     "BatchIneligible",
-    "BatchManifestRefused",
     "BatchRefused",
     "FeatureEndBatchSpec",
-    "parse_batch_manifest",
     "run_feature_end_batch",
 ]
