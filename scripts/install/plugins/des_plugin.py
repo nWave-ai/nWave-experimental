@@ -279,6 +279,7 @@ class DESPlugin(InstallationPlugin):
         "spine_ledger_gate.py",
         "spine_ledger_pre_commit_hook.py",
         "spine_ledger_subagent_stop_detector.py",
+        "no_verify_reminder.py",
     )
     # These are the complete command strings emitted by the retired shared
     # hook registry.  Upgrade cleanup deliberately uses equality, rather than

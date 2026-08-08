@@ -44,13 +44,29 @@ In subagent mode (Agent tool invocation with 'execute'/'TASK BOUNDARY'), skip gr
 ## Route contract
 
 **Thin Auto M/L route (`nw-auto`) — authoritative terminal branch:** when the
-dispatch names this route, follow this paragraph and stop before the Human-only
-Workflow below. Accept a bounded brief directly from root. Use
-`nw-code-analysis-port` and bounded
-`des code-fact query.* SUBJECT --root ROOT` commands only when a structural
-fact is needed. Retain the algebra, certainty, property, and test-design core;
-when a generated property needs a language deep dive, load exactly ONE matching
-`nw-pbt-{language}` skill on demand, never all eight.
+dispatch names this route, follow this paragraph (including the generated
+Read directive immediately below it) and stop before the Human-only Workflow
+below. Accept a bounded brief directly from root. Use `nw-code-analysis-port`
+and bounded `des code-fact query.* SUBJECT --root ROOT` commands only when a
+structural fact is needed. Before authoring, execute every generated NOW row
+of the block below with the Read tool; the instant an ON-TRIGGER row's
+trigger fires, load exactly ONE matching row with the Read tool — never
+before the trigger fires, never all eight PBT deep dives.
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- Read `nw-test-design-mandates` NOW — Phase 0 policy detection
+- Read `nw-property-based-testing` NOW — Phase 2 property authoring
+- Read `nw-algebraic-design-protocol` ON-TRIGGER — compositional or stateful surface
+- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
+- Read ONE `nw-pbt-dotnet` ON-TRIGGER — a `csharp`/`dotnet`/`fsharp` property needs it
+- Read ONE `nw-pbt-erlang-elixir` ON-TRIGGER — a `elixir`/`erlang` property needs it
+- Read ONE `nw-pbt-go` ON-TRIGGER — a `go` property needs it
+- Read ONE `nw-pbt-haskell` ON-TRIGGER — a `haskell` property needs it
+- Read ONE `nw-pbt-jvm` ON-TRIGGER — a `java`/`kotlin`/`scala` property needs it
+- Read ONE `nw-pbt-python` ON-TRIGGER — a `python` property needs it
+- Read ONE `nw-pbt-rust` ON-TRIGGER — a `rust` property needs it
+- Read ONE `nw-pbt-typescript` ON-TRIGGER — a `javascript`/`typescript` property needs it
+<!-- GENERATED:role-skill-loading END -->
 
 Author the minimal acceptance tests and return a thin `DeliveryContract` to
 root carrying the selected `paradigm` (`functional` or `object_oriented`), the
@@ -131,20 +147,9 @@ The four large test-design families are decomposed into one-job-one-trigger modu
 
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo).
 
-<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- compositional or stateful surface: `nw-algebraic-design-protocol`
-- invalid-state or preservation claim: `nw-certainty-by-construction`
-- Phase 0 policy detection: `nw-test-design-mandates`
-- Phase 2 property authoring: `nw-property-based-testing`
-- for a `csharp`/`dotnet`/`fsharp` property: `nw-pbt-dotnet`
-- for a `elixir`/`erlang` property: `nw-pbt-erlang-elixir`
-- for a `go` property: `nw-pbt-go`
-- for a `haskell` property: `nw-pbt-haskell`
-- for a `java`/`kotlin`/`scala` property: `nw-pbt-jvm`
-- for a `python` property: `nw-pbt-python`
-- for a `rust` property: `nw-pbt-rust`
-- for a `javascript`/`typescript` property: `nw-pbt-typescript`
-<!-- GENERATED:role-skill-loading END -->
+The universal algebra/certainty/PBT-language lens directive is generated once,
+in the Route contract above (Auto reads it there too) — do not duplicate it
+here.
 
 <!-- GENERATED:skill-load-set START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 Conditional skills by active workflow mode — projected from the mode

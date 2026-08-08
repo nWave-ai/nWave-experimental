@@ -872,21 +872,26 @@ def _command_catalog_body() -> str:
 
 def _role_skill_on_demand_lines(entry: dict) -> list[str]:
     return [
-        f"- {trigger}: `{skill}`"
+        f"- Read `{skill}` ON-TRIGGER — {trigger}"
         for skill, trigger in entry.get("on_demand", {}).items()
     ]
 
 
-def _role_skill_trigger_lines(entry: dict) -> list[str]:
+def _role_skill_entry_lines(entry: dict) -> list[str]:
     return [
-        f"- {trigger}: `{skill}`"
-        for field in ("on_demand", "phase")
-        for skill, trigger in entry.get(field, {}).items()
+        f"- Read `{skill}` NOW — {trigger}"
+        for skill, trigger in entry.get("phase", {}).items()
     ]
 
 
+def _role_skill_trigger_lines(entry: dict) -> list[str]:
+    return _role_skill_entry_lines(entry) + _role_skill_on_demand_lines(entry)
+
+
 def _role_skill_loading_body(agent_id: str, root: Path) -> str:
-    """Render one role's universal-lens directives — build-time only, no
+    """Render one role's universal-lens directives as imperative Read
+    instructions -- NOW rows fire unconditionally at task entry, ON-TRIGGER
+    rows fire only once their trigger condition holds. Build-time only, no
     runtime registry read: this is the ONLY place `role-skill-loading.yaml`
     is ever parsed. A reviewer with exactly one reviewed role mirrors that
     role's on_demand lenses (lens-only, never its authoring `phase` rows)."""
@@ -902,16 +907,19 @@ def _role_skill_loading_body(agent_id: str, root: Path) -> str:
             lines += _role_skill_on_demand_lines(roles[reviewed[0]])
         else:
             lines.append(
-                "- mirror the reviewed role's on-demand lenses -- lens-only, never author"
+                "- ON-TRIGGER — mirror the reviewed role's on-demand lenses, lens-only"
             )
     lines += _role_skill_trigger_lines(entry)
     for kind, target in entry.get("paradigm", {}).items():
-        lines.append(f"- post-paradigm `{kind}`: `{target}`")
+        lines.append(f"- Read `{target}` ON-TRIGGER — paradigm confirmed {kind}")
     by_target: dict[str, list[str]] = {}
     for lang, target in entry.get("language_pbt", {}).items():
         by_target.setdefault(target, []).append(lang)
     for target, langs in sorted(by_target.items()):
-        lines.append(f"- for a `{'`/`'.join(sorted(langs))}` property: `{target}`")
+        joined = "`/`".join(sorted(langs))
+        lines.append(
+            f"- Read ONE `{target}` ON-TRIGGER — a `{joined}` property needs it"
+        )
     return "\n".join(lines) if lines else "- (no universal lens applies to this role)"
 
 

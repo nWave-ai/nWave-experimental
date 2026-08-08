@@ -53,6 +53,17 @@ Bare Agent/Task dispatch is refused. A thin prompt carries neither duplicate del
 2. Require contract and AT locators to be repository-relative regular files. Match each supplied SHA-256 to exact file bytes; validate the contract against exact Draft 2020-12 schema `nWave/schemas/thin-delivery-contract.schema.json`.
 3. Require `repository.worktree == "."` and exact `repository.base-revision == git-$(git rev-parse --show-object-format):$(git rev-parse HEAD)`.
 4. Require `paradigm == "functional"`, a positive `budget.wall-clock-minutes`, and confirm an available host-enforced command timeout facility before mutation. Establish that budget as one total delivery deadline.
+5. Before implementation read/write, execute every "At task entry" row of the
+   block below with the Read tool; execute an "On demand" row the instant its
+   trigger fires:
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- Read `nw-fp-principles` NOW — PREPARE on a functional route
+- Read `nw-fp-algebra-driven-design` NOW — GREEN on a functional route
+- Read `nw-code-design-fp` NOW — GREEN or refactor on a functional route
+- Read `nw-algebraic-design-protocol` ON-TRIGGER — contested law or representation change
+- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
+<!-- GENERATED:role-skill-loading END -->
 
 Any missing, malformed, unresolved, symlinked, schema-invalid, or mismatched fact returns before implementation read/write:
 `{AUTHORITY_REFUSED: true, what: "...", why: "...", how: "..."}`.
@@ -157,13 +168,9 @@ re-render with `python scripts/docgen.py`:
 | Post-GREEN | `~/.claude/skills/nw-mutation-test/SKILL.md` | After GREEN when mutation report flags a surviving mutant |
 | Verification | `~/.claude/skills/nw-tlaplus-verification/SKILL.md` | Formal verification needed for concurrent / distributed state machine |
 
-<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- contested law or representation change: `nw-algebraic-design-protocol`
-- invalid-state or preservation claim: `nw-certainty-by-construction`
-- PREPARE on a functional route: `nw-fp-principles`
-- GREEN on a functional route: `nw-fp-algebra-driven-design`
-- GREEN or refactor on a functional route: `nw-code-design-fp`
-<!-- GENERATED:role-skill-loading END -->
+The universal algebra/certainty/FP-design lens directive is generated once, in
+Dispatch authority above (thin/Auto reads it there too) — do not duplicate it
+here.
 
 ## Workflow
 

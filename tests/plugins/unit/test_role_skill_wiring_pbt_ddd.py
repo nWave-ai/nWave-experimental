@@ -131,7 +131,8 @@ class TestThinAutoRoleRoutes:
         for token in (
             "authoritative terminal branch",
             "des code-fact query.* SUBJECT --root ROOT",
-            "load exactly ONE matching",
+            "execute every generated NOW row",
+            "load exactly ONE matching row",
             "thin `DeliveryContract`",
             "selected `paradigm`",
             "expectation charter, and the user-surface start recipe",

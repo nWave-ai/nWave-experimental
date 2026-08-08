@@ -97,9 +97,9 @@ Every frontmatter skill routed by its current name (A07 zero orphans both ways):
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo).
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- mirror the reviewed role's on-demand lenses -- lens-only, never author
-- review start: `nw-sc-review-dimensions`
-- AT-density review: `nw-at-completeness-check`
+- ON-TRIGGER — mirror the reviewed role's on-demand lenses, lens-only
+- Read `nw-sc-review-dimensions` NOW — review start
+- Read `nw-at-completeness-check` NOW — AT-density review
 <!-- GENERATED:role-skill-loading END -->
 
 ## Review Workflow

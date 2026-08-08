@@ -69,10 +69,10 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 `nw-at-completeness-check` (Tier-1 C1-C7 + Tier-2 S1-S3/S5-S7, loaded per the generated block below) runs INDEPENDENTLY of the acceptance-designer's own self-audit — never trust its self-report as a substitute.
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- compositional or stateful surface: `nw-algebraic-design-protocol`
-- invalid-state or preservation claim: `nw-certainty-by-construction`
-- review start: `nw-ad-critique-dimensions`
-- review start: `nw-at-completeness-check`
+- Read `nw-algebraic-design-protocol` ON-TRIGGER — compositional or stateful surface
+- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
+- Read `nw-ad-critique-dimensions` NOW — review start
+- Read `nw-at-completeness-check` NOW — review start
 <!-- GENERATED:role-skill-loading END -->
 
 ALSO load every skill the active workflow mode's registry row declares for this agent:

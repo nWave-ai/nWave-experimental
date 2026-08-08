@@ -75,10 +75,10 @@ Load on-demand by phase, not all at once:
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo)
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- contested design or law: `nw-algebraic-design-protocol`
-- invalid-state or preservation claim: `nw-certainty-by-construction`
-- post-paradigm `object_oriented`: `nw-code-design-oo`
-- post-paradigm `functional`: `nw-code-design-fp`
+- Read `nw-algebraic-design-protocol` ON-TRIGGER — contested design or law
+- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
+- Read `nw-code-design-oo` ON-TRIGGER — paradigm confirmed object_oriented
+- Read `nw-code-design-fp` ON-TRIGGER — paradigm confirmed functional
 <!-- GENERATED:role-skill-loading END -->
 
 ## Workflow

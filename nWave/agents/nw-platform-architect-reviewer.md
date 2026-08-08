@@ -43,11 +43,11 @@ After loading each skill, output: `[SKILL LOADED] {skill-name}`
 If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- contested design or law: `nw-algebraic-design-protocol`
-- invalid-state or preservation claim: `nw-certainty-by-construction`
-- dimension review: `nw-par-critique-dimensions`
-- dimension review: `nw-par-review-criteria`
-- output generation: `nw-review-output-format`
+- Read `nw-algebraic-design-protocol` ON-TRIGGER — contested design or law
+- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
+- Read `nw-par-critique-dimensions` NOW — dimension review
+- Read `nw-par-review-criteria` NOW — dimension review
+- Read `nw-review-output-format` NOW — output generation
 <!-- GENERATED:role-skill-loading END -->
 
 ## Workflow

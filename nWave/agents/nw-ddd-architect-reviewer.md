@@ -49,11 +49,11 @@ You MUST load your skill files before beginning review work.
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md`
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- contested design or law: `nw-algebraic-design-protocol`
-- invalid-state or preservation claim: `nw-certainty-by-construction`
-- review start: `nw-ddd-strategic`
-- review start: `nw-ddd-architect`
-- aggregate review: `nw-ddd-tactical`
+- Read `nw-algebraic-design-protocol` ON-TRIGGER — contested design or law
+- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
+- Read `nw-ddd-strategic` NOW — review start
+- Read `nw-ddd-architect` NOW — review start
+- Read `nw-ddd-tactical` NOW — aggregate review
 <!-- GENERATED:role-skill-loading END -->
 
 ## Workflow

@@ -47,6 +47,15 @@ Bare Agent/Task dispatch is refused. A thin prompt carries neither duplicate del
 2. Require contract and AT locators to be repository-relative regular files. Match each supplied SHA-256 to exact file bytes; validate the contract against exact Draft 2020-12 schema `nWave/schemas/thin-delivery-contract.schema.json`.
 3. Require `repository.worktree == "."` and exact `repository.base-revision == git-$(git rev-parse --show-object-format):$(git rev-parse HEAD)`.
 4. Require `paradigm == "object_oriented"`, a positive `budget.wall-clock-minutes`, and confirm an available host-enforced command timeout facility before mutation. Establish that budget as one total delivery deadline.
+5. Before implementation read/write, execute every "At task entry" row of the
+   block below with the Read tool; execute an "On demand" row the instant its
+   trigger fires:
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- Read `nw-code-design-oo` NOW — GREEN or refactor on an object-oriented route
+- Read `nw-algebraic-design-protocol` ON-TRIGGER — contested law or representation change
+- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
+<!-- GENERATED:role-skill-loading END -->
 
 Any missing, malformed, unresolved, symlinked, schema-invalid, or mismatched fact returns before implementation read/write:
 `{AUTHORITY_REFUSED: true, what: "...", why: "...", how: "..."}`.
@@ -121,11 +130,9 @@ For current DES `atdd_pure`, this table is the SSOT for skill loading — dispat
 | E_BATCH_REFACTOR | `~/.claude/skills/nw-mikado-method/SKILL.md` | `*mikado` command (complex architectural refactor) |
 | PREPARE / A_GREEN_ATS / COMMIT / G_COMMIT (atdd_pure) | `~/.claude/skills/nw-crafter-discipline-atdd-pure/SKILL.md` | atdd_pure mode active (`workflow.mode` registry `skill_load_set`) — load NOW at phase entry; Phase B common-cuts taxonomy + Phase C/F routing contract; RE-CONSULT at COMMIT/G_COMMIT for the `des commit-slice` mechanics (§ "Stamp the trailer MECHANICALLY") — the obligation does not stop applying once GREEN is reached | <!-- mode-ref-ok -->
 
-<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- contested law or representation change: `nw-algebraic-design-protocol`
-- invalid-state or preservation claim: `nw-certainty-by-construction`
-- GREEN or refactor on an object-oriented route: `nw-code-design-oo`
-<!-- GENERATED:role-skill-loading END -->
+The universal algebra/certainty/OO-design lens directive is generated once, in
+Dispatch authority above (thin/Auto reads it there too) — do not duplicate it
+here.
 
 ### Crafter-matches-design — implement TO the declared contract
 

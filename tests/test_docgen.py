@@ -14,6 +14,7 @@ from nwave_ai.state_delta import assert_state_delta, set_to, unchanged
 from scripts.docgen import (
     DocgenError,
     _infer_wave,
+    _role_skill_loading_body,
     check_links,
     check_pages,
     check_registry_runtime_agreement,
@@ -916,3 +917,90 @@ class TestRoleSkillLoadingRegistry:
                 f"{agent_id} carries language_pbt -- PBT authoring is owned "
                 "exclusively by nw-acceptance-designer, never a crafter"
             )
+
+    def test_atd_auto_route_reads_algebra_certainty_property_testdesign_at_entry(
+        self, root: Path
+    ):
+        """The rendered block itself must carry the imperative Read verb and
+        split entry-time rows (algebra/certainty/property/test-design) from
+        on-demand rows -- proving the projected prose is actionable, not a
+        declarative fact table."""
+        body = _role_skill_loading_body("nw-acceptance-designer", root)
+        entry_lines = [line for line in body.splitlines() if " NOW — " in line]
+        on_demand_lines = [
+            line for line in body.splitlines() if " ON-TRIGGER — " in line
+        ]
+        assert any("Read `nw-test-design-mandates`" in line for line in entry_lines), (
+            body
+        )
+        assert any(
+            "Read `nw-property-based-testing`" in line for line in entry_lines
+        ), body
+        assert any(
+            "Read `nw-algebraic-design-protocol`" in line for line in on_demand_lines
+        ), body
+        assert any(
+            "Read `nw-certainty-by-construction`" in line for line in on_demand_lines
+        ), body
+        pbt_rows = [line for line in on_demand_lines if "Read ONE `nw-pbt-" in line]
+        assert len(pbt_rows) == 8, (
+            f"expected one ON-TRIGGER row per pbt-language target, got {pbt_rows}"
+        )
+
+    def test_atd_auto_route_directive_is_reachable_from_auto_terminal_branch(
+        self, root: Path
+    ):
+        """The generated block must sit inside the Auto-reachable Route
+        contract paragraph, before the Human-only branch marker -- placing it
+        after `## Workflow` (as the pre-fix location did) is unreachable
+        because Auto stops before that heading."""
+        text = (root / "nWave" / "agents" / "nw-acceptance-designer.md").read_text()
+        route_idx = text.index("## Route contract")
+        human_idx = text.index("**Human route:**")
+        marker_idx = text.index("GENERATED:role-skill-loading START")
+        assert route_idx < marker_idx < human_idx, (
+            "role-skill-loading directive must render between the Auto Route "
+            "contract heading and the Human-route marker"
+        )
+        assert text.count("Read `nw-algebraic-design-protocol`") == 1, (
+            "the algebra directive must not be duplicated as stale hand-authored prose"
+        )
+
+    def test_oo_and_fp_crafters_read_lens_at_point_of_need_without_test_authoring(
+        self, root: Path
+    ):
+        for agent_id, design_skill in (
+            ("nw-software-crafter", "nw-code-design-oo"),
+            ("nw-functional-software-crafter", "nw-code-design-fp"),
+        ):
+            body = _role_skill_loading_body(agent_id, root)
+            assert f"Read `{design_skill}`" in body, body
+            assert "Read `nw-algebraic-design-protocol`" in body, body
+            assert "Read `nw-certainty-by-construction`" in body, body
+            for banned in ("nw-property-based-testing", "nw-test-design-mandates"):
+                assert banned not in body, (
+                    f"{agent_id} must never load a test-authoring skill -- SLIM "
+                    f"scope forbids it, found {banned!r} in {body!r}"
+                )
+
+    def test_crafters_directive_is_reachable_from_dispatch_authority(self, root: Path):
+        for agent_id in _CRAFTER_ROLES:
+            text = (root / "nWave" / "agents" / f"{agent_id}.md").read_text()
+            dispatch_idx = text.index("## Dispatch authority")
+            workflow_idx = text.index("## Workflow")
+            marker_idx = text.index("GENERATED:role-skill-loading START")
+            assert dispatch_idx < marker_idx < workflow_idx, (
+                f"{agent_id}: role-skill-loading directive must render inside "
+                "Dispatch authority, the section the thin/Auto path executes"
+            )
+            assert text.count("Read `nw-algebraic-design-protocol`") == 1, (
+                f"{agent_id}: the algebra directive must not be duplicated as "
+                "stale hand-authored prose"
+            )
+
+    @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
+    def test_every_registered_role_still_projects_a_nonempty_body(
+        self, root: Path, agent_id: str
+    ):
+        body = _role_skill_loading_body(agent_id, root)
+        assert body.strip(), f"{agent_id} projected an empty role-skill-loading body"

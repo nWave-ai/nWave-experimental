@@ -196,9 +196,35 @@ class TestDESHookIdempotence:
     def test_upgrade_removes_retired_no_verify_hook_and_preserves_user_hook(
         self, _mock_python, plugin: DESPlugin, install_context: InstallContext
     ):
-        """CONTRACT_SHAPE: bounded-change. Exact retirement preserves user hooks."""
+        """CONTRACT_SHAPE: bounded-change. Exact retirement preserves user hooks
+        and every sibling/user script in ~/.claude/scripts/."""
         result = plugin._install_des_hooks(install_context)
         assert result.success, result.message
+
+        # Seed a stale legacy script an old install left behind, alongside a
+        # sibling DES hook script and an unrelated user-owned script. Only
+        # the exact retired name may be removed by the upgrade.
+        scripts_dir = install_context.claude_dir / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        stale_script = scripts_dir / "no_verify_reminder.py"
+        stale_script.write_text("# stale legacy script\n")
+        sibling_hook_script = scripts_dir / "git_stash_guard.py"
+        sibling_hook_script.write_text("# sibling DES hook script\n")
+        user_script = scripts_dir / "my_custom_user_script.py"
+        user_script.write_text("# unrelated user script\n")
+
+        hook_scripts_result = plugin._install_des_hook_scripts(install_context)
+        assert hook_scripts_result.success, hook_scripts_result.message
+
+        assert not stale_script.exists(), (
+            "Retired no_verify_reminder.py must be removed on upgrade"
+        )
+        assert sibling_hook_script.exists(), (
+            "Sibling DES hook script must survive upgrade cleanup"
+        )
+        assert user_script.exists(), (
+            "Unrelated user-owned script must survive upgrade cleanup"
+        )
 
         settings_file = install_context.claude_dir / "settings.json"
         settings = json.loads(settings_file.read_text())
@@ -250,6 +276,27 @@ class TestDESHookIdempotence:
                 "hooks": [user_hook],
             }
         ]
+
+    def test_uninstall_removes_exact_legacy_no_verify_script_and_preserves_sibling(
+        self, plugin: DESPlugin, install_context: InstallContext
+    ):
+        """Uninstall removes the retired script without sweeping sibling files."""
+        scripts_dir = install_context.claude_dir / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        legacy_script = scripts_dir / "no_verify_reminder.py"
+        sibling_script = scripts_dir / "other_plugin_script.py"
+        legacy_script.write_text("# retired legacy script\n")
+        sibling_script.write_text("# unrelated installed sibling\n")
+
+        result = plugin.uninstall(install_context)
+
+        assert result.success, result.message
+        assert not legacy_script.exists(), (
+            "Uninstall must remove the exact retired no_verify_reminder.py script"
+        )
+        assert sibling_script.exists(), (
+            "Uninstall must preserve unrelated installed sibling scripts"
+        )
 
     @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")
     def test_install_over_mixed_format_hooks_produces_no_duplicates(
