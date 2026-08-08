@@ -793,8 +793,10 @@ def _declared_flavor_ids(flavors_dir: Path) -> list[str]:
 # so each region names its own source instead of inheriting the flavors default.
 _REGION_SOURCE_OF_TRUTH = {
     "des-command-catalog": "src/des/cli/__main__.py::_REGISTRY",
+    "role-skill-loading": "role-skill-loading.yaml (build-time registry, not shipped)",
 }
 _DEFAULT_REGION_SOURCE_OF_TRUTH = "nWave/flavors/*.yaml"
+_ROLE_SKILL_REGISTRY_REL = Path("nWave") / "data" / "role-skill-loading.yaml"
 
 
 def _generated_region(region_id: str, body: str) -> str:
@@ -868,24 +870,75 @@ def _command_catalog_body() -> str:
     return "\n".join([header, sep, *rows])
 
 
-def _render_region_body(region_id: str, asset_path: Path, flavors_dir: Path) -> str:
+def _role_skill_on_demand_lines(entry: dict) -> list[str]:
+    return [
+        f"- {trigger}: `{skill}`"
+        for skill, trigger in entry.get("on_demand", {}).items()
+    ]
+
+
+def _role_skill_trigger_lines(entry: dict) -> list[str]:
+    return [
+        f"- {trigger}: `{skill}`"
+        for field in ("on_demand", "phase")
+        for skill, trigger in entry.get(field, {}).items()
+    ]
+
+
+def _role_skill_loading_body(agent_id: str, root: Path) -> str:
+    """Render one role's universal-lens directives — build-time only, no
+    runtime registry read: this is the ONLY place `role-skill-loading.yaml`
+    is ever parsed. A reviewer with exactly one reviewed role mirrors that
+    role's on_demand lenses (lens-only, never its authoring `phase` rows)."""
+    registry_path = root / _ROLE_SKILL_REGISTRY_REL
+    roles = subset_parser.load_file(registry_path).get("roles", {})
+    entry = roles.get(agent_id)
+    if entry is None:
+        raise DocgenError(f"{agent_id!r} has no entry in {registry_path}")
+    lines: list[str] = []
+    reviewed = entry.get("reviewer_of")
+    if reviewed:
+        if len(reviewed) == 1:
+            lines += _role_skill_on_demand_lines(roles[reviewed[0]])
+        else:
+            lines.append(
+                "- mirror the reviewed role's on-demand lenses -- lens-only, never author"
+            )
+    lines += _role_skill_trigger_lines(entry)
+    for kind, target in entry.get("paradigm", {}).items():
+        lines.append(f"- post-paradigm `{kind}`: `{target}`")
+    by_target: dict[str, list[str]] = {}
+    for lang, target in entry.get("language_pbt", {}).items():
+        by_target.setdefault(target, []).append(lang)
+    for target, langs in sorted(by_target.items()):
+        lines.append(f"- for a `{'`/`'.join(sorted(langs))}` property: `{target}`")
+    return "\n".join(lines) if lines else "- (no universal lens applies to this role)"
+
+
+def _render_region_body(
+    region_id: str, asset_path: Path, flavors_dir: Path, root: Path
+) -> str:
     if region_id == "skill-load-set":
         return _skill_load_set_body(asset_path.stem, flavors_dir)
     if region_id == "mode-descriptor":
         return _mode_descriptor_body(flavors_dir)
     if region_id == "des-command-catalog":
         return _command_catalog_body()
+    if region_id == "role-skill-loading":
+        return _role_skill_loading_body(asset_path.stem, root)
     raise DocgenError(
         f"Unknown GENERATED region id '{region_id}' in {asset_path} — "
         "refusing to serve a region no renderer owns"
     )
 
 
-def _project_asset(path: Path, text: str, flavors_dir: Path) -> AssetProjection:
+def _project_asset(
+    path: Path, text: str, flavors_dir: Path, root: Path
+) -> AssetProjection:
     def _replace(match: re.Match[str]) -> str:
         region_id = match.group("region_id")
         return _generated_region(
-            region_id, _render_region_body(region_id, path, flavors_dir)
+            region_id, _render_region_body(region_id, path, flavors_dir, root)
         )
 
     return AssetProjection(
@@ -910,7 +963,7 @@ def project_generated_regions(
         text = path.read_text(encoding="utf-8")
         if not _GENERATED_REGION_RE.search(text):
             continue
-        projections.append(_project_asset(path, text, flavors_dir))
+        projections.append(_project_asset(path, text, flavors_dir, root))
     return projections
 
 

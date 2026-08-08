@@ -108,8 +108,6 @@ For current DES `atdd_pure`, this table is the SSOT for skill loading — dispat
 |---|---|---|
 | ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
-| a law or invariant with exceptions, or a refactor where the representation change could change meaning | `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` | state the equivalence claim BEFORE changing the representation, and protect it on both sides |
-| making an invalid state unrepresentable, or introducing a canonical form | `~/.claude/skills/nw-certainty-by-construction/SKILL.md` | return evidence rather than a Boolean, and calibrate the claim to what the language actually guarantees |
 | PREPARE / A_GREEN_ATS | `~/.claude/skills/nw-tdd-methodology/SKILL.md` | ALWAYS at start (Mandate 1 behavior counting + GREEN execution discipline) |
 | PREPARE / A_GREEN_ATS | `~/.claude/skills/nw-quality-framework/SKILL.md` | ALWAYS at start (11 quality gates + Object Calisthenics) |
 | GREEN / A_GREEN_ATS | `~/.claude/skills/nw-hexagonal-testing/SKILL.md` | When the step involves port/adapter boundary choices — impl-side patterns only, NOT test-design |
@@ -121,8 +119,13 @@ For current DES `atdd_pure`, this table is the SSOT for skill loading — dispat
 | E_BATCH_REFACTOR / COMMIT | `~/.claude/skills/nw-legacy-refactoring-ddd/SKILL.md` | Refactoring legacy code using DDD patterns (strangler fig, bubble context, ACL) |
 | F_FINAL_REVIEW / COMMIT | `~/.claude/skills/nw-sc-review-dimensions/SKILL.md` | `/nw-review` invocation (reviewer dispatch context) |
 | E_BATCH_REFACTOR | `~/.claude/skills/nw-mikado-method/SKILL.md` | `*mikado` command (complex architectural refactor) |
-| GREEN / A_GREEN_ATS / E_BATCH_REFACTOR | `~/.claude/skills/nw-code-design-oo/SKILL.md` | GREEN/refactor — consult the curated OO code-design SSOT (Object Calisthenics · RPP smell taxonomy · effect isolation) to MATCH the architect's code-design contract; this skill is the SSOT, the crafter cross-references it, no verbatim copy |
 | PREPARE / A_GREEN_ATS / COMMIT / G_COMMIT (atdd_pure) | `~/.claude/skills/nw-crafter-discipline-atdd-pure/SKILL.md` | atdd_pure mode active (`workflow.mode` registry `skill_load_set`) — load NOW at phase entry; Phase B common-cuts taxonomy + Phase C/F routing contract; RE-CONSULT at COMMIT/G_COMMIT for the `des commit-slice` mechanics (§ "Stamp the trailer MECHANICALLY") — the obligation does not stop applying once GREEN is reached | <!-- mode-ref-ok -->
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- contested law or representation change: `nw-algebraic-design-protocol`
+- invalid-state or preservation claim: `nw-certainty-by-construction`
+- GREEN or refactor on an object-oriented route: `nw-code-design-oo`
+<!-- GENERATED:role-skill-loading END -->
 
 ### Crafter-matches-design — implement TO the declared contract
 

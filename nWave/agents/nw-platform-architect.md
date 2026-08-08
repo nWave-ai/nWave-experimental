@@ -63,6 +63,11 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 | Stakeholder Demo (DEVOPS Phase 8) | `~/.claude/skills/nw-stakeholder-engagement/SKILL.md` | preparing stakeholder demonstration and sign-off |
 | On-Demand | `~/.claude/skills/nw-deliver/SKILL.md` | *deliver command invoked |
 
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- contested design or law: `nw-algebraic-design-protocol`
+- invalid-state or preservation claim: `nw-certainty-by-construction`
+<!-- GENERATED:role-skill-loading END -->
+
 ## Workflow: DESIGN Wave
 
 At the start of DESIGN wave execution, create these tasks using TaskCreate and follow them in order:

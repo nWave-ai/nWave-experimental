@@ -116,9 +116,7 @@ The four large test-design families are decomposed into one-job-one-trigger modu
 |-------|------|----------------|
 | ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
-| before authoring scenarios for a compositional or stateful surface | `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` | the observation set decides what the suite can conclude; anything outside it is invisible however much it matters |
-| a scenario that needs an invalid state to be impossible rather than merely rejected | `~/.claude/skills/nw-certainty-by-construction/SKILL.md` | an invariant encoded in construction needs no scenario; one that cannot be encoded needs the scenario AND its residual obligation named |
-| authoring a `@property`/`@given` PBT scenario, once Phase 0 language detection has a matching deep dive | the single matching `nw-pbt-{language}` skill, resolved via the Skills path convention below — `python`→`nw-pbt-python`, TypeScript/JS→`nw-pbt-typescript`, `Cargo.toml`→`nw-pbt-rust`, `go.mod`→`nw-pbt-go`, `pom.xml`/`build.gradle.kts`→`nw-pbt-jvm`, `*.csproj`/`*.fsproj`→`nw-pbt-dotnet`, Haskell→`nw-pbt-haskell`, Erlang/Elixir→`nw-pbt-erlang-elixir` | Read exactly ONE deep dive per feature, matching the Phase 0 detected language — never all eight; `nw-property-based-testing` already covers cross-language taxonomy, this row is framework/strategy syntax for the one language in play. No manifest match → no language-specific PBT skill loads |
+| authoring a `@property`/`@given` PBT scenario, once Phase 0 language detection has a matching deep dive | the single matching `nw-pbt-{language}` skill — see the generated language-lens block below for the exact mapping | Read exactly ONE deep dive per feature, matching the Phase 0 detected language — never all eight; `nw-property-based-testing` already covers cross-language taxonomy, this row is framework/strategy syntax for the one language in play. No manifest match → no language-specific PBT skill loads |
 | 0 Detect Language + Policy | `nw-distill`, `nw-distill-port-treatment-policy`, `nw-test-design-mandates` (core) | Always — Phase 0 entry; `nw-distill` = induction map + density contract + gate-G; `nw-distill-port-treatment-policy` = port→treatment classification + Project Infrastructure Policy + WS canonical def + state-delta port bootstrap; the mandate-registry + 3-Pillars + language-convention frame are cross-cutting core concerns |
 | 1 Understand Context | `nw-bdd-methodology`, `nw-distill-prior-wave-reading` | Always — Phase 1 entry; outside-in BDD framing + `nw-distill-prior-wave-reading` = read prior-wave SSOT/feature-delta, Wave-Decision Reconciliation HARD GATE, rows 7b/7c advisories, graceful degradation, back-propagation |
 | 2 Design Scenarios | `nw-tdd-methodology-paradigm`, `nw-tdd-methodology-walking-skeleton`, `nw-test-design-mandates-scenario-design`, `nw-test-design-mandates-layered-mechanics`, `nw-test-design-mandates-composition-contract`, `nw-property-based-testing`, `nw-ad-mandate-summaries` | Always — Phase 2 entry; `-paradigm` = PBT + state-delta mandate for the test being written; `-walking-skeleton` = WS authoring (`@walking_skeleton @driving_port`, per-slice JIT); `-scenario-design` = scenario SHAPE (Pillars 1-2, boundary, language, journey); `-layered-mechanics` = layer-dependent PBT mode + tier (Mandates 8-11, used Phase 2 step 4 + Phase 3 state-delta); `-composition-contract` = driving-surface + `@contract-shape:` tag + dormant-seam (Mandates 12-15); `-property-based-testing` + `-ad-mandate-summaries` = PBT/parametrize density + operational mandate summaries |
@@ -132,6 +130,21 @@ The four large test-design families are decomposed into one-job-one-trigger modu
 | On-demand | `nw-test-refactoring-catalog` | When refactoring AT modules for Mandate-12 SSOT compliance (collapse duplicate steps into typed-parameter templates) |
 
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo).
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- compositional or stateful surface: `nw-algebraic-design-protocol`
+- invalid-state or preservation claim: `nw-certainty-by-construction`
+- Phase 0 policy detection: `nw-test-design-mandates`
+- Phase 2 property authoring: `nw-property-based-testing`
+- for a `csharp`/`dotnet`/`fsharp` property: `nw-pbt-dotnet`
+- for a `elixir`/`erlang` property: `nw-pbt-erlang-elixir`
+- for a `go` property: `nw-pbt-go`
+- for a `haskell` property: `nw-pbt-haskell`
+- for a `java`/`kotlin`/`scala` property: `nw-pbt-jvm`
+- for a `python` property: `nw-pbt-python`
+- for a `rust` property: `nw-pbt-rust`
+- for a `javascript`/`typescript` property: `nw-pbt-typescript`
+<!-- GENERATED:role-skill-loading END -->
 
 <!-- GENERATED:skill-load-set START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 Conditional skills by active workflow mode — projected from the mode

@@ -45,13 +45,16 @@ You MUST load your skill files before beginning review work.
 | Phase | Load | Trigger |
 |-------|------|---------|
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
-| Review Start | `nw-ddd-strategic` | Always -- context mapping and boundary validation |
-| Review Start | `nw-ddd-architect` | Always -- design-time mandates (fixture-fanout enumeration, D8 mechanical check) |
-| Aggregate Review | `nw-ddd-tactical` | Always -- aggregate design rule validation |
-| a contested design decision, a law with exceptions, or a model that keeps giving wrong answers | `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` | name observations and equality BEFORE constructors, and follow a contradiction to the carrier that causes it — the step that catches a wrong unit of analysis rather than a wrong scan |
-| a requirement that an invalid state or transition must never occur, or a rewrite/cache that must preserve meaning | `~/.claude/skills/nw-certainty-by-construction/SKILL.md` | decide whether the claim belongs in construction, how strong the guarantee HONESTLY is, and what obligation is left outside it |
 
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md`
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- contested design or law: `nw-algebraic-design-protocol`
+- invalid-state or preservation claim: `nw-certainty-by-construction`
+- review start: `nw-ddd-strategic`
+- review start: `nw-ddd-architect`
+- aggregate review: `nw-ddd-tactical`
+<!-- GENERATED:role-skill-loading END -->
 
 ## Workflow
 

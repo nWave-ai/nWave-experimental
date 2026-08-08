@@ -155,31 +155,6 @@ _AT_REVIEW_VERDICT = "ATReviewVerdict"
 # verified record for a prose slice would be theater (the honesty invariant).
 _SLICE_PROSE_DELIVERED = "SliceProseDelivered"
 
-# The DISCUSS PO-review verdict event name (nwave-flow-v2-enforcement
-# slice-07b, O-4). The `discuss_review_verdict` producer appends one such
-# record per recorded review outcome -- BOTH `approved` AND `needs-revision`
-# (intentional divergence from the AT-review producer's NEEDS_REVISION skip:
-# the DISCUSS veto-gate must mechanically READ a veto to enforce it) --
-# through `append_discuss_review_verdict`, so the record carries `seq` +
-# `record_hash` exactly like a gate event.
-_DISCUSS_REVIEW_VERDICT = "DiscussReviewVerdict"
-
-# The DESIGN review-verdict event name (f-design-devops-review-gate slice-01).
-# The `design_review_verdict` producer appends one such record per recorded
-# solution-architect-reviewer outcome -- BOTH `approved` AND `needs-revision`
-# (the O-4 both-outcomes policy reused verbatim for the DESIGN wave) through
-# `append_design_review_verdict`, the sibling of the DISCUSS append for the
-# DESIGN-scoped record family.
-_DESIGN_REVIEW_VERDICT = "DesignReviewVerdict"
-
-# The DEVOPS review-verdict event name (f-design-devops-review-gate slice-02).
-# The `devops_review_verdict` producer appends one such record per recorded
-# platform-architect-reviewer outcome -- BOTH `approved` AND `needs-revision`
-# (the O-4 both-outcomes policy reused verbatim for the DEVOPS wave) through
-# `append_devops_review_verdict`, the sibling of the DESIGN append for the
-# DEVOPS-scoped record family. The SSOT-reuse proof: a SECOND wave with zero
-# new verdict logic.
-_DEVOPS_REVIEW_VERDICT = "DevopsReviewVerdict"
 _WALKING_SKELETON_EVENTS = frozenset(
     {
         WALKING_SKELETON_GATE_RAN,
@@ -872,45 +847,6 @@ class AtCompletionLedger(AtCompletionLedgerPort):
         """
         return self._append_record(
             {"event": event, "slice_id": "", **verdict_fields},
-            feature_id=feature_id,
-        )
-
-    def append_discuss_review_verdict(
-        self,
-        verdict_fields: dict[str, Any],
-        *,
-        feature_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Append one DiscussReviewVerdict record (slice-07b, O-4)."""
-        return self.append_wave_review_verdict(
-            event=_DISCUSS_REVIEW_VERDICT,
-            verdict_fields=verdict_fields,
-            feature_id=feature_id,
-        )
-
-    def append_design_review_verdict(
-        self,
-        verdict_fields: dict[str, Any],
-        *,
-        feature_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Append one DesignReviewVerdict record (f-design-devops-review-gate)."""
-        return self.append_wave_review_verdict(
-            event=_DESIGN_REVIEW_VERDICT,
-            verdict_fields=verdict_fields,
-            feature_id=feature_id,
-        )
-
-    def append_devops_review_verdict(
-        self,
-        verdict_fields: dict[str, Any],
-        *,
-        feature_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Append one DevopsReviewVerdict record (f-design-devops-review-gate)."""
-        return self.append_wave_review_verdict(
-            event=_DEVOPS_REVIEW_VERDICT,
-            verdict_fields=verdict_fields,
             feature_id=feature_id,
         )
 

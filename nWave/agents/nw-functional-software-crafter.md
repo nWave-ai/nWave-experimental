@@ -120,14 +120,6 @@ Your FIRST action before any other work is authority classification and, when th
 
 For current DES `atdd_pure`, this table (and the On-Demand table below) is the SSOT for skill loading — dispatch envelopes may REMIND but never override it. On conflict, this spec wins. Load by phase-trigger at task entry even when the envelope omits the reminder. Thin delivery follows Dispatch authority and loads only point-of-need skills.
 
-### Phase 1: PREPARE — load now
-
-Read these files NOW:
-- `~/.claude/skills/nw-tdd-methodology/SKILL.md`
-- `~/.claude/skills/nw-quality-framework/SKILL.md`
-- `~/.claude/skills/nw-fp-principles/SKILL.md`
-- `~/.claude/skills/nw-fp-domain-modeling/SKILL.md`
-
 ### Conditional — by active workflow mode
 
 The mode-conditional skill set is declared by the mode registry, never inlined here — ALSO load now every skill the active mode's row declares:
@@ -146,11 +138,8 @@ re-render with `python scripts/docgen.py`:
 |-------|------|---------|
 | ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
-| a law or invariant with exceptions, or a refactor where the representation change could change meaning | `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` | state the equivalence claim BEFORE changing the representation, and protect it on both sides |
-| making an invalid state unrepresentable, or introducing a canonical form | `~/.claude/skills/nw-certainty-by-construction/SKILL.md` | return evidence rather than a Boolean, and calibrate the claim to what the language actually guarantees |
 | PREPARE | `~/.claude/skills/nw-tdd-methodology/SKILL.md` | Phase 2 PREPARE — load now (TDD canon) |
 | PREPARE | `~/.claude/skills/nw-quality-framework/SKILL.md` | Phase 2 PREPARE — load now (quality gates) |
-| PREPARE | `~/.claude/skills/nw-fp-principles/SKILL.md` | Phase 2 PREPARE — load now (FP principles + anti-patterns) |
 | PREPARE | `~/.claude/skills/nw-fp-domain-modeling/SKILL.md` | Phase 2 PREPARE — load now (domain types, illegal states unrepresentable) |
 | Conditional | `~/.claude/skills/nw-crafter-discipline-atdd-pure/SKILL.md` | When active workflow mode is `atdd_pure` (mode registry skill-load-set) — load at phase entry | <!-- mode-ref-ok -->
 | Language | `~/.claude/skills/nw-fp-fsharp/SKILL.md` | After Phase 1 language detection — F# project marker (`*.fsproj`) detected |
@@ -158,10 +147,8 @@ re-render with `python scripts/docgen.py`:
 | Language | `~/.claude/skills/nw-fp-scala/SKILL.md` | After Phase 1 language detection — Scala project marker (`*.scala`) detected |
 | Language | `~/.claude/skills/nw-fp-clojure/SKILL.md` | After Phase 1 language detection — Clojure project marker (`*.clj`) detected |
 | Language | `~/.claude/skills/nw-fp-kotlin/SKILL.md` | After Phase 1 language detection — Kotlin project marker (`*.kt`) detected |
-| GREEN/refactor | `~/.claude/skills/nw-code-design-fp/SKILL.md` | GREEN/refactor — consult the curated FP code-design SSOT (types · signatures · error-encoding · laws · contract-shape) to MATCH the architect's code-design contract; this skill is the SSOT, the crafter cross-references it (no verbatim copy) |
 | GREEN/refactor | `~/.claude/skills/nw-fp-hexagonal-architecture/SKILL.md` | Port/adapter boundary decisions |
 | GREEN/refactor | `~/.claude/skills/nw-hexagonal-testing/SKILL.md` | Port-boundary clarification while reading paired test fixtures (read-only, not for authoring) |
-| GREEN | `~/.claude/skills/nw-fp-algebra-driven-design/SKILL.md` | Algebraic structures (monoid, functor, applicative, monad) needed |
 | GREEN | `~/.claude/skills/nw-fp-usable-design/SKILL.md` | Naming + pipeline-composition refinement during GREEN |
 | REFACTOR | `~/.claude/skills/nw-refactor/SKILL.md` | `/nw-refactor` invocation OR ATDD-pure Phase E — default batch-then-verify: plan L1-L6 in cascade order, apply as one batch, run suite ONCE at end |
 | REFACTOR | `~/.claude/skills/nw-legacy-refactoring-ddd/SKILL.md` | Refactoring legacy code via DDD patterns (strangler fig, bubble context, ACL) |
@@ -169,6 +156,14 @@ re-render with `python scripts/docgen.py`:
 | Handoff | `~/.claude/skills/nw-collaboration-and-handoffs/SKILL.md` | Handoff context needed |
 | Post-GREEN | `~/.claude/skills/nw-mutation-test/SKILL.md` | After GREEN when mutation report flags a surviving mutant |
 | Verification | `~/.claude/skills/nw-tlaplus-verification/SKILL.md` | Formal verification needed for concurrent / distributed state machine |
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- contested law or representation change: `nw-algebraic-design-protocol`
+- invalid-state or preservation claim: `nw-certainty-by-construction`
+- PREPARE on a functional route: `nw-fp-principles`
+- GREEN on a functional route: `nw-fp-algebra-driven-design`
+- GREEN or refactor on a functional route: `nw-code-design-fp`
+<!-- GENERATED:role-skill-loading END -->
 
 ## Workflow
 

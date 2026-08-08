@@ -62,14 +62,6 @@ preloading the whole set wastes the context budget every turn).
 After loading each skill, output: `[SKILL LOADED] {skill-name}`
 If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
-### Phase 1: Startup (always)
-
-Read these files NOW:
-- `~/.claude/skills/nw-sc-review-dimensions/SKILL.md`
-- `~/.claude/skills/nw-adversarial-refutation/SKILL.md`
-- `~/.claude/skills/nw-tdd-review-enforcement/SKILL.md`
-- `~/.claude/skills/nw-tdd-methodology/SKILL.md`
-
 ### Phase 2: Mode-conditional skill load
 
 The mode-conditional skill set is declared by the mode registry, never inlined here. When the current phase is `C_REVIEWER_AUDIT` OR `F_FINAL_REVIEW`, Read NOW every skill the active mode's row declares:
@@ -98,15 +90,17 @@ Every frontmatter skill routed by its current name (A07 zero orphans both ways):
 | Phase | Load | Trigger |
 |-------|------|---------|
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
-| a law or invariant with exceptions, or a refactor where the representation change could change meaning | `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` | state the equivalence claim BEFORE changing the representation, and protect it on both sides |
-| making an invalid state unrepresentable, or introducing a canonical form | `~/.claude/skills/nw-certainty-by-construction/SKILL.md` | return evidence rather than a Boolean, and calibrate the claim to what the language actually guarantees |
-| Startup (any mode) | `~/.claude/skills/nw-sc-review-dimensions/SKILL.md` | Always |
 | Startup (any mode) | `~/.claude/skills/nw-adversarial-refutation/SKILL.md` | Always — the falsification POSTURE (assume-wrong, default-to-refuted, diverse lenses, exhibited counterexample) applied to every dimension |
 | Startup (any mode) | `~/.claude/skills/nw-tdd-review-enforcement/SKILL.md` | Always |
 | Startup (any mode) | `~/.claude/skills/nw-tdd-methodology/SKILL.md` | Always |
-| `C_REVIEWER_AUDIT` / `F_FINAL_REVIEW` | `~/.claude/skills/nw-at-completeness-check/SKILL.md` | Drives the Tier-1 AT-density checklist and Tier-2 structural-invariants gate; any structural block fails. |
 
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo).
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- mirror the reviewed role's on-demand lenses -- lens-only, never author
+- review start: `nw-sc-review-dimensions`
+- AT-density review: `nw-at-completeness-check`
+<!-- GENERATED:role-skill-loading END -->
 
 ## Review Workflow
 

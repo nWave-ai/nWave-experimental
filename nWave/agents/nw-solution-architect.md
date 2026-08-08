@@ -67,8 +67,6 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 |-------|------|---------|
 | ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
-| a contested design decision, a law with exceptions, or a model that keeps giving wrong answers | `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` | name observations and equality BEFORE constructors, and follow a contradiction to the carrier that causes it — the step that catches a wrong unit of analysis rather than a wrong scan |
-| a requirement that an invalid state or transition must never occur, or a rewrite/cache that must preserve meaning | `~/.claude/skills/nw-certainty-by-construction/SKILL.md` | decide whether the claim belongs in construction, how strong the guarantee HONESTLY is, and what obligation is left outside it |
 | Architecture Design | `~/.claude/skills/nw-architecture-patterns/SKILL.md` | Phase 6 Architecture Design — select approach, define component boundaries |
 | Peer Review and Handoff | `~/.claude/skills/nw-sa-critique-dimensions/SKILL.md` | Phase 8 Peer Review and Handoff — structuring critique dimensions |
 | Architecture Design | `~/.claude/skills/nw-architectural-styles-tradeoffs/SKILL.md` | When comparing architectural styles or making style decisions |
@@ -76,8 +74,13 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 | Architecture Design | `~/.claude/skills/nw-domain-driven-design/SKILL.md` | When domain complexity warrants DDD (core/supporting subdomains) |
 | Architecture Design | `~/.claude/skills/nw-formal-verification-tlaplus/SKILL.md` | When distributed system invariants need formal specification |
 | Stress Analysis | `~/.claude/skills/nw-stress-analysis/SKILL.md` | Only with `--residuality` flag |
-| Architecture Design | `~/.claude/skills/nw-code-design-oo/SKILL.md` | Project paradigm is OO (CLAUDE.md `object-oriented`) or unspecified — load at Architecture Design phase entry, before component boundary decisions |
-| Architecture Design | `~/.claude/skills/nw-code-design-fp/SKILL.md` | Project paradigm is FP (CLAUDE.md `functional` or `/nw-design --paradigm=fp`) — load at Architecture Design phase entry, before component boundary decisions |
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- contested design or law: `nw-algebraic-design-protocol`
+- invalid-state or preservation claim: `nw-certainty-by-construction`
+- post-paradigm `object_oriented`: `nw-code-design-oo`
+- post-paradigm `functional`: `nw-code-design-fp`
+<!-- GENERATED:role-skill-loading END -->
 
 ## Workflow
 

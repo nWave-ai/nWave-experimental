@@ -42,11 +42,13 @@ preloading the whole set wastes the context budget every turn).
 After loading each skill, output: `[SKILL LOADED] {skill-name}`
 If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
-| Phase | Load | Trigger |
-|-------|------|---------|
-| Dimension Review | `~/.claude/skills/nw-par-critique-dimensions/SKILL.md` | scoring findings by severity dimension |
-| Dimension Review | `~/.claude/skills/nw-par-review-criteria/SKILL.md` | applying platform review criteria |
-| Output Generation | `~/.claude/skills/nw-review-output-format/SKILL.md` | emitting structured YAML review feedback |
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- contested design or law: `nw-algebraic-design-protocol`
+- invalid-state or preservation claim: `nw-certainty-by-construction`
+- dimension review: `nw-par-critique-dimensions`
+- dimension review: `nw-par-review-criteria`
+- output generation: `nw-review-output-format`
+<!-- GENERATED:role-skill-loading END -->
 
 ## Workflow
 

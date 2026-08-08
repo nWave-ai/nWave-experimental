@@ -62,13 +62,18 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 | Phase | Load | Trigger |
 |-------|------|---------|
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
-| before authoring scenarios for a compositional or stateful surface | `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` | the observation set decides what the suite can conclude; anything outside it is invisible however much it matters |
-| a scenario that needs an invalid state to be impossible rather than merely rejected | `~/.claude/skills/nw-certainty-by-construction/SKILL.md` | an invariant encoded in construction needs no scenario; one that cannot be encoded needs the scenario AND its residual obligation named |
-| Load Context | `~/.claude/skills/nw-ad-critique-dimensions/SKILL.md` | Start of Phase 1 |
 | Load Context | `~/.claude/skills/nw-adversarial-refutation/SKILL.md` | Start of Phase 1 — the falsification POSTURE applied to the AT set (assume-incomplete, default-to-refuted, diverse lenses, exhibited witness) |
 | Load Context | `~/.claude/skills/nw-test-design-mandates/SKILL.md` | Start of Phase 1 |
 | Load Context | `~/.claude/skills/nw-bdd-methodology/SKILL.md` | Start of Phase 1 |
-| Load Context | `~/.claude/skills/nw-at-completeness-check/SKILL.md` | Start of Phase 1 — Tier-1 coverage (C1-C7, 15-item checklist) + Tier-2 structural invariants (S1-S3, S5-S7); the reviewer runs this INDEPENDENTLY of the acceptance-designer's own self-audit, never trusts its self-report as a substitute |
+
+`nw-at-completeness-check` (Tier-1 C1-C7 + Tier-2 S1-S3/S5-S7, loaded per the generated block below) runs INDEPENDENTLY of the acceptance-designer's own self-audit — never trust its self-report as a substitute.
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- compositional or stateful surface: `nw-algebraic-design-protocol`
+- invalid-state or preservation claim: `nw-certainty-by-construction`
+- review start: `nw-ad-critique-dimensions`
+- review start: `nw-at-completeness-check`
+<!-- GENERATED:role-skill-loading END -->
 
 ALSO load every skill the active workflow mode's registry row declares for this agent:
 

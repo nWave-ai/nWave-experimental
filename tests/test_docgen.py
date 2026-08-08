@@ -824,3 +824,95 @@ class TestRegistryRuntimePhaseVocabAgreement:
         assert any("TOTALLY_BOGUS_PHASE" in entry for entry in disagreements), (
             f"the disagreement must name the unrecognized token. got: {disagreements}"
         )
+
+
+# ---------------------------------------------------------------------------
+# role-skill-loading.yaml: build-time-only universal-lens registry
+# ---------------------------------------------------------------------------
+_ROLE_SKILL_TARGETS = [
+    "nw-acceptance-designer-reviewer",
+    "nw-acceptance-designer",
+    "nw-ddd-architect-reviewer",
+    "nw-ddd-architect",
+    "nw-functional-software-crafter",
+    "nw-platform-architect-reviewer",
+    "nw-platform-architect",
+    "nw-software-crafter-reviewer",
+    "nw-software-crafter",
+    "nw-solution-architect-reviewer",
+    "nw-solution-architect",
+]
+_CRAFTER_ROLES = ["nw-software-crafter", "nw-functional-software-crafter"]
+
+
+class TestRoleSkillLoadingRegistry:
+    """`role-skill-loading.yaml` is parsed ONLY at docgen (build) time -- there
+    is no runtime resolver -- so its guarantees are enforced here, once, on
+    the registry + its rendering into every targeted agent's installed spec.
+    """
+
+    @pytest.fixture(scope="class")
+    def root(self) -> Path:
+        root = Path(__file__).resolve().parent.parent
+        if not (root / "nWave" / "data" / "role-skill-loading.yaml").exists():
+            pytest.skip("role-skill-loading.yaml not found")
+        return root
+
+    @pytest.fixture(scope="class")
+    def roles(self, root: Path) -> dict:
+        import yaml
+
+        return yaml.safe_load(
+            (root / "nWave" / "data" / "role-skill-loading.yaml").read_text()
+        )["roles"]
+
+    def test_registry_matches_its_own_closed_schema(self, root: Path, roles: dict):
+        import jsonschema
+        import yaml
+
+        schema = yaml.safe_load(
+            (root / "nWave" / "data" / "role-skill-loading.schema.yaml").read_text()
+        )
+        registry = yaml.safe_load(
+            (root / "nWave" / "data" / "role-skill-loading.yaml").read_text()
+        )
+        jsonschema.validate(registry, schema)
+
+    @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
+    def test_installed_spec_has_exactly_one_generated_region(
+        self, root: Path, agent_id: str
+    ):
+        body = (root / "nWave" / "agents" / f"{agent_id}.md").read_text()
+        assert body.count("GENERATED:role-skill-loading START") == 1
+
+    @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
+    def test_every_trigger_is_lazy_never_an_eager_always_preload(
+        self, roles: dict, agent_id: str
+    ):
+        entry = roles[agent_id]
+        for field in ("on_demand", "phase"):
+            for trigger in entry.get(field, {}).values():
+                assert not trigger.lower().startswith("always"), (
+                    f"{agent_id}.{field} trigger {trigger!r} is eager, not "
+                    "lazy -- role-skill-loading rows load on a fired trigger, "
+                    "never unconditionally"
+                )
+
+    def test_reviewers_mirror_only_on_demand_lenses_never_authoring_phase_rows(
+        self, roles: dict
+    ):
+        for agent_id, entry in roles.items():
+            reviewed = entry.get("reviewer_of")
+            if not reviewed or len(reviewed) != 1:
+                continue
+            reviewed_entry = roles[reviewed[0]]
+            assert set(entry.get("on_demand", {})).isdisjoint(
+                reviewed_entry.get("phase", {})
+            ), f"{agent_id} must not author the reviewed role's phase-owned skills"
+
+    def test_no_crafter_role_authors_a_language_pbt_lens(self, roles: dict):
+        for agent_id in _CRAFTER_ROLES:
+            assert "language_pbt" not in roles[agent_id], (
+                f"{agent_id} carries language_pbt -- PBT authoring is owned "
+                "exclusively by nw-acceptance-designer, never a crafter"
+            )

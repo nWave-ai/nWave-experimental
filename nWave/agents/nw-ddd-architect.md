@@ -66,17 +66,20 @@ Load on-demand by phase, not all at once:
 |-------|------|---------|
 | ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
-| a contested design decision, a law with exceptions, or a model that keeps giving wrong answers | `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` | name observations and equality BEFORE constructors, and follow a contradiction to the carrier that causes it — the step that catches a wrong unit of analysis rather than a wrong scan |
-| a requirement that an invalid state or transition must never occur, or a rewrite/cache that must preserve meaning | `~/.claude/skills/nw-certainty-by-construction/SKILL.md` | decide whether the claim belongs in construction, how strong the guarantee HONESTLY is, and what obligation is left outside it |
 | Mode Selection | `nw-ddd-strategic` | Always -- foundational vocabulary and context discovery |
 | Mode Selection | `nw-ddd-architect` | Always -- design-time mandates (fixture-fanout enumeration, etc.) before any DESIGN row authored |
 | Guide Mode | `nw-ddd-event-modeling` | When facilitating guided discovery sessions |
 | Propose Mode | `nw-ddd-tactical` | When analyzing existing code for domain patterns |
 | ES/CQRS Guidance | `nw-ddd-eventsourcing` | When user asks about ES/CQRS or domain warrants it |
-| Domain Modeling | `~/.claude/skills/nw-code-design-oo/SKILL.md` | Project paradigm is OO (CLAUDE.md `object-oriented`) or unspecified — load at domain-modeling phase entry, before aggregate/type design (OO tactical: Object-Calisthenics/tell-don't-ask aggregates). Shared SSOT also co-loaded by solution-architect + crafter — reference, do not duplicate |
-| Domain Modeling | `~/.claude/skills/nw-code-design-fp/SKILL.md` | Project paradigm is FP (CLAUDE.md `functional` or `/nw-design --paradigm=fp`) — load at domain-modeling phase entry, before aggregate/type design (FP tactical: algebraic types / illegal-states-unrepresentable). Shared SSOT also co-loaded by solution-architect + crafter — reference, do not duplicate |
 
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo)
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- contested design or law: `nw-algebraic-design-protocol`
+- invalid-state or preservation claim: `nw-certainty-by-construction`
+- post-paradigm `object_oriented`: `nw-code-design-oo`
+- post-paradigm `functional`: `nw-code-design-fp`
+<!-- GENERATED:role-skill-loading END -->
 
 ## Workflow
 

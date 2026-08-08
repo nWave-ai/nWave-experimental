@@ -1,0 +1,90 @@
+version: 1
+roles:
+  nw-software-crafter:
+    on_demand:
+      nw-algebraic-design-protocol: contested law or representation change
+      nw-certainty-by-construction: invalid-state or preservation claim
+    phase:
+      nw-code-design-oo: GREEN or refactor on an object-oriented route
+  nw-functional-software-crafter:
+    on_demand:
+      nw-algebraic-design-protocol: contested law or representation change
+      nw-certainty-by-construction: invalid-state or preservation claim
+    phase:
+      nw-fp-principles: PREPARE on a functional route
+      nw-fp-algebra-driven-design: GREEN on a functional route
+      nw-code-design-fp: GREEN or refactor on a functional route
+  nw-software-crafter-reviewer:
+    reviewer_of:
+      - nw-software-crafter
+      - nw-functional-software-crafter
+    phase:
+      nw-sc-review-dimensions: review start
+      nw-at-completeness-check: AT-density review
+  nw-solution-architect:
+    on_demand:
+      nw-algebraic-design-protocol: contested design or law
+      nw-certainty-by-construction: invalid-state or preservation claim
+    paradigm:
+      object_oriented: nw-code-design-oo
+      functional: nw-code-design-fp
+  nw-solution-architect-reviewer:
+    reviewer_of:
+      - nw-solution-architect
+    phase:
+      nw-sar-critique-dimensions: architecture review
+  nw-ddd-architect:
+    on_demand:
+      nw-algebraic-design-protocol: contested design or law
+      nw-certainty-by-construction: invalid-state or preservation claim
+    paradigm:
+      object_oriented: nw-code-design-oo
+      functional: nw-code-design-fp
+  nw-ddd-architect-reviewer:
+    reviewer_of:
+      - nw-ddd-architect
+    phase:
+      nw-ddd-strategic: review start
+      nw-ddd-architect: review start
+      nw-ddd-tactical: aggregate review
+  nw-platform-architect:
+    on_demand:
+      nw-algebraic-design-protocol: contested design or law
+      nw-certainty-by-construction: invalid-state or preservation claim
+  nw-platform-architect-reviewer:
+    reviewer_of:
+      - nw-platform-architect
+    phase:
+      nw-par-critique-dimensions: dimension review
+      nw-par-review-criteria: dimension review
+      nw-review-output-format: output generation
+  nw-acceptance-designer:
+    on_demand:
+      nw-algebraic-design-protocol: compositional or stateful surface
+      nw-certainty-by-construction: invalid-state or preservation claim
+    phase:
+      nw-test-design-mandates: Phase 0 policy detection
+      nw-property-based-testing: Phase 2 property authoring
+    language_pbt:
+      python: nw-pbt-python
+      typescript: nw-pbt-typescript
+      javascript: nw-pbt-typescript
+      rust: nw-pbt-rust
+      go: nw-pbt-go
+      java: nw-pbt-jvm
+      kotlin: nw-pbt-jvm
+      scala: nw-pbt-jvm
+      dotnet: nw-pbt-dotnet
+      csharp: nw-pbt-dotnet
+      fsharp: nw-pbt-dotnet
+      haskell: nw-pbt-haskell
+      erlang: nw-pbt-erlang-elixir
+      elixir: nw-pbt-erlang-elixir
+  nw-acceptance-designer-reviewer:
+    reviewer_of:
+      - nw-acceptance-designer
+    phase:
+      nw-ad-critique-dimensions: review start
+      nw-at-completeness-check: review start
+  nw-user-examiner:
+    reviewer_of: []
