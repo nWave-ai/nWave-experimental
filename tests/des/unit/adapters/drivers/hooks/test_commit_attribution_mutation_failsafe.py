@@ -13,13 +13,12 @@ to the existing validation path), never raising.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import json
+from pathlib import Path
+
+import pytest
 
 from des.adapters.drivers.hooks import pre_tool_use_handler
-
-
-if TYPE_CHECKING:
-    import pytest
 
 
 class _RaisingService:
@@ -58,4 +57,77 @@ def test_d1_service_exception_does_not_raise(
 def test_d1_non_string_command_still_passes_through() -> None:
     """A non-string command is a no-op passthrough (existing guard preserved)."""
     result = pre_tool_use_handler.emit_commit_attribution_mutation({"command": None})
+    assert result is None
+
+
+class _MutatingService:
+    """A service whose ``plan_rewrite`` returns a mutate plan."""
+
+    def __init__(self, rewritten: str = 'git commit -m "x" -C HEAD'):
+        self.rewritten = rewritten
+
+    def plan_rewrite(self, command: str) -> object:
+        class Plan:
+            action = "mutate"
+            rewritten_command = self.rewritten
+
+        return Plan()
+
+
+def test_attribution_enabled_true_mutates(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+) -> None:
+    """When attribution.enabled=true, emit_commit_attribution_mutation mutates."""
+    global_config_dir = tmp_path / ".nwave"
+    global_config_dir.mkdir()
+    global_config_file = global_config_dir / "global-config.json"
+    global_config_file.write_text(
+        json.dumps({"attribution": {"enabled": True}}), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(
+        pre_tool_use_handler, "_commit_attribution_service", _MutatingService()
+    )
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    result = pre_tool_use_handler.emit_commit_attribution_mutation(
+        {"command": 'git commit -m "x"'},
+        cwd=tmp_path,
+    )
+    assert result == 0
+    captured = capsys.readouterr()
+    assert "hookSpecificOutput" in captured.out
+
+
+import pytest
+
+
+@pytest.mark.parametrize(
+    "config_content",
+    [
+        {"attribution": {"enabled": False}},  # disabled
+        {"attribution": {}},  # missing key
+        None,  # missing file
+        "{invalid json",  # malformed
+    ],
+)
+def test_attribution_disabled_or_absent_passthrough(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, config_content
+) -> None:
+    """When attribution is disabled, missing, or config malformed, return None."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    if config_content is not None:
+        global_config_dir = tmp_path / ".nwave"
+        global_config_dir.mkdir()
+        global_config_file = global_config_dir / "global-config.json"
+        if isinstance(config_content, str):
+            global_config_file.write_text(config_content, encoding="utf-8")
+        else:
+            global_config_file.write_text(json.dumps(config_content), encoding="utf-8")
+
+    result = pre_tool_use_handler.emit_commit_attribution_mutation(
+        {"command": 'git commit -m "x"'},
+        cwd=tmp_path,
+    )
     assert result is None

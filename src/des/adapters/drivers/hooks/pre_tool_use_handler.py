@@ -238,7 +238,9 @@ def _log_wave_entry_clear_failed(exc: Exception, hook_id: str) -> None:
         pass  # the LOUD event must never change the dispatch outcome
 
 
-def emit_commit_attribution_mutation(tool_input: dict[str, object]) -> int | None:
+def emit_commit_attribution_mutation(
+    tool_input: dict[str, object], *, cwd: Path | None = None
+) -> int | None:
     """Net-new mutation branch: rewrite a Bash `git commit` to carry the trailer.
 
     ADR-CA-006 D4 (Reuse row R4). On a Bash `git commit` command, asks
@@ -256,6 +258,7 @@ def emit_commit_attribution_mutation(tool_input: dict[str, object]) -> int | Non
     Args:
         tool_input: the ``tool_input`` object from the PreToolUse payload. Its
             ``command`` field is the Bash command to consider.
+        cwd: Optional working directory for attribution config resolution.
 
     Returns:
         ``0`` after emitting a mutation; ``None`` to fall through to the existing
@@ -272,6 +275,15 @@ def emit_commit_attribution_mutation(tool_input: dict[str, object]) -> int | Non
     # commit is not. On any failure, return None so the caller falls through to
     # the existing validation path and the original command runs unchanged.
     try:
+        from des.adapters.driven.config.des_config import DESConfig
+
+        config = DESConfig(
+            cwd=cwd or Path.cwd(),
+            global_config_path=Path.home() / ".nwave" / "global-config.json",
+        )
+        if not config.attribution_enabled:
+            return None
+
         plan = _commit_attribution_service.plan_rewrite(command)
         if plan.action != "mutate" or plan.rewritten_command is None:
             return None
@@ -439,7 +451,14 @@ def handle_pre_tool_use() -> int:
                         exit_code = 2
                         return exit_code
 
-                mutation_exit = emit_commit_attribution_mutation(tool_input)
+                mutation_cwd = None
+                if isinstance(hook_input.get("cwd"), str):
+                    cwd_str = hook_input.get("cwd")
+                    if cwd_str:
+                        mutation_cwd = Path(cwd_str)
+                mutation_exit = emit_commit_attribution_mutation(
+                    tool_input, cwd=mutation_cwd
+                )
                 if mutation_exit is not None:
                     exit_code = mutation_exit
                     return exit_code

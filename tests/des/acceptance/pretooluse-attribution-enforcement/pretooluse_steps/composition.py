@@ -36,6 +36,8 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from pathlib import Path
+from unittest.mock import patch
 
 from des.adapters.drivers.hooks.hook_router import main as _hook_router_main
 from des.application.commit_attribution_service import (
@@ -285,6 +287,9 @@ class HookAdapterComposition:
         the router directly avoids it while preserving the dispatched behaviour.
         ``_SRC_PATH``/``PYTHONPATH`` was a subprocess import-resolution concern
         only (``des`` is already importable in-process) -- a no-op here.
+
+        This composition explicitly supplies the enabled attribution preference
+        via a disposable mock home directory.
         """
         tool_input = {"command": str(command), **self.extra_tool_input}
         payload = json.dumps(
@@ -303,12 +308,22 @@ class HookAdapterComposition:
         prior_des_project_dir = os.environ.get("DES_PROJECT_DIR")
         os.environ["DES_PROJECT_DIR"] = os.getcwd()
         try:
-            exit_code, stdout, _stderr = run_hook_in_process(
-                _hook_router_main,
-                stdin_text=payload,
-                cwd=os.getcwd(),
-                argv=["claude_code_hook_adapter", "pre-tool-use"],
-            )
+            with tempfile.TemporaryDirectory() as temp_home:
+                temp_home_path = Path(temp_home)
+                nwave_dir = temp_home_path / ".nwave"
+                nwave_dir.mkdir(parents=True, exist_ok=True)
+                config_file = nwave_dir / "global-config.json"
+                config_file.write_text(
+                    json.dumps({"attribution": {"enabled": True}}),
+                    encoding="utf-8",
+                )
+                with patch.object(Path, "home", return_value=temp_home_path):
+                    exit_code, stdout, _stderr = run_hook_in_process(
+                        _hook_router_main,
+                        stdin_text=payload,
+                        cwd=os.getcwd(),
+                        argv=["claude_code_hook_adapter", "pre-tool-use"],
+                    )
         finally:
             if prior_des_project_dir is None:
                 os.environ.pop("DES_PROJECT_DIR", None)
