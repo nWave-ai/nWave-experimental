@@ -5,7 +5,7 @@ user-invocable: true
 argument-hint: '[feature-description] - Example: "Implement user authentication with JWT"'
 ---
 
-> **Code facts** — resolve structural facts about code (who-calls / defs-reads / never-wired / call-graph / atoms-in-file) through the `nw-code-analysis-port` skill: graphify-first (`graphify explain <symbol>`), declared fallback (AST, then grep), degrade-LOUD. Never ad-hoc grep for a structural fact.
+> **Code facts** — resolve structural facts about code through `des code-fact` CLI (vendor-neutral, bundled adapters: AST then TextSearch). Degrade LOUD. Never ad-hoc grep. Example: `des code-fact query.callers-of SYMBOL --root ROOT`.
 
 <!-- gates-ref: deliver -->
 <!-- outputs-ref: deliver -->

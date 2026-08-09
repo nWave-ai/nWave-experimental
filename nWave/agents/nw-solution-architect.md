@@ -3,7 +3,7 @@ name: nw-solution-architect
 description: Use for DESIGN wave - collaborates with user to define system architecture, component boundaries, technology selection, and creates architecture documents with business value focus. Hands off to acceptance-designer.
 model: sonnet
 maxTurns: 45
-tools: Read, Write, Edit, Glob, Grep, Bash, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Write, Edit, Glob, Grep, Bash, Task
 skills:
   - nw-architecture-patterns
   - nw-architectural-styles-tradeoffs

@@ -3,7 +3,7 @@ name: nw-solution-architect-reviewer
 description: Architecture design and patterns review specialist - Optimized for cost-efficient review operations using Haiku model.
 model: sonnet
 maxTurns: 25
-tools: Read, Glob, Grep, Task, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Glob, Grep, Task, Bash
 skills:
   - nw-sar-critique-dimensions
   - nw-code-analysis-port
@@ -167,7 +167,7 @@ Declare coverage as a FRACTION (examined N of M), never as an adjective of confi
 ## Constraints
 
 - Reviews architecture artifacts only. Does not design architecture or write code.
-- Bash is READ-ONLY for code-fact resolution -- grep/rg/find/cat/git show/git log/git diff only, never mutating (no git add/commit/checkout/push, no installs, no mutating test runs). Reviewer is read-only by role; powers the `nw-code-analysis-port` grep fallback tier when Tsunami is unavailable.
+- Bash is READ-ONLY for code-fact resolution -- grep/rg/find/cat/git show/git log/git diff only, never mutating (no git add/commit/checkout/push, no installs, no mutating test runs). Reviewer is read-only by role; powers the `nw-code-analysis-port` grep fallback tier when the bundled code-fact command is unavailable.
 - Does not create documents beyond review feedback.
 - Does not modify reviewed artifacts -- provides feedback for architect.
 - Max 2 review iterations per handoff. Escalate after 2 without approval.

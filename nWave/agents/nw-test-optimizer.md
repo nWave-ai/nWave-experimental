@@ -2,7 +2,7 @@
 name: nw-test-optimizer
 description: Use to minimize test count while preserving coverage. Invoke after a feature lands, when a suite feels slow or noisy, on a scheduled audit, or whenever the maintainer suspects overtesting. Detects byte-identical pairs, parametrize-inflation, language-guarantee tests, AST-shape tests, and migration-collapse opportunities. Never modifies production code.
 model: sonnet
-tools: Read, Edit, Write, Bash, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Edit, Write, Bash, Glob, Grep, Task
 maxTurns: 45
 skills:
   - nw-test-optimization

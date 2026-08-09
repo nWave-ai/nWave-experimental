@@ -32,9 +32,10 @@ Reference: plan v3 `docs/proposals/atdd-pure-workflow-restructure-v3-2026-05-19.
 1. Read **all** ATs end-to-end before writing one line of production code. Hold the AT contract in working memory (~50KB sustainable per spike-2 honest assessment).
 2. Implement the **smallest** code shape that satisfies every AT. Single dispatch — no iterative incremental ping-pong.
 3. **NO defensive code**: do not write try/except wrappers, dry_run guards, idempotency checks, `validate_prerequisites()` failure branches, `_read_hooks` isinstance guards, type-branching coercion in formatters — **unless an AT explicitly requires it**.
-3.5. **Reuse-before-create (code-fact)**: before writing a NEW production function/class/module to reach GREEN, resolve code-facts via `nw-code-analysis-port` (graphify-first `graphify explain <symbol>`, declared AST->grep fallback, degrade-LOUD — never ad-hoc grep, never a hard-dep on any one tool). Search for an existing symbol that already carries the responsibility about to be implemented.
-   - `DUPLICATE_CANDIDATE` found (`{file}:{line}` doing the same job) -> EXTEND it, or record an explicit justification mirroring the DESIGN-wave Reuse Analysis EXTEND-vs-CREATE_NEW rule (`nw-design/SKILL.md` §Reuse Analysis).
-   - Port cannot resolve (no Tsunami, AST/grep unavailable) -> degrade LOUD, fall back to a manual reuse check — never silently skip.
+3.5. **Reuse-before-create (code-fact)**: before writing a NEW production function/class/module to reach GREEN, resolve code-facts via `des code-fact` (AST-then-TextSearch, degrade-LOUD). Search for an existing symbol that already carries the responsibility about to be implemented.
+   - Use `des code-fact query.reads-of SYMBOL --root ROOT` or `des find-similar-responsibility --scope ROOT --name NAME` to locate existing symbols doing similar work.
+   - `DUPLICATE_CANDIDATE` found (`{file}:{line}` doing the same job) → EXTEND it, or record an explicit justification mirroring the DESIGN-wave Reuse Analysis EXTEND-vs-CREATE_NEW rule (`nw-design/SKILL.md` §Reuse Analysis).
+   - CLI degraded to TextSearch → degrade LOUD, fall back to a manual reuse check — never silently skip.
 4. **NO architectural anticipation**: write what tests demand, not what "future me might need". Speculative abstractions, premature extension points, configuration knobs without an AT — all forbidden.
 5. **NO AT modification**: ATs are read-only. If an AT seems wrong or incomplete, surface to the Phase C reviewer via the verdict pipeline; do NOT edit.
 
@@ -263,5 +264,5 @@ Any unchecked box blocks COMMIT. Surface diagnosis to operator; do not bypass.
 - **nw-test-design-mandates** — PBT + state-delta paradigm (applies to Phase A paired unit tests)
 - **nw-at-completeness-check** — Phase C reviewer taxonomy (7-category C1-C7, plan v3 §6)
 - **nw-refactor** — L1-L6 transformation catalogue (unconditional batch-then-verify default per `feedback_refactor_batch_when_test_suite_slow_2026_05_19`)
-- **nw-code-analysis-port** — CodeFactPort resolution order (Tsunami -> AST -> grep, degrade-LOUD); powers Phase A step 3.5 reuse-before-create
+- **nw-code-analysis-port** — CodeFactPort resolution order (AST -> TextSearch, degrade-LOUD); powers Phase A step 3.5 reuse-before-create
 - **Memory anchors**: `feedback_refactor_batch_when_test_suite_slow_2026_05_19`, `feedback_load_skills_before_touching_code_2026_05_15`, `feedback_never_revert_user_work_unauthorized`, `feedback_atdd_ssot_via_types_services_dsl_2026_05_18`

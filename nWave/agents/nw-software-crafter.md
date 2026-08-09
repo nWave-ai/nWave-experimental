@@ -3,7 +3,7 @@ name: nw-software-crafter
 description: DELIVER wave - SLIM scope (implementation + refactor expert). Crafter implements production code to satisfy ATs authored by acceptance-designer (DISTILL). Does NOT author tests. Phase protocol follows the active workflow mode, projected from the mode registry into this spec. Accepts exactly either the current DES `atdd_pure` envelope or a validated two-header thin DeliveryContract authority; bare Agent/Task dispatch is refused. For current `atdd_pure`, prefer `des dispatch` and pass its envelope VERBATIM; `/nw-deliver` and `/nw-bugfix` also drive it. For analysis, measurement or investigation pick a different agent — this one is for implementation only.
 model: sonnet
 maxTurns: 45
-tools: Read, Write, Edit, Bash, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Write, Edit, Bash, Glob, Grep, Task
 skills:
   - nw-tdd-methodology
   - nw-progressive-refactoring

@@ -3,7 +3,7 @@ name: nw-troubleshooter-reviewer
 description: Use for review and critique tasks - Risk analysis and failure mode review specialist. Runs on Haiku for cost efficiency.
 model: haiku
 maxTurns: 25
-tools: Read, Glob, Grep, Task, Bash, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Glob, Grep, Task, Bash
 skills:
   - nw-tr-review-criteria
   - nw-code-analysis-port
@@ -118,6 +118,6 @@ Declare coverage as a FRACTION (examined N of M), never as an adjective of confi
 
 - Reviews troubleshooter output only. Does not conduct investigations or write analyses.
 - Read-only: review output returned inline, not written to disk.
-- Bash is READ-ONLY for code-fact resolution -- grep/rg/find/cat/git show/git log/git diff only, never mutating (no git add/commit/checkout/push, no installs, no mutating test runs). Powers the `nw-code-analysis-port` grep fallback tier when Tsunami is unavailable.
+- Bash is READ-ONLY for code-fact resolution -- grep/rg/find/cat/git show/git log/git diff only, never mutating (no git add/commit/checkout/push, no installs, no mutating test runs). Powers the `nw-code-analysis-port` grep fallback tier when the bundled code-fact command is unavailable.
 - Does not review application code|architecture|non-troubleshooter artifacts.
 - Token economy: YAML review, not narrative essay.

@@ -3,7 +3,7 @@ name: nw-ddd-architect
 description: Use for DESIGN wave domain modeling. Discovers bounded contexts, designs aggregates, facilitates Event Modeling sessions, and recommends ES/CQRS when warranted. Writes to architecture SSOT.
 model: sonnet
 maxTurns: 45
-tools: Read, Write, Edit, Glob, Grep, Bash, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Write, Edit, Glob, Grep, Bash, Task
 skills:
   - nw-ddd-architect
   - nw-ddd-strategic

@@ -3,7 +3,7 @@ name: nw-functional-software-crafter
 description: DELIVER wave — SLIM functional crafter. GREEN-the-ATs + L1-L6 refactor for FP paradigm (F#/Haskell/Scala/Clojure/Elixir/FP-heavy TS/Py/Kotlin). Pure functions, pipeline composition, types-as-documentation. Test authoring (ATs + paired PBT) is owned by `nw-acceptance-designer`; this agent implements pure functions and refactors. Use when the project follows functional-first. Accepts exactly either the current DES `atdd_pure` envelope or a validated two-header thin DeliveryContract authority; bare Agent/Task dispatch is refused. For current `atdd_pure`, prefer `des dispatch` and pass its envelope VERBATIM; `/nw-deliver` and `/nw-bugfix` also drive it. For analysis, measurement or investigation pick a different agent — this one is for implementation only.
 model: sonnet
 maxTurns: 45
-tools: Read, Write, Edit, Bash, Glob, Grep, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Write, Edit, Bash, Glob, Grep, Task
 skills:
   - nw-tdd-methodology
   - nw-quality-framework

@@ -37,27 +37,23 @@ Scenarios are INDUCED from the design code-design contract via the 3-source indu
 - **Environment-aware scenarios** — DEVOPS environment inventory → ≥1 walking skeleton scenario per environment (clean install vs upgrade vs stale config).
 - **AT authoring granularity (atdd_pure)** — author ONLY the current slice's scenarios, JIT, active-RED; future slices ABSENT from disk; never `@skip`/`@pending` (ADR-GV-001 D6). <!-- mode-ref-ok -->
 
-## Coverage-verification via the code-analysis-port (velocity — do NOT hand-read prod code)
+## Coverage-verification via the code-fact CLI (velocity — do NOT hand-read prod code)
 
 Before authoring a NEW scenario, VERIFY whether an existing mechanism / test already covers the
-behaviour — but resolve that as a CODE-FACT through `nw-code-analysis-port` (Tsunami-first, declared
-fallback), NEVER by manually reading production files. This is the DOMINANT DISTILL time-cost:
+behaviour — but resolve that as a CODE-FACT through `des code-fact` CLI, NEVER by manually reading production files. This is the DOMINANT DISTILL time-cost:
 empirically the longest DISTILL phases are spent reading production code to check existing coverage,
 NOT writing Gherkin (sister dogfood 2026-07-04 — 4 of 7 slices needed zero new code because an
 existing mechanism already covered them; the cost was DISCOVERING that).
 
-- **Query** "what already covers behaviour X?": `graphify explain "<symbol>"` names every
-  caller and reader of a load-bearing seam, each with file and line, which is the
-  what-covers-what answer for a specific symbol; `graphify path "A" "B"` shows how one
-  reaches the other. **There is no graphify equivalent of the old
-  `mcp__tsunami__feature_analyze`** (`{files, tests, coverage}` for a NAMED FEATURE) —
-  that surface is temporarily disabled, so a feature-level coverage question has no
-  tier-1 answer today. Say so and take the fallback; do not assemble one from `explain`
-  output and present it as the same fact.
-- **Fallback (no graph built, or the question is feature-level)**: the SAME `nw-code-analysis-port` degrades LOUD — generic AST
-  (defs / refs / test-imports of the symbol) → grep (last resort, tagged `noisy`). The guidance is
-  identical whichever tier answers; only the confidence label changes. Never leave the developer
-  without an answer because the top tier is absent.
+- **Query** "what already covers behaviour X?":
+  ```bash
+  des code-fact query.reads-of SYMBOL --root ROOT
+  des code-fact query.callers-of SYMBOL --root ROOT
+  ```
+  These name every caller and reader of a load-bearing seam, each with file and line, which is the
+  what-covers-what answer for a specific symbol. **Feature-level change-scope has no stable CLI today** — use bounded symbol-level queries above, then manual inspection with explicit limitation note.
+- **Fallback (AST unavailable)**: the CLI degrades LOUD — generic TextSearch
+  (last resort, tagged `noisy`). The guidance is identical whichever tier answers; only the confidence label changes. Never leave the developer without an answer because the top tier is absent.
 - **Outcome**: already covered → REUSE the existing AT (Mandate-12), do NOT author a duplicate;
   genuinely uncovered → author the induced scenario. Either way the decision is a CITED code-fact
   (feature/test names), not a hunch from a manual read.

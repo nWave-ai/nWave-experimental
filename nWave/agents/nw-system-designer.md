@@ -3,7 +3,7 @@ name: nw-system-designer
 description: Use for DESIGN wave infrastructure-level architecture. Designs distributed systems, scalability strategies, load balancing, caching, database sharding, message queues, back-of-envelope estimation, and trade-off analysis. Complements solution-architect (application-level) with infrastructure-level depth.
 model: sonnet
 maxTurns: 45
-tools: Read, Write, Edit, Glob, Grep, Bash, Task, mcp__tsunami__callers_of, mcp__tsunami__reads_of, mcp__tsunami__never_wired, mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section
+tools: Read, Write, Edit, Glob, Grep, Bash, Task
 skills:
   - nw-sd-framework
   - nw-sd-patterns
