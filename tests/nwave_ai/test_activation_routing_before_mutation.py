@@ -99,16 +99,23 @@ def test_claude_md_section_ties_routing_to_any_tool_call() -> None:
     assert "size (S/M/L)" in nearby
 
 
-def test_claude_md_section_lets_a_self_contained_s_skip_mode_select_and_waves() -> None:
-    """Outcome property (proportional hot path): an unambiguous, self-contained
-    S must not pay the nw-mode-select-invocation (or wave-invocation) tax --
-    it states direct + S + reason inline and proceeds."""
+def test_claude_md_section_routes_every_size_through_mode_select_before_dispatch() -> (
+    None
+):
+    """Independent-review correction: S no longer skips nw-mode-select -- it
+    invokes the skill once, same as M/L/undetermined, and only exits direct
+    afterward (no wave, no re-ask, no nw-auto). Ordering: the S clause's own
+    invocation is stated before the 'Everything else' M/L clause, and the
+    stale 'without invoking' carve-out is gone from the section entirely."""
     content = load_section_content()
-    assert "direct + S + reason" in content
-    idx = content.index("direct + S + reason")
-    nearby = content[idx : idx + 150]
-    assert "without invoking" in nearby
-    assert "nw-mode-select" in nearby
+    assert "without invoking" not in content
+    s_idx = content.index("self-contained S")
+    everything_else_idx = content.index("Everything else")
+    assert s_idx < everything_else_idx
+    s_clause = content[s_idx:everything_else_idx]
+    assert "nw-mode-select" in s_clause
+    assert "exits direct" in s_clause
+    assert "no `nw-auto`" in s_clause
 
 
 def test_claude_md_section_routes_m_l_and_undetermined_through_mode_select() -> None:
@@ -280,11 +287,12 @@ def test_subagent_start_reminder_still_names_flat_topical_skill_examples() -> No
 
 def test_mode_select_explicit_mode_still_invokes_the_skill_not_only_sizing() -> None:
     text = _mode_select_text()
-    assert "still invokes this skill for M/L/undetermined work" in text
+    assert "still invokes this skill once, every size included" in text
     idx = text.index("still invokes this skill")
     nearby = text[idx : idx + 300]
     assert "removes only the re-ask question" in nearby
-    assert "never removes the requirement to load and follow this skill" in nearby
+    assert "never removes the one required `nw-mode-select` invocation" in nearby
+    assert "S included" in nearby
 
 
 def test_mode_select_auto_m_l_enters_nw_auto_directly_not_deliver() -> None:

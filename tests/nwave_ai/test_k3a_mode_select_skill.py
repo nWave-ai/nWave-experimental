@@ -83,6 +83,29 @@ def test_skill_names_the_reused_html_projection_mechanism_not_a_new_one() -> Non
     assert "do not build a template engine" in text
 
 
+def test_skill_line_count_is_compressed_by_at_least_30_percent() -> None:
+    """Deletion-first contract correction: SKILL.md must shrink from its
+    prior 104 lines by >=30% (<=73) while preserving the decision table."""
+    assert len(_skill_text().splitlines()) <= 73
+
+
+def test_skill_self_contained_s_invokes_selector_then_never_nw_auto() -> None:
+    """Corrected contract: S no longer skips this skill -- it invokes
+    nw-mode-select once, classifies S, then exits directly without ever
+    delegating to nw-auto (delegation is Auto M/L only)."""
+    text = _skill_text()
+    assert "only a self-contained S skips this skill entirely" not in text
+    assert "S never delegates to `nw-auto`" in text
+
+
+def test_skill_hook_statement_matches_runtime_blocking_truth() -> None:
+    """The reused hook may block the first mutation until mode/size
+    selection is observed once; it is not unconditionally non-blocking."""
+    text = _skill_text()
+    assert "is non-blocking and reused as-is" not in text
+    assert "may block the first mutation until this one selection is observed" in text
+
+
 def test_subagent_start_hook_reused_unmodified_and_still_fail_open() -> None:
     """The reused hook must still exist and its non-blocking contract must hold."""
     assert HOOK_PATH.is_file(), f"K3-A relies on the existing hook at {HOOK_PATH}"
