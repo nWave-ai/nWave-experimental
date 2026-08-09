@@ -2,27 +2,20 @@
 
 ### Drive Work Through the Spine — Use the `/nw-*` Commands
 
-Epic and feature work in this project flows through nWave's wave-based methodology. Use the `/nw-*` slash commands to guide work end-to-end.
+Epic and feature work flows through nWave's `/nw-*` wave-based slash commands.
 
-**Before any tool call — including read-only discovery, not just your first mutating call (Write/Edit/Agent) — establish and state your route: posture (`human` / `auto` / `direct`), size (S/M/L), one observable reason for that size, and the path you are taking.** Route first, then explore: once the route is stated, use bounded, read-only discovery to fill gaps in your own understanding. An unambiguous, self-contained S still invokes the `nw-mode-select` skill (Skill tool) once, is classified S, and then exits direct straight to the fix — no wave, no re-ask, no `nw-auto`. Everything else — M, L, or undetermined size — invokes the `nw-mode-select` skill (Skill tool) first, unless the route is already explicit in this conversation (a generic autonomous-execution authorization counts as explicit `auto`; do not ask again) — an explicit mode still gets sized S/M/L, it only skips the re-ask, never the invocation. For undetermined-shape new work with no prior wave artifacts, invoke `nw-new` first: it recommends the correct starting wave instead of guessing directly at `/nw-deliver`.
+**Before any tool call — including read-only discovery, not just your first mutating call (Write/Edit/Agent) — establish and state your route: posture (`human` / `auto` / `direct`), size (S/M/L) with one observable reason for that size, and the path you are taking.** A self-contained S still invokes `nw-mode-select` once, is classified S, then exits direct — no wave, no re-ask, no `nw-auto`. Everything else — M, L, or undetermined size — invokes `nw-mode-select` first; an explicit mode (a generic autonomy grant counts as `auto`) still gets sized S/M/L. Undetermined shape invokes `nw-new` first, not `/nw-deliver`.
 
-The seven waves are:
-- `/nw-discover` — explore the market and problem space
-- `/nw-diverge` — compare design directions and approaches
-- `/nw-discuss` — gather requirements and user stories
-- `/nw-design` — architecture and domain modeling
-- `/nw-devops` — infrastructure and deployment
-- `/nw-distill` — write acceptance tests (Given-When-Then scenarios)
-- `/nw-deliver` — TDD implementation (red → green → refactor)
+Waves, in order: `/nw-discover` `/nw-diverge` `/nw-discuss` `/nw-design` `/nw-devops` `/nw-distill` `/nw-deliver`.
 
-**Mandatory floor**: DISTILL → DELIVER. Every feature must include acceptance tests and test-driven code. The five upstream waves are optional; start where your knowledge is incomplete.
+**Mandatory floor**: DISTILL → DELIVER — acceptance tests, test-driven code; upstream waves optional.
 
-**Never hand-roll feature work** bypassing the spine — not even under a tight budget. For Auto mode on M/L work, load the `nw-auto` skill directly — never `/nw-deliver` first, and never in parallel with it; `nw-auto` owns the fixed floor end-to-end — `nw-acceptance-designer` authors the thin contract and acceptance tests, one paradigm-appropriate crafter implements, one independent examiner verifies — cheaper than hand-implementing and self-checking the same work, not "the full pipeline." You orchestrate this handoff; you never substitute for any of the three roles by authoring the contract, the acceptance tests, or the examiner's verdict yourself. A tight budget shrinks context and documentation; it never skips these roles. For Human mode, `/nw-deliver` carries this same floor plus staged review; its feature-end cycle runs once per feature (not once per slice, and not a second multi-agent round) to re-verify the whole tree — see `/nw-deliver` for the mechanics. Auto mode has no separate feature-end cycle: `nw-auto`'s own examiner verdict is the re-verification.
+**Never hand-roll feature work** bypassing the spine. For Auto mode on M/L work, load the `nw-auto` skill directly — never `/nw-deliver` first, never in parallel with it; `nw-auto` owns the floor: `nw-acceptance-designer` authors the contract and acceptance tests, one crafter implements, one independent examiner verifies — never substitute the three roles. For Human mode, `/nw-deliver` adds staged review to the same floor; its feature-end cycle runs once per feature, not per slice. Auto mode has no separate feature-end cycle: `nw-auto`'s own examiner verdict is the re-verification.
 
-If you need to continue work from a previous session or pick up where another developer left off, use `/nw-continue` to see the current state and next steps.
+Resuming work: `/nw-continue`.
 
 {{LOOP_CONSENT_FRAGMENT}}
 
 ### Privacy — Non-Negotiable
 
-nWave is in **active development** and runs entirely local: no telemetry, no automatic transmission of any kind. See [PRIVACY.md](../../PRIVACY.md) for the complete policy. Feedback on nWave itself is welcome via GitHub Issues on the experimental repo, at your discretion — never a required step of doing the work.
+nWave runs entirely local: no telemetry ([PRIVACY.md](../../PRIVACY.md)). Feedback via GitHub Issues is welcome, never required.

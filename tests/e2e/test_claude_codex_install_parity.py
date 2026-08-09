@@ -106,13 +106,27 @@ def _venv_with_wheel(pypi_shape_wheel: Path, tmp_path_factory) -> Path:
     return venv
 
 
+# Module-scoped cache: a host's prepared $HOME + install stdout is installed
+# ONCE per host and reused by every fixture below that needs that host's
+# install, so `host_install` and `_both_host_homes` never re-run the same
+# install for the same host.
+_PREPARED_HOST_HOMES: dict[str, tuple[Path, str]] = {}
+
+
+def _prepared_host_home(host: str, venv: Path, tmp_path_factory) -> tuple[Path, str]:
+    if host not in _PREPARED_HOST_HOMES:
+        home = tmp_path_factory.mktemp(f"nwave_{host}_home")
+        seed = _seed_claude if host == "claude" else _seed_codex
+        stdout = _install_into_home(venv, home, seed)
+        _PREPARED_HOST_HOMES[host] = (home, stdout)
+    return _PREPARED_HOST_HOMES[host]
+
+
 @pytest.fixture(scope="module", params=["claude", "codex"])
 def host_install(request, _venv_with_wheel: Path, tmp_path_factory):
     """Install the same wheel into an isolated, single-host $HOME (parity matrix)."""
     host = request.param
-    home = tmp_path_factory.mktemp(f"nwave_{host}_home")
-    seed = _seed_claude if host == "claude" else _seed_codex
-    stdout = _install_into_home(_venv_with_wheel, home, seed)
+    home, stdout = _prepared_host_home(host, _venv_with_wheel, tmp_path_factory)
     return host, home, stdout
 
 
@@ -248,13 +262,15 @@ def test_wheel_has_no_case_insensitive_graphify_leak(pypi_shape_wheel: Path) -> 
 
 @pytest.fixture(scope="module")
 def _both_host_homes(_venv_with_wheel: Path, tmp_path_factory):
-    """Install the SAME wheel into isolated claude and codex homes, side by side."""
-    homes = {}
-    for host, seed in (("claude", _seed_claude), ("codex", _seed_codex)):
-        home = tmp_path_factory.mktemp(f"nwave_{host}_parity_home")
-        _install_into_home(_venv_with_wheel, home, seed)
-        homes[host] = home
-    return homes
+    """The same wheel's claude and codex homes, side by side.
+
+    Reuses `_prepared_host_home`'s module-scoped cache instead of installing
+    again -- `host_install` already installed both hosts for this module.
+    """
+    return {
+        host: _prepared_host_home(host, _venv_with_wheel, tmp_path_factory)[0]
+        for host in ("claude", "codex")
+    }
 
 
 @pytest.mark.e2e
