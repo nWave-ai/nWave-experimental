@@ -335,9 +335,9 @@ class DESPlugin(InstallationPlugin):
         "exit 2",
         # fix-execution-log-bash-guard-consolidation follow-on
         # (Ale-authorised 2026-08-09): the standalone git-stash guard
-        # PreToolUse/Bash registration was retired -- `_evaluate_bash_guards`
-        # in the universal `pre_tool_use_handler` now evaluates the same
-        # decision inline on every installed PreToolUse/Bash invocation.
+        # PreToolUse/Bash registration was retired -- the pre-activation
+        # universal `hook_router` call now evaluates the same decision
+        # inline on every installed PreToolUse/Bash invocation.
         "# des-hook:pre-bash-git-stash-guard\n"
         "INPUT=$(cat); "
         "CMD=$(printf '%s' \"$INPUT\" | python3 -c "

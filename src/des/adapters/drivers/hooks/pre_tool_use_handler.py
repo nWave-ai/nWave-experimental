@@ -312,18 +312,24 @@ def _resolve_deliverable_type() -> str | None:
     return DESConfig(cwd=Path.cwd()).deliverable_type
 
 
-def _evaluate_bash_guards(
+def evaluate_bash_safety_guards(
     hook_input: dict[str, object], tool_input: dict[str, object]
 ) -> dict[str, str] | None:
     """The git-stash + worktree-remove Bash guard decisions (consolidated).
 
     Formerly two standalone PreToolUse/Bash hook registrations
-    (`scripts/hooks/git_stash_guard.py`, `scripts/hooks/worktree_removal_guard.py`);
-    now evaluated inline against `des.adapters.drivers.hooks.bash_command_guards`,
-    the single decision authority both the standalone scripts (kept as thin
-    CLI entry points) and this universal handler call. Returns a
-    `{decision: block, reason: ...}` payload, or `None` to allow (paying no
-    triage/filesystem work when neither guard's command shape matched).
+    (`scripts/hooks/git_stash_guard.py`, `scripts/hooks/worktree_removal_guard.py`).
+    The single decision authority is `des.adapters.drivers.hooks.bash_command_guards`
+    (`evaluate_git_stash_command` / `evaluate_worktree_remove_command`); this
+    function is one envelope-parsing wrapper around it. The standalone scripts
+    call the shared predicate authority directly (their own CLI envelope
+    shape), NOT necessarily this helper. `hook_router.main()` calls THIS
+    helper by name, once, BEFORE `activation_gate.apply_gate` (ADR-AG-001
+    ordering repair), so an inactive project cannot exit 0 past a live
+    stash/worktree mutation -- see the router's pre-activation call site for
+    the ordering contract. Returns a `{decision: block, reason: ...}` payload,
+    or `None` to allow (paying no triage/filesystem work when neither guard's
+    command shape matched).
     """
     command = tool_input.get("command")
     if not isinstance(command, str) or not command:
@@ -399,12 +405,11 @@ def handle_pre_tool_use() -> int:
             tool_input = hook_input.get("tool_input", {})
 
             if hook_input.get("tool_name") == "Bash":
-                bash_guard_block = _evaluate_bash_guards(hook_input, tool_input)
-                if bash_guard_block is not None:
-                    print(json.dumps(bash_guard_block))
-                    exit_code = 2
-                    return exit_code
-
+                # The git-stash / worktree-remove safety decision already ran
+                # once, pre-activation, in `hook_router.main()` (before
+                # `apply_gate`) -- see `evaluate_bash_safety_guards`. Do not
+                # re-run it here; that would be a duplicate second evaluation
+                # of the same command on the active path.
                 if (
                     not hook_input.get("agent_id")
                     and not hook_input.get("agent_type")

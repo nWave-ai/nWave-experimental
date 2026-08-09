@@ -72,13 +72,12 @@ class HookEvent:
 # `~/.claude/scripts/` tree so the module resolves at runtime.
 # fix-execution-log-bash-guard-consolidation follow-on (Ale-authorised
 # 2026-08-09): the standalone git-stash guard registration below is retired
-# -- `_evaluate_bash_guards` in the universal `pre_tool_use_handler` now
-# evaluates the same `bash_command_guards.evaluate_git_stash_command`
-# decision inline on every installed PreToolUse/Bash invocation, so a
-# second, independently-scheduled Python process is no longer needed. The
-# exact retired command string is tombstoned in
-# `des_plugin.py:_RETIRED_HOOK_COMMANDS` so upgrade removes the stale
-# nested registration.
+# -- the pre-activation universal `hook_router` call now evaluates the same
+# `bash_command_guards.evaluate_git_stash_command` decision inline on every
+# installed PreToolUse/Bash invocation, so a second, independently-scheduled
+# Python process is no longer needed. The exact retired command string is
+# tombstoned in `des_plugin.py:_RETIRED_HOOK_COMMANDS` so upgrade removes
+# the stale nested registration.
 
 # Pure-shell wrapper around the worktree-removal guard
 # (fix-worktree-removal-liveness-guard, Ale-authorised 2026-07-29). This is
@@ -108,8 +107,8 @@ class HookEvent:
 # `~/.claude/scripts/` tree so the module resolves at runtime.
 # fix-execution-log-bash-guard-consolidation follow-on (Ale-authorised
 # 2026-08-09): the standalone worktree-removal guard registration below is
-# retired for the same reason as the git-stash guard above --
-# `_evaluate_bash_guards` now evaluates
+# retired for the same reason as the git-stash guard above -- the
+# pre-activation universal `hook_router` call now evaluates
 # `bash_command_guards.evaluate_worktree_remove_command` inline. The exact
 # retired command string is tombstoned in
 # `des_plugin.py:_RETIRED_HOOK_COMMANDS`.
