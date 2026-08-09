@@ -71,32 +71,21 @@ this hook is a safety net over a destructive command, not the sole control.
 from __future__ import annotations
 
 import json
-import os
-import shlex
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 
-# Human-authorisation override env var. Required to carry actual prose (see
-# _reason_is_valid) -- a bare truthy flag does not qualify.
-_REASON_ENV = "NWAVE_WORKTREE_REMOVE_REASON"
-_MIN_REASON_LENGTH = 15
+# Decision algorithm lives in `des.adapters.drivers.hooks.bash_command_guards`
+# (fix-execution-log-bash-guard-consolidation follow-on, Ale-authorised) --
+# this script is now a thin stdin/stdout/exit-code CLI wrapper around it, so
+# the universal `src/des` PreToolUse/Bash handler and this standalone
+# registration cannot diverge into two decision algorithms. Imported lazily
+# inside `main()` so a broken `des` install fails INSIDE the call, where it
+# is converted to a deterministic BLOCK-with-reason (see `main`).
+def _guards():
+    from des.adapters.drivers.hooks import bash_command_guards
 
-# Optional target-branch override for the unmerged-commits check. Defaults to
-# the CURRENT branch of the invoking repo (the orchestrator's own vantage
-# point: "is this worktree's work reachable from where I stand").
-_TARGET_BRANCH_ENV = "NWAVE_WORKTREE_GUARD_TARGET_BRANCH"
-
-# Test-harness env var so the hook locates the audit-log dir without relying
-# on Path.cwd(). Production leaves it unset. Mirrors
-# git_stash_guard.NWAVE_GIT_STASH_GUARD_TARGET_ROOT.
-_TARGET_ROOT_ENV = "NWAVE_WORKTREE_GUARD_TARGET_ROOT"
-
-_AUDIT_LOG_DIR_RELPATH = Path(".nwave") / "des" / "logs"
-_BYPASS_EVENT = "WorktreeRemovalBypassUsed"
-
-_SEPARATORS = frozenset({"&&", "||", ";", "|", "&"})
+    return bash_command_guards
 
 
 def _read_hook_event() -> dict[str, object]:
@@ -123,226 +112,38 @@ def _bash_command(event: dict[str, object]) -> str:
     return command if isinstance(command, str) else ""
 
 
-def _split_subcommands(command: str) -> list[list[str]] | None:
-    """Tokenize `command` and split on shell separators.
-
-    Returns None on unparsable input (unbalanced quotes) -- the caller
-    fails open rather than false-block on a command it cannot understand.
-    """
-    try:
-        tokens = shlex.split(command)
-    except ValueError:
-        return None
-    sub_commands: list[list[str]] = []
-    current: list[str] = []
-    for token in tokens:
-        if token in _SEPARATORS:
-            if current:
-                sub_commands.append(current)
-                current = []
-        else:
-            current.append(token)
-    if current:
-        sub_commands.append(current)
-    return sub_commands
-
-
-def _worktree_remove_target(sub_command: list[str]) -> str | None:
-    """Return the target path argument of a `git worktree remove <path>` sub-command.
-
-    Returns None when `sub_command` is not a `git worktree remove` invocation,
-    or when it carries no positional path argument (git itself will error --
-    nothing for this guard to check).
-    """
-    if len(sub_command) < 3:
-        return None
-    if (
-        sub_command[0] != "git"
-        or sub_command[1] != "worktree"
-        or sub_command[2] != "remove"
-    ):
-        return None
-    for token in sub_command[3:]:
-        if not token.startswith("-"):
-            return token
-    return None
-
-
-def _find_removal_target(command: str) -> str | None:
-    """Scan every sub-command of `command` for a `git worktree remove <path>`.
-
-    Returns the target path string of the FIRST match, or None if the
-    command is unparsable or carries no such invocation (fast path: no
-    liveness probes run at all).
-    """
-    sub_commands = _split_subcommands(command)
-    if sub_commands is None:
-        return None
-    for sub in sub_commands:
-        target = _worktree_remove_target(sub)
-        if target is not None:
-            return target
-    return None
-
-
-def _reason_is_valid(raw: str) -> bool:
-    """True iff the override reason carries a non-trivial justification.
-
-    A bare truthy flag (`1`, `true`, `yes`, ...) does not qualify -- the
-    override must read like an actual sentence a human wrote, mirroring
-    `des wave-clear --reason`'s required-prose discipline (not a convenience
-    toggle).
-    """
-    return len(raw.strip()) >= _MIN_REASON_LENGTH
-
-
-def _target_root() -> Path:
-    override = os.environ.get(_TARGET_ROOT_ENV, "")
-    return Path(override) if override else Path.cwd()
-
-
-def _audit_log_path(target_root: Path) -> Path:
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return target_root / _AUDIT_LOG_DIR_RELPATH / f"audit-{today}.log"
-
-
-def _emit_bypass_event(
-    target_root: Path, command: str, reason: str, session_id: str
-) -> None:
-    log_path = _audit_log_path(target_root)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    event = {
-        "event": _BYPASS_EVENT,
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "command": command,
-        "reason": reason,
-        "session_id": session_id,
-    }
-    with log_path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(event, sort_keys=True) + "\n")
-
-
-def _resolve_target_branch(repo: Path) -> str | None:
-    """Resolve the branch the unmerged-commits check compares against.
-
-    `NWAVE_WORKTREE_GUARD_TARGET_BRANCH` wins when set (explicit, no
-    guessing -- mirrors `des verify-worktree-cleanup --target-branch`'s "no
-    implicit default" stance for the OPERATOR-facing CLI). Otherwise falls
-    back to `worktree_triage_collector.resolve_target_branch` (the CURRENT
-    branch of `repo` -- the orchestrator's own vantage point), the SAME
-    fallback the Sentinel sweep enumerator uses when it carries no override
-    of its own. Returns None when neither resolves -- the caller reports
-    that as an Indeterminate unmerged-commits signal, never a silent
-    "assume merged".
-    """
-    override = os.environ.get(_TARGET_BRANCH_ENV, "").strip()
-    if override:
-        return override
-
-    # Lazy import: preserves this hook's fail-closed-not-crashed contract
-    # when `des` is unimportable (see `_run_triage`).
-    from des.application.worktree_triage_collector import resolve_target_branch
-
-    return resolve_target_branch(repo)
-
-
-def _emit_block(reason: str) -> None:
-    print(json.dumps({"decision": "block", "reason": reason}))
-
-
-def _format_block_reason(receipt, target: str) -> str:
-    lines = [
-        f"⛔ WORKTREE REMOVAL REFUSED — triage state {receipt.state.value} for "
-        f"{target!r} (CLEAN is required to remove).",
-        "",
-    ]
-    for finding in receipt.evidence:
-        lines.append(f"- WHAT: {finding.what}")
-        lines.append(f"  WHY:  {finding.why}")
-    if receipt.actions:
-        lines.append("")
-        lines.append(
-            f"Recommended actions (human picks ONE): {', '.join(receipt.actions)}"
-        )
-    lines.append("")
-    lines.append(f"HOW: {receipt.how}")
-    lines.append(
-        "NOTE: evidence categories not yet mechanically available: "
-        f"{', '.join(receipt.unavailable_evidence)}."
-    )
-    return "\n".join(lines)
-
-
-def _run_triage(repo: Path, target_path: Path):
-    """Collect the four evidence signals and return the triage receipt.
-
-    EXTRACTED (sentinel-sweep-enumerator, 2026-07-29) into
-    `des.application.worktree_triage_collector.collect_worktree_triage_receipt`
-    so the periodic Sentinel sweep can reuse the SAME signal-collection
-    instead of re-deriving it -- this function is now a thin wrapper that
-    resolves this hook's OWN target-branch policy (env-var override, see
-    `_resolve_target_branch`) and delegates the rest. Imports the `des`
-    application/domain modules LAZILY (not at module top-level) so a broken
-    `des` install fails INSIDE this function, where the caller can convert
-    it into a deterministic BLOCK-with-reason rather than an uncaught
-    traceback with an ambiguous exit code. GDP-6: the guard itself failing
-    to run is exactly the kind of "cannot see" that must refuse loud, never
-    silently allow (and never crash into an undefined Claude Code hook
-    outcome either).
-    """
-    from des.application.worktree_triage_collector import (
-        collect_worktree_triage_receipt,
-    )
-
-    return collect_worktree_triage_receipt(
-        repo=repo, target_path=target_path, target_branch=_resolve_target_branch(repo)
-    )
+def _session_id(event: dict[str, object]) -> str:
+    session_id = event.get("session_id", "")
+    return session_id if isinstance(session_id, str) else ""
 
 
 def main() -> int:
+    """Read the hook event, delegate the decision, return the exit code.
+
+    All decision logic (fast-path, target extraction, override, triage)
+    lives in `bash_command_guards.evaluate_worktree_remove_command`; this
+    wrapper only translates the stdin event into that call and the returned
+    decision into the stdout/exit-code protocol.
+    """
+    guards = _guards()
     event = _read_hook_event()
     command = _bash_command(event)
     if not command:
         return 0
 
-    target = _find_removal_target(command)
-    if target is None:
-        return 0  # fast path: not a `git worktree remove` invocation
-
     repo = Path(str(event.get("cwd") or Path.cwd()))
-    target_path = Path(target)
-    if not target_path.is_absolute():
-        target_path = repo / target_path
-
-    raw_reason = os.environ.get(_REASON_ENV, "")
-    if raw_reason and _reason_is_valid(raw_reason):
-        session_id = str(event.get("session_id", ""))
-        _emit_bypass_event(_target_root(), command, raw_reason.strip(), session_id)
+    decision = guards.evaluate_worktree_remove_command(command, repo)
+    if decision is None:
         return 0
-
-    try:
-        receipt = _run_triage(repo, target_path)
-    except Exception as exc:
-        _emit_block(
-            f"⛔ WORKTREE REMOVAL REFUSED — the triage predicate itself could "
-            f"not run ({type(exc).__name__}: {exc}) for {str(target_path)!r}.\n\n"
-            "WHY: a guard that cannot see and lets you through is worse than "
-            "no guard -- an internal failure here degrades LOUD (refuse), "
-            "never silently allow.\n\n"
-            f"HOW: fix the `des` install (this hook imports `des.adapters`/"
-            "`des.domain` lazily and this is the failure boundary), or -- "
-            "ONLY after a HUMAN has confirmed removal is safe -- set "
-            f'{_REASON_ENV}="<why a human confirmed this is safe>" '
-            "(audited) and re-run."
+    if decision.audit_event is not None:
+        guards.write_bash_guard_audit_event(
+            guards.worktree_guard_target_root(),
+            decision.audit_event,
+            {**(decision.audit_data or {}), "session_id": _session_id(event)},
         )
-        return 2
-
-    from des.domain.worktree_anti_rot_triage import TriageState
-
-    if receipt.state is TriageState.CLEAN:
-        return 0  # convergent evidence: no liveness, nothing at risk
-
-    _emit_block(_format_block_reason(receipt, str(target_path)))
+    if decision.allow:
+        return 0
+    print(json.dumps({"decision": "block", "reason": decision.reason}))
     return 2
 
 

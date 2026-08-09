@@ -20,7 +20,6 @@ from __future__ import annotations
 import pytest
 
 from scripts.shared.hook_definitions import (
-    _BASH_GIT_STASH_GUARD,
     HOOK_EVENT_TYPES,
     HOOK_EVENTS,
     build_guard_command,
@@ -34,7 +33,7 @@ class TestHookEventDefinitions:
 
     def test_defines_independent_hook_registrations(self):
         """The shared definition contains only the current independent hooks."""
-        assert len(HOOK_EVENTS) == 9
+        assert len(HOOK_EVENTS) == 7
 
         # Verify exact event/matcher/action triples
         events_matchers = [(h.event, h.matcher, h.action) for h in HOOK_EVENTS]
@@ -42,13 +41,23 @@ class TestHookEventDefinitions:
         assert ("PreToolUse", "Write", "pre-write") in events_matchers
         assert ("PreToolUse", "Edit", "pre-edit") in events_matchers
         assert ("PreToolUse", "Bash", "pre-bash") not in events_matchers
-        assert ("PreToolUse", "Bash", "pre-bash-git-stash-guard") in events_matchers
+        # fix-execution-log-bash-guard-consolidation follow-on: the
+        # standalone git-stash / worktree-removal Bash registrations are
+        # retired -- the universal `pre-tool-use` action now evaluates both
+        # decisions inline.
+        assert ("PreToolUse", "Bash", "pre-bash-git-stash-guard") not in events_matchers
         assert (
             "PreToolUse",
             "Bash",
             "pre-bash-worktree-removal-guard",
-        ) in events_matchers
+        ) not in events_matchers
         assert ("PreToolUse", "Bash", "pre-tool-use") in events_matchers
+        bash_entries = [
+            (h.event, h.matcher, h.action)
+            for h in HOOK_EVENTS
+            if h.event == "PreToolUse" and h.matcher == "Bash"
+        ]
+        assert bash_entries == [("PreToolUse", "Bash", "pre-tool-use")]
         assert ("PostToolUse", "Agent", "post-tool-use") in events_matchers
         assert ("SubagentStop", None, "subagent-stop") in events_matchers
         assert ("SubagentStop", None, "deliver-progress") not in events_matchers
@@ -102,17 +111,15 @@ class TestGenerateHookConfig:
         assert set(config.keys()) == HOOK_EVENT_TYPES
 
     def test_pretooluse_has_independent_entries(self):
-        """PreToolUse has Agent, Write, Edit and three independent Bash hooks."""
+        """PreToolUse has Agent, Write, Edit and one universal Bash hook."""
         config = generate_hook_config(self._simple_command)
         pre_tool_use = config["PreToolUse"]
-        assert len(pre_tool_use) == 6
+        assert len(pre_tool_use) == 4
         matchers = [e.get("matcher") for e in pre_tool_use]
         assert matchers == [
             "Agent",
             "Write",
             "Edit",
-            "Bash",
-            "Bash",
             "Bash",
         ]
 
@@ -169,15 +176,12 @@ class TestGenerateHookConfig:
         )
         assert agent_entry["hooks"][0]["command"] == "python3 -m des.hook pre-task"
 
-    def test_bash_hook_uses_shell_command_verbatim(self):
-        """Bash entries carry their shell_command verbatim, e.g. the git-stash guard."""
-        config = generate_hook_config(self._simple_command)
-        bash_entries = [e for e in config["PreToolUse"] if e.get("matcher") == "Bash"]
-        commands = [e["hooks"][0]["command"] for e in bash_entries]
-        assert _BASH_GIT_STASH_GUARD in commands
-
-    def test_bash_hook_ignores_guard_command_fn(self):
-        """Bash hooks use shell_command even when guard_command_fn is provided."""
+    def test_bash_hook_is_sole_universal_pre_tool_use_and_ignores_guard_command_fn(
+        self,
+    ):
+        """The sole generated Bash entry is the universal `pre-tool-use`
+        command, never routed through `scripts.hooks`, and unaffected by
+        `guard_command_fn` even when one is supplied."""
 
         def guard_fn(action: str) -> str:
             return f"GUARD:{action}"
@@ -185,8 +189,8 @@ class TestGenerateHookConfig:
         config = generate_hook_config(self._simple_command, guard_command_fn=guard_fn)
         bash_entries = [e for e in config["PreToolUse"] if e.get("matcher") == "Bash"]
         commands = [e["hooks"][0]["command"] for e in bash_entries]
-        assert _BASH_GIT_STASH_GUARD in commands
-        assert not any(c.startswith("GUARD:") for c in commands)
+        assert commands == ["python3 -m des.hook pre-tool-use"]
+        assert "scripts.hooks" not in commands[0]
 
     def test_entries_without_matcher_omit_matcher_key(self):
         """Subagent lifecycle entries have no matcher key."""

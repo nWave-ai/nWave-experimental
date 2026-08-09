@@ -333,6 +333,28 @@ class DESPlugin(InstallationPlugin):
         "To read it, use the Read tool.\\n"
         "This retired artifact must not be recreated or modified.\"}'; "
         "exit 2",
+        # fix-execution-log-bash-guard-consolidation follow-on
+        # (Ale-authorised 2026-08-09): the standalone git-stash guard
+        # PreToolUse/Bash registration was retired -- `_evaluate_bash_guards`
+        # in the universal `pre_tool_use_handler` now evaluates the same
+        # decision inline on every installed PreToolUse/Bash invocation.
+        "# des-hook:pre-bash-git-stash-guard\n"
+        "INPUT=$(cat); "
+        "CMD=$(printf '%s' \"$INPUT\" | python3 -c "
+        '"import sys,json; print(json.load(sys.stdin)'
+        ".get('tool_input',{}).get('command',''))\"); "
+        "printf '%s' \"$CMD\" | grep -qE '^\\s*git\\s+stash\\b' || exit 0; "
+        "printf '%s' \"$INPUT\" | python3 -m scripts.hooks.git_stash_guard",
+        # fix-execution-log-bash-guard-consolidation follow-on
+        # (Ale-authorised 2026-08-09): the standalone worktree-removal guard
+        # PreToolUse/Bash registration was retired for the same reason.
+        "# des-hook:pre-bash-worktree-removal-guard\n"
+        "INPUT=$(cat); "
+        "CMD=$(printf '%s' \"$INPUT\" | python3 -c "
+        '"import sys,json; print(json.load(sys.stdin)'
+        ".get('tool_input',{}).get('command',''))\"); "
+        "printf '%s' \"$CMD\" | grep -qE 'git\\s+worktree\\s+remove' || exit 0; "
+        "printf '%s' \"$INPUT\" | python3 -m scripts.hooks.worktree_removal_guard",
     )
     # Retired lifecycle event arrays are intentionally outside HOOK_EVENTS:
     # fresh installs never recreate them.  Upgrade/uninstall still visit only

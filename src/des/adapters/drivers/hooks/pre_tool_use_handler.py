@@ -21,6 +21,13 @@ from pathlib import Path
 
 from des.adapters.driven.time.system_time import SystemTimeProvider
 from des.adapters.drivers.hooks import des_task_signal, hook_protocol, service_factory
+from des.adapters.drivers.hooks.bash_command_guards import (
+    evaluate_git_stash_command,
+    evaluate_worktree_remove_command,
+    git_stash_guard_target_root,
+    worktree_guard_target_root,
+    write_bash_guard_audit_event,
+)
 from des.adapters.drivers.hooks.hook_protocol import (
     EXIT_CODE_TO_DECISION,
     STDERR_CAPTURE_MAX_CHARS,
@@ -305,6 +312,57 @@ def _resolve_deliverable_type() -> str | None:
     return DESConfig(cwd=Path.cwd()).deliverable_type
 
 
+def _evaluate_bash_guards(
+    hook_input: dict[str, object], tool_input: dict[str, object]
+) -> dict[str, str] | None:
+    """The git-stash + worktree-remove Bash guard decisions (consolidated).
+
+    Formerly two standalone PreToolUse/Bash hook registrations
+    (`scripts/hooks/git_stash_guard.py`, `scripts/hooks/worktree_removal_guard.py`);
+    now evaluated inline against `des.adapters.drivers.hooks.bash_command_guards`,
+    the single decision authority both the standalone scripts (kept as thin
+    CLI entry points) and this universal handler call. Returns a
+    `{decision: block, reason: ...}` payload, or `None` to allow (paying no
+    triage/filesystem work when neither guard's command shape matched).
+    """
+    command = tool_input.get("command")
+    if not isinstance(command, str) or not command:
+        return None
+
+    stash_decision = evaluate_git_stash_command(command)
+    if stash_decision is not None:
+        if stash_decision.audit_event is not None:
+            write_bash_guard_audit_event(
+                git_stash_guard_target_root(),
+                stash_decision.audit_event,
+                {
+                    **(stash_decision.audit_data or {}),
+                    "session_id": str(hook_input.get("session_id", "")),
+                },
+            )
+        if not stash_decision.allow:
+            return {"decision": "block", "reason": stash_decision.reason or ""}
+        return None
+
+    repo = Path(str(hook_input.get("cwd") or Path.cwd()))
+    worktree_decision = evaluate_worktree_remove_command(command, repo)
+    if worktree_decision is not None:
+        if worktree_decision.audit_event is not None:
+            write_bash_guard_audit_event(
+                worktree_guard_target_root(),
+                worktree_decision.audit_event,
+                {
+                    **(worktree_decision.audit_data or {}),
+                    "session_id": str(hook_input.get("session_id", "")),
+                },
+            )
+        if not worktree_decision.allow:
+            return {"decision": "block", "reason": worktree_decision.reason or ""}
+        return None
+
+    return None
+
+
 def handle_pre_tool_use() -> int:
     """Handle PreToolUse command: validate Task tool invocation.
 
@@ -341,6 +399,12 @@ def handle_pre_tool_use() -> int:
             tool_input = hook_input.get("tool_input", {})
 
             if hook_input.get("tool_name") == "Bash":
+                bash_guard_block = _evaluate_bash_guards(hook_input, tool_input)
+                if bash_guard_block is not None:
+                    print(json.dumps(bash_guard_block))
+                    exit_code = 2
+                    return exit_code
+
                 if (
                     not hook_input.get("agent_id")
                     and not hook_input.get("agent_type")

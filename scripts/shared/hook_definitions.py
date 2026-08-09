@@ -70,15 +70,15 @@ class HookEvent:
 # remains valid in BOTH installer-path AND plugin-bundle distribution modes. The
 # DES_HOOKS list in `des_plugin.py` ships the script file to the operator's
 # `~/.claude/scripts/` tree so the module resolves at runtime.
-_BASH_GIT_STASH_GUARD = (
-    "# des-hook:pre-bash-git-stash-guard\n"
-    "INPUT=$(cat); "
-    "CMD=$(printf '%s' \"$INPUT\" | python3 -c "
-    '"import sys,json; print(json.load(sys.stdin)'
-    ".get('tool_input',{}).get('command',''))\"); "
-    "printf '%s' \"$CMD\" | grep -qE '^\\s*git\\s+stash\\b' || exit 0; "
-    "printf '%s' \"$INPUT\" | python3 -m scripts.hooks.git_stash_guard"
-)
+# fix-execution-log-bash-guard-consolidation follow-on (Ale-authorised
+# 2026-08-09): the standalone git-stash guard registration below is retired
+# -- `_evaluate_bash_guards` in the universal `pre_tool_use_handler` now
+# evaluates the same `bash_command_guards.evaluate_git_stash_command`
+# decision inline on every installed PreToolUse/Bash invocation, so a
+# second, independently-scheduled Python process is no longer needed. The
+# exact retired command string is tombstoned in
+# `des_plugin.py:_RETIRED_HOOK_COMMANDS` so upgrade removes the stale
+# nested registration.
 
 # Pure-shell wrapper around the worktree-removal guard
 # (fix-worktree-removal-liveness-guard, Ale-authorised 2026-07-29). This is
@@ -106,15 +106,13 @@ _BASH_GIT_STASH_GUARD = (
 # installer-path AND plugin-bundle distribution modes; `des_plugin.py:
 # DES_HOOKS` ships `worktree_removal_guard.py` to the operator's
 # `~/.claude/scripts/` tree so the module resolves at runtime.
-_BASH_WORKTREE_REMOVAL_GUARD = (
-    "# des-hook:pre-bash-worktree-removal-guard\n"
-    "INPUT=$(cat); "
-    "CMD=$(printf '%s' \"$INPUT\" | python3 -c "
-    '"import sys,json; print(json.load(sys.stdin)'
-    ".get('tool_input',{}).get('command',''))\"); "
-    "printf '%s' \"$CMD\" | grep -qE 'git\\s+worktree\\s+remove' || exit 0; "
-    "printf '%s' \"$INPUT\" | python3 -m scripts.hooks.worktree_removal_guard"
-)
+# fix-execution-log-bash-guard-consolidation follow-on (Ale-authorised
+# 2026-08-09): the standalone worktree-removal guard registration below is
+# retired for the same reason as the git-stash guard above --
+# `_evaluate_bash_guards` now evaluates
+# `bash_command_guards.evaluate_worktree_remove_command` inline. The exact
+# retired command string is tombstoned in
+# `des_plugin.py:_RETIRED_HOOK_COMMANDS`.
 
 # Canonical hook event definitions -- the ONLY place these are defined.
 # Order matters: PreToolUse/Agent must come before Write/Edit guards. The
@@ -140,18 +138,6 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
     HookEvent(event="PreToolUse", matcher="Agent", action="pre-task"),
     HookEvent(event="PreToolUse", matcher="Write", action="pre-write", is_guard=True),
     HookEvent(event="PreToolUse", matcher="Edit", action="pre-edit", is_guard=True),
-    HookEvent(
-        event="PreToolUse",
-        matcher="Bash",
-        action="pre-bash-git-stash-guard",
-        shell_command=_BASH_GIT_STASH_GUARD,
-    ),
-    HookEvent(
-        event="PreToolUse",
-        matcher="Bash",
-        action="pre-bash-worktree-removal-guard",
-        shell_command=_BASH_WORKTREE_REMOVAL_GUARD,
-    ),
     # Universal root mode-selection gate. Unlike the specialised Bash guards
     # above, this uses the distribution's portable DES module command so the
     # existing pre_tool_use handler is reached on every installed Bash event.

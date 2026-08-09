@@ -63,53 +63,20 @@ target root and `<target>/.nwave/des/logs/` as the audit-log dir.
 from __future__ import annotations
 
 import json
-import os
-import re
 import sys
-from datetime import datetime, timezone
-from pathlib import Path
 
 
-# Kill-switch env var: truthy value approves the mutating git-stash invocation
-# and emits an audited GitStashBypassUsed event.
-_ALLOW_ENV = "NWAVE_GIT_STASH_ALLOW"
+# Decision algorithm lives in `des.adapters.drivers.hooks.bash_command_guards`
+# (fix-execution-log-bash-guard-consolidation follow-on, Ale-authorised) --
+# this script is now a thin stdin/stdout/exit-code CLI wrapper around it, so
+# the universal `src/des` PreToolUse/Bash handler and this standalone
+# registration cannot diverge into two decision algorithms. Imported lazily
+# inside `main()` so the module still parses even when `des` is not on
+# `sys.path` (bootstrap-self exemption, matching the sibling worktree guard).
+def _guards():
+    from des.adapters.drivers.hooks import bash_command_guards
 
-# Test-harness env var so the hook locates the target tree (audit-log dir)
-# without relying on Path.cwd(). Production leaves it unset and falls back to
-# Path.cwd().
-_TARGET_ROOT_ENV = "NWAVE_GIT_STASH_GUARD_TARGET_ROOT"
-
-_AUDIT_LOG_DIR_RELPATH = Path(".nwave") / "des" / "logs"
-
-# The audit-event name the guard emits on a kill-switch bypass.
-_BYPASS_EVENT = "GitStashBypassUsed"
-
-# Shell-fast-path discriminator: a bash command starts with `git stash` (with
-# optional leading whitespace) followed by a word boundary so `git stashed`
-# (hypothetical) does not match.
-_GIT_STASH_RE = re.compile(r"^\s*git\s+stash\b")
-
-# Read-only `git stash` subcommands: the next non-flag token after `git stash`.
-# Only `list` + `show` are non-mutating in modern git. Every other subcommand
-# (push/pop/apply/drop/clear/save/branch/create/store) -- and the bare
-# `git stash` (implicit push) -- mutates the stash stack or working tree.
-_READ_ONLY_SUBCOMMANDS = frozenset({"list", "show"})
-
-# Help flags that turn ANY `git stash` invocation into a read-only doc request.
-_HELP_FLAGS = frozenset({"--help", "-h"})
-
-# Falsy env-var spellings that DO NOT activate the kill-switch, mirroring
-# standard shell conventions for boolean flags.
-_FALSY_ENV_VALUES = frozenset({"0", "false", "no", "off"})
-
-# Block reason: names the safe alternative AND the bypass mechanism so the
-# operator sees a directly actionable remedy. AT-1 asserts both substrings.
-_BLOCK_REASON = (
-    "git stash is forbidden per STANDING (10 cumulative violations); "
-    "use `git worktree add /tmp/probe HEAD` for clean-tree isolation instead. "
-    "To bypass deliberately, set NWAVE_GIT_STASH_ALLOW=1 "
-    "(audited GitStashBypassUsed event)."
-)
+    return bash_command_guards
 
 
 def _read_hook_event() -> dict[str, object]:
@@ -145,114 +112,29 @@ def _session_id(event: dict[str, object]) -> str:
     return session_id if isinstance(session_id, str) else ""
 
 
-def _is_git_stash(command: str) -> bool:
-    """True iff the bash command begins with `git stash` (word-boundary match)."""
-    return _GIT_STASH_RE.match(command) is not None
-
-
-def _is_mutating_git_stash(command: str) -> bool:
-    """True iff a `git stash` command mutates state (block candidate).
-
-    Discriminator: tokenise the command; any token in `--help`/`-h` makes the
-    invocation a read-only help request (ALLOW). Otherwise peek the first
-    non-flag token AFTER `stash`; if it is in `{list, show}` -> read-only
-    (ALLOW). Bare `git stash` (no subcommand) and every other subcommand
-    (push/pop/apply/drop/clear/save/branch/create/store) -> mutating (BLOCK).
-    """
-    tokens = command.split()
-    if any(token in _HELP_FLAGS for token in tokens):
-        return False
-    subcommand = _first_subcommand_after_stash(tokens)
-    return subcommand not in _READ_ONLY_SUBCOMMANDS
-
-
-def _first_subcommand_after_stash(tokens: list[str]) -> str | None:
-    """Return the first non-flag token after the `stash` token, or None.
-
-    Walks past the leading `git stash` tokens, then returns the first token
-    that is not a flag (does not start with `-`). A bare `git stash` with no
-    following token returns None (treated as mutating implicit push).
-    """
-    seen_stash = False
-    for token in tokens:
-        if not seen_stash:
-            if token == "stash":
-                seen_stash = True
-            continue
-        if token.startswith("-"):
-            continue
-        return token
-    return None
-
-
-def _allow_env_active() -> bool:
-    """True when NWAVE_GIT_STASH_ALLOW is set to a truthy value.
-
-    Truthy = any non-empty string that is not one of `_FALSY_ENV_VALUES`
-    (case-insensitive), so an operator who exports the var with any non-zero
-    value gets the bypass.
-    """
-    raw = os.environ.get(_ALLOW_ENV, "")
-    if not raw:
-        return False
-    return raw.strip().lower() not in _FALSY_ENV_VALUES
-
-
-def _target_root() -> Path:
-    """Resolve the target machine root from env override or Path.cwd()."""
-    override = os.environ.get(_TARGET_ROOT_ENV, "")
-    return Path(override) if override else Path.cwd()
-
-
-def _audit_log_path(target_root: Path) -> Path:
-    """Return today's UTC-dated audit log path under the target root."""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return target_root / _AUDIT_LOG_DIR_RELPATH / f"audit-{today}.log"
-
-
-def _emit_bypass_event(target_root: Path, command: str, session_id: str) -> None:
-    """Append one GitStashBypassUsed event to today's audit log (JSONL format).
-
-    The directory is created on demand so the first bypass on a clean target
-    succeeds. The event carries the git-stash command + session id.
-    """
-    log_path = _audit_log_path(target_root)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    event = {
-        "event": _BYPASS_EVENT,
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "command": command,
-        "session_id": session_id,
-    }
-    with log_path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(event, sort_keys=True) + "\n")
-
-
-def _emit_block() -> None:
-    """Print a single-line `{decision: block}` JSON object on stdout."""
-    print(json.dumps({"decision": "block", "reason": _BLOCK_REASON}, sort_keys=True))
-
-
 def main() -> int:
-    """Read the hook event, dispatch by command shape, return the exit code.
+    """Read the hook event, delegate the decision, return the exit code.
 
-    Decision order:
-        1. Read stdin event JSON (empty/malformed -> approve silently).
-        2. Fast-path: non-git-stash command -> exit 0 (no filesystem work).
-        3. Read-only git-stash (list/show/--help) -> exit 0 (approve).
-        4. Kill-switch active -> exit 0 (approve) + audited GitStashBypassUsed.
-        5. Mutating git-stash -> exit 2 (block) + {decision: block} reason.
+    All decision logic (fast-path, read-only vs mutating, kill-switch) lives
+    in `bash_command_guards.evaluate_git_stash_command`; this wrapper only
+    translates the stdin event into that call and the returned decision into
+    the stdout/exit-code protocol.
     """
+    guards = _guards()
     event = _read_hook_event()
     command = _bash_command(event)
-    if not _is_git_stash(command):
+    decision = guards.evaluate_git_stash_command(command)
+    if decision is None:
         return 0
-    if not _is_mutating_git_stash(command):
+    if decision.audit_event is not None:
+        guards.write_bash_guard_audit_event(
+            guards.git_stash_guard_target_root(),
+            decision.audit_event,
+            {**(decision.audit_data or {}), "session_id": _session_id(event)},
+        )
+    if decision.allow:
         return 0
-    if _allow_env_active():
-        _emit_bypass_event(_target_root(), command, _session_id(event))
-        return 0
-    _emit_block()
+    print(json.dumps({"decision": "block", "reason": decision.reason}, sort_keys=True))
     return 2
 
 

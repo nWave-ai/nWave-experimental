@@ -1,39 +1,29 @@
-"""Tests for the worktree-removal guard's command parsing (scripts/hooks/worktree_removal_guard.py).
+"""Tests for the worktree-removal guard's command parsing.
 
-Pure, in-process tests of `_find_removal_target` / `_reason_is_valid` -- the
-tokenized detection must find a `git worktree remove <path>` buried after a
-`&&`, must NOT false-positive on the phrase inside a quoted commit message,
-and must ignore every OTHER `git worktree` subcommand (`add`, `list`,
-`lock`, `prune`, ...).
+Pure, in-process tests of the shared decision authority
+`des.adapters.drivers.hooks.bash_command_guards.find_worktree_remove_target`
+/ `worktree_remove_reason_is_valid` -- both the standalone
+`scripts/hooks/worktree_removal_guard.py` wrapper and the universal
+`src/des` PreToolUse/Bash handler call these SAME functions
+(fix-execution-log-bash-guard-consolidation follow-on), so pinning them here
+covers both consumers. The tokenized detection must find a `git worktree
+remove <path>` buried after a `&&`, must NOT false-positive on the phrase
+inside a quoted commit message, and must ignore every OTHER `git worktree`
+subcommand (`add`, `list`, `lock`, `prune`, ...).
 """
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-
 import pytest
 
-
-_HOOK_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "scripts"
-    / "hooks"
-    / "worktree_removal_guard.py"
+from des.adapters.drivers.hooks.bash_command_guards import (
+    find_worktree_remove_target,
+    worktree_remove_reason_is_valid,
 )
 
 
-def _load():
-    spec = importlib.util.spec_from_file_location("worktree_removal_guard", _HOOK_PATH)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(module)
-    return module
-
-
-_MODULE = _load()
-_FIND_TARGET = _MODULE._find_removal_target
-_REASON_VALID = _MODULE._reason_is_valid
+_FIND_TARGET = find_worktree_remove_target
+_REASON_VALID = worktree_remove_reason_is_valid
 
 
 @pytest.mark.parametrize(
