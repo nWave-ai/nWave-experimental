@@ -57,7 +57,6 @@ def test_atdd_pure_flavor_parsed_structure_is_pinned() -> None:
     assert list(events) == [
         "dispatch.pre",
         "subagent.stop",
-        "commit.pre",
     ]
 
     # f-nonbypassable-attestation slice-05 (DDD-8): dispatch.pre legitimately
@@ -99,9 +98,6 @@ def test_atdd_pure_flavor_parsed_structure_is_pinned() -> None:
         "feature_id": "{feature_id}",
         "slice_id": "{slice_id}",
     }
-
-    # `require_reviewed_by: false` must coerce to a Python bool, not "false".
-    assert events["commit.pre"][0]["args"]["require_reviewed_by"] is False
 
 
 def test_classic_flavor_is_absent_instead_of_parseable() -> None:

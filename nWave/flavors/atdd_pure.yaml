@@ -209,16 +209,6 @@ lifecycle_events:
         FullSuiteLegNotApplicable: FullSuiteLegRan
         WalkingSkeletonNotApplicable: WalkingSkeletonTierVerified
 
-  # Commit lifecycle (git-hook prepare-commit-msg) — closes friction #35
-  # mechanical trailer derivation. Phase 5 wiring; today the trailer
-  # is operator-typed (cosmetic per friction #35 standing).
-  commit.pre:
-    - gate_id: verify-commit-trailers
-      args:
-        commit: HEAD
-        require_reviewed_by: false  # Phase 5 will flip to true
-      on_failure: warn
-
 # f-distill-wiring-to-registry slice-01 (DDD-3, MOVE-completion): the dormant
 # ``wave_gate_stacks`` block is REMOVED. Its last co-tenant -- the ``distill``
 # gate-out stack -- was the false-credit source: the spine NEVER resolved it
