@@ -41,14 +41,15 @@ def context(tmp_path: Path) -> DoctorContext:
 # shared fixtures-as-preconditions for the P7 three-valued-verdict tests below
 # ---------------------------------------------------------------------------
 
-#: Matches AttributionCheck._HOOK_MARKER ("pre-commit-attribution") -- the
-#: SAME substring the tombstoned _attribution_hook_command() shape used to
-#: carry in settings.json's hooks.PreToolUse[].hooks[].command (retained only
-#: as the cleanup_legacy_attribution_hook() removal baseline, never written by
-#: install anymore -- scripts/install/attribution_utils.py).
+#: Matches AttributionCheck._HOOK_MODULE + _HOOK_ACTION -- the shape actually
+#: written by scripts/install/plugins/des_plugin.py's HOOK_COMMAND_TEMPLATE
+#: for the universal PreToolUse adapter (action "pre-tool-use"). The retired
+#: "pre-commit-attribution" independent-hook shape (tombstoned in
+#: scripts/install/attribution_utils.py as a removal-only baseline) is no
+#: longer written by any current install path.
 _HOOK_COMMAND = (
     "PYTHONPATH=$HOME/.claude/lib/python python3 -m "
-    "des.adapters.drivers.hooks.claude_code_hook_adapter pre-commit-attribution"
+    "des.adapters.drivers.hooks.claude_code_hook_adapter pre-tool-use"
 )
 
 
@@ -231,6 +232,52 @@ class TestAttributionCheckThreeValuedVerdict:
         assert result.passed is False
         assert result.error_code == "ATTRIBUTION_UNVERIFIABLE"
         assert result.error_code != "ATTRIBUTION_DISAGREEMENT"
+
+    def test_attribution_check_agrees_with_a_real_plugin_generated_hook_command(
+        self, context: DoctorContext
+    ) -> None:
+        """Regression for the stale-marker defect: the hook command actually
+        emitted by the installer (DESPlugin._generate_hook_command, the SAME
+        producing tool `scripts/install/plugins/des_plugin.py` uses) must be
+        recognised as registered -- not just the fixture's hand-built
+        `_HOOK_COMMAND` shape above. A fresh temp target with attribution
+        declared enabled and the repo activated must come back healthy.
+        """
+        from scripts.install.plugins.base import InstallContext
+        from scripts.install.plugins.des_plugin import DESPlugin
+
+        install_context = InstallContext(
+            claude_dir=context.claude_dir,
+            scripts_dir=context.claude_dir,
+            templates_dir=context.claude_dir,
+            logger=None,
+        )
+        real_hook_command = DESPlugin()._generate_hook_command(
+            install_context, "pre-tool-use"
+        )
+        _write_json(
+            context.settings_path,
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {"type": "command", "command": real_hook_command}
+                            ],
+                        }
+                    ]
+                }
+            },
+        )
+        _declare_attribution_enabled(context.global_config_path, enabled=True)
+        _activate_repo(context.project_root)
+
+        result = AttributionCheck().run(context)
+
+        assert result.passed is True
+        assert result.error_code is None
+        assert "attribution commit hook: registered" in result.message
 
     def test_attribution_check_never_writes_settings_or_global_config(
         self, context: DoctorContext

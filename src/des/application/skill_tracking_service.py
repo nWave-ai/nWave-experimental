@@ -3,9 +3,8 @@
 Compose Method pattern: small, well-named methods for each responsibility.
 Intercepts Read tool calls to skill files and logs tracking events.
 
-Two entry points:
-- maybe_track(): called per tool invocation (post-tool-use hook)
-- track_from_transcript(): called at subagent-stop with full JSONL transcript
+Entry point: track_from_transcript() is called at subagent-stop with the
+full JSONL transcript.
 
 Fail-open: never raises exceptions that could block agent execution.
 """
@@ -102,8 +101,8 @@ def mode_select_observed_before_mutation(transcript_path: str) -> bool:
 class SkillTrackingService:
     """Tracks skill file loads for observability.
 
-    Entry point: maybe_track() is called from the post-tool-use hook
-    for every tool invocation. It filters to skill Read calls only.
+    Entry point: track_from_transcript() is called from the SubagentStop
+    hook with a sub-agent's full JSONL transcript.
     """
 
     SKILL_PATH_MARKER = "/skills/nw/"
@@ -124,40 +123,6 @@ class SkillTrackingService:
         self._tracker = tracker
         self._time = time_provider
         self._strategy = strategy
-
-    def maybe_track(
-        self,
-        tool_name: str,
-        tool_input: dict,
-        des_context: dict | None = None,
-    ) -> None:
-        """Track skill load if this is a skill Read call.
-
-        Entry point called for every tool invocation. Filters to
-        Read calls targeting skill files under /skills/nw/.
-
-        Args:
-            tool_name: Name of the tool invoked (e.g., "Read", "Write")
-            tool_input: Tool input parameters (must contain "file_path" for Read)
-            des_context: Optional DES execution context with step_id
-        """
-        if not self._is_skill_read(tool_name, tool_input):
-            return
-
-        file_path = tool_input.get("file_path", "")
-        agent_name, skill_name = self._parse_skill_info(file_path)
-        estimated_tokens = self._estimate_tokens(file_path)
-        step_id = self._extract_step_id(des_context)
-
-        event = SkillLoadEvent(
-            timestamp=self._time.now_utc().isoformat(),
-            agent_name=agent_name,
-            skill_name=skill_name,
-            file_path=file_path,
-            estimated_tokens=estimated_tokens,
-            step_id=step_id,
-        )
-        self._tracker.log_skill_load(event)
 
     def _is_skill_read(self, tool_name: str, tool_input: dict) -> bool:
         """Check if this tool call is a Read of a skill file."""
@@ -217,23 +182,6 @@ class SkillTrackingService:
             # HOW: safe to continue -- caller falls back to the 0 default.
             pass
         return 0
-
-    def _extract_step_id(self, des_context: dict | None) -> str | None:
-        """Extract step_id from DES context if available.
-
-        Args:
-            des_context: Optional DES execution context
-
-        Returns:
-            Step identifier string or None
-        """
-        if des_context is None:
-            return None
-        return des_context.get("step_id")
-
-    # ------------------------------------------------------------------
-    # Transcript-based tracking (SubagentStop hook)
-    # ------------------------------------------------------------------
 
     def track_from_transcript(self, transcript_path: str) -> list[SkillLoadEvent]:
         """Extract and log skill loads from a sub-agent JSONL transcript.

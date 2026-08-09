@@ -29,8 +29,7 @@ from pathlib import Path
 
 import yaml
 
-from des.cli import at_review_verdict
-from scripts.cli import carpaccio_slice_gate
+from des.cli import at_review_verdict, carpaccio_slice_gate
 
 
 # The legacy signing-key env var — referenced ONLY to SCRUB it around producer

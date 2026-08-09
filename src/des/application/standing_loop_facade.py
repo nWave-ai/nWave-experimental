@@ -44,8 +44,8 @@ class LoopRefusal:
 class StandingLoopFacade:
     """Delegates operator control and occurrence execution to their ports.
 
-    It never claims an occurrence, creates an attestation, touches a ledger, or
-    invokes a scheduler.  Both manual and scheduler drivers normalize an
+    It owns no ledger protocol itself but delegates persistence to
+    LoopControlService.  Both manual and scheduler drivers normalize an
     occurrence and call the same ``StandingLoopTickPort.execute_tick`` boundary.
     """
 

@@ -2,7 +2,7 @@
 
 ADR-028 D2-bis + ADR-029 D5 / slice-03 (Mandate-12, Pillar 3). Wires the
 PRODUCTION carpaccio-slice-gate CLI entry point
-(``scripts.cli.carpaccio_slice_gate.main``) against a tmp_path repo fixture.
+(``des.cli.carpaccio_slice_gate.main``) against a tmp_path repo fixture.
 Business logic lives here as the single source of truth; step bodies delegate
 to ``CarpaccioGateComposition`` methods and never inline logic.
 
@@ -14,13 +14,6 @@ Pure-function contract (ADR-028 D2-bis): the gate reads the feature-delta +
 + JSON); it performs NO filesystem mutation. The composition's
 ``capture_universe`` snapshots the files the gate could be tempted to touch so
 the When-step state-delta guard proves the read-only contract (Mandate 8).
-
-RED scaffold note: ``scripts/cli/carpaccio_slice_gate.py`` does not exist on
-master -- slice-03 creates it. The import below therefore fails at collection
-on master; that is the intended RED signal (the AT cannot pass until the gate
-CLI is implemented). It is a deliberate missing-functionality RED, not a test
-bug: every other dependency (state-delta port, pytest-bdd, domain types)
-resolves cleanly.
 """
 
 from __future__ import annotations
@@ -35,8 +28,7 @@ from pathlib import Path
 
 import yaml
 
-# Production driving port -- created by slice-03. Absent on master (RED).
-from scripts.cli.carpaccio_slice_gate import main as carpaccio_gate_main
+from des.cli.carpaccio_slice_gate import main as carpaccio_gate_main
 
 from .domain_types import (
     ATReviewRecordState,

@@ -10,8 +10,8 @@ F-11 (atdd-pure-dogfooding-friction-2026-05-20.md): this gate is an importable
 ``des.cli`` module so it SHIPS with the ``des`` package and is invokable
 layout-independently as a module -- the same shape U2
 (``des.cli.verify_slice_commit_completeness``) uses, run as a subprocess by the
-U1 hook. The legacy ``scripts/cli/carpaccio_slice_gate.py`` path survives as a
-thin shim that re-exports this module.
+U1 hook. The legacy ``scripts/cli/carpaccio_slice_gate.py`` shim has been removed;
+callers now use the packaged ``des.cli`` module directly.
 
 Implemented as a single-file core CLI with single-line JSON
 output, explicit exit codes, pure-function -- the gate reads the feature-delta

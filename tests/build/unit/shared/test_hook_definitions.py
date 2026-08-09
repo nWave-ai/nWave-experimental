@@ -294,8 +294,159 @@ class TestIsDESHookEntry:
             ),
             # Empty entry
             ({}, False),
+            # Issue97: bare mention of the module path, not an invocation --
+            # must NOT be classified as a DES hook (would delete user command)
+            (
+                {
+                    "matcher": "Bash",
+                    "command": "echo des.adapters.drivers.hooks",
+                },
+                False,
+            ),
+            # Issue97: bare mention of the adapter name, not an invocation --
+            # must NOT be classified as a DES hook (would delete user command)
+            (
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "grep claude_code_hook_adapter .",
+                        }
+                    ],
+                },
+                False,
+            ),
+            # Legacy flat, path-style invocation (pre-`-m`), known action --
+            # the exact historical shape WTBD-165 restores detection for.
+            (
+                {
+                    "matcher": "Task",
+                    "command": (
+                        "python3 src/des/adapters/drivers/hooks/"
+                        "claude_code_hook_adapter.py pre-task"
+                    ),
+                },
+                True,
+            ),
+            # Same legacy shape via bare `python` (not `python3`).
+            (
+                {
+                    "matcher": "SubagentStop",
+                    "command": (
+                        "python src/des/adapters/drivers/hooks/"
+                        "claude_code_hook_adapter.py subagent-stop"
+                    ),
+                },
+                True,
+            ),
+            # Legacy shape, nested format, another known action.
+            (
+                {
+                    "matcher": "Agent",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": (
+                                "python3 src/des/adapters/drivers/hooks/"
+                                "claude_code_hook_adapter.py post-tool-use"
+                            ),
+                        }
+                    ],
+                },
+                True,
+            ),
+            # Near-miss: legacy script path but UNKNOWN action -- must not
+            # match (not a positive structure the installer ever emitted).
+            (
+                {
+                    "matcher": "Task",
+                    "command": (
+                        "python3 src/des/adapters/drivers/hooks/"
+                        "claude_code_hook_adapter.py bogus-action"
+                    ),
+                },
+                False,
+            ),
+            # Near-miss: legacy script path referenced mid-command (not
+            # anchored at start) -- must not match a foreign wrapper.
+            (
+                {
+                    "matcher": "Task",
+                    "command": (
+                        "echo running && python3 src/des/adapters/drivers/"
+                        "hooks/claude_code_hook_adapter.py pre-task"
+                    ),
+                },
+                False,
+            ),
+            # Near-miss: foreign echo mentioning the legacy script path and a
+            # known action -- must not match (echo is not python invocation).
+            (
+                {
+                    "matcher": "Task",
+                    "command": (
+                        "echo python3 src/des/adapters/drivers/hooks/"
+                        "claude_code_hook_adapter.py pre-task"
+                    ),
+                },
+                False,
+            ),
+            # Near-miss: foreign grep mentioning the legacy script path --
+            # must not match.
+            (
+                {
+                    "matcher": "Task",
+                    "command": (
+                        "grep -r 'claude_code_hook_adapter.py pre-task' "
+                        "src/des/adapters/drivers/hooks/"
+                    ),
+                },
+                False,
+            ),
+            # Near-miss: wrong script path (different module tree) with a
+            # known action -- must not match.
+            (
+                {
+                    "matcher": "Task",
+                    "command": (
+                        "python3 src/other/adapters/drivers/hooks/"
+                        "claude_code_hook_adapter.py pre-task"
+                    ),
+                },
+                False,
+            ),
+            # Near-miss: legacy path missing the `.py` suffix -- must not
+            # match (not the exact historical structure).
+            (
+                {
+                    "matcher": "Task",
+                    "command": (
+                        "python3 src/des/adapters/drivers/hooks/"
+                        "claude_code_hook_adapter pre-task"
+                    ),
+                },
+                False,
+            ),
         ],
-        ids=["nested-des", "flat-des", "shell-des", "non-des", "empty"],
+        ids=[
+            "nested-des",
+            "flat-des",
+            "shell-des",
+            "non-des",
+            "empty",
+            "issue97-module-path-substring-not-invocation",
+            "issue97-adapter-name-substring-not-invocation",
+            "legacy-flat-script-known-action-pre-task",
+            "legacy-flat-script-bare-python-known-action",
+            "legacy-flat-script-nested-known-action-post-tool-use",
+            "legacy-flat-script-unknown-action-near-miss",
+            "legacy-flat-script-not-anchored-at-start-near-miss",
+            "legacy-flat-script-foreign-echo-near-miss",
+            "legacy-flat-script-foreign-grep-near-miss",
+            "legacy-flat-script-wrong-module-path-near-miss",
+            "legacy-flat-script-missing-py-suffix-near-miss",
+        ],
     )
     def test_detects_des_hooks(self, entry: dict, expected: bool):
         assert is_des_hook_entry(entry) == expected

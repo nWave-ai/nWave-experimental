@@ -22,9 +22,6 @@ from des.adapters.drivers.hooks.hook_protocol import (
     log_hook_invoked,
     read_and_parse_stdin,
 )
-from des.adapters.drivers.hooks.skill_tracking_hooks import (
-    maybe_track_skill_load as _maybe_track_skill_load,
-)
 from des.domain.des_marker_parser import DesMarkerParser
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 
@@ -96,9 +93,6 @@ def handle_post_tool_use() -> int:
                 },
                 hook_id=hook_id,
             )
-
-            # Skill loading tracking (non-blocking, fail-open)
-            _maybe_track_skill_load(hook_input)
 
             # Check if the just-completed Task was a DES task (had DES markers).
             # Delegates to the canonical DesMarkerParser (domain layer) instead of

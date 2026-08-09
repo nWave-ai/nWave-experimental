@@ -170,6 +170,67 @@ class TestIgnoresNonSkillTranscriptEntries:
         assert len(tracker.events) == 0
 
 
+class TestEstimatesTokens:
+    """track_from_transcript estimates token count from file size when
+    strategy is token-tracking."""
+
+    def test_estimates_tokens_from_file_size(self, tmp_path) -> None:
+        """Token count is chars // 4 when strategy is token-tracking."""
+        skill_dir = tmp_path / "skills" / "nw" / "software-crafter"
+        skill_dir.mkdir(parents=True)
+        skill_file = skill_dir / "tdd-methodology.md"
+        skill_file.write_text("x" * 400, encoding="utf-8")
+        transcript_path = _write_transcript(
+            tmp_path,
+            [
+                {
+                    "type": "tool_use",
+                    "name": "Read",
+                    "input": {"file_path": str(skill_file)},
+                },
+            ],
+        )
+
+        tracker = InMemorySkillTracker()
+        service = SkillTrackingService(
+            tracker=tracker,
+            time_provider=MockedTimeProvider(),
+            strategy="token-tracking",
+        )
+
+        events = service.track_from_transcript(transcript_path)
+
+        assert events[0].estimated_tokens == 100
+
+    def test_passive_logging_skips_token_estimation(self, tmp_path) -> None:
+        """Token count is 0 when strategy is passive-logging."""
+        skill_dir = tmp_path / "skills" / "nw" / "software-crafter"
+        skill_dir.mkdir(parents=True)
+        skill_file = skill_dir / "tdd-methodology.md"
+        skill_file.write_text("x" * 400, encoding="utf-8")
+        transcript_path = _write_transcript(
+            tmp_path,
+            [
+                {
+                    "type": "tool_use",
+                    "name": "Read",
+                    "input": {"file_path": str(skill_file)},
+                },
+            ],
+        )
+
+        tracker = InMemorySkillTracker()
+        service = SkillTrackingService(
+            tracker=tracker,
+            time_provider=MockedTimeProvider(),
+            strategy="passive-logging",
+        )
+
+        events = service.track_from_transcript(transcript_path)
+
+        assert events[0].estimated_tokens == 0
+
+
 class TestTranscriptTrackingFailOpen:
     """track_from_transcript never raises, returns empty on errors."""
 

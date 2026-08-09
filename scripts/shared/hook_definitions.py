@@ -15,6 +15,7 @@ HOOK_EVENTS is the installed hook SSOT for the fixed manifest.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 
@@ -217,23 +218,51 @@ def build_guard_command(python_cmd: str) -> str:
     ).format(python_cmd=python_cmd)
 
 
+_DES_MODULE_INVOCATION = "-m des.adapters.drivers.hooks.claude_code_hook_adapter"
+
+# Old (pre-`-m`) flat, path-style invocation the installer used to emit:
+# `python3 src/des/adapters/drivers/hooks/claude_code_hook_adapter.py <action>`.
+# Anchored at the start of the command and restricted to the known action
+# vocabulary below -- not a bare substring check -- so it matches only the
+# exact historical structure the installer wrote, never a foreign command
+# that merely mentions the script path (see WTBD-165 / issue97 falsifiers).
+_LEGACY_SCRIPT_INVOCATION_RE = re.compile(
+    r"^python3?\s+src/des/adapters/drivers/hooks/claude_code_hook_adapter\.py\s+(\S+)"
+)
+
+_KNOWN_HOOK_ACTIONS: frozenset[str] = frozenset(h.action for h in HOOK_EVENTS)
+
+
 def _is_des_command(command: str) -> bool:
-    """Check if a command string belongs to DES.
+    """Check if a command string is an installer-owned DES hook command.
 
-    Detects:
-    - Python-based hooks via module name (claude_code_hook_adapter)
-    - Python-based hooks via module path (des.adapters.drivers.hooks)
-    - Shell-based hooks via marker prefix (# des-hook:)
+    Recognizes only the positive structures the installer actually emits
+    (present or historical), not bare substrings:
+    - Python-based hooks via the exact module invocation
+      (`-m des.adapters.drivers.hooks.claude_code_hook_adapter`), the form
+      `_generate_hook_command`'s `HOOK_COMMAND_TEMPLATE` produces.
+    - The legacy flat, path-style invocation
+      (`python3 src/des/adapters/drivers/hooks/claude_code_hook_adapter.py
+      <action>`) the installer used to emit before the `-m` module form,
+      restricted to a known hook action so it stays a positive structural
+      match rather than a substring check.
+    - Shell-based hooks via the leading marker (`# des-hook:...`), which
+      every shell hook command starts with (see `_RETIRED_HOOK_COMMANDS`).
 
-    Multiple markers provide defense-in-depth: if the adapter module is
-    renamed or the command format changes between versions, at least one
-    marker should still match, preventing duplicate hooks on upgrade.
+    A bare-substring check (e.g. `"claude_code_hook_adapter" in command`)
+    also matches unrelated user commands that merely mention the module
+    name or path (`echo des.adapters.drivers.hooks`, `grep
+    claude_code_hook_adapter .`), which would delete them on
+    install/uninstall. Requiring the full `-m <module>` invocation, the
+    exact legacy script-path structure with a known action, and anchoring
+    the shell marker to the start of the command excludes those false
+    positives while still matching every command the installer itself
+    writes (present or historical).
     """
-    return (
-        "claude_code_hook_adapter" in command
-        or "des-hook:" in command
-        or "des.adapters.drivers.hooks" in command
-    )
+    if _DES_MODULE_INVOCATION in command or command.startswith("# des-hook:"):
+        return True
+    legacy_match = _LEGACY_SCRIPT_INVOCATION_RE.match(command)
+    return legacy_match is not None and legacy_match.group(1) in _KNOWN_HOOK_ACTIONS
 
 
 def is_des_hook_entry(hook_entry: dict) -> bool:
@@ -258,3 +287,31 @@ def is_des_hook_entry(hook_entry: dict) -> bool:
         if _is_des_command(h.get("command", "")):
             return True
     return False
+
+
+def strip_des_hooks_from_entries(entries: list) -> list:
+    """Remove DES-owned commands from a hook-event's entry list.
+
+    An old flat entry whose own command is DES-owned is dropped outright.
+    A nested entry may bundle a DES hook alongside an unrelated sibling
+    hook (e.g. a user's own Bash hook) under the same matcher; only the
+    DES-owned nested hooks are removed, so the sibling and all entry
+    metadata survive. The entry itself is dropped only once stripping
+    leaves it with no hooks at all.
+    """
+    result = []
+    for entry in entries:
+        if _is_des_command(entry.get("command", "")):
+            continue
+        hooks = entry.get("hooks")
+        if hooks is None:
+            result.append(entry)
+            continue
+        retained_hooks = [h for h in hooks if not _is_des_command(h.get("command", ""))]
+        if not retained_hooks:
+            continue
+        if len(retained_hooks) != len(hooks):
+            result.append({**entry, "hooks": retained_hooks})
+        else:
+            result.append(entry)
+    return result

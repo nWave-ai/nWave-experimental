@@ -43,7 +43,18 @@ if TYPE_CHECKING:
 
 
 _LEGACY_RUNTIME = "nwave_attribution_hook.py"
-_HOOK_MARKER = "pre-commit-attribution"
+
+# Current registration shape (ADR-CA-006/007): the universal PreToolUse
+# adapter observes attribution.enabled at invocation time -- there is no
+# dedicated attribution hook entry anymore. `_HOOK_MARKER` below matched the
+# retired independent `pre-commit-attribution` action
+# (scripts/install/attribution_utils.py:_attribution_hook_command, tombstoned
+# as the cleanup-only removal baseline); real installs have never written
+# that shape since ADR-CA-006. `_hook_registered` must key on the module +
+# action actually installed by scripts/install/plugins/des_plugin.py
+# (HOOK_COMMAND_TEMPLATE): "...claude_code_hook_adapter pre-tool-use".
+_HOOK_MODULE = "des.adapters.drivers.hooks.claude_code_hook_adapter"
+_HOOK_ACTION = "pre-tool-use"
 
 
 class AttributionCheck:
@@ -130,7 +141,8 @@ class AttributionCheck:
     def _hook_registered(settings: dict) -> bool:
         entries = settings.get("hooks", {}).get("PreToolUse", [])
         return any(
-            _HOOK_MARKER in hook.get("command", "")
+            _HOOK_MODULE in (command := hook.get("command", ""))
+            and _HOOK_ACTION in command
             for entry in entries
             if isinstance(entry, dict)
             for hook in entry.get("hooks", [])

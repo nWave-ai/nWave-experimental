@@ -34,8 +34,11 @@ try:
     from scripts.install.plugins.opencode_des_plugin import _opencode_config_dir
     from scripts.shared.install_paths import host_neutral_runtime_dir
     from scripts.shared.skill_distribution import (
+        DATA_FAMILY_KEY,
         MANIFEST_FILENAME,
         SKILLS_FAMILY_KEY,
+        TEMPLATES_FAMILY_KEY,
+        UTILITIES_FAMILY_KEY,
         FamilyRemovalEvidence,
         read_family_record,
         remove_family_record,
@@ -58,8 +61,11 @@ except ImportError:
     from plugins.opencode_des_plugin import _opencode_config_dir
     from shared.install_paths import host_neutral_runtime_dir
     from shared.skill_distribution import (
+        DATA_FAMILY_KEY,
         MANIFEST_FILENAME,
         SKILLS_FAMILY_KEY,
+        TEMPLATES_FAMILY_KEY,
+        UTILITIES_FAMILY_KEY,
         FamilyRemovalEvidence,
         read_family_record,
         remove_family_record,
@@ -97,6 +103,35 @@ class ClaudeOwnershipInventory:
     skills_legacy_root_present: bool
     skills_manifest_status: str  # "absent" | "corrupt" | "present"
     skills_owned_present: frozenset[str]
+    templates_manifest_status: str  # "absent" | "corrupt" | "present"
+    templates_owned_present: frozenset[str]
+    utilities_manifest_status: str  # "absent" | "corrupt" | "present"
+    utilities_owned_present: frozenset[str]
+    data_manifest_status: str  # "absent" | "corrupt" | "present"
+    data_owned_present: frozenset[str]
+
+
+def _scan_family_ownership(target_dir: Path, *, key: str) -> tuple[str, frozenset[str]]:
+    """Read-only ownership scan for one manifest-tracked family.
+
+    Shared by every family scanned by `scan_claude_ownership` -- a missing
+    or corrupt manifest yields an empty owned set (never a guess), and a
+    tracked name only counts as owned if it still exists on disk.
+    """
+    manifest_path = target_dir / MANIFEST_FILENAME
+    if not manifest_path.exists():
+        return "absent", frozenset()
+    try:
+        record = read_family_record(target_dir, key=key)
+    except (OSError, ValueError, AttributeError):
+        return "corrupt", frozenset()
+    tracked = record.tracked or frozenset()
+    owned = frozenset(
+        name
+        for name in tracked
+        if (target_dir / name).exists() or (target_dir / name).is_symlink()
+    )
+    return "present", owned
 
 
 def scan_claude_ownership(claude_config_dir: Path) -> ClaudeOwnershipInventory:
@@ -105,32 +140,29 @@ def scan_claude_ownership(claude_config_dir: Path) -> ClaudeOwnershipInventory:
     Never mutates the tree and never calls `remove_family_record` -- it only
     reads the manifest (`read_family_record`) and stats dedicated paths, so
     two scans with no intervening removal return an equal (`==`) inventory.
-    A missing or corrupt skills manifest yields an empty owned set (never a
-    guess); a scan can therefore never manufacture ownership by itself.
+    A missing or corrupt manifest yields an empty owned set (never a guess);
+    a scan can therefore never manufacture ownership by itself.
     `adopt_legacy` is deliberately NOT passed: `remove_family_record` only
     ever reads/removes the family's own key, so honoring a legacy-adopted
     key here would claim ownership over members mutation can never clear.
     """
     skills_dir = claude_config_dir / "skills"
-    manifest_path = skills_dir / MANIFEST_FILENAME
+    templates_dir = claude_config_dir / "templates"
+    scripts_dir = claude_config_dir / "scripts"
+    data_dir = claude_config_dir / "data"
 
-    if not manifest_path.exists():
-        skills_manifest_status = "absent"
-        skills_owned_present: frozenset[str] = frozenset()
-    else:
-        try:
-            record = read_family_record(skills_dir, key=SKILLS_FAMILY_KEY)
-        except (OSError, ValueError, AttributeError):
-            skills_manifest_status = "corrupt"
-            skills_owned_present = frozenset()
-        else:
-            skills_manifest_status = "present"
-            tracked = record.tracked or frozenset()
-            skills_owned_present = frozenset(
-                name
-                for name in tracked
-                if (skills_dir / name).exists() or (skills_dir / name).is_symlink()
-            )
+    skills_manifest_status, skills_owned_present = _scan_family_ownership(
+        skills_dir, key=SKILLS_FAMILY_KEY
+    )
+    templates_manifest_status, templates_owned_present = _scan_family_ownership(
+        templates_dir, key=TEMPLATES_FAMILY_KEY
+    )
+    utilities_manifest_status, utilities_owned_present = _scan_family_ownership(
+        scripts_dir, key=UTILITIES_FAMILY_KEY
+    )
+    data_manifest_status, data_owned_present = _scan_family_ownership(
+        data_dir, key=DATA_FAMILY_KEY
+    )
 
     return ClaudeOwnershipInventory(
         agents_legacy_root_present=(claude_config_dir / "agents" / "nw").exists(),
@@ -138,6 +170,12 @@ def scan_claude_ownership(claude_config_dir: Path) -> ClaudeOwnershipInventory:
         skills_legacy_root_present=(skills_dir / "nw").exists(),
         skills_manifest_status=skills_manifest_status,
         skills_owned_present=skills_owned_present,
+        templates_manifest_status=templates_manifest_status,
+        templates_owned_present=templates_owned_present,
+        utilities_manifest_status=utilities_manifest_status,
+        utilities_owned_present=utilities_owned_present,
+        data_manifest_status=data_manifest_status,
+        data_owned_present=data_owned_present,
     )
 
 
@@ -177,6 +215,11 @@ class NWaveUninstaller:
         # not run yet this instance, which validates the same as a missing
         # manifest (never a false green).
         self._skills_removal_evidence: FamilyRemovalEvidence | None = None
+        # Set by remove_templates()/remove_utility_scripts()/remove_data();
+        # keyed by family label, consulted by validate_removal() via
+        # _family_removal_state(). A missing entry validates the same as a
+        # missing manifest (never a false green).
+        self._family_removal_evidence: dict[str, FamilyRemovalEvidence] = {}
 
     def enable_uninstall_logging(self) -> None:
         """Enable persistent logging once a Claude installation is confirmed."""
@@ -479,9 +522,20 @@ class NWaveUninstaller:
         (a tracked member survived). A completed run is green whether it
         actually deleted members this run ("removed-completely-this-run")
         or found the family already clean ("already-clean").
+
+        `evidence is None` means remove_skills() has not run this instance
+        (e.g. validate_removal() called standalone). That is honestly
+        "already-clean" -- not "absent-before-run" -- when the skills
+        directory does not currently exist on disk: a family that was never
+        installed carries no manifest to be missing. When the directory DOES
+        exist unread, ownership genuinely was never established, so it stays
+        "absent-before-run".
         """
         evidence = self._skills_removal_evidence
-        if evidence is None or evidence.status == "missing_manifest":
+        if evidence is None:
+            skills_dir = self.claude_config_dir / "skills"
+            return "already-clean" if not skills_dir.exists() else "absent-before-run"
+        if evidence.status == "missing_manifest":
             return "absent-before-run"
         if evidence.status == "invalid_manifest":
             return "corrupt"
@@ -533,6 +587,147 @@ class NWaveUninstaller:
                 "inspect skills/ for leftover nw-* entries or a legacy "
                 "skills/nw directory and remove them by hand, then re-run "
                 "uninstall to confirm",
+            ),
+        }[category]
+        return f"  WHAT: {what} WHY: {why} HOW: {how}"
+
+    def remove_templates(self) -> None:
+        """Remove nWave templates via manifest ownership record only."""
+        self._remove_family_dir(
+            subdir="templates", key=TEMPLATES_FAMILY_KEY, family_label="templates"
+        )
+
+    def remove_utility_scripts(self) -> None:
+        """Remove nWave non-hook utility scripts via manifest ownership record only.
+
+        Shares `~/.claude/scripts/` with DES hook scripts (removed separately
+        by `remove_des_hook_scripts`); `remove_family_record` only ever
+        touches its own `UTILITIES_FAMILY_KEY` members, so the sibling hook
+        scripts and the manifest key that tracks them are untouched.
+        """
+        self._remove_family_dir(
+            subdir="scripts", key=UTILITIES_FAMILY_KEY, family_label="utility scripts"
+        )
+
+    def remove_data(self) -> None:
+        """Remove the installed nWave data tree via manifest ownership record only."""
+        self._remove_family_dir(subdir="data", key=DATA_FAMILY_KEY, family_label="data")
+
+    def _remove_family_dir(self, *, subdir: str, key: str, family_label: str) -> None:
+        """Remove one manifest-tracked family from `~/.claude/{subdir}/`.
+
+        Shared by remove_templates/remove_utility_scripts/remove_data: each
+        owns a distinct manifest key inside a directory that may be shared
+        with sibling families or untracked user files, so `remove_family_record`
+        (the sole mutator) is the only thing that ever deletes -- it removes
+        only its own key's listed members and preserves everything else,
+        including sibling manifest keys and untracked siblings. The parent
+        directory is removed only if it becomes fully empty.
+        """
+        target_dir = self.claude_config_dir / subdir
+
+        if self.dry_run:
+            self.logger.info(f"  🚨 [DRY RUN] Would remove nWave {family_label}")
+            return
+
+        with self.logger.progress_spinner(f"  🚧 Removing nWave {family_label}..."):
+            if target_dir.exists():
+                result = remove_family_record(target_dir, key=key)
+                self._family_removal_evidence[family_label] = result
+
+                if result.status == "blocked":
+                    self.logger.warn(
+                        f"  ⚠️ Could not remove {len(result.blocked)} {family_label} "
+                        f"(non-success)\n{self._family_removal_diagnosis(family_label, 'blocked')}"
+                    )
+                elif result.status == "missing_manifest":
+                    self.logger.info(
+                        f"  ℹ️ No {family_label} manifest found; nothing to remove"
+                    )
+                elif result.status == "invalid_manifest":
+                    self.logger.warn(
+                        f"  ⚠️ {family_label} manifest could not be parsed"
+                        f"\n{self._family_removal_diagnosis(family_label, 'corrupt')}"
+                    )
+                else:
+                    self.logger.info(
+                        f"  🗑️ Removed {len(result.removed)} manifest-owned "
+                        f"{family_label}"
+                    )
+            else:
+                self._family_removal_evidence[family_label] = FamilyRemovalEvidence(
+                    "complete", frozenset(), frozenset(), frozenset()
+                )
+
+            if target_dir.exists():
+                try:
+                    if not any(target_dir.iterdir()):
+                        target_dir.rmdir()
+                        self.logger.info(f"  🗑️ Removed empty {subdir} directory")
+                except OSError:
+                    pass
+
+    # family_label -> subdir name under claude_config_dir, for the
+    # dir-existence check `_family_removal_state` needs when its remover
+    # never ran this instance (validate_removal() called standalone).
+    _FAMILY_SUBDIRS = {
+        "templates": "templates",
+        "utility scripts": "scripts",
+        "data": "data",
+    }
+
+    def _family_removal_state(self, family_label: str) -> str:
+        """Classify a family removal into the same states `_skills_removal_state` uses.
+
+        `evidence is None` means this family's remover has not run this
+        instance. That is honestly "already-clean" -- not
+        "absent-before-run" -- when the family's directory does not
+        currently exist on disk: a family that was never installed carries
+        no manifest to be missing.
+        """
+        evidence = self._family_removal_evidence.get(family_label)
+        if evidence is None:
+            subdir = self._FAMILY_SUBDIRS[family_label]
+            target_dir = self.claude_config_dir / subdir
+            return "already-clean" if not target_dir.exists() else "absent-before-run"
+        if evidence.status == "missing_manifest":
+            return "absent-before-run"
+        if evidence.status == "invalid_manifest":
+            return "corrupt"
+        if evidence.status == "blocked":
+            return "blocked"
+        return "removed-completely-this-run" if evidence.removed else "already-clean"
+
+    def _family_removal_diagnosis(self, family_label: str, category: str) -> str:
+        """WHAT/WHY/HOW for a non-green family removal outcome."""
+        what, why, how = {
+            "absent": (
+                f"no {family_label} manifest was found before this run",
+                "ownership was never established, so no entry could be "
+                "honestly attributed to nWave and removed",
+                "re-run the nWave installer to regenerate the manifest, "
+                "then re-run uninstall",
+            ),
+            "corrupt": (
+                f"the {family_label} manifest could not be parsed",
+                "ownership was never established, so no entry could be "
+                "honestly attributed to nWave and removed",
+                "restore the manifest from a backup or reinstall to "
+                "regenerate it, then re-run uninstall",
+            ),
+            "blocked": (
+                f"one or more manifest-owned {family_label} could not be removed",
+                "a filesystem or permission error stopped the mutation "
+                "part-way through",
+                f"check filesystem permissions and re-run uninstall; the "
+                f"blocked {family_label} stay recorded in the manifest for retry",
+            ),
+            "residue": (
+                f"a manifest-owned {family_label} entry is still present on disk",
+                "the removal pass reported success but a fresh scan found "
+                "residue anyway",
+                f"inspect the {family_label} directory for leftovers and "
+                "remove them by hand, then re-run uninstall to confirm",
             ),
         }[category]
         return f"  WHAT: {what} WHY: {why} HOW: {how}"
@@ -975,6 +1170,35 @@ class NWaveUninstaller:
             )
             errors += 1
 
+        for family_label, owned_present, display_name in (
+            ("templates", inventory.templates_owned_present, "Templates"),
+            ("utility scripts", inventory.utilities_owned_present, "Utility scripts"),
+            ("data", inventory.data_owned_present, "Data"),
+        ):
+            state = self._family_removal_state(family_label)
+            # Unlike skills (always installed, so an unmanifested skills dir
+            # is suspicious), these families are optional: a directory that
+            # was never installer-owned -- no manifest, no owned residue --
+            # is an idempotent no-op, not a validation failure. Only
+            # "corrupt"/"blocked"/actual residue stay LOUD.
+            clean = (
+                state
+                in ("removed-completely-this-run", "already-clean", "absent-before-run")
+                and not owned_present
+            )
+            if clean:
+                self.logger.info(f"    ✅ {display_name} removed")
+            else:
+                category = {
+                    "corrupt": "corrupt",
+                    "blocked": "blocked",
+                }.get(state, "residue")
+                self.logger.error(
+                    f"    ❌ {display_name} not verified clean:\n"
+                    f"{self._family_removal_diagnosis(family_label, category)}"
+                )
+                errors += 1
+
         if errors == 0:
             self.logger.info("  ✅ Uninstallation validation passed")
             return True
@@ -1130,6 +1354,9 @@ def main():
     uninstaller.remove_agents()
     uninstaller.remove_skills()
     uninstaller.remove_commands()
+    uninstaller.remove_templates()
+    uninstaller.remove_utility_scripts()
+    uninstaller.remove_data()
     uninstaller.remove_lib_python()
     uninstaller.remove_host_neutral_des_runtime()
     uninstaller.remove_des_hooks()

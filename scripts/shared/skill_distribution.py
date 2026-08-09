@@ -54,6 +54,7 @@ SCRIPTS_FAMILY_KEY = "installed_scripts"
 UTILITIES_FAMILY_KEY = "installed_utilities"
 TEMPLATES_FAMILY_KEY = "installed_templates"
 SKILLS_FAMILY_KEY = "installed_skills"
+DATA_FAMILY_KEY = "installed_data"
 
 
 class FamilyRecord(NamedTuple):

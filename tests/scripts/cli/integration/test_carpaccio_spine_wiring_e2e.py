@@ -1,10 +1,12 @@
 """Walking-skeleton @wiring_e2e integration test for the ATDD-pure carpaccio spine.
 
 The carpaccio per-slice ENTRY path is a composition of four spine CLIs:
-``carpaccio_slice_gate.py`` (the consumer) reads a feature-delta's ``[REF] Slice
-Plan`` table + the feature's ``.feature`` files + the AT-completion ledger that
-``at_review_verdict.py`` (the producer) writes. Slices 01-15 of the spine
-rollout shipped each CLI with isolated unit/AT tests using hand-shaped fixtures.
+``des.cli.carpaccio_slice_gate`` (the consumer, invoked via the canonical
+``python -m des carpaccio-slice-gate`` entry point) reads a feature-delta's
+``[REF] Slice Plan`` table + the feature's ``.feature`` files + the
+AT-completion ledger that ``at_review_verdict.py`` (the producer) writes.
+Slices 01-15 of the spine rollout shipped each CLI with isolated unit/AT
+tests using hand-shaped fixtures.
 NO test wired them together against a real feature's ``.feature`` files
 end-to-end. That gap let three "fixture passes, real invocation fails" defects
 ship (see ``docs/analysis/atdd-pure-dogfooding-friction-2026-05-20.md``):
@@ -46,7 +48,6 @@ import pytest
 pytestmark = [pytest.mark.wiring_e2e, pytest.mark.integration]
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-_GATE_CLI = _REPO_ROOT / "scripts" / "cli" / "carpaccio_slice_gate.py"
 _VERDICT_CLI = _REPO_ROOT / "src" / "des" / "cli" / "at_review_verdict.py"
 
 # Keyless spine (oss-review-verdict-demotion S2): the producer writes no
@@ -109,7 +110,29 @@ Feature: The public package excludes private work
 
 
 def _run(cli: Path, *args: str, repo: Path) -> subprocess.CompletedProcess[str]:
-    """Invoke a spine CLI as a real subprocess (not an in-process call)."""
+    """Invoke a spine CLI file as a real subprocess (not an in-process call)."""
+    return _run_cmd(
+        [sys.executable, str(cli), "--repo-root", str(repo), *args], repo=repo
+    )
+
+
+def _run_gate(*args: str, repo: Path) -> subprocess.CompletedProcess[str]:
+    """Invoke the canonical ``python -m des carpaccio-slice-gate`` entry point."""
+    return _run_cmd(
+        [
+            sys.executable,
+            "-m",
+            "des",
+            "carpaccio-slice-gate",
+            "--repo-root",
+            str(repo),
+            *args,
+        ],
+        repo=repo,
+    )
+
+
+def _run_cmd(argv: list[str], *, repo: Path) -> subprocess.CompletedProcess[str]:
     env = {
         "NWAVE_REPO_ROOT": str(repo),
         "PATH": _path_env(),
@@ -119,9 +142,10 @@ def _run(cli: Path, *args: str, repo: Path) -> subprocess.CompletedProcess[str]:
         # sync design §6 — propagated to the curated subprocess env because
         # `env={...}` discards the parent's NWAVE_FRESHNESS.
         "NWAVE_FRESHNESS": "skip",
+        "PYTHONPATH": str(_REPO_ROOT / "src"),
     }
     return subprocess.run(
-        [sys.executable, str(cli), "--repo-root", str(repo), *args],
+        argv,
         capture_output=True,
         text=True,
         env=env,
@@ -208,8 +232,7 @@ def test_carpaccio_entry_path_clears_a_well_formed_slice(tmp_path: Path) -> None
     assert json.loads(produced.stdout)["verdict_written"] is True
 
     # CONSUMER: the carpaccio slice gate, as a real subprocess.
-    gated = _run(
-        _GATE_CLI,
+    gated = _run_gate(
         "--feature-id",
         feature_id,
         "--entering-slice",
@@ -261,8 +284,7 @@ def test_carpaccio_entry_path_fails_loud_on_malformed_and_missing_inputs(
     (tmp_path / "docs" / "feature" / feature_id / "feature-delta.md").write_text(
         delta_with_empty_slice, encoding="utf-8"
     )
-    no_scenarios = _run(
-        _GATE_CLI,
+    no_scenarios = _run_gate(
         "--feature-id",
         feature_id,
         "--entering-slice",
@@ -281,8 +303,7 @@ def test_carpaccio_entry_path_fails_loud_on_malformed_and_missing_inputs(
         feature_file_dir="tests/installer/acceptance/private_skill_leak",
         feature_file_text=_FEATURE_FILE,
     )
-    no_verdict = _run(
-        _GATE_CLI,
+    no_verdict = _run_gate(
         "--feature-id",
         feature_id,
         "--entering-slice",
@@ -310,8 +331,7 @@ def test_carpaccio_entry_path_fails_loud_on_malformed_and_missing_inputs(
         feature_file_text=_FEATURE_FILE,
         feature_delta_text=bad_delta,
     )
-    malformed = _run(
-        _GATE_CLI,
+    malformed = _run_gate(
         "--feature-id",
         feature_id,
         "--entering-slice",

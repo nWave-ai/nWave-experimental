@@ -16,6 +16,7 @@ from scripts.shared.install_paths import (
     resolve_python_path_for_shell,
 )
 from scripts.shared.skill_distribution import (
+    DATA_FAMILY_KEY,
     SCRIPTS_FAMILY_KEY,
     UTILITIES_FAMILY_KEY,
     FamilyRecord,
@@ -1544,6 +1545,7 @@ class DESPlugin(InstallationPlugin):
                             "then re-run the install."
                         ),
                     )
+                write_family_record(target_dir, declared, key=DATA_FAMILY_KEY)
 
             return PluginResult(
                 success=True,
@@ -1584,6 +1586,13 @@ class DESPlugin(InstallationPlugin):
                     if not context.dry_run:
                         shutil.copy2(source, target)
                     installed.append(template_name)
+
+            # No write_family_record() here: TemplatesPlugin (a declared
+            # dependency, see __init__) already owns the complete templates
+            # family manifest under TEMPLATES_FAMILY_KEY, including files
+            # this loop also copies. A second write here with only
+            # DES_TEMPLATES would clobber that manifest and drop every other
+            # tracked template (e.g. the schema files) from upgrade sweeps.
 
             return PluginResult(
                 success=True,
@@ -1999,14 +2008,14 @@ class DESPlugin(InstallationPlugin):
                     message="DES hooks up-to-date, configuration and retired hooks reconciled",
                 )
 
-            # Remove any existing DES hooks (both old flat and new nested format)
+            # Remove any existing DES hooks (both old flat and new nested
+            # format), preserving unrelated sibling hooks nested under the
+            # same matcher entry.
             for event in self.HOOK_EVENTS:
                 if event in config["hooks"]:
-                    config["hooks"][event] = [
-                        h
-                        for h in config["hooks"][event]
-                        if not shared_hooks.is_des_hook_entry(h)
-                    ]
+                    config["hooks"][event] = shared_hooks.strip_des_hooks_from_entries(
+                        config["hooks"][event]
+                    )
 
             # Add all DES hooks from shared definitions
             for event, entries in desired_hooks.items():
@@ -2501,11 +2510,11 @@ class DESPlugin(InstallationPlugin):
                 )
                 for event in self.HOOK_EVENTS:
                     if event in config["hooks"]:
-                        config["hooks"][event] = [
-                            h
-                            for h in config["hooks"][event]
-                            if not shared_hooks.is_des_hook_entry(h)
-                        ]
+                        config["hooks"][event] = (
+                            shared_hooks.strip_des_hooks_from_entries(
+                                config["hooks"][event]
+                            )
+                        )
                 for event in self._RETIRED_LIFECYCLE_EVENTS:
                     if event in config["hooks"]:
                         config["hooks"][event] = [

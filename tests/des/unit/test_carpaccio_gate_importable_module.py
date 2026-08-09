@@ -11,8 +11,7 @@ rejected EVERY atdd_pure dispatch with `exit 2 "no gate output"`.
 Approach A fix: the gate becomes an importable `des.cli.carpaccio_slice_gate`
 module shipped with the `des` package, invokable layout-independently via
 `python -m des.cli.carpaccio_slice_gate` -- exactly as U2 invokes
-`python -m des.cli.verify_slice_commit_completeness`. The `scripts/cli/`
-path stays as a thin shim so existing callers are unaffected.
+`python -m des.cli.verify_slice_commit_completeness`.
 
 Layer: classic-TDD unit tests on the module move + the intercept path fix.
 """
@@ -70,20 +69,6 @@ def test_carpaccio_gate_runs_as_a_python_m_module() -> None:
     assert completed.returncode == 1, completed.stdout + completed.stderr
     payload = json.loads(completed.stdout)
     assert payload["event"] == "SlicePlanSectionMissing"
-
-
-def test_scripts_cli_shim_still_exposes_main() -> None:
-    """The legacy `scripts/cli/carpaccio_slice_gate.py` path keeps working.
-
-    Existing callers (the /nw-deliver skill prose, the gate's own AT suite,
-    manual invocations) reference the `scripts.cli` path -- the shim preserves
-    them, delegating to the `des.cli` module.
-    """
-    from des.cli import carpaccio_slice_gate as module
-    from scripts.cli import carpaccio_slice_gate as shim
-
-    # The shim delegates to the same module-level entry point.
-    assert shim.main is module.main
 
 
 def test_intercept_resolves_gate_without_repo_relative_scripts_path() -> None:
