@@ -174,25 +174,11 @@ here.
 
 ## Workflow
 
-At the start of each step execution, create these tasks using TaskCreate and follow them in order:
+Human route only — Auto/thin Dispatch stay under the unchanged authority above; stop before this section.
 
-1. **DETECT LANGUAGE** — Glob project root for FP markers (`*.fsproj`, `*.hs`, `*.scala`, `*.clj`, `*.kt`, `*.py`, `*.ts`, `*.go`, `*.rs`, `*.erl`, `*.ex`). Load the matching `~/.claude/skills/nw-fp-{lang}/SKILL.md`. Generic FP-only if no marker matches. Gate: language detected, FP-language skill loaded.
+Order/review/EXAMINE/commit/finalization: `nw-deliver`. GREEN/refactor/test-integrity: `nw-crafter-discipline-atdd-pure`. Design: see Skill Loading -- MANDATORY above (complete authority; not restated here).
 
-2. **PREPARE** — Load `~/.claude/skills/nw-tdd-methodology/SKILL.md`, `~/.claude/skills/nw-quality-framework/SKILL.md`, `~/.claude/skills/nw-fp-principles/SKILL.md`, `~/.claude/skills/nw-fp-domain-modeling/SKILL.md` NOW. ALSO load every mode-conditional skill the registry declares for this agent (generated skill-load region above). Read the rigor profile from `.nwave/des-config.json` (key `rigor`; absent → standard defaults) and apply its model, review, examination, and refactoring settings without changing the fixed executable-AT delivery floor. Read `docs/feature/{feature-id}/feature-delta.md` fully, select the active `[REF] Slice Plan` row and its declared target paths, then read every referenced `.feature`/AT file and `brief.md` if present, emitting `✓ {file}` / `⊘ {file} (not found)` per file — never skip an existing file. Verify exactly ONE acceptance scenario is active-RED — authored run-ready by DISTILL (ADR-025, no @skip) or activated by ATDD-pure Phase A entry. Gate: one AT active, skills loaded, rigor applied, feature delta and Slice Plan grounded, prior-wave checklist emitted.
-
-3. **READ ATs END-TO-END** — Read the full AT contract + any paired PBT unit tests authored by `nw-acceptance-designer`. Do NOT modify. Hold the contract in working memory (~50KB sustainable). Gate: AT contract internalized, selected Slice Plan target paths cross-referenced.
-
-4. **GREEN** — Load `~/.claude/skills/nw-fp-algebra-driven-design/SKILL.md` + `~/.claude/skills/nw-fp-usable-design/SKILL.md` NOW. Implement minimal pure functions to satisfy the AT contract — MATCHING the design: the FP module's PUBLIC surface (exported functions and types) conforms to the design's declared public contract, while private helpers and pipeline-internal functions stay free (the per-language public boundary applies to FP modules too). Define domain types first (make illegal states unrepresentable), then implement. Build pipelines. Keep functions small. Do NOT modify ATs or paired unit tests. Gate: all tests green, public surface conforms to the declared contract.
-
-   The crafter-matches-design check on the exported FP surface is language-agnostic: the public-surface inspection is resolved behind a per-language AST port reusing the CodeFactPort adapter family (the same per-language `LanguageAstAdapter` family the architecture declares), so an F#/Haskell/Scala/Clojure/Elixir module is inspected through the SAME seam as an OO one. An unrecognized target language → INDETERMINATE (degrade-LOUD), never a silent pass. This is the seam shape, NOT a parser the crafter builds — the mechanical adapter is owned upstream.
-
-5. **WIRING CHECK** — Run `git diff --name-only`. For `atdd_pure`, verify every production path declared by the selected `[REF] Slice Plan` row appears in the diff; for thin delivery, verify every production path in `DeliveryContract.targets` appears. Test-only diff with tests flipped RED→GREEN = Fixture Theater — BLOCK COMMIT and re-dispatch. Gate: production files in diff match the selected authority.
-
-6. **COMMIT** — Conventional commit with `Step-Id:` trailer (ADR-025 §3). Subject in domain language. No push until `/nw-finalize`. Gate: commit message valid, no regressions, no prohibited bypass flags (`--no-verify`, `# noqa`, `# type: ignore`, `@pytest.mark.skip`, `suppress_health_check`).
-
-7. **REFACTOR (ATDD-pure Phase E)** — In a SEPARATE crafter instance (clean session), load `~/.claude/skills/nw-refactor/SKILL.md`. Plan all L1-L6 transformations in cascade order as a single coherent edit set. Apply ALL planned edits in one editing session — no interleaved test runs. Run the suite ONCE at the end (unconditional batch-then-verify default per `feedback_refactor_batch_when_test_suite_slow_2026_05_19`). If RED: fix the production code, do NOT modify tests to pass — a test that must change signals altered behavior (revert it) or an implementation-detail test (flag to the operator). No incremental retry. Gate: terminating test run GREEN, diff internally consistent, no behavior change.
-
-**Stuck escalation (any phase)**: if you cannot make a test pass after 3 implementation attempts, revert to last green state, document the failing test and all 3 approaches, return `{ESCALATION_NEEDED: true, reason: "3 attempts exhausted", test: "<path>", approaches: [...]}`. NEVER weaken the test.
+This crafter owns repository-marker detection: inspect repo markers, load the matching `nw-fp-{lang}` skill; unrecognized marker → continue with generic FP and report the fallback LOUDLY.
 
 ## Test Doubles in FP (read-only reference)
 

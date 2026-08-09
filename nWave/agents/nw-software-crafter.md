@@ -156,25 +156,9 @@ If a step requires test-authoring decisions (AT gap, new scenario, universe re-s
 
 ## Workflow
 
-At the start of each step execution, create these tasks using TaskCreate and follow them in order. Branch by mode.
+Human route only — Auto/thin Dispatch stay under the unchanged authority above; stop before this section.
 
-### atdd_pure mode (ADR-027, plan v3) <!-- mode-ref-ok -->
-
-1. **PREPARE** — Load `nw-tdd-methodology`, `nw-quality-framework`, AND `nw-crafter-discipline-atdd-pure` NOW before proceeding. Read the rigor profile from `.nwave/des-config.json` (key `rigor`; absent → standard defaults) and apply its model, review, examination, and refactoring settings without changing the fixed executable-AT delivery floor. Read `docs/feature/{feature-id}/feature-delta.md` fully, select the active `[REF] Slice Plan` row and its declared target paths, then read every referenced `.feature`/AT file and `brief.md` if present, emitting `✓ {file}` / `⊘ {file} (not found)` per file — never skip an existing file. Detect the target language from manifest files (Language Convention Frame) before touching code. Read the AT contract authored by DISTILL (do not modify). Gate: skill files loaded, rigor applied, prior-wave checklist emitted, language detected, AT contract read, feature-delta and Slice Plan grounded.
-2. **A_GREEN_ATS** — Load `nw-hexagonal-testing` if port/adapter boundary decisions involved. Consume the bundle (AT + `[REF] Code-Design` contract + architecture) and implement the minimum production code that GREENs all ATs while MATCHING the declared design — its PUBLIC surface conforms to the design's declared public contract (C2/C3), private structure stays free (C4). This is bundle-consume + matches-design conformance, NOT free-to-invent-any-structure-that-passes-the-ATs. Do NOT author new tests. Gate: all ATs green, public surface conforms to the design contract, no test modifications.
-3. **B_COVERAGE_CLEANUP** — **DEPRECATED (FR-2/FR-3, velocity-v2)**: coverage-driven dead-code elimination (a `pytest --cov` diff gate) is REMOVED; the KEEP — AT-driven minimalism, "no defensive code beyond AT-driven need" — is absorbed into A_GREEN. See the Phase B DEPRECATED banner in `nw-crafter-discipline-atdd-pure`.
-4. **E_BATCH_REFACTOR** — Load `nw-refactor` NOW. Plan L1-L6 in cascade order, apply ALL transformations as one batch, run the test suite ONCE at the end (unconditional batch-then-verify default per `feedback_refactor_batch_when_test_suite_slow_2026_05_19`). If RED: fix production code, do NOT modify tests. Gate: suite green post-batch, terminating test run performed.
-5. **COMMIT-handoff** — Route to F_FINAL_REVIEW (reviewer dispatch); after approval, COMMIT phase emits conventional commit with `Step-Id:` trailer + verdict-hash trailer (plan v3 §8). Gate: reviewer approved, mechanical trailers present.
-
-Commit message format (both modes):
-```
-{type}({scope}): {subject} - step {step-id}
-
-- Acceptance test: {scenario}
-- Refactoring: L1+L2+...
-
-Step-Id: {step-id}
-```
+Order/review/EXAMINE/commit/finalization: `nw-deliver`. GREEN/refactor/test-integrity: `nw-crafter-discipline-atdd-pure`. Design: see Skill Loading -- MANDATORY above (complete authority; not restated here).
 
 ## Test Integrity -- Mandatory
 

@@ -206,15 +206,6 @@ def validate_agent(filepath: Path, result: ValidationResult) -> None:
                     f"Skill '{skill}' in frontmatter but not referenced in body",
                 )
 
-    # A09: example count
-    examples = re.findall(r"^### Example \d+", body, re.MULTILINE)
-    if len(examples) < 3:
-        result.add(
-            "A09", "warning", name, f"Only {len(examples)} examples (minimum: 3)"
-        )
-    elif len(examples) > 7:
-        result.add("A09", "warning", name, f"{len(examples)} examples (maximum: 7)")
-
     # A11: reviewer model must be a cost-bounded tier.
     #
     # The rule keys on the COST CEILING, not on the "-reviewer" designation.

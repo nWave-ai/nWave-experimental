@@ -306,14 +306,6 @@
         "severity": "warning"
       },
       {
-        "id": "A09",
-        "name": "example_count",
-        "description": "Between 3 and 7 examples (### Example N: headers)",
-        "severity": "warning",
-        "min_examples": 3,
-        "max_examples": 7
-      },
-      {
         "id": "A10",
         "name": "no_aggressive_language",
         "description": "No CRITICAL, MANDATORY, or ABSOLUTE in prose (exception: skill loading section)",

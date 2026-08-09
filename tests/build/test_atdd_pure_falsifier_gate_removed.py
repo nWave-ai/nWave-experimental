@@ -112,7 +112,6 @@ _NARROW_LITERALS: tuple[str, ...] = (
 # Each must (a) exist and (b) contain falsifier-gate-shaped text (case
 # insensitive) -- proving the corpus is real, not a vacuous empty check.
 _OTHER_MECHANISM_FILES: tuple[str, ...] = (
-    "nWave/agents/nw-acceptance-designer.md",
     "nWave/skills/nw-at-completeness-check/SKILL.md",
     "nWave/skills/nw-at-completeness-check-taxonomy-lifecycle/SKILL.md",
     "nWave/skills/nw-property-based-testing/SKILL.md",

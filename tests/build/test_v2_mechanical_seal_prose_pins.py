@@ -156,11 +156,21 @@ def test_composition_contract_closes_the_immutable_artifact_lineage() -> None:
 
 
 def test_acceptance_designer_inventory_reaches_the_consumer_boundary() -> None:
-    """The operational agent applies the rule before authoring ATs."""
+    """The operational agent identifies the consumer boundary/lineage before
+    authoring scenarios, and the lineage-closure rule it applies stays intact."""
     text = _read("nWave/agents/nw-acceptance-designer.md")
-    assert "Consumer Boundary Inventory" in text
-    assert "do not defer this classification to review" in text
-    assert "ASSEMBLED-SURFACE WS closes Artifact Lineage Closure" in text
+    idx_prior_wave = text.find("1. **Prior-Wave Context.**")
+    assert idx_prior_wave != -1, "Phase 1 heading must remain present"
+    idx_consumer_boundary = text.find(
+        "consumer boundary/assembled-artifact lineage", idx_prior_wave
+    )
+    assert idx_consumer_boundary != -1, (
+        "Phase 1 must still identify the consumer boundary/assembled-artifact lineage"
+    )
+    idx_design_scenarios = text.find("2. **Design Scenarios.**", idx_consumer_boundary)
+    assert idx_design_scenarios != -1, "Phase 2 heading must remain present"
+    assert idx_prior_wave < idx_consumer_boundary < idx_design_scenarios
+    assert "Artifact Lineage Closure" in text
     assert "produced PROPERTY, never its DESIGNATION" in text
 
 

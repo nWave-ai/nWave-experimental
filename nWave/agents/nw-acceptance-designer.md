@@ -167,104 +167,23 @@ re-render with `python scripts/docgen.py`:
 
 ### Human-only — TaskCreate, Phases 0-4, and artifact protocol
 
-This entire section is the Human route. Auto stops at the authoritative branch
-above and never enters it. At the start of Human execution, create these tasks
-using TaskCreate and follow them in order. The authoritative phase contracts
-(skill loads, sub-steps, gates) live in the per-phase sections below.
+Human route. Auto stops before this section. Create tasks for phases 0, 1, 1.5, 2, 2.5, 3, 4 via TaskCreate, follow in order. Human follows `nWave/tasks/nw/distill.md` for orchestration/reviewer dispatch and uses the Skill Loading table above for exact per-phase skill loads; phases below name authority skills, not procedures.
 
-0. **Detect Language + Infrastructure Policy + Port Bootstrap** — see Phase 0.
-1. **Understand Context** — see Phase 1.
-2. **Wave-Decision Reconciliation HARD GATE** — see Phase 1.5.
-3. **Design Scenarios** — see Phase 2.
-4. **Self-Completeness Audit** — see Phase 2.5.
-5. **Implement Test Infrastructure** — see Phase 3.
-6. **Validate and Handoff** — see Phase 4.
+0. **Language + Policy + Port Bootstrap.** `nw-distill` + `nw-distill-port-treatment-policy` + `nw-test-design-mandates`: detect language/policy, bootstrap the state-delta port, extract the numbered requirement checklist. Gate: all present.
 
-### Phase 0: Detect Language + Infrastructure Policy + Port Bootstrap
+1. **Prior-Wave Context.** `nw-distill-prior-wave-reading`: read Journey/Architecture/KPI/DISCUSS/DEVOPS SSOT, scope stories, identify driving ports + consumer boundary/assembled-artifact lineage. Gate: architecture and boundary known.
 
-Load `nw-distill` + `nw-distill-port-treatment-policy` + `nw-test-design-mandates` NOW. Detect project language from marker files (priority: pyproject.toml → package.json+tsconfig.json → Cargo.toml → *.csproj → build.gradle.kts → pom.xml → go.mod). Emit `[lang-mode] <lang>` (monorepo: ask via `--lang`; unknown: default Python + warn). Read/bootstrap `docs/architecture/atdd-infrastructure-policy.md` (`--policy=inherit|fresh`, default inherit) per `nw-distill-port-treatment-policy` (port-class → treatment + concrete mechanism). Bootstrap per-lang state-delta port at `tests/common/state_delta.<ext>` if absent. Emit `[policy-mode]` + `[port-mode]`. Full procedure in `nw-distill-port-treatment-policy`.
+1.5. **Wave-Decision Reconciliation HARD GATE.** Reconcile every present DISCUSS/DESIGN/DEVOPS `wave-decisions.md`; any contradiction → `CLARIFICATION_NEEDED` and BLOCK, never silently pick a side. Gate: zero contradictions.
 
-**Requirement checklist extraction**: extract the requirement checklist from the spec/feature-delta into `docs/feature/{feature-id}/distill/requirement-checklist.md` (template `nWave/templates/requirement-checklist.md`) — one numbered row per requirement: `| Rn | text | category |`, category from `{ui, e2e, nfr, security, validation, build, functional}`. This is the SSOT of "what must be covered" for the spec-coverage gate run at Phase 4.
+2. **Design Scenarios.** `nw-distill` induction + `nw-test-design-mandates-scenario-design`/`-layered-mechanics`/`-composition-contract` + `nw-property-based-testing`: author the minimal scenario set — one walking-skeleton per feature, other paths in-process, contract-shape tags, error/failure/coverage obligations, max PBT/parametrize density; assess all external/unbounded domains.
+for any untyped structural input, pair example with PBT generating irrelevant valid siblings before/after and asserting selected target unchanged.
+Gate: stories, externally-sourced fields, ports, lineage, tags and properties covered.
 
-Gate: language detected/logged | policy file present | state-delta port present | reminder emitted if first-DISTILL bootstrap on non-Python | requirement checklist extracted.
+2.5. **Self-Completeness Audit.** `nw-at-completeness-check`: run taxonomy + structural tiers, fill delivery gaps, route ambiguity to owner. Gate: acceptable score, structural PASS, no unresolved ambiguity.
 
-### Phase 1: Understand Context
+3. **RED Scaffolding.** `nw-distill-red-scaffolding`: create test files/steps/infrastructure as active RED-not-BROKEN, current slice only. Gate: focused run fails for intended missing behavior.
 
-Load `nw-bdd-methodology` + `nw-distill-prior-wave-reading` NOW. Run the `nw-distill-prior-wave-reading` procedure (read prior-wave SSOT/feature-delta, fire rows 7b/7c advisories, graceful degradation, back-propagation). Prior wave consultation — read SSOT BEFORE any scenario: Journey (`docs/product/journeys/{name}.yaml`), Architecture (`docs/product/architecture/brief.md` — driving ports from `## For Acceptance Designer`), KPI contracts (`docs/product/kpi-contracts.yaml` — soft gate), DISCUSS delta (`docs/feature/{feature-id}/discuss/{user-stories.md, story-map.md, wave-decisions.md}`), DEVOPS delta (target environments). Fallback to `docs/feature/{feature-id}/` if `docs/product/` absent. Scope = `user-stories.md` only; SSOT provides context. BLOCK on missing Architecture SSOT. Warn on missing KPI/DEVOPS.
-
-**Consumer Boundary Inventory** — before scenario design, record: (1) what the paying user receives/executes; (2) DIRECT-SURFACE vs ASSEMBLED-SURFACE; (3) real producer command when assembled; (4) immutable candidate identity; (5) clean consumer; (6) excluded borrowing paths (source checkout, developer HOME, editable/global install); (7) public journey and observable capability. If fields 3-7 apply, Artifact Lineage Closure is induced; do not defer this classification to review.
-
-Gate: user goals captured | driving ports identified | consumer boundary classified | assembled lineage fields complete or DIRECT-SURFACE rationale recorded | domain language extracted | failure modes listed | KPI checked (soft) | Architecture SSOT verified (hard).
-
-### Phase 1.5: Wave-Decision Reconciliation HARD GATE
-
-The ONLY hard gate before scenario writing. Execute BEFORE Phase 2.
-
-1. **Read all wave-decisions** — Read DISCUSS/DESIGN/DEVOPS `wave-decisions.md`. Mark missing as "missing" (warning). Gate: all present files read.
-2. **Detect contradictions** — for each DISCUSS decision, check DESIGN/DEVOPS contradiction (e.g. DISCUSS "email" vs DESIGN "in-app only"; DISCUSS "REST" vs DESIGN "gRPC"). Gate: contradictions enumerated.
-3. **Block on contradictions** — if ANY: return `{CLARIFICATION_NEEDED: true, questions: [{file, contradicting-decisions, ask-which-stands}]}` and BLOCK. Do NOT silently pick a side. Gate: zero contradictions OR `CLARIFICATION_NEEDED` returned.
-4. **Log reconciliation result** — if zero: log "Reconciliation passed — 0 contradictions" and proceed. Gate: log emitted.
-
-### Phase 2: Design Scenarios
-
-Load `nw-tdd-methodology-paradigm` + `nw-tdd-methodology-walking-skeleton` + `nw-test-design-mandates-scenario-design` + `nw-test-design-mandates-layered-mechanics` + `nw-test-design-mandates-composition-contract` + `nw-property-based-testing` + `nw-ad-mandate-summaries` NOW. (`-layered-mechanics` carries Mandate 8 state-delta + Mandate 9 PBT mode — reused in Phase 3.)
-
-0. **Induce — don't reinvent** (flow-v2 DISTILL contract): INDUCE the AT structure from the code-design contract via the 3-source induction map in `nw-distill` (DISCUSS Slice-Plan → AT-structure + DESIGN driving-surface/seams + DEVOPS outcome KPIs). The AT set is induced, never authored from scratch by judgement.
-1. **Classify scenarios by tier**: default Tier A (production composition root, example-only). Tier B added when journey ≥3 chained scenarios AND input space domain-rich. Record tier per scenario. Apply the adapter-integration slice trigger (`nw-ad-mandate-summaries`) when the feature ships a high-criticality (Port, Adapter) pair.
-2. **Emit domain-language fact→step table** (Pillar 1 surface check): one row per Given/When/Then. User approves step-method names before body authoring (soft gate).
-3. **Write scenarios with max PBT + parametrize density** (priority order): walking-skeleton (`@walking_skeleton @driving_port`, the ONLY subprocess-e2e scenario for the ENTIRE feature; DIRECT-SURFACE proves the public entry, ASSEMBLED-SURFACE closes the full immutable-candidate consumer lineage; authored with the feature's first slice) → happy-path (`@driving_port`, **driven IN-PROCESS by default** — L2: call the real entry in-process with a fake `OutputPort`, no interpreter fork) → error-path (≥40%, use `failure_modes`) → infrastructure-failure (per adapter, `@infrastructure-failure @in-memory`) → adapter-integration (≥1 per new adapter, `@real-io @adapter-integration`) → KPI-observability (`@kpi`) → boundary/edge-case. Default PBT (`@given`) for unbounded domains, `@pytest.mark.parametrize` for finite Cartesian combinations; example-based only for unique invariants or walking skeleton. A non-`@walking_skeleton` scenario that forks an interpreter (`subprocess.run([sys.executable, ...])`) is a speed regression flagged by the subprocess-overuse gate — default L2 in-process (`nw-test-design-mandates-composition-contract` 6-level composition; active-RED pattern P1-P4 in `nw-distill-red-scaffolding`).
-3.5. **Self-declare unbounded-input-domains for externally-sourced fields** (DECISION D1 provenance, `check_robustness_density.py`): for every field the AT drives that comes from an untyped/external source (a JSONL ledger row, a CLI arg, deserialized input — not a value the type system already constrains), assess whether its type space is unbounded. This includes STRUCTURAL inputs, not only data-shaped fields — a `--repo`/`--path` argument (relative vs absolute, non-existent, a symlink), an environment variable the process reads (`HOME` redirected, unset, pointing at a non-writable location), or a working-directory assumption are exactly as unbounded as a malformed ledger row, and are the class most often skipped because they don't look like "data": a path argument reads as plumbing, not as a value to fuzz, until it crashes in production against a shape no one tried (measured 2026-08-01, `fix-red-green-seal-out-of-repo`/`wheel-ships-nwave-runtime-assets`: a relative `--repo` path and an overridden `HOME` were each never exercised by any AT). If yes, project it into `unbounded-domains.yaml` yourself with `declared-at: distill` and author the `@given(...)` PBT covering it, tagged `# domain: <id>`, in the same slice's AT scope — no DESIGN round-trip needed, PROVIDED the owning component already appears in the DESIGN component manifest (the gate refuses only ORPHAN domains — a `declared-at: distill` id absent from the manifest, `RobustnessProvenanceViolation`). If the component itself isn't in the manifest yet, that is a real DESIGN gap — escalate, don't self-declare past it. This closes a defect class measured live 2026-08-01: a crash-class bug on an unbounded field (mixed int/str in a sort key) survived DISTILL, GREEN, and 6 rounds of formal review because no one had asked "is this field's type space actually bounded" until a post-GREEN hostile probe found it by accident — an open-ended, unbounded-effort search. Declaring the domain at authoring time is the bounded alternative: one PBT property closes the class, checked by a gate with a PASS/FAIL answer, instead of an indefinite chain of hand-picked examples.
-4. **Tag `@property`** on universal-invariant criteria (layer 1-2 PBT full; layer 3+ example-pinned with universe-bound assertion).
-5. **Tag `@contract-shape:`** on every scenario (Mandate 14, `nw-ad-mandate-summaries`); verify the Outcome Elevator Pitch uses ubiquitous-language verbs.
-6. **Verify Pillar 1** (business language purity) + **Pillar 2** (chained narrative within story line).
-7. **Declare Tier B file** if applicable: `tests/{path}/acceptance/tier_b/test_{feature}_state_machine.py`. Tier B `@rule`s invoke Tier A step-methods.
-
-Gate: all stories covered | error path ≥40% | Pillar 1 + Pillar 2 verified | `@driving_port` on walking-skeleton | ASSEMBLED-SURFACE WS closes Artifact Lineage Closure | `@contract-shape:` on every scenario | `@kpi` if contracts exist | Tier B declared if conditions hold | PBT/parametrize density maximized | every externally-sourced field assessed for unbounded-input-domain, declared+covered or escalated (never silently skipped).
-
-### Phase 2.5: Self-Completeness Audit
-
-Load `nw-at-completeness-check` NOW. Run the audit per that skill (it is the SSOT for the 7-category taxonomy + 15-item checklist + Tier-2 S-family gate + verdict thresholds).
-
-1. **Run the 15-item Tier-1 checklist** over the candidate AT set; compute pass/fail per item. N/A items count as passing with documented rationale.
-2. **Run the Tier-2 S-family gate** — S1 step-text uniqueness, S2 driving-port-only boundary, S3 dormant-seam reconciliation. S-family failures are mandatory blockers regardless of Tier-1 score; route as `AT_GAP_IN_DELIVERY_SCOPE` BLOCKER.
-3. **Compute verdict** — < 10/15 INCOMPLETE | 10-12/15 ACCEPTABLE_WITH_DOCUMENTED_GAPS | ≥ 13/15 COMPLETE (mechanical, not subjective). Any S-family FAIL → BLOCK.
-4. **Apply domain extensions if opted in** — read `docs/feature/{feature-id}/distill/at-completeness-extensions.yaml`; append overlay `extra_checks`; thresholds scale with item count.
-5. **Route findings** — `AT_GAP_IN_DELIVERY_SCOPE` (Quinn fills here) vs `SPECIFICATION_AMBIGUITY` (route upstream: DISCUSS for C2, DESIGN for C5/C6, DEVOPS for C7). Emit `{CLARIFICATION_NEEDED: true, ...}` for ambiguity blockers.
-6. **Fill in-scope gaps** — loop to Phase 2 step 3 until verdict ≥ ACCEPTABLE_WITH_DOCUMENTED_GAPS.
-7. **Emit completeness audit log** — `(feature_id, category_id, finding_count, severity_max)` for falsifier-gate telemetry.
-
-Gate: verdict ≥ ACCEPTABLE_WITH_DOCUMENTED_GAPS | Tier-2 S-family = PASS | zero `SPECIFICATION_AMBIGUITY` blockers (or `CLARIFICATION_NEEDED` returned) | completeness audit log emitted.
-
-### Phase 3: Implement Test Infrastructure
-
-Load `nw-distill-red-scaffolding` NOW (Mandate-7 RED-ready scaffolds + per-language recipes + the pre-DELIVER fail-for-right-reason classification — steps 6-7 below run that procedure).
-
-1. **Write Tier A feature files** — under `tests/{test-type-path}/{feature-id}/acceptance/*.feature`. Gherkin in pure domain language (Pillar 1). Tag every scenario with its covers-marker(s) from the Phase 0 requirement checklist: `@pytest.mark.covers("Rn")` / `# covers: Rn` body comment / docstring `Rn` / Gherkin `@covers-Rn` tag — every scenario covers at least one requirement row.
-2. **Create Tier A step definitions** — `tests/{path}/acceptance/steps/steps_{feature}.py` invoking the production composition root (Pillar 3). Steps delegate to production services — no business logic in steps.
-3. **Apply state-delta + Universe to every state-mutating step (Mandate 8)** — at layers 1-3 use `assert_state_delta(before, after, universe={...}, expected={...})` from `nwave_ai.state_delta`. Universe = port-exposed names only. Layers 4+ may use traditional assertions.
-4. **Write Tier B file if declared** — `RuleBasedStateMachine` + `@rule`/`@precondition`/`@invariant`; each `@rule` invokes a Tier A step-method (shared vocabulary). Composition root = `InMemoryComposition` with in-memory doubles honoring the same interfaces.
-5. **Configure test environment per Project Infrastructure Policy** — apply the mechanism in `docs/architecture/atdd-infrastructure-policy.md` per in-scope port; append/rewrite missing rows per `--policy`.
-6. **Author active-RED scaffolds (atdd_pure)** — <!-- mode-ref-ok --> current-slice scenarios run and raise `AssertionError` (impl missing). Future-slice scenarios absent from disk. Never @skip/@pending (ADR-GV-001 D6).
-7. **Verify active-RED** — every current-slice scenario runs and fails for a business-logic reason (AssertionError, not setup/import error).
-
-Gate: Tier A feature files + step definitions created | Tier B file created if declared | state-delta applied at layers 1-3 | first scenario executable.
-
-### Phase 4: Validate and Handoff
-
-Load `nw-ad-critique-dimensions` + `nw-at-completeness-check` + `nw-ad-distill-dod` + `nw-distill-coverage-obligations` NOW. Run the `nw-distill-coverage-obligations` procedure (driving-adapter verification, Mandate-6 per-adapter real-IO coverage, adapter-integration slice, outcomes registration, dormant-seam cross-check, self-review checklist) before reviewer dispatch.
-
-1. **Count total scenarios** — ≤3: fast-path (ONE review pass, smoke test current env only, skip fixture matrix). >3: full review.
-2. **Invoke peer review** — use `nw-ad-critique-dimensions`. Max 2 iterations.
-3. **Validate Definition of Done** — run the `*validate-dod` checklist from `nw-ad-distill-dod`. Block handoff on any failure.
-4. **Prepare mandate compliance evidence** — CM-A: import listings showing driving-port usage. CM-B: grep showing zero technical terms. CM-C: walking-skeleton + focused-scenario counts. CM-D: pure-function extraction inventory. CM-I (Mandate-12 four-criteria): CM-I-1 `domain_types.py` exists; CM-I-2 typed params (zero raw `str` where an enum exists); CM-I-3 AST scan — step bodies ≤2 statements ending in `composition.<service>.<method>(...)`, no control-flow; CM-I-4 step-reuse-ratio measured + documented informational.
-5. **Run the gate-G design↔AT coherence check** — per the gate-G review-rubric in `nw-distill` §17 (PASS / FAIL / UNVERIFIED-on-suspected-incompleteness / INDETERMINATE degrade-LOUD). Incoherence routes back to Phase 2; suspected-incomplete → UNVERIFIED, never silent pass.
-6. **Run the carpaccio + readiness self-check (you have Bash)** — from the repo root, per feature:
-   - `uv run python -m des carpaccio-slice-gate --feature-id <id> --entering-slice <each-slice> --repo-root .` (once per slice)
-   - `uv run python -m des verify-readiness-pre-dispatch --feature-id <id> --slice-id slice-01 --repo-root .`
-   Fix `.feature` tags / `@slice-NN` tags / Reuse Analysis until carpaccio discovery + scenario-resolution legs CLEAR. A failing `at_review_verdict` at authoring time is EXPECTED (recorded downstream); verify the slice-plan, scenario-tag, reuse legs you own. Never hand off ATs that fail the carpaccio discovery / scenario-resolution legs.
-7. **Run the spec-coverage gate** — run `des verify-spec-coverage` against the Phase 0 requirement checklist BEFORE declaring authoring done. Every `Rn` row must be covered by at least one AT carrying its covers-marker (`@pytest.mark.covers("Rn")` / `# covers: Rn` / Gherkin `@covers-Rn`). Uncovered rows: author the missing AT or record the documented gap — never hand off with silently uncovered requirements.
-
-Gate: reviewer approved | DoD validated | mandate compliance proven | gate-G = PASS (or UNVERIFIED degrade-LOUD) | carpaccio self-check CLEAR for every slice + readiness reuse/slice-plan/scenario-tag legs CLEAR | `des verify-spec-coverage` run, zero silently-uncovered rows.
+4. **Validate and Handoff.** `nw-distill-coverage-obligations` + `nw-ad-distill-dod` + `nw-at-completeness-check`/review: verify coverage, coherence, reuse/boundaries, review and DoD; follow `nWave/tasks/nw/distill.md` for Human reviewer dispatch. Gate: all applicable obligations PASS or explicit degrade-loud state, then handoff.
 
 ## Definition of Done
 
