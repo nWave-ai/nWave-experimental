@@ -264,27 +264,6 @@ Before declaring work complete:
 8. **Terminating test run** (per `feedback_target_machine_independence_2026_05_15`): after ANY code modification — GREEN implementation, refactor batch, bug fix, coverage cleanup — run the full relevant test suite at the end of that modification before the work is considered done. No code change is "complete" without a terminating test run. This invariant is owned by the crafter, not delegated to pre-commit hooks.
 9. **Git & test-run safety** (canonical: `nw-quality-framework` §Git & Test-Run Safety): no git WRITE on the real project repo (only the orchestrator commits); no concurrent heavy full-suite pytest runs (background `-n auto` + a foreground loop can trigger earlyoom to corrupt `.git`) — verify robustness with bounded/isolated runs only.
 
-## Examples
-
-### Example 1: GREEN-the-ATs for new domain feature
-Input: feature-delta Slice Plan slice for "bulk-order discount calculation"; ATs already authored by acceptance-designer assert `for all valid orders with quantity > 100: discount_rate > 0` and a parametrized table of tier boundaries.
-
-Lambda reads the AT contract, defines domain types (`Quantity`, `Money`, `DiscountTier = NoDiscount | Bronze(rate) | Silver(rate) | Gold(rate)`), implements `calculate_discount: Quantity -> DiscountTier` and `apply_discount: Money -> DiscountTier -> Money` as pure functions. All tests green. Commits with domain-language subject.
-
-### Example 2: Adapter integration boundary
-Input: "Add PostgreSQL adapter for `SaveOrder` port"; acceptance-designer authored an integration test using testcontainers.
-
-Lambda implements `save_order_postgres(conn) -> SaveOrder`. Verifies roundtrip via the integration test. No mocks at the IO boundary. No PBT skill loaded — this is impl, not test authoring.
-
-### Example 3: ATDD-pure Phase B coverage cut
-After Phase A green, Lambda runs `pytest --cov`. Coverage report flags an outer `try/except` wrapper around the pipeline with 0% branch coverage. No AT injects a runtime exception. Per `nw-crafter-discipline-atdd-pure` Phase B common-cuts taxonomy row 1: CUT the try/except, re-run suite, stay green. Coverage rises to ≥90%.
-
-### Example 4: Reviewer flags Phase B cut as gap
-Phase C reviewer flags the cut try/except as a behavior-loss bug. Lambda does NOT restore the defensive code. Per skill routing rule, the finding becomes `AT_GAP_IN_DELIVERY_SCOPE` and Phase D routes to acceptance-designer to add the missing AT first. Only after the AT exists does Lambda re-implement the defensive branch.
-
-### Example 5: Batch refactor in separate instance
-Phase E dispatched as a clean `Agent(subagent_type='nw-functional-software-crafter')` invocation. Lambda reads all production files modified in Phase A + test suite. Plans L1-L6 transformations (rename `proc_ord` → `process_order`, extract `apply_discount_pipeline` from monolithic match, introduce `OrderResult` choice type, replace conditional with pipeline composition). Applies ALL edits in one session. Single test run. GREEN. Commit.
-
 ## Commands
 
 All commands require `*` prefix.

@@ -286,19 +286,6 @@ commit-slice` computes the committed-scope digest of the resulting HEAD and amen
 onto it atomically; a hand-stamped trailer is stale by construction (computed before the commit
 that changes the tree it digests) and is the exact defect class this tool exists to eliminate.
 
-## Examples
-
-### Example 1: ATDD-pure Phase A — GREEN the ATs
-Reviewer dispatches crafter into Phase A_GREEN_ATS. Crafty loads `nw-tdd-methodology`, `nw-quality-framework`, AND `nw-crafter-discipline-atdd-pure`. Reads the `.feature` files authored by acceptance-designer (no edits). Implements minimum production code in the selected Slice Plan's declared target paths. Runs the AT suite — all green. Wiring check confirms every declared production target appears in `git diff`. Hands off to Phase B.
-
-### Example 3: AT-gap detected during implementation
-
-### Example 4: E_BATCH_REFACTOR — batch-then-verify default
-Crafty plans all L1-L6 transformations in cascade order, applies them as one coherent batch, then runs the suite ONCE. If RED: diagnose and fix the production code — never modify tests to pass (a test that must change signals altered behavior — revert it — or an implementation-detail test — flag to the operator). If GREEN: commit via `des commit-slice` (G_COMMIT above — never a bare `git commit`). Incremental L1→test→L2→test is the legacy opt-in variant only. Anchor: `feedback_refactor_batch_when_test_suite_slow_2026_05_19`.
-
-### Example 5: Mutation evidence requested by reviewer
-Phase F reviewer flags low confidence on the domain module. Crafty loads `nw-mutation-test`, runs mutmut on `src/des/domain/atdd_pure_phases.py`, reports kill ratio. If the ratio is below threshold, the finding routes back to acceptance-designer (test-strength gap), NOT to crafter (crafter does not author tests to lift mutation score).
-
 ## Constraints
 
 - Writes production code only within the project codebase. Does not modify CI/CD, infrastructure, or deployment files (platform-architect territory).

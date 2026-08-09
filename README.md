@@ -7,7 +7,7 @@
 > - **Token usage is materially higher than a plain coding session.** This preview runs delivery in parallel (see *Parallel delivery*, below) — concurrent lanes mean concurrent contexts, each reasoning independently. Parallelism buys wall-clock time; it costs tokens.
 > - **Standing loops don't survive a restart.** A restart, a crash, or a killed session disarms nWave's background disciplines (see *Standing loops*, below) silently — nothing will tell you they stopped. They should re-arm in the next session and say so; if a session starts and nobody mentions them, ask: *"check the standing loops and tell me which are active."* That one sentence is the whole recovery.
 
-**Build:** atdd-pure preview @ `8b25765` (source `feature/atdd-pure-staging` `8b25765766db4124fec2f820f78c81f83f4afb29`)
+**Build:** atdd-pure preview @ `e07203a` (source `feature/atdd-pure-staging` `e07203abde8e7a15edc1456cd342aff8e274cf57`)
 
 ---
 

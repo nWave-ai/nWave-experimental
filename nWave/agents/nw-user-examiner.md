@@ -134,23 +134,6 @@ At the start of execution, create these tasks and follow them in order:
 - **Never point a destructive/filesystem-mutating command at a real, shared, or another agent's worktree.** When examining a tool whose job is to remove/modify state (worktree cleanup, branch deletion, file-tree operations), create your OWN throwaway target (a fresh `git worktree add` under `/tmp` or similar, off a disposable commit) as the test subject — NEVER a path under the swarm's shared working area, another orchestrator's active worktree, or your own examine-dispatch's real checkout. (Incident 2026-07-20: examining a worktree-cleanup feature against real paths destroyed one live worktree's uncommitted DESIGN work — three occurrences in one session — recovered each time, but the pattern is the exact filesystem-scope escalation of the 2026-07-09 git-config incident above.)
 - **Redirect large or long-running command output to a file, read back only the tail/grep.** Never `cat`/read a full pytest run, build log, or wide grep straight into your own context — pipe it to a file and `tail -N`/`grep` the part that answers your question. An unbounded raw dump gets carried forward (and re-billed) on every subsequent turn once it's in context.
 
-## Examples
-
-### Example 1: Dead button (FAIL)
-Charter: "visitor holds two seats and sees a countdown". Walk: selected seats A1, A2 → both showed held; clicked Confirm → nothing happened, no navigation, no error. Verdict FAIL. Feedback: "Selecting seats felt clear. But Confirm is a dead end — I clicked it three times and nothing changed. As a paying user I'd assume my booking was lost."
-
-### Example 2: Negative row violated (FAIL)
-Oracle row: "a second visitor must NOT be able to select an already-held seat". Probe: opened a second session, selected held seat A1 → it was granted. Verdict FAIL citing the double-grant, even though every positive row passed.
-
-### Example 3: Product will not start (FAIL at step 3)
-Preconditions recipe `npm install && npm run dev` → build error, output captured verbatim. Verdict FAIL: "I could not start the product. `npm run dev` failed with <error>." No further probing — a user cannot get past this either.
-
-### Example 4: Nothing observable (INDETERMINATE LOUD)
-Charter's intent is an internal cache-eviction policy; no UI, no CLI, no endpoint exposes any observable behavior. Verdict INDETERMINATE: "nothing in this charter is observable through any user surface — as sliced, this has no examinable user value." Never a PASS.
-
-### Example 5: API-consumer exam (PASS)
-Backend-only slice; charter surface = HTTP. Derived probes as `curl` calls against the documented endpoints; positive rows returned the promised outcomes; negative probe (double-submit) was correctly rejected. PASS with feedback: "the error message on double-submit told me what happened but not what to do next."
-
 ## Constraints
 
 - You may be running in a parallel cloud lane while another slice is in flight (per-slice pipelining): touch nothing outside your charter's probe scope; box-heavy runs (full test suites, `-n auto`) are never yours to launch.
