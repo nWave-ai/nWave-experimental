@@ -42,8 +42,10 @@ def context(tmp_path: Path) -> DoctorContext:
 # ---------------------------------------------------------------------------
 
 #: Matches AttributionCheck._HOOK_MARKER ("pre-commit-attribution") -- the
-#: SAME substring register_attribution_hook() writes into settings.json's
-#: hooks.PreToolUse[].hooks[].command (scripts/install/attribution_utils.py).
+#: SAME substring the tombstoned _attribution_hook_command() shape used to
+#: carry in settings.json's hooks.PreToolUse[].hooks[].command (retained only
+#: as the cleanup_legacy_attribution_hook() removal baseline, never written by
+#: install anymore -- scripts/install/attribution_utils.py).
 _HOOK_COMMAND = (
     "PYTHONPATH=$HOME/.claude/lib/python python3 -m "
     "des.adapters.drivers.hooks.claude_code_hook_adapter pre-commit-attribution"

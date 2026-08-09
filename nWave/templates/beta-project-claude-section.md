@@ -21,9 +21,7 @@ The seven waves are:
 
 If you need to continue work from a previous session or pick up where another developer left off, use `/nw-continue` to see the current state and next steps.
 
-### Standing Loops — Consent Required
-
-nWave's background loops (consolidation, tech debt, bugfix) are **OFF by default.** They run only with your explicit yes, this session only. Enable: *"enable standing loops."* They don't persist across restarts.
+{{LOOP_CONSENT_FRAGMENT}}
 
 ### Privacy — Non-Negotiable
 

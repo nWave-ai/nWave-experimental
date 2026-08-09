@@ -74,6 +74,10 @@ tracked instead as R2/R3/R4/R5 in
 | ``test_green_to_green_and_merge_back_never_overlap_across_concurrent_items`` | R3 | none -- mutual-exclusion witness log is new to slice-02 |
 | ``test_a_failing_items_broken_change_never_leaks_into_a_sibling_items_worktree`` | R4 | none -- cross-item isolation half of the false-green oracle (slice-01's ``test_an_item_is_never_marked_paid_when_the_post_fix_test_run_comes_back_red`` covers the single-item half only) |
 | ``test_two_concurrent_merges_never_drop_either_items_commit_from_the_integration_branch`` | R5 | none -- lost-update race is new to slice-02 |
+
+``test_default_batch_composition_wires_the_real_agent_invocation_adapter_with_no_barrier``
+carries no R-number -- it is a composition-root wiring regression (shard-3
+CI fix, 2026-08-09), not a domain-level AT/requirement.
 """
 
 from __future__ import annotations
@@ -163,6 +167,13 @@ def test_agent_reasoning_lanes_run_concurrently_while_the_shared_box_serializes(
     slice exists to add), the LAST lane's ``invoke()`` never arrives and the
     barrier times out inside ``run_drain_batch`` before this test body
     resumes -- the timeout IS the failure signal for that regression.
+
+    The barrier is an EXPLICIT opt-in (``barrier_gated_agent_invocation``):
+    this is the one AT in this file whose own claim is about lane overlap,
+    so it is the one AT that injects it. Every other ``run_drain_batch``
+    consumer gets the real adapter with no rendezvous (shard-3 CI fix,
+    2026-08-09 -- see ``test_default_batch_composition_wires_the_real_agent_
+    invocation_adapter_with_no_barrier`` below).
     """
     # covers: R2
     composition = RefactorSwarmComposition(tmp_path)
@@ -173,7 +184,10 @@ def test_agent_reasoning_lanes_run_concurrently_while_the_shared_box_serializes(
     merge_lock = RecordingMergeLock()
 
     composition.run_drain_batch(
-        merge_lock=merge_lock, env_provision=env_provision, item_count=item_count
+        merge_lock=merge_lock,
+        env_provision=env_provision,
+        item_count=item_count,
+        agent_invocation=composition.barrier_gated_agent_invocation(parties=item_count),
     )
 
 
@@ -295,3 +309,51 @@ def test_two_concurrent_merges_never_drop_either_items_commit_from_the_integrati
             f"branch's final tree -- a concurrent merge silently dropped "
             f"it. Tracked paths: {tracked!r}"
         )
+
+
+@pytest.mark.parametrize("batch_kind", ["plain", "selector-injected"])
+def test_default_batch_composition_wires_the_real_agent_invocation_adapter_with_no_barrier(
+    tmp_path, batch_kind
+):
+    """Given no explicit ``agent_invocation`` override, When either batch
+    composition root is built (``drain_service_for_batch`` -- ``run_drain_batch``'s
+    default; ``drain_service_for_batch_with_selector`` -- scenario 5's
+    ``observe_reported_scope_for_batch``), Then the REAL
+    ``ShellAgentInvocationAdapter`` is wired directly -- never a
+    barrier-gated wrapper.
+
+    Regression witness for a real CI failure (shard-3, 2026-08-09) and its
+    independent-review follow-up: ``BarrierGatedAgentInvocationPort.
+    wait(timeout=10)`` used to wrap EVERY batch consumer of BOTH
+    construction sites unconditionally, so an ordinary batch AT with no
+    interest in reasoning-lane overlap could time out under xdist
+    contention (unbounded real ``git worktree`` subprocesses on a 4-vCPU
+    runner). The barrier is now an explicit opt-in
+    (``barrier_gated_agent_invocation``) that only
+    ``test_agent_reasoning_lanes_run_concurrently_while_the_shared_box_serializes``
+    injects. This test asserts BOTH default compositions never reintroduce
+    the rendezvous -- structurally, with no thread, no subprocess, and no
+    11-second sleep needed to prove it.
+    """
+    composition = RefactorSwarmComposition(tmp_path)
+    merge_lock = RecordingMergeLock()
+    env_provision = FakeEnvProvisionPort()
+
+    if batch_kind == "plain":
+        port_type_name = composition.default_batch_agent_invocation_type_name(
+            merge_lock=merge_lock, env_provision=env_provision
+        )
+    else:
+        port_type_name = (
+            composition.default_batch_with_selector_agent_invocation_type_name(
+                selector=None, merge_lock=merge_lock, env_provision=env_provision
+            )
+        )
+
+    assert port_type_name == "ShellAgentInvocationAdapter", (
+        f"the default {batch_kind!r} batch composition must wire the real "
+        "shell adapter directly -- a BarrierGatedAgentInvocationPort here "
+        "would reintroduce the shard-3 CI hazard (an artificial rendezvous "
+        f"unconditionally wrapped around every ordinary batch consumer); "
+        f"got {port_type_name!r}"
+    )

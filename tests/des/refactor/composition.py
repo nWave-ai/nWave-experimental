@@ -47,6 +47,7 @@ from des.adapters.driven.refactor.uv_env_provision_adapter import (
 )
 from des.application.refactor_drain_service import RefactorDrainService
 from des.domain.refactor.entry_gate import EntryGateVerdict
+from des.ports.driven_ports.agent_invocation_port import AgentInvocationPort
 
 from .domain_types import EntryGateAgentVerdict
 
@@ -679,19 +680,19 @@ proposed_solution="extract a shared function"
         selector,
         merge_lock,
         env_provision,
-        barrier_parties: int,
+        agent_invocation: AgentInvocationPort | None = None,
     ) -> RefactorDrainService:
         """The slice-02 batch composition shape (``drain_service_for_batch``),
         with the impacted-test selector ALSO injected -- so scenario 5's
         batch leg can arrange the same configured answer the single-item leg
-        arranges via ``drain_service_with_selector``."""
-        from .doubles import BarrierGatedAgentInvocationPort
-
+        arranges via ``drain_service_with_selector``. ``agent_invocation``
+        defaults to the real adapter with no rendezvous, same as
+        ``drain_service_for_batch``; scenario 5 asserts on the SELECTOR'S
+        answer, never on lane overlap, so no consumer of this composition
+        root needs the barrier."""
         return RefactorDrainService(
             git_worktree=GitWorktreeAdapter(),
-            agent_invocation=BarrierGatedAgentInvocationPort(
-                delegate=ShellAgentInvocationAdapter(), parties=barrier_parties
-            ),
+            agent_invocation=agent_invocation or ShellAgentInvocationAdapter(),
             env_provision=env_provision,
             impacted_test_selector=selector,
             ledger=AtCompletionLedger(self.feature_id, self.project_root),
@@ -713,7 +714,6 @@ proposed_solution="extract a shared function"
             selector=selector,
             merge_lock=merge_lock,
             env_provision=env_provision,
-            barrier_parties=len(item_ids),
         )
         batch_result = service.drain_batch(
             repo=self.project_root,
@@ -793,27 +793,45 @@ proposed_solution="extract a shared function"
             "&& echo REFACTOR_SAFE'"
         )
 
+    def barrier_gated_agent_invocation(self, *, parties: int) -> AgentInvocationPort:
+        """Explicit opt-in ``AgentInvocationPort``: the REAL
+        ``ShellAgentInvocationAdapter`` wrapped in the barrier-gated double
+        (deterministic reasoning-lane-concurrency proof) -- injected ONLY by
+        the one AT whose own claim is "N reasoning lanes were in-flight at
+        once"
+        (``test_agent_reasoning_lanes_run_concurrently_while_the_shared_box_serializes``).
+        Regression fix (shard-3 CI, 2026-08-09): this used to be wrapped
+        UNCONDITIONALLY around every ``run_drain_batch`` consumer, so an
+        ordinary batch AT with no interest in lane overlap could time out on
+        ``BarrierGatedAgentInvocationPort.wait(timeout=10)`` under xdist
+        contention (unbounded real ``git worktree`` subprocesses on a 4-vCPU
+        runner). Every other consumer now gets the real adapter directly via
+        ``drain_service_for_batch``'s default, with no artificial
+        rendezvous."""
+        from .doubles import BarrierGatedAgentInvocationPort
+
+        return BarrierGatedAgentInvocationPort(
+            delegate=ShellAgentInvocationAdapter(), parties=parties
+        )
+
     def drain_service_for_batch(
         self,
         *,
         merge_lock,
         env_provision,
-        barrier_parties: int,
+        agent_invocation: AgentInvocationPort | None = None,
     ) -> RefactorDrainService:
         """The slice-02 composition root: REAL ``GitWorktreeAdapter`` (the
         worktree/venv isolation claim needs a real git tree to mean
-        anything) + a REAL ``ShellAgentInvocationAdapter`` wrapped in the
-        barrier-gated double (deterministic reasoning-lane-concurrency
-        proof) + the injected fake env-provisioning + merge-lock doubles
+        anything) + a REAL ``ShellAgentInvocationAdapter`` (no artificial
+        rendezvous by default -- pass ``agent_invocation=`` explicitly, e.g.
+        ``barrier_gated_agent_invocation()``, only when the AT's own claim
+        needs one) + the injected fake env-provisioning + merge-lock doubles
         (deterministic serialization proof, Architecture of Reference:
         driven-external ports default to a fake with output capture)."""
-        from .doubles import BarrierGatedAgentInvocationPort
-
         return RefactorDrainService(
             git_worktree=GitWorktreeAdapter(),
-            agent_invocation=BarrierGatedAgentInvocationPort(
-                delegate=ShellAgentInvocationAdapter(), parties=barrier_parties
-            ),
+            agent_invocation=agent_invocation or ShellAgentInvocationAdapter(),
             env_provision=env_provision,
             impacted_test_selector=HeuristicImpactedTestSelectorAdapter(),
             ledger=AtCompletionLedger(self.feature_id, self.project_root),
@@ -827,16 +845,19 @@ proposed_solution="extract a shared function"
         item_count: int,
         max_parallel: int | None = None,
         agent_cmd: str | None = None,
+        agent_invocation: AgentInvocationPort | None = None,
     ) -> object:
         """Layer 3 composition: drive ``RefactorDrainService.drain_batch``
         in-process -- the slice-02 driving surface every non-walking-skeleton
         AT in this file uses (slice-02 has no NEW walking-skeleton of its
         own; the feature's single WS is slice-01's, per the one-per-FEATURE
-        rule)."""
+        rule). ``agent_invocation`` defaults to the real adapter with no
+        rendezvous; pass ``barrier_gated_agent_invocation(parties=...)``
+        explicitly for the one AT that asserts lane overlap."""
         service = self.drain_service_for_batch(
             merge_lock=merge_lock,
             env_provision=env_provision,
-            barrier_parties=item_count,
+            agent_invocation=agent_invocation,
         )
         return service.drain_batch(
             repo=self.project_root,
@@ -847,6 +868,39 @@ proposed_solution="extract a shared function"
             max_parallel=max_parallel or item_count,
             merge_lock=merge_lock,
         )
+
+    def default_batch_agent_invocation_type_name(
+        self, *, merge_lock, env_provision
+    ) -> str:
+        """The class name of the ``AgentInvocationPort`` ``drain_service_for_batch``
+        wires when no explicit ``agent_invocation`` override is given --
+        the regression witness for the shard-3 CI failure (a barrier
+        unconditionally wrapped around every batch consumer). Reads the
+        composition root's own private wiring (a wiring/DI check, not a
+        domain observable -- Mandate 8's port-exposed universe governs
+        ``DrainResult`` assertions, not this file's own composition-root
+        construction), deliberately WITHOUT running any drain or spawning
+        any thread -- fast and deterministic by construction."""
+        service = self.drain_service_for_batch(
+            merge_lock=merge_lock, env_provision=env_provision
+        )
+        return type(service._agent_invocation).__name__
+
+    def default_batch_with_selector_agent_invocation_type_name(
+        self, *, selector, merge_lock, env_provision
+    ) -> str:
+        """Same regression witness as
+        ``default_batch_agent_invocation_type_name``, for the SELECTOR-
+        injected batch composition root
+        (``drain_service_for_batch_with_selector``) scenario 5's
+        ``observe_reported_scope_for_batch`` consumes -- the second
+        construction site the same shard-3 CI hazard could independently
+        reintroduce a barrier into. ``selector`` is never invoked here (pure
+        wiring check, construction only), so any placeholder is valid."""
+        service = self.drain_service_for_batch_with_selector(
+            selector=selector, merge_lock=merge_lock, env_provision=env_provision
+        )
+        return type(service._agent_invocation).__name__
 
     # --- When: drive the real CLI entry in-process (Layer 2, L2 default) ---
 

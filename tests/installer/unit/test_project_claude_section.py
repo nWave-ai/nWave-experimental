@@ -1,4 +1,8 @@
-"""Unit tests for the managed CLAUDE.md beta-section helpers + CLI consent wiring."""
+"""Unit tests for the managed guidance-section helpers + CLI consent wiring.
+
+Covers both hosts (Claude Code's CLAUDE.md, Codex's AGENTS.md) through the same
+marker/atomic-write engine and the same parameterized CLI sync path.
+"""
 
 from __future__ import annotations
 
@@ -9,11 +13,15 @@ import pytest
 from scripts.install.project_claude_section import (
     BEGIN_MARKER,
     END_MARKER,
+    HOSTS,
     inject_managed_section,
     load_section_content,
     remove_managed_section,
     resolve_section_template,
 )
+
+
+HOST_IDS = sorted(HOSTS)
 
 
 SECTION = "## nWave (beta)\n\nDrive work through the spine."
@@ -106,122 +114,139 @@ def test_inject_then_remove_round_trips_user_content(tmp_path: Path) -> None:
     assert claude.read_text(encoding="utf-8").strip() == original.strip()
 
 
-# --- template resolution --------------------------------------------------
+# --- template resolution ---------------------------------------------------
 
 
-def test_section_template_resolves_and_loads() -> None:
-    template = resolve_section_template()
+@pytest.mark.parametrize("host", HOST_IDS)
+def test_section_template_resolves_and_loads(host: str) -> None:
+    template = resolve_section_template(host=host)
     assert template.is_file(), template
-    content = load_section_content()
+    content = load_section_content(host=host)
     assert "nWave (beta)" in content
     # The body must NOT carry the markers — those are added at inject time.
     assert BEGIN_MARKER not in content and END_MARKER not in content
 
 
-# --- CLI consent wiring ---------------------------------------------------
+def test_codex_projection_forbids_claude_specific_language() -> None:
+    """AGENTS.md never carries Claude slash-command/Skill-tool prose."""
+    content = load_section_content(host="codex").lower()
+    for forbidden in ("/nw-", "skill tool", "slash command"):
+        assert forbidden not in content, forbidden
 
 
-def test_cli_enable_injects_with_assume_yes(tmp_path: Path) -> None:
+# --- CLI consent wiring (parametrized across both hosts) -------------------
+
+
+@pytest.mark.parametrize("host", HOST_IDS)
+def test_cli_enable_injects_with_assume_yes(host: str, tmp_path: Path) -> None:
     from nwave_ai import cli
 
-    cli._sync_project_claude_section("enable", tmp_path, assume_yes=True)
-    claude = tmp_path / "CLAUDE.md"
-    assert claude.is_file()
-    assert BEGIN_MARKER in claude.read_text(encoding="utf-8")
+    cli._sync_guidance_section_for_host(host, "enable", tmp_path, assume_yes=True)
+    target = tmp_path / HOSTS[host].filename
+    assert target.is_file()
+    assert BEGIN_MARKER in target.read_text(encoding="utf-8")
 
 
-def test_cli_disable_removes_section(tmp_path: Path) -> None:
+@pytest.mark.parametrize("host", HOST_IDS)
+def test_cli_disable_removes_section(host: str, tmp_path: Path) -> None:
     from nwave_ai import cli
 
-    cli._sync_project_claude_section("enable", tmp_path, assume_yes=True)
-    cli._sync_project_claude_section("disable", tmp_path, assume_yes=False)
-    assert not (tmp_path / "CLAUDE.md").exists()
+    cli._sync_guidance_section_for_host(host, "enable", tmp_path, assume_yes=True)
+    cli._sync_guidance_section_for_host(host, "disable", tmp_path, assume_yes=False)
+    assert not (tmp_path / HOSTS[host].filename).exists()
 
 
+@pytest.mark.parametrize("host", HOST_IDS)
 def test_cli_enable_skips_when_non_interactive_without_yes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    host: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from nwave_ai import cli
 
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: False)
-    cli._sync_project_claude_section("enable", tmp_path, assume_yes=False)
-    assert not (tmp_path / "CLAUDE.md").exists()
+    cli._sync_guidance_section_for_host(host, "enable", tmp_path, assume_yes=False)
+    assert not (tmp_path / HOSTS[host].filename).exists()
 
 
+@pytest.mark.parametrize("host", HOST_IDS)
 def test_cli_enable_skips_on_declined_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    host: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from nwave_ai import cli
 
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda *a, **k: "n")
-    cli._sync_project_claude_section("enable", tmp_path, assume_yes=False)
-    assert not (tmp_path / "CLAUDE.md").exists()
+    cli._sync_guidance_section_for_host(host, "enable", tmp_path, assume_yes=False)
+    assert not (tmp_path / HOSTS[host].filename).exists()
 
 
+@pytest.mark.parametrize("host", HOST_IDS)
 def test_cli_enable_injects_on_accepted_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    host: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from nwave_ai import cli
 
     monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda *a, **k: "")  # bare Enter = yes
-    cli._sync_project_claude_section("enable", tmp_path, assume_yes=False)
-    assert (tmp_path / "CLAUDE.md").is_file()
+    cli._sync_guidance_section_for_host(host, "enable", tmp_path, assume_yes=False)
+    assert (tmp_path / HOSTS[host].filename).is_file()
 
 
-# --- standing loops consent teaser ---
+def test_sync_project_claude_section_drives_both_hosts_at_once(tmp_path: Path) -> None:
+    """The top-level CLI sync path writes every registered host, not just Claude."""
+    from nwave_ai import cli
+
+    cli._sync_project_claude_section("enable", tmp_path, assume_yes=True)
+    for host, guidance in HOSTS.items():
+        target = tmp_path / guidance.filename
+        assert target.is_file(), host
+        assert BEGIN_MARKER in target.read_text(encoding="utf-8")
+
+    cli._sync_project_claude_section("disable", tmp_path, assume_yes=False)
+    for guidance in HOSTS.values():
+        assert not (tmp_path / guidance.filename).exists()
 
 
-def test_standing_loops_teaser_present_and_valid() -> None:
-    """Verify consent teaser for standing loops: authority, token cap, correct semantics."""
-    from scripts.install.project_claude_section import load_section_content
+# --- standing loops consent fragment ---------------------------------------
+
+
+def _fragment_source_bytes() -> bytes:
+    repo_root = resolve_section_template(host="claude").parents[2]
+    fragment_path = repo_root / "nWave" / "templates" / "loop-consent-fragment.md"
+    return fragment_path.read_text(encoding="utf-8").strip().encode("utf-8")
+
+
+@pytest.mark.parametrize("host", HOST_IDS)
+def test_consent_fragment_bytes_match_source_verbatim(host: str) -> None:
+    """Extract the fragment as spliced into each host's projection and compare
+    its bytes against the fragment source file — not a hash of derived content
+    against itself, an independent byte-for-byte extraction per host."""
+    fragment_bytes = _fragment_source_bytes()
+    content_bytes = load_section_content(host=host).encode("utf-8")
+
+    start = content_bytes.find(fragment_bytes)
+    assert start != -1, f"fragment not found verbatim in {host} projection"
+    extracted = content_bytes[start : start + len(fragment_bytes)]
+    assert extracted == fragment_bytes
+
+
+def test_consent_fragment_semantics_and_token_cap() -> None:
     from scripts.measure_doc_tokens import count_tokens
 
-    content = load_section_content()
+    fragment = _fragment_source_bytes().decode("utf-8")
+    lowered = fragment.lower()
 
-    # Teaser must exist
-    assert "Standing Loops" in content or "standing loops" in content, (
-        "Standing loops teaser missing"
-    )
+    # Required semantics: optional/OFF, explicit repo+scope+mode+budget consent,
+    # session-scoped with no restart/compact rearm, stop/status, details on demand.
+    assert "off" in lowered
+    assert "repo" in lowered and "scope" in lowered
+    assert "mode" in lowered and "budget" in lowered
+    assert "session" in lowered
+    assert "restart" in lowered and "compaction" in lowered
+    assert "stop" in lowered and "status" in lowered
 
-    # Extract the teaser section (between heading and next section)
-    import re
-
-    teaser_match = re.search(
-        r"###?\s+Standing Loops.*?\n\n(.*?)(?=\n###|\n##[^#]|$)",
-        content,
-        re.DOTALL | re.IGNORECASE,
-    )
-    assert teaser_match, "Standing loops section not found"
-    teaser_body = teaser_match.group(1)
-
-    # Must NOT mention auto-arm, auto-rearm, opt-out, or "on by default"
-    forbidden = [
-        "auto-arm",
-        "auto-rearm",
-        "opt-out",
-        "opt out",
-        "on by default",
-        "arm themselves",
-    ]
+    forbidden = ["auto-arm", "auto-rearm", "opt-out", "opt out", "on by default"]
     for term in forbidden:
-        assert term not in teaser_body.lower(), (
-            f"Forbidden term '{term}' found in teaser"
-        )
+        assert term not in lowered, f"forbidden term '{term}' found in fragment"
 
-    # Must mention OFF by default and explicit consent
-    assert "off" in teaser_body.lower(), "Teaser must state loops are OFF by default"
-    assert "explicit" in teaser_body.lower() or "consent" in teaser_body.lower(), (
-        "Teaser must mention explicit consent"
-    )
-
-    # Token cap: must be ≤64 tokens
-    token_count = count_tokens(teaser_body)
-    assert token_count <= 64, (
-        f"Teaser too large: {token_count} tokens (max 64). Body:\n{teaser_body}"
-    )
-
-    # Byte cap: must be ≤256 bytes
-    byte_count = len(teaser_body.encode("utf-8"))
-    assert byte_count <= 256, f"Teaser exceeds 256 bytes: {byte_count}"
+    token_count = count_tokens(fragment)
+    assert token_count <= 51, f"fragment too large: {token_count} tokens (max 51)"

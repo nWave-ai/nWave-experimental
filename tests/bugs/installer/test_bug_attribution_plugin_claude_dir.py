@@ -9,13 +9,16 @@ same feature split across two directories. RCA:
 docs/feature/fix-attribution-plugin-claude-dir/deliver/rca.md.
 
 ADR-CA-007 reconciliation: the un-gateable ``settings.json attribution.{commit,pr}``
-WRITE is retired; install now registers the activation-gated PreToolUse hook
-(``register_attribution_hook(claude_dir=...)``) and records the opt-in
-preference. The ``claude_dir`` injection seam is LOAD-BEARING and PRESERVED —
-this regression still guards it, now over the hook-registration call site (the
-surviving settings-touching surface) instead of the retired credit writer.
-Uninstall still routes ``remove_settings_attribution`` through ``claude_dir``
-(RETAINED legacy-block cleanup), so that half is unchanged.
+WRITE is retired; the activation-gated PreToolUse hook (universal pre-tool-use
+adapter) is the sole enforcement, observing ``attribution.enabled`` at
+invocation time. Install instead calls ``cleanup_legacy_attribution_hook(
+claude_dir=...)`` to remove any stale independent registration left by an
+older install, and records the opt-in preference. The ``claude_dir`` injection
+seam is LOAD-BEARING and PRESERVED — this regression still guards it, now over
+the cleanup call site (the surviving settings-touching surface) instead of the
+retired credit writer. Uninstall still routes ``remove_settings_attribution``
+through ``claude_dir`` (RETAINED legacy-block cleanup), so that half is
+unchanged.
 
 These tests drive the REAL AttributionPlugin.install()/.uninstall() with NO
 stubbing of the settings helpers — they live under tests/bugs/, which does NOT
@@ -35,6 +38,7 @@ from unittest.mock import MagicMock
 from scripts.install.attribution_utils import (
     NWAVE_MANAGED_COMMIT,
     NWAVE_MANAGED_PR,
+    _attribution_hook_command,
 )
 from scripts.install.plugins.attribution_plugin import AttributionPlugin
 from scripts.install.plugins.base import InstallContext
@@ -115,11 +119,7 @@ def test_install_routes_stale_cleanup_to_target_claude_dir(
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": (
-                                        "# des-hook:pre-commit-attribution\n"
-                                        "PYTHONPATH=$HOME/.claude/lib/python python3 -m "
-                                        "des.adapters.drivers.hooks.claude_code_hook_adapter pre-tool-use"
-                                    ),
+                                    "command": _attribution_hook_command(target_claude),
                                 }
                             ],
                         }
@@ -134,6 +134,8 @@ def test_install_routes_stale_cleanup_to_target_claude_dir(
     ctx = _make_context(target_claude, nwave_config)
     AttributionPlugin(config_dir=nwave_config).install(ctx)
 
+    # Stale hook removed from target (cleanup routed via seam).
+    assert not _attribution_hook_registered(target_claude)
     # Stale hook cleaned from target (cleanup routed via seam).
     assert _settings_attribution_commit(target_claude) is None
     # Default ~/.claude never written.

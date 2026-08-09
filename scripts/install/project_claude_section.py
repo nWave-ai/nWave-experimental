@@ -1,10 +1,13 @@
-"""Managed marker-delimited section in a target project's CLAUDE.md.
+"""Managed marker-delimited section in a target project's managed guidance file.
 
 The beta channel teaches the project's LLM how to drive the nWave spine and how
 to collect friction/time/cost feedback locally (no transmission). That guidance
-ships as a SECTION injected into the project's *existing* ``CLAUDE.md`` — never a
+ships as a SECTION injected into the project's *existing* guidance file — never a
 new file that competes with the user's own (Ale 2026-06-30: "aggiunge una sezione
-e rimuoverla alla disinstallazione, non deve crearne uno nuovo").
+e rimuoverla alla disinstallazione, non deve crearne uno nuovo"). Two hosts are
+supported today: Claude Code's ``CLAUDE.md`` and Codex's ``AGENTS.md`` — same
+marker/atomic-write engine, one template per host (``HOSTS`` below), so the
+Claude-specific slash-command/Skill-tool prose never lands in the Codex file.
 
 The section is bounded by HTML-comment markers (invisible in rendered markdown),
 so injection is idempotent (re-inject replaces the block between the markers) and
@@ -21,18 +24,45 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 
 # HTML-comment markers — invisible in rendered markdown, stable across edits.
+# Shared across hosts: each host writes to its own file, so the marker never
+# collides even though the text is identical.
 BEGIN_MARKER = "<!-- BEGIN nWave-beta-section (managed by nwave-ai; do not edit) -->"
 END_MARKER = "<!-- END nWave-beta-section -->"
 
-# Template path relative to the nWave source/package root.
-_TEMPLATE_RELPATH = ("nWave", "templates", "beta-project-claude-section.md")
+# The consent fragment is authored once and spliced into every host template —
+# this placeholder is how each template asks for it. Keeping the splice here
+# (not a hand-copy per template) is what makes the composed bytes identical.
+_CONSENT_FRAGMENT_PLACEHOLDER = "{{LOOP_CONSENT_FRAGMENT}}"
+_CONSENT_FRAGMENT_RELPATH = ("nWave", "templates", "loop-consent-fragment.md")
 
 
-def resolve_section_template(project_root: Path | None = None) -> Path:
-    """Locate the beta CLAUDE.md section template.
+class HostGuidance(NamedTuple):
+    """One managed-guidance host: its target filename and template source."""
+
+    filename: str
+    template_relpath: tuple[str, ...]
+
+
+# Registry of supported hosts. Add a host by adding one entry + one template —
+# never a parallel copy of this module's marker/atomic-write engine.
+HOSTS: dict[str, HostGuidance] = {
+    "claude": HostGuidance(
+        "CLAUDE.md", ("nWave", "templates", "beta-project-claude-section.md")
+    ),
+    "codex": HostGuidance(
+        "AGENTS.md", ("nWave", "templates", "beta-project-agents-section.md")
+    ),
+}
+
+
+def resolve_section_template(
+    project_root: Path | None = None, *, host: str = "claude"
+) -> Path:
+    """Locate the beta guidance-section template for ``host``.
 
     ``project_root`` is the nWave source/package root (where ``nWave/`` lives),
     NOT the target project. When omitted, derive it from this file's location
@@ -40,12 +70,23 @@ def resolve_section_template(project_root: Path | None = None) -> Path:
     installed layout where ``nWave/`` ships beside the scripts.
     """
     root = project_root or Path(__file__).resolve().parents[2]
-    return root.joinpath(*_TEMPLATE_RELPATH)
+    return root.joinpath(*HOSTS[host].template_relpath)
 
 
-def load_section_content(project_root: Path | None = None) -> str:
-    """Read the managed-section body (the inner content, no markers)."""
-    return resolve_section_template(project_root).read_text(encoding="utf-8").strip()
+def load_section_content(
+    project_root: Path | None = None, *, host: str = "claude"
+) -> str:
+    """Read the managed-section body for ``host`` (inner content, no markers).
+
+    Splices the shared loop-consent fragment into the template's placeholder,
+    so the fragment bytes are identical across every host by construction.
+    """
+    root = project_root or Path(__file__).resolve().parents[2]
+    template = resolve_section_template(root, host=host).read_text(encoding="utf-8")
+    fragment = (
+        root.joinpath(*_CONSENT_FRAGMENT_RELPATH).read_text(encoding="utf-8").strip()
+    )
+    return template.replace(_CONSENT_FRAGMENT_PLACEHOLDER, fragment).strip()
 
 
 def _build_block(content: str) -> str:

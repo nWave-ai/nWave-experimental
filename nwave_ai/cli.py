@@ -975,13 +975,19 @@ def _print_usage() -> int:
 # ---------------------------------------------------------------------------
 
 
-def _sync_project_claude_section(
-    action: str, project_root: Path, *, assume_yes: bool
-) -> None:
-    """Inject (enable) or remove (disable) the managed beta section in CLAUDE.md.
+# Hosts synced on every `project enable|disable` — one parameterized path
+# (`_sync_guidance_section_for_host`) called once per host, never a
+# per-host branch/copy of the sync logic.
+_GUIDANCE_HOSTS = ("claude", "codex")
 
-    Modifying the user's project CLAUDE.md is a durable, user-facing change, so
-    `enable` asks for consent first (Ale 2026-06-30: "ci vuole la richiesta
+
+def _sync_guidance_section_for_host(
+    host: str, action: str, project_root: Path, *, assume_yes: bool
+) -> None:
+    """Inject (enable) or remove (disable) the managed beta section for `host`.
+
+    Modifying the user's project guidance file is a durable, user-facing change,
+    so `enable` asks for consent first (Ale 2026-06-30: "ci vuole la richiesta
     all'utente"). `--yes` (or any non-interactive context with `--yes`) bypasses
     the prompt; a non-interactive context WITHOUT `--yes` skips injection and
     prints how to add it. Removal of our own marker-bounded block on `disable`
@@ -989,30 +995,31 @@ def _sync_project_claude_section(
     activation toggle.
     """
     from scripts.install.project_claude_section import (
+        HOSTS,
         inject_managed_section,
         load_section_content,
         remove_managed_section,
     )
 
-    claude_md = project_root / "CLAUDE.md"
+    target_md = project_root / HOSTS[host].filename
 
     if action == "disable":
         try:
-            outcome = remove_managed_section(claude_md)
+            outcome = remove_managed_section(target_md)
         except OSError as exc:
-            print(f"  (could not update {claude_md}: {exc})", file=sys.stderr)
+            print(f"  (could not update {target_md}: {exc})", file=sys.stderr)
             return
         if outcome == "removed-file":
             print(
-                f"Removed the nWave beta section (and the now-empty {claude_md.name})."
+                f"Removed the nWave beta section (and the now-empty {target_md.name})."
             )
         elif outcome == "removed-section":
-            print(f"Removed the nWave beta section from {claude_md.name}.")
+            print(f"Removed the nWave beta section from {target_md.name}.")
         return
 
     # action == "enable"
     try:
-        content = load_section_content(_get_project_root())
+        content = load_section_content(_get_project_root(), host=host)
     except OSError:
         # Template missing (unusual) — never block the toggle on it.
         return
@@ -1021,7 +1028,7 @@ def _sync_project_claude_section(
         consent = True
     elif sys.stdin.isatty():
         answer = input(
-            f"Add the nWave beta-feedback guidance section to ./{claude_md.name}? "
+            f"Add the nWave beta-feedback guidance section to ./{target_md.name}? "
             "(removable later with `nwave-ai project disable`) [Y/n] "
         )
         consent = answer.strip().lower() in ("", "y", "yes")
@@ -1030,25 +1037,36 @@ def _sync_project_claude_section(
 
     if not consent:
         print(
-            "Skipped the CLAUDE.md beta section. Add it anytime with "
+            f"Skipped the {target_md.name} beta section. Add it anytime with "
             "`nwave-ai project enable --yes` from this project."
         )
         return
 
     try:
-        outcome = inject_managed_section(claude_md, content)
+        outcome = inject_managed_section(target_md, content)
     except OSError as exc:
-        print(f"  (could not update {claude_md}: {exc})", file=sys.stderr)
+        print(f"  (could not update {target_md}: {exc})", file=sys.stderr)
         return
     verb = {"created": "Created", "appended": "Added", "updated": "Refreshed"}[outcome]
-    print(f"{verb} the nWave beta section in {claude_md.name}.")
+    print(f"{verb} the nWave beta section in {target_md.name}.")
+
+
+def _sync_project_claude_section(
+    action: str, project_root: Path, *, assume_yes: bool
+) -> None:
+    """Sync the managed beta section into every supported host's guidance file."""
+    for host in _GUIDANCE_HOSTS:
+        _sync_guidance_section_for_host(
+            host, action, project_root, assume_yes=assume_yes
+        )
 
 
 def _handle_project(args: list[str]) -> int:
     """Handle 'project enable|disable' — write the marker + fix gitignore.
 
-    On `enable`, also offers to inject the managed beta-feedback section into the
-    project's CLAUDE.md (consent-gated; `--yes` bypasses). On `disable`, removes it.
+    On `enable`, also offers to inject the managed beta-feedback section into each
+    supported host's guidance file (CLAUDE.md, AGENTS.md; consent-gated per host,
+    `--yes` bypasses). On `disable`, removes it from all of them.
     """
     assume_yes = "--yes" in args
     positional = [a for a in args if a != "--yes"]
