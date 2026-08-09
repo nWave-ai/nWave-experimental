@@ -10,6 +10,7 @@ Usage: python uninstall_nwave.py [--backup] [--force] [--dry-run] [--help]
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -177,6 +178,37 @@ def scan_claude_ownership(claude_config_dir: Path) -> ClaudeOwnershipInventory:
         data_manifest_status=data_manifest_status,
         data_owned_present=data_owned_present,
     )
+
+
+def _is_legacy_flat_nw_symlink(entry: Path, nested_dir: Path) -> bool:
+    """True if `entry` is a legacy flat symlink into the dedicated `nested_dir`.
+
+    Positive identification only -- never name-prefix ownership. `entry` must
+    itself be a symlink named `nw-*` whose RAW (unresolved) target lexically
+    resolves inside `nested_dir` (the dedicated `{noun}/nw/` root this same
+    family owns), dangling target included. Uses `Path.readlink` -- never
+    `Path.resolve()` -- so neither the symlink itself nor any intermediate
+    path component is ever followed on disk; only the link's own recorded
+    text and `nested_dir` are compared lexically. A regular file, a
+    directory, or a symlink pointing anywhere else is a preserved user
+    sibling even when its name starts with `nw-`.
+    """
+    if not entry.is_symlink() or not entry.name.startswith("nw-"):
+        return False
+    try:
+        raw_target = entry.readlink()
+    except OSError:
+        return False
+    target = Path(raw_target)
+    if not target.is_absolute():
+        target = entry.parent / target
+    normalized_target = Path(os.path.normpath(str(target)))
+    normalized_nested = Path(os.path.normpath(str(nested_dir)))
+    try:
+        normalized_target.relative_to(normalized_nested)
+    except ValueError:
+        return False
+    return True
 
 
 class NWaveUninstaller:
@@ -850,22 +882,26 @@ class NWaveUninstaller:
                 shutil.rmtree(nested_dir)
                 self.logger.info(f"  🗑️ Removed {noun}/nw directory")
 
-            # Flat layout: {noun}/nw-* files/symlinks/dirs (a public/flat install
-            # writes flat nw-*.md; the nested remover above misses them). Symmetric
-            # with remove_skills. is_symlink() is checked FIRST so DANGLING symlinks
-            # (target already gone) are unlinked, not followed -- otherwise they
-            # survive uninstall and crash the next install's backup step.
+            # Flat layout: a public/flat install writes flat {noun}/nw-*.md
+            # symlinks into the dedicated nested_dir above; the nested remover
+            # only clears the nested root, missing them. Ownership here is
+            # POSITIVE, never prefix/glob: only a symlink whose raw target
+            # lexically resolves inside nested_dir (dangling included, so it
+            # is unlinked rather than followed -- a followed dangling link
+            # would otherwise survive uninstall and crash the next install's
+            # backup step) is ours. A regular file, a directory, or a symlink
+            # pointing elsewhere is a preserved user sibling even when its
+            # name starts with nw-.
             flat_removed = 0
             if parent_dir.exists():
                 for entry in parent_dir.glob("nw-*"):
-                    if entry.is_symlink() or entry.is_file():
+                    if _is_legacy_flat_nw_symlink(entry, nested_dir):
                         entry.unlink()
                         flat_removed += 1
-                    elif entry.is_dir():
-                        shutil.rmtree(entry)
-                        flat_removed += 1
             if flat_removed:
-                self.logger.info(f"  🗑️ Removed {flat_removed} flat {noun}/nw-* entries")
+                self.logger.info(
+                    f"  🗑️ Removed {flat_removed} legacy flat {noun}/nw-* symlinks"
+                )
 
             # Remove parent directory if empty
             if parent_dir.exists():
@@ -1052,16 +1088,27 @@ class NWaveUninstaller:
             self.logger.info("  ✅ No DES hook scripts to remove (already clean)")
 
     def _has_flat_nw_residue(self, noun: str) -> bool:
-        """True if any flat nw-* entry survives under ~/.claude/{noun}/.
+        """True if a positively-identified legacy flat nw-* symlink survives
+        under ~/.claude/{noun}/.
 
         Detects the orphan flat layout the nested-only remover used to miss,
-        INCLUDING dangling symlinks (glob yields them without stat). Used by
-        validate_removal so a flat-layout leftover is an honest ❌, not a false ✅.
+        INCLUDING dangling symlinks (glob yields them without stat) -- but
+        only a symlink whose raw target lexically resolves inside the
+        dedicated {noun}/nw/ root (see `_is_legacy_flat_nw_symlink`). A
+        user-owned flat file, directory, or a symlink pointing elsewhere is
+        never residue, even when its name starts with nw-. Used by
+        validate_removal so a genuine legacy leftover is an honest ❌, never
+        a false ✅, while a coincidentally-named user sibling is never
+        misclassified as nWave residue.
         """
         parent = self.claude_config_dir / noun
         if not parent.exists():
             return False
-        return any(parent.glob("nw-*"))
+        nested_dir = parent / "nw"
+        return any(
+            _is_legacy_flat_nw_symlink(entry, nested_dir)
+            for entry in parent.glob("nw-*")
+        )
 
     def remove_attribution(self) -> None:
         """Remove the nWave-managed attribution payload from settings.json.

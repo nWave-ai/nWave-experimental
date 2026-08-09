@@ -561,13 +561,77 @@ def test_installed_universal_handler_emits_dual_trailer_on_real_commit(
     )
 
 
+def _seed_user_flat_nw_assets(parent: Path, noun: str) -> dict[str, object]:
+    """Seed user-owned flat siblings beside the dedicated ``{noun}/nw/`` root.
+
+    Covers the three shapes ``_is_legacy_flat_nw_symlink`` must NOT claim: a
+    regular ``nw-*`` file, an ``nw-*`` directory, and an ``nw-*`` symlink whose
+    raw target resolves OUTSIDE ``{noun}/nw/`` (a sibling foreign target) --
+    every one of them starts with the ``nw-`` prefix the uninstaller globs on,
+    so only the positive symlink-into-nested-dir check may remove anything.
+    """
+    parent.mkdir(parents=True, exist_ok=True)
+    note_bytes = f"user-owned {noun} note, not nWave's\n".encode()
+    note = parent / "nw-note.md"
+    note.write_bytes(note_bytes)
+
+    keep_dir = parent / "nw-dir"
+    keep_dir.mkdir()
+    keep_text = f"user-owned {noun} keepsake\n"
+    (keep_dir / "keep.txt").write_text(keep_text, encoding="utf-8")
+
+    foreign_text = f"foreign {noun} target, outside nw/\n"
+    foreign_target = parent / "foreign-target.md"
+    foreign_target.write_text(foreign_text, encoding="utf-8")
+    symlink = parent / "nw-foreign.md"
+    symlink.symlink_to("foreign-target.md")
+
+    return {
+        "note": note,
+        "note_bytes": note_bytes,
+        "keep_file": keep_dir / "keep.txt",
+        "keep_text": keep_text,
+        "foreign_target": foreign_target,
+        "foreign_text": foreign_text,
+        "symlink": symlink,
+    }
+
+
+def _assert_user_flat_nw_assets_intact(assets: dict[str, object], noun: str) -> None:
+    assert assets["note"].is_file(), f"{noun}: user nw-note.md vanished"
+    assert assets["note"].read_bytes() == assets["note_bytes"], (
+        f"{noun}: user nw-note.md bytes changed"
+    )
+    assert assets["keep_file"].is_file(), f"{noun}: user nw-dir/keep.txt vanished"
+    assert assets["keep_file"].read_text(encoding="utf-8") == assets["keep_text"], (
+        f"{noun}: user nw-dir/keep.txt content changed"
+    )
+    assert assets["foreign_target"].is_file(), f"{noun}: foreign-target.md vanished"
+    assert (
+        assets["foreign_target"].read_text(encoding="utf-8") == assets["foreign_text"]
+    ), f"{noun}: foreign-target.md content changed"
+    symlink = assets["symlink"]
+    assert symlink.is_symlink(), f"{noun}: nw-foreign.md is no longer a symlink"
+    assert symlink.readlink() == Path("foreign-target.md"), (
+        f"{noun}: nw-foreign.md symlink target changed: {symlink.readlink()}"
+    )
+    assert symlink.read_text(encoding="utf-8") == assets["foreign_text"], (
+        f"{noun}: nw-foreign.md no longer resolves to its foreign target"
+    )
+
+
 @pytest.mark.e2e
 def test_claude_settings_receipt_uninstall_roundtrip_preserves_user_sentinel(
     _venv_with_wheel: Path, tmp_path_factory
 ) -> None:
     """Uninstall reverses nWave's own settings.json edits via its receipt, leaving a
     pre-existing user key untouched, and clears the receipt itself (D1 pool semantics:
-    a settings-provenance receipt is per-``claude_dir``, not per-install-run)."""
+    a settings-provenance receipt is per-``claude_dir``, not per-install-run).
+
+    Also covers user-owned flat ``nw-*`` siblings seeded under both
+    ``agents/`` and ``commands/`` AFTER the real install (a file, a directory,
+    and a symlink to a foreign sibling target) -- all must survive uninstall
+    byte/target-identical, AND survive a second, idempotent uninstall run."""
     home = tmp_path_factory.mktemp("nwave_settings_roundtrip_home")
     claude_dir = home / ".claude"
     claude_dir.mkdir(parents=True)
@@ -603,6 +667,11 @@ def test_claude_settings_receipt_uninstall_roundtrip_preserves_user_sentinel(
         f"install did not write a settings receipt at {receipt_path}"
     )
 
+    user_assets = {
+        noun: _seed_user_flat_nw_assets(claude_dir / noun, noun)
+        for noun in ("agents", "commands")
+    }
+
     uninstall_proc = subprocess.run(
         [str(console), "uninstall", "--target", str(claude_dir)],
         stdout=subprocess.PIPE,
@@ -621,3 +690,20 @@ def test_claude_settings_receipt_uninstall_roundtrip_preserves_user_sentinel(
     assert not receipt_path.exists(), (
         f"successful uninstall did not clear its settings receipt: {receipt_path}"
     )
+    for noun, assets in user_assets.items():
+        _assert_user_flat_nw_assets_intact(assets, noun)
+
+    second_uninstall_proc = subprocess.run(
+        [str(console), "uninstall", "--target", str(claude_dir)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        env=env,
+        timeout=300,
+        check=False,
+    )
+    second_out = second_uninstall_proc.stdout.decode("utf-8", errors="replace")
+    assert second_uninstall_proc.returncode == 0, (
+        f"second (idempotent) uninstall failed:\n{second_out}"
+    )
+    for noun, assets in user_assets.items():
+        _assert_user_flat_nw_assets_intact(assets, noun)
