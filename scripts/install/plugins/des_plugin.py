@@ -314,6 +314,25 @@ class DESPlugin(InstallationPlugin):
         ".get('tool_input',{}).get('command',''))\"); "
         "printf '%s' \"$CMD\" | grep -qE '\\bgit\\b' || exit 0; "
         "printf '%s' \"$INPUT\" | python3 -m scripts.hooks.no_verify_reminder",
+        # fix-execution-log-bash-guard-consolidation (Ale-authorised
+        # 2026-08-09): the standalone PreToolUse/Bash execution-log guard
+        # (formerly hook_definitions._BASH_EXECUTION_LOG_GUARD) was retired.
+        # Upgrade cleanup removes the exact stale registration this installer
+        # previously wrote; a user's own hook that happens to mention
+        # execution-log is unaffected (equality match, not token match).
+        "# des-hook:pre-bash\n"
+        "INPUT=$(cat); "
+        "CMD=$(printf '%s' \"$INPUT\" | python3 -c "
+        '"import sys,json; print(json.load(sys.stdin)'
+        ".get('tool_input',{}).get('command',''))\"); "
+        "printf '%s' \"$CMD\" | grep -q 'execution-log' || exit 0; "
+        "printf '%s' \"$CMD\" | grep -qE "
+        "'des\\.cli\\.verify_deliver_integrity|des +verify-integrity' && exit 0; "
+        'printf \'%s\\n\' \'{"decision":"block","reason":"Direct modification of '
+        "execution-log.json via Bash is blocked.\\n"
+        "To read it, use the Read tool.\\n"
+        "This retired artifact must not be recreated or modified.\"}'; "
+        "exit 2",
     )
     # Retired lifecycle event arrays are intentionally outside HOOK_EVENTS:
     # fresh installs never recreate them.  Upgrade/uninstall still visit only

@@ -52,25 +52,6 @@ class HookEvent:
     shell_command: str | None = None
 
 
-# Pure-shell guard for Bash commands that target execution-log.json.
-# The "# des-hook:pre-bash;" prefix is a shell comment (no-op) that serves
-# as a DES marker string for is_des_hook_entry detection.
-_BASH_EXECUTION_LOG_GUARD = (
-    "# des-hook:pre-bash\n"
-    "INPUT=$(cat); "
-    "CMD=$(printf '%s' \"$INPUT\" | python3 -c "
-    '"import sys,json; print(json.load(sys.stdin)'
-    ".get('tool_input',{}).get('command',''))\"); "
-    "printf '%s' \"$CMD\" | grep -q 'execution-log' || exit 0; "
-    "printf '%s' \"$CMD\" | grep -qE "
-    "'des\\.cli\\.verify_deliver_integrity|des +verify-integrity' && exit 0; "
-    'printf \'%s\\n\' \'{"decision":"block","reason":"Direct modification of '
-    "execution-log.json via Bash is blocked.\\n"
-    "To read it, use the Read tool.\\n"
-    "This retired artifact must not be recreated or modified.\"}'; "
-    "exit 2"
-)
-
 # Pure-shell wrapper around the git-stash guard PreToolUse hook (slice-01 of
 # fix-crafter-stash-structural-mitigation). The shell wrapper buffers stdin
 # (the hook event JSON), greps the bash command for `^\s*git\s+stash\b` as a
@@ -141,23 +122,24 @@ _BASH_WORKTREE_REMOVAL_GUARD = (
 # that makes a normal coding action depend on historical workflow bookkeeping.
 #
 # fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29): 1 new entry
-# joins -- PreToolUse/Bash for the worktree-removal liveness guard (4th Bash
-# entry; #6 -> #7 PreToolUse; greps `git worktree remove`, orthogonal to every
-# other Bash entry's grep). Blocks a `git worktree remove` while a live
-# process's cwd is inside the target, the target carries an explicit
-# `git worktree lock`, or the target's branch carries unmerged commits --
-# closing the incident where a clean `git status` was mistaken for "safe to
-# remove" while a lane's pytest run was still live inside the worktree.
+# joins -- PreToolUse/Bash for the worktree-removal liveness guard (3rd Bash
+# entry; greps `git worktree remove`, orthogonal to every other Bash entry's
+# grep). Blocks a `git worktree remove` while a live process's cwd is inside
+# the target, the target carries an explicit `git worktree lock`, or the
+# target's branch carries unmerged commits -- closing the incident where a
+# clean `git status` was mistaken for "safe to remove" while a lane's pytest
+# run was still live inside the worktree.
+#
+# The standalone execution-log Bash guard (_BASH_EXECUTION_LOG_GUARD) was
+# removed (Ale-authorised): the nested/duplicate registration it produced
+# under some install paths is retired via des_plugin.py's retired-command
+# tombstone. The universal `pre-tool-use` action below (registered
+# unconditionally on PreToolUse/Bash) remains installed and unaffected.
+# Write/Edit execution-log refusal is unchanged -- see build_guard_command.
 HOOK_EVENTS: tuple[HookEvent, ...] = (
     HookEvent(event="PreToolUse", matcher="Agent", action="pre-task"),
     HookEvent(event="PreToolUse", matcher="Write", action="pre-write", is_guard=True),
     HookEvent(event="PreToolUse", matcher="Edit", action="pre-edit", is_guard=True),
-    HookEvent(
-        event="PreToolUse",
-        matcher="Bash",
-        action="pre-bash",
-        shell_command=_BASH_EXECUTION_LOG_GUARD,
-    ),
     HookEvent(
         event="PreToolUse",
         matcher="Bash",

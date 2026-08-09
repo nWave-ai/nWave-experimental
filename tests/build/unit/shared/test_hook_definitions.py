@@ -4,7 +4,7 @@ Driving port: hook_definitions module (pure functions).
 Tests verify the canonical hook definitions produce correct configs
 for both distribution paths (plugin and installer).
 
-Test Budget: 10 distinct behaviors x 2 = 20 max unit tests.
+Test Budget: 8 distinct behaviors x 2 = 16 max unit tests.
 Behaviors:
   1. Hook events define the fixed independent registrations.
   2. Hook event types cover all 6 distinct event types
@@ -13,20 +13,14 @@ Behaviors:
   5. generate_hook_config uses shell_command verbatim for Bash hooks
   6. build_guard_command produces shell fast-path with correct structure
   7. is_des_hook_entry detects DES hooks in all formats (Python + shell)
-  8. Bash execution-log guard shell command has correct structure and content
-  9. Bash guard integration: allows non-execution-log commands
-  10. Bash guard integration: blocks/allows based on des.cli presence
 """
 
 from __future__ import annotations
 
-import json
-import subprocess
-
 import pytest
 
 from scripts.shared.hook_definitions import (
-    _BASH_EXECUTION_LOG_GUARD,
+    _BASH_GIT_STASH_GUARD,
     HOOK_EVENT_TYPES,
     HOOK_EVENTS,
     build_guard_command,
@@ -40,14 +34,14 @@ class TestHookEventDefinitions:
 
     def test_defines_independent_hook_registrations(self):
         """The shared definition contains only the current independent hooks."""
-        assert len(HOOK_EVENTS) == 10
+        assert len(HOOK_EVENTS) == 9
 
         # Verify exact event/matcher/action triples
         events_matchers = [(h.event, h.matcher, h.action) for h in HOOK_EVENTS]
         assert ("PreToolUse", "Agent", "pre-task") in events_matchers
         assert ("PreToolUse", "Write", "pre-write") in events_matchers
         assert ("PreToolUse", "Edit", "pre-edit") in events_matchers
-        assert ("PreToolUse", "Bash", "pre-bash") in events_matchers
+        assert ("PreToolUse", "Bash", "pre-bash") not in events_matchers
         assert ("PreToolUse", "Bash", "pre-bash-git-stash-guard") in events_matchers
         assert (
             "PreToolUse",
@@ -108,16 +102,15 @@ class TestGenerateHookConfig:
         assert set(config.keys()) == HOOK_EVENT_TYPES
 
     def test_pretooluse_has_independent_entries(self):
-        """PreToolUse has Agent, Write, Edit and four independent Bash hooks."""
+        """PreToolUse has Agent, Write, Edit and three independent Bash hooks."""
         config = generate_hook_config(self._simple_command)
         pre_tool_use = config["PreToolUse"]
-        assert len(pre_tool_use) == 7
+        assert len(pre_tool_use) == 6
         matchers = [e.get("matcher") for e in pre_tool_use]
         assert matchers == [
             "Agent",
             "Write",
             "Edit",
-            "Bash",
             "Bash",
             "Bash",
             "Bash",
@@ -177,20 +170,23 @@ class TestGenerateHookConfig:
         assert agent_entry["hooks"][0]["command"] == "python3 -m des.hook pre-task"
 
     def test_bash_hook_uses_shell_command_verbatim(self):
-        """Bash entry command matches _BASH_EXECUTION_LOG_GUARD exactly."""
+        """Bash entries carry their shell_command verbatim, e.g. the git-stash guard."""
         config = generate_hook_config(self._simple_command)
-        bash_entry = next(e for e in config["PreToolUse"] if e.get("matcher") == "Bash")
-        assert bash_entry["hooks"][0]["command"] == _BASH_EXECUTION_LOG_GUARD
+        bash_entries = [e for e in config["PreToolUse"] if e.get("matcher") == "Bash"]
+        commands = [e["hooks"][0]["command"] for e in bash_entries]
+        assert _BASH_GIT_STASH_GUARD in commands
 
     def test_bash_hook_ignores_guard_command_fn(self):
-        """Bash hook uses shell_command even when guard_command_fn is provided."""
+        """Bash hooks use shell_command even when guard_command_fn is provided."""
 
         def guard_fn(action: str) -> str:
             return f"GUARD:{action}"
 
         config = generate_hook_config(self._simple_command, guard_command_fn=guard_fn)
-        bash_entry = next(e for e in config["PreToolUse"] if e.get("matcher") == "Bash")
-        assert bash_entry["hooks"][0]["command"] == _BASH_EXECUTION_LOG_GUARD
+        bash_entries = [e for e in config["PreToolUse"] if e.get("matcher") == "Bash"]
+        commands = [e["hooks"][0]["command"] for e in bash_entries]
+        assert _BASH_GIT_STASH_GUARD in commands
+        assert not any(c.startswith("GUARD:") for c in commands)
 
     def test_entries_without_matcher_omit_matcher_key(self):
         """Subagent lifecycle entries have no matcher key."""
@@ -242,121 +238,6 @@ class TestBuildGuardCommand:
             'guard command re-introduced the dash-unsafe `echo "$INPUT"` '
             "re-emission -- see k3a-hook-payload-dash-safety D1"
         )
-
-
-class TestBashExecutionLogGuard:
-    """Verify the Bash guard shell command structure and content."""
-
-    def test_bash_hook_uses_shell_command_not_guard(self):
-        """Bash hook has shell_command set, is_guard=False."""
-        bash_hook = next(
-            h for h in HOOK_EVENTS if h.event == "PreToolUse" and h.matcher == "Bash"
-        )
-        assert bash_hook.shell_command is not None
-        assert bash_hook.is_guard is False
-
-    def test_shell_command_contains_des_hook_marker(self):
-        """Shell command starts with DES marker for is_des_hook_entry detection."""
-        assert _BASH_EXECUTION_LOG_GUARD.startswith("# des-hook:")
-
-    def test_shell_command_uses_ere_syntax(self):
-        """Shell command uses grep -qE (ERE) for portability."""
-        assert "grep -qE" in _BASH_EXECUTION_LOG_GUARD
-
-    def test_shell_command_has_no_retired_execution_log_allow_pattern(self):
-        """The guard never treats retired execution-log commands as approved writers."""
-        assert "log_phase" not in _BASH_EXECUTION_LOG_GUARD
-        assert "init_log" not in _BASH_EXECUTION_LOG_GUARD
-        assert "des log-phase" not in _BASH_EXECUTION_LOG_GUARD
-        assert "des init-log" not in _BASH_EXECUTION_LOG_GUARD
-
-    def test_shell_command_blocks_with_correct_json(self):
-        """Shell command outputs valid JSON block response with decision=block."""
-        assert '{"decision":"block"' in _BASH_EXECUTION_LOG_GUARD
-
-
-class TestBashGuardIntegration:
-    """End-to-end tests running the shell command via subprocess.
-
-    These tests feed JSON through the shell command and verify exit codes,
-    confirming the guard works at the shell level (not just string matching).
-    """
-
-    @staticmethod
-    def _run_guard(input_json: dict) -> subprocess.CompletedProcess:
-        """Run the Bash guard shell command with given JSON input."""
-        return subprocess.run(
-            ["bash", "-c", _BASH_EXECUTION_LOG_GUARD],
-            input=json.dumps(input_json),
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-
-    def test_allow_non_execution_log_command(self):
-        """Command not mentioning execution-log exits 0 (fast path)."""
-        result = self._run_guard(
-            {"tool_name": "Bash", "tool_input": {"command": "ls -la"}}
-        )
-        assert result.returncode == 0
-
-    def test_block_direct_modification(self):
-        """Command mentioning execution-log without des.cli exits 2 (block)."""
-        result = self._run_guard(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": "python3 -c \"import json; f=open('execution-log.json')\""
-                },
-            }
-        )
-        assert result.returncode == 2
-        output = json.loads(result.stdout)
-        assert output["decision"] == "block"
-
-    @pytest.mark.parametrize(
-        "command",
-        (
-            "des log-phase --phase RED execution-log.json",
-            "des init-log --project-dir . execution-log.json",
-        ),
-        ids=("log-phase", "init-log"),
-    )
-    def test_blocks_retired_execution_log_commands(self, command: str):
-        """Removed execution-log commands receive the same block as direct writes."""
-        result = self._run_guard(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": command,
-                },
-            }
-        )
-        assert result.returncode == 2
-        assert json.loads(result.stdout)["decision"] == "block"
-
-    def test_allow_des_cli_verify_deliver_integrity(self):
-        """Command with `des verify-integrity` exits 0 (approved CLI, post-slice-03)."""
-        result = self._run_guard(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "command": "des verify-integrity --project-dir .",
-                },
-            }
-        )
-        assert result.returncode == 0
-
-    def test_allow_command_with_execution_log_in_description_only(self):
-        """Guard does NOT block when 'execution-log' appears only in description, not command."""
-        result = self._run_guard(
-            {
-                "tool_name": "Bash",
-                "description": "Test: command without execution-log mention",
-                "tool_input": {"command": "ls -la"},
-            }
-        )
-        assert result.returncode == 0
 
 
 class TestIsDESHookEntry:

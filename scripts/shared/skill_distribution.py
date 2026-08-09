@@ -332,6 +332,114 @@ def write_family_record(
     _write_document(target_dir, manifest)
 
 
+class FamilyRemovalEvidence(NamedTuple):
+    """Outcome of an uninstall pass over one family's record.
+
+    ``status`` distinguishes a completed removal from a manifest that could
+    not be trusted: ``"missing_manifest"`` (no manifest — nothing was ever
+    installer-owned here) and ``"invalid_manifest"`` (unparsable/malformed
+    document) never guess ownership, so callers must not delete on either.
+    ``"blocked"`` means at least one recorded member could not be removed
+    (unsafe name or filesystem error); it stays in the manifest for retry.
+    """
+
+    status: str
+    removed: frozenset[str]
+    already_absent: frozenset[str]
+    blocked: frozenset[str]
+
+
+def _is_safe_member_name(name: str) -> bool:
+    """One safe basename: no traversal, no separators, no drive escape."""
+    if not name or name in (".", ".."):
+        return False
+    return not any(char in name for char in ("/", "\\", ":"))
+
+
+def remove_family_record(target_dir: Path, *, key: str) -> FamilyRemovalEvidence:
+    """Remove one family's installer-owned members and retire its manifest key.
+
+    Every recorded member is prevalidated as a safe basename BEFORE any
+    mutation: one unsafe name blocks the whole family (nothing is touched).
+    Symlinks are inspected (and unlinked) before following into file/dir
+    removal, so a dangling or outside-pointing link only loses the link
+    itself, never its target. A listed-but-missing member is
+    ``already_absent``; names that fail removal stay recorded as
+    ``blocked`` for retry. Sibling family keys and unknown manifest keys
+    are preserved verbatim; the manifest file is deleted only once no
+    family list remains in it. A missing or corrupt manifest is reported
+    as such and never mutated.
+    """
+    manifest_path = target_dir / _MANIFEST_FILENAME
+    if not manifest_path.exists():
+        return FamilyRemovalEvidence(
+            "missing_manifest", frozenset(), frozenset(), frozenset()
+        )
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return FamilyRemovalEvidence(
+            "invalid_manifest", frozenset(), frozenset(), frozenset()
+        )
+    if not isinstance(manifest, dict):
+        return FamilyRemovalEvidence(
+            "invalid_manifest", frozenset(), frozenset(), frozenset()
+        )
+
+    members = manifest.get(key, [])
+    if not isinstance(members, list) or not all(
+        isinstance(member, str) for member in members
+    ):
+        return FamilyRemovalEvidence(
+            "invalid_manifest", frozenset(), frozenset(), frozenset()
+        )
+    if not members:
+        if key in manifest:
+            manifest.pop(key, None)
+            if _list_values(manifest):
+                _write_document(target_dir, manifest)
+            else:
+                manifest_path.unlink()
+        return FamilyRemovalEvidence("complete", frozenset(), frozenset(), frozenset())
+
+    if any(not _is_safe_member_name(member) for member in members):
+        return FamilyRemovalEvidence(
+            "blocked", frozenset(), frozenset(), frozenset(members)
+        )
+
+    removed: set[str] = set()
+    already_absent: set[str] = set()
+    blocked: set[str] = set()
+    for member in members:
+        path = target_dir / member
+        if not path.is_symlink() and not path.exists():
+            already_absent.add(member)
+            continue
+        try:
+            if path.is_symlink() or not path.is_dir():
+                path.unlink()
+            else:
+                shutil.rmtree(path)
+            removed.add(member)
+        except OSError:
+            blocked.add(member)
+
+    if blocked:
+        manifest[key] = sorted(blocked)
+    else:
+        manifest.pop(key, None)
+
+    if _list_values(manifest):
+        _write_document(target_dir, manifest)
+    else:
+        manifest_path.unlink()
+
+    status = "blocked" if blocked else "complete"
+    return FamilyRemovalEvidence(
+        status, frozenset(removed), frozenset(already_absent), frozenset(blocked)
+    )
+
+
 def sweep_retired_assets(
     target_dir: Path, retired_names: frozenset[str]
 ) -> tuple[list[str], list[str]]:

@@ -3,7 +3,7 @@
 k3a-hook-payload-dash-safety, slice-01. Evidence:
 `docs/analysis/2026-08-07-k3a-root-activation-evidence-report.md` Section 4.1.
 
-`scripts.shared.hook_definitions.build_guard_command` and the three `_BASH_*`
+`scripts.shared.hook_definitions.build_guard_command` and the two `_BASH_*`
 guard constants wrap the hook envelope as `INPUT=$(cat); echo "$INPUT" | ...`.
 Claude Code runs every installed hook command through `/bin/sh`, which on
 Debian/Ubuntu (and this box) is **dash** -- and dash's builtin `echo`
@@ -15,7 +15,7 @@ stops being valid JSON before any handler ever sees it.
 
 `handle_pre_write` fails OPEN on the parse error and returns 0 several
 branches above the K3-A root-activation reminder -- the reminder is silently
-never emitted. The three `_BASH_*` guards share the identical
+never emitted. The two `_BASH_*` guards share the identical
 `CMD=$(echo "$INPUT" | python3 -c '...json.load...')` extraction prefix;
 under the same corruption `CMD` comes back empty, the guard's own
 `grep ... || exit 0` fast-path fires, and the downstream Python guard never
@@ -35,8 +35,7 @@ RED at HEAD, for the diagnosed reason (JSON corruption -- not an import or
 fixture error): every corruption-dependent test in this module was run
 against HEAD before authoring and observed failing on the assertion that
 encodes the correct behaviour (byte-identity / reminder presence / guard
-decision), never on a setup exception. `test_execution_log_guard_...`,
-`test_git_stash_guard_...`, and
+decision), never on a setup exception. `test_git_stash_guard_...` and
 `test_worktree_removal_guard_...` each flip GREEN once the shared
 `echo "$INPUT"` idiom is replaced with `printf '%s' "$INPUT"` (the remedy the
 evidence report verified in isolation, Section 4.1).
@@ -58,7 +57,6 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from scripts.shared.hook_definitions import (
-    _BASH_EXECUTION_LOG_GUARD,
     _BASH_GIT_STASH_GUARD,
     _BASH_WORKTREE_REMOVAL_GUARD,
     build_guard_command,
@@ -558,28 +556,14 @@ class TestRootActivationReminderThroughPosixSh:
 # Case 3 -- each _BASH_* guard's shared CMD-extraction prefix.
 # ---------------------------------------------------------------------------
 
-# The literal reason text `_BASH_EXECUTION_LOG_GUARD` prints on its OWN
-# block decision (see `scripts/shared/hook_definitions.py`,
-# `_BASH_EXECUTION_LOG_GUARD`'s trailing `printf '%s\n' '{"decision":...}'`)
-# -- copied here so the test below can assert byte-EXACT equality, not mere
-# parseability (team-lead review, 2026-08-07: `json.loads` succeeding proves
-# nothing for a `\\`-collapse-shaped corruption that leaves valid JSON with
-# different content).
-_EXECUTION_LOG_BLOCK_REASON = (
-    "Direct modification of execution-log.json via Bash is blocked.\n"
-    "To read it, use the Read tool.\n"
-    "This retired artifact must not be recreated or modified."
-)
-
-
 # --- Property-test domain: the shared CMD-extraction pipe ------------------
 #
-# Team-lead review (2026-08-07): the three `_BASH_*` guards below are pinned
+# Team-lead review (2026-08-07): the two `_BASH_*` guards below are pinned
 # by ONE example each against the identical `INPUT=$(cat); CMD=$(printf
 # '%s' "$INPUT" | python3 -c '...json.load...')` prefix -- the same identity
 # law generalized above for `build_guard_command`, left ungeneralized here.
-# Generalize it ONCE, over the shared pipe, parametrized across the three
-# guards it is sliced from -- three separate property tests would be
+# Generalize it ONCE, over the shared pipe, parametrized across the two
+# guards it is sliced from -- two separate property tests would be
 # duplication pretending to be coverage, since it is the same law.
 #
 # OBSERVATION. Given any `tool_input.command` string, run the shared
@@ -600,7 +584,6 @@ _EXECUTION_LOG_BLOCK_REASON = (
 # directly) and a POSIX shell variable cannot hold an embedded NUL byte at
 # all -- a universal C-string limitation of every `sh`, independent of D1.
 _GUARDS_SHARING_CMD_EXTRACTION: dict[str, str] = {
-    "execution_log": _BASH_EXECUTION_LOG_GUARD,
     "git_stash": _BASH_GIT_STASH_GUARD,
     "worktree_removal": _BASH_WORKTREE_REMOVAL_GUARD,
 }
@@ -652,89 +635,6 @@ class TestBashGuardsExtractCommandDespiteEscapedNewline:
     `CMD` comes back empty, and the guard's own `grep ... || exit 0`
     fast-path silently disarms it -- the downstream Python guard never runs.
     """
-
-    @_skip_unless_dash_reproducible
-    def test_execution_log_guard_blocks_despite_escaped_newline_in_command(
-        self,
-    ) -> None:
-        """A command touching execution-log.json, with an escaped newline
-        elsewhere in the same string, must still be BLOCKED (exit 2). Fails
-        at HEAD: CMD extraction corrupts, comes back empty, `grep -q
-        'execution-log' || exit 0` fires -- silent disarm (exit 0, no
-        block)."""
-        command = "python3 -c \"import json\nprint('reading execution-log.json')\""
-        payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
-
-        result = subprocess.run(
-            ["/bin/sh", "-c", _BASH_EXECUTION_LOG_GUARD],
-            input=payload,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-
-        assert result.returncode == 2, (
-            "guard should block a command touching execution-log.json even "
-            "when the JSON carries an escaped newline elsewhere; "
-            f"exit={result.returncode} stdout={result.stdout!r}"
-        )
-        assert json.loads(result.stdout)["decision"] == "block"
-
-    @_skip_unless_dash_reproducible
-    def test_execution_log_guard_own_block_message_parses_with_clean_command(
-        self,
-    ) -> None:
-        """Distinct from the CMD-extraction defect above: `_BASH_EXECUTION_LOG_GUARD`
-        carries its OWN static block-decision string with a literal `\\n`
-        baked into its `reason` text (a JSON newline escape) -- independent
-        of anything the incoming command carries. Even a perfectly CLEAN
-        command (no escapes anywhere in the envelope) must still yield a
-        block body BYTE-EXACT to the known reason text -- not merely
-        parseable. Team-lead review (2026-08-07): `json.loads` succeeding
-        proves nothing for a `\\\\`-collapse-shaped corruption that leaves
-        valid JSON with DIFFERENT content, which is the exact class this
-        module's own property test (`test_build_guard_command_is_the_...`)
-        exists to catch elsewhere; a parseability-only check here would
-        carry the identical blind spot. Fails at HEAD (pre-D1-fix
-        reconstruction): dash's `echo` expands the guard's own hardcoded
-        `\\n`s when it prints `echo '{"decision":"block","reason":"...
-        blocked.\\nTo read it..."}'`, so the block correctly triggers
-        (exit 2) but the JSON it prints is invalid -- Claude Code would
-        receive a malformed block body. This is the site the crafter found
-        unprompted during A_GREEN and confirmed byte-for-byte; this test is
-        its dedicated regression lock, isolated from the CMD-extraction
-        case above so a future regression here cannot hide behind that
-        other test's escaped input."""
-        command = "cat execution-log.json"  # no escapes anywhere in the
-        # envelope -- isolates the guard's OWN literal-echo corruption from
-        # the CMD-extraction corruption the sibling test above covers.
-        payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
-
-        result = subprocess.run(
-            ["/bin/sh", "-c", _BASH_EXECUTION_LOG_GUARD],
-            input=payload,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-
-        assert result.returncode == 2, (
-            "guard should block a clean execution-log.json-touching command; "
-            f"exit={result.returncode} stdout={result.stdout!r}"
-        )
-        try:
-            body = json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
-            pytest.fail(
-                "the guard's OWN block-decision message is not valid JSON "
-                f"under /bin/sh -- {exc}; raw stdout={result.stdout!r}"
-            )
-        assert body == {"decision": "block", "reason": _EXECUTION_LOG_BLOCK_REASON}, (
-            "the guard's OWN block-decision body is not byte-exact to the "
-            "known reason text -- valid JSON, but possibly WRONG content "
-            f"(the `\\\\`-collapse failure shape); got {body!r}, expected "
-            f"reason={_EXECUTION_LOG_BLOCK_REASON!r}"
-        )
 
     @_skip_unless_dash_reproducible
     def test_git_stash_guard_blocks_despite_escaped_newline_in_command(
