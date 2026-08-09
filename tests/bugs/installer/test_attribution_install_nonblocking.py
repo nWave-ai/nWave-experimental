@@ -38,18 +38,14 @@ pytestmark = pytest.mark.xdist_group("git_hooks")
 def _isolate_attribution_side_effects():
     """Prevent the plugin from touching ~/.claude/settings.json or probing git.
 
-    Post-ADR-CA-007 install no longer WRITES the settings.json attribution
-    credit (that surface is retired): it registers the activation-gated
-    PreToolUse hook and migrates the legacy hook. Both real-FS side effects are
-    stubbed so the non-blocking regression assertions exercise only the
-    prompt-free control flow. ``register_attribution_hook`` is the symbol the
-    plugin still imports (``write_settings_attribution`` no longer exists on the
-    plugin module), so the patch re-points onto it.
+    Post-ADR-CA-007 install calls cleanup_legacy_attribution_hook and
+    migrate_legacy_hook. Both real-FS side effects are stubbed so the
+    non-blocking regression assertions exercise only the prompt-free flow.
     """
     with (
         patch(
-            "scripts.install.plugins.attribution_plugin.register_attribution_hook",
-            return_value=True,
+            "scripts.install.plugins.attribution_plugin.cleanup_legacy_attribution_hook",
+            return_value=False,
         ),
         patch(
             "scripts.install.plugins.attribution_plugin.migrate_legacy_hook",

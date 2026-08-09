@@ -59,18 +59,16 @@ def _init_repo(path: Path) -> None:
 
 
 def _isolate_off(config_dir: Path):
-    """Patch the CLI off path's config dir + the unrelated ~/.claude seams.
+    """Patch the CLI off path's config dir + unrelated seams.
 
     ``migrate_legacy_hook`` itself is deliberately NOT patched -- that is the
-    wiring under test. Only the settings-credit migration and the PreToolUse
-    hook unregister (both of which would otherwise reach the real ~/.claude)
-    are stubbed.
+    wiring under test. Only the settings-credit migration (which would
+    otherwise reach the real ~/.claude) is stubbed.
     """
     return (
         patch("sys.argv", ["nwave-ai", "attribution", "off"]),
         patch("nwave_ai.cli._get_config_dir", return_value=config_dir),
         patch("nwave_ai.cli.migrate_legacy_settings_attribution"),
-        patch("nwave_ai.cli.unregister_attribution_hook"),
     )
 
 
@@ -100,13 +98,13 @@ def test_off_removes_orphaned_shim_in_unscanned_dir(
 
     # Probes are cwd-relative; drive the CLI from inside the trap repo.
     monkeypatch.chdir(repo)
-    patch_a, patch_b, patch_c, patch_d = _isolate_off(config_dir)
-    with patch_a, patch_b, patch_c, patch_d:
+    patch_a, patch_b, patch_c = _isolate_off(config_dir)
+    with patch_a, patch_b, patch_c:
         result = main()
 
     # off must stay fail-open (never raise / never error the toggle).
     assert result == 0
-    # The defect: off leaves the orphaned shim in place -> machine stays broken.
+    # The shim is removed by migrate_legacy_hook call.
     assert not shim.exists(), (
         "attribution off left the orphaned prepare-commit-msg shim in place -- "
         "an already-broken machine cannot recover with the obvious command"
@@ -124,8 +122,8 @@ def test_off_is_fail_open_when_no_shim_present(
     config_dir.mkdir(parents=True)
 
     monkeypatch.chdir(repo)
-    patch_a, patch_b, patch_c, patch_d = _isolate_off(config_dir)
-    with patch_a, patch_b, patch_c, patch_d:
+    patch_a, patch_b, patch_c = _isolate_off(config_dir)
+    with patch_a, patch_b, patch_c:
         result = main()
 
     assert result == 0

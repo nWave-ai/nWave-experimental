@@ -127,13 +127,7 @@ Verdict-first, tables over prose, evidence-dense, zero narrative. Depth comes fr
 
 ## Skill Loading -- MANDATORY
 
-Your FIRST action before any other work is authority classification and, when thin is selected, complete thin validation. Current `atdd_pure` skill loading begins only after route selection; thin delivery loads point-of-need skills only. After the current DES `atdd_pure` authority is selected, read the Skill Loading table below and load — with the Read tool, by exact file path — ONLY the skill(s) whose Trigger matches your CURRENT phase/task. Load every other skill ON-DEMAND the moment its Trigger fires; do NOT preload skills whose trigger has not fired (preloading the whole set wastes the context budget every turn). After loading each skill, output: `[SKILL LOADED] {skill-name}`. If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
-
-For current DES `atdd_pure`, this table (and the On-Demand table below) is the SSOT for skill loading — dispatch envelopes may REMIND but never override it. On conflict, this spec wins. Load by phase-trigger at task entry even when the envelope omits the reminder. Thin delivery follows Dispatch authority and loads only point-of-need skills.
-
-### Conditional — by active workflow mode
-
-The mode-conditional skill set is declared by the mode registry, never inlined here — ALSO load now every skill the active mode's row declares:
+Read `~/.claude/skills/nw-{skill-name}/SKILL.md` per CURRENT phase (ON-DEMAND instant). Output `[SKILL LOADED]` or `[SKILL MISSING]`. For `atdd_pure`, table SSOT. Load discipline at entry; RE-CONSULT at COMMIT/G_COMMIT for `des commit-slice`.
 
 <!-- GENERATED:skill-load-set START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 Conditional skills by active workflow mode — projected from the mode
@@ -143,34 +137,25 @@ re-render with `python scripts/docgen.py`:
 - `atdd_pure`: `nw-crafter-discipline-atdd-pure`
 <!-- GENERATED:skill-load-set END -->
 
-### On-Demand (load only when triggered)
-
-| Phase | Load | Trigger |
-|-------|------|---------|
-| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
-| code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
-| PREPARE | `~/.claude/skills/nw-tdd-methodology/SKILL.md` | Phase 2 PREPARE — load now (TDD canon) |
-| PREPARE | `~/.claude/skills/nw-quality-framework/SKILL.md` | Phase 2 PREPARE — load now (quality gates) |
-| PREPARE | `~/.claude/skills/nw-fp-domain-modeling/SKILL.md` | Phase 2 PREPARE — load now (domain types, illegal states unrepresentable) |
-| Conditional | `~/.claude/skills/nw-crafter-discipline-atdd-pure/SKILL.md` | When active workflow mode is `atdd_pure` (mode registry skill-load-set) — load at phase entry | <!-- mode-ref-ok -->
-| Language | `~/.claude/skills/nw-fp-fsharp/SKILL.md` | After Phase 1 language detection — F# project marker (`*.fsproj`) detected |
-| Language | `~/.claude/skills/nw-fp-haskell/SKILL.md` | After Phase 1 language detection — Haskell project marker (`*.hs`) detected |
-| Language | `~/.claude/skills/nw-fp-scala/SKILL.md` | After Phase 1 language detection — Scala project marker (`*.scala`) detected |
-| Language | `~/.claude/skills/nw-fp-clojure/SKILL.md` | After Phase 1 language detection — Clojure project marker (`*.clj`) detected |
-| Language | `~/.claude/skills/nw-fp-kotlin/SKILL.md` | After Phase 1 language detection — Kotlin project marker (`*.kt`) detected |
-| GREEN/refactor | `~/.claude/skills/nw-fp-hexagonal-architecture/SKILL.md` | Port/adapter boundary decisions |
-| GREEN/refactor | `~/.claude/skills/nw-hexagonal-testing/SKILL.md` | Port-boundary clarification while reading paired test fixtures (read-only, not for authoring) |
-| GREEN | `~/.claude/skills/nw-fp-usable-design/SKILL.md` | Naming + pipeline-composition refinement during GREEN |
-| REFACTOR | `~/.claude/skills/nw-refactor/SKILL.md` | `/nw-refactor` invocation OR ATDD-pure Phase E — default batch-then-verify: plan L1-L6 in cascade order, apply as one batch, run suite ONCE at end |
-| REFACTOR | `~/.claude/skills/nw-legacy-refactoring-ddd/SKILL.md` | Refactoring legacy code via DDD patterns (strangler fig, bubble context, ACL) |
-| Review | `~/.claude/skills/nw-sc-review-dimensions/SKILL.md` | `/nw-review` invocation |
-| Handoff | `~/.claude/skills/nw-collaboration-and-handoffs/SKILL.md` | Handoff context needed |
-| Post-GREEN | `~/.claude/skills/nw-mutation-test/SKILL.md` | After GREEN when mutation report flags a surviving mutant |
-| Verification | `~/.claude/skills/nw-tlaplus-verification/SKILL.md` | Formal verification needed for concurrent / distributed state machine |
-
-The universal algebra/certainty/FP-design lens directive is generated once, in
-Dispatch authority above (thin/Auto reads it there too) — do not duplicate it
-here.
+|P|Load|Trigger|
+|-|-|-|
+|✱|`nw-cross-cutting-invariants`|Invariants|
+|F|`nw-code-analysis-port`|Code|
+|Prep|`nw-tdd-methodology`, `nw-quality-framework`, `nw-fp-domain-modeling`|TDD+gates+types|
+|AP|`nw-crafter-discipline-atdd-pure`|atdd_pure|
+|F#|`nw-fp-fsharp`|*.fsproj|
+|HS|`nw-fp-haskell`|*.hs|
+|Sc|`nw-fp-scala`|*.scala|
+|Clj|`nw-fp-clojure`|*.clj|
+|Kt|`nw-fp-kotlin`|*.kt|
+|G|`nw-fp-hexagonal-architecture`, `nw-fp-usable-design`|Port+naming|
+|G|`nw-hexagonal-testing`|Port (RO fixtures)|
+|R|`nw-refactor`|Batch L1-L6|
+|R|`nw-legacy-refactoring-ddd`|DDD|
+|Rev|`nw-sc-review-dimensions`|/nw-review|
+|HO|`nw-collaboration-and-handoffs`|Handoff|
+|PG|`nw-mutation-test`|Mutant|
+|Ver|`nw-tlaplus-verification`|Concurrent SM|
 
 ## Workflow
 

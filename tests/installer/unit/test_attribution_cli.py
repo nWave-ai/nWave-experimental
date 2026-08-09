@@ -71,6 +71,23 @@ def _write_config(config_dir: Path, *, enabled: bool) -> None:
     )
 
 
+def _hook_registered(claude_dir: Path) -> bool:
+    """Check if PreToolUse universal handler entry exists."""
+    settings_path = claude_dir / "settings.json"
+    if not settings_path.exists():
+        return False
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    entries = (settings.get("hooks") or {}).get("PreToolUse") or []
+    return any(
+        entry.get("matcher") == "Bash"
+        and any(
+            "pre-tool-use" in (hook.get("command") or "")
+            for hook in entry.get("hooks") or []
+        )
+        for entry in entries
+    )
+
+
 def _read_config(config_dir: Path) -> dict:
     """Read global-config.json."""
     config_file = config_dir / "global-config.json"
@@ -84,8 +101,7 @@ class TestAttributionCLI:
     def test_attribution_on(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     ) -> None:
-        """'attribution on' enables the preference + registers the hook, writing
-        NO settings.json credit (ADR-CA-007: the hook is the sole mechanism)."""
+        """'attribution on' enables the preference + calls cleanup, writes NO credit."""
         nwave_dir = tmp_path / ".nwave"
         home_dir = tmp_path / "home"
         claude_dir = home_dir / ".claude"
@@ -95,6 +111,7 @@ class TestAttributionCLI:
         with (
             patch("sys.argv", ["nwave-ai", "attribution", "on"]),
             patch("nwave_ai.cli._get_config_dir", return_value=nwave_dir),
+            patch("nwave_ai.cli.cleanup_legacy_attribution_hook", return_value=False),
         ):
             result = main()
 
@@ -103,29 +120,25 @@ class TestAttributionCLI:
         assert config["attribution"]["enabled"] is True
 
         # No managed credit written to settings.json (retired surface).
-        settings = json.loads((claude_dir / "settings.json").read_text())
-        assert "commit" not in settings.get("attribution", {})
-
-        # The commit-attribution hook IS registered (sole mechanism).
-        commands = [
-            hook.get("command", "")
-            for entry in settings.get("hooks", {}).get("PreToolUse", [])
-            for hook in entry.get("hooks", [])
-        ]
-        assert any("pre-commit-attribution" in c for c in commands)
+        if (claude_dir / "settings.json").exists():
+            settings = json.loads((claude_dir / "settings.json").read_text())
+            assert "commit" not in settings.get("attribution", {})
 
         captured = capsys.readouterr()
         assert "enabled" in captured.out.lower()
 
     def test_attribution_off(self, tmp_path: Path, capsys) -> None:
-        """'attribution off' disables attribution in config."""
+        """'attribution off' disables preference + calls cleanup."""
         nwave_dir = tmp_path / ".nwave"
         _write_config(nwave_dir, enabled=True)
 
         with (
             patch("sys.argv", ["nwave-ai", "attribution", "off"]),
             patch("nwave_ai.cli._get_config_dir", return_value=nwave_dir),
-            patch("nwave_ai.cli.migrate_legacy_settings_attribution"),
+            patch("nwave_ai.cli.cleanup_legacy_attribution_hook", return_value=False),
+            patch(
+                "nwave_ai.cli.migrate_legacy_settings_attribution", return_value=False
+            ),
         ):
             result = main()
 
@@ -165,18 +178,21 @@ class TestAttributionCLI:
         captured = capsys.readouterr()
         assert "off" in captured.out.lower()
 
-    def test_off_delegates_to_legacy_migration(self, tmp_path: Path) -> None:
-        """'attribution off' delegates legacy cleanup to the migration helper.
+    def test_off_calls_both_legacy_cleanups(self, tmp_path: Path) -> None:
+        """'attribution off' calls both legacy cleanup paths.
 
-        ADR-CA-007 retires the WRITE surface but RETAINS legacy-residue cleanup
-        on 'off': turning attribution off must scrub any pre-existing managed
-        credit from settings.json. As of 01-03 that cleanup is the one-shot
-        ``migrate_legacy_settings_attribution`` (which reuses the settings
-        remover internally), routed through the claude_dir seam."""
+        ADR-CA-007 and CA-006: turning off must clean both the retired
+        settings.json attribution.{commit,pr} credit (via migrate_legacy_settings_attribution)
+        and the stale PreToolUse hook entry (via cleanup_legacy_attribution_hook)."""
         nwave_dir = tmp_path / ".nwave"
         _write_config(nwave_dir, enabled=True)
 
+        cleanup_calls = []
         migrate_calls = []
+
+        def mock_cleanup(claude_dir=None):
+            cleanup_calls.append(claude_dir)
+            return False
 
         def mock_migrate(config_dir=None, claude_dir=None):
             migrate_calls.append((config_dir, claude_dir))
@@ -186,6 +202,10 @@ class TestAttributionCLI:
             patch("sys.argv", ["nwave-ai", "attribution", "off"]),
             patch("nwave_ai.cli._get_config_dir", return_value=nwave_dir),
             patch(
+                "nwave_ai.cli.cleanup_legacy_attribution_hook",
+                side_effect=mock_cleanup,
+            ),
+            patch(
                 "nwave_ai.cli.migrate_legacy_settings_attribution",
                 side_effect=mock_migrate,
             ),
@@ -193,18 +213,17 @@ class TestAttributionCLI:
             main()
 
         assert _read_config(nwave_dir)["attribution"]["enabled"] is False
-        assert len(migrate_calls) == 1
-        # Cleanup routed through the claude_dir injection seam (criterion 3).
+        assert len(cleanup_calls) == 1, "cleanup_legacy_attribution_hook must be called"
+        assert len(migrate_calls) == 1, (
+            "migrate_legacy_settings_attribution must be called"
+        )
+        # Cleanup routed through the claude_dir injection seam.
         assert migrate_calls[0][1] is not None
 
     def test_enable_writes_no_managed_credit(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     ) -> None:
-        """'attribution on' registers the hook and writes NO managed credit.
-
-        ADR-CA-007 retires the settings.json write surface: enabling must NOT
-        produce an attribution.commit entry — the registered hook is the sole
-        mechanism."""
+        """'attribution on' writes preference only, NO managed credit."""
         nwave_dir = tmp_path / ".nwave"
         _write_config(nwave_dir, enabled=False)
         home_dir = tmp_path / "home"
@@ -215,17 +234,13 @@ class TestAttributionCLI:
         with (
             patch("sys.argv", ["nwave-ai", "attribution", "on"]),
             patch("nwave_ai.cli._get_config_dir", return_value=nwave_dir),
+            patch("nwave_ai.cli.cleanup_legacy_attribution_hook", return_value=False),
         ):
             result = main()
 
         assert result == 0
         assert _read_config(nwave_dir)["attribution"]["enabled"] is True
 
-        settings = json.loads((claude_dir / "settings.json").read_text())
-        assert "commit" not in settings.get("attribution", {})
-        commands = [
-            hook.get("command", "")
-            for entry in settings.get("hooks", {}).get("PreToolUse", [])
-            for hook in entry.get("hooks", [])
-        ]
-        assert any("pre-commit-attribution" in c for c in commands)
+        if (claude_dir / "settings.json").exists():
+            settings = json.loads((claude_dir / "settings.json").read_text())
+            assert "commit" not in settings.get("attribution", {})

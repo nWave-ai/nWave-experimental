@@ -5,11 +5,11 @@ Feature: The attribution toggle still reads on, off, and status
   So that turning credit on or off is unchanged by the migration
 
   @contract-shape:bounded-change
-  Scenario: Turning attribution on applies the dual credit
+  Scenario: Turning attribution on writes the enabled preference
     Given a developer machine in the fresh state
     And the developer's commit credit is captured before the action
     When the developer runs attribution on
-    Then the developer's commits carry the nWave dual credit
+    Then the enabled attribution preference is recorded
     And the action succeeds
 
   @contract-shape:bounded-change

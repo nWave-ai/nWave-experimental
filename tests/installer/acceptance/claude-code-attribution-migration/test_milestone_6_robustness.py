@@ -8,8 +8,8 @@ from pytest_bdd import scenario
     "Claude Code not installed yet leaves the machine untouched",
 )
 def test_robustness_claude_absent():
-    """Q5 (ADR-CA-007) — ~/.claude absent → register_attribution_hook warn+skips
-    silently; no machine change, no hook registered, install still succeeds."""
+    """Q5 (ADR-CA-007) — ~/.claude absent → install degrades gracefully;
+    no machine change, no preference recorded, install still succeeds."""
 
 
 @scenario(

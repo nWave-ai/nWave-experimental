@@ -174,15 +174,28 @@ def validate_agent(filepath: Path, result: ValidationResult) -> None:
         if not re.search(pattern, body, re.MULTILINE):
             result.add("A04", "error", name, msg)
 
-    # A05: skill loading imperative (old or new format)
-    has_old_imperative = "You MUST load your skill files" in body
-    has_new_imperative = "Your FIRST action before any other work" in body
-    if not has_old_imperative and not has_new_imperative:
+    # A05: skill loading imperative (legacy or compact format)
+    match = re.search(
+        r"^## Skill Loading[^\n]*\n.*?(?=^## |\Z)", body, re.MULTILINE | re.DOTALL
+    )
+    section = match.group(0) if match else ""
+    has_legacy = (
+        "You MUST load your skill files" in section
+        or "Your FIRST action before any other work" in section
+    )
+    has_compact = bool(
+        re.search(
+            r"^Read\s+.*~/\.claude/skills/nw-(?:[a-z0-9-]+|\{skill-name\})/SKILL\.md",
+            section,
+            re.MULTILINE,
+        )
+    )
+    if not (has_legacy or has_compact):
         result.add(
             "A05",
             "error",
             name,
-            "Skill loading section must contain imperative loading instructions",
+            "Skill Loading section must contain imperative loading instructions (legacy 'You MUST load' or 'Your FIRST action' or compact 'Read ~/.claude/skills/nw-.../SKILL.md')",
         )
 
     # A06: skills path documented (old: nw/{agent}/, new: nw-{skill}/SKILL.md)

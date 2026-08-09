@@ -1,21 +1,13 @@
-"""Composition root for the E7 install-registration slice.
+"""Composition root for the E7 install neighbour-preservation slice.
 
-Two production-wired driving surfaces (Mandate 13 — driving-port-only, Layer 3
-composition root over a sandboxed `~/.claude`):
+One production-wired driving surface (Mandate 13 — driving-port-only, Layer 3
+composition root over a sandboxed `~/.claude`): `InstallComposition` drives the
+real `AttributionPlugin` install/uninstall lifecycle. It is the production
+plugin object (Pillar 3), wired to a sandboxed `~/.claude` + `~/.nwave` via a
+redirected `Path.home()`.
 
-  * `InstallComposition` drives the real `AttributionPlugin` install/uninstall
-    lifecycle (the registration call site, Reuse row R7). It is the production
-    plugin object (Pillar 3), wired to a sandboxed `~/.claude` + `~/.nwave` via a
-    redirected `Path.home()`.
-
-  * `CliComposition` drives the real `nwave-ai attribution on|off` handler (the
-    post-install toggle, R7), the user-facing entry point for flipping the gate.
-
-Both surfaces reach the SAME net-new production seam — the attribution-hook
-registration that writes/removes the `Bash`/`pre-commit-attribution` entry in
-`settings.json`, gated by `attribution.enabled`. Driving them through the real
-install + CLI entry points (never the registration function in isolation) is the
-Mandate-15 witnessing path: the seam is reached from the real entry points and
+Driving install through the real entry point (never in isolation) is the
+Mandate-15 witnessing path: the seam is reached from the real entry point and
 asserted on its observable effect (the settings.json `hooks.PreToolUse` content).
 
 The single observable across every scenario is `SettingsView` — a read-only
@@ -203,32 +195,6 @@ class InstallComposition:
     def uninstall(self) -> str:
         """Drive the real plugin uninstall; return the result message."""
         return self._plugin().uninstall(self._context()).message
-
-    def settings(self) -> SettingsView:
-        """Project the post-action settings.json into the observable view."""
-        return SettingsView.read(self.claude_dir)
-
-
-# ---------------------------------------------------------------------------
-# Surface 2 — `nwave-ai attribution on|off` CLI handler
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class CliComposition:
-    """Production-wired composition over the real `attribution on|off` handler."""
-
-    home: Path
-
-    @property
-    def claude_dir(self) -> Path:
-        return self.home / ".claude"
-
-    def turn(self, state: str) -> int:
-        """Drive the real `attribution on|off` CLI handler; return its exit code."""
-        from nwave_ai.cli import _handle_attribution
-
-        return _handle_attribution([state])
 
     def settings(self) -> SettingsView:
         """Project the post-action settings.json into the observable view."""

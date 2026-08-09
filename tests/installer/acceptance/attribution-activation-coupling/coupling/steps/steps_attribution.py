@@ -22,7 +22,6 @@ from .domain_types import (
     AttributionPreference,
     CommitForm,
     DeprecatedKeyLocation,
-    HookRegistration,
     RepoActivationState,
     SettingsAvailability,
     SettingsResidue,
@@ -63,10 +62,6 @@ _FORM = {
     "with -m": CommitForm.DASH_M,
     "in an && chain": CommitForm.AND_CHAIN,
 }
-_REGISTRATION = {
-    "registered": HookRegistration.REGISTERED,
-    "not registered": HookRegistration.UNREGISTERED,
-}
 _DEPRECATED_LOCATION = {
     "the top level": DeprecatedKeyLocation.TOP_LEVEL,
     "under attribution": DeprecatedKeyLocation.NESTED_UNDER_ATTRIBUTION,
@@ -106,13 +101,6 @@ def given_legacy_residue(
     composition: AttributionCouplingComposition, residue: str
 ) -> None:
     composition.given_legacy_settings_residue(_RESIDUE[residue])
-
-
-@given(parsers.parse("the attribution commit hook is {registration}"))
-def given_hook_registration(
-    composition: AttributionCouplingComposition, registration: str
-) -> None:
-    composition.given_registered_hook(_REGISTRATION[registration])
 
 
 @given("the nWave execution guard is registered")
@@ -216,21 +204,6 @@ def then_user_value_preserved(
 @then("no managed attribution credit is written to the Claude settings")
 def then_no_managed_write(composition: AttributionCouplingComposition) -> None:
     assert composition.settings_attribution_commit() is None
-
-
-@then("the attribution commit hook is registered")
-def then_hook_registered(composition: AttributionCouplingComposition) -> None:
-    assert composition.attribution_hook_is_registered() is True
-
-
-@then("the attribution commit hook is not registered")
-def then_hook_unregistered(composition: AttributionCouplingComposition) -> None:
-    assert composition.attribution_hook_is_registered() is False
-
-
-@then("exactly one attribution commit hook is registered")
-def then_single_hook(composition: AttributionCouplingComposition) -> None:
-    assert composition.attribution_hook_is_registered() is True
 
 
 @then("the nWave execution guard is still registered")

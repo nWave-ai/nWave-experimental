@@ -123,37 +123,24 @@ These principles diverge from defaults -- they define your specific methodology:
 
 ## Skill Loading -- MANDATORY
 
-Your FIRST action before any other work: read the Skill Loading table below and load — with the Read tool, by exact file path — ONLY the skill(s) whose Trigger matches your CURRENT phase/task. Load every other skill ON-DEMAND the moment its Trigger fires; do NOT preload skills whose trigger has not fired (preloading the whole set wastes the context budget every turn). Skill paths are `~/.claude/skills/nw-{skill-name}/SKILL.md`.
-After loading each skill, output: `[SKILL LOADED] {skill-name}`. If a file is not found, output `[SKILL MISSING] {skill-name}` and continue.
+Read `~/.claude/skills/nw-{skill-name}/SKILL.md` per phase. `[SKILL LOADED]` or `[SKILL MISSING]`. Read exactly ONE deep dive per feature, never all eight.
 
-Load on-demand by phase, not all at once. Every frontmatter skill has at least one `Load:` directive in the workflow text below.
-
-This table is the SSOT for skill loading — dispatch envelopes may REMIND but never override it. On conflict, this table wins. Load by phase-trigger at task entry even when the envelope omits the reminder.
-
-The four large test-design families are decomposed into one-job-one-trigger modules. Each phase routes to the PRECISE module its job needs; load the recomposing core (`nw-test-design-mandates`, `nw-at-completeness-check`) only where a phase needs the whole family.
-
-| Phase | Load | Trigger |
-|-------|------|----------------|
-| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
-| code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
-| authoring a `@property`/`@given` PBT scenario, once Phase 0 language detection has a matching deep dive | the single matching `nw-pbt-{language}` skill — see the generated language-lens block below for the exact mapping | Read exactly ONE deep dive per feature, matching the Phase 0 detected language — never all eight; `nw-property-based-testing` already covers cross-language taxonomy, this row is framework/strategy syntax for the one language in play. No manifest match → no language-specific PBT skill loads |
-| 0 Detect Language + Policy | `nw-distill`, `nw-distill-port-treatment-policy`, `nw-test-design-mandates` (core) | Always — Phase 0 entry; `nw-distill` = induction map + density contract + gate-G; `nw-distill-port-treatment-policy` = port→treatment classification + Project Infrastructure Policy + WS canonical def + state-delta port bootstrap; the mandate-registry + 3-Pillars + language-convention frame are cross-cutting core concerns |
-| 1 Understand Context | `nw-bdd-methodology`, `nw-distill-prior-wave-reading` | Always — Phase 1 entry; outside-in BDD framing + `nw-distill-prior-wave-reading` = read prior-wave SSOT/feature-delta, Wave-Decision Reconciliation HARD GATE, rows 7b/7c advisories, graceful degradation, back-propagation |
-| 2 Design Scenarios | `nw-tdd-methodology-paradigm`, `nw-tdd-methodology-walking-skeleton`, `nw-test-design-mandates-scenario-design`, `nw-test-design-mandates-layered-mechanics`, `nw-test-design-mandates-composition-contract`, `nw-property-based-testing`, `nw-ad-mandate-summaries` | Always — Phase 2 entry; `-paradigm` = PBT + state-delta mandate for the test being written; `-walking-skeleton` = WS authoring (`@walking_skeleton @driving_port`, per-slice JIT); `-scenario-design` = scenario SHAPE (Pillars 1-2, boundary, language, journey); `-layered-mechanics` = layer-dependent PBT mode + tier (Mandates 8-11, used Phase 2 step 4 + Phase 3 state-delta); `-composition-contract` = driving-surface + `@contract-shape:` tag + dormant-seam (Mandates 12-15); `-property-based-testing` + `-ad-mandate-summaries` = PBT/parametrize density + operational mandate summaries |
-| 2.5 Self-Completeness Audit | `nw-at-completeness-check` (core) | Always — post initial authoring; core dispatches BOTH tiers (coverage-taxonomy + structural-invariants) + gap-routing — whole family needed |
-| 3 Implement Test Infrastructure | `nw-distill-red-scaffolding` | Always — Phase 3 entry; make ATs RED-not-BROKEN (Mandate-7 scaffolds, per-language recipes) + run the pre-DELIVER fail-for-right-reason classification |
-| 4 Validate and Handoff | `nw-ad-critique-dimensions`, `nw-at-completeness-check` (core), `nw-ad-distill-dod`, `nw-distill-coverage-obligations` | Always — Phase 4 entry; critique dimensions + re-run both completeness tiers + DISTILL DoD + `nw-distill-coverage-obligations` = driving-adapter/Mandate-6/adapter-integration/dormant-seam/outcomes coverage verification + self-review checklist |
-| On-demand | `nw-distill-feature-delta-schema` | When authoring/validating a feature-delta.md wave section's inherited-commitments table format or running E1+E2 |
-| On-demand | `nw-test-organization-conventions` | When deciding test directory structure / naming |
-| On-demand | `nw-test-optimization-paradigm-match` | When §4-bis paradigm-match fires (which paradigm fits this test shape — PBT vs parametrize vs example) |
-| On-demand | `nw-test-optimization-consolidation` | When step-reuse-ratio < 4× informational — collapse redundant/duplicate steps without losing coverage |
-| On-demand | `nw-test-refactoring-catalog` | When refactoring AT modules for Mandate-12 SSOT compliance (collapse duplicate steps into typed-parameter templates) |
-
-Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo).
-
-The universal algebra/certainty/PBT-language lens directive is generated once,
-in the Route contract above (Auto reads it there too) — do not duplicate it
-here.
+|P|Load|Trigger|
+|-|-|-|
+|✱|`nw-cross-cutting-invariants`|Invariants|
+|F|`nw-code-analysis-port`|Code/test|
+|0|`nw-distill`, `nw-distill-port-treatment-policy`, `nw-test-design-mandates`|P0 entry|
+|1|`nw-bdd-methodology`, `nw-distill-prior-wave-reading`|P1 entry|
+|2|`nw-tdd-methodology-paradigm`, `nw-tdd-methodology-walking-skeleton`, `nw-test-design-mandates-scenario-design`, `nw-test-design-mandates-layered-mechanics`, `nw-test-design-mandates-composition-contract`, `nw-property-based-testing`, `nw-ad-mandate-summaries`|P2 entry|
+|2.5|`nw-at-completeness-check`|Post-auth|
+|3|`nw-distill-red-scaffolding`|P3 entry|
+|4|`nw-ad-critique-dimensions`, `nw-at-completeness-check`, `nw-ad-distill-dod`, `nw-distill-coverage-obligations`|P4 entry|
+|OD|`nw-pbt-{lang}`|ONE P0 deep dive|
+|OD|`nw-distill-feature-delta-schema`|E1+E2|
+|OD|`nw-test-organization-conventions`|Dir|
+|OD|`nw-test-optimization-paradigm-match`|PBT vs ex|
+|OD|`nw-test-optimization-consolidation`|Ratio<4×|
+|OD|`nw-test-refactoring-catalog`|M-12|
 
 <!-- GENERATED:skill-load-set START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 Conditional skills by active workflow mode — projected from the mode

@@ -9,7 +9,8 @@ from pytest_bdd import scenario
 
 @scenario(
     "walking-skeleton.feature",
-    "Fresh install applies the dual credit and leaves no legacy hook",
+    "Fresh install records enabled preference and leaves no legacy hook",
 )
 def test_ws_fresh_install_applies_dual_credit():
-    """Walking skeleton: real plugin install against a sandboxed HOME (AC1)."""
+    """Walking skeleton: real plugin install records the enabled preference
+    against a sandboxed HOME (AC1)."""

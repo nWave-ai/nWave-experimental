@@ -27,12 +27,11 @@ from nwave_ai.doctor.context import DoctorContext  # noqa: E402
 from nwave_ai.doctor.formatter import render_human, render_json  # noqa: E402
 from nwave_ai.doctor.runner import run_doctor  # noqa: E402
 from scripts.install.attribution_utils import (  # noqa: E402
+    cleanup_legacy_attribution_hook,
     migrate_legacy_hook,
     migrate_legacy_settings_attribution,
     read_attribution_preference,
     read_global_config,
-    register_attribution_hook,
-    unregister_attribution_hook,
     write_attribution_preference,
     write_global_config,
 )
@@ -467,31 +466,21 @@ def _handle_attribution(args: list[str]) -> int:
 
     if action == "on":
         write_attribution_preference(config_dir, enabled=True)
-        # ADR-CA-007: the settings.json credit write surface is retired. The
-        # activation-gated PreToolUse commit-attribution hook is the SOLE
-        # attribution mechanism, so enabling registers it (and only it).
-        # Ensure claude_dir exists so the hook has a home, then register it
-        # idempotently. Contained so a registration fault never fails the
-        # toggle (belt-and-suspenders).
-        registered = False
+        # ADR-CA-007: the activation-gated PreToolUse hook (universal pre-tool-use
+        # adapter) is the SOLE attribution mechanism, observing attribution.enabled
+        # at invocation time. Clean any legacy independent entry. Fail-open.
         try:
-            claude_dir.mkdir(parents=True, exist_ok=True)
-            registered = register_attribution_hook(enabled=True, claude_dir=claude_dir)
+            cleanup_legacy_attribution_hook(claude_dir=claude_dir)
         except Exception:
             pass
-        if registered:
-            print(
-                "Attribution enabled. New Claude commits will carry the nWave "
-                f"credit via the commit-attribution hook in {claude_dir}. "
-                "Restart Claude (don't /resume older sessions) for this to "
-                "take effect."
-            )
-        else:
-            print(
-                "Attribution enabled, but the commit-attribution hook could "
-                f"not be registered in {claude_dir} (Claude Code config "
-                "absent or user-modified)."
-            )
+        message = (
+            "Attribution enabled. New Claude commits will carry the nWave "
+            "credit via the universal handler (observes the preference at "
+            "commit time)."
+        )
+        if target is not None:
+            message += f" (target: {claude_dir})"
+        print(message)
         return 0
 
     if action == "off":
@@ -500,10 +489,10 @@ def _handle_attribution(args: list[str]) -> int:
         # preserving a user-modified value. Route through the claude_dir seam
         # explicitly so the sandbox injection holds (fail-open: never raises).
         migrate_legacy_settings_attribution(config_dir, claude_dir=claude_dir)
-        # ADR-CA-006: disabling removes ONLY the commit-attribution hook entry,
-        # leaving the DES guards intact. Contained so it never breaks the toggle.
+        # DDD-3: remove the stale independent attribution PreToolUse entry.
+        # Contained so it never breaks the toggle.
         try:
-            unregister_attribution_hook(claude_dir=claude_dir)
+            cleanup_legacy_attribution_hook(claude_dir=claude_dir)
         except Exception:
             pass
         # Root cause C: 'off' is the remediation affordance, so it must also
@@ -515,11 +504,13 @@ def _handle_attribution(args: list[str]) -> int:
             migrate_legacy_hook(config_dir=config_dir)
         except Exception:
             pass
-        print(
-            "Attribution disabled. New Claude sessions will not carry the nWave "
-            f"credit line in {claude_dir}. Restart Claude (don't /resume older "
-            "sessions) for this to take effect."
+        message = (
+            "Attribution disabled. New Claude commits will not carry the nWave "
+            "credit (the universal handler observes the preference at commit time)."
         )
+        if target is not None:
+            message += f" (target: {claude_dir})"
+        print(message)
         return 0
 
     if action == "status":

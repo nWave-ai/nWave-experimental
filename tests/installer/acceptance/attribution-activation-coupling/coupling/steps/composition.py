@@ -56,7 +56,6 @@ from .domain_types import (
     AttributionPreference,
     CommitForm,
     DeprecatedKeyLocation,
-    HookRegistration,
     RepoActivationState,
     SettingsAvailability,
     SettingsResidue,
@@ -186,15 +185,6 @@ class AttributionCouplingComposition:
             config.setdefault("attribution", {})["last_written_value"] = value
             write_global_config(self.config_dir, config)
 
-    def given_registered_hook(self, registration: HookRegistration) -> None:
-        """Seed the ``pre-commit-attribution`` PreToolUse entry registered or not."""
-        from scripts.install.attribution_utils import register_attribution_hook
-
-        register_attribution_hook(
-            enabled=registration is HookRegistration.REGISTERED,
-            claude_dir=self.claude_dir,
-        )
-
     def given_des_guard_registered(self) -> None:
         """Seed the existing DES ``pre-bash`` guard entry (coexistence base)."""
         self.claude_dir.mkdir(parents=True, exist_ok=True)
@@ -320,7 +310,6 @@ class AttributionCouplingComposition:
         """Snapshot the port-exposed observable surface."""
         return {
             "settings.attribution.commit": self._settings_attribution_commit(),
-            "settings.hooks.attribution_registered": self._attribution_hook_registered(),
             "settings.hooks.des_guard_registered": self._des_guard_registered(),
             "settings.raw_present": self.settings_path.exists(),
             "global_config.attribution.enabled": self._preference_enabled(),
@@ -333,9 +322,6 @@ class AttributionCouplingComposition:
 
     def settings_attribution_commit(self) -> str | None:
         return self._settings_attribution_commit()
-
-    def attribution_hook_is_registered(self) -> bool:
-        return self._attribution_hook_registered()
 
     def des_guard_is_registered(self) -> bool:
         return self._des_guard_registered()
@@ -424,17 +410,6 @@ class AttributionCouplingComposition:
         from scripts.install.attribution_utils import read_attribution_preference
 
         return read_attribution_preference(self.config_dir)
-
-    def _attribution_hook_registered(self) -> bool:
-        settings = self._read_settings_or_empty()
-        entries = settings.get("hooks", {}).get("PreToolUse", [])
-        return any(
-            "pre-commit-attribution" in hook.get("command", "")
-            for entry in entries
-            if isinstance(entry, dict)
-            for hook in entry.get("hooks", [])
-            if isinstance(hook, dict)
-        )
 
     def _des_guard_registered(self) -> bool:
         settings = self._read_settings_or_empty()

@@ -1,25 +1,29 @@
-# E7 — coexistence preservation + fail-safe registration (ADR-CA-006/CA-007; Q5
-# from the prior soft-attribution feature: skip when ~/.claude is absent).
+# E7 — install preserves neighbours and fails safe (ADR-CA-006/CA-007; Q5 from
+# the prior soft-attribution feature: skip when ~/.claude is absent).
 #
-# Registration must NEVER stomp a neighbour: it appends to hooks.PreToolUse,
-# preserving the operator's own hooks and the DES guards. When the Claude
-# config is absent or corrupt, registration skips silently (registers no hook,
-# leaves the file untouched) rather than crashing the install. Under ADR-CA-007
-# the settings.json credit write is retired, so an absent/corrupt config simply
-# leaves no attribution hook registered; the install still succeeds.
+# Attribution commit rewriting is now driven by the shared PreToolUse dispatch
+# (exercised by the sibling real-adapter acceptance slice), not by a separate,
+# independently-registered commit-attribution hook. Install must therefore
+# never stomp a neighbour: the operator's own hooks and the existing DES guard
+# stay registered exactly as they were, and install registers no independent
+# commit-attribution hook of its own. When the Claude config is absent or
+# corrupt, install leaves it alone (untouched, or simply absent) rather than
+# crashing.
 #
 # Driving port: the install plugin lifecycle over a sandboxed ~/.claude.
 
 @driving_port @real-io @contract-shape:bounded-change
-Feature: Registering the commit-attribution hook preserves neighbours and fails safe
+Feature: Installing nWave preserves neighbours and never registers an independent commit-attribution hook
 
-  Scenario: A hook the operator added themselves survives registration
+  Scenario: Install with attribution enabled preserves neighbours and registers no independent hook
     Given a sandboxed nWave home where the commit guard is already registered
     And the operator has added their own Bash hook
     And the operator has chosen to enable attribution
     When nWave is installed
     Then the operator's own Bash hook is still registered
-    And the commit-attribution hook is registered for Bash commands
+    And the existing commit guard is still registered
+    And no commit-attribution hook is registered
+    And the install still succeeds
 
   Scenario: Registration skips when the Claude config is absent
     Given a sandboxed nWave home with no Claude configuration

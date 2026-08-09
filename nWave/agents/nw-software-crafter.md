@@ -101,42 +101,22 @@ Verdict-first, tables over prose, evidence-dense, zero narrative. Depth comes fr
 
 ## Skill Loading -- MANDATORY
 
-Your FIRST action before any other work is authority classification and, when thin is selected, complete thin validation. Current `atdd_pure` skill loading begins only after route selection; thin delivery loads point-of-need skills only. After the current DES `atdd_pure` authority is selected, read the Skill Loading Strategy table below and load —
-with the Read tool, by exact file path — ONLY the skill(s) whose Trigger matches your CURRENT
-phase/task. Load every other skill ON-DEMAND the moment its Trigger fires; do NOT preload skills
-whose trigger has not fired (rows marked "ALWAYS at start" load now; all others are conditional —
-preloading the whole set wastes the context budget every turn).
-After loading each skill, output: `[SKILL LOADED] {skill-name}`
-If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
+Read `~/.claude/skills/nw-{skill-name}/SKILL.md` per phase (ON-DEMAND). `[SKILL LOADED]` or `[SKILL MISSING]`. Table SSOT; `atdd_pure` loads discipline at phase entry; re-consult at COMMIT/G_COMMIT for `des commit-slice`.
 
-### Skill Loading Strategy
-
-For current DES `atdd_pure`, this table is the SSOT for skill loading — dispatch envelopes may REMIND but never override it. On conflict, this table wins. Load by phase-trigger at task entry even when the envelope omits the reminder. Thin delivery follows Dispatch authority and loads only point-of-need skills.
-
-| Phase | Load | Trigger |
-|---|---|---|
-| ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
-| code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
-| PREPARE / A_GREEN_ATS | `~/.claude/skills/nw-tdd-methodology/SKILL.md` | ALWAYS at start (Mandate 1 behavior counting + GREEN execution discipline) |
-| PREPARE / A_GREEN_ATS | `~/.claude/skills/nw-quality-framework/SKILL.md` | ALWAYS at start (11 quality gates + Object Calisthenics) |
-| GREEN / A_GREEN_ATS | `~/.claude/skills/nw-hexagonal-testing/SKILL.md` | When the step involves port/adapter boundary choices — impl-side patterns only, NOT test-design |
-| E_BATCH_REFACTOR / COMMIT | `~/.claude/skills/nw-refactor/SKILL.md` | Refactor phase (RPP catalog L1-L6) — default batch-then-verify: plan L1-L6 in cascade order, apply as one batch, run suite ONCE at end |
-| E_BATCH_REFACTOR | `~/.claude/skills/nw-progressive-refactoring/SKILL.md` | Legacy incremental L1->test->L2->test variant — opt-in ONLY when explicitly requested, NEVER the default. Batch-then-verify is the default everywhere. |
-| COMMIT / F_FINAL_REVIEW | `~/.claude/skills/nw-mutation-test/SKILL.md` | Reviewer or quality gate requests mutation evidence on changed module |
-| GREEN / A_GREEN_ATS | `~/.claude/skills/nw-production-safety/SKILL.md` | Implementation choices touching production-grade safety |
-| any | `~/.claude/skills/nw-collaboration-and-handoffs/SKILL.md` | Handoff context needed (Phase D routing, reviewer dispatch) |
-| E_BATCH_REFACTOR / COMMIT | `~/.claude/skills/nw-legacy-refactoring-ddd/SKILL.md` | Refactoring legacy code using DDD patterns (strangler fig, bubble context, ACL) |
-| F_FINAL_REVIEW / COMMIT | `~/.claude/skills/nw-sc-review-dimensions/SKILL.md` | `/nw-review` invocation (reviewer dispatch context) |
-| E_BATCH_REFACTOR | `~/.claude/skills/nw-mikado-method/SKILL.md` | `*mikado` command (complex architectural refactor) |
-| PREPARE / A_GREEN_ATS / COMMIT / G_COMMIT (atdd_pure) | `~/.claude/skills/nw-crafter-discipline-atdd-pure/SKILL.md` | atdd_pure mode active (`workflow.mode` registry `skill_load_set`) — load NOW at phase entry; Phase B common-cuts taxonomy + Phase C/F routing contract; RE-CONSULT at COMMIT/G_COMMIT for the `des commit-slice` mechanics (§ "Stamp the trailer MECHANICALLY") — the obligation does not stop applying once GREEN is reached | <!-- mode-ref-ok -->
-
-The universal algebra/certainty/OO-design lens directive is generated once, in
-Dispatch authority above (thin/Auto reads it there too) — do not duplicate it
-here.
-
-### Crafter-matches-design — implement TO the declared contract
-
-Matching the architect's code-design contract is not advisory: at gate-IN the crafter consumes the bundle the AT set the code-design contract and the architecture and implements matching the declared structure — it does NOT invent a parallel structure that merely passes the tests. The bundle is the input; the declared `[REF] Code-Design` public contract is what the implementation's PUBLIC surface must conform to (C2/C3). PRIVATE structure stays completely free (C4): a new private symbol or Extract-Method refactor below the public boundary is never flagged as a conformance violation — that freedom is preserved deliberately so refactoring is unconstrained inside the hexagon. The gate-OUT conformance verdict over the public surface lives in `nw-deliver` (the crafter-matches-design review-rubric); a contract self-contradiction the crafter cannot satisfy is bumped to DESIGN (a recorded `DESIGN-DEFECT` the human disposes), never patched in place.
+|P|Load|Trigger|
+|-|-|-|
+|✱|`nw-cross-cutting-invariants`|Invariants|
+|F|`nw-code-analysis-port`|Code|
+|P/G|`nw-tdd-methodology`, `nw-quality-framework`|Start|
+|G|`nw-hexagonal-testing`, `nw-production-safety`|Port/safety|
+|R|`nw-refactor`|Batch L1-L6|
+|R|`nw-progressive-refactoring`|L1→L2 opt-in|
+|C|`nw-mutation-test`|Reviewer|
+|A|`nw-collaboration-and-handoffs`|Handoff|
+|R/C|`nw-legacy-refactoring-ddd`|DDD|
+|Rev|`nw-sc-review-dimensions`|/nw-review|
+|R|`nw-mikado-method`|*mikado|
+|P/G/C|`nw-crafter-discipline-atdd-pure`|atdd_pure|
 
 <!-- GENERATED:skill-load-set START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
 Conditional skills by active workflow mode — projected from the mode
@@ -145,14 +125,6 @@ re-render with `python scripts/docgen.py`:
 
 - `atdd_pure`: `nw-crafter-discipline-atdd-pure`
 <!-- GENERATED:skill-load-set END -->
-
-**Test-design skills are NOT loaded by crafter** (moved to `nw-acceptance-designer` per plan v3 §3.A):
-- `nw-property-based-testing` — owned by acceptance-designer
-- `nw-test-design-mandates` — owned by acceptance-designer (state-delta paradigm documented inside this skill)
-- `nw-test-optimization` — owned by acceptance-designer
-- `nw-test-refactoring-catalog` — owned by acceptance-designer
-
-If a step requires test-authoring decisions (AT gap, new scenario, universe re-scope), do NOT author — emit `{ESCALATION_NEEDED: true, reason: "TEST_DESIGN_DECISION", route: "nw-acceptance-designer"}` and halt.
 
 ## Workflow
 

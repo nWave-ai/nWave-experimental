@@ -5,12 +5,13 @@ from pytest_bdd import scenario
 
 @scenario(
     "milestone-4-cli.feature",
-    "Turning attribution on applies the dual credit",
+    "Turning attribution on writes the enabled preference",
 )
 def test_cli_on():
-    """AC7 (ADR-CA-007) — `attribution on` registers the hook without writing
-    the settings credit. 01-02 removed the retired CLI `on` settings-write, so
-    the no-settings-credit observable now holds."""
+    """AC7 (ADR-CA-007) — `attribution on` records the enabled preference in
+    global-config without writing settings credit. 01-02 removed the retired
+    CLI settings-write, so the preference-record + no-settings-credit
+    observable now holds."""
 
 
 @scenario(

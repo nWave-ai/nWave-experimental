@@ -168,3 +168,60 @@ def test_cli_enable_injects_on_accepted_prompt(
     monkeypatch.setattr("builtins.input", lambda *a, **k: "")  # bare Enter = yes
     cli._sync_project_claude_section("enable", tmp_path, assume_yes=False)
     assert (tmp_path / "CLAUDE.md").is_file()
+
+
+# --- standing loops consent teaser ---
+
+
+def test_standing_loops_teaser_present_and_valid() -> None:
+    """Verify consent teaser for standing loops: authority, token cap, correct semantics."""
+    from scripts.install.project_claude_section import load_section_content
+    from scripts.measure_doc_tokens import count_tokens
+
+    content = load_section_content()
+
+    # Teaser must exist
+    assert "Standing Loops" in content or "standing loops" in content, (
+        "Standing loops teaser missing"
+    )
+
+    # Extract the teaser section (between heading and next section)
+    import re
+
+    teaser_match = re.search(
+        r"###?\s+Standing Loops.*?\n\n(.*?)(?=\n###|\n##[^#]|$)",
+        content,
+        re.DOTALL | re.IGNORECASE,
+    )
+    assert teaser_match, "Standing loops section not found"
+    teaser_body = teaser_match.group(1)
+
+    # Must NOT mention auto-arm, auto-rearm, opt-out, or "on by default"
+    forbidden = [
+        "auto-arm",
+        "auto-rearm",
+        "opt-out",
+        "opt out",
+        "on by default",
+        "arm themselves",
+    ]
+    for term in forbidden:
+        assert term not in teaser_body.lower(), (
+            f"Forbidden term '{term}' found in teaser"
+        )
+
+    # Must mention OFF by default and explicit consent
+    assert "off" in teaser_body.lower(), "Teaser must state loops are OFF by default"
+    assert "explicit" in teaser_body.lower() or "consent" in teaser_body.lower(), (
+        "Teaser must mention explicit consent"
+    )
+
+    # Token cap: must be ≤64 tokens
+    token_count = count_tokens(teaser_body)
+    assert token_count <= 64, (
+        f"Teaser too large: {token_count} tokens (max 64). Body:\n{teaser_body}"
+    )
+
+    # Byte cap: must be ≤256 bytes
+    byte_count = len(teaser_body.encode("utf-8"))
+    assert byte_count <= 256, f"Teaser exceeds 256 bytes: {byte_count}"

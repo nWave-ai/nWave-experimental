@@ -32,6 +32,10 @@ try:
     from scripts.install.plugins.copilot_des_plugin import _copilot_config_dir
     from scripts.install.plugins.opencode_des_plugin import _opencode_config_dir
     from scripts.shared.install_paths import host_neutral_runtime_dir
+    from scripts.shared.skill_distribution import (
+        SKILLS_FAMILY_KEY,
+        remove_family_record,
+    )
 except ImportError:
     from attribution_utils import (
         NWAVE_MANAGED_COMMIT,
@@ -49,6 +53,10 @@ except ImportError:
     from plugins.copilot_des_plugin import _copilot_config_dir
     from plugins.opencode_des_plugin import _opencode_config_dir
     from shared.install_paths import host_neutral_runtime_dir
+    from shared.skill_distribution import (
+        SKILLS_FAMILY_KEY,
+        remove_family_record,
+    )
 
 # The DES manifest filename each native (non-Claude) plugin writes under its
 # own host config dir -- each plugin module repeats this same literal as a
@@ -296,60 +304,75 @@ class NWaveUninstaller:
         self._remove_nw_namespace_subdir("agents")
 
     def remove_skills(self) -> None:
-        """Remove nWave skills.
+        """Remove nWave skills via manifest ownership record only.
 
-        Install layout writes flat `~/.claude/skills/nw-<name>/` directories
-        (NEW_FLAT layout per skills_plugin.py). The legacy nested
-        `~/.claude/skills/nw/<name>/` layout is also handled for backward
-        compatibility with users still on pre-flat installs. User-created
-        skills (no `nw-` prefix) are preserved.
+        Flat `~/.claude/skills/nw-<name>/` directories listed in
+        skills/.nwave-manifest.json are removed via remove_family_record
+        (ownership tracking). Legacy nested `~/.claude/skills/nw/<name>/`
+        layout is removed unconditionally. User-created skills (untracked
+        nw-*) and non-nw-* files are preserved. Missing/corrupt manifest
+        preserves all skills/nw-* entries.
         """
         skills_dir = self.claude_config_dir / "skills"
 
         if self.dry_run:
             self.logger.info("  🚨 [DRY RUN] Would remove nWave skills")
             if skills_dir.exists():
-                nw_dirs = sorted(skills_dir.glob("nw-*"))
-                legacy_nested = skills_dir / "nw"
-                if nw_dirs:
+                if (skills_dir / ".nwave-manifest.json").exists():
                     self.logger.info(
-                        f"    🚨 [DRY RUN] Would remove {len(nw_dirs)} skills/nw-* dirs"
+                        "    🚨 [DRY RUN] Would consider manifest-owned "
+                        "skills/nw-* members for removal"
                     )
-                if legacy_nested.exists():
+                else:
+                    self.logger.info(
+                        "    🚨 [DRY RUN] No manifest found; would preserve "
+                        "all skills/nw-* entries"
+                    )
+                if (skills_dir / "nw").exists():
                     self.logger.info(
                         "    🚨 [DRY RUN] Would remove legacy skills/nw/ dir"
                     )
             return
 
         with self.logger.progress_spinner("  🚧 Removing nWave skills..."):
-            removed_count = 0
             if skills_dir.exists():
-                # New flat layout: skills/nw-<name>/
-                for nw_dir in skills_dir.glob("nw-*"):
-                    if nw_dir.is_dir():
-                        shutil.rmtree(nw_dir)
-                        removed_count += 1
-                # Legacy nested layout: skills/nw/<name>/
+                result = remove_family_record(skills_dir, key=SKILLS_FAMILY_KEY)
+                status_messages = {
+                    "complete": (
+                        f"  🗑️ Removed {len(result.removed)} manifest-owned "
+                        "skills/nw-* members"
+                    ),
+                    "missing_manifest": (
+                        "  ⚠️ No manifest found; preserved all skills/nw-* "
+                        "entries (non-success)"
+                    ),
+                    "invalid_manifest": (
+                        "  ⚠️ Manifest is corrupt; preserved all skills/nw-* "
+                        "entries (non-success)"
+                    ),
+                }
+                if result.status == "blocked":
+                    self.logger.warn(
+                        f"  ⚠️ Could not remove {len(result.blocked)} skills "
+                        "(non-success)"
+                    )
+                else:
+                    self.logger.info(status_messages[result.status])
+
                 legacy_nested = skills_dir / "nw"
                 if legacy_nested.exists():
                     shutil.rmtree(legacy_nested)
                     self.logger.info("  🗑️ Removed legacy skills/nw directory")
 
-            if removed_count:
-                self.logger.info(f"  🗑️ Removed {removed_count} skills/nw-* dirs")
-
-            # Remove parent skills directory if empty
             if skills_dir.exists():
                 try:
                     if not any(skills_dir.iterdir()):
                         skills_dir.rmdir()
                         self.logger.info("  🗑️ Removed empty skills directory")
                     else:
-                        self.logger.info(
-                            "  📂 Kept skills directory (contains user files)"
-                        )
+                        self.logger.info("  📂 Kept skills directory (contains files)")
                 except OSError:
-                    self.logger.info("  📂 Kept skills directory (contains user files)")
+                    self.logger.info("  📂 Kept skills directory (contains files)")
 
     def remove_lib_python(self) -> None:
         """Remove the installed DES runtime library (`des/`), wherever it lives.

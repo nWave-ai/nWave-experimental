@@ -2,10 +2,9 @@
 
 Couples commit attribution to per-repo nWave activation (ADR-CA-007): the
 un-gateable ``~/.claude/settings.json`` ``attribution.{commit,pr}`` write surface
-is RETIRED. Install registers the activation-gated PreToolUse hook (via
-``register_attribution_hook``, gated by ``attribution.enabled``) and records the
-opt-in preference -- that hook is the sole enforcement. Runs LAST (priority 200)
--- never blocks core installation.
+is RETIRED. The activation-gated PreToolUse hook (universal pre-tool-use adapter)
+is the sole enforcement, gated by ``attribution.enabled`` at invocation time.
+Runs LAST (priority 200) -- never blocks core installation.
 """
 
 from pathlib import Path
@@ -13,12 +12,11 @@ from pathlib import Path
 from scripts.install.attribution_utils import (
     ATTRIBUTION_USER_MANAGED,
     classify_attribution_value,
+    cleanup_legacy_attribution_hook,
     migrate_legacy_hook,
     migrate_legacy_settings_attribution,
     read_attribution_preference,
     read_global_config,
-    register_attribution_hook,
-    unregister_attribution_hook,
     write_attribution_preference,
     write_global_config,
 )
@@ -27,8 +25,8 @@ from .base import InstallationPlugin, InstallContext, PluginResult
 
 
 _MSG_FIRST_TIME_ENABLED = (
-    "nWave attribution enabled. New Claude sessions will carry the nWave credit "
-    "via Claude Code settings (restart Claude for it to take effect). "
+    "nWave attribution enabled. New Claude commits will carry the nWave credit "
+    "via the universal handler (observes the preference at commit time). "
     "Run `nwave-ai attribution off` to disable."
 )
 _MSG_USER_MODIFIED = (
@@ -74,8 +72,7 @@ class AttributionPlugin(InstallationPlugin):
         Any legacy ``prepare-commit-msg`` hook is dismantled first. The retired
         ``settings.json attribution.{commit,pr}`` write is NOT performed
         (ADR-CA-007 DDD-1/DDD-2): the activation-gated PreToolUse hook is the
-        sole enforcement. Install registers that hook (gated by the
-        ``attribution.enabled`` preference) and records the opt-in preference.
+        sole enforcement via universal handler observing attribution.enabled.
         """
         migrate_legacy_hook(self._config_dir)
         # ADR-CA-007 DDD-3: machines upgrading off the CA-004 era carry a
@@ -87,6 +84,16 @@ class AttributionPlugin(InstallationPlugin):
             self._config_dir, claude_dir=context.claude_dir
         )
 
+        # DDD-3: remove the stale independent attribution PreToolUse entry on
+        # upgrade. The universal pre-tool-use adapter now handles attribution
+        # decisions at invocation time by reading attribution.enabled, so the
+        # dedicated entry is no longer needed. Fail-open: never raises, preserves
+        # all other entries.
+        try:
+            cleanup_legacy_attribution_hook(claude_dir=context.claude_dir)
+        except Exception:
+            pass
+
         existing = read_attribution_preference(self._config_dir)
         if existing is False:
             return PluginResult(
@@ -96,12 +103,6 @@ class AttributionPlugin(InstallationPlugin):
             )
 
         self._ensure_enabled_preference()
-        # ADR-CA-006 D7/O-4: the enabled preference gates registration of the
-        # PreToolUse commit-attribution hook, coexisting with the DES guards.
-        # Belt-and-suspenders: registration must never block install (§Consequences
-        # "Both must independently fail-safe"), so its failure is contained here
-        # and never corrupts the attribution-credit install message.
-        self._register_commit_attribution_hook(context)
         context.logger.info(f"  {_MSG_FIRST_TIME_ENABLED}")
         return PluginResult(
             success=True,
@@ -113,26 +114,6 @@ class AttributionPlugin(InstallationPlugin):
         """Record opt-in preference without clobbering bookkeeping keys."""
         if read_attribution_preference(self._config_dir) is None:
             write_attribution_preference(self._config_dir, enabled=True)
-
-    def _register_commit_attribution_hook(self, context: InstallContext) -> None:
-        """Register the PreToolUse commit-attribution hook; never block install.
-
-        The ``attribution.enabled`` preference is load-bearing (ADR-CA-006 O-4):
-        it gates registration. A disabled preference makes ``register`` a no-op
-        (and removes any stale entry), so the flag honestly drives the hook.
-        """
-        enabled = read_attribution_preference(self._config_dir) is not False
-        try:
-            register_attribution_hook(enabled=enabled, claude_dir=context.claude_dir)
-        except Exception as e:
-            context.logger.warn(f"  Commit-attribution hook registration skipped: {e}")
-
-    def _unregister_commit_attribution_hook(self, context: InstallContext) -> None:
-        """Remove the PreToolUse commit-attribution hook; never block uninstall."""
-        try:
-            unregister_attribution_hook(claude_dir=context.claude_dir)
-        except Exception as e:
-            context.logger.warn(f"  Commit-attribution hook removal skipped: {e}")
 
     def verify(self, context: InstallContext) -> PluginResult:
         """Verify attribution preference is readable (config is optional)."""
@@ -169,9 +150,12 @@ class AttributionPlugin(InstallationPlugin):
             migrate_legacy_settings_attribution(
                 self._config_dir, claude_dir=context.claude_dir
             )
-            # ADR-CA-006: uninstall removes the commit-attribution hook entry,
-            # leaving the DES guards intact. Contained so it never blocks uninstall.
-            self._unregister_commit_attribution_hook(context)
+            # DDD-3: remove the stale independent attribution PreToolUse entry.
+            # Contained so it never blocks uninstall.
+            try:
+                cleanup_legacy_attribution_hook(claude_dir=context.claude_dir)
+            except Exception:
+                pass
 
             config = read_global_config(self._config_dir)
             config.pop("attribution", None)

@@ -21,6 +21,10 @@ The seven waves are:
 
 If you need to continue work from a previous session or pick up where another developer left off, use `/nw-continue` to see the current state and next steps.
 
+### Standing Loops — Consent Required
+
+nWave's background loops (consolidation, tech debt, bugfix) are **OFF by default.** They run only with your explicit yes, this session only. Enable: *"enable standing loops."* They don't persist across restarts.
+
 ### Privacy — Non-Negotiable
 
 nWave is in **active development** and runs entirely local: no telemetry, no automatic transmission of any kind. See [PRIVACY.md](../../PRIVACY.md) for the complete policy. Feedback on nWave itself is welcome via GitHub Issues on the experimental repo, at your discretion — never a required step of doing the work.

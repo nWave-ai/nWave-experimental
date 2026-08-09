@@ -10,17 +10,7 @@ The two distribution paths differ only in HOW the Python command is
 constructed (plugin uses CLAUDE_PLUGIN_ROOT, installer uses $HOME),
 not in WHAT hooks are registered.
 
-SCOPE DISCLAIMER: this module is NOT the complete registry of every
-`hooks.PreToolUse` entry this repo can write into `~/.claude/settings.json`.
-`scripts/install/attribution_utils.py` (`register_attribution_hook`) builds
-and writes an INDEPENDENT `PreToolUse`/`Bash` entry (action
-`pre-commit-attribution`) with its own on/off lifecycle, gated by
-`attribution.enabled` in the DES config and toggled without touching the
-install manifest -- it is invisible to `HOOK_EVENTS` and to this module's own
-exhaustive test. An audit, count, or invariant that wants "every PreToolUse
-hook this repo can register" must ALSO consult `attribution_utils.py`; this
-module alone answers only "every hook the fixed install/plugin manifest
-writes."
+HOOK_EVENTS is the installed hook SSOT for the fixed manifest.
 """
 
 from __future__ import annotations

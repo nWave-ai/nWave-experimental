@@ -85,48 +85,14 @@ def _attribution_hook_registered(claude_dir: Path) -> bool:
     )
 
 
-def test_install_routes_attribution_hook_to_target_claude_dir(
+def test_install_routes_stale_cleanup_to_target_claude_dir(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """install() registers the hook into ctx.claude_dir, not ~/.claude (CA-007).
+    """install() routes exact stale cleanup to ctx.claude_dir, not ~/.claude.
 
-    ADR-CA-007: the settings.json credit WRITE is retired, so the observable is
-    the registered PreToolUse hook (the surviving settings-touching surface).
-    The claude_dir injection seam must route it to the install target and leave
-    the default ~/.claude untouched.
-    """
-    home = tmp_path / "home"
-    home_claude = home / ".claude"
-    home_claude.mkdir(parents=True)  # MUST exist or registration warn+skips
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-
-    target_claude = tmp_path / "target_claude"
-    target_claude.mkdir()  # exists AND differs from Path.home()/.claude
-
-    nwave_config = tmp_path / ".nwave"
-    ctx = _make_context(target_claude, nwave_config)
-
-    AttributionPlugin(config_dir=nwave_config).install(ctx)
-
-    # Hook registered into the install target (claude_dir seam preserved).
-    assert _attribution_hook_registered(target_claude) is True
-    # And did NOT pollute the default ~/.claude (the anti-assertion = the RED).
-    assert _attribution_hook_registered(home_claude) is False
-    # And NO settings.json attribution credit was written anywhere (retired).
-    assert _settings_attribution_commit(target_claude) is None
-    assert _settings_attribution_commit(home_claude) is None
-
-
-def test_install_routes_legacy_migration_to_target_claude_dir(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """install() routes the legacy-settings migration into ctx.claude_dir.
-
-    ADR-CA-007 DDD-3: install now performs a one-shot
-    ``migrate_legacy_settings_attribution`` cleanup of a previously nWave-written
-    settings credit. The claude_dir injection seam must route that cleanup to the
-    install target -- a legacy block seeded in the TARGET is removed, while the
-    default ~/.claude is never read or written.
+    ADR-CA-007/CA-006: install calls cleanup_legacy_attribution_hook on the
+    install target. The claude_dir injection seam must route cleanup to the
+    install target and leave the default ~/.claude untouched.
     """
     home = tmp_path / "home"
     home_claude = home / ".claude"
@@ -138,8 +104,63 @@ def test_install_routes_legacy_migration_to_target_claude_dir(
 
     nwave_config = tmp_path / ".nwave"
 
-    # Seed a nWave-managed legacy credit into the TARGET settings.json, plus the
-    # baseline so the classifier recognises it as nWave-managed.
+    # Seed stale hook into target (simulating prior install)
+    (target_claude / "settings.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": (
+                                        "# des-hook:pre-commit-attribution\n"
+                                        "PYTHONPATH=$HOME/.claude/lib/python python3 -m "
+                                        "des.adapters.drivers.hooks.claude_code_hook_adapter pre-tool-use"
+                                    ),
+                                }
+                            ],
+                        }
+                    ]
+                }
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    ctx = _make_context(target_claude, nwave_config)
+    AttributionPlugin(config_dir=nwave_config).install(ctx)
+
+    # Stale hook cleaned from target (cleanup routed via seam).
+    assert _settings_attribution_commit(target_claude) is None
+    # Default ~/.claude never written.
+    assert not (home_claude / "settings.json").exists()
+
+
+def test_install_routes_settings_migration_to_target_claude_dir(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """install() routes settings.json legacy cleanup to ctx.claude_dir.
+
+    install performs migrate_legacy_settings_attribution cleanup of retired
+    settings.json attribution.{commit,pr}. The claude_dir injection seam must
+    route that cleanup to the install target, leaving the default ~/.claude
+    untouched.
+    """
+    home = tmp_path / "home"
+    home_claude = home / ".claude"
+    home_claude.mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    target_claude = tmp_path / "target_claude"
+    target_claude.mkdir()
+
+    nwave_config = tmp_path / ".nwave"
+
+    # Seed a nWave-managed legacy credit into the TARGET settings.json
     (target_claude / "settings.json").write_text(
         json.dumps(
             {"attribution": {"commit": NWAVE_MANAGED_COMMIT, "pr": NWAVE_MANAGED_PR}},
@@ -151,9 +172,9 @@ def test_install_routes_legacy_migration_to_target_claude_dir(
     ctx = _make_context(target_claude, nwave_config)
     AttributionPlugin(config_dir=nwave_config).install(ctx)
 
-    # Legacy credit removed from the install target (migration routed via seam).
+    # Legacy credit removed from target (migration routed via seam).
     assert _settings_attribution_commit(target_claude) is None
-    # And the default ~/.claude was never written.
+    # Default ~/.claude never written.
     assert not (home_claude / "settings.json").exists()
 
 

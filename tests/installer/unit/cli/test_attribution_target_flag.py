@@ -2,23 +2,21 @@
 `nwave-ai attribution on|off`.
 
 Defect (audit AUDIT-installer.md #3, MEDIA): `_handle_attribution` always
-registered/removed the commit-attribution hook in `Path.home() / ".claude"`,
-ignoring both `CLAUDE_CONFIG_DIR` and `--target` -- unlike `_handle_install`
-and `_handle_uninstall`, which both document and honor `--target` (ADR-001).
-The success/failure message also never named which settings.json was
-touched, even though the resolved path was already in scope
-(`register_attribution_hook` receives it as a parameter).
+routed cleanup through `Path.home() / ".claude"`, ignoring both `CLAUDE_CONFIG_DIR`
+and `--target` (ADR-001). The success/failure message also never named which
+settings.json was touched.
 
 On a multi-profile machine (this repo's own documented claude/claude2/claude3
-setup) the toggle could appear to succeed while registering the hook in the
-wrong profile, or in none.
+setup) the toggle could appear to succeed while cleaning the wrong profile.
 
 Fix: `_handle_attribution` now consumes `--target` via the same
 `_extract_target_flag` seam as install/uninstall, resolves `claude_dir` via
 `PathUtils.get_claude_config_dir()` (honors `CLAUDE_CONFIG_DIR`), and names
-that directory in both the "on" and "off" messages.
+that directory in the messages.
 
-Mirrors tests/installer/unit/cli/test_target_flag.py (install/uninstall).
+Load-bearing contract: --target and CLAUDE_CONFIG_DIR route exact stale
+cleanup (legacy PreToolUse hook removal) to the target, leaving default
+~/.claude untouched.
 """
 
 from __future__ import annotations
@@ -30,6 +28,7 @@ from unittest.mock import patch
 import pytest
 
 from nwave_ai import cli
+from scripts.install.attribution_utils import _attribution_hook_command
 
 
 @pytest.fixture(autouse=True)
@@ -38,26 +37,45 @@ def _scrub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
 
 
-def _hook_registered(claude_dir: Path) -> bool:
+def _stale_attribution_hook_present(claude_dir: Path) -> bool:
+    """Check if stale independent attribution hook entry is in PreToolUse."""
     settings_path = claude_dir / "settings.json"
     if not settings_path.exists():
         return False
     settings = json.loads(settings_path.read_text(encoding="utf-8"))
     entries = (settings.get("hooks") or {}).get("PreToolUse") or []
     return any(
-        entry.get("matcher") == "Bash"
-        and any(
-            "pre-commit-attribution" in (hook.get("command") or "")
-            for hook in entry.get("hooks") or []
-        )
+        "# des-hook:pre-commit-attribution" in (hook.get("command") or "")
         for entry in entries
+        if isinstance(entry, dict)
+        for hook in entry.get("hooks") or []
+        if isinstance(hook, dict)
     )
 
 
+def _seed_stale_attribution_hook(claude_dir: Path) -> None:
+    """Seed the exact historical stale attribution hook into settings.json."""
+    claude_dir.mkdir(parents=True, exist_ok=True)
+    settings_path = claude_dir / "settings.json"
+    stale_command = _attribution_hook_command(claude_dir)
+    settings = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash",
+                    "hooks": [{"type": "command", "command": stale_command}],
+                }
+            ]
+        }
+    }
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+
+
 class TestAttributionOnTargetFlag:
-    def test_target_registers_hook_in_target_not_home(
+    def test_target_cleans_stale_hook_in_target_not_home(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """on --target cleans stale hook from target, leaves home untouched."""
         home = tmp_path / "home"
         home_claude = home / ".claude"
         home_claude.mkdir(parents=True)
@@ -65,6 +83,10 @@ class TestAttributionOnTargetFlag:
 
         target = tmp_path / "target-profile"
         nwave_dir = tmp_path / ".nwave"
+
+        # Seed stale hook into target
+        _seed_stale_attribution_hook(target)
+        assert _stale_attribution_hook_present(target) is True
 
         with (
             patch(
@@ -76,12 +98,15 @@ class TestAttributionOnTargetFlag:
             result = cli.main()
 
         assert result == 0
-        assert _hook_registered(target) is True
-        assert _hook_registered(home_claude) is False
+        # Stale hook cleaned from target
+        assert _stale_attribution_hook_present(target) is False
+        # Home untouched (no spurious cleanup)
+        assert not (home_claude / "settings.json").exists()
 
     def test_target_is_named_in_success_message(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     ) -> None:
+        """on --target names the target in output."""
         home = tmp_path / "home"
         home.mkdir()
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
@@ -104,12 +129,17 @@ class TestAttributionOnTargetFlag:
     def test_omitting_target_defaults_to_home_claude(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """on without --target cleans home ~/.claude."""
         home = tmp_path / "home"
         home_claude = home / ".claude"
         home_claude.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
 
         nwave_dir = tmp_path / ".nwave"
+
+        # Seed stale hook into home
+        _seed_stale_attribution_hook(home_claude)
+        assert _stale_attribution_hook_present(home_claude) is True
 
         with (
             patch("sys.argv", ["nwave-ai", "attribution", "on"]),
@@ -118,32 +148,26 @@ class TestAttributionOnTargetFlag:
             result = cli.main()
 
         assert result == 0
-        assert _hook_registered(home_claude) is True
+        # Stale hook cleaned from home
+        assert _stale_attribution_hook_present(home_claude) is False
 
 
 class TestAttributionOffTargetFlag:
-    def test_target_removes_hook_from_target_not_home(
+    def test_target_cleans_stale_hook_from_target_not_home(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """off --target cleans stale hook from target, leaves home untouched."""
         home = tmp_path / "home"
         home_claude = home / ".claude"
         home_claude.mkdir(parents=True)
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
 
         target = tmp_path / "target-profile"
-        target.mkdir()
         nwave_dir = tmp_path / ".nwave"
 
-        # Seed the hook into the TARGET (simulating a prior 'on --target').
-        with (
-            patch(
-                "sys.argv",
-                ["nwave-ai", "attribution", "--target", str(target), "on"],
-            ),
-            patch("nwave_ai.cli._get_config_dir", return_value=nwave_dir),
-        ):
-            cli.main()
-        assert _hook_registered(target) is True
+        # Seed stale hook into target
+        _seed_stale_attribution_hook(target)
+        assert _stale_attribution_hook_present(target) is True
 
         with (
             patch(
@@ -155,11 +179,15 @@ class TestAttributionOffTargetFlag:
             result = cli.main()
 
         assert result == 0
-        assert _hook_registered(target) is False
+        # Stale hook cleaned from target
+        assert _stale_attribution_hook_present(target) is False
+        # Home untouched
+        assert not (home_claude / "settings.json").exists()
 
     def test_target_is_named_in_disabled_message(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     ) -> None:
+        """off --target names the target in output."""
         home = tmp_path / "home"
         home.mkdir()
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
@@ -184,8 +212,7 @@ class TestAttributionClaudeConfigDirEnv:
     def test_claude_config_dir_env_is_honored_without_target_flag(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """CLAUDE_CONFIG_DIR set (no --target) routes the hook there too --
-        install/uninstall already honor this env var; attribution must match."""
+        """CLAUDE_CONFIG_DIR set routes cleanup there, not home."""
         home = tmp_path / "home"
         home_claude = home / ".claude"
         home_claude.mkdir(parents=True)
@@ -195,6 +222,10 @@ class TestAttributionClaudeConfigDirEnv:
         monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(profile))
         nwave_dir = tmp_path / ".nwave"
 
+        # Seed stale hook into env var profile
+        _seed_stale_attribution_hook(profile)
+        assert _stale_attribution_hook_present(profile) is True
+
         with (
             patch("sys.argv", ["nwave-ai", "attribution", "on"]),
             patch("nwave_ai.cli._get_config_dir", return_value=nwave_dir),
@@ -202,5 +233,7 @@ class TestAttributionClaudeConfigDirEnv:
             result = cli.main()
 
         assert result == 0
-        assert _hook_registered(profile) is True
-        assert _hook_registered(home_claude) is False
+        # Stale hook cleaned from CLAUDE_CONFIG_DIR target
+        assert _stale_attribution_hook_present(profile) is False
+        # Home untouched
+        assert not (home_claude / "settings.json").exists()

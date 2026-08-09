@@ -6,15 +6,13 @@ Feature: The doctor explains why a commit did or did not get the credit
   its correct top-level location. The doctor is a diagnostic, never a gate, and
   never mutates the settings.
 
-  # AB-9 — doctor surfaces hook + activation + residue.
+  # AB-9 — doctor surfaces activation + residue (hook state observable via absence).
   @ab-9 @driving_port @contract-shape:unbounded-preservation
-  Scenario: Doctor reports hook, activation, and legacy residue state
+  Scenario: Doctor reports activation and legacy residue state
     Given a active repo
-    And the attribution commit hook is registered
     And an nWave-managed legacy attribution credit in the Claude settings
     When the operator runs the doctor
-    Then the doctor reports the hook registration state
-    And the doctor reports this repo's activation state
+    Then the doctor reports this repo's activation state
     And the doctor reports the legacy settings residue state
 
   # AB-9 — DDD-7 bug fix: deprecated flag read from TOP-LEVEL, not nested.

@@ -277,7 +277,6 @@ class AttributionComposition:
             "settings.attribution.commit": attribution.get("commit"),
             "settings.attribution.pr": attribution.get("pr"),
             "settings.theme": settings.get("theme"),
-            "hook.attribution_registered": self._attribution_hook_registered(settings),
             "gconfig.attribution.enabled": gattr.get("enabled"),
             "gconfig.attribution.last_written_value": gattr.get("last_written_value"),
             "gconfig.attribution.previous_user_value": gattr.get("previous_user_value"),
@@ -285,25 +284,9 @@ class AttributionComposition:
             "legacy.runtime_present": (
                 self.hooks_dir / "nwave_attribution_hook.py"
             ).exists(),
+            "legacy.independent_attribution_hook_present": "pre-commit-attribution"
+            in gattr,
         }
-
-    @staticmethod
-    def _attribution_hook_registered(settings: dict) -> bool:
-        """Whether the CA-007 PreToolUse commit-attribution hook is registered.
-
-        The sole enforcement surface under ADR-CA-007: a ``Bash``-matcher
-        ``hooks.PreToolUse`` entry routing to the ``pre-commit-attribution``
-        adapter. This is the port-exposed observable that REPLACES the retired
-        ``settings.json attribution.{commit,pr}`` write.
-        """
-        entries = (settings.get("hooks") or {}).get("PreToolUse") or []
-        for entry in entries:
-            if not isinstance(entry, dict) or entry.get("matcher") != "Bash":
-                continue
-            for hook in entry.get("hooks") or []:
-                if "pre-commit-attribution" in (hook.get("command") or ""):
-                    return True
-        return False
 
     def doctor_report_text(self) -> str:
         results = self.doctor_results or []
@@ -448,28 +431,24 @@ def when_runs_doctor(composition: AttributionComposition) -> None:
 # ---------------------------------------------------------------------------
 
 
-@then("the developer's commits carry the nWave dual credit")
-def then_commits_carry_dual_credit(
+@then("the enabled attribution preference is recorded")
+def then_enabled_preference_recorded(
     composition: AttributionComposition, scenario_state: dict
 ) -> None:
-    # ADR-CA-007 (supersedes CA-004 H3): the un-gateable settings.json
-    # attribution.{commit,pr} WRITE is retired. The dual credit is now carried
-    # by the activation-gated PreToolUse hook, so the observable outcome is
-    # "the commit-attribution hook is registered" + "no settings credit is
-    # written" + "the opt-in preference is recorded" -- NOT a settings.json
-    # attribution block.
+    # ADR-CA-007: install/CLI writes gconfig.attribution.enabled=True to
+    # persist the opt-in preference. Settings.json attribution.{commit,pr} are
+    # NOT written. The observable outcome is "enabled preference is recorded" +
+    # "no settings credit is written".
     assert_state_delta(
         before=scenario_state["settings_before"],
         after=composition.observe(),
         universe={
-            "hook.attribution_registered",
             "settings.attribution.commit",
             "settings.attribution.pr",
             "gconfig.attribution.enabled",
             "legacy.shim_present",
         },
         expected={
-            "hook.attribution_registered": set_to(True),
             "settings.attribution.commit": set_to(None),
             "settings.attribution.pr": set_to(None),
             "gconfig.attribution.enabled": set_to(True),
@@ -533,14 +512,15 @@ def then_legacy_dismantled(composition: AttributionComposition) -> None:
     )
 
 
-@then("the developer's commits carry the nWave dual credit instead")
-def then_credit_replaced_with_dual(composition: AttributionComposition) -> None:
-    # ADR-CA-007: after the legacy hook is retired, the credit is carried by the
-    # activation-gated PreToolUse hook (sole mechanism), not a settings.json
-    # write. The replacement is observable as the registered hook with no
-    # settings.json attribution block.
+@then("the enabled attribution preference is recorded instead")
+def then_enabled_preference_recorded_instead(
+    composition: AttributionComposition,
+) -> None:
+    # ADR-CA-007: the enabled preference is recorded in global-config.json +
+    # no settings.json attribution block (the dual credit is handled by the
+    # universal handler at commit time, not by an independent hook).
     obs = composition.observe()
-    assert obs["hook.attribution_registered"] is True
+    assert obs["gconfig.attribution.enabled"] is True
     assert obs["settings.attribution.commit"] is None
 
 
@@ -590,12 +570,9 @@ def then_declines_and_explains(composition: AttributionComposition) -> None:
 
 @then("no commit-attribution hook is left on the machine")
 def then_no_attribution_hook_left(composition: AttributionComposition) -> None:
-    # ADR-CA-007: with the settings.json write retired, the sole surface is the
-    # PreToolUse hook. On an absent/corrupt Claude config, register_attribution_hook
-    # warn+skips internally (returns False, never raises), so the graceful-
-    # degradation guarantee is "no hook is registered and the config is not
-    # stomped" -- the install no longer emits a "could not apply" warning.
-    assert composition.observe()["hook.attribution_registered"] is False
+    # ADR-CA-007: the legacy independent attribution hook is dismantled;
+    # the enabled preference is recorded in global-config only.
+    assert composition.observe()["legacy.independent_attribution_hook_present"] is False
 
 
 @then("the corrupt configuration is left exactly as it was")

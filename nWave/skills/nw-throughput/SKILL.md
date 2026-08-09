@@ -13,9 +13,8 @@ that fan-out — answer it from evidence, not from memory of having answered it 
 
 ## Are the standing loops actually armed right now — and are they routing the DRAINS too?
 
-Standing consolidation loops require an explicit host scheduler. Re-check with the real tool
-(`CronList`/`TaskList`) at the start of each managed delivery run and re-arm what is missing — a
-remembered "I armed them" describes a session that may no longer exist.
+Standing consolidation loops do NOT arm automatically. They require your explicit consent and an explicit host scheduler. Before each managed delivery run, ask the assistant to enable loops if you want them, then verify with the real tool
+(`CronList`/`TaskList`) that they are scheduled — a remembered "I armed them" describes a session that may no longer exist. Loops are session-scoped and OFF by default.
 
 Is throughput only parallel swarm delivery? No — the loops also route the two DRAINS, and both are
 first-class throughput work, not a side chore:

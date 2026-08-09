@@ -85,15 +85,6 @@ CHOICE_BY_PHRASE: dict[str, AttributionChoice] = {
     "disable attribution": AttributionChoice.DISABLED,
 }
 
-# The adjective form used in `installed with attribution {state}` and
-# `turns attribution {state}` (e.g. "enabled"/"disabled", "on"/"off").
-CHOICE_BY_STATE: dict[str, AttributionChoice] = {
-    "enabled": AttributionChoice.ENABLED,
-    "disabled": AttributionChoice.DISABLED,
-    "on": AttributionChoice.ENABLED,
-    "off": AttributionChoice.DISABLED,
-}
-
 HOME_BY_PHRASE: dict[str, HomeShape] = {
     "where the commit guard is already registered": HomeShape.GUARD_PRESENT,
     "with no Claude configuration": HomeShape.NO_CLAUDE,

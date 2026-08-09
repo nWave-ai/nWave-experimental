@@ -710,42 +710,28 @@ def _reverse_historical_hookspath(config_dir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# PreToolUse commit-attribution hook registration (ADR-CA-006 D6/D7/O-4).
+# Legacy PreToolUse commit-attribution hook cleanup (ADR-CA-006 D6/D7/O-4).
 #
-# The net-new E7 surface: install (and `nwave-ai attribution on|off`) register/
-# remove a `Bash`/`pre-commit-attribution` PreToolUse entry in
-# ~/.claude/settings.json, gated by `attribution.enabled`, COEXISTING with the
-# existing DES `pre-bash` execution-log guard (append, never replace). The entry
-# routes to the (E6-extended) `claude_code_hook_adapter pre-tool-use` adapter,
-# whose `handle_pre_tool_use` calls `emit_commit_attribution_mutation` on Bash
-# `git commit` commands. Mirrors the DES hook-registration pattern in
-# des_plugin.py: $HOME-based command for cross-machine portability, a unique
-# marker comment, atomic write, append-never-replace, idempotent.
+# Removal of the retired independent hook registration (E7/DDD-3). The
+# universal `pre-tool-use` adapter now handles all attribution decisions at
+# runtime by reading attribution.enabled per invocation, so the dedicated
+# `pre-commit-attribution` entry is no longer needed. On upgrade, this cleanup
+# removes any stale entry. Tombstoned: the exact historical command that was
+# registered, used only as the removal baseline.
 # ---------------------------------------------------------------------------
 
-# The action token tagging the commit-attribution PreToolUse entry, so it is
-# recognizable and removable independently of the `pre-bash` guard.
-ATTRIBUTION_HOOK_ACTION = "pre-commit-attribution"
-
-# Unique marker comment prefixing the registered command. Mirrors the DES
-# `# des-hook:pre-bash` convention so the entry is identifiable and removable
-# without touching the DES guards or any operator-authored hook.
-_ATTRIBUTION_HOOK_MARKER = f"# des-hook:{ATTRIBUTION_HOOK_ACTION}"
-
-# PreToolUse adapter action that routes to handle_pre_tool_use ->
-# emit_commit_attribution_mutation (hook_router maps "pre-tool-use").
-_ATTRIBUTION_ADAPTER_ACTION = "pre-tool-use"
+# Unique marker comment that tagged the registered command (historical).
+# Tombstoned: used only to identify and remove stale entries on upgrade.
+_ATTRIBUTION_HOOK_MARKER = "# des-hook:pre-commit-attribution"
 
 
 def _attribution_hook_command(claude_dir: Path) -> str:
-    """Build the $HOME-portable PreToolUse command for the attribution entry.
+    """Reconstruct the historical $HOME-portable attribution hook command.
 
-    Mirrors DESPlugin._generate_hook_command: PYTHONPATH points at the installed
-    lib, the interpreter is resolved portably ($HOME form for the default
-    ~/.claude, absolute otherwise), and the adapter is invoked with the
-    `pre-tool-use` action so handle_pre_tool_use -> emit_commit_attribution_mutation
-    runs on Bash git-commit commands. The marker comment makes the entry
-    identifiable and independently removable.
+    Exact replica of the legacy registration command, used only as the
+    removal baseline for cleanup. Never called to register new hooks.
+    The universal pre-tool-use adapter observes attribution.enabled at
+    invocation time instead.
     """
     if claude_dir == Path.home() / ".claude":
         lib_path = "$HOME/.claude/lib/python"
@@ -756,100 +742,68 @@ def _attribution_hook_command(claude_dir: Path) -> str:
         f"{_ATTRIBUTION_HOOK_MARKER}\n"
         f"PYTHONPATH={lib_path} {python_cmd} -m "
         f"des.adapters.drivers.hooks.claude_code_hook_adapter "
-        f"{_ATTRIBUTION_ADAPTER_ACTION}"
+        f"pre-tool-use"
     )
 
 
-def _is_attribution_hook_entry(entry: dict) -> bool:
-    """Whether a hooks.PreToolUse entry is the commit-attribution entry."""
-    if not isinstance(entry, dict):
-        return False
-    return any(
-        _ATTRIBUTION_HOOK_MARKER in hook.get("command", "")
-        for hook in entry.get("hooks", [])
-        if isinstance(hook, dict)
-    )
+def cleanup_legacy_attribution_hook(claude_dir: Path | None = None) -> bool:
+    """Remove the stale independent attribution PreToolUse entry on upgrade.
 
+    Scans ~/.claude/settings.json hooks.PreToolUse for nested hook dicts whose
+    full `command` field matches the exact historical registration, removing
+    ONLY those hooks. Preserves siblings (DES guards, user hooks), sibling
+    metadata (timeout, entry-level keys), non-dicts, marker-only and near-match
+    commands. Returns True when an entry was modified. No-op when settings.json
+    is absent/corrupt; never raises.
 
-def register_attribution_hook(
-    enabled: bool,
-    claude_dir: Path | None = None,
-) -> bool:
-    """Register the Bash commit-attribution PreToolUse hook when enabled.
-
-    When ``enabled`` is True, append a ``Bash``-matcher PreToolUse entry routing
-    to the ``pre-tool-use`` adapter (tagged ``pre-commit-attribution``) into
-    ``~/.claude/settings.json hooks.PreToolUse``, preserving every existing entry
-    (the DES ``pre-bash`` guard and any operator-authored hook) and never
-    duplicating on re-run. When ``enabled`` is False, ensure no such entry is
-    present. Warn+skip (return False) when ``~/.claude`` is absent or
-    ``settings.json`` is corrupt — never stomp.
-
-    Returns True when an entry is registered, False otherwise (gate closed,
-    config absent/corrupt).
-    """
-    if not enabled:
-        unregister_attribution_hook(claude_dir)
-        return False
-
-    claude_dir = _default_claude_dir(claude_dir)
-    try:
-        settings = read_claude_settings(claude_dir)
-    except ValueError:
-        # Corrupt settings.json — warn+skip, never stomp.
-        return False
-    if settings is None:
-        # ~/.claude absent (Claude Code not installed) — warn+skip.
-        return False
-
-    hooks = settings.setdefault("hooks", {})
-    pre_tool_use = hooks.setdefault("PreToolUse", [])
-
-    # Idempotent: never duplicate on re-register.
-    if any(_is_attribution_hook_entry(entry) for entry in pre_tool_use):
-        return True
-
-    pre_tool_use.append(
-        {
-            "matcher": "Bash",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": _attribution_hook_command(claude_dir),
-                }
-            ],
-        }
-    )
-    _write_settings_atomic(claude_dir, settings)
-    return True
-
-
-def unregister_attribution_hook(claude_dir: Path | None = None) -> None:
-    """Remove ONLY the commit-attribution PreToolUse entry from settings.json.
-
-    Leaves the DES ``pre-bash`` guard and every other PreToolUse entry intact
-    (remove the attribution entry, never the guards). No-op when ``~/.claude`` is
-    absent or the entry is not present.
+    For each entry dict with list hooks:
+    - Filter out hook dicts with exact-command match
+    - If hooks remain after filter, append {**entry, "hooks": retained}
+    - If no hooks remain, drop the entry entirely
+    - Preserve untouched entries exactly
+    Write to settings.json only if removed=True.
     """
     claude_dir = _default_claude_dir(claude_dir)
     try:
         settings = read_claude_settings(claude_dir)
     except ValueError:
-        # Corrupt settings.json — leave untouched.
-        return
+        return False
     if settings is None:
-        return
+        return False
 
     pre_tool_use = settings.get("hooks", {}).get("PreToolUse")
     if not isinstance(pre_tool_use, list):
-        return
+        return False
 
-    remaining = [
-        entry for entry in pre_tool_use if not _is_attribution_hook_entry(entry)
-    ]
-    if len(remaining) == len(pre_tool_use):
-        # Nothing to remove — idempotent no-op (skip the write entirely).
-        return
+    expected_command = _attribution_hook_command(claude_dir)
+    removed = False
+    final_entries = []
 
-    settings["hooks"]["PreToolUse"] = remaining
+    for entry in pre_tool_use:
+        if not isinstance(entry, dict):
+            final_entries.append(entry)
+            continue
+
+        hooks = entry.get("hooks")
+        if not isinstance(hooks, list):
+            final_entries.append(entry)
+            continue
+
+        # Filter out hooks with exact-command match.
+        retained_hooks = []
+        for hook in hooks:
+            if isinstance(hook, dict) and hook.get("command") == expected_command:
+                removed = True
+            else:
+                retained_hooks.append(hook)
+
+        # Append entry if hooks remain, otherwise drop.
+        if retained_hooks:
+            final_entries.append({**entry, "hooks": retained_hooks})
+
+    if not removed:
+        return False
+
+    settings["hooks"]["PreToolUse"] = final_entries
     _write_settings_atomic(claude_dir, settings)
+    return True

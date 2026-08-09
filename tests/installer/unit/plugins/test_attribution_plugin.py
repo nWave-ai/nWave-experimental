@@ -148,19 +148,22 @@ def guard_git_hooks():
 # ---------------------------------------------------------------------------
 @pytest.fixture(autouse=True, scope="module")
 def isolate_attribution_side_effects():
-    """Prevent plugin.install() from probing the surrounding repo's git config.
+    """Prevent plugin.install() from probing real git and settings.json.
 
-    Post ADR-CA-007 the install no longer writes the retired
-    ``settings.json attribution.{commit,pr}`` credit, so there is no write
-    branch to force. ``register_attribution_hook`` is left REAL — it targets the
-    per-test ``tmp_path/.claude`` sandbox (via ``context.claude_dir``), so the
-    hook registration is observable without touching the operator's real home.
-    Only ``migrate_legacy_hook`` (which probes real git config / .git/hooks) is
-    neutralized here.
+    Post ADR-CA-007, install calls cleanup_legacy_attribution_hook (which probes
+    real git config / .git/hooks) and migrate_legacy_settings_attribution
+    (which touches ~/.claude). Both are neutralized so plugin tests validate
+    only the global-config bookkeeping, not the settings/git side effects.
     """
-    with patch(
-        "scripts.install.plugins.attribution_plugin.migrate_legacy_hook",
-        return_value=False,
+    with (
+        patch(
+            "scripts.install.plugins.attribution_plugin.cleanup_legacy_attribution_hook",
+            return_value=False,
+        ),
+        patch(
+            "scripts.install.plugins.attribution_plugin.migrate_legacy_hook",
+            return_value=False,
+        ),
     ):
         yield
 
@@ -219,8 +222,7 @@ class TestAttributionPluginInstall:
     """Tests for AttributionPlugin.install() driving port."""
 
     def test_interactive_accept_default(self, tmp_path: Path) -> None:
-        """TTY present, empty input (default) -> hook registered + preference
-        recorded, but NO retired settings.json credit written (ADR-CA-007)."""
+        """Fresh install -> preference recorded, no prompt, no settings credit."""
         context = _make_context(tmp_path)
         nwave_dir = tmp_path / ".nwave"
         plugin = AttributionPlugin(config_dir=nwave_dir)
@@ -247,15 +249,13 @@ class TestAttributionPluginInstall:
                 "attribution.trailer": set_to("Co-Authored-By: nWave <nwave@nwave.ai>"),
             },
         )
-        # ADR-CA-007: hook is the sole mechanism; no settings credit is written.
-        assert _attribution_hook_registered(context.claude_dir) is True
+        # No settings credit written; cleanup called but patched.
         assert _settings_attribution_commit(context.claude_dir) is None
 
     def test_install_never_prompts(self, tmp_path: Path) -> None:
         """Install MUST be non-blocking -- never calls input() (Fabio RCA).
 
-        Replaces the legacy interactive_decline test: install no longer
-        prompts. Users opt out post-install via `nwave-ai attribution off`.
+        Install no longer prompts. Users opt out post-install via `nwave-ai attribution off`.
         See tests/bugs/installer/test_attribution_install_nonblocking.py
         for the full regression suite.
         """
@@ -274,13 +274,11 @@ class TestAttributionPluginInstall:
         mock_input.assert_not_called()
         config = _read_global_config(nwave_dir)
         assert config["attribution"]["enabled"] is True
-        # ADR-CA-007: hook registered, no retired settings credit written.
-        assert _attribution_hook_registered(context.claude_dir) is True
+        # No settings credit written; cleanup called but patched.
         assert _settings_attribution_commit(context.claude_dir) is None
 
     def test_non_interactive_defaults_on(self, tmp_path: Path) -> None:
-        """No TTY -> attribution defaults to on; hook registered + preference
-        recorded, NO retired settings credit written (ADR-CA-007)."""
+        """No TTY -> attribution defaults to on, no prompt."""
         context = _make_context(tmp_path)
         nwave_dir = tmp_path / ".nwave"
         plugin = AttributionPlugin(config_dir=nwave_dir)
@@ -296,8 +294,7 @@ class TestAttributionPluginInstall:
         config = _read_global_config(nwave_dir)
         assert config["attribution"]["enabled"] is True
         mock_input.assert_not_called()
-        # ADR-CA-007: hook registered, no retired settings credit written.
-        assert _attribution_hook_registered(context.claude_dir) is True
+        # No settings credit written; cleanup called but patched.
         assert _settings_attribution_commit(context.claude_dir) is None
 
     def test_existing_preference_skips_prompt(self, tmp_path: Path) -> None:

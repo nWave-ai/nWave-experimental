@@ -85,13 +85,6 @@ class ToggleAction(Enum):
     STATUS = "status"
 
 
-class HookRegistration(Enum):
-    """Whether the ``pre-commit-attribution`` PreToolUse entry is registered."""
-
-    REGISTERED = "registered"
-    UNREGISTERED = "unregistered"
-
-
 class TrailerOutcome(Enum):
     """The observable trailer effect on a committed message (AB-1..AB-3)."""
 
