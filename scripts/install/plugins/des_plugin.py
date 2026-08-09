@@ -1678,6 +1678,146 @@ class DESPlugin(InstallationPlugin):
             for command in commands
         )
 
+    # --- P1-C settings provenance (reversible settings.json edits) ---
+    #
+    # `nwave_hook_version` (D6/M13 stamp) and the `env.PATH` shim-bin prepend
+    # are the two settings.json edits nWave owns and must be able to reverse.
+    # The receipt is the SSOT for "what nWave found before it ever touched
+    # this settings.json" -- written once (first-receipt-wins) and cleared
+    # only by a successful uninstall, so v1 -> v2 -> uninstall restores the
+    # true pre-nWave absence/value rather than whatever v2 last wrote.
+    #
+    # Location is derived entirely from `context.claude_dir` (the resolved
+    # CLAUDE_CONFIG_DIR -- see `PathUtils.get_claude_config_dir`), never from
+    # `Path.home()`: a DESPlugin driven with a temp/custom claude_dir (tests,
+    # --target installs) must not infer or write the developer's real
+    # ~/.nwave. The key embeds a hash of the resolved claude_dir so two
+    # profiles sharing the same parent directory (e.g. ~/.claude and
+    # ~/.claude-alt both rooted at the real $HOME) never collide.
+    SETTINGS_RECEIPT_SCHEMA_VERSION = 2
+
+    # Sentinel distinguishing "caller did not touch this field" from a
+    # legitimate recorded value of `None` (e.g. no `nwave_hook_version`
+    # existed before nWave ever wrote one).
+    _UNSET = object()
+
+    @staticmethod
+    def _settings_receipt_path(context: InstallContext) -> Path:
+        """Path of the settings-provenance receipt for this `claude_dir`."""
+        root = context.claude_dir.parent / ".nwave" / "install-receipts"
+        key = hashlib.sha256(
+            str(context.claude_dir.resolve()).encode("utf-8")
+        ).hexdigest()[:16]
+        return root / f"settings-{key}.json"
+
+    def _record_settings_receipt(
+        self,
+        context: InstallContext,
+        *,
+        hook_version_before: Any = _UNSET,
+        hook_version_written: Any = _UNSET,
+        path_before: Any = _UNSET,
+        path_written: Any = _UNSET,
+    ) -> None:
+        """Merge-write the settings-provenance receipt.
+
+        The `*_before` fields are first-wins: recorded once (the key is
+        absent) and never overwritten afterwards, so they keep anchoring the
+        true pre-nWave state across every later install. The `*_written`
+        fields always take the latest call's value -- they track exactly
+        what nWave itself most recently wrote, which is the sole basis
+        `_restore_settings_from_receipt` compares the current settings
+        against (never a recomputed package version or PATH).
+        """
+        if context.dry_run:
+            return
+        receipt_path = self._settings_receipt_path(context)
+        receipt: dict[str, Any] = {}
+        if receipt_path.exists():
+            try:
+                receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                receipt = {}
+        receipt["schema_version"] = self.SETTINGS_RECEIPT_SCHEMA_VERSION
+        receipt["claude_config_dir"] = str(context.claude_dir.resolve())
+        if (
+            hook_version_before is not self._UNSET
+            and "nwave_hook_version_before" not in receipt
+        ):
+            receipt["nwave_hook_version_before"] = hook_version_before
+        if hook_version_written is not self._UNSET:
+            receipt["nwave_hook_version_written"] = hook_version_written
+        if path_before is not self._UNSET and "path_before" not in receipt:
+            receipt["path_before"] = path_before
+        if path_written is not self._UNSET:
+            receipt["path_written"] = path_written
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+
+    def _restore_settings_from_receipt(
+        self, context: InstallContext, config: dict[str, Any]
+    ) -> bool:
+        """Reverse nWave's settings.json edits using the receipt, if any.
+
+        Restores/removes `nwave_hook_version` and the PATH segment nWave
+        wrote ONLY when the current value still equals the receipt's
+        recorded `*_written` value -- never a recomputed package version or
+        a re-derived PATH segment. A value the user has since edited by hand
+        no longer matches the recorded write and is preserved untouched,
+        order and all other content included. Returns whether `config` was
+        mutated.
+        """
+        changed = False
+
+        receipt_path = self._settings_receipt_path(context)
+        if not receipt_path.exists():
+            return changed
+        try:
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return changed
+
+        written_version = receipt.get("nwave_hook_version_written", self._UNSET)
+        if (
+            written_version is not self._UNSET
+            and config.get("nwave_hook_version") == written_version
+        ):
+            original = receipt.get("nwave_hook_version_before")
+            if original is None:
+                if config.pop("nwave_hook_version", None) is not None:
+                    changed = True
+            elif config.get("nwave_hook_version") != original:
+                config["nwave_hook_version"] = original
+                changed = True
+
+        written_path = receipt.get("path_written", self._UNSET)
+        if (
+            written_path is not self._UNSET
+            and config.get("env", {}).get("PATH", "") == written_path
+        ):
+            original_path = receipt.get("path_before")
+            env = config.setdefault("env", {})
+            if not original_path:
+                if env.pop("PATH", None) is not None:
+                    changed = True
+            elif env.get("PATH") != original_path:
+                env["PATH"] = original_path
+                changed = True
+
+        return changed
+
+    def _clear_settings_receipt(self, context: InstallContext) -> None:
+        """Delete the settings-provenance receipt (successful-uninstall reset).
+
+        Idempotent -- a missing receipt (already cleared, or never written
+        because this target never touched settings.json) is not an error.
+        """
+        if context.dry_run:
+            return
+        receipt_path = self._settings_receipt_path(context)
+        if receipt_path.exists():
+            receipt_path.unlink()
+
     def _install_des_hooks(self, context: InstallContext) -> PluginResult:
         """Install DES hooks into settings.json (global config).
 
@@ -1816,6 +1956,16 @@ class DESPlugin(InstallationPlugin):
             # so a fresh hook set never carries a stale or absent stamp.
             hook_version = self._resolve_nwave_hook_version()
             version_changed = config.get("nwave_hook_version") != hook_version
+            # P1-C settings provenance: snapshot the pre-nWave `nwave_hook_
+            # version` (first-wins) and record the value nWave is about to
+            # write (always latest) BEFORE mutating `config`, so restore can
+            # compare against what was actually written instead of
+            # recomputing the package version.
+            self._record_settings_receipt(
+                context,
+                hook_version_before=config.get("nwave_hook_version"),
+                hook_version_written=hook_version,
+            )
             if version_changed:
                 config["nwave_hook_version"] = hook_version
 
@@ -2174,6 +2324,10 @@ class DESPlugin(InstallationPlugin):
             config["env"] = {}
 
         existing_path = config["env"].get("PATH", "")
+        # P1-C settings provenance: the value found BEFORE this call touches
+        # it, captured once (first-wins) so uninstall can restore the true
+        # pre-nWave PATH rather than whatever the most recent install left.
+        path_before = existing_path
 
         # Normalize any $HOME references in existing PATH entries to absolute paths.
         # Claude Code does not shell-expand env values, so $HOME must be resolved now.
@@ -2192,6 +2346,9 @@ class DESPlugin(InstallationPlugin):
         if existing_path == legacy_fabricated_path:
             live_path = os.environ.get("PATH") or self.SYSTEM_PATH_FALLBACK
             config["env"]["PATH"] = des_bin_path + ":" + live_path
+            self._record_settings_receipt(
+                context, path_before=path_before, path_written=config["env"]["PATH"]
+            )
             if not context.dry_run:
                 self._save_settings(settings_file, config, context)
             return
@@ -2201,6 +2358,9 @@ class DESPlugin(InstallationPlugin):
                 config["env"]["PATH"] = existing_path
                 if not context.dry_run:
                     self._save_settings(settings_file, config, context)
+            self._record_settings_receipt(
+                context, path_before=path_before, path_written=existing_path
+            )
             return
 
         if existing_path:
@@ -2212,6 +2372,9 @@ class DESPlugin(InstallationPlugin):
             live_path = os.environ.get("PATH") or self.SYSTEM_PATH_FALLBACK
             config["env"]["PATH"] = des_bin_path + ":" + live_path
 
+        self._record_settings_receipt(
+            context, path_before=path_before, path_written=config["env"]["PATH"]
+        )
         if not context.dry_run:
             self._save_settings(settings_file, config, context)
 
@@ -2318,6 +2481,11 @@ class DESPlugin(InstallationPlugin):
             settings_file = context.claude_dir / "settings.json"
 
             if not settings_file.exists():
+                # A missing settings.json is itself a successful uninstall
+                # outcome -- clear the receipt so a future install is
+                # treated as first-ever, not poisoned by a stale receipt
+                # pointing at settings this uninstall never got to see.
+                self._clear_settings_receipt(context)
                 return PluginResult(
                     success=True,
                     plugin_name="des",
@@ -2349,7 +2517,14 @@ class DESPlugin(InstallationPlugin):
                             )
                         ]
 
+            # P1-C settings provenance: reverse the `nwave_hook_version`
+            # stamp and the PATH shim-bin prepend using the first-wins
+            # receipt, then clear the receipt so the next install is
+            # treated as first-ever again.
+            self._restore_settings_from_receipt(context, config)
+
             self._save_settings(settings_file, config, context)
+            self._clear_settings_receipt(context)
 
             return PluginResult(
                 success=True,

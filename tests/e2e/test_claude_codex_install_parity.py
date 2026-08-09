@@ -1,0 +1,238 @@
+"""E2E: Claude vs Codex install parity for the PyPI-shaped wheel.
+
+Installs the SAME locally-built PyPI-shape wheel (``pypi_shape_wheel`` from
+tests/e2e/conftest.py) into two isolated ``$HOME`` sandboxes -- one seeded
+with only ``~/.claude/``, one seeded with only ``~/.codex/`` -- and checks
+the real cross-host gap the existing suites leave uncovered:
+
+  - both hosts get a representative, manifest-tracked install (parity)
+  - Codex honestly ships no slash-command surface (it has none), and a
+    foreign, non-nWave file sitting beside nWave's ``~/.codex/`` assets
+    survives the install untouched
+  - Claude's ``settings.json`` carries exactly ONE universal Bash
+    PreToolUse registration -- not the retired independent
+    ``pre-commit-attribution`` entry (commit 5aaf380a3, "retire duplicate
+    attribution hook registration")
+  - the installed ``des`` console script resolves a code fact through the
+    Ast/TextSearch tiers with NO ``PYTHONPATH`` and no external
+    Graphify/Tsunami binary -- the ordinary OSS install shape
+  - the wheel itself carries no case-insensitive ``graphify`` residue
+
+Reuses ``pypi_shape_wheel`` (tests/e2e/conftest.py) and the pure subprocess
+helper + runtime-deps tuple from test_pypi_shape_install_chain.py -- no wheel
+build/install machinery is duplicated here.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import zipfile
+from pathlib import Path
+
+import pytest
+
+from tests.e2e.test_pypi_shape_install_chain import _RUNTIME_DEPS, _run
+
+
+pytestmark = pytest.mark.e2e_smoke
+
+_TEXT_SCAN_SUFFIXES = (".py", ".md", ".json", ".toml", ".yaml", ".yml", ".cfg")
+_FOREIGN_MARKER_TEXT = "# pre-existing, not nWave-owned\n"
+
+_SKILLS_ROOT = {"claude": (".claude", "skills"), "codex": (".agents", "skills")}
+_REPRESENTATIVE_AGENT_GLOB = {
+    "claude": (".claude", "agents/nw", "*.md"),
+    "codex": (".codex", "agents", "nw-*.toml"),
+}
+
+
+def _seed_claude(home: Path) -> None:
+    claude_dir = home / ".claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "settings.json").write_text(
+        '{"permissions": {}, "hooks": {}}', encoding="utf-8"
+    )
+
+
+def _seed_codex(home: Path) -> None:
+    codex_dir = home / ".codex"
+    codex_dir.mkdir(parents=True)
+    (codex_dir / "foreign-marker.toml").write_text(
+        _FOREIGN_MARKER_TEXT, encoding="utf-8"
+    )
+
+
+def _install_into_home(venv: Path, home: Path, seed) -> str:
+    """Seed *home*, then run the installed ``nwave-ai install`` console script."""
+    seed(home)
+    console = venv / "bin" / "nwave-ai"
+    env = {
+        "HOME": str(home),
+        "PATH": f"{venv / 'bin'}:{os.environ.get('PATH', '')}",
+        "NWAVE_AUTO_CONFIRM": "1",
+    }
+    proc = subprocess.run(
+        [str(console), "install"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        input=b"y\n" * 20,
+        env=env,
+        timeout=600,
+        check=False,
+    )
+    out = proc.stdout.decode("utf-8", errors="replace")
+    assert proc.returncode == 0, f"nwave-ai install failed for {home}:\n{out}"
+    return out
+
+
+@pytest.fixture(scope="module")
+def _venv_with_wheel(pypi_shape_wheel: Path, tmp_path_factory) -> Path:
+    """A venv with the local PyPI-shape wheel + runtime deps installed once."""
+    venv = tmp_path_factory.mktemp("nwave_parity_venv") / "venv"
+    code, out = _run([sys.executable, "-m", "venv", str(venv)])
+    assert code == 0, f"venv creation failed:\n{out}"
+    pip = venv / "bin" / "pip"
+    code, out = _run([str(pip), "install", "--quiet", *_RUNTIME_DEPS], timeout=300)
+    assert code == 0, f"runtime deps install failed:\n{out}"
+    code, out = _run(
+        [str(pip), "install", "--quiet", str(pypi_shape_wheel)], timeout=300
+    )
+    assert code == 0, f"wheel install failed:\n{out}"
+    return venv
+
+
+@pytest.fixture(scope="module", params=["claude", "codex"])
+def host_install(request, _venv_with_wheel: Path, tmp_path_factory):
+    """Install the same wheel into an isolated, single-host $HOME (parity matrix)."""
+    host = request.param
+    home = tmp_path_factory.mktemp(f"nwave_{host}_home")
+    seed = _seed_claude if host == "claude" else _seed_codex
+    stdout = _install_into_home(_venv_with_wheel, home, seed)
+    return host, home, stdout
+
+
+@pytest.mark.e2e
+class TestClaudeCodexInstallParity:
+    """Representative install shape parity across the two isolated hosts."""
+
+    def test_skills_manifest_and_representative_agent_present(self, host_install):
+        host, home, _ = host_install
+        base, sub = _SKILLS_ROOT[host]
+        skills_dir = home / base / sub
+        manifest = skills_dir / ".nwave-manifest.json"
+        assert manifest.is_file(), f"{host}: skills manifest missing at {manifest}"
+        assert "installed_skills" in json.loads(manifest.read_text())
+        assert any(
+            (p / "SKILL.md").is_file() for p in skills_dir.iterdir() if p.is_dir()
+        ), f"{host}: no installed skill directory carries SKILL.md"
+
+        agent_base, agent_sub, pattern = _REPRESENTATIVE_AGENT_GLOB[host]
+        assert list((home / agent_base / agent_sub).glob(pattern)), (
+            f"{host}: no representative agent asset matching {pattern!r}"
+        )
+
+    def test_codex_has_no_commands_surface_and_preserves_foreign_sibling(
+        self, host_install
+    ):
+        host, home, _ = host_install
+        if host != "codex":
+            pytest.skip("commands-surface + foreign-sibling guard is Codex-specific")
+        assert not (home / ".codex" / "commands").exists(), (
+            "Codex has no slash-command surface; nWave must not create one"
+        )
+        assert (home / ".codex" / "agents").is_dir(), (
+            "nWave did not write its own Codex assets alongside the foreign sibling"
+        )
+        foreign = home / ".codex" / "foreign-marker.toml"
+        assert foreign.is_file() and foreign.read_text() == _FOREIGN_MARKER_TEXT, (
+            "foreign, non-nWave ~/.codex/ sibling was not preserved by install"
+        )
+
+    def test_claude_settings_single_bash_registration_no_retired_markers(
+        self, host_install
+    ):
+        host, home, _ = host_install
+        if host != "claude":
+            pytest.skip("settings.json shape guard is Claude-specific")
+        settings_path = home / ".claude" / "settings.json"
+        raw = settings_path.read_text(encoding="utf-8")
+        assert "pre-commit-attribution" not in raw, (
+            "retired independent attribution hook marker leaked into settings.json"
+        )
+        pre_tool_use = json.loads(raw)["hooks"]["PreToolUse"]
+        bash_entries = [e for e in pre_tool_use if e.get("matcher") == "Bash"]
+        assert len(bash_entries) == 1, (
+            "expected exactly one universal Bash PreToolUse registration, found "
+            f"{len(bash_entries)}: {bash_entries}"
+        )
+
+
+@pytest.mark.e2e
+def test_installed_code_fact_resolves_via_ast_or_textsearch_without_pythonpath(
+    _venv_with_wheel: Path, tmp_path: Path
+) -> None:
+    """The installed ``des`` console script degrades to Ast/TextSearch honestly.
+
+    No ``PYTHONPATH`` is set (the env dict below fully replaces the process
+    env) and no Graphify/Tsunami binary is on PATH -- the ordinary OSS shape.
+
+    ``des code-fact``'s contract is stdout-is-pure-JSON (its own module
+    docstring: "renders the existing result envelope as JSON"). Running
+    pytest from a git checkout makes ``des.runtime.freshness`` emit its
+    dev-checkout autoskip event -- correctly, on stderr (see
+    ``des.runtime.freshness._emit_event``) -- so streams are captured
+    SEPARATELY here rather than through the shared ``_run`` helper, which
+    merges them on purpose for tests that want combined diagnostics.
+    """
+    site_packages = next((_venv_with_wheel / "lib").glob("python3.*/site-packages"))
+    des_pkg = site_packages / "des"
+    assert des_pkg.is_dir(), f"installed des package missing at {des_pkg}"
+
+    des_script = _venv_with_wheel / "bin" / "des"
+    env = {"HOME": str(tmp_path), "PATH": str(_venv_with_wheel / "bin")}
+    proc = subprocess.run(
+        [str(des_script), "code-fact", "query.atoms-in-file", "--root", str(des_pkg)],
+        capture_output=True,
+        env=env,
+        timeout=60,
+        check=False,
+    )
+    out = proc.stdout.decode("utf-8", errors="replace")
+    err = proc.stderr.decode("utf-8", errors="replace")
+    assert proc.returncode == 0, (
+        f"des code-fact failed:\nSTDOUT:\n{out}\nSTDERR:\n{err}"
+    )
+    result = json.loads(out)
+    assert result["provider"] in {"ast", "textsearch"}, (
+        f"code-fact resolved via {result['provider']!r}, expected ast/textsearch "
+        f"(no Graphify/Tsunami in an OSS install): {result}"
+    )
+    assert result["confidence"] in {"approx", "noisy"}
+    assert "health.gate.code-fact.tsunami-absent" in result["health_events"], (
+        "chain did not honestly LOUD-skip the absent Tsunami/Graphify tier"
+    )
+
+
+@pytest.mark.e2e
+def test_wheel_has_no_case_insensitive_graphify_leak(pypi_shape_wheel: Path) -> None:
+    """Wheel metadata + assets must carry no case-insensitive 'graphify' residue."""
+    pattern = re.compile("graphify", re.IGNORECASE)
+    hits: list[str] = []
+    with zipfile.ZipFile(pypi_shape_wheel) as zf:
+        for name in zf.namelist():
+            if pattern.search(name):
+                hits.append(f"member name: {name}")
+                continue
+            if name.endswith(_TEXT_SCAN_SUFFIXES) or name.endswith(
+                ("METADATA", "RECORD")
+            ):
+                text = zf.read(name).decode("utf-8", errors="replace")
+                if pattern.search(text):
+                    hits.append(f"content: {name}")
+    assert not hits, "case-insensitive 'graphify' leaked into the wheel:\n" + "\n".join(
+        hits
+    )

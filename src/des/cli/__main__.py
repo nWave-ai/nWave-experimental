@@ -414,7 +414,7 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # Public vendor-neutral code-analysis projection.  The adapters and
     # negotiation already live behind CodeFactChain; this row makes that one
     # read-only port reachable to installed agents without requiring an
-    # external Graphify or Tsunami binary. catalogued_gate=False: this is a
+    # external Tsunami binary. catalogued_gate=False: this is a
     # read-only query surface, not a coercive gate -- it has no PASS/FAIL
     # verdict and nothing to reconcile into nWave/gates/_catalog.yaml.
     _SubcommandRow("code-fact", "des.cli.code_fact", "main", catalogued_gate=False),

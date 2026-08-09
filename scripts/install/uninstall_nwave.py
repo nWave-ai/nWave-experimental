@@ -12,6 +12,7 @@ import argparse
 import json
 import shutil
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -33,7 +34,10 @@ try:
     from scripts.install.plugins.opencode_des_plugin import _opencode_config_dir
     from scripts.shared.install_paths import host_neutral_runtime_dir
     from scripts.shared.skill_distribution import (
+        MANIFEST_FILENAME,
         SKILLS_FAMILY_KEY,
+        FamilyRemovalEvidence,
+        read_family_record,
         remove_family_record,
     )
 except ImportError:
@@ -54,7 +58,10 @@ except ImportError:
     from plugins.opencode_des_plugin import _opencode_config_dir
     from shared.install_paths import host_neutral_runtime_dir
     from shared.skill_distribution import (
+        MANIFEST_FILENAME,
         SKILLS_FAMILY_KEY,
+        FamilyRemovalEvidence,
+        read_family_record,
         remove_family_record,
     )
 
@@ -69,6 +76,69 @@ _ANSI_BLUE = "\033[0;34m"
 _ANSI_NC = "\033[0m"  # No Color
 
 __version__ = "1.1.0"
+
+
+@dataclass(frozen=True)
+class ClaudeOwnershipInventory:
+    """Positive-ownership snapshot of the Claude discovery surface.
+
+    Produced by exactly one read-only scan (`scan_claude_ownership`), which
+    both `validate_removal` and the removal methods consult instead of each
+    re-deriving ownership ad hoc. Ownership is established only by manifest
+    membership under the family's OWN key (never a legacy/superseded key --
+    `remove_family_record` never adopts or removes those, so a scan that
+    claimed them as owned would report residue nothing can ever clear), or
+    an exact dedicated legacy root -- never a `nw-*` prefix/glob, which would
+    misclassify a coincidentally-named user file as nWave residue.
+    """
+
+    agents_legacy_root_present: bool
+    commands_legacy_root_present: bool
+    skills_legacy_root_present: bool
+    skills_manifest_status: str  # "absent" | "corrupt" | "present"
+    skills_owned_present: frozenset[str]
+
+
+def scan_claude_ownership(claude_config_dir: Path) -> ClaudeOwnershipInventory:
+    """Read-only total scan of what nWave positively owns, once.
+
+    Never mutates the tree and never calls `remove_family_record` -- it only
+    reads the manifest (`read_family_record`) and stats dedicated paths, so
+    two scans with no intervening removal return an equal (`==`) inventory.
+    A missing or corrupt skills manifest yields an empty owned set (never a
+    guess); a scan can therefore never manufacture ownership by itself.
+    `adopt_legacy` is deliberately NOT passed: `remove_family_record` only
+    ever reads/removes the family's own key, so honoring a legacy-adopted
+    key here would claim ownership over members mutation can never clear.
+    """
+    skills_dir = claude_config_dir / "skills"
+    manifest_path = skills_dir / MANIFEST_FILENAME
+
+    if not manifest_path.exists():
+        skills_manifest_status = "absent"
+        skills_owned_present: frozenset[str] = frozenset()
+    else:
+        try:
+            record = read_family_record(skills_dir, key=SKILLS_FAMILY_KEY)
+        except (OSError, ValueError, AttributeError):
+            skills_manifest_status = "corrupt"
+            skills_owned_present = frozenset()
+        else:
+            skills_manifest_status = "present"
+            tracked = record.tracked or frozenset()
+            skills_owned_present = frozenset(
+                name
+                for name in tracked
+                if (skills_dir / name).exists() or (skills_dir / name).is_symlink()
+            )
+
+    return ClaudeOwnershipInventory(
+        agents_legacy_root_present=(claude_config_dir / "agents" / "nw").exists(),
+        commands_legacy_root_present=(claude_config_dir / "commands" / "nw").exists(),
+        skills_legacy_root_present=(skills_dir / "nw").exists(),
+        skills_manifest_status=skills_manifest_status,
+        skills_owned_present=skills_owned_present,
+    )
 
 
 class NWaveUninstaller:
@@ -102,6 +172,11 @@ class NWaveUninstaller:
         self.logger = Logger(None)
         self.backup_manager = BackupManager(self.logger, "uninstall")
         self.claude_installation_present = False
+        # Set by remove_skills(); classified by _skills_removal_state() and
+        # consulted by validate_removal() -- None means remove_skills() has
+        # not run yet this instance, which validates the same as a missing
+        # manifest (never a false green).
+        self._skills_removal_evidence: FamilyRemovalEvidence | None = None
 
     def enable_uninstall_logging(self) -> None:
         """Enable persistent logging once a Claude installation is confirmed."""
@@ -308,10 +383,14 @@ class NWaveUninstaller:
 
         Flat `~/.claude/skills/nw-<name>/` directories listed in
         skills/.nwave-manifest.json are removed via remove_family_record
-        (ownership tracking). Legacy nested `~/.claude/skills/nw/<name>/`
-        layout is removed unconditionally. User-created skills (untracked
-        nw-*) and non-nw-* files are preserved. Missing/corrupt manifest
-        preserves all skills/nw-* entries.
+        (ownership tracking) -- the sole mutator, which always runs and
+        revalidates safety immediately before deleting. scan_claude_ownership's
+        skills_manifest_status classification picks which outcome message
+        fires (a genuine decision input, not just the count it also reports).
+        Legacy nested `~/.claude/skills/nw/<name>/` layout is removed
+        unconditionally. User-created skills (untracked nw-*) and non-nw-*
+        files are preserved. Missing/corrupt manifest preserves all
+        skills/nw-* entries.
         """
         skills_dir = self.claude_config_dir / "skills"
 
@@ -336,33 +415,50 @@ class NWaveUninstaller:
 
         with self.logger.progress_spinner("  🚧 Removing nWave skills..."):
             if skills_dir.exists():
+                # scan_claude_ownership() is the one total read-only scan;
+                # its skills_manifest_status classification -- not a second
+                # reading of result.status -- picks which message below
+                # fires, so the scan genuinely drives what gets reported
+                # instead of existing only for the count on the next line.
+                # remove_family_record still runs unconditionally: it is the
+                # sole mutator and the only one that revalidates safety
+                # (and can detect "blocked") immediately before deleting.
+                inventory = scan_claude_ownership(self.claude_config_dir)
+                self.logger.info(
+                    f"  🔍 {len(inventory.skills_owned_present)} manifest-owned "
+                    "skills currently on disk"
+                )
                 result = remove_family_record(skills_dir, key=SKILLS_FAMILY_KEY)
-                status_messages = {
-                    "complete": (
-                        f"  🗑️ Removed {len(result.removed)} manifest-owned "
-                        "skills/nw-* members"
-                    ),
-                    "missing_manifest": (
-                        "  ⚠️ No manifest found; preserved all skills/nw-* "
-                        "entries (non-success)"
-                    ),
-                    "invalid_manifest": (
-                        "  ⚠️ Manifest is corrupt; preserved all skills/nw-* "
-                        "entries (non-success)"
-                    ),
-                }
-                if result.status == "blocked":
+                self._skills_removal_evidence = result
+
+                if inventory.skills_manifest_status != "present":
+                    category = (
+                        "absent"
+                        if inventory.skills_manifest_status == "absent"
+                        else "corrupt"
+                    )
+                    self.logger.warn(self._skills_removal_diagnosis(category))
+                elif result.status == "blocked":
                     self.logger.warn(
                         f"  ⚠️ Could not remove {len(result.blocked)} skills "
-                        "(non-success)"
+                        f"(non-success)\n{self._skills_removal_diagnosis('blocked')}"
                     )
                 else:
-                    self.logger.info(status_messages[result.status])
+                    self.logger.info(
+                        f"  🗑️ Removed {len(result.removed)} manifest-owned "
+                        "skills/nw-* members"
+                    )
 
                 legacy_nested = skills_dir / "nw"
                 if legacy_nested.exists():
                     shutil.rmtree(legacy_nested)
                     self.logger.info("  🗑️ Removed legacy skills/nw directory")
+            else:
+                # Nothing was ever installed under skills/ -- already clean,
+                # not the same state as "a manifest was expected but missing".
+                self._skills_removal_evidence = FamilyRemovalEvidence(
+                    "complete", frozenset(), frozenset(), frozenset()
+                )
 
             if skills_dir.exists():
                 try:
@@ -373,6 +469,73 @@ class NWaveUninstaller:
                         self.logger.info("  📂 Kept skills directory (contains files)")
                 except OSError:
                     self.logger.info("  📂 Kept skills directory (contains files)")
+
+    def _skills_removal_state(self) -> str:
+        """Classify this run's skills removal into the five owed states.
+
+        "absent-before-run" (no manifest existed) and "corrupt" (manifest
+        unparsable) never validate green -- ownership was never established,
+        so nothing can be honestly asserted as removed. "blocked" stays red
+        (a tracked member survived). A completed run is green whether it
+        actually deleted members this run ("removed-completely-this-run")
+        or found the family already clean ("already-clean").
+        """
+        evidence = self._skills_removal_evidence
+        if evidence is None or evidence.status == "missing_manifest":
+            return "absent-before-run"
+        if evidence.status == "invalid_manifest":
+            return "corrupt"
+        if evidence.status == "blocked":
+            return "blocked"
+        return "removed-completely-this-run" if evidence.removed else "already-clean"
+
+    def _skills_removal_diagnosis(self, category: str) -> str:
+        """WHAT/WHY/HOW for a non-green skills outcome, with an actionable HOW.
+
+        Shared by remove_skills() (reported as it happens) and
+        validate_removal() (reported as the final verdict) so the two
+        surfaces never drift into two different explanations for the same
+        category. `category` is one of "absent" | "corrupt" | "blocked" |
+        "residue" (the last covers a reported-clean run whose post-removal
+        scan still finds owned or legacy residue).
+        """
+        what, why, how = {
+            "absent": (
+                "no skills/.nwave-manifest.json was found before this run",
+                "ownership was never established, so no skills/nw-* entry "
+                "could be honestly attributed to nWave and removed",
+                "re-run the nWave installer to regenerate the manifest, "
+                "then re-run uninstall; if skills/nw-* entries remain and "
+                "you can confirm they are nWave-owned, remove them by hand",
+            ),
+            "corrupt": (
+                "skills/.nwave-manifest.json could not be parsed",
+                "ownership was never established, so no skills/nw-* entry "
+                "could be honestly attributed to nWave and removed",
+                "restore skills/.nwave-manifest.json from a backup or "
+                "reinstall to regenerate it, then re-run uninstall; if "
+                "skills/nw-* entries remain and you can confirm they are "
+                "nWave-owned, remove them by hand",
+            ),
+            "blocked": (
+                "one or more manifest-owned skills/nw-* entries could not be removed",
+                "a filesystem or permission error stopped the mutation "
+                "part-way through",
+                "check filesystem permissions on the skills directory and "
+                "re-run uninstall; if it persists, remove the reported "
+                "skills/nw-* entries by hand after confirming ownership",
+            ),
+            "residue": (
+                "a manifest-owned skill or the legacy skills/nw directory "
+                "is still present on disk",
+                "the removal pass reported success but a fresh scan found "
+                "residue anyway",
+                "inspect skills/ for leftover nw-* entries or a legacy "
+                "skills/nw directory and remove them by hand, then re-run "
+                "uninstall to confirm",
+            ),
+        }[category]
+        return f"  WHAT: {what} WHY: {why} HOW: {how}"
 
     def remove_lib_python(self) -> None:
         """Remove the installed DES runtime library (`des/`), wherever it lives.
@@ -739,8 +902,7 @@ class NWaveUninstaller:
 
         self.logger.info("  🔍 Validating complete removal...")
 
-        agents_nw_dir = self.claude_config_dir / "agents" / "nw"
-        commands_nw_dir = self.claude_config_dir / "commands" / "nw"
+        inventory = scan_claude_ownership(self.claude_config_dir)
         manifest_file = self.claude_config_dir / "nwave-manifest.txt"
         install_log = self.claude_config_dir / "nwave-install.log"
 
@@ -771,11 +933,12 @@ class NWaveUninstaller:
         checks = [
             (
                 "Agents",
-                not agents_nw_dir.exists() and not self._has_flat_nw_residue("agents"),
+                not inventory.agents_legacy_root_present
+                and not self._has_flat_nw_residue("agents"),
             ),
             (
                 "Commands",
-                not commands_nw_dir.exists()
+                not inventory.commands_legacy_root_present
                 and not self._has_flat_nw_residue("commands"),
             ),
             ("DES Hooks", des_hooks_removed),
@@ -791,6 +954,26 @@ class NWaveUninstaller:
             else:
                 self.logger.error(f"    ❌ {name} still exists")
                 errors += 1
+
+        skills_state = self._skills_removal_state()
+        skills_clean = (
+            skills_state in ("removed-completely-this-run", "already-clean")
+            and not inventory.skills_owned_present
+            and not inventory.skills_legacy_root_present
+        )
+        if skills_clean:
+            self.logger.info("    ✅ Skills removed")
+        else:
+            category = {
+                "absent-before-run": "absent",
+                "corrupt": "corrupt",
+                "blocked": "blocked",
+            }.get(skills_state, "residue")
+            self.logger.error(
+                f"    ❌ Skills not verified clean:\n"
+                f"{self._skills_removal_diagnosis(category)}"
+            )
+            errors += 1
 
         if errors == 0:
             self.logger.info("  ✅ Uninstallation validation passed")
