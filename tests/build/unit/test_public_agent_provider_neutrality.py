@@ -1,7 +1,11 @@
 """Public agent specs stay provider-neutral: no literal Tsunami/Graphify wiring.
 
-Covers the 12 public agents carried by P0-B: no `mcp__tsunami__` tool grant,
-no operational Graphify/Tsunami command.
+Coverage is catalog-driven (``load_public_agents``), not a hardcoded roster --
+the public agent count drifts as the catalog evolves, so no count is restated
+here. Every public spec must carry no `graphify` or `tsunami` literal
+(covers both the `mcp__tsunami__*` tool grant and bare operational prose
+mentions), and no `des code-fact` need may be expressed except through that
+port.
 """
 
 from pathlib import Path
@@ -30,6 +34,6 @@ def test_public_agents_provider_neutrality():
         text_lower = text.lower()
 
         assert "graphify" not in text_lower, f"{agent_file.name} contains 'graphify'"
-        assert "mcp__tsunami__" not in text_lower, (
-            f"{agent_file.name} contains 'mcp__tsunami__'"
+        assert "tsunami" not in text_lower, (
+            f"{agent_file.name} contains 'tsunami' (tool grant or operational prose)"
         )

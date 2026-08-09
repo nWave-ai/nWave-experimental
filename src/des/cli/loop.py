@@ -81,8 +81,7 @@ def _project(path: Path) -> tuple[Path, str]:
 def _work(args: argparse.Namespace) -> _ContinuedWork:
     return _ContinuedWork(
         project_root=args.project.resolve(),
-        outcome=args.outcome
-        or "produce one bounded, inspectable continued-work result",
+        outcome=args.outcome,
         context_mode=args.context or "reconstructed",
         max_tokens_per_tick=args.max_tokens,
         max_wall_seconds=args.max_wall_seconds,
@@ -216,6 +215,18 @@ def _dispatch(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                     "Supply positive --max-tokens and --max-wall-seconds values "
                     "with the arm request."
                 ),
+            )
+        if not args.outcome:
+            return 2, _handle_refusal(
+                args.command,
+                args.project,
+                code="INVALID_LIMIT",
+                what="A bounded continued-work request omitted --outcome.",
+                why=(
+                    "The consent contract promises an explicit scope, not an "
+                    "implicit default, for what the loop is authorised to do."
+                ),
+                how="Supply --outcome describing the bounded work this arm request is scoped to.",
             )
         if args.idempotency_key is None:
             return 2, _handle_refusal(

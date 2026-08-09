@@ -631,7 +631,12 @@ def test_claude_settings_receipt_uninstall_roundtrip_preserves_user_sentinel(
     Also covers user-owned flat ``nw-*`` siblings seeded under both
     ``agents/`` and ``commands/`` AFTER the real install (a file, a directory,
     and a symlink to a foreign sibling target) -- all must survive uninstall
-    byte/target-identical, AND survive a second, idempotent uninstall run."""
+    byte/target-identical, AND survive a second, idempotent uninstall run.
+
+    The other side of the same contract: the nWave-owned assets the install
+    actually wrote (manifest-tracked skills, the ``agents/nw/`` root) must
+    disappear after uninstall and stay gone across the idempotent rerun --
+    proving removal, not just preservation."""
     home = tmp_path_factory.mktemp("nwave_settings_roundtrip_home")
     claude_dir = home / ".claude"
     claude_dir.mkdir(parents=True)
@@ -667,6 +672,29 @@ def test_claude_settings_receipt_uninstall_roundtrip_preserves_user_sentinel(
         f"install did not write a settings receipt at {receipt_path}"
     )
 
+    skills_dir = claude_dir / "skills"
+    skills_manifest_path = skills_dir / ".nwave-manifest.json"
+    installed_skill_ids = set(
+        json.loads(skills_manifest_path.read_text())["installed_skills"]
+    )
+    assert installed_skill_ids, "install wrote an empty skills manifest"
+    agents_nw_dir = claude_dir / "agents" / "nw"
+    assert list(agents_nw_dir.glob("*.md")), (
+        "install did not write representative nWave-owned agent assets"
+    )
+
+    def _assert_nwave_owned_assets_removed() -> None:
+        assert not skills_manifest_path.exists(), (
+            f"uninstall left the nWave skills manifest behind: {skills_manifest_path}"
+        )
+        surviving = {sid for sid in installed_skill_ids if (skills_dir / sid).exists()}
+        assert not surviving, (
+            f"uninstall left nWave-owned skill directories behind: {surviving}"
+        )
+        assert not agents_nw_dir.exists(), (
+            f"uninstall left the nWave-owned agents/nw/ root behind: {agents_nw_dir}"
+        )
+
     user_assets = {
         noun: _seed_user_flat_nw_assets(claude_dir / noun, noun)
         for noun in ("agents", "commands")
@@ -692,6 +720,7 @@ def test_claude_settings_receipt_uninstall_roundtrip_preserves_user_sentinel(
     )
     for noun, assets in user_assets.items():
         _assert_user_flat_nw_assets_intact(assets, noun)
+    _assert_nwave_owned_assets_removed()
 
     second_uninstall_proc = subprocess.run(
         [str(console), "uninstall", "--target", str(claude_dir)],
@@ -705,5 +734,9 @@ def test_claude_settings_receipt_uninstall_roundtrip_preserves_user_sentinel(
     assert second_uninstall_proc.returncode == 0, (
         f"second (idempotent) uninstall failed:\n{second_out}"
     )
+    assert not receipt_path.exists(), (
+        f"second uninstall did not keep settings receipt absent: {receipt_path}"
+    )
     for noun, assets in user_assets.items():
         _assert_user_flat_nw_assets_intact(assets, noun)
+    _assert_nwave_owned_assets_removed()

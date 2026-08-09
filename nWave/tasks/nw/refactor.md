@@ -65,31 +65,7 @@ The invoked agent MUST create a task list from its workflow phases at the start 
 **Handoff To**: {invoking-agent-returns-to-workflow}
 **Deliverables**: Refactored codebase with quality improvements
 
-## Examples
-
-### Example 1: Module-level readability refactor
-```
-/nw-refactor src/auth/token_manager.py --level=2 --scope=module
-```
-Crafty applies RPP L1-L2: rename ambiguous variables|extract magic numbers into constants|remove dead code (L1), then simplify conditionals|extract long methods (L2).
-
-### Example 2: SOLID-level design refactor
-```
-/nw-refactor src/billing/ --level=6 --scope=module --mikado_planning=true
-```
-Crafty uses Mikado Method for multi-class refactoring, applies dependency inversion|interface segregation across billing module.
-
-### Example 3: RPP range sweep (L1-L3)
-```
-/nw-refactor src/des/domain/ --from=1 --to=3 --scope=module
-```
-Sweeps L1 readability|L2 complexity|L3 responsibility smells. Cascade governs planning order (analyze L1 before L2 before L3); edits applied as one batch; suite run once at the end.
-
-### Example 4: Targeted single-level refactor
-```
-/nw-refactor src/des/cli/verify.py --level=3 --scope=file
-```
-Targets L3 responsibility smells only (Large Class, Feature Envy, Shotgun Surgery). Assumes L1-L2 already clean.
+Worked examples: `~/.claude/skills/nw-refactor/SKILL.md` ## Examples (verbatim copy removed here, 2026-08-09 token-hot-path cut).
 
 ## Expected Outputs
 

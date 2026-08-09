@@ -183,34 +183,7 @@ The invoked agent MUST create a task list from its workflow phases at the start 
 - [ ] EXAMINE (Phase 3c): light charter authored by a FRESH `nw-product-owner` dispatch (never inline) + @nw-user-examiner (Vera) PASS recorded via `des record-examine-verdict` BEFORE the commit — examine is the DoD, never skipped
 - [ ] Commit with conventional message: `fix(scope): description`
 
-## Examples
-
-### Example 1: Runtime crash
-```
-/nw-bugfix "DES hook crashes with FileNotFoundError when template schema is missing"
-```
-Phase 1: Rex traces to missing `step-tdd-cycle-schema.json` in plugin cache.
-Phase 2: User confirms.
-Phase 3a: @nw-acceptance-designer writes `test_bug_missing_template_schema.py` (RED).
-Phase 3b: `/nw-deliver "fix-missing-template-schema"` → crafter adds fallback path resolution (GREEN), commits.
-
-### Example 2: Silent failure
-```
-/nw-bugfix "Skills plugin reports success but installs zero files when source has nw-prefixed layout"
-```
-Phase 1: Rex traces to `is_public_skill()` returning False for all nw-prefixed names due to ownership map key mismatch.
-Phase 2: User confirms.
-Phase 3a: @nw-acceptance-designer writes a regression test with an nw-prefixed fixture (RED).
-Phase 3b: `/nw-deliver "fix-ownership-map-keys"` → crafter fixes the ownership map keys (GREEN), commits.
-
-### Example 3: Functional project bug
-```
-/nw-bugfix "Pipeline composition breaks when filter predicate returns None"
-```
-Phase 1: Rex traces to missing None guard in compose() function.
-Phase 2: User confirms.
-Phase 3a: @nw-acceptance-designer writes a property-based test covering the None-predicate case (RED).
-Phase 3b: `/nw-deliver "fix-compose-none-guard"` → paradigm detected as FP → @nw-functional-software-crafter adds the None guard (GREEN), commits.
+Worked examples: `~/.claude/skills/nw-bugfix/SKILL.md` ## Examples (verbatim copy removed here, 2026-08-09 token-hot-path cut).
 
 ## Notes
 
