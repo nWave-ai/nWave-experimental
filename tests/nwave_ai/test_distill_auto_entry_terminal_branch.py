@@ -11,6 +11,9 @@ REPO = Path(__file__).resolve().parents[2]
 AUTO_SKILL_PATH = REPO / "nWave/skills/nw-auto/SKILL.md"
 DISTILL_SKILL_PATH = REPO / "nWave/skills/nw-distill/SKILL.md"
 MODE_SKILL_PATH = REPO / "nWave/skills/nw-mode-select/SKILL.md"
+ATD_AGENT_PATH = REPO / "nWave/agents/nw-acceptance-designer.md"
+OO_CRAFTER_PATH = REPO / "nWave/agents/nw-software-crafter.md"
+FP_CRAFTER_PATH = REPO / "nWave/agents/nw-functional-software-crafter.md"
 
 DISTILL_AUTO_HEADING = "## Auto entry (root reads this FIRST — terminal branch)"
 DISTILL_HUMAN_HEADING = "## Human-only ceremony (Human-on-the-loop path — Auto never reads past this heading)"
@@ -66,17 +69,35 @@ def test_auto_l_route_bounds_serial_gap_specific_consults() -> None:
         assert token in route
 
 
-def test_auto_code_facts_use_the_port_without_a_named_backend_dependency() -> None:
-    """CONTRACT_SHAPE: bounded-change. Code-fact guidance stays executable and neutral."""
+def test_auto_root_delegates_the_code_fact_query_to_the_acceptance_designer() -> None:
+    """CONTRACT_SHAPE: bounded-change. Root owns no CodeFact command; ATD does."""
     text = _auto_skill_text()
-    dispatch_loading = _default_skill_loading_body("nw-acceptance-designer")
-    executable_form = "des code-fact query.* SUBJECT --root ROOT"
-    assert executable_form in text
-    assert executable_form in dispatch_loading
+    assert (
+        "Root does not run `des code-fact query.* SUBJECT --root ROOT` itself" in text
+    )
+    assert "delegates the bounded brief" in text
+    assert "nw-acceptance-designer" in text
     assert "CodeFactPort" in text
-    for content in (text, dispatch_loading):
-        assert "graphify" not in content.lower()
-        assert "tsunami" not in content.lower()
+    assert "graphify" not in text.lower()
+    assert "tsunami" not in text.lower()
+
+    atd_text = ATD_AGENT_PATH.read_text(encoding="utf-8")
+    executable_form = "des code-fact query.* SUBJECT --root ROOT"
+    assert "run\nexactly one bounded provider-neutral" in atd_text
+    assert executable_form in atd_text
+    for field in ("`reuse`", "`boundaries`", "`targets`"):
+        assert field in atd_text
+    assert "no applicable reuse is encoded directly in `reuse`" in atd_text
+    assert "never as\na separate receipt" in atd_text
+    dispatch_loading = _default_skill_loading_body("nw-acceptance-designer")
+    assert executable_form in dispatch_loading
+
+
+def test_crafters_retain_declared_reuse_architecture_conformance_phrase() -> None:
+    """CONTRACT_SHAPE: non-regression. OO and FP crafters keep the conformance phrase."""
+    phrase = "demonstrate declared reuse/architecture conformance"
+    for path in (OO_CRAFTER_PATH, FP_CRAFTER_PATH):
+        assert phrase in path.read_text(encoding="utf-8")
 
 
 def test_auto_examiner_receives_only_expectation_and_start_recipe() -> None:

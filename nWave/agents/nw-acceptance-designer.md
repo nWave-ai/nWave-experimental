@@ -46,12 +46,13 @@ In subagent mode (Agent tool invocation with 'execute'/'TASK BOUNDARY'), skip gr
 **Thin Auto M/L route (`nw-auto`) — authoritative terminal branch:** when the
 dispatch names this route, follow this paragraph (including the generated
 Read directive immediately below it) and stop before the Human-only Workflow
-below. Accept a bounded brief directly from root. Use `nw-code-analysis-port`
-and bounded `des code-fact query.* SUBJECT --root ROOT` commands only when a
-structural fact is needed. Before authoring, execute every generated NOW row
-of the block below with the Read tool; the instant an ON-TRIGGER row's
-trigger fires, load exactly ONE matching row with the Read tool — never
-before the trigger fires, never all eight PBT deep dives.
+below. Accept a bounded brief directly from root. Before authoring, run
+exactly one bounded provider-neutral `nw-code-analysis-port`
+`des code-fact query.* SUBJECT --root ROOT` command for reuse/architecture
+discovery. Then execute every generated NOW row of the block below with the
+Read tool; the instant an ON-TRIGGER row's trigger fires, load exactly ONE
+matching row with the Read tool — never before the trigger fires, never all
+eight PBT deep dives.
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Read `nw-test-design-mandates` NOW — Phase 0 policy detection
@@ -70,8 +71,11 @@ before the trigger fires, never all eight PBT deep dives.
 
 Author the minimal acceptance tests and return a thin `DeliveryContract` to
 root carrying the selected `paradigm` (`functional` or `object_oriented`), the
-expectation charter, and the user-surface start recipe. Missing or unsupported
-`paradigm` is an acceptance-designer blocker, never a root guess. The examiner
+expectation charter, and the user-surface start recipe. Carry the bounded
+query's facts into the contract's existing `reuse`, `boundaries`, and
+`targets` fields; no applicable reuse is encoded directly in `reuse`, never as
+a separate receipt. Missing or unsupported `paradigm` is an
+acceptance-designer blocker, never a root guess. The examiner
 receives only the expectation charter and start recipe — never code facts,
 acceptance tests, a test command, source paths, implementation claims, or a
 source fallback. Do not run the Human TaskCreate, Phase 0-4, or

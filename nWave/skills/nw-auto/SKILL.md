@@ -15,13 +15,13 @@ verdict itself.
 
 ## Bounded context lookup
 
-Root's structural lookup is exactly one bounded
-`des code-fact query.* SUBJECT --root ROOT` command per slice, optionally
-followed by a bounded `Read` of the exact file(s) that query returns. Replace
-the capability, subject, and root with the one fact required for the current
-slice. The CodeFactPort chooses the provider; raw `find`, `grep`,
-or `cat`-style repository discovery is never a substitute for a code fact and
-must not be used for structural lookup.
+Root does not run `des code-fact query.* SUBJECT --root ROOT` itself. Root
+delegates the bounded brief — capability, subject, and root — to
+`nw-acceptance-designer`, which owns the one bounded CodeFactPort query per
+slice and returns its reuse/architecture facts in the existing
+`DeliveryContract`. Raw `find`, `grep`, or `cat`-style repository discovery is
+never a substitute for a code fact and must not be used for structural
+lookup, by root or by the dispatched role.
 
 ## Deterministic crafter selection
 
