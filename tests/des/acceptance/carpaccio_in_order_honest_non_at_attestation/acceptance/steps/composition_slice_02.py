@@ -325,7 +325,6 @@ class DegradedCommitComposition:
             carpaccio_runner=_clearing_runner,
             readiness_runner=_clearing_runner,
             wave_dispatch_runner=_clearing_runner,
-            completeness_runner=_clearing_runner,
         )
         if decision.is_block and decision.event == _OUT_OF_ORDER_EVENT:
             return GateOutcome.WEDGED

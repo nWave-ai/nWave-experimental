@@ -65,20 +65,11 @@ def test_atdd_pure_flavor_parsed_structure_is_pinned() -> None:
     # every Agent/Task dispatch the PreToolUse intercept sees. The pin is updated
     # to record the 3-row composition; deleting the guard row regresses the
     # arch-test leg-3 (test_arch_wave_dispatch_guard_home), not this pin.
-    # f-design-devops-review-gate slice-03 (CT-9 / DDD-5): dispatch.pre
-    # legitimately gains the AT-completeness BACKSTOP row (the EXISTING
-    # check-slice-at-completeness CLI, zero new gate logic) after carpaccio, so an
-    # incomplete slice cannot enter DELIVER even if the DISTILL gate-out was
-    # bypassed. `on_failure: warn` (advisory at the backstop; the PRIMARY block is
-    # the DISTILL gate-out, nWave/waves/distill.yaml). The pin records the 4-row
-    # composition; deleting the backstop row regresses the slice-03 dispatch.pre
-    # AT (AT-11), not just this pin.
     dispatch_pre = events["dispatch.pre"]
     assert [g["gate_id"] for g in dispatch_pre] == [
         "verify-wave-dispatch",
         "verify-readiness-pre-dispatch",
         "carpaccio-slice-gate",
-        "check-slice-at-completeness",
     ]
     assert dispatch_pre[0]["on_failure"] == "block"
     assert dispatch_pre[0]["args"] == {
@@ -92,11 +83,6 @@ def test_atdd_pure_flavor_parsed_structure_is_pinned() -> None:
     assert dispatch_pre[2]["args"] == {
         "feature_id": "{feature_id}",
         "entering_slice": "{slice_id}",
-    }
-    assert dispatch_pre[3]["on_failure"] == "warn"
-    assert dispatch_pre[3]["args"] == {
-        "feature_id": "{feature_id}",
-        "slice_id": "{slice_id}",
     }
 
 

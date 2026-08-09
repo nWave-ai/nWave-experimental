@@ -10,7 +10,7 @@ This is HOOK-INTERNAL behavior -> pytest, NOT Gherkin. The tests drive the REAL
 to-be-added seams (no reimplementation):
   * `des_marker_parser.classify_bootstrap(markers, firing_gate_id)` -- the pure
     3-verdict classifier (to be ADDED alongside `classify_atdd_pure_dispatch`).
-  * `des_marker_parser.BOOTSTRAPPABLE_GATES` -- the closed 4-member dispatch-gate
+  * `des_marker_parser.BOOTSTRAPPABLE_GATES` -- the closed 3-member dispatch-gate
     vocabulary (to be ADDED as the SSOT const).
   * `carpaccio_intercept._gate_invoker_for(...)._invoke` -- the per-gate decision
     seam where the bootstrap check is inserted (Reuse Analysis: "insert a per-gate
@@ -50,12 +50,11 @@ from des.domain import des_marker_parser as dmp
 
 _FEATURE_ID = "fix-self-extending-gate-deadlock"
 
-# The closed 4-member dispatch-gate class the bootstrap vocabulary spans (D6).
+# The closed 3-member dispatch-gate class the bootstrap vocabulary spans (D6).
 _CARPACCIO = "carpaccio-slice-gate"
 _WAVE = "verify-wave-dispatch"
 _READINESS = "verify-readiness-pre-dispatch"
-_COMPLETENESS = "check-slice-at-completeness"
-_ALL_GATES = (_WAVE, _READINESS, _CARPACCIO, _COMPLETENESS)
+_ALL_GATES = (_WAVE, _READINESS, _CARPACCIO)
 
 _JUSTIFICATION = "repairs the carpaccio-slice-gate at_kind check (instance-3 deadlock)"
 
@@ -111,7 +110,6 @@ def _build_invoker() -> tuple:
         carpaccio_runner=recs[_CARPACCIO],
         readiness_runner=recs[_READINESS],
         wave_dispatch_runner=recs[_WAVE],
-        completeness_runner=recs[_COMPLETENESS],
     )
     return invoke, recs
 

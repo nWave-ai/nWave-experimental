@@ -108,7 +108,6 @@ BOOTSTRAPPABLE_GATES = frozenset(
         "carpaccio-slice-gate",
         "verify-readiness-pre-dispatch",
         "verify-wave-dispatch",
-        "check-slice-at-completeness",
     }
 )
 

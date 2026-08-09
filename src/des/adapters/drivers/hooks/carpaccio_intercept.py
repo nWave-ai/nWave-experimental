@@ -150,19 +150,6 @@ _CARPACCIO_SLICE_GATE_ID = "carpaccio-slice-gate"
 _VERIFY_READINESS_PRE_DISPATCH_GATE_ID = "verify-readiness-pre-dispatch"
 _VERIFY_WAVE_DISPATCH_GATE_ID = "verify-wave-dispatch"
 
-# f-design-devops-review-gate slice-03 (CT-9 / DDD-5): the DELIVER-entry
-# AT-completeness BACKSTOP gate is the EXISTING completeness CLI -- an importable
-# `des.cli` module, run the SAME layout-independent `python_for(None) -m des
-# check-slice-at-completeness ...` subprocess as the readiness gate. Zero new
-# gate logic: the runner just maps the dispatch slice context to the existing
-# CLI's argv (--repo / --commit HEAD / --slice-id / --feature-id).
-_CHECK_SLICE_AT_COMPLETENESS_GATE_ID = "check-slice-at-completeness"
-_COMPLETENESS_GATE_CLI_TARGET = "des"
-_COMPLETENESS_GATE_SUBCOMMAND = "check-slice-at-completeness"
-# The completeness gate's subprocess timeout matches the carpaccio / readiness
-# ceiling; all fit inside the Claude Code PreToolUse hook budget.
-COMPLETENESS_GATE_SUBPROCESS_TIMEOUT_SECONDS = 20
-
 
 # A carpaccio runner: (feature_id, entering_slice) -> (exit_code, stdout).
 CarpaccioRunner = Callable[[str, str], "tuple[int, str]"]
@@ -172,13 +159,6 @@ CarpaccioRunner = Callable[[str, str], "tuple[int, str]"]
 # `_gate_invoker_for` looks up the runner by gate_id and delegates with the
 # (feature_id, slice_id) pair extracted from the dispatcher context dict.
 ReadinessRunner = Callable[[str, str], "tuple[int, str]"]
-
-# A completeness runner: (feature_id, slice_id) -> (exit_code, stdout)
-# (f-design-devops-review-gate slice-03, CT-9). SAME (feature_id, slice_id)
-# shape as `CarpaccioRunner` / `ReadinessRunner` -- the per-gate registry in
-# `_gate_invoker_for` looks it up by gate_id and delegates the same pair. The
-# DELIVER-entry BACKSTOP for the EXISTING completeness CLI.
-CompletenessRunner = Callable[[str, str], "tuple[int, str]"]
 
 # A wave-dispatch runner: (subagent_type, prompt) -> (exit_code, stdout)
 # (slice-05, DDD-8). DISTINCT shape from the (feature_id, slice_id) runners --
@@ -408,49 +388,6 @@ def _real_readiness_runner(
                 {
                     "event": "GateInvocationTimeout",
                     "gate": "verify_readiness_pre_dispatch",
-                    "entering_slice": entering_slice,
-                }
-            )
-        return completed.returncode, completed.stdout
-
-    return _run
-
-
-def _real_completeness_runner(project_root: Path) -> CompletenessRunner:
-    """Build the real AT-completeness backstop runner bound to ``project_root``.
-
-    f-design-devops-review-gate slice-03 (CT-9 / DDD-5): the DELIVER-entry
-    BACKSTOP for the EXISTING completeness CLI -- ZERO new gate logic. Mirrors
-    `_real_readiness_runner`: runs `python_for(None) -m des
-    check-slice-at-completeness --repo <root> --commit HEAD --slice-id <s>
-    --feature-id <f>` (the CLI's argv) as a layout-independent module subprocess.
-    A timeout / signal-kill is surfaced as a non-zero exit so the caller treats
-    it identically to an explicit gate verdict.
-    """
-
-    def _run(feature_id: str, entering_slice: str) -> tuple[int, str]:
-        try:
-            completed = des_spawn(
-                None,
-                _COMPLETENESS_GATE_CLI_TARGET,
-                _COMPLETENESS_GATE_SUBCOMMAND,
-                "--repo",
-                str(project_root),
-                "--commit",
-                "HEAD",
-                "--slice-id",
-                entering_slice,
-                "--feature-id",
-                feature_id,
-                capture_output=True,
-                text=True,
-                timeout=COMPLETENESS_GATE_SUBPROCESS_TIMEOUT_SECONDS,
-            )
-        except subprocess.TimeoutExpired:
-            return 124, json.dumps(
-                {
-                    "event": "GateInvocationTimeout",
-                    "gate": "check_slice_at_completeness",
                     "entering_slice": entering_slice,
                 }
             )
@@ -886,14 +823,13 @@ def _gate_invoker_for(
     carpaccio_runner: CarpaccioRunner,
     readiness_runner: ReadinessRunner | None = None,
     wave_dispatch_runner: WaveDispatchRunner | None = None,
-    completeness_runner: CompletenessRunner | None = None,
 ) -> Callable[[str, dict[str, str]], tuple[int, str]]:
     """Adapt the per-gate runners into the dispatcher's `gate_invoker` Port.
 
     The dispatcher invokes `gate_invoker(gate_id, context_dict)`; this helper
     builds a per-gate registry from the injected runners (keyed by gate_id) +
     delegates the per-gate context extraction. The (feature_id, slice_id) gates
-    (carpaccio + readiness + the slice-03 completeness BACKSTOP) read those two
+    (carpaccio + readiness) read those two
     context keys uniformly; the wave-dispatch guard (slice-05, DDD-8) reads
     `subagent_type` + `prompt` from the context instead (its DISTINCT runner
     shape). Adding a gate to
@@ -911,8 +847,6 @@ def _gate_invoker_for(
     }
     if readiness_runner is not None:
         slice_registry[_VERIFY_READINESS_PRE_DISPATCH_GATE_ID] = readiness_runner
-    if completeness_runner is not None:
-        slice_registry[_CHECK_SLICE_AT_COMPLETENESS_GATE_ID] = completeness_runner
 
     def _invoke(gate_id: str, context: dict[str, str]) -> tuple[int, str]:
         # ADR-001 DES-BOOTSTRAP: a dispatch repairing dispatch-gate G is
@@ -937,8 +871,7 @@ def _gate_invoker_for(
         # for a one-defect fix. The verify-readiness-pre-dispatch bugfix lane
         # (run as its own composed gate) remains the lane's VALIDITY guard: it
         # REFUSES a vacuous justification and enforces the 2 mechanical safety
-        # guards, so an invalid lane is still blocked there. The AT-completeness
-        # BACKSTOP gate is NOT skipped -- the mechanical quality floor stays.
+        # guards, so an invalid lane is still blocked there.
         lane, _lane_just = _parse_lane_from_prompt(context.get("prompt", ""))
         if lane == "bugfix" and gate_id == _CARPACCIO_SLICE_GATE_ID:
             return 0, json.dumps(
@@ -1124,7 +1057,6 @@ def evaluate_atdd_pure_dispatch(
     carpaccio_runner: CarpaccioRunner | None = None,
     readiness_runner: ReadinessRunner | None = None,
     wave_dispatch_runner: WaveDispatchRunner | None = None,
-    completeness_runner: CompletenessRunner | None = None,
 ) -> InterceptDecision:
     """Evaluate the U1 carpaccio intercept for one PreToolUse dispatch.
 
@@ -1134,19 +1066,15 @@ def evaluate_atdd_pure_dispatch(
     slice-02 + slice-05); the injected per-gate runners are wrapped into
     the dispatcher's `gate_invoker` Port via a per-gate registry.
 
-    The `readiness_runner` + `wave_dispatch_runner` + `completeness_runner`
-    parameters are ADDITIVE on top of the slice-02 frozen signature -- defaulting
-    to None preserves the slice-02 single-gate call shape (AT-4 regression-pin).
-    When the `wave_dispatch_runner` is provided, the flavor's dispatch.pre
-    composition can wire `verify-wave-dispatch` ahead of
-    `verify-readiness-pre-dispatch` / `carpaccio-slice-gate` as a YAML edit
-    (INV-12). The wave-dispatch guard is fail-OPEN (DDD-8): its runner surfaces
-    only a definite BLOCK (gate exit 1) as a composition failure; malformed
-    input / module-absent / timeout map to ALLOW. The `completeness_runner`
-    (f-design-devops-review-gate slice-03, CT-9) is the DELIVER-entry
-    AT-completeness BACKSTOP wired onto dispatch.pre as `on_failure: warn`, so an
-    incomplete slice is surfaced (not bricked) at DELIVER entry even if the
-    DISTILL gate-out was bypassed.
+    The `readiness_runner` + `wave_dispatch_runner` parameters are ADDITIVE on
+    top of the slice-02 frozen signature -- defaulting to None preserves the
+    slice-02 single-gate call shape (AT-4 regression-pin). When the
+    `wave_dispatch_runner` is provided, the flavor's dispatch.pre composition
+    can wire `verify-wave-dispatch` ahead of `verify-readiness-pre-dispatch` /
+    `carpaccio-slice-gate` as a YAML edit (INV-12). The wave-dispatch guard is
+    fail-OPEN (DDD-8): its runner surfaces only a definite BLOCK (gate exit 1)
+    as a composition failure; malformed input / module-absent / timeout map to
+    ALLOW.
 
     Returns an `InterceptDecision`:
       * `block(...)`    -- an unresolved or legacy dispatch carrier.
@@ -1170,7 +1098,6 @@ def evaluate_atdd_pure_dispatch(
         regression_test_file=_regression_test_file,
     )
     wave_dispatch = wave_dispatch_runner or _real_wave_dispatch_runner(project_root)
-    completeness = completeness_runner or _real_completeness_runner(project_root)
 
     markers = DesMarkerParser().parse(prompt)
     classification = classify_atdd_pure_dispatch(markers)
@@ -1254,9 +1181,7 @@ def evaluate_atdd_pure_dispatch(
             "prompt": prompt,
         },
         flavors_dir=_FLAVORS_DIR,
-        gate_invoker=_gate_invoker_for(
-            carpaccio, readiness, wave_dispatch, completeness
-        ),
+        gate_invoker=_gate_invoker_for(carpaccio, readiness, wave_dispatch),
     )
 
     return _decision_from_composition(
@@ -1387,7 +1312,6 @@ def intercept_atdd_pure_dispatch(
     carpaccio_runner: CarpaccioRunner | None = None,
     readiness_runner: ReadinessRunner | None = None,
     wave_dispatch_runner: WaveDispatchRunner | None = None,
-    completeness_runner: CompletenessRunner | None = None,
 ) -> InterceptDecision:
     """The M1 fail-closed U1 intercept driving port.
 
@@ -1409,7 +1333,6 @@ def intercept_atdd_pure_dispatch(
             carpaccio_runner=carpaccio_runner,
             readiness_runner=readiness_runner,
             wave_dispatch_runner=wave_dispatch_runner,
-            completeness_runner=completeness_runner,
         )
     except Exception as exc:
         return InterceptDecision.block(

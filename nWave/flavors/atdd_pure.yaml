@@ -117,22 +117,6 @@ lifecycle_events:
         feature_id: "{feature_id}"
         entering_slice: "{slice_id}"
       on_failure: block
-    # f-design-devops-review-gate slice-03 (CT-9 / DDD-5): the DELIVER-entry
-    # BACKSTOP for the EXISTING completeness CLI (`check-slice-at-completeness`,
-    # zero new gate logic). The PRIMARY placement is the DISTILL gate-out
-    # (nWave/waves/distill.yaml); this complementary backstop (Alt 2, ADR-NB-002)
-    # ensures an incomplete slice cannot ENTER DELIVER even if the DISTILL
-    # gate-out was bypassed — the slice context (feature_id + slice_id) is in hand
-    # at dispatch.pre, so a thin runner maps it to the CLI's argv. `on_failure:
-    # warn` mirrors the spine's other advisory dispatch.pre/co-tenant gates (the
-    # PRIMARY block is the DISTILL gate-out); adding this row is the SAME
-    # composition pattern the prior gates use (INV-2 composable, INV-12 future
-    # workflow change = reconfiguration) — the dispatch loop never changes.
-    - gate_id: check-slice-at-completeness
-      args:
-        feature_id: "{feature_id}"
-        slice_id: "{slice_id}"
-      on_failure: warn
 
   # SubagentStop (Claude Code) / dispatch.post (Codex/OpenCode) —
   # fires when dispatched subagent returns. Verify slice commit + emit
