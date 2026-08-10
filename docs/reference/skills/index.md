@@ -618,7 +618,7 @@
 
 ## nw-property-based-testing
 
-- [nw-property-based-testing](nw-property-based-testing.md) — Property-based testing strategies (PBT — ACTIVE, authored by the acceptance-designer during DISTILL), shrinking, PBT+TDD integration. (Mutation testing is documented but DEPRECATED per FR-1 — PBT is not.)
+- [nw-property-based-testing](nw-property-based-testing.md) — Property-based testing strategies (PBT — ACTIVE, authored by the acceptance-designer during DISTILL), shrinking, PBT+TDD integration.
 
 ## nw-quality-framework
 

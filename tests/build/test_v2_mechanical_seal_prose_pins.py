@@ -189,5 +189,5 @@ def test_rigor_reflects_v2_flow_floor_examiner_uncapped_mutation_offaxis() -> No
     assert "NOT rigor-gated" in text or "not rigor-gated" in text.lower()
     # agent_model uncapped (opus stays available for high-stakes profiles).
     assert "UNCAPPED" in text or "uncapped" in text.lower()
-    # mutation is no longer a rigor axis.
-    assert "no longer a rigor axis" in text.lower()
+    # mutation is not a rigor axis.
+    assert "not a rigor axis" in text.lower()

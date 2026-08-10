@@ -59,7 +59,7 @@ Under `## Wave: DELIVER / [REF] <Section>` headings:
 - Scenarios green count — `<N> of <M>` from the `.feature` file with timestamp
 - DoD check — itemized pass/fail against the DISCUSS Definition of Done items
 - Demo evidence — captured stdout/exit-code per Elevator Pitch demo command (Phase 3.5 gate)
-- Quality gates — per-phase outcomes (refactor, review, integrity, plus mutation ONLY when `rigor.mutation_enabled = true` — deprecated/opt-in-only per FR-1, CLAUDE.md § Mutation Testing Strategy, off by default)
+- Quality gates — per-phase outcomes (refactor, review, integrity). Mutation testing is not a per-feature DELIVER gate — see CLAUDE.md § Mutation Testing Strategy for project-level policy
 - Pre-requisites — DISTILL scenarios + DESIGN component manifest the implementation depended on
 
 ### Tier-2 EXPANSION CATALOG — lazy, on-demand (per D10)
@@ -72,7 +72,6 @@ Rendered under `## Wave: DELIVER / [WHY|HOW] <Section>` only when requested via 
 | `retrospective-notes` | [WHY] | 5 Whys analysis on issues encountered, lessons learned, what to repeat/avoid |
 | `performance-measurements` | [WHY] | Benchmarks, profiling output, latency/memory deltas vs baseline |
 | `alternative-implementations-rejected` | [WHY] | Implementation approaches tried and rejected with one-paragraph reason each |
-| `mutation-testing-report` | [HOW] | Mutmut/Pitest output: kill rate, surviving mutants, mitigation actions |
 | `architecture-decision-deviations` | [WHY] | Where DELIVER deviated from DESIGN and the back-propagation logged in upstream-issues.md |
 | `coverage-deltas` | [HOW] | Per-module coverage delta with rationale for any drops |
 | `expansion-catalog-rationale` | [WHY] | Why this set of expansions, why these defaults, why D10 enforces one-line descriptions |
@@ -275,7 +274,6 @@ Before dispatching any agent, read the rigor profile from `.nwave/des-config.jso
 | `review_enabled` | If `false`, skip Phase 4 (Adversarial Review). |
 | `double_review` | If `true`, run Phase 4 twice with separate review scopes. |
 | `refactor_pass` | If `false`, skip Phase 3 (Complete Refactoring). |
-| `mutation_enabled` | Deprecated (FR-1, CLAUDE.md § Mutation Testing Strategy): the config default is `false` and Phase 5 is SKIPPED unless this is explicitly set `true` for an opt-in run — the inverse of "runs unless disabled". |
 
 **Task invocation with rigor model:**
 ```python

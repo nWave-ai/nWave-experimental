@@ -1,6 +1,6 @@
 # nw-property-based-testing
 
-Property-based testing strategies (PBT — ACTIVE, authored by the acceptance-designer during DISTILL), shrinking, PBT+TDD integration. (Mutation testing is documented but DEPRECATED per FR-1 — PBT is not.)
+Property-based testing strategies (PBT — ACTIVE, authored by the acceptance-designer during DISTILL), shrinking, PBT+TDD integration.
 
 **Used by:** [nw-acceptance-designer](../agents/nw-acceptance-designer.md)
 

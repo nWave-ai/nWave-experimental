@@ -1,16 +1,13 @@
 ---
-description: "DEPRECATED (FR-1, opt-in only, not a default step). Runs feature-scoped mutation testing (kill rate >= 80%) when a project explicitly opts in; green ATs + EXAMINE are the methodology truth."
+description: Runs feature-scoped mutation testing (kill rate >= 80%) on explicit invocation. Unspecified project default is disabled; a project may declare its own strategy in CLAUDE.md.
 argument-hint: "[feature-id] - Optional: --threshold=[75|80|85] --language=[auto|python|java|javascript]"
 ---
 
 # NW-MUTATION-TEST: Feature-Scoped Mutation Testing
 
-> **DEPRECATED (FR-1, 2026-07-04).** Mutation testing is a slow post-green ceremony REMOVED from the
-> velocity-v2 methodology — green ATs + EXAMINE (independent end-to-end verification by Vera) are the
-> truth; a coverage-after-green / mutation pass adds cost, not signal. `.nwave/des-config.json` keeps
-> `mutation_enabled=false`; this command remains available for an **explicit, opt-in** run only. It is
-> **NOT** part of any per-feature or nightly gate — do not run it as a default step. The strategy prose
-> below is retained for that opt-in use, not as a recommended default.
+> **Not a default step.** Unspecified project default is `disabled` — mutation is never run as part of
+> per-feature DELIVER. This command remains available for an **explicit, on-demand** run regardless of a
+> project's declared strategy; green ATs + EXAMINE are the methodology's default correctness truth.
 
 **Wave**: QUALITY_GATE
 **Agent**: Crafter (nw-software-crafter)
@@ -24,7 +21,7 @@ feature-scoped configs, and delegates to software-crafter. Uses cosmic-ray
 
 ## Mutation Testing Strategy
 
-Projects declare a strategy via `## Mutation Testing Strategy` in `CLAUDE.md`: `per-feature` | `nightly-delta` | `pre-release` | `disabled`. Per FR-1 the methodology default is **`disabled`** (`mutation_enabled=false`) — mutation is NOT a default step. When a project explicitly opts in, `/nw-mutation-test` runs on-demand independent of strategy.
+Projects declare a strategy via `## Mutation Testing Strategy` in `CLAUDE.md`: `per-feature` | `nightly-delta` | `pre-release` | `disabled`. **Default (when unspecified): `disabled`** — mutation is NOT a default step. A project that declares `nightly-delta` runs mutmut nightly in CI against changed modules; that CI run is project-level, not a per-feature DELIVER gate. `/nw-mutation-test` runs on-demand independent of strategy.
 
 ## Context Files Required
 
@@ -90,28 +87,35 @@ The invoked agent MUST create a task list from its workflow phases at the start 
 
 - [ ] Implementation files derived from the selected Slice Plan and changed production paths
 - [ ] All implementation files verified on disk
-- [ ] Mutation testing executed without errors
+- [ ] Mutation testing executed only inside a dedicated disposable worktree/copy, never in the user's working worktree
 - [ ] Per-file breakdown in mutation-report.md
 - [ ] Kill rate meets threshold (>= 80% PASS, 70-80% WARN, < 70% FAIL)
-- [ ] Source files restored to HEAD after mutation run (git checkout -- src/ tests/)
+- [ ] User's working worktree verified unchanged after the mutation run (status snapshot matches pre-run snapshot)
 
 ## Post-Mutation Safety (mandatory)
 
-After EVERY mutation run (success, failure, or interruption), restore source files:
+Mutation tools apply mutations directly to source files. Agent MUST run mutation tooling only against a
+dedicated disposable worktree or copy — never against the user's working worktree. `git checkout`,
+`git reset`, or any equivalent restoration command against the user's worktree is FORBIDDEN: the user's
+worktree is never mutated in the first place, so there is nothing in it to restore, and running these
+commands risks discarding the user's own uncommitted work.
 
-    git checkout -- src/ tests/
+After EVERY mutation run (success, failure, or interruption):
 
-Mutation tools apply mutations directly to source files. An interrupted run can leave corrupted code (e.g. `is not None` -> `is  None`). Agent MUST restore source files even if the run errors out.
+1. Snapshot `git status` of the user's working worktree before creating the disposable target.
+2. Run mutation tooling only inside the disposable worktree/copy.
+3. Snapshot `git status` of the user's working worktree again; fail loud if it differs from the pre-run snapshot.
+4. Discard only the disposable target the agent owns.
 
 ## Quality Gate
 
 Kill rate thresholds: >= 80% PASS (proceed)|70-80% WARN (review surviving mutants)|< 70% FAIL (add tests first).
 
-Skip conditions: no mutation tool for language|project opts out via `.mutation-config.yaml`|test suite broken. Per FR-1, mutation testing is SKIPPED BY DEFAULT for every project; it runs only on explicit opt-in (`rigor.mutation_enabled = true`), never as a required gate.
+Skip conditions: no mutation tool for language|project opts out via `.mutation-config.yaml`|test suite broken. Mutation testing is SKIPPED BY DEFAULT for every project unless the project's `CLAUDE.md` declares a strategy other than `disabled`; it is never a required per-feature gate.
 
 ## Next Wave
 
-This command is invoked standalone, on explicit opt-in — never as a numbered step in `nWave/tasks/nw/deliver.md`'s own DELIVER phase sequence (its Phase 5 is mutation testing, skip-if-disabled; Phase 7 is Finalize). There is no `develop.md` workflow in this repo to hand off to.
+This command is invoked standalone, on explicit invocation — it is not a numbered step in `nWave/tasks/nw/deliver.md`'s DELIVER phase sequence.
 **Deliverables**: `docs/feature/{feature-id}/deliver/mutation/mutation-report.md`
 
 ## Expected Outputs

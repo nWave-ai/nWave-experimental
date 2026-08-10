@@ -17,7 +17,7 @@ argument-hint: '[feature-id] - Optional: --threshold=[75|80|85] --language=[auto
 
 Projects declare a strategy via `## Mutation Testing Strategy` in `CLAUDE.md`: `per-feature` | `nightly-delta` | `pre-release` | `disabled`.
 
-**Default (when unspecified): `nightly-delta`** — the recommended mode. CI runs mutmut nightly against modules changed since the last run (the delta), keeping per-feature delivery gates fast. `/nw-mutation-test` performs an explicit, on-demand feature-scoped run regardless of strategy; under `nightly-delta` the in-wave Phase 5 gate is skipped and the work is handled by the CI nightly pipeline.
+**Default (when unspecified): `disabled`** — fail-safe; no mutation gate runs unless a project opts in. A project may declare `nightly-delta` in its own `CLAUDE.md` to run mutmut nightly in CI against modules changed since the last run (the delta); that CI run is project-level, not a per-feature DELIVER gate. `/nw-mutation-test` remains usable as an explicit, on-demand feature-scoped run regardless of strategy.
 
 ### Target extraction by `workflow.mode` <!-- mode-ref-ok -->
 
@@ -83,19 +83,25 @@ Detects `package.json`, selects Stryker, delegates with Stryker-specific instruc
 ## Success Criteria
 
 - [ ] All implementation files verified on disk
-- [ ] Mutation testing executed without errors
+- [ ] Mutation testing executed only inside a dedicated disposable worktree/copy, never in the user's working worktree
 - [ ] Per-file breakdown in mutation-report.md
 - [ ] Kill rate meets threshold (>= 80% PASS, 70-80% WARN, < 70% FAIL)
-- [ ] Source files restored to HEAD after mutation run (git checkout -- src/ tests/)
+- [ ] User's working worktree verified unchanged after the mutation run (status snapshot matches pre-run snapshot)
 
 ## Post-Mutation Safety (mandatory)
 
+Mutation tools apply mutations directly to source files. Agent MUST run mutation tooling only against a
+dedicated disposable worktree or copy — never against the user's working worktree. `git checkout`,
+`git reset`, or any equivalent restoration command against the user's worktree is FORBIDDEN: the user's
+worktree is never mutated in the first place, so there is nothing in it to restore, and running these
+commands risks discarding the user's own uncommitted work.
+
 After EVERY mutation run (success, failure, or interruption):
 
-1. **Restore source files** — Run `git checkout -- src/ tests/`. Gate: working tree clean (no mutations remain).
-2. **Verify no corruption** — Confirm test suite still passes after restore. Gate: `pytest -x {test_scope}` exits 0.
-
-Mutation tools apply mutations directly to source files. An interrupted run can leave corrupted code (e.g. `is not None` -> `is  None`). Agent MUST execute these steps even if the run errors out.
+1. **Snapshot before** — Record `git status` of the user's working worktree before creating the disposable target. Gate: snapshot captured.
+2. **Run in isolation** — Execute mutation tooling only inside the disposable worktree/copy. Gate: user's working worktree untouched during the run.
+3. **Snapshot after and compare** — Record `git status` of the user's working worktree again. Gate: identical to the pre-run snapshot; fail loud if it differs.
+4. **Discard only the disposable target** — Remove the dedicated worktree/copy the agent owns. Gate: user's working worktree was never a deletion/restoration target.
 
 ## Quality Gate
 
@@ -111,11 +117,11 @@ Skip conditions (each requires documented justification in mutation-report.md):
 2. **Project opt-out** — `.mutation-config.yaml` has `skip: true` with justification.
 3. **Broken test suite** — Pre-invocation step 4 fails; fix tests before mutation testing.
 
-Note: Python projects require mutation testing. All skips need documented justification.
+Note: Mutation testing is disabled by default for every project. All skips need documented justification.
 
 ## Next Wave
 
-**Handoff To**: Phase 8 - Finalize (orchestrator continues develop.md workflow)
+This command is invoked standalone, on explicit invocation — it is not a numbered step in any develop.md workflow phase.
 **Deliverables**: `docs/feature/{feature-id}/deliver/mutation/mutation-report.md`
 
 ## Expected Outputs

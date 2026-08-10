@@ -1,21 +1,15 @@
 ---
 name: nw-property-based-testing
-description: Property-based testing strategies (PBT — ACTIVE, authored by the acceptance-designer during DISTILL), shrinking, PBT+TDD integration. (Mutation testing is documented but DEPRECATED per FR-1 — PBT is not.)
+description: Property-based testing strategies (PBT — ACTIVE, authored by the acceptance-designer during DISTILL), shrinking, PBT+TDD integration.
 user-invocable: false
 disable-model-invocation: true
 ---
 
-# Property-Based Testing (ACTIVE) + Mutation Testing (deprecated appendix)
+# Property-Based Testing (ACTIVE)
 
 > **PBT IS ACTIVE — NOT deprecated.** Property-based testing remains a first-class technique: the
 > **acceptance-designer authors PBT during DISTILL** (max PBT + parametrize density is a standing
-> mandate). Everything in the `Property-Based Testing` sections below is CURRENT.
->
-> **ONLY the MUTATION-TESTING appendix is DEPRECATED (FR-1, velocity-v2, 2026-07-04)**: mutation testing
-> (mutmut) is REMOVED from the methodology — green ATs + EXAMINE (independent end-to-end verification)
-> are the truth; a mutation pass adds cost, not signal. The `## Mutation Testing` sections below are
-> retained as reference only; do NOT run mutation testing as a per-feature or nightly gate. See
-> `docs/product/velocity-v2-progress-tracker.md` (FR-1).
+> mandate). Everything below is CURRENT.
 
 ## Property-Based Testing (PBT)
 
@@ -72,42 +66,6 @@ See `nw-test-optimization` §4-bis Paradigm-Match Decision Rule for the full sha
 4. Refactor freely - properties verify behavior preservation
 
 Properties = higher-level spec that survives refactoring better than examples.
-
-## Mutation Testing (DEPRECATED — FR-1, reference only, not a methodology gate)
-
-Evaluates test suite quality by introducing artificial bugs (mutations) and checking if tests catch them.
-Mutation score = killed mutants / total mutants. Stronger metric than code coverage.
-
-## Mutation Score Targets
-
-| Score | Quality |
-|-------|---------|
-| < 60% | Weak suite, significant gaps |
-| 60-80% | Moderate, some gaps |
-| > 80% | Strong, few gaps |
-
-Target: 75-80% minimum. Not all survivors indicate bad tests (equivalent mutants exist).
-
-## Mutation Operators
-Change == to != | + to - | remove method call | change constant | modify loop boundary | alter comparison.
-
-## Mutation Testing Tools
-
-| Language | Tool |
-|----------|------|
-| Java | PIT |
-| JavaScript/TypeScript/C# | Stryker |
-| Python | mutmut, Cosmic Ray |
-
-Computationally expensive. Use incremental: on changed code in PRs, full codebase weekly.
-
-## Combined PBT + Mutation Workflow
-1. Write example-based tests (TDD) -> cover known scenarios
-2. Apply mutation testing -> identify assertion gaps -> write more tests
-3. Add PBT for complex logic -> cover input space systematically
-4. Mutation testing again -> verify properties are comprehensive
-
-Quality ratchet: each technique exposes gaps others miss. Prioritize critical paths and complex algorithms.
 
 ## PBT Performance Guidance
 - Fast feedback: ~100 examples | CI/CD: ~1000 examples | Nightly builds: ~10000+ examples
