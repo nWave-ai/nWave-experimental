@@ -14,7 +14,7 @@ Use for evidence-driven research with source verification. Gathers knowledge fro
 - [`/nw-execute`](../commands/index.md)
 - [`/nw-research`](../commands/index.md)
 
-## Skills
+## Preloaded skills
 
 - [nw-authoritative-sources](../skills/nw-authoritative-sources.md) — Domain-specific authoritative source databases, search strategies by topic category, and source freshness rules
 - [nw-operational-safety](../skills/nw-operational-safety.md) — Tool safety protocols, adversarial output validation, error recovery patterns, and I/O contracts for research operations

@@ -13,11 +13,7 @@ skills:
   - nw-stress-analysis
   - nw-sa-critique-dimensions
   - nw-code-analysis-port
-  - nw-code-design-oo
-  - nw-code-design-fp
   - nw-cross-cutting-invariants
-  - nw-algebraic-design-protocol
-  - nw-certainty-by-construction
 ---
 
 # nw-solution-architect

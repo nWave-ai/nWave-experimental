@@ -7,6 +7,6 @@ Use for review and critique tasks - Data architecture and pipeline review specia
 **Max turns:** 20
 **Tools:** Read, Glob, Grep, Task
 
-## Skills
+## Preloaded skills
 
 - [nw-der-review-criteria](../skills/nw-der-review-criteria.md) — Evaluation criteria and scoring for data engineering artifact reviews

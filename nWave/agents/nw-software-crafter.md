@@ -9,19 +9,15 @@ skills:
   - nw-progressive-refactoring
   - nw-refactor
   - nw-legacy-refactoring-ddd
-  - nw-sc-review-dimensions
   - nw-mikado-method
   - nw-production-safety
   - nw-quality-framework
-  - nw-code-design-oo
   - nw-hexagonal-testing
   - nw-mutation-test
   - nw-collaboration-and-handoffs
   - nw-crafter-discipline-atdd-pure
   - nw-code-analysis-port
   - nw-cross-cutting-invariants
-  - nw-algebraic-design-protocol
-  - nw-certainty-by-construction
 ---
 
 # nw-software-crafter
@@ -52,7 +48,7 @@ Bare Agent/Task dispatch is refused. A thin prompt carries neither duplicate del
    trigger fires:
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- Read `nw-code-design-oo` NOW — GREEN or refactor on an object-oriented route
+- Read `nw-code-design-oo` ON-TRIGGER — GREEN or refactor on an object-oriented route
 - Read `nw-algebraic-design-protocol` ON-TRIGGER — contested law or representation change
 - Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
 <!-- GENERATED:role-skill-loading END -->

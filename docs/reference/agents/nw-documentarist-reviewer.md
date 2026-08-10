@@ -11,7 +11,7 @@ Use for reviewing documentarist assessments. Validates classification accuracy, 
 
 - [`/nw-document`](../commands/index.md)
 
-## Skills
+## Preloaded skills
 
 - [nw-divio-framework](../skills/nw-divio-framework.md) — DIVIO/Diataxis four-quadrant documentation framework - type definitions, classification decision tree, and signal catalog
 - [nw-dr-review-criteria](../skills/nw-dr-review-criteria.md) — Critique dimensions, severity framework, verdict decision matrix, and review output format for documentation assessment reviews

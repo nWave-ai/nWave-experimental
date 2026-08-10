@@ -5,14 +5,10 @@ model: sonnet
 maxTurns: 25
 tools: Read, Glob, Grep, Task, Bash
 skills:
-  - nw-sc-review-dimensions
   - nw-adversarial-refutation
   - nw-tdd-review-enforcement
   - nw-tdd-methodology
-  - nw-at-completeness-check
   - nw-code-analysis-port
-  - nw-algebraic-design-protocol
-  - nw-certainty-by-construction
 ---
 
 # nw-software-crafter-reviewer
@@ -98,8 +94,8 @@ Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/s
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - ON-TRIGGER — mirror the reviewed role's on-demand lenses, lens-only
-- Read `nw-sc-review-dimensions` NOW — review start
-- Read `nw-at-completeness-check` NOW — AT-density review
+- Read `nw-sc-review-dimensions` ON-TRIGGER — review start
+- Read `nw-at-completeness-check` ON-TRIGGER — AT-density review
 <!-- GENERATED:role-skill-loading END -->
 
 ## Review Workflow

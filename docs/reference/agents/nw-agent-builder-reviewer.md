@@ -7,7 +7,7 @@ Use for review and critique tasks - Agent design and quality review specialist. 
 **Max turns:** 20
 **Tools:** Read, Glob, Grep, Bash, Task
 
-## Skills
+## Preloaded skills
 
 - [nw-ab-anti-patterns](../skills/nw-ab-anti-patterns.md) — KNOWLEDGE — agent/skill/command anti-pattern catalog with fixes. Reference scanned by validate-spec; no sequence.
 - [nw-ab-validation-checklist](../skills/nw-ab-validation-checklist.md) — KNOWLEDGE (data) — the 19-item agent-spec validation checklist. The item definitions the validate-spec / todoify procedures RUN against. No sequence of its own.

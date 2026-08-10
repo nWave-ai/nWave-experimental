@@ -253,6 +253,68 @@ class TestBuildOwnershipMapUnit:
         result = build_ownership_map(agents_dir)
         assert result["nw-my-skill"] == {"my-agent"}
 
+    def test_role_skill_loading_registry_maps_keys_and_values(self, tmp_path):
+        import yaml
+
+        agents_dir = tmp_path / "nWave" / "agents"
+        agents_dir.mkdir(parents=True)
+        data_dir = tmp_path / "nWave" / "data"
+        data_dir.mkdir(parents=True)
+
+        registry = {
+            "version": 1,
+            "roles": {
+                "nw-test-role": {
+                    "on_demand": {
+                        "nw-algebra-lens": "law or representation",
+                        "nw-certainty-lens": "invalid-state claim",
+                    },
+                    "phase": {"nw-phase-skill": "design phase"},
+                    "paradigm": {
+                        "object_oriented": "nw-oo-design",
+                        "functional": "nw-fp-design",
+                    },
+                    "language_pbt": {
+                        "python": "nw-pbt-python",
+                        "rust": "nw-pbt-rust",
+                    },
+                },
+                "nw-test-role-reviewer": {
+                    "reviewer_of": ["nw-test-role"],
+                    "phase": {"nw-review-skill": "review start"},
+                },
+            },
+        }
+        (data_dir / "role-skill-loading.yaml").write_text(
+            yaml.dump(registry), encoding="utf-8"
+        )
+
+        registry_skills = {
+            "nw-algebra-lens",
+            "nw-certainty-lens",
+            "nw-phase-skill",
+            "nw-oo-design",
+            "nw-fp-design",
+            "nw-pbt-python",
+            "nw-pbt-rust",
+        }
+
+        agent_skills = ["nw-frontmatter-owned"]
+        self._create_agent_file(agents_dir, "nw-test-role", agent_skills)
+
+        result = build_ownership_map(agents_dir)
+
+        assert result["nw-frontmatter-owned"] == {"test-role"}
+        assert result["nw-algebra-lens"] == {"test-role", "test-role-reviewer"}
+        assert result["nw-certainty-lens"] == {"test-role", "test-role-reviewer"}
+        for skill in registry_skills - {"nw-algebra-lens", "nw-certainty-lens"}:
+            assert skill in result, f"{skill} missing"
+            assert result[skill] == {"test-role"}
+        assert result["nw-review-skill"] == {"test-role-reviewer"}
+
+        for text in ("law or representation", "invalid-state claim", "design phase"):
+            assert text not in result
+
 
 class TestIsPublicSkillWithOwnershipMap:
     """Unit tests for is_public_skill with the ownership_map parameter."""

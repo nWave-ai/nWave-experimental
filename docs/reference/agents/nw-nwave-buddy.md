@@ -11,7 +11,7 @@ Use for any nWave question — methodology, project navigation, command help, wa
 
 - [`/nw-buddy`](../commands/index.md)
 
-## Skills
+## Preloaded skills
 
 - [nw-buddy-command-catalog](../skills/nw-buddy-command-catalog.md) — All /nw-* commands — what they do, when to use them, which agent they invoke. For the buddy agent to help users pick the right command.
 - [nw-buddy-project-reading](../skills/nw-buddy-project-reading.md) — How the nWave buddy agent reads a project to answer questions — detection, order of inspection, and citation discipline.

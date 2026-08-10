@@ -7,7 +7,7 @@ Use for database technology selection, data architecture design, query optimizat
 **Max turns:** 30
 **Tools:** Read, Write, Edit, Glob, Grep, Bash
 
-## Skills
+## Preloaded skills
 
 - [nw-data-architecture-patterns](../skills/nw-data-architecture-patterns.md) — Data architecture patterns (warehouse, lake, lakehouse, mesh), ETL/ELT pipelines, streaming architectures, scaling strategies, and schema design patterns
 - [nw-database-technology-selection](../skills/nw-database-technology-selection.md) — Database comparison catalogs, RDBMS vs NoSQL selection criteria, CAP/ACID/BASE theory, OLTP vs OLAP, and technology-specific characteristics

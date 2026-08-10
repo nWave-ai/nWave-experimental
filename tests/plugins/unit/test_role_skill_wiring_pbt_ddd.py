@@ -3,8 +3,9 @@
 Bounded to the two confirmed defects from
 docs/analysis/2026-08-08-installed-role-skill-wiring-audit.md:
 
-1. nw-ddd-architect-reviewer is missing the algebraic-design/certainty-by-
-   construction pair every peer architect/crafter/reviewer role carries.
+1. nw-ddd-architect-reviewer loads the algebraic-design/certainty-by-
+   construction pair as lazy ON-TRIGGER skills in its Skill-Loading-Strategy
+   table, not in frontmatter (consistent with peer architect/reviewer roles).
 2. The 8 language-specific nw-pbt-* skills remain distributed by their
    skill-local ownership, while nw-acceptance-designer selects exactly one
    from its body at authoring time instead of preloading all eight.
@@ -57,24 +58,23 @@ def _frontmatter(agent_filename: str) -> dict:
     return metadata
 
 
-class TestDdlArchitectReviewerAlgebraCertaintyGap:
-    """Fix A: nw-ddd-architect-reviewer must carry the role baseline pair."""
+class TestDddArchitectReviewerLoadsBaselineOnTrigger:
+    """Fix A: nw-ddd-architect-reviewer loads baseline pair as lazy ON-TRIGGER skills."""
 
-    def test_frontmatter_declares_algebraic_design_and_certainty(self):
+    def test_frontmatter_absent_baseline_pair(self):
         skills = _frontmatter("nw-ddd-architect-reviewer.md").get("skills") or []
-        missing = [s for s in BASELINE_PAIR if s not in skills]
-        assert missing == [], (
-            f"nw-ddd-architect-reviewer.md frontmatter missing {missing}; "
-            f"every peer reviewer (solution-architect-reviewer, "
-            f"software-crafter-reviewer) carries this pair"
+        preloaded = [s for s in BASELINE_PAIR if s in skills]
+        assert preloaded == [], (
+            f"nw-ddd-architect-reviewer.md frontmatter preloaded {preloaded}; "
+            f"baseline pair must be lazy ON-TRIGGER, not host-preloaded"
         )
 
     def test_skill_loading_table_emits_a_read_row_for_each(self):
         body = (AGENTS_DIR / "nw-ddd-architect-reviewer.md").read_text(encoding="utf-8")
-        missing = [s for s in BASELINE_PAIR if s not in body]
+        missing = [s for s in BASELINE_PAIR if f"Read `{s}` ON-TRIGGER" not in body]
         assert missing == [], (
-            f"nw-ddd-architect-reviewer.md body has no Skill-Loading-Strategy "
-            f"row (or any mention) for {missing} -- declared without emission"
+            f"nw-ddd-architect-reviewer.md body has no imperative "
+            f'"Read `{{skill}}` ON-TRIGGER" row for {missing}'
         )
 
 
@@ -131,8 +131,10 @@ class TestThinAutoRoleRoutes:
         for token in (
             "authoritative terminal branch",
             "des code-fact query.* SUBJECT --root ROOT",
-            "execute every generated NOW row",
-            "load exactly ONE matching row",
+            "load each generated Read row",
+            "when its trigger fires",
+            "never preload",
+            "never all eight PBT deep dives",
             "thin `DeliveryContract`",
             "selected `paradigm`",
             "expectation charter, and the user-surface start recipe",

@@ -2,11 +2,9 @@
 
 The dangling-reference class recurs because skill references live in TWO
 channels — an agent's declared frontmatter ``skills:`` list AND free-text
-``skills/nw-*/SKILL.md`` body mentions — but skill ownership (which drives
-the privacy strip) is derived from only the first channel. A public artifact
-can therefore body-reference a skill that no agent declares; the
-ownership-only strip then drops it as orphan work, and the public package
-ships with a dangling skill reference.
+``skills/nw-*/SKILL.md`` body mentions. Distribution ownership is the union
+centralized by build_ownership_map: frontmatter plus role-skill-loading
+conditional ownership. A public artifact can still body-reference a skill that neither ownership channel captures; the strip then drops it as orphan work, and the public package ships with a dangling skill reference.
 
 This validator closes the loop: it scans every PUBLIC artifact (public
 agents + public skills) for skill references in both channels, and flags
@@ -163,16 +161,18 @@ def check_references(nwave_dir: Path) -> list[str]:
 
 
 def check_frontmatter_completeness(nwave_dir: Path) -> list[str]:
-    """Return agents whose frontmatter ``skills:`` omits a skill they LOAD.
+    """Return agents whose ownership omits a skill they LOAD in body text.
 
     An agent that references ``skills/nw-X/SKILL.md`` in its body (its
-    loading-table / load instruction) but does not list ``nw-X`` in its
-    frontmatter ``skills:`` list is drifted: the frontmatter is packaging +
-    docs authoritative (which skills bundle with the agent, the used-by
-    cross-refs), so a loaded-but-undeclared skill ships incompletely. The
-    union-based ``check_references`` MISSES this class (the body reference
-    itself counts as satisfying the reference). Empty == every loaded skill is
-    declared; a non-empty entry names the agent + the missing skill.
+    loading-table / load instruction) but does not own ``nw-X`` through
+    either channel -- its frontmatter ``skills:`` list (eager preload) or
+    the ``role-skill-loading.yaml`` registry (conditional on-demand/phase
+    use, folded in by ``build_ownership_map``) -- is drifted: a
+    loaded-but-unowned skill ships incompletely. The union-based
+    ``check_references`` MISSES this class (the body reference itself
+    counts as satisfying the reference). Empty == every loaded skill is
+    owned via one of the two channels; a non-empty entry names the agent +
+    the missing skill.
     """
     agents_dir = nwave_dir / "agents"
     skills_dir = nwave_dir / "skills"
@@ -186,20 +186,23 @@ def check_frontmatter_completeness(nwave_dir: Path) -> list[str]:
             if child.is_dir() and child.name.startswith("nw-")
         }
 
+    ownership_map = build_ownership_map(agents_dir)
+
     drift: list[str] = []
     for agent_file in sorted(agents_dir.glob("nw-*.md")):
+        agent_name = agent_file.stem.removeprefix("nw-")
         text = _read_text(agent_file)
-        declared = {
-            s if s.startswith("nw-") else f"nw-{s}" for s in _frontmatter_skills(text)
+        owned = {
+            skill for skill, owners in ownership_map.items() if agent_name in owners
         }
         loaded = {
             m for m in _BODY_SKILL_REFERENCE.findall(text) if m in existing_skills
         }
-        for missing in sorted(loaded - declared):
+        for missing in sorted(loaded - owned):
             drift.append(
                 f"agent {agent_file.name} loads skill {missing} via a "
-                f"skills/{missing}/SKILL.md reference but omits it from its "
-                f"frontmatter skills: list"
+                f"skills/{missing}/SKILL.md reference but it is not owned "
+                f"via frontmatter skills: or the role-skill-loading.yaml registry"
             )
     return sorted(drift)
 
@@ -223,7 +226,8 @@ def main() -> None:
 
     print(
         "PASS: every public-artifact skill reference survives the strip AND "
-        "every loaded skill is declared in its agent's frontmatter"
+        "every loaded skill is owned via frontmatter or the role-skill "
+        "registry"
     )
 
 

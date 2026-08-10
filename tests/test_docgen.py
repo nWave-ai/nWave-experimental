@@ -391,6 +391,38 @@ class TestSkillLinks:
         assert "nw-pub" in page  # public user is listed
         assert "nw-priv" not in page  # private user must be filtered out
 
+    def test_agent_index_and_detail_label_preloaded_skills(self, nwave_tree: Path):
+        """Eager preload (frontmatter-only) is labeled distinctly from
+        conditional use so readers don't conflate the two channels."""
+        paths = {
+            "agents": list((nwave_tree / "nWave" / "agents").glob("*.md")),
+            "commands": list((nwave_tree / "nWave" / "tasks" / "nw").glob("*.md")),
+            "skills": list((nwave_tree / "nWave" / "skills").rglob("*.md")),
+            "templates": list((nwave_tree / "nWave" / "templates").glob("*.yaml")),
+        }
+        pages = render(enrich(extract_all(paths)))
+        assert "| Preloaded skills |" in pages["agents/index.md"]
+        assert "| Skills |" not in pages["agents/index.md"]
+        detail = pages["agents/nw-crafter.md"]
+        assert "## Preloaded skills" in detail
+        assert "## Skills\n" not in detail
+
+    def test_real_tree_lists_conditional_owner_in_skill_used_by(self):
+        """On the real tree, nw-acceptance-designer owns nw-property-based-testing
+        via role-skill-loading.yaml's phase field, not its frontmatter — the
+        generated skill page's 'Used by' must still surface it."""
+        from scripts.docgen import scan
+
+        root = Path(__file__).resolve().parents[1]
+        pages = render(enrich(extract_all(scan(root))), root=root)
+        page = pages["skills/nw-property-based-testing.md"]
+        assert "nw-acceptance-designer" in page
+        agent_frontmatter = (
+            root / "nWave" / "agents" / "nw-acceptance-designer.md"
+        ).read_text(encoding="utf-8")
+        front, _, _ = agent_frontmatter.partition("\n---\n")
+        assert "property-based-testing" not in front
+
 
 class TestWaveGrouping:
     @pytest.mark.parametrize(
@@ -888,8 +920,9 @@ class TestRoleSkillLoadingRegistry:
 
     @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
     def test_every_trigger_is_lazy_never_an_eager_always_preload(
-        self, roles: dict, agent_id: str
+        self, root: Path, roles: dict, agent_id: str
     ):
+        """Every phase and on_demand skill appears as ON-TRIGGER, never NOW."""
         entry = roles[agent_id]
         for field in ("on_demand", "phase"):
             for trigger in entry.get(field, {}).values():
@@ -898,6 +931,16 @@ class TestRoleSkillLoadingRegistry:
                     "lazy -- role-skill-loading rows load on a fired trigger, "
                     "never unconditionally"
                 )
+        # Verify rendered body emits only ON-TRIGGER, never NOW for phase skills
+        body = _role_skill_loading_body(agent_id, root)
+        phase_skills = entry.get("phase", {})
+        for skill in phase_skills:
+            assert f"Read `{skill}` ON-TRIGGER" in body, (
+                f"{agent_id}: phase skill {skill} must render as ON-TRIGGER, never NOW"
+            )
+            assert f"Read `{skill}` NOW" not in body, (
+                f"{agent_id}: phase skill {skill} must not render as NOW"
+            )
 
     def test_reviewers_mirror_only_on_demand_lenses_never_authoring_phase_rows(
         self, roles: dict
@@ -918,34 +961,102 @@ class TestRoleSkillLoadingRegistry:
                 "exclusively by nw-acceptance-designer, never a crafter"
             )
 
-    def test_atd_auto_route_reads_algebra_certainty_property_testdesign_at_entry(
-        self, root: Path
+    def test_atd_auto_route_projects_author_skills_and_lenses_on_trigger(
+        self, root: Path, roles: dict
     ):
-        """The rendered block itself must carry the imperative Read verb and
-        split entry-time rows (algebra/certainty/property/test-design) from
-        on-demand rows -- proving the projected prose is actionable, not a
-        declarative fact table."""
+        """ATD's author lenses and eight language PBT deep dives render
+        ON-TRIGGER with zero NOW rows; generic PBT is phase-owned (author
+        only, never on_demand); the reviewer mirrors on_demand lenses only,
+        never the phase-owned generic PBT skill."""
         body = _role_skill_loading_body("nw-acceptance-designer", root)
-        entry_lines = [line for line in body.splitlines() if " NOW — " in line]
-        on_demand_lines = [
-            line for line in body.splitlines() if " ON-TRIGGER — " in line
-        ]
-        assert any("Read `nw-test-design-mandates`" in line for line in entry_lines), (
-            body
+        assert "NOW" not in body, f"ATD rendered body must have zero NOW rows: {body}"
+
+        for lens in (
+            "nw-test-design-mandates",
+            "nw-property-based-testing",
+            "nw-algebraic-design-protocol",
+            "nw-certainty-by-construction",
+        ):
+            assert f"Read `{lens}` ON-TRIGGER" in body, (
+                f"{lens} must render as ON-TRIGGER"
+            )
+
+        pbt_rows = [line for line in body.splitlines() if "Read ONE `nw-pbt-" in line]
+        assert len(pbt_rows) == 8, f"expected 8 language PBT rows, got {pbt_rows}"
+
+        atd_entry = roles["nw-acceptance-designer"]
+        assert "nw-property-based-testing" in atd_entry.get("phase", {}), (
+            "nw-property-based-testing must be in ATD phase (author-only)"
         )
-        assert any(
-            "Read `nw-property-based-testing`" in line for line in entry_lines
-        ), body
-        assert any(
-            "Read `nw-algebraic-design-protocol`" in line for line in on_demand_lines
-        ), body
-        assert any(
-            "Read `nw-certainty-by-construction`" in line for line in on_demand_lines
-        ), body
-        pbt_rows = [line for line in on_demand_lines if "Read ONE `nw-pbt-" in line]
-        assert len(pbt_rows) == 8, (
-            f"expected one ON-TRIGGER row per pbt-language target, got {pbt_rows}"
+        assert "nw-property-based-testing" not in atd_entry.get("on_demand", {}), (
+            "nw-property-based-testing must not be in ATD on_demand"
         )
+
+        reviewer_body = _role_skill_loading_body(
+            "nw-acceptance-designer-reviewer", root
+        )
+        assert "nw-property-based-testing" not in reviewer_body, (
+            "reviewer must not include phase-owned nw-property-based-testing"
+        )
+        assert "nw-algebraic-design-protocol" in reviewer_body, (
+            "reviewer must mirror on_demand algebra lens"
+        )
+        assert "nw-certainty-by-construction" in reviewer_body, (
+            "reviewer must mirror on_demand certainty lens"
+        )
+
+    @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
+    def test_frontmatter_disjoint_from_effective_conditional_skills(
+        self, root: Path, roles: dict, agent_id: str
+    ):
+        """Frontmatter skills must be disjoint from effective conditional skills.
+
+        Effective conditional skills are: own on_demand/phase KEYS, own paradigm/
+        language_pbt VALUES, and union of reviewer_of owners' on_demand KEYS.
+        """
+        path = root / "nWave" / "agents" / f"{agent_id}.md"
+        if agent_id not in roles or not path.exists():
+            pytest.skip(f"{agent_id} unavailable")
+
+        # Compute effective conditional skills
+        entry = roles[agent_id]
+        effective = set()
+        for field in ("on_demand", "phase"):
+            effective.update(entry.get(field, {}).keys())
+        for field in ("paradigm", "language_pbt"):
+            effective.update(entry.get(field, {}).values())
+        for owner in entry.get("reviewer_of", []):
+            effective.update(roles.get(owner, {}).get("on_demand", {}).keys())
+
+        # Load frontmatter skills
+        text = path.read_text(encoding="utf-8")
+        import yaml
+
+        fm = yaml.safe_load(text.split("---")[1])
+        frontmatter_skills = set(fm.get("skills") or [])
+
+        # Assert disjointness
+        overlap = effective & frontmatter_skills
+        assert not overlap, f"{agent_id} frontmatter still owns {overlap}"
+
+        # ATD-specific compact assertions
+        if agent_id == "nw-acceptance-designer":
+            banned = {
+                "nw-property-based-testing",
+                "nw-test-design-mandates",
+                "nw-algebraic-design-protocol",
+                "nw-certainty-by-construction",
+            }
+            assert not (frontmatter_skills & banned), frontmatter_skills & banned
+        elif agent_id == "nw-acceptance-designer-reviewer":
+            banned = {
+                "nw-property-based-testing",
+                "nw-algebraic-design-protocol",
+                "nw-certainty-by-construction",
+                "nw-ad-critique-dimensions",
+                "nw-at-completeness-check",
+            }
+            assert not (frontmatter_skills & banned), frontmatter_skills & banned
 
     def test_atd_auto_route_directive_is_reachable_from_auto_terminal_branch(
         self, root: Path

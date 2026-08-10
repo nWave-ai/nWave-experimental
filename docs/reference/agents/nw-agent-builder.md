@@ -11,7 +11,7 @@ Use when creating new AI agents, validating agent specifications, optimizing com
 
 - [`/nw-forge`](../commands/index.md)
 
-## Skills
+## Preloaded skills
 
 - [nw-ab-agent-template](../skills/nw-ab-agent-template.md) — KNOWLEDGE — the canonical agent-spec template (frontmatter + body skeleton). Reference loaded by the create/migrate procedures; no sequence.
 - [nw-ab-anti-patterns](../skills/nw-ab-anti-patterns.md) — KNOWLEDGE — agent/skill/command anti-pattern catalog with fixes. Reference scanned by validate-spec; no sequence.

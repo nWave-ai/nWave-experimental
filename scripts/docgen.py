@@ -582,7 +582,7 @@ def render_agents_index(agents: list[Agent], skills: list[Skill]) -> str:
             agent_skills = _skills_for_agent(a, skills)
             link = f"[{a['name']}]({a['name']}.md)"
             rows.append([link, a["description"], str(len(agent_skills))])
-        lines.append(_md_table(["Name", "Description", "Skills"], rows))
+        lines.append(_md_table(["Name", "Description", "Preloaded skills"], rows))
         lines.append("")
     # All Agents reference table
     lines.append("## All Agents")
@@ -593,7 +593,9 @@ def render_agents_index(agents: list[Agent], skills: list[Skill]) -> str:
         link = f"[{a['name']}]({a['name']}.md)"
         wave = a.get("wave", "Other")
         all_rows.append([link, wave, a["description"], str(len(agent_skills))])
-    lines.append(_md_table(["Name", "Wave", "Description", "Skills"], all_rows))
+    lines.append(
+        _md_table(["Name", "Wave", "Description", "Preloaded skills"], all_rows)
+    )
     lines.append("")
     return "\n".join(lines)
 
@@ -622,7 +624,7 @@ def render_agent_detail(
             lines.append(f"- [`/nw-{cmd_name}`](../commands/index.md)")
         lines.append("")
     if agent_skills:
-        lines.append("## Skills")
+        lines.append("## Preloaded skills")
         lines.append("")
         for s in sorted(agent_skills, key=lambda x: x["name"]):
             skill_path = skill_ref(s, released, in_skills_dir=False)
@@ -700,12 +702,30 @@ def render(data: dict[str, list], *, root: Path | None = None) -> dict[str, str]
     # Per-skill reference pages — released skills only. "Used by" lists public
     # agents only: a released skill page ships to the public repo, so naming a
     # private agent there would leak it (and link to a stripped agent page).
+    # It is the union of frontmatter preload users and role-skill-loading.yaml
+    # (conditional on-demand/phase/reviewer) owners from build_ownership_map —
+    # this restores conditional role users without changing runtime preload,
+    # which stays frontmatter-only (see the "Preloaded skills" counts/lists
+    # above).
+    real_agent_names = {a["name"] for a in data["agents"]}
+    ownership_map = build_ownership_map(root / "nWave" / "agents") if root else {}
     used_by: dict[str, list[str]] = {}
     for agent in data["agents"]:
         if public_agents and not is_public_agent(f"{agent['name']}.md", public_agents):
             continue
         for s in _skills_for_agent(agent, data["skills"]):
             used_by.setdefault(skill_slug(s), []).append(agent["name"])
+    for s in data["skills"]:
+        slug = skill_slug(s)
+        for owner in ownership_map.get(s["agent_dir"], ()):
+            owner_name = owner if owner.startswith("nw-") else f"nw-{owner}"
+            if owner_name not in real_agent_names:
+                continue
+            if public_agents and not is_public_agent(f"{owner_name}.md", public_agents):
+                continue
+            bucket = used_by.setdefault(slug, [])
+            if owner_name not in bucket:
+                bucket.append(owner_name)
     for s in data["skills"]:
         if not _is_released(s, released):
             continue
@@ -879,7 +899,7 @@ def _role_skill_on_demand_lines(entry: dict) -> list[str]:
 
 def _role_skill_entry_lines(entry: dict) -> list[str]:
     return [
-        f"- Read `{skill}` NOW — {trigger}"
+        f"- Read `{skill}` ON-TRIGGER — {trigger}"
         for skill, trigger in entry.get("phase", {}).items()
     ]
 
@@ -890,11 +910,14 @@ def _role_skill_trigger_lines(entry: dict) -> list[str]:
 
 def _role_skill_loading_body(agent_id: str, root: Path) -> str:
     """Render one role's universal-lens directives as imperative Read
-    instructions -- NOW rows fire unconditionally at task entry, ON-TRIGGER
-    rows fire only once their trigger condition holds. Build-time only, no
-    runtime registry read: this is the ONLY place `role-skill-loading.yaml`
-    is ever parsed. A reviewer with exactly one reviewed role mirrors that
-    role's on_demand lenses (lens-only, never its authoring `phase` rows)."""
+    instructions -- all registry rows load ON-TRIGGER (never eagerly preloaded):
+    both phase and on_demand rows fire exactly when their declared trigger
+    condition holds, never unconditionally. Build-time only, no runtime registry
+    read: docgen is the authoritative renderer/semantic parser for agent Read
+    directives, while scripts.shared.agent_catalog separately reads ownership
+    fields for build-time distribution retention and is not a runtime registry
+    read. A reviewer with exactly one reviewed role mirrors that role's on_demand
+    lenses (lens-only, never its authoring `phase` rows)."""
     registry_path = root / _ROLE_SKILL_REGISTRY_REL
     roles = subset_parser.load_file(registry_path).get("roles", {})
     entry = roles.get(agent_id)

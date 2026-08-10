@@ -11,7 +11,7 @@ Use for documentation quality enforcement using DIVIO/Diataxis principles. Class
 
 - [`/nw-document`](../commands/index.md)
 
-## Skills
+## Preloaded skills
 
 - [nw-collapse-detection](../skills/nw-collapse-detection.md) — Documentation collapse anti-patterns - detection rules, bad examples, and remediation strategies for type-mixing violations
 - [nw-divio-framework](../skills/nw-divio-framework.md) — DIVIO/Diataxis four-quadrant documentation framework - type definitions, classification decision tree, and signal catalog

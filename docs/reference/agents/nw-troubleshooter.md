@@ -12,7 +12,7 @@ Use for investigating system failures, recurring issues, unexpected behaviors, o
 - [`/nw-bugfix`](../commands/index.md)
 - [`/nw-root-why`](../commands/index.md)
 
-## Skills
+## Preloaded skills
 
 - [nw-code-analysis-port](../skills/nw-code-analysis-port.md) — KNOWLEDGE — resolve code facts (who-calls-X / where-defined-or-read / call-graph / change-scope / file-atoms) through the vendor-neutral CLI `des code-fact`, degrading LOUD through bundled adapters (AST, TextSearch). Trigger: any time an agent designs, writes, analyzes, or reviews code or tests and needs a structural code fact.
 - [nw-five-whys-methodology](../skills/nw-five-whys-methodology.md) — Toyota 5 Whys methodology with multi-causal branching, evidence requirements, and validation techniques

@@ -14,7 +14,7 @@ Use for DESIGN wave (infrastructure design) and DEVOPS wave (deployment executio
 - [`/nw-discuss`](../commands/index.md)
 - [`/nw-finalize`](../commands/index.md)
 
-## Skills
+## Preloaded skills
 
 - [nw-cicd-and-deployment](../skills/nw-cicd-and-deployment.md) — CI/CD pipeline design methodology, deployment strategies, GitHub Actions patterns, and branch/release strategies. Load when designing pipelines or deployment workflows.
 - [nw-cross-cutting-invariants](../skills/nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — paradigm-independent and role-independent rules that bind every architect and crafter (data justification, gate design GDP-1..9, self-explaining surfaces). SHIPPED home of these definitions; cite by clause id, never re-declare.

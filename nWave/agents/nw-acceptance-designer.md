@@ -6,7 +6,6 @@ tools: Read, Write, Edit, Bash, Glob, Grep, Task
 maxTurns: 45
 skills:
   - nw-bdd-methodology
-  - nw-test-design-mandates
   - nw-test-design-mandates-scenario-design
   - nw-test-design-mandates-layered-mechanics
   - nw-test-design-mandates-composition-contract
@@ -21,7 +20,6 @@ skills:
   - nw-distill-red-scaffolding
   - nw-distill-coverage-obligations
   - nw-at-completeness-check
-  - nw-property-based-testing
   - nw-test-optimization-paradigm-match
   - nw-test-optimization-consolidation
   - nw-test-refactoring-catalog
@@ -29,8 +27,6 @@ skills:
   - nw-ad-distill-dod
   - nw-code-analysis-port
   - nw-cross-cutting-invariants
-  - nw-algebraic-design-protocol
-  - nw-certainty-by-construction
 ---
 
 # nw-acceptance-designer
@@ -49,14 +45,13 @@ Read directive immediately below it) and stop before the Human-only Workflow
 below. Accept a bounded brief directly from root. Before authoring, run
 exactly one bounded provider-neutral `nw-code-analysis-port`
 `des code-fact query.* SUBJECT --root ROOT` command for reuse/architecture
-discovery. Then execute every generated NOW row of the block below with the
-Read tool; the instant an ON-TRIGGER row's trigger fires, load exactly ONE
-matching row with the Read tool — never before the trigger fires, never all
+discovery. Then load each generated Read row with the Read tool exactly when
+its trigger fires — never preload, never before the trigger fires, never all
 eight PBT deep dives.
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- Read `nw-test-design-mandates` NOW — Phase 0 policy detection
-- Read `nw-property-based-testing` NOW — Phase 2 property authoring
+- Read `nw-test-design-mandates` ON-TRIGGER — Phase 0 policy detection
+- Read `nw-property-based-testing` ON-TRIGGER — Phase 2 property authoring
 - Read `nw-algebraic-design-protocol` ON-TRIGGER — compositional or stateful surface
 - Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
 - Read ONE `nw-pbt-dotnet` ON-TRIGGER — a `csharp`/`dotnet`/`fsharp` property needs it

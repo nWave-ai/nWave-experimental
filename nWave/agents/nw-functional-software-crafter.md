@@ -7,16 +7,12 @@ tools: Read, Write, Edit, Bash, Glob, Grep, Task
 skills:
   - nw-tdd-methodology
   - nw-quality-framework
-  - nw-fp-principles
   - nw-fp-domain-modeling
   - nw-fp-hexagonal-architecture
-  - nw-fp-algebra-driven-design
-  - nw-code-design-fp
   - nw-fp-usable-design
   - nw-hexagonal-testing
   - nw-refactor
   - nw-legacy-refactoring-ddd
-  - nw-sc-review-dimensions
   - nw-collaboration-and-handoffs
   - nw-mutation-test
   - nw-tlaplus-verification
@@ -28,8 +24,6 @@ skills:
   - nw-fp-kotlin
   - nw-code-analysis-port
   - nw-cross-cutting-invariants
-  - nw-algebraic-design-protocol
-  - nw-certainty-by-construction
 ---
 
 # nw-functional-software-crafter
@@ -58,9 +52,9 @@ Bare Agent/Task dispatch is refused. A thin prompt carries neither duplicate del
    trigger fires:
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- Read `nw-fp-principles` NOW — PREPARE on a functional route
-- Read `nw-fp-algebra-driven-design` NOW — GREEN on a functional route
-- Read `nw-code-design-fp` NOW — GREEN or refactor on a functional route
+- Read `nw-fp-principles` ON-TRIGGER — PREPARE on a functional route
+- Read `nw-fp-algebra-driven-design` ON-TRIGGER — GREEN on a functional route
+- Read `nw-code-design-fp` ON-TRIGGER — GREEN or refactor on a functional route
 - Read `nw-algebraic-design-protocol` ON-TRIGGER — contested law or representation change
 - Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
 <!-- GENERATED:role-skill-loading END -->

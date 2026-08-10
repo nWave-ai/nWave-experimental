@@ -11,7 +11,7 @@ Use as hard gate before DESIGN wave - validates journey coherence, emotional arc
 
 - [`/nw-distill`](../commands/index.md)
 
-## Skills
+## Preloaded skills
 
 - [nw-dor-validation](../skills/nw-dor-validation.md) — Definition of Ready checklist criteria, antipattern detection patterns, UAT quality rules, and domain language enforcement for product owner review
 - [nw-po-review-dimensions](../skills/nw-po-review-dimensions.md) — Requirements quality critique dimensions for peer review - confirmation bias detection, completeness validation, clarity checks, testability assessment, and priority validation

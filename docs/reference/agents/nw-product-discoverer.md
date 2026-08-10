@@ -11,7 +11,7 @@ Conducts evidence-based product discovery through customer interviews, assumptio
 
 - [`/nw-discover`](../commands/index.md)
 
-## Skills
+## Preloaded skills
 
 - [nw-discovery-workflow](../skills/nw-discovery-workflow.md) — 4-phase discovery workflow with decision gates, phase transitions, success metrics, and state tracking
 - [nw-interviewing-techniques](../skills/nw-interviewing-techniques.md) — Mom Test questioning toolkit, JTBD analysis, interview conduct, assumption testing framework, and hypothesis design

@@ -1,8 +1,10 @@
 """Unit test for the frontmatter-completeness check (WS-11 D1 prevention).
 
 `check_frontmatter_completeness` flags an agent that LOADS a skill via a
-`skills/nw-X/SKILL.md` body reference but omits `nw-X` from its frontmatter
-`skills:` list — the drift the union-based `check_references` misses.
+`skills/nw-X/SKILL.md` body reference but does not OWN `nw-X` via either
+channel — its frontmatter `skills:` list OR the role-skill-loading.yaml
+registry (folded in by `build_ownership_map`) — the drift the union-based
+`check_references` misses.
 """
 
 from pathlib import Path
@@ -43,8 +45,19 @@ def test_no_drift_once_the_loaded_skill_is_declared(tmp_path):
     assert check_frontmatter_completeness(repo) == []
 
 
+def test_no_drift_when_the_loaded_skill_is_registry_owned(tmp_path):
+    """CONTRACT_SHAPE: bounded-change. Outcome: a skill owned only through
+    role-skill-loading.yaml's phase field also clears the drift."""
+    repo = _make_repo(tmp_path, frontmatter_skills=["nw-other"])
+    (repo / "data").mkdir()
+    (repo / "data" / "role-skill-loading.yaml").write_text(
+        "version: 1\nroles:\n  nw-bar:\n    phase:\n      nw-foo: some phase\n"
+    )
+    assert check_frontmatter_completeness(repo) == []
+
+
 def test_real_nwave_tree_has_zero_frontmatter_completeness_drift():
     """CONTRACT_SHAPE: unbounded-preservation. Outcome: the shipped nWave/ tree
-    declares every loaded skill (regression guard for WS-11 D1)."""
+    owns every loaded skill (regression guard for WS-11 D1)."""
     nwave_dir = Path(__file__).resolve().parents[3] / "nWave"
     assert check_frontmatter_completeness(nwave_dir) == []

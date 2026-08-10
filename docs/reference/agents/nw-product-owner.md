@@ -14,7 +14,7 @@ Conducts UX journey design and requirements gathering with BDD acceptance criter
 - [`/nw-discuss`](../commands/index.md)
 - [`/nw-diverge`](../commands/index.md)
 
-## Skills
+## Preloaded skills
 
 - [nw-bdd-requirements](../skills/nw-bdd-requirements.md) — BDD requirements discovery methodology - Example Mapping, Three Amigos, conversational patterns, Given-When-Then translation, and collaborative specification
 - [nw-design-methodology](../skills/nw-design-methodology.md) — Apple LeanUX++ design workflow, journey schema, emotional arc patterns, and CLI UX patterns. Load when transitioning from discovery to visualization or when designing journey artifacts.

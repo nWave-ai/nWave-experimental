@@ -11,7 +11,7 @@ Use before DISCUSS — runs JTBD analysis, competitive research, structured brai
 
 - [`/nw-diverge`](../commands/index.md)
 
-## Skills
+## Preloaded skills
 
 - [nw-brainstorming](../skills/nw-brainstorming.md) — Structured divergent thinking techniques — HMW framing, SCAMPER, Crazy 8s mechanics, and option diversity guarantees. Enforces strict separation of generation and evaluation phases.
 - [nw-jtbd-analysis](../skills/nw-jtbd-analysis.md) — JTBD methodology for extracting real jobs behind feature requests — job statements, abstraction layers, first-principles extraction, ODI outcome statements, and opportunity scoring

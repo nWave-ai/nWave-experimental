@@ -11,6 +11,6 @@ Use for review and critique tasks - Research quality and evidence review special
 
 - [`/nw-document`](../commands/index.md)
 
-## Skills
+## Preloaded skills
 
 - [nw-rr-critique-dimensions](../skills/nw-rr-critique-dimensions.md) — Critique dimensions and scoring for research document reviews

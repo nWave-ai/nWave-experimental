@@ -7,6 +7,6 @@ Use to validate Claude Code plugin structure and schema during DISTILL/DELIVER v
 **Max turns:** 20
 **Tools:** Read, Glob, Grep
 
-## Skills
+## Preloaded skills
 
 - [nw-agent-creation-workflow](../skills/nw-agent-creation-workflow.md) — Detailed 5-phase workflow for creating agents - from requirements analysis through validation and iterative refinement

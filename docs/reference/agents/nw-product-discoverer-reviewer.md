@@ -7,6 +7,6 @@ Use as peer reviewer for product-discoverer outputs -- validates evidence qualit
 **Max turns:** 25
 **Tools:** Read, Glob, Grep, Task
 
-## Skills
+## Preloaded skills
 
 - [nw-pdr-review-criteria](../skills/nw-pdr-review-criteria.md) — Evidence quality validation and decision gate criteria for product discovery reviews

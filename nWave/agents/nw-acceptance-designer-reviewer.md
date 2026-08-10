@@ -5,14 +5,10 @@ model: sonnet
 maxTurns: 25
 tools: Read, Glob, Grep, Task, Bash
 skills:
-  - nw-ad-critique-dimensions
   - nw-adversarial-refutation
   - nw-test-design-mandates
   - nw-bdd-methodology
   - nw-code-analysis-port
-  - nw-at-completeness-check
-  - nw-algebraic-design-protocol
-  - nw-certainty-by-construction
 ---
 
 # nw-acceptance-designer-reviewer
@@ -71,8 +67,8 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Read `nw-algebraic-design-protocol` ON-TRIGGER — compositional or stateful surface
 - Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
-- Read `nw-ad-critique-dimensions` NOW — review start
-- Read `nw-at-completeness-check` NOW — review start
+- Read `nw-ad-critique-dimensions` ON-TRIGGER — review start
+- Read `nw-at-completeness-check` ON-TRIGGER — review start
 <!-- GENERATED:role-skill-loading END -->
 
 ALSO load every skill the active workflow mode's registry row declares for this agent:

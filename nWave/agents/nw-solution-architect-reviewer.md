@@ -5,10 +5,7 @@ model: sonnet
 maxTurns: 25
 tools: Read, Glob, Grep, Task, Bash
 skills:
-  - nw-sar-critique-dimensions
   - nw-code-analysis-port
-  - nw-algebraic-design-protocol
-  - nw-certainty-by-construction
 ---
 
 # nw-solution-architect-reviewer
@@ -56,7 +53,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Read `nw-algebraic-design-protocol` ON-TRIGGER — contested design or law
 - Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
-- Read `nw-sar-critique-dimensions` NOW — architecture review
+- Read `nw-sar-critique-dimensions` ON-TRIGGER — architecture review
 <!-- GENERATED:role-skill-loading END -->
 
 ## Workflow
