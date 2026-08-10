@@ -30,7 +30,7 @@ path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave"
-version = "4.0.0+atddpure.6de87e4"
+version = "4.0.0+atddpure.c99f738"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -113,7 +113,7 @@ dev = [
     "hypothesis>=6.164.0",
     # Mutation testing
     "cosmic-ray>=8.4.0",
-    "mutmut>=3.6.0",
+    "mutmut==3.6.0",
     # Linting & formatting
     "mypy>=2.3.0",
     "ruff==0.15.22",
@@ -134,10 +134,19 @@ dev = [
     # and CT1/T7 rule enforcement) before this pin was raised.
     "gitlint-core>=0.19.0",
     "sh>=2.2.4; sys_platform != 'win32'",
+    # Explicit security floors for transitive deps (Dependabot batch, 34 alerts,
+    # 2026-08-10). Neither package is a direct dependency; both are pulled in
+    # unpinned by other dev-group packages, so without an explicit floor here a
+    # future `uv lock` re-resolution could silently drop back below the patched
+    # version. gitpython + aiohttp come in via cosmic-ray (mutation testing);
+    # pillow comes in via fpdf2 (PDF report generation).
+    "gitpython>=3.1.58",
+    "aiohttp>=3.14.3",
     # Task runner (replaces Pipfile [scripts]; run via `uv run poe <task>`)
     "poethepoet>=0.48.0",
     # Utilities
     "fpdf2>=2.7.0",
+    "pillow>=12.3.0",
     "click>=8.0.0",
     "colorama>=0.4.0",
     "tqdm>=4.70.0",
@@ -296,9 +305,11 @@ show_missing = true
 # modules under src/des/testarch are mutated first); mutmut de-dupes the overlap
 # with src/des, so do NOT "simplify" this back to src/des alone — that loses the
 # priority signal. See ADR-TEST-002 D12.
-paths_to_mutate = "src/des/testarch,src/des,scripts/install"
-tests_dir = "tests/"
-runner = "python -m pytest -x -q"
+#
+# Schema note (2026-08-10): mutmut 3.6 uses array-valued `source_paths` /
+# `pytest_add_cli_args_test_selection` and has no `runner`/string `paths_to_mutate` key.
+source_paths = ["src/des/testarch", "src/des", "scripts/install"]
+pytest_add_cli_args_test_selection = ["tests/"]
 
 [tool.mypy]
 python_version = "3.10"
@@ -443,7 +454,7 @@ update_changelog_on_bump = true
 # Dev task runner — replaces the former Pipfile [scripts] block.
 # Run with: `uv run poe <task>` (or `poe <task>` inside an activated .venv).
 # Testing (alphabetical)
-mutation-test    = "mutmut run --paths-to-mutate=src/des,scripts/install"
+mutation-test    = "mutmut run"
 test             = "python -m pytest tests/ --pspec --tb=short --color=yes"
 test-fast        = "python -m pytest tests/ -n 4 --dist loadgroup --tb=short --color=yes"
 test-acceptance  = "python -m pytest tests/des/acceptance/ tests/installer/acceptance/ tests/plugins/plugin-architecture/acceptance/ tests/bugs/ --pspec --tb=short --color=yes"
