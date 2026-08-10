@@ -26,6 +26,10 @@ from scripts.install.plugins.opencode_common import (
     verify_with_manifest,
 )
 from scripts.shared.agent_catalog import is_public_agent, load_public_agents
+from scripts.shared.batching_fragment import (
+    append_batching_fragment,
+    load_batching_fragment,
+)
 from scripts.shared.skill_path_rewrite import rewrite_host_paths
 
 
@@ -120,11 +124,20 @@ def _transform_frontmatter(frontmatter: dict) -> dict:
     return result
 
 
-def _transform_agent(content: str) -> str:
+def _transform_agent(content: str, batching_fragment: str = "") -> str:
     """Full transformation pipeline: parse, transform, render with body.
+
+    Pipeline:
+      1. Parse YAML frontmatter + Markdown body
+      2. Transform frontmatter (rename fields, add mode, convert tools)
+      3. Rewrite host paths
+      4. Append batching_fragment to body when provided (idempotent, exact-once)
+      5. Render frontmatter + body
 
     Args:
         content: Full source agent file content (Claude Code format)
+        batching_fragment: Pre-loaded batching guidance text; omitted (default)
+            leaves the body untouched
 
     Returns:
         Transformed agent file content (OpenCode format)
@@ -133,6 +146,8 @@ def _transform_agent(content: str) -> str:
     transformed = _transform_frontmatter(frontmatter)
     rendered = render_frontmatter(transformed)
     body = rewrite_host_paths(body, "opencode")
+    if batching_fragment:
+        body = append_batching_fragment(body, batching_fragment)
     return rendered + body
 
 
@@ -213,6 +228,8 @@ class OpenCodeAgentsPlugin(InstallationPlugin):
                     message="No agent files found in source directory",
                 )
 
+            batching_fragment = load_batching_fragment(context.project_root / "nWave")
+
             installed_names = []
             installed_files = []
 
@@ -222,7 +239,7 @@ class OpenCodeAgentsPlugin(InstallationPlugin):
                 agent_name = source_file.stem
                 content = source_file.read_text(encoding="utf-8")
 
-                transformed = _transform_agent(content)
+                transformed = _transform_agent(content, batching_fragment)
 
                 target_file = target_dir / f"{agent_name}.md"
                 target_file.write_text(transformed, encoding="utf-8")

@@ -394,6 +394,17 @@ class TestAgentsPluginSourceFallback:
             "agents:\n  test-agent:\n    public: true\n"
         )
 
+        # AgentsPlugin.install() loads nWave/templates/tool-batching-fragment.md
+        # via context.project_root / "nWave"; seed it from the canonical file.
+        templates_dir = tmp_path / "nWave" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        source_fragment = (
+            project_root / "nWave" / "templates" / "tool-batching-fragment.md"
+        )
+        (templates_dir / "tool-batching-fragment.md").write_text(
+            source_fragment.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+
         context = InstallContext(
             claude_dir=claude_dir,
             scripts_dir=tmp_path / "scripts",

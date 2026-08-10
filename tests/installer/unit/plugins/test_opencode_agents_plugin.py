@@ -63,6 +63,9 @@ from scripts.install.plugins.opencode_agents_plugin import (
 from scripts.install.plugins.opencode_common import parse_frontmatter
 
 
+_BATCH_FRAGMENT = "BATCH-FRAGMENT"
+
+
 def _make_context(tmp_path):
     """Create an InstallContext with a minimal agent source layout.
 
@@ -74,6 +77,13 @@ def _make_context(tmp_path):
 
     agents_source = project_root / "nWave" / "agents"
     agents_source.mkdir(parents=True)
+
+    # Canonical batching-fragment source; install() loads it once per run.
+    templates_dir = project_root / "nWave" / "templates"
+    templates_dir.mkdir(parents=True)
+    (templates_dir / "tool-batching-fragment.md").write_text(
+        f"{_BATCH_FRAGMENT}\n", encoding="utf-8"
+    )
 
     # Create minimal framework-catalog.yaml so load_public_agents(strict=True)
     # does not raise CatalogNotFoundError. Empty agents section means all
@@ -90,7 +100,7 @@ def _make_context(tmp_path):
     context = InstallContext(
         claude_dir=claude_dir,
         scripts_dir=tmp_path / "scripts",
-        templates_dir=tmp_path / "templates",
+        templates_dir=templates_dir,
         logger=logger,
         project_root=project_root,
         framework_source=framework_source,
@@ -428,13 +438,13 @@ class TestInstallCreatesAgentFiles:
 
 
 class TestInstallPreservesBody:
-    """Test that install() preserves body content unchanged after transformation."""
+    """Test that install() preserves source body as unchanged prefix and appends batching fragment once."""
 
     def test_install_preserves_body(self, tmp_path, monkeypatch):
         """
         GIVEN: An agent file with specific body content
         WHEN: install() transforms it
-        THEN: The body content after the frontmatter is unchanged;
+        THEN: Source body is preserved as an unchanged prefix; batching fragment is appended once;
               frontmatter transformation slots (mode, steps, permission) declared;
               implicit-unchanged enforces no undeclared slot mutations.
         """
@@ -456,12 +466,19 @@ class TestInstallPreservesBody:
 
         _, source_body = parse_frontmatter(_CSV_TOOLS_AGENT)
 
-        def body_unchanged(old: object, new: object) -> bool:
-            """Body portion of the agent file is preserved after transformation."""
+        def body_prefix_preserved_fragment_appended_once(
+            old: object, new: object
+        ) -> bool:
+            """Source body is an unchanged prefix; the sentinel is appended once as the final line."""
             if not isinstance(new, str):
                 return False
             _, installed_body = parse_frontmatter(new)
-            return installed_body == source_body
+            if not installed_body.startswith(source_body):
+                return False
+            return (
+                installed_body.count(_BATCH_FRAGMENT) == 1
+                and installed_body.splitlines()[-1] == _BATCH_FRAGMENT
+            )
 
         assert_state_delta(
             before=before,
@@ -469,7 +486,7 @@ class TestInstallPreservesBody:
             universe=universe,
             expected={
                 "content.exists": set_to(True),
-                "content.full": body_unchanged,
+                "content.full": body_prefix_preserved_fragment_appended_once,
                 "content.has_mode": set_to(True),
                 "content.has_steps": set_to(True),
                 "content.has_name": set_to(False),

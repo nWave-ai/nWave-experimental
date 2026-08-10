@@ -13,6 +13,10 @@ from scripts.install.plugins.base import (
     PluginResult,
 )
 from scripts.shared.agent_catalog import is_public_agent, load_public_agents
+from scripts.shared.batching_fragment import (
+    append_batching_fragment,
+    load_batching_fragment,
+)
 
 
 class AgentsPlugin(InstallationPlugin):
@@ -72,13 +76,20 @@ class AgentsPlugin(InstallationPlugin):
             context.logger.info(f"  ⏳ From source ({source_agent_count} agents)...")
 
             # Copy only public nw-*.md files from source root (excludes legacy/ and README.md)
+            batching_fragment = load_batching_fragment(context.project_root / "nWave")
+
             copied_count = 0
             installed_files = []
             for source_file in sorted(source_agent_dir.glob("nw-*.md")):
                 if not is_public_agent(source_file.name, public_agents):
                     continue
-                shutil.copy2(source_file, target_agent_dir / source_file.name)
-                installed_files.append(str(target_agent_dir / source_file.name))
+                source_content = source_file.read_text(encoding="utf-8")
+                target_content = append_batching_fragment(
+                    source_content, batching_fragment
+                )
+                target_file = target_agent_dir / source_file.name
+                target_file.write_text(target_content, encoding="utf-8")
+                installed_files.append(str(target_file))
                 copied_count += 1
 
             context.logger.info(f"  ✅ Agents installed ({copied_count} files)")

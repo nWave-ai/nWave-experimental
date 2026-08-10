@@ -5,6 +5,7 @@ These tests validate that wrapper plugins correctly install files,
 verify installations, and maintain execution order.
 """
 
+from pathlib import Path
 from unittest.mock import Mock
 
 from scripts.install.plugins import (
@@ -30,6 +31,20 @@ class TestAgentsPlugin:
         # Create minimal catalog to satisfy fail-closed load_public_agents
         (tmp_path / "nWave" / "framework-catalog.yaml").write_text(
             "agents:\n  test-agent:\n    public: true\n"
+        )
+
+        # AgentsPlugin.install() loads nWave/templates/tool-batching-fragment.md
+        # via context.project_root / "nWave"; seed it from the canonical file.
+        templates_dir = tmp_path / "nWave" / "templates"
+        templates_dir.mkdir(parents=True)
+        source_fragment = (
+            Path(__file__).resolve().parents[3]
+            / "nWave"
+            / "templates"
+            / "tool-batching-fragment.md"
+        )
+        (templates_dir / "tool-batching-fragment.md").write_text(
+            source_fragment.read_text(encoding="utf-8"), encoding="utf-8"
         )
 
         # Set up target directory

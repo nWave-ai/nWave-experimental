@@ -167,10 +167,18 @@ def clean_claude_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def temp_source_dir(tmp_path: Path) -> Path:
+def temp_source_dir(tmp_path: Path, project_root: Path) -> Path:
     """Temporary source directory simulating nWave framework source."""
     source = tmp_path / "nWave"
     source.mkdir(parents=True, exist_ok=True)
+    # AgentsPlugin.install() loads nWave/templates/tool-batching-fragment.md
+    # via context.project_root / "nWave"; seed it from the canonical file.
+    templates_dir = source / "templates"
+    templates_dir.mkdir(parents=True, exist_ok=True)
+    source_fragment = project_root / "nWave" / "templates" / "tool-batching-fragment.md"
+    (templates_dir / "tool-batching-fragment.md").write_text(
+        source_fragment.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     return source
 
 

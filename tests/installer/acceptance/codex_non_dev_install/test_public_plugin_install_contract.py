@@ -77,6 +77,18 @@ def test_non_dev_public_install_never_loses_portable_codex_assets(
         "\n".join(catalog) + "\n", encoding="utf-8"
     )
 
+    templates = framework / "templates"
+    templates.mkdir()
+    source_fragment = (
+        Path(__file__).resolve().parents[4]
+        / "nWave"
+        / "templates"
+        / "tool-batching-fragment.md"
+    )
+    (templates / "tool-batching-fragment.md").write_text(
+        source_fragment.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
     isolated_home = tmp_path / "home"
     codex_home = isolated_home / ".codex"
     codex_home.mkdir(parents=True)

@@ -73,6 +73,13 @@ def _make_context(
     agents_dir = framework_source / "agents"
     agents_dir.mkdir(parents=True)
 
+    # Canonical batching-fragment source; install() loads it once per run.
+    templates_dir = framework_source / "templates"
+    templates_dir.mkdir(parents=True)
+    (templates_dir / "tool-batching-fragment.md").write_text(
+        "BATCH-FRAGMENT\n", encoding="utf-8"
+    )
+
     if agents is None:
         agents = {
             "nw-test-agent": (
@@ -95,7 +102,7 @@ def _make_context(
     context = InstallContext(
         claude_dir=claude_dir,
         scripts_dir=project_root / "scripts",
-        templates_dir=framework_source / "templates",
+        templates_dir=templates_dir,
         logger=MagicMock(),
         project_root=project_root,
         framework_source=framework_source,
