@@ -209,9 +209,9 @@ def test_sync_project_claude_section_drives_both_hosts_at_once(tmp_path: Path) -
 # --- standing loops consent fragment ---------------------------------------
 
 
-def _fragment_source_bytes() -> bytes:
+def _fragment_source_bytes(fragment_name: str = "loop-consent-fragment") -> bytes:
     repo_root = resolve_section_template(host="claude").parents[2]
-    fragment_path = repo_root / "nWave" / "templates" / "loop-consent-fragment.md"
+    fragment_path = repo_root / "nWave" / "templates" / f"{fragment_name}.md"
     return fragment_path.read_text(encoding="utf-8").strip().encode("utf-8")
 
 
@@ -250,3 +250,33 @@ def test_consent_fragment_semantics_and_token_cap() -> None:
 
     token_count = count_tokens(fragment)
     assert token_count <= 51, f"fragment too large: {token_count} tokens (max 51)"
+
+
+@pytest.mark.parametrize("host", HOST_IDS)
+def test_tool_batching_fragment_exact_bytes_once_and_semantics(host: str) -> None:
+    """Verify tool-batching fragment appears verbatim once, has required semantics,
+    is under token cap, and has no host-specific language."""
+    from scripts.measure_doc_tokens import count_tokens
+
+    fragment_bytes = _fragment_source_bytes("tool-batching-fragment")
+    content_bytes = load_section_content(host=host).encode("utf-8")
+    fragment_str = fragment_bytes.decode("utf-8")
+    lowered = fragment_str.lower()
+
+    # Must appear exactly once.
+    assert content_bytes.count(fragment_bytes) == 1, (
+        f"fragment not found once in {host}"
+    )
+
+    # Required words: batch/independent/sequence.
+    assert "batch" in lowered
+    assert "independent" in lowered
+    assert "sequence" in lowered
+
+    # Host-specific language forbidden.
+    assert "/nw-" not in lowered
+    assert "skill tool" not in lowered
+
+    # Token cap.
+    token_count = count_tokens(fragment_str)
+    assert token_count <= 30, f"fragment too large: {token_count} tokens (max 30)"

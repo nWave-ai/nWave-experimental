@@ -2,6 +2,8 @@
 
 nWave is in **active development**. Feature work should follow discovery, design, and acceptance-test-first delivery: write the acceptance tests before the implementation (TDD), then implement to make them pass.
 
+{{TOOL_BATCHING_FRAGMENT}}
+
 {{LOOP_CONSENT_FRAGMENT}}
 
 ### Privacy — Non-Negotiable

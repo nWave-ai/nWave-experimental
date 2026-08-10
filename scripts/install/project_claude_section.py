@@ -33,11 +33,13 @@ from typing import NamedTuple
 BEGIN_MARKER = "<!-- BEGIN nWave-beta-section (managed by nwave-ai; do not edit) -->"
 END_MARKER = "<!-- END nWave-beta-section -->"
 
-# The consent fragment is authored once and spliced into every host template —
-# this placeholder is how each template asks for it. Keeping the splice here
-# (not a hand-copy per template) is what makes the composed bytes identical.
-_CONSENT_FRAGMENT_PLACEHOLDER = "{{LOOP_CONSENT_FRAGMENT}}"
-_CONSENT_FRAGMENT_RELPATH = ("nWave", "templates", "loop-consent-fragment.md")
+# Managed fragments are authored once and spliced into every host template.
+# Placeholder names are how templates ask for them; the splice here ensures
+# composed bytes are identical across hosts.
+_FRAGMENTS = (
+    ("{{TOOL_BATCHING_FRAGMENT}}", ("nWave", "templates", "tool-batching-fragment.md")),
+    ("{{LOOP_CONSENT_FRAGMENT}}", ("nWave", "templates", "loop-consent-fragment.md")),
+)
 
 
 class HostGuidance(NamedTuple):
@@ -78,15 +80,16 @@ def load_section_content(
 ) -> str:
     """Read the managed-section body for ``host`` (inner content, no markers).
 
-    Splices the shared loop-consent fragment into the template's placeholder,
-    so the fragment bytes are identical across every host by construction.
+    Splices managed fragments into the template's placeholders, ensuring
+    fragment bytes are identical across every host by construction.
     """
     root = project_root or Path(__file__).resolve().parents[2]
     template = resolve_section_template(root, host=host).read_text(encoding="utf-8")
-    fragment = (
-        root.joinpath(*_CONSENT_FRAGMENT_RELPATH).read_text(encoding="utf-8").strip()
-    )
-    return template.replace(_CONSENT_FRAGMENT_PLACEHOLDER, fragment).strip()
+    content = template
+    for placeholder, relpath in _FRAGMENTS:
+        fragment = root.joinpath(*relpath).read_text(encoding="utf-8").strip()
+        content = content.replace(placeholder, fragment)
+    return content.strip()
 
 
 def _build_block(content: str) -> str:

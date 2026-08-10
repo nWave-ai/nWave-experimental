@@ -28,11 +28,10 @@ drain is a tree-writing lane — it MUST run in its own worktree, never in trunk
 ## Are you dispatching in the background, in parallel, by default?
 
 Dispatch agents and commands in the BACKGROUND by default, and maximize how much runs
-concurrently — never dispatch-then-wait-then-dispatch-next when the work is genuinely
-independent. Only serialize when there is a real reason to (see below): a shared box
-resource, or two lanes that touch the same files. Absent one of those, is more parallelism
-the default? Yes — the user opts OUT of parallelism explicitly if they want serial/foreground
-work, not the other way round.
+concurrently. Normative tool-call batching authority: nWave/templates/tool-batching-fragment.md.
+Only serialize when there is a real reason to (see below): a shared box resource, or two lanes
+that touch the same files. Absent one of those, is more parallelism the default? Yes — the user
+opts OUT of parallelism explicitly if they want serial/foreground work, not the other way round.
 
 ### After this event, did you recompute the DAG and dispatch every READY lane — or is something idle that shouldn't be?
 

@@ -14,6 +14,8 @@ Waves, in order: `/nw-discover` `/nw-diverge` `/nw-discuss` `/nw-design` `/nw-de
 
 Resuming work: `/nw-continue`.
 
+{{TOOL_BATCHING_FRAGMENT}}
+
 {{LOOP_CONSENT_FRAGMENT}}
 
 ### Privacy — Non-Negotiable
