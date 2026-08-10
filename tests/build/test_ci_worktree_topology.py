@@ -76,7 +76,7 @@ def test_worktree_topology_job_runs_exact_audited_contract_without_heavy_artifac
     assert isinstance(job, dict)
     assert job["needs"] == ["plan"]
     assert job["runs-on"] == "ubuntu-latest"
-    assert "if" not in job
+    assert job["if"] == "needs.plan.outputs.docs_only != 'true'"
 
     steps = job["steps"]
     assert isinstance(steps, list)
