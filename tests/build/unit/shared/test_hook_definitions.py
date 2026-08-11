@@ -33,11 +33,20 @@ class TestHookEventDefinitions:
 
     def test_defines_independent_hook_registrations(self):
         """The shared definition contains only the current independent hooks."""
-        assert len(HOOK_EVENTS) == 7
+        assert len(HOOK_EVENTS) == 8
 
         # Verify exact event/matcher/action triples
         events_matchers = [(h.event, h.matcher, h.action) for h in HOOK_EVENTS]
         assert ("PreToolUse", "Agent", "pre-task") in events_matchers
+        # K4 overhead slice: SendMessage routes to the existing portable
+        # pre-tool-use action -- exactly one registration, no new action.
+        assert ("PreToolUse", "SendMessage", "pre-tool-use") in events_matchers
+        send_message_entries = [
+            (h.event, h.matcher, h.action)
+            for h in HOOK_EVENTS
+            if h.event == "PreToolUse" and h.matcher == "SendMessage"
+        ]
+        assert send_message_entries == [("PreToolUse", "SendMessage", "pre-tool-use")]
         assert ("PreToolUse", "Write", "pre-write") in events_matchers
         assert ("PreToolUse", "Edit", "pre-edit") in events_matchers
         assert ("PreToolUse", "Bash", "pre-bash") not in events_matchers
@@ -111,13 +120,15 @@ class TestGenerateHookConfig:
         assert set(config.keys()) == HOOK_EVENT_TYPES
 
     def test_pretooluse_has_independent_entries(self):
-        """PreToolUse has Agent, Write, Edit and one universal Bash hook."""
+        """PreToolUse has Agent, SendMessage, Write, Edit and one universal
+        Bash hook."""
         config = generate_hook_config(self._simple_command)
         pre_tool_use = config["PreToolUse"]
-        assert len(pre_tool_use) == 4
+        assert len(pre_tool_use) == 5
         matchers = [e.get("matcher") for e in pre_tool_use]
         assert matchers == [
             "Agent",
+            "SendMessage",
             "Write",
             "Edit",
             "Bash",

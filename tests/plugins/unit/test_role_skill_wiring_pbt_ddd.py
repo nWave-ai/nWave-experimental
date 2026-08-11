@@ -220,6 +220,29 @@ class TestUserExaminerAutoRouteIsBoundedNotExhaustive:
         assert "Human route below keeps its richer" in body
 
 
+class TestAutoRolesAreSinglePassNoContinuation:
+    """K4 overhead slice SSOT: Auto's first role result is terminal -- no
+    SendMessage/resume/retry/correction within the same run.
+
+    CONTRACT_SHAPE: bounded-change
+    """
+
+    def test_route_boundaries_declare_the_single_pass_no_send_message_rule(self):
+        body = (SKILLS_DIR / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
+        route_boundaries = " ".join(body[body.index("## Route boundaries") :].split())
+        for token in (
+            "single-pass",
+            "first result of each dispatched role",
+            "is terminal",
+            "SendMessage",
+            "resume",
+            "retry",
+            "correction",
+            "separately measured new run",
+        ):
+            assert token in route_boundaries
+
+
 class TestDddReviewerUsesCodeAnalysisPort:
     """Structural review evidence goes through the code-analysis port."""
 

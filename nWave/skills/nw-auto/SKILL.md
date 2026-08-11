@@ -94,6 +94,11 @@ derives probes from the expectation and observes only the shipped user surface.
 
 ## Route boundaries
 
+- Auto roles are single-pass: the first result of each dispatched role
+  (acceptance-designer, crafter, examiner) is terminal. No `SendMessage`,
+  resume, retry, or correction within the same Auto run. A later retry is a
+  separately measured new run, issued only after the upstream gap that
+  caused the first result is corrected.
 - Direct S and Human-on-the-loop routes are unchanged.
 - No `TaskCreate` bookkeeping, new hook, schema, CLI verb, or duplicate
   sequencer/controller is introduced by this skill.

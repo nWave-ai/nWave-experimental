@@ -78,24 +78,34 @@ def read_transcript_tool_calls(transcript_path: str) -> list[dict]:
     return tool_calls
 
 
-def mode_select_observed_before_mutation(transcript_path: str) -> bool:
-    """True iff the transcript contains an actual `Skill(nw-mode-select)` call.
+def skill_observed_before_action(transcript_path: str, skill_name: str) -> bool:
+    """True iff the transcript contains an actual `Skill(skill_name)` call.
 
-    Only a real `Skill` tool_use whose input selects `nw-mode-select` counts —
+    Only a real `Skill` tool_use whose input selects `skill_name` counts —
     prose mentioning the skill, a `Read` of an unrelated file, and other
     `Skill` names are all false. Fails closed (False) when the transcript is
-    missing, unreadable, or not valid UTF-8/JSONL text, since the caller uses
-    this to decide whether a mutation may proceed.
+    missing, unreadable, or not valid UTF-8/JSONL text, since callers use
+    this to decide whether a mutation or a role transition may proceed.
     """
     try:
         tool_calls = read_transcript_tool_calls(transcript_path)
     except (OSError, UnicodeDecodeError):
         return False
     return any(
-        tc.get("name") == "Skill"
-        and tc.get("input", {}).get("skill") == "nw-mode-select"
+        tc.get("name") == "Skill" and tc.get("input", {}).get("skill") == skill_name
         for tc in tool_calls
     )
+
+
+def mode_select_observed_before_mutation(transcript_path: str) -> bool:
+    """True iff the transcript contains an actual `Skill(nw-mode-select)` call.
+
+    Delegates to the shared `skill_observed_before_action` predicate --
+    same authority rules, same fail-closed behavior on a missing/unreadable
+    transcript, since the caller uses this to decide whether a mutation may
+    proceed.
+    """
+    return skill_observed_before_action(transcript_path, "nw-mode-select")
 
 
 class SkillTrackingService:

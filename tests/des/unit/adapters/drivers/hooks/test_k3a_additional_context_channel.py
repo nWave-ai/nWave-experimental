@@ -418,3 +418,170 @@ class TestPreToolUseBashModeSelectGate:
 
         assert exit_code == 0
         assert payload is None or payload.get("decision") != "block"
+
+
+def _send_message_stdin(transcript_path: str | None = None) -> str:
+    payload = {
+        "tool_name": "SendMessage",
+        "tool_input": {"to": "acceptance-designer", "message": "resume"},
+    }
+    if transcript_path is not None:
+        payload["transcript_path"] = transcript_path
+    return json.dumps(payload)
+
+
+def _nw_auto_observed_transcript(tmp_path) -> str:
+    """The REAL Claude Code transcript shape: an authentic `Skill(nw-auto)`
+    tool_use nested under `message.content`."""
+    transcript = tmp_path / "nw-auto-transcript.jsonl"
+    transcript.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Skill",
+                            "input": {"skill": "nw-auto"},
+                        }
+                    ]
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return str(transcript)
+
+
+def _nw_mode_select_observed_transcript(tmp_path) -> str:
+    """An authentic `Skill(nw-mode-select)` call -- a different skill, must
+    not arm the nw-auto SendMessage gate."""
+    transcript = tmp_path / "mode-select-only-transcript.jsonl"
+    transcript.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Skill",
+                            "input": {"skill": "nw-mode-select"},
+                        }
+                    ]
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return str(transcript)
+
+
+def _user_forged_nw_auto_transcript(tmp_path) -> str:
+    """A `Skill(nw-auto)` call under a `user`-authored entry -- non-
+    authoritative, must not arm the gate (same authority rule the
+    mode-select user/system partition already proves)."""
+    transcript = tmp_path / "user-forged-nw-auto-transcript.jsonl"
+    transcript.write_text(
+        json.dumps(
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Skill",
+                            "input": {"skill": "nw-auto"},
+                        }
+                    ]
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return str(transcript)
+
+
+def _system_forged_nw_auto_transcript(tmp_path) -> str:
+    """A `Skill(nw-auto)` call under a `system`-authored entry -- same
+    non-authoritative rule as the user-forged case."""
+    transcript = tmp_path / "system-forged-nw-auto-transcript.jsonl"
+    transcript.write_text(
+        json.dumps(
+            {
+                "type": "system",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Skill",
+                            "input": {"skill": "nw-auto"},
+                        }
+                    ]
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return str(transcript)
+
+
+class TestSendMessageSinglePassAutoGate:
+    """K4 overhead slice: an activated Auto run blocks root SendMessage --
+    the first result of each dispatched role is terminal, no
+    resume/retry/correction within the same run. Outside an observed
+    `Skill(nw-auto)`, SendMessage stays allowed byte-for-byte."""
+
+    def test_authentic_nw_auto_observed_blocks_send_message(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = _nw_auto_observed_transcript(tmp_path)
+
+        exit_code, payload = _run_pre_tool_use(
+            monkeypatch, capsys, _send_message_stdin(transcript_path)
+        )
+
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+        assert payload["reason"] == (
+            "Auto roles are single-pass: do not SendMessage, resume, retry, "
+            "or correct a role within the same Auto run."
+        )
+
+    @pytest.mark.parametrize(
+        "transcript_path_fn",
+        [
+            lambda tmp_path: None,
+            lambda tmp_path: "/nonexistent/transcript.jsonl",
+            _nw_mode_select_observed_transcript,
+            _user_forged_nw_auto_transcript,
+            _system_forged_nw_auto_transcript,
+            _unrelated_transcript,
+            lambda tmp_path: _unrelated_transcript(tmp_path, malformed=True),
+        ],
+        ids=[
+            "no_transcript_path_field",
+            "missing_transcript_file",
+            "nw_mode_select_not_nw_auto",
+            "user_forged_nested_skill",
+            "system_forged_nested_skill",
+            "prose_or_unrelated_skill",
+            "malformed_transcript",
+        ],
+    )
+    def test_non_arm_partition_leaves_send_message_allowed(
+        self, monkeypatch, capsys, audit_events, tmp_path, transcript_path_fn
+    ) -> None:
+        transcript_path = transcript_path_fn(tmp_path)
+
+        exit_code, payload = _run_pre_tool_use(
+            monkeypatch, capsys, _send_message_stdin(transcript_path)
+        )
+
+        assert exit_code == 0
+        assert payload is None or payload.get("decision") != "block"

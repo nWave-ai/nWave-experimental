@@ -19,6 +19,7 @@ import pytest
 from des.application.skill_tracking_service import (
     SkillTrackingService,
     mode_select_observed_before_mutation,
+    skill_observed_before_action,
 )
 from des.domain.skill_load_event import SkillLoadEvent
 from des.ports.driven_ports.skill_tracking_port import SkillTrackingPort
@@ -452,3 +453,40 @@ class TestModeSelectObservedBeforeMutation:
         )
 
         assert mode_select_observed_before_mutation(transcript_path) is True
+
+
+class TestSkillObservedBeforeActionIsGenericPerSkillName:
+    """skill_observed_before_action is the shared predicate the SendMessage
+    single-pass Auto gate reuses -- not a second transcript parser, and not
+    hardcoded to `nw-mode-select`.
+
+    CONTRACT_SHAPE: bounded-change
+    """
+
+    @pytest.mark.parametrize(
+        "skill_name,expected",
+        [("nw-auto", True), ("nw-mode-select", False)],
+        ids=["matches_requested_skill", "other_skill_name_does_not_match"],
+    )
+    def test_matches_only_the_requested_skill_name(
+        self, tmp_path, skill_name: str, expected: bool
+    ) -> None:
+        transcript_path = _write_transcript(
+            tmp_path,
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "Skill",
+                                "input": {"skill": "nw-auto"},
+                            }
+                        ]
+                    },
+                }
+            ],
+        )
+
+        assert skill_observed_before_action(transcript_path, skill_name) is expected

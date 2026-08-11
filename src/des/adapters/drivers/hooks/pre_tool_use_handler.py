@@ -41,7 +41,10 @@ from des.adapters.drivers.hooks.root_activation_context import (
     build_root_mode_select_context,
 )
 from des.application.commit_attribution_service import CommitAttributionService
-from des.application.skill_tracking_service import mode_select_observed_before_mutation
+from des.application.skill_tracking_service import (
+    mode_select_observed_before_mutation,
+    skill_observed_before_action,
+)
 from des.application.wave_activation_service import WaveActivationService
 from des.domain.atdd_pure_phases import ATDDPurePhase
 from des.domain.des_marker_parser import DesMarkerParser
@@ -415,6 +418,32 @@ def handle_pre_tool_use() -> int:
 
             # Diagnostic: confirm hook was invoked
             tool_input = hook_input.get("tool_input", {})
+
+            if hook_input.get("tool_name") == "SendMessage":
+                transcript_path = extract_transcript_path(hook_input)
+                auto_observed = False
+                try:
+                    auto_observed = bool(
+                        transcript_path
+                        and skill_observed_before_action(transcript_path, "nw-auto")
+                    )
+                except Exception:
+                    auto_observed = False
+                if auto_observed:
+                    print(
+                        json.dumps(
+                            {
+                                "decision": "block",
+                                "reason": (
+                                    "Auto roles are single-pass: do not "
+                                    "SendMessage, resume, retry, or correct a "
+                                    "role within the same Auto run."
+                                ),
+                            }
+                        )
+                    )
+                    exit_code = 2
+                    return exit_code
 
             if hook_input.get("tool_name") == "Bash":
                 # The git-stash / worktree-remove safety decision already ran

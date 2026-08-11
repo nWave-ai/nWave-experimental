@@ -126,6 +126,12 @@ class HookEvent:
 # Write/Edit execution-log refusal is unchanged -- see build_guard_command.
 HOOK_EVENTS: tuple[HookEvent, ...] = (
     HookEvent(event="PreToolUse", matcher="Agent", action="pre-task"),
+    # Root-activation single-pass guard (K4 overhead slice): routes
+    # PreToolUse/SendMessage to the existing portable pre-tool-use action --
+    # no new hook implementation, process, controller, state, ledger, or
+    # schema. See pre_tool_use_handler.handle_pre_tool_use's SendMessage
+    # branch for the decision itself.
+    HookEvent(event="PreToolUse", matcher="SendMessage", action="pre-tool-use"),
     HookEvent(event="PreToolUse", matcher="Write", action="pre-write", is_guard=True),
     HookEvent(event="PreToolUse", matcher="Edit", action="pre-edit", is_guard=True),
     # Universal root mode-selection gate. Unlike the specialised Bash guards
