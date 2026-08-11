@@ -51,15 +51,28 @@ Before dispatching any role, decide worktree ownership:
 
 ## M route — direct reuse floor
 
-Dispatch, in order and without a second controller:
+Dispatch the PO/ATD sibling pair as independent concurrent (when parallel
+Agent calls are supported) or sequential siblings — neither reads the other's
+output. Then join on both validated results and continue without a second
+controller:
 
-1. `nw-acceptance-designer` authors the minimal thin `DeliveryContract`, the
-   acceptance tests, an expectation charter, and a user-surface start recipe.
-   The contract must carry `paradigm`.
-2. After the validation above, dispatch exactly one crafter selected by the
-   deterministic mapping. That crafter implements the contract to green
-   without rewriting the acceptance-designer's tests.
-3. One independent `nw-user-examiner` examines the running product.
+1. **Sibling dispatch (concurrent when parallel Agent calls are supported):**
+   - `nw-product-owner` (value-side inputs only) runs `des charter-scaffold`,
+     fills the expectation charter with Preconditions/start recipe and oracle,
+     then stops before the Human workflow.
+   - `nw-acceptance-designer` receives the same immutable value seed as the PO,
+     plus the design SSOT. It authors the minimal thin `DeliveryContract` v1.1
+     and acceptance tests. The contract must carry `paradigm`; the ATD never
+     authors or reads the charter/start recipe.
+2. **Join:** after BOTH the charter is verified and contract+tests are
+   validated, dispatch exactly one crafter selected by the deterministic
+   paradigm mapping. That crafter implements the contract to green without
+   rewriting the acceptance-designer's tests. Root never authors, repairs, or
+   reconstructs either sibling's output: a failed or incomplete first result
+   is terminal under the single-pass rule, never a root-side patch-up.
+3. One independent `nw-user-examiner` examines the running product using the
+   charter, whose Preconditions contain the start recipe, and rejects every
+   other artifact.
 4. Root reports the role verdicts, focused evidence, and Git diff/status.
 
 ## L route — bounded serial gap resolution, then the same floor

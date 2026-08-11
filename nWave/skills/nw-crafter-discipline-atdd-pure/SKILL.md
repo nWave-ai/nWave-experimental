@@ -123,7 +123,7 @@ This invariant is owned by the crafter/workflow, NOT delegated to pre-commit hoo
 
 Applies to every phase: Phase A exit gate (all ATs pass), Phase B exit gate (suite stays green after cuts), Phase E exit gate (single suite run after the batch). The rule is the union — every modification terminates in a green suite.
 
-**The per-slice terminating run is the project-declared focused test command, not a hook.** Do not invent a language-specific subset (`pytest tests/des/` or similar): use a command already declared by the project. If none is declared, report that limitation rather than guessing. The whole-tree suite belongs at feature-end, not every slice commit.
+**The per-slice terminating run is the project-declared focused test command, against the project-declared dependency closure — not the ambient interpreter alone.** Do not trust an ambient import as evidence a new test-only dependency resolves: use the command and manifest (`requirements*.txt`/`pyproject.toml`, `package.json`, `Cargo.toml`, `go.mod`) already declared by the project; report the limitation if either is undeclared. The whole-tree suite belongs at feature-end, not every slice commit.
 
 ### Staging hygiene and commit subject (gate-affordance audit A1/A2, 2026-07-28)
 

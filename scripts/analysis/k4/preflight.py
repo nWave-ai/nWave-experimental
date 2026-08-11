@@ -184,6 +184,22 @@ def seed_step(auth_profile: Path) -> list[str]:
     ]
 
 
+#: `git clone <url> .` leaves HEAD attached to the SUT's default branch. Read
+#: literally against `nWave/skills/nw-auto/SKILL.md`'s worktree-ownership rule
+#: ("if the current checkout is ... otherwise shared/non-isolated, create or
+#: reuse an isolated detached worktree"), an attached checkout is exactly the
+#: shared/non-isolated case: Auto abandons this directory and creates ANOTHER
+#: detached worktree elsewhere for the actual delivery. `paired_campaign.py`
+#: then times and captures THIS directory, and the hidden acceptance suite and
+#: blind review only ever inspect `pair-dir/{arm}` -- so they measure the
+#: unchanged clone while the real delivery landed somewhere neither looks.
+#: Detaching HEAD here, in the already-isolated per-arm clone, makes the
+#: workspace match Auto's OTHER branch of that same rule ("if the current
+#: checkout is already an isolated detached worktree, keep using it") by
+#: construction, so Auto reuses this directory instead of relocating.
+_DETACH_STEP = ["git", "checkout", "--detach", "HEAD"]
+
+
 def nwave_setup_steps(venv: Path, auth_profile: Path) -> list[list[str]]:
     """The nWave arm's declared setup. `--yes` is load-bearing, see module doc."""
     cli = str(venv / "bin" / "nwave-ai")
@@ -192,6 +208,7 @@ def nwave_setup_steps(venv: Path, auth_profile: Path) -> list[list[str]]:
         # seed creates `.claude-k4/` in exactly that directory - so seeding first
         # made the clone exit 128. Caught by the preflight on its own run.
         ["git", "clone", "--depth", "1", _SUT, "."],
+        _DETACH_STEP,
         seed_step(auth_profile),
         # `--platform claude-code`, never the `auto` default. Measured 2026-08-07:
         # auto-detect installs into EVERY platform it finds, and CLAUDE_CONFIG_DIR
@@ -209,7 +226,16 @@ def control_setup_steps(auth_profile: Path) -> list[list[str]]:
     # different rate-limit windows, and the arm that happened to start with more
     # headroom would be measured under a condition nobody declared -- exactly the
     # confound pairing exists to remove.
-    return [["git", "clone", "--depth", "1", _SUT, "."], seed_step(auth_profile)]
+    #
+    # Detached for the same reason as the nWave arm, even though the control
+    # arm never reads nw-auto's rule itself: a treatment-only locator
+    # convention would make the workspace construction asymmetric, and the
+    # comparison arms must differ only in what their setup installs.
+    return [
+        ["git", "clone", "--depth", "1", _SUT, "."],
+        _DETACH_STEP,
+        seed_step(auth_profile),
+    ]
 
 
 def probe_engagement(

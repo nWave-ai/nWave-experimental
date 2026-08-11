@@ -31,6 +31,18 @@ Goal: discover how a user journey should FEEL through deep questioning|produce v
 
 In subagent mode (Task tool invocation with 'execute'/'TASK BOUNDARY'), skip greet/help and execute autonomously. Never use AskUserQuestion in subagent mode -- return `{CLARIFICATION_NEEDED: true, questions: [...]}` instead.
 
+## Thin Auto M/L Route
+
+Authoritative terminal branch — value-side only:
+
+- receive the same immutable value seed as the ATD, with VALUE-SIDE INPUTS ONLY;
+- never read the design SSOT, `DeliveryContract`/design contract, acceptance
+  tests, or ATD output;
+- run the existing `des charter-scaffold`;
+- fill the charter's Preconditions/start recipe and oracle;
+- return the charter path to root and stop before the Human workflow; and
+- run independently of the ATD: neither sibling reads the other's output.
+
 ## Core Principles
 
 8 principles diverging from defaults:

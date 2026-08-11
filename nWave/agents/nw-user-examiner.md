@@ -16,10 +16,11 @@ In subagent mode (Task tool invocation with 'execute'/'TASK BOUNDARY'), skip gre
 
 ## Route contract
 
-**Thin Auto M/L route (`nw-auto`) — terminal branch:** receive exactly the
-expectation charter and its user-surface start recipe. Reject and leave unread
-any code facts, acceptance tests, test command, source paths, implementation
-claims, or source fallback. Derive independent probes from the expectation and
+**Thin Auto M/L route (`nw-auto`) — terminal branch:** receive exactly ONE
+artifact: the expectation charter produced by `nw-product-owner`; its
+Preconditions contain the start recipe. Reject and leave unread any code facts,
+acceptance tests, test command, source paths, implementation claims, design
+contract, or source fallback. Derive independent probes from the expectation and
 observe only the running user surface. After Step 5, return the verdict and
 observations to root and STOP before Human-only Step 6; never append or record a
 verdict on the Auto route.

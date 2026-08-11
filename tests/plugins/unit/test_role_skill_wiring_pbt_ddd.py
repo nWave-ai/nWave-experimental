@@ -118,10 +118,47 @@ class TestAcceptanceDesignerLoadsLanguagePbtOnDemand:
 
 
 class TestThinAutoRoleRoutes:
-    """The existing roles expose thin Auto without changing Human routes."""
+    """Auto ownership: independent PO/ATD derivations and examiner isolation."""
 
-    def test_acceptance_designer_emits_only_examiner_safe_inputs(self):
-        """CONTRACT_SHAPE: bounded-change. Auto ATD returns a thin typed handoff."""
+    def test_auto_dispatches_siblings_then_joins_without_root_repair(self):
+        body = (SKILLS_DIR / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
+        route = " ".join(
+            body[body.index("## M route") : body.index("## L route")].split()
+        )
+        for token in (
+            "Sibling dispatch",
+            "concurrent",
+            "nw-product-owner",
+            "nw-acceptance-designer",
+            "BOTH",
+            "charter",
+            "contract+tests",
+            "never authors, repairs, or reconstructs",
+            "terminal under the single-pass rule",
+        ):
+            assert token in route
+
+    def test_product_owner_owns_value_side_charter_and_embedded_recipe(self):
+        body = (AGENTS_DIR / "nw-product-owner.md").read_text(encoding="utf-8")
+        route = " ".join(
+            body[
+                body.index("## Thin Auto M/L Route") : body.index("## Core Principles")
+            ].split()
+        )
+        for token in (
+            "same immutable value seed",
+            "VALUE-SIDE INPUTS ONLY",
+            "never read the design SSOT",
+            "`DeliveryContract`/design contract",
+            "acceptance tests",
+            "des charter-scaffold",
+            "Preconditions/start recipe",
+            "oracle",
+            "stop before the Human workflow",
+        ):
+            assert token in route
+
+    def test_acceptance_designer_owns_contract_and_tests_not_charter(self):
         body = (AGENTS_DIR / "nw-acceptance-designer.md").read_text(encoding="utf-8")
         route = " ".join(
             body[
@@ -129,46 +166,35 @@ class TestThinAutoRoleRoutes:
             ].split()
         )
         for token in (
-            "authoritative terminal branch",
-            "des code-fact query.* SUBJECT --root ROOT",
-            "load each generated Read row",
-            "when its trigger fires",
-            "never preload",
-            "never all eight PBT deep dives",
-            "thin `DeliveryContract`",
-            "selected `paradigm`",
-            "expectation charter, and the user-surface start recipe",
-            "never code facts, acceptance tests",
-            "test command",
-            "source fallback",
-            "Do not run the Human TaskCreate, Phase 0-4",
+            "same immutable value seed",
+            "design SSOT",
+            "acceptance tests",
+            "schema-valid `DeliveryContract`",
+            "never author or read the expectation charter",
+            "user-surface start recipe",
         ):
             assert token in route
+        assert "expectation charter, and the user-surface start recipe" not in route
 
-    def test_user_examiner_accepts_exactly_expectation_and_start_recipe(self):
-        """CONTRACT_SHAPE: bounded-change. Auto EXAMINE stops before Human recording."""
+    def test_examiner_receives_one_charter_artifact_and_rejects_design_inputs(self):
         body = (AGENTS_DIR / "nw-user-examiner.md").read_text(encoding="utf-8")
         route = " ".join(
             body[
                 body.index("## Route contract") : body.index("## Hard Boundary")
             ].split()
         )
-        examiner_isolation = " ".join(route.split())
         for token in (
-            "Human route",
-            "existing EXAMINE workflow below is unchanged",
-            "Thin Auto M/L route",
-            "exactly the expectation charter",
-            "user-surface start recipe",
+            "exactly ONE artifact",
+            "expectation charter",
+            "Preconditions contain the start recipe",
             "code facts",
             "acceptance tests",
             "test command",
-            "source fallback",
-            "After Step 5",
+            "source paths",
+            "design contract",
             "STOP before Human-only Step 6",
-            "never append or record a verdict",
         ):
-            assert token in examiner_isolation
+            assert token in route
 
 
 class TestUserExaminerAutoRouteIsBoundedNotExhaustive:

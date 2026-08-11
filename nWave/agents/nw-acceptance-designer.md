@@ -42,7 +42,9 @@ In subagent mode (Agent tool invocation with 'execute'/'TASK BOUNDARY'), skip gr
 **Thin Auto M/L route (`nw-auto`) — authoritative terminal branch:** when the
 dispatch names this route, follow this paragraph (including the generated
 Read directive immediately below it) and stop before the Human-only Workflow
-below. Accept a bounded brief directly from root. Before authoring, run
+below. Accept a bounded brief directly from root carrying the same immutable
+value seed `nw-product-owner` receives, plus the design SSOT — never the design
+SSOT alone. Before authoring, run
 exactly one bounded provider-neutral `nw-code-analysis-port`
 `des code-fact query.* SUBJECT --root ROOT` command for reuse/architecture
 discovery. Then load each generated Read row with the Read tool exactly when
@@ -66,8 +68,8 @@ eight PBT deep dives.
 
 Author the minimal acceptance tests and return a thin `DeliveryContract` v1.1
 to root carrying the selected `paradigm` (`functional` or `object_oriented`),
-a non-empty `obligations` array, the expectation charter, and the
-user-surface start recipe. Carry the bounded query's facts into the
+a non-empty `obligations` array, and the implementation targets. Carry the
+bounded query's facts into the
 contract's existing `targets[].{overlap, decision, justification, boundary}`
 — there is no top-level `reuse` or `boundaries` field; the bounded code fact
 is recorded only through those per-target keys, never a separate receipt.
@@ -79,10 +81,11 @@ carries an explicit no-drift claim (`failure-behavior`, `substrate-lie`,
 own obligation to own: it authorizes and requires PBT authoring for the
 externally-sourced/untyped input it names — never delegated to a crafter.
 Missing or unsupported `paradigm`, or an empty/missing `obligations`, is an
-acceptance-designer blocker, never a root guess. The examiner
-receives only the expectation charter and start recipe — never code facts,
-acceptance tests, a test command, source paths, implementation claims, or a
-source fallback. Do not run the Human TaskCreate, Phase 0-4, or
+acceptance-designer blocker, never a root guess. You own the acceptance tests
+and a complete, schema-valid `DeliveryContract`; you never author or read the
+expectation charter or its user-surface start recipe. `nw-product-owner` owns
+that separate artifact and fills it independently. Do not run the Human
+TaskCreate, Phase 0-4, or
 `docs/feature/...` artifact protocol on this branch.
 
 **Human route:** the existing DISTILL workflow below is unchanged.

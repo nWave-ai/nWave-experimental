@@ -97,6 +97,52 @@ def skill_observed_before_action(transcript_path: str, skill_name: str) -> bool:
     )
 
 
+def agent_role_already_dispatched(transcript_path: str, role: str) -> bool:
+    """True iff the transcript contains a COMPLETED `Agent` dispatch for `role`.
+
+    Keys on a genuine tool-result entry (`type == "user"`, a `tool_result`
+    content block) whose sibling `toolUseResult.agentType` matches `role` --
+    the authoritative real-transcript shape for a dispatch that actually ran
+    to completion, refusal, or failure alike. A PreToolUse-blocked `Agent`
+    tool_use never produces this result entry (the dispatch never ran), so it
+    does NOT consume the role's single pass. A completed result counts even
+    when its outcome is a refusal/failure (e.g. AUTHORITY_REFUSED) -- Auto
+    must stop rather than retry a completed role result, so completion, never
+    outcome, is the discriminant. A different role, prose, a forged `user`/
+    `system` entry missing the real `tool_result` block, and a missing/
+    unreadable/malformed transcript are all false (fail-closed).
+    """
+    if not role:
+        return False
+    try:
+        with open(transcript_path, encoding="utf-8") as f:
+            lines = f.readlines()
+    except (OSError, UnicodeDecodeError):
+        return False
+    for raw_line in lines:
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            entry = json.loads(raw_line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict) or entry.get("type") != "user":
+            continue
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        has_tool_result = isinstance(content, list) and any(
+            isinstance(block, dict) and block.get("type") == "tool_result"
+            for block in content
+        )
+        if not has_tool_result:
+            continue
+        result = entry.get("toolUseResult")
+        if isinstance(result, dict) and result.get("agentType") == role:
+            return True
+    return False
+
+
 def mode_select_observed_before_mutation(transcript_path: str) -> bool:
     """True iff the transcript contains an actual `Skill(nw-mode-select)` call.
 

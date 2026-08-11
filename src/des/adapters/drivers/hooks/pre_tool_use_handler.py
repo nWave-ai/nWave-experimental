@@ -42,6 +42,7 @@ from des.adapters.drivers.hooks.root_activation_context import (
 )
 from des.application.commit_attribution_service import CommitAttributionService
 from des.application.skill_tracking_service import (
+    agent_role_already_dispatched,
     mode_select_observed_before_mutation,
     skill_observed_before_action,
 )
@@ -444,6 +445,45 @@ def handle_pre_tool_use() -> int:
                     )
                     exit_code = 2
                     return exit_code
+
+            if hook_input.get("tool_name") == "Agent":
+                transcript_path = extract_transcript_path(hook_input)
+                auto_observed = False
+                try:
+                    auto_observed = bool(
+                        transcript_path
+                        and skill_observed_before_action(transcript_path, "nw-auto")
+                    )
+                except Exception:
+                    auto_observed = False
+                if auto_observed:
+                    role = tool_input.get("subagent_type")
+                    role_repeated = False
+                    try:
+                        role_repeated = bool(
+                            transcript_path
+                            and role
+                            and agent_role_already_dispatched(transcript_path, role)
+                        )
+                    except Exception:
+                        role_repeated = False
+                    if role_repeated:
+                        print(
+                            json.dumps(
+                                {
+                                    "decision": "block",
+                                    "reason": (
+                                        f"Auto role '{role}' was already "
+                                        "dispatched in this run: a repeat "
+                                        "Agent call for the same role is "
+                                        "blocked even if it creates a fresh "
+                                        "agent."
+                                    ),
+                                }
+                            )
+                        )
+                        exit_code = 2
+                        return exit_code
 
             if hook_input.get("tool_name") == "Bash":
                 # The git-stash / worktree-remove safety decision already ran
