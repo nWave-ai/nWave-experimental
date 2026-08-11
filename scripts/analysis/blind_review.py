@@ -38,11 +38,13 @@ Stdlib only.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import random
 import secrets
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -76,6 +78,8 @@ _NEVER_SEAL = (
     ".mypy_cache",
     "__pycache__",
     ".git",
+    "AGENTS.md",
+    "test_k4_acceptance.py",
 )
 
 
@@ -104,6 +108,170 @@ def strip_setup_traces(delivery: Path) -> None:
     kept = [ln for ln in lines if ln.strip() not in _SETUP_GITIGNORE_BLOCK]
     if len(kept) != len(lines):
         gitignore.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+
+_MANIFEST_NAME = "DELIVERY-CHANGES.txt"
+
+_STATUS_ADDED = "A"
+_STATUS_MODIFIED = "M"
+_STATUS_DELETED = "D"
+_STATUS_RENAMED = "R"
+
+
+def _excluded_path(rel_path: str) -> bool:
+    """True if any component of `rel_path` matches a `_NEVER_SEAL` pattern.
+
+    Mirrors `shutil.ignore_patterns`, which matches basenames per directory
+    level during the walk -- so a manifest entry never names a path that
+    `seal`'s own copytree would have refused to copy.
+    """
+    return any(
+        fnmatch.fnmatch(part, pattern)
+        for part in Path(rel_path).parts
+        for pattern in _NEVER_SEAL
+    )
+
+
+def _git_status(workspace: Path) -> list[tuple[str, str, str | None]]:
+    """`(XY code, path, old_path-if-renamed)` for every entry, relative to HEAD.
+
+    `-z` makes this path-safe: porcelain's default quoting is not reversible
+    for every legal filename, and NUL-separated records are.
+    """
+    done = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(workspace),
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+        ],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        timeout=30,
+    )
+    if done.returncode != 0:
+        raise RuntimeError(f"git status failed in {workspace}: {done.stderr.strip()}")
+
+    tokens = done.stdout.split("\0")
+    entries: list[tuple[str, str, str | None]] = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        i += 1
+        if not tok:
+            continue
+        code, path = tok[:2], tok[3:]
+        old_path = None
+        if code[0] in ("R", "C"):
+            # `-z` records renames as NEW-path NUL OLD-path NUL, in that
+            # order -- verified against `git status --porcelain=v1 -z`
+            # output for a `git mv`, not the manpage's prose description.
+            old_path = tokens[i]
+            i += 1
+        entries.append((code, path, old_path))
+    return entries
+
+
+def _classify_status(code: str) -> str | None:
+    """One of the four manifest buckets, or None if the code can't be represented."""
+    if code == "??":
+        return _STATUS_ADDED
+    if code[0] in ("R", "C"):
+        return _STATUS_RENAMED
+    if "D" in code:
+        return _STATUS_DELETED
+    if "A" in code:
+        return _STATUS_ADDED
+    if "M" in code:
+        return _STATUS_MODIFIED
+    return None
+
+
+def _gitignore_setup_only(workspace: Path) -> bool:
+    """True if `.gitignore`'s only difference from HEAD is the setup block.
+
+    A delivery may legitimately edit `.gitignore` too; only the exact block
+    `nwave-ai project enable` appends is setup noise, so this diffs the
+    stripped working copy against HEAD rather than excluding the path outright.
+    """
+    gitignore = workspace / ".gitignore"
+    if not gitignore.is_file():
+        return False
+    shown = subprocess.run(
+        ["git", "-C", str(workspace), "show", "HEAD:.gitignore"],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        timeout=30,
+    )
+    head_lines = shown.stdout.splitlines() if shown.returncode == 0 else []
+    current_lines = gitignore.read_text(encoding="utf-8", errors="replace").splitlines()
+    stripped = [ln for ln in current_lines if ln.strip() not in _SETUP_GITIGNORE_BLOCK]
+    return stripped == head_lines
+
+
+def write_delivery_manifest(workspace: Path, target: Path) -> int:
+    """`DELIVERY-CHANGES.txt`: the git evidence of what this delivery changed.
+
+    Built from `git status` against the workspace's own HEAD, after setup-only
+    traces are excluded -- never from the arm label or session, so the file
+    itself cannot leak identity the rest of `seal` withholds.
+    """
+    manifest_path = target / _MANIFEST_NAME
+    if not (workspace / ".git").is_dir():
+        manifest_path.write_text("", encoding="utf-8")
+        return 0
+
+    try:
+        entries = _git_status(workspace)
+    except RuntimeError as exc:
+        sys.stderr.write(
+            "WHAT: could not read the delivery-manifest git evidence for a packet.\n"
+            f"      - {exc}\n"
+            "WHY:  a manifest built without evidence would either be empty (looks\n"
+            "      like nothing changed) or invented, and both are dishonest.\n"
+            "HOW:  make sure the delivery workspace is a readable git checkout, then\n"
+            "      re-seal.\n"
+        )
+        return 1
+
+    lines: list[str] = []
+    unrepresentable: list[tuple[str, str]] = []
+    for code, path, old_path in entries:
+        if _excluded_path(path) or (old_path and _excluded_path(old_path)):
+            continue
+        if path == ".gitignore" and "M" in code and _gitignore_setup_only(workspace):
+            continue
+        bucket = _classify_status(code)
+        if bucket is None:
+            unrepresentable.append((code, path))
+            continue
+        if bucket == _STATUS_RENAMED:
+            lines.append(f"{_STATUS_RENAMED} {old_path} -> {path}")
+        else:
+            lines.append(f"{bucket} {path}")
+
+    if unrepresentable:
+        sys.stderr.write(
+            "WHAT: a delivery-changed path cannot be represented honestly in its manifest.\n"
+            + "".join(f"      - {code} {path}\n" for code, path in unrepresentable)
+            + "WHY:  an unrecognised git status (typechange, unmerged conflict, ...)\n"
+            "      dropped silently would make DELIVERY-CHANGES.txt claim completeness\n"
+            "      it does not have.\n"
+            "HOW:  resolve the working tree state, or teach `_classify_status` the new\n"
+            "      status honestly, then re-seal. Do not hand out this packet.\n"
+        )
+        return 1
+
+    lines.sort()
+    manifest_path.write_text(
+        ("\n".join(lines) + "\n") if lines else "", encoding="utf-8"
+    )
+    return 0
 
 
 def opaque_id(session_id: str, salt: str) -> str:
@@ -168,6 +336,9 @@ def seal(campaign: Path, out: Path, map_path: Path) -> int:
             )
             return 1
 
+        if write_delivery_manifest(workspace, target) != 0:
+            return 1
+
     # Shuffled: ordering alone would rebuild the arm, since `control` sorts
     # before `nwave` in every pair, every time.
     order = list(mapping)
@@ -198,12 +369,136 @@ def seal(campaign: Path, out: Path, map_path: Path) -> int:
     return 0
 
 
+_CRITERIA_KEYS = {str(n) for n in range(1, 13)}
+_VERDICT_TOP_KEYS = {"criteria", "total", "blocking_quality_findings", "summary"}
+
+
+def _validate_one_verdict(opaque: str, verdict: object) -> list[str]:
+    """Problem strings for one delivery's verdict, empty if it is well-formed.
+
+    Checked BEFORE anything is mapped back to a session: the rubric criteria
+    object is exactly the shape four reviewer attempts got wrong, so this is a
+    boundary, not a best-effort read.
+    """
+    if not isinstance(verdict, dict):
+        return [
+            f"{opaque}: verdict must be a JSON object, got {type(verdict).__name__}"
+        ]
+
+    problems: list[str] = []
+    top_keys = set(verdict)
+    if top_keys != _VERDICT_TOP_KEYS:
+        missing = sorted(_VERDICT_TOP_KEYS - top_keys)
+        extra = sorted(top_keys - _VERDICT_TOP_KEYS)
+        detail = []
+        if missing:
+            detail.append(f"missing {missing}")
+        if extra:
+            detail.append(f"unexpected {extra}")
+        problems.append(
+            f"{opaque}: verdict keys must be exactly "
+            f"{sorted(_VERDICT_TOP_KEYS)} (" + ", ".join(detail) + ")"
+        )
+
+    criteria = verdict.get("criteria") if "criteria" in top_keys else None
+    criteria_keys: set[str] = set()
+    if not isinstance(criteria, dict):
+        if "criteria" in top_keys:
+            problems.append(f"{opaque}: 'criteria' must be a JSON object")
+    else:
+        criteria_keys = set(criteria)
+        if criteria_keys != _CRITERIA_KEYS:
+            missing = sorted(_CRITERIA_KEYS - criteria_keys, key=int)
+            extra = sorted(criteria_keys - _CRITERIA_KEYS)
+            detail = []
+            if missing:
+                detail.append(f"missing {missing}")
+            if extra:
+                detail.append(f"unexpected {extra}")
+            problems.append(
+                f"{opaque}: criteria keys must be exactly '1'..'12' ("
+                + ", ".join(detail)
+                + ")"
+            )
+
+    score_sum = 0
+    scores_all_valid = True
+    for key in sorted(criteria_keys & _CRITERIA_KEYS, key=int):
+        criterion = criteria[key]
+        if not isinstance(criterion, dict):
+            problems.append(f"{opaque}: criterion {key} must be an object")
+            scores_all_valid = False
+            continue
+        criterion_keys = set(criterion)
+        if criterion_keys != {"score", "evidence"}:
+            problems.append(
+                f"{opaque}: criterion {key} keys must be exactly ['evidence', 'score']"
+            )
+            scores_all_valid = False
+        score = criterion.get("score")
+        # `bool` is a subclass of `int`; `type(score) is not int` is the one
+        # check that rejects True/False while still accepting 0, 1, 2.
+        if type(score) is not int or not (0 <= score <= 2):
+            problems.append(
+                f"{opaque}: criterion {key}.score must be an int 0..2, got {score!r}"
+            )
+            scores_all_valid = False
+        else:
+            score_sum += score
+        if not isinstance(criterion.get("evidence"), str):
+            problems.append(f"{opaque}: criterion {key}.evidence must be a string")
+
+    total = verdict.get("total")
+    if type(total) is not int:
+        problems.append(f"{opaque}: 'total' must be an int, got {total!r}")
+    elif scores_all_valid and criteria_keys == _CRITERIA_KEYS and total != score_sum:
+        problems.append(
+            f"{opaque}: 'total' ({total}) does not equal the score sum ({score_sum})"
+        )
+
+    findings = verdict.get("blocking_quality_findings")
+    if not isinstance(findings, list) or not all(isinstance(f, str) for f in findings):
+        problems.append(
+            f"{opaque}: 'blocking_quality_findings' must be a list of strings"
+        )
+
+    if not isinstance(verdict.get("summary"), str):
+        problems.append(f"{opaque}: 'summary' must be a string")
+
+    return problems
+
+
+def validate_verdict_shape(verdicts: dict) -> list[str]:
+    """All problem strings across every scored delivery, in a stable order."""
+    problems: list[str] = []
+    for opaque in sorted(verdicts):
+        problems.extend(_validate_one_verdict(opaque, verdicts[opaque]))
+    return problems
+
+
 def unseal(sealed: Path, scored: Path, out: Path) -> int:
-    """Map opaque verdicts back to sessions, refusing an incomplete set."""
+    """Map opaque verdicts back to sessions, refusing a malformed or incomplete set."""
     # `sealed` is the MAP FILE now, not a directory beside the packets.
     seal_data = json.loads(sealed.read_text(encoding="utf-8"))
     issued: dict[str, str] = seal_data["opaque_to_session"]
     verdicts: dict[str, dict] = json.loads(scored.read_text(encoding="utf-8"))
+
+    malformed = validate_verdict_shape(verdicts)
+    if malformed:
+        sys.stderr.write(
+            "WHAT: the scored file contains malformed reviewer verdicts.\n"
+            + "".join(f"      - {p}\n" for p in malformed)
+            + "WHY:  the rubric is source-blind but not shape-blind: a verdict that\n"
+            "      does not carry all 12 scored criteria, or whose total the reviewer\n"
+            "      cannot add up, is not a disagreement about quality -- it is not a\n"
+            "      verdict this instrument can trust downstream.\n"
+            "HOW:  fix the verdict JSON so each delivery is exactly {criteria, total,\n"
+            "      blocking_quality_findings, summary}, with 'criteria' an object\n"
+            "      keyed '1'..'12' of {score: int 0..2, evidence: str}, an int\n"
+            "      'total' equal to their sum, 'blocking_quality_findings' as a list\n"
+            "      of strings, and a string 'summary'. Nothing was mapped.\n"
+        )
+        return 1
 
     unknown = sorted(set(verdicts) - set(issued))
     unscored = sorted(set(issued) - set(verdicts))

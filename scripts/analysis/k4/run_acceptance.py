@@ -127,14 +127,21 @@ def examine(workspace: Path, suite: Path) -> tuple[bool, str]:
     shutil.copy2(suite, target)
     python = str(venv / "bin" / "python")
 
-    feature_code, feature_tail = _run(
-        [python, "manage.py", "test", _SUITE_LABEL], workspace
-    )
-    regression_code, regression_tail = _run(
-        [python, "manage.py", "test", "hc", "--exclude-tag", "k4"],
-        workspace,
-        timeout=3600,
-    )
+    # The suite this call wrote in is removed here no matter how the run below
+    # ends -- pass, fail, an uncaught exception, or a timeout inside `_run`.
+    # Only a file THIS call created is ever touched: a pre-existing one already
+    # caused a refusal above, before the copy.
+    try:
+        feature_code, feature_tail = _run(
+            [python, "manage.py", "test", _SUITE_LABEL], workspace
+        )
+        regression_code, regression_tail = _run(
+            [python, "manage.py", "test", "hc", "--exclude-tag", "k4"],
+            workspace,
+            timeout=3600,
+        )
+    finally:
+        target.unlink(missing_ok=True)
 
     accepted = feature_code == 0 and regression_code == 0
     evidence = (
