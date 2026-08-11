@@ -52,6 +52,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.common.delivery_contract_fixture import contract_args
 from tests.common.in_process_cli import run_cli_in_process
 
 
@@ -73,8 +74,7 @@ def _base_argv(*, project_id: str, slice_id: str) -> list[str]:
         slice_id,
         "--phase",
         "A_GREEN",
-        "--repo-root",
-        str(_REPO_ROOT),
+        *contract_args(_REPO_ROOT, seed=False),
     ]
 
 

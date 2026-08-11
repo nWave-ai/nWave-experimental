@@ -95,6 +95,7 @@ from des.cli import dispatch
 from des.domain.atdd_pure_phases import FEATURE_END_PHASES
 from des.domain.lane_profile import LANE_PROFILES
 from des.domain.wave_dispatch_profile import WAVE_DISPATCH_PROFILES
+from tests.common.delivery_contract_fixture import contract_args
 from tests.common.in_process_cli import run_cli_in_process
 
 
@@ -168,7 +169,11 @@ def _missing_token_groups(text: str) -> list[str]:
 # in the live SSOT data, so a lane/wave added later cannot silently escape it.
 # ---------------------------------------------------------------------------
 
-_TAIL: tuple[str, ...] = ("--intent", "x", "--repo-root", str(_REPO_ROOT))
+#: Appended to every shape. `--delivery-contract` is unused by a phaseless
+#: shape (only consumed when `runs_tests` is True) but harmless there --
+#: sharing ONE tail keeps the matrix from branching per-shape on a fact the
+#: matrix itself does not track.
+_TAIL: tuple[str, ...] = ("--intent", "x", *contract_args(_REPO_ROOT, seed=False))
 
 
 def _argv(

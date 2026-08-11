@@ -31,10 +31,15 @@ import base64
 import datetime
 import hashlib
 import json
+import re
 import shlex
+import stat
 import sys
 import uuid
 from pathlib import Path
+
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError as _JsonSchemaValidationError
 
 from des._internal import subset_parser
 from des.application.dispatch_lane_ssot import _DISPATCH_YAML_PARTS, _read_full_sections
@@ -79,6 +84,193 @@ from des.domain.wave_dispatch_profile import WAVE_DISPATCH_PROFILES
 #: Deliberate, distinguishable exit for "bad input" (missing/invalid CLI
 #: argument, unreadable/malformed SSOT file) -- never a Python traceback.
 _EXIT_USAGE_ERROR = 2
+
+#: ADR-SSOT-002 S4a -- the schema every --delivery-contract PATH is validated
+#: against, shipped as a sibling of the dispatch assets dir in all three real
+#: layouts (mirrors _resolve_dispatch_assets_dir's own resolution comment
+#: above it).
+_DELIVERY_CONTRACT_SCHEMA_PARTS = ("schemas", "thin-delivery-contract.schema.json")
+
+#: Structurally unsafe PATH shapes (glob metacharacters) -- checked alongside
+#: the explicit absolute/traversal/backslash/drive-letter checks below, never
+#: enumerated by hand beyond this single character class.
+_DELIVERY_CONTRACT_GLOB_PATTERN = re.compile(r"[*?\[\]]")
+
+
+def _unsafe_delivery_contract_path_reason(path_str: str) -> str | None:
+    """Return a WHAT clause naming why PATH is untrustworthy, else None.
+
+    Checked BEFORE any filesystem access (validate PATH before trust): empty
+    / whitespace-only, absolute, a `..` traversal segment, a backslash, a
+    Windows drive letter, or a glob metacharacter are all refused on the raw
+    string alone.
+    """
+    if not path_str.strip():
+        return "the --delivery-contract PATH is empty or whitespace-only"
+    if path_str != path_str.strip():
+        return (
+            f"the --delivery-contract PATH {path_str!r} has leading/trailing whitespace"
+        )
+    if path_str.startswith("/"):
+        return f"the --delivery-contract PATH {path_str!r} is absolute"
+    if re.match(r"^[A-Za-z]:", path_str):
+        return (
+            f"the --delivery-contract PATH {path_str!r} carries a Windows drive letter"
+        )
+    if "\\" in path_str:
+        return f"the --delivery-contract PATH {path_str!r} contains a backslash"
+    if ".." in path_str.split("/"):
+        return f"the --delivery-contract PATH {path_str!r} contains a `..` traversal segment"
+    if _DELIVERY_CONTRACT_GLOB_PATTERN.search(path_str):
+        return (
+            f"the --delivery-contract PATH {path_str!r} contains a glob metacharacter"
+        )
+    return None
+
+
+def _delivery_contract_design_context(contract: dict, relative_path: str) -> str:
+    """Compact DESIGN_CONTEXT derived ONLY from validated contract facts."""
+    acceptance_tests = contract.get("acceptance-tests", {})
+    commands = contract.get("verification-scope", {}).get("commands", [])
+    commands_text = "; ".join(" ".join(command) for command in commands)
+    targets_text = ", ".join(sorted(contract.get("targets", {})))
+    obligations_text = ", ".join(contract.get("obligations", []))
+    return (
+        f"DeliveryContract: {relative_path}\n"
+        f"Delivery-id: {contract.get('delivery-id', '')}\n"
+        f"Outcome: {contract.get('outcome', '')}\n"
+        f"Paradigm: {contract.get('paradigm', '')}\n"
+        f"Targets: {targets_text}\n"
+        f"Obligations: {obligations_text}\n"
+        "Acceptance-test: "
+        f"{acceptance_tests.get('locator', '')} ({acceptance_tests.get('digest', '')})\n"
+        f"Verification commands: {commands_text}\n"
+    )
+
+
+def _load_delivery_contract(repo_root: Path, path_str: str) -> tuple[dict, str] | None:
+    """Validate --delivery-contract PATH before trust, then load + schema-
+    validate its content. Returns ``(contract, relative_path)`` on success, or
+    ``None`` after emitting a WHAT/WHY/HOW refusal to stderr.
+
+    ``repo_root`` is the explicit ``args.repo_root`` ONLY -- PATH is resolved
+    against no other axis. Uses ``lstat`` (never ``stat``) so a symlink,
+    directory, or fifo masquerading at PATH is refused rather than silently
+    followed.
+    """
+    unsafe_reason = _unsafe_delivery_contract_path_reason(path_str)
+    if unsafe_reason is not None:
+        _handoff_refusal(
+            what=unsafe_reason,
+            why=(
+                "an unsafe or unresolvable PATH could escape --repo-root or "
+                "read a file the caller never named"
+            ),
+            how=(
+                "pass a repository-root-relative PATH with no leading '/', "
+                "no '..' segment, no backslash, no drive letter, and no "
+                "glob metacharacter"
+            ),
+        )
+        return None
+
+    candidate = repo_root / path_str
+    try:
+        resolved_root = repo_root.resolve()
+        resolved_candidate = candidate.resolve()
+    except OSError as exc:
+        _handoff_refusal(
+            what=f"path resolution failed for {candidate} ({exc})",
+            why="symlink traversal or filesystem access error prevents verifying path safety",
+            how="check that --delivery-contract points to an accessible path under --repo-root",
+        )
+        return None
+    if not resolved_candidate.is_relative_to(resolved_root):
+        _handoff_refusal(
+            what=f"the --delivery-contract path {candidate} escapes outside --repo-root",
+            why="path resolution reveals a symlink or traversal that points outside the explicit --repo-root boundary",
+            how="pass --delivery-contract pointing at a path within --repo-root",
+        )
+        return None
+    try:
+        file_stat = candidate.lstat()
+    except OSError:
+        _handoff_refusal(
+            what=f"the --delivery-contract file does not exist at {candidate}",
+            why=(
+                "a DELIVER-test-executing dispatch requires a real "
+                "ThinDeliveryContract to validate before any prompt is rendered"
+            ),
+            how=(
+                "pass --delivery-contract pointing at an existing "
+                "repository-root-relative JSON file"
+            ),
+        )
+        return None
+    if not stat.S_ISREG(file_stat.st_mode):
+        _handoff_refusal(
+            what=f"the --delivery-contract path {candidate} is not a regular file",
+            why=(
+                "a symlink, directory, or fifo cannot be trusted as the "
+                "contract's content"
+            ),
+            how="pass --delivery-contract pointing at a regular JSON file",
+        )
+        return None
+
+    try:
+        text = candidate.read_text(encoding="utf-8")
+    except OSError as exc:
+        _handoff_refusal(
+            what=f"the --delivery-contract file at {candidate} cannot be read ({exc})",
+            why="a DELIVER-test-executing dispatch requires a readable ThinDeliveryContract",
+            how="fix the file's permissions/encoding and rerun des dispatch",
+        )
+        return None
+    try:
+        contract = json.loads(text)
+    except json.JSONDecodeError as exc:
+        _handoff_refusal(
+            what=f"the --delivery-contract file at {candidate} is not valid json ({exc})",
+            why="a DELIVER-test-executing dispatch cannot trust a malformed contract",
+            how=(
+                "fix the file so it parses as valid JSON, or point "
+                "--delivery-contract at a valid file"
+            ),
+        )
+        return None
+
+    schema_path = _INSTALLED_DISPATCH_ASSETS_DIR.parent.joinpath(
+        *_DELIVERY_CONTRACT_SCHEMA_PARTS
+    )
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        _handoff_refusal(
+            what=f"the thin-delivery-contract schema cannot be read at {schema_path} ({exc})",
+            why="the contract cannot be validated without its schema",
+            how="reinstall nWave so nWave/schemas/thin-delivery-contract.schema.json is present",
+        )
+        return None
+    try:
+        Draft202012Validator(schema).validate(contract)
+    except _JsonSchemaValidationError as exc:
+        _handoff_refusal(
+            what=(
+                f"the --delivery-contract file at {candidate} fails the "
+                f"thin-delivery-contract schema ({exc.message})"
+            ),
+            why="a DELIVER-test-executing dispatch cannot trust a schema-invalid contract",
+            how=(
+                "fix the contract to satisfy "
+                "nWave/schemas/thin-delivery-contract.schema.json, or point "
+                "--delivery-contract at a valid one"
+            ),
+        )
+        return None
+    return contract, path_str
+
+
 _MAX_HANDOFF_BYTES = 2_048
 
 
@@ -346,15 +538,31 @@ _PREFACTORING_WITNESS_RESCUABLE_VERDICTS = frozenset(
 _VENDORS_YAML_PARTS = ("nWave", "dispatch", "vendors.yaml")
 _VENDOR_ID = "claude_code"
 
-# nWave/dispatch/ ships as a sibling of the code root in BOTH layouts this
-# module runs from: a dev checkout (src/des/cli/dispatch.py -> parents[3] ==
-# checkout root) and an installed tree (lib/python/des/cli/dispatch.py ->
-# parents[3] == <claude_dir>/lib). Mirrors the sibling-of-lib/python formula
-# other runtime asset paths use. Resolved fresh at import time -- never cached
-# beyond that.
-_INSTALLED_DISPATCH_ASSETS_DIR = (
-    Path(__file__).resolve().parents[3] / "nWave" / "dispatch"
-)
+
+# nWave/dispatch/ ships as a sibling of the code root in a dev checkout
+# (src/des/cli/dispatch.py -> parents[3] == checkout root) and in a Claude
+# runtime install (lib/python/des/cli/dispatch.py -> parents[3] ==
+# <claude_dir>/lib). A PyPI/pipx site-packages install is a THIRD, distinct
+# shape: the public `des` console entry ships FLAT at site-packages/des/
+# (parents[2] == site-packages) while nWave/dispatch/ ships NESTED one level
+# deeper at site-packages/nWave/nWave/dispatch (mirrors patch_pyproject.py's
+# `"nWave/dispatch" = "nWave/nWave/dispatch"` force-include and
+# des_plugin.py's own nested-first probe for the identical
+# site-packages/nWave/nWave/<asset> shape). `_resolve_dispatch_assets_dir`
+# probes both candidates by their own `atdd_pure.yaml` marker rather than
+# guessing from cwd or hardcoding an environment; resolved fresh at import
+# time -- never cached beyond that.
+def _resolve_dispatch_assets_dir() -> Path:
+    here = Path(__file__).resolve()
+    sibling_of_lib_python = here.parents[3] / "nWave" / "dispatch"
+    nested_site_packages = here.parents[2] / "nWave" / "nWave" / "dispatch"
+    for candidate in (sibling_of_lib_python, nested_site_packages):
+        if candidate.joinpath("atdd_pure.yaml").is_file():
+            return candidate
+    return sibling_of_lib_python
+
+
+_INSTALLED_DISPATCH_ASSETS_DIR = _resolve_dispatch_assets_dir()
 
 #: Fallback marker syntax -- used only if the vendors.yaml SSOT cannot be
 #: read/parsed (degrade-loud path); mirrors the claude_code vendor row so a
@@ -1078,6 +1286,7 @@ def _design_context_body(
     wave: str,
     project_root: Path,
     capability: DeclaredCapability,
+    delivery_contract_context: str | None = None,
 ) -> str:
     """DESIGN_CONTEXT section body, keyed on the resolved dispatch agent
     (and, for a bugfix-lane code-facing dispatch, on whether a
@@ -1095,6 +1304,10 @@ def _design_context_body(
     feature-delta.md by design, so pointing the crafter at one that will
     never resolve is the exact defect this branch fixes.
     """
+    if delivery_contract_context is not None:
+        if agent in _NON_CODE_FACING_AGENTS:
+            return delivery_contract_context + _capability_claim(agent, capability)
+        return delivery_contract_context
     if agent in _NON_CODE_FACING_AGENTS:
         return _NON_CODE_FACING_DESIGN_CONTEXT + _capability_claim(agent, capability)
     if agent == "nw-solution-architect" and wave == "design":
@@ -1147,6 +1360,7 @@ def _section_body(
     capability: DeclaredCapability,
     middle_slot_charter: str | None,
     legacy_middle_slot: bool,
+    delivery_contract_context: str | None = None,
 ) -> str:
     """Render one section's scaffold body.
 
@@ -1174,7 +1388,8 @@ def _section_body(
         # silent-wrong this register exists to prevent (GDP-6), and the reason
         # the claim is DERIVED from the declaration rather than asserted.
         if section_id == "DESIGN_CONTEXT":
-            return armed_body + _capability_claim(agent, capability)
+            contract_prefix = delivery_contract_context or ""
+            return contract_prefix + armed_body + _capability_claim(agent, capability)
         return armed_body
     if legacy_middle_slot:
         legacy_body = _legacy_middle_slot_section_body(section_id)
@@ -1201,7 +1416,13 @@ def _section_body(
             + (f"{intent}\n" if intent else "")
         ),
         "DESIGN_CONTEXT": _design_context_body(
-            agent, feature_id, lane, wave, project_root, capability
+            agent,
+            feature_id,
+            lane,
+            wave,
+            project_root,
+            capability,
+            delivery_contract_context,
         ),
         "ATDD_PURE_PHASES": (
             "Execute the phase named in the DES-PHASE marker.\n"
@@ -1325,6 +1546,7 @@ def _build_prompt(
     swarm_isolated_justification: str | None = None,
     middle_slot_charter: str | None = None,
     legacy_middle_slot: bool = False,
+    delivery_contract_context: str | None = None,
 ) -> str:
     """Assemble the full dispatch prompt: marker block, then section headers.
 
@@ -1401,6 +1623,7 @@ def _build_prompt(
             capability=capability,
             middle_slot_charter=middle_slot_charter,
             legacy_middle_slot=legacy_middle_slot,
+            delivery_contract_context=delivery_contract_context,
         )
         for section_id in section_ids
     ]
@@ -1678,6 +1901,21 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--delivery-contract",
+        dest="delivery_contract",
+        default=None,
+        help=(
+            "Repository-root-relative PATH to a ThinDeliveryContract JSON "
+            "file, paired with --repo-root (which supplies the ROOT PATH is "
+            "resolved against, and against no other axis). Required, "
+            "together with --repo-root, for every DELIVER-test-executing "
+            "dispatch (ADR-SSOT-002 S4a) -- refused WHAT/WHY/HOW before any "
+            "prompt is rendered when only one of the pair is given. An "
+            "authoring-wave dispatch (e.g. --wave discuss) needs neither "
+            "flag."
+        ),
+    )
+    parser.add_argument(
         "--swarm-isolated",
         dest="swarm_isolated",
         action="store_true",
@@ -1908,6 +2146,57 @@ def main(argv: list[str] | None = None) -> int:
         )
         return _EXIT_USAGE_ERROR
 
+    # The existing runs_tests decision, computed ONCE here (ADR-SSOT-002
+    # S4a) -- derived from the already-computed `_phaseless` authority so
+    # this early gate can never diverge from the phaseless classification
+    # (which already covers both the phaseless lanes, e.g. --lane charter,
+    # and authoring waves that declare `runs_tests = False`). A phase-bearing
+    # dispatch additionally runs no tests when its statically resolved phase
+    # agent is itself non-code-facing (the SAME ``_NON_CODE_FACING_AGENTS``
+    # SSOT the test-loading/skill-loading gates already consult) -- e.g.
+    # C_REVIEWER_AUDIT / FEATURE_END_EXAMINE both resolve to the examiner
+    # agent, which never executes tests.
+    runs_tests = not _phaseless and (
+        phase is None
+        or _resolve_agent(phase, args.lane, args.wave) not in _NON_CODE_FACING_AGENTS
+    )
+
+    delivery_contract_context: str | None = None
+    if runs_tests:
+        missing_flags = [
+            flag
+            for flag, value in (
+                ("--repo-root", args.repo_root),
+                ("--delivery-contract", args.delivery_contract),
+            )
+            if value is None
+        ]
+        if missing_flags:
+            return _handoff_refusal(
+                what=(
+                    f"{' and '.join(missing_flags)} missing for a "
+                    "DELIVER-test-executing dispatch"
+                ),
+                why=(
+                    "ADR-SSOT-002 S4a requires the explicit --repo-root + "
+                    "--delivery-contract pair before any test-running "
+                    "dispatch can be trusted or rendered"
+                ),
+                how=(
+                    "pass both --repo-root <ROOT> and --delivery-contract "
+                    "<PATH-relative-to-ROOT>"
+                ),
+            )
+        loaded_contract = _load_delivery_contract(
+            args.repo_root, args.delivery_contract
+        )
+        if loaded_contract is None:
+            return _EXIT_USAGE_ERROR
+        contract, contract_relative_path = loaded_contract
+        delivery_contract_context = _delivery_contract_design_context(
+            contract, contract_relative_path
+        )
+
     slice_id: str = args.slice_id
     if (
         phase is not None
@@ -2035,13 +2324,10 @@ def main(argv: list[str] | None = None) -> int:
     # wave, absent from the YAML's single full profile, reads the datum.
     if args.lane is not None:
         section_ids = LANE_PROFILES[args.lane].required_sections
-        runs_tests = True
     elif _wave_profile is not None and not _wave_profile.runs_tests:
         section_ids = _wave_profile.required_sections
-        runs_tests = False
     else:
         section_ids = full_sections
-        runs_tests = True
 
     # Fix B (RCA fix-des-dispatch-broken-design-context-pointer): the
     # EXISTENCE leg and the reuse-analysis CONTENT leg are orthogonal checks
@@ -2057,7 +2343,11 @@ def main(argv: list[str] | None = None) -> int:
     # epic mode never will -- fractal JIT authors only the epic-delta).
     lane_profile = LANE_PROFILES.get(args.lane) if args.lane is not None else None
     _cites_design = _wave_profile is None or _wave_profile.cites_design
-    if _cites_design and (lane_profile is None or lane_profile.feature_readiness):
+    if (
+        not runs_tests
+        and _cites_design
+        and (lane_profile is None or lane_profile.feature_readiness)
+    ):
         missing_advisory = _feature_delta_missing_advisory(
             project_root, args.project_id
         )
@@ -2067,8 +2357,15 @@ def main(argv: list[str] | None = None) -> int:
     # The Reuse Analysis is a DESIGN artifact. Advising its absence on a
     # dispatch for DISCUSS -- the wave that runs BEFORE design -- demands an
     # artifact that cannot exist yet, the same inversion the section profile
-    # above closes. Only waves that CITE a design are held to it.
-    if args.lane not in _LANES_REQUIRING_JUSTIFICATION and _cites_design:
+    # above closes. Only waves that CITE a design are held to it. Never on a
+    # runs_tests path (ADR-SSOT-002 S4a): the DeliveryContract already
+    # validated above owns that role there, and feature-delta.md must never
+    # be consulted or suggested on a DELIVER-test-executing route.
+    if (
+        not runs_tests
+        and args.lane not in _LANES_REQUIRING_JUSTIFICATION
+        and _cites_design
+    ):
         content_advisory = _feature_delta_content_advisory(
             project_root, args.project_id
         )
@@ -2174,6 +2471,7 @@ def main(argv: list[str] | None = None) -> int:
         swarm_isolated_justification=swarm_justification or None,
         middle_slot_charter=middle_slot_charter,
         legacy_middle_slot=legacy_middle_slot,
+        delivery_contract_context=delivery_contract_context,
     )
 
     # The declaration is written by a dispatch that SUCCEEDS -- a refused one

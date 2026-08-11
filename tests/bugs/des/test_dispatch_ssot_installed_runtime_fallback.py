@@ -132,6 +132,13 @@ def _base_argv(
     slice_id: str = "slice-01",
     repo_root: Path | None = None,
 ) -> list[str]:
+    # `--wave discuss` (a phaseless, authoring wave -- runs_tests=False) is
+    # used instead of a code-facing `--phase` on purpose: the property under
+    # test here is SSOT LOCATION resolution, never the DeliveryContract
+    # locator (ADR-SSOT-002 S4a's `--repo-root` + `--delivery-contract` pair
+    # is required ONLY for a `runs_tests=True` dispatch, and requiring it
+    # would make AT-1's "no --repo-root at all" scenario impossible to
+    # express through a code-facing phase).
     argv = [
         "--mode",
         "atdd_pure",
@@ -139,8 +146,8 @@ def _base_argv(
         project_id,
         "--slice",
         slice_id,
-        "--phase",
-        "A_GREEN",
+        "--wave",
+        "discuss",
         "--intent",
         "verify SSOT resolution",
     ]

@@ -74,6 +74,7 @@ import re
 from pathlib import Path
 
 import pytest
+from tests.common.delivery_contract_fixture import contract_args
 from tests.common.in_process_cli import run_cli_in_process
 
 from des.adapters.drivers.hooks.project_root_validator import (
@@ -111,6 +112,7 @@ def _base_argv(*, repo_root: str | None = None) -> list[str]:
     ]
     if repo_root is not None:
         argv += ["--repo-root", repo_root]
+        argv += list(contract_args(_REPO_ROOT, seed=False)[2:])
     return argv
 
 

@@ -1005,6 +1005,15 @@ class TestRoleSkillLoadingRegistry:
             "reviewer must mirror on_demand certainty lens"
         )
 
+        pbt_trigger = roles["nw-acceptance-designer"]["phase"][
+            "nw-property-based-testing"
+        ]
+        assert "BROAD_INPUT_DOMAIN" in pbt_trigger
+        assert "BROAD_INPUT_DOMAIN" in body
+        assert "BROAD_INPUT_DOMAIN" not in reviewer_body, (
+            "the reviewer must not inherit the ATD-only PBT authoring obligation"
+        )
+
     @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
     def test_frontmatter_disjoint_from_effective_conditional_skills(
         self, root: Path, roles: dict, agent_id: str
@@ -1093,6 +1102,22 @@ class TestRoleSkillLoadingRegistry:
                     f"{agent_id} must never load a test-authoring skill -- SLIM "
                     f"scope forbids it, found {banned!r} in {body!r}"
                 )
+
+            for token in (
+                "CONTESTED_LAW",
+                "REPRESENTATION_CHANGE",
+                "INVALID_STATE",
+                "PRESERVATION",
+            ):
+                assert token in body, (
+                    f"{agent_id}: DeliveryContract obligation {token} must "
+                    "deterministically appear in the generated trigger projection"
+                )
+
+            text = (root / "nWave" / "agents" / f"{agent_id}.md").read_text()
+            assert "REUSE_CANDIDATE" in text
+            assert "ARCHITECTURE_BOUNDARY_CHANGE" in text
+            assert "authoring or editing a test" in text
 
     def test_crafters_directive_is_reachable_from_dispatch_authority(self, root: Path):
         for agent_id in _CRAFTER_ROLES:

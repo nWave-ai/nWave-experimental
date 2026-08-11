@@ -208,7 +208,12 @@ def test_charter_lane_without_intent_never_renders_a_placeholder_artifact() -> N
         )
 
     substantive = [line for line in body.splitlines() if line.strip()]
-    assert substantive == [f"Slice {_SLICE_ID} of feature {_PROJECT_ID}."], (
-        "intent-less charter TASK_CONTEXT must carry exactly the slice/feature "
+    # charter is a PHASELESS lane (runs_tests=False), so TASK_CONTEXT renders
+    # the wave/scope statement, never the runs_tests=True "Slice ... of
+    # feature ..." wording -- `--wave` defaults to "deliver" when unset.
+    assert substantive == [
+        f"Wave deliver for feature {_PROJECT_ID} (scope: {_SLICE_ID})."
+    ], (
+        "intent-less charter TASK_CONTEXT must carry exactly the wave/scope "
         f"statement and nothing else; got {substantive!r}"
     )

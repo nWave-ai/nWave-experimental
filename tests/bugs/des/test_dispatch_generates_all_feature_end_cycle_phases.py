@@ -104,6 +104,7 @@ from des.cli import dispatch
 from des.domain import atdd_pure_phases
 from des.domain.atdd_pure_phases import FEATURE_END_PHASES
 from des.domain.des_marker_parser import DesMarkerParser, classify_atdd_pure_dispatch
+from tests.common.delivery_contract_fixture import contract_args
 from tests.common.in_process_cli import run_cli_in_process
 
 
@@ -195,8 +196,7 @@ def _feature_end_argv(*, phase: str, project_id: str) -> list[str]:
         "feature-end",
         "--intent",
         "X",
-        "--repo-root",
-        str(_REPO_ROOT),
+        *contract_args(_REPO_ROOT, seed=False),
     ]
 
 

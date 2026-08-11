@@ -47,16 +47,19 @@ Bare Agent/Task dispatch is refused. A thin prompt carries neither duplicate del
 2. Require contract and AT locators to be repository-relative regular files. Match each supplied SHA-256 to exact file bytes; validate the contract against exact Draft 2020-12 schema `nWave/schemas/thin-delivery-contract.schema.json`.
 3. Require `repository.worktree == "."` and exact `repository.base-revision == git-$(git rev-parse --show-object-format):$(git rev-parse HEAD)`.
 4. Require `paradigm == "functional"`, a positive `budget.wall-clock-minutes`, and confirm an available host-enforced command timeout facility before mutation. Establish that budget as one total delivery deadline.
-5. Before implementation read/write, execute every "At task entry" row of the
+5. Require a non-empty `obligations` array (closed enum, schema `$defs/obligations`) and treat every entry as an authoritative trigger token, never narrative: `REUSE_CANDIDATE`, or `EXTEND` on any `targets[].decision`, requires demonstrated reuse-first/prefactoring conformance against the declared `targets[].overlap`; `ARCHITECTURE_BOUNDARY_CHANGE` requires demonstrated no-drift conformance to the declared `targets[].boundary`. Neither obligation authorizes authoring or editing a test.
+6. Before implementation read/write, execute every "At task entry" row of the
    block below with the Read tool; execute an "On demand" row the instant its
-   trigger fires:
+   trigger fires — the algebra/certainty rows are generated from the single
+   `role-skill-loading.yaml` registry and fire on `obligations`'
+   `CONTESTED_LAW`/`REPRESENTATION_CHANGE`/`INVALID_STATE`/`PRESERVATION`:
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Read `nw-fp-principles` ON-TRIGGER — PREPARE on a functional route
 - Read `nw-fp-algebra-driven-design` ON-TRIGGER — GREEN on a functional route
 - Read `nw-code-design-fp` ON-TRIGGER — GREEN or refactor on a functional route
-- Read `nw-algebraic-design-protocol` ON-TRIGGER — contested law or representation change
-- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
+- Read `nw-algebraic-design-protocol` ON-TRIGGER — CONTESTED_LAW or REPRESENTATION_CHANGE obligation, or contested law/representation change
+- Read `nw-certainty-by-construction` ON-TRIGGER — INVALID_STATE or PRESERVATION obligation, or invalid-state/preservation claim
 <!-- GENERATED:role-skill-loading END -->
 
 Any missing, malformed, unresolved, symlinked, schema-invalid, or mismatched fact returns before implementation read/write:
@@ -64,7 +67,7 @@ Any missing, malformed, unresolved, symlinked, schema-invalid, or mismatched fac
 When `AUTHORITY PROBE ONLY` is present and all checks pass, return
 `{THIN_AUTHORITY_ACCEPTED: true, delivery_id: "...", contract_digest: "...", paradigm: "functional"}` and stop without mutation.
 
-For a validated thin delivery, `DeliveryContract.targets` alone authorizes mutation targets; the contract also authorizes the AT locator/digest, verification commands, applicability, reuse, contract shape, and boundaries. Mutate declared targets only; keep AT-first and no test edits; demonstrate declared reuse/architecture conformance; apply algebra-driven decomposition, type-level invalid-state prevention, pure/effect boundary separation, and property/law conformance with skills loaded or supplied at the point of need. Each entry of `verification-scope.commands` is an argv vector: the first token is the executable and every later token is passed through literally, never re-parsed as shell syntax. Run them sequentially from `repository.worktree`, without a shell, with a host-enforced timeout no greater than the remaining total deadline; stop and return failure on exhaustion. Independent review and EXAMINE are orchestrator handoff obligations, not crafter-launched work. Thin delivery has no `.nwave` config/ledger, flavor/phase state, DES command, hook, envelope reconstruction, or crafter commit: hand the approved scoped result to the orchestrator. Current DES `atdd_pure` instructions below remain unchanged and apply only to that authority; this section owns all thin behavior.
+For a validated thin delivery, `DeliveryContract.targets` alone authorizes mutation targets; the contract also authorizes the AT locator/digest, verification commands, applicability, and per-target `overlap`/`decision`/`justification`/`boundary` — there is no top-level `reuse` or `boundaries` field. Mutate declared targets only; keep AT-first and no test edits; demonstrate declared reuse/architecture conformance per Step 5; apply algebra-driven decomposition, type-level invalid-state prevention, pure/effect boundary separation, and property/law conformance with skills loaded or supplied at the point of need. Each entry of `verification-scope.commands` is an argv vector: the first token is the executable and every later token is passed through literally, never re-parsed as shell syntax. Run them sequentially from `repository.worktree`, without a shell, with a host-enforced timeout no greater than the remaining total deadline; stop and return failure on exhaustion. Independent review and EXAMINE are orchestrator handoff obligations, not crafter-launched work. Thin delivery has no `.nwave` config/ledger, flavor/phase state, DES command, hook, envelope reconstruction, or crafter commit: hand the approved scoped result to the orchestrator. Current DES `atdd_pure` instructions below remain unchanged and apply only to that authority; this section owns all thin behavior.
 
 ## Scope (SLIM per plan v3 §3.C — ATDD-pure separation)
 

@@ -12,6 +12,8 @@ produced it.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from des.application.atdd_pure_prompt_validator import (
@@ -20,7 +22,11 @@ from des.application.atdd_pure_prompt_validator import (
 )
 from des.cli import dispatch as dispatch_cli
 from des.domain.wave_dispatch_profile import WAVE_DISPATCH_PROFILES
+from tests.common.delivery_contract_fixture import contract_args
 
+
+# tests/des/unit/cli/<this file> -> parents[4] == checkout root.
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 
 AUTHORING_WAVES = ("discuss", "design", "devops", "distill")
 
@@ -100,7 +106,14 @@ def test_deliver_still_owes_the_full_implementation_set(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The lighter profiles are ADDITIVE -- DELIVER's ceremony is untouched."""
-    prompt = _generate(capsys, "--wave", "deliver", "--phase", "A_GREEN")
+    prompt = _generate(
+        capsys,
+        "--wave",
+        "deliver",
+        "--phase",
+        "A_GREEN",
+        *contract_args(_REPO_ROOT, seed=False),
+    )
 
     for section in ATDD_PURE_MANDATORY_SECTIONS:
         assert f"# {section}" in prompt
@@ -112,7 +125,14 @@ def test_an_incomplete_deliver_dispatch_is_still_rejected(
 ) -> None:
     """The guard is RELOCATED per wave, never weakened: DELIVER still fails
     closed when a mandatory implementation section is absent."""
-    prompt = _generate(capsys, "--wave", "deliver", "--phase", "A_GREEN")
+    prompt = _generate(
+        capsys,
+        "--wave",
+        "deliver",
+        "--phase",
+        "A_GREEN",
+        *contract_args(_REPO_ROOT, seed=False),
+    )
 
     mutilated = prompt.replace("# TERMINATING_RUN", "# NOT_A_SECTION")
 

@@ -1,5 +1,14 @@
 # How to author a feature using the L7 single-file model
 
+> **Transition notice (added 2026-08-10)**: this guide is accurate for
+> repositories using the current `feature-delta.md` compatibility runtime.
+> `feature-delta.md` is being migrated away from as the target model — see
+> [ADR-SSOT-001](../product/architecture/ADR-SSOT-001-canonical-delivery-authority.md)
+> (`docs/product/architecture/ADR-SSOT-001-canonical-delivery-authority.md`),
+> the permanent normative authority for this decision.
+> Do not start new architecture work by treating feature-delta as the target
+> SSOT.
+
 This guide teaches you how to write or migrate a feature to the lean L7 single-file model: one `feature-delta.md` per feature with schema-typed section headings.
 
 ## Prerequisites

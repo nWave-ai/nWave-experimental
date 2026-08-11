@@ -42,6 +42,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.common.delivery_contract_fixture import contract_args
 from tests.common.in_process_cli import run_cli_in_process
 
 
@@ -98,15 +99,25 @@ def _run_dispatch(argv: list[str], *, cwd: Path) -> tuple[int, str, str]:
 
 
 def _feature_argv(*, project_id: str, repo_root: Path) -> list[str]:
+    # `--phase FEATURE_END_EXAMINE` (routes to the examiner, non-code-facing)
+    # rather than `--phase A_GREEN` (the crafter): ADR-SSOT-002 S4a gates the
+    # whole feature-delta readiness-advisory block on `not runs_tests` --
+    # "feature-delta.md must never be consulted or suggested on a
+    # DELIVER-test-executing route" (src/des/cli/dispatch.py, the advisory
+    # call site) -- so a crafter (`runs_tests=True`) dispatch can no longer
+    # exercise this advisory at all; the examiner phase still can, and needs
+    # no --delivery-contract since it stays runs_tests=False.
     return [
         "--mode",
         "atdd_pure",
         "--project-id",
         project_id,
         "--slice",
-        "slice-01",
+        "feature-end",
         "--phase",
-        "A_GREEN",
+        "FEATURE_END_EXAMINE",
+        "--wave",
+        "feature-end",
         "--repo-root",
         str(repo_root),
     ]
@@ -182,8 +193,7 @@ def test_bugfix_lane_dispatch_emits_no_readiness_advisory(tmp_path: Path) -> Non
             "off-by-one in _resolve_head_sha returns the parent commit",
             "--regression-test",
             "test_resolve_head_sha_returns_head",
-            "--repo-root",
-            str(repo_root),
+            *contract_args(repo_root),
         ],
         cwd=repo_root,
     )

@@ -19,6 +19,17 @@ from jsonschema import Draft202012Validator, ValidationError
 
 SCHEMA_PATH = Path("nWave/schemas/thin-delivery-contract.schema.json")
 TARGET_PATH = "nWave/schemas/thin-delivery-contract.schema.json"
+CHECKED_IN_CONTRACTS = Path("docs/delivery-contracts")
+
+ALL_OBLIGATION_KINDS = (
+    "CONTESTED_LAW",
+    "REPRESENTATION_CHANGE",
+    "INVALID_STATE",
+    "PRESERVATION",
+    "BROAD_INPUT_DOMAIN",
+    "REUSE_CANDIDATE",
+    "ARCHITECTURE_BOUNDARY_CHANGE",
+)
 
 
 def _target_plan() -> dict[str, Any]:
@@ -40,7 +51,7 @@ def _target_plan() -> dict[str, Any]:
 
 def _contract(paradigm: str) -> dict[str, Any]:
     return {
-        "schema-version": "1.0",
+        "schema-version": "1.1",
         "delivery-id": "thin-delivery-contract-schema",
         "repository": {
             "worktree": ".",
@@ -49,6 +60,7 @@ def _contract(paradigm: str) -> dict[str, Any]:
         "outcome": "Validate one immutable delivery contract before direct role routing.",
         "targets": {TARGET_PATH: _target_plan()},
         "paradigm": paradigm,
+        "obligations": ["REUSE_CANDIDATE"],
         "acceptance-tests": {
             "locator": "tests/build/test_thin_delivery_contract_schema.py",
             "digest": f"sha256:{'b' * 64}",
@@ -109,6 +121,25 @@ def test_complete_thin_delivery_contract_validates(paradigm: str) -> None:
     assert _errors(_contract(paradigm)) == []
 
 
+@pytest.mark.parametrize(
+    "contract_path",
+    sorted(CHECKED_IN_CONTRACTS.glob("*.json")),
+    ids=lambda path: path.name,
+)
+def test_every_checked_in_delivery_contract_uses_the_current_schema(
+    contract_path: Path,
+) -> None:
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+
+    assert _errors(contract) == [], (
+        "WHAT: a checked-in DeliveryContract no longer validates against the sole "
+        "current schema. "
+        "WHY: changing canonical authority without migrating its live instances "
+        "creates two effective contract versions. "
+        f"HOW: migrate {contract_path} in the same vertical as the schema change."
+    )
+
+
 Mutation = Callable[[dict[str, Any]], None]
 
 
@@ -120,11 +151,16 @@ def _remove_evidence_locator(contract: dict[str, Any]) -> None:
     del contract["acceptance-tests"]["locator"]
 
 
+def _remove_obligations(contract: dict[str, Any]) -> None:
+    del contract["obligations"]
+
+
 @pytest.mark.parametrize(
     ("mutate", "expected_path"),
     [
         (_remove_paradigm, ()),
         (_remove_evidence_locator, ("acceptance-tests",)),
+        (_remove_obligations, ()),
     ],
 )
 def test_contract_rejects_missing_required_authority(
@@ -137,6 +173,66 @@ def test_contract_rejects_missing_required_authority(
     assert any(
         tuple(error.absolute_path) == expected_path and error.validator == "required"
         for error in _errors(contract)
+    )
+
+
+@pytest.mark.parametrize("kind", ALL_OBLIGATION_KINDS)
+def test_every_closed_obligation_kind_validates_alone(kind: str) -> None:
+    contract = _contract("object_oriented")
+    contract["obligations"] = [kind]
+
+    assert _errors(contract) == []
+
+
+def _empty_obligations(contract: dict[str, Any]) -> None:
+    contract["obligations"] = []
+
+
+def _duplicate_obligations(contract: dict[str, Any]) -> None:
+    contract["obligations"] = ["REUSE_CANDIDATE", "REUSE_CANDIDATE"]
+
+
+def _unknown_obligation(contract: dict[str, Any]) -> None:
+    contract["obligations"] = ["NOT_A_CLOSED_ENUM_KIND"]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_validator"),
+    [
+        (_empty_obligations, "minItems"),
+        (_duplicate_obligations, "uniqueItems"),
+        (_unknown_obligation, "enum"),
+    ],
+)
+def test_contract_rejects_empty_duplicate_or_unknown_obligations(
+    mutate: Mutation,
+    expected_validator: str,
+) -> None:
+    contract = copy.deepcopy(_contract("object_oriented"))
+    mutate(contract)
+
+    assert any(
+        tuple(error.absolute_path)[:1] == ("obligations",)
+        and error.validator == expected_validator
+        for error in _errors(contract)
+    ), (
+        "WHAT: an empty, duplicate, or unknown-kind obligations array was accepted. "
+        "WHY: obligations is a non-vacuous, duplicate-free, closed-world set. "
+        "HOW: reject empty arrays (minItems), duplicate kinds (uniqueItems), and "
+        "any kind outside the closed enum."
+    )
+
+
+def test_schema_has_no_finalize_property() -> None:
+    schema = _schema()
+
+    assert "finalize" not in schema["properties"]
+    assert "finalize" not in schema["$defs"], (
+        "WHAT: the schema defines a finalize shape. "
+        "WHY: finalize is end-of-delivery promotion and filesystem cleanup, not "
+        "per-slice DeliveryContract data. "
+        "HOW: keep finalize outside this schema and run it once after the whole "
+        "delivery completes."
     )
 
 

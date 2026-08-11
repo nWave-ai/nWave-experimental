@@ -356,7 +356,7 @@ BULK_HASHES = {
     # modules (b2b, cialdini); core is a lean composing router. §22.0 reviewed.
     "nw-proposal-structure": "bec9dd508f567c847da44cd41ee56821",
     "nw-psychological-safety": "106382f562186d415f5b5ad1430542b7",
-    "nw-quality-framework": "f07139e33b05628ae028903044055cf5",
+    "nw-quality-framework": "ed8a778a815f2fef823f73d59ccef931",
     "nw-quality-validation": "41cee9327afa9d4e579b7c0699eb544d",
     "nw-query-optimization": "17959230c1a5f619b4a172e5e8196068",
     "nw-research-methodology": "e4910ea40aefc82f421640138986f300",

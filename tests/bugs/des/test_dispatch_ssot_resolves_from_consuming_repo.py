@@ -63,6 +63,10 @@ from pathlib import Path
 import pytest
 
 from des.cli import dispatch
+from tests.common.delivery_contract_fixture import (
+    seed_delivery_contract,
+    seed_delivery_contract_schema_only,
+)
 from tests.common.in_process_cli import run_cli_in_process
 
 
@@ -85,7 +89,15 @@ _MISSING_FEATURE_DELTA_SIGNAL = "no feature-delta.md found"
 
 
 def _copy_real_dispatch_ssot(dst_dir: Path) -> None:
-    """Copy THIS checkout's real dispatch SSOT into ``dst_dir`` verbatim."""
+    """Copy THIS checkout's real dispatch SSOT into ``dst_dir`` verbatim.
+
+    Also seeds the thin-delivery-contract SCHEMA alongside it (``dst_dir``
+    doubles as a monkeypatched ``_INSTALLED_DISPATCH_ASSETS_DIR`` in the
+    callers below) -- a runs_tests=True dispatch reads that schema
+    unconditionally via ``_INSTALLED_DISPATCH_ASSETS_DIR.parent``, before
+    SSOT resolution runs, so leaving it unseeded would refuse the dispatch on
+    the WRONG axis before ever reaching the fallback behaviour under test.
+    """
     dst_dir.mkdir(parents=True, exist_ok=True)
     (dst_dir / "atdd_pure.yaml").write_text(
         _REAL_ATDD_PURE_YAML.read_text(encoding="utf-8"), encoding="utf-8"
@@ -93,6 +105,7 @@ def _copy_real_dispatch_ssot(dst_dir: Path) -> None:
     (dst_dir / "vendors.yaml").write_text(
         _REAL_VENDORS_YAML.read_text(encoding="utf-8"), encoding="utf-8"
     )
+    seed_delivery_contract_schema_only(dst_dir)
 
 
 def _write_ready_feature_delta(project_root: Path, feature_id: str) -> Path:
@@ -107,7 +120,32 @@ def _base_argv(
     project_id: str = _ABSENT_FEATURE_ID,
     slice_id: str = "slice-01",
     repo_root: str | None = None,
+    exercise_advisory: bool = False,
 ) -> list[str]:
+    # `--phase A_GREEN` (the crafter, runs_tests=True) is used ONLY for the
+    # pure-SSOT-resolution legs below (Branch A / the SSOT-absent refusal),
+    # never to exercise the feature-delta readiness advisory: ADR-SSOT-002
+    # S4a gates that whole advisory block on `not runs_tests` (dispatch.py's
+    # advisory call sites) -- a crafter dispatch can no longer trigger it at
+    # all. `exercise_advisory=True` routes instead to `FEATURE_END_EXAMINE`
+    # (the examiner, non-code-facing -> runs_tests=False), which still can,
+    # and needs no --delivery-contract.
+    if exercise_advisory:
+        return [
+            "--mode",
+            "atdd_pure",
+            "--project-id",
+            project_id,
+            "--slice",
+            "feature-end",
+            "--phase",
+            "FEATURE_END_EXAMINE",
+            "--wave",
+            "feature-end",
+            "--intent",
+            "verify consuming-repo dispatch",
+            *(["--repo-root", repo_root] if repo_root is not None else []),
+        ]
     argv = [
         "--mode",
         "atdd_pure",
@@ -168,8 +206,14 @@ def test_explicit_repo_root_pointing_at_a_consuming_project_still_generates_a_di
     # tells a consuming-repo operator to pass, resolved against `cwd` (set to
     # the consuming project below, matching the RCA's reported `cd
     # <project> && des dispatch ... --repo-root .`).
+    contract_rel_path = seed_delivery_contract(consuming_project)
     exit_code, stdout, stderr = _run_dispatch(
-        _base_argv(repo_root="."), cwd=consuming_project
+        [
+            *_base_argv(repo_root="."),
+            "--delivery-contract",
+            contract_rel_path,
+        ],
+        cwd=consuming_project,
     )
 
     assert exit_code == 0, (
@@ -235,7 +279,7 @@ def test_feature_delta_advisory_resolves_under_the_project_root_not_the_installe
     # consuming project, which carries no nWave/dispatch/ of its own, so SSOT
     # resolution falls to the installed fallback.
     exit_code, stdout, stderr = _run_dispatch(
-        _base_argv(project_id=feature_id), cwd=consuming_project
+        _base_argv(project_id=feature_id, exercise_advisory=True), cwd=consuming_project
     )
 
     assert exit_code == 0, (
@@ -310,8 +354,14 @@ def test_genuinely_missing_feature_delta_is_still_reported_missing(
     _copy_real_dispatch_ssot(consuming_project / "nWave" / "dispatch")
     # deliberately NO docs/feature/<id>/feature-delta.md written.
 
+    contract_rel_path = seed_delivery_contract(consuming_project)
     exit_code, stdout, stderr = _run_dispatch(
-        _base_argv(repo_root=str(consuming_project)), cwd=consuming_project
+        [
+            *_base_argv(exercise_advisory=True, repo_root=str(consuming_project)),
+            "--delivery-contract",
+            contract_rel_path,
+        ],
+        cwd=consuming_project,
     )
 
     assert exit_code == 0, (
@@ -344,9 +394,22 @@ def test_ssot_absent_everywhere_still_refuses_honestly(
     monkeypatch.setattr(
         dispatch, "_INSTALLED_DISPATCH_ASSETS_DIR", absent_installed_dir, raising=False
     )
+    # The contract-SCHEMA axis must stay resolvable even though the dispatch
+    # SSOT (atdd_pure.yaml) under this same installed dir is genuinely absent
+    # -- `_load_delivery_contract` reads the schema unconditionally, before
+    # SSOT resolution runs, and would otherwise refuse on the WRONG axis
+    # (missing schema) before ever reaching the SSOT-absent refusal this test
+    # targets.
+    seed_delivery_contract_schema_only(absent_installed_dir)
 
+    contract_rel_path = seed_delivery_contract(consuming_project)
     exit_code, stdout, stderr = _run_dispatch(
-        _base_argv(repo_root="."), cwd=consuming_project
+        [
+            *_base_argv(repo_root="."),
+            "--delivery-contract",
+            contract_rel_path,
+        ],
+        cwd=consuming_project,
     )
 
     assert exit_code == dispatch._EXIT_USAGE_ERROR, (

@@ -59,6 +59,7 @@ from pathlib import Path
 import pytest
 
 from des.cli import verify_readiness_pre_dispatch as gate
+from tests.common.delivery_contract_fixture import contract_args
 from tests.common.in_process_cli import run_cli_in_process
 
 
@@ -427,12 +428,15 @@ def _make_dispatch_repo_root(tmp_path: Path, *, feature_delta: str) -> Path:
 def test_dispatch_emits_prefactoring_advisory_for_design_delta_missing_assessment(
     tmp_path: Path,
 ) -> None:
-    """POSITIVE (active-RED today): a feature-lane `--phase A_GREEN` dispatch
-    for a project whose DESIGN-having feature-delta LACKS a Prefactoring
-    Assessment section must print a proactive readiness ADVISORY on STDERR
-    naming the gap, while STILL emitting the valid envelope on STDOUT with
-    exit code 0 -- advisory-only, mirroring the existing Reuse Analysis
-    advisory (`_feature_delta_content_advisory`).
+    """POSITIVE (active-RED today): a feature-end non-test-executing
+    `--phase FEATURE_END_EXAMINE` dispatch for a project whose DESIGN-having
+    feature-delta LACKS a Prefactoring Assessment section must print a
+    proactive readiness ADVISORY on STDERR naming the gap, while STILL emitting
+    the valid envelope on STDOUT with exit code 0 -- advisory-only, mirroring
+    the existing Reuse Analysis advisory (`_feature_delta_content_advisory`).
+    ADR-SSOT-002: feature-delta is never consulted on test-executing DELIVER
+    routes, so this AT targets the feature-end non-test-executing examiner
+    phase instead.
     """
     repo_root = _make_dispatch_repo_root(tmp_path, feature_delta=_design_delta(None))
 
@@ -445,10 +449,11 @@ def test_dispatch_emits_prefactoring_advisory_for_design_delta_missing_assessmen
             _FEATURE_ID,
             "--slice",
             _SLICE_ID,
+            "--wave",
+            "feature-end",
             "--phase",
-            "A_GREEN",
-            "--repo-root",
-            str(repo_root),
+            "FEATURE_END_EXAMINE",
+            *contract_args(repo_root),
         ],
         cwd=repo_root,
     )
@@ -494,8 +499,7 @@ def test_dispatch_emits_no_prefactoring_advisory_for_design_skipped_witness(
             _SLICE_ID,
             "--phase",
             "A_GREEN",
-            "--repo-root",
-            str(repo_root),
+            *contract_args(repo_root),
         ],
         cwd=repo_root,
     )

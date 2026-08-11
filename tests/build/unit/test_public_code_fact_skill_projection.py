@@ -83,6 +83,34 @@ def test_every_public_skill_has_no_graphify_or_mcp_residue(public_skill_entries)
         assert not MCP_PATTERN.search(content), f"{entry.name}: mcp__ reference found"
 
 
+def test_every_skill_textual_asset_has_no_graphify_tsunami_or_mcp_residue():
+    """Sweep ALL textual assets under nWave/skills, public or not.
+
+    Broader than the public-only check above: any SKILL.md/md/yaml/yml/json
+    file under nWave/skills must be case-insensitively free of graphify,
+    tsunami, and mcp__ -- catches residue on skills not yet in the public
+    catalog.
+    """
+    tsunami_pattern = re.compile(r"tsunami", re.IGNORECASE)
+    graphify_pattern = re.compile(r"graphify", re.IGNORECASE)
+
+    asset_files = sorted(
+        f
+        for pattern in ("*.md", "*.yaml", "*.yml", "*.json")
+        for f in SKILLS_DIR.rglob(pattern)
+    )
+
+    assert asset_files, "No textual assets found under nWave/skills"
+
+    for asset_file in asset_files:
+        content = asset_file.read_text(encoding="utf-8")
+        rel = asset_file.relative_to(SKILLS_DIR)
+
+        assert not graphify_pattern.search(content), f"{rel}: contains 'graphify'"
+        assert not tsunami_pattern.search(content), f"{rel}: contains 'tsunami'"
+        assert not MCP_PATTERN.search(content), f"{rel}: contains 'mcp__'"
+
+
 @pytest.mark.parametrize("skill_name", sorted(TARGET_SKILLS))
 def test_target_skill_projects_executable_code_fact_command(skill_name):
     content = (SKILLS_DIR / skill_name / "SKILL.md").read_text(encoding="utf-8")

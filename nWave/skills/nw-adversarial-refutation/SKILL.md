@@ -47,8 +47,9 @@ the whole stance exists to oppose; default-to-refuted (Pillar 2) and the exhibit
   end-to-end red compatible with every cause, and never by the artifact asserting the question is
   answered. A walking-skeleton test that calls the target directly (callers in tests, ZERO in
   production) resolves nothing: it is `never_wired` wearing the name of the discipline that exists
-  to prevent it. Ask the code-analysis port for the production-caller count (Tsunami → AST → grep,
-  degrade-LOUD) — do not eyeball it.
+  to prevent it. Get the production-caller count via `des code-fact query.callers-of SYMBOL --root
+  ROOT` (the provider-neutral `nw-code-analysis-port`, degrade-LOUD if unavailable) — do not
+  eyeball it.
 
 ## Pillar 2 — two levers, BOTH required
 
@@ -68,8 +69,7 @@ the whole stance exists to oppose; default-to-refuted (Pillar 2) and the exhibit
    spot. GENUINE lens-diversity is a property of the per-feature `F_FINAL_REVIEW`, where ≥2 DISTINCT
    reviewers each carry a distinct lens. Do NOT collapse lens-diversity into a single per-slice
    prompt and call it covered — the empirical catch (the named-catch-all a homogeneous reviewer
-   missed) came from N DIFFERENT reviewers, not one reviewer's N passes. (Sister Tsunami, validated
-   on a real per-slice review: 9 refutations all survived in ONE reviewer = Pillars 1+3, not 2.)
+   missed) came from N DIFFERENT reviewers, not one reviewer's N passes. On a real per-slice review: 9 refutations all survived in ONE reviewer = Pillars 1+3, not 2.)
 
 ## Pillar 3 — evidence discipline (for REFUTE and for CLEAR)
 
@@ -113,9 +113,9 @@ not a verdict.
 
 ---
 
-*Empirical source: the nWave adversarial verifier swarm (sister Tsunami) — the 15-verifier swarm
+*Empirical source: an independent nWave adversarial verifier swarm — the 15-verifier swarm
 that caught the C13/C14 catalogued-not-wired false-DONE, and the consolidated multi-lens DELIVER
 review. This SSOT productizes that stance into the standard per-slice + per-feature reviews so the
 full swarm is the exception, not the rule. The cross-language projection-leakage mode was found by
-sister Tsunami APPLYING this taxonomy's catalogued-not-wired litmus on a real polyglot slice (F1
+that swarm APPLYING this taxonomy's catalogued-not-wired litmus on a real polyglot slice (F1
 slice-03, TS/JS detector D2) — the method generating a new mode is the stance working on itself.*

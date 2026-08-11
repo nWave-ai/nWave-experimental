@@ -171,11 +171,13 @@ structural_invariants:
       registered two @then literals across steps_slice_01_walking_skeleton.py and
       steps_slice_02_install_manifest.py. Contract gate caught it only after AT
       failed. S1 would catch at AT-completeness audit time, before DELIVER starts.
-    cross_language_pair: >
-      Tsunami sister Rhai recipe step_text_collision.rhai (tree-sitter #[step]
-      AtomDecorator query, group by qualname+body_text). S1 = first-line within-
-      feature Python check; Rhai recipe = broader cross-language / cross-feature
-      detector. Same invariant, two enforcement layers.
+    cross_language_scope: >
+      S1 as specified here is a first-line, within-feature Python check (AST-walk
+      over .py step files). Broader cross-language / cross-feature enforcement of
+      the same step-text-uniqueness invariant is currently UNPROVEN and not
+      supplied by any shipped detector — do not assume equivalent coverage exists
+      for non-Python step files until a provider-neutral detector is built and
+      validated.
 
   - id: S2
     name: "Driving-Port-Only Boundary — NO direct-domain testing in ATs"

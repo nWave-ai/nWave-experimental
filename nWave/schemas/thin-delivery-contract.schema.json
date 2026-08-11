@@ -12,18 +12,20 @@
     "outcome",
     "targets",
     "paradigm",
+    "obligations",
     "acceptance-tests",
     "verification-scope",
     "applicability",
     "budget"
   ],
   "properties": {
-    "schema-version": { "const": "1.0" },
+    "schema-version": { "const": "1.1" },
     "delivery-id": { "$ref": "#/$defs/id" },
     "repository": { "$ref": "#/$defs/repository" },
     "outcome": { "$ref": "#/$defs/nonEmptyText" },
     "targets": { "$ref": "#/$defs/targets" },
     "paradigm": { "enum": ["functional", "object_oriented"] },
+    "obligations": { "$ref": "#/$defs/obligations" },
     "acceptance-tests": { "$ref": "#/$defs/evidence" },
     "verification-scope": { "$ref": "#/$defs/verificationScope" },
     "applicability": { "$ref": "#/$defs/applicability" },
@@ -31,6 +33,22 @@
     "correction-reference": { "$ref": "#/$defs/correctionReference" }
   },
   "$defs": {
+    "obligations": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "CONTESTED_LAW",
+          "REPRESENTATION_CHANGE",
+          "INVALID_STATE",
+          "PRESERVATION",
+          "BROAD_INPUT_DOMAIN",
+          "REUSE_CANDIDATE",
+          "ARCHITECTURE_BOUNDARY_CHANGE"
+        ]
+      }
+    },
     "nonEmptyText": {
       "type": "string",
       "minLength": 1

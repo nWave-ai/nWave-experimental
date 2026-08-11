@@ -104,6 +104,7 @@ from des.domain.design_context_content_check import (
     design_context_carries_architecture,
 )
 from des.domain.lane_profile import PHASELESS_LANES
+from tests.common.delivery_contract_fixture import contract_args
 from tests.common.in_process_cli import run_cli_in_process
 
 
@@ -181,8 +182,7 @@ def _phase_argv(*, phase: str, project_id: str) -> list[str]:
         phase,
         "--intent",
         "x",
-        "--repo-root",
-        str(_REPO_ROOT),
+        *contract_args(_REPO_ROOT, seed=False),
     ]
 
 
@@ -199,8 +199,7 @@ def _lane_argv(*, lane: str, project_id: str) -> list[str]:
         lane,
         "--intent",
         "x",
-        "--repo-root",
-        str(_REPO_ROOT),
+        *contract_args(_REPO_ROOT, seed=False),
     ]
 
 

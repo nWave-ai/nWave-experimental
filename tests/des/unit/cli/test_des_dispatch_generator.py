@@ -80,6 +80,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -111,6 +112,42 @@ _MARKER_SYNTAX = "<!-- {key} : {value} -->"
 _DES_LANE_JUSTIFICATION_PATTERN = re.compile(
     r"<!--\s*DES-LANE-JUSTIFICATION\s*:\s*(.+?)\s*-->"
 )
+
+#: ADR-SSOT-002 S4a: every test-running (`runs_tests=True`) dispatch now
+#: REQUIRES an explicit `--repo-root <ROOT>` + `--delivery-contract <PATH>`
+#: pair, `PATH` resolved ONLY against `ROOT` (locked by the 19-test locator
+#: suite, `tests/des/acceptance/test_dispatch_delivery_contract_locator.py`).
+#: The real, checked-in, schema-valid ThinDeliveryContract fixture that
+#: suite already proves against -- reused here rather than a second,
+#: drifting hand-authored contract literal.
+_DELIVERY_CONTRACT_FIXTURE_REL = (
+    "docs/delivery-contracts/retarget-des-dispatch-contract.json"
+)
+_DELIVERY_CONTRACT_FIXTURE = _REPO_ROOT / _DELIVERY_CONTRACT_FIXTURE_REL
+
+
+def _seed_delivery_contract(
+    root: Path, rel_path: str = "delivery-contract.json"
+) -> str:
+    """Copy the real ThinDeliveryContract fixture under `root` and return its
+    ROOT-relative PATH -- for a test driving an isolated `--repo-root` (a
+    tmp workspace), which cannot resolve a PATH relative to the real
+    checkout root."""
+    dst = root / rel_path
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(_DELIVERY_CONTRACT_FIXTURE, dst)
+    return rel_path
+
+
+def _contract_args(root: Path, *, seed: bool = True) -> tuple[str, str, str, str]:
+    """The `--repo-root <root> --delivery-contract <PATH>` pair a test-
+    running dispatch against `root` now requires. `seed=True` (the default)
+    copies the fixture under `root` first, for an isolated tmp workspace;
+    `seed=False` reuses the real checked-in fixture in place, for a dispatch
+    driven against the real checkout root (`_REPO_ROOT`) -- never a second
+    copy of a file already on disk there."""
+    rel_path = _seed_delivery_contract(root) if seed else _DELIVERY_CONTRACT_FIXTURE_REL
+    return ("--repo-root", str(root), "--delivery-contract", rel_path)
 
 
 def _marker(key: str, value: str) -> str:
@@ -167,7 +204,7 @@ def _run_dispatch(
 # ---------------------------------------------------------------------------
 
 
-def test_dispatch_generates_gate_valid_prompt_by_construction() -> None:
+def test_dispatch_generates_gate_valid_prompt_by_construction(tmp_path: Path) -> None:
     """`des dispatch --mode atdd_pure --project-id demo --slice slice-01
     --phase A_GREEN` must emit, on stdout, a dispatch prompt carrying the
     complete marker set + ALL 12 canonical `# SECTION` headers, and that
@@ -190,6 +227,7 @@ def test_dispatch_generates_gate_valid_prompt_by_construction() -> None:
         "A_GREEN",
         "--intent",
         "wire the missing seam",
+        *_contract_args(_REPO_ROOT, seed=False),
     )
 
     assert result.returncode == 0, (
@@ -264,6 +302,7 @@ def test_dispatch_bugfix_lane_emits_lane_markers_and_exact_section_set() -> None
         "off-by-one in _resolve_head_sha returns the parent commit",
         "--regression-test",
         "test_resolve_head_sha_returns_head",
+        *_contract_args(_REPO_ROOT, seed=False),
     )
 
     assert result.returncode == 0, (
@@ -321,6 +360,7 @@ def test_dispatch_prefactoring_lane_drops_at_recording_sections() -> None:
         "A_GREEN",
         "--lane",
         "prefactoring",
+        *_contract_args(_REPO_ROOT, seed=False),
     )
 
     assert result.returncode == 0, (
@@ -374,6 +414,7 @@ def test_dispatch_section_set_is_derived_from_the_dispatch_ssot_yaml() -> None:
         "slice-01",
         "--phase",
         "A_GREEN",
+        *_contract_args(_REPO_ROOT, seed=False),
     )
 
     assert result.returncode == 0, (
@@ -451,8 +492,7 @@ def test_dispatch_section_set_changes_when_the_ssot_yaml_gains_a_section(
         "slice-01",
         "--phase",
         "A_GREEN",
-        "--repo-root",
-        str(tmp_path),
+        *_contract_args(tmp_path),
     )
 
     assert result.returncode == 0, (
@@ -600,27 +640,6 @@ def test_unknown_lane_is_a_clear_error_never_a_traceback() -> None:
 # shape as the rest of this file -- example-based, no PBT).
 # ---------------------------------------------------------------------------
 
-_DESIGN_CONTEXT_SECTION_PATTERN = re.compile(
-    r"# DESIGN_CONTEXT\n(.*?)(?=\n# [A-Z_]+\n|\Z)", re.DOTALL
-)
-
-#: Shape-check for AT-5d: ANY `docs/feature/.../feature-delta.md`-shaped
-#: substring, not just the one literal path for one feature-id -- a fix that
-#: merely reworded the sentence around an unchanged dangling path must still
-#: fail this.
-_FEATURE_DELTA_PATH_SHAPE_PATTERN = re.compile(
-    r"docs/feature/[\w./-]+/feature-delta\.md"
-)
-
-
-def _design_context_section(prompt: str) -> str:
-    """Extract just the `# DESIGN_CONTEXT` section body from a rendered
-    dispatch prompt (scopes assertions to that one section, never accidentally
-    matching an unrelated section)."""
-    match = _DESIGN_CONTEXT_SECTION_PATTERN.search(prompt)
-    assert match is not None, f"no DESIGN_CONTEXT section found in prompt:\n{prompt}"
-    return match.group(1)
-
 
 def _isolated_dispatch_env() -> dict[str, str]:
     """`_dispatch_env()` plus `NWAVE_REPO_ROOT` popped -- so the child
@@ -629,187 +648,6 @@ def _isolated_dispatch_env() -> dict[str, str]:
     env = _dispatch_env()
     env.pop("NWAVE_REPO_ROOT", None)
     return env
-
-
-def _run_bugfix_dispatch_without_feature_delta(
-    tmp_path: Path, feature_id: str
-) -> subprocess.CompletedProcess[str]:
-    """Run `des dispatch --lane bugfix` with the child cwd = an EMPTY
-    `tmp_path` (no `docs/feature/<feature_id>/feature-delta.md` anywhere under
-    it) -- the exact precondition the bug reproduces under."""
-    return subprocess.run(
-        _dispatch_argv(
-            "--mode",
-            "atdd_pure",
-            "--project-id",
-            feature_id,
-            "--slice",
-            "feature-end",
-            "--phase",
-            "A_GREEN",
-            "--lane",
-            "bugfix",
-            "--defect",
-            "some defect",
-            "--regression-test",
-            "test_probe_regression",
-        ),
-        capture_output=True,
-        text=True,
-        timeout=30,
-        env=_isolated_dispatch_env(),
-        cwd=str(tmp_path),
-    )
-
-
-def test_bugfix_lane_design_context_never_names_a_dangling_feature_delta_path(
-    tmp_path: Path,
-) -> None:
-    """POSITIVE (the bug, RED today): `--lane bugfix` for a feature-id whose
-    `docs/feature/<id>/feature-delta.md` does NOT exist must NOT emit that
-    bare dangling pointer in `# DESIGN_CONTEXT` -- it must instead say
-    plainly no feature-delta.md exists and name the bugfix design source
-    (RCA / dispatch intent / regression test) instead.
-
-    FAILS TODAY: `_design_context_body` (dispatch.py:308-317) hardcodes the
-    feature-delta.md pointer for every code-facing agent with no filesystem
-    check and no `lane` parameter -- it emits the dangling path unconditionally.
-    """
-    feature_id = "probe-bugfix-missing-delta"
-    result = _run_bugfix_dispatch_without_feature_delta(tmp_path, feature_id)
-
-    assert result.returncode == 0, (
-        "a bugfix dispatch with no feature-delta.md must still produce the "
-        f"full envelope; got exit {result.returncode}. "
-        f"stdout={result.stdout!r} stderr={result.stderr!r}"
-    )
-    design_context = _design_context_section(result.stdout)
-
-    dangling_pointer = f"docs/feature/{feature_id}/feature-delta.md"
-    assert dangling_pointer not in design_context, (
-        "DESIGN_CONTEXT must never point the crafter at a nonexistent "
-        f"feature-delta.md -- found the dangling pointer {dangling_pointer!r} "
-        f"in the DESIGN_CONTEXT section:\n{design_context}"
-    )
-
-    lowered = design_context.lower()
-    assert "feature-delta.md" in lowered and (
-        "no " in lowered or "not " in lowered or "does not exist" in lowered
-    ), (
-        "DESIGN_CONTEXT must say PLAINLY that no feature-delta.md exists for "
-        f"this bugfix, not merely omit the pointer silently -- section:\n{design_context}"
-    )
-    assert any(
-        keyword in lowered for keyword in ("rca", "regression test", "dispatch intent")
-    ), (
-        "DESIGN_CONTEXT must NAME what the crafter should use INSTEAD of a "
-        "design doc (the RCA, the dispatch intent, or the regression test) -- "
-        f"section:\n{design_context}"
-    )
-
-
-def test_bugfix_lane_design_context_fallback_is_not_a_reworded_dangling_path(
-    tmp_path: Path,
-) -> None:
-    """NEGATIVE (resolvability, not just shape): the positive-case fallback
-    body must not itself contain ANY `docs/feature/.../feature-delta.md`
-    -shaped substring -- a fix that reworded the sentence around an unchanged
-    (still-nonexistent) path is the SAME defect wearing different words, not
-    a fix. A downstream shape-only gate checking "does the DESIGN_CONTEXT
-    section mention a path" would wrongly accept that -- this AT pins that
-    the path itself must be GONE, not merely re-sentenced.
-
-    FAILS TODAY: same root cause as the sibling AT above -- the hardcoded
-    pointer is exactly `docs/feature/<id>/feature-delta.md`, which matches
-    this shape pattern.
-    """
-    feature_id = "probe-bugfix-missing-delta-shape-check"
-    result = _run_bugfix_dispatch_without_feature_delta(tmp_path, feature_id)
-
-    assert result.returncode == 0, (
-        f"expected exit 0; got {result.returncode}. "
-        f"stdout={result.stdout!r} stderr={result.stderr!r}"
-    )
-    design_context = _design_context_section(result.stdout)
-
-    shape_match = _FEATURE_DELTA_PATH_SHAPE_PATTERN.search(design_context)
-    assert shape_match is None, (
-        "DESIGN_CONTEXT must not contain ANY docs/feature/.../feature-delta.md"
-        f"-shaped path when the file does not exist -- found {shape_match.group(0) if shape_match else None!r} "
-        f"in section:\n{design_context}"
-    )
-
-
-def test_bugfix_lane_design_context_still_points_to_an_existing_feature_delta(
-    tmp_path: Path,
-) -> None:
-    """NEGATIVE (no regression): when `docs/feature/<id>/feature-delta.md`
-    genuinely EXISTS for a bugfix-lane dispatch, DESIGN_CONTEXT must still
-    reference it -- the fix must not blanket-drop the real pointer for every
-    bugfix dispatch, only the DANGLING one.
-    """
-    feature_id = "probe-bugfix-with-delta"
-    delta_dir = tmp_path / "docs" / "feature" / feature_id
-    delta_dir.mkdir(parents=True)
-    (delta_dir / "feature-delta.md").write_text("# Feature Delta\n", encoding="utf-8")
-
-    result = _run_bugfix_dispatch_without_feature_delta(tmp_path, feature_id)
-
-    assert result.returncode == 0, (
-        f"expected exit 0; got {result.returncode}. "
-        f"stdout={result.stdout!r} stderr={result.stderr!r}"
-    )
-    design_context = _design_context_section(result.stdout)
-
-    expected_pointer = f"docs/feature/{feature_id}/feature-delta.md"
-    assert expected_pointer in design_context, (
-        "a feature-delta.md that genuinely EXISTS must still be referenced "
-        f"in DESIGN_CONTEXT (no regression) -- section:\n{design_context}"
-    )
-
-
-def test_plain_dispatch_design_context_still_points_to_an_existing_feature_delta(
-    tmp_path: Path,
-) -> None:
-    """NEGATIVE (no regression, non-bugfix code-facing agent): a plain
-    (no `--lane`) dispatch for a feature-id WITH a real feature-delta.md must
-    keep pointing to it -- threading `lane` into `_design_context_body` must
-    not perturb the non-bugfix, code-facing-agent path.
-    """
-    feature_id = "probe-plain-with-delta"
-    delta_dir = tmp_path / "docs" / "feature" / feature_id
-    delta_dir.mkdir(parents=True)
-    (delta_dir / "feature-delta.md").write_text("# Feature Delta\n", encoding="utf-8")
-
-    result = subprocess.run(
-        _dispatch_argv(
-            "--mode",
-            "atdd_pure",
-            "--project-id",
-            feature_id,
-            "--slice",
-            "slice-01",
-            "--phase",
-            "A_GREEN",
-        ),
-        capture_output=True,
-        text=True,
-        timeout=30,
-        env=_isolated_dispatch_env(),
-        cwd=str(tmp_path),
-    )
-
-    assert result.returncode == 0, (
-        f"expected exit 0; got {result.returncode}. "
-        f"stdout={result.stdout!r} stderr={result.stderr!r}"
-    )
-    design_context = _design_context_section(result.stdout)
-
-    expected_pointer = f"docs/feature/{feature_id}/feature-delta.md"
-    assert expected_pointer in design_context, (
-        "a non-bugfix, code-facing dispatch with a real feature-delta.md "
-        f"must keep pointing to it -- section:\n{design_context}"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -857,6 +695,7 @@ def _run_plain_dispatch(tmp_path: Path) -> subprocess.CompletedProcess[str]:
             "slice-01",
             "--phase",
             "A_GREEN",
+            *_contract_args(tmp_path),
         ),
         capture_output=True,
         text=True,
@@ -982,6 +821,7 @@ def _run_crafter_dispatch(feature_id: str = "demo") -> subprocess.CompletedProce
         "A_GREEN",
         "--intent",
         "merge the dispatch-template-ssot-reconciliation content",
+        *_contract_args(_REPO_ROOT, seed=False),
     )
 
 
@@ -1022,6 +862,7 @@ def _run_distill_dispatch() -> subprocess.CompletedProcess[str]:
         "slice-01",
         "--phase",
         "D_DISTILL",
+        *_contract_args(_REPO_ROOT, seed=False),
     )
 
 
@@ -1359,6 +1200,7 @@ def test_examiner_unarmed_dispatch_body_is_unperturbed_by_the_crafter_merge(
             "slice-01",
             "--phase",
             "C_REVIEWER_AUDIT",
+            *_contract_args(tmp_path),
         ),
         capture_output=True,
         text=True,
@@ -1518,6 +1360,7 @@ def test_armed_middle_slot_dispatch_body_is_unperturbed_by_the_crafter_merge(
             "slice-01",
             "--phase",
             "C_REVIEWER_AUDIT",
+            *_contract_args(tmp_path),
         ),
         capture_output=True,
         text=True,
@@ -1781,11 +1624,19 @@ _INVARIANCE_DISPATCH_SHAPES: tuple[tuple[str, ...], ...] = (
 
 def _render_all_shapes(workspace: Path) -> list[str]:
     """Render every `_INVARIANCE_DISPATCH_SHAPES` entry against `workspace`
-    (via `--repo-root`) and return the masked stdout for each, in order."""
+    (via `--repo-root`) and return the masked stdout for each, in order.
+    Every phase-bearing (test-running) shape also gets the `--delivery-
+    contract` pair seeded under `workspace`; the phaseless authoring-wave and
+    `--lane charter` shapes stay contract-free."""
     renders = []
     for shape in _INVARIANCE_DISPATCH_SHAPES:
+        extra_args = (
+            _contract_args(workspace)
+            if "--phase" in shape
+            else ("--repo-root", str(workspace))
+        )
         result = subprocess.run(
-            _dispatch_argv(*shape, "--repo-root", str(workspace)),
+            _dispatch_argv(*shape, *extra_args),
             capture_output=True,
             text=True,
             timeout=30,

@@ -2,14 +2,14 @@ version: 1
 roles:
   nw-software-crafter:
     on_demand:
-      nw-algebraic-design-protocol: contested law or representation change
-      nw-certainty-by-construction: invalid-state or preservation claim
+      nw-algebraic-design-protocol: CONTESTED_LAW or REPRESENTATION_CHANGE obligation, or contested law/representation change
+      nw-certainty-by-construction: INVALID_STATE or PRESERVATION obligation, or invalid-state/preservation claim
     phase:
       nw-code-design-oo: GREEN or refactor on an object-oriented route
   nw-functional-software-crafter:
     on_demand:
-      nw-algebraic-design-protocol: contested law or representation change
-      nw-certainty-by-construction: invalid-state or preservation claim
+      nw-algebraic-design-protocol: CONTESTED_LAW or REPRESENTATION_CHANGE obligation, or contested law/representation change
+      nw-certainty-by-construction: INVALID_STATE or PRESERVATION obligation, or invalid-state/preservation claim
     phase:
       nw-fp-principles: PREPARE on a functional route
       nw-fp-algebra-driven-design: GREEN on a functional route
@@ -64,7 +64,7 @@ roles:
       nw-certainty-by-construction: invalid-state or preservation claim
     phase:
       nw-test-design-mandates: Phase 0 policy detection
-      nw-property-based-testing: Phase 2 property authoring
+      nw-property-based-testing: BROAD_INPUT_DOMAIN obligation, or Phase 2 property authoring
     language_pbt:
       python: nw-pbt-python
       typescript: nw-pbt-typescript

@@ -42,13 +42,11 @@ from scripts.validation.validate_framework_templates import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-# The exact shipped WS-12 tools string (nw-software-crafter-reviewer.md,
-# commit ee48faa62) -- read-only Bash alongside the code-fact MCP tools.
-_WS12_REVIEWER_TOOLS = (
-    "Read, Glob, Grep, Task, Bash, mcp__tsunami__callers_of, "
-    "mcp__tsunami__reads_of, mcp__tsunami__never_wired, "
-    "mcp__tsunami__atoms_in_file, mcp__tsunami__adr_section"
-)
+# The shipped WS-12 tools shape (nw-software-crafter-reviewer.md) -- read-only
+# Bash alongside the standard read-only investigative tools (code-fact access
+# goes through the provider-neutral `des code-fact` CLI reachable via Bash,
+# not a dedicated MCP tool grant).
+_WS12_REVIEWER_TOOLS = "Read, Glob, Grep, Task, Bash"
 
 
 def _write_agent(tmp_path: Path, name: str, tools: str) -> Path:

@@ -85,10 +85,12 @@ def test_auto_root_delegates_the_code_fact_query_to_the_acceptance_designer() ->
     executable_form = "des code-fact query.* SUBJECT --root ROOT"
     assert "run\nexactly one bounded provider-neutral" in atd_text
     assert executable_form in atd_text
-    for field in ("`reuse`", "`boundaries`", "`targets`"):
-        assert field in atd_text
-    assert "no applicable reuse is encoded directly in `reuse`" in atd_text
-    assert "never as\na separate receipt" in atd_text
+    assert "`targets[]`" in atd_text or "targets[].{" in atd_text
+    for nested_field in ("overlap", "decision", "justification", "boundary"):
+        assert nested_field in atd_text
+    assert "no top-level" in atd_text or "DeliveryContract fields" in atd_text
+    assert "targets[].{overlap, decision, justification, boundary}" in atd_text
+    assert "there is no top-level `reuse` or `boundaries` field" in atd_text
     dispatch_loading = _default_skill_loading_body("nw-acceptance-designer")
     assert executable_form in dispatch_loading
 

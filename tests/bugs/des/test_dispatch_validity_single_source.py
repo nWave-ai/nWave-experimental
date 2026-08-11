@@ -70,13 +70,12 @@ from des.domain.des_marker_parser import (
 )
 from des.domain.marker_completeness_policy import MarkerCompletenessPolicy
 from des.domain.wave_dispatch_profile import WAVE_DISPATCH_PROFILES
+from tests.common.delivery_contract_fixture import contract_args
 
 
-# tests/bugs/des/<this file> -> parents[2] == checkout root (mirrors the
-# established tests/bugs/des/test_dispatch_lane_for_non_code_facing_agents.py
-# REPO_ROOT resolution style, one level shallower -- this file lives directly
-# under tests/bugs/des/, not a subdirectory).
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+# tests/bugs/des/<this file> -> parents[3] == checkout root (this file is
+# directly under tests/bugs/des/, so the path is 4 levels deep: file/des/bugs/tests/root).
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 _PARSER = DesMarkerParser()
 _COMPLETENESS_POLICY = MarkerCompletenessPolicy()
@@ -120,7 +119,7 @@ def _generated_markers(argv: list[str]) -> DesMarkers:
     prompt.
     """
     exit_code, stdout, stderr = _run_dispatch_main(
-        [*argv, "--repo-root", str(_REPO_ROOT)]
+        [*argv, *contract_args(_REPO_ROOT, seed=False)]
     )
     assert exit_code == 0, (
         f"dispatch generation itself must succeed for argv={argv!r} -- a "

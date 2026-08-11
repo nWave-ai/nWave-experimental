@@ -29,6 +29,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -43,6 +44,26 @@ pytestmark = pytest.mark.e2e_smoke
 
 _TEXT_SCAN_SUFFIXES = (".py", ".md", ".json", ".toml", ".yaml", ".yml", ".cfg")
 _FOREIGN_MARKER_TEXT = "# pre-existing, not nWave-owned\n"
+
+# The real, checked-in DeliveryContract fixture -- read from the checkout
+# under test (never embedded as a dict literal here; see the identical
+# rationale on `_DELIVERY_CONTRACT_FIXTURE` in
+# tests/des/acceptance/test_dispatch_delivery_contract_locator.py, the
+# in-process sibling this installed-shape test complements).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DELIVERY_CONTRACT_FIXTURE = (
+    _REPO_ROOT / "docs" / "delivery-contracts" / "retarget-des-dispatch-contract.json"
+)
+_DELIVER_ARGS = (
+    "--mode",
+    "atdd_pure",
+    "--project-id",
+    "demo",
+    "--slice",
+    "slice-01",
+    "--phase",
+    "A_GREEN",
+)
 
 _SKILLS_ROOT = {"claude": (".claude", "skills"), "codex": (".agents", "skills")}
 _REPRESENTATIVE_AGENT_GLOB = {
@@ -236,6 +257,54 @@ def test_installed_code_fact_resolves_via_ast_or_textsearch_without_pythonpath(
     forbidden = re.compile(r"graphify|pip install|npm install|\bmcp\b", re.IGNORECASE)
     assert not forbidden.search(out), (
         f"code-fact output leaked a dependency/executable/MCP instruction: {out}"
+    )
+
+
+@pytest.mark.e2e
+def test_installed_dispatch_accepts_valid_delivery_contract_without_pythonpath(
+    host_install, _venv_with_wheel: Path, tmp_path: Path
+) -> None:
+    """The installed ``des dispatch`` console script accepts a schema-valid,
+    repository-root-relative DeliveryContract, under both isolated Claude and
+    Codex ``$HOME``s, with no ``PYTHONPATH`` -- the installed-shape gap this
+    suite left uncovered: the SAME wheel's ``nWave/nWave/schemas/`` PyPI
+    layout previously resolved to a nonexistent
+    ``lib/python3.12/nWave/schemas/`` path (checkout/Claude-runtime-shaped
+    locator applied to a PyPI/pipx site-packages install), so a schema-valid
+    explicit contract exited 2 instead of dispatching.
+    """
+    host, home, _ = host_install
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    contract_rel = "delivery-contract.json"
+    shutil.copyfile(_DELIVERY_CONTRACT_FIXTURE, repo_root / contract_rel)
+
+    des_script = _venv_with_wheel / "bin" / "des"
+    env = {"HOME": str(home), "PATH": str(_venv_with_wheel / "bin")}
+    proc = subprocess.run(
+        [
+            str(des_script),
+            "dispatch",
+            *_DELIVER_ARGS,
+            "--repo-root",
+            str(repo_root),
+            "--delivery-contract",
+            contract_rel,
+        ],
+        capture_output=True,
+        cwd=str(repo_root),
+        env=env,
+        timeout=60,
+        check=False,
+    )
+    out = proc.stdout.decode("utf-8", errors="replace")
+    err = proc.stderr.decode("utf-8", errors="replace")
+    assert proc.returncode == 0, (
+        f"{host}: installed des dispatch rejected a schema-valid, installed "
+        f"thin-delivery-contract schema lookup:\nSTDOUT:\n{out}\nSTDERR:\n{err}"
+    )
+    assert "retarget-des-dispatch-contract" in out, (
+        f"{host}: compact DeliveryContract context missing from rendered prompt:\n{out}"
     )
 
 

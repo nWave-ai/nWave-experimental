@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 import pytest
+from tests.common.delivery_contract_fixture import contract_args
 from tests.common.in_process_cli import run_cli_in_process, run_module_in_process
 
 
@@ -37,6 +38,7 @@ def _render_intent(project: Path) -> str:
             "deliver",
             "--intent",
             "Make the next dispatched work traceable without claiming it finished.",
+            *contract_args(project),
         ],
         cwd=project,
     )

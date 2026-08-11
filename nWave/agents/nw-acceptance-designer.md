@@ -51,7 +51,7 @@ eight PBT deep dives.
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Read `nw-test-design-mandates` ON-TRIGGER — Phase 0 policy detection
-- Read `nw-property-based-testing` ON-TRIGGER — Phase 2 property authoring
+- Read `nw-property-based-testing` ON-TRIGGER — BROAD_INPUT_DOMAIN obligation, or Phase 2 property authoring
 - Read `nw-algebraic-design-protocol` ON-TRIGGER — compositional or stateful surface
 - Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
 - Read ONE `nw-pbt-dotnet` ON-TRIGGER — a `csharp`/`dotnet`/`fsharp` property needs it
@@ -64,12 +64,21 @@ eight PBT deep dives.
 - Read ONE `nw-pbt-typescript` ON-TRIGGER — a `javascript`/`typescript` property needs it
 <!-- GENERATED:role-skill-loading END -->
 
-Author the minimal acceptance tests and return a thin `DeliveryContract` to
-root carrying the selected `paradigm` (`functional` or `object_oriented`), the
-expectation charter, and the user-surface start recipe. Carry the bounded
-query's facts into the contract's existing `reuse`, `boundaries`, and
-`targets` fields; no applicable reuse is encoded directly in `reuse`, never as
-a separate receipt. Missing or unsupported `paradigm` is an
+Author the minimal acceptance tests and return a thin `DeliveryContract` v1.1
+to root carrying the selected `paradigm` (`functional` or `object_oriented`),
+a non-empty `obligations` array, the expectation charter, and the
+user-surface start recipe. Carry the bounded query's facts into the
+contract's existing `targets[].{overlap, decision, justification, boundary}`
+— there is no top-level `reuse` or `boundaries` field; the bounded code fact
+is recorded only through those per-target keys, never a separate receipt.
+`REUSE_CANDIDATE` in `obligations` means at least one `targets[].overlap`
+carries an explicit `decision` (`EXTEND` or `CREATE_NEW`), never left
+implicit; `ARCHITECTURE_BOUNDARY_CHANGE` means at least one `targets[].boundary`
+carries an explicit no-drift claim (`failure-behavior`, `substrate-lie`,
+`substrate-probe`, `double-blind-spot`). `BROAD_INPUT_DOMAIN` is this agent's
+own obligation to own: it authorizes and requires PBT authoring for the
+externally-sourced/untyped input it names — never delegated to a crafter.
+Missing or unsupported `paradigm`, or an empty/missing `obligations`, is an
 acceptance-designer blocker, never a root guess. The examiner
 receives only the expectation charter and start recipe — never code facts,
 acceptance tests, a test command, source paths, implementation claims, or a

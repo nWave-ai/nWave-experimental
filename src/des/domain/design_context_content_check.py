@@ -43,6 +43,10 @@ _TEMPLATE_PLACEHOLDER_PREFIX = "{Summary of architectural decisions"
 #   * ## Wave: DESIGN  — a DESIGN-wave reference
 #   * docs/feature/.../feature-delta.md — a feature-delta DESIGN path
 #   * brief.md         — the component-inventory brief
+#   * DeliveryContract: <path> — a producer-owned ThinDeliveryContract locator
+#     (the literal ``DeliveryContract:`` prefix followed by whitespace and a
+#     non-whitespace token, NOT a bare ``.json`` path -- an arbitrary JSON path
+#     proves nothing about provenance)
 _DESIGN_REFERENCE_TOKEN = re.compile(
     r"DDD-\d+"
     r"|ADR[-A-Z]*-?\d+"
@@ -50,6 +54,7 @@ _DESIGN_REFERENCE_TOKEN = re.compile(
     r"|## Wave: DESIGN"
     r"|docs/feature/[^ ]+/feature-delta\.md"
     r"|brief\.md"
+    r"|DeliveryContract:\s+\S+"
 )
 
 
@@ -61,7 +66,7 @@ def design_context_carries_architecture(body: str) -> bool:
     is not the "no design artifacts" sentinel, is not the unfilled template
     placeholder, and contains at least one design-reference token (DDD-N /
     ADR[-A-Z]*-N / SYS-N / a feature-delta.md path / brief.md / a
-    ``## Wave: DESIGN`` reference).
+    ``## Wave: DESIGN`` reference / a ``DeliveryContract:<path>`` locator).
 
     Args:
         body: The DESIGN_CONTEXT section body (heading line already stripped).
