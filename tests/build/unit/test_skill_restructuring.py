@@ -188,7 +188,7 @@ BULK_HASHES = {
     # docgen --check owns this guard.
     # Prior hash updated 2026-07-08: added Skill-addressing-tables (load-by-trigger)
     # section (directive).
-    "nw-agent-creation-workflow": "d4e7abc894ce58ec342949f3c96d665d",
+    "nw-agent-creation-workflow": "51158267e8f8af350c0d28a753b4318b",
     "nw-agent-testing": "58093930e354b85b07be5fe0a08fc4ed",
     "nw-ai-workflow-tutorials": "93e15d83c8b2042102785dff4c677bb7",
     "nw-architectural-styles-tradeoffs": "f6dc4a1e0f1ac40d9d1dd0d25d9c90f4",

@@ -18,7 +18,7 @@
 
 | Name | Description | Preloaded skills |
 | --- | --- | --- |
-| [nw-acceptance-designer](nw-acceptance-designer.md) | Use for DISTILL wave — designs E2E acceptance tests from user stories and architecture using Given-When-Then format. EXPANDED scope (plan v3 §3.A, 2026-05-19) — exclusive test-expertise owner; authors ATs with maximum PBT + parametrize density, runs self-completeness audit (7-category taxonomy + 15-item checklist), enforces Mandate-12 step-reuse ≥4× target informational, consults DISCUSS+DESIGN+DEVOPS upstream waves for taxonomy population (C2/C5/C6/C7). Creates executable specifications that drive Outside-In TDD development. | 22 |
+| [nw-acceptance-designer](nw-acceptance-designer.md) | Use for DISTILL wave — designs E2E acceptance tests from user stories and architecture using Given-When-Then format. EXPANDED scope (plan v3 §3.A, 2026-05-19) — exclusive test-expertise owner; authors ATs with maximum PBT + parametrize density, runs self-completeness audit (7-category taxonomy + 15-item checklist), enforces Mandate-12 step-reuse ≥4× target informational, consults DISCUSS+DESIGN+DEVOPS upstream waves for taxonomy population (C2/C5/C6/C7). Creates executable specifications that drive Outside-In TDD development. | 0 |
 | [nw-acceptance-designer-reviewer](nw-acceptance-designer-reviewer.md) | Use for review and critique tasks - Acceptance criteria and BDD review specialist. Runs on Haiku for cost efficiency. | 4 |
 
 ## DELIVER
@@ -59,7 +59,7 @@
 
 | Name | Wave | Description | Preloaded skills |
 | --- | --- | --- | --- |
-| [nw-acceptance-designer](nw-acceptance-designer.md) | DISTILL | Use for DISTILL wave — designs E2E acceptance tests from user stories and architecture using Given-When-Then format. EXPANDED scope (plan v3 §3.A, 2026-05-19) — exclusive test-expertise owner; authors ATs with maximum PBT + parametrize density, runs self-completeness audit (7-category taxonomy + 15-item checklist), enforces Mandate-12 step-reuse ≥4× target informational, consults DISCUSS+DESIGN+DEVOPS upstream waves for taxonomy population (C2/C5/C6/C7). Creates executable specifications that drive Outside-In TDD development. | 22 |
+| [nw-acceptance-designer](nw-acceptance-designer.md) | DISTILL | Use for DISTILL wave — designs E2E acceptance tests from user stories and architecture using Given-When-Then format. EXPANDED scope (plan v3 §3.A, 2026-05-19) — exclusive test-expertise owner; authors ATs with maximum PBT + parametrize density, runs self-completeness audit (7-category taxonomy + 15-item checklist), enforces Mandate-12 step-reuse ≥4× target informational, consults DISCUSS+DESIGN+DEVOPS upstream waves for taxonomy population (C2/C5/C6/C7). Creates executable specifications that drive Outside-In TDD development. | 0 |
 | [nw-acceptance-designer-reviewer](nw-acceptance-designer-reviewer.md) | DISTILL | Use for review and critique tasks - Acceptance criteria and BDD review specialist. Runs on Haiku for cost efficiency. | 4 |
 | [nw-agent-builder](nw-agent-builder.md) | Other | Use when creating new AI agents, validating agent specifications, optimizing command definitions, or ensuring compliance with Claude Code best practices. Creates focused, research-validated agents (200-400 lines) with Skills for domain knowledge. Also optimizes bloated command files into lean declarative definitions. | 19 |
 | [nw-agent-builder-reviewer](nw-agent-builder-reviewer.md) | Other | Use for review and critique tasks - Agent design and quality review specialist. Runs on Haiku for cost efficiency. | 5 |

@@ -65,6 +65,29 @@ roles:
     phase:
       nw-test-design-mandates: Phase 0 policy detection
       nw-property-based-testing: BROAD_INPUT_DOMAIN obligation, or Phase 2 property authoring
+      nw-code-analysis-port: F — code/test fact query
+    catalog_only:
+      - nw-bdd-methodology
+      - nw-test-design-mandates-scenario-design
+      - nw-test-design-mandates-layered-mechanics
+      - nw-test-design-mandates-composition-contract
+      - nw-test-organization-conventions
+      - nw-ad-critique-dimensions
+      - nw-tdd-methodology-paradigm
+      - nw-tdd-methodology-walking-skeleton
+      - nw-distill
+      - nw-distill-prior-wave-reading
+      - nw-distill-feature-delta-schema
+      - nw-distill-port-treatment-policy
+      - nw-distill-red-scaffolding
+      - nw-distill-coverage-obligations
+      - nw-at-completeness-check
+      - nw-test-optimization-paradigm-match
+      - nw-test-optimization-consolidation
+      - nw-test-refactoring-catalog
+      - nw-ad-mandate-summaries
+      - nw-ad-distill-dod
+      - nw-cross-cutting-invariants
     language_pbt:
       python: nw-pbt-python
       typescript: nw-pbt-typescript

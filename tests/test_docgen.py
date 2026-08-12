@@ -911,6 +911,83 @@ class TestRoleSkillLoadingRegistry:
         )
         jsonschema.validate(registry, schema)
 
+    def test_schema_accepts_valid_catalog_only(self, root: Path):
+        import jsonschema
+        import yaml
+
+        schema = yaml.safe_load(
+            (root / "nWave" / "data" / "role-skill-loading.schema.yaml").read_text()
+        )
+        registry = {
+            "version": 1,
+            "roles": {
+                "nw-example": {"catalog_only": ["nw-a", "nw-b"]},
+            },
+        }
+        jsonschema.validate(registry, schema)
+
+    @pytest.mark.parametrize(
+        "catalog_only",
+        [
+            [],
+            ["nw-a", "nw-a"],
+            ["not-nw-prefixed"],
+            [123],
+        ],
+        ids=["empty", "duplicate", "bad-pattern", "wrong-type"],
+    )
+    def test_schema_rejects_invalid_catalog_only(self, root: Path, catalog_only):
+        import jsonschema
+        import yaml
+
+        schema = yaml.safe_load(
+            (root / "nWave" / "data" / "role-skill-loading.schema.yaml").read_text()
+        )
+        registry = {
+            "version": 1,
+            "roles": {"nw-example": {"catalog_only": catalog_only}},
+        }
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(registry, schema)
+
+    def test_schema_rejects_unknown_role_field(self, root: Path):
+        import jsonschema
+        import yaml
+
+        schema = yaml.safe_load(
+            (root / "nWave" / "data" / "role-skill-loading.schema.yaml").read_text()
+        )
+        registry = {
+            "version": 1,
+            "roles": {"nw-example": {"catalog_only": ["nw-a"], "bogus": True}},
+        }
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(registry, schema)
+
+    def test_real_atd_frontmatter_has_no_skills_field(self, root: Path):
+        text = (root / "nWave" / "agents" / "nw-acceptance-designer.md").read_text()
+        import yaml
+
+        fm = yaml.safe_load(text.split("---")[1])
+        assert "skills" not in fm, (
+            "nw-acceptance-designer.md frontmatter must not eagerly preload -- "
+            f"found skills: {fm.get('skills')}"
+        )
+
+    def test_atd_generated_body_excludes_catalog_only_and_includes_code_analysis(
+        self, root: Path, roles: dict
+    ):
+        body = _role_skill_loading_body("nw-acceptance-designer", root)
+        atd_entry = roles["nw-acceptance-designer"]
+        for skill in atd_entry.get("catalog_only", []):
+            assert f"Skill({skill})" not in body, (
+                f"catalog_only skill {skill} must not render in the generated body"
+            )
+        assert "Invoke Skill(nw-code-analysis-port) ON-TRIGGER" in body, (
+            "nw-code-analysis-port must render ON-TRIGGER"
+        )
+        assert "F — code/test fact query" in body
+
     @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
     def test_installed_spec_has_exactly_one_generated_region(
         self, root: Path, agent_id: str
@@ -1024,6 +1101,11 @@ class TestRoleSkillLoadingRegistry:
 
         Effective conditional skills are: own on_demand/phase KEYS, own paradigm/
         language_pbt VALUES, and union of reviewer_of owners' on_demand KEYS.
+
+        catalog_only must also be disjoint from that same effective set --
+        it is build-time ownership only, never an eager preload or an
+        ON-TRIGGER row, so it must not shadow a role's own on_demand/phase/
+        paradigm/language_pbt authority.
         """
         path = root / "nWave" / "agents" / f"{agent_id}.md"
         if agent_id not in roles or not path.exists():
@@ -1049,6 +1131,14 @@ class TestRoleSkillLoadingRegistry:
         # Assert disjointness
         overlap = effective & frontmatter_skills
         assert not overlap, f"{agent_id} frontmatter still owns {overlap}"
+
+        # catalog_only must not shadow the role's own effective conditional skills
+        catalog_only = set(entry.get("catalog_only") or [])
+        catalog_overlap = catalog_only & effective
+        assert not catalog_overlap, (
+            f"{agent_id} catalog_only shadows effective conditional skills: "
+            f"{catalog_overlap}"
+        )
 
         # ATD-specific compact assertions
         if agent_id == "nw-acceptance-designer":

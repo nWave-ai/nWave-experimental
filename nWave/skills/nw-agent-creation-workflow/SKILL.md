@@ -73,7 +73,7 @@ Every agent that carries `skills:` in frontmatter needs two things, kept aligned
    - Create a loading table: Phase → Skill → Trigger condition
    - Add explicit `Load: skill-name` directives in each workflow phase
    - Document path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo)
-   - Note: `skills:` in frontmatter is declarative only — Claude Code does NOT auto-load skill files. The agent must use Read tool to load them, triggered by `Load:` directives in workflow text.
+   - Note: `skills:` in frontmatter eagerly preloads full skill content into context — reserve it for always-needed skills; skills meant for on-demand loading stay out of frontmatter and load via `Load:` directives (Read tool or Skill invocation) triggered by workflow text instead.
 7. Draft frontmatter:
    ```yaml
    ---

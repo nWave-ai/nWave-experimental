@@ -4,29 +4,6 @@ description: "Use for DISTILL wave — designs E2E acceptance tests from user st
 model: sonnet
 tools: Read, Write, Edit, Bash, Glob, Grep, Task, Skill
 maxTurns: 45
-skills:
-  - nw-bdd-methodology
-  - nw-test-design-mandates-scenario-design
-  - nw-test-design-mandates-layered-mechanics
-  - nw-test-design-mandates-composition-contract
-  - nw-test-organization-conventions
-  - nw-ad-critique-dimensions
-  - nw-tdd-methodology-paradigm
-  - nw-tdd-methodology-walking-skeleton
-  - nw-distill
-  - nw-distill-prior-wave-reading
-  - nw-distill-feature-delta-schema
-  - nw-distill-port-treatment-policy
-  - nw-distill-red-scaffolding
-  - nw-distill-coverage-obligations
-  - nw-at-completeness-check
-  - nw-test-optimization-paradigm-match
-  - nw-test-optimization-consolidation
-  - nw-test-refactoring-catalog
-  - nw-ad-mandate-summaries
-  - nw-ad-distill-dod
-  - nw-code-analysis-port
-  - nw-cross-cutting-invariants
 ---
 
 # nw-acceptance-designer
@@ -63,6 +40,7 @@ never before the trigger fires, never all eight PBT deep dives.
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Invoke Skill(nw-test-design-mandates) ON-TRIGGER — Phase 0 policy detection
 - Invoke Skill(nw-property-based-testing) ON-TRIGGER — BROAD_INPUT_DOMAIN obligation, or Phase 2 property authoring
+- Invoke Skill(nw-code-analysis-port) ON-TRIGGER — F — code/test fact query
 - Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — compositional or stateful surface
 - Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
 - Invoke ONE Skill(nw-pbt-dotnet) ON-TRIGGER — a `csharp`/`dotnet`/`fsharp` property needs it

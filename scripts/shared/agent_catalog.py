@@ -311,15 +311,17 @@ def _add_role_skill_registry_ownership(
     agents_dir: Path, ownership: dict[str, set[str]], yaml_module: object
 ) -> None:
     """Fold the sibling role-skill-loading.yaml registry's direct role fields
-    (on_demand/phase keys, paradigm/language_pbt values) into ``ownership``,
-    keyed under the bare role owner name -- these skills are conditionally
-    projected by docgen, not frontmatter-listed, so the frontmatter-only scan
-    above would otherwise miss them. Also maps each ``reviewer_of`` role to
-    every reviewed owner's ``on_demand`` keys, since a reviewer's usage
-    ownership of a reviewed role's on-demand skills is a distribution
-    concern, not author-phase ownership or eager preload. Missing or
-    malformed registry is a no-op: this is a secondary distribution seam,
-    not the registry's schema authority.
+    (on_demand/phase keys, paradigm/language_pbt values, catalog_only items)
+    into ``ownership``, keyed under the bare role owner name -- these skills
+    are conditionally projected by docgen, not frontmatter-listed, so the
+    frontmatter-only scan above would otherwise miss them. ``catalog_only``
+    entries are build-time ownership only (never rendered by docgen) for
+    skills a role owns without eager preload or an ON-TRIGGER row. Also maps
+    each ``reviewer_of`` role to every reviewed owner's ``on_demand`` keys,
+    since a reviewer's usage ownership of a reviewed role's on-demand skills
+    is a distribution concern, not author-phase ownership or eager preload.
+    Missing or malformed registry is a no-op: this is a secondary
+    distribution seam, not the registry's schema authority.
     """
     registry_path = agents_dir.parent / "data" / "role-skill-loading.yaml"
     if not registry_path.exists():
@@ -350,6 +352,9 @@ def _add_role_skill_registry_ownership(
             values = entry.get(field)
             if isinstance(values, dict):
                 skills.extend(v for v in values.values() if isinstance(v, str))
+        catalog_only = entry.get("catalog_only")
+        if isinstance(catalog_only, list):
+            skills.extend(v for v in catalog_only if isinstance(v, str))
         for skill in skills:
             skill_key = skill if skill.startswith("nw-") else f"nw-{skill}"
             ownership.setdefault(skill_key, set()).add(owner)

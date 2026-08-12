@@ -53,4 +53,4 @@ When optimizing command files for token efficiency:
 
 **Compression evidence**: Pipe-delimited compression achieves 15-30% token reduction on prose-heavy files. Code-heavy files (PBT skills, code examples) yield <5%. Average across framework: ~7.4% overall.
 
-**Orchestrator skill loading section**: Commands dispatching sub-agents must include `SKILL_LOADING` in the Task prompt reminding the agent to read its skills at `~/.claude/skills/nw-{skill-name}/SKILL.md`. Without this, sub-agents operate without domain knowledge (the `skills:` frontmatter is decorative).
+**Orchestrator skill loading section**: Commands dispatching sub-agents must include `SKILL_LOADING` in the Task prompt reminding the agent to read its skills at `~/.claude/skills/nw-{skill-name}/SKILL.md`. Sub-agents can invoke the Skill tool (but not slash commands); the `skills:` frontmatter field eagerly preloads full skill content into custom subagents, so this reminder targets skills meant to load at point-of-use instead. Without it, sub-agents operate without domain knowledge.

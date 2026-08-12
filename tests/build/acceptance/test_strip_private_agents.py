@@ -15,8 +15,11 @@ Scenarios covered (step 02-01):
   P0b-12: Registry-only skill ownership (role-skill-loading.yaml) is
           honoured by strip() -- survives for a public role owner, does
           not leak for a private-only role owner
+  P0b-13: catalog_only registry ownership (no frontmatter skills:) is
+          honoured by strip() -- survives for a public catalog_only
+          owner, does not leak for an unowned private skill
 
-Test Budget: 12 distinct behaviors x 2 = 24 max. Using 12 tests.
+Test Budget: 13 distinct behaviors x 2 = 26 max. Using 13 tests.
 """
 
 from __future__ import annotations
@@ -562,6 +565,54 @@ class TestRegistryOnlyOwnershipHonouredByStrip:
         assert not (skills_dir / "nw-private-registry-skill").exists(), (
             "skill owned only by role-skill-loading.yaml for a private-only "
             "agent must not leak"
+        )
+
+
+# ---------------------------------------------------------------------------
+# P0b-13: catalog_only registry ownership is honoured by strip()
+# ---------------------------------------------------------------------------
+
+
+class TestCatalogOnlyOwnershipHonouredByStrip:
+    """P0b-13: strip() must honour catalog_only registry ownership -- a
+    public agent with NO frontmatter skills: entry that owns a skill only
+    via role-skill-loading.yaml catalog_only must keep that skill, while an
+    unowned skill belonging to a private agent is still removed.
+    """
+
+    def test_catalog_only_skill_survives_for_public_owner_unowned_private_skill_stripped(
+        self, tmp_path: Path
+    ) -> None:
+        """A skill owned ONLY via catalog_only (no frontmatter skills: on
+        the agent at all) survives strip() when its owner is public, while
+        an unowned skill belonging to a private agent is removed."""
+        from scripts.release.strip_private_agents import strip
+
+        target = _create_target(
+            tmp_path,
+            CATALOG_PUBLIC_PRIVATE,
+            agents={"alpha": None, "internal-tool": ["nw-unowned-private-skill"]},
+            skills=["catalog-only-skill", "unowned-private-skill"],
+        )
+        data_dir = target / "nWave" / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / "role-skill-loading.yaml").write_text(
+            "version: 1\n"
+            "roles:\n"
+            "  nw-alpha:\n"
+            "    catalog_only:\n"
+            "      - nw-catalog-only-skill\n"
+        )
+
+        strip(target)
+
+        skills_dir = target / "nWave" / "skills"
+        assert (skills_dir / "nw-catalog-only-skill").exists(), (
+            "skill owned only via catalog_only for a public agent with no "
+            "frontmatter skills: must survive strip()"
+        )
+        assert not (skills_dir / "nw-unowned-private-skill").exists(), (
+            "skill owned only by a private agent must not leak"
         )
 
 

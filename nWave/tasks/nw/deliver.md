@@ -18,7 +18,7 @@ This prose does not re-enumerate the gate stack inline; it POINTS at the registr
 
 Orchestrates complete DELIVER wave: feature description → production-ready code with mandatory quality gates. You (main Claude instance) coordinate by delegating to specialized agents via Task tool. Final wave (DISCOVER > DIVERGE > DISCUSS > DESIGN > DEVOPS > DISTILL > DELIVER).
 
-Sub-agents cannot use Skill tool or `/nw:*` commands. You MUST:
+Sub-agents cannot use `/nw:*` commands (Skill tool is available). You MUST:
 - Read the relevant command file and embed instructions in the Task prompt
 - Remind the crafter to load its skills as needed for the task (skill files are at `~/.claude/skills/nw/{agent-name}/`)
 

@@ -315,6 +315,101 @@ class TestBuildOwnershipMapUnit:
         for text in ("law or representation", "invalid-state claim", "design phase"):
             assert text not in result
 
+    def test_catalog_only_entries_fold_into_ownership(self, tmp_path):
+        import yaml
+
+        agents_dir = tmp_path / "nWave" / "agents"
+        agents_dir.mkdir(parents=True)
+        data_dir = tmp_path / "nWave" / "data"
+        data_dir.mkdir(parents=True)
+
+        registry = {
+            "version": 1,
+            "roles": {
+                "nw-test-role": {
+                    "phase": {"nw-phase-skill": "design phase"},
+                    "catalog_only": ["nw-catalog-a", "nw-catalog-b"],
+                },
+            },
+        }
+        (data_dir / "role-skill-loading.yaml").write_text(
+            yaml.dump(registry), encoding="utf-8"
+        )
+        self._create_agent_file(agents_dir, "nw-test-role", ["nw-frontmatter-owned"])
+
+        result = build_ownership_map(agents_dir)
+
+        assert result["nw-catalog-a"] == {"test-role"}
+        assert result["nw-catalog-b"] == {"test-role"}
+        assert result["nw-phase-skill"] == {"test-role"}
+
+    def test_malformed_catalog_only_is_ignored_fail_closed(self, tmp_path):
+        import yaml
+
+        agents_dir = tmp_path / "nWave" / "agents"
+        agents_dir.mkdir(parents=True)
+        data_dir = tmp_path / "nWave" / "data"
+        data_dir.mkdir(parents=True)
+
+        registry = {
+            "version": 1,
+            "roles": {
+                "nw-test-role": {
+                    "catalog_only": "not-a-list",
+                },
+                "nw-other-role": {
+                    "catalog_only": [123, None, "nw-valid"],
+                },
+            },
+        }
+        (data_dir / "role-skill-loading.yaml").write_text(
+            yaml.dump(registry), encoding="utf-8"
+        )
+        self._create_agent_file(agents_dir, "nw-test-role", ["nw-frontmatter-owned"])
+
+        result = build_ownership_map(agents_dir)
+
+        assert "not-a-list" not in result
+        assert result["nw-valid"] == {"other-role"}
+
+    def test_real_atd_ownership_covers_all_22_former_frontmatter_skills(self):
+        """Every skill that used to be in nw-acceptance-designer.md's
+        frontmatter must still resolve to an owner through either the
+        `phase` field or the new `catalog_only` field."""
+        former_frontmatter_skills = {
+            "nw-bdd-methodology",
+            "nw-test-design-mandates-scenario-design",
+            "nw-test-design-mandates-layered-mechanics",
+            "nw-test-design-mandates-composition-contract",
+            "nw-test-organization-conventions",
+            "nw-ad-critique-dimensions",
+            "nw-tdd-methodology-paradigm",
+            "nw-tdd-methodology-walking-skeleton",
+            "nw-distill",
+            "nw-distill-prior-wave-reading",
+            "nw-distill-feature-delta-schema",
+            "nw-distill-port-treatment-policy",
+            "nw-distill-red-scaffolding",
+            "nw-distill-coverage-obligations",
+            "nw-at-completeness-check",
+            "nw-test-optimization-paradigm-match",
+            "nw-test-optimization-consolidation",
+            "nw-test-refactoring-catalog",
+            "nw-ad-mandate-summaries",
+            "nw-ad-distill-dod",
+            "nw-code-analysis-port",
+            "nw-cross-cutting-invariants",
+        }
+        assert len(former_frontmatter_skills) == 22
+
+        result = build_ownership_map(NWAVE_DIR / "agents")
+        missing = {
+            skill
+            for skill in former_frontmatter_skills
+            if "acceptance-designer" not in result.get(skill, set())
+        }
+        assert not missing, f"acceptance-designer lost ownership of: {missing}"
+
 
 class TestIsPublicSkillWithOwnershipMap:
     """Unit tests for is_public_skill with the ownership_map parameter."""
@@ -352,6 +447,25 @@ class TestIsPublicSkillWithOwnershipMap:
         ownership_map = {"nw-known-skill": {"software-crafter"}}
         # Skill not in map -- falls back to old heuristic
         assert is_public_skill("software-crafter", public_agents, ownership_map) is True
+
+    def test_real_atd_catalog_only_skills_remain_public(self):
+        """A catalog_only skill is build-time ownership only (never
+        rendered), but the public agent still owns it -- the release strip
+        must keep it installed for the human ATD's method-skill access."""
+        import yaml
+
+        registry = yaml.safe_load(
+            (NWAVE_DIR / "data" / "role-skill-loading.yaml").read_text()
+        )
+        catalog_only = registry["roles"]["nw-acceptance-designer"]["catalog_only"]
+        assert catalog_only, "nw-acceptance-designer must declare catalog_only skills"
+
+        public_agents = load_public_agents(NWAVE_DIR)
+        ownership_map = build_ownership_map(NWAVE_DIR / "agents")
+        for skill in catalog_only:
+            assert is_public_skill(skill, public_agents, ownership_map) is True, (
+                f"{skill}: catalog_only skill must stay public via registry ownership"
+            )
 
 
 class TestBuildOwnershipMap:

@@ -58,7 +58,7 @@ Does the agent ensure skills are actually loaded during execution?
 
 **Check**: Skill Loading Strategy table present for agents with 3+ skills | Every frontmatter skill has matching `Load:` directive in workflow | Skills path documented (`~/.claude/skills/nw-{skill-name}/SKILL.md`) | Phase-gated loading (not "load everything at start")
 
-**Severity**: High — orphan skills (declared but never loaded) mean sub-agents operate without domain knowledge. The `skills:` frontmatter field is declarative only; Claude Code does not auto-load skill files.
+**Severity**: High — orphan skills (declared but never loaded ON-TRIGGER) mean sub-agents either waste context on unused eager preload or operate without domain knowledge. The `skills:` frontmatter field eagerly preloads full skill content into context; omit it and load ON-TRIGGER via Skill invocation instead.
 
 **Gold standard**: `nw-product-owner.md` — Skill Loading Strategy table mapping phases to skills with triggers + explicit `Load:` directives in each workflow phase.
 
