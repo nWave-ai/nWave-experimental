@@ -49,11 +49,58 @@ Before dispatching any role, decide worktree ownership:
 - Auto never creates or switches a branch. Branch proliferation is refused;
   isolation is achieved by worktree, not by branch.
 
-## M route — direct reuse floor
+## Architecture readiness — shared M/L prefix
 
-Dispatch the PO/ATD sibling pair as two background Agent dispatches, issuing
-both before waiting on either result — neither reads the other's output. Then
-join on both validated results and continue without a second controller:
+Before either route dispatches PO/ATD, root resolves intent and architecture
+readiness through this ordered, bounded sequence. It is explanatory
+prompt-level algebra only — never persisted, never a schema, never a
+controller state — and it is the ONE prefix both M and L run; there is no
+separate M/L architecture-gap split and no duplicated per-route algorithm.
+
+1. **Intent**, conditional: if an intent gap exists, dispatch DISCUSS once,
+   then re-evaluate intent. If the gap remains, refuse with a concise intent
+   blocker.
+2. **Architecture readiness**, conditional, evaluated only after intent is
+   resolved:
+
+   ```
+   ArchitectureReadiness =
+     Covered(DesignAuthorityRef) | NoImpact(Evidence) | Unresolved
+   ```
+
+   - **Covered** carries an explicit repo-relative locator plus the relevant
+     section of an existing durable brief/ADR, supplied by the user, an
+     upstream wave, or the DESIGN consult below. Root never scans the
+     repository to discover this locator itself.
+   - **NoImpact** carries explicit upstream/RCA evidence that persistence,
+     public contracts, ports/boundaries, failure semantics,
+     timing/concurrency, and paradigm are all unchanged by this slice.
+     Missing evidence is never NoImpact — absence of a stated architecture
+     concern is Unresolved, not NoImpact.
+   - **Unresolved** is the default whenever neither of the above holds. It
+     dispatches exactly one DESIGN consult, then re-evaluates: DESIGN
+     returns either a Covered reference or a concise architecture blocker.
+     If the gap remains after that one consult, refuse with the blocker —
+     never a second DESIGN dispatch.
+
+   Only Covered or NoImpact enters FloorReady (the M/L floor below).
+
+The total consult bound across a run is two: at most one DISCUSS, then at
+most one DESIGN, conditional, independent, and serial — never parallel. Skip
+either consult when its gap is absent.
+
+Any incomplete terminal role result — from DISCUSS, DESIGN, or the floor
+below — immediately ends root work: report only. No root discovery, Task
+bookkeeping, retry, repair, or reconstruction follows an incomplete result.
+
+## M/L route — shared reuse floor
+
+Once intent is resolved and architecture readiness reaches Covered or
+NoImpact above, M and L run this identical floor — there is no M-only or
+L-only variant of it. Dispatch the PO/ATD sibling pair as two background
+Agent dispatches, issuing both before waiting on either result — neither
+reads the other's output. Then join on both validated results and continue
+without a second controller:
 
 1. **Sibling dispatch (PO and ATD dispatched in the background before either
    result is awaited):**
@@ -65,9 +112,12 @@ join on both validated results and continue without a second controller:
      inventing a signup path — sets the oracle, then stops before the Human
      workflow.
    - `nw-acceptance-designer` receives the same immutable value seed as the PO,
-     plus the design SSOT. It authors the minimal thin `DeliveryContract` v1.1
-     and acceptance tests. The contract must carry `paradigm`; the ATD never
-     authors or reads the charter/start recipe.
+     plus the design SSOT, and, when architecture readiness resolved as
+     Covered or NoImpact, the exact Covered reference or NoImpact evidence —
+     never a root-authored paradigm/targets/storage/boundary/implementation
+     guess or open design choice. It authors the minimal thin
+     `DeliveryContract` v1.1 and acceptance tests. The contract must carry
+     `paradigm`; the ATD never authors or reads the charter/start recipe.
 2. **Join:** after BOTH the charter is verified and contract+tests are
    validated, dispatch exactly one crafter selected by the deterministic
    paradigm mapping. That crafter implements the contract to green without
@@ -79,24 +129,12 @@ join on both validated results and continue without a second controller:
    other artifact.
 4. Root reports the role verdicts, focused evidence, and Git diff/status.
 
-## L route — bounded serial gap resolution, then the same floor
+## L route — same prefix, same floor
 
-Before the M route, resolve gaps independently and in this order:
-
-1. If an intent gap exists, dispatch DISCUSS once, then re-evaluate intent. If
-   the gap remains, refuse with a concise intent blocker.
-2. After intent is resolved, if an architecture gap exists, dispatch DESIGN
-   once, then re-evaluate architecture. If the gap remains, refuse with a
-   concise architecture blocker.
-
-An architecture gap triggers exactly one DESIGN consult after intent is
-resolved.
-
-The consult bound is two total: at most one DISCUSS followed by at most one
-DESIGN. They are conditional, independent, and serial — never parallel. Skip
-either consult when its gap is absent. Once both gaps are resolved, run the
-same acceptance-designer → selected crafter → independent examiner → Git
-evidence floor defined for M.
+L runs the identical Architecture readiness prefix above, then the identical
+M/L route floor above. There is no separate L-only algorithm: L differs from
+M only in which gaps `nw-mode-select` observed before dispatching into this
+skill, never in a distinct in-skill procedure.
 
 ## Examiner input isolation
 

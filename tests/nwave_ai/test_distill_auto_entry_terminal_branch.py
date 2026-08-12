@@ -54,19 +54,44 @@ def test_auto_m_route_reuses_the_three_roles_then_git_evidence() -> None:
     assert "missing or has any other value" in text
 
 
-def test_auto_l_route_bounds_serial_gap_specific_consults() -> None:
-    """CONTRACT_SHAPE: bounded-change. L resolves two ordered gap classes."""
+def test_m_and_l_share_exactly_one_architecture_readiness_prefix() -> None:
+    """CONTRACT_SHAPE: bounded-change. There is one shared Architecture
+    readiness prefix, referenced (never duplicated) by both M and L, which
+    pins the Covered/NoImpact/Unresolved contract, the single DESIGN consult,
+    the FloorReady gate, the no-root-authored-guess rule, and the terminal
+    incomplete-result rule."""
     text = _auto_skill_text()
-    route = text[text.index("## L route") : text.index("## Examiner input isolation")]
+    assert text.count("## Architecture readiness — shared M/L prefix") == 1
+    prefix = text[
+        text.index("## Architecture readiness — shared M/L prefix") : text.index(
+            "## M/L route — shared reuse floor"
+        )
+    ]
+    compact_prefix = _compact(prefix)
     for token in (
-        "If an intent gap exists, dispatch DISCUSS once",
-        "If the gap remains, refuse",
-        "An architecture gap triggers exactly one DESIGN consult",
-        "consult bound is two total",
-        "independent, and serial",
-        "same acceptance-designer",
+        "Covered(DesignAuthorityRef) | NoImpact(Evidence) | Unresolved",
+        "Missing evidence is never NoImpact",
+        "dispatches exactly one DESIGN consult",
+        "never a second DESIGN dispatch",
+        "Only Covered or NoImpact enters FloorReady",
+        "Any incomplete terminal role result",
+        "No root discovery, Task",
+        "retry, repair, or reconstruction",
     ):
-        assert token in route
+        assert token in compact_prefix
+
+    m_route = text[
+        text.index("## M/L route — shared reuse floor") : text.index("## L route")
+    ]
+    assert (
+        "never a root-authored paradigm/targets/storage/boundary/implementation"
+        in _compact(m_route)
+    )
+    assert "architecture readiness" in m_route.lower()
+    l_route = text[text.index("## L route") : text.index("## Examiner input isolation")]
+    assert "identical Architecture readiness prefix" in l_route
+    assert "no separate L-only algorithm" in l_route
+    assert "## Architecture readiness" not in l_route
 
 
 def test_auto_root_delegates_the_code_fact_query_to_the_acceptance_designer() -> None:
@@ -83,7 +108,7 @@ def test_auto_root_delegates_the_code_fact_query_to_the_acceptance_designer() ->
 
     atd_text = ATD_AGENT_PATH.read_text(encoding="utf-8")
     executable_form = "des code-fact query.* SUBJECT --root ROOT"
-    assert "run\nexactly one bounded provider-neutral" in atd_text
+    assert "run exactly one bounded provider-neutral" in _compact(atd_text)
     assert executable_form in atd_text
     assert "`targets[]`" in atd_text or "targets[].{" in atd_text
     for nested_field in ("overlap", "decision", "justification", "boundary"):

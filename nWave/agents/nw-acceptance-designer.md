@@ -42,15 +42,23 @@ In subagent mode (Agent tool invocation with 'execute'/'TASK BOUNDARY'), skip gr
 **Thin Auto M/L route (`nw-auto`) — authoritative terminal branch:** when the
 dispatch names this route, follow this paragraph (including the generated
 Read directive immediately below it) and stop before the Human-only Workflow
-below. Accept a bounded brief directly from root carrying the same immutable
-value seed `nw-product-owner` receives, plus the design SSOT — never the design
-SSOT alone. First read that prior-wave/design SSOT, then before authoring, run
-exactly one bounded provider-neutral `nw-code-analysis-port`
-`des code-fact query.* SUBJECT --root ROOT` command to discover this slice's
-acceptance obligations, implementation targets, and verification commands.
-Then load each generated Read row with the Read tool exactly when
-its trigger fires — never preload, never before the trigger fires, never all
-eight PBT deep dives.
+below. Accept a bounded brief directly from root carrying exactly: the same
+immutable value seed `nw-product-owner` receives, plus the design SSOT, plus
+root's resolved architecture readiness — an explicit Covered reference
+(repo-relative locator and section of an existing durable brief/ADR) or an
+explicit NoImpact evidence statement (persistence, public contracts,
+ports/boundaries, failure semantics, timing/concurrency, and paradigm all
+unchanged). That is the whole input; never the design SSOT alone, and never a
+root-authored paradigm/targets/storage/boundary/implementation guess or open
+design choice in place of it — an Unresolved gap is root's to close with
+DESIGN before this dispatch, not this agent's to guess around. First read
+that prior-wave/design SSOT and the Covered/NoImpact reference, then before
+authoring, run exactly one bounded provider-neutral `nw-code-analysis-port`
+`des code-fact query.* SUBJECT --root ROOT` command — scoped to confirming
+acceptance-facing implementation targets and verification/test commands,
+never to inventing or discovering architecture. Then load each generated
+Read row with the Read tool exactly when its trigger fires — never preload,
+never before the trigger fires, never all eight PBT deep dives.
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Invoke Skill(nw-test-design-mandates) ON-TRIGGER — Phase 0 policy detection

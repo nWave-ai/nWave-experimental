@@ -127,7 +127,11 @@ class TestThinAutoRoleRoutes:
     def test_auto_dispatches_siblings_then_joins_without_root_repair(self):
         body = (SKILLS_DIR / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
         route = " ".join(
-            body[body.index("## M route") : body.index("## L route")].split()
+            body[
+                body.index("## M/L route — shared reuse floor") : body.index(
+                    "## L route — same prefix, same floor"
+                )
+            ].split()
         )
         for token in (
             "Sibling dispatch",

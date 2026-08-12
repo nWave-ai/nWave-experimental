@@ -15,6 +15,7 @@ in the dispatch itself, not preconditions a hook re-litigates.
 import contextlib
 import io
 import json
+import shlex
 import time
 import uuid
 from pathlib import Path
@@ -74,6 +75,142 @@ _DISTILL_DISPATCH_INCOMPLETE_EVENT = "DistillDispatchMarkerSetIncomplete"
 # The feature-end-cycle phase the G-DISTILL-PRE gate keys on. A D_DISTILL
 # dispatch is per-feature: its only coherent scope is the `feature-end` literal.
 _D_DISTILL_PHASE = ATDDPurePhase.D_DISTILL.value
+
+# Auto-root Bash lockdown (K4 architecture gap): tool names that carry DES
+# task-signal authority. Auto's root process must never call these directly
+# once nw-auto is engaged -- that authority belongs to a dispatched role.
+_AUTO_ROOT_BLOCKED_TASK_TOOL_NAMES = ("TaskCreate", "TaskUpdate")
+
+# Tool names for which the Auto-root lockdown check (`_is_auto_root`, a
+# transcript read + skill observation) is even worth paying for. Every other
+# tool falls through untouched -- zero transcript read, zero observation.
+_AUTO_ROOT_TASK_TOOL_LOCKDOWN_NAMES = ("Bash", *_AUTO_ROOT_BLOCKED_TASK_TOOL_NAMES)
+
+# Shell-composition operators rejected BEFORE `shlex.split` runs: `shlex` has
+# no concept of &&/||/pipe/redirection/command-substitution/newline, so a
+# smuggled second command would otherwise survive tokenization undetected.
+_AUTO_ROOT_BASH_INJECTION_MARKERS = (
+    "&&",
+    "||",
+    ";",
+    "|",
+    "`",
+    "$(",
+    "<",
+    ">",
+    "\n",
+    "\r",
+)
+
+# The closed set of git subcommands an Auto-root Bash call may run: read-only
+# inspection (status/diff/rev-parse/branch/worktree) plus the two staging/
+# commit verbs Auto's own commit-attribution flow needs.
+_AUTO_ROOT_BASH_ALLOWED_GIT_SUBCOMMANDS = frozenset(
+    {"status", "diff", "rev-parse", "branch", "worktree", "add", "commit"}
+)
+
+
+def _is_auto_root(hook_input: dict[str, object]) -> bool:
+    """True iff this dispatch is Auto's OWN root process (not a dispatched sub-agent).
+
+    Reuses the same transcript-observation authority the SendMessage/Agent
+    Auto guards above already call (`skill_observed_before_action(...,
+    "nw-auto")`) plus the exact root-identity predicate the Bash
+    mode-select gate already uses below (`agent_id`/`agent_type` both
+    absent -- a dispatched sub-agent always carries one or the other, root
+    carries neither). A transcript lookup failure fails OPEN (not root):
+    the lockdown only ever ADDS restriction on a confirmed Auto-root call,
+    never on an ambiguous one.
+    """
+    if hook_input.get("agent_id") or hook_input.get("agent_type"):
+        return False
+    transcript_path = extract_transcript_path(hook_input)
+    try:
+        return bool(
+            transcript_path and skill_observed_before_action(transcript_path, "nw-auto")
+        )
+    except Exception:
+        return False
+
+
+def _auto_root_task_tool_block(tool_name: str) -> dict[str, str]:
+    """Render the block payload for an Auto-root TaskCreate/TaskUpdate call."""
+    return {
+        "decision": "block",
+        "reason": (
+            f"WHAT: an Auto-root {tool_name} call was blocked. "
+            "WHY: Auto's root process owns no task-signal authority once "
+            "nw-auto is engaged -- TaskCreate/TaskUpdate belong to a "
+            "dispatched role, not the root orchestrator. "
+            f"HOW: dispatch the appropriate nw-* role instead of calling "
+            f"{tool_name} directly from Auto root."
+        ),
+    }
+
+
+def _auto_root_bash_block(reason: str) -> dict[str, str]:
+    return {"decision": "block", "reason": reason}
+
+
+def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
+    """Pure Auto-root Bash allowlist decision.
+
+    Restricts Auto-root's OWN Bash calls to a single, literal
+    `git status|diff|rev-parse|branch|worktree|add|commit` invocation.
+    Lexically rejects any shell-composition operator (see
+    `_AUTO_ROOT_BASH_INJECTION_MARKERS`) BEFORE `shlex.split` runs -- a
+    string like ``"git status; rm -rf /"`` tokenizes cleanly under shlex,
+    so the composition check must happen on the raw string first. Returns
+    `None` (allow) or a `{decision: block, reason: ...}` payload. A missing,
+    empty, whitespace-only, or non-string command fails CLOSED (blocked),
+    not allowed: once Auto-root is armed, there is no well-formed command
+    to fall through to the allowlist below on.
+    """
+    if not isinstance(command, str) or not command.strip():
+        return _auto_root_bash_block(
+            "WHAT: an Auto-root Bash call carried no usable command. "
+            "WHY: Auto-root Bash is restricted to a single, literal git "
+            "call -- a missing, empty, or whitespace-only command cannot "
+            "be that call. "
+            "HOW: run one git subcommand per Bash call, or dispatch a "
+            "role instead."
+        )
+    if any(marker in command for marker in _AUTO_ROOT_BASH_INJECTION_MARKERS):
+        return _auto_root_bash_block(
+            "WHAT: an Auto-root Bash command carrying a shell-composition "
+            "operator (&&, ||, ;, |, `, $(...), <, >, or a newline/CR) was "
+            "blocked. "
+            "WHY: Auto-root Bash is restricted to a single, literal git "
+            "call -- composition operators can smuggle a second command "
+            "past that allowlist. "
+            "HOW: run one git subcommand per Bash call; drop the operator."
+        )
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return _auto_root_bash_block(
+            "WHAT: an Auto-root Bash command failed to tokenize. "
+            "WHY: Auto-root Bash must be a single well-formed git call. "
+            "HOW: fix the quoting, or dispatch a role to run it."
+        )
+    if not argv or argv[0] != "git":
+        return _auto_root_bash_block(
+            "WHAT: an Auto-root Bash command is not a `git` invocation. "
+            "WHY: Auto-root Bash is restricted to git status/diff/"
+            "rev-parse/branch/worktree/add/commit. "
+            "HOW: dispatch a role for non-git work, or run the equivalent "
+            "git subcommand."
+        )
+    subcommand = argv[1] if len(argv) > 1 else None
+    if subcommand not in _AUTO_ROOT_BASH_ALLOWED_GIT_SUBCOMMANDS:
+        return _auto_root_bash_block(
+            f"WHAT: an Auto-root `git {subcommand}` call was blocked. "
+            "WHY: Auto-root Bash only allows git status/diff/rev-parse/"
+            "branch/worktree/add/commit. "
+            "HOW: dispatch the appropriate nw-* role for any other git "
+            "subcommand."
+        )
+    return None
 
 
 def _classic_mode_removed_payload() -> dict[str, object]:
@@ -419,6 +556,28 @@ def handle_pre_tool_use() -> int:
 
             # Diagnostic: confirm hook was invoked
             tool_input = hook_input.get("tool_input", {})
+
+            # K4 architecture gap: Auto-root lockdown. Runs BEFORE the
+            # existing mode-select observation gate and commit-attribution
+            # mutation below (both scoped to "Bash"), so a locked-down call
+            # never reaches either -- an armed but disallowed call is a
+            # terminal block, not a fall-through to the general path.
+            tool_name = hook_input.get("tool_name")
+            if tool_name in _AUTO_ROOT_TASK_TOOL_LOCKDOWN_NAMES and _is_auto_root(
+                hook_input
+            ):
+                if tool_name in _AUTO_ROOT_BLOCKED_TASK_TOOL_NAMES:
+                    print(json.dumps(_auto_root_task_tool_block(tool_name)))
+                    exit_code = 2
+                    return exit_code
+                if tool_name == "Bash":
+                    auto_root_bash_block = _evaluate_auto_root_bash_command(
+                        tool_input.get("command")
+                    )
+                    if auto_root_bash_block is not None:
+                        print(json.dumps(auto_root_bash_block))
+                        exit_code = 2
+                        return exit_code
 
             if hook_input.get("tool_name") == "SendMessage":
                 transcript_path = extract_transcript_path(hook_input)
