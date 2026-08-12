@@ -88,9 +88,9 @@ def test_auto_root_delegates_the_code_fact_query_to_the_acceptance_designer() ->
     assert "`targets[]`" in atd_text or "targets[].{" in atd_text
     for nested_field in ("overlap", "decision", "justification", "boundary"):
         assert nested_field in atd_text
-    assert "no top-level" in atd_text or "DeliveryContract fields" in atd_text
+    assert "no top-level" in _compact(atd_text)
     assert "targets[].{overlap, decision, justification, boundary}" in atd_text
-    assert "there is no top-level `reuse` or `boundaries` field" in atd_text
+    assert "there is no top-level `reuse` or `boundaries` field" in _compact(atd_text)
     dispatch_loading = _default_skill_loading_body("nw-acceptance-designer")
     assert executable_form in dispatch_loading
 
@@ -232,8 +232,9 @@ def test_crafter_specs_reference_installed_schema_locator_only() -> None:
 
 
 def test_atd_auto_route_honors_wave_order_before_red_execution() -> None:
-    """CONTRACT_SHAPE: bounded-change. ATD Auto route discovers prior-wave SSOT and
-    obligations before write-and-validate, which precedes RED materialize/execute.
+    """CONTRACT_SHAPE: bounded-change. ATD Auto route reads/validates schema,
+    determines paradigm, identifies targets and commands, digests FILE, assembles
+    DeliveryContract, executes RED, re-verifies, gates crafter on RedConfirmed.
     """
     text = ATD_AGENT_PATH.read_text(encoding="utf-8")
     auto_section = text[
@@ -241,27 +242,33 @@ def test_atd_auto_route_honors_wave_order_before_red_execution() -> None:
     ]
     compact = _compact(auto_section)
     tokens_in_order = [
-        "prior-wave/design SSOT",
-        "acceptance obligations",
-        "implementation targets",
-        "verification commands",
-        "write and schema-validate",
-        "materialize",
-        "execute",
-        "crafter becomes eligible",
+        "read and validate the installed `DeliveryContract` v1.1 schema",
+        "determine the selected `paradigm`",
+        "verification-scope.commands",
+        "exactly ONE consolidated repository-relative acceptance-test artifact FILE",
+        "sha256 its bytes",
+        "Assemble and schema-validate the `DeliveryContract` v1.1 instance",
+        "Execute the focused acceptance test and observe the expected RED",
+        "re-verify the digest",
+        "Only the `RedConfirmed` proof enables crafter dispatch",
     ]
     positions = [compact.index(token) for token in tokens_in_order]
     assert positions == sorted(positions)
 
 
 def test_auto_m_route_requires_po_atd_same_message_and_no_invented_signup() -> None:
-    """CONTRACT_SHAPE: bounded-change. Auto M dispatches PO+ATD in one assistant
-    message, documents repository-owned onboarding, and examiner input stays exactly two.
+    """CONTRACT_SHAPE: bounded-change. Auto M dispatches PO+ATD with both
+    dispatches issued before waiting, documents repository-owned onboarding,
+    and examiner input stays exactly two.
     """
     text = _auto_skill_text()
     m_section = text[text.index("## Deterministic crafter") : text.index("## L route")]
     compact_m = _compact(m_section)
-    assert "SAME assistant message" in compact_m
+    assert "SAME assistant message" not in compact_m
+    assert (
+        "two background Agent dispatches, issuing both before waiting on either result"
+        in compact_m
+    )
     assert "nw-product-owner" in compact_m
     assert "nw-acceptance-designer" in compact_m
     assert "target repository" in compact_m

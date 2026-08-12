@@ -51,12 +51,12 @@ Before dispatching any role, decide worktree ownership:
 
 ## M route — direct reuse floor
 
-Dispatch the PO/ATD sibling pair as two Agent tool-use blocks in the SAME
-assistant message — concurrent by construction, neither reads the other's output.
-Then join on both validated results and continue without a second controller:
+Dispatch the PO/ATD sibling pair as two background Agent dispatches, issuing
+both before waiting on either result — neither reads the other's output. Then
+join on both validated results and continue without a second controller:
 
-1. **Sibling dispatch (PO and ATD Agent tool-use blocks in one assistant
-   message):**
+1. **Sibling dispatch (PO and ATD dispatched in the background before either
+   result is awaited):**
    - `nw-product-owner` (value-side inputs only) additionally receives, as
      part of its seed, the target repository's own documented user-facing
      local onboarding/setup excerpt (e.g. its README's local-install/quick-start

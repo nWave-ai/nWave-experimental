@@ -67,31 +67,49 @@ eight PBT deep dives.
 - Invoke ONE Skill(nw-pbt-typescript) ON-TRIGGER — a `javascript`/`typescript` property needs it
 <!-- GENERATED:role-skill-loading END -->
 
-Next, write and schema-validate the thin `DeliveryContract` v1.1 carrying the
-selected `paradigm` (`functional` or `object_oriented`), a non-empty
-`obligations` array, and the implementation targets — BEFORE materializing or
-executing any acceptance test; the contract is neither speculative nor
-deferred until after an expensive RED implementation. Carry the
-bounded query's facts into the
-contract's existing `targets[].{overlap, decision, justification, boundary}`
-— there is no top-level `reuse` or `boundaries` field; the bounded code fact
-is recorded only through those per-target keys, never a separate receipt.
-`REUSE_CANDIDATE` in `obligations` means at least one `targets[].overlap`
-carries an explicit `decision` (`EXTEND` or `CREATE_NEW`), never left
-implicit; `ARCHITECTURE_BOUNDARY_CHANGE` means at least one `targets[].boundary`
+Next, read and validate the installed `DeliveryContract` v1.1 schema
+(`nWave/schemas/thin-delivery-contract.schema.json`) — the schema, not a
+contract document, is the first artifact this branch touches; the contract
+itself cannot exist yet because it needs the acceptance-test file's digest.
+Then determine the selected `paradigm` (`functional` or `object_oriented`),
+a non-empty `obligations` array, and, per target, the reuse decision and
+boundary claim, carrying the bounded query's facts into the contract's
+existing `targets[].{overlap, decision, justification, boundary}` — there is
+no top-level `reuse` or `boundaries` field; the bounded code fact is
+recorded only through those per-target keys, never a separate receipt — plus
+the `verification-scope.commands` that will run the test. `REUSE_CANDIDATE`
+in `obligations` means at least one `targets[].overlap` carries an explicit
+`decision` (`EXTEND` or `CREATE_NEW`), never left implicit;
+`ARCHITECTURE_BOUNDARY_CHANGE` means at least one `targets[].boundary`
 carries an explicit no-drift claim (`failure-behavior`, `substrate-lie`,
 `substrate-probe`, `double-blind-spot`). `BROAD_INPUT_DOMAIN` is this agent's
 own obligation to own: it authorizes and requires PBT authoring for the
 externally-sourced/untyped input it names — never delegated to a crafter.
 Missing or unsupported `paradigm`, or an empty/missing `obligations`, is an
-acceptance-designer blocker, never a root guess. Only once the contract is
-written and schema-valid do you materialize and execute the minimal
-acceptance tests RED. You own the acceptance tests
-and a complete, schema-valid `DeliveryContract`; you never author or read the
-expectation charter or its user-surface start recipe. `nw-product-owner` owns
-that separate artifact and fills it independently. A crafter becomes
-eligible for dispatch only once its acceptance tests are RED and the
-contract is schema-valid. Do not run the Human
+acceptance-designer blocker, never a root guess (derived stage: `NoArtifacts`).
+
+Only then materialize exactly ONE consolidated repository-relative
+acceptance-test artifact FILE (derived stage: `TestsMaterialized`) and sha256
+its bytes. Assemble and schema-validate the `DeliveryContract` v1.1 instance
+against the schema read above, pointing `acceptance-tests.{locator,digest}`
+at that file and its digest (derived stage: `ContractValid`) — the contract
+is neither speculative nor deferred until after an expensive RED
+implementation; it is simply not the first artifact written. Execute the
+focused acceptance test and observe the expected RED, then re-verify the
+digest still matches the on-disk file bytes (derived stage: `RedConfirmed`).
+`NoArtifacts`, `TestsMaterialized`, `ContractValid`, `RedConfirmed` are
+explanatory derived stages only, computed from what already exists on disk
+and in the schema-validated contract — never persisted as their own record.
+Only the `RedConfirmed` proof enables crafter dispatch. An incomplete run, a
+crash, or a digest mismatch at any stage is terminal — no retry, no
+partial-state resume; re-enter from `NoArtifacts`. The acceptance-test
+artifact is immutable once its digest is taken into the contract: any
+mutation to that file during RED refuses readiness.
+
+You own the acceptance tests and a complete, schema-valid
+`DeliveryContract`; you never author or read the expectation charter or its
+user-surface start recipe. `nw-product-owner` owns that separate artifact
+and fills it independently. Do not run the Human
 TaskCreate, Phase 0-4, or
 `docs/feature/...` artifact protocol on this branch.
 

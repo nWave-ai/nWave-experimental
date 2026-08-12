@@ -131,7 +131,8 @@ class TestThinAutoRoleRoutes:
         )
         for token in (
             "Sibling dispatch",
-            "concurrent",
+            "two background Agent dispatches",
+            "before waiting on either result",
             "nw-product-owner",
             "nw-acceptance-designer",
             "BOTH",

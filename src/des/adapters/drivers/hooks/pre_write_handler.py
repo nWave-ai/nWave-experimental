@@ -29,7 +29,10 @@ from des.adapters.drivers.hooks.hook_protocol import (
 from des.adapters.drivers.hooks.root_activation_context import (
     build_root_write_mode_select_context,
 )
-from des.application.skill_tracking_service import mode_select_observed_before_mutation
+from des.application.skill_tracking_service import (
+    mode_select_observed_before_mutation,
+    skill_observed_before_action,
+)
 from des.domain.session_guard_policy import SessionGuardPolicy
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 from des.runtime.interpreter import des_spawn
@@ -310,6 +313,33 @@ def handle_pre_write() -> int:
                         response = {
                             "decision": "block",
                             "reason": "Invoke nw-mode-select before the first mutation.",
+                        }
+                        print(json.dumps(response))
+                        exit_code = 2
+                        return exit_code
+
+                    auto_root_observed = False
+                    try:
+                        auto_root_observed = bool(
+                            transcript_path
+                            and skill_observed_before_action(transcript_path, "nw-auto")
+                        )
+                    except Exception:
+                        auto_root_observed = False
+                    if auto_root_observed:
+                        _log_pre_write_decision(
+                            hook_id=hook_id,
+                            event_type="HOOK_PRE_WRITE_BLOCKED",
+                            file_path=file_path,
+                            reason="auto_root_direct_write",
+                        )
+                        response = {
+                            "decision": "block",
+                            "reason": (
+                                "Auto root cannot author or repair role-owned "
+                                "artifacts or production directly -- dispatch "
+                                "the owning role instead."
+                            ),
                         }
                         print(json.dumps(response))
                         exit_code = 2

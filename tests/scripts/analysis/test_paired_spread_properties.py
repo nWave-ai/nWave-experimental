@@ -23,7 +23,9 @@ from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from scripts.analysis.paired_spread import (
+    AGGREGATE_MODEL_USAGE,
     MIN_USABLE,
+    TOP_LEVEL_ONLY,
     Failed,
     Indeterminate,
     Spread,
@@ -240,3 +242,197 @@ def test_a_zero_minimum_refuses_instead_of_returning_infinity(
     """max/min against 0 is undefined, not "very large". Returning inf here
     would print a headline ratio nobody could act on."""
     assert isinstance(spread("m", [0.0, *rest]), Indeterminate)
+
+
+# --- modelUsage: nested-inclusive aggregation ---------------------------------
+
+_TOKEN_FIELD = {
+    "in": "inputTokens",
+    "out": "outputTokens",
+    "cc": "cacheCreationInputTokens",
+    "cr": "cacheReadInputTokens",
+}
+
+
+def _model_record(inp: int, out: int, cc: int, cr: int) -> dict:
+    return {
+        "inputTokens": inp,
+        "outputTokens": out,
+        "cacheCreationInputTokens": cc,
+        "cacheReadInputTokens": cr,
+    }
+
+
+@_SETTINGS
+@given(
+    models=st.dictionaries(
+        keys=st.text(min_size=1, max_size=10),
+        values=st.fixed_dictionaries(
+            {
+                "inputTokens": st.integers(min_value=0, max_value=10_000),
+                "outputTokens": st.integers(min_value=0, max_value=10_000),
+                "cacheCreationInputTokens": st.integers(min_value=0, max_value=10_000),
+                "cacheReadInputTokens": st.integers(min_value=0, max_value=10_000),
+            }
+        ),
+        min_size=1,
+        max_size=6,
+    )
+)
+def test_aggregation_law_equals_componentwise_sum_across_models(models: dict) -> None:
+    """The law: aggregate tokens == the component-wise sum over an arbitrary,
+    non-empty, valid `modelUsage` map. Order and model count must not matter,
+    only the per-category sum -- this is the exact computation the K4 defect
+    skipped by reading top-level `usage` instead."""
+    outcome = classify("probe", _payload(modelUsage=models))
+
+    assert isinstance(outcome, Usable)
+    assert outcome.token_scope == AGGREGATE_MODEL_USAGE
+    assert outcome.tokens == {
+        k: sum(m[field] for m in models.values()) for k, field in _TOKEN_FIELD.items()
+    }
+
+
+def test_absent_model_usage_preserves_legacy_top_level_scope() -> None:
+    """No `modelUsage` key at all: fall back to the pre-existing top-level
+    `usage` reading, but label the scope explicitly rather than calling it a
+    total -- the exact honesty gap the K4 defect exploited."""
+    outcome = classify("probe", _payload())
+
+    assert isinstance(outcome, Usable)
+    assert outcome.token_scope == TOP_LEVEL_ONLY
+    assert outcome.tokens == {"in": 10, "out": 20, "cc": 30, "cr": 40}
+
+
+def test_empty_model_usage_dict_falls_back_to_legacy_top_level() -> None:
+    """`modelUsage: {}` carries no model to sum, so it must fall back exactly
+    like an absent key -- not be treated as a present-but-empty aggregate."""
+    outcome = classify("probe", _payload(modelUsage={}))
+
+    assert isinstance(outcome, Usable)
+    assert outcome.token_scope == TOP_LEVEL_ONLY
+
+
+@_SETTINGS
+@given(
+    bad_value=st.one_of(
+        st.booleans(),
+        st.text(),
+        st.floats(allow_nan=False),
+        st.integers(max_value=-1),
+        st.none(),
+    )
+)
+def test_malformed_model_token_value_fails_closed_unreadable(bad_value) -> None:
+    """bool / non-int / negative / null in a required category must never fall
+    back silently to top-level `usage` -- that silent fallback is exactly how
+    a broken capture could still report a plausible-looking number."""
+    models = {"m": _model_record(1, 1, 1, 1)}
+    models["m"]["inputTokens"] = bad_value
+
+    outcome = classify("probe", _payload(modelUsage=models))
+
+    assert isinstance(outcome, Unreadable)
+
+
+@_SETTINGS
+@given(missing_field=st.sampled_from(list(_TOKEN_FIELD.values())))
+def test_missing_model_token_category_fails_closed_unreadable(
+    missing_field: str,
+) -> None:
+    """A model record missing a required category is malformed, not a model
+    that legitimately used zero of it -- those two are indistinguishable only
+    if the reader is willing to fail closed instead of guessing 0."""
+    record = _model_record(1, 1, 1, 1)
+    del record[missing_field]
+
+    outcome = classify("probe", _payload(modelUsage={"m": record}))
+
+    assert isinstance(outcome, Unreadable)
+
+
+@_SETTINGS
+@given(bad=st.one_of(st.text(), st.integers(), st.lists(st.integers())))
+def test_model_usage_wrong_type_fails_closed_unreadable(bad) -> None:
+    """`modelUsage` present but not an object (string/number/list) is a reader
+    problem, not an invitation to quietly read top-level `usage` instead."""
+    payload = json.loads(_payload())
+    payload["modelUsage"] = bad
+
+    outcome = classify("probe", json.dumps(payload))
+
+    assert isinstance(outcome, Unreadable)
+
+
+def test_non_dict_model_record_fails_closed_unreadable() -> None:
+    """One model entry that isn't itself an object is malformed, even when its
+    siblings in the same `modelUsage` map are well-formed."""
+    outcome = classify("probe", _payload(modelUsage={"m": "not-a-record"}))
+
+    assert isinstance(outcome, Unreadable)
+
+
+def test_k4_false_pass_cannot_return_control_and_nwave_totals() -> None:
+    """Regression for the exact K4 defect (`a3f1f4cdf`): top-level `usage`
+    totals (control 18,799,230, nWave 24,214,598, ratio 1.2881x) falsely
+    PASSed a <=1.5x gate while the nested-inclusive `modelUsage` totals
+    (control 19,397,533, nWave 32,822,225, ratio 1.6921x) FAIL it.
+
+    The per-category split below is fixture-minimal and invented -- the real
+    transcripts are not needed -- but every TOTAL reproduced here is the exact
+    documented K4 number, so this false PASS cannot silently return.
+    """
+    control = _payload(
+        usage={
+            "input_tokens": 100,
+            "output_tokens": 200,
+            "cache_creation_input_tokens": 300,
+            "cache_read_input_tokens": 18_798_630,
+        },
+        modelUsage={
+            "primary": _model_record(100, 200, 300, 18_798_630),
+            "nested-subagent": _model_record(0, 0, 0, 598_303),
+        },
+    )
+    nwave = _payload(
+        usage={
+            "input_tokens": 1000,
+            "output_tokens": 2000,
+            "cache_creation_input_tokens": 3000,
+            "cache_read_input_tokens": 24_208_598,
+        },
+        modelUsage={
+            "primary": _model_record(1000, 2000, 3000, 24_208_598),
+            "nested-subagent": _model_record(0, 0, 0, 8_607_627),
+        },
+    )
+
+    control_outcome = classify("control", control)
+    nwave_outcome = classify("nwave", nwave)
+
+    assert isinstance(control_outcome, Usable)
+    assert isinstance(nwave_outcome, Usable)
+    assert control_outcome.token_scope == AGGREGATE_MODEL_USAGE
+    assert nwave_outcome.token_scope == AGGREGATE_MODEL_USAGE
+    control_total = sum(control_outcome.tokens.values())
+    nwave_total = sum(nwave_outcome.tokens.values())
+    assert control_total == 19_397_533
+    assert nwave_total == 32_822_225
+    assert nwave_total / control_total > 1.5  # true ratio 1.6921x -- FAILs
+
+    # The false-PASS path this fixes: strip modelUsage, read top-level only.
+    stale_control = json.loads(control)
+    del stale_control["modelUsage"]
+    stale_nwave = json.loads(nwave)
+    del stale_nwave["modelUsage"]
+    stale_control_outcome = classify("control", json.dumps(stale_control))
+    stale_nwave_outcome = classify("nwave", json.dumps(stale_nwave))
+
+    assert isinstance(stale_control_outcome, Usable)
+    assert isinstance(stale_nwave_outcome, Usable)
+    assert stale_control_outcome.token_scope == TOP_LEVEL_ONLY
+    stale_control_total = sum(stale_control_outcome.tokens.values())
+    stale_nwave_total = sum(stale_nwave_outcome.tokens.values())
+    assert stale_control_total == 18_799_230
+    assert stale_nwave_total == 24_214_598
+    assert stale_nwave_total / stale_control_total < 1.5  # the false PASS

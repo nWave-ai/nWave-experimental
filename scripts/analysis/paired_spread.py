@@ -35,6 +35,23 @@ MIN_USABLE = 3
 
 _TOKEN_FIELDS = ("in", "out", "cc", "cr")
 
+# `modelUsage` (camelCase, Claude Code's own stream-json field) is nested-
+# inclusive: it carries one entry per model actually invoked, including
+# sub-agents the top-level `usage` block never sees. Reading top-level `usage`
+# alone silently excludes every nested role's tokens -- the exact K4 defect
+# (control 18,799,230 top-level vs 19,397,533 nested-inclusive; nWave
+# 24,214,598 vs 32,822,225) that let a 1.2881x ratio PASS while the true
+# 1.6921x ratio FAILed.
+_MODEL_TOKEN_FIELDS = {
+    "in": "inputTokens",
+    "out": "outputTokens",
+    "cc": "cacheCreationInputTokens",
+    "cr": "cacheReadInputTokens",
+}
+
+TOP_LEVEL_ONLY = "top-level-only"
+AGGREGATE_MODEL_USAGE = "aggregate-model-usage"
+
 
 # --- outcomes: one case per outcome, none of them representable as another ---
 
@@ -49,6 +66,11 @@ class Usable:
     turns: int
     wall_s: float
     tokens: dict[str, int]
+    token_scope: str
+    """`AGGREGATE_MODEL_USAGE` when summed from `modelUsage`, else
+    `TOP_LEVEL_ONLY`. Never call the latter a total: it is a scope, not a
+    smaller total -- naming it a total is the exact false-PASS this exists to
+    prevent from recurring."""
 
 
 @dataclass(frozen=True)
@@ -109,6 +131,21 @@ SpreadOutcome = Spread | Indeterminate
 # --- pure core ---------------------------------------------------------------
 
 
+def _aggregate_model_usage(model_usage: dict) -> dict[str, int] | None:
+    """Sum every model's four token categories. `None` means malformed --
+    the caller fails closed to `Unreadable`, never falls back to top-level."""
+    totals = dict.fromkeys(_TOKEN_FIELDS, 0)
+    for record in model_usage.values():
+        if not isinstance(record, dict):
+            return None
+        for key, field in _MODEL_TOKEN_FIELDS.items():
+            value = record.get(field)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                return None
+            totals[key] += value
+    return totals
+
+
 def classify(name: str, raw: str) -> RunOutcome:
     """Every input reaches exactly one outcome; none can be silently dropped."""
     try:
@@ -118,14 +155,33 @@ def classify(name: str, raw: str) -> RunOutcome:
     if not isinstance(payload, dict):
         return Unreadable(name, f"top level is {type(payload).__name__}, not an object")
 
-    usage = payload.get("usage")
-    usage = usage if isinstance(usage, dict) else {}
-    tokens = {
-        "in": usage.get("input_tokens"),
-        "out": usage.get("output_tokens"),
-        "cc": usage.get("cache_creation_input_tokens"),
-        "cr": usage.get("cache_read_input_tokens"),
-    }
+    model_usage = payload.get("modelUsage")
+    if model_usage is not None and not isinstance(model_usage, dict):
+        return Unreadable(
+            name, f"modelUsage is {type(model_usage).__name__}, not an object"
+        )
+    if isinstance(model_usage, dict) and model_usage:
+        aggregated = _aggregate_model_usage(model_usage)
+        if aggregated is None:
+            return Unreadable(
+                name,
+                "modelUsage present but malformed: expected non-negative "
+                "int inputTokens/outputTokens/cacheCreationInputTokens/"
+                "cacheReadInputTokens per model",
+            )
+        tokens: dict[str, int | None] = aggregated
+        token_scope = AGGREGATE_MODEL_USAGE
+    else:
+        usage = payload.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        tokens = {
+            "in": usage.get("input_tokens"),
+            "out": usage.get("output_tokens"),
+            "cc": usage.get("cache_creation_input_tokens"),
+            "cr": usage.get("cache_read_input_tokens"),
+        }
+        token_scope = TOP_LEVEL_ONLY
+
     cost = payload.get("total_cost_usd")
     turns = payload.get("num_turns")
     duration_ms = payload.get("duration_ms")
@@ -154,6 +210,7 @@ def classify(name: str, raw: str) -> RunOutcome:
         int(turns),
         duration_ms / 1000,
         {k: int(v) for k, v in tokens.items()},
+        token_scope,
     )
 
 
@@ -256,13 +313,28 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    header = f"{'run':16s}{'cost$':>9s}{'turns':>7s}{'wall_s':>9s}{'out_tok':>9s}{'cache_rd':>11s}"
+    header = (
+        f"{'run':16s}{'cost$':>9s}{'turns':>7s}{'wall_s':>9s}{'out_tok':>9s}"
+        f"{'cache_rd':>11s}{'token scope':>23s}"
+    )
     print("\n" + header + "\n" + "-" * len(header))
     for r in usable:
         print(
             f"{r.name:16s}{r.cost:9.4f}{r.turns:7d}{r.wall_s:9.1f}"
-            f"{r.tokens['out']:9d}{r.tokens['cr']:11d}"
+            f"{r.tokens['out']:9d}{r.tokens['cr']:11d}{r.token_scope:>23s}"
         )
+
+    scopes = {r.token_scope for r in usable}
+    if len(scopes) == 1:
+        scope_note = scopes.pop()
+    else:
+        scope_note = (
+            "MIXED — some runs top-level-only, some aggregate-model-usage; "
+            "the token spreads below compare unlike scopes"
+        )
+    # Never call `top-level-only` a total: it excludes nested-role usage by
+    # construction, which is the exact defect this file exists to prevent.
+    print(f"\ntoken categories reflect scope: {scope_note}")
 
     series: list[tuple[str, list[float]]] = [
         ("cost USD", [r.cost for r in usable]),

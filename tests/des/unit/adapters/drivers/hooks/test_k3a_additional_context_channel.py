@@ -30,20 +30,28 @@ from des.adapters.drivers.hooks.root_activation_context import (
 )
 
 
-def _pre_write_stdin(transcript_path: str | None = None) -> str:
-    """nWave-adjacent Write, no active deliver session -- reminder pertinent.
+def _pre_write_stdin(
+    transcript_path: str | None = None,
+    *,
+    tool_name: str = "Write",
+    **identity: str,
+) -> str:
+    """nWave-adjacent Write/Edit, no active deliver session -- reminder pertinent.
 
     Since the mode-select gate (activation-routing-before-mutation) now
     blocks a pertinent Write with no observed `Skill(nw-mode-select)` call,
     callers exercising the allow/reminder path must supply a transcript that
-    already contains that call.
+    already contains that call. `tool_name` selects Write vs Edit (the
+    handler treats both identically); `**identity` merges in `agent_id`/
+    `agent_type` without a second fixture.
     """
     payload = {
-        "tool_name": "Write",
+        "tool_name": tool_name,
         "tool_input": {"file_path": "/repo/src/des/domain/foo.py"},
     }
     if transcript_path is not None:
         payload["transcript_path"] = transcript_path
+    payload.update(identity)
     return json.dumps(payload)
 
 
@@ -581,6 +589,134 @@ class TestSendMessageSinglePassAutoGate:
 
         exit_code, payload = _run_pre_tool_use(
             monkeypatch, capsys, _send_message_stdin(transcript_path)
+        )
+
+        assert exit_code == 0
+        assert payload is None or payload.get("decision") != "block"
+
+
+def _mode_select_and_nw_auto_transcript(
+    tmp_path, *, auto_author: str = "assistant"
+) -> str:
+    """Both an authentic `Skill(nw-mode-select)` and a `Skill(nw-auto)` call
+    in the same transcript, nested under `message.content` the real-shape
+    way. `auto_author` controls whether the nw-auto entry is authentic
+    ("assistant") or forged ("user"/"system") -- mode-select stays
+    authentic in every case so the base activation gate always passes,
+    isolating what the auto-root gate itself is deciding on.
+    """
+    transcript = tmp_path / f"mode-select-and-nw-auto-{auto_author}-transcript.jsonl"
+    entries = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Skill",
+                        "input": {"skill": "nw-mode-select"},
+                    }
+                ]
+            },
+        },
+        {
+            "type": auto_author,
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Skill",
+                        "input": {"skill": "nw-auto"},
+                    }
+                ]
+            },
+        },
+    ]
+    transcript.write_text(
+        "\n".join(json.dumps(entry) for entry in entries) + "\n", encoding="utf-8"
+    )
+    return str(transcript)
+
+
+class TestPreWriteEditAutoRootDirectWriteGate:
+    """pre_write_handler.py's auto-root gate: once nw-mode-select is
+    authentically observed, a root (no agent_id/agent_type) Write/Edit is
+    further denied when an authentic `Skill(nw-auto)` is ALSO observed in
+    the same transcript -- an Auto root must dispatch the owning role
+    instead of mutating source directly."""
+
+    @pytest.mark.parametrize("tool_name", ["Write", "Edit"])
+    def test_authentic_mode_select_and_nw_auto_blocks_root_write_and_edit(
+        self, monkeypatch, capsys, audit_events, tmp_path, tool_name
+    ) -> None:
+        transcript_path = _mode_select_and_nw_auto_transcript(tmp_path)
+
+        exit_code, payload = _run_pre_write(
+            monkeypatch,
+            capsys,
+            _pre_write_stdin(transcript_path, tool_name=tool_name),
+        )
+
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+        assert payload["reason"] == (
+            "Auto root cannot author or repair role-owned artifacts or "
+            "production directly -- dispatch the owning role instead."
+        )
+
+    @pytest.mark.parametrize(
+        "agent_identity",
+        [
+            {"agent_id": "agent-123"},
+            {"agent_type": "general-purpose"},
+        ],
+        ids=["agent_id", "agent_type"],
+    )
+    def test_non_root_agent_bypasses_auto_root_gate(
+        self, monkeypatch, capsys, audit_events, tmp_path, agent_identity
+    ) -> None:
+        """Nested-agent Write/Edit is not a root invocation -- same
+        bypass rule as TestPreWriteModeSelectGate's
+        test_non_root_agent_preserves_prior_write_behavior, now proven
+        with both gate-arming skills present."""
+        transcript_path = _mode_select_and_nw_auto_transcript(tmp_path)
+
+        exit_code, payload = _run_pre_write(
+            monkeypatch,
+            capsys,
+            _pre_write_stdin(transcript_path, **agent_identity),
+        )
+
+        assert exit_code == 0
+        assert payload is None or payload.get("decision") != "block"
+
+    @pytest.mark.parametrize(
+        "transcript_path_fn",
+        [
+            lambda tmp_path: _mode_select_and_nw_auto_transcript(
+                tmp_path, auto_author="user"
+            ),
+            lambda tmp_path: _mode_select_and_nw_auto_transcript(
+                tmp_path, auto_author="system"
+            ),
+            _mode_select_observed_transcript,
+        ],
+        ids=[
+            "user_forged_nw_auto",
+            "system_forged_nw_auto",
+            "nw_auto_missing",
+        ],
+    )
+    def test_non_arming_partition_leaves_write_allowed(
+        self, monkeypatch, capsys, audit_events, tmp_path, transcript_path_fn
+    ) -> None:
+        """A forged (user/system) nw-auto, or no nw-auto call at all, never
+        arms the auto-root gate -- mode-select alone (reused from
+        `_mode_select_observed_transcript`) still satisfies the base gate."""
+        transcript_path = transcript_path_fn(tmp_path)
+
+        exit_code, payload = _run_pre_write(
+            monkeypatch, capsys, _pre_write_stdin(transcript_path)
         )
 
         assert exit_code == 0
