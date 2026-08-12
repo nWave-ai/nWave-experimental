@@ -88,26 +88,65 @@ state.
      Covered(DesignAuthorityRef) | NoImpact(Evidence) | Unresolved
    ```
 
-   - **Covered** carries an explicit repo-relative locator plus the relevant
-     section of an existing durable brief/ADR, supplied by the user, an
-     upstream wave, or the DESIGN consult below. Root never scans the
-     repository to discover this locator itself.
-   - **NoImpact** carries explicit upstream/RCA evidence that persistence,
-     public contracts, ports/boundaries, failure semantics,
-     timing/concurrency, and paradigm are all unchanged by this slice.
-     Missing evidence is never NoImpact — absence of a stated architecture
-     concern is Unresolved, not NoImpact.
+   - **Covered** carries an explicit
+     `ARCHITECTURE-COVERED: <repo-relative-permanent-path>#<section-anchor>`
+     reference — a repo-relative locator plus the relevant section of an
+     existing durable brief/ADR — supplied by the user, an upstream wave, or
+     the DESIGN consult below. Root never scans the repository to discover
+     this locator itself.
+   - **NoImpact** carries an explicit
+     `ARCHITECTURE-NO-IMPACT: <repo-relative-permanent-path>#<section-anchor>`
+     citation, backed by durable upstream/RCA evidence, that persistence,
+     public contracts, ports/boundaries, failure semantics, timing/concurrency,
+     and paradigm are all unchanged by this slice. No free prose evidence:
+     evidence without that citation form, or a citation without a durable
+     upstream/RCA source behind it, is never NoImpact — absence of a stated
+     architecture concern is Unresolved, not NoImpact.
    - **Unresolved** is the default whenever neither of the above holds. It
      dispatches exactly one DESIGN consult, then re-evaluates: DESIGN
-     returns either a Covered reference or a concise architecture blocker.
-     If the gap remains after that one consult, refuse with the blocker —
-     never a second DESIGN dispatch.
+     returns either an `ARCHITECTURE-COVERED` reference or a concise
+     `ARCHITECTURE-BLOCKED` blocker. If the gap remains after that one
+     consult, refuse with the blocker — never a second DESIGN dispatch.
 
    Only Covered or NoImpact enters FloorReady (the M/L floor below).
 
 The total consult bound across a run is two: at most one DISCUSS, then at
 most one DESIGN, conditional, independent, and serial — never parallel. Skip
 either consult when its gap is absent.
+
+## DESIGN consult — first bytes
+
+When Architecture readiness resolves Unresolved, root's Agent dispatch
+prompt to `nw-solution-architect` begins at byte zero with exactly:
+
+```
+AUTO-ARCHITECTURE-CONSULT: <bounded-subject>
+AUTO-ARCHITECTURE-ROOT: <absolute-root>
+```
+
+then one blank line, then the value seed/context. Root passes the same
+`<absolute-root>` from Root propagation above — never rediscovered — and a
+`<bounded-subject>` scoped to the value seed, never the full DISCUSS/DESIGN
+brief. Root never asks this consult to write `feature-delta.md` or run the
+full Human DESIGN workflow.
+
+The consult's terminal response begins at byte zero with exactly one of:
+
+```
+ARCHITECTURE-COVERED: <repo-relative-permanent-path>#<section-anchor>
+```
+
+or
+
+```
+ARCHITECTURE-BLOCKED: <what>; WHY: <why>; HOW: <how>
+```
+
+`ARCHITECTURE-COVERED` becomes the Covered `DesignAuthorityRef` above;
+`ARCHITECTURE-BLOCKED` is the concise architecture blocker. Root never
+hashes, rewrites, or repairs either line: a missing or malformed header is
+terminal under the single-pass rule, same as the crafter dispatch headers
+above.
 
 Any incomplete terminal role result — from DISCUSS, DESIGN, or the floor
 below — immediately ends root work: report only. No root discovery, Task
@@ -123,6 +162,14 @@ reads the other's output. Then join on both validated results and continue
 without a second controller:
 
 1. **Sibling dispatch (PO and ATD dispatched concurrently before awaiting either):**
+   Root forwards the selected exact architecture authority line — the
+   `ARCHITECTURE-COVERED: <repo-relative-permanent-path>#<section-anchor>`
+   line or the
+   `ARCHITECTURE-NO-IMPACT: <repo-relative-permanent-path>#<section-anchor>`
+   line, whichever resolved above — byte-for-byte as the first bytes of BOTH
+   sibling Agent prompts,
+   followed by one blank line; it is never reconstructed. The existing
+   role-specific context below follows only after that blank line.
    - `nw-product-owner`: receives own documented user-facing local
      onboarding/setup excerpt (e.g. README's local-install section), never inventing a signup path. Runs
      `des charter-scaffold`, fills Preconditions/start recipe grounded in that

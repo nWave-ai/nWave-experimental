@@ -70,7 +70,12 @@ def test_m_and_l_share_exactly_one_architecture_readiness_prefix() -> None:
     compact_prefix = _compact(prefix)
     for token in (
         "Covered(DesignAuthorityRef) | NoImpact(Evidence) | Unresolved",
-        "Missing evidence is never NoImpact",
+        "`ARCHITECTURE-NO-IMPACT: <repo-relative-permanent-path>#<section-anchor>`",
+        "backed by durable upstream/RCA evidence",
+        "evidence without that citation form, or a citation without a durable "
+        "upstream/RCA source behind it, is never NoImpact",
+        "absence of a stated architecture concern is Unresolved, not NoImpact",
+        "begins at byte zero with exactly",
         "dispatches exactly one DESIGN consult",
         "never a second DESIGN dispatch",
         "Only Covered or NoImpact enters FloorReady",
@@ -352,7 +357,8 @@ def test_root_propagation_binds_every_dispatch_role() -> None:
         "inference, or another clone" in section
     )
 
-    assert text.count("Root propagation") == 1
+    assert text.count("**Root propagation:**") == 1
+    assert "Root propagation above" in text
     assert len(block.split()) <= 50
 
 

@@ -94,6 +94,17 @@ _THIN_HEADER_DIGEST_PREFIX = "THIN-DELIVERY-CONTRACT-DIGEST: sha256:"
 _THIN_HEADER_DIGEST_HEX_LEN = 64
 _THIN_HEADER_DIGEST_HEX_ALPHABET = frozenset("0123456789abcdef")
 
+# K4: exact-match roles whose Auto-root Agent dispatch must carry a
+# well-formed ARCHITECTURE-COVERED/ARCHITECTURE-NO-IMPACT first-bytes ref.
+_AUTO_ROOT_DESIGN_CONSULT_ROLES = frozenset(
+    {"nw-product-owner", "nw-acceptance-designer"}
+)
+
+_ARCH_HEADER_COVERED_PREFIX = "ARCHITECTURE-COVERED: "
+_ARCH_HEADER_NO_IMPACT_PREFIX = "ARCHITECTURE-NO-IMPACT: "
+_ARCH_HEADER_PREFIXES = (_ARCH_HEADER_COVERED_PREFIX, _ARCH_HEADER_NO_IMPACT_PREFIX)
+_ARCH_HEADER_ANCHOR_ALPHABET = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-")
+
 # Tool names for which the Auto-root lockdown check (`_is_auto_root`, a
 # transcript read + skill observation) is even worth paying for. Every other
 # tool falls through untouched -- zero transcript read, zero observation.
@@ -226,18 +237,36 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
     return None
 
 
-def _is_lexical_repo_relative_json_locator(locator: str) -> bool:
-    """Pure lexical repo-relative `.json` locator check -- no filesystem I/O.
-
-    Rejects an absolute path, a `..` traversal component, an empty segment
-    (leading/trailing/doubled `/`), and anything not ending `.json`. Never
-    reads, hashes, or otherwise touches the filesystem or repository.
-    """
-    if not locator or not locator.endswith(".json"):
+def _is_lexical_repo_relative_locator(
+    locator: str, *, suffix: str, reject_leading_whitespace: bool = False
+) -> bool:
+    """Lexical repo-relative locator check (no I/O): rejects absolute path,
+    `..` traversal, empty segment, wrong suffix."""
+    if not locator or not locator.endswith(suffix):
+        return False
+    if reject_leading_whitespace and (locator[0].isspace() or locator[0] == "\ufeff"):
         return False
     if locator.startswith(("/", "~")) or ":" in locator:
         return False
     return all(part not in ("", "..") for part in locator.split("/"))
+
+
+def _is_lexical_repo_relative_json_locator(locator: str) -> bool:
+    """Lexical repo-relative `.json` locator check -- no filesystem I/O."""
+    return _is_lexical_repo_relative_locator(locator, suffix=".json")
+
+
+def _is_lexical_repo_relative_md_locator(locator: str) -> bool:
+    """Lexical repo-relative `.md` locator check, plus BOM/leading-whitespace
+    reject since this locator sits at prompt byte zero."""
+    return _is_lexical_repo_relative_locator(
+        locator, suffix=".md", reject_leading_whitespace=True
+    )
+
+
+def _is_lexical_markdown_anchor(anchor: str) -> bool:
+    """Pure lexical markdown-anchor check: nonempty, lowercase `[a-z0-9-]`."""
+    return bool(anchor) and set(anchor) <= _ARCH_HEADER_ANCHOR_ALPHABET
 
 
 def _auto_root_crafter_thin_header_block() -> dict[str, str]:
@@ -303,6 +332,64 @@ def _evaluate_auto_root_crafter_thin_header(prompt: object) -> dict[str, str] | 
             or _THIN_HEADER_DIGEST_PREFIX.rstrip() in context
         ):
             return _auto_root_crafter_thin_header_block()
+
+    return None
+
+
+def _auto_root_design_consult_block() -> dict[str, str]:
+    """Render the block payload for a malformed Auto-root PO/ATD header."""
+    return {
+        "decision": "block",
+        "reason": (
+            "WHAT: Auto-root design-consult header malformed -- the Agent "
+            "prompt's first bytes are not exactly one ARCHITECTURE-COVERED: "
+            "or ARCHITECTURE-NO-IMPACT: <path>#<anchor> line. "
+            "WHY: architecture readiness is the deterministic first-bytes "
+            "authority a PO/ATD launch must carry -- no prose, BOM, "
+            "duplication, or reconstructed path/anchor may precede or "
+            "follow it; validating this only downstream wastes an entire "
+            "wave/service activation on a dispatch that had no architecture "
+            "reference to begin with. "
+            "HOW: forward the architect's exact ARCHITECTURE-COVERED / "
+            "ARCHITECTURE-NO-IMPACT <repo-relative-path>.md#<anchor> "
+            "reference verbatim as the prompt's first bytes, with no reconstruction."
+        ),
+    }
+
+
+def _evaluate_auto_root_design_consult_header(prompt: object) -> dict[str, str] | None:
+    """Lexical Auto-root PO/ATD design-consult header gate: shape-only,
+    never reads/parses the referenced doc. `None` (allow) when the prompt's
+    first line is a well-formed ARCHITECTURE-COVERED/-NO-IMPACT
+    `<path>.md#<anchor>` line, optionally followed by one blank line and
+    context with no duplicate header; else the block payload."""
+    if not isinstance(prompt, str):
+        return _auto_root_design_consult_block()
+    lines = prompt.split("\n")
+    header_line = lines[0]
+    matched_prefix = next(
+        (prefix for prefix in _ARCH_HEADER_PREFIXES if header_line.startswith(prefix)),
+        None,
+    )
+    if matched_prefix is None:
+        return _auto_root_design_consult_block()
+
+    reference = header_line[len(matched_prefix) :]
+    path, separator, anchor = reference.partition("#")
+    if not separator:
+        return _auto_root_design_consult_block()
+    if not _is_lexical_repo_relative_md_locator(path):
+        return _auto_root_design_consult_block()
+    if not _is_lexical_markdown_anchor(anchor):
+        return _auto_root_design_consult_block()
+
+    remainder = lines[1:]
+    if remainder:
+        if remainder[0] != "":
+            return _auto_root_design_consult_block()
+        context = "\n".join(remainder[1:])
+        if any(prefix.rstrip() in context for prefix in _ARCH_HEADER_PREFIXES):
+            return _auto_root_design_consult_block()
 
     return None
 
@@ -767,6 +854,20 @@ def handle_pre_tool_use() -> int:
                         )
                         if crafter_thin_block is not None:
                             print(json.dumps(crafter_thin_block))
+                            exit_code = 2
+                            return exit_code
+                    if (
+                        role in _AUTO_ROOT_DESIGN_CONSULT_ROLES
+                        and not hook_input.get("agent_id")
+                        and not hook_input.get("agent_type")
+                    ):
+                        design_consult_block = (
+                            _evaluate_auto_root_design_consult_header(
+                                tool_input.get("prompt")
+                            )
+                        )
+                        if design_consult_block is not None:
+                            print(json.dumps(design_consult_block))
                             exit_code = 2
                             return exit_code
 
