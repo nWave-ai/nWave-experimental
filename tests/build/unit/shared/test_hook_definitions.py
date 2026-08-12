@@ -33,7 +33,7 @@ class TestHookEventDefinitions:
 
     def test_defines_independent_hook_registrations(self):
         """The shared definition contains only the current independent hooks."""
-        assert len(HOOK_EVENTS) == 8
+        assert len(HOOK_EVENTS) == 9
 
         # Verify exact event/matcher/action triples
         events_matchers = [(h.event, h.matcher, h.action) for h in HOOK_EVENTS]
@@ -47,6 +47,11 @@ class TestHookEventDefinitions:
             if h.event == "PreToolUse" and h.matcher == "SendMessage"
         ]
         assert send_message_entries == [("PreToolUse", "SendMessage", "pre-tool-use")]
+        # K4 task-boundary slice: TaskCreate/TaskUpdate combine into a single
+        # matcher routed to the existing portable pre-tool-use action --
+        # exactly one registration, no new action.
+        task_boundary_triple = ("PreToolUse", "TaskCreate|TaskUpdate", "pre-tool-use")
+        assert events_matchers.count(task_boundary_triple) == 1
         assert ("PreToolUse", "Write", "pre-write") in events_matchers
         assert ("PreToolUse", "Edit", "pre-edit") in events_matchers
         assert ("PreToolUse", "Bash", "pre-bash") not in events_matchers
@@ -120,19 +125,26 @@ class TestGenerateHookConfig:
         assert set(config.keys()) == HOOK_EVENT_TYPES
 
     def test_pretooluse_has_independent_entries(self):
-        """PreToolUse has Agent, SendMessage, Write, Edit and one universal
-        Bash hook."""
+        """PreToolUse has Agent, SendMessage, the combined TaskCreate/
+        TaskUpdate matcher, Write, Edit and one universal Bash hook. The
+        combined TaskCreate|TaskUpdate matcher routes to the same portable
+        `pre-tool-use` command used elsewhere -- no new action."""
         config = generate_hook_config(self._simple_command)
         pre_tool_use = config["PreToolUse"]
-        assert len(pre_tool_use) == 5
+        assert len(pre_tool_use) == 6
         matchers = [e.get("matcher") for e in pre_tool_use]
         assert matchers == [
             "Agent",
             "SendMessage",
+            "TaskCreate|TaskUpdate",
             "Write",
             "Edit",
             "Bash",
         ]
+        entry = next(
+            e for e in pre_tool_use if e.get("matcher") == "TaskCreate|TaskUpdate"
+        )
+        assert entry["hooks"][0]["command"] == "python3 -m des.hook pre-tool-use"
 
     def test_neutral_bash_reaches_portable_pre_tool_use_handler(self):
         """Installed config binds Bash to the shipped module handler.

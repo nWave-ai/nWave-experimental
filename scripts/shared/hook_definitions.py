@@ -132,6 +132,10 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
     # schema. See pre_tool_use_handler.handle_pre_tool_use's SendMessage
     # branch for the decision itself.
     HookEvent(event="PreToolUse", matcher="SendMessage", action="pre-tool-use"),
+    # K4 task-boundary slice: combined matcher, existing portable action.
+    HookEvent(
+        event="PreToolUse", matcher="TaskCreate|TaskUpdate", action="pre-tool-use"
+    ),
     HookEvent(event="PreToolUse", matcher="Write", action="pre-write", is_guard=True),
     HookEvent(event="PreToolUse", matcher="Edit", action="pre-edit", is_guard=True),
     # Universal root mode-selection gate. Unlike the specialised Bash guards
