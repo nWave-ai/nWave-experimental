@@ -81,6 +81,19 @@ _D_DISTILL_PHASE = ATDDPurePhase.D_DISTILL.value
 # once nw-auto is engaged -- that authority belongs to a dispatched role.
 _AUTO_ROOT_BLOCKED_TASK_TOOL_NAMES = ("TaskCreate", "TaskUpdate")
 
+# Auto-root crafter first-dispatch THIN header gate (K4 architecture gap):
+# the exact role names for which an Auto-root Agent dispatch must carry a
+# well-formed THIN-DELIVERY-CONTRACT authority as the prompt's first bytes.
+# Deliberately exact match -- a reviewer or any other nw-* role is untouched.
+_AUTO_ROOT_CRAFTER_ROLES = frozenset(
+    {"nw-software-crafter", "nw-functional-software-crafter"}
+)
+
+_THIN_HEADER_LOCATOR_PREFIX = "THIN-DELIVERY-CONTRACT: "
+_THIN_HEADER_DIGEST_PREFIX = "THIN-DELIVERY-CONTRACT-DIGEST: sha256:"
+_THIN_HEADER_DIGEST_HEX_LEN = 64
+_THIN_HEADER_DIGEST_HEX_ALPHABET = frozenset("0123456789abcdef")
+
 # Tool names for which the Auto-root lockdown check (`_is_auto_root`, a
 # transcript read + skill observation) is even worth paying for. Every other
 # tool falls through untouched -- zero transcript read, zero observation.
@@ -210,6 +223,87 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
             "HOW: dispatch the appropriate nw-* role for any other git "
             "subcommand."
         )
+    return None
+
+
+def _is_lexical_repo_relative_json_locator(locator: str) -> bool:
+    """Pure lexical repo-relative `.json` locator check -- no filesystem I/O.
+
+    Rejects an absolute path, a `..` traversal component, an empty segment
+    (leading/trailing/doubled `/`), and anything not ending `.json`. Never
+    reads, hashes, or otherwise touches the filesystem or repository.
+    """
+    if not locator or not locator.endswith(".json"):
+        return False
+    if locator.startswith(("/", "~")) or ":" in locator:
+        return False
+    return all(part not in ("", "..") for part in locator.split("/"))
+
+
+def _auto_root_crafter_thin_header_block() -> dict[str, str]:
+    """Render the block payload for a malformed Auto-root crafter THIN header."""
+    return {
+        "decision": "block",
+        "reason": (
+            "WHAT: Auto-root crafter thin authority malformed -- the Agent "
+            "prompt's first bytes are not exactly the two-line "
+            "THIN-DELIVERY-CONTRACT / THIN-DELIVERY-CONTRACT-DIGEST header. "
+            "WHY: the first bytes are the deterministic authority boundary "
+            "-- no prose, fence, BOM, duplication, or reconstructed JSON may "
+            "precede or follow it; validating this only downstream, inside "
+            "the crafter itself, wastes an entire wave/service activation on "
+            "a dispatch that was already doomed to AUTHORITY_REFUSED. "
+            "HOW: forward ATD's exact two-line THIN-DELIVERY-CONTRACT / "
+            "THIN-DELIVERY-CONTRACT-DIGEST block verbatim as the prompt's "
+            "first bytes, with no reconstruction, hashing, or repair."
+        ),
+    }
+
+
+def _evaluate_auto_root_crafter_thin_header(prompt: object) -> dict[str, str] | None:
+    """Pure lexical Auto-root crafter THIN-header gate.
+
+    Validates ONLY the shape of the prompt's first bytes -- never reads,
+    hashes, opens, or schema-validates the referenced contract file. Returns
+    `None` (allow -- fall through unchanged) when the prompt's first two
+    lines are exactly a well-formed THIN-DELIVERY-CONTRACT /
+    THIN-DELIVERY-CONTRACT-DIGEST pair, optionally followed by one blank
+    line and unrelated context carrying no duplicate header. Otherwise
+    returns the block payload.
+    """
+    if not isinstance(prompt, str):
+        return _auto_root_crafter_thin_header_block()
+    lines = prompt.split("\n")
+    if len(lines) < 2:
+        return _auto_root_crafter_thin_header_block()
+
+    locator_line, digest_line = lines[0], lines[1]
+    if not locator_line.startswith(_THIN_HEADER_LOCATOR_PREFIX):
+        return _auto_root_crafter_thin_header_block()
+    locator = locator_line[len(_THIN_HEADER_LOCATOR_PREFIX) :]
+    if not _is_lexical_repo_relative_json_locator(locator):
+        return _auto_root_crafter_thin_header_block()
+
+    if not digest_line.startswith(_THIN_HEADER_DIGEST_PREFIX):
+        return _auto_root_crafter_thin_header_block()
+    digest_hex = digest_line[len(_THIN_HEADER_DIGEST_PREFIX) :]
+    if (
+        len(digest_hex) != _THIN_HEADER_DIGEST_HEX_LEN
+        or not set(digest_hex) <= _THIN_HEADER_DIGEST_HEX_ALPHABET
+    ):
+        return _auto_root_crafter_thin_header_block()
+
+    remainder = lines[2:]
+    if remainder:
+        if remainder[0] != "":
+            return _auto_root_crafter_thin_header_block()
+        context = "\n".join(remainder[1:])
+        if (
+            _THIN_HEADER_LOCATOR_PREFIX.rstrip() in context
+            or _THIN_HEADER_DIGEST_PREFIX.rstrip() in context
+        ):
+            return _auto_root_crafter_thin_header_block()
+
     return None
 
 
@@ -663,6 +757,18 @@ def handle_pre_tool_use() -> int:
                         )
                         exit_code = 2
                         return exit_code
+                    if (
+                        role in _AUTO_ROOT_CRAFTER_ROLES
+                        and not hook_input.get("agent_id")
+                        and not hook_input.get("agent_type")
+                    ):
+                        crafter_thin_block = _evaluate_auto_root_crafter_thin_header(
+                            tool_input.get("prompt")
+                        )
+                        if crafter_thin_block is not None:
+                            print(json.dumps(crafter_thin_block))
+                            exit_code = 2
+                            return exit_code
 
             if hook_input.get("tool_name") == "Bash":
                 # The git-stash / worktree-remove safety decision already ran
