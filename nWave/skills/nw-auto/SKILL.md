@@ -15,13 +15,9 @@ verdict itself.
 
 ## Bounded context lookup
 
-Root does not run `des code-fact query.* SUBJECT --root ROOT` itself. Root
-delegates the bounded brief — capability, subject, and root — to
+Root delegates the bounded brief — capability, subject, and root — to
 `nw-acceptance-designer`, which owns the one bounded CodeFactPort query per
-slice and returns its reuse/architecture facts in the existing
-`DeliveryContract`. Raw `find`, `grep`, or `cat`-style repository discovery is
-never a substitute for a code fact and must not be used for structural
-lookup, by root or by the dispatched role.
+slice. Root does not run `des code-fact query.* SUBJECT --root ROOT` itself.
 
 ## Deterministic crafter selection
 
@@ -36,6 +32,23 @@ crafter dispatch:
 If `paradigm` is missing or has any other value, return the contract to
 `nw-acceptance-designer` as a blocker. Root never guesses or selects by target
 language.
+
+## Crafter dispatch — first bytes
+
+ATD returns a ready-to-forward authority block. Its first two lines,
+byte-for-byte, are exactly:
+
+```
+THIN-DELIVERY-CONTRACT: <repo-relative-json-locator>
+THIN-DELIVERY-CONTRACT-DIGEST: sha256:<64-lowercase-hex>
+```
+
+Root forwards those two ATD-authored lines as the first bytes of the
+selected crafter's Agent prompt: no prose, no root line, no JSON paste, and
+no code fence precede them. Optional context follows only after one blank
+line.
+
+A missing or malformed header is terminal under the single-pass rule: root never hashes, never reconstructs, never repairs, never retries, and never re-invokes `nw-auto`; it never dispatches a helper agent or substitutes a generic writer.
 
 ## Worktree ownership — before role dispatch
 
@@ -53,16 +66,16 @@ Never branch, or delete/reset/clean/stash/force/adopt. WIP stays bit-identical.
 
 **Root propagation:** this root is an immutable dispatch input. Every Agent
 dispatch (DISCUSS, DESIGN, PO, ATD, crafter, examiner) must receive that exact
-absolute root and treat it as sole repository — never rediscovered via global
+absolute root and treat it as target repository — never rediscovered via global
 find, nearest-repo, transcript inference, or another clone.
 
 ## Architecture readiness — shared M/L prefix
 
-Before either route dispatches PO/ATD, root resolves intent and architecture
-readiness through this ordered, bounded sequence. It is explanatory
-prompt-level algebra only — never persisted, never a schema, never a
-controller state — and it is the ONE prefix both M and L run; there is no
-separate M/L architecture-gap split and no duplicated per-route algorithm.
+Before dispatching PO/ATD, root resolves intent and architecture readiness
+through this ordered, bounded sequence. It is the ONE prefix both M and L
+run; there is no separate M/L architecture-gap split. Explanatory
+prompt-level algebra only — never persisted, never a schema, never controller
+state.
 
 1. **Intent**, conditional: if an intent gap exists, dispatch DISCUSS once,
    then re-evaluate intent. If the gap remains, refuse with a concise intent
@@ -109,28 +122,21 @@ Agent dispatches, issuing both before waiting on either result — neither
 reads the other's output. Then join on both validated results and continue
 without a second controller:
 
-1. **Sibling dispatch (PO and ATD dispatched in the background before either
-   result is awaited):**
-   - `nw-product-owner` (value-side inputs only) additionally receives, as
-     part of its seed, the target repository's own documented user-facing
-     local onboarding/setup excerpt (e.g. its README's local-install/quick-start
-     section). It runs `des charter-scaffold`, fills the expectation charter's
-     Preconditions/start recipe by grounding it in that excerpt — never
-     inventing a signup path — sets the oracle, then stops before the Human
-     workflow.
-   - `nw-acceptance-designer` receives the same immutable value seed as the PO,
-     plus the design SSOT, and, when architecture readiness resolved as
-     Covered or NoImpact, the exact Covered reference or NoImpact evidence —
-     never a root-authored paradigm/targets/storage/boundary/implementation
-     guess or open design choice. It authors the minimal thin
-     `DeliveryContract` v1.1 and acceptance tests. The contract must carry
-     `paradigm`; the ATD never authors or reads the charter/start recipe.
-2. **Join:** after BOTH the charter is verified and contract+tests are
-   validated, dispatch exactly one crafter selected by the deterministic
-   paradigm mapping. That crafter implements the contract to green without
-   rewriting the acceptance-designer's tests. Root never authors, repairs, or
-   reconstructs either sibling's output: a failed or incomplete first result
-   is terminal under the single-pass rule, never a root-side patch-up.
+1. **Sibling dispatch (PO and ATD dispatched concurrently before awaiting either):**
+   - `nw-product-owner`: receives own documented user-facing local
+     onboarding/setup excerpt (e.g. README's local-install section), never inventing a signup path. Runs
+     `des charter-scaffold`, fills Preconditions/start recipe grounded in that
+     excerpt, sets oracle, then stops.
+   - `nw-acceptance-designer`: receives immutable value seed, design SSOT,
+     and architecture evidence (Covered reference or NoImpact only — never a
+     root-authored paradigm/targets/storage/boundary/implementation). Authors minimal
+     `DeliveryContract` v1.1 with `paradigm` and acceptance tests. ATD never
+     reads charter/start recipe.
+2. **Join:** after BOTH charter and contract+tests are validated, dispatch
+   exactly one crafter by deterministic paradigm mapping. That crafter
+   implements the contract to green without rewriting tests. A failed or
+   incomplete first result is terminal under the single-pass rule: root never authors,
+   repairs, or reconstructs either sibling's output.
 3. One independent `nw-user-examiner` examines the running product using the
    charter, whose Preconditions contain the start recipe, and rejects every
    other artifact.
@@ -138,10 +144,7 @@ without a second controller:
 
 ## L route — same prefix, same floor
 
-L runs the identical Architecture readiness prefix above, then the identical
-M/L route floor above. There is no separate L-only algorithm: L differs from
-M only in which gaps `nw-mode-select` observed before dispatching into this
-skill, never in a distinct in-skill procedure.
+L uses identical Architecture readiness prefix, then M/L route floor: no separate L-only algorithm.
 
 ## Examiner input isolation
 
@@ -157,13 +160,13 @@ derives probes from the expectation and observes only the shipped user surface.
 ## Route boundaries
 
 - Auto roles are single-pass: the first result of each dispatched role
-  (acceptance-designer, crafter, examiner) is terminal. No `SendMessage`,
-  resume, retry, or correction within the same Auto run. A later retry is a
-  separately measured new run, issued only after the upstream gap that
-  caused the first result is corrected.
+  (acceptance-designer, crafter, examiner) is terminal and never repeated —
+  no retry, resume, or correction within the same run via `SendMessage`. Only
+  a separately measured new run, begun after correcting the upstream gap that
+  caused the first failure, may proceed.
 - Direct S and Human-on-the-loop routes are unchanged.
-- No `TaskCreate` bookkeeping, new hook, schema, CLI verb, or duplicate
-  sequencer/controller is introduced by this skill.
+- No `TaskCreate`, new hook, schema, CLI verb, or duplicate sequencer/controller
+  is introduced.
 - Auto ends with one of these terminal Git outcomes in the isolated worktree
   decided above; no ledger or seal is created:
   - **PASS** — the current checkout must be neither `main` nor `master` (the
