@@ -1,4 +1,5 @@
-"""Handler-boundary tests for the K4 same-role Agent gate (PreToolUse/Agent).
+"""Handler-boundary tests for the K4 same-role and non-nWave-role Agent gates
+(PreToolUse/Agent).
 
 Falsifies the wiring in `pre_tool_use_handler.handle_pre_tool_use`: without
 these, `agent_role_already_dispatched` could be reverted from the Agent path
@@ -101,44 +102,44 @@ def _run(monkeypatch, transcript_path: str, role: str):
     ("prior", "role", "expected_exit", "case"),
     [
         (
-            [_skill("nw-auto"), *_dispatched_agent("crafter")],
-            "crafter",
+            [_skill("nw-auto"), *_dispatched_agent("nw-crafter")],
+            "nw-crafter",
             2,
             "async_launched same-role result blocks the repeat",
         ),
         (
-            [_skill("nw-auto"), _bare_agent_call("crafter")],
-            "crafter",
+            [_skill("nw-auto"), _bare_agent_call("nw-crafter")],
+            "nw-crafter",
             0,
             "a blocked/never-ran tool_use alone must not consume the pass",
         ),
         (
-            [_skill("nw-auto"), *_dispatched_agent("reviewer")],
-            "crafter",
+            [_skill("nw-auto"), *_dispatched_agent("nw-reviewer")],
+            "nw-crafter",
             0,
             "a different role's launched result does not block this role",
         ),
         (
-            [*_dispatched_agent("crafter")],
-            "crafter",
+            [*_dispatched_agent("nw-crafter")],
+            "nw-crafter",
             0,
             "no authentic nw-auto: gate never fires (pre-K4 behavior)",
         ),
         (
             [_skill("nw-auto")],
-            "crafter",
+            "nw-crafter",
             0,
             "first dispatch of a role is allowed: no prior record",
         ),
         (
-            [_skill("nw-auto"), *_completed_agent("crafter")],
-            "crafter",
+            [_skill("nw-auto"), *_completed_agent("nw-crafter")],
+            "nw-crafter",
             2,
             "completed same-role result blocks the repeat",
         ),
         (
-            [_skill("nw-auto"), *_completed_agent("reviewer")],
-            "crafter",
+            [_skill("nw-auto"), *_completed_agent("nw-reviewer")],
+            "nw-crafter",
             0,
             "a different role's completed result does not block this role",
         ),
@@ -155,3 +156,28 @@ def test_agent_role_gate_handler_boundary(
         payload = json.loads(output[0])
         assert payload["decision"] == "block"
         assert role in payload["reason"]
+
+
+@pytest.mark.parametrize(
+    ("prior", "role", "expected_exit", "case"),
+    [
+        ([_skill("nw-auto")], "general-purpose", 2, "non-nw role blocked"),
+        ([_skill("nw-auto")], "Explore", 2, "non-nw role blocked (other name)"),
+        ([_skill("nw-auto")], "nw-crafter", 0, "nw-* role first dispatch allowed"),
+        ([], "general-purpose", 0, "no authentic nw-auto: ungated"),
+    ],
+)
+def test_agent_non_nwave_role_gate_handler_boundary(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, prior, role, expected_exit, case
+) -> None:
+    """K4 ownership-escape gate: nw-auto restricts Agent dispatch to nw-* roles."""
+    transcript_path = _transcript(tmp_path, prior)
+    exit_code, output = _run(monkeypatch, transcript_path, role)
+
+    assert exit_code == expected_exit, case
+    if expected_exit == 2:
+        payload = json.loads(output[0])
+        assert payload["decision"] == "block"
+        reason = payload["reason"]
+        for token in ("Auto-root", role, "WHY", "HOW", "nw-"):
+            assert token in reason, case

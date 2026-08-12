@@ -617,6 +617,26 @@ def handle_pre_tool_use() -> int:
                     auto_observed = False
                 if auto_observed:
                     role = tool_input.get("subagent_type")
+                    if not isinstance(role, str) or not role.startswith("nw-"):
+                        print(
+                            json.dumps(
+                                {
+                                    "decision": "block",
+                                    "reason": (
+                                        f"Auto-root Agent dispatch to "
+                                        f"'{role}' was blocked. "
+                                        "WHY: Auto-root may only dispatch "
+                                        "nWave (nw-*) roles -- a non-nWave "
+                                        "subagent_type escapes Auto's own "
+                                        "role authority. "
+                                        "HOW: dispatch an nw-* role instead "
+                                        f"of '{role}'."
+                                    ),
+                                }
+                            )
+                        )
+                        exit_code = 2
+                        return exit_code
                     role_repeated = False
                     try:
                         role_repeated = bool(
