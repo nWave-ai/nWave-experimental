@@ -281,6 +281,56 @@ def test_atd_auto_route_honors_wave_order_before_red_execution() -> None:
     assert positions == sorted(positions)
 
 
+def test_worktree_ownership_is_a_deterministic_two_probe_grammar() -> None:
+    """CONTRACT_SHAPE: bounded-change. Worktree ownership is a compact,
+    deterministic git grammar: two cwd-local probes feeding a decision
+    table with exact sibling-path, collision/failure refusal, and explicit
+    forbidden constructs -- no example path, no repeated explanations."""
+    text = _auto_skill_text()
+    section = text[
+        text.index("## Worktree ownership") : text.index("## Architecture readiness")
+    ]
+    compact = _compact(section)
+
+    for token in (
+        # Closed git grammar: exactly these commands, forbidden constructs.
+        "git rev-parse --show-toplevel",
+        "git rev-parse --abbrev-ref HEAD",
+        "git worktree list --porcelain",
+        "git worktree add --detach <sibling> HEAD",
+        "never `git -C`/`cd`/compound shell/substitution",
+        # Detached reuse is independent of dirt.
+        "reuse cwd as-is, dirt or clean",
+        "zero `git worktree add`, zero relocation",
+        "no session heuristic",
+        # Attached branch: exact deterministic sibling, no example path.
+        "sibling = root + `.nwave-auto`",
+        # Registered-collision and add-occupied-failure share one refusal.
+        "registered, or `git worktree add --detach <sibling> HEAD` fails occupied",
+        "refuse fail-closed",
+        "WHAT: path registered/occupied",
+        "WHY: ownership/cleanliness unprovable",
+        "HOW: reconcile/remove, retry",
+        "never adopt",
+        # Destructive-ops refusal and WIP preservation.
+        "Never branch, or delete/reset/clean/stash/force/adopt",
+        "WIP stays bit-identical",
+    ):
+        assert token in compact
+
+    assert "/x/repo.nwave-auto" not in compact
+
+    # Probe-before-table ordering: both probes precede either row.
+    ordered_tokens = [
+        "git rev-parse --show-toplevel",
+        "git rev-parse --abbrev-ref HEAD",
+        "reuse cwd as-is",
+        "sibling = root",
+    ]
+    positions = [compact.index(token) for token in ordered_tokens]
+    assert positions == sorted(positions)
+
+
 def test_auto_m_route_requires_po_atd_same_message_and_no_invented_signup() -> None:
     """CONTRACT_SHAPE: bounded-change. Auto M dispatches PO+ATD with both
     dispatches issued before waiting, documents repository-owned onboarding,

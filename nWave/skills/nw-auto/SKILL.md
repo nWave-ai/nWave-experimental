@@ -39,15 +39,17 @@ language.
 
 ## Worktree ownership — before role dispatch
 
-Before dispatching any role, decide worktree ownership:
+Two cwd-local probes only — never `git -C`/`cd`/compound shell/substitution:
 
-- If the current checkout is `main`, `master`, or otherwise shared/
-  non-isolated, create or reuse an isolated detached worktree and run every
-  subsequent role dispatch inside it.
-- If the current checkout is already an isolated detached worktree, keep
-  using it.
-- Auto never creates or switches a branch. Branch proliferation is refused;
-  isolation is achieved by worktree, not by branch.
+1. `git rev-parse --show-toplevel` → root
+2. `git rev-parse --abbrev-ref HEAD` → attachment
+
+| Attachment | Action |
+|---|---|
+| `HEAD` | reuse cwd as-is, dirt or clean; zero `git worktree add`, zero relocation; no session heuristic |
+| branch name | sibling = root + `.nwave-auto`; `git worktree list --porcelain`; registered, or `git worktree add --detach <sibling> HEAD` fails occupied → refuse fail-closed (WHAT: path registered/occupied; WHY: ownership/cleanliness unprovable; HOW: reconcile/remove, retry) — never adopt; else run that add |
+
+Never branch, or delete/reset/clean/stash/force/adopt. WIP stays bit-identical.
 
 ## Architecture readiness — shared M/L prefix
 
