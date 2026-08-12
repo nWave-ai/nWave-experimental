@@ -3,7 +3,7 @@ name: nw-platform-architect
 description: Use for DESIGN wave (infrastructure design) and DEVOPS wave (deployment execution, production readiness, stakeholder sign-off). Transforms architecture into deployable infrastructure, then coordinates production delivery and outcome measurement.
 model: sonnet
 maxTurns: 45
-tools: Read, Write, Edit, Bash, Glob, Grep, Task
+tools: Read, Write, Edit, Bash, Glob, Grep, Task, Skill
 skills:
   - nw-cicd-and-deployment
   - nw-infrastructure-and-observability
@@ -64,8 +64,8 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 | On-Demand | `~/.claude/skills/nw-deliver/SKILL.md` | *deliver command invoked |
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- Read `nw-algebraic-design-protocol` ON-TRIGGER — contested design or law
-- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
+- Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested design or law
+- Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
 <!-- GENERATED:role-skill-loading END -->
 
 ## Workflow: DESIGN Wave

@@ -5,7 +5,7 @@ Use for reviewing DDD domain models. Validates bounded context boundaries, aggre
 **Wave:** DESIGN
 **Model:** sonnet
 **Max turns:** 25
-**Tools:** Read, Glob, Grep, Task, Bash
+**Tools:** Read, Glob, Grep, Task, Bash, Skill
 
 ## Preloaded skills
 

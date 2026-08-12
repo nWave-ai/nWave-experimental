@@ -4,16 +4,18 @@ Bounded to the two confirmed defects from
 docs/analysis/2026-08-08-installed-role-skill-wiring-audit.md:
 
 1. nw-ddd-architect-reviewer loads the algebraic-design/certainty-by-
-   construction pair as lazy ON-TRIGGER skills in its Skill-Loading-Strategy
-   table, not in frontmatter (consistent with peer architect/reviewer roles).
+   construction pair as lazy ON-TRIGGER skills via a native `Invoke
+   Skill(...)` call, not in frontmatter (consistent with peer
+   architect/reviewer roles). The canonical Claude source deliberately uses
+   the native invocation form; the Codex translation is covered elsewhere.
 2. The 8 language-specific nw-pbt-* skills remain distributed by their
    skill-local ownership, while nw-acceptance-designer selects exactly one
    from its body at authoring time instead of preloading all eight.
 
 D = declared ownership, I = installed/resolvable, E = emitted (a
-Skill-Loading-Strategy table row that actually instructs a Read). R
-(mechanically read) is explicitly out of scope for this lane -- see the joint
-installed provider probe.
+Skill-Loading-Strategy table row that actually instructs a native `Invoke
+Skill(...)` call). R (mechanically read) is explicitly out of scope for this
+lane -- see the joint installed provider probe.
 """
 
 from __future__ import annotations
@@ -69,12 +71,14 @@ class TestDddArchitectReviewerLoadsBaselineOnTrigger:
             f"baseline pair must be lazy ON-TRIGGER, not host-preloaded"
         )
 
-    def test_skill_loading_table_emits_a_read_row_for_each(self):
+    def test_skill_loading_table_emits_a_native_invoke_row_for_each(self):
         body = (AGENTS_DIR / "nw-ddd-architect-reviewer.md").read_text(encoding="utf-8")
-        missing = [s for s in BASELINE_PAIR if f"Read `{s}` ON-TRIGGER" not in body]
+        missing = [
+            s for s in BASELINE_PAIR if f"Invoke Skill({s}) ON-TRIGGER" not in body
+        ]
         assert missing == [], (
             f"nw-ddd-architect-reviewer.md body has no imperative "
-            f'"Read `{{skill}}` ON-TRIGGER" row for {missing}'
+            f'"Invoke Skill({{skill}}) ON-TRIGGER" row for {missing}'
         )
 
 

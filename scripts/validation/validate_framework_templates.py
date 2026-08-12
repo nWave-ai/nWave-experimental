@@ -174,7 +174,15 @@ def validate_agent(filepath: Path, result: ValidationResult) -> None:
         if not re.search(pattern, body, re.MULTILINE):
             result.add("A04", "error", name, msg)
 
-    # A05: skill loading imperative (legacy or compact format)
+    # Parsed once: frontmatter tools tokens, reused by A05/A06/A12.
+    tools_raw = fm.get("tools", "")
+    tools_tokens = (
+        [t.strip() for t in tools_raw.split(",")]
+        if isinstance(tools_raw, str)
+        else list(tools_raw)
+    )
+
+    # A05: skill loading imperative (legacy, compact, or native Skill invocation)
     match = re.search(
         r"^## Skill Loading[^\n]*\n.*?(?=^## |\Z)", body, re.MULTILINE | re.DOTALL
     )
@@ -190,19 +198,42 @@ def validate_agent(filepath: Path, result: ValidationResult) -> None:
             re.MULTILINE,
         )
     )
-    if not (has_legacy or has_compact):
+    has_native_invoke = False
+    for line in section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            stripped = stripped[2:].strip()
+        if re.fullmatch(
+            r"Invoke (?:ONE )?Skill\(nw-(?:[a-z][a-z0-9-]*|\{skill-name\})\)"
+            r"(?: ON-TRIGGER — \S.*)?",
+            stripped,
+        ):
+            has_native_invoke = True
+            break
+    has_native = has_native_invoke and "Skill" in tools_tokens
+    if not (has_legacy or has_compact or has_native):
         result.add(
             "A05",
             "error",
             name,
-            "Skill Loading section must contain imperative loading instructions (legacy 'You MUST load' or 'Your FIRST action' or compact 'Read ~/.claude/skills/nw-.../SKILL.md')",
+            "Skill Loading section must contain imperative loading instructions "
+            "(legacy 'You MUST load' or 'Your FIRST action', compact "
+            "'Read ~/.claude/skills/nw-.../SKILL.md', or native 'Invoke Skill(nw-...)' "
+            "with 'Skill' declared in frontmatter tools)",
         )
 
-    # A06: skills path documented (old: nw/{agent}/, new: nw-{skill}/SKILL.md)
+    # A06: skills path documented (old: nw/{agent}/, new: nw-{skill}/SKILL.md,
+    # or native capability-backed Skill invocation in place of a path)
     has_old_path = "~/.claude/skills/nw/" in body
     has_new_path = "~/.claude/skills/nw-" in body
-    if not has_old_path and not has_new_path:
-        result.add("A06", "error", name, "Missing skills path (~/.claude/skills/nw-)")
+    if not has_old_path and not has_new_path and not has_native:
+        result.add(
+            "A06",
+            "error",
+            name,
+            "Missing skills path (~/.claude/skills/nw-) or native Skill invocation "
+            "route (Invoke Skill(nw-...) with 'Skill' declared in frontmatter tools)",
+        )
 
     # A07: orphan skills (skill in frontmatter but no reference in body)
     # In flat layout, agents use a template path like nw-{skill-name}/SKILL.md.
@@ -245,12 +276,6 @@ def validate_agent(filepath: Path, result: ValidationResult) -> None:
     # A12: reviewer must not have write tools (Bash is allowed, read-only
     # per WS-12 -- the code-fact grep tier reachable from reviewers)
     if is_reviewer:
-        tools_raw = fm.get("tools", "")
-        tools_tokens = (
-            [t.strip() for t in tools_raw.split(",")]
-            if isinstance(tools_raw, str)
-            else list(tools_raw)
-        )
         for forbidden in ("Write", "Edit"):
             if forbidden in tools_tokens:
                 result.add(

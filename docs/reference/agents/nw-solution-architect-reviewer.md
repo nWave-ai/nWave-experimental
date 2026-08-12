@@ -5,7 +5,7 @@ Architecture design and patterns review specialist - Optimized for cost-efficien
 **Wave:** DESIGN
 **Model:** sonnet
 **Max turns:** 25
-**Tools:** Read, Glob, Grep, Task, Bash
+**Tools:** Read, Glob, Grep, Task, Bash, Skill
 
 ## Commands
 

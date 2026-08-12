@@ -5,7 +5,7 @@ DELIVER wave — SLIM functional crafter. GREEN-the-ATs + L1-L6 refactor for FP 
 **Wave:** DELIVER
 **Model:** sonnet
 **Max turns:** 45
-**Tools:** Read, Write, Edit, Bash, Glob, Grep, Task
+**Tools:** Read, Write, Edit, Bash, Glob, Grep, Task, Skill
 
 ## Commands
 

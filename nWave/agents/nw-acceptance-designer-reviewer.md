@@ -3,7 +3,7 @@ name: nw-acceptance-designer-reviewer
 description: Use for review and critique tasks - Acceptance criteria and BDD review specialist. Runs on Haiku for cost efficiency.
 model: sonnet
 maxTurns: 25
-tools: Read, Glob, Grep, Task, Bash
+tools: Read, Glob, Grep, Task, Bash, Skill
 skills:
   - nw-adversarial-refutation
   - nw-test-design-mandates
@@ -65,10 +65,10 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 `nw-at-completeness-check` (Tier-1 C1-C7 + Tier-2 S1-S3/S5-S7, loaded per the generated block below) runs INDEPENDENTLY of the acceptance-designer's own self-audit — never trust its self-report as a substitute.
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- Read `nw-algebraic-design-protocol` ON-TRIGGER — compositional or stateful surface
-- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
-- Read `nw-ad-critique-dimensions` ON-TRIGGER — review start
-- Read `nw-at-completeness-check` ON-TRIGGER — review start
+- Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — compositional or stateful surface
+- Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
+- Invoke Skill(nw-ad-critique-dimensions) ON-TRIGGER — review start
+- Invoke Skill(nw-at-completeness-check) ON-TRIGGER — review start
 <!-- GENERATED:role-skill-loading END -->
 
 ALSO load every skill the active workflow mode's registry row declares for this agent:

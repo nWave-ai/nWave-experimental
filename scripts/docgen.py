@@ -892,14 +892,14 @@ def _command_catalog_body() -> str:
 
 def _role_skill_on_demand_lines(entry: dict) -> list[str]:
     return [
-        f"- Read `{skill}` ON-TRIGGER — {trigger}"
+        f"- Invoke Skill({skill}) ON-TRIGGER — {trigger}"
         for skill, trigger in entry.get("on_demand", {}).items()
     ]
 
 
 def _role_skill_entry_lines(entry: dict) -> list[str]:
     return [
-        f"- Read `{skill}` ON-TRIGGER — {trigger}"
+        f"- Invoke Skill({skill}) ON-TRIGGER — {trigger}"
         for skill, trigger in entry.get("phase", {}).items()
     ]
 
@@ -909,11 +909,11 @@ def _role_skill_trigger_lines(entry: dict) -> list[str]:
 
 
 def _role_skill_loading_body(agent_id: str, root: Path) -> str:
-    """Render one role's universal-lens directives as imperative Read
+    """Render one role's universal-lens directives as native Skill-invocation
     instructions -- all registry rows load ON-TRIGGER (never eagerly preloaded):
     both phase and on_demand rows fire exactly when their declared trigger
     condition holds, never unconditionally. Build-time only, no runtime registry
-    read: docgen is the authoritative renderer/semantic parser for agent Read
+    read: docgen is the authoritative renderer/semantic parser for agent Skill
     directives, while scripts.shared.agent_catalog separately reads ownership
     fields for build-time distribution retention and is not a runtime registry
     read. A reviewer with exactly one reviewed role mirrors that role's on_demand
@@ -934,14 +934,14 @@ def _role_skill_loading_body(agent_id: str, root: Path) -> str:
             )
     lines += _role_skill_trigger_lines(entry)
     for kind, target in entry.get("paradigm", {}).items():
-        lines.append(f"- Read `{target}` ON-TRIGGER — paradigm confirmed {kind}")
+        lines.append(f"- Invoke Skill({target}) ON-TRIGGER — paradigm confirmed {kind}")
     by_target: dict[str, list[str]] = {}
     for lang, target in entry.get("language_pbt", {}).items():
         by_target.setdefault(target, []).append(lang)
     for target, langs in sorted(by_target.items()):
         joined = "`/`".join(sorted(langs))
         lines.append(
-            f"- Read ONE `{target}` ON-TRIGGER — a `{joined}` property needs it"
+            f"- Invoke ONE Skill({target}) ON-TRIGGER — a `{joined}` property needs it"
         )
     return "\n".join(lines) if lines else "- (no universal lens applies to this role)"
 

@@ -12,22 +12,22 @@ Scenarios covered (step 02-01):
   P0b-09: Missing catalog in target directory halts stripping
   P0b-10: Multi-owner skill with all owners private is stripped
   P0b-11: Corrupted agent frontmatter halts skill stripping
+  P0b-12: Registry-only skill ownership (role-skill-loading.yaml) is
+          honoured by strip() -- survives for a public role owner, does
+          not leak for a private-only role owner
 
-Test Budget: 11 distinct behaviors x 2 = 22 max. Using 11 tests.
+Test Budget: 12 distinct behaviors x 2 = 24 max. Using 12 tests.
 """
 
 from __future__ import annotations
 
+import shutil
 import sys
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
 from scripts.shared.agent_catalog import CatalogNotFoundError
-
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -476,3 +476,125 @@ class TestCorruptedFrontmatterHalts:
 
         with pytest.raises((ValueError, TypeError, KeyError)):
             strip(target)
+
+    @pytest.mark.parametrize(
+        "list_frontmatter",
+        [
+            pytest.param("---\n- nw-alpha\n- skills\n---\n# List\n", id="flat-list"),
+            pytest.param(
+                "---\n- name: nw-alpha\n  skills: [nw-alpha-skill]\n---\n# List-of-maps\n",
+                id="list-of-maps",
+            ),
+        ],
+    )
+    def test_list_frontmatter_raises_frontmatter_parse_error(
+        self, tmp_path: Path, list_frontmatter: str
+    ) -> None:
+        """Syntactically valid YAML that parses to a list (not a mapping)
+        must be rejected as FrontmatterParseError, not silently passed to
+        build_ownership_map() where it would fail with an unrelated
+        AttributeError (frontmatter.get() on a list)."""
+        from scripts.release.strip_private_agents import (
+            FrontmatterParseError,
+            strip,
+        )
+
+        target = _create_target(
+            tmp_path,
+            CATALOG_ALPHA_ONLY,
+            agents={},
+        )
+        agents_dir = target / "nWave" / "agents"
+        (agents_dir / "nw-alpha.md").write_text(list_frontmatter)
+
+        with pytest.raises(FrontmatterParseError):
+            strip(target)
+
+
+# ---------------------------------------------------------------------------
+# P0b-12: Registry-only skill ownership is honoured by strip()
+# ---------------------------------------------------------------------------
+
+
+class TestRegistryOnlyOwnershipHonouredByStrip:
+    """P0b-12: strip() must use the shared SSOT ownership map, which folds
+    role-skill-loading.yaml registry ownership on top of frontmatter --
+    NOT a private, frontmatter-only rebuild (the RCA regression: a stale
+    duplicate in strip_private_agents.py independently rebuilt ownership
+    from frontmatter alone and dropped registry-only skills owned by
+    public agents).
+    """
+
+    def test_registry_only_skill_survives_for_public_owner_and_is_stripped_for_private_owner(
+        self, tmp_path: Path
+    ) -> None:
+        """A skill owned ONLY via role-skill-loading.yaml (no frontmatter
+        skills: entry) survives strip() when its registry owner is public,
+        and is removed when its registry owner is private only."""
+        from scripts.release.strip_private_agents import strip
+
+        target = _create_target(
+            tmp_path,
+            CATALOG_PUBLIC_PRIVATE,
+            agents={"alpha": None, "internal-tool": None},
+            skills=["registry-only-skill", "private-registry-skill"],
+        )
+        data_dir = target / "nWave" / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / "role-skill-loading.yaml").write_text(
+            "version: 1\n"
+            "roles:\n"
+            "  nw-alpha:\n"
+            "    phase:\n"
+            "      nw-registry-only-skill: some phase\n"
+            "  nw-internal-tool:\n"
+            "    phase:\n"
+            "      nw-private-registry-skill: some phase\n"
+        )
+
+        strip(target)
+
+        skills_dir = target / "nWave" / "skills"
+        assert (skills_dir / "nw-registry-only-skill").exists(), (
+            "skill owned only by role-skill-loading.yaml for a public agent "
+            "must survive strip()"
+        )
+        assert not (skills_dir / "nw-private-registry-skill").exists(), (
+            "skill owned only by role-skill-loading.yaml for a private-only "
+            "agent must not leak"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Real-tree regression: every native Invoke Skill() reference survives
+# ---------------------------------------------------------------------------
+
+
+class TestRealTreeInvokeSkillReferencesSurviveStrip:
+    """Exercises the actual production strip() port against a copy of the
+    real nWave/ tree (not a synthetic fixture), then hands the stripped
+    tree to the production ``check_references`` validator -- the same
+    authority that gates a release -- instead of owning a second
+    regex/scanner here. Catches the RCA regression where
+    strip_private_agents.py's stale frontmatter-only ownership rebuild
+    dropped registry-only skills that public agents invoke natively.
+    """
+
+    def test_real_nwave_tree_invoke_skill_references_survive_strip(
+        self, tmp_path: Path
+    ) -> None:
+        """Copy the real nWave/ tree, run the real strip(), then confirm
+        the production validator finds zero dangling skill references in
+        the surviving tree."""
+        from scripts.release.strip_private_agents import strip
+        from scripts.validation.validate_skill_references import check_references
+
+        repo_root = Path(__file__).resolve().parents[3]
+        target = tmp_path / "target"
+        shutil.copytree(repo_root / "nWave", target / "nWave")
+
+        strip(target)
+
+        dangling = check_references(target / "nWave")
+
+        assert dangling == [], f"skill references dangling after strip(): {dangling}"

@@ -3,7 +3,7 @@ name: nw-ddd-architect
 description: Use for DESIGN wave domain modeling. Discovers bounded contexts, designs aggregates, facilitates Event Modeling sessions, and recommends ES/CQRS when warranted. Writes to architecture SSOT.
 model: sonnet
 maxTurns: 45
-tools: Read, Write, Edit, Glob, Grep, Bash, Task
+tools: Read, Write, Edit, Glob, Grep, Bash, Task, Skill
 skills:
   - nw-ddd-architect
   - nw-ddd-strategic
@@ -71,10 +71,10 @@ Load on-demand by phase, not all at once:
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo)
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- Read `nw-algebraic-design-protocol` ON-TRIGGER — contested design or law
-- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
-- Read `nw-code-design-oo` ON-TRIGGER — paradigm confirmed object_oriented
-- Read `nw-code-design-fp` ON-TRIGGER — paradigm confirmed functional
+- Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested design or law
+- Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
+- Invoke Skill(nw-code-design-oo) ON-TRIGGER — paradigm confirmed object_oriented
+- Invoke Skill(nw-code-design-fp) ON-TRIGGER — paradigm confirmed functional
 <!-- GENERATED:role-skill-loading END -->
 
 ## Workflow

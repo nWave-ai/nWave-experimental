@@ -5,7 +5,7 @@ Use for review and critique tasks - Acceptance criteria and BDD review specialis
 **Wave:** DISTILL
 **Model:** sonnet
 **Max turns:** 25
-**Tools:** Read, Glob, Grep, Task, Bash
+**Tools:** Read, Glob, Grep, Task, Bash, Skill
 
 ## Commands
 

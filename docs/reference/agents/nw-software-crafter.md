@@ -5,7 +5,7 @@ DELIVER wave - SLIM scope (implementation + refactor expert). Crafter implements
 **Wave:** DELIVER
 **Model:** sonnet
 **Max turns:** 45
-**Tools:** Read, Write, Edit, Bash, Glob, Grep, Task
+**Tools:** Read, Write, Edit, Bash, Glob, Grep, Task, Skill
 
 ## Commands
 

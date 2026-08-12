@@ -935,10 +935,10 @@ class TestRoleSkillLoadingRegistry:
         body = _role_skill_loading_body(agent_id, root)
         phase_skills = entry.get("phase", {})
         for skill in phase_skills:
-            assert f"Read `{skill}` ON-TRIGGER" in body, (
+            assert f"Invoke Skill({skill}) ON-TRIGGER" in body, (
                 f"{agent_id}: phase skill {skill} must render as ON-TRIGGER, never NOW"
             )
-            assert f"Read `{skill}` NOW" not in body, (
+            assert f"Invoke Skill({skill}) NOW" not in body, (
                 f"{agent_id}: phase skill {skill} must not render as NOW"
             )
 
@@ -977,11 +977,13 @@ class TestRoleSkillLoadingRegistry:
             "nw-algebraic-design-protocol",
             "nw-certainty-by-construction",
         ):
-            assert f"Read `{lens}` ON-TRIGGER" in body, (
+            assert f"Invoke Skill({lens}) ON-TRIGGER" in body, (
                 f"{lens} must render as ON-TRIGGER"
             )
 
-        pbt_rows = [line for line in body.splitlines() if "Read ONE `nw-pbt-" in line]
+        pbt_rows = [
+            line for line in body.splitlines() if "Invoke ONE Skill(nw-pbt-" in line
+        ]
         assert len(pbt_rows) == 8, f"expected 8 language PBT rows, got {pbt_rows}"
 
         atd_entry = roles["nw-acceptance-designer"]
@@ -1082,7 +1084,7 @@ class TestRoleSkillLoadingRegistry:
             "role-skill-loading directive must render between the Auto Route "
             "contract heading and the Human-route marker"
         )
-        assert text.count("Read `nw-algebraic-design-protocol`") == 1, (
+        assert text.count("Invoke Skill(nw-algebraic-design-protocol)") == 1, (
             "the algebra directive must not be duplicated as stale hand-authored prose"
         )
 
@@ -1094,9 +1096,9 @@ class TestRoleSkillLoadingRegistry:
             ("nw-functional-software-crafter", "nw-code-design-fp"),
         ):
             body = _role_skill_loading_body(agent_id, root)
-            assert f"Read `{design_skill}`" in body, body
-            assert "Read `nw-algebraic-design-protocol`" in body, body
-            assert "Read `nw-certainty-by-construction`" in body, body
+            assert f"Invoke Skill({design_skill})" in body, body
+            assert "Invoke Skill(nw-algebraic-design-protocol)" in body, body
+            assert "Invoke Skill(nw-certainty-by-construction)" in body, body
             for banned in ("nw-property-based-testing", "nw-test-design-mandates"):
                 assert banned not in body, (
                     f"{agent_id} must never load a test-authoring skill -- SLIM "
@@ -1129,10 +1131,38 @@ class TestRoleSkillLoadingRegistry:
                 f"{agent_id}: role-skill-loading directive must render inside "
                 "Dispatch authority, the section the thin/Auto path executes"
             )
-            assert text.count("Read `nw-algebraic-design-protocol`") == 1, (
+            assert text.count("Invoke Skill(nw-algebraic-design-protocol)") == 1, (
                 f"{agent_id}: the algebra directive must not be duplicated as "
                 "stale hand-authored prose"
             )
+
+    @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
+    def test_frontmatter_tools_declares_skill(self, root: Path, agent_id: str):
+        text = (root / "nWave" / "agents" / f"{agent_id}.md").read_text()
+        tools_line = next(
+            line for line in text.splitlines() if line.startswith("tools:")
+        )
+        tools = [tool.strip() for tool in tools_line.removeprefix("tools:").split(",")]
+        assert "Skill" in tools, f"{agent_id}: frontmatter tools must declare Skill"
+        assert tools.count("Skill") == 1, f"{agent_id}: Skill declared more than once"
+
+    @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
+    def test_generated_region_invokes_skill_natively_never_reads_a_path(
+        self, root: Path, agent_id: str
+    ):
+        text = (root / "nWave" / "agents" / f"{agent_id}.md").read_text()
+        start = text.index("GENERATED:role-skill-loading START")
+        end = text.index("GENERATED:role-skill-loading END")
+        region = text[start:end]
+        assert "Invoke" in region and "Skill(" in region, (
+            f"{agent_id}: generated region must render native Skill invocations"
+        )
+        assert "~/.claude/skills" not in region, (
+            f"{agent_id}: generated region must never render a Read path"
+        )
+        assert "Read `" not in region, (
+            f"{agent_id}: generated region must never render a Read directive"
+        )
 
     @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
     def test_every_registered_role_still_projects_a_nonempty_body(

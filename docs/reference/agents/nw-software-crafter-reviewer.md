@@ -5,7 +5,7 @@ Use for review and critique tasks. The AT-density-completeness audit is primary 
 **Wave:** DELIVER
 **Model:** sonnet
 **Max turns:** 25
-**Tools:** Read, Glob, Grep, Task, Bash
+**Tools:** Read, Glob, Grep, Task, Bash, Skill
 
 ## Preloaded skills
 

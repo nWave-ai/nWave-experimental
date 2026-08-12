@@ -26,6 +26,7 @@ import importlib
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -229,6 +230,27 @@ def _toml_multiline_string(value: str) -> str:
     return f'"""\n{escaped_body}"""'
 
 
+#: Codex has no native Skill tool. Native agent bodies carry
+#: `Invoke Skill(NAME)` / `Invoke ONE Skill(NAME)` directives (docgen/dispatch
+#: output); Codex must instead be told to read the skill file directly.
+_SKILL_INVOKE_PATTERN = re.compile(r"Invoke( ONE)? Skill\(([a-z0-9-]+)\)")
+
+
+def _translate_skill_invocations(body: str) -> str:
+    """Rewrite native Skill-invocation directives into explicit read
+    instructions. ON-TRIGGER suffixes that follow the matched directive are
+    untouched. Uses a replacement callable (not a replacement string) so
+    literal backslashes in ``body`` are never interpreted as regex
+    backreferences."""
+
+    def _replace(match: re.Match[str]) -> str:
+        path = f"~/.agents/skills/{match.group(2)}/SKILL.md"
+        prefix = "Read ONE" if match.group(1) else "Read"
+        return f"{prefix} `{path}`"
+
+    return _SKILL_INVOKE_PATTERN.sub(_replace, body)
+
+
 def _transform_agent(
     source_content: str, agent_name: str, batching_fragment: str = ""
 ) -> str:
@@ -255,6 +277,7 @@ def _transform_agent(
     scalar_fields = _extract_scalar_fields(frontmatter)
     _omit_unsupported_model(scalar_fields)
     body = rewrite_host_paths(body, "codex")
+    body = _translate_skill_invocations(body)
     if batching_fragment:
         body = append_batching_fragment(body, batching_fragment)
     return _render_toml_agent(scalar_fields, body)

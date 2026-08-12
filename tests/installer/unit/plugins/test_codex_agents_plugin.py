@@ -44,6 +44,7 @@ from scripts.install.plugins.codex_agents_plugin import (
     _toml_multiline_string,
     _toml_string,
     _transform_agent,
+    _translate_skill_invocations,
     _warn_if_tools_dropped,
 )
 
@@ -289,6 +290,54 @@ class TestTransformAgent:
         parsed = tomllib.loads(_transform_agent(source, "nw-craft"))
 
         assert parsed["model"] == "gpt-5.2-codex"
+
+
+class TestTranslateSkillInvocations:
+    """Codex has no Skill tool: native `Invoke Skill(NAME)` directives must
+    become explicit reads of the installed skill file."""
+
+    def test_invoke_skill_becomes_exact_read_path(self):
+        result = _translate_skill_invocations("Invoke Skill(nw-tdd-methodology)")
+        assert result == "Read `~/.agents/skills/nw-tdd-methodology/SKILL.md`"
+
+    def test_invoke_one_skill_becomes_exact_read_path(self):
+        result = _translate_skill_invocations("Invoke ONE Skill(nw-property-fsharp)")
+        assert result == "Read ONE `~/.agents/skills/nw-property-fsharp/SKILL.md`"
+
+    def test_on_trigger_suffix_is_preserved(self):
+        result = _translate_skill_invocations(
+            "- Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested law"
+        )
+        assert result == (
+            "- Read `~/.agents/skills/nw-algebraic-design-protocol/SKILL.md` "
+            "ON-TRIGGER — contested law"
+        )
+
+    def test_idempotent_on_already_translated_text(self):
+        once = _translate_skill_invocations("Invoke Skill(nw-tdd-methodology)")
+        twice = _translate_skill_invocations(once)
+        assert once == twice
+
+    def test_unrelated_text_unchanged(self):
+        text = "Plain prose about invoking a skillful reviewer, no directive here."
+        assert _translate_skill_invocations(text) == text
+
+    def test_regex_looking_backslashes_in_body_survive_toml_parse(self):
+        source = (
+            "---\n"
+            "name: nw-craft\n"
+            "description: crafts code\n"
+            "model: gpt-5.2-codex\n"
+            "---\n\n"
+            "Invoke Skill(nw-tdd-methodology) ON-TRIGGER — path is C:\\Users\\x\\1\n"
+        )
+        result = _transform_agent(source, "nw-craft")
+        parsed = tomllib.loads(result)
+        assert (
+            "~/.agents/skills/nw-tdd-methodology/SKILL.md"
+            in (parsed["developer_instructions"])
+        )
+        assert "C:\\Users\\x\\1" in parsed["developer_instructions"]
 
 
 # ---------------------------------------------------------------------------

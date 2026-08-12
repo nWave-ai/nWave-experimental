@@ -3,7 +3,7 @@ name: nw-software-crafter-reviewer
 description: Use for review and critique tasks. The AT-density-completeness audit is primary whenever the active workflow requests it; code-quality and TDD-discipline review are secondary. Runs on Haiku for cost efficiency.
 model: sonnet
 maxTurns: 25
-tools: Read, Glob, Grep, Task, Bash
+tools: Read, Glob, Grep, Task, Bash, Skill
 skills:
   - nw-adversarial-refutation
   - nw-tdd-review-enforcement
@@ -94,8 +94,8 @@ Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/s
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - ON-TRIGGER — mirror the reviewed role's on-demand lenses, lens-only
-- Read `nw-sc-review-dimensions` ON-TRIGGER — review start
-- Read `nw-at-completeness-check` ON-TRIGGER — AT-density review
+- Invoke Skill(nw-sc-review-dimensions) ON-TRIGGER — review start
+- Invoke Skill(nw-at-completeness-check) ON-TRIGGER — AT-density review
 <!-- GENERATED:role-skill-loading END -->
 
 ## Review Workflow

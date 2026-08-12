@@ -3,7 +3,7 @@ name: nw-ddd-architect-reviewer
 description: Use for reviewing DDD domain models. Validates bounded context boundaries, aggregate design, context mapping, ES/CQRS recommendations, and ubiquitous language consistency.
 model: sonnet
 maxTurns: 25
-tools: Read, Glob, Grep, Task, Bash
+tools: Read, Glob, Grep, Task, Bash, Skill
 skills:
   - nw-code-analysis-port
 ---
@@ -44,11 +44,11 @@ You MUST load your skill files before beginning review work.
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md`
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- Read `nw-algebraic-design-protocol` ON-TRIGGER — contested design or law
-- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
-- Read `nw-ddd-strategic` ON-TRIGGER — review start
-- Read `nw-ddd-architect` ON-TRIGGER — review start
-- Read `nw-ddd-tactical` ON-TRIGGER — aggregate review
+- Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested design or law
+- Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
+- Invoke Skill(nw-ddd-strategic) ON-TRIGGER — review start
+- Invoke Skill(nw-ddd-architect) ON-TRIGGER — review start
+- Invoke Skill(nw-ddd-tactical) ON-TRIGGER — aggregate review
 <!-- GENERATED:role-skill-loading END -->
 
 ## Workflow

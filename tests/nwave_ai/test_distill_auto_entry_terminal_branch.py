@@ -95,7 +95,14 @@ def test_auto_root_delegates_the_code_fact_query_to_the_acceptance_designer() ->
     assert executable_form in dispatch_loading
 
 
-def test_crafters_retain_declared_reuse_architecture_conformance_phrase() -> None:
+def test_default_skill_loading_body_uses_native_skill_invocation_not_read() -> None:
+    """CONTRACT_SHAPE: non-regression. The generic reminder must send Claude at
+    the native `Skill` tool -- not the old `Read the Read tool, by exact path`
+    instruction -- and must not duplicate any role's actual skill list."""
+    body = _default_skill_loading_body("nw-acceptance-designer")
+    assert "Invoke Skill(<exact skill name>) at the role table's phase trigger" in body
+    assert "with the Read tool" not in body
+    assert "by exact path" not in body
     """CONTRACT_SHAPE: non-regression. OO and FP crafters keep the conformance phrase."""
     phrase = "demonstrate declared reuse/architecture conformance"
     for path in (OO_CRAFTER_PATH, FP_CRAFTER_PATH):

@@ -5,7 +5,7 @@ Use for DESIGN wave domain modeling. Discovers bounded contexts, designs aggrega
 **Wave:** DESIGN
 **Model:** sonnet
 **Max turns:** 45
-**Tools:** Read, Write, Edit, Glob, Grep, Bash, Task
+**Tools:** Read, Write, Edit, Glob, Grep, Bash, Task, Skill
 
 ## Commands
 

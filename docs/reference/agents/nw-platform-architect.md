@@ -5,7 +5,7 @@ Use for DESIGN wave (infrastructure design) and DEVOPS wave (deployment executio
 **Wave:** DESIGN
 **Model:** sonnet
 **Max turns:** 45
-**Tools:** Read, Write, Edit, Bash, Glob, Grep, Task
+**Tools:** Read, Write, Edit, Bash, Glob, Grep, Task, Skill
 
 ## Commands
 

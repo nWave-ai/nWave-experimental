@@ -5,9 +5,15 @@ which agents are public. Everything NOT in the public allow-list is
 removed -- this is **fail-closed** by design: uncatalogued agents are
 stripped rather than leaked.
 
-Skills are stripped using the ownership map derived from agent
-frontmatter. A skill is kept only if at least one of its owning
-agents is public.
+Skills are stripped using the ownership map built by the shared
+``agent_catalog.build_ownership_map`` -- frontmatter ``skills:`` lists
+PLUS the ``role-skill-loading.yaml`` registry's conditional on-demand
+ownership. This module first validates every agent's frontmatter
+strictly (fail-closed on corruption) and then delegates ownership
+construction to that shared authority, so the strip and the
+skill-reference validator never disagree about what a public agent
+owns. A skill is kept only if at least one of its owning agents is
+public.
 
 Usage::
 
@@ -32,6 +38,7 @@ if _project_root not in sys.path:
 import yaml  # noqa: E402
 
 from scripts.shared.agent_catalog import (  # noqa: E402
+    build_ownership_map,
     detect_command_skills,
     is_public_agent,
     is_public_skill,
@@ -166,20 +173,26 @@ def _scrub_private_links(doc_path: Path, private_names: set[str]) -> None:
         doc_path.write_text("".join(filtered), encoding="utf-8")
 
 
-def _build_ownership_map_strict(agents_dir: Path) -> dict[str, set[str]]:
-    """Build ownership map with strict parsing -- raises on corrupted frontmatter.
+def _validate_frontmatter_or_raise(agents_dir: Path) -> None:
+    """Fail closed on corrupted agent frontmatter before ownership is built.
 
-    Unlike the shared ``build_ownership_map()`` which silently skips
-    corrupt files, this version raises ``FrontmatterParseError`` to
-    prevent silent data loss during stripping.
+    Parses each ``nw-*.md`` file's YAML frontmatter strictly. Unlike the
+    shared ``build_ownership_map()`` (which silently skips unparsable
+    frontmatter -- acceptable for the docgen/validation callers that use
+    it), this raises ``FrontmatterParseError`` so a corrupted agent file
+    halts the strip instead of silently losing that agent's skill
+    ownership and leaking its skills as "uncatalogued".
+
+    Ownership itself is NOT built here: once validation passes, ``strip()``
+    delegates to the shared ``agent_catalog.build_ownership_map`` -- the
+    same authority the skill-reference validator uses -- so both agree on
+    what a public agent owns (frontmatter plus the role-skill-loading.yaml
+    registry).
     """
     if not agents_dir.exists():
-        return {}
-
-    ownership: dict[str, set[str]] = {}
+        return
 
     for agent_file in sorted(agents_dir.glob("nw-*.md")):
-        agent_name = agent_file.stem.removeprefix("nw-")
         text = agent_file.read_text(encoding="utf-8")
 
         if not text.startswith("---"):
@@ -190,23 +203,17 @@ def _build_ownership_map_strict(agents_dir: Path) -> dict[str, set[str]]:
             continue
 
         try:
-            frontmatter = yaml.safe_load(text[3:end])
+            parsed = yaml.safe_load(text[3:end])
         except Exception as exc:
             msg = f"Corrupted frontmatter in {agent_file.name}: {exc}"
             raise FrontmatterParseError(msg) from exc
 
-        if frontmatter is None or not isinstance(frontmatter, dict):
-            continue
-
-        skills = frontmatter.get("skills")
-        if not isinstance(skills, list):
-            continue
-
-        for skill in skills:
-            skill_key = skill if skill.startswith("nw-") else f"nw-{skill}"
-            ownership.setdefault(skill_key, set()).add(agent_name)
-
-    return ownership
+        if not isinstance(parsed, dict):
+            msg = (
+                f"Non-mapping frontmatter in {agent_file.name}: "
+                f"expected a YAML mapping, got {type(parsed).__name__}"
+            )
+            raise FrontmatterParseError(msg)
 
 
 def strip(target_dir: Path) -> dict[str, list[str]]:
@@ -236,8 +243,11 @@ def strip(target_dir: Path) -> dict[str, list[str]]:
     agents_dir = nwave_dir / "agents"
     skills_dir = nwave_dir / "skills"
 
-    # 1. Build ownership map (strict -- fails on corrupted frontmatter)
-    ownership_map = _build_ownership_map_strict(agents_dir)
+    # 1. Fail closed on corrupted frontmatter, then delegate ownership
+    #    construction to the shared SSOT (frontmatter + role-skill-loading
+    #    registry) -- the same authority validate_skill_references.py uses.
+    _validate_frontmatter_or_raise(agents_dir)
+    ownership_map = build_ownership_map(agents_dir)
     command_skills = detect_command_skills(skills_dir)
 
     # 2. Strip agent files: remove anything NOT in public allow-list

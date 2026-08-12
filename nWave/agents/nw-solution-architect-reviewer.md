@@ -3,7 +3,7 @@ name: nw-solution-architect-reviewer
 description: Architecture design and patterns review specialist - Optimized for cost-efficient review operations using Haiku model.
 model: sonnet
 maxTurns: 25
-tools: Read, Glob, Grep, Task, Bash
+tools: Read, Glob, Grep, Task, Bash, Skill
 skills:
   - nw-code-analysis-port
 ---
@@ -51,9 +51,9 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- Read `nw-algebraic-design-protocol` ON-TRIGGER — contested design or law
-- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
-- Read `nw-sar-critique-dimensions` ON-TRIGGER — architecture review
+- Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested design or law
+- Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
+- Invoke Skill(nw-sar-critique-dimensions) ON-TRIGGER — architecture review
 <!-- GENERATED:role-skill-loading END -->
 
 ## Workflow

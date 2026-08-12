@@ -2,7 +2,7 @@
 name: nw-acceptance-designer
 description: "Use for DISTILL wave — designs E2E acceptance tests from user stories and architecture using Given-When-Then format. EXPANDED scope (plan v3 §3.A, 2026-05-19) — exclusive test-expertise owner; authors ATs with maximum PBT + parametrize density, runs self-completeness audit (7-category taxonomy + 15-item checklist), enforces Mandate-12 step-reuse ≥4× target informational, consults DISCUSS+DESIGN+DEVOPS upstream waves for taxonomy population (C2/C5/C6/C7). Creates executable specifications that drive Outside-In TDD development."
 model: sonnet
-tools: Read, Write, Edit, Bash, Glob, Grep, Task
+tools: Read, Write, Edit, Bash, Glob, Grep, Task, Skill
 maxTurns: 45
 skills:
   - nw-bdd-methodology
@@ -52,18 +52,18 @@ its trigger fires — never preload, never before the trigger fires, never all
 eight PBT deep dives.
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- Read `nw-test-design-mandates` ON-TRIGGER — Phase 0 policy detection
-- Read `nw-property-based-testing` ON-TRIGGER — BROAD_INPUT_DOMAIN obligation, or Phase 2 property authoring
-- Read `nw-algebraic-design-protocol` ON-TRIGGER — compositional or stateful surface
-- Read `nw-certainty-by-construction` ON-TRIGGER — invalid-state or preservation claim
-- Read ONE `nw-pbt-dotnet` ON-TRIGGER — a `csharp`/`dotnet`/`fsharp` property needs it
-- Read ONE `nw-pbt-erlang-elixir` ON-TRIGGER — a `elixir`/`erlang` property needs it
-- Read ONE `nw-pbt-go` ON-TRIGGER — a `go` property needs it
-- Read ONE `nw-pbt-haskell` ON-TRIGGER — a `haskell` property needs it
-- Read ONE `nw-pbt-jvm` ON-TRIGGER — a `java`/`kotlin`/`scala` property needs it
-- Read ONE `nw-pbt-python` ON-TRIGGER — a `python` property needs it
-- Read ONE `nw-pbt-rust` ON-TRIGGER — a `rust` property needs it
-- Read ONE `nw-pbt-typescript` ON-TRIGGER — a `javascript`/`typescript` property needs it
+- Invoke Skill(nw-test-design-mandates) ON-TRIGGER — Phase 0 policy detection
+- Invoke Skill(nw-property-based-testing) ON-TRIGGER — BROAD_INPUT_DOMAIN obligation, or Phase 2 property authoring
+- Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — compositional or stateful surface
+- Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
+- Invoke ONE Skill(nw-pbt-dotnet) ON-TRIGGER — a `csharp`/`dotnet`/`fsharp` property needs it
+- Invoke ONE Skill(nw-pbt-erlang-elixir) ON-TRIGGER — a `elixir`/`erlang` property needs it
+- Invoke ONE Skill(nw-pbt-go) ON-TRIGGER — a `go` property needs it
+- Invoke ONE Skill(nw-pbt-haskell) ON-TRIGGER — a `haskell` property needs it
+- Invoke ONE Skill(nw-pbt-jvm) ON-TRIGGER — a `java`/`kotlin`/`scala` property needs it
+- Invoke ONE Skill(nw-pbt-python) ON-TRIGGER — a `python` property needs it
+- Invoke ONE Skill(nw-pbt-rust) ON-TRIGGER — a `rust` property needs it
+- Invoke ONE Skill(nw-pbt-typescript) ON-TRIGGER — a `javascript`/`typescript` property needs it
 <!-- GENERATED:role-skill-loading END -->
 
 Author the minimal acceptance tests and return a thin `DeliveryContract` v1.1

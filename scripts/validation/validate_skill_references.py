@@ -1,13 +1,16 @@
 """Validate that every skill referenced by a public artifact survives the strip.
 
-The dangling-reference class recurs because skill references live in TWO
-channels — an agent's declared frontmatter ``skills:`` list AND free-text
-``skills/nw-*/SKILL.md`` body mentions. Distribution ownership is the union
+The dangling-reference class recurs because skill references live in THREE
+channels — an agent's declared frontmatter ``skills:`` list, free-text
+``skills/nw-*/SKILL.md`` body mentions, and native executable
+``Invoke Skill(nw-*)`` calls. Distribution ownership is the union
 centralized by build_ownership_map: frontmatter plus role-skill-loading
-conditional ownership. A public artifact can still body-reference a skill that neither ownership channel captures; the strip then drops it as orphan work, and the public package ships with a dangling skill reference.
+conditional ownership. A public artifact can still reference a skill that
+neither ownership channel captures; the strip then drops it as orphan
+work, and the public package ships with a dangling skill reference.
 
 This validator closes the loop: it scans every PUBLIC artifact (public
-agents + public skills) for skill references in both channels, and flags
+agents + public skills) for skill references in all channels, and flags
 any referenced skill the privacy strip would remove.
 
 Usage::
@@ -43,6 +46,12 @@ from scripts.shared.agent_catalog import (  # noqa: E402
 # Matches free-text body references of the form ``skills/nw-foo/SKILL.md``.
 _BODY_SKILL_REFERENCE = re.compile(r"skills/(nw-[a-z0-9-]+)/SKILL\.md")
 
+# Matches exact native executable references of the form
+# ``Invoke Skill(nw-foo)``. Placeholder names such as ``nw-{skill-name}``
+# contain characters outside ``[a-z0-9-]`` and so never match -- they are
+# template text, not an executable reference to a real skill.
+_INVOKE_SKILL_REFERENCE = re.compile(r"Invoke Skill\((nw-[a-z0-9-]+)\)")
+
 
 def _read_text(path: Path) -> str:
     """Read a file, returning an empty string on any OS error."""
@@ -74,25 +83,29 @@ def _frontmatter_skills(text: str) -> list[str]:
 
 
 def _referenced_skills(text: str) -> set[str]:
-    """Collect nw-prefixed skill names referenced in BOTH channels.
+    """Collect nw-prefixed skill names referenced in ALL channels.
 
     Channel 1: declared frontmatter ``skills:`` list.
     Channel 2: free-text body mentions of ``skills/nw-*/SKILL.md``.
+    Channel 3: native executable ``Invoke Skill(nw-*)`` calls.
     """
     referenced: set[str] = set()
     for skill in _frontmatter_skills(text):
         referenced.add(skill if skill.startswith("nw-") else f"nw-{skill}")
     for match in _BODY_SKILL_REFERENCE.findall(text):
         referenced.add(match)
+    for match in _INVOKE_SKILL_REFERENCE.findall(text):
+        referenced.add(match)
     return referenced
 
 
 def check_references(nwave_dir: Path) -> list[str]:
-    """Return public artifacts whose referenced skills would be stripped.
+    """Return public artifacts whose referenced skills are missing or would be stripped.
 
     Empty list == every skill referenced by a public agent or public skill
-    survives the privacy strip. A non-empty entry names the referrer and
-    the strippable skill it depends on.
+    exists on disk AND survives the privacy strip. A non-empty entry names
+    the referrer and either the nonexistent skill it names or the
+    strippable skill it depends on.
 
     Args:
         nwave_dir: the ``nWave/`` directory (contains ``agents/`` +
@@ -134,6 +147,10 @@ def check_references(nwave_dir: Path) -> list[str]:
             text = _read_text(agent_file)
             for skill in sorted(_referenced_skills(text)):
                 if skill not in existing_skills:
+                    dangling.append(
+                        f"public agent {agent_file.name} references skill "
+                        f"{skill} which does not exist"
+                    )
                     continue
                 if not survives_strip(skill):
                     dangling.append(
@@ -149,7 +166,13 @@ def check_references(nwave_dir: Path) -> list[str]:
             skill_file = skills_dir / skill_dir / "SKILL.md"
             text = _read_text(skill_file)
             for skill in sorted(_referenced_skills(text)):
-                if skill == skill_dir or skill not in existing_skills:
+                if skill == skill_dir:
+                    continue
+                if skill not in existing_skills:
+                    dangling.append(
+                        f"public skill {skill_dir} references skill "
+                        f"{skill} which does not exist"
+                    )
                     continue
                 if not survives_strip(skill):
                     dangling.append(

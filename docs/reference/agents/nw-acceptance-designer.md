@@ -5,7 +5,7 @@ Use for DISTILL wave — designs E2E acceptance tests from user stories and arch
 **Wave:** DISTILL
 **Model:** sonnet
 **Max turns:** 45
-**Tools:** Read, Write, Edit, Bash, Glob, Grep, Task
+**Tools:** Read, Write, Edit, Bash, Glob, Grep, Task, Skill
 
 ## Commands
 

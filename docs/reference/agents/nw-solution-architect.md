@@ -5,7 +5,7 @@ Use for DESIGN wave - collaborates with user to define system architecture, comp
 **Wave:** DESIGN
 **Model:** sonnet
 **Max turns:** 45
-**Tools:** Read, Write, Edit, Glob, Grep, Bash, Task
+**Tools:** Read, Write, Edit, Glob, Grep, Bash, Task, Skill
 
 ## Commands
 
