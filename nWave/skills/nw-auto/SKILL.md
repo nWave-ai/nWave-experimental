@@ -51,6 +51,11 @@ Two cwd-local probes only — never `git -C`/`cd`/compound shell/substitution:
 
 Never branch, or delete/reset/clean/stash/force/adopt. WIP stays bit-identical.
 
+**Root propagation:** this root is an immutable dispatch input. Every Agent
+dispatch (DISCUSS, DESIGN, PO, ATD, crafter, examiner) must receive that exact
+absolute root and treat it as sole repository — never rediscovered via global
+find, nearest-repo, transcript inference, or another clone.
+
 ## Architecture readiness — shared M/L prefix
 
 Before either route dispatches PO/ATD, root resolves intent and architecture

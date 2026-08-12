@@ -331,6 +331,31 @@ def test_worktree_ownership_is_a_deterministic_two_probe_grammar() -> None:
     assert positions == sorted(positions)
 
 
+def test_root_propagation_binds_every_dispatch_role() -> None:
+    """CONTRACT_SHAPE: bounded-change. The canonical root measured by the
+    worktree-ownership probe is an immutable dispatch input propagated
+    verbatim to every dispatched role; no role may rediscover it via global
+    find, nearest-repo, transcript inference, or another clone."""
+    text = _auto_skill_text()
+    idx_worktree = text.index("## Worktree ownership")
+    idx_propagation = text.index("**Root propagation:**")
+    idx_architecture = text.index("## Architecture readiness — shared M/L prefix")
+    assert idx_worktree < idx_propagation < idx_architecture
+
+    block = text[idx_propagation:idx_architecture].strip()
+    section = _compact(block)
+    assert "immutable dispatch input" in section
+    for role in ("DISCUSS", "DESIGN", "PO", "ATD", "crafter", "examiner"):
+        assert role in section
+    assert (
+        "never rediscovered via global find, nearest-repo, transcript "
+        "inference, or another clone" in section
+    )
+
+    assert text.count("Root propagation") == 1
+    assert len(block.split()) <= 50
+
+
 def test_auto_m_route_requires_po_atd_same_message_and_no_invented_signup() -> None:
     """CONTRACT_SHAPE: bounded-change. Auto M dispatches PO+ATD with both
     dispatches issued before waiting, documents repository-owned onboarding,

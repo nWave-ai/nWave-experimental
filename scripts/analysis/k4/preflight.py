@@ -238,6 +238,10 @@ def control_setup_steps(auth_profile: Path) -> list[list[str]]:
     ]
 
 
+def _probe_workspace(root: Path) -> Path:
+    return root / "probe-nwave"
+
+
 def probe_engagement(
     root: Path, venv: Path, auth_profile: Path
 ) -> tuple[str, list[str]]:
@@ -255,7 +259,7 @@ def probe_engagement(
     remedy offered was `--yes` for a missing-catalog failure. Caught on its own
     first real run, 2026-08-07.
     """
-    workspace = root / "probe-nwave"
+    workspace = _probe_workspace(root)
     if workspace.exists():
         shutil.rmtree(workspace)
     workspace.mkdir(parents=True)
@@ -286,6 +290,24 @@ def probe_engagement(
         if not directory.is_dir() or not any(directory.iterdir()):
             missing.append(f"{config_dir.name}/{name} is missing or empty")
     return "absent", missing
+
+
+def cleanup_probe_workspace(root: Path, verdict: str, detail: list[str]) -> bool:
+    """Remove the probe workspace after a PASS verdict only; return whether removed.
+
+    PASS is exactly `verdict != "broke"` and `detail` empty -- the same
+    condition `main` already checks before printing the engagement success
+    line. `broke` and `absent`-with-detail both leave the probe in place: the
+    failure messages above point a reader at `<root>/probe-nwave` for the HOW,
+    and a probe deleted out from under that pointer would make the HOW a lie.
+    """
+    if verdict == "broke" or detail:
+        return False
+    workspace = _probe_workspace(root)
+    if workspace.exists():
+        shutil.rmtree(workspace)
+        return True
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -329,6 +351,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     print("engagement  : nWave section injected, agents and skills present")
+
+    if cleanup_probe_workspace(args.root, verdict, detail):
+        print(f"probe clean : removed {_probe_workspace(args.root)}")
 
     delivery = [
         "claude",
