@@ -39,7 +39,7 @@ ATD returns a ready-to-forward authority block. Its first two lines,
 byte-for-byte, are exactly:
 
 ```
-THIN-DELIVERY-CONTRACT: <repo-relative-json-locator>
+THIN-DELIVERY-CONTRACT: <repository-relative-json-locator>
 THIN-DELIVERY-CONTRACT-DIGEST: sha256:<64-lowercase-hex>
 ```
 

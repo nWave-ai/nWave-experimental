@@ -4,13 +4,28 @@ Installs the K4 ceiling slice fix: ATD's first result carries exactly two
 header lines; root forwards them byte-for-byte as the crafter prompt's first
 bytes, with no reconstruction/repair/retry/fallback permitted.
 
-Confirmed defect: prose-prefixed crafter dispatch (JSON paste before headers)
-caused AUTHORITY_REFUSED; retry via helper agent wasted turns. First result is
-terminal under the single-pass rule.
+Confirmed defect (K4 exact bc79aace1): ATD produced a schema-valid
+DeliveryContract and passing RED tests, but its own agent spec
+(nw-acceptance-designer.md) never instructed it to emit the two-header block
+as its terminal output -- that contract lived only in nw-auto/SKILL.md,
+root's routing description of what ATD *should* send, never in ATD's own
+runtime instruction surface. ATD's terminal text began "Now let's..." and
+closed with a "## Summary" heading; zero THIN-DELIVERY-CONTRACT header
+occurrences. Root then prefixed/duplicated facts when dispatching the
+crafter, which refused. Checking only nw-auto/SKILL.md, as the prior version
+of this suite did, cannot catch this class of defect because that file was
+never wrong.
 
-Tests verify, all anchored on the single owning section
-"## Crafter dispatch — first bytes" of nw-auto/SKILL.md:
-(a) ATD owns the two exact thin headers as its first result lines
+Tests verify, anchored on ATD's own runtime instruction surface
+(nw-acceptance-designer.md Route contract, Auto branch) in agreement with
+the shared "## Crafter dispatch — first bytes" section of nw-auto/SKILL.md
+and both crafters' accepted-authority headers:
+(a) ATD's own agent spec -- not merely nw-auto/SKILL.md -- instructs it to
+    compute the SHA-256 of the exact final DeliveryContract bytes and begin
+    its FINAL response at byte zero with the two exact thin headers, then
+    one blank line, then only concise optional evidence; and the two
+    header-line prefixes agree across ATD's spec, nw-auto/SKILL.md, and
+    both crafter specs
 (b) Root forwards them byte-for-byte as crafter prompt first bytes with
     optional context only after one blank line, no prefix of any kind
 (c) Missing/malformed headers are terminal: no hash/reconstruct/repair/
@@ -28,16 +43,35 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 NWAVE_DIR = PROJECT_ROOT / "nWave"
 SKILLS_DIR = NWAVE_DIR / "skills"
+AGENTS_DIR = NWAVE_DIR / "agents"
 
 SECTION_ANCHOR = "## Crafter dispatch — first bytes"
+ATD_AUTO_ANCHOR = "**Thin Auto M/L route"
+ATD_HUMAN_ANCHOR = "**Human route:**"
+
+HEADER_LOCATOR_PREFIX = "THIN-DELIVERY-CONTRACT: "
+HEADER_DIGEST_PREFIX = "THIN-DELIVERY-CONTRACT-DIGEST: sha256:"
+
+CRAFTER_FILES = (
+    AGENTS_DIR / "nw-software-crafter.md",
+    AGENTS_DIR / "nw-functional-software-crafter.md",
+)
 
 
 def _skill_body() -> str:
     return (SKILLS_DIR / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
 
 
+def _atd_body() -> str:
+    return (AGENTS_DIR / "nw-acceptance-designer.md").read_text(encoding="utf-8")
+
+
 def _crafter_dispatch_section(body: str) -> str:
     return body[body.index(SECTION_ANCHOR) :]
+
+
+def _atd_auto_route_section(body: str) -> str:
+    return body[body.index(ATD_AUTO_ANCHOR) : body.index(ATD_HUMAN_ANCHOR)]
 
 
 def _normalized(text: str) -> str:
@@ -49,7 +83,7 @@ class TestCrafterDispatchFirstBytesRule:
     """ATD -> root -> crafter first-bytes contract and terminal fallback ban."""
 
     def test_atd_ready_to_forward_block_has_exact_two_header_lines(self):
-        """(a) ATD's block leads with the two exact headers, byte-for-byte."""
+        """(a) ATD's own spec owns the terminal contract, agreeing with root/crafters."""
         section = _crafter_dispatch_section(_skill_body())
         for token in (
             "ATD returns a ready-to-forward authority block",
@@ -58,10 +92,46 @@ class TestCrafterDispatchFirstBytesRule:
         ):
             assert token in section, f"Missing: {token}"
         exact_pair = (
-            "THIN-DELIVERY-CONTRACT: <repo-relative-json-locator>\n"
+            "THIN-DELIVERY-CONTRACT: <repository-relative-json-locator>\n"
             "THIN-DELIVERY-CONTRACT-DIGEST: sha256:<64-lowercase-hex>"
         )
         assert exact_pair in section, "Header lines are not adjacent/exact"
+
+        atd_section_raw = _atd_auto_route_section(_atd_body())
+        assert exact_pair in atd_section_raw, "ATD header lines are not adjacent/exact"
+
+        atd_section = _normalized(atd_section_raw)
+        for token in (
+            "compute the SHA-256 of the exact final",
+            "bytes as written to disk",
+            "begins at byte zero",
+            "No greeting",
+            "summary heading",
+            "code fence",
+            "absolute path",
+            "JSON paste",
+            "duplicate header",
+            "root-computed hash",
+            "ready-to-forward block",
+        ):
+            assert token in atd_section, (
+                f"ATD's own spec missing terminal-output obligation: {token}"
+            )
+
+        for source_name, text in (
+            ("nw-auto/SKILL.md", section),
+            ("nw-acceptance-designer.md", atd_section_raw),
+            *((f.name, f.read_text(encoding="utf-8")) for f in CRAFTER_FILES),
+        ):
+            assert HEADER_LOCATOR_PREFIX in text, (
+                f"{source_name} missing locator header prefix"
+            )
+            assert HEADER_DIGEST_PREFIX in text, (
+                f"{source_name} missing digest header prefix"
+            )
+            assert exact_pair in text, (
+                f"{source_name} header lines are not the same exact adjacent pair"
+            )
 
     def test_root_forwards_headers_as_first_bytes_no_prefix_blank_line_context(self):
         """(b) No prose/root line/JSON/fence may precede; context needs a blank line."""
@@ -116,3 +186,23 @@ class TestCrafterDispatchFirstBytesRule:
         """The section must exist exactly once; removal must fail this suite."""
         body = _skill_body()
         assert body.count(SECTION_ANCHOR) == 1
+
+        atd_body = _atd_body()
+        anchor = "begins at byte zero"
+        assert atd_body.count(anchor) == 1, (
+            "ATD terminal directive must be a sole owner"
+        )
+        generated_start = atd_body.index("<!-- GENERATED:role-skill-loading START")
+        generated_end = atd_body.index("<!-- GENERATED:role-skill-loading END") + len(
+            "<!-- GENERATED:role-skill-loading END -->"
+        )
+        anchor_index = atd_body.index(anchor)
+        assert not (generated_start <= anchor_index <= generated_end), (
+            "ATD terminal directive must not live inside the generated Skill Loading region"
+        )
+        assert ATD_AUTO_ANCHOR in atd_body[:anchor_index], (
+            "ATD terminal directive must sit inside the Auto route branch"
+        )
+        assert anchor_index < atd_body.index(ATD_HUMAN_ANCHOR), (
+            "ATD terminal directive must precede the Human-route handoff"
+        )

@@ -114,6 +114,22 @@ partial-state resume; re-enter from `NoArtifacts`. The acceptance-test
 artifact is immutable once its digest is taken into the contract: any
 mutation to that file during RED refuses readiness.
 
+Once `RedConfirmed` holds, compute the SHA-256 of the exact final
+`DeliveryContract` bytes as written to disk — never a draft, an in-memory
+value, or a hash root could recompute. Your FINAL response begins at byte zero
+with exactly:
+
+```
+THIN-DELIVERY-CONTRACT: <repository-relative-json-locator>
+THIN-DELIVERY-CONTRACT-DIGEST: sha256:<64-lowercase-hex>
+```
+
+then exactly one blank line, then only concise optional evidence. No
+greeting, summary heading, code fence, absolute path, JSON paste, duplicate
+header, root-computed hash, or other preamble may precede or replace these
+two lines: this is the ready-to-forward block root owns only as opaque
+bytes.
+
 You own the acceptance tests and a complete, schema-valid
 `DeliveryContract`; you never author or read the expectation charter or its
 user-surface start recipe. `nw-product-owner` owns that separate artifact
