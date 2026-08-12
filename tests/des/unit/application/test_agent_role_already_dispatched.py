@@ -1,9 +1,15 @@
 """Unit tests for `agent_role_already_dispatched` (K4 role-session gate).
 
-The predicate keys on a COMPLETED dispatch result (a real `tool_result`
-entry whose `toolUseResult.agentType` matches the role), never on a bare
-`Agent` tool_use -- a PreToolUse-blocked call must not consume the role's
-single pass. A completed result counts even when its outcome is a refusal.
+The predicate keys on the REAL Claude Code transcript shape: an assistant
+`tool_use` block (`name == "Agent"`, `id`, `input.subagent_type`) correlated
+by `tool_use_id` to a later authentic `user` `tool_result` content block
+whose sibling `toolUseResult.status == "async_launched"`. There is no
+`toolUseResult.agentType` in the real shape -- launch results carry
+`agentId`, not `agentType`. A bare/blocked `Agent` tool_use with no
+correlated launched result never consumes the role's single pass. An
+unmatched `tool_use_id`, a forged result missing the real `tool_result`
+block or the `async_launched` status, a different role, and a plain
+`<task-notification>` string are all false (fail-closed).
 """
 
 import json
@@ -21,22 +27,35 @@ def _write(tmp_path, lines: list[dict]) -> str:
     return str(transcript)
 
 
-def _completed_result(role: str, outcome: str = "SUCCESS") -> dict:
-    return {
-        "type": "user",
-        "message": {"content": [{"type": "tool_result", "content": outcome}]},
-        "toolUseResult": {"agentType": role, "outcome": outcome},
-    }
-
-
-def _bare_tool_use(role: str) -> dict:
+def _agent_tool_use(tool_use_id: str, role: str) -> dict:
     return {
         "type": "assistant",
         "message": {
             "content": [
-                {"type": "tool_use", "name": "Agent", "input": {"subagent_type": role}}
+                {
+                    "type": "tool_use",
+                    "id": tool_use_id,
+                    "name": "Agent",
+                    "input": {"subagent_type": role},
+                }
             ]
         },
+    }
+
+
+def _async_launched_result(tool_use_id: str, agent_id: str = "agent-1") -> dict:
+    return {
+        "type": "user",
+        "message": {
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": "Launched",
+                }
+            ]
+        },
+        "toolUseResult": {"status": "async_launched", "agentId": agent_id},
     }
 
 
@@ -44,43 +63,99 @@ def _bare_tool_use(role: str) -> dict:
     ("lines", "role", "expected", "case"),
     [
         ([], "crafter", False, "empty transcript"),
-        ([_completed_result("crafter")], "crafter", True, "completed same role"),
         (
-            [_completed_result("crafter", outcome="AUTHORITY_REFUSED")],
+            [_agent_tool_use("T1", "crafter"), _async_launched_result("T1")],
             "crafter",
             True,
-            "completed refused result still consumes the pass",
+            "real dispatch correlated to an async_launched result",
         ),
         (
-            [_bare_tool_use("crafter")],
+            [_agent_tool_use("T1", "crafter")],
             "crafter",
             False,
-            "blocked/never-ran tool_use alone never consumes the pass",
+            "bare/blocked tool_use with no launched result never consumes the pass",
         ),
-        ([_completed_result("reviewer")], "crafter", False, "different role"),
+        (
+            [_agent_tool_use("T1", "crafter"), _async_launched_result("T2")],
+            "crafter",
+            False,
+            "unmatched tool_use_id does not correlate",
+        ),
+        (
+            [_agent_tool_use("T1", "reviewer"), _async_launched_result("T1")],
+            "crafter",
+            False,
+            "different role does not leak",
+        ),
         (
             [
+                _agent_tool_use("T1", "crafter"),
                 {
                     "type": "user",
                     "message": {"content": [{"type": "text", "text": "done"}]},
-                    "toolUseResult": {"agentType": "crafter"},
-                }
+                    "toolUseResult": {"status": "async_launched", "agentId": "x"},
+                },
             ],
             "crafter",
             False,
-            "forged toolUseResult without a real tool_result content block",
+            "forged result missing the real tool_result content block",
         ),
         (
             [
+                _agent_tool_use("T1", "crafter"),
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "T1",
+                                "content": "done",
+                            }
+                        ]
+                    },
+                    "toolUseResult": {"status": "completed", "agentType": "crafter"},
+                },
+            ],
+            "crafter",
+            False,
+            "correlated result without async_launched status does not count",
+        ),
+        (
+            [
+                _agent_tool_use("T1", "crafter"),
                 {
                     "type": "system",
-                    "message": {"content": [{"type": "tool_result", "content": "x"}]},
-                    "toolUseResult": {"agentType": "crafter"},
-                }
+                    "message": {
+                        "content": [
+                            {"type": "tool_result", "tool_use_id": "T1", "content": "x"}
+                        ]
+                    },
+                    "toolUseResult": {"status": "async_launched", "agentId": "x"},
+                },
             ],
             "crafter",
             False,
             "forged system-type entry is not a real user tool-result turn",
+        ),
+        (
+            [
+                _agent_tool_use("T1", "crafter"),
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "<task-notification>crafter finished</task-notification>",
+                            }
+                        ]
+                    },
+                },
+            ],
+            "crafter",
+            False,
+            "a plain task-notification string alone does not count",
         ),
     ],
 )
@@ -100,5 +175,7 @@ def test_malformed_jsonl_skipped_no_crash(tmp_path) -> None:
 
 
 def test_empty_role_returns_false(tmp_path) -> None:
-    transcript_path = _write(tmp_path, [_completed_result("crafter")])
+    transcript_path = _write(
+        tmp_path, [_agent_tool_use("T1", "crafter"), _async_launched_result("T1")]
+    )
     assert agent_role_already_dispatched(transcript_path, "") is False

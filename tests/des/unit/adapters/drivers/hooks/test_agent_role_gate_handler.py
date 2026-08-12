@@ -2,7 +2,10 @@
 
 Falsifies the wiring in `pre_tool_use_handler.handle_pre_tool_use`: without
 these, `agent_role_already_dispatched` could be reverted from the Agent path
-and the pure-helper unit tests would stay green.
+and the pure-helper unit tests would stay green. Fixtures use the real
+Claude Code transcript shape -- an assistant `tool_use` (`name == "Agent"`,
+`id`, `input.subagent_type`) correlated via `tool_use_id` to a `user`
+`tool_result` block whose sibling `toolUseResult.status == "async_launched"`.
 """
 
 import io
@@ -22,18 +25,35 @@ def _skill(name: str) -> dict:
     return {"type": "assistant", "message": {"content": content}}
 
 
-def _completed_agent(role: str) -> dict:
-    content = [{"type": "tool_result", "content": "done"}]
-    return {
-        "type": "user",
-        "message": {"content": content},
-        "toolUseResult": {"agentType": role},
-    }
-
-
-def _bare_agent_call(role: str) -> dict:
-    content = [{"type": "tool_use", "name": "Agent", "input": {"subagent_type": role}}]
+def _bare_agent_call(role: str, tool_use_id: str = "T1") -> dict:
+    content = [
+        {
+            "type": "tool_use",
+            "id": tool_use_id,
+            "name": "Agent",
+            "input": {"subagent_type": role},
+        }
+    ]
     return {"type": "assistant", "message": {"content": content}}
+
+
+def _dispatched_agent(role: str, tool_use_id: str = "T1") -> list[dict]:
+    return [
+        _bare_agent_call(role, tool_use_id),
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": "Launched",
+                    }
+                ]
+            },
+            "toolUseResult": {"status": "async_launched", "agentId": "agent-xyz"},
+        },
+    ]
 
 
 def _run(monkeypatch, transcript_path: str, role: str):
@@ -58,10 +78,10 @@ def _run(monkeypatch, transcript_path: str, role: str):
     ("prior", "role", "expected_exit", "case"),
     [
         (
-            [_skill("nw-auto"), _completed_agent("crafter")],
+            [_skill("nw-auto"), *_dispatched_agent("crafter")],
             "crafter",
             2,
-            "completed same-role result blocks the repeat",
+            "async_launched same-role result blocks the repeat",
         ),
         (
             [_skill("nw-auto"), _bare_agent_call("crafter")],
@@ -70,13 +90,13 @@ def _run(monkeypatch, transcript_path: str, role: str):
             "a blocked/never-ran tool_use alone must not consume the pass",
         ),
         (
-            [_skill("nw-auto"), _completed_agent("reviewer")],
+            [_skill("nw-auto"), *_dispatched_agent("reviewer")],
             "crafter",
             0,
-            "a different role's completed result does not block this role",
+            "a different role's launched result does not block this role",
         ),
         (
-            [_completed_agent("crafter")],
+            [*_dispatched_agent("crafter")],
             "crafter",
             0,
             "no authentic nw-auto: gate never fires (pre-K4 behavior)",

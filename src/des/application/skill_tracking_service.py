@@ -98,19 +98,23 @@ def skill_observed_before_action(transcript_path: str, skill_name: str) -> bool:
 
 
 def agent_role_already_dispatched(transcript_path: str, role: str) -> bool:
-    """True iff the transcript contains a COMPLETED `Agent` dispatch for `role`.
+    """True iff the transcript contains a LAUNCHED `Agent` dispatch for `role`.
 
-    Keys on a genuine tool-result entry (`type == "user"`, a `tool_result`
-    content block) whose sibling `toolUseResult.agentType` matches `role` --
-    the authoritative real-transcript shape for a dispatch that actually ran
-    to completion, refusal, or failure alike. A PreToolUse-blocked `Agent`
-    tool_use never produces this result entry (the dispatch never ran), so it
-    does NOT consume the role's single pass. A completed result counts even
-    when its outcome is a refusal/failure (e.g. AUTHORITY_REFUSED) -- Auto
-    must stop rather than retry a completed role result, so completion, never
-    outcome, is the discriminant. A different role, prose, a forged `user`/
-    `system` entry missing the real `tool_result` block, and a missing/
-    unreadable/malformed transcript are all false (fail-closed).
+    Real Claude Code emits a dispatch as an assistant `tool_use` content
+    block (`name == "Agent"`, an `id`, `input.subagent_type`) followed by a
+    `user` entry carrying a `tool_result` content block whose `tool_use_id`
+    matches that `id`, with a sibling `toolUseResult.status ==
+    "async_launched"` (there is no `toolUseResult.agentType` in the real
+    shape -- launch results carry `agentId`, not a role). Walking the
+    transcript in order, an assistant `Agent` tool_use is recorded by its
+    id/role; it only counts once a later `user` entry correlates to that id
+    with a real `tool_result` block and the `async_launched` status. A bare
+    or PreToolUse-blocked `Agent` tool_use with no correlated launched
+    result never consumes the role's single pass. An unmatched
+    `tool_use_id`, a forged result missing the real `tool_result` block or
+    the `async_launched` status, a different role, a plain
+    `<task-notification>` string, and a missing/unreadable/malformed
+    transcript are all false (fail-closed).
     """
     if not role:
         return False
@@ -119,6 +123,7 @@ def agent_role_already_dispatched(transcript_path: str, role: str) -> bool:
             lines = f.readlines()
     except (OSError, UnicodeDecodeError):
         return False
+    dispatched_roles_by_id: dict[str, str] = {}
     for raw_line in lines:
         raw_line = raw_line.strip()
         if not raw_line:
@@ -127,19 +132,33 @@ def agent_role_already_dispatched(transcript_path: str, role: str) -> bool:
             entry = json.loads(raw_line)
         except json.JSONDecodeError:
             continue
-        if not isinstance(entry, dict) or entry.get("type") != "user":
+        if not isinstance(entry, dict):
+            continue
+        entry_type = entry.get("type")
+        if entry_type == "assistant":
+            for tool_call in extract_tool_calls(entry):
+                if tool_call.get("name") != "Agent":
+                    continue
+                tool_use_id = tool_call.get("id")
+                subagent_type = tool_call.get("input", {}).get("subagent_type")
+                if tool_use_id and subagent_type:
+                    dispatched_roles_by_id[tool_use_id] = subagent_type
+            continue
+        if entry_type != "user":
+            continue
+        result = entry.get("toolUseResult")
+        if not isinstance(result, dict) or result.get("status") != "async_launched":
             continue
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
-        has_tool_result = isinstance(content, list) and any(
-            isinstance(block, dict) and block.get("type") == "tool_result"
-            for block in content
-        )
-        if not has_tool_result:
+        if not isinstance(content, list):
             continue
-        result = entry.get("toolUseResult")
-        if isinstance(result, dict) and result.get("agentType") == role:
-            return True
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            tool_use_id = block.get("tool_use_id")
+            if dispatched_roles_by_id.get(tool_use_id) == role:
+                return True
     return False
 
 
