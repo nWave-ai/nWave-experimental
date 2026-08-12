@@ -80,33 +80,28 @@ def build_root_mode_select_context(
     return ROOT_MODE_SELECT_REMINDER
 
 
-#: Top-level directories a Write/Edit is considered "nWave-adjacent" under.
-#: Deliberately narrow (not `docs/`): a purely historical doc edit must not
-#: produce noise, and this predicate has no prose to read (Write/Edit carries
-#: no `prompt`), so it stays conservative rather than guessing intent.
-_NWAVE_ADJACENT_ROOTS = frozenset({"src", "nWave", "tests", "scripts"})
-
 #: Any path segment naming one of these means the write is bookkeeping/
 #: telemetry, never root's own code-modification act -- excluded regardless
-#: of which top-level root it lives under (covers both `.nwave/telemetry/**`
-#: and `tests/.nwave/**`).
+#: of which top-level directory it lives under (covers both
+#: `.nwave/telemetry/**` and `tests/.nwave/**`).
 _NWAVE_ADJACENT_EXCLUDED_SEGMENTS = frozenset({".nwave"})
 
 
 def is_nwave_adjacent_write(file_path: str | None) -> bool:
     """True iff a Write/Edit `file_path` is pertinent to root-activation.
 
-    Pertinent means: under one of the recognised project roots (`src/`,
-    `nWave/`, `tests/`, `scripts/`) and not under any `.nwave/` tree
-    (telemetry, session bookkeeping) -- a bookkeeping write is not "root
-    starting to modify code".
+    Pertinent means: any non-empty path, under any top-level directory (not
+    restricted to a fixed set of recognised project roots -- an activated
+    root cannot Write/Edit any user artifact regardless of its top-level
+    directory name, including `hc/generated_plan.py`, docs, or an arbitrary
+    top-level package) and not under any `.nwave/` tree (telemetry, session
+    bookkeeping) -- a bookkeeping write is not "root starting to modify
+    code".
     """
     if not file_path:
         return False
     parts = PurePosixPath(file_path.replace("\\", "/")).parts
-    if any(segment in _NWAVE_ADJACENT_EXCLUDED_SEGMENTS for segment in parts):
-        return False
-    return any(segment in _NWAVE_ADJACENT_ROOTS for segment in parts)
+    return not any(segment in _NWAVE_ADJACENT_EXCLUDED_SEGMENTS for segment in parts)
 
 
 def build_root_write_mode_select_context(

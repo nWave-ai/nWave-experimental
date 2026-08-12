@@ -41,11 +41,18 @@ def test_reminder_fires_on_nwave_adjacent_write_with_no_active_session() -> None
     assert context == ROOT_MODE_SELECT_REMINDER
 
 
-def test_is_nwave_adjacent_write_true_for_recognised_project_roots() -> None:
+def test_is_nwave_adjacent_write_true_for_all_non_bookkeeping_paths() -> None:
+    """K4 root-write-boundary: pertinence is no longer restricted to a fixed
+    root allowlist -- any non-`.nwave` path is pertinent after activation,
+    including recognized project roots, generated-plan artifacts, docs, and
+    arbitrary top-level packages."""
     assert is_nwave_adjacent_write("/repo/src/des/domain/foo.py") is True
     assert is_nwave_adjacent_write("/repo/nWave/skills/nw-mode-select/SKILL.md") is True
     assert is_nwave_adjacent_write("/repo/tests/nwave_ai/test_x.py") is True
     assert is_nwave_adjacent_write("/repo/scripts/shared/hook_definitions.py") is True
+    assert is_nwave_adjacent_write("/repo/hc/generated_plan.py") is True
+    assert is_nwave_adjacent_write("/repo/docs/notes.md") is True
+    assert is_nwave_adjacent_write("/repo/some_arbitrary_package/mod.py") is True
 
 
 # --- 2. no reminder for non-pertinent targets -------------------------------
@@ -75,12 +82,15 @@ def test_no_reminder_for_tests_nwave_session_bookkeeping() -> None:
     )
 
 
-def test_no_reminder_for_out_of_tree_file() -> None:
+def test_reminder_fires_for_out_of_tree_file() -> None:
+    """K4 root-write-boundary: pertinence is no longer scoped to a fixed
+    root allowlist, so a path outside any recognised project root is now
+    pertinent too -- only `.nwave/**` and a missing `file_path` stay silent."""
     assert (
         build_root_write_mode_select_context(
             file_path="/tmp/scratch/notes.txt", session_active=False
         )
-        is None
+        == ROOT_MODE_SELECT_REMINDER
     )
 
 
@@ -141,16 +151,4 @@ def test_no_new_hook_event_registered_for_k3a_write_activation() -> None:
     assert (
         'HookEvent(event="PreToolUse", matcher="Edit", action="pre-edit", is_guard=True)'
         in source
-    )
-
-
-def test_guard_command_still_fast_paths_irrelevant_writes_without_python() -> None:
-    """Non-pertinent, non-session writes still exit 0 before spawning Python."""
-    from scripts.shared.hook_definitions import build_guard_command
-
-    cmd = build_guard_command("python3 -m des.hook pre-write")
-    assert "deliver-session.json" in cmd
-    assert "exit 0" in cmd
-    assert (
-        "/src/" in cmd and "/nWave/" in cmd and "/tests/" in cmd and "/scripts/" in cmd
     )

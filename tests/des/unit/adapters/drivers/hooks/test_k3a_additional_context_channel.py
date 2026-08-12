@@ -200,11 +200,14 @@ class TestPreWriteModeSelectGate:
         assert exit_code == 2
         assert payload["decision"] == "block"
 
-    def test_non_activated_project_write_is_unaffected(
+    def test_arbitrary_top_level_write_is_now_pertinent_and_denies(
         self, monkeypatch, capsys, audit_events
     ) -> None:
-        """A file outside the nWave-adjacent roots never reaches the gate --
-        same allow outcome as before this change, no transcript needed."""
+        """Root-write-boundary slice (K4): a path that previously sat
+        outside the fixed root allowlist (`src/`, `nWave/`, `tests/`,
+        `scripts/`) is now pertinent regardless of its top-level directory
+        name, so a root Write with no observed `Skill(nw-mode-select)` call
+        DENIES exactly like an in-tree path would."""
         stdin = json.dumps(
             {
                 "tool_name": "Write",
@@ -214,8 +217,9 @@ class TestPreWriteModeSelectGate:
 
         exit_code, payload = _run_pre_write(monkeypatch, capsys, stdin)
 
-        assert exit_code == 0
-        assert payload is None or "decision" not in payload
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+        assert payload["reason"] == "Invoke nw-mode-select before the first mutation."
 
     @pytest.mark.parametrize(
         "agent_identity",

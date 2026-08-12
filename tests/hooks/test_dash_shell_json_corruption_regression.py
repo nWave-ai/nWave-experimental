@@ -357,7 +357,12 @@ class TestBuildGuardCommandBytePreservation:
         once `build_guard_command` switches to `printf '%s' "$INPUT"`
         (verified remedy, evidence report Section 4.1). Concrete,
         documentation-shaped instance of the universal law the property test
-        below covers."""
+        below covers. Root-write-boundary slice: the guard's own fast-path
+        pre-filter is now a `.nwave/local-config.json` EXISTENCE check
+        (content- and path-blind), not a `file_path` regex -- `_activate_project`
+        creates that candidate marker so the guard reaches the downstream
+        command at all."""
+        _activate_project(tmp_path)
         payload = json.dumps(
             {
                 "tool_name": "Edit",
@@ -375,7 +380,7 @@ class TestBuildGuardCommandBytePreservation:
 
         assert capture_file.exists(), (
             "the guard never reached the downstream command -- its own "
-            f"fast-path grep did not match the file_path pattern; "
+            f"fast-path existence check did not find the candidate marker; "
             f"exit={result.returncode} stderr={result.stderr!r}"
         )
         captured = capture_file.read_bytes()
@@ -413,9 +418,13 @@ class TestBuildGuardCommandBytePreservation:
         succeeding proves nothing for the `\\\\` collapse case (valid JSON,
         wrong content -- the worst failure shape, since nothing signals it).
         A dedicated temp dir per example (not the `tmp_path` fixture) keeps
-        each Hypothesis example fully isolated."""
+        each Hypothesis example fully isolated. Each example activates its
+        own temp dir (`_activate_project`) so the guard's `.nwave/local-
+        config.json` existence pre-filter reaches the downstream command --
+        the property is about payload identity, not about activation."""
         with tempfile.TemporaryDirectory() as raw_tmp:
             tmp_path = Path(raw_tmp)
+            _activate_project(tmp_path)
             payload = json.dumps(
                 {
                     "tool_name": "Edit",
@@ -441,6 +450,109 @@ class TestBuildGuardCommandBytePreservation:
                 "guard is not the identity on this generated payload -- "
                 f"sent {payload!r}, captured {captured!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Root-write-boundary slice -- the shell candidate-existence pre-filter
+# itself (falsifiers E/F/G): whether the guard invokes the downstream
+# command at all, proven with the same byte-capture sentinel as Case 1
+# above, never by inspecting stdout/exit-code prose that a differently-wired
+# guard could coincidentally reproduce.
+# ---------------------------------------------------------------------------
+
+
+class TestGuardCandidateExistenceGate:
+    """The shell fast-path's ONLY pre-filter left is `.nwave/local-config.json`
+    EXISTENCE -- content-blind, path-blind. These pin that the downstream
+    command is/isn't reached purely on that file's presence."""
+
+    @_skip_unless_sh_exists
+    def test_no_marker_ordinary_path_never_invokes_downstream_command(
+        self, tmp_path: Path
+    ) -> None:
+        """Falsifier E: an unactivated project (no `.nwave/local-config.json`
+        at all), no deliver session, ordinary path -- the shell must exit 0
+        before ever spawning the downstream (Python) command. Proven via the
+        byte-capture sentinel (`capture_file` absence), not via stdout/exit-
+        code prose that a differently-wired guard could reproduce by luck."""
+        payload = json.dumps(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "src" / "widget.py")},
+            }
+        ).encode("utf-8")
+
+        result, capture_file = _capture_bytes_through_build_guard_command(
+            payload, tmp_path
+        )
+
+        assert result.returncode == 0
+        assert not capture_file.exists(), (
+            "the guard invoked the downstream command despite no "
+            f".nwave/local-config.json candidate marker; stdout="
+            f"{result.stdout!r} stderr={result.stderr!r}"
+        )
+
+    @_skip_unless_sh_exists
+    def test_malformed_marker_still_invokes_downstream_command(
+        self, tmp_path: Path
+    ) -> None:
+        """Falsifier G (shell half): a `.nwave/local-config.json` that exists
+        but is NOT valid JSON still passes the shell's `test -f` -- the shell
+        never parses the marker's content, so a malformed marker reaches
+        Python exactly like a well-formed one. Only Python (`DESConfig`'s
+        JSON load + `activation_gate`'s fail-open) may decide what a
+        malformed marker means."""
+        nwave_dir = tmp_path / ".nwave"
+        nwave_dir.mkdir(parents=True, exist_ok=True)
+        (nwave_dir / "local-config.json").write_text(
+            "{not valid json", encoding="utf-8"
+        )
+        payload = json.dumps(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "src" / "widget.py")},
+            }
+        ).encode("utf-8")
+
+        result, capture_file = _capture_bytes_through_build_guard_command(
+            payload, tmp_path
+        )
+
+        assert capture_file.exists(), (
+            "the guard did not reach the downstream command for a malformed "
+            f"but PRESENT marker; stdout={result.stdout!r} "
+            f"stderr={result.stderr!r}"
+        )
+        assert capture_file.read_bytes().rstrip(b"\n") == payload
+
+    @_skip_unless_sh_exists
+    def test_malformed_marker_reaches_python_and_fails_open_to_allow(
+        self, tmp_path: Path
+    ) -> None:
+        """Falsifier G (Python half): driven through the REAL installed
+        pre-write handler (not the sentinel), a malformed marker resolves
+        `enabled_for_repo` to `None` (`DESConfig._load_json_file`'s
+        malformed -> `{}` collapse) and falls through to the existing
+        `activation_gate` opt-in default -- inactive, silent allow -- the
+        existing fail-open-to-handler behaviour, never a shell-level bypass
+        (the sentinel sibling test already proves Python IS reached)."""
+        nwave_dir = tmp_path / ".nwave"
+        nwave_dir.mkdir(parents=True, exist_ok=True)
+        (nwave_dir / "local-config.json").write_text(
+            "{not valid json", encoding="utf-8"
+        )
+        payload = json.dumps(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(tmp_path / "src" / "widget.py")},
+            }
+        )
+
+        result = _run_installed_write_guard(payload, tmp_path)
+
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
 
 
 # ---------------------------------------------------------------------------
@@ -489,7 +601,7 @@ class TestRootActivationReminderThroughPosixSh:
     @pytest.mark.parametrize(
         "relative_path,expect_python_invoked",
         (
-            (".nwave/telemetry/probe.jsonl", False),
+            (".nwave/telemetry/probe.jsonl", True),
             ("tests/.nwave/fixture.json", True),
         ),
         ids=("dot-nwave-root", "tests-dot-nwave"),
@@ -498,25 +610,28 @@ class TestRootActivationReminderThroughPosixSh:
         self, tmp_path: Path, relative_path: str, expect_python_invoked: bool
     ) -> None:
         """Case 4 -- sibling-branch pin (Critical Rules: pin the correct
-        behaviour of neighbouring branches). Fixing D1's JSON corruption must
-        NOT start emitting the root-activation reminder for `.nwave/**` /
-        `tests/.nwave/**` bookkeeping writes -- `is_nwave_adjacent_write`'s
-        own exclusion must keep them silent. This holds BOTH before and
-        after the D1 fix; it guards against the fix accidentally widening
-        the reminder's scope while it repairs the JSON-survival path.
+        behaviour of neighbouring branches). The root-write-boundary slice
+        must NOT start emitting the root-activation reminder for `.nwave/**`
+        / `tests/.nwave/**` bookkeeping writes -- `is_nwave_adjacent_write`'s
+        own exclusion must keep them silent. It guards against the fix
+        accidentally widening the reminder's scope while it repairs the
+        JSON-survival path.
 
-        Team-lead review (2026-08-07): the absence assertion alone cannot
-        tell WHICH of two structurally different mechanisms produced the
-        silence. `.nwave/telemetry/**` never matches `build_guard_command`'s
-        own shell-level fast-path grep (`/src/|/nWave/|/tests/|/scripts/`),
-        so Python NEVER RUNS. `tests/.nwave/fixture.json` DOES match that
-        grep (it contains `/tests/`), reaches Python, and it is
-        `is_nwave_adjacent_write`'s `.nwave`-segment exclusion that keeps it
-        silent. Asserting the mechanism per branch (`_python_hook_was_invoked`
-        -- a HOOK_INVOKED audit-event witness) makes a future change that
-        collapses BOTH branches onto the same mechanism -- or swaps which
-        one filters which path -- visible, instead of silently absorbed
-        into "still passes"."""
+        Team-lead review (2026-08-07, amended for the root-write-boundary
+        slice): the absence assertion alone cannot tell WHICH of two
+        structurally different mechanisms produced the silence. The shell
+        guard's own fast-path pre-filter is now a content-blind
+        `.nwave/local-config.json` EXISTENCE check, not a `file_path` regex
+        -- once a project carries that candidate marker (`_activate_project`
+        below), EVERY Write/Edit reaches Python regardless of target path,
+        including both `.nwave/**` cases here. It is exclusively
+        `is_nwave_adjacent_write`'s `.nwave`-segment exclusion (inside
+        Python) that keeps both silent now. Asserting the mechanism per
+        branch (`_python_hook_was_invoked` -- a HOOK_INVOKED audit-event
+        witness) makes a future change that collapses this onto a
+        shell-level path filter again -- or otherwise swaps which layer
+        excludes which path -- visible, instead of silently absorbed into
+        "still passes"."""
         _activate_project(tmp_path)
         target = tmp_path / relative_path
         payload = json.dumps(
@@ -545,3 +660,130 @@ class TestRootActivationReminderThroughPosixSh:
             "changes nothing about the reminder's absence but IS a real "
             "regression this discriminator exists to catch."
         )
+
+    @_skip_unless_sh_exists
+    def test_arbitrary_top_level_write_blocks_after_authentic_mode_select_and_nw_auto(
+        self, tmp_path: Path
+    ) -> None:
+        """Falsifier B, end-to-end through the real installed `/bin/sh`
+        guard: an active project's root Write/Edit under an ARBITRARY
+        top-level directory (`hc/...`, no fixed-allowlist membership) still
+        reaches Python (the shell's only filter is the candidate-marker
+        existence check), and once the transcript carries an authentic
+        `Skill(nw-mode-select)` followed by an authentic `Skill(nw-auto)`
+        (both nested under a real assistant `message.content` entry, the
+        actual Claude Code transcript shape), the write BLOCKS with the
+        existing auto-root reason -- unchanged by this slice."""
+        _activate_project(tmp_path)
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(
+            "\n".join(
+                json.dumps(entry)
+                for entry in [
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [
+                                {
+                                    "type": "tool_use",
+                                    "name": "Skill",
+                                    "input": {"skill": "nw-mode-select"},
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [
+                                {
+                                    "type": "tool_use",
+                                    "name": "Skill",
+                                    "input": {"skill": "nw-auto"},
+                                }
+                            ]
+                        },
+                    },
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        target = tmp_path / "hc" / "generated_plan.py"
+        payload = json.dumps(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target)},
+                "transcript_path": str(transcript),
+            }
+        )
+
+        result = _run_installed_write_guard(payload, tmp_path)
+
+        assert result.returncode == 2
+        assert json.loads(result.stdout) == {
+            "decision": "block",
+            "reason": (
+                "Auto root cannot author or repair role-owned artifacts or "
+                "production directly -- dispatch the owning role instead."
+            ),
+        }, (
+            "the auto-root gate never blocked an arbitrary top-level "
+            f"(hc/...) write -- exit={result.returncode} "
+            f"stdout={result.stdout!r} stderr={result.stderr[-2000:]!r}"
+        )
+
+    @_skip_unless_sh_exists
+    @pytest.mark.parametrize(
+        "agent_identity",
+        [{"agent_id": "agent-123"}, {"agent_type": "general-purpose"}],
+        ids=["agent_id", "agent_type"],
+    )
+    def test_subagent_write_stays_allowed_through_real_shell_guard(
+        self, tmp_path: Path, agent_identity: dict[str, str]
+    ) -> None:
+        """Falsifier C, end-to-end: the SAME handler envelope, only carrying
+        `agent_id` OR `agent_type`, remains allowed through the real
+        installed `/bin/sh` guard -- a legitimate subagent write is never
+        subject to the root-only mode-select/auto-root gates."""
+        _activate_project(tmp_path)
+        target = tmp_path / "hc" / "generated_plan.py"
+        payload_dict = {
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(target)},
+        }
+        payload_dict.update(agent_identity)
+        payload = json.dumps(payload_dict)
+
+        result = _run_installed_write_guard(payload, tmp_path)
+
+        assert result.returncode == 0
+        assert result.stdout.strip() == "" or (
+            json.loads(result.stdout).get("decision") != "block"
+        )
+
+    @_skip_unless_sh_exists
+    def test_enabled_for_repo_false_stays_silent_through_real_shell_guard(
+        self, tmp_path: Path
+    ) -> None:
+        """Falsifier D, end-to-end: `enabled_for_repo=false` in the marker
+        resolves inactive through `activation_gate.apply_gate` -- the write
+        is silently allowed even though the shell DID invoke Python (the
+        marker exists), and even for an nWave-adjacent target."""
+        nwave_dir = tmp_path / ".nwave"
+        nwave_dir.mkdir(parents=True, exist_ok=True)
+        (nwave_dir / "local-config.json").write_text(
+            json.dumps({"enabled_for_repo": False}), encoding="utf-8"
+        )
+        target = tmp_path / "src" / "widget.py"
+        payload = json.dumps(
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": str(target)},
+            }
+        )
+
+        result = _run_installed_write_guard(payload, tmp_path)
+
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""

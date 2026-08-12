@@ -193,14 +193,20 @@ def build_guard_command(python_cmd: str) -> str:
     2. If the target is execution-log.json, always invokes Python (unconditional)
     3. If a deliver-session.json is active, invokes Python for full DES
        enforcement
-    4. Otherwise (no active session), invokes Python ONLY when the target path
-       looks nWave-adjacent (`src/`, `nWave/`, `tests/`, `scripts/`) -- a
-       coarse, over-inclusive shell-level pre-filter; the authoritative
-       pertinence check (which also excludes `.nwave/**`) lives in
-       `root_activation_context.is_nwave_adjacent_write` and runs inside
-       Python. This lets K3-A's root-activation reminder reach root's own
-       direct Write/Edit (no sub-agent dispatch, no deliver session) without
-       spawning Python on irrelevant writes (telemetry, unrelated repos).
+    4. Otherwise (no active session), invokes Python when a
+       `.nwave/local-config.json` candidate exists in the project -- a cheap,
+       content-blind shell-level pre-filter (file EXISTENCE only, never the
+       marker's `enabled_for_repo` value or any other JSON). The shell never
+       parses JSON or interprets activation state itself: the semantic
+       `enabled_for_repo`/activation-mode resolution stays the sole
+       responsibility of `activation_gate.apply_gate` (invoked once the
+       Python process starts, over the same buffered stdin), and pertinence
+       of the target path (which also excludes `.nwave/**`) stays the sole
+       responsibility of `root_activation_context.is_nwave_adjacent_write`.
+       This lets the root-write boundary reach root's own direct Write/Edit
+       (no sub-agent dispatch, no deliver session) against ANY top-level
+       target path, without spawning Python in a project that has never
+       carried an activation marker at all.
     5. Otherwise, exits 0 (fast path, unchanged for irrelevant/out-of-tree
        writes)
 
@@ -217,8 +223,7 @@ def build_guard_command(python_cmd: str) -> str:
         "{{ printf '%s' \"$INPUT\" | {python_cmd}; exit $?; }}; "
         "test -f .nwave/des/deliver-session.json && "
         "{{ printf '%s' \"$INPUT\" | {python_cmd}; exit $?; }}; "
-        'printf \'%s\' "$INPUT" | grep -qE \'"file_path"[[:space:]]*:[[:space:]]*"[^"]*'
-        "(/src/|/nWave/|/tests/|/scripts/)' && "
+        "test -f .nwave/local-config.json && "
         "{{ printf '%s' \"$INPUT\" | {python_cmd}; exit $?; }}; "
         "exit 0"
     ).format(python_cmd=python_cmd)
