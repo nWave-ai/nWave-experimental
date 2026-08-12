@@ -44,10 +44,11 @@ dispatch names this route, follow this paragraph (including the generated
 Read directive immediately below it) and stop before the Human-only Workflow
 below. Accept a bounded brief directly from root carrying the same immutable
 value seed `nw-product-owner` receives, plus the design SSOT — never the design
-SSOT alone. Before authoring, run
+SSOT alone. First read that prior-wave/design SSOT, then before authoring, run
 exactly one bounded provider-neutral `nw-code-analysis-port`
-`des code-fact query.* SUBJECT --root ROOT` command for reuse/architecture
-discovery. Then load each generated Read row with the Read tool exactly when
+`des code-fact query.* SUBJECT --root ROOT` command to discover this slice's
+acceptance obligations, implementation targets, and verification commands.
+Then load each generated Read row with the Read tool exactly when
 its trigger fires — never preload, never before the trigger fires, never all
 eight PBT deep dives.
 
@@ -66,9 +67,11 @@ eight PBT deep dives.
 - Invoke ONE Skill(nw-pbt-typescript) ON-TRIGGER — a `javascript`/`typescript` property needs it
 <!-- GENERATED:role-skill-loading END -->
 
-Author the minimal acceptance tests and return a thin `DeliveryContract` v1.1
-to root carrying the selected `paradigm` (`functional` or `object_oriented`),
-a non-empty `obligations` array, and the implementation targets. Carry the
+Next, write and schema-validate the thin `DeliveryContract` v1.1 carrying the
+selected `paradigm` (`functional` or `object_oriented`), a non-empty
+`obligations` array, and the implementation targets — BEFORE materializing or
+executing any acceptance test; the contract is neither speculative nor
+deferred until after an expensive RED implementation. Carry the
 bounded query's facts into the
 contract's existing `targets[].{overlap, decision, justification, boundary}`
 — there is no top-level `reuse` or `boundaries` field; the bounded code fact
@@ -81,10 +84,14 @@ carries an explicit no-drift claim (`failure-behavior`, `substrate-lie`,
 own obligation to own: it authorizes and requires PBT authoring for the
 externally-sourced/untyped input it names — never delegated to a crafter.
 Missing or unsupported `paradigm`, or an empty/missing `obligations`, is an
-acceptance-designer blocker, never a root guess. You own the acceptance tests
+acceptance-designer blocker, never a root guess. Only once the contract is
+written and schema-valid do you materialize and execute the minimal
+acceptance tests RED. You own the acceptance tests
 and a complete, schema-valid `DeliveryContract`; you never author or read the
 expectation charter or its user-surface start recipe. `nw-product-owner` owns
-that separate artifact and fills it independently. Do not run the Human
+that separate artifact and fills it independently. A crafter becomes
+eligible for dispatch only once its acceptance tests are RED and the
+contract is schema-valid. Do not run the Human
 TaskCreate, Phase 0-4, or
 `docs/feature/...` artifact protocol on this branch.
 

@@ -5,7 +5,10 @@ these, `agent_role_already_dispatched` could be reverted from the Agent path
 and the pure-helper unit tests would stay green. Fixtures use the real
 Claude Code transcript shape -- an assistant `tool_use` (`name == "Agent"`,
 `id`, `input.subagent_type`) correlated via `tool_use_id` to a `user`
-`tool_result` block whose sibling `toolUseResult.status == "async_launched"`.
+`tool_result` block whose sibling `toolUseResult.status` is either
+`"async_launched"` (background dispatch) or `"completed"` (foreground/
+synchronous dispatch, counted only with `is_error` not `True` and non-empty
+`content`).
 """
 
 import io
@@ -56,6 +59,26 @@ def _dispatched_agent(role: str, tool_use_id: str = "T1") -> list[dict]:
     ]
 
 
+def _completed_agent(role: str, tool_use_id: str = "T1") -> list[dict]:
+    return [
+        _bare_agent_call(role, tool_use_id),
+        {
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": "Done",
+                        "is_error": False,
+                    }
+                ]
+            },
+            "toolUseResult": {"status": "completed"},
+        },
+    ]
+
+
 def _run(monkeypatch, transcript_path: str, role: str):
     from des.adapters.drivers.hooks import claude_code_hook_adapter as adapter
 
@@ -100,6 +123,24 @@ def _run(monkeypatch, transcript_path: str, role: str):
             "crafter",
             0,
             "no authentic nw-auto: gate never fires (pre-K4 behavior)",
+        ),
+        (
+            [_skill("nw-auto")],
+            "crafter",
+            0,
+            "first dispatch of a role is allowed: no prior record",
+        ),
+        (
+            [_skill("nw-auto"), *_completed_agent("crafter")],
+            "crafter",
+            2,
+            "completed same-role result blocks the repeat",
+        ),
+        (
+            [_skill("nw-auto"), *_completed_agent("reviewer")],
+            "crafter",
+            0,
+            "a different role's completed result does not block this role",
         ),
     ],
 )

@@ -51,15 +51,19 @@ Before dispatching any role, decide worktree ownership:
 
 ## M route — direct reuse floor
 
-Dispatch the PO/ATD sibling pair as independent concurrent (when parallel
-Agent calls are supported) or sequential siblings — neither reads the other's
-output. Then join on both validated results and continue without a second
-controller:
+Dispatch the PO/ATD sibling pair as two Agent tool-use blocks in the SAME
+assistant message — concurrent by construction, neither reads the other's output.
+Then join on both validated results and continue without a second controller:
 
-1. **Sibling dispatch (concurrent when parallel Agent calls are supported):**
-   - `nw-product-owner` (value-side inputs only) runs `des charter-scaffold`,
-     fills the expectation charter with Preconditions/start recipe and oracle,
-     then stops before the Human workflow.
+1. **Sibling dispatch (PO and ATD Agent tool-use blocks in one assistant
+   message):**
+   - `nw-product-owner` (value-side inputs only) additionally receives, as
+     part of its seed, the target repository's own documented user-facing
+     local onboarding/setup excerpt (e.g. its README's local-install/quick-start
+     section). It runs `des charter-scaffold`, fills the expectation charter's
+     Preconditions/start recipe by grounding it in that excerpt — never
+     inventing a signup path — sets the oracle, then stops before the Human
+     workflow.
    - `nw-acceptance-designer` receives the same immutable value seed as the PO,
      plus the design SSOT. It authors the minimal thin `DeliveryContract` v1.1
      and acceptance tests. The contract must carry `paradigm`; the ATD never

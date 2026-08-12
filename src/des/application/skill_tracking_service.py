@@ -98,23 +98,34 @@ def skill_observed_before_action(transcript_path: str, skill_name: str) -> bool:
 
 
 def agent_role_already_dispatched(transcript_path: str, role: str) -> bool:
-    """True iff the transcript contains a LAUNCHED `Agent` dispatch for `role`.
+    """True iff the transcript contains a LAUNCHED or COMPLETED `Agent` dispatch
+    for `role`.
 
     Real Claude Code emits a dispatch as an assistant `tool_use` content
     block (`name == "Agent"`, an `id`, `input.subagent_type`) followed by a
     `user` entry carrying a `tool_result` content block whose `tool_use_id`
-    matches that `id`, with a sibling `toolUseResult.status ==
-    "async_launched"` (there is no `toolUseResult.agentType` in the real
-    shape -- launch results carry `agentId`, not a role). Walking the
-    transcript in order, an assistant `Agent` tool_use is recorded by its
-    id/role; it only counts once a later `user` entry correlates to that id
-    with a real `tool_result` block and the `async_launched` status. A bare
-    or PreToolUse-blocked `Agent` tool_use with no correlated launched
-    result never consumes the role's single pass. An unmatched
-    `tool_use_id`, a forged result missing the real `tool_result` block or
-    the `async_launched` status, a different role, a plain
-    `<task-notification>` string, and a missing/unreadable/malformed
-    transcript are all false (fail-closed).
+    matches that `id`, with a sibling `toolUseResult.status` of either:
+
+    - `"async_launched"` (background dispatch; there is no
+      `toolUseResult.agentType` in the real shape -- launch results carry
+      `agentId`, not a role); or
+    - `"completed"` (foreground/synchronous dispatch that ran to
+      completion) -- counted only when the correlated `tool_result` block's
+      `is_error` is not `True` and its `content` is non-empty. Result prose
+      is never parsed; only the block's own `is_error`/`content` fields are
+      read, never any invented `agentType`/signature field.
+
+    Walking the transcript in order, an assistant `Agent` tool_use is
+    recorded by its id/role; it only counts once a later `user` entry
+    correlates to that id with a real `tool_result` block under one of the
+    two statuses above (plus the completed-only `is_error`/content check).
+    A bare or PreToolUse-blocked `Agent` tool_use with no correlated
+    launched/completed result never consumes the role's single pass. An
+    unmatched `tool_use_id`, a forged result missing the real `tool_result`
+    block or carrying neither status, an errored or empty-content
+    "completed" result, a different role, a plain `<task-notification>`
+    string, and a missing/unreadable/malformed transcript are all false
+    (fail-closed).
     """
     if not role:
         return False
@@ -147,7 +158,8 @@ def agent_role_already_dispatched(transcript_path: str, role: str) -> bool:
         if entry_type != "user":
             continue
         result = entry.get("toolUseResult")
-        if not isinstance(result, dict) or result.get("status") != "async_launched":
+        status = result.get("status") if isinstance(result, dict) else None
+        if status not in ("async_launched", "completed"):
             continue
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
@@ -155,6 +167,10 @@ def agent_role_already_dispatched(transcript_path: str, role: str) -> bool:
             continue
         for block in content:
             if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            if status == "completed" and (
+                block.get("is_error") is True or not block.get("content")
+            ):
                 continue
             tool_use_id = block.get("tool_use_id")
             if dispatched_roles_by_id.get(tool_use_id) == role:

@@ -214,3 +214,60 @@ def test_distill_human_section_retains_representative_ceremony() -> None:
         "## Composition (load by trigger)",
     ):
         assert token in human_section
+
+
+def test_crafter_specs_reference_installed_schema_locator_only() -> None:
+    """CONTRACT_SHAPE: bounded-change. Both OO/FP crafters use exactly one installed
+    schema path and no backticked fallback.
+    """
+    installed_locator = (
+        "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/"
+        "thin-delivery-contract.schema.json"
+    )
+    backticked_fallback = "`nWave/schemas/thin-delivery-contract.schema.json`"
+    for crafter_path in (OO_CRAFTER_PATH, FP_CRAFTER_PATH):
+        text = crafter_path.read_text(encoding="utf-8")
+        assert text.count(installed_locator) == 1
+        assert backticked_fallback not in text
+
+
+def test_atd_auto_route_honors_wave_order_before_red_execution() -> None:
+    """CONTRACT_SHAPE: bounded-change. ATD Auto route discovers prior-wave SSOT and
+    obligations before write-and-validate, which precedes RED materialize/execute.
+    """
+    text = ATD_AGENT_PATH.read_text(encoding="utf-8")
+    auto_section = text[
+        text.index("## Route contract") : text.index("## Language Convention")
+    ]
+    compact = _compact(auto_section)
+    tokens_in_order = [
+        "prior-wave/design SSOT",
+        "acceptance obligations",
+        "implementation targets",
+        "verification commands",
+        "write and schema-validate",
+        "materialize",
+        "execute",
+        "crafter becomes eligible",
+    ]
+    positions = [compact.index(token) for token in tokens_in_order]
+    assert positions == sorted(positions)
+
+
+def test_auto_m_route_requires_po_atd_same_message_and_no_invented_signup() -> None:
+    """CONTRACT_SHAPE: bounded-change. Auto M dispatches PO+ATD in one assistant
+    message, documents repository-owned onboarding, and examiner input stays exactly two.
+    """
+    text = _auto_skill_text()
+    m_section = text[text.index("## Deterministic crafter") : text.index("## L route")]
+    compact_m = _compact(m_section)
+    assert "SAME assistant message" in compact_m
+    assert "nw-product-owner" in compact_m
+    assert "nw-acceptance-designer" in compact_m
+    assert "target repository" in compact_m
+    assert "own documented user-facing local onboarding/setup excerpt" in compact_m
+    assert "never inventing a signup path" in compact_m
+    examiner_section = text[
+        text.index("## Examiner input isolation") : text.index("## Route boundaries")
+    ]
+    assert "exactly two inputs" in _compact(examiner_section)

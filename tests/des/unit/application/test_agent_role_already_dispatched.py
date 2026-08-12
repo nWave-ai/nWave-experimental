@@ -3,13 +3,21 @@
 The predicate keys on the REAL Claude Code transcript shape: an assistant
 `tool_use` block (`name == "Agent"`, `id`, `input.subagent_type`) correlated
 by `tool_use_id` to a later authentic `user` `tool_result` content block
-whose sibling `toolUseResult.status == "async_launched"`. There is no
-`toolUseResult.agentType` in the real shape -- launch results carry
-`agentId`, not `agentType`. A bare/blocked `Agent` tool_use with no
-correlated launched result never consumes the role's single pass. An
-unmatched `tool_use_id`, a forged result missing the real `tool_result`
-block or the `async_launched` status, a different role, and a plain
-`<task-notification>` string are all false (fail-closed).
+whose sibling `toolUseResult.status` is either:
+
+- `"async_launched"` (background dispatch); or
+- `"completed"` (foreground/synchronous dispatch), counted only when the
+  correlated `tool_result` block's `is_error` is not `True` and its
+  `content` is non-empty.
+
+There is no `toolUseResult.agentType` in the real shape -- launch results
+carry `agentId`, not `agentType`; role authority comes only from the
+assistant `Agent` tool-use's own `input.subagent_type`, never from result
+prose. A bare/blocked `Agent` tool_use with no correlated launched/completed
+result never consumes the role's single pass. An unmatched `tool_use_id`, a
+forged result missing the real `tool_result` block or carrying neither
+status, an errored or empty-content "completed" result, a different role,
+and a plain `<task-notification>` string are all false (fail-closed).
 """
 
 import json
@@ -56,6 +64,20 @@ def _async_launched_result(tool_use_id: str, agent_id: str = "agent-1") -> dict:
             ]
         },
         "toolUseResult": {"status": "async_launched", "agentId": agent_id},
+    }
+
+
+def _completed_result(
+    tool_use_id: str, content: str | list | None = "Done", is_error: bool = False
+) -> dict:
+    block: dict = {"type": "tool_result", "tool_use_id": tool_use_id}
+    if content is not None:
+        block["content"] = content
+    block["is_error"] = is_error
+    return {
+        "type": "user",
+        "message": {"content": [block]},
+        "toolUseResult": {"status": "completed"},
     }
 
 
@@ -114,12 +136,54 @@ def _async_launched_result(tool_use_id: str, agent_id: str = "agent-1") -> dict:
                             }
                         ]
                     },
-                    "toolUseResult": {"status": "completed", "agentType": "crafter"},
+                    "toolUseResult": {"status": "queued", "agentType": "crafter"},
                 },
             ],
             "crafter",
             False,
-            "correlated result without async_launched status does not count",
+            "correlated result with neither async_launched nor completed status does not count",
+        ),
+        (
+            [_agent_tool_use("T1", "crafter"), _completed_result("T1")],
+            "crafter",
+            True,
+            "real sync completion correlated to a completed result with non-empty content",
+        ),
+        (
+            [
+                _agent_tool_use("T1", "crafter"),
+                _completed_result("T1", is_error=True),
+            ],
+            "crafter",
+            False,
+            "errored completion does not count",
+        ),
+        (
+            [_agent_tool_use("T1", "crafter"), _completed_result("T1", content="")],
+            "crafter",
+            False,
+            "empty-content completion does not count",
+        ),
+        (
+            [
+                _agent_tool_use("T1", "crafter"),
+                _completed_result("T1", content=None),
+            ],
+            "crafter",
+            False,
+            "missing-content completion does not count",
+        ),
+        (
+            [_agent_tool_use("T1", "crafter"), _completed_result("T2")],
+            "crafter",
+            False,
+            "completed result with unmatched tool_use_id does not correlate",
+        ),
+        (
+            [_agent_tool_use("T1", "reviewer"), _completed_result("T1")],
+            "crafter",
+            False,
+            "completed result of a different role does not leak",
         ),
         (
             [
