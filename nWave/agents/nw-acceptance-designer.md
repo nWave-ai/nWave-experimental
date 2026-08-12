@@ -54,9 +54,10 @@ never before the trigger fires, never all eight PBT deep dives.
 <!-- GENERATED:role-skill-loading END -->
 
 Next, read and validate the installed `DeliveryContract` v1.1 schema
-(`nWave/schemas/thin-delivery-contract.schema.json`) — the schema, not a
-contract document, is the first artifact this branch touches; the contract
-itself cannot exist yet because it needs the acceptance-test file's digest.
+(`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/thin-delivery-contract.schema.json`)
+— the schema, not a contract document, is the first artifact this branch
+touches; the contract itself cannot exist yet because it needs the
+acceptance-test file's digest.
 Then determine the selected `paradigm` (`functional` or `object_oriented`),
 a non-empty `obligations` array, and, per target, the reuse decision and
 boundary claim, carrying the bounded query's facts into the contract's

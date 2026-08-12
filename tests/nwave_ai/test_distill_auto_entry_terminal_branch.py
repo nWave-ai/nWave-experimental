@@ -246,17 +246,17 @@ def test_distill_human_section_retains_representative_ceremony() -> None:
         assert token in human_section
 
 
-def test_crafter_specs_reference_installed_schema_locator_only() -> None:
-    """CONTRACT_SHAPE: bounded-change. Both OO/FP crafters use exactly one installed
-    schema path and no backticked fallback.
+def test_atd_and_crafter_specs_reference_installed_schema_locator_only() -> None:
+    """CONTRACT_SHAPE: bounded-change. ATD and both OO/FP crafters use exactly
+    one installed schema path and no backticked fallback.
     """
     installed_locator = (
         "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/"
         "thin-delivery-contract.schema.json"
     )
     backticked_fallback = "`nWave/schemas/thin-delivery-contract.schema.json`"
-    for crafter_path in (OO_CRAFTER_PATH, FP_CRAFTER_PATH):
-        text = crafter_path.read_text(encoding="utf-8")
+    for spec_path in (ATD_AGENT_PATH, OO_CRAFTER_PATH, FP_CRAFTER_PATH):
+        text = spec_path.read_text(encoding="utf-8")
         assert text.count(installed_locator) == 1
         assert backticked_fallback not in text
 
