@@ -129,9 +129,12 @@ without a second controller:
      excerpt, sets oracle, then stops.
    - `nw-acceptance-designer`: receives immutable value seed, design SSOT,
      and architecture evidence (Covered reference or NoImpact only — never a
-     root-authored paradigm/targets/storage/boundary/implementation). Authors minimal
-     `DeliveryContract` v1.1 with `paradigm` and acceptance tests. ATD never
-     reads charter/start recipe.
+     root-authored paradigm/targets/storage/boundary/implementation, and
+     never a root-named or root-guessed language or test runner/framework in
+     the dispatch prompt). ATD alone detects language and separately
+     discovers the project-native test command from repository-owned
+     evidence. Authors minimal `DeliveryContract` v1.1 with `paradigm` and
+     acceptance tests. ATD never reads charter/start recipe.
 2. **Join:** after BOTH charter and contract+tests are validated, dispatch
    exactly one crafter by deterministic paradigm mapping. That crafter
    implements the contract to green without rewriting tests. A failed or
