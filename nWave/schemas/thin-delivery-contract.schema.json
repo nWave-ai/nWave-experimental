@@ -19,7 +19,7 @@
     "budget"
   ],
   "properties": {
-    "schema-version": { "const": "1.1" },
+    "schema-version": { "const": "1.2" },
     "delivery-id": { "$ref": "#/$defs/id" },
     "repository": { "$ref": "#/$defs/repository" },
     "outcome": { "$ref": "#/$defs/nonEmptyText" },
@@ -73,11 +73,48 @@
       "type": "string",
       "minLength": 1
     },
+    "toolchainName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/\\\\]+$"
+    },
+    "repositoryExecutable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": { "const": "repository" },
+        "path": { "$ref": "#/$defs/repositoryRelativePath" }
+      }
+    },
+    "toolchainExecutable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "const": "toolchain" },
+        "name": { "$ref": "#/$defs/toolchainName" }
+      }
+    },
+    "executableIdentity": {
+      "description": "Command = product(ExecutableIdentity, Arguments). A repository executable resolves against repository.worktree; a toolchain executable intentionally resolves through the consumer host toolchain -- this schema declares provenance only, never binary/version identity.",
+      "oneOf": [
+        { "$ref": "#/$defs/repositoryExecutable" },
+        { "$ref": "#/$defs/toolchainExecutable" }
+      ]
+    },
     "command": {
-      "description": "One argv vector. The first token is the executable; every later token is passed through literally, never re-parsed as shell syntax.",
-      "type": "array",
-      "minItems": 1,
-      "items": { "$ref": "#/$defs/commandToken" }
+      "description": "One verification command: a tagged executable identity paired with a literal arguments array -- never a raw argv vector or a shell string. Execution projects it to exactly [path-or-name, *arguments], with no shell and no reparsing.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable", "arguments"],
+      "properties": {
+        "executable": { "$ref": "#/$defs/executableIdentity" },
+        "arguments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/commandToken" }
+        }
+      }
     },
     "repository": {
       "type": "object",

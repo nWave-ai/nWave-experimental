@@ -128,11 +128,20 @@ def _unsafe_delivery_contract_path_reason(path_str: str) -> str | None:
     return None
 
 
+def _projected_command_argv(command: dict) -> list[str]:
+    """Project one tagged verification command to [path-or-name, *arguments]."""
+    executable = command.get("executable", {})
+    identity = executable.get("path", executable.get("name", ""))
+    return [identity, *command.get("arguments", [])]
+
+
 def _delivery_contract_design_context(contract: dict, relative_path: str) -> str:
     """Compact DESIGN_CONTEXT derived ONLY from validated contract facts."""
     acceptance_tests = contract.get("acceptance-tests", {})
     commands = contract.get("verification-scope", {}).get("commands", [])
-    commands_text = "; ".join(" ".join(command) for command in commands)
+    commands_text = "; ".join(
+        " ".join(_projected_command_argv(command)) for command in commands
+    )
     targets_text = ", ".join(sorted(contract.get("targets", {})))
     obligations_text = ", ".join(contract.get("obligations", []))
     return (

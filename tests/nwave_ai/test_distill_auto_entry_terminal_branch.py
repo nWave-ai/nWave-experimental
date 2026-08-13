@@ -276,21 +276,22 @@ def test_atd_auto_route_honors_wave_order_before_red_execution() -> None:
     ]
     compact = _compact(auto_section)
     tokens_in_order = [
-        "read and validate the installed `DeliveryContract` v1.1 schema",
+        "read and validate the installed `DeliveryContract` v1.2 schema",
         "determine the selected `paradigm`",
         "verification-scope.commands",
         "last ON-TRIGGER `Skill(...)` return",
         "the `Write` of exactly ONE consolidated repository-relative "
         "acceptance-test artifact FILE",
         "Sha256 its bytes",
-        "assemble and schema-validate the `DeliveryContract` v1.1 instance",
+        "assemble and schema-validate the `DeliveryContract` v1.2 instance",
         "Repository-owned CI/script evidence (step 4 of the pre-authoring "
         "window) selects the exact stored `verification-scope.commands` "
-        "argv before the contract is validated",
+        "tagged executable identity and arguments before the contract is "
+        "validated",
         "an alternate diagnostic command or one hand-picked anchor test "
         "can never establish readiness for a different or broader stored "
         "scope",
-        "Execute every argv vector already stored in `verification-scope.commands`",
+        "Execute every command already stored in `verification-scope.commands`",
         "covering the complete acceptance artifact named by the contract "
         "— never a subset",
         "a command-not-found, import, collection, or setup failure is "
@@ -504,6 +505,8 @@ def test_auto_m_route_requires_po_atd_same_message_and_no_invented_signup() -> N
     assert "target repository" in compact_m
     assert "own documented user-facing local onboarding/setup excerpt" in compact_m
     assert "never inventing a signup path" in compact_m
+    assert "DeliveryContract` v1.2" in m_section
+    assert "DeliveryContract` v1.1" not in text
     examiner_section = text[
         text.index("## Examiner input isolation") : text.index("## Route boundaries")
     ]

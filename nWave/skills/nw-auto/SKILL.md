@@ -196,7 +196,7 @@ continue without a second controller:
      architecture and never enumerates or numbers test cases in this prompt.
      ATD alone owns the bounded pre-authoring evidence window defined by its
      own route contract (`nw-acceptance-designer`) — root neither restates
-     nor executes that sequence here. Authors minimal `DeliveryContract` v1.1
+     nor executes that sequence here. Authors minimal `DeliveryContract` v1.2
      with `paradigm` and acceptance tests. ATD never reads charter/start
      recipe.
 2. **Join:** after BOTH charter and contract+tests are validated, dispatch

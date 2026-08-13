@@ -49,9 +49,23 @@ def _target_plan() -> dict[str, Any]:
     }
 
 
+def _repository_executable_command(path: str, *arguments: str) -> dict[str, Any]:
+    return {
+        "executable": {"kind": "repository", "path": path},
+        "arguments": list(arguments),
+    }
+
+
+def _toolchain_executable_command(name: str, *arguments: str) -> dict[str, Any]:
+    return {
+        "executable": {"kind": "toolchain", "name": name},
+        "arguments": list(arguments),
+    }
+
+
 def _contract(paradigm: str) -> dict[str, Any]:
     return {
-        "schema-version": "1.1",
+        "schema-version": "1.2",
         "delivery-id": "thin-delivery-contract-schema",
         "repository": {
             "worktree": ".",
@@ -67,13 +81,13 @@ def _contract(paradigm: str) -> dict[str, Any]:
         },
         "verification-scope": {
             "commands": [
-                [
+                _toolchain_executable_command(
                     "uv",
                     "run",
                     "pytest",
                     "tests/build/test_thin_delivery_contract_schema.py",
                     "-q",
-                ]
+                )
             ]
         },
         "applicability": {
@@ -417,29 +431,45 @@ def test_contract_rejects_a_shell_string_verification_command(
 @pytest.mark.parametrize(
     ("commands", "expected_path", "expected_validator"),
     [
-        ([[]], ("verification-scope", "commands", 0), "minItems"),
-        ([["uv", ""]], ("verification-scope", "commands", 0, 1), "minLength"),
+        (
+            [{"executable": {"kind": "toolchain", "name": ""}, "arguments": []}],
+            ("verification-scope", "commands", 0, "executable", "name"),
+            "minLength",
+        ),
+        (
+            [_toolchain_executable_command("uv", "")],
+            ("verification-scope", "commands", 0, "arguments", 0),
+            "minLength",
+        ),
         ([], ("verification-scope", "commands"), "minItems"),
     ],
 )
 def test_contract_rejects_empty_verification_argv(
-    commands: list[list[str]],
+    commands: list[Any],
     expected_path: tuple[str | int, ...],
     expected_validator: str,
 ) -> None:
     contract = _contract("functional")
     contract["verification-scope"]["commands"] = commands
 
+    def _flatten(errors: list[ValidationError]) -> list[ValidationError]:
+        flattened = []
+        for error in errors:
+            flattened.append(error)
+            flattened.extend(_flatten(list(error.context or [])))
+        return flattened
+
     assert any(
         tuple(error.absolute_path) == expected_path
         and error.validator == expected_validator
-        for error in _errors(contract)
+        for error in _flatten(_errors(contract))
     ), (
-        "WHAT: an empty command vector or an empty token was accepted. "
-        "WHY: neither names an executable a host can run, so verification would "
+        "WHAT: an empty toolchain name, an empty argument token, or an empty "
+        "commands array was accepted. "
+        "WHY: none of these name a runnable executable, so verification would "
         "report success without executing anything. "
-        "HOW: every command needs at least one token and every token at least one "
-        "character."
+        "HOW: every toolchain name and every argument token needs at least one "
+        "character; the commands array itself needs at least one entry."
     )
 
 
@@ -465,11 +495,72 @@ def test_contract_accepts_a_literal_token_without_splitting_it(
     """
     contract = _contract("object_oriented")
     contract["verification-scope"]["commands"] = [
-        ["uv", "run", "pytest", literal_token]
+        _toolchain_executable_command("uv", "run", "pytest", literal_token)
     ]
 
     assert _errors(contract) == []
-    assert contract["verification-scope"]["commands"][0][3] == literal_token
+    assert (
+        contract["verification-scope"]["commands"][0]["arguments"][2] == literal_token
+    )
+
+
+@pytest.mark.parametrize(
+    ("command", "expect_valid"),
+    [
+        (["python3", "manage.py", "test"], False),
+        (
+            _repository_executable_command(
+                "k4-fixture-venv/bin/python", "manage.py", "test"
+            ),
+            True,
+        ),
+        (_toolchain_executable_command("uv", "run", "pytest", "-q"), True),
+        (
+            {
+                "executable": {
+                    "kind": "repository",
+                    "path": "k4-fixture-venv/bin/python",
+                    "name": "python",
+                },
+                "arguments": ["manage.py", "test"],
+            },
+            False,
+        ),
+        (
+            {
+                "executable": {"kind": "system", "path": "python3"},
+                "arguments": ["manage.py", "test"],
+            },
+            False,
+        ),
+    ],
+    ids=[
+        "bare-argv-ambiguous-interpreter",
+        "repository-executable-identity",
+        "toolchain-executable-identity",
+        "executable-both-path-and-name",
+        "executable-unknown-kind",
+    ],
+)
+def test_verification_command_is_a_tagged_executable_identity_not_bare_argv(
+    command: object,
+    expect_valid: bool,
+) -> None:
+    """CONTRACT_SHAPE: a verification-scope.commands element is the executable-
+    identity sum type -- {kind: repository, path} | {kind: toolchain, name} --
+    paired with a literal `arguments` array, not a raw argv vector.
+    """
+    # A bare argv vector lets the producer's PATH pick which `python3` (or `uv`)
+    # actually runs, so the declared command silently changes meaning downstream.
+    contract = _contract("object_oriented")
+    contract["verification-scope"]["commands"] = [command]
+
+    errors = _errors(contract)
+
+    if expect_valid:
+        assert errors == []
+    else:
+        assert errors != []
 
 
 def test_targets_are_path_keyed_without_a_second_target_designation() -> None:

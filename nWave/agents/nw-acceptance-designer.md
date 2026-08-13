@@ -88,7 +88,7 @@ input's property is authored.
 - Invoke ONE Skill(nw-pbt-typescript) ON-TRIGGER — a `javascript`/`typescript` property needs it
 <!-- GENERATED:role-skill-loading END -->
 
-Next, read and validate the installed `DeliveryContract` v1.1 schema
+Next, read and validate the installed `DeliveryContract` v1.2 schema
 (`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/thin-delivery-contract.schema.json`)
 — the schema, not a contract document, is the first artifact this branch
 touches; the contract itself cannot exist yet because it needs the
@@ -99,7 +99,10 @@ boundary claim, carrying the bounded query's facts into the contract's
 existing `targets[].{overlap, decision, justification, boundary}` — there is
 no top-level `reuse` or `boundaries` field; the bounded code fact is
 recorded only through those per-target keys, never a separate receipt — plus
-the `verification-scope.commands` that will run the test. `REUSE_CANDIDATE`
+the `verification-scope.commands` that will run the test, each constructed as
+a tagged executable identity (`{"kind": "repository", "path": ...}` relative
+to the worktree, or `{"kind": "toolchain", "name": ...}`) paired with a
+literal `arguments` array — never a raw argv array. `REUSE_CANDIDATE`
 in `obligations` means at least one `targets[].overlap` carries an explicit
 `decision` (`EXTEND` or `CREATE_NEW`), never left implicit;
 `ARCHITECTURE_BOUNDARY_CHANGE` means at least one `targets[].boundary`
@@ -129,15 +132,16 @@ skeleton: states, failure modes, observables, and properties mapped directly
 into test/docstring structure (parametrize tables, `@given`/`Rule`
 skeletons, scenario headers), never prose planning; refine only via `Edit`
 on this same file, never a separate design/proof document. Sha256 its
-bytes, then assemble and schema-validate the `DeliveryContract` v1.1
+bytes, then assemble and schema-validate the `DeliveryContract` v1.2
 instance against the schema read above, pointing
 `acceptance-tests.{locator,digest}` at that file and its digest (derived
 stage: `ContractValid`) — not the first artifact written. Repository-owned CI/script evidence (step 4 of the pre-authoring window)
-selects the exact stored `verification-scope.commands` argv before the
-contract is validated; that selected authority is binding, so an alternate
-diagnostic command or one hand-picked anchor test can never establish
-readiness for a different or broader stored scope. Execute every argv vector
-already stored in `verification-scope.commands` in the current
+selects the exact stored `verification-scope.commands` tagged executable
+identity and arguments before the contract is validated; that selected
+authority is binding, so an alternate diagnostic command or one hand-picked
+anchor test can never establish readiness for a different or broader stored
+scope. Execute every command already stored in `verification-scope.commands`
+(projected to `[path-or-name, *arguments]`) in the current
 repository/worktree, covering the complete acceptance artifact named by the
 contract — never a subset. Every collected failure must be attributable to
 the intended missing functionality: a command-not-found, import, collection,
