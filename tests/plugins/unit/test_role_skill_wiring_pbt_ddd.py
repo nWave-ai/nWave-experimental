@@ -135,8 +135,9 @@ class TestThinAutoRoleRoutes:
         )
         for token in (
             "Sibling dispatch",
-            "two background Agent dispatches",
-            "before waiting on either result",
+            "SAME",
+            "run_in_background=false",
+            "before awaiting either result",
             "nw-product-owner",
             "nw-acceptance-designer",
             "BOTH",
@@ -146,6 +147,13 @@ class TestThinAutoRoleRoutes:
             "terminal under the single-pass rule",
         ):
             assert token in route
+
+        boundaries = " ".join(body[body.index("## Route boundaries") :].split())
+        assert (
+            "never ends its turn awaiting a background task notification" in boundaries
+        )
+        assert "never polls" in boundaries
+        assert "ScheduleWakeup" in boundaries
 
     def test_product_owner_owns_value_side_charter_and_embedded_recipe(self):
         body = (AGENTS_DIR / "nw-product-owner.md").read_text(encoding="utf-8")

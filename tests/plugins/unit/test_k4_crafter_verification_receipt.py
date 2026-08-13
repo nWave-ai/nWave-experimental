@@ -139,14 +139,14 @@ class TestCrafterVerificationReceipt:
             assert field in join, f"nw-auto Join step missing field: {field}"
 
     def test_crafter_dispatch_is_foreground_synchronous_never_background(self):
-        """K4 (2026-08-13): PO/ATD are the only concurrent/background sibling
-        pair -- the single crafter dispatch after their join must be
-        foreground and synchronous, explicitly contrasted with that pair, so
-        an async dispatch can no longer let the tool-result boundary fire
-        before the terminal receipt is emitted."""
+        """K4 (2026-08-13): PO/ATD are a concurrent foreground two-call pair
+        -- the single crafter dispatch after their join is one separate
+        foreground, synchronous dispatch, so an async dispatch can no longer
+        let the tool-result boundary fire before the terminal receipt is
+        emitted."""
         join = _join_step()
         for token in (
-            "unlike the po/atd sibling pair above",
+            "two-call foreground pair issued together",
             "foreground and synchronous",
             "root waits on its result inline",
             "never `run_in_background`",

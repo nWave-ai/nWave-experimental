@@ -156,10 +156,12 @@ bookkeeping, retry, repair, or reconstruction follows an incomplete result.
 
 Once intent is resolved and architecture readiness reaches Covered or
 NoImpact above, M and L run this identical floor — there is no M-only or
-L-only variant of it. Dispatch the PO/ATD sibling pair as two background
-Agent dispatches, issuing both before waiting on either result — neither
-reads the other's output. Then join on both validated results and continue
-without a second controller:
+L-only variant of it. Dispatch the PO/ATD sibling pair as two foreground
+Agent dispatches, `run_in_background=false`, issued together in the SAME
+assistant message before awaiting either result — neither reads the
+other's output, and root never closes its turn to await a background
+task notification for either. Then join on both validated results and
+continue without a second controller:
 
 1. **Sibling dispatch (PO and ATD dispatched concurrently before awaiting either):**
    Root forwards the selected exact architecture authority line — the
@@ -198,10 +200,13 @@ without a second controller:
      with `paradigm` and acceptance tests. ATD never reads charter/start
      recipe.
 2. **Join:** after BOTH charter and contract+tests are validated, dispatch
-   exactly one crafter by deterministic paradigm mapping. Unlike the PO/ATD
-   sibling pair above, this single dispatch is foreground and synchronous —
-   root waits on its result inline, never `run_in_background`, and never a
-   second concurrent dispatch. That crafter implements the contract to green
+   exactly one crafter by deterministic paradigm mapping. The PO/ATD
+   sibling pair above is a two-call foreground pair issued together in one
+   SAME-message pair; the crafter dispatch here is a single, separate
+   dispatch issued only after both sibling results validate — it too is
+   foreground and synchronous — root waits on its result inline, never
+   `run_in_background`, and never a second concurrent dispatch. That
+   crafter implements the contract to green
    without rewriting tests, then closes its
    terminal result with its own concise verification receipt from the
    terminating full relevant suite run: `outcome: PASS|FAIL`, `argv`, `scope`,
@@ -244,6 +249,12 @@ derives probes from the expectation and observes only the shipped user surface.
   a separately measured new run, begun after correcting the upstream gap that
   caused the first failure, may proceed.
 - Direct S and Human-on-the-loop routes are unchanged.
+- Root never ends its turn awaiting a background task notification and never
+  polls: every Agent dispatch above is foreground/synchronous
+  (`run_in_background=false`), including the PO/ATD pair issued together in
+  one message, so the tool runtime returns both results before root's next
+  reasoning step. No `Task`, `SendMessage`, or `ScheduleWakeup` call is used
+  to join the sibling pair.
 - No `TaskCreate`, new hook, schema, CLI verb, or duplicate sequencer/controller
   is introduced.
 - Auto ends with one of these terminal Git outcomes in the isolated worktree

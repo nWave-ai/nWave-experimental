@@ -496,11 +496,9 @@ def test_auto_m_route_requires_po_atd_same_message_and_no_invented_signup() -> N
     text = _auto_skill_text()
     m_section = text[text.index("## Deterministic crafter") : text.index("## L route")]
     compact_m = _compact(m_section)
-    assert "SAME assistant message" not in compact_m
-    assert (
-        "two background Agent dispatches, issuing both before waiting on either result"
-        in compact_m
-    )
+    assert "SAME assistant message" in compact_m
+    assert "run_in_background=false" in compact_m
+    assert "two background Agent dispatches" not in compact_m
     assert "nw-product-owner" in compact_m
     assert "nw-acceptance-designer" in compact_m
     assert "target repository" in compact_m
