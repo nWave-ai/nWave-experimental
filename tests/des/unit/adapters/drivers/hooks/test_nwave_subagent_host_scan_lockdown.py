@@ -47,6 +47,8 @@ class TestNwaveSubagentHostScanBlocked:
             "find -L / -iname foo",
             "find / /home -name x",
             "cd /tmp && find / -name x",
+            'python3 -c "import sys; print(1)" 2>/dev/null; '
+            "find / -iname cronsim-star -path '*/site-packages/*' 2>/dev/null | head",
         ],
     )
     def test_host_wide_find_or_bfs_is_blocked(
@@ -79,6 +81,7 @@ class TestNwaveSubagentHostScanAllowed:
             'echo "please don\'t find / for files"',
             'git commit -m "find / stuff"',
             'python -c "import inspect,os; print(inspect.getsourcefile(os))"',
+            'echo "safe; find /"',
         ],
     )
     def test_project_scoped_or_non_traversal_command_is_not_blocked(

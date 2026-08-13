@@ -163,8 +163,18 @@ WORKTREE_BYPASS_EVENT = "WorktreeRemovalBypassUsed"
 
 
 def _split_subcommands(command: str) -> list[list[str]] | None:
+    # `shlex.split` runs `whitespace_split=True`, which glues any
+    # non-whitespace run into one token -- a separator attached to a
+    # redirection with no intervening space (`2>/dev/null;`) never becomes
+    # its own token and the argv stays rooted at the command before it.
+    # `punctuation_chars` restores shell-accurate tokenization: `;`/`&&`/
+    # `||`/`|`/`&` (plus `()<>`) always end a token even mid-run, multi-char
+    # operators (`&&`, `||`) still group into one token, and a quoted
+    # separator stays literal data (posix quote handling takes precedence).
     try:
-        tokens = shlex.split(command)
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
     except ValueError:
         return None
     sub_commands: list[list[str]] = []
