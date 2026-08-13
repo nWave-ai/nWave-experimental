@@ -23,12 +23,17 @@ are recorded; `accepted` requires both.
 
 The arm's own `requirements.txt` is installed, because a delivery may
 legitimately add a dependency, and refusing that would score the arms on a
-constraint neither was told about. Its optional `requirements-dev.txt` is
-installed next, for the same reason: a delivered test suite may declare
+constraint neither was told about. Next comes only the slice of
+`requirements-dev.txt` the delivery itself added or changed versus its own
+Git HEAD -- never the whole file. A delivered test suite may declare
 test-only dependencies there, and a workspace that has one but cannot
-install it fails outright, before either suite runs. Everything else -- the
-suite file, the command, the interpreter version -- comes from here, not
-from the workspace.
+install it fails outright, before either suite runs; but that file also
+carries whatever dev dependencies pre-existed the delivery, and one of those
+can need system packages this environment doesn't have, for reasons that
+have nothing to do with the delivery under test. Installing the whole file
+would then fail both arms identically before either suite runs and call
+that a measurement. Everything else -- the suite file, the command, the
+interpreter version -- comes from here, not from the workspace.
 
 The name `test_k4_acceptance.py` is written INTO the arm's tree at run time.
 That is deliberate: it never exists while the arm works, so no delivery can be
@@ -44,6 +49,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -53,6 +59,7 @@ from scripts.analysis.k4 import prepare_examiner_fixture as pef
 _SUITE_TARGET = Path("hc") / "api" / "tests" / "test_k4_acceptance.py"
 _SUITE_LABEL = "hc.api.tests.test_k4_acceptance"
 _ACCEPTANCE_VENV_NAME = ".k4-acceptance-venv"
+_DEV_DELTA_REQUIREMENTS_NAME = "requirements-dev-delta.txt"
 
 #: Measurement/setup bulk that must never ride into the disposable snapshot:
 #: VCS metadata, Claude runtime/session dirs, a prior run's own venv, and
@@ -131,10 +138,73 @@ def _snapshot_ignore(_dir: str, names: list[str]) -> set[str]:
     return {name for name in names if name in _EXCLUDED_SNAPSHOT_NAMES}
 
 
-def _examine_snapshot(snapshot: Path, suite: Path) -> tuple[bool, str]:
+class _RequirementsDeltaError(RuntimeError):
+    """Git/HEAD could not be inspected for a reason other than
+    requirements-dev.txt simply not existing at HEAD."""
+
+
+def _requirement_lines(text: str) -> list[str]:
+    return [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
+
+def _dev_requirements_delta(workspace: Path) -> list[str]:
+    """The requirements-dev.txt lines this delivery itself added or changed,
+    versus `git show HEAD:requirements-dev.txt` in the delivery worktree --
+    never the whole file, so that a dev dependency that pre-existed the
+    delivery (and may need system packages this environment doesn't have)
+    is never installed on the delivery's behalf. Order and duplicate counts
+    from the current file are preserved; a changed pin has different text
+    from anything at HEAD and so counts as an addition."""
+    current_path = workspace / "requirements-dev.txt"
+    if not current_path.is_file():
+        return []
+    current_lines = _requirement_lines(current_path.read_text(encoding="utf-8"))
+
+    try:
+        done = subprocess.run(
+            ["git", "show", "HEAD:requirements-dev.txt"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise _RequirementsDeltaError(
+            "`git show HEAD:requirements-dev.txt` in "
+            f"{workspace} could not run: {type(exc).__name__}: {exc}"
+        ) from exc
+
+    if done.returncode == 0:
+        head_lines = _requirement_lines(done.stdout)
+    elif "does not exist in" in done.stderr or "exists on disk, but not" in done.stderr:
+        head_lines = []
+    else:
+        raise _RequirementsDeltaError(
+            "`git show HEAD:requirements-dev.txt` in "
+            f"{workspace} failed (exit {done.returncode}): {done.stderr.strip()}"
+        )
+
+    remaining = Counter(head_lines)
+    delta: list[str] = []
+    for line in current_lines:
+        if remaining.get(line, 0) > 0:
+            remaining[line] -= 1
+        else:
+            delta.append(line)
+    return delta
+
+
+def _examine_snapshot(
+    snapshot: Path, suite: Path, dev_delta: list[str]
+) -> tuple[bool, str]:
     """Run both suites against the disposable copy. Whatever this writes into
-    `snapshot` (venv, suite file) dies with it in `examine`'s `finally` --
-    nothing here needs its own cleanup."""
+    `snapshot` (venv, delta requirements file, suite file) dies with it in
+    `examine`'s `finally` -- nothing here needs its own cleanup."""
     venv = snapshot / _ACCEPTANCE_VENV_NAME
     code, tail = _run([sys.executable, "-m", "venv", str(venv)], snapshot)
     if code != 0:
@@ -143,15 +213,15 @@ def _examine_snapshot(snapshot: Path, suite: Path) -> tuple[bool, str]:
     code, tail = _run([pip, "install", "-q", "-r", "requirements.txt"], snapshot)
     if code != 0:
         return False, f"the delivery's requirements.txt does not install: {tail}"
-    dev_reqs = snapshot / "requirements-dev.txt"
-    if dev_reqs.exists():
-        code, tail = _run(
-            [pip, "install", "-q", "-r", "requirements-dev.txt"], snapshot
-        )
+    if dev_delta:
+        delta_reqs = snapshot / _DEV_DELTA_REQUIREMENTS_NAME
+        delta_reqs.write_text("\n".join(dev_delta) + "\n", encoding="utf-8")
+        code, tail = _run([pip, "install", "-q", "-r", str(delta_reqs)], snapshot)
         if code != 0:
             return (
                 False,
-                f"the delivery's requirements-dev.txt does not install: {tail}",
+                "the delivery's test-dependency delta "
+                f"{dev_delta} does not install: {tail}",
             )
     code, tail = _run([pip, "install", "-q", "time-machine"], snapshot)
     if code != 0:
@@ -198,11 +268,16 @@ def examine(workspace: Path, suite: Path) -> tuple[bool, str]:
             f"the delivery already contains {_SUITE_TARGET}; refusing to overwrite",
         )
 
+    try:
+        dev_delta = _dev_requirements_delta(workspace)
+    except _RequirementsDeltaError as exc:
+        return False, f"could not derive the delivered test-dependency delta: {exc}"
+
     snapshot_root = Path(tempfile.mkdtemp(prefix="k4-examine-"))
     try:
         snapshot = snapshot_root / "snapshot"
         shutil.copytree(workspace, snapshot, ignore=_snapshot_ignore, symlinks=True)
-        return _examine_snapshot(snapshot, suite)
+        return _examine_snapshot(snapshot, suite, dev_delta)
     finally:
         shutil.rmtree(snapshot_root, ignore_errors=True)
         (workspace / pef.DOC_NAME).unlink(missing_ok=True)

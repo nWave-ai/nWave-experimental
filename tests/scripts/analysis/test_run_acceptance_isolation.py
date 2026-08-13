@@ -246,37 +246,54 @@ def test_examine_preserves_delivery_symlinks_semantically(tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize(
-    "dev_req_status",
+    "case",
     [
-        pytest.param(None, id="manifest-absent"),
-        pytest.param("success", id="manifest-present-installs"),
-        pytest.param("fail", id="manifest-present-fails"),
+        pytest.param("no-manifest", id="manifest-absent-no-delta"),
+        pytest.param("addition-only", id="base-native-dep-plus-addition"),
+        pytest.param("delta-fails", id="delta-install-fails"),
     ],
 )
-def test_examine_dev_requirements_install_order_and_failure_handling(
-    tmp_path, monkeypatch, dev_req_status
+def test_examine_dev_requirements_delta_install_order_and_failure_handling(
+    tmp_path, monkeypatch, case
 ):
-    """Install order is requirements.txt → optional requirements-dev.txt →
-    time-machine → suites. If dev-requirements fails, time-machine and both
-    suites are never called; failure is explicit evidence naming the manifest.
-    If dev-requirements is absent, it is skipped; if present and succeeds,
-    it installs before time-machine."""
+    """Install order is requirements.txt -> derived test-dependency delta ->
+    time-machine -> suites, and only the delta -- never the whole
+    requirements-dev.txt -- is ever installed.
+
+    Falsifies: (1) an absent manifest yields no delta and no extra install
+    call; (2) a delivery that adds `hypothesis==6.140.4` on top of a
+    pre-existing, possibly-unbuildable `mysqlclient` pin installs ONLY the
+    addition, in a file whose contents are exactly that one line, between
+    requirements.txt and time-machine; (3) a failing delta install
+    short-circuits before time-machine and both suites, with evidence naming
+    the addition and never the pre-existing dependency."""
     workspace, suite = _workspace(tmp_path)
-    if dev_req_status is not None:
-        (workspace / "requirements-dev.txt").write_text("hypothesis\n")
+
+    if case != "no-manifest":
+        _git("init", "-q", "-b", "master", cwd=workspace)
+        _git("config", "user.email", "k4@example.test", cwd=workspace)
+        _git("config", "user.name", "k4", cwd=workspace)
+        (workspace / "requirements-dev.txt").write_text("mysqlclient\n")
+        _git("add", "-A", cwd=workspace)
+        _git("commit", "-q", "-m", "seed", cwd=workspace)
+        (workspace / "requirements-dev.txt").write_text(
+            "mysqlclient\nhypothesis==6.140.4\n"
+        )
 
     calls = []
+    seen: dict = {}
 
     def fake(argv, cwd, timeout=2400):
         joined = " ".join(argv)
         calls.append(joined)
         if "venv" in argv:
             return 0, ""
-        if "requirements.txt" in joined:
-            return 0, ""
-        if "requirements-dev.txt" in joined:
-            if dev_req_status == "fail":
+        if ra._DEV_DELTA_REQUIREMENTS_NAME in joined:
+            seen["delta_contents"] = Path(argv[-1]).read_text()
+            if case == "delta-fails":
                 return 1, "ERROR: Could not find a version satisfying the requirement"
+            return 0, ""
+        if "requirements.txt" in joined:
             return 0, ""
         if "time-machine" in joined:
             return 0, ""
@@ -290,27 +307,32 @@ def test_examine_dev_requirements_install_order_and_failure_handling(
 
     install_calls = [c for c in calls if "install" in c]
     req_txt_idx = next(
-        i for i, c in enumerate(install_calls) if "requirements.txt" in c
+        i
+        for i, c in enumerate(install_calls)
+        if c.rstrip().endswith("requirements.txt")
     )
-    dev_txt_indices = [
-        i for i, c in enumerate(install_calls) if "requirements-dev.txt" in c
+    delta_indices = [
+        i for i, c in enumerate(install_calls) if ra._DEV_DELTA_REQUIREMENTS_NAME in c
     ]
     time_machine_indices = [
         i for i, c in enumerate(install_calls) if "time-machine" in c
     ]
 
-    if dev_req_status == "fail":
+    if case == "no-manifest":
+        assert accepted is True
+        assert len(delta_indices) == 0
+        assert req_txt_idx < time_machine_indices[0]
+    elif case == "addition-only":
+        assert accepted is True
+        assert len(delta_indices) == 1
+        assert seen["delta_contents"] == "hypothesis==6.140.4\n"
+        assert req_txt_idx < delta_indices[0] < time_machine_indices[0]
+    else:
         assert accepted is False
-        assert "requirements-dev.txt" in evidence
+        assert len(delta_indices) == 1
+        assert seen["delta_contents"] == "hypothesis==6.140.4\n"
+        assert "hypothesis==6.140.4" in evidence
+        assert "mysqlclient" not in evidence
         assert len(time_machine_indices) == 0
         assert not any(ra._SUITE_LABEL in c for c in calls)
         assert not any("--exclude-tag" in c for c in calls)
-    elif dev_req_status == "success":
-        assert accepted is True
-        assert len(dev_txt_indices) == 1
-        dev_txt_idx = dev_txt_indices[0]
-        assert req_txt_idx < dev_txt_idx < time_machine_indices[0]
-    else:
-        assert accepted is True
-        assert len(dev_txt_indices) == 0
-        assert req_txt_idx < time_machine_indices[0]
