@@ -12,8 +12,10 @@ they are the boundary the earlier suite stopped at.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
+from scripts.analysis.k4.preflight import _arm_env
 from scripts.analysis.paired_campaign import ArmSpec, declared_identity_violations
 from scripts.analysis.paired_quality_join import main as join_main
 
@@ -274,3 +276,32 @@ def test_the_same_workspace_relative_env_in_both_arms_is_not_a_collision() -> No
     ]
 
     assert declared_identity_violations(arms) == []
+
+
+def test_preflight_arms_share_one_path_rule_to_the_fixture_interpreter(
+    monkeypatch,
+) -> None:
+    """The arm-asymmetric escape this closes: the control arm's only route to
+    the fixture-owned venv was the user-facing doc, so nWave's crafter (which
+    never reads that doc) fell back to a bare `python` off the inherited
+    PATH. Both arms must declare the SAME PATH template, and after
+    `{workspace}` substitution each must resolve `python` to its own fixture
+    bin first, with the inherited PATH still reachable behind it."""
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    argv = ("claude", "-p", "{task}")
+    declared = tuple(sorted(_arm_env().items()))
+
+    control = ArmSpec("control", argv, (), declared)
+    nwave = ArmSpec("nwave", argv, (), tuple(sorted(_arm_env().items())))
+
+    assert control.env == nwave.env
+
+    control_path = control.rendered_env(Path("/pairs/p1/control"))["PATH"]
+    nwave_path = nwave.rendered_env(Path("/pairs/p1/nwave"))["PATH"]
+
+    assert control_path.startswith(f"/pairs/p1/control/k4-fixture-venv/bin{os.pathsep}")
+    assert nwave_path.startswith(f"/pairs/p1/nwave/k4-fixture-venv/bin{os.pathsep}")
+    assert control_path.endswith(f"{os.pathsep}/usr/bin:/bin")
+    assert nwave_path.endswith(f"{os.pathsep}/usr/bin:/bin")
+
+    assert declared_identity_violations([control, nwave]) == []

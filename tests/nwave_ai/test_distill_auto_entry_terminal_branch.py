@@ -284,11 +284,27 @@ def test_atd_auto_route_honors_wave_order_before_red_execution() -> None:
         "acceptance-test artifact FILE",
         "Sha256 its bytes",
         "assemble and schema-validate the `DeliveryContract` v1.1 instance",
-        "Execute the focused acceptance test and observe the expected RED",
-        "re-verify the digest",
+        "Repository-owned CI/script evidence (step 4 of the pre-authoring "
+        "window) selects the exact stored `verification-scope.commands` "
+        "argv before the contract is validated",
+        "an alternate diagnostic command or one hand-picked anchor test "
+        "can never establish readiness for a different or broader stored "
+        "scope",
+        "Execute every argv vector already stored in `verification-scope.commands`",
+        "covering the complete acceptance artifact named by the contract "
+        "— never a subset",
+        "a command-not-found, import, collection, or setup failure is "
+        "BROKEN, never `RedConfirmed`, and is terminal under the no-retry "
+        "rule",
+        "Only after that complete-scope RED holds, re-verify the digest",
         "Only the `RedConfirmed` proof enables crafter dispatch",
     ]
-    positions = [compact.index(token) for token in tokens_in_order]
+    cursor = 0
+    positions = []
+    for token in tokens_in_order:
+        found = compact.index(token, cursor)
+        positions.append(found)
+        cursor = found + len(token)
     assert positions == sorted(positions)
 
 

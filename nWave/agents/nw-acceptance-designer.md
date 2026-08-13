@@ -132,9 +132,19 @@ on this same file, never a separate design/proof document. Sha256 its
 bytes, then assemble and schema-validate the `DeliveryContract` v1.1
 instance against the schema read above, pointing
 `acceptance-tests.{locator,digest}` at that file and its digest (derived
-stage: `ContractValid`) — not the first artifact written. Execute the
-focused acceptance test and observe the expected RED, then re-verify the
-digest still matches the on-disk file bytes (derived stage: `RedConfirmed`).
+stage: `ContractValid`) — not the first artifact written. Repository-owned CI/script evidence (step 4 of the pre-authoring window)
+selects the exact stored `verification-scope.commands` argv before the
+contract is validated; that selected authority is binding, so an alternate
+diagnostic command or one hand-picked anchor test can never establish
+readiness for a different or broader stored scope. Execute every argv vector
+already stored in `verification-scope.commands` in the current
+repository/worktree, covering the complete acceptance artifact named by the
+contract — never a subset. Every collected failure must be attributable to
+the intended missing functionality: a command-not-found, import, collection,
+or setup failure is BROKEN, never `RedConfirmed`, and is terminal under the
+no-retry rule below — no substitute command, no narrower rerun, no partial
+pass. Only after that complete-scope RED holds, re-verify the digest still
+matches the on-disk file bytes (derived stage: `RedConfirmed`).
 This focused RED/digest verification is terminal work: run it in the
 FOREGROUND in this same turn, or poll it synchronously to completion before
 the turn ends — never `run_in_background`, and never end the turn awaiting

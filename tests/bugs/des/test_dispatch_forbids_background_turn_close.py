@@ -610,7 +610,7 @@ def test_atd_thin_auto_route_forbids_background_turn_close_on_focused_red() -> N
     start = text.index("**Thin Auto M/L route (`nw-auto`)")
     end = text.index("**Human route:**", start)
     branch_after_red = text[start:end][
-        text[start:end].index("observe the expected RED") :
+        text[start:end].index("This focused RED/digest verification is terminal work") :
     ]
     missing = _missing_token_groups(branch_after_red)
     assert not missing, (

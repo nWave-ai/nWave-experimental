@@ -242,6 +242,24 @@ def control_setup_steps(auth_profile: Path) -> list[list[str]]:
     ]
 
 
+def _arm_env() -> dict[str, str]:
+    """The one declared env, identical for both arms; only `{workspace}`
+    differs once `ArmSpec.rendered_env` substitutes it per arm.
+
+    PATH prepends the fixture-owned interpreter's bin dir (see
+    `pef.VENV_PYTHON`) ahead of the inherited PATH, so a bare `python` on
+    either arm's PATH resolves to the SAME clone-local venv the user-facing
+    fixture doc points a human at -- without a role-specific carrier for it.
+    """
+    fixture_bin = "{workspace}/" + str(Path(pef.VENV_PYTHON).parent)
+    inherited = os.environ.get("PATH", "")
+    path = f"{fixture_bin}{os.pathsep}{inherited}" if inherited else fixture_bin
+    return {
+        "CLAUDE_CONFIG_DIR": "{workspace}/.claude-k4",
+        "PATH": path,
+    }
+
+
 def _probe_workspace(root: Path) -> Path:
     return root / "probe-nwave"
 
@@ -379,12 +397,12 @@ def main(argv: list[str] | None = None) -> int:
             "control": {
                 "setup": control_setup_steps(args.auth_profile),
                 "argv": delivery,
-                "env": {"CLAUDE_CONFIG_DIR": "{workspace}/.claude-k4"},
+                "env": _arm_env(),
             },
             "nwave": {
                 "setup": nwave_setup_steps(venv, args.auth_profile),
                 "argv": delivery,
-                "env": {"CLAUDE_CONFIG_DIR": "{workspace}/.claude-k4"},
+                "env": _arm_env(),
             },
         },
     }
