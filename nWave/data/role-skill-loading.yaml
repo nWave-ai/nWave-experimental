@@ -51,6 +51,13 @@ roles:
     on_demand:
       nw-algebraic-design-protocol: contested design or law
       nw-certainty-by-construction: invalid-state or preservation claim
+  nw-system-designer:
+    on_demand:
+      nw-algebraic-design-protocol: contested infrastructure or recovery law
+      nw-certainty-by-construction: invalid recovery or failure-policy state
+  nw-system-designer-reviewer:
+    reviewer_of:
+      - nw-system-designer
   nw-platform-architect-reviewer:
     reviewer_of:
       - nw-platform-architect

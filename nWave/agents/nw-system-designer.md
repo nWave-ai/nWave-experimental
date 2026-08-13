@@ -3,7 +3,7 @@ name: nw-system-designer
 description: Use for DESIGN wave infrastructure-level architecture. Designs distributed systems, scalability strategies, load balancing, caching, database sharding, message queues, back-of-envelope estimation, and trade-off analysis. Complements solution-architect (application-level) with infrastructure-level depth.
 model: sonnet
 maxTurns: 45
-tools: Read, Write, Edit, Glob, Grep, Bash, Task
+tools: Read, Write, Edit, Glob, Grep, Bash, Task, Skill
 skills:
   - nw-sd-framework
   - nw-sd-patterns
@@ -59,6 +59,11 @@ Load on-demand by phase, not all at once:
 | 3 Deep Dive | `nw-sd-patterns` | Always -- core distributed patterns |
 | 3 Deep Dive | `nw-sd-patterns-advanced` | When CQRS, saga, event sourcing, stream processing, or financial patterns needed |
 | 3 Deep Dive | `nw-sd-case-studies` | When designing a system similar to a known case study |
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested infrastructure or recovery law
+- Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid recovery or failure-policy state
+<!-- GENERATED:role-skill-loading END -->
 
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo)
 

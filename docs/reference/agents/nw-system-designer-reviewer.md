@@ -5,7 +5,7 @@ Use to review system design architecture outputs. Validates trade-off analysis, 
 **Wave:** DESIGN
 **Model:** sonnet
 **Max turns:** 25
-**Tools:** Read, Glob, Grep, Task, Bash
+**Tools:** Read, Glob, Grep, Task, Bash, Skill
 
 ## Preloaded skills
 

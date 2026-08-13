@@ -40,10 +40,40 @@ Algorithm: find failing input -> try simpler variants -> if still fails, use as 
 
 Adopted by Amazon, Volvo, Stripe, Jane Street (ICSE 2024 study).
 
+## Cross-layer properties (ADR-SSOT-002 §6a)
+
+PBT is one projection of the same per-layer observations/laws Section 6a
+names — pick the property PATTERN (above) that matches the layer the target's
+`boundary`/`contract-shape` says applies; do not author a property for a
+layer with no declared law:
+
+| Layer | Property pattern | What it checks |
+|---|---|---|
+| Domain | Invariant | a stable state/transition law holds for all generated inputs |
+| Application/ports | Roundtrip/Oracle | the outcome type is total — every declared success/failure alternative is reachable and handled |
+| Adapter/integration | Metamorphic | under a controlled, test-injected fault model, translation maps each simulated fault to its declared failure without losing causal identity |
+| Infrastructure/recovery | Invariant | retry/idempotency/timeout/compensation laws hold under repeated or reordered application, against the declared deterministic recovery model |
+
+A layer with no declared failure-mapping or recovery law has no corresponding
+property to author for that target — this is a derivation, not an invitation
+to invent coverage.
+
+**Scope of the adapter/infrastructure rows.** These properties exercise
+deterministic failure translation and the declared recovery model under a
+fault the test itself injects (timeout, malformed response, simulated
+partition) — they show the adapter and recovery logic behave correctly given
+a fault, not that the property has discovered or predicted a real vendor's
+actual behavior. They do not substitute for real-boundary integration tests,
+which exercise the actual external system (or its recorded contract) and are
+the only class that shows whether the substrate genuinely delivers what it
+claims. The "external API integrations" LOW-value entry below refers to
+using PBT to probe live vendor behavior — it does not apply to the bounded,
+HIGH-value adapter/infrastructure translation and recovery properties above.
+
 ## When PBT Adds Value
-HIGH value: algorithms | data structures | serialization | business rules (validation, calculations) | protocols/state machines | **unbounded input domain** with universal invariant.
-LOW value: simple CRUD | UI logic | external API integrations | **closed-world finite domain** (use parametrize instead — see falsifier-gate below).
-PBT complements example-based testing, doesn't replace it.
+HIGH value: algorithms | data structures | serialization | business rules (validation, calculations) | protocols/state machines | **unbounded input domain** with universal invariant | deterministic adapter failure-translation and recovery-model properties under a controlled fault model (see Cross-layer properties above).
+LOW value: simple CRUD | UI logic | probing live external API/vendor behavior | **closed-world finite domain** (use parametrize instead — see falsifier-gate below).
+PBT complements example-based testing, doesn't replace it, and never substitutes for real-boundary integration tests against the actual external system.
 
 ### Falsifier-gate: closed-world finite → parametrize, NOT PBT
 

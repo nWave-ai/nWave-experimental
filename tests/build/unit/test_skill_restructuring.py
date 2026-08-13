@@ -284,7 +284,7 @@ BULK_HASHES = {
     "nw-entity-resolution": "4e84222a5674af4765809ba03800696c",
     "nw-fisher-ury-preparation": "62edcbc7f0f7598821cbeca3b440e9a2",
     "nw-formal-verification-tlaplus": "0708381a1fb1aec638c3efa6ef377f78",
-    "nw-fp-algebra-driven-design": "d9cdbe8eb60c311b9c74dc2033f39f9c",
+    "nw-fp-algebra-driven-design": "58f650d080064cb03faf2d4aec991b59",
     "nw-fp-clojure": "abc40c7289b4e66579ca141f14172551",
     "nw-fp-domain-modeling": "889c821f8d504cc2f452dad642b95d7b",
     "nw-fp-fsharp": "b3504a0b3a6291a14c2f3f6cf64f0cea",
@@ -351,7 +351,7 @@ BULK_HASHES = {
     # Updated 2026-05-19: extended "When PBT Adds Value" with closed-world
     # falsifier-gate anti-pattern + empirical anchor (commit c2637f6c8). See
     # backlog F-TEST-SPEEDUP-PARADIGM-CATALOG for context.
-    "nw-property-based-testing": "b1eacd16ec453a9d7344b21961dac47e",
+    "nw-property-based-testing": "5900eb3277c0fc09ebdc2fda58877c46",
     # Hash updated 2026-06-17: decompose-and-recompose into 2 nw-proposal-structure-*
     # modules (b2b, cialdini); core is a lean composing router. §22.0 reviewed.
     "nw-proposal-structure": "bec9dd508f567c847da44cd41ee56821",

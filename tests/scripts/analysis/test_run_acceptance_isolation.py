@@ -159,15 +159,16 @@ def test_concurrent_examine_calls_do_not_race_and_leave_the_original_unchanged(
         "k4-fixture-venv",
         "__pycache__",
         ".pytest_cache",
+        ".hypothesis",
     ],
 )
 def test_snapshot_excludes_measurement_bulk_from_the_copy(
     tmp_path, monkeypatch, bulky_name
 ):
-    """A prior acceptance venv, VCS metadata, a Claude runtime dir, or an
-    interpreter cache sitting in the delivery must not ride into the
-    snapshot the run actually executes against -- only production content
-    does."""
+    """A prior acceptance venv, VCS metadata, a Claude runtime dir, an
+    interpreter cache, or a Hypothesis cache sitting in the delivery must
+    not ride into the snapshot the run actually executes against -- only
+    production content does."""
     workspace, suite = _workspace(tmp_path)
     bulky = workspace / bulky_name
     bulky.mkdir()
@@ -242,3 +243,74 @@ def test_examine_preserves_delivery_symlinks_semantically(tmp_path, monkeypatch)
     assert symlink_file.readlink() == before_link_target
     assert symlink_file.read_text() == before_link_content
     assert target_file.read_text() == before_target_content
+
+
+@pytest.mark.parametrize(
+    "dev_req_status",
+    [
+        pytest.param(None, id="manifest-absent"),
+        pytest.param("success", id="manifest-present-installs"),
+        pytest.param("fail", id="manifest-present-fails"),
+    ],
+)
+def test_examine_dev_requirements_install_order_and_failure_handling(
+    tmp_path, monkeypatch, dev_req_status
+):
+    """Install order is requirements.txt → optional requirements-dev.txt →
+    time-machine → suites. If dev-requirements fails, time-machine and both
+    suites are never called; failure is explicit evidence naming the manifest.
+    If dev-requirements is absent, it is skipped; if present and succeeds,
+    it installs before time-machine."""
+    workspace, suite = _workspace(tmp_path)
+    if dev_req_status is not None:
+        (workspace / "requirements-dev.txt").write_text("hypothesis\n")
+
+    calls = []
+
+    def fake(argv, cwd, timeout=2400):
+        joined = " ".join(argv)
+        calls.append(joined)
+        if "venv" in argv:
+            return 0, ""
+        if "requirements.txt" in joined:
+            return 0, ""
+        if "requirements-dev.txt" in joined:
+            if dev_req_status == "fail":
+                return 1, "ERROR: Could not find a version satisfying the requirement"
+            return 0, ""
+        if "time-machine" in joined:
+            return 0, ""
+        if ra._SUITE_LABEL in argv or "--exclude-tag" in argv:
+            return 0, "OK"
+        raise AssertionError(f"unexpected argv: {argv}")
+
+    monkeypatch.setattr(ra, "_run", fake)
+
+    accepted, evidence = ra.examine(workspace, suite)
+
+    install_calls = [c for c in calls if "install" in c]
+    req_txt_idx = next(
+        i for i, c in enumerate(install_calls) if "requirements.txt" in c
+    )
+    dev_txt_indices = [
+        i for i, c in enumerate(install_calls) if "requirements-dev.txt" in c
+    ]
+    time_machine_indices = [
+        i for i, c in enumerate(install_calls) if "time-machine" in c
+    ]
+
+    if dev_req_status == "fail":
+        assert accepted is False
+        assert "requirements-dev.txt" in evidence
+        assert len(time_machine_indices) == 0
+        assert not any(ra._SUITE_LABEL in c for c in calls)
+        assert not any("--exclude-tag" in c for c in calls)
+    elif dev_req_status == "success":
+        assert accepted is True
+        assert len(dev_txt_indices) == 1
+        dev_txt_idx = dev_txt_indices[0]
+        assert req_txt_idx < dev_txt_idx < time_machine_indices[0]
+    else:
+        assert accepted is True
+        assert len(dev_txt_indices) == 0
+        assert req_txt_idx < time_machine_indices[0]

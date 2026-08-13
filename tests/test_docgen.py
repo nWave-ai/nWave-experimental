@@ -874,8 +874,18 @@ _ROLE_SKILL_TARGETS = [
     "nw-software-crafter",
     "nw-solution-architect-reviewer",
     "nw-solution-architect",
+    "nw-system-designer-reviewer",
+    "nw-system-designer",
 ]
 _CRAFTER_ROLES = ["nw-software-crafter", "nw-functional-software-crafter"]
+# {authoring role: single-owner reviewer} — every design-lens architect that
+# projects native algebra + certainty on_demand, paired with its reviewer.
+_ARCHITECT_REVIEWER_PAIRS = [
+    ("nw-solution-architect", "nw-solution-architect-reviewer"),
+    ("nw-ddd-architect", "nw-ddd-architect-reviewer"),
+    ("nw-system-designer", "nw-system-designer-reviewer"),
+    ("nw-platform-architect", "nw-platform-architect-reviewer"),
+]
 
 
 class TestRoleSkillLoadingRegistry:
@@ -1030,6 +1040,39 @@ class TestRoleSkillLoadingRegistry:
             assert set(entry.get("on_demand", {})).isdisjoint(
                 reviewed_entry.get("phase", {})
             ), f"{agent_id} must not author the reviewed role's phase-owned skills"
+
+    @pytest.mark.parametrize("author,reviewer", _ARCHITECT_REVIEWER_PAIRS)
+    def test_architect_projects_algebra_certainty_reviewer_mirrors_lens_only(
+        self, root: Path, roles: dict, author: str, reviewer: str
+    ):
+        """Cross-layer projection law (ADR-SSOT-002 6a, 2026-08-13): solution
+        architect, DDD architect, system designer and platform architect each
+        project native algebra + certainty on_demand; each single-owner
+        reviewer mirrors exactly those two on-demand lenses and never the
+        author's own phase- or paradigm-owned rows. One dense parametrized
+        law replaces four near-duplicate per-role test bodies."""
+        author_entry = roles[author]
+        for lens in ("nw-algebraic-design-protocol", "nw-certainty-by-construction"):
+            assert lens in author_entry.get("on_demand", {}), (
+                f"{author} must project native {lens} on_demand"
+            )
+
+        author_body = _role_skill_loading_body(author, root)
+        reviewer_body = _role_skill_loading_body(reviewer, root)
+        for lens in ("nw-algebraic-design-protocol", "nw-certainty-by-construction"):
+            assert f"Invoke Skill({lens}) ON-TRIGGER" in author_body
+            assert f"Invoke Skill({lens}) ON-TRIGGER" in reviewer_body
+
+        reviewer_entry = roles[reviewer]
+        assert reviewer_entry.get("reviewer_of") == [author]
+        for target in author_entry.get("paradigm", {}).values():
+            assert f"Skill({target})" not in reviewer_body, (
+                f"{reviewer} must not inherit {author}'s paradigm-owned {target}"
+            )
+        for skill in author_entry.get("phase", {}):
+            assert f"Skill({skill})" not in reviewer_body, (
+                f"{reviewer} must not inherit {author}'s phase-owned {skill}"
+            )
 
     def test_no_crafter_role_authors_a_language_pbt_lens(self, roles: dict):
         for agent_id in _CRAFTER_ROLES:

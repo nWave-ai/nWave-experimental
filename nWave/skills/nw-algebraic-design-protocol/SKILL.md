@@ -13,6 +13,14 @@ answers.
 
 Knowledge basis: algebra-driven design — deriving an API from its laws.
 
+**Cross-layer authority (ADR-SSOT-002 §6a).** This is the one language-agnostic
+operational procedure for every layer a target's declared boundary touches —
+domain, application/ports, adapter/integration, infrastructure/recovery.
+Layer applicability derives from `targets` and `targets[].boundary`/
+`contract-shape`; nothing here adds a persisted layer field. OO/FP structure
+catalogues (`nw-code-design-oo`/`-fp`, `nw-fp-algebra-driven-design`) are thin
+projections of this method, never a competing one.
+
 ## 1. Observations and equality, before anything else
 
 State what a user can meaningfully **observe**. Then define `x ≈ y` as agreement

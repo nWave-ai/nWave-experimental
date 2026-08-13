@@ -1,6 +1,6 @@
 ---
 name: nw-certainty-by-construction
-description: Turn a stable domain claim into a construction boundary so the invalid state cannot be built, and state honestly what remains unguarded. Use when a requirement says an invalid state or transition must not occur, when values need a canonical form, or when a rewrite/cache/optimisation must preserve meaning. Complements nw-fp-domain-modeling, which shows the encodings; this decides whether to encode, how strong the claim really is, and what obligation is left over.
+description: Turn a stable layer claim (domain, application, adapter, or infrastructure) into a construction boundary so the invalid state cannot be built, and state honestly what remains unguarded. Use when a requirement says an invalid state or transition must not occur, when values need a canonical form, or when a rewrite/cache/optimisation must preserve meaning. Complements nw-fp-domain-modeling, which shows the encodings; this decides whether to encode, how strong the claim really is, and what obligation is left over.
 ---
 
 # Certainty by Construction
@@ -12,6 +12,12 @@ outside it.
 
 Knowledge basis: certainty by construction — encoding invariants so the
 invalid state cannot be built.
+
+**Layer-neutral (ADR-SSOT-002 §6a).** A claim is encoded at whichever layer
+it is stable, local and high-value — domain state/transition, application/
+port outcome, adapter/integration failure translation, or infrastructure/
+recovery policy. Which layers apply to a target derives from that target's
+declared `boundary`/`contract-shape`, never a hand-picked "domain-only" scope.
 
 ## Work from the claim outward
 

@@ -23,8 +23,12 @@ are recorded; `accepted` requires both.
 
 The arm's own `requirements.txt` is installed, because a delivery may
 legitimately add a dependency, and refusing that would score the arms on a
-constraint neither was told about. Everything else -- the suite file, the
-command, the interpreter version -- comes from here, not from the workspace.
+constraint neither was told about. Its optional `requirements-dev.txt` is
+installed next, for the same reason: a delivered test suite may declare
+test-only dependencies there, and a workspace that has one but cannot
+install it fails outright, before either suite runs. Everything else -- the
+suite file, the command, the interpreter version -- comes from here, not
+from the workspace.
 
 The name `test_k4_acceptance.py` is written INTO the arm's tree at run time.
 That is deliberate: it never exists while the arm works, so no delivery can be
@@ -66,6 +70,7 @@ _EXCLUDED_SNAPSHOT_NAMES = frozenset(
         ".mypy_cache",
         ".ruff_cache",
         ".tox",
+        ".hypothesis",
     }
 )
 
@@ -138,6 +143,16 @@ def _examine_snapshot(snapshot: Path, suite: Path) -> tuple[bool, str]:
     code, tail = _run([pip, "install", "-q", "-r", "requirements.txt"], snapshot)
     if code != 0:
         return False, f"the delivery's requirements.txt does not install: {tail}"
+    dev_reqs = snapshot / "requirements-dev.txt"
+    if dev_reqs.exists():
+        code, tail = _run(
+            [pip, "install", "-q", "-r", "requirements-dev.txt"], snapshot
+        )
+        if code != 0:
+            return (
+                False,
+                f"the delivery's requirements-dev.txt does not install: {tail}",
+            )
     code, tail = _run([pip, "install", "-q", "time-machine"], snapshot)
     if code != 0:
         return False, f"could not install the suite's clock dependency: {tail}"

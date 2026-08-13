@@ -3,7 +3,7 @@ name: nw-system-designer-reviewer
 description: Use to review system design architecture outputs. Validates trade-off analysis, estimation accuracy, pattern applicability, SPOF detection, and scalability claims. Pairs with system-designer.
 model: sonnet
 maxTurns: 25
-tools: Read, Glob, Grep, Task, Bash
+tools: Read, Glob, Grep, Task, Bash, Skill
 skills:
   - nw-sd-framework
   - nw-sd-patterns
@@ -41,6 +41,11 @@ You MUST load your skill files before beginning any review.
 | code facts | `~/.claude/skills/nw-code-analysis-port/SKILL.md` | designing/writing/analyzing/reviewing code or tests — resolve code facts (callers/defs/reads/call-graph/scope/atoms) via the port, not ad-hoc grep |
 | Review | `nw-sd-framework` | Always -- estimation validation |
 | Review | `nw-sd-patterns` | Always -- pattern correctness |
+
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested infrastructure or recovery law
+- Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid recovery or failure-policy state
+<!-- GENERATED:role-skill-loading END -->
 
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md`
 
