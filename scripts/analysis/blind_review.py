@@ -82,6 +82,7 @@ _NEVER_SEAL = (
     ".venv*",
     ".k4-acceptance-venv",
     ".mypy_cache",
+    ".hypothesis",
     "__pycache__",
     ".git",
     "AGENTS.md",

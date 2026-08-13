@@ -508,3 +508,34 @@ def test_excluded_paths_never_leak(tmp_path):
 
     # Delivery's own file should be present
     assert "new.py" in manifest or "new.py" in patch, "delivery's own file was excluded"
+
+
+def test_hypothesis_cache_with_binary_excluded(tmp_path):
+    """`.hypothesis/` runtime cache with non-UTF8 bytes does not crash seal."""
+
+    def populate(workspace):
+        # Hypothesis runtime cache with binary content (non-UTF8)
+        hypothesis_dir = workspace / ".hypothesis"
+        hypothesis_dir.mkdir(exist_ok=True)
+        (hypothesis_dir / "cache.bin").write_bytes(b"\x00\x01\x02\xff\xfe\xfd")
+        (hypothesis_dir / "examples.db").write_bytes(b"binary_data_\xff\xfe")
+        # Legitimate delivery change
+        (workspace / "new.py").write_text("x = 1\n")
+
+    campaign, _ = _campaign_with_workspace(tmp_path, populate)
+    opaque_dir = _seal(tmp_path, campaign)
+
+    manifest_path = opaque_dir / "DELIVERY-CHANGES.txt"
+    patch_path = opaque_dir / "DELIVERY.patch"
+    assert manifest_path.is_file(), "DELIVERY-CHANGES.txt missing"
+    assert patch_path.is_file(), "DELIVERY.patch missing"
+
+    manifest = manifest_path.read_text()
+    patch = patch_path.read_text()
+
+    # `.hypothesis` should never appear in manifest or patch
+    assert ".hypothesis" not in manifest, ".hypothesis leaked into manifest"
+    assert ".hypothesis" not in patch, ".hypothesis leaked into patch"
+
+    # Delivery file should be present
+    assert "new.py" in manifest or "new.py" in patch, "delivery file was excluded"
