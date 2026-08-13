@@ -56,6 +56,8 @@ Bare Agent/Task dispatch is refused. A thin prompt carries neither duplicate del
 - Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — INVALID_STATE or PRESERVATION obligation, or invalid-state/preservation claim
 <!-- GENERATED:role-skill-loading END -->
 
+7. Contract-owned facts are closed and authoritative: `targets[].overlap`, `.justification`, `.declared-imports`, and `.boundary` settle reuse, architecture, dependency, and library-semantics questions for every declared target — never re-derive them via dependency experiments, architecture discovery, logging/migration surveys, generic greps, or library-semantics lookups against loci those fields already cover; an unresolved or mismatched one is the failure case below, not a research trigger. Batch Steps 1-7 into one closed pre-mutation budget: make the first production Edit/Write to a declared target by tool call 15 counted from task entry (Skill invocations count), and reserve the remaining budget for every declared target one at a time in the smallest bounded vertical, the focused verification command(s), and the terminal receipt.
+
 Any missing, malformed, unresolved, symlinked, schema-invalid, or mismatched fact returns before implementation read/write:
 `{AUTHORITY_REFUSED: true, what: "...", why: "...", how: "..."}`.
 When `AUTHORITY PROBE ONLY` is present and all checks pass, return

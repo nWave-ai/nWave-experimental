@@ -23,6 +23,7 @@ from pathlib import Path
 from des.adapters.driven.time.system_time import SystemTimeProvider
 from des.adapters.drivers.hooks import des_task_signal, hook_protocol, service_factory
 from des.adapters.drivers.hooks.bash_command_guards import (
+    _split_subcommands,
     evaluate_git_stash_command,
     evaluate_worktree_remove_command,
     git_stash_guard_target_root,
@@ -234,6 +235,90 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
             "HOW: dispatch the appropriate nw-* role for any other git "
             "subcommand."
         )
+    return None
+
+
+# nWave subagent host-scan lockdown (K4 architecture gap): a dispatched nw-*
+# subagent's own Bash `find`/`bfs` call is restricted to a repo-scoped
+# traversal root -- `find /` (or an option-prefixed equivalent) walks the
+# whole host instead of the active project. Root/user Bash and non-nWave
+# agents are untouched (see `_is_nwave_subagent`).
+_NWAVE_AGENT_PREFIX = "nw-"
+_HOST_SCAN_COMMAND_NAMES = frozenset({"find", "bfs"})
+
+
+def _is_nwave_subagent(hook_input: dict[str, object]) -> bool:
+    """True iff this dispatch is a running nWave subagent (`agent_type`
+    starting with `nw-`) -- never root/user (neither identity field set) and
+    never a non-nWave agent (some other `agent_type` prefix)."""
+    agent_type = hook_input.get("agent_type")
+    return isinstance(agent_type, str) and agent_type.startswith(_NWAVE_AGENT_PREFIX)
+
+
+def _host_scan_traversal_roots(argv: list[str]) -> list[str]:
+    """The traversal-root path arguments of a `find`/`bfs` argv.
+
+    Options may precede the roots (`find -H /`); once at least one root has
+    been collected, the next `-`-prefixed token starts the predicate/
+    expression list and ends the scan -- `find /repo -name find` must not
+    see a later bare `find` token in a predicate as a second root.
+    """
+    roots: list[str] = []
+    for token in argv[1:]:
+        if token.startswith("-"):
+            if roots:
+                break
+            continue
+        roots.append(token)
+    return roots
+
+
+def _is_host_wide_traversal_root(root: str) -> bool:
+    """True iff `root` is the filesystem root itself (`/`, `//`, ...) --
+    never a scoped path like `/repo`, `/tmp/project`, `.`, or `AUTO-ARCHITECTURE-ROOT`."""
+    return root.rstrip("/") == ""
+
+
+def _nwave_host_scan_block(command: str) -> dict[str, str]:
+    return {
+        "decision": "block",
+        "reason": (
+            f"WHAT: an nWave subagent Bash call ({command!r}) traverses the "
+            "filesystem root instead of the active project. "
+            "WHY: a host-wide find/bfs scan can spend minutes walking the "
+            "entire machine instead of the project tree -- discovery must "
+            "stay repo-scoped so a consult's critical path is not spent "
+            "scanning the host. "
+            "HOW: use repo-scoped Glob/Grep/find rooted at the project "
+            "directory or the absolute AUTO-ARCHITECTURE-ROOT, or inspect "
+            "the exact module path directly (e.g. `python -c "
+            '"import inspect, <module>; print(inspect.getsourcefile(<module>))"` '
+            "and read the returned path)."
+        ),
+    }
+
+
+def _evaluate_nwave_subagent_host_scan(command: object) -> dict[str, str] | None:
+    """Pure nWave-subagent `find`/`bfs` host-scan decision.
+
+    Returns `None` (allow) for anything that is not, in some `&&`/`||`/`;`/
+    `|`/`&`-separated sub-command, an actual `find`/`bfs` invocation whose
+    traversal root is the filesystem root -- including quoted mentions
+    (shlex tokenizes those into one non-command argument, never `argv[0]`)
+    and repo-/cwd-/AUTO-root-scoped invocations. Fails open (`None`) on an
+    unparsable command, matching `find_worktree_remove_target`'s contract.
+    """
+    if not isinstance(command, str) or not command.strip():
+        return None
+    sub_commands = _split_subcommands(command)
+    if sub_commands is None:
+        return None
+    for argv in sub_commands:
+        if not argv or argv[0] not in _HOST_SCAN_COMMAND_NAMES:
+            continue
+        roots = _host_scan_traversal_roots(argv)
+        if any(_is_host_wide_traversal_root(root) for root in roots):
+            return _nwave_host_scan_block(command)
     return None
 
 
@@ -759,6 +844,19 @@ def handle_pre_tool_use() -> int:
                         print(json.dumps(auto_root_bash_block))
                         exit_code = 2
                         return exit_code
+
+            # K4 architecture gap: nWave subagent host-scan lockdown. Cheap
+            # for the overwhelming majority of Bash calls (non-find/bfs
+            # commands, or a non-nWave-subagent caller) -- `_is_nwave_subagent`
+            # is a dict-get + prefix check, no I/O.
+            if tool_name == "Bash" and _is_nwave_subagent(hook_input):
+                host_scan_block = _evaluate_nwave_subagent_host_scan(
+                    tool_input.get("command")
+                )
+                if host_scan_block is not None:
+                    print(json.dumps(host_scan_block))
+                    exit_code = 2
+                    return exit_code
 
             if hook_input.get("tool_name") == "SendMessage":
                 transcript_path = extract_transcript_path(hook_input)

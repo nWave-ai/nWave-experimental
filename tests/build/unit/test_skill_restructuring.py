@@ -335,7 +335,7 @@ BULK_HASHES = {
     "nw-pbt-go": "629a6d1930c05f21da98f06225c3ebc3",
     "nw-pbt-haskell": "e28bba247b22609280214655f1b50747",
     "nw-pbt-jvm": "a6227b730ab646f9d006450c3752a788",
-    "nw-pbt-python": "6b0748511bdefd79777a2f4b9c998c8d",
+    "nw-pbt-python": "54d535a53ef3392c433f129962852f2d",
     "nw-pbt-rust": "59f9328e4c1b6f94d8761c8440d1f316",
     "nw-pbt-stateful": "adb77facce00fe56c7ebc642abd59a27",
     "nw-pbt-typescript": "461d6e3987c13eb66005e755db39e5a6",
@@ -351,7 +351,7 @@ BULK_HASHES = {
     # Updated 2026-05-19: extended "When PBT Adds Value" with closed-world
     # falsifier-gate anti-pattern + empirical anchor (commit c2637f6c8). See
     # backlog F-TEST-SPEEDUP-PARADIGM-CATALOG for context.
-    "nw-property-based-testing": "5900eb3277c0fc09ebdc2fda58877c46",
+    "nw-property-based-testing": "5133a0c01a8b315ec99fefbf1d8bb5d0",
     # Hash updated 2026-06-17: decompose-and-recompose into 2 nw-proposal-structure-*
     # modules (b2b, cialdini); core is a lean composing router. §22.0 reviewed.
     "nw-proposal-structure": "bec9dd508f567c847da44cd41ee56821",
@@ -405,7 +405,7 @@ BULK_HASHES = {
     # (COUNT->population / PARTITION->conservation / SILENCE->discriminator; methodology Cambio-1).
     # Hash updated 2026-07-26: add durable-outcome naming so delivery metadata
     # cannot become the public identifier of an acceptance test.
-    "nw-test-design-mandates": "c5d5ca7247981ea96443ffd4d5bc9118",
+    "nw-test-design-mandates": "3d4601294ae808770006e6f0c28cdd1f",
     "nw-test-organization-conventions": "b478170a1cccb0aac1811fa06daf0ba1",
     "nw-test-refactoring-catalog": "9dd4d17224b32058386f4413027253bd",
     "nw-tlaplus-verification": "39ba15e1845e237a9d2014c467aa56ff",

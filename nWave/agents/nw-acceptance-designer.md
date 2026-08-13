@@ -114,13 +114,19 @@ obligation.
 Missing or unsupported `paradigm`, or an empty/missing `obligations`, is an
 acceptance-designer blocker, never a root guess (derived stage: `NoArtifacts`).
 
-Only then materialize exactly ONE consolidated repository-relative
-acceptance-test artifact FILE (derived stage: `TestsMaterialized`) and sha256
-its bytes. Assemble and schema-validate the `DeliveryContract` v1.1 instance
-against the schema read above, pointing `acceptance-tests.{locator,digest}`
-at that file and its digest (derived stage: `ContractValid`) — the contract
-is neither speculative nor deferred until after an expensive RED
-implementation; it is simply not the first artifact written. Execute the
+**Spatial-first materialization (HARD):** after the schema read and the last
+ON-TRIGGER `Skill(...)` return, the next tool call is the `Write` of exactly
+ONE consolidated repository-relative acceptance-test artifact FILE (derived
+stage: `TestsMaterialized`) — no extra Read/Grep/Glob/Bash, no further
+silent synthesis first. That `Write` already carries the compact spatial
+skeleton: states, failure modes, observables, and properties mapped directly
+into test/docstring structure (parametrize tables, `@given`/`Rule`
+skeletons, scenario headers), never prose planning; refine only via `Edit`
+on this same file, never a separate design/proof document. Sha256 its
+bytes, then assemble and schema-validate the `DeliveryContract` v1.1
+instance against the schema read above, pointing
+`acceptance-tests.{locator,digest}` at that file and its digest (derived
+stage: `ContractValid`) — not the first artifact written. Execute the
 focused acceptance test and observe the expected RED, then re-verify the
 digest still matches the on-disk file bytes (derived stage: `RedConfirmed`).
 `NoArtifacts`, `TestsMaterialized`, `ContractValid`, `RedConfirmed` are

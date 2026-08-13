@@ -2,7 +2,6 @@
 name: nw-property-based-testing
 description: Property-based testing strategies (PBT — ACTIVE, authored by the acceptance-designer during DISTILL), shrinking, PBT+TDD integration.
 user-invocable: false
-disable-model-invocation: true
 ---
 
 # Property-Based Testing (ACTIVE)

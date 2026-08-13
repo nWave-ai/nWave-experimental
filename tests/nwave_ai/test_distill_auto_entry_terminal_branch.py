@@ -264,8 +264,11 @@ def test_atd_and_crafter_specs_reference_installed_schema_locator_only() -> None
 
 def test_atd_auto_route_honors_wave_order_before_red_execution() -> None:
     """CONTRACT_SHAPE: bounded-change. ATD Auto route reads/validates schema,
-    determines paradigm, identifies targets and commands, digests FILE, assembles
-    DeliveryContract, executes RED, re-verifies, gates crafter on RedConfirmed.
+    determines paradigm/verification commands, invokes the last native
+    ON-TRIGGER `Skill(...)` return -- the hard boundary before
+    materializing the sole acceptance-test `Write` -- sha256s its bytes,
+    assembles/schema-validates the DeliveryContract, executes the expected
+    RED, re-verifies the digest, and gates crafter dispatch on RedConfirmed.
     """
     text = ATD_AGENT_PATH.read_text(encoding="utf-8")
     auto_section = text[
@@ -276,9 +279,11 @@ def test_atd_auto_route_honors_wave_order_before_red_execution() -> None:
         "read and validate the installed `DeliveryContract` v1.1 schema",
         "determine the selected `paradigm`",
         "verification-scope.commands",
-        "exactly ONE consolidated repository-relative acceptance-test artifact FILE",
-        "sha256 its bytes",
-        "Assemble and schema-validate the `DeliveryContract` v1.1 instance",
+        "last ON-TRIGGER `Skill(...)` return",
+        "the `Write` of exactly ONE consolidated repository-relative "
+        "acceptance-test artifact FILE",
+        "Sha256 its bytes",
+        "assemble and schema-validate the `DeliveryContract` v1.1 instance",
         "Execute the focused acceptance test and observe the expected RED",
         "re-verify the digest",
         "Only the `RedConfirmed` proof enables crafter dispatch",

@@ -2,7 +2,6 @@
 name: nw-test-design-mandates
 description: Design mandates for acceptance tests - hexagonal boundary, business language abstraction, user journey completeness, pure function extraction, 3 Pillars (domain language / chained narrative / production composition), and the layered ATD discipline (Universe-bound assertion, layer-dependent PBT mode, two-tier acceptance, example-based sad paths). Lean recomposing core - routes to three narrow mandate modules.
 user-invocable: false
-disable-model-invocation: true
 ---
 
 # Acceptance Test Design Mandates (recomposing core)
