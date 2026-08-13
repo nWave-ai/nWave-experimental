@@ -11,14 +11,20 @@ Walking-skeleton scope:
 - No PostToolUse / Stop hooks in this slice (deferred)
 
 Hook protocol is NOT identical to Claude Code, despite both taking JSON on
-stdin. Per developers.openai.com/codex/hooks, Codex PreToolUse reads a denial
-reason from stderr on exit 2 and ignores stdout text, while the shared
-claude_code_hook_adapter.py (reused as-is) still writes the legacy Claude Code
-``{"decision": ..., "reason": ...}`` JSON to stdout. The generated Codex
-launcher bridges that gap: on exit 2 with empty child stderr it derives a
-reason from the adapter's stdout and writes it to its own stderr, so Codex
-never logs "PreToolUse hook exited with code 2 but did not write a blocking
-reason to stderr".
+stdin. Codex's legacy exit-2-plus-stderr blocking path is unreliable in
+practice: it depends on the child's stderr surviving intact through to Codex,
+and a stale/absent/miscaptured stderr makes Codex print "PreToolUse hook
+exited with code 2 but did not write a blocking reason to stderr" even when
+the hook did block. Codex's native protocol is more robust: a valid JSON
+``{"decision": "block", "reason": ...}`` document on stdout with the process
+exiting 0 is read as an ordinary block, not a failed hook. The shared
+claude_code_hook_adapter.py (reused as-is) still writes that same legacy
+Claude Code shape to stdout on exit 2. The generated Codex launcher bridges
+the gap by translating: on child exit 2 it derives a reason (child stderr,
+then the stdout JSON's top-level ``reason``, then
+``hookSpecificOutput.permissionDecisionReason``, then a deterministic
+fallback) and re-emits it as that single native JSON payload on its own
+stdout, exiting 0.
 
 A manifest (.nwave-des-manifest.json) tracks the installed hook config for
 clean uninstallation.
@@ -153,15 +159,20 @@ def _launcher_source(python_path: str, pythonpath: str) -> str:
     The child's stdout/stderr go to seekable ``tempfile.TemporaryFile`` objects,
     never ``PIPE``/``capture_output=True``: a grandchild that inherits a pipe's
     write end keeps it open, and ``subprocess.run`` keeps waiting on it after the
-    direct child has exited -- the same hang this file exists to close. Codex
-    reads a denial's reason from stderr on exit 2 and ignores stdout
-    (developers.openai.com/codex/hooks), but the shared adapter writes the
-    legacy Claude Code ``{"decision": "block", "reason": ...}`` shape to stdout
-    and may leave stderr empty; on that combination this launcher derives a
-    reason from the stdout JSON (``reason``, then
-    ``hookSpecificOutput.permissionDecisionReason``) and writes it to its OWN
-    stderr. Exit code 2 is always preserved regardless of whether a reason was
-    found.
+    direct child has exited -- the same hang this file exists to close.
+
+    The shared adapter writes the legacy Claude Code ``{"decision": "block",
+    "reason": ...}`` shape to stdout on exit 2 and may leave stderr empty.
+    Codex's legacy exit-2-plus-stderr blocking path is fragile against exactly
+    that (a stale/absent/miscaptured stderr reads as a FAILED hook, not a
+    block), so on child exit 2 this launcher translates instead of forwarding:
+    it derives a reason (child stderr, then the stdout JSON's top-level
+    ``reason``, then ``hookSpecificOutput.permissionDecisionReason``, then a
+    deterministic WHAT/WHY/HOW fallback) and emits exactly one Codex-native
+    ``{"decision": "block", "reason": ...}`` JSON document on its OWN stdout,
+    exiting 0 -- Codex's documented normal-block shape, not its failure path.
+    The child's own stdout/stderr are not also forwarded on this path, so
+    Codex never sees two JSON documents on stdout.
     """
     return (
         '"""nWave Codex DES launcher. Generated; reinstall to update."""\n'
@@ -220,7 +231,6 @@ def _launcher_source(python_path: str, pythonpath: str) -> str:
         "    stderr_tmp.seek(0)\n"
         "    child_stdout = stdout_tmp.read()\n"
         "    child_stderr = stderr_tmp.read()\n"
-        "sys.stdout.write(child_stdout)\n"
         "if completed.returncode == 2:\n"
         "    reason = child_stderr.strip()\n"
         "    if not reason:\n"
@@ -250,9 +260,11 @@ def _launcher_source(python_path: str, pythonpath: str) -> str:
         '            "HOW: re-run to reproduce, or inspect the DES adapter "\n'
         '            "raw stdout above.\\n"\n'
         "        )\n"
-        '    sys.stderr.write(reason if reason.endswith("\\n") else reason + "\\n")\n'
-        "else:\n"
-        "    sys.stderr.write(child_stderr)\n"
+        '    json.dump({"decision": "block", "reason": reason.strip()}, sys.stdout)\n'
+        '    sys.stdout.write("\\n")\n'
+        "    sys.exit(0)\n"
+        "sys.stdout.write(child_stdout)\n"
+        "sys.stderr.write(child_stderr)\n"
         "sys.exit(completed.returncode)\n"
     )
 

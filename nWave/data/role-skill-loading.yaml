@@ -25,6 +25,7 @@ roles:
     on_demand:
       nw-algebraic-design-protocol: contested design or law
       nw-certainty-by-construction: invalid-state or preservation claim
+      nw-stress-analysis: external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
     paradigm:
       object_oriented: nw-code-design-oo
       functional: nw-code-design-fp
@@ -37,6 +38,7 @@ roles:
     on_demand:
       nw-algebraic-design-protocol: contested design or law
       nw-certainty-by-construction: invalid-state or preservation claim
+      nw-stress-analysis: external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
     paradigm:
       object_oriented: nw-code-design-oo
       functional: nw-code-design-fp
@@ -51,10 +53,12 @@ roles:
     on_demand:
       nw-algebraic-design-protocol: contested design or law
       nw-certainty-by-construction: invalid-state or preservation claim
+      nw-stress-analysis: external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
   nw-system-designer:
     on_demand:
       nw-algebraic-design-protocol: contested infrastructure or recovery law
       nw-certainty-by-construction: invalid recovery or failure-policy state
+      nw-stress-analysis: external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
   nw-system-designer-reviewer:
     reviewer_of:
       - nw-system-designer

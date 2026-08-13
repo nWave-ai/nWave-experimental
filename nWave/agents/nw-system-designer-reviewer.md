@@ -45,6 +45,7 @@ You MUST load your skill files before beginning any review.
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested infrastructure or recovery law
 - Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid recovery or failure-policy state
+- Invoke Skill(nw-stress-analysis) ON-TRIGGER — external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
 <!-- GENERATED:role-skill-loading END -->
 
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md`

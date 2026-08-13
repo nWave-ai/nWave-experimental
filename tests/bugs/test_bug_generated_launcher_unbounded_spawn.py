@@ -245,10 +245,11 @@ _DENIAL_REASON = "Invoke nw-mode-select before the first Bash/Write/Edit."
 _DENIAL_CONFLICTING_REASON = "stdout-json-reason-that-must-not-win"
 _DENIAL_CHILD_STDERR = "adapter wrote this directly to stderr"
 
-# (child stdout, child stderr, substrings that must reach launcher stderr,
-# substrings that must NOT). Every case exits 2; only the reason-derivation
-# path differs -- top-level JSON reason, nested reason, stderr-wins-over-a-
-# conflicting-JSON-reason, and the no-reason-found fallback.
+# (child stdout, child stderr, substrings that must appear in the derived
+# reason, substrings that must NOT). Every case exits 2; only the
+# reason-derivation path differs -- top-level JSON reason, nested reason,
+# stderr-wins-over-a-conflicting-JSON-reason, and the no-reason-found
+# fallback.
 _DENIAL_CASES = [
     pytest.param(
         json.dumps({"decision": "block", "reason": _DENIAL_REASON}),
@@ -293,14 +294,21 @@ _DENIAL_CASES = [
     ("child_stdout", "child_stderr", "must_contain", "must_not_contain"),
     _DENIAL_CASES,
 )
-def test_generated_launcher_derives_a_denial_reason_for_codex_stderr(
+def test_generated_launcher_translates_a_denial_into_codexs_native_block_json(
     tmp_path: Path,
     child_stdout: str,
     child_stderr: str,
     must_contain: tuple[str, ...],
     must_not_contain: tuple[str, ...],
 ) -> None:
-    """rc=2: Codex reads the block reason from launcher stderr, never stdout."""
+    """rc=2: translate to Codex's native stdout-JSON block, exit 0, silent stderr.
+
+    Codex's legacy exit-2-plus-stderr path is the one that produces "PreToolUse
+    hook exited with code 2 but did not write a blocking reason to stderr" when
+    stderr goes missing in transit. The robust boundary is Codex's documented
+    normal-block shape: a single valid ``{"decision": "block", "reason": ...}``
+    JSON document on stdout with the process exiting 0.
+    """
     stub_body = (
         "import sys\n"
         "sys.stdin.read()\n"
@@ -316,18 +324,100 @@ def test_generated_launcher_derives_a_denial_reason_for_codex_stderr(
         os.write(write_fd, b'{"tool_name": "Bash"}')
         os.close(write_fd)  # a well-behaved harness closes: the child sees EOF
         write_fd = -1
-        returncode, _, stderr = _drive(launcher, tmp_path, read_fd, {})
+        returncode, stdout, stderr = _drive(launcher, tmp_path, read_fd, {})
     finally:
         os.close(read_fd)
         if write_fd != -1:
             os.close(write_fd)
 
-    assert returncode == 2, f"denial rc not preserved (got {returncode})"
-    assert all(expected in stderr for expected in must_contain), (must_contain, stderr)
-    assert not any(bad in stderr for bad in must_not_contain), (
-        must_not_contain,
-        stderr,
+    assert returncode == 0, (
+        "WHAT: the launcher did not translate the block into Codex's native "
+        f"protocol (exit {returncode}).\n"
+        "WHY: Codex reads a valid JSON decision:block/reason document on "
+        "stdout with exit 0 as a normal block; propagating the legacy exit 2 "
+        "is the path that produces Codex's stale-stderr UI noise.\n"
+        f"--- launcher stdout ---\n{stdout}\n--- launcher stderr ---\n{stderr}"
     )
+    assert stderr == "", (
+        "WHAT: the translated block path wrote to stderr.\n"
+        "WHY: the native protocol is a stdout JSON document on exit 0; "
+        "writing ordinary blocking output to stderr here reintroduces the "
+        "condition that makes Codex misreport the hook as failed.\n"
+        f"--- launcher stderr ---\n{stderr}"
+    )
+    lines = stdout.splitlines()
+    assert len(lines) == 1, (
+        "WHAT: the launcher's stdout is not exactly one JSON document.\n"
+        "WHY: the child's own stdout (the legacy Claude Code JSON) must not "
+        "also be forwarded, or Codex sees two JSON documents where it "
+        "expects one.\n"
+        f"--- launcher stdout ---\n{stdout!r}"
+    )
+    payload = json.loads(lines[0])
+    assert payload.get("decision") == "block", payload
+    reason = payload.get("reason")
+    assert isinstance(reason, str) and reason, payload
+    assert all(expected in reason for expected in must_contain), (
+        must_contain,
+        reason,
+    )
+    assert not any(bad in reason for bad in must_not_contain), (
+        must_not_contain,
+        reason,
+    )
+
+
+@_POSIX_ONLY
+def test_generated_launcher_does_not_duplicate_the_childs_own_json_on_denial(
+    tmp_path: Path,
+) -> None:
+    """Falsifier: the child's legacy stdout JSON must not survive alongside it.
+
+    A launcher that regressed to `sys.stdout.write(child_stdout)` unconditionally
+    plus the new native payload would emit TWO JSON documents on stdout; Codex's
+    parser expects exactly one.
+    """
+    # A distinctive extra key makes the child's raw JSON text byte-different
+    # from the minimal {"decision", "reason"} payload the launcher emits, so a
+    # substring match below cannot coincidentally pass.
+    child_json = json.dumps(
+        {
+            "decision": "block",
+            "reason": _DENIAL_REASON,
+            "legacyMarkerNotPartOfNativePayload": True,
+        }
+    )
+    stub_body = (
+        f"import sys\nsys.stdin.read()\nsys.stdout.write({child_json!r})\nsys.exit(2)\n"
+    )
+    stub = _stub_interpreter(tmp_path, stub_body)
+    launcher = _write_launcher(tmp_path, stub)
+
+    read_fd, write_fd = os.pipe()
+    try:
+        os.write(write_fd, b'{"tool_name": "Bash"}')
+        os.close(write_fd)
+        write_fd = -1
+        returncode, stdout, stderr = _drive(launcher, tmp_path, read_fd, {})
+    finally:
+        os.close(read_fd)
+        if write_fd != -1:
+            os.close(write_fd)
+
+    assert returncode == 0, f"launcher exited {returncode}, expected 0"
+    assert "legacyMarkerNotPartOfNativePayload" not in stdout, (
+        "WHAT: the child's raw legacy JSON survived in the launcher's stdout "
+        "alongside the translated native payload.\n"
+        "WHY: Codex must see exactly one JSON document; duplicating the "
+        "child's stdout alongside the translated payload breaks that "
+        "contract.\n"
+        f"--- launcher stdout ---\n{stdout!r}"
+    )
+    assert len(stdout.splitlines()) == 1, (
+        "WHAT: the launcher's stdout is not exactly one line/JSON document.\n"
+        f"--- launcher stdout ---\n{stdout!r}"
+    )
+    assert stderr == "", f"expected empty stderr on the translated path, got {stderr!r}"
 
 
 def test_generated_launcher_ensures_bounded_spawn_with_proper_channels() -> None:

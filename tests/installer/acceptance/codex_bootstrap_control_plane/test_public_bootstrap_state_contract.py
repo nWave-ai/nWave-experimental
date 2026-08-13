@@ -285,7 +285,6 @@ def _current_codex_launcher_source(python_path: str, pythonpath: str) -> str:
         "    stderr_tmp.seek(0)\n"
         "    child_stdout = stdout_tmp.read()\n"
         "    child_stderr = stderr_tmp.read()\n"
-        "sys.stdout.write(child_stdout)\n"
         "if completed.returncode == 2:\n"
         "    reason = child_stderr.strip()\n"
         "    if not reason:\n"
@@ -315,9 +314,11 @@ def _current_codex_launcher_source(python_path: str, pythonpath: str) -> str:
         '            "HOW: re-run to reproduce, or inspect the DES adapter "\n'
         '            "raw stdout above.\\n"\n'
         "        )\n"
-        '    sys.stderr.write(reason if reason.endswith("\\n") else reason + "\\n")\n'
-        "else:\n"
-        "    sys.stderr.write(child_stderr)\n"
+        '    json.dump({"decision": "block", "reason": reason.strip()}, sys.stdout)\n'
+        '    sys.stdout.write("\\n")\n'
+        "    sys.exit(0)\n"
+        "sys.stdout.write(child_stdout)\n"
+        "sys.stderr.write(child_stderr)\n"
         "sys.exit(completed.returncode)\n"
     )
 

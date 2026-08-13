@@ -1047,19 +1047,27 @@ class TestRoleSkillLoadingRegistry:
     ):
         """Cross-layer projection law (ADR-SSOT-002 6a, 2026-08-13): solution
         architect, DDD architect, system designer and platform architect each
-        project native algebra + certainty on_demand; each single-owner
-        reviewer mirrors exactly those two on-demand lenses and never the
-        author's own phase- or paradigm-owned rows. One dense parametrized
-        law replaces four near-duplicate per-role test bodies."""
+        project native algebra + certainty + stress-analysis on_demand; each
+        single-owner reviewer mirrors exactly those on-demand lenses and
+        never the author's own phase- or paradigm-owned rows. One dense
+        parametrized law replaces four near-duplicate per-role test bodies."""
         author_entry = roles[author]
-        for lens in ("nw-algebraic-design-protocol", "nw-certainty-by-construction"):
+        for lens in (
+            "nw-algebraic-design-protocol",
+            "nw-certainty-by-construction",
+            "nw-stress-analysis",
+        ):
             assert lens in author_entry.get("on_demand", {}), (
                 f"{author} must project native {lens} on_demand"
             )
 
         author_body = _role_skill_loading_body(author, root)
         reviewer_body = _role_skill_loading_body(reviewer, root)
-        for lens in ("nw-algebraic-design-protocol", "nw-certainty-by-construction"):
+        for lens in (
+            "nw-algebraic-design-protocol",
+            "nw-certainty-by-construction",
+            "nw-stress-analysis",
+        ):
             assert f"Invoke Skill({lens}) ON-TRIGGER" in author_body
             assert f"Invoke Skill({lens}) ON-TRIGGER" in reviewer_body
 
@@ -1073,6 +1081,80 @@ class TestRoleSkillLoadingRegistry:
             assert f"Skill({skill})" not in reviewer_body, (
                 f"{reviewer} must not inherit {author}'s phase-owned {skill}"
             )
+
+    def test_stress_analysis_owned_only_by_architects_never_atd_crafters_examiner(
+        self, root: Path, roles: dict
+    ):
+        """`nw-stress-analysis` is lazy on_demand exclusively on the four
+        architect roles (mirrored by their single-owner reviewers). ATD, both
+        crafters, the crafter reviewer and the examiner must neither declare
+        nor render it."""
+        architects = [author for author, _ in _ARCHITECT_REVIEWER_PAIRS]
+        for role in architects:
+            assert "nw-stress-analysis" in roles[role].get("on_demand", {})
+
+        excluded = [
+            "nw-acceptance-designer",
+            "nw-acceptance-designer-reviewer",
+            "nw-software-crafter",
+            "nw-functional-software-crafter",
+            "nw-software-crafter-reviewer",
+            "nw-user-examiner",
+        ]
+        for role in excluded:
+            entry = roles.get(role, {})
+            for field in ("on_demand", "phase", "catalog_only"):
+                values = entry.get(field, {})
+                names = values if isinstance(values, list) else values.keys()
+                assert "nw-stress-analysis" not in names, (
+                    f"{role} must not own nw-stress-analysis via {field}"
+                )
+            body = _role_skill_loading_body(role, root)
+            assert "nw-stress-analysis" not in body, (
+                f"{role} must not render nw-stress-analysis"
+            )
+
+    def test_stress_analysis_skill_is_native_invocable_not_disabled(self, root: Path):
+        """`nw-stress-analysis` is rendered as a native `Invoke Skill(...)
+        ON-TRIGGER` row -- `disable-model-invocation: true` would mechanically
+        contradict that (see test_atd_native_trigger_spatial_first.py's
+        established law). It stays non-user-invocable (loaded only via the
+        registry trigger, never a direct user command)."""
+        text = (
+            root / "nWave" / "skills" / "nw-stress-analysis" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        front = text.split("---")[1]
+        assert "user-invocable: false" in front
+        assert "disable-model-invocation" not in front
+
+    def test_residuality_flag_is_force_on_not_sole_authoritative_trigger(
+        self, root: Path
+    ):
+        """`--residuality` remains the explicit force-on path into
+        `nw-stress-analysis`'s semantic trigger, but no hand-authored
+        normative prose may claim it is the ONLY trigger -- that phrasing
+        contradicts the registry-driven semantic-trigger set."""
+        targets = [
+            root / "nWave" / "agents" / "nw-solution-architect.md",
+            root / "nWave" / "skills" / "nw-design" / "SKILL.md",
+            root / "nWave" / "skills" / "nw-design-discovery-flow" / "SKILL.md",
+            root / "nWave" / "skills" / "nw-stress-analysis" / "SKILL.md",
+        ]
+        stale_phrases = (
+            "Only with --residuality",
+            "flag only",
+            "--residuality flag only",
+        )
+        for path in targets:
+            text = path.read_text(encoding="utf-8")
+            for phrase in stale_phrases:
+                assert phrase not in text, (
+                    f"{path.name} still carries stale sole-trigger phrasing: {phrase!r}"
+                )
+        stress_text = (
+            root / "nWave" / "skills" / "nw-stress-analysis" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert "force-on" in stress_text
 
     def test_no_crafter_role_authors_a_language_pbt_lens(self, roles: dict):
         for agent_id in _CRAFTER_ROLES:

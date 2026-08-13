@@ -730,7 +730,7 @@
 
 ## nw-stress-analysis
 
-- [nw-stress-analysis](nw-stress-analysis.md) — Advanced architecture stress analysis methodology for designing systems that survive unknown stresses. Load when --residuality flag is used or when designing high-uncertainty, mission-critical systems.
+- [nw-stress-analysis](nw-stress-analysis.md) — Advanced architecture stress analysis methodology for designing systems that survive unknown stresses. Load on its semantic trigger — external/nondeterministic dependency, recovery/retry/compensation/degradation, contagion, infrastructure/substrate uncertainty, high-uncertainty socio-technical/business boundary — or on explicit --residuality (force-on).
 
 ## nw-taste-evaluation
 

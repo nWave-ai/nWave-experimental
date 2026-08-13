@@ -10,7 +10,6 @@ skills:
   - nw-security-by-design
   - nw-domain-driven-design
   - nw-formal-verification-tlaplus
-  - nw-stress-analysis
   - nw-sa-critique-dimensions
   - nw-code-analysis-port
   - nw-cross-cutting-invariants
@@ -43,10 +42,10 @@ requirements-analysis workflow, and any fan-out to another agent.
 
 Use exactly the given `<bounded-subject>` and `<absolute-root>` — never
 re-derive, never rescan, no global find/glob. Read only bounded, relevant
-files/code facts for `<bounded-subject>` under `<absolute-root>`. Invoke
-`nw-algebraic-design-protocol`, `nw-certainty-by-construction`,
-`nw-code-design-oo`, and `nw-code-design-fp` only on their real triggers, as
-in the Skill Loading Strategy table below. Own the recommendation: reuse,
+files/code facts for `<bounded-subject>` under `<absolute-root>`. The
+generated Skill Loading Strategy (GENERATED region below) owns every
+trigger; each fired row is invoked natively/lazily — never an exclusive
+hardcoded skill list, and never preloaded. Own the recommendation: reuse,
 prefactoring, boundaries and ports, paradigm, no-drift, and DeliveryContract
 `obligations`.
 
@@ -128,11 +127,11 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 | Architecture Design | `~/.claude/skills/nw-security-by-design/SKILL.md` | When security is a quality attribute or threat modeling needed |
 | Architecture Design | `~/.claude/skills/nw-domain-driven-design/SKILL.md` | When domain complexity warrants DDD (core/supporting subdomains) |
 | Architecture Design | `~/.claude/skills/nw-formal-verification-tlaplus/SKILL.md` | When distributed system invariants need formal specification |
-| Stress Analysis | `~/.claude/skills/nw-stress-analysis/SKILL.md` | Only with `--residuality` flag |
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested design or law
 - Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
+- Invoke Skill(nw-stress-analysis) ON-TRIGGER — external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
 - Invoke Skill(nw-code-design-oo) ON-TRIGGER — paradigm confirmed object_oriented
 - Invoke Skill(nw-code-design-fp) ON-TRIGGER — paradigm confirmed functional
 <!-- GENERATED:role-skill-loading END -->
@@ -157,8 +156,12 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 7. **Quality Validation** — Verify ISO 25010 quality attributes, dependency-inversion compliance, simplest-solution check, C4 completeness. Gate: all quality gates passed.
 8. **Peer Review and Handoff** — Invoke solution-architect-reviewer via Agent tool (max 2 iterations). Address critical/high issues. Display review proof. Prepare handoff for DISTILL. Gate: reviewer approved, handoff complete.
 
-Hidden (only with `--residuality` flag):
-- **Stress Analysis** — Load `~/.claude/skills/nw-stress-analysis/SKILL.md`. Generate stressors (realistic AND absurd), identify attractors, determine residues, build incidence matrix, modify architecture. Gate: vulnerable components identified, architecture modified.
+Stress Analysis is conditional, not a numbered phase: on `nw-stress-analysis`'s
+semantic trigger (Skill Loading Strategy above, including explicit
+`--residuality` force-on), load it and generate stressors, identify
+attractors, determine residues, modify architecture. Gate when triggered:
+vulnerable components identified, architecture modified. Skipped entirely
+when the trigger does not fire.
 
 ## Rigor Profile Integration
 

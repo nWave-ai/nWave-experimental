@@ -374,7 +374,7 @@ BULK_HASHES = {
     "nw-signal-detection": "8cd56c60dc2d43743e88b2e8ce399685",
     "nw-source-verification": "0c9a94d055e58634c55d32fe7c6cf4a8",
     "nw-stakeholder-engagement": "32b0f2710a6afb70fa434a2a55962fac",
-    "nw-stress-analysis": "ad5e1b64848a4343e749ec99c61f3517",
+    "nw-stress-analysis": "69ec9088d58465277e38dfd07a72f92d",
     "nw-taste-evaluation": "93f3f75be13aae0ec1a260ca68af94b7",
     "nw-tbr-methodology": "40e44f3c469968c140bd7c107b536644",
     # Hash updated 2026-06-08: ADR-GV-001 D6 — active-RED scaffolds (not @skip), classic skip DEPRECATED.

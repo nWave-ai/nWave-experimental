@@ -73,6 +73,7 @@ Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/s
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested design or law
 - Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
+- Invoke Skill(nw-stress-analysis) ON-TRIGGER — external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
 - Invoke Skill(nw-code-design-oo) ON-TRIGGER — paradigm confirmed object_oriented
 - Invoke Skill(nw-code-design-fp) ON-TRIGGER — paradigm confirmed functional
 <!-- GENERATED:role-skill-loading END -->

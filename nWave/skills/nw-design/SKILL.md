@@ -390,7 +390,7 @@ Context files: see `nw-design-prior-wave-reading` (Prior Wave Consultation) + pr
 - interactive: moderate
 - output_format: markdown
 - diagram_format: mermaid (C4)
-- stress_analysis: {true if --residuality flag, false otherwise}
+- stress_analysis: {true if --residuality flag (force-on) or `nw-stress-analysis`'s own semantic trigger fires per the role registry, false otherwise}
 
 **SKILL_LOADING**: Read your skill files at `~/.claude/skills/nw-{skill-name}/SKILL.md`. At Phase 4, always load: `nw-architecture-patterns`, `nw-architectural-styles-tradeoffs`. Then follow your Skill Loading Strategy table for phase-specific skills.
 
