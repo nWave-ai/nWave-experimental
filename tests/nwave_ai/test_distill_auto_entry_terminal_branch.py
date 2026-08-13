@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from des.cli.dispatch import _default_skill_loading_body
@@ -113,8 +114,8 @@ def test_auto_root_delegates_the_code_fact_query_to_the_acceptance_designer() ->
 
     atd_text = ATD_AGENT_PATH.read_text(encoding="utf-8")
     executable_form = "des code-fact query.* SUBJECT --root ROOT"
-    assert "run exactly one bounded provider-neutral" in _compact(atd_text)
-    assert executable_form in atd_text
+    assert "Run exactly one stable" in _compact(atd_text)
+    assert executable_form in _compact(atd_text)
     assert "`targets[]`" in atd_text or "targets[].{" in atd_text
     for nested_field in ("overlap", "decision", "justification", "boundary"):
         assert nested_field in atd_text
@@ -360,6 +361,110 @@ def test_root_propagation_binds_every_dispatch_role() -> None:
     assert text.count("**Root propagation:**") == 1
     assert "Root propagation above" in text
     assert len(block.split()) <= 50
+
+
+def _atd_sibling_bullet(text: str) -> str:
+    start = text.index("`nw-acceptance-designer`: receives immutable value seed")
+    end = text.index("2. **Join:")
+    return text[start:end]
+
+
+def _atd_route_contract_paragraph() -> str:
+    text = ATD_AGENT_PATH.read_text(encoding="utf-8")
+    return text[text.index("## Route contract") : text.index("## Language Convention")]
+
+
+def test_atd_closed_grammar_root_forbidden_projections() -> None:
+    """CONTRACT_SHAPE: bounded-change. ATD carrier is exactly CLOSED ROOT/VALUE-SEED
+    in both nw-auto and ATD spec; root never names paraphrase/enumeration/
+    paradigm/language/runner/design fields.
+    """
+    text = _auto_skill_text()
+    bullet = _atd_sibling_bullet(text)
+    compact = _compact(bullet)
+
+    # Exact fenced CLOSED grammar in nw-auto
+    assert "ROOT: <absolute-root> VALUE-SEED: <immutable-verbatim-seed>" in compact
+    fence_positions = [m.start() for m in re.finditer(r"```", bullet)]
+    assert len(fence_positions) == 2
+    fenced_block = bullet[fence_positions[0] + 3 : fence_positions[1]]
+    field_lines = re.findall(r"^\s*([A-Z][A-Z-]*):\s", fenced_block, flags=re.MULTILINE)
+    assert field_lines == ["ROOT", "VALUE-SEED"]
+
+    # Identical ROOT/VALUE-SEED grammar in ATD spec
+    section = _atd_route_contract_paragraph()
+    exact_grammar = "ROOT: <absolute-root>\nVALUE-SEED: <immutable-verbatim-seed>"
+    assert exact_grammar in section
+    assert "No fourth field" in _compact(section)
+    assert "never the design SSOT" in _compact(section)
+
+    # Root forbidden from paraphrase, enumeration, paradigm, language, runner, design
+    for token in (
+        "never restates or paraphrases the cited architecture",
+        "never enumerates or numbers test cases in this prompt",
+        "never a root-authored paradigm/targets/storage/boundary/implementation",
+        "never a root-named or root-guessed language or test runner/framework "
+        "in the dispatch prompt",
+    ):
+        assert token in compact
+    assert "functional" not in bullet
+    assert "object_oriented" not in bullet
+    assert not re.search(r"\n\s*\d+\.\s", bullet)
+
+
+def test_atd_pre_authoring_window_is_bounded_and_terminal() -> None:
+    """CONTRACT_SHAPE: bounded-change. Proves the Markdown contract is internally
+    closed; runtime agent compliance remains for installed K4/K6 evidence.
+    """
+    section = _atd_route_contract_paragraph()
+    compact = _compact(section)
+
+    # Exact query command: exactly one occurrence.
+    assert compact.count("des code-fact query.* SUBJECT --root ROOT") == 1
+
+    # Five-call sequence fragments in order.
+    ordered_tokens = [
+        "AT MOST five calls total",
+        "1. Read the cited architecture",
+        "2. At most one bounded Glob/discovery call",
+        "3. Read at most one selected language manifest",
+        "4. Read at most one selected executable command source",
+        "the same file may satisfy step 3 and step 4",
+        "5. Run exactly one stable",
+        "des code-fact query.* SUBJECT --root ROOT",
+        "target/reuse/boundary facts",
+        "never for language/runner discovery",
+        "That five-call sequence is the ENTIRE pre-authoring product-evidence window",
+        "once step 5 returns, no further product-source Read/Grep/Glob or ad-hoc Bash",
+    ]
+    positions = [compact.index(token) for token in ordered_tokens]
+    assert positions == sorted(positions)
+
+    # Terminal phrases: EVIDENCE_GAP and surrounding context separately.
+    assert "terminal `EVIDENCE_GAP`" in compact
+    assert "no retry, no second discovery/query call, and no guessing" in compact
+
+    # Verify deleted phrases are absent.
+    assert (
+        "First read the cited architecture at that Covered/NoImpact locator"
+        not in compact
+    )
+    assert "run exactly one bounded provider-neutral" not in compact
+    assert "Reading the cited architecture plus that one query" not in compact
+
+
+def test_po_carrier_not_constrained_by_closed_atd_grammar() -> None:
+    """CONTRACT_SHAPE: non-regression. PO sibling bullet retains free-form
+    onboarding context; CLOSED ROOT/VALUE-SEED constraint is ATD-specific only.
+    """
+    text = _auto_skill_text()
+    po_bullet = text[
+        text.index("`nw-product-owner`: owns the expectation charter") : text.index(
+            "`nw-acceptance-designer`: receives immutable value seed"
+        )
+    ]
+    assert "CLOSED" not in po_bullet
+    assert "VALUE-SEED:" not in po_bullet
 
 
 def test_auto_m_route_requires_po_atd_same_message_and_no_invented_signup() -> None:

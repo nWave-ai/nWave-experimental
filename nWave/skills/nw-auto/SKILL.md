@@ -176,14 +176,27 @@ without a second controller:
      `des charter-scaffold`, authoring the expectation charter with
      Preconditions/start recipe grounded in that excerpt, sets oracle, then
      stops.
-   - `nw-acceptance-designer`: receives immutable value seed, design SSOT,
-     and architecture evidence (Covered reference or NoImpact only — never a
-     root-authored paradigm/targets/storage/boundary/implementation, and
-     never a root-named or root-guessed language or test runner/framework in
-     the dispatch prompt). ATD alone detects language and separately
-     discovers the project-native test command from repository-owned
-     evidence. Authors minimal `DeliveryContract` v1.1 with `paradigm` and
-     acceptance tests. ATD never reads charter/start recipe.
+   - `nw-acceptance-designer`: receives immutable value seed via a CLOSED
+     carrier that follows the architecture authority line and its blank
+     line — exactly:
+
+     ```
+     ROOT: <absolute-root>
+     VALUE-SEED: <immutable-verbatim-seed>
+     ```
+
+     No fourth field, no role-specific free prose, and never the design
+     SSOT: root forwards only the exact architecture authority, ROOT, and
+     VALUE-SEED — never a root-authored
+     paradigm/targets/storage/boundary/implementation, and never a
+     root-named or root-guessed language or test runner/framework in the
+     dispatch prompt. Root never restates or paraphrases the cited
+     architecture and never enumerates or numbers test cases in this prompt.
+     ATD alone owns the bounded pre-authoring evidence window defined by its
+     own route contract (`nw-acceptance-designer`) — root neither restates
+     nor executes that sequence here. Authors minimal `DeliveryContract` v1.1
+     with `paradigm` and acceptance tests. ATD never reads charter/start
+     recipe.
 2. **Join:** after BOTH charter and contract+tests are validated, dispatch
    exactly one crafter by deterministic paradigm mapping. Unlike the PO/ATD
    sibling pair above, this single dispatch is foreground and synchronous —

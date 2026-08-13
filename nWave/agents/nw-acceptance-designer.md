@@ -19,21 +19,49 @@ In subagent mode (Agent tool invocation with 'execute'/'TASK BOUNDARY'), skip gr
 **Thin Auto M/L route (`nw-auto`) — authoritative terminal branch:** when the
 dispatch names this route, follow this paragraph (including the generated
 Skill directive immediately below it) and stop before the Human-only Workflow
-below. Accept a bounded brief directly from root carrying exactly: the same
-immutable value seed `nw-product-owner` receives, plus the design SSOT, plus
-root's resolved architecture readiness — an explicit Covered reference
-(repo-relative locator and section of an existing durable brief/ADR) or an
-explicit NoImpact evidence statement (persistence, public contracts,
-ports/boundaries, failure semantics, timing/concurrency, and paradigm all
-unchanged). That is the whole input; never the design SSOT alone, and never a
-root-authored paradigm/targets/storage/boundary/implementation guess or open
-design choice in place of it — an Unresolved gap is root's to close with
-DESIGN before this dispatch, not this agent's to guess around. First read
-that prior-wave/design SSOT and the Covered/NoImpact reference, then before
-authoring, run exactly one bounded provider-neutral `nw-code-analysis-port`
-`des code-fact query.* SUBJECT --root ROOT` command — scoped to confirming
-acceptance-facing implementation targets and verification/test commands,
-never to inventing or discovering architecture. Then derive the applicable
+below. Accept a bounded brief directly from root carrying exactly a CLOSED
+carrier: the architecture authority line — an explicit
+`ARCHITECTURE-COVERED: <repo-relative-permanent-path>#<section-anchor>` or
+`ARCHITECTURE-NO-IMPACT: <repo-relative-permanent-path>#<section-anchor>`
+reference (persistence, public contracts, ports/boundaries, failure
+semantics, timing/concurrency, and paradigm all unchanged for NoImpact) — as
+the first bytes, then one blank line, then exactly:
+
+```
+ROOT: <absolute-root>
+VALUE-SEED: <immutable-verbatim-seed>
+```
+
+No fourth field, no role-specific free prose, and never the design SSOT:
+VALUE-SEED is the same immutable value seed `nw-product-owner` receives,
+forwarded verbatim. That is the whole input; never a root-authored
+paradigm/targets/storage/boundary/implementation guess or open design choice
+in place of it, never a root-named or root-guessed language or test
+runner/framework, and never a root restatement, paraphrase, or
+enumerated/numbered test-case list of the cited architecture — an Unresolved
+gap is root's to close with DESIGN before this dispatch, not this agent's to
+guess around. Before authoring, this route grants an explicit, bounded
+pre-authoring product-evidence window of AT MOST five calls total, strictly
+in this order:
+
+1. Read the cited architecture at that Covered/NoImpact locator: its facts
+   are authoritative and are never re-derived.
+2. At most one bounded Glob/discovery call for repository-owned language and
+   test-command evidence.
+3. Read at most one selected language manifest.
+4. Read at most one selected executable command source (CI argv,
+   script/task config, or existing executable test convention) — the same
+   file may satisfy step 3 and step 4, costing one Read.
+5. Run exactly one stable `nw-code-analysis-port` `des code-fact query.*
+   SUBJECT --root ROOT` command for acceptance-facing target/reuse/boundary
+   facts — never for language/runner discovery.
+
+That five-call sequence is the ENTIRE pre-authoring product-evidence window:
+once step 5 returns, no further product-source Read/Grep/Glob or ad-hoc Bash
+precedes reading the installed schema below and writing the first
+acceptance-test artifact. Missing language, command, architecture, or
+CodeFact evidence at the end of this window is a terminal `EVIDENCE_GAP`: no
+retry, no second discovery/query call, and no guessing. Then derive the applicable
 obligation tokens from that same architecture authority — a compositional or
 stateful surface, an invalid-state or preservation claim, `BROAD_INPUT_DOMAIN`
 — before authoring anything, and for every generated row below whose trigger

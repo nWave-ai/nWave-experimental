@@ -50,9 +50,8 @@ def test_root_never_names_language_or_runner_and_delegates_to_atd():
     required = (
         "never a root-named or root-guessed language or test runner/framework "
         "in the dispatch prompt",
-        "ATD alone detects language",
-        "discovers the project-native test command from",
-        "repository-owned",
+        "ATD alone owns the bounded pre-authoring evidence window "
+        "defined by its own route contract",
     )
     for token in required:
         assert token in section, f"Missing root-delegation projection: {token!r}"
