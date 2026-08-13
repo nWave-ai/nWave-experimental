@@ -13,9 +13,15 @@ Run: uv run pytest -q tests/scripts/analysis/test_run_acceptance_hygiene.py
 
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
 from scripts.analysis.k4 import run_acceptance as ra
+
+
+def _git(*args: str, cwd) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
 _TARGET = ra._SUITE_TARGET  # hc/api/tests/test_k4_acceptance.py, relative
@@ -107,3 +113,44 @@ def test_accepted_requires_both_suites_to_pass(tmp_path, monkeypatch):
 
     assert accepted is True
     assert not (workspace / _TARGET).exists()
+
+
+def test_user_environment_fixture_artifact_is_absent_and_workspace_git_clean_after_examine(
+    tmp_path, monkeypatch
+):
+    """A stale `.k4-user-environment.md` left in the workspace must not
+    survive `examine`: it is gone from the filesystem and the workspace
+    reports a clean `git status` once `examine` returns, the same hygiene
+    guarantee as the hidden suite file above, so a reviewer never sees it
+    either. How cleanup is achieved is an implementation detail this test
+    does not pin down."""
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    workspace, suite = _workspace(tmp_path)
+    _git("init", "-q", "-b", "master", cwd=workspace)
+    _git("config", "user.email", "k4@example.test", cwd=workspace)
+    _git("config", "user.name", "k4", cwd=workspace)
+    _git("add", "-A", cwd=workspace)
+    _git("commit", "-q", "-m", "seed", cwd=workspace)
+
+    leftover = workspace / pef.DOC_NAME
+    leftover.write_text("stale user-environment fixture doc\n")
+
+    monkeypatch.setattr(ra, "_run", _stub_run())
+
+    ra.examine(workspace, suite)
+
+    assert not leftover.exists(), (
+        "the user-environment fixture artifact must not survive `examine`, "
+        "not be left for a reviewer to find"
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert status.stdout.strip() == "", (
+        f"workspace must be git-clean after examine: {status.stdout!r}"
+    )

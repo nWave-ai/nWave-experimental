@@ -117,3 +117,46 @@ def test_both_arms_detach_the_same_way(tmp_path):
     ]
 
     assert control_git == nwave_git
+
+
+def test_examiner_fixture_step_is_shared_with_distinct_ports_per_arm(tmp_path):
+    """The examiner-fixture step both arms run must be the SAME lifecycle --
+    same script, same fixed argv shape, same POSITION relative to the
+    clone/detach git steps -- so neither arm's fixture is prepared
+    differently or too early. The only thing allowed to differ is the port
+    each arm binds, so control and nwave fixtures can run side by side
+    without colliding on one port.
+    """
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    control_step = pef.fixture_setup_step(pef.CONTROL_PORT)
+    nwave_step = pef.fixture_setup_step(pef.NWAVE_PORT)
+
+    assert pef.CONTROL_PORT != pef.NWAVE_PORT
+    assert control_step[:-1] == nwave_step[:-1], (
+        "the fixture step's lifecycle (script + fixed argv) must be identical "
+        "across arms -- only the trailing port argument may differ"
+    )
+    assert control_step[-1] == str(pef.CONTROL_PORT)
+    assert nwave_step[-1] == str(pef.NWAVE_PORT)
+
+    control_steps = preflight.control_setup_steps(tmp_path / "auth")
+    nwave_steps = preflight.nwave_setup_steps(tmp_path / "venv", tmp_path / "auth")
+
+    control_git_positions = [i for i, s in enumerate(control_steps) if s[0] == "git"]
+    nwave_git_positions = [i for i, s in enumerate(nwave_steps) if s[0] == "git"]
+    control_fixture_index = control_steps.index(control_step)
+    nwave_fixture_index = nwave_steps.index(nwave_step)
+
+    assert control_fixture_index > control_git_positions[-1], (
+        "control arm must prepare the fixture only after its clone/detach git steps"
+    )
+    assert nwave_fixture_index > nwave_git_positions[-1], (
+        "nwave arm must prepare the fixture only after its clone/detach git steps"
+    )
+    assert (control_fixture_index - control_git_positions[-1]) == (
+        nwave_fixture_index - nwave_git_positions[-1]
+    ), (
+        "the fixture step must sit at the same lifecycle position relative to "
+        "clone/detach in both arms"
+    )

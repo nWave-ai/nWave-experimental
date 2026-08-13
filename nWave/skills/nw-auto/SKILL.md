@@ -170,10 +170,12 @@ without a second controller:
    sibling Agent prompts,
    followed by one blank line; it is never reconstructed. The existing
    role-specific context below follows only after that blank line.
-   - `nw-product-owner`: receives own documented user-facing local
-     onboarding/setup excerpt (e.g. README's local-install section), never inventing a signup path. Runs
-     `des charter-scaffold`, fills Preconditions/start recipe grounded in that
-     excerpt, sets oracle, then stops.
+   - `nw-product-owner`: owns the expectation charter. Receives own
+     documented user-facing local onboarding/setup excerpt (e.g. README's
+     local-install section), never inventing a signup path. Runs
+     `des charter-scaffold`, authoring the expectation charter with
+     Preconditions/start recipe grounded in that excerpt, sets oracle, then
+     stops.
    - `nw-acceptance-designer`: receives immutable value seed, design SSOT,
      and architecture evidence (Covered reference or NoImpact only — never a
      root-authored paradigm/targets/storage/boundary/implementation, and
@@ -198,10 +200,12 @@ L uses identical Architecture readiness prefix, then M/L route floor: no separat
 
 ## Examiner input isolation
 
-The examiner receives exactly two inputs from the acceptance-designer:
+The examiner receives exactly two inputs, both carried by the expectation
+charter `nw-product-owner` authors — never the acceptance-designer, which
+never reads or authors the charter:
 
 - the expectation charter; and
-- the user-surface start recipe.
+- the user-surface start recipe, contained in the charter's Preconditions.
 
 Never send the examiner code facts, acceptance tests, a test command, source
 paths, implementation claims, or a source-reading fallback. The examiner

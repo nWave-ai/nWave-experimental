@@ -321,3 +321,26 @@ class TestCraftersDoNotAuthorLanguagePbt:
             owners = ownership.get(skill, set())
             leaked = owners & crafter_names
             assert leaked == set(), f"{skill} owned by crafter(s) {leaked}"
+
+
+def test_auto_names_product_owner_as_charter_and_start_recipe_owner():
+    """Auto's own route text is the SSOT for who owns the expectation
+    charter and the user-facing local start recipe. The companion invariant
+    -- ATD never reads or authors the charter -- is proven separately by
+    TestThinAutoRoleRoutes.test_acceptance_designer_owns_contract_and_tests_not_charter,
+    which stays untouched here.
+    """
+    body = (SKILLS_DIR / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
+    route = " ".join(
+        body[
+            body.index("## M/L route — shared reuse floor") : body.index(
+                "## L route — same prefix, same floor"
+            )
+        ].split()
+    )
+    for token in (
+        "nw-product-owner",
+        "expectation charter",
+        "start recipe",
+    ):
+        assert token in route, f"nw-auto/SKILL.md route missing {token!r}"

@@ -42,6 +42,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
 
 _SUITE_TARGET = Path("hc") / "api" / "tests" / "test_k4_acceptance.py"
 _SUITE_LABEL = "hc.api.tests.test_k4_acceptance"
@@ -142,6 +144,7 @@ def examine(workspace: Path, suite: Path) -> tuple[bool, str]:
         )
     finally:
         target.unlink(missing_ok=True)
+        (workspace / pef.DOC_NAME).unlink(missing_ok=True)
 
     accepted = feature_code == 0 and regression_code == 0
     evidence = (

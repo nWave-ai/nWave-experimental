@@ -40,6 +40,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
 
 #: Injected by `nwave-ai project enable`. An HTML comment, so it is invisible in
 #: rendered markdown and unambiguous to look for.
@@ -209,6 +211,7 @@ def nwave_setup_steps(venv: Path, auth_profile: Path) -> list[list[str]]:
         # made the clone exit 128. Caught by the preflight on its own run.
         ["git", "clone", "--depth", "1", _SUT, "."],
         _DETACH_STEP,
+        pef.fixture_setup_step(pef.NWAVE_PORT),
         seed_step(auth_profile),
         # `--platform claude-code`, never the `auto` default. Measured 2026-08-07:
         # auto-detect installs into EVERY platform it finds, and CLAUDE_CONFIG_DIR
@@ -234,6 +237,7 @@ def control_setup_steps(auth_profile: Path) -> list[list[str]]:
     return [
         ["git", "clone", "--depth", "1", _SUT, "."],
         _DETACH_STEP,
+        pef.fixture_setup_step(pef.CONTROL_PORT),
         seed_step(auth_profile),
     ]
 
