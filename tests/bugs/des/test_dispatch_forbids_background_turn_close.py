@@ -600,6 +600,25 @@ def test_generated_envelope_is_still_accepted_by_its_own_validator(
     )
 
 
+def test_atd_thin_auto_route_forbids_background_turn_close_on_focused_red() -> None:
+    """DIRECT-ROUTE witness: nw-auto dispatches this agent via Agent,
+    bypassing des-dispatch's TIMEOUT_INSTRUCTION -- the Thin Auto branch's own
+    prose must carry the rule after its focused-RED sentence."""
+    # covers: fix-dispatched-agent-background-job-never-wakes
+    spec_path = _REPO_ROOT / "nWave" / "agents" / "nw-acceptance-designer.md"
+    text = spec_path.read_text(encoding="utf-8")
+    start = text.index("**Thin Auto M/L route (`nw-auto`)")
+    end = text.index("**Human route:**", start)
+    branch_after_red = text[start:end][
+        text[start:end].index("observe the expected RED") :
+    ]
+    missing = _missing_token_groups(branch_after_red)
+    assert not missing, (
+        "Thin Auto branch missing background-turn-close rule after focused "
+        f"RED: {missing!r} in {branch_after_red!r}"
+    )
+
+
 def test_mandatory_section_set_is_unchanged_by_the_fix() -> None:
     """FROZEN FLOOR: the atdd_pure mandatory-section set must not change.
 

@@ -129,6 +129,12 @@ instance against the schema read above, pointing
 stage: `ContractValid`) — not the first artifact written. Execute the
 focused acceptance test and observe the expected RED, then re-verify the
 digest still matches the on-disk file bytes (derived stage: `RedConfirmed`).
+This focused RED/digest verification is terminal work: run it in the
+FOREGROUND in this same turn, or poll it synchronously to completion before
+the turn ends — never `run_in_background`, and never end the turn awaiting
+its notification, because on this route the notification reaches
+root/orchestrator, not this dispatched agent, so a turn closed on it never
+reopens.
 `NoArtifacts`, `TestsMaterialized`, `ContractValid`, `RedConfirmed` are
 explanatory derived stages only, computed from what already exists on disk
 and in the schema-validated contract — never persisted as their own record.

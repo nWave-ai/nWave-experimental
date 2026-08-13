@@ -59,6 +59,7 @@ CURE regresses the protocol.
 from __future__ import annotations
 
 import ast
+import json
 import os
 import subprocess
 import sys
@@ -134,6 +135,20 @@ def _drive(
         out_path.read_text(encoding="utf-8", errors="replace"),
         err_path.read_text(encoding="utf-8", errors="replace"),
     )
+
+
+def _generated_subprocess_spawns(source: str) -> list[ast.Call]:
+    """Return every ``subprocess.<spawner>(...)`` Call node in generated source."""
+    tree = ast.parse(source)
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in _SPAWNERS
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "subprocess"
+    ]
 
 
 @_POSIX_ONLY
@@ -226,55 +241,184 @@ def test_generated_launcher_delivers_the_payload_to_its_child(tmp_path: Path) ->
     )
 
 
-def test_generated_launcher_bounds_its_spawn_and_decides_stdin() -> None:
-    """Every spawn in the GENERATED code carries a stdin decision and a bound.
+_DENIAL_REASON = "Invoke nw-mode-select before the first Bash/Write/Edit."
+_DENIAL_CONFLICTING_REASON = "stdout-json-reason-that-must-not-win"
+_DENIAL_CHILD_STDERR = "adapter wrote this directly to stderr"
+
+# (child stdout, child stderr, substrings that must reach launcher stderr,
+# substrings that must NOT). Every case exits 2; only the reason-derivation
+# path differs -- top-level JSON reason, nested reason, stderr-wins-over-a-
+# conflicting-JSON-reason, and the no-reason-found fallback.
+_DENIAL_CASES = [
+    pytest.param(
+        json.dumps({"decision": "block", "reason": _DENIAL_REASON}),
+        "",
+        (_DENIAL_REASON,),
+        (),
+        id="stdout_top_level_reason",
+    ),
+    pytest.param(
+        json.dumps(
+            {
+                "decision": "block",
+                "hookSpecificOutput": {
+                    "permissionDecisionReason": _DENIAL_REASON,
+                },
+            }
+        ),
+        "",
+        (_DENIAL_REASON,),
+        (),
+        id="stdout_nested_hookSpecificOutput_reason",
+    ),
+    pytest.param(
+        json.dumps({"decision": "block", "reason": _DENIAL_CONFLICTING_REASON}),
+        _DENIAL_CHILD_STDERR,
+        (_DENIAL_CHILD_STDERR,),
+        (_DENIAL_CONFLICTING_REASON,),
+        id="nonempty_child_stderr_wins_over_conflicting_stdout_reason",
+    ),
+    pytest.param(
+        "not valid json, and no reason field either",
+        "",
+        ("WHAT", "WHY", "HOW"),
+        (),
+        id="reasonless_stdout_falls_back_to_what_why_how",
+    ),
+]
+
+
+@_POSIX_ONLY
+@pytest.mark.parametrize(
+    ("child_stdout", "child_stderr", "must_contain", "must_not_contain"),
+    _DENIAL_CASES,
+)
+def test_generated_launcher_derives_a_denial_reason_for_codex_stderr(
+    tmp_path: Path,
+    child_stdout: str,
+    child_stderr: str,
+    must_contain: tuple[str, ...],
+    must_not_contain: tuple[str, ...],
+) -> None:
+    """rc=2: Codex reads the block reason from launcher stderr, never stdout."""
+    stub_body = (
+        "import sys\n"
+        "sys.stdin.read()\n"
+        f"sys.stdout.write({child_stdout!r})\n"
+        f"sys.stderr.write({child_stderr!r})\n"
+        "sys.exit(2)\n"
+    )
+    stub = _stub_interpreter(tmp_path, stub_body)
+    launcher = _write_launcher(tmp_path, stub)
+
+    read_fd, write_fd = os.pipe()
+    try:
+        os.write(write_fd, b'{"tool_name": "Bash"}')
+        os.close(write_fd)  # a well-behaved harness closes: the child sees EOF
+        write_fd = -1
+        returncode, _, stderr = _drive(launcher, tmp_path, read_fd, {})
+    finally:
+        os.close(read_fd)
+        if write_fd != -1:
+            os.close(write_fd)
+
+    assert returncode == 2, f"denial rc not preserved (got {returncode})"
+    assert all(expected in stderr for expected in must_contain), (must_contain, stderr)
+    assert not any(bad in stderr for bad in must_not_contain), (
+        must_not_contain,
+        stderr,
+    )
+
+
+def test_generated_launcher_ensures_bounded_spawn_with_proper_channels() -> None:
+    """Every spawn in the GENERATED code carries stdin decision, bound, and temp-file I/O.
 
     Asserted on the AST of the generator's OUTPUT, not on its text: the property
-    holds through any rewrite of how the launcher is assembled, and cannot be
-    satisfied by a substring. This is the same predicate
-    ``tests/build/test_no_unbounded_unstdin_spawn.py`` applies to hand-written
-    modules -- applied where that scan cannot see, because here the spawn is a
-    string at scan time and code only after install.
+    holds through any rewrite of how the launcher is assembled. This is the same
+    predicate ``tests/build/test_no_unbounded_unstdin_spawn.py`` applies to
+    hand-written modules -- applied here where that scan cannot see, because the
+    spawn is a string at scan time and code only after install.
+
+    The observable safety contract combines three hazards: (1) a child that blocks
+    on stdin drags the launcher down unless stdin is forwarded explicitly; (2) an
+    unbounded spawn can hang forever if the child blocks; (3) pipes held open by
+    grandchildren block subprocess.run's wait even after the direct child exits,
+    perpetuating the deadlock this hook exists to close.
     """
     source = _launcher_source("/opt/nwave/bin/python", "/opt/nwave/runtime")
     tree = ast.parse(source)
 
-    spawns = [
-        node
+    # Collect TemporaryFile context variables once
+    temp_file_vars = {
+        node.optional_vars.id
         for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr in _SPAWNERS
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "subprocess"
-    ]
+        if isinstance(node, ast.withitem)
+        and isinstance(node.context_expr, ast.Call)
+        and isinstance(node.context_expr.func, ast.Attribute)
+        and node.context_expr.func.attr == "TemporaryFile"
+        and isinstance(node.context_expr.func.value, ast.Name)
+        and node.context_expr.func.value.id == "tempfile"
+        and isinstance(node.optional_vars, ast.Name)
+    }
+
+    # Collect all subprocess spawns once
+    spawns = _generated_subprocess_spawns(source)
     assert spawns, "the generated launcher no longer spawns; re-point this witness"
 
     offences: list[str] = []
     for node in spawns:
-        kwargs = {kw.arg for kw in node.keywords if kw.arg}
-        if not kwargs & {"stdin", "input"}:
+        kwargs = {kw.arg: kw.value for kw in node.keywords}
+        kwargs_names = {kw.arg for kw in node.keywords if kw.arg}
+
+        # Check explicit stdin or input
+        if not kwargs_names & {"stdin", "input"}:
             offences.append(
-                f"generated line {node.lineno}: subprocess.{node.func.attr}(...) "
-                f"passes neither stdin= nor input=, so the child INHERITS fd 0 "
-                f"transitively"
+                f"line {node.lineno}: subprocess.{node.func.attr}(...) passes neither "
+                f"stdin= nor input=, so the child INHERITS fd 0"
             )
-        elif node.func.attr in _BOUNDABLE_SPAWNERS and "timeout" not in kwargs:
+
+        # Check timeout for boundable spawners
+        if node.func.attr in _BOUNDABLE_SPAWNERS and "timeout" not in kwargs_names:
             offences.append(
-                f"generated line {node.lineno}: subprocess.{node.func.attr}(...) is "
-                f"UNBOUNDED: no timeout=, so a blocked child hangs the hook forever"
+                f"line {node.lineno}: subprocess.{node.func.attr}(...) is UNBOUNDED: "
+                f"no timeout="
             )
+
+        # Check no capture_output
+        if "capture_output" in kwargs:
+            offences.append(f"line {node.lineno}: capture_output=True")
+
+        # Check stdout/stderr are TemporaryFile, not PIPE
+        for channel in ("stdout", "stderr"):
+            value = kwargs.get(channel)
+            is_pipe = (
+                isinstance(value, ast.Attribute)
+                and value.attr == "PIPE"
+                and isinstance(value.value, ast.Name)
+                and value.value.id == "subprocess"
+            )
+            if is_pipe:
+                offences.append(f"line {node.lineno}: {channel}=subprocess.PIPE")
+            else:
+                is_temp_file_var = (
+                    isinstance(value, ast.Name) and value.id in temp_file_vars
+                )
+                if not is_temp_file_var:
+                    offences.append(
+                        f"line {node.lineno}: {channel}= not a TemporaryFile var"
+                    )
 
     assert not offences, (
         "WHAT: the launcher generated by `_launcher_source` -- the file that lands "
-        "on the operator's machine at install time -- spawns without an explicit "
-        "stdin decision or without a wall-clock bound.\n"
+        "on the operator's machine at install time -- does not consistently apply "
+        "the observable safety contract for spawned subprocesses.\n"
         "WHY: this text becomes executable code on someone else's machine. The "
         "static spawn ban cannot see it (at scan time it is a string literal, not "
         "a Call node), so the hazard ships unchallenged into a PreToolUse hook.\n"
-        "HOW: pass both kwargs in the emitted body in `_launcher_source` "
-        "(scripts/install/plugins/codex_des_plugin.py). Do NOT widen the allowlist "
-        "in tests/build/test_no_unbounded_unstdin_spawn.py, and do NOT change that "
-        "ban's predicate here.\n"
-        "--- offending generated sites ---\n" + "\n".join(offences)
+        "HOW: ensure every subprocess spawn in `_launcher_source` "
+        "(scripts/install/plugins/codex_des_plugin.py) carries an explicit stdin "
+        "decision (stdin= or input=), a timeout= for boundable spawners, and uses "
+        "TemporaryFile rather than PIPE for stdout and stderr. Do NOT widen the "
+        "allowlist in tests/build/test_no_unbounded_unstdin_spawn.py.\n"
+        "--- offending sites ---\n" + "\n".join(offences)
     )

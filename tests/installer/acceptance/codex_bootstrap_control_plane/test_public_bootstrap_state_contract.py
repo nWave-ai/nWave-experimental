@@ -221,22 +221,32 @@ def _current_codex_launcher_source(python_path: str, pythonpath: str) -> str:
     """The exact current launcher bytes; keep this fixture implementation-local.
 
     Restated by hand, in lockstep with the generator, when the emitted spawn
-    gained its explicit stdin decision and its wall-clock bound.  Unlike
+    gained its explicit stdin decision and its wall-clock bound, and again when
+    it started capturing the child's stdout/stderr into seekable temp files so
+    it could translate an rc=2 block reason onto its own stderr.  Unlike
     ``_legacy_codex_launcher_source`` above -- a frozen fingerprint of bytes the
     public v1 bootstrap already wrote on real machines, which must never move --
     this one tracks whatever the installer emits today.
     """
     return (
         '"""nWave Codex DES launcher. Generated; reinstall to update."""\n'
-        "import os\nimport subprocess\nimport sys\n\n"
+        "import json\n"
+        "import os\n"
+        "import subprocess\n"
+        "import sys\n"
+        "import tempfile\n\n"
         f"PYTHON_PATH = {json.dumps(python_path)}\n"
         f"PYTHONPATH = {json.dumps(pythonpath)}\n"
         'TIMEOUT_ENV = "NWAVE_CODEX_HOOK_TIMEOUT"\n'
         "DEFAULT_TIMEOUT_SECONDS = 25.0\n"
-        'env = os.environ.copy()\nenv["PYTHONPATH"] = PYTHONPATH\n'
-        'argv = [\n    PYTHON_PATH,\n    "-m",\n'
+        "env = os.environ.copy()\n"
+        'env["PYTHONPATH"] = PYTHONPATH\n'
+        "argv = [\n"
+        "    PYTHON_PATH,\n"
+        '    "-m",\n'
         '    "des.adapters.drivers.hooks.claude_code_hook_adapter",\n'
-        '    "pre-tool-use",\n]\n'
+        '    "pre-tool-use",\n'
+        "]\n"
         "try:\n"
         "    bound = float(os.environ.get(TIMEOUT_ENV, DEFAULT_TIMEOUT_SECONDS))\n"
         "except (TypeError, ValueError):\n"
@@ -245,21 +255,69 @@ def _current_codex_launcher_source(python_path: str, pythonpath: str) -> str:
         "    stdin_channel = sys.stdin.fileno()\n"
         "except (AttributeError, OSError, ValueError):\n"
         "    stdin_channel = subprocess.DEVNULL\n"
-        "try:\n"
-        "    completed = subprocess.run(\n"
-        "        argv, env=env, check=False, stdin=stdin_channel, timeout=bound\n"
-        "    )\n"
-        "except subprocess.TimeoutExpired:\n"
-        "    sys.stderr.write(\n"
-        '        f"WHAT: the nWave DES PreToolUse validation did not finish "\n'
-        '        f"within its {bound:g}s bound and was killed.\\n"\n'
-        '        f"WHY: a hook that never returns hangs the Codex session, so "\n'
-        '        f"this launcher bounds its child and always yields.\\n"\n'
-        '        f"HOW: re-run. If the validation genuinely needs longer, set "\n'
-        '        f"{TIMEOUT_ENV}=<seconds>. Allowing the tool without a "\n'
-        '        f"verdict.\\n"\n'
-        "    )\n"
-        "    sys.exit(0)\n"
+        "with tempfile.TemporaryFile(\n"
+        '    mode="w+", encoding="utf-8", errors="replace"\n'
+        ") as stdout_tmp, tempfile.TemporaryFile(\n"
+        '    mode="w+", encoding="utf-8", errors="replace"\n'
+        ") as stderr_tmp:\n"
+        "    try:\n"
+        "        completed = subprocess.run(\n"
+        "            argv,\n"
+        "            env=env,\n"
+        "            check=False,\n"
+        "            stdin=stdin_channel,\n"
+        "            timeout=bound,\n"
+        "            stdout=stdout_tmp,\n"
+        "            stderr=stderr_tmp,\n"
+        "        )\n"
+        "    except subprocess.TimeoutExpired:\n"
+        "        sys.stderr.write(\n"
+        '            f"WHAT: the nWave DES PreToolUse validation did not finish "\n'
+        '            f"within its {bound:g}s bound and was killed.\\n"\n'
+        '            f"WHY: a hook that never returns hangs the Codex session, "\n'
+        '            f"so this launcher bounds its child and always yields.\\n"\n'
+        '            f"HOW: re-run. If the validation genuinely needs longer, "\n'
+        '            f"set {TIMEOUT_ENV}=<seconds>. Allowing the tool without "\n'
+        '            f"a verdict.\\n"\n'
+        "        )\n"
+        "        sys.exit(0)\n"
+        "    stdout_tmp.seek(0)\n"
+        "    stderr_tmp.seek(0)\n"
+        "    child_stdout = stdout_tmp.read()\n"
+        "    child_stderr = stderr_tmp.read()\n"
+        "sys.stdout.write(child_stdout)\n"
+        "if completed.returncode == 2:\n"
+        "    reason = child_stderr.strip()\n"
+        "    if not reason:\n"
+        "        try:\n"
+        "            payload = json.loads(child_stdout)\n"
+        "        except (TypeError, ValueError):\n"
+        "            payload = None\n"
+        "        candidate = None\n"
+        "        if isinstance(payload, dict):\n"
+        '            candidate = payload.get("reason")\n'
+        "            if not (isinstance(candidate, str) and candidate.strip()):\n"
+        '                hook_specific = payload.get("hookSpecificOutput")\n'
+        "                candidate = (\n"
+        '                    hook_specific.get("permissionDecisionReason")\n'
+        "                    if isinstance(hook_specific, dict)\n"
+        "                    else None\n"
+        "                )\n"
+        "        if isinstance(candidate, str) and candidate.strip():\n"
+        "            reason = candidate.strip()\n"
+        "    if not reason:\n"
+        "        reason = (\n"
+        '            "WHAT: the nWave DES PreToolUse hook blocked this tool "\n'
+        '            "call (exit 2) without a readable reason.\\n"\n'
+        '            "WHY: its child wrote nothing to stderr, and stdout was "\n'
+        '            "not valid JSON with a `reason` or "\n'
+        '            "`hookSpecificOutput.permissionDecisionReason` field.\\n"\n'
+        '            "HOW: re-run to reproduce, or inspect the DES adapter "\n'
+        '            "raw stdout above.\\n"\n'
+        "        )\n"
+        '    sys.stderr.write(reason if reason.endswith("\\n") else reason + "\\n")\n'
+        "else:\n"
+        "    sys.stderr.write(child_stderr)\n"
         "sys.exit(completed.returncode)\n"
     )
 
