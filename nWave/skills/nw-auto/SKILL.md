@@ -186,9 +186,18 @@ without a second controller:
      acceptance tests. ATD never reads charter/start recipe.
 2. **Join:** after BOTH charter and contract+tests are validated, dispatch
    exactly one crafter by deterministic paradigm mapping. That crafter
-   implements the contract to green without rewriting tests. A failed or
-   incomplete first result is terminal under the single-pass rule: root never authors,
-   repairs, or reconstructs either sibling's output.
+   implements the contract to green without rewriting tests, then closes its
+   terminal result with its own concise verification receipt from the
+   terminating full relevant suite run: `outcome: PASS|FAIL`, `argv`, `scope`,
+   `exit_code`. Root requires that receipt — present, well-formed,
+   `outcome: PASS`, `exit_code == 0` — before dispatching the examiner or
+   committing. A failed or incomplete first result is terminal under the
+   single-pass rule: root never authors, repairs, or reconstructs either
+   sibling's output. A missing, malformed, truncated, nonzero, or `FAIL`
+   receipt is itself terminal FAIL under that same single-pass rule: preserve
+   WIP exactly as-is; no retry, resume, root repair, or source-inspection
+   substitution. A focused-AT-green result or an Examiner PASS never
+   substitutes for this receipt.
 3. One independent `nw-user-examiner` examines the running product using the
    charter, whose Preconditions contain the start recipe, and rejects every
    other artifact.
