@@ -118,7 +118,13 @@ acceptance-designer blocker, never a root guess (derived stage: `NoArtifacts`).
 ON-TRIGGER `Skill(...)` return, the next tool call is the `Write` of exactly
 ONE consolidated repository-relative acceptance-test artifact FILE (derived
 stage: `TestsMaterialized`) — no extra Read/Grep/Glob/Bash, no further
-silent synthesis first. That `Write` already carries the compact spatial
+silent synthesis first. Before committing that skeleton to a CLI/management/
+service boundary: from evidence already gathered, judge whether that boundary
+is long-running (a loop/daemon entrypoint) rather than one-shot; if it is,
+the skeleton must give it a bounded lifecycle and a terminal oracle, and when
+the user-observable property is one cycle, drive the nearest production
+one-cycle seam instead of the unbounded daemon entrypoint. That `Write`
+already carries the compact spatial
 skeleton: states, failure modes, observables, and properties mapped directly
 into test/docstring structure (parametrize tables, `@given`/`Rule`
 skeletons, scenario headers), never prose planning; refine only via `Edit`

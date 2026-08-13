@@ -619,6 +619,40 @@ def test_atd_thin_auto_route_forbids_background_turn_close_on_focused_red() -> N
     )
 
 
+_LIFECYCLE_TOKEN_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("the long-running boundary notion", ("long-running", "long running")),
+    (
+        "the bounded-lifecycle/terminal-oracle requirement",
+        ("bounded lifecycle", "terminal oracle"),
+    ),
+    ("the one-cycle seam preference", ("one-cycle", "one cycle")),
+)
+
+
+def test_atd_thin_auto_route_requires_bounded_lifecycle_for_long_running_boundaries() -> (
+    None
+):
+    """Point-of-use witness (K4 ATD daemon regression): before materializing a
+    CLI/management/service boundary, the Thin Auto branch must require
+    inspecting it for long-running shape and giving any exercised long-running
+    boundary a bounded lifecycle + terminal oracle, preferring the nearest
+    one-cycle seam when the user property is one cycle."""
+    # covers: fix-atd-daemon-lifecycle
+    spec_path = _REPO_ROOT / "nWave" / "agents" / "nw-acceptance-designer.md"
+    text = spec_path.read_text(encoding="utf-8")
+    start = text.index("**Thin Auto M/L route (`nw-auto`)")
+    end = text.index("**Human route:**", start)
+    lowered = text[start:end].lower()
+    missing = [
+        name
+        for name, alternatives in _LIFECYCLE_TOKEN_GROUPS
+        if not any(alt in lowered for alt in alternatives)
+    ]
+    assert not missing, (
+        f"Thin Auto branch missing the long-running-boundary lifecycle rule: {missing!r}"
+    )
+
+
 def test_mandatory_section_set_is_unchanged_by_the_fix() -> None:
     """FROZEN FLOOR: the atdd_pure mandatory-section set must not change.
 
