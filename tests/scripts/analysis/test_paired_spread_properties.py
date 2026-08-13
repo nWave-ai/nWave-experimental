@@ -25,6 +25,7 @@ from hypothesis import strategies as st
 from scripts.analysis.paired_spread import (
     AGGREGATE_MODEL_USAGE,
     MIN_USABLE,
+    ROOT_PAYLOAD_ONLY,
     TOP_LEVEL_ONLY,
     Failed,
     Indeterminate,
@@ -291,6 +292,16 @@ def test_aggregation_law_equals_componentwise_sum_across_models(models: dict) ->
     assert outcome.tokens == {
         k: sum(m[field] for m in models.values()) for k, field in _TOKEN_FIELD.items()
     }
+
+
+def test_classify_labels_wall_scope_as_root_payload_only() -> None:
+    """`classify` never claims more than the root payload measures: `wall_s` is
+    `duration_ms` from THIS artifact alone, so its scope must say so honestly
+    rather than let a reader assume it accounts for dispatched subagents too."""
+    outcome = classify("probe", _payload())
+
+    assert isinstance(outcome, Usable)
+    assert outcome.wall_scope == ROOT_PAYLOAD_ONLY
 
 
 def test_absent_model_usage_preserves_legacy_top_level_scope() -> None:

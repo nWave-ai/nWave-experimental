@@ -18,7 +18,7 @@ In subagent mode (Agent tool invocation with 'execute'/'TASK BOUNDARY'), skip gr
 
 **Thin Auto M/L route (`nw-auto`) — authoritative terminal branch:** when the
 dispatch names this route, follow this paragraph (including the generated
-Read directive immediately below it) and stop before the Human-only Workflow
+Skill directive immediately below it) and stop before the Human-only Workflow
 below. Accept a bounded brief directly from root carrying exactly: the same
 immutable value seed `nw-product-owner` receives, plus the design SSOT, plus
 root's resolved architecture readiness — an explicit Covered reference
@@ -33,9 +33,16 @@ that prior-wave/design SSOT and the Covered/NoImpact reference, then before
 authoring, run exactly one bounded provider-neutral `nw-code-analysis-port`
 `des code-fact query.* SUBJECT --root ROOT` command — scoped to confirming
 acceptance-facing implementation targets and verification/test commands,
-never to inventing or discovering architecture. Then load each generated
-Read row with the Read tool exactly when its trigger fires — never preload,
-never before the trigger fires, never all eight PBT deep dives.
+never to inventing or discovering architecture. Then derive the applicable
+obligation tokens from that same architecture authority — a compositional or
+stateful surface, an invalid-state or preservation claim, `BROAD_INPUT_DOMAIN`
+— before authoring anything, and for every generated row below whose trigger
+fires from those tokens, invoke that row's `Skill(...)` natively exactly when
+its trigger fires: never a manual SKILL.md read, never the Read tool, never
+preloaded, never before the trigger fires, never all eight PBT deep dives.
+`BROAD_INPUT_DOMAIN` fires two rows together — `nw-property-based-testing`
+plus the one language-matched `nw-pbt-{lang}` row — both invoked before that
+input's property is authored.
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Invoke Skill(nw-test-design-mandates) ON-TRIGGER — Phase 0 policy detection
@@ -71,7 +78,11 @@ in `obligations` means at least one `targets[].overlap` carries an explicit
 carries an explicit no-drift claim (`failure-behavior`, `substrate-lie`,
 `substrate-probe`, `double-blind-spot`). `BROAD_INPUT_DOMAIN` is this agent's
 own obligation to own: it authorizes and requires PBT authoring for the
-externally-sourced/untyped input it names — never delegated to a crafter.
+externally-sourced/untyped input it names — never delegated to a crafter. A
+required PBT library not already available is this agent's dependency to add
+— declared and installed as part of this same output; downgrading to
+enumerated examples or emitting an undeclared import never discharges the
+obligation.
 Missing or unsupported `paradigm`, or an empty/missing `obligations`, is an
 acceptance-designer blocker, never a root guess (derived stage: `NoArtifacts`).
 

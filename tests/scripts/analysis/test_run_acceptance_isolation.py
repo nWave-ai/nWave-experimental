@@ -1,0 +1,244 @@
+"""`run_acceptance.examine` measures a disposable snapshot of the delivery,
+never the delivery itself -- so it can never write the hidden suite or the
+acceptance venv into the original, and two concurrent calls over the same
+workspace cannot race on a shared target/venv. The base version wrote both
+directly into `workspace`: two concurrent calls raced on the same paths and
+produced contradictory results, which is exactly what a measurement
+instrument that changes its subject must not do.
+
+Run: uv run pytest -q tests/scripts/analysis/test_run_acceptance_isolation.py
+"""
+
+from __future__ import annotations
+
+import subprocess
+import threading
+from pathlib import Path
+
+import pytest
+
+from scripts.analysis.k4 import prepare_examiner_fixture as pef
+from scripts.analysis.k4 import run_acceptance as ra
+
+
+def _git(*args: str, cwd) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+
+def _workspace(tmp_path):
+    workspace = tmp_path / "delivery"
+    (workspace / "hc" / "api" / "tests").mkdir(parents=True)
+    (workspace / "manage.py").write_text("# django manage.py stub\n")
+    (workspace / "requirements.txt").write_text("# no real deps\n")
+    suite = tmp_path / "suite.py"
+    suite.write_text("# hidden suite\n")
+    return workspace, suite
+
+
+def _digest(root: Path) -> dict[str, bytes]:
+    """Content + relative name for every file under `root`, excluding only
+    the setup-owned user-environment doc `examine` is allowed to remove."""
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and path.name != pef.DOC_NAME
+    }
+
+
+def _passing_run(seen: dict | None = None):
+    def fake(argv, cwd, timeout=2400):
+        if "venv" in argv or "install" in argv:
+            return 0, ""
+        if ra._SUITE_LABEL in argv or "--exclude-tag" in argv:
+            if seen is not None:
+                seen["manage.py"] = (Path(cwd) / "manage.py").read_text()
+                seen["untracked"] = (
+                    Path(cwd) / "hc" / "api" / "tests" / "untracked_delivery.py"
+                ).read_text()
+            return 0, "OK"
+        raise AssertionError(f"unexpected argv: {argv}")
+
+    return fake
+
+
+def test_examine_measures_the_delivered_tree_and_leaves_the_original_untouched(
+    tmp_path, monkeypatch
+):
+    """Falsifiers 1 & 4: the copy sees an untracked file and a post-commit
+    modification to a tracked file (proving it measures the delivered tree,
+    not HEAD), yet the original digest is byte-identical afterwards and
+    neither the hidden-suite target nor the acceptance venv exist in it."""
+    workspace, suite = _workspace(tmp_path)
+    _git("init", "-q", "-b", "master", cwd=workspace)
+    _git("config", "user.email", "k4@example.test", cwd=workspace)
+    _git("config", "user.name", "k4", cwd=workspace)
+    _git("add", "-A", cwd=workspace)
+    _git("commit", "-q", "-m", "seed", cwd=workspace)
+
+    (workspace / "manage.py").write_text("# modified after commit\n")
+    untracked = workspace / "hc" / "api" / "tests" / "untracked_delivery.py"
+    untracked.write_text("# untracked delivery file\n")
+
+    before = _digest(workspace)
+    seen: dict = {}
+    monkeypatch.setattr(ra, "_run", _passing_run(seen))
+
+    accepted, _ = ra.examine(workspace, suite)
+
+    assert accepted is True
+    assert seen["manage.py"] == "# modified after commit\n"
+    assert seen["untracked"] == "# untracked delivery file\n"
+    assert _digest(workspace) == before
+    assert not (workspace / ra._SUITE_TARGET).exists()
+    assert not (workspace / ra._ACCEPTANCE_VENV_NAME).exists()
+
+
+def test_concurrent_examine_calls_do_not_race_and_leave_the_original_unchanged(
+    tmp_path, monkeypatch
+):
+    """Falsifier 2: two concurrent `examine` calls over the same workspace,
+    driven by a thread-safe fake `_run`, must both accept, must leave the
+    original unchanged, and -- the deterministic part -- must each have run
+    the hidden and subject suites in their OWN snapshot directory. Recording
+    the cwd of every hidden/subject invocation under the lock and asserting
+    exactly two distinct values, neither the original workspace, is what
+    makes this a falsifier: on the base version, which runs both suites
+    directly in `workspace`, every invocation shares the same cwd and this
+    assertion fails even though `results` and the digest both look fine."""
+    workspace, suite = _workspace(tmp_path)
+    before = _digest(workspace)
+    lock = threading.Lock()
+    call_count = {"n": 0}
+    suite_cwds: list[str] = []
+
+    def fake(argv, cwd, timeout=2400):
+        with lock:
+            call_count["n"] += 1
+            if ra._SUITE_LABEL in argv or "--exclude-tag" in argv:
+                suite_cwds.append(str(cwd))
+        if "venv" in argv or "install" in argv:
+            return 0, ""
+        if ra._SUITE_LABEL in argv or "--exclude-tag" in argv:
+            return 0, "OK"
+        raise AssertionError(f"unexpected argv: {argv}")
+
+    monkeypatch.setattr(ra, "_run", fake)
+
+    results: list[tuple[bool, str] | None] = [None, None]
+
+    def worker(index: int) -> None:
+        results[index] = ra.examine(workspace, suite)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert results[0] is not None and results[1] is not None
+    assert results[0][0] is True
+    assert results[1][0] is True
+    assert call_count["n"] > 0
+    assert _digest(workspace) == before
+    assert not (workspace / ra._SUITE_TARGET).exists()
+    assert not (workspace / ra._ACCEPTANCE_VENV_NAME).exists()
+
+    distinct_cwds = set(suite_cwds)
+    assert len(distinct_cwds) == 2, (
+        f"expected exactly two distinct snapshot cwds, got {suite_cwds}"
+    )
+    assert str(workspace) not in distinct_cwds
+
+
+@pytest.mark.parametrize(
+    "bulky_name",
+    [
+        ".git",
+        ".claude",
+        ra._ACCEPTANCE_VENV_NAME,
+        "k4-fixture-venv",
+        "__pycache__",
+        ".pytest_cache",
+    ],
+)
+def test_snapshot_excludes_measurement_bulk_from_the_copy(
+    tmp_path, monkeypatch, bulky_name
+):
+    """A prior acceptance venv, VCS metadata, a Claude runtime dir, or an
+    interpreter cache sitting in the delivery must not ride into the
+    snapshot the run actually executes against -- only production content
+    does."""
+    workspace, suite = _workspace(tmp_path)
+    bulky = workspace / bulky_name
+    bulky.mkdir()
+    (bulky / "marker").write_text("bulk, not production content\n")
+
+    seen: dict = {}
+
+    def fake(argv, cwd, timeout=2400):
+        if "venv" in argv or "install" in argv:
+            return 0, ""
+        if ra._SUITE_LABEL in argv or "--exclude-tag" in argv:
+            seen["present"] = (Path(cwd) / bulky_name).exists()
+            return 0, "OK"
+        raise AssertionError(f"unexpected argv: {argv}")
+
+    monkeypatch.setattr(ra, "_run", fake)
+
+    accepted, _ = ra.examine(workspace, suite)
+
+    assert accepted is True
+    assert seen["present"] is False
+    assert bulky.exists()
+
+
+def test_examine_preserves_delivery_symlinks_semantically(tmp_path, monkeypatch):
+    """Falsifier 3: a delivery symlink to an existing delivery file remains a
+    symlink in the snapshot with the same target, readable content, and both
+    the source link and target are unchanged after examine."""
+    workspace, suite = _workspace(tmp_path)
+    _git("init", "-q", "-b", "master", cwd=workspace)
+    _git("config", "user.email", "k4@example.test", cwd=workspace)
+    _git("config", "user.name", "k4", cwd=workspace)
+
+    target_file = workspace / "hc" / "api" / "tests" / "target_delivery.py"
+    target_file.write_text("# delivery target file\n")
+    symlink_file = workspace / "hc" / "api" / "tests" / "link_to_delivery.py"
+    symlink_file.symlink_to("target_delivery.py")
+
+    _git("add", "-A", cwd=workspace)
+    _git("commit", "-q", "-m", "seed", cwd=workspace)
+
+    before_link_target = symlink_file.readlink()
+    before_link_content = symlink_file.read_text()
+    before_target_content = target_file.read_text()
+
+    seen: dict = {}
+
+    def fake(argv, cwd, timeout=2400):
+        if "venv" in argv or "install" in argv:
+            return 0, ""
+        if ra._SUITE_LABEL in argv or "--exclude-tag" in argv:
+            snapshot_symlink = (
+                Path(cwd) / "hc" / "api" / "tests" / "link_to_delivery.py"
+            )
+            snapshot_target = Path(cwd) / "hc" / "api" / "tests" / "target_delivery.py"
+            seen["symlink_is_link"] = snapshot_symlink.is_symlink()
+            seen["link_target"] = snapshot_symlink.readlink()
+            seen["link_content"] = snapshot_symlink.read_text()
+            seen["target_content"] = snapshot_target.read_text()
+            return 0, "OK"
+        raise AssertionError(f"unexpected argv: {argv}")
+
+    monkeypatch.setattr(ra, "_run", fake)
+
+    accepted, _ = ra.examine(workspace, suite)
+
+    assert accepted is True
+    assert seen["symlink_is_link"] is True
+    assert seen["link_target"] == before_link_target
+    assert seen["link_content"] == before_link_content
+    assert seen["target_content"] == before_target_content
+    assert symlink_file.readlink() == before_link_target
+    assert symlink_file.read_text() == before_link_content
+    assert target_file.read_text() == before_target_content

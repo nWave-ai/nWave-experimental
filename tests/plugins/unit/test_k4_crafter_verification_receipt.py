@@ -36,6 +36,7 @@ SKILLS_DIR = NWAVE_DIR / "skills"
 AGENTS_DIR = NWAVE_DIR / "agents"
 
 CRAFTER_ANCHOR = "For a validated thin delivery, `DeliveryContract.targets`"
+SIBLING_ANCHOR = "1. **Sibling dispatch"
 JOIN_ANCHOR = "2. **Join:**"
 EXAMINER_ANCHOR = "3. One independent `nw-user-examiner`"
 
@@ -65,6 +66,13 @@ def _join_step() -> str:
     body = _skill_body()
     start = body.index(JOIN_ANCHOR)
     end = body.index(EXAMINER_ANCHOR)
+    return _normalized(body[start:end])
+
+
+def _sibling_dispatch_step() -> str:
+    body = _skill_body()
+    start = body.index(SIBLING_ANCHOR)
+    end = body.index(JOIN_ANCHOR)
     return _normalized(body[start:end])
 
 
@@ -129,6 +137,28 @@ class TestCrafterVerificationReceipt:
         for field in RECEIPT_FIELDS:
             assert field in paragraph, f"Crafter spec missing field: {field}"
             assert field in join, f"nw-auto Join step missing field: {field}"
+
+    def test_crafter_dispatch_is_foreground_synchronous_never_background(self):
+        """K4 (2026-08-13): PO/ATD are the only concurrent/background sibling
+        pair -- the single crafter dispatch after their join must be
+        foreground and synchronous, explicitly contrasted with that pair, so
+        an async dispatch can no longer let the tool-result boundary fire
+        before the terminal receipt is emitted."""
+        join = _join_step()
+        for token in (
+            "unlike the po/atd sibling pair above",
+            "foreground and synchronous",
+            "root waits on its result inline",
+            "never `run_in_background`",
+            "never a second concurrent dispatch",
+        ):
+            assert token in join.lower(), f"Missing: {token}"
+
+        sibling = _sibling_dispatch_step()
+        assert "dispatched concurrently before awaiting either" in sibling.lower()
+        assert "background agent dispatch" not in join.lower(), (
+            "the crafter Join step must never carry the PO/ATD background-dispatch phrasing"
+        )
 
     def test_join_anchor_is_the_sole_stable_owner(self):
         """The Join step must exist exactly once; removal must fail this suite."""

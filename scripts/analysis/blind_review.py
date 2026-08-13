@@ -12,12 +12,19 @@ Two operations, and the sealing between them is the whole point:
     blind_review.py seal    --campaign <dir> --out <dir>
     blind_review.py unseal  --sealed <dir> --verdicts <scored.json> --out verdicts.json
 
-`seal` writes two things into `--out`:
+`seal` writes into `--out` — safe to hand over WHOLE, because it cannot
+physically contain the map:
 
-* `deliveries/<opaque>/` — one directory per run, carrying its artifacts and
-  NOTHING that names the arm, the pair, or the session;
-* `SEALED-do-not-open.json` — the opaque -> session map, which the reviewer must
-  not read and `unseal` needs.
+* `deliveries/<opaque>/` — one directory per run, carrying exactly
+  `DELIVERY-CHANGES.txt` and `DELIVERY.patch` — NOTHING that names the arm,
+  the pair, the session, or the delivery's own workspace tree. `seal` never
+  copies the workspace wholesale into the packet; `DELIVERY.patch` is a
+  `git apply`-able unified diff against that workspace's own HEAD, built in a
+  throwaway copy and cleaned up before `seal` returns;
+* `REVIEW-THESE.txt` — the opaque ids to score, one per line, shuffled.
+
+`seal` writes the opaque -> session map separately, to `--map`, which MUST be
+a path outside `--out`. The reviewer must never read it; `unseal` needs it.
 
 The opaque id is `sha256(session_id + salt)[:12]` with a random salt per campaign,
 and the directories are emitted in shuffled order. Both matter: a hash without a
@@ -46,10 +53,9 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
-
-_SEAL_NAME = "SEALED-do-not-open.json"
 
 #: Never copied into a review packet. Measured 2026-08-07, before the first seal:
 #: copying the arm's workspace wholesale would have shipped, to a reviewer,
@@ -223,8 +229,16 @@ def write_delivery_manifest(workspace: Path, target: Path) -> int:
     """
     manifest_path = target / _MANIFEST_NAME
     if not (workspace / ".git").is_dir():
-        manifest_path.write_text("", encoding="utf-8")
-        return 0
+        sys.stderr.write(
+            "WHAT: the delivery workspace is missing or is not a git checkout.\n"
+            f"      - {workspace}\n"
+            "WHY:  writing an empty manifest here would look identical to a delivery\n"
+            "      that legitimately changed nothing -- silent-empty and\n"
+            "      silent-unsupported must not be the same output.\n"
+            "HOW:  point the campaign at a real git checkout for this run, then\n"
+            "      re-seal. Nothing was written for this delivery.\n"
+        )
+        return 1
 
     try:
         entries = _git_status(workspace)
@@ -274,12 +288,295 @@ def write_delivery_manifest(workspace: Path, target: Path) -> int:
     return 0
 
 
+_PATCH_NAME = "DELIVERY.patch"
+
+
+def _patchable_entries(
+    entries: list[tuple[str, str, str | None]],
+) -> tuple[list[str], list[str], list[tuple[str, str]]]:
+    """`(pathspec, untracked-among-it, unrepresentable)`, filtered like the manifest.
+
+    Excludes the same `_NEVER_SEAL` paths the manifest excludes, and fails the
+    same way on a status code neither honestly represents -- one filter, used
+    twice, so the manifest and the patch can never disagree about what a
+    delivery changed.
+    """
+    paths: list[str] = []
+    untracked: list[str] = []
+    unrepresentable: list[tuple[str, str]] = []
+    for code, path, old_path in entries:
+        if _excluded_path(path) or (old_path and _excluded_path(old_path)):
+            continue
+        bucket = _classify_status(code)
+        if bucket is None:
+            unrepresentable.append((code, path))
+            continue
+        paths.append(path)
+        if old_path:
+            paths.append(old_path)
+        if code == "??":
+            untracked.append(path)
+    return paths, untracked, unrepresentable
+
+
+def write_delivery_patch(workspace: Path, target: Path) -> int:
+    """`DELIVERY.patch`: every non-setup delivery change against this
+    workspace's own HEAD, as one `git apply`-able unified diff -- the compact
+    substitute for copying the workspace wholesale.
+
+    Built inside a throwaway copy of `workspace`, so the source lane's git
+    index is never touched. `strip_setup_traces` runs there first: a
+    setup-only `.gitignore` edit then stops differing from HEAD and never
+    reaches `git status`, while a legitimate edit mixed into the same file
+    still shows up, minus the setup lines. The copy (including `.git`, needed
+    to diff at all) is removed before this function returns.
+    """
+    patch_path = target / _PATCH_NAME
+    if not (workspace / ".git").is_dir():
+        sys.stderr.write(
+            "WHAT: the delivery workspace is missing or is not a git checkout.\n"
+            f"      - {workspace}\n"
+            "WHY:  writing an empty patch here would look identical to a delivery\n"
+            "      that legitimately changed nothing -- silent-empty and\n"
+            "      silent-unsupported must not be the same output.\n"
+            "HOW:  point the campaign at a real git checkout for this run, then\n"
+            "      re-seal. Nothing was written for this delivery.\n"
+        )
+        return 1
+
+    with tempfile.TemporaryDirectory(prefix="blind-review-patch-") as tmp:
+        tmp_ws = Path(tmp) / "ws"
+        try:
+            # Ignore the same bulk `_NEVER_SEAL` would exclude from the
+            # packet -- credentials, venvs, caches -- so the throwaway copy
+            # never holds them even transiently. `.git` is the one exception:
+            # the diff below needs it, and it was never in `_NEVER_SEAL` for
+            # a leak reason, only so manifest paths never name it.
+            shutil.copytree(
+                workspace,
+                tmp_ws,
+                symlinks=True,
+                ignore=shutil.ignore_patterns(
+                    *(name for name in _NEVER_SEAL if name != ".git")
+                ),
+            )
+        except OSError as exc:
+            sys.stderr.write(
+                "WHAT: could not copy the delivery workspace to build its patch.\n"
+                f"      - {exc}\n"
+                "WHY:  a patch built on a partial copy could silently omit real\n"
+                "      delivery changes.\n"
+                "HOW:  make sure the delivery workspace is a readable, well-formed\n"
+                "      git checkout, then re-seal.\n"
+            )
+            return 1
+        strip_setup_traces(tmp_ws)
+
+        try:
+            entries = _git_status(tmp_ws)
+        except RuntimeError as exc:
+            sys.stderr.write(
+                "WHAT: could not read the delivery-patch git evidence for a packet.\n"
+                f"      - {exc}\n"
+                "WHY:  a patch built without evidence would either be empty (looks\n"
+                "      like nothing changed) or invented, and both are dishonest.\n"
+                "HOW:  make sure the delivery workspace is a readable git checkout, then\n"
+                "      re-seal.\n"
+            )
+            return 1
+
+        paths, untracked, unrepresentable = _patchable_entries(entries)
+        if unrepresentable:
+            sys.stderr.write(
+                "WHAT: a delivery-changed path cannot be represented honestly in its patch.\n"
+                + "".join(f"      - {code} {path}\n" for code, path in unrepresentable)
+                + "WHY:  an unrecognised git status (typechange, unmerged conflict, ...)\n"
+                "      dropped silently would make DELIVERY.patch claim completeness it\n"
+                "      does not have.\n"
+                "HOW:  resolve the working tree state, or teach `_classify_status` the new\n"
+                "      status honestly, then re-seal. Do not hand out this packet.\n"
+            )
+            return 1
+
+        if not paths:
+            patch_path.write_text("", encoding="utf-8")
+            return 0
+
+        if untracked:
+            # `-N` (intent-to-add) is what makes `git diff HEAD` see an
+            # untracked path at all -- without it, a path git never indexed
+            # is invisible to the diff machinery, staged or not.
+            added = subprocess.run(
+                ["git", "-C", str(tmp_ws), "add", "-N", "--", *untracked],
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=30,
+            )
+            if added.returncode != 0:
+                sys.stderr.write(
+                    "WHAT: could not stage untracked delivery paths to build the patch.\n"
+                    f"      - git add -N: {added.stderr.strip()}\n"
+                    "WHY:  without intent-to-add, an untracked delivery file is invisible\n"
+                    "      to `git diff HEAD`, so the patch would silently omit it.\n"
+                    "HOW:  make sure the delivery workspace is a readable git checkout, then\n"
+                    "      re-seal.\n"
+                )
+                return 1
+
+        diff = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(tmp_ws),
+                "diff",
+                "--no-color",
+                "--binary",
+                "-M",
+                "HEAD",
+                "--",
+                *paths,
+            ],
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+        )
+        if diff.returncode not in (0, 1):
+            sys.stderr.write(
+                "WHAT: git diff failed while building a delivery patch.\n"
+                f"      - {diff.stderr.strip()}\n"
+                "WHY:  a patch built on a failed diff would silently ship whatever\n"
+                "      partial output git produced.\n"
+                "HOW:  make sure the delivery workspace is a readable git checkout, then\n"
+                "      re-seal.\n"
+            )
+            return 1
+        patch_path.write_text(diff.stdout, encoding="utf-8")
+    return 0
+
+
+#: JSON keys specific to the OAuth credential file `seed_auth.py` copies
+#: (`claudeAiOauth`) and its usual shape (`accessToken`/`refreshToken`) --
+#: structural, unlike a generic filename a legitimate delivery could
+#: plausibly mention in its own code or docs.
+_CREDENTIAL_SENTINELS = ("claudeAiOauth", "accessToken", "refreshToken")
+
+
+def _diff_header_paths(patch_text: str) -> set[str]:
+    """Every path named in a unified diff's own structural headers.
+
+    Independent of `_patchable_entries`' filtering: if that filter ever had a
+    bug, the paths git actually wrote into `diff --git`/`---`/`+++`/rename
+    headers would still be exactly what a reviewer's `git apply` sees, so
+    checking them is a second axis on the same claim, not a repeat of it.
+    """
+    paths: set[str] = set()
+    for line in patch_text.splitlines():
+        if line.startswith("diff --git a/"):
+            rest = line[len("diff --git a/") :]
+            marker = " b/"
+            idx = rest.find(marker)
+            if idx != -1:
+                paths.add(rest[:idx])
+                paths.add(rest[idx + len(marker) :])
+        elif line.startswith("--- a/"):
+            paths.add(line[len("--- a/") :])
+        elif line.startswith("+++ b/"):
+            paths.add(line[len("+++ b/") :])
+        elif line.startswith(("rename from ", "copy from ", "rename to ", "copy to ")):
+            paths.add(line.split(" ", 2)[2])
+    return paths
+
+
+def _leak_scan(target: Path, *, session_id: str, arm: str) -> list[str]:
+    """Structural checks over the packet's own two files -- a verification
+    net over the exclusion filters above, not a substitute for them.
+
+    Deliberately narrow: a legitimate delivery can mention a generic
+    filename like `.git` or `CLAUDE.md` in its own code or prose, so this
+    never bans those names as free-text substrings -- that rejects real
+    delivery content while an attacker dodges it with a comment. Checked
+    instead: the packet holds exactly the two expected files; every path the
+    manifest and the patch's own diff headers name would have survived
+    `_excluded_path`; none of the setup's exact `.gitignore` lines survived
+    as an added patch line; and, the one substring check left because these
+    are this packet's own actual identity rather than a generic word, this
+    delivery's session id, its arm name, and credential-shaped JSON keys.
+    Findings never repeat the identity value they found -- that would leak
+    it into the very refusal meant to stop it.
+    """
+    if not target.is_dir():
+        return [f"{target}: packet directory is missing"]
+
+    found: list[str] = []
+    present = {p.name for p in target.iterdir()}
+    extra = sorted(present - {_MANIFEST_NAME, _PATCH_NAME})
+    if extra:
+        found.append(
+            f"packet holds {extra} too -- a compact packet is exactly "
+            f"{_MANIFEST_NAME} + {_PATCH_NAME}, nothing else"
+        )
+
+    manifest_path = target / _MANIFEST_NAME
+    manifest_text = (
+        manifest_path.read_text(encoding="utf-8", errors="replace")
+        if manifest_path.is_file()
+        else ""
+    )
+    for line in manifest_text.splitlines():
+        entry_paths = line[2:].split(" -> ") if line[:2] == "R " else [line[2:]]
+        if any(_excluded_path(p) for p in entry_paths):
+            found.append(f"{_MANIFEST_NAME}: an excluded path resurfaced ({line!r})")
+
+    patch_path = target / _PATCH_NAME
+    patch_text = (
+        patch_path.read_text(encoding="utf-8", errors="replace")
+        if patch_path.is_file()
+        else ""
+    )
+    for header_path in _diff_header_paths(patch_text):
+        if _excluded_path(header_path):
+            found.append(
+                f"{_PATCH_NAME}: an excluded path resurfaced ({header_path!r})"
+            )
+    added_lines = {
+        line[1:]
+        for line in patch_text.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    }
+    if added_lines & set(_SETUP_GITIGNORE_BLOCK):
+        found.append(f"{_PATCH_NAME}: a setup .gitignore line survived stripping")
+
+    for name, text in ((_MANIFEST_NAME, manifest_text), (_PATCH_NAME, patch_text)):
+        if session_id and session_id in text:
+            found.append(f"{name}: contains this delivery's own session id")
+        if arm and arm in text:
+            found.append(f"{name}: contains this delivery's own arm name")
+        for sentinel in _CREDENTIAL_SENTINELS:
+            if sentinel in text:
+                found.append(f"{name}: contains a credential-shaped key ({sentinel})")
+
+    return found
+
+
 def opaque_id(session_id: str, salt: str) -> str:
     return hashlib.sha256(f"{salt}:{session_id}".encode()).hexdigest()[:12]
 
 
 def seal(campaign: Path, out: Path, map_path: Path) -> int:
     """Emit blinded delivery packets plus the sealed map."""
+    resolved_out = out.resolve()
+    resolved_map = map_path.resolve()
+    if resolved_out == resolved_map or resolved_out in resolved_map.parents:
+        sys.stderr.write(
+            f"WHAT: the map {resolved_map} is inside the bundle {resolved_out}.\n"
+            "WHY:  the bundle exists to be handed over WHOLE. A map inside it turns\n"
+            "      blinding back into a procedure that one `cp -r` defeats.\n"
+            "HOW:  point --map somewhere outside --out.\n"
+        )
+        return 1
+
     from scripts.analysis.paired_spread import Usable, classify
 
     runs: list[tuple[str, Path]] = []
@@ -310,20 +607,16 @@ def seal(campaign: Path, out: Path, map_path: Path) -> int:
         target.mkdir(exist_ok=True)
         # The arm's workspace, not its result payload: the payload carries
         # session and cost, which is exactly what the reviewer must not see.
+        # Neither call copies the workspace into `target`: the manifest reads
+        # `git status`, the patch builds its own throwaway copy and cleans it
+        # up, so `target` only ever holds the two files a reviewer needs.
         workspace = payload_path.parent / payload_path.stem
-        if workspace.is_dir():
-            shutil.copytree(
-                workspace,
-                target / "delivery",
-                dirs_exist_ok=True,
-                ignore=shutil.ignore_patterns(*_NEVER_SEAL),
-            )
-        strip_setup_traces(target / "delivery")
-        leaks = sorted(
-            str(found.relative_to(target))
-            for name in _NEVER_SEAL
-            for found in target.rglob(name)
-        )
+        if write_delivery_manifest(workspace, target) != 0:
+            return 1
+        if write_delivery_patch(workspace, target) != 0:
+            return 1
+
+        leaks = _leak_scan(target, session_id=session_id, arm=payload_path.stem)
         if leaks:
             sys.stderr.write(
                 "WHAT: a sealed packet still contains material that must never be in it.\n"
@@ -331,12 +624,11 @@ def seal(campaign: Path, out: Path, map_path: Path) -> int:
                 + "WHY:  this is the tool whose whole claim is that blinding is STRUCTURAL\n"
                 "      rather than promised. A packet carrying the runtime config leaks\n"
                 "      the arm three ways and a live credential once.\n"
-                "HOW:  add the offending name to _NEVER_SEAL and re-seal. Do not hand out\n"
-                "      the packets produced by this run.\n"
+                "HOW:  if this is a missed filename, add it to _NEVER_SEAL; if it is the\n"
+                "      setup gitignore block or this delivery's own identity, the writers\n"
+                "      above have a bug -- fix it there. Then re-seal. Do not hand out the\n"
+                "      packets produced by this run.\n"
             )
-            return 1
-
-        if write_delivery_manifest(workspace, target) != 0:
             return 1
 
     # Shuffled: ordering alone would rebuild the arm, since `control` sorts
@@ -555,16 +847,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.op == "seal":
-        bundle, mapped = args.out.resolve(), args.map_path.resolve()
-        if bundle == mapped or bundle in mapped.parents:
-            sys.stderr.write(
-                f"WHAT: the map {mapped} is inside the bundle {bundle}.\n"
-                "WHY:  the bundle exists to be handed over WHOLE. A map inside it turns\n"
-                "      blinding back into a procedure that one `cp -r` defeats.\n"
-                "HOW:  point --map somewhere outside --out.\n"
-            )
-            return 2
-        return seal(args.campaign, args.out, mapped)
+        return seal(args.campaign, args.out, args.map_path)
     return unseal(args.sealed, args.verdicts, args.out)
 
 

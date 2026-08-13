@@ -39,6 +39,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,6 +48,26 @@ from scripts.analysis.k4 import prepare_examiner_fixture as pef
 
 _SUITE_TARGET = Path("hc") / "api" / "tests" / "test_k4_acceptance.py"
 _SUITE_LABEL = "hc.api.tests.test_k4_acceptance"
+_ACCEPTANCE_VENV_NAME = ".k4-acceptance-venv"
+
+#: Measurement/setup bulk that must never ride into the disposable snapshot:
+#: VCS metadata, Claude runtime/session dirs, a prior run's own venv, and
+#: interpreter/tool caches. Everything else -- tracked or not, modified or
+#: not -- is delivered content and is copied.
+_EXCLUDED_SNAPSHOT_NAMES = frozenset(
+    {
+        ".git",
+        ".claude",
+        ".claude-k4",
+        _ACCEPTANCE_VENV_NAME,
+        "k4-fixture-venv",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".tox",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -101,50 +122,39 @@ def _verdict_line(output: str) -> str:
     return " ; ".join(parts) if parts else "<no output>"
 
 
-def examine(workspace: Path, suite: Path) -> tuple[bool, str]:
-    """Prepare the delivery, run both suites, and report what was observed."""
-    if not (workspace / "manage.py").is_file():
-        return False, "no manage.py: the workspace is not a usable checkout"
+def _snapshot_ignore(_dir: str, names: list[str]) -> set[str]:
+    return {name for name in names if name in _EXCLUDED_SNAPSHOT_NAMES}
 
-    target = workspace / _SUITE_TARGET
-    if target.exists():
-        return (
-            False,
-            f"the delivery already contains {_SUITE_TARGET}; refusing to overwrite",
-        )
 
-    venv = workspace / ".k4-acceptance-venv"
-    code, tail = _run([sys.executable, "-m", "venv", str(venv)], workspace)
+def _examine_snapshot(snapshot: Path, suite: Path) -> tuple[bool, str]:
+    """Run both suites against the disposable copy. Whatever this writes into
+    `snapshot` (venv, suite file) dies with it in `examine`'s `finally` --
+    nothing here needs its own cleanup."""
+    venv = snapshot / _ACCEPTANCE_VENV_NAME
+    code, tail = _run([sys.executable, "-m", "venv", str(venv)], snapshot)
     if code != 0:
         return False, f"could not create the acceptance venv: {tail}"
     pip = str(venv / "bin" / "pip")
-    code, tail = _run([pip, "install", "-q", "-r", "requirements.txt"], workspace)
+    code, tail = _run([pip, "install", "-q", "-r", "requirements.txt"], snapshot)
     if code != 0:
         return False, f"the delivery's requirements.txt does not install: {tail}"
-    code, tail = _run([pip, "install", "-q", "time-machine"], workspace)
+    code, tail = _run([pip, "install", "-q", "time-machine"], snapshot)
     if code != 0:
         return False, f"could not install the suite's clock dependency: {tail}"
 
+    target = snapshot / _SUITE_TARGET
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(suite, target)
     python = str(venv / "bin" / "python")
 
-    # The suite this call wrote in is removed here no matter how the run below
-    # ends -- pass, fail, an uncaught exception, or a timeout inside `_run`.
-    # Only a file THIS call created is ever touched: a pre-existing one already
-    # caused a refusal above, before the copy.
-    try:
-        feature_code, feature_tail = _run(
-            [python, "manage.py", "test", _SUITE_LABEL], workspace
-        )
-        regression_code, regression_tail = _run(
-            [python, "manage.py", "test", "hc", "--exclude-tag", "k4"],
-            workspace,
-            timeout=3600,
-        )
-    finally:
-        target.unlink(missing_ok=True)
-        (workspace / pef.DOC_NAME).unlink(missing_ok=True)
+    feature_code, feature_tail = _run(
+        [python, "manage.py", "test", _SUITE_LABEL], snapshot
+    )
+    regression_code, regression_tail = _run(
+        [python, "manage.py", "test", "hc", "--exclude-tag", "k4"],
+        snapshot,
+        timeout=3600,
+    )
 
     accepted = feature_code == 0 and regression_code == 0
     evidence = (
@@ -152,6 +162,35 @@ def examine(workspace: Path, suite: Path) -> tuple[bool, str]:
         f"subject suite exit {regression_code} [{_verdict_line(regression_tail)}]"
     )
     return accepted, evidence
+
+
+def examine(workspace: Path, suite: Path) -> tuple[bool, str]:
+    """Measure a disposable snapshot of the delivery, never the delivery
+    itself. The original is written to only for the setup-owned user-
+    environment doc, removed here regardless of outcome; every other
+    original path -- tracked or not, before or after this call -- is
+    unchanged. Because each call owns its own snapshot, two concurrent
+    `examine` calls over the same workspace share no mutable state and
+    cannot race on a target file or a venv.
+    """
+    workspace = Path(workspace)
+    if not (workspace / "manage.py").is_file():
+        return False, "no manage.py: the workspace is not a usable checkout"
+
+    if (workspace / _SUITE_TARGET).exists():
+        return (
+            False,
+            f"the delivery already contains {_SUITE_TARGET}; refusing to overwrite",
+        )
+
+    snapshot_root = Path(tempfile.mkdtemp(prefix="k4-examine-"))
+    try:
+        snapshot = snapshot_root / "snapshot"
+        shutil.copytree(workspace, snapshot, ignore=_snapshot_ignore, symlinks=True)
+        return _examine_snapshot(snapshot, suite)
+    finally:
+        shutil.rmtree(snapshot_root, ignore_errors=True)
+        (workspace / pef.DOC_NAME).unlink(missing_ok=True)
 
 
 def main(argv: list[str] | None = None) -> int:

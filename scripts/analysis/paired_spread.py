@@ -27,6 +27,7 @@ import json
 import statistics as st
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 
@@ -52,6 +53,9 @@ _MODEL_TOKEN_FIELDS = {
 TOP_LEVEL_ONLY = "top-level-only"
 AGGREGATE_MODEL_USAGE = "aggregate-model-usage"
 
+ROOT_PAYLOAD_ONLY = "root-payload-only"
+TRANSCRIPT_ROOT_PLUS_SUBAGENTS = "transcript-root-plus-subagents"
+
 
 # --- outcomes: one case per outcome, none of them representable as another ---
 
@@ -71,6 +75,14 @@ class Usable:
     `TOP_LEVEL_ONLY`. Never call the latter a total: it is a scope, not a
     smaller total -- naming it a total is the exact false-PASS this exists to
     prevent from recurring."""
+    wall_scope: str
+    """Always `ROOT_PAYLOAD_ONLY`: `wall_s` above is `duration_ms` from the root
+    payload alone, and that duration ends the instant the ROOT process returns
+    -- even while background agents it dispatched keep running. The exact K4
+    gap this labels honestly: payload claimed 337s/78s while the root+subagent
+    transcript spanned 1764s/1287s. `resolve_transcript_wall` below is the
+    path-aware measurement that does not share this blind spot; nothing here
+    falls back to it silently, and nothing there falls back to this one."""
 
 
 @dataclass(frozen=True)
@@ -211,6 +223,7 @@ def classify(name: str, raw: str) -> RunOutcome:
         duration_ms / 1000,
         {k: int(v) for k, v in tokens.items()},
         token_scope,
+        ROOT_PAYLOAD_ONLY,
     )
 
 
@@ -227,6 +240,157 @@ def spread(label: str, values: list[float]) -> SpreadOutcome:
     mean = st.mean(values)
     return Spread(
         label, lo, st.median(values), hi, hi / lo, st.pstdev(values) / mean * 100
+    )
+
+
+# --- transcript-scoped wall measurement (path-aware) -------------------------
+
+
+@dataclass(frozen=True)
+class TranscriptWall:
+    """Wall clock re-scoped to transcript evidence: the one root transcript the
+    payload's `session_id` names, plus that transcript's own `subagents/*.jsonl`
+    -- nothing else. `wall_s` is the span (latest - earliest) of every valid ISO
+    timestamp parsed across them."""
+
+    name: str
+    session_id: str
+    wall_s: float
+    scope: str
+
+
+@dataclass(frozen=True)
+class TranscriptWallUnreadable:
+    """Transcript evidence absent, ambiguous, or malformed. A refusal VALUE, same
+    discipline as `Unreadable`/`Indeterminate`: the caller excludes this run from
+    the wall-clock claim and never substitutes the payload duration for it."""
+
+    name: str
+    session_id: str
+    reason: str
+
+
+TranscriptWallOutcome = TranscriptWall | TranscriptWallUnreadable
+
+
+def _parse_iso_timestamp(value: object) -> datetime | None:
+    """Timezone-aware only -- no file mtime inference, no naive-datetime guess.
+    A naive timestamp cannot be compared honestly against evidence pulled from a
+    different file, so it is treated the same as an absent one."""
+    if not isinstance(value, str) or not value:
+        return None
+    text = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def _read_transcript_timestamps(path: Path) -> list[datetime] | None:
+    """`None` when the file itself cannot be read, OR when any line is
+    malformed JSON / not an object / carries a `timestamp` key that is present
+    but invalid or naive -- each of those makes the whole transcript
+    untrustworthy, not just the one line, so the caller fails the run closed
+    rather than computing a span from whatever else happened to parse. A
+    genuinely ABSENT `timestamp` key is not one of those cases: real transcript
+    lines routinely omit it, so that line is skipped and reading continues."""
+    try:
+        raw = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    stamps: list[datetime] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(record, dict):
+            return None
+        if "timestamp" not in record:
+            continue
+        parsed = _parse_iso_timestamp(record["timestamp"])
+        if parsed is None:
+            return None
+        stamps.append(parsed)
+    return stamps
+
+
+def resolve_transcript_wall(
+    name: str, session_id: str, payload_path: Path
+) -> TranscriptWallOutcome:
+    """The path-aware measurement boundary `main` uses for the wall-clock claim.
+
+    `Usable.wall_s` ends when the ROOT payload process returns even while
+    background agents it dispatched keep running -- the exact K4 gap: payload
+    duration 337s/78s against a root+subagent transcript span of 1764s/1287s.
+    This locates the one root transcript under the workspace ADJACENT to the
+    payload (`{workspace}/.claude-k4/projects/**/<session_id>.jsonl`, where
+    `workspace` is `payload_path` with its `.json` suffix stripped -- the exact
+    layout `paired_campaign.py` writes), adds only that transcript's own
+    `subagents/*.jsonl`, and spans every valid ISO timestamp found across them.
+
+    On any ambiguity -- no `.claude-k4` workspace, no matching root transcript,
+    more than one, an unreadable file, or fewer than two valid timestamps -- this
+    fails closed to `TranscriptWallUnreadable`. It never falls back to the
+    payload duration: a silent fallback here is the exact false PASS/FAIL this
+    function exists to prevent.
+    """
+    workspace = payload_path.parent / payload_path.stem
+    projects_dir = workspace / ".claude-k4" / "projects"
+    if not projects_dir.is_dir():
+        return TranscriptWallUnreadable(
+            name,
+            session_id,
+            f"no {projects_dir} -- no adjacent .claude-k4 workspace for this run",
+        )
+    matches = sorted(p for p in projects_dir.rglob("*.jsonl") if p.stem == session_id)
+    if not matches:
+        return TranscriptWallUnreadable(
+            name,
+            session_id,
+            "no root transcript matching this session_id under projects/**",
+        )
+    if len(matches) > 1:
+        return TranscriptWallUnreadable(
+            name,
+            session_id,
+            f"{len(matches)} root transcripts matched this session_id, ambiguous: "
+            + ", ".join(str(m) for m in matches[:4]),
+        )
+    root = matches[0]
+    stamps = _read_transcript_timestamps(root)
+    if stamps is None:
+        return TranscriptWallUnreadable(name, session_id, f"could not read {root}")
+
+    # Own subagents only: the directory that shares the root transcript's own
+    # session-id stem, never a sibling session's -- that boundary is what keeps
+    # an unrelated session in the same workspace from ever entering this span.
+    subagents_dir = root.parent / root.stem / "subagents"
+    if subagents_dir.is_dir():
+        for sub_path in sorted(subagents_dir.glob("*.jsonl")):
+            sub_stamps = _read_transcript_timestamps(sub_path)
+            if sub_stamps is None:
+                return TranscriptWallUnreadable(
+                    name, session_id, f"could not read {sub_path}"
+                )
+            stamps.extend(sub_stamps)
+
+    if len(stamps) < 2:
+        return TranscriptWallUnreadable(
+            name,
+            session_id,
+            f"only {len(stamps)} valid ISO timestamp(s) across root+subagents, "
+            "need >= 2",
+        )
+    return TranscriptWall(
+        name,
+        session_id,
+        (max(stamps) - min(stamps)).total_seconds(),
+        TRANSCRIPT_ROOT_PLUS_SUBAGENTS,
     )
 
 
@@ -270,8 +434,10 @@ def main(argv: list[str] | None = None) -> int:
 
     seen: dict[str, str] = {}
     outcomes: list[RunOutcome] = []
+    paths_by_name: dict[str, Path] = {}
     for path in campaign:
         name = f"{path.parent.name}/{path.stem}"
+        paths_by_name[name] = path
         outcome = classify(name, path.read_text(encoding="utf-8", errors="replace"))
         if isinstance(outcome, Usable):
             if outcome.session_id in seen:
@@ -314,15 +480,23 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     header = (
-        f"{'run':16s}{'cost$':>9s}{'turns':>7s}{'wall_s':>9s}{'out_tok':>9s}"
+        f"{'run':16s}{'cost$':>9s}{'turns':>7s}{'payload_s':>10s}{'out_tok':>9s}"
         f"{'cache_rd':>11s}{'token scope':>23s}"
     )
     print("\n" + header + "\n" + "-" * len(header))
     for r in usable:
         print(
-            f"{r.name:16s}{r.cost:9.4f}{r.turns:7d}{r.wall_s:9.1f}"
+            f"{r.name:16s}{r.cost:9.4f}{r.turns:7d}{r.wall_s:10.1f}"
             f"{r.tokens['out']:9d}{r.tokens['cr']:11d}{r.token_scope:>23s}"
         )
+    # `payload_s` above, never `wall_s`: it is `ROOT_PAYLOAD_ONLY`, the exact
+    # scope that ends when the root process returns even while its dispatched
+    # agents keep running. The wall-clock CLAIM below never reads this column.
+    print(
+        "\n(payload_s is root-payload-only -- ends when the root process returns,"
+        "\nnot when its dispatched agents finish. The wall clock s spread below"
+        "\nis transcript-scoped, never this column.)"
+    )
 
     scopes = {r.token_scope for r in usable}
     if len(scopes) == 1:
@@ -336,10 +510,29 @@ def main(argv: list[str] | None = None) -> int:
     # construction, which is the exact defect this file exists to prevent.
     print(f"\ntoken categories reflect scope: {scope_note}")
 
+    # The wall-clock CLAIM is resolved per run from transcript evidence, never
+    # from the payload duration -- that fallback is the exact false PASS/FAIL
+    # this module exists to prevent. A run without readable transcript evidence
+    # is EXCLUDED from the wall spread and named here, not silently backfilled.
+    wall_outcomes = [
+        resolve_transcript_wall(r.name, r.session_id, paths_by_name[r.name])
+        for r in usable
+    ]
+    wall_ok = [w for w in wall_outcomes if isinstance(w, TranscriptWall)]
+    wall_bad = [w for w in wall_outcomes if isinstance(w, TranscriptWallUnreadable)]
+    print(
+        f"\nwall clock evidence : {len(wall_ok)} transcript-scoped, "
+        f"{len(wall_bad)} indeterminate (excluded, never backfilled from payload)"
+    )
+    for w in wall_bad:
+        print(f"     wall indeterminate {w.name}: {w.reason}")
+    if wall_ok:
+        print(f"wall clock reflects scope: {TRANSCRIPT_ROOT_PLUS_SUBAGENTS}")
+
     series: list[tuple[str, list[float]]] = [
         ("cost USD", [r.cost for r in usable]),
         ("turns", [float(r.turns) for r in usable]),
-        ("wall clock s", [r.wall_s for r in usable]),
+        ("wall clock s", [w.wall_s for w in wall_ok]),
     ] + [(f"{k} tok", [float(r.tokens[k]) for r in usable]) for k in _TOKEN_FIELDS]
 
     print(

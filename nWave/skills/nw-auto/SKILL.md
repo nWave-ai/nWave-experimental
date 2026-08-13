@@ -185,8 +185,11 @@ without a second controller:
      evidence. Authors minimal `DeliveryContract` v1.1 with `paradigm` and
      acceptance tests. ATD never reads charter/start recipe.
 2. **Join:** after BOTH charter and contract+tests are validated, dispatch
-   exactly one crafter by deterministic paradigm mapping. That crafter
-   implements the contract to green without rewriting tests, then closes its
+   exactly one crafter by deterministic paradigm mapping. Unlike the PO/ATD
+   sibling pair above, this single dispatch is foreground and synchronous —
+   root waits on its result inline, never `run_in_background`, and never a
+   second concurrent dispatch. That crafter implements the contract to green
+   without rewriting tests, then closes its
    terminal result with its own concise verification receipt from the
    terminating full relevant suite run: `outcome: PASS|FAIL`, `argv`, `scope`,
    `exit_code`. Root requires that receipt — present, well-formed,

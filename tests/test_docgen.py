@@ -1093,6 +1093,66 @@ class TestRoleSkillLoadingRegistry:
             "the reviewer must not inherit the ATD-only PBT authoring obligation"
         )
 
+    def test_atd_route_contract_paragraph_mandates_native_skill_and_obligation_order(
+        self, root: Path
+    ):
+        """K4 (2026-08-13): the hand-authored paragraph wrapping the generated
+        Skill rows must never call them "Read rows" or send Claude to the Read
+        tool -- that exact language let a real ATD run skip algebra/certainty/
+        PBT before authoring while still emitting BROAD_INPUT_DOMAIN. It must
+        derive obligation tokens before authoring, invoke every fired row's
+        Skill(...) natively, and bind BROAD_INPUT_DOMAIN to both the generic
+        and language-matched PBT rows."""
+        text = (root / "nWave" / "agents" / "nw-acceptance-designer.md").read_text()
+        start = text.index("**Thin Auto M/L route")
+        end = text.index("<!-- GENERATED:role-skill-loading START")
+        paragraph = " ".join(text[start:end].split())
+
+        for forbidden in ("Read row", "Read directive", "with the Read tool"):
+            assert forbidden not in paragraph, (
+                f"ATD route-contract paragraph must not say {forbidden!r} -- "
+                "the generated rows are native Skill invocations, never Read targets"
+            )
+
+        for token in (
+            "Skill directive",
+            "derive the applicable obligation tokens",
+            "before authoring anything",
+            "invoke that row's `Skill(...)` natively",
+            "never a manual SKILL.md read",
+            "never the Read tool",
+            "`BROAD_INPUT_DOMAIN` fires two rows together",
+            "the one language-matched `nw-pbt-{lang}` row",
+        ):
+            assert token in paragraph, f"ATD route-contract paragraph missing: {token}"
+
+        assert paragraph.index(
+            "derive the applicable obligation tokens"
+        ) < paragraph.index("invoke that row's `Skill(...)` natively"), (
+            "obligation-token derivation must precede Skill invocation in reading order"
+        )
+
+    def test_atd_broad_input_domain_dependency_completeness_is_atd_owned(
+        self, root: Path
+    ):
+        """A missing PBT library is ATD's own dependency to add -- never an
+        excuse to downgrade BROAD_INPUT_DOMAIN to enumerated examples or ship
+        an undeclared import."""
+        text = (root / "nWave" / "agents" / "nw-acceptance-designer.md").read_text()
+        start = text.index("`BROAD_INPUT_DOMAIN` is this agent's")
+        end = text.index("Missing or unsupported `paradigm`")
+        paragraph = " ".join(text[start:end].split())
+        for token in (
+            "never delegated to a crafter",
+            "is this agent's dependency to add",
+            "declared and installed as part of this same output",
+            "downgrading to",
+            "enumerated examples",
+            "emitting an undeclared import",
+            "never discharges the obligation",
+        ):
+            assert token in paragraph, f"BROAD_INPUT_DOMAIN paragraph missing: {token}"
+
     @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
     def test_frontmatter_disjoint_from_effective_conditional_skills(
         self, root: Path, roles: dict, agent_id: str
