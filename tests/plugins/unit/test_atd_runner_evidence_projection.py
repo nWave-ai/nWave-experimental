@@ -32,7 +32,7 @@ def _norm(text: str) -> str:
 def _sibling_dispatch_bullet() -> str:
     body = (NWAVE_DIR / "skills" / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
     start = body.index("`nw-acceptance-designer`: receives immutable value seed")
-    end = body.index("2. **Join:")
+    end = body.index("3. **Join:")
     return _norm(body[start:end])
 
 

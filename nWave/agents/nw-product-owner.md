@@ -38,7 +38,12 @@ Authoritative terminal branch — value-side only:
 - receive the same immutable value seed as the ATD, with VALUE-SIDE INPUTS ONLY;
 - never read the design SSOT, `DeliveryContract`/design contract, acceptance
   tests, or ATD output;
-- run the existing `des charter-scaffold`;
+- receive the repo-relative charter path root already created, one level up,
+  by running `des charter-scaffold --seed-mode direct-value` once before
+  dispatching this pair — fill THAT already-existing charter only; never
+  run `des charter-scaffold` itself, and never use Task/Agent to delegate,
+  locate, or retry a CLI gate (this route has no Bash; the orchestrator
+  owns CLI gates);
 - fill the charter's Preconditions/start recipe and oracle;
 - return the charter path to root and stop before the Human workflow; and
 - run independently of the ATD: neither sibling reads the other's output.

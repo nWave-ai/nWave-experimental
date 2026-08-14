@@ -387,7 +387,7 @@ def test_root_propagation_binds_every_dispatch_role() -> None:
 
 def _atd_sibling_bullet(text: str) -> str:
     start = text.index("`nw-acceptance-designer`: receives immutable value seed")
-    end = text.index("2. **Join:")
+    end = text.index("3. **Join:")
     return text[start:end]
 
 

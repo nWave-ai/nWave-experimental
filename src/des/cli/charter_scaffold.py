@@ -1,34 +1,40 @@
-"""des charter-scaffold -- the producing tool for expectation-charter scaffolds
-(charter-scaffold feature, slice-01).
+"""des charter-scaffold -- the producing tool for expectation-charter scaffolds.
 
-Makes charter authoring system-paid (GDP-5) and early (GDP-1): reads a
-feature's `## Wave: DISCUSS / [REF] Slice Plan` table and, for each
-OBSERVABLE-value slice (Annotation NOT `@infrastructure` / `@prefactoring`),
-generates a charter SCAFFOLD at
-`docs/product/expectations/<feature-id>/<intent-name>.md` using
-`nWave/templates/expectation-charter.md` as the skeleton, Intent pre-filled
-from the slice's Value statement VERBATIM. Every other section (Preconditions,
-Charter, Expected observations, Session log) is left as the template's
-fresh-PO-fill placeholder -- this tool does not invent judgment, only lifts
-the user-side Value statement (uncontaminated by construction: it never sees
-design/impl vocabulary).
+Makes charter authoring system-paid (GDP-5) and early (GDP-1): generates a
+charter SCAFFOLD at `docs/product/expectations/<feature-id>/<intent-name>.md`
+using `nWave/templates/expectation-charter.md` as the skeleton, Intent
+pre-filled VERBATIM from a user-side value/observable statement (uncontaminated
+by construction: it never sees design/impl vocabulary). Every other section
+(Preconditions, Charter, Expected observations, Session log) is left as the
+template's fresh-PO-fill placeholder -- this tool does not invent judgment,
+only lifts the value statement.
 
-Idempotent (never overwrites an existing charter); degrades LOUD (GDP-6) on a
-missing/malformed feature-delta or absent Slice Plan -- never a silent no-op
-nor a partial scaffold that looks complete.
+Four `--seed-mode` values, each producing exactly one accepted scaffold run
+(see `--seed-mode` help / `_EXAMPLES_EPILOG` for the per-mode cardinality and
+required flags): `slice-plan` (default, N charters, one per OBSERVABLE Slice
+Plan row read from the feature-delta), `bug-observable`, `brownfield-discovery`,
+and `direct-value` (one charter each, straight from `--observable` / `--area` /
+`--value`, no feature-delta or Slice Plan read; `direct-value` alone accepts an
+omitted `--feature-id`, mechanically deriving one from `--value`).
 
-Reuses the existing feature-delta Slice-Plan parser verbatim
+Idempotent (never overwrites an existing charter); degrades LOUD (GDP-6) on
+any missing/malformed required input for the active mode -- never a silent
+no-op nor a partial scaffold that looks complete.
+
+`slice-plan` reuses the existing feature-delta Slice-Plan parser verbatim
 (`_plan_table_rows` / `_parse_table_cells` / `_is_separator_row` /
 `validate_slice_plan_content` from `des.cli.validate_feature_delta` -- the
 same machinery `feature_delta_schema._slice_plan_row` composes) -- no
 parallel table parser.
 
 Architecture: pure functions for slug/skeleton/row classification; a thin
-`main` shell does the filesystem I/O and JSON rendering (mirrors
-`feature_delta_doctor`'s pure-core / thin-shell split).
+`main` shell dispatches on `--seed-mode` and does the filesystem I/O and JSON
+rendering (mirrors `feature_delta_doctor`'s pure-core / thin-shell split).
 
 CLI contract:
-    des charter-scaffold --feature-id <id> [--repo-root .] [--format json]
+    des charter-scaffold --seed-mode <mode> [--feature-id <id>]
+        [--observable <text> | --area <text> | --value <text>]
+        [--repo-root .] [--format json]
 
 stdout token (JSON):
     {feature_id, created:[...], skipped:[...], observable_slices:N, verdict,
@@ -87,6 +93,19 @@ VERDICT_MISSING_OBSERVABLE = "missing-observable"
 #: invoked with a missing or blank `--area` -- mirrors the naming convention
 #: of the verdicts above.
 VERDICT_MISSING_AREA = "missing-area"
+
+#: Degrade-LOUD token for `--seed-mode direct-value` invoked with a missing
+#: or blank `--value` -- mirrors the naming convention of the verdicts
+#: above (K4 route fix: the honest direct-value mode for ordinary Auto M/L
+#: work, no feature-delta/Slice Plan involved).
+VERDICT_MISSING_VALUE = "missing-value"
+
+#: Degrade-LOUD token for `--seed-mode direct-value` invoked with NO
+#: `--feature-id` when the same `--value` seed also normalises to an empty
+#: kebab-slug (symbol-only/non-Latin) -- there is then nothing mechanical to
+#: derive a feature id FROM, and this mode has no Slice Plan/feature-delta
+#: to fall back on. Never silently proceeds with a degenerate feature id.
+VERDICT_UNDETERMINABLE_FEATURE_ID = "undeterminable-feature-id"
 
 _TEMPLATE_RELATIVE_PATH = Path("nWave/templates/expectation-charter.md")
 _TEMPLATE_HEADING = "## Template"
@@ -209,18 +228,16 @@ def _extract_template_skeleton(template_content: str) -> str:
 #: shape, not the mapping logic itself).
 _SLICE_ID_RE = re.compile(r"\Aslice-\d+\Z")
 
-#: fix-charter-scaffold-placeholder-scope O2 (feature-delta amendment,
-#: 2026-07-30, DD-1..DD-3, human-granted forward-only): the two non-slice
-#: `--seed-mode` identifiers `_run_bug_observable` / `_run_brownfield_discovery`
-#: stamp as the `Slice` field. Neither reads a Slice Plan, so their own
-#: identifier is the ONLY scope they can honestly claim -- a `slice-01`
-#: fabricated from the template's untouched fence default is a silent-wrong
-#: claim (O2's defect). Deliberately a closed, producer-owned set -- NOT
-#: "anything not slice-NN" -- so a future third-party token (`n/a`, `human
-#: directive`, ...) keeps leaving the field untouched (DD-2's original guard,
-#: still the right call for values this producer never emits itself).
+#: The three producer-owned `--seed-mode` identifiers that stamp as the
+#: `Slice` field: `bug-observable`, `brownfield-discovery`, and `direct-value`.
+#: Each is used when no Slice Plan is read, so the mode's own identifier is the
+#: ONLY scope they can honestly claim -- a `slice-01` fabricated from the
+#: template's untouched fence default is a silent-wrong claim. Deliberately a
+#: closed, producer-owned set -- NOT "anything not slice-NN" -- so a future
+#: third-party token (`n/a`, `human directive`, ...) keeps leaving the field
+#: untouched.
 _FEATURE_LEVEL_SEED_MODE_IDENTIFIERS: frozenset[str] = frozenset(
-    {"bug-observable", "brownfield-discovery"}
+    {"bug-observable", "brownfield-discovery", "direct-value"}
 )
 
 #: The `ID:` line's `Spec rows:` field, up to the next `·` separator or end of
@@ -233,20 +250,14 @@ def _fill_spec_rows_field(content: str, slice_id: str) -> str:
     """Replace the `ID:` line's `Spec rows:` placeholder with the slice this
     charter was actually generated for. Pure.
 
-    DD-1: the scaffolder already knows `slice_id` (it read the Slice Plan row
-    to decide the row was observable) -- write it down in the
-    comma-separated `slice-NN` grammar `resolve_slice_charter` accepts,
-    instead of copying the template's own literal placeholder (`<R…>`)
-    verbatim.
-
-    DD-2 (scope guard, widened O2 2026-07-30): rewrites when `slice_id`
-    matches the `slice-NN` grammar OR is one of the two producer-owned
-    non-slice seed-mode identifiers (`_FEATURE_LEVEL_SEED_MODE_IDENTIFIERS`)
-    -- both `_run_bug_observable` and `_run_brownfield_discovery` call this
-    with their OWN `identifier`, never a slice-NN token, and must stamp it
-    rather than leave the template's fence default untouched. Any OTHER
-    identifier is left UNTOUCHED -- deciding a third party's `Spec rows:`
-    grammar stays out of scope.
+    Rewrites when `slice_id` matches the `slice-NN` grammar OR is one of the
+    three producer-owned seed-mode identifiers (`_FEATURE_LEVEL_SEED_MODE_IDENTIFIERS`:
+    `bug-observable`, `brownfield-discovery`, `direct-value`). The caller
+    stamping one of these means the scaffolder already knows which seed-mode
+    was used, so write it down in the comma-separated grammar
+    `resolve_slice_charter` accepts, instead of copying the template's own
+    literal placeholder (`<R…>`) verbatim. Any OTHER identifier is left
+    UNTOUCHED -- deciding a third party's `Spec rows:` grammar stays out of scope.
     """
     if not (
         _SLICE_ID_RE.fullmatch(slice_id)
@@ -372,6 +383,13 @@ Examples:
   # charter for an existing, undocumented --area.
   des charter-scaffold --feature-id my-feature --seed-mode brownfield-discovery \\
       --area "the legacy export pipeline"
+
+  # --seed-mode direct-value: scaffolds exactly one charter straight from an
+  # immutable user value/observable, no feature-delta/Slice Plan read.
+  # --feature-id is OPTIONAL here -- omit it and one is derived mechanically
+  # from --value.
+  des charter-scaffold --seed-mode direct-value \\
+      --value "Operator sees last night's backup succeeded before relying on it"
 """
 
 
@@ -387,7 +405,16 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=_EXAMPLES_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--feature-id", required=True, help="The feature id.")
+    parser.add_argument(
+        "--feature-id",
+        default=None,
+        help=(
+            "The feature id. Required for --seed-mode slice-plan / "
+            "bug-observable / brownfield-discovery. Optional for --seed-mode "
+            "direct-value: when omitted, a filesystem-safe feature id is "
+            "derived mechanically from --value."
+        ),
+    )
     add_repo_root_argument(
         parser, "--repo-root", default=".", help="Repository root (default: cwd)."
     )
@@ -399,7 +426,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--seed-mode",
-        choices=("slice-plan", "bug-observable", "brownfield-discovery"),
+        choices=(
+            "slice-plan",
+            "bug-observable",
+            "brownfield-discovery",
+            "direct-value",
+        ),
         default="slice-plan",
         help=(
             "'slice-plan' (default) scaffolds every observable Slice Plan row "
@@ -407,7 +439,12 @@ def _build_parser() -> argparse.ArgumentParser:
             "behaviour. 'bug-observable' scaffolds ONE charter straight from "
             "--observable text, no Slice Plan read. 'brownfield-discovery' "
             "scaffolds ONE discovery-framed charter for an existing, "
-            "undocumented --area, no Slice Plan read."
+            "undocumented --area, no Slice Plan read. 'direct-value' "
+            "scaffolds ONE charter straight from --value text (an immutable "
+            "user value/observable), no feature-delta or Slice Plan read --"
+            "the honest mode for ordinary Auto M/L work with a user "
+            "directive; --feature-id is optional and derived mechanically "
+            "from --value when omitted."
         ),
     )
     parser.add_argument(
@@ -428,6 +465,16 @@ def _build_parser() -> argparse.ArgumentParser:
             "retrofit a charter onto -- named in a discovery-framed Intent "
             "that invites exploring the running system, not a finished "
             "description of the area's behaviour."
+        ),
+    )
+    parser.add_argument(
+        "--value",
+        default=None,
+        help=(
+            "Required (and must be non-blank) for --seed-mode direct-value: "
+            "the immutable user value/observable (e.g. the human's directive "
+            "verbatim), copied into the scaffold's Intent section verbatim. "
+            "No feature-delta or Slice Plan is read."
         ),
     )
     return parser
@@ -547,17 +594,18 @@ def _emit_single_scaffold_result(
     Not pure (filesystem write + stdout print).
 
     D4 refactor: the ONE single-scaffold JSON-emission locus shared by
-    `_run_bug_observable` and `_run_brownfield_discovery` -- both scaffold
-    exactly one row (`observable_slices: 1`, fixed) and emitted the same
-    `created`/`skipped` bucketing + payload shape, previously duplicated
-    byte-for-byte. `_run_slice_plan` is NOT routed through this helper: it
-    loops over N rows with its own blank-Value-statement skip and an
-    `observable_slices` count that varies with the plan, so its emission
-    shape genuinely differs (not a false-DRY collapse).
+    `_run_bug_observable`, `_run_brownfield_discovery`, and `_run_direct_value`
+    -- all three scaffold exactly one row (`observable_slices: 1`, fixed) and
+    emit the same `created`/`skipped` bucketing + payload shape. `_run_slice_plan`
+    is NOT routed through this helper: it loops over N rows with its own
+    blank-Value-statement skip and an `observable_slices` count that varies
+    with the plan, so its emission shape genuinely differs (not a false-DRY
+    collapse).
 
-    `raw_input` is the caller's USER-SUPPLIED text (`--observable` / `--area`);
-    `value_statement` is what actually fills Intent (the observable verbatim
-    for bug-observable; the discovery-framed sentence for brownfield). The
+    `raw_input` is the caller's USER-SUPPLIED text (`--observable` / `--area` /
+    `--value`); `value_statement` is what actually fills Intent (verbatim for
+    bug-observable and direct-value; the discovery-framed sentence for
+    brownfield). The
     hostility decision reads `raw_input`, NOT `value_statement` (GDP-3):
     brownfield WRAPS the area in fixed English prose, so the composed
     `value_statement` never slugs empty -- only the raw `--area` reveals a
@@ -677,6 +725,73 @@ def _run_brownfield_discovery(
     )
 
 
+def _derive_feature_id(value: str) -> str:
+    """Deterministic, filesystem-safe feature id mechanically derived from
+    the immutable `--value` seed when `--feature-id` is omitted for
+    `--seed-mode direct-value`. Pure.
+
+    Reuses `_kebab_slug` verbatim -- the SAME normalisation/truncation
+    contract the scaffold filename itself already uses -- so this is never
+    an LLM convention, always a mechanical function of the same seed text.
+    Returns an empty string when the value has no derivable slug (caller
+    degrades LOUD on that).
+    """
+    return _kebab_slug(value)
+
+
+def _run_direct_value(
+    repo_root: Path, feature_id: str | None, value: str | None
+) -> int:
+    """`--seed-mode direct-value`: no feature-delta/Slice Plan is read -- ONE
+    charter scaffold straight from an immutable user value/observable,
+    copied into Intent VERBATIM. The honest mode for ordinary Auto M/L work
+    driven by a user directive (K4 route fix): PO no longer needs to invent
+    a nested Agent/CLI lookup to seed a charter with no feature-delta.
+
+    `--feature-id` is OPTIONAL: when omitted, it is derived mechanically
+    (never by LLM convention) from the same `--value` seed via
+    `_derive_feature_id`. Degrades LOUD when `--value` is missing/blank
+    (mirrors bug-observable/brownfield-discovery), and degrades LOUD when no
+    `--feature-id` was supplied AND derivation is impossible (the value
+    normalises to an empty kebab-slug -- symbol-only/non-Latin input).
+    """
+    if value is None or not value.strip():
+        return _degrade(
+            feature_id or "",
+            VERDICT_MISSING_VALUE,
+            "--value is required (and must be non-blank) for --seed-mode direct-value",
+        )
+
+    resolved_feature_id = feature_id
+    if not resolved_feature_id:
+        resolved_feature_id = _derive_feature_id(value)
+        if not resolved_feature_id:
+            return _degrade(
+                "",
+                VERDICT_UNDETERMINABLE_FEATURE_ID,
+                "no --feature-id was supplied and a filesystem-safe feature "
+                f"id could not be mechanically derived from --value {value!r} "
+                "(symbol-only/non-Latin input normalizes to an empty slug) "
+                "-- supply --feature-id explicitly",
+            )
+
+    template_skeleton, degraded_exit = _load_template_skeleton_or_degrade(
+        repo_root, resolved_feature_id
+    )
+    if degraded_exit is not None:
+        return degraded_exit
+    assert template_skeleton is not None  # narrows for mypy: degraded_exit is None
+
+    return _emit_single_scaffold_result(
+        repo_root,
+        resolved_feature_id,
+        identifier="direct-value",
+        raw_input=value,
+        value_statement=value,
+        template_skeleton=template_skeleton,
+    )
+
+
 def _run_slice_plan(repo_root: Path, feature_id: str) -> int:
     """`--seed-mode slice-plan` (default): the slice-01 behaviour, unchanged
     byte-for-byte -- scaffold every observable Slice Plan row from the
@@ -736,15 +851,27 @@ def _run_slice_plan(repo_root: Path, feature_id: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Generate charter scaffolds; return 0 on `accepted`, non-zero on any
     degrade-LOUD verdict. Dispatches on `--seed-mode` (default 'slice-plan',
-    byte-identical to the pre-slice-03 behaviour)."""
-    args = _build_parser().parse_args(argv)
+    byte-identical to the pre-slice-03 behaviour).
+
+    `--feature-id` stays byte-identically REQUIRED for the three pre-
+    existing seed-modes (argparse itself no longer enforces this -- only
+    `direct-value` may omit it -- so this replicates argparse's own
+    required-argument error, same message and exit code, for the other
+    three)."""
+    parser = _build_parser()
+    args = parser.parse_args(argv)
     repo_root = Path(args.repo_root)
     feature_id = args.feature_id
+
+    if args.seed_mode != "direct-value" and not feature_id:
+        parser.error("the following arguments are required: --feature-id")
 
     if args.seed_mode == "bug-observable":
         return _run_bug_observable(repo_root, feature_id, args.observable)
     if args.seed_mode == "brownfield-discovery":
         return _run_brownfield_discovery(repo_root, feature_id, args.area)
+    if args.seed_mode == "direct-value":
+        return _run_direct_value(repo_root, feature_id, args.value)
 
     return _run_slice_plan(repo_root, feature_id)
 

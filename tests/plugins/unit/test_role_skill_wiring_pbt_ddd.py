@@ -134,6 +134,11 @@ class TestThinAutoRoleRoutes:
             ].split()
         )
         for token in (
+            "Scaffold-before-pair",
+            "root-owned, before either sibling",
+            "des charter-scaffold --seed-mode direct-value",
+            "created-or-existing",
+            "helper Agent/Task",
             "Sibling dispatch",
             "SAME",
             "run_in_background=false",
@@ -145,8 +150,15 @@ class TestThinAutoRoleRoutes:
             "contract+tests",
             "never authors, repairs, or reconstructs",
             "terminal under the single-pass rule",
+            "Join",
         ):
             assert token in route
+
+        assert (
+            route.index("Scaffold-before-pair")
+            < route.index("Sibling dispatch")
+            < route.index("**Join:**")
+        )
 
         boundaries = " ".join(body[body.index("## Route boundaries") :].split())
         assert (
@@ -172,8 +184,22 @@ class TestThinAutoRoleRoutes:
             "Preconditions/start recipe",
             "oracle",
             "stop before the Human workflow",
+            "repo-relative charter path root already created",
+            "never run `des charter-scaffold` itself",
+            "never use Task/Agent to delegate, locate, or retry a CLI gate",
+            "this route has no Bash",
         ):
             assert token in route
+
+    def test_product_owner_keeps_task_tool_and_human_workflow_peer_review(self):
+        """K4 fix scope guard: the Thin Auto route bans PO's Task/Agent use
+        for CLI delegation, but Task itself (and the Human workflow's own
+        use of it, e.g. peer review) stays untouched globally."""
+        metadata = _frontmatter("nw-product-owner.md")
+        assert "Task" in (metadata.get("tools") or [])
+
+        body = (AGENTS_DIR / "nw-product-owner.md").read_text(encoding="utf-8")
+        assert "Run peer review via Task, max 2 iterations" in body
 
     def test_acceptance_designer_owns_contract_and_tests_not_charter(self):
         body = (AGENTS_DIR / "nw-acceptance-designer.md").read_text(encoding="utf-8")

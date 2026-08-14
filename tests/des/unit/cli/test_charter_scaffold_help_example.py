@@ -70,12 +70,14 @@ def test_help_shows_example_invocations_with_1_vs_n_cardinality_distinction(
     producing exactly ONE."""
     help_text = _help_stdout(capsys)
 
-    # All three seed-mode example invocations are present.
+    # All four seed-mode example invocations are present.
     assert "--seed-mode slice-plan" in help_text
     assert "--seed-mode bug-observable" in help_text
     assert "--seed-mode brownfield-discovery" in help_text
+    assert "--seed-mode direct-value" in help_text
     assert "--observable" in help_text
     assert "--area" in help_text
+    assert "--value" in help_text
 
     # The 1-vs-N cardinality distinction is spelled out, not merely implied.
     lowered = help_text.lower()

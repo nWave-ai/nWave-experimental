@@ -163,7 +163,23 @@ other's output, and root never closes its turn to await a background
 task notification for either. Then join on both validated results and
 continue without a second controller:
 
-1. **Sibling dispatch (PO and ATD dispatched concurrently before awaiting either):**
+1. **Scaffold-before-pair (mechanical, root-owned, before either sibling
+   dispatch):** root invokes the installed `des charter-scaffold
+   --seed-mode direct-value` CLI exactly once, against the immutable
+   value seed — `--value <immutable-verbatim-seed>` and `--repo-root
+   <absolute-root>` (the same root from Root propagation above);
+   `--feature-id` is forwarded only when the run already carries one,
+   otherwise omitted so the CLI derives it mechanically. Root never
+   invents a `--feature-id`, authors charter content, or dispatches a
+   helper Agent/Task to locate or run this CLI. The run must return
+   `accepted` JSON naming exactly one charter path in `created` or
+   `skipped` (created-or-existing) — any other verdict, a
+   missing/malformed JSON payload, more than one path, or a non-zero exit
+   is terminal under the single-pass rule: report the blocker; root never
+   repairs, retries, or re-invokes the CLI. On success root carries that
+   repo-relative charter path, plus the same value-side input, into the
+   PO dispatch below.
+2. **Sibling dispatch (PO and ATD dispatched concurrently before awaiting either):**
    Root forwards the selected exact architecture authority line — the
    `ARCHITECTURE-COVERED: <repo-relative-permanent-path>#<section-anchor>`
    line or the
@@ -174,10 +190,12 @@ continue without a second controller:
    role-specific context below follows only after that blank line.
    - `nw-product-owner`: owns the expectation charter. Receives own
      documented user-facing local onboarding/setup excerpt (e.g. README's
-     local-install section), never inventing a signup path. Runs
-     `des charter-scaffold`, authoring the expectation charter with
-     Preconditions/start recipe grounded in that excerpt, sets oracle, then
-     stops.
+     local-install section), never inventing a signup path, plus the
+     charter path root produced in step 1 above. Fills THAT
+     already-created charter's Preconditions/start recipe grounded in
+     that excerpt, sets oracle, then stops. PO never runs
+     `des charter-scaffold` itself and never dispatches Task/Agent to
+     locate or run a CLI gate.
    - `nw-acceptance-designer`: receives immutable value seed via a CLOSED
      carrier that follows the architecture authority line and its blank
      line — exactly:
@@ -199,7 +217,7 @@ continue without a second controller:
      nor executes that sequence here. Authors minimal `DeliveryContract` v1.2
      with `paradigm` and acceptance tests. ATD never reads charter/start
      recipe.
-2. **Join:** after BOTH charter and contract+tests are validated, dispatch
+3. **Join:** after BOTH charter and contract+tests are validated, dispatch
    exactly one crafter by deterministic paradigm mapping. The PO/ATD
    sibling pair above is a two-call foreground pair issued together in one
    SAME-message pair; the crafter dispatch here is a single, separate
@@ -219,10 +237,10 @@ continue without a second controller:
    WIP exactly as-is; no retry, resume, root repair, or source-inspection
    substitution. A focused-AT-green result or an Examiner PASS never
    substitutes for this receipt.
-3. One independent `nw-user-examiner` examines the running product using the
+4. One independent `nw-user-examiner` examines the running product using the
    charter, whose Preconditions contain the start recipe, and rejects every
    other artifact.
-4. Root reports the role verdicts, focused evidence, and Git diff/status.
+5. Root reports the role verdicts, focused evidence, and Git diff/status.
 
 ## L route — same prefix, same floor
 

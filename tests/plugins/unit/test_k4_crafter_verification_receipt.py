@@ -36,9 +36,9 @@ SKILLS_DIR = NWAVE_DIR / "skills"
 AGENTS_DIR = NWAVE_DIR / "agents"
 
 CRAFTER_ANCHOR = "For a validated thin delivery, `DeliveryContract.targets`"
-SIBLING_ANCHOR = "1. **Sibling dispatch"
-JOIN_ANCHOR = "2. **Join:**"
-EXAMINER_ANCHOR = "3. One independent `nw-user-examiner`"
+SIBLING_ANCHOR = "2. **Sibling dispatch"
+JOIN_ANCHOR = "3. **Join:**"
+EXAMINER_ANCHOR = "4. One independent `nw-user-examiner`"
 
 RECEIPT_FIELDS = ("outcome", "argv", "scope", "exit_code")
 
