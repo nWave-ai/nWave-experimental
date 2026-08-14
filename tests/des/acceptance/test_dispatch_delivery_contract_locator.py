@@ -84,10 +84,17 @@ def _load_valid_contract() -> dict:
     return json.loads(_DELIVERY_CONTRACT_FIXTURE.read_text(encoding="utf-8"))
 
 
-def _seed_valid_contract(root: Path, rel_path: str = "delivery-contract.json") -> Path:
+def _seed_valid_contract(
+    root: Path,
+    rel_path: str = "delivery-contract.json",
+    *,
+    delivery_route: str = "RED_TO_GREEN",
+) -> Path:
+    contract = _load_valid_contract()
+    contract["delivery-route"] = delivery_route
     dst = root / rel_path
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(_DELIVERY_CONTRACT_FIXTURE, dst)
+    dst.write_text(json.dumps(contract), encoding="utf-8")
     return dst
 
 
@@ -157,11 +164,13 @@ def test_missing_delivery_contract_refuses_before_prompt(tmp_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("delivery_route", ["RED_TO_GREEN", "GREEN_TO_GREEN"])
 def test_valid_pair_renders_contract_facts_never_feature_delta(
     tmp_path: Path,
+    delivery_route: str,
 ) -> None:
     _seed_ssot(tmp_path)
-    contract = _seed_valid_contract(tmp_path)
+    contract = _seed_valid_contract(tmp_path, delivery_route=delivery_route)
     exit_code, out, err = _run(
         *_DELIVER_ARGS,
         "--repo-root",
@@ -173,6 +182,9 @@ def test_valid_pair_renders_contract_facts_never_feature_delta(
     assert "retarget-des-dispatch-contract" in out, (
         "the rendered prompt must carry a contract-derived observable fact "
         f"(delivery-id); prompt=\n{out}"
+    )
+    assert f"Delivery-route: {delivery_route}" in out, (
+        f"route projection missing; prompt=\n{out}"
     )
     assert "feature-delta" not in out.lower()
     assert "design reference" not in out.lower()

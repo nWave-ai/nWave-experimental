@@ -74,6 +74,7 @@ def _contract(paradigm: str) -> dict[str, Any]:
         "outcome": "Validate one immutable delivery contract before direct role routing.",
         "targets": {TARGET_PATH: _target_plan()},
         "paradigm": paradigm,
+        "delivery-route": "RED_TO_GREEN",
         "obligations": ["REUSE_CANDIDATE"],
         "acceptance-tests": {
             "locator": "tests/build/test_thin_delivery_contract_schema.py",
@@ -571,6 +572,66 @@ def test_targets_are_path_keyed_without_a_second_target_designation() -> None:
     assert "propertyNames" in targets
     assert "target" not in target_plan["properties"]
     assert "target" not in target_plan["required"]
+
+
+DELIVERY_ROUTE_VALUES = ("RED_TO_GREEN", "GREEN_TO_GREEN")
+
+
+@pytest.mark.parametrize("delivery_route", DELIVERY_ROUTE_VALUES)
+@pytest.mark.parametrize("examine", [True, False])
+def test_every_delivery_route_validates_crossed_with_examine(
+    delivery_route: str,
+    examine: bool,
+) -> None:
+    contract = _contract("object_oriented")
+    contract["delivery-route"] = delivery_route
+    contract["applicability"]["examine"] = examine
+
+    assert _errors(contract) == []
+
+
+def test_contract_rejects_missing_delivery_route() -> None:
+    contract = _contract("object_oriented")
+    del contract["delivery-route"]
+
+    assert any(
+        tuple(error.absolute_path) == () and error.validator == "required"
+        for error in _errors(contract)
+    ), (
+        "WHAT: a DeliveryContract without a top-level delivery-route was accepted. "
+        "WHY: the execution route (RED_TO_GREEN vs GREEN_TO_GREEN) is declared "
+        "authority the host must know before routing, not an inferred default. "
+        "HOW: require delivery-route as a top-level property of every contract."
+    )
+
+
+@pytest.mark.parametrize(
+    "invalid_delivery_route",
+    [
+        "RED-TO-GREEN",
+        "NOT_A_ROUTE",
+        "red_to_green",
+        "",
+    ],
+    ids=["near-miss-hyphenated", "unknown-value", "wrong-case", "empty-string"],
+)
+def test_contract_rejects_non_enum_delivery_route(
+    invalid_delivery_route: str,
+) -> None:
+    contract = _contract("object_oriented")
+    contract["delivery-route"] = invalid_delivery_route
+
+    assert any(
+        tuple(error.absolute_path) == ("delivery-route",) and error.validator == "enum"
+        for error in _errors(contract)
+    ), (
+        "WHAT: a delivery-route value outside the closed two-value enum was accepted. "
+        "WHY: delivery-route is a closed-world switch -- RED_TO_GREEN or "
+        "GREEN_TO_GREEN, exactly -- not a free string a near-miss spelling can "
+        "silently slip past. "
+        f"HOW: reject {invalid_delivery_route!r} and every value that is not "
+        "exactly one of the two closed enum members."
+    )
 
 
 def test_schema_acceptance_does_not_claim_host_conformance() -> None:

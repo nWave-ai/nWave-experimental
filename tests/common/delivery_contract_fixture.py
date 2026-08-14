@@ -38,14 +38,24 @@ def load_valid_contract() -> dict:
     return json.loads(_DELIVERY_CONTRACT_FIXTURE.read_text(encoding="utf-8"))
 
 
-def seed_delivery_contract(root: Path, rel_path: str = "delivery-contract.json") -> str:
-    """Copy the real ThinDeliveryContract fixture under `root` and return its
+def seed_delivery_contract(
+    root: Path,
+    rel_path: str = "delivery-contract.json",
+    *,
+    route: str = "RED_TO_GREEN",
+) -> str:
+    """Write the real ThinDeliveryContract fixture under `root`, with its
+    top-level `delivery-route` set explicitly to `route`, and return its
     ROOT-relative PATH -- for a test driving an isolated `--repo-root` (a
     tmp workspace), which cannot resolve a PATH relative to the real
-    checkout root."""
+    checkout root. Parses and re-serializes the fixture (rather than a raw
+    byte copy) so `route` always lands in the written contract instead of
+    silently reusing whatever the checked-in fixture happens to contain."""
     dst = root / rel_path
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(_DELIVERY_CONTRACT_FIXTURE, dst)
+    contract = load_valid_contract()
+    contract["delivery-route"] = route
+    dst.write_text(json.dumps(contract), encoding="utf-8")
     return rel_path
 
 

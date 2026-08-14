@@ -149,6 +149,7 @@ def _delivery_contract_design_context(contract: dict, relative_path: str) -> str
         f"Delivery-id: {contract.get('delivery-id', '')}\n"
         f"Outcome: {contract.get('outcome', '')}\n"
         f"Paradigm: {contract.get('paradigm', '')}\n"
+        f"Delivery-route: {contract.get('delivery-route', '')}\n"
         f"Targets: {targets_text}\n"
         f"Obligations: {obligations_text}\n"
         "Acceptance-test: "
