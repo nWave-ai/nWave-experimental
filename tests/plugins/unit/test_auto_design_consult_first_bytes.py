@@ -151,13 +151,12 @@ class TestEscalationNamesSpecialistsWithoutDispatch:
 
 
 class TestNwAutoForwardsAuthorityAndNoImpactCitationForm:
-    """(d) root forwards the authority header to both siblings; NoImpact cites, never prose."""
+    """(d) root resolves one authority and forwards it to dispatched roles."""
 
     def test_consult_header_grammar_and_sibling_forwarding_and_no_impact_form(self):
         body = _auto_body()
-        consult_start = body.index("## DESIGN consult — first bytes")
+        consult_start = body.index("## Architecture readiness — shared M/L prefix")
         floor_start = body.index("## M/L route — shared reuse floor")
-        l_route_start = body.index("## L route — same prefix, same floor")
         assert consult_start < floor_start
 
         consult_section = body[consult_start:floor_start]
@@ -165,22 +164,10 @@ class TestNwAutoForwardsAuthorityAndNoImpactCitationForm:
         assert COVERED_TOKEN in consult_section
         assert BLOCKED_TOKEN in consult_section
         normalized_consult = _norm(consult_section)
-        assert "never asks this consult to write" in normalized_consult
-        assert "`feature-delta.md`" in normalized_consult
+        assert "Covered/NoImpact" in normalized_consult
+        assert "Unresolved" in normalized_consult
 
-        readiness_section = body[
-            body.index("## Architecture readiness") : consult_start
-        ]
-        assert NO_IMPACT_TOKEN in readiness_section
-        assert "No free prose evidence" in _norm(readiness_section)
-
-        sibling_section = _norm(body[floor_start:l_route_start])
-        assert "first bytes of BOTH sibling Agent prompts" in sibling_section
-        assert (
-            COVERED_TOKEN in sibling_section
-            or "ARCHITECTURE-COVERED" in sibling_section
-        )
-        assert (
-            NO_IMPACT_TOKEN in sibling_section
-            or "ARCHITECTURE-NO-IMPACT" in sibling_section
-        )
+        route = _norm(body[floor_start : body.index("## Examiner input isolation")])
+        assert "Forwards architecture authority line" in route
+        assert "Receives architecture line + charter path" in route
+        assert "## L route" not in body

@@ -80,7 +80,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -95,6 +94,7 @@ from des.application.atdd_pure_prompt_validator import (
 from des.application.dispatch_lane_ssot import _read_full_sections
 from des.domain.atdd_pure_phases import ATDDPurePhase
 from des.domain.lane_profile import LANE_PROFILES
+from tests.common.delivery_contract_fixture import contract_args as _contract_args
 from tests.common.in_process_cli import run_module_in_process
 
 
@@ -118,36 +118,8 @@ _DES_LANE_JUSTIFICATION_PATTERN = re.compile(
 #: pair, `PATH` resolved ONLY against `ROOT` (locked by the 19-test locator
 #: suite, `tests/des/acceptance/test_dispatch_delivery_contract_locator.py`).
 #: The real, checked-in, schema-valid ThinDeliveryContract fixture that
-#: suite already proves against -- reused here rather than a second,
-#: drifting hand-authored contract literal.
-_DELIVERY_CONTRACT_FIXTURE_REL = (
-    "docs/delivery-contracts/retarget-des-dispatch-contract.json"
-)
-_DELIVERY_CONTRACT_FIXTURE = _REPO_ROOT / _DELIVERY_CONTRACT_FIXTURE_REL
-
-
-def _seed_delivery_contract(
-    root: Path, rel_path: str = "delivery-contract.json"
-) -> str:
-    """Copy the real ThinDeliveryContract fixture under `root` and return its
-    ROOT-relative PATH -- for a test driving an isolated `--repo-root` (a
-    tmp workspace), which cannot resolve a PATH relative to the real
-    checkout root."""
-    dst = root / rel_path
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(_DELIVERY_CONTRACT_FIXTURE, dst)
-    return rel_path
-
-
-def _contract_args(root: Path, *, seed: bool = True) -> tuple[str, str, str, str]:
-    """The `--repo-root <root> --delivery-contract <PATH>` pair a test-
-    running dispatch against `root` now requires. `seed=True` (the default)
-    copies the fixture under `root` first, for an isolated tmp workspace;
-    `seed=False` reuses the real checked-in fixture in place, for a dispatch
-    driven against the real checkout root (`_REPO_ROOT`) -- never a second
-    copy of a file already on disk there."""
-    rel_path = _seed_delivery_contract(root) if seed else _DELIVERY_CONTRACT_FIXTURE_REL
-    return ("--repo-root", str(root), "--delivery-contract", rel_path)
+#: suite already proves against -- reused from tests.common.delivery_contract_fixture
+#: rather than a second, drifting hand-authored contract literal.
 
 
 def _marker(key: str, value: str) -> str:

@@ -36,7 +36,9 @@ import shlex
 import stat
 import sys
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
+from typing import NoReturn
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError as _JsonSchemaValidationError
@@ -55,6 +57,7 @@ from des.cli.validate_feature_delta import (
     validate_prefactoring_assessment_content,
     validate_reuse_analysis_content,
 )
+from des.cli.verify_charter_filled import charter_missing_sections
 from des.cli.verify_readiness_pre_dispatch import _design_skip_witness_present
 from des.domain.agent_capability import (
     ClaimRegister,
@@ -135,8 +138,39 @@ def _projected_command_argv(command: dict) -> list[str]:
     return [identity, *command.get("arguments", [])]
 
 
-def _delivery_contract_design_context(contract: dict, relative_path: str) -> str:
-    """Compact DESIGN_CONTEXT derived ONLY from validated contract facts."""
+#: ADR-SSOT-002 S4b/S9 -- Axis 1 (`delivery-route`) projection: the ATD
+#: instruction this route compiles into, independent of `applicability.
+#: examine` (Axis 2). Neither route infers or waives the other axis.
+_ROUTE_INSTRUCTIONS: dict[str, str] = {
+    "RED_TO_GREEN": (
+        "Delivery route RED_TO_GREEN: the acceptance designer (ATD) must "
+        "author a NEW acceptance/integration oracle and prove its intended "
+        "RED observation before implementation begins; the crafter never "
+        "authors tests.\n"
+    ),
+    "GREEN_TO_GREEN": (
+        "Delivery route GREEN_TO_GREEN: ATD validates and binds the "
+        "DESIGN-named EXISTING acceptance-test locator/digest -- do NOT "
+        "create or mutate an acceptance/integration test. DELIVER proves "
+        "the same digest/path green before and after.\n"
+    ),
+}
+
+
+def _delivery_contract_design_context(
+    contract: dict,
+    relative_path: str,
+    *,
+    reused_charter_paths: tuple[str, ...] = (),
+) -> str:
+    """Compact DESIGN_CONTEXT derived ONLY from validated contract facts.
+
+    ``reused_charter_paths`` (ADR-SSOT-002 S4b Axis 2, `Resolve(true,
+    Valid(charters))`) is empty unless the caller already resolved a
+    `Reuse(charters)` outcome -- an `examine=false` dispatch never reaches
+    this with a non-empty tuple, so its rendered prompt never mentions a
+    charter.
+    """
     acceptance_tests = contract.get("acceptance-tests", {})
     commands = contract.get("verification-scope", {}).get("commands", [])
     commands_text = "; ".join(
@@ -144,7 +178,7 @@ def _delivery_contract_design_context(contract: dict, relative_path: str) -> str
     )
     targets_text = ", ".join(sorted(contract.get("targets", {})))
     obligations_text = ", ".join(contract.get("obligations", []))
-    return (
+    text = (
         f"DeliveryContract: {relative_path}\n"
         f"Delivery-id: {contract.get('delivery-id', '')}\n"
         f"Outcome: {contract.get('outcome', '')}\n"
@@ -156,6 +190,232 @@ def _delivery_contract_design_context(contract: dict, relative_path: str) -> str
         f"{acceptance_tests.get('locator', '')} ({acceptance_tests.get('digest', '')})\n"
         f"Verification commands: {commands_text}\n"
     )
+    text += _ROUTE_INSTRUCTIONS.get(contract.get("delivery-route", ""), "")
+    if reused_charter_paths:
+        text += (
+            "Expectation charter(s) for this delivery (reuse, no rewrite): "
+            f"{', '.join(reused_charter_paths)}\n"
+            "Preserved for exactly one terminal source-blind Vera EXAMINE "
+            "aggregate pass -- never a per-slice or per-contract pass.\n"
+        )
+    return text
+
+
+#: ADR-SSOT-002 S4b Axis 2 -- the `Discover`/`Resolve` algebra over the
+#: schema-validated `delivery-id` namespace
+#: `docs/product/expectations/{id}/`, compiled as a closed ADT (module-
+#: private frozen dataclass variants) rather than string tags/loose tuples:
+#: `Discover = Missing(namespace) | Empty(namespace) | Valid(NonEmpty paths)
+#: | Invalid(what, why, how)`. `Valid`/`Reuse` reject an empty path tuple at
+#: construction; `Invalid`/`Block` reject a blank what/why/how at
+#: construction -- both invalid internal states are unrepresentable rather
+#: than merely undocumented.
+@dataclass(frozen=True, slots=True)
+class _Missing:
+    namespace: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _Empty:
+    namespace: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _Valid:
+    charter_paths: tuple[Path, ...]
+
+    def __post_init__(self) -> None:
+        if not self.charter_paths:
+            raise ValueError("_Valid requires at least one charter path")
+
+
+@dataclass(frozen=True, slots=True)
+class _Invalid:
+    what: str
+    why: str
+    how: str
+
+    def __post_init__(self) -> None:
+        if not self.what.strip() or not self.why.strip() or not self.how.strip():
+            raise ValueError("_Invalid requires nonblank what/why/how")
+
+
+_Discover = _Missing | _Empty | _Valid | _Invalid
+
+
+def _assert_never(value: object) -> NoReturn:
+    """Module-private `assert_never` (py3.10-safe: `typing.assert_never` is
+    3.11+) -- an equivalently strong exhaustiveness guard for the closed
+    `_Discover`/`_Resolve` ADTs."""
+    raise AssertionError(f"unhandled ADT variant: {value!r}")
+
+
+#: Shared WHY/HOW for every `Invalid`/`Block` outcome -- Discover classifies
+#: every direct namespace member without filtering, so a single invalid
+#: member (or an invalid namespace itself) always blocks with the SAME
+#: explanation and the SAME fix, regardless of which specific check failed.
+_INVALID_MEMBER_WHY = (
+    "Discover classifies every direct namespace member "
+    "without filtering -- a single invalid member blocks "
+    "the entire namespace, never a partial or filtered "
+    "prompt"
+)
+_INVALID_MEMBER_HOW = (
+    "fix or remove the invalid charter member (a real, "
+    "readable `.md` file with no symlink/directory/path-"
+    "escape, filled Preconditions and a negative-oracle "
+    "observation), then re-run des dispatch"
+)
+
+
+def _invalid_charter_member_detail(entry: Path, resolved_namespace: Path) -> str | None:
+    """Detail clause naming why one DIRECT namespace member is `Invalid`, or
+    `None` when it is a Valid, filled, regular `.md` charter.
+
+    Reuses `charter_missing_sections` (`des.cli.verify_charter_filled`) --
+    the ONE filled-charter predicate, never re-derived here.
+    """
+    if entry.is_symlink():
+        return f"{entry} is a symlink, not a regular charter file"
+    if entry.is_dir():
+        return f"{entry} is a directory, not a regular charter file"
+    if entry.suffix != ".md":
+        return f"{entry} is not a `.md` file"
+    try:
+        resolved_entry = entry.resolve()
+    except OSError as exc:
+        return f"{entry} cannot be resolved ({exc.__class__.__name__})"
+    try:
+        resolved_entry.relative_to(resolved_namespace)
+    except ValueError:
+        return f"{entry} escapes the charter namespace {resolved_namespace}"
+    try:
+        content = entry.read_text(encoding="utf-8")
+    except OSError as exc:
+        return f"{entry} cannot be read ({exc.__class__.__name__})"
+    missing = charter_missing_sections(content)
+    if missing:
+        return f"{entry} is unfilled ({'; '.join(missing)})"
+    return None
+
+
+def _discover_charter_namespace(repo_root: Path, delivery_id: str) -> _Discover:
+    """`Discover(root, schemaValidDeliveryId)` (ADR-SSOT-002 S4b): total over
+    the fixed namespace `docs/product/expectations/{delivery_id}/` under the
+    explicit repo root.
+
+    Classifies EVERY direct namespace member without filtering: a symlink,
+    directory, non-`.md` file, path escape, or malformed/unfilled `.md`
+    member all classify `Invalid`, never silently `Missing`/`Empty`.
+    """
+    namespace = repo_root / "docs" / "product" / "expectations" / delivery_id
+    base = (repo_root / "docs" / "product" / "expectations").resolve()
+
+    def _invalid(detail: str) -> _Invalid:
+        return _Invalid(
+            what=(
+                "the expectation-charter namespace "
+                f"docs/product/expectations/{delivery_id}/ has an "
+                f"invalid member: {detail}"
+            ),
+            why=_INVALID_MEMBER_WHY,
+            how=_INVALID_MEMBER_HOW,
+        )
+
+    if namespace.is_symlink():
+        return _invalid(
+            f"the charter namespace {namespace} is a symlink, not a real directory"
+        )
+    if not namespace.exists():
+        return _Missing(namespace)
+    if not namespace.is_dir():
+        return _invalid(
+            f"the charter namespace {namespace} exists but is not a directory"
+        )
+    try:
+        resolved_namespace = namespace.resolve()
+    except OSError as exc:
+        return _invalid(
+            f"the charter namespace {namespace} cannot be resolved ({exc.__class__.__name__})"
+        )
+    try:
+        resolved_namespace.relative_to(repo_root.resolve())
+        resolved_namespace.relative_to(base)
+    except ValueError:
+        return _invalid(
+            f"the charter namespace {namespace} escapes --repo-root or the "
+            "canonical docs/product/expectations/ base"
+        )
+
+    entries = sorted(namespace.iterdir(), key=lambda entry: entry.name)
+    if not entries:
+        return _Empty(namespace)
+
+    valid_paths: list[Path] = []
+    for entry in entries:
+        detail = _invalid_charter_member_detail(entry, resolved_namespace)
+        if detail is not None:
+            return _invalid(detail)
+        valid_paths.append(entry)
+    return _Valid(tuple(valid_paths))
+
+
+@dataclass(frozen=True, slots=True)
+class _Skip:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class _Author:
+    namespace: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _Reuse:
+    charter_paths: tuple[Path, ...]
+
+    def __post_init__(self) -> None:
+        if not self.charter_paths:
+            raise ValueError("_Reuse requires at least one charter path")
+
+
+@dataclass(frozen=True, slots=True)
+class _Block:
+    what: str
+    why: str
+    how: str
+
+    def __post_init__(self) -> None:
+        if not self.what.strip() or not self.why.strip() or not self.how.strip():
+            raise ValueError("_Block requires nonblank what/why/how")
+
+
+_Resolve = _Skip | _Author | _Reuse | _Block
+
+
+def _resolve_charter_namespace(
+    *, examine: bool, discovered: _Discover | None
+) -> _Resolve:
+    """`Resolve(examine, Discover)` (ADR-SSOT-002 S4b) -- total, four outcomes:
+    `Skip | Author(Namespace) | Reuse(charters) | Block(what, why, how)`.
+
+    `Resolve(false, _) = Skip` regardless of `discovered` -- the caller never
+    invokes `_discover_charter_namespace` at all when `examine` is False (so
+    `discovered` is `None` on that path by construction), meaning an
+    `examine=false` dispatch never reads the filesystem for a charter.
+    """
+    if not examine:
+        return _Skip()
+    assert discovered is not None
+    match discovered:
+        case _Missing(namespace) | _Empty(namespace):
+            return _Author(namespace)
+        case _Valid(charter_paths):
+            return _Reuse(charter_paths)
+        case _Invalid(what, why, how):
+            return _Block(what, why, how)
+        case _:
+            _assert_never(discovered)
 
 
 def _load_delivery_contract(repo_root: Path, path_str: str) -> tuple[dict, str] | None:
@@ -1757,7 +2017,7 @@ def _charter_obligation_screen_line(
         return (
             f"charter: REQUIRED (lane={lane}) -- this work OWES an "
             "expectation charter. Run `des charter-scaffold --feature-id "
-            f"{feature_id} --seed-mode slice-plan` to scaffold it before "
+            f"{feature_id} --seed-mode direct-value` to scaffold it before "
             "commit."
         )
     if obligation == CharterObligation.EXEMPT.value:
@@ -2203,8 +2463,65 @@ def main(argv: list[str] | None = None) -> int:
         if loaded_contract is None:
             return _EXIT_USAGE_ERROR
         contract, contract_relative_path = loaded_contract
+
+        # ADR-SSOT-002 S4b Axis 2 -- `applicability.examine` is independent
+        # of `delivery-route`: resolved here, before ANY prompt is rendered,
+        # so `Author`/`Block` refuse loud with no partial stdout. `examine`
+        # false never calls `_discover_charter_namespace` at all (no read,
+        # no requirement, no mention of a charter in the rendered prompt).
+        delivery_id = str(contract.get("delivery-id", ""))
+        examine = bool(contract.get("applicability", {}).get("examine", False))
+        discovered: _Discover | None
+        if examine:
+            discovered = _discover_charter_namespace(args.repo_root, delivery_id)
+        else:
+            discovered = None
+        resolution = _resolve_charter_namespace(examine=examine, discovered=discovered)
+
+        reused_charter_paths: tuple[str, ...] = ()
+        if isinstance(resolution, _Author):
+            return _handoff_refusal(
+                what=(
+                    "the expectation-charter namespace "
+                    f"docs/product/expectations/{delivery_id}/ carries no "
+                    "valid charter"
+                ),
+                why=(
+                    "applicability.examine=true requires Discover to reach "
+                    "Valid(charters) before a DELIVER-test-executing "
+                    "dispatch is rendered -- Missing or Empty must never "
+                    "silently skip fresh PO authorship"
+                ),
+                how=(
+                    "author a fresh expectation charter from value-side "
+                    "evidence only under "
+                    f"docs/product/expectations/{delivery_id}/ (e.g. `des "
+                    "charter-scaffold --seed-mode direct-value "
+                    f"--feature-id {delivery_id} --value <the value "
+                    "statement>`), then re-run des dispatch"
+                ),
+            )
+        elif isinstance(resolution, _Block):
+            return _handoff_refusal(
+                what=resolution.what,
+                why=resolution.why,
+                how=resolution.how,
+            )
+        elif isinstance(resolution, _Reuse):
+            resolved_repo_root = args.repo_root.resolve()
+            reused_charter_paths = tuple(
+                path.resolve().relative_to(resolved_repo_root).as_posix()
+                for path in resolution.charter_paths
+            )
+        elif isinstance(resolution, _Skip):
+            pass
+        else:
+            _assert_never(resolution)
+
         delivery_contract_context = _delivery_contract_design_context(
-            contract, contract_relative_path
+            contract,
+            contract_relative_path,
+            reused_charter_paths=reused_charter_paths,
         )
 
     slice_id: str = args.slice_id

@@ -36,9 +36,9 @@ SKILLS_DIR = NWAVE_DIR / "skills"
 AGENTS_DIR = NWAVE_DIR / "agents"
 
 CRAFTER_ANCHOR = "For a validated thin delivery, `DeliveryContract.targets`"
-SIBLING_ANCHOR = "2. **Sibling dispatch"
-JOIN_ANCHOR = "3. **Join:**"
-EXAMINER_ANCHOR = "4. One independent `nw-user-examiner`"
+SIBLING_ANCHOR = "1. `nw-acceptance-designer` (every run):"
+JOIN_ANCHOR = "3. **Join**:"
+EXAMINER_ANCHOR = "4. `nw-user-examiner` (only if `examine=true`):"
 
 RECEIPT_FIELDS = ("outcome", "argv", "scope", "exit_code")
 
@@ -96,69 +96,43 @@ class TestCrafterVerificationReceipt:
             )
 
     def test_join_step_requires_receipt_before_examiner_or_commit(self):
-        """(b) Root's Join step gates examiner dispatch and commit on the receipt."""
+        """(b) Root gates the conditional examiner on a terminal receipt."""
         join = _join_step()
         for token in (
-            "concise verification receipt",
-            "terminating full relevant suite run",
-            "outcome: PASS",
-            "exit_code == 0",
-            "before dispatching the examiner or",
-            "committing",
+            "returns the ephemeral receipt",
+            "outcome: PASS|FAIL",
+            "argv",
+            "scope",
+            "exit_code",
+            "verification-scope.commands",
+            "scope` to cover them",
+            "every exit code to be zero",
+            "terminal FAIL",
+            "focused-AT green or Examiner PASS never substitutes",
+            "No receipt ledger/artifact",
         ):
             assert token in join, f"Missing: {token}"
+        body = _skill_body()
+        assert body.index(JOIN_ANCHOR) < body.index(EXAMINER_ANCHOR)
 
     def test_bad_receipt_is_terminal_fail_preserving_wip_no_repair_paths(self):
         """(c) Missing/malformed/truncated/nonzero/FAIL receipt is terminal FAIL."""
         join = _join_step()
-        assert "missing, malformed, truncated, nonzero, or `FAIL` receipt" in join
-        assert "terminal FAIL" in join
-        assert "single-pass rule" in join
-        for forbidden in (
-            "preserve wip exactly as-is",
-            "no retry",
-            "resume",
-            "root repair",
-            "source-inspection substitution",
+        for token in (
+            "Missing/malformed/truncated/mismatched/nonzero/FAIL",
+            "terminal FAIL",
+            "preserve WIP",
         ):
-            assert forbidden in join.lower(), f"Did not forbid: {forbidden}"
-
-    def test_focused_at_or_examiner_pass_cannot_substitute_for_receipt(self):
-        """(d) Focused-AT-green and Examiner PASS explicitly barred as substitutes."""
-        join = _join_step()
-        assert "focused-at-green" in join.lower()
-        assert "examiner pass" in join.lower()
-        assert "never substitutes for this receipt" in join
+            assert token in join
+        assert "single-pass rule" in join
 
     def test_receipt_field_vocabulary_agrees_across_crafter_and_root(self):
-        """(e) outcome/argv/scope/exit_code appear verbatim in both files."""
+        """The crafter owns receipt production; root verifies its full interface."""
         paragraph = _crafter_dispatch_paragraph()
         join = _join_step()
         for field in RECEIPT_FIELDS:
             assert field in paragraph, f"Crafter spec missing field: {field}"
             assert field in join, f"nw-auto Join step missing field: {field}"
-
-    def test_crafter_dispatch_is_foreground_synchronous_never_background(self):
-        """K4 (2026-08-13): PO/ATD are a concurrent foreground two-call pair
-        -- the single crafter dispatch after their join is one separate
-        foreground, synchronous dispatch, so an async dispatch can no longer
-        let the tool-result boundary fire before the terminal receipt is
-        emitted."""
-        join = _join_step()
-        for token in (
-            "two-call foreground pair issued together",
-            "foreground and synchronous",
-            "root waits on its result inline",
-            "never `run_in_background`",
-            "never a second concurrent dispatch",
-        ):
-            assert token in join.lower(), f"Missing: {token}"
-
-        sibling = _sibling_dispatch_step()
-        assert "dispatched concurrently before awaiting either" in sibling.lower()
-        assert "background agent dispatch" not in join.lower(), (
-            "the crafter Join step must never carry the PO/ATD background-dispatch phrasing"
-        )
 
     def test_join_anchor_is_the_sole_stable_owner(self):
         """The Join step must exist exactly once; removal must fail this suite."""

@@ -1,7 +1,6 @@
-"""RED regression ATs -- two BLOCKER defects found by the feature-end deep
-review of the shipped `des charter-scaffold` tool
-(`src/des/cli/charter_scaffold.py`, slice-01/02/03/04, all seed-modes
-already on `main`).
+"""RED regression ATs -- two BLOCKER defects found in the shipped
+`des charter-scaffold` tool (`src/des/cli/charter_scaffold.py`, all
+seed-modes already present).
 
 D1 (silent-wrong on hostile input, a variant of the already-fixed blank-
 input bug): every degrade-LOUD guard in the tool checks `not input.strip()`
@@ -35,18 +34,12 @@ zero-observable-slice plan deserves. No existing test drives an
 all-`@infrastructure`/`@prefactoring` Slice Plan, so this gap shipped
 unexercised.
 
-covers: feature-end deep review D1 + D2, `des charter-scaffold`
-(`src/des/cli/charter_scaffold.py`)
-
-RED reason (P1-P4 in-process active-RED, `nw-distill-red-scaffolding`):
-NOT a missing-module/missing-flag RED (the tool + every flag exercised here
-are already shipped) -- these are BEHAVIOURAL REDs. Each test drives the
-real, already-shipped `des.cli.charter_scaffold.main(argv)` IN-PROCESS
-against a `tmp_path` fixture repo and asserts the DESIRED (not-yet-true)
-outcome; the CURRENT implementation's actual outcome (a garbage scaffold
-silently created / a silent empty-success exit) makes the assertion raise a
-plain `AssertionError` -- fail-for-the-right-reason, never a collection or
-import error.
+RED reason: These are BEHAVIOURAL REDs. Each test drives the real,
+already-shipped `des.cli.charter_scaffold.main(argv)` IN-PROCESS against a
+`tmp_path` fixture repo and asserts the DESIRED (not-yet-true) outcome; the
+CURRENT implementation's actual outcome (a garbage scaffold silently created /
+a silent empty-success exit) makes the assertion raise a plain
+`AssertionError` -- fail-for-the-right-reason.
 
 Driving surface: `des.cli.charter_scaffold.main(argv) -> int` invoked
 IN-PROCESS against a `tmp_path` fixture repo (composition-root driving
@@ -59,8 +52,6 @@ import json
 from pathlib import Path
 
 import pytest
-
-from des.cli.validate_feature_delta import VERDICT_REJECTED_INFRA_ONLY
 
 
 #: The one repo-root-relative asset every seed-mode reads regardless of
@@ -109,26 +100,19 @@ def _invoke_seed_mode(
 ) -> tuple[int, dict]:
     """Drive the already-shipped `main()` (P2) for one of the three
     `--seed-mode` values, feeding `hostile_text` as that mode's user-supplied
-    text (`slice-plan` Value statement / `bug-observable` `--observable` /
+    text (`direct-value` `--value` / `bug-observable` `--observable` /
     `brownfield-discovery` `--area`). No SystemExit handling needed -- all
     three seed-modes and their flags already exist on `main`'s argparse."""
     from des.cli.charter_scaffold import main
 
-    if seed_mode == "slice-plan":
-        feature_delta = f"""# Feature-delta -- {feature_id}
-
-## Wave: DISCUSS / [REF] Slice Plan
-
-| Slice | Value statement | Status | Annotation | Justification |
-|---|---|---|---|---|
-| slice-01 | {hostile_text} | pending |  | hostile Value statement (D1 regression) |
-"""
-        delta_dir = repo_root / "docs" / "feature" / feature_id
-        delta_dir.mkdir(parents=True, exist_ok=True)
-        (delta_dir / "feature-delta.md").write_text(feature_delta, encoding="utf-8")
+    if seed_mode == "direct-value":
         argv = [
+            "--seed-mode",
+            "direct-value",
             "--feature-id",
             feature_id,
+            "--value",
+            hostile_text,
             "--repo-root",
             str(repo_root),
             "--format",
@@ -170,9 +154,9 @@ def _invoke_seed_mode(
 @pytest.mark.parametrize(
     "seed_mode,hostile_text",
     [
-        pytest.param("slice-plan", "???", id="slice_plan_symbols_only"),
+        pytest.param("direct-value", "???", id="direct_value_symbols_only"),
         pytest.param(
-            "slice-plan", "日本語のみのテキストです", id="slice_plan_non_latin"
+            "direct-value", "日本語のみのテキストです", id="direct_value_non_latin"
         ),
         pytest.param("bug-observable", "###", id="bug_observable_symbols_only"),
         pytest.param(
@@ -230,74 +214,3 @@ def test_hostile_input_normalizing_to_an_empty_slug_never_creates_a_garbage_scaf
             "hostile input degraded to exit 0 with nothing created AND "
             f"nothing reported in 'skipped' -- silent no-op: {payload}"
         )
-
-
-@pytest.mark.parametrize(
-    "annotations",
-    [
-        pytest.param(
-            ("infrastructure", "prefactoring"),
-            id="mixed_infrastructure_and_prefactoring",
-        ),
-        pytest.param(("prefactoring", "prefactoring"), id="all_prefactoring"),
-    ],
-)
-def test_slice_plan_with_zero_observable_rows_never_silently_exits_zero(
-    tmp_path: Path, capsys, annotations: tuple[str, str]
-) -> None:
-    """D2 (BLOCKER, AT-completeness ZERO-obligation gap): a Slice Plan whose
-    rows are ALL `@infrastructure`/`@prefactoring` (zero observable slices)
-    must degrade LOUD with `rejected-infra-only` (or equivalent), never a
-    silent `accepted` exit-0 with `observable_slices: 0`.
-
-    `_classify_slice_cohesion`'s MECC vetoes only the literal
-    all-`"infrastructure"` case -- a plan mixing `@infrastructure` with
-    `@prefactoring` (or entirely `@prefactoring`) slips past it, then
-    `_observable_slice_rows` correctly filters every row out, yielding a
-    silent empty "success": exit 0, `created: []`, `verdict: "accepted"`.
-    """
-    _seed_repo(tmp_path)
-    feature_id = "zero-observable-" + "-".join(annotations)
-
-    rows = "\n".join(
-        f"| slice-{i + 1:02d} | Some internal plumbing step {i + 1} | "
-        f"pending | @{annotation} | no user value |"
-        for i, annotation in enumerate(annotations)
-    )
-    feature_delta = f"""# Feature-delta -- {feature_id}
-
-## Wave: DISCUSS / [REF] Slice Plan
-
-| Slice | Value statement | Status | Annotation | Justification |
-|---|---|---|---|---|
-{rows}
-"""
-    delta_dir = tmp_path / "docs" / "feature" / feature_id
-    delta_dir.mkdir(parents=True, exist_ok=True)
-    (delta_dir / "feature-delta.md").write_text(feature_delta, encoding="utf-8")
-
-    from des.cli.charter_scaffold import main
-
-    exit_code = main(
-        [
-            "--feature-id",
-            feature_id,
-            "--repo-root",
-            str(tmp_path),
-            "--format",
-            "json",
-        ]
-    )
-    payload = json.loads(capsys.readouterr().out)
-
-    assert exit_code != 0, (
-        "a Slice Plan with ZERO observable rows (annotations="
-        f"{annotations}) exited 0 -- silent empty success (payload="
-        f"{payload}) instead of a LOUD reject"
-    )
-    assert payload["verdict"] == VERDICT_REJECTED_INFRA_ONLY, (
-        f"expected verdict {VERDICT_REJECTED_INFRA_ONLY!r} for a "
-        f"zero-observable-slice Slice Plan, got {payload['verdict']!r} "
-        f"(payload={payload})"
-    )
-    assert payload["created"] == []

@@ -37,16 +37,16 @@ def _distill_sections() -> tuple[str, str]:
 
 
 def test_auto_m_route_reuses_the_three_roles_then_git_evidence() -> None:
-    """CONTRACT_SHAPE: bounded-change. Auto M preserves the thin role order."""
+    """CONTRACT_SHAPE: bounded-change. Unified M/L preserves the thin role order."""
     text = _auto_skill_text()
-    route = text[text.index("## Deterministic crafter") : text.index("## L route")]
+    route = text[text.index("## Deterministic crafter selection") :]
     expected = (
         "DeliveryContract.paradigm",
         "missing or has any other value",
-        "nw-acceptance-designer",
-        "exactly one crafter",
-        "nw-user-examiner",
-        "Git",
+        "1. `nw-acceptance-designer`",
+        "dispatch crafter by paradigm",
+        "4. `nw-user-examiner`",
+        "Report role verdicts + Git",
     )
     positions = [route.index(token) for token in expected]
     assert positions == sorted(positions)
@@ -56,11 +56,7 @@ def test_auto_m_route_reuses_the_three_roles_then_git_evidence() -> None:
 
 
 def test_m_and_l_share_exactly_one_architecture_readiness_prefix() -> None:
-    """CONTRACT_SHAPE: bounded-change. There is one shared Architecture
-    readiness prefix, referenced (never duplicated) by both M and L, which
-    pins the Covered/NoImpact/Unresolved contract, the single DESIGN consult,
-    the FloorReady gate, the no-root-authored-guess rule, and the terminal
-    incomplete-result rule."""
+    """CONTRACT_SHAPE: bounded-change. Unified M/L has one readiness prefix."""
     text = _auto_skill_text()
     assert text.count("## Architecture readiness — shared M/L prefix") == 1
     prefix = text[
@@ -70,34 +66,27 @@ def test_m_and_l_share_exactly_one_architecture_readiness_prefix() -> None:
     ]
     compact_prefix = _compact(prefix)
     for token in (
-        "Covered(DesignAuthorityRef) | NoImpact(Evidence) | Unresolved",
-        "`ARCHITECTURE-NO-IMPACT: <repo-relative-permanent-path>#<section-anchor>`",
-        "backed by durable upstream/RCA evidence",
-        "evidence without that citation form, or a citation without a durable "
-        "upstream/RCA source behind it, is never NoImpact",
-        "absence of a stated architecture concern is Unresolved, not NoImpact",
-        "begins at byte zero with exactly",
-        "dispatches exactly one DESIGN consult",
-        "never a second DESIGN dispatch",
-        "Only Covered or NoImpact enters FloorReady",
-        "Any incomplete terminal role result",
-        "No root discovery, Task",
-        "retry, repair, or reconstruction",
+        "Covered/NoImpact",
+        "Unresolved",
+        "Dispatch one DESIGN consult",
+        "AUTO-ARCHITECTURE-CONSULT",
+        "ARCHITECTURE-COVERED",
+        "ARCHITECTURE-BLOCKED",
+        "Missing/malformed header",
+        "Any incomplete result",
     ):
         assert token in compact_prefix
-
-    m_route = text[
-        text.index("## M/L route — shared reuse floor") : text.index("## L route")
+    route = text[
+        text.index("## M/L route — shared reuse floor") : text.index(
+            "## Examiner input isolation"
+        )
     ]
-    assert (
-        "never a root-authored paradigm/targets/storage/boundary/implementation"
-        in _compact(m_route)
-    )
-    assert "architecture readiness" in m_route.lower()
-    l_route = text[text.index("## L route") : text.index("## Examiner input isolation")]
-    assert "identical Architecture readiness prefix" in l_route
-    assert "no separate L-only algorithm" in l_route
-    assert "## Architecture readiness" not in l_route
+    for token in (
+        "delivery-route",
+        "applicability.examine",
+        "No new carrier/controller",
+    ):
+        assert token in route
 
 
 def test_auto_root_delegates_the_code_fact_query_to_the_acceptance_designer() -> None:
@@ -120,8 +109,10 @@ def test_auto_root_delegates_the_code_fact_query_to_the_acceptance_designer() ->
     for nested_field in ("overlap", "decision", "justification", "boundary"):
         assert nested_field in atd_text
     assert "no top-level" in _compact(atd_text)
-    assert "targets[].{overlap, decision, justification, boundary}" in atd_text
-    assert "there is no top-level `reuse` or `boundaries` field" in _compact(atd_text)
+    assert "targets[].{overlap, decision, justification, boundary}" in _compact(
+        atd_text
+    )
+    assert "no top-level `reuse`/`boundaries` field" in _compact(atd_text)
     dispatch_loading = _default_skill_loading_body("nw-acceptance-designer")
     assert executable_form in dispatch_loading
 
@@ -168,23 +159,22 @@ def test_auto_is_not_a_second_controller_or_persistent_workflow() -> None:
     text = _compact(_auto_skill_text())
     for token in (
         "prompt-level routing",
-        "duplicate sequencer/controller",
+        "not a workflow runtime",
+        "does not author the contract",
+        "No infrastructure",
+        "sequencer/controller",
         "PASS",
-        "neither `main` nor `master`",
-        "exact commit SHA",
-        "Vera's failure rule",
-        "preserve the current WIP exactly as-is",
+        "FAIL",
         "INDETERMINATE",
-        "current branch plus `git status`",
-        "no ledger or seal",
+        "no ledger",
     ):
         assert token in text
 
 
 def test_auto_preserves_direct_s_and_human_routes() -> None:
     """CONTRACT_SHAPE: bounded-change. Thin Auto leaves other routes unchanged."""
-    text = _auto_skill_text()
-    assert "Direct S and Human-on-the-loop routes are unchanged" in text
+    text = _compact(_auto_skill_text())
+    assert "Human mode and direct S work keep their existing routes" in text
 
 
 def test_mode_select_classifies_then_delegates_auto_without_restatement() -> None:
@@ -275,38 +265,26 @@ def test_atd_auto_route_honors_wave_order_before_red_execution() -> None:
         text.index("## Route contract") : text.index("## Language Convention")
     ]
     compact = _compact(auto_section)
-    tokens_in_order = [
+    materialization_order = [
+        "the next tool call is the `Write`",
+        "Sha256 its bytes",
+        "assemble and schema-validate the `DeliveryContract` v1.2",
+        "Execute every stored command",
+        "Only after complete-scope RED holds",
+        "re-verify the digest",
+        "Only `RedConfirmed` enables crafter dispatch here",
+    ]
+    positions = [compact.index(token) for token in materialization_order]
+    assert positions == sorted(positions)
+    for prerequisite in (
         "read and validate the installed `DeliveryContract` v1.2 schema",
-        "determine the selected `paradigm`",
+        "determine `paradigm`",
         "verification-scope.commands",
         "last ON-TRIGGER `Skill(...)` return",
-        "the `Write` of exactly ONE consolidated repository-relative "
         "acceptance-test artifact FILE",
-        "Sha256 its bytes",
-        "assemble and schema-validate the `DeliveryContract` v1.2 instance",
-        "Repository-owned CI/script evidence (step 4 of the pre-authoring "
-        "window) selects the exact stored `verification-scope.commands` "
-        "tagged executable identity and arguments before the contract is "
-        "validated",
-        "an alternate diagnostic command or one hand-picked anchor test "
-        "can never establish readiness for a different or broader stored "
-        "scope",
-        "Execute every command already stored in `verification-scope.commands`",
-        "covering the complete acceptance artifact named by the contract "
-        "— never a subset",
-        "a command-not-found, import, collection, or setup failure is "
-        "BROKEN, never `RedConfirmed`, and is terminal under the no-retry "
-        "rule",
-        "Only after that complete-scope RED holds, re-verify the digest",
-        "Only the `RedConfirmed` proof enables crafter dispatch",
-    ]
-    cursor = 0
-    positions = []
-    for token in tokens_in_order:
-        found = compact.index(token, cursor)
-        positions.append(found)
-        cursor = found + len(token)
-    assert positions == sorted(positions)
+        "command-not-found, import, collection, or setup failure is BROKEN",
+    ):
+        assert prerequisite in compact
 
 
 def test_worktree_ownership_is_a_deterministic_two_probe_grammar() -> None:
@@ -381,13 +359,12 @@ def test_root_propagation_binds_every_dispatch_role() -> None:
     )
 
     assert text.count("**Root propagation:**") == 1
-    assert "Root propagation above" in text
     assert len(block.split()) <= 50
 
 
 def _atd_sibling_bullet(text: str) -> str:
-    start = text.index("`nw-acceptance-designer`: receives immutable value seed")
-    end = text.index("3. **Join:")
+    start = text.index("1. `nw-acceptance-designer` (every run):")
+    end = text.index("2. `nw-product-owner`")
     return text[start:end]
 
 
@@ -405,30 +382,34 @@ def test_atd_closed_grammar_root_forbidden_projections() -> None:
     bullet = _atd_sibling_bullet(text)
     compact = _compact(bullet)
 
-    # Exact fenced CLOSED grammar in nw-auto
-    assert "ROOT: <absolute-root> VALUE-SEED: <immutable-verbatim-seed>" in compact
-    fence_positions = [m.start() for m in re.finditer(r"```", bullet)]
-    assert len(fence_positions) == 2
-    fenced_block = bullet[fence_positions[0] + 3 : fence_positions[1]]
-    field_lines = re.findall(r"^\s*([A-Z][A-Z-]*):\s", fenced_block, flags=re.MULTILINE)
-    assert field_lines == ["ROOT", "VALUE-SEED"]
+    for token in (
+        "architecture authority line",
+        "ROOT/VALUE-SEED/DELIVERY-ROUTE",
+        "four lines only",
+        "no design SSOT/language/framework",
+    ):
+        assert token in compact
 
-    # Identical ROOT/VALUE-SEED grammar in ATD spec
+    # Four carrier lines total: the authority line precedes this exact
+    # three-line ROOT/VALUE-SEED/DELIVERY-ROUTE grammar in the ATD spec.
     section = _atd_route_contract_paragraph()
-    exact_grammar = "ROOT: <absolute-root>\nVALUE-SEED: <immutable-verbatim-seed>"
+    exact_grammar = (
+        "ROOT: <absolute-root>\n"
+        "VALUE-SEED: <immutable-verbatim-seed>\n"
+        "DELIVERY-ROUTE: <RED_TO_GREEN|GREEN_TO_GREEN>"
+    )
     assert exact_grammar in section
-    assert "No fourth field" in _compact(section)
+    assert "No fifth field" in _compact(section)
     assert "never the design SSOT" in _compact(section)
 
     # Root forbidden from paraphrase, enumeration, paradigm, language, runner, design
     for token in (
-        "never restates or paraphrases the cited architecture",
-        "never enumerates or numbers test cases in this prompt",
+        "never a root restatement, paraphrase",
+        "enumerated/numbered test-case list",
         "never a root-authored paradigm/targets/storage/boundary/implementation",
-        "never a root-named or root-guessed language or test runner/framework "
-        "in the dispatch prompt",
+        "never a root-named or root-guessed language or test runner/framework",
     ):
-        assert token in compact
+        assert token in _compact(section)
     assert "functional" not in bullet
     assert "object_oriented" not in bullet
     assert not re.search(r"\n\s*\d+\.\s", bullet)
@@ -451,20 +432,20 @@ def test_atd_pre_authoring_window_is_bounded_and_terminal() -> None:
         "2. At most one bounded Glob/discovery call",
         "3. Read at most one selected language manifest",
         "4. Read at most one selected executable command source",
-        "the same file may satisfy step 3 and step 4",
+        "may reuse step 3's Read",
         "5. Run exactly one stable",
         "des code-fact query.* SUBJECT --root ROOT",
         "target/reuse/boundary facts",
         "never for language/runner discovery",
-        "That five-call sequence is the ENTIRE pre-authoring product-evidence window",
-        "once step 5 returns, no further product-source Read/Grep/Glob or ad-hoc Bash",
+        "Once step 5 returns",
+        "no further product-source Read/Grep/Glob or ad-hoc Bash",
     ]
     positions = [compact.index(token) for token in ordered_tokens]
     assert positions == sorted(positions)
 
     # Terminal phrases: EVIDENCE_GAP and surrounding context separately.
     assert "terminal `EVIDENCE_GAP`" in compact
-    assert "no retry, no second discovery/query call, and no guessing" in compact
+    assert "no retry, no second query, no guessing" in compact
 
     # Verify deleted phrases are absent.
     assert (
@@ -476,36 +457,32 @@ def test_atd_pre_authoring_window_is_bounded_and_terminal() -> None:
 
 
 def test_po_carrier_not_constrained_by_closed_atd_grammar() -> None:
-    """CONTRACT_SHAPE: non-regression. PO sibling bullet retains free-form
-    onboarding context; CLOSED ROOT/VALUE-SEED constraint is ATD-specific only.
-    """
+    """CONTRACT_SHAPE: PO is conditional on examine Author, independently of route."""
     text = _auto_skill_text()
-    po_bullet = text[
-        text.index("`nw-product-owner`: owns the expectation charter") : text.index(
-            "`nw-acceptance-designer`: receives immutable value seed"
+    route = text[
+        text.index("## M/L route — shared reuse floor") : text.index(
+            "## Examiner input isolation"
         )
     ]
-    assert "CLOSED" not in po_bullet
-    assert "VALUE-SEED:" not in po_bullet
+    assert "nw-product-owner` (only if `examine=true, Author(Namespace)`" in route
+    assert "No charter/PO/Vera this run" in route
+    assert "ATD always; PO only when dispatched" in route
 
 
 def test_auto_m_route_requires_po_atd_same_message_and_no_invented_signup() -> None:
-    """CONTRACT_SHAPE: bounded-change. Auto M dispatches PO+ATD with both
-    dispatches issued before waiting, documents repository-owned onboarding,
-    and examiner input stays exactly two.
-    """
+    """CONTRACT_SHAPE: route and examine axes dispatch roles independently."""
     text = _auto_skill_text()
-    m_section = text[text.index("## Deterministic crafter") : text.index("## L route")]
-    compact_m = _compact(m_section)
-    assert "SAME assistant message" in compact_m
-    assert "run_in_background=false" in compact_m
-    assert "two background Agent dispatches" not in compact_m
-    assert "nw-product-owner" in compact_m
-    assert "nw-acceptance-designer" in compact_m
-    assert "target repository" in compact_m
-    assert "own documented user-facing local onboarding/setup excerpt" in compact_m
-    assert "never inventing a signup path" in compact_m
-    assert "DeliveryContract` v1.2" in m_section
+    route = text[
+        text.index("## M/L route — shared reuse floor") : text.index(
+            "## Examiner input isolation"
+        )
+    ]
+    compact_route = _compact(route)
+    assert "run_in_background=false" in compact_route
+    assert "nw-acceptance-designer` (every run)" in compact_route
+    assert "nw-product-owner` (only if `examine=true" in compact_route
+    assert "nw-user-examiner` (only if `examine=true`)" in compact_route
+    assert "DeliveryContract` v1.2" in route
     assert "DeliveryContract` v1.1" not in text
     examiner_section = text[
         text.index("## Examiner input isolation") : text.index("## Route boundaries")

@@ -1223,29 +1223,6 @@ def _append_examine_deferred_to_feature_end(
         ledger.append_gate_event("ExamineDeferredToFeatureEnd", slice_id)
 
 
-def _append_examine_exempt_non_observable_slice(
-    repo: Path, feature_id: str, slice_ids: frozenset[str]
-) -> None:
-    """Record one `ExamineExemptNonObservableSlice` event per
-    `@infrastructure`/`@prefactoring` slice whose per-slice examine
-    requirement is PERMANENTLY exempt (GDP-8 fix, fix-examine-gate-defer-
-    keyed-on-designation-not-property).
-
-    Written at the SAME single chokepoint as `_append_slice_commit_verified`
-    / `_append_examine_deferred_to_feature_end` (`_run_verify_then_record`,
-    the ONE place this function is called) -- never inside
-    `check_examine_verdict` itself, so the attestation is never duplicated.
-    A DISTINCT event name from `ExamineDeferredToFeatureEnd`: an auditor
-    scanning `.nwave/**/*.jsonl` must be able to tell "permanently exempt,
-    no oracle can ever exist for this slice" apart from "deferred, a real
-    charter WILL examine it later at feature-end" apart from "nobody
-    checked".
-    """
-    ledger = AtCompletionLedger(feature_id, repo)
-    for slice_id in slice_ids:
-        ledger.append_gate_event("ExamineExemptNonObservableSlice", slice_id)
-
-
 def _append_slice_commit_indeterminate(
     repo: Path,
     feature_id: str,
@@ -1579,7 +1556,6 @@ class _VerifiedSliceContext:
     attested_via: str | None
     regression_test_files_executed: list[str]
     deferred_examine_slices: frozenset[str] = frozenset()
-    exempt_examine_slices: frozenset[str] = frozenset()
     entering_slice_id: str | None = None
     entering_regression_test_file: str | None = None
     prefactoring_exempt_shipped_slices: list[dict[str, str]] = field(
@@ -2158,7 +2134,7 @@ def _run_verify_checks(
     # This closes the bypass where a slice committed via `git commit` + `des
     # verify-slice-commit` skipped the examine gate that only `des commit-slice`
     # enforced (Ale 2026-07-05: "without evidence the slice is not implemented").
-    from des.cli.commit_slice import _EXAMINE_EXEMPT_EVENT, check_examine_verdict
+    from des.cli.commit_slice import check_examine_verdict
 
     # Charter-obligation arming, surfaced DISTINCTLY (OQ-6, R12): the
     # override-slice-id path already reported it up front (see
@@ -2169,28 +2145,14 @@ def _run_verify_checks(
         _emit_charter_obligation_arming(repo, feature_id, slice_ids)
 
     deferred_examine_slices: set[str] = set()
-    exempt_examine_slices: set[str] = set()
     for slice_id in slice_ids:
         examine_rejection = check_examine_verdict(repo, feature_id, slice_id)
         if examine_rejection is None:
             continue
         if "exit_code" not in examine_rejection:
-            # Two DISTINCT non-refusal outcomes share the exit_code-absence
-            # discriminator (see check_examine_verdict's docstring): a
-            # `@coupled` slice DEFERS to feature-end (RCA fix-coupled-slice-
-            # examine-deferred-to-feature-end -- a real charter WILL examine
-            # it later), while an `@infrastructure`/`@prefactoring` slice is
-            # PERMANENTLY EXEMPT (GDP-8 fix, fix-examine-gate-defer-keyed-on-
-            # designation-not-property -- no charter will EVER examine it, at
-            # any scope). Collected into SEPARATE sets so
-            # `_run_verify_then_record`'s SOLE write chokepoint (constraint
-            # e) can attest each with its own, honest event name instead of
-            # conflating "checked later" with "never checked, by design";
-            # this pure half writes nothing itself.
-            if examine_rejection.get("event") == _EXAMINE_EXEMPT_EVENT:
-                exempt_examine_slices.add(slice_id)
-            else:
-                deferred_examine_slices.add(slice_id)
+            # The only non-refusal outcome without an exit code is the
+            # `@coupled` deferral to feature-end.
+            deferred_examine_slices.add(slice_id)
             continue
         exit_code = examine_rejection.pop("exit_code")
         examine_rejection["refused_half"] = "E3"
@@ -2220,8 +2182,6 @@ def _run_verify_checks(
         attested_via = "examine-verdict"
     elif deferred_examine_slices:
         attested_via = "examine-deferred"
-    elif exempt_examine_slices:
-        attested_via = "examine-exempt-non-observable"
     else:
         attested_via = None
     prefactoring_candidate = getattr(args, "prefactoring_candidate", None)
@@ -2244,7 +2204,6 @@ def _run_verify_checks(
         attested_via=attested_via,
         regression_test_files_executed=regression_test_files_executed,
         deferred_examine_slices=frozenset(deferred_examine_slices),
-        exempt_examine_slices=frozenset(exempt_examine_slices),
         entering_slice_id=entering_regression_slice_id,
         entering_regression_test_file=(
             regression_test_file if entering_regression_slice_id is not None else None
@@ -2411,12 +2370,6 @@ def _run_verify_then_record(repo: Path, args: argparse.Namespace) -> int:
             repo,
             verified_context.feature_id,
             verified_context.deferred_examine_slices,
-        )
-    if verified_context.exempt_examine_slices:
-        _append_examine_exempt_non_observable_slice(
-            repo,
-            verified_context.feature_id,
-            verified_context.exempt_examine_slices,
         )
     verified_payload: dict[str, object] = {
         "event": "SliceCommitVerified",

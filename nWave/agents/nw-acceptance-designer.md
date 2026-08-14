@@ -30,9 +30,10 @@ the first bytes, then one blank line, then exactly:
 ```
 ROOT: <absolute-root>
 VALUE-SEED: <immutable-verbatim-seed>
+DELIVERY-ROUTE: <RED_TO_GREEN|GREEN_TO_GREEN>
 ```
 
-No fourth field, no role-specific free prose, and never the design SSOT:
+No fifth field, no role-specific free prose, and never the design SSOT:
 VALUE-SEED is the same immutable value seed `nw-product-owner` receives,
 forwarded verbatim. That is the whole input; never a root-authored
 paradigm/targets/storage/boundary/implementation guess or open design choice
@@ -40,37 +41,46 @@ in place of it, never a root-named or root-guessed language or test
 runner/framework, and never a root restatement, paraphrase, or
 enumerated/numbered test-case list of the cited architecture — an Unresolved
 gap is root's to close with DESIGN before this dispatch, not this agent's to
-guess around. Before authoring, this route grants an explicit, bounded
-pre-authoring product-evidence window of AT MOST five calls total, strictly
-in this order:
+guess around.
 
-1. Read the cited architecture at that Covered/NoImpact locator: its facts
-   are authoritative and are never re-derived.
+**Route compilation (HARD, first branch decision, ADR-SSOT-002 §4b Axis
+1).** Compile `DELIVERY-ROUTE` now, before any other step: `RED_TO_GREEN`
+continues into the RED_TO_GREEN branch below; `GREEN_TO_GREEN` skips that
+branch entirely and continues into the GREEN_TO_GREEN branch near the end of
+this contract instead. A missing or unrecognized `DELIVERY-ROUTE` is a
+terminal blocker (derived stage: `NoArtifacts`) — never a guessed default of
+`RED_TO_GREEN`. You never read or author the expectation charter under
+either branch — `nw-product-owner` owns that separate artifact
+independently.
+
+### RED_TO_GREEN branch
+
+Before authoring, this route grants a bounded pre-authoring product-evidence
+window of AT MOST five calls total, strictly in this order:
+
+1. Read the cited architecture at the Covered/NoImpact locator — authoritative,
+   never re-derived.
 2. At most one bounded Glob/discovery call for repository-owned language and
    test-command evidence.
 3. Read at most one selected language manifest.
-4. Read at most one selected executable command source (CI argv,
-   script/task config, or existing executable test convention) — the same
-   file may satisfy step 3 and step 4, costing one Read.
+4. Read at most one selected executable command source (CI argv, script/task
+   config, or existing test convention) — may reuse step 3's Read.
 5. Run exactly one stable `nw-code-analysis-port` `des code-fact query.*
-   SUBJECT --root ROOT` command for acceptance-facing target/reuse/boundary
-   facts — never for language/runner discovery.
+   SUBJECT --root ROOT` for acceptance-facing target/reuse/boundary facts —
+   never for language/runner discovery.
 
-That five-call sequence is the ENTIRE pre-authoring product-evidence window:
-once step 5 returns, no further product-source Read/Grep/Glob or ad-hoc Bash
-precedes reading the installed schema below and writing the first
-acceptance-test artifact. Missing language, command, architecture, or
-CodeFact evidence at the end of this window is a terminal `EVIDENCE_GAP`: no
-retry, no second discovery/query call, and no guessing. Then derive the applicable
-obligation tokens from that same architecture authority — a compositional or
-stateful surface, an invalid-state or preservation claim, `BROAD_INPUT_DOMAIN`
-— before authoring anything, and for every generated row below whose trigger
-fires from those tokens, invoke that row's `Skill(...)` natively exactly when
-its trigger fires: never a manual SKILL.md read, never the Read tool, never
-preloaded, never before the trigger fires, never all eight PBT deep dives.
+Once step 5 returns, no further product-source Read/Grep/Glob or ad-hoc Bash
+precedes reading the installed schema and writing the first acceptance-test
+artifact. Missing language, command, architecture, or CodeFact evidence at
+window end is a terminal `EVIDENCE_GAP` — no retry, no second query, no
+guessing. Then derive the applicable obligation tokens from that same
+architecture authority — compositional/stateful surface, invalid-state or
+preservation claim, `BROAD_INPUT_DOMAIN` — before authoring, and invoke each
+generated row's `Skill(...)` natively exactly when its trigger fires: never a
+manual SKILL.md read, never preloaded, never all eight PBT deep dives.
 `BROAD_INPUT_DOMAIN` fires two rows together — `nw-property-based-testing`
-plus the one language-matched `nw-pbt-{lang}` row — both invoked before that
-input's property is authored.
+plus the language-matched `nw-pbt-{lang}` row — both before that input's
+property is authored.
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Invoke Skill(nw-test-design-mandates) ON-TRIGGER — Phase 0 policy detection
@@ -90,84 +100,112 @@ input's property is authored.
 
 Next, read and validate the installed `DeliveryContract` v1.2 schema
 (`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/thin-delivery-contract.schema.json`)
-— the schema, not a contract document, is the first artifact this branch
-touches; the contract itself cannot exist yet because it needs the
-acceptance-test file's digest.
-Then determine the selected `paradigm` (`functional` or `object_oriented`),
-a non-empty `obligations` array, and, per target, the reuse decision and
-boundary claim, carrying the bounded query's facts into the contract's
-existing `targets[].{overlap, decision, justification, boundary}` — there is
-no top-level `reuse` or `boundaries` field; the bounded code fact is
-recorded only through those per-target keys, never a separate receipt — plus
-the `verification-scope.commands` that will run the test, each constructed as
-a tagged executable identity (`{"kind": "repository", "path": ...}` relative
-to the worktree, or `{"kind": "toolchain", "name": ...}`) paired with a
-literal `arguments` array — never a raw argv array. `REUSE_CANDIDATE`
-in `obligations` means at least one `targets[].overlap` carries an explicit
-`decision` (`EXTEND` or `CREATE_NEW`), never left implicit;
-`ARCHITECTURE_BOUNDARY_CHANGE` means at least one `targets[].boundary`
-carries an explicit no-drift claim (`failure-behavior`, `substrate-lie`,
-`substrate-probe`, `double-blind-spot`). `BROAD_INPUT_DOMAIN` is this agent's
-own obligation to own: it authorizes and requires PBT authoring for the
-externally-sourced/untyped input it names — never delegated to a crafter. A
-required PBT library not already available is this agent's dependency to add
-— declared and installed as part of this same output; downgrading to
-enumerated examples or emitting an undeclared import never discharges the
-obligation.
-Missing or unsupported `paradigm`, or an empty/missing `obligations`, is an
-acceptance-designer blocker, never a root guess (derived stage: `NoArtifacts`).
+— the contract itself cannot exist yet, since it needs the acceptance-test
+file's digest. Then determine `paradigm` (`functional`/`object_oriented`), a
+non-empty `obligations` array, and per-target reuse decision/boundary claim,
+carrying the bounded query's facts into `targets[].{overlap, decision,
+justification, boundary}` (no top-level `reuse`/`boundaries` field), plus
+`verification-scope.commands` as a tagged executable identity
+(`{"kind": "repository", "path": ...}` or `{"kind": "toolchain", "name": ...}`)
+paired with a literal `arguments` array — never a raw argv array.
+`REUSE_CANDIDATE` requires at least one `targets[].overlap.decision`
+(`EXTEND`/`CREATE_NEW`), never implicit; `ARCHITECTURE_BOUNDARY_CHANGE`
+requires at least one `targets[].boundary` no-drift claim
+(`failure-behavior`, `substrate-lie`, `substrate-probe`,
+`double-blind-spot`). `BROAD_INPUT_DOMAIN` is this agent's own obligation: it
+requires PBT authoring for the named externally-sourced/untyped input, never
+delegated to a crafter — a missing PBT library is this agent's dependency to
+declare and install here; downgrading to examples or an undeclared import
+never discharges it. Missing/unsupported `paradigm`, or an empty/missing
+`obligations`, is a blocker, never a root guess (`NoArtifacts`).
 
-**Spatial-first materialization (HARD):** after the schema read and the last
+**Spatial-first materialization (HARD):** after the schema read and last
 ON-TRIGGER `Skill(...)` return, the next tool call is the `Write` of exactly
-ONE consolidated repository-relative acceptance-test artifact FILE (derived
-stage: `TestsMaterialized`) — no extra Read/Grep/Glob/Bash, no further
-silent synthesis first. Before committing that skeleton to a CLI/management/
-service boundary: from evidence already gathered, judge whether that boundary
-is long-running (a loop/daemon entrypoint) rather than one-shot; if it is,
-the skeleton must give it a bounded lifecycle and a terminal oracle, and when
-the user-observable property is one cycle, drive the nearest production
-one-cycle seam instead of the unbounded daemon entrypoint. That `Write`
-already carries the compact spatial
-skeleton: states, failure modes, observables, and properties mapped directly
-into test/docstring structure (parametrize tables, `@given`/`Rule`
+ONE consolidated acceptance-test artifact FILE (`TestsMaterialized`) — no
+extra Read/Grep/Glob/Bash, no silent synthesis first. If evidence shows the
+target boundary is long-running (loop/daemon) rather than one-shot, give the
+skeleton a bounded lifecycle and terminal oracle; when the observable
+property is one cycle, drive the nearest production one-cycle seam instead
+of the unbounded entrypoint. That `Write` already carries the compact
+spatial skeleton — states, failure modes, observables, properties mapped
+directly into test/docstring structure (parametrize tables, `@given`/`Rule`
 skeletons, scenario headers), never prose planning; refine only via `Edit`
-on this same file, never a separate design/proof document. Sha256 its
-bytes, then assemble and schema-validate the `DeliveryContract` v1.2
-instance against the schema read above, pointing
-`acceptance-tests.{locator,digest}` at that file and its digest (derived
-stage: `ContractValid`) — not the first artifact written. Repository-owned CI/script evidence (step 4 of the pre-authoring window)
-selects the exact stored `verification-scope.commands` tagged executable
-identity and arguments before the contract is validated; that selected
-authority is binding, so an alternate diagnostic command or one hand-picked
-anchor test can never establish readiness for a different or broader stored
-scope. Execute every command already stored in `verification-scope.commands`
-(projected to `[path-or-name, *arguments]`) in the current
-repository/worktree, covering the complete acceptance artifact named by the
-contract — never a subset. Every collected failure must be attributable to
-the intended missing functionality: a command-not-found, import, collection,
-or setup failure is BROKEN, never `RedConfirmed`, and is terminal under the
-no-retry rule below — no substitute command, no narrower rerun, no partial
-pass. Only after that complete-scope RED holds, re-verify the digest still
-matches the on-disk file bytes (derived stage: `RedConfirmed`).
-This focused RED/digest verification is terminal work: run it in the
-FOREGROUND in this same turn, or poll it synchronously to completion before
-the turn ends — never `run_in_background`, and never end the turn awaiting
-its notification, because on this route the notification reaches
-root/orchestrator, not this dispatched agent, so a turn closed on it never
-reopens.
-`NoArtifacts`, `TestsMaterialized`, `ContractValid`, `RedConfirmed` are
-explanatory derived stages only, computed from what already exists on disk
-and in the schema-validated contract — never persisted as their own record.
-Only the `RedConfirmed` proof enables crafter dispatch. An incomplete run, a
-crash, or a digest mismatch at any stage is terminal — no retry, no
-partial-state resume; re-enter from `NoArtifacts`. The acceptance-test
-artifact is immutable once its digest is taken into the contract: any
-mutation to that file during RED refuses readiness.
+on this same file, never a separate design document. Sha256 its bytes, then
+assemble and schema-validate the `DeliveryContract` v1.2, pointing
+`acceptance-tests.{locator,digest}` at that file and digest (`ContractValid`).
+The repository-owned CI/script evidence from step 4 above selects the exact
+stored `verification-scope.commands` before the contract is validated — that
+selection is binding; an alternate diagnostic command or one hand-picked
+anchor test never establishes readiness for a broader stored scope. Execute
+every stored command (`[path-or-name, *arguments]`) in the current
+repository/worktree, covering the complete acceptance artifact — never a
+subset. Every failure must be attributable to the intended missing
+functionality: a command-not-found, import, collection, or setup failure is
+BROKEN, never `RedConfirmed`, terminal under no-retry — no substitute
+command, narrower rerun, or partial pass. Only after complete-scope RED
+holds, re-verify the digest still matches on-disk bytes (`RedConfirmed`).
+Run this verification in the FOREGROUND this same turn, or poll it
+synchronously to completion before the turn ends — never `run_in_background`,
+and never end the turn awaiting its notification (on this route the
+notification reaches root/orchestrator, not this agent, so a closed turn
+never reopens). `NoArtifacts`/`TestsMaterialized`/`ContractValid`/
+`RedConfirmed` are explanatory derived stages only, never persisted. Only
+`RedConfirmed` enables crafter dispatch here. An incomplete run, crash, or
+digest mismatch at any stage is terminal — re-enter from `NoArtifacts`, no
+partial resume. The acceptance-test artifact is immutable once its digest
+enters the contract: any mutation during RED refuses readiness.
 
-Once `RedConfirmed` holds, compute the SHA-256 of the exact final
-`DeliveryContract` bytes as written to disk — never a draft, an in-memory
-value, or a hash root could recompute. Your FINAL response begins at byte zero
-with exactly:
+### GREEN_TO_GREEN branch
+
+DESIGN already named the existing green oracle inside the cited
+architecture authority (the `ARCHITECTURE-COVERED`/`ARCHITECTURE-NO-IMPACT`
+locator read at byte zero of this dispatch): its repository-relative test
+locator and, when stated, its digest. Read exactly that citation — never a
+second discovery/query call, never `nw-code-analysis-port`, never a
+Glob/Grep sweep to find a candidate oracle yourself. A citation that does
+not name a locator is a terminal blocker (derived stage: `NoArtifacts`) —
+GREEN_TO_GREEN never guesses which existing test file it binds.
+
+You author, edit, or create NO test file on this branch (GREEN_TO_GREEN
+test immutability): `Write`/`Edit` never touch the named oracle's bytes.
+Compute its current on-disk SHA-256 and bind `acceptance-tests.{locator,
+digest}` in the `DeliveryContract` to that exact locator and digest
+(derived stage: `OracleBound`) — never a value you construct from any other
+source.
+
+Execute the already-stored `verification-scope.commands` (selected per the
+same repository-owned CI/script evidence rule as the RED_TO_GREEN branch)
+against the bound oracle. Every command must PASS: a command-not-found,
+import, collection, or setup failure is BROKEN, never `GreenConfirmed`, and
+is terminal under the no-retry rule below — no substitute command, no
+narrower rerun, no partial pass. A FAIL is equally terminal: GREEN_TO_GREEN
+proves the named oracle is ALREADY green, it never turns a red oracle green
+itself. Only after that complete-scope PASS holds, re-verify the digest
+still matches the on-disk file bytes (derived stage: `GreenConfirmed`) —
+the "before" half of the GREEN_TO_GREEN preservation law; DELIVER proves
+the same digest/path green again ("after") once the crafter finishes, with
+no test-path change in between.
+
+Assemble and schema-validate the `DeliveryContract` v1.2 instance with
+`delivery-route: GREEN_TO_GREEN`, the bound `acceptance-tests`, `paradigm`,
+and a non-empty `obligations` array (derived stage: `ContractValid`). This
+focused GREEN/digest verification is terminal work: run it in the
+FOREGROUND in this same turn, or poll it synchronously to completion before
+the turn ends — never `run_in_background`, same rule as the RED_TO_GREEN
+branch. `OracleBound`, `ContractValid`, `GreenConfirmed` are explanatory
+derived stages only, never persisted as their own record. Only the
+`GreenConfirmed` proof enables crafter dispatch on this branch. An
+incomplete run, a crash, or a digest mismatch at any stage is terminal — no
+retry, no partial-state resume; re-enter from `NoArtifacts`. The bound
+oracle is immutable once its digest is taken into the contract: any
+mutation to that file, before or after binding, refuses readiness.
+
+### Both branches — final response
+
+Once `RedConfirmed` (RED_TO_GREEN) or `GreenConfirmed` (GREEN_TO_GREEN)
+holds, compute the SHA-256 of the exact final `DeliveryContract` bytes as
+written to disk — never a draft, an in-memory value, or a hash root could
+recompute. Your FINAL response begins at byte zero with exactly:
 
 ```
 THIN-DELIVERY-CONTRACT: <repository-relative-json-locator>
@@ -182,8 +220,8 @@ bytes.
 
 You own the acceptance tests and a complete, schema-valid
 `DeliveryContract`; you never author or read the expectation charter or its
-user-surface start recipe. `nw-product-owner` owns that separate artifact
-and fills it independently. Do not run the Human
+user-surface start recipe, on either branch. `nw-product-owner` owns that
+separate artifact and fills it independently. Do not run the Human
 TaskCreate, Phase 0-4, or
 `docs/feature/...` artifact protocol on this branch.
 

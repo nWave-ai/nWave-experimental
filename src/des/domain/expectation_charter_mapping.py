@@ -29,13 +29,13 @@ _SPEC_ROWS_PATTERN = re.compile(r"\bSpec rows:\s*([^\n·]+)", re.IGNORECASE)
 _SLICE_ID_PATTERN = re.compile(r"slice-\d+\Z")
 
 #: fix-charter-scaffold-placeholder-scope O3 (feature-delta amendment,
-#: 2026-07-30, human-granted forward-only decision): the two `Spec rows:`
+#: 2026-07-30, human-granted forward-only decision): the three `Spec rows:`
 #: tokens meaning "deliberately not slice-scoped, feature-level" -- the SAME
-#: two producer-owned seed-mode identifiers `charter_scaffold` stamps (O2).
+#: three producer-owned seed-mode identifiers `charter_scaffold` stamps (O2).
 #: A first-class, closed set -- every other non-slice-NN value (`n/a`, `human
 #: directive`, ...) keeps refusing `indeterminate` unchanged.
 _FEATURE_LEVEL_SCOPE_TOKENS: frozenset[str] = frozenset(
-    {"bug-observable", "brownfield-discovery"}
+    {"bug-observable", "brownfield-discovery", "direct-value"}
 )
 
 

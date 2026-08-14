@@ -43,30 +43,41 @@ def seed_delivery_contract(
     rel_path: str = "delivery-contract.json",
     *,
     route: str = "RED_TO_GREEN",
+    examine: bool = False,
 ) -> str:
     """Write the real ThinDeliveryContract fixture under `root`, with its
-    top-level `delivery-route` set explicitly to `route`, and return its
+    top-level `delivery-route` set explicitly to `route` and
+    `applicability.examine` set explicitly to `examine`, and return its
     ROOT-relative PATH -- for a test driving an isolated `--repo-root` (a
     tmp workspace), which cannot resolve a PATH relative to the real
     checkout root. Parses and re-serializes the fixture (rather than a raw
-    byte copy) so `route` always lands in the written contract instead of
-    silently reusing whatever the checked-in fixture happens to contain."""
+    byte copy) so `route` and `examine` always land in the written contract
+    instead of silently reusing whatever the checked-in fixture happens to
+    contain."""
     dst = root / rel_path
     dst.parent.mkdir(parents=True, exist_ok=True)
     contract = load_valid_contract()
     contract["delivery-route"] = route
+    contract["applicability"]["examine"] = examine
     dst.write_text(json.dumps(contract), encoding="utf-8")
     return rel_path
 
 
-def contract_args(root: Path, *, seed: bool = True) -> tuple[str, str, str, str]:
+def contract_args(
+    root: Path, *, seed: bool = True, examine: bool = False
+) -> tuple[str, str, str, str]:
     """The `--repo-root <root> --delivery-contract <PATH>` pair a test-
     running dispatch against `root` now requires. `seed=True` (the default)
     copies the fixture under `root` first, for an isolated tmp workspace;
     `seed=False` reuses the real checked-in fixture in place, for a dispatch
     driven against the real checkout root (`_REPO_ROOT`) -- never a second
-    copy of a file already on disk there."""
-    rel_path = seed_delivery_contract(root) if seed else _DELIVERY_CONTRACT_FIXTURE_REL
+    copy of a file already on disk there. `examine` (default False) sets the
+    contract's `applicability.examine` axis -- passed through to seed_delivery_contract."""
+    rel_path = (
+        seed_delivery_contract(root, examine=examine)
+        if seed
+        else _DELIVERY_CONTRACT_FIXTURE_REL
+    )
     return ("--repo-root", str(root), "--delivery-contract", rel_path)
 
 

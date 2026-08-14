@@ -52,21 +52,10 @@ import pytest
 
 from des.cli import charter_scaffold
 from des.cli.charter_scaffold import VERDICT_MISSING_CHARTER_TEMPLATE
-from des.cli.validate_feature_delta import VERDICT_ACCEPTED
 
 
 FEATURE_ID = "consumer-charter-template-fix"
-
-VALUE_STATEMENT = "A visitor books a seat and sees a confirmation"
-
-SLICE_PLAN_FEATURE_DELTA = f"""# Feature-delta -- {FEATURE_ID}
-
-## Wave: DISCUSS / [REF] Slice Plan
-
-| Slice | Value statement | Status | Annotation | Justification |
-|---|---|---|---|---|
-| slice-01 | {VALUE_STATEMENT} | pending |  | first observable slice |
-"""
+DIRECT_VALUE = "Operator sees the expected system behavior"
 
 #: The real, shipped `nWave/templates/expectation-charter.md` "Template"
 #: section headings -- what a correctly-resolved scaffold must carry
@@ -112,14 +101,6 @@ Explore <area> via <surface: browser/CLI/API> to verify <intent>.
 """
 
 
-def _write_feature_delta(repo_root: Path, feature_id: str, content: str) -> Path:
-    delta_dir = repo_root / "docs" / "feature" / feature_id
-    delta_dir.mkdir(parents=True, exist_ok=True)
-    path = delta_dir / "feature-delta.md"
-    path.write_text(content, encoding="utf-8")
-    return path
-
-
 def _expectations_dir(repo_root: Path, feature_id: str) -> Path:
     return repo_root / "docs" / "product" / "expectations" / feature_id
 
@@ -141,6 +122,10 @@ def _invoke(repo_root: Path, capsys, feature_id: str = FEATURE_ID) -> tuple[int,
             feature_id,
             "--repo-root",
             str(repo_root),
+            "--seed-mode",
+            "direct-value",
+            "--value",
+            DIRECT_VALUE,
             "--format",
             "json",
         ]
@@ -157,12 +142,11 @@ def _invoke(repo_root: Path, capsys, feature_id: str = FEATURE_ID) -> tuple[int,
 def test_consumer_repo_without_own_nwave_templates_still_produces_charter_scaffold(
     tmp_path: Path, capsys
 ) -> None:
-    """A CONSUMER-shape workspace (a `--repo-root` that carries a
-    feature-delta with a Slice Plan but NO `nWave/templates/` directory of
-    its own -- e.g. an installed nWave consumer project) must still produce
-    the expectation-charter skeleton, found via the SHIPPED template that
-    always sits alongside the `charter_scaffold.py` module itself. It must
-    NOT emit `missing-charter-template`.
+    """A CONSUMER-shape workspace with NO `nWave/templates/` directory of
+    its own (e.g. an installed nWave consumer project) must still produce the
+    expectation-charter skeleton, found via the SHIPPED template that always
+    sits alongside the `charter_scaffold.py` module itself. It must NOT emit
+    `missing-charter-template`.
 
     Deliberately does NOT seed `consumer_repo/nWave/templates/` -- doing so
     would mask the bug; the whole point is that the tool must find the
@@ -175,7 +159,6 @@ def test_consumer_repo_without_own_nwave_templates_still_produces_charter_scaffo
 
     consumer_repo = tmp_path / "consumer-repo"
     consumer_repo.mkdir()
-    _write_feature_delta(consumer_repo, FEATURE_ID, SLICE_PLAN_FEATURE_DELTA)
     assert not (consumer_repo / "nWave").exists(), (
         "fixture bug: the consumer repo must NOT carry its own nWave/ tree "
         "-- seeding one would mask the defect under test"
@@ -196,7 +179,7 @@ def test_consumer_repo_without_own_nwave_templates_still_produces_charter_scaffo
         "expected a successful scaffold run in the consumer repo, got "
         f"exit_code={exit_code!r}, payload={payload!r}"
     )
-    assert payload.get("verdict") == VERDICT_ACCEPTED, payload
+    assert payload.get("verdict") == "accepted", payload
 
     expectations_dir = _expectations_dir(consumer_repo, FEATURE_ID)
     created_files = (
@@ -216,7 +199,7 @@ def test_consumer_repo_without_own_nwave_templates_still_produces_charter_scaffo
             f"produced scaffold is missing section {heading!r} from the "
             f"SHIPPED template -- scaffold_content:\n{scaffold_content}"
         )
-    assert VALUE_STATEMENT in scaffold_content
+    assert DIRECT_VALUE in scaffold_content
 
 
 # ===========================================================================
@@ -237,7 +220,6 @@ def test_dev_checkout_repo_with_its_own_nwave_templates_still_produces_charter_s
     dev_repo = tmp_path / "dev-repo"
     dev_repo.mkdir()
     _seed_own_template(dev_repo)
-    _write_feature_delta(dev_repo, FEATURE_ID, SLICE_PLAN_FEATURE_DELTA)
 
     exit_code, payload = _invoke(dev_repo, capsys)
 
@@ -245,7 +227,7 @@ def test_dev_checkout_repo_with_its_own_nwave_templates_still_produces_charter_s
         "expected a successful scaffold run in the dev-checkout repo, got "
         f"exit_code={exit_code!r}, payload={payload!r}"
     )
-    assert payload.get("verdict") == VERDICT_ACCEPTED, payload
+    assert payload.get("verdict") == "accepted", payload
 
     expectations_dir = _expectations_dir(dev_repo, FEATURE_ID)
     created_files = (
@@ -257,7 +239,7 @@ def test_dev_checkout_repo_with_its_own_nwave_templates_still_produces_charter_s
     scaffold_content = (expectations_dir / created_files[0]).read_text(encoding="utf-8")
     for heading in _TEMPLATE_SECTION_HEADINGS:
         assert heading in scaffold_content
-    assert VALUE_STATEMENT in scaffold_content
+    assert DIRECT_VALUE in scaffold_content
 
 
 # ===========================================================================
@@ -300,7 +282,6 @@ def test_charter_scaffold_never_silently_succeeds_when_shipped_template_is_found
 
     isolated_repo = tmp_path / "isolated-repo"
     isolated_repo.mkdir()
-    _write_feature_delta(isolated_repo, FEATURE_ID, SLICE_PLAN_FEATURE_DELTA)
     assert not (isolated_repo / "nWave").exists()
     assert not (isolated_install_root / "nWave").exists()
 

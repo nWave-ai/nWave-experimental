@@ -43,21 +43,10 @@ from des.cli.charter_scaffold import (
     VERDICT_AMBIGUOUS_CHARTER_TEMPLATE,
     VERDICT_MISSING_CHARTER_TEMPLATE,
 )
-from des.cli.validate_feature_delta import VERDICT_ACCEPTED
 
 
 FEATURE_ID = "ambiguous-charter-template-fix"
-
-VALUE_STATEMENT = "A visitor books a seat and sees a confirmation"
-
-SLICE_PLAN_FEATURE_DELTA = f"""# Feature-delta -- {FEATURE_ID}
-
-## Wave: DISCUSS / [REF] Slice Plan
-
-| Slice | Value statement | Status | Annotation | Justification |
-|---|---|---|---|---|
-| slice-01 | {VALUE_STATEMENT} | pending |  | first observable slice |
-"""
+DIRECT_VALUE = "Operator sees the expected system behavior"
 
 #: The real, shipped template -- located via the module's own position, same
 #: anchor `_load_template_skeleton_or_degrade` uses for its `installed`
@@ -65,14 +54,6 @@ SLICE_PLAN_FEATURE_DELTA = f"""# Feature-delta -- {FEATURE_ID}
 #: never to duplicate the template's content by hand.
 _REAL_REPO_ROOT = Path(charter_scaffold.__file__).resolve().parents[3]
 _REAL_TEMPLATE_PATH = _REAL_REPO_ROOT / "nWave" / "templates" / "expectation-charter.md"
-
-
-def _write_feature_delta(repo_root: Path, feature_id: str, content: str) -> Path:
-    delta_dir = repo_root / "docs" / "feature" / feature_id
-    delta_dir.mkdir(parents=True, exist_ok=True)
-    path = delta_dir / "feature-delta.md"
-    path.write_text(content, encoding="utf-8")
-    return path
 
 
 def _expectations_dir(repo_root: Path, feature_id: str) -> Path:
@@ -98,6 +79,10 @@ def _invoke(repo_root: Path, capsys, feature_id: str = FEATURE_ID) -> tuple[int,
             feature_id,
             "--repo-root",
             str(repo_root),
+            "--seed-mode",
+            "direct-value",
+            "--value",
+            DIRECT_VALUE,
             "--format",
             "json",
         ]
@@ -130,7 +115,6 @@ def test_divergent_checkout_template_is_refused_not_silently_shadowed(
         "shipped one for this to exercise AMBIGUOUS, not IDENTICAL"
     )
     checkout_template_path = _seed_checkout_template(checkout, divergent_content)
-    _write_feature_delta(checkout, FEATURE_ID, SLICE_PLAN_FEATURE_DELTA)
 
     exit_code, payload = _invoke(checkout, capsys)
 
@@ -182,7 +166,6 @@ def test_checkout_template_identical_to_shipped_resolves_without_ceremony(
     template_dir = checkout / "nWave" / "templates"
     template_dir.mkdir(parents=True)
     (template_dir / "expectation-charter.md").write_bytes(real_bytes)
-    _write_feature_delta(checkout, FEATURE_ID, SLICE_PLAN_FEATURE_DELTA)
 
     exit_code, payload = _invoke(checkout, capsys)
 
@@ -190,4 +173,4 @@ def test_checkout_template_identical_to_shipped_resolves_without_ceremony(
         "identical checkout/installed templates must resolve without "
         f"ceremony -- got exit_code={exit_code!r}, payload={payload!r}"
     )
-    assert payload.get("verdict") == VERDICT_ACCEPTED, payload
+    assert payload.get("verdict") == "accepted", payload

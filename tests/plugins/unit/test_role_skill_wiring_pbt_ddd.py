@@ -129,43 +129,35 @@ class TestThinAutoRoleRoutes:
         route = " ".join(
             body[
                 body.index("## M/L route — shared reuse floor") : body.index(
-                    "## L route — same prefix, same floor"
+                    "## Examiner input isolation"
                 )
             ].split()
         )
         for token in (
-            "Scaffold-before-pair",
-            "root-owned, before either sibling",
+            "delivery-route",
+            "applicability.examine",
+            "Skip",
+            "Reuse",
+            "Author",
+            "Block",
             "des charter-scaffold --seed-mode direct-value",
-            "created-or-existing",
-            "helper Agent/Task",
-            "Sibling dispatch",
-            "SAME",
             "run_in_background=false",
-            "before awaiting either result",
             "nw-product-owner",
             "nw-acceptance-designer",
-            "BOTH",
-            "charter",
-            "contract+tests",
-            "never authors, repairs, or reconstructs",
-            "terminal under the single-pass rule",
+            "ATD always; PO only when dispatched",
             "Join",
+            "nw-user-examiner` (only if `examine=true`)",
         ):
             assert token in route
-
-        assert (
-            route.index("Scaffold-before-pair")
-            < route.index("Sibling dispatch")
-            < route.index("**Join:**")
-        )
+        assert route.index("des charter-scaffold") < route.index("**Dispatch sequence")
+        assert route.index("nw-acceptance-designer") < route.index("**Join**:")
 
         boundaries = " ".join(body[body.index("## Route boundaries") :].split())
-        assert (
-            "never ends its turn awaiting a background task notification" in boundaries
-        )
-        assert "never polls" in boundaries
-        assert "ScheduleWakeup" in boundaries
+        for token in ("Task", "SendMessage", "ScheduleWakeup"):
+            assert token in boundaries
+        dispatch = route[route.index("**Dispatch sequence") :]
+        for token in ("foreground", "run_in_background=false", "root waits inline"):
+            assert token in dispatch
 
     def test_product_owner_owns_value_side_charter_and_embedded_recipe(self):
         body = (AGENTS_DIR / "nw-product-owner.md").read_text(encoding="utf-8")
@@ -298,16 +290,18 @@ class TestAutoRolesAreSinglePassNoContinuation:
 
     def test_route_boundaries_declare_the_single_pass_no_send_message_rule(self):
         body = (SKILLS_DIR / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
-        route_boundaries = " ".join(body[body.index("## Route boundaries") :].split())
+        route_boundaries = " ".join(
+            body[body.index("## Route boundaries") :].lower().split()
+        )
         for token in (
             "single-pass",
-            "first result of each dispatched role",
+            "first result of each (atd, po, crafter, examiner)",
             "is terminal",
-            "SendMessage",
+            "sendmessage",
             "resume",
             "retry",
             "correction",
-            "separately measured new run",
+            "new run only",
         ):
             assert token in route_boundaries
 
@@ -368,13 +362,14 @@ def test_auto_names_product_owner_as_charter_and_start_recipe_owner():
     route = " ".join(
         body[
             body.index("## M/L route — shared reuse floor") : body.index(
-                "## L route — same prefix, same floor"
+                "## Examiner input isolation"
             )
         ].split()
     )
     for token in (
         "nw-product-owner",
-        "expectation charter",
+        "charter path",
         "start recipe",
+        "only if `examine=true, Author(Namespace)`",
     ):
         assert token in route, f"nw-auto/SKILL.md route missing {token!r}"

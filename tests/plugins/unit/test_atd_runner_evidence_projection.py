@@ -31,8 +31,8 @@ def _norm(text: str) -> str:
 
 def _sibling_dispatch_bullet() -> str:
     body = (NWAVE_DIR / "skills" / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
-    start = body.index("`nw-acceptance-designer`: receives immutable value seed")
-    end = body.index("3. **Join:")
+    start = body.index("1. `nw-acceptance-designer` (every run)")
+    end = body.index("3. **Join**:")
     return _norm(body[start:end])
 
 
@@ -47,14 +47,9 @@ def _language_convention_frame() -> str:
 
 def test_root_never_names_language_or_runner_and_delegates_to_atd():
     section = _sibling_dispatch_bullet()
-    required = (
-        "never a root-named or root-guessed language or test runner/framework "
-        "in the dispatch prompt",
-        "ATD alone owns the bounded pre-authoring evidence window "
-        "defined by its own route contract",
-    )
-    for token in required:
-        assert token in section, f"Missing root-delegation projection: {token!r}"
+    assert "four lines only, no design SSOT/language/framework" in section
+    for leaked_runner in ("pytest", "manage.py", "cucumber", "jest", "vitest"):
+        assert leaked_runner not in section.lower()
 
 
 def test_atd_separates_manifest_language_evidence_from_runner_evidence():

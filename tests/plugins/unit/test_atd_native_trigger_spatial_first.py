@@ -125,23 +125,23 @@ class TestThinRouteRequiresImmediateSpatialMaterialization:
 
     def test_mandate_orders_write_immediately_after_schema_and_last_trigger(self):
         start = AGENT_BODY.index("**Spatial-first materialization (HARD):**")
-        end = AGENT_BODY.index("Once `RedConfirmed` holds")
+        end = AGENT_BODY.index("### GREEN_TO_GREEN branch")
         section = " ".join(AGENT_BODY[start:end].split())
         for token in (
-            "after the schema read and the last",
+            "after the schema read and last",
             "ON-TRIGGER `Skill(...)` return",
             "the next tool call is the `Write`",
             "no extra Read/Grep/Glob/Bash",
-            "no further silent synthesis first",
+            "no silent synthesis first",
         ):
             assert token in section, f"Missing ordering token: {token!r}"
 
     def test_mandate_requires_spatial_skeleton_not_prose_planning(self):
         start = AGENT_BODY.index("**Spatial-first materialization (HARD):**")
-        end = AGENT_BODY.index("Once `RedConfirmed` holds")
+        end = AGENT_BODY.index("### GREEN_TO_GREEN branch")
         section = " ".join(AGENT_BODY[start:end].split())
         for token in (
-            "states, failure modes, observables, and properties",
+            "states, failure modes, observables, properties",
             "test/docstring structure",
             "never prose planning",
         ):
@@ -149,14 +149,14 @@ class TestThinRouteRequiresImmediateSpatialMaterialization:
 
     def test_refinement_stays_in_the_same_file_no_new_artifact_type(self):
         start = AGENT_BODY.index("**Spatial-first materialization (HARD):**")
-        end = AGENT_BODY.index("Once `RedConfirmed` holds")
+        end = AGENT_BODY.index("### GREEN_TO_GREEN branch")
         section = " ".join(AGENT_BODY[start:end].split())
         assert "refine only via `Edit` on this same file" in section
-        assert "never a separate design/proof document" in section
+        assert "never a separate design document" in section
 
     def test_only_one_acceptance_test_artifact_file_is_named(self):
         start = AGENT_BODY.index("**Spatial-first materialization (HARD):**")
-        end = AGENT_BODY.index("Once `RedConfirmed` holds")
+        end = AGENT_BODY.index("### GREEN_TO_GREEN branch")
         section = " ".join(AGENT_BODY[start:end].split())
-        assert "the `Write` of exactly ONE consolidated repository-relative" in section
+        assert "the `Write` of exactly ONE consolidated" in section
         assert "acceptance-test artifact FILE" in section

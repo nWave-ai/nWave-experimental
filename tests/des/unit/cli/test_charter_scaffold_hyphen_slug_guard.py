@@ -1,6 +1,5 @@
 """RED regression AT -- bugfix #59 LOW-2, the hyphen-only variant of the
-already-fixed D1 empty-slug guard
-(`src/des/cli/charter_scaffold.py`, feature `charter-scaffold-hyphen-slug-guard`).
+already-fixed D1 empty-slug guard (`src/des/cli/charter_scaffold.py`).
 
 THE DEFECT: `_kebab_slug` strips every character outside `[A-Za-z0-9\\s-]` and
 lower-cases the rest, but a HYPHEN-only (or whitespace+hyphen) input has no
@@ -21,15 +20,11 @@ normalised result carries NO alphanumeric character, so every existing
 covers: bugfix #59 LOW-2, `des charter-scaffold`
 (`src/des/cli/charter_scaffold.py`)
 
-RED reason (P1-P4 in-process active-RED, `nw-distill-red-scaffolding`): NOT a
-missing-module/missing-flag RED (the tool + `_kebab_slug` are already
-shipped) -- these are BEHAVIOURAL REDs. Each test drives the real,
+RED reason: These are BEHAVIOURAL REDs. Each test drives the real,
 already-shipped seam (`_kebab_slug` directly, or `des.cli.charter_scaffold.main`
-IN-PROCESS against a `tmp_path` fixture repo) and asserts the DESIRED
-(not-yet-true) outcome; the CURRENT implementation's actual outcome (a
-hyphens-preserved slug / a garbage `---.md` scaffold silently created) makes
-the assertion raise a plain `AssertionError` -- fail-for-the-right-reason,
-never a collection or import error.
+IN-PROCESS) and asserts the DESIRED outcome; the CURRENT implementation's
+actual outcome (a hyphens-preserved slug / garbage `---.md` scaffold) makes
+the assertion raise a plain `AssertionError`.
 
 Driving surface: `_kebab_slug(value_statement) -> str` (pure function, direct
 call) for scenario 1; `des.cli.charter_scaffold.main(argv) -> int` invoked
@@ -37,18 +32,15 @@ IN-PROCESS against a `tmp_path` fixture repo (composition-root driving port --
 Mandate 16, driving-port-only boundary) for scenarios 2-3. No subprocess fork.
 
 Test Reuse & Consolidation: reuses the D1 hostile-input fixture pattern
-(`_seed_repo` / `_expectations_dir` / `_invoke_seed_mode`) verbatim from
-`tests.des.unit.cli.test_charter_scaffold_hostile_input` for the `slice-plan`
-seed-mode (the hyphen-only text lands in a feature-delta table cell, never
-argv, so the shared helper applies unmodified). `bug-observable` and
-`brownfield-discovery` route through a LOCAL `--flag=value` argv builder
+(`_seed_repo` / `_expectations_dir` / `_invoke_seed_mode`) from
+`tests.des.unit.cli.test_charter_scaffold_hostile_input`. `bug-observable`
+and `brownfield-discovery` route through a LOCAL `--flag=value` argv builder
 (`_invoke_seed_mode_equals_form` below) instead of the shared helper's
 `--flag value` two-token form: argparse rejects a bare `---`/`-` TOKEN
-following `--observable`/`--area` as an ambiguous option-like value
-(`error: argument --area: expected one argument`) -- a genuine, orthogonal
-argparse quirk, not the `_kebab_slug` defect under test. The `--flag=value`
-single-token form sidesteps that ambiguity without touching production code
-or the shared D1 helper.
+following `--observable`/`--area` as ambiguous (`error: argument --area:
+expected one argument`) -- a genuine argparse quirk, not the `_kebab_slug`
+defect under test. The `--flag=value` single-token form sidesteps that
+without touching production code.
 """
 
 from __future__ import annotations
@@ -73,10 +65,8 @@ def _invoke_seed_mode_equals_form(
     seed_mode: str,
     hostile_text: str,
 ) -> tuple[int, dict]:
-    """`bug-observable` / `brownfield-discovery` variant of
-    `_invoke_seed_mode` that passes the hostile text via `--flag=value`
-    (single argv token) instead of `--flag value` (two argv tokens) --
-    required for a hyphen-only `hostile_text` (see module docstring)."""
+    """Variant that passes the hostile text via `--flag=value` (single token)
+    instead of `--flag value` (two tokens) for hyphen-only inputs."""
     from des.cli.charter_scaffold import main
 
     flag = "--observable" if seed_mode == "bug-observable" else "--area"
@@ -129,7 +119,7 @@ def test_kebab_slug_reduces_no_alphanumeric_input_to_empty(
 @pytest.mark.parametrize(
     "seed_mode",
     [
-        pytest.param("slice-plan", id="slice_plan"),
+        pytest.param("direct-value", id="direct_value"),
         pytest.param("bug-observable", id="bug_observable"),
         pytest.param("brownfield-discovery", id="brownfield_discovery"),
     ],
@@ -150,11 +140,7 @@ def test_hyphen_only_input_is_skipped_and_writes_no_charter_file(
     feature_id = f"hyphen-only-{seed_mode}"
     hostile_text = "---"
 
-    invoke = (
-        _invoke_seed_mode
-        if seed_mode == "slice-plan"
-        else _invoke_seed_mode_equals_form
-    )
+    invoke = _invoke_seed_mode_equals_form
     exit_code, payload = invoke(tmp_path, capsys, feature_id, seed_mode, hostile_text)
 
     expectations_dir = _expectations_dir(tmp_path, feature_id)
@@ -197,9 +183,9 @@ def test_normal_alphanumeric_input_is_not_skipped_still_writes_charter() -> None
 def test_normal_alphanumeric_input_end_to_end_writes_its_charter(
     tmp_path: Path, capsys
 ) -> None:
-    """Non-regression, end-to-end: a normal alphanumeric Value statement
+    """Non-regression, end-to-end: a normal alphanumeric value
     still gets its charter written (not skipped) through the real
-    `des charter-scaffold` slice-plan entry -- the hyphen-only guard must not
+    `des charter-scaffold` direct-value entry -- the hyphen-only guard must not
     over-trigger on ordinary user-authored content.
     """
     # covers: bugfix #59 LOW-2
@@ -207,7 +193,7 @@ def test_normal_alphanumeric_input_end_to_end_writes_its_charter(
     feature_id = "normal-input-non-regression"
 
     exit_code, payload = _invoke_seed_mode(
-        tmp_path, capsys, feature_id, "slice-plan", "Fix the thing"
+        tmp_path, capsys, feature_id, "direct-value", "Fix the thing"
     )
 
     expectations_dir = _expectations_dir(tmp_path, feature_id)

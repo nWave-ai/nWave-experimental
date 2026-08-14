@@ -35,20 +35,19 @@ and catch real gaps.
 > No skill can decontaminate a context. Dispatch a FRESH `nw-product-owner` context instead,
 > giving it VALUE-SIDE INPUTS ONLY.
 
-Value-side inputs (the only legal charter sources):
-- The human's directive, verbatim (best anchor).
+Value-side inputs (the only legal charter sources — the exact `--value`/`--observable`/`--area`
+seed passed to the required `--seed-mode`, ADR §4b `Author(Namespace)`):
+- The human's directive, verbatim (best anchor) — `--seed-mode direct-value`.
 - The bug's observable (for `/nw-bugfix`: what a user sees when it's fixed, in plain language —
-  never the diff).
-- The feature-delta's Value statement rows (Slice Plan row / user story Elevator Pitch) —
-  EXTRACTED, never the whole file.
+  never the diff) — `--seed-mode bug-observable`.
+- The named existing system area for a retrofit — `--seed-mode brownfield-discovery`.
 
 NEVER these (design-side, disqualifying):
 - The design contract sections, ADRs, architecture diffs.
 - The implementation, its diffs, its internal names.
-- **The whole `feature-delta.md` file.** It accumulates DESIGN/DELIVER sections from later
-  waves as the feature progresses — handing the fresh context the entire file re-contaminates
-  it even when the intent was to give only the Value statement. Extract and pass ONLY the
-  Value-statement rows (or the human directive / bug-observable), never the file itself.
+- **Any `feature-delta.md` file, in whole or in part** (legacy family, ADR §3 — no new target
+  reads it). Charter derivation reads only the direct-value/bug-observable/brownfield-discovery
+  seed passed to `des charter-scaffold`, never a feature-delta file for any reason.
 - The ATs as SOURCE — consulted, if at all, only AFTER the charter is drafted, and ONLY as a
   final coverage cross-check ("is every charter observation's territory also AT-covered?"), NEVER
   as the derivation and NEVER before the charter exists. Deriving the charter FROM the ATs
@@ -65,19 +64,22 @@ of the SAME intent, not a downstream artifact of the other.
 ## Run the producing tool first (GDP-4) — never hand-assemble the scaffold
 
 **`des charter-scaffold` is the producing tool for the file you are about to touch — run it
-before writing a single line by hand.** It reads the Slice Plan (or the bug/brownfield seed) and
-generates the scaffold at the correct path, with the correct filename, and with every heading
-already in the exact dialect `des verify-charter-filled` greps for (see Parser dialect below) —
-Intent pre-filled VERBATIM from the Value statement. It is idempotent (never overwrites an
-existing charter) and system-paid (GDP-5): the path/naming/heading judgment calls below exist so
-you can VERIFY the tool's output or fill a scaffold by hand in the rare case the tool cannot run
-(never as the default authoring path).
+before writing a single line by hand.** It generates the scaffold at the correct path, with the
+correct filename, and with every heading already in the exact dialect `des verify-charter-filled`
+greps for (see Parser dialect below) — Intent pre-filled VERBATIM from the value-side seed. It is
+idempotent (never overwrites an existing charter) and system-paid (GDP-5): the path/naming/heading
+judgment calls below exist so you can VERIFY the tool's output or fill a scaffold by hand in the
+rare case the tool cannot run (never as the default authoring path).
+
+`--seed-mode` is a required, closed choice of exactly three legal modes — there is no default
+mode and no Slice Plan or feature-delta producing-tool invocation:
 
 ```
-# default — one charter per observable Slice Plan row:
-des charter-scaffold --feature-id <feature-id>
+# ordinary value-side authorship — the immutable value seed, verbatim:
+des charter-scaffold --feature-id <feature-id> --seed-mode direct-value \
+    --value "<the immutable value-side seed, verbatim>"
 
-# a /nw-bugfix charter (no Slice Plan involved):
+# a /nw-bugfix charter:
 des charter-scaffold --feature-id <feature-id> --seed-mode bug-observable \
     --observable "<what a user sees once the bug is fixed>"
 
@@ -89,21 +91,19 @@ des charter-scaffold --feature-id <feature-id> --seed-mode brownfield-discovery 
 Your job as the FRESH `nw-product-owner` context is to **fill** the TODO placeholders the tool
 already scaffolded (start-recipe, expected observations incl. ≥1 negative, session-log) — not to
 invent the path, filename, or heading text yourself. `des verify-charter-filled` then verifies the
-fill (backstop gate) before the charter can arm a DELIVER EXAMINE. Full wiring (WHEN this runs in
-each wave): `nWave/skills/nw-distill/SKILL.md` § "Charter Scaffold (DISTILL-open...)" — the SSOT
-for when the tool fires; this skill is the SSOT for what to write once it has.
+fill (backstop gate) before the charter can arm a DELIVER EXAMINE. Full wiring (WHEN this runs,
+which axis triggers it): `docs/product/architecture/ADR-SSOT-002-canonical-delivery-model.md`
+§4b `Resolve` — the SSOT for when the tool fires (`Author(Namespace)` only, on `Missing`/`Empty`);
+this skill is the SSOT for what to write once it has.
 
 ## When NOT to write a charter
 
-`@infrastructure` / `@prefactoring` slices with no user-observable value get NO charter —
-writing one there is a contract-spec in disguise (the acceptance-designer's job, not the PO's).
-The charter belongs to the OBSERVABLE slice (often the wiring slice that finally makes the
-infra visible). An infra slice with no charter leaves EXAMINE unarmed for that slice BY DESIGN
-— the reviewer audit is the by-design fallback, not a gap to fill.
-
-Positive classification example: a slice titled "wire the config port into the CLI" gets NO
-charter (mechanism, no user-observable change alone); the NEXT slice, "operator's CLI command
-now reads from the wired config", gets the charter (the observable behavior finally exists).
+`applicability.examine=false` slices get NO charter, no PO dispatch, and no Vera dispatch — this
+is the value owner's own axis-2 decision (ADR §4b `Resolve(false, _) = Skip`), never a routing
+label this skill re-derives. This skill never routes on `@infrastructure`/`@prefactoring`
+annotations or on `delivery-route`: the full algebra — `Skip`/`Reuse`/`Author`/`Block` over
+`Discover`'s `Missing`/`Empty`/`Valid`/`Invalid` outcomes — lives at ADR §4b only, not duplicated
+here.
 
 ## How to write a good charter
 
@@ -233,11 +233,12 @@ DID look) but is BLIND to the class category — a real `class RealThing:` was b
 
 ## Invocation per flow
 
-| Flow | Who authors | Input given to the fresh context | Charter path |
-|---|---|---|---|
-| DISCUSS (native) | `nw-product-owner`, in-wave Phase 6/7 | Slice Plan Value statement rows | `docs/product/expectations/{feature-id}/{intent-name}.md` |
-| `/nw-bugfix` Phase 3c | a FRESH `nw-product-owner` dispatch — never the bugfix orchestrator inline | the RCA's bug observable (plain language, no diff) + the human's bug description verbatim | `docs/product/expectations/fix-{bug-summary}/{intent-name}.md` |
-| Ad-hoc technical fix (skips DISCUSS) | a FRESH `nw-product-owner` dispatch | the human's directive verbatim | `docs/product/expectations/{feature-id}/{intent-name}.md` |
+| Flow | Who authors | `--seed-mode` | Input given to the fresh context | Charter path |
+|---|---|---|---|---|
+| DISCUSS (native) | `nw-product-owner`, in-wave Phase 6/7 | `direct-value` | the immutable value-side seed, verbatim | `docs/product/expectations/{feature-id}/{intent-name}.md` |
+| `/nw-bugfix` Phase 3c | a FRESH `nw-product-owner` dispatch — never the bugfix orchestrator inline | `bug-observable` | the RCA's bug observable (plain language, no diff) + the human's bug description verbatim | `docs/product/expectations/fix-{bug-summary}/{intent-name}.md` |
+| Ad-hoc technical fix (skips DISCUSS) | a FRESH `nw-product-owner` dispatch | `direct-value` | the human's directive verbatim | `docs/product/expectations/{feature-id}/{intent-name}.md` |
+| Brownfield retrofit onto existing code | a FRESH `nw-product-owner` dispatch | `brownfield-discovery` | the named existing system area | `docs/product/expectations/{feature-id}/{intent-name}.md` |
 
 ## GOOD vs BAD (compact pair)
 
@@ -256,8 +257,9 @@ generator turning the expectations corpus into a manual — not built yet.)
 
 ## Success Criteria
 
-1. - [ ] Disqualification Rule honored — author's context holds VALUE-side inputs only (human
-   directive / bug observable / Value statement), never design/implementation/diffs.
+1. - [ ] Disqualification Rule honored — author's context holds VALUE-side inputs only (the
+   `--value`/`--observable`/`--area` seed for the used `--seed-mode`), never design/
+   implementation/diffs.
 2. - [ ] ATs used, if at all, only as a coverage cross-check AFTER the charter is drafted —
    never as the charter's source.
 3. - [ ] Path + intent name are from the user's side, kebab-case, no implementation terms.
@@ -268,8 +270,8 @@ generator turning the expectations corpus into a manual — not built yet.)
 6. - [ ] Charter body describes outcomes to explore, contains zero keystroke/command scripts.
 7. - [ ] Oracle has ≥1 positive AND ≥1 negative observation.
 8. - [ ] Session log is append-only.
-9. - [ ] `@infrastructure`/`@prefactoring` slices carry NO charter; the first observable-value
-   slice does.
+9. - [ ] `applicability.examine=false` slices carry NO charter (ADR §4b `Resolve(false, _) =
+   Skip`); the first `examine=true` slice does.
 10. - [ ] Charter path's `{feature-id}` matches what the DELIVER EXAMINE gate / commit-slice
    gate expects (arming confirmed).
 11. - [ ] For any surface with an incapable/optional leg (analysis tool, grounding gate,

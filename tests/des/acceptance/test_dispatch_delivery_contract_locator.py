@@ -39,6 +39,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from tests.common.delivery_contract_fixture import load_valid_contract
 from tests.common.in_process_cli import run_cli_in_process
 
 
@@ -80,18 +81,15 @@ _DELIVERY_CONTRACT_FIXTURE = (
 )
 
 
-def _load_valid_contract() -> dict:
-    return json.loads(_DELIVERY_CONTRACT_FIXTURE.read_text(encoding="utf-8"))
-
-
 def _seed_valid_contract(
     root: Path,
     rel_path: str = "delivery-contract.json",
     *,
     delivery_route: str = "RED_TO_GREEN",
 ) -> Path:
-    contract = _load_valid_contract()
+    contract = load_valid_contract()
     contract["delivery-route"] = delivery_route
+    contract["applicability"]["examine"] = False
     dst = root / rel_path
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(json.dumps(contract), encoding="utf-8")
@@ -295,7 +293,7 @@ def _write_malformed_json(root: Path) -> str:
 
 def _write_schema_invalid_json(root: Path) -> str:
     rel_path = "beta-artifact"
-    invalid = _load_valid_contract()
+    invalid = load_valid_contract()
     del invalid["obligations"]  # required field, per thin-delivery-contract schema
     (root / rel_path).write_text(json.dumps(invalid), encoding="utf-8")
     return rel_path

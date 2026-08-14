@@ -178,8 +178,8 @@ class TestCrafterDispatchFirstBytesRule:
     def test_single_pass_rule_applies_across_route_boundaries(self):
         """(e) The terminal/single-pass rule flows into the standing route rules."""
         body = _skill_body()
-        boundaries = body[body.index("## Route boundaries") :]
-        for token in ("single-pass", "is terminal", "never"):
+        boundaries = body[body.index("## Route boundaries") :].lower()
+        for token in ("single-pass", "is terminal", "no retry"):
             assert token in boundaries, f"Single-pass rule missing: {token}"
 
     def test_section_anchor_is_the_sole_stable_owner(self):

@@ -715,65 +715,6 @@ def _slice_is_coupled(repo: Path, feature_id: str, slice_id: str) -> bool:
     return _is_slice_coupled(plan, slice_id)
 
 
-# The distinct EXEMPT outcome (GDP-8 fix, fix-examine-gate-defer-keyed-on-
-# designation-not-property): an `@infrastructure`/`@prefactoring` slice has
-# NO observable surface AT ALL -- not now, not ever, not even at feature-end
-# (DISTILL's own `des charter-scaffold` tool never creates a charter for this
-# row in the first place, so `_run_feature_end_examine_leg`'s per-CHARTER
-# sweep has nothing to re-examine for it either -- nw-distill/SKILL.md: "no
-# scaffold -> no charter -> EXAMINE unarmed -- by design, not a gap").
-# Naming this outcome `ExamineDeferredToFeatureEnd` would be a LIE: nothing
-# defers, because nothing will ever look. A DIFFERENT event, so a ledger
-# reader can tell "permanently exempt, no oracle can exist" apart from
-# "checked later" apart from "examined and passed" apart from "nobody
-# looked" -- distinguished by the SAME `exit_code`-absence discriminator as
-# the `@coupled` DEFER (see `check_examine_verdict`'s docstring).
-_EXAMINE_EXEMPT_EVENT = "ExamineExemptNonObservableSlice"
-
-
-def _slice_has_no_observable_surface(
-    repo: Path, feature_id: str, slice_id: str
-) -> bool:
-    """Whether ``slice_id``'s OWN Slice-Plan row is annotated
-    ``@infrastructure`` or ``@prefactoring`` -- the SAME ``_is_observable``
-    PROPERTY DISTILL's own charter-scaffold tool (``des charter-scaffold``,
-    ``charter_scaffold._is_observable``) already consults to decide whether
-    this row ever RECEIVES a charter at all. Imported (local, avoiding a
-    module-level cycle -- ``charter_scaffold`` is a sibling CLI module),
-    never re-derived, so this gate's notion of "has no surface" can never
-    drift from DISTILL's own.
-
-    GDP-8: this is the discriminator on the PROPERTY (will DISTILL ever
-    scaffold a charter for THIS row?), not on the feature-level DESIGNATION
-    (does the FEATURE have charters, for ANY row?) that ``_examine_gate_armed``
-    alone tests -- the gap this predicate exists to close. Measured on
-    ``unified-event-store`` slice-01 (`@infrastructure`): the feature carries
-    3 charters, none of them for slice-01, and the prior code had no escape
-    but `@coupled` -- refusing `ExamineVerdictMissing` with a remediation
-    ("dispatch nw-user-examiner with the slice's charter") that names a
-    charter that will never exist.
-
-    Fail-CLOSED to ``False`` on ANY read failure (mirrors `_slice_is_coupled`
-    above) -- an absent feature-delta, an absent row, or a malformed
-    Slice-Plan table never grants the exemption; the slice then falls
-    through to the ordinary `ExamineVerdictMissing` refusal.
-    """
-    from des.cli.charter_scaffold import _is_observable
-
-    delta_path = _feature_delta_path(repo, feature_id)
-    if not delta_path.is_file():
-        return False
-    try:
-        feature_delta_text = delta_path.read_text(encoding="utf-8")
-        plan = _parse_slice_plan(feature_delta_text)
-    except (OSError, UnicodeDecodeError, _CarpaccioGateError):
-        return False
-    row = plan.row_for(slice_id)
-    if row is None:
-        return False
-    return not _is_observable(row.annotation)
-
-
 def _examine_gate_armed(repo: Path, feature_id: str | None) -> bool:
     """Whether the examine-verdict commit gate applies to this commit.
 
@@ -927,33 +868,14 @@ def check_examine_verdict(
     caller pops before emitting) otherwise -- every refusal states WHAT
     failed, WHY, and HOW to fix it (never a bare event name).
 
-    TWO further non-refusal outcomes exist beyond "clears with a fresh PASS",
-    both keyed on the entering slice's OWN Slice-Plan row and both carrying
-    NO ``exit_code`` key -- the discriminator every caller uses to tell
-    "not a refusal, proceed" apart from "refuse, exit_code pops cleanly":
-
-      * ``@coupled`` slice with no per-slice record (RCA fix-coupled-slice-
-        examine-deferred-to-feature-end): a DEFER payload, event
-        ``ExamineDeferredToFeatureEnd``. A ``@coupled`` slice has no
-        independently-observable surface (its guarantee is only checkable
-        through the ASSEMBLED feature), so demanding a per-slice PASS asks
-        for evidence that cannot exist; feature-end's unconditional
-        per-charter examine leg
-        (``feature_end_cycle_service._run_feature_end_examine_leg``) covers
-        it instead -- deferred, never dropped.
-      * ``@infrastructure``/``@prefactoring`` slice (GDP-8 fix, fix-examine-
-        gate-defer-keyed-on-designation-not-property): an EXEMPT payload,
-        event ``ExamineExemptNonObservableSlice``, DISTINCT from the DEFER
-        above. This row has no observable surface EVER, at ANY scope --
-        DISTILL's own charter-scaffold tool never creates a charter for it,
-        so unlike ``@coupled`` there is nothing for feature-end to examine
-        later either. Labeling it "deferred" would promise an examine that
-        will never happen.
+    One further non-refusal outcome exists beyond "clears with a fresh PASS":
+    an ``@coupled`` slice with no per-slice record returns the DEFER payload
+    ``ExamineDeferredToFeatureEnd``. Its guarantee is only observable through
+    the assembled feature, whose feature-end examine leg supplies the oracle.
 
     Refusal taxonomy (fail-closed, never a silent pass):
-      * ``ExamineVerdictMissing``       (exit 2) -- no record at all, and the
-        slice is neither ``@coupled`` nor ``@infrastructure``/
-        ``@prefactoring`` (those defer/exempt instead, see above).
+      * ``ExamineVerdictMissing``       (exit 2) -- no record at all and the
+        slice is not ``@coupled`` (which defers instead, see above).
       * ``ExamineVerdictRefused``       (exit 1) -- recorded verdict is FAIL.
       * ``ExamineVerdictIndeterminate`` (exit 2) -- recorded verdict is
         INDETERMINATE (an unexaminable slice carries no observable value --
@@ -993,27 +915,6 @@ def check_examine_verdict(
                     "through the ASSEMBLED feature); feature-end's "
                     "unconditional per-charter examine leg covers it "
                     "instead of a per-slice ExamineVerdict."
-                ),
-            }
-        if _slice_has_no_observable_surface(repo, feature_id, slice_id):
-            return {
-                "event": _EXAMINE_EXEMPT_EVENT,
-                "feature_id": feature_id,
-                "slice_id": slice_id,
-                "what": (
-                    f"slice {slice_id} is @infrastructure/@prefactoring -- "
-                    "it has NO observable surface and is PERMANENTLY EXEMPT "
-                    "from the per-slice examine-verdict requirement"
-                ),
-                "why": (
-                    "DISTILL's own `des charter-scaffold` tool never creates "
-                    "a charter for an @infrastructure/@prefactoring row (it "
-                    "carries no user-visible value to examine); demanding a "
-                    "per-slice PASS here would instruct dispatching an "
-                    "examiner against a charter that can never exist. "
-                    "Unlike @coupled (deferred to feature-end, where a real "
-                    "charter DOES eventually examine it), this slice has no "
-                    "charter to defer to, at any scope, ever."
                 ),
             }
         return {
