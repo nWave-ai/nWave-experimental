@@ -18,23 +18,7 @@ from des.adapters.drivers.hooks.pre_tool_use_handler import (
 )
 from des.adapters.drivers.hooks.pre_write_handler import handle_pre_write
 from des.adapters.drivers.hooks.subagent_start_handler import handle_subagent_start
-from des.adapters.drivers.hooks.subagent_stop_handler import (
-    extract_des_context_from_transcript,
-    handle_subagent_stop,
-)
-
-
-def _is_atdd_pure_subagent_stop(stdin_text: str) -> bool:
-    """Whether an inactive stop return still needs DES causal projection."""
-    try:
-        envelope = json.loads(stdin_text)
-        transcript_path = envelope.get("agent_transcript_path")
-    except (json.JSONDecodeError, AttributeError):
-        return False
-    if not isinstance(transcript_path, str):
-        return False
-    context = extract_des_context_from_transcript(transcript_path)
-    return context is not None and context.get("mode") == "atdd_pure"
+from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
 
 
 _PRE_TOOL_USE_COMMANDS = ("pre-tool-use", "pre-task")
@@ -51,7 +35,7 @@ def apply_bash_safety_guards(command: str, stdin_text: str) -> None:
 
     Fail-open on a non-PreToolUse command, non-JSON/non-dict envelope, or a
     non-Bash tool_name -- identical parse tolerance to `apply_gate`'s own
-    `_parse_cwd`/`_stdin_is_nw_agent`, since the gate right after this call
+    `_parse_cwd`, since the gate right after this call
     already owns "no readable envelope -> inactive -> allow". Blocks by
     printing the guard's structured payload and calling `sys.exit(2)`,
     matching the existing block exit-code convention.
@@ -111,15 +95,15 @@ def main() -> None:
     # exactly once here; `handle_pre_tool_use` no longer re-runs it.
     apply_bash_safety_guards(command, buffered_stdin)
 
-    # A valid atdd_pure return is an evidence boundary even in a clean
-    # temporary project.  Classic returns retain the activation gate, so an
-    # inactive classic SubagentStop remains byte-for-byte gated as before.
-    reinjected = (
-        buffered_stdin
-        if command == "subagent-stop" and _is_atdd_pure_subagent_stop(buffered_stdin)
-        else apply_gate(command, buffered_stdin)
-    )
+    reinjected = apply_gate(command, buffered_stdin)
     sys.stdin = io.StringIO(reinjected if reinjected is not None else buffered_stdin)
+
+    # Freshness is relevant only after explicit project activation. Running it
+    # at facade import time created `.nwave/des/logs` before the activation gate
+    # could silence an unrelated repository.
+    from des.runtime.freshness import assert_fresh_or_explain
+
+    assert_fresh_or_explain(suppress_git_autoskip=True)
 
     if command in ("pre-tool-use", "pre-task"):
         # "pre-task" accepted for backward compatibility

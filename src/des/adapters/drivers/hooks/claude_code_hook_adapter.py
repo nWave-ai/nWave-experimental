@@ -55,17 +55,6 @@ from des.adapters.drivers.hooks.subagent_stop_handler import (  # noqa: F401
     extract_des_context_from_transcript,
     handle_subagent_stop,
 )
-from des.runtime.freshness import assert_fresh_or_explain
-
-
-# Runtime freshness gate (DESIGN SYS-2 / Gap A): fire at the hook process startup
-# as an import-time side effect, mirroring des.cli/__init__.py — before any
-# handler logic runs. DV-2: the hook hot path passes suppress_git_autoskip=True so
-# the content probe REACHES the verdict even on a developer checkout (the #58
-# topology the coarse .git/-adjacency autoskip would otherwise neuter).
-# Degrade-loud: a stale install warns + proceeds (exit 0); it never bricks a
-# session.
-assert_fresh_or_explain(suppress_git_autoskip=True)
 
 
 if __name__ == "__main__":

@@ -26,8 +26,6 @@ from tests.common.state_delta import assert_state_delta, set_to, unchanged
 from tests.des.acceptance.activation_gating.steps.domain_types import (
     COMPLETION_EXPECTATION,
     Activation,
-    AdoptionResult,
-    AdoptionTrigger,
     CliResult,
     CompletionShell,
     FsMode,
@@ -73,12 +71,10 @@ EXTRA_TYPES = {
     "GlobalMode": _by_name(GlobalMode),
     "MarkerState": _by_name(MarkerState),
     "GitignoreVariant": _by_name(GitignoreVariant),
-    "AdoptionTrigger": _by_name(AdoptionTrigger),
     "HookCommand": _by_name(HookCommand),
     "CompletionShell": _by_name(CompletionShell),
     "Activation": _by_name(Activation),
     "GateOutcome": _by_name(GateOutcome),
-    "AdoptionResult": _by_name(AdoptionResult),
     "FsMode": _by_name(FsMode),
 }
 
@@ -161,16 +157,6 @@ def When_nw_agent_dispatched(composition) -> None:
             subagent_type=SubagentType("nw-software-crafter"),
         )
     )
-
-
-@when(
-    parsers.parse(
-        'the session adopts the project via "{trigger:AdoptionTrigger}"',
-        extra_types=EXTRA_TYPES,
-    ),
-)
-def When_adopt(composition, trigger: AdoptionTrigger) -> None:
-    composition.adopt(trigger)
 
 
 @when("the gitignore is fixed for the marker")
@@ -257,11 +243,6 @@ def Then_stdin_intact(composition) -> None:
     assert composition.captured_handler_stdin == composition.recorded.get("sent_stdin")
 
 
-@then("the project is adopted and the agent dispatch proceeds")
-def Then_adopted_and_dispatched(composition) -> None:
-    assert composition.last_gate_outcome is GateOutcome.ADOPTED_AND_DISPATCHED
-
-
 @then("the project marker is written")
 def Then_marker_written(composition) -> None:
     assert_state_delta(
@@ -280,23 +261,17 @@ def Then_marker_written(composition) -> None:
     )
 
 
-@then("no project marker is written")
-def Then_marker_not_written(composition) -> None:
-    assert composition.capture_universe()["marker.file_exists"] is False
-
-
-@then(
-    parsers.parse(
-        'the adoption outcome is "{result:AdoptionResult}"', extra_types=EXTRA_TYPES
-    ),
-)
-def Then_adoption_outcome(composition, result: AdoptionResult) -> None:
-    assert composition.last_adoption is result
-
-
 @then("the marker still reflects the deliberate opt-out")
 def Then_sticky_preserved(composition) -> None:
     assert composition.capture_universe()["marker.enabled_for_repo"] is False
+
+
+@then("the project state is unchanged")
+def Then_project_unchanged(composition) -> None:
+    assert (
+        composition.capture_project_tree()
+        == composition.recorded["project_tree_before"]
+    )
 
 
 @then("the marker becomes trackable by version control")

@@ -4,9 +4,9 @@ Feature: nWave hooks run only in active projects and never block an inactive one
   A single gate sits at the one place every hook is dispatched. In an inactive
   project the gate allows the hook through without running any nWave logic and
   without ever blocking. In an active project the hook is dispatched to its
-  handler as before. The session-start event is exempt — it always runs so that
-  existing projects can be adopted silently. The gate is transparent to handlers:
-  the original hook input reaches the handler intact.
+  handler as before. The gate never activates a project: only the explicit
+  project-enable command owns that decision. The gate is transparent to
+  handlers: the original hook input reaches the handler intact.
 
   Background:
     Given the global activation mode is "OPT_IN"
@@ -17,6 +17,14 @@ Feature: nWave hooks run only in active projects and never block an inactive one
     When a "PRE_TOOL_USE" hook fires
     Then the hook is allowed without blocking
     And the gate never blocks the hook
+
+  @contract-shape:unbounded-preservation
+  Scenario: An agent dispatch cannot silently activate an inactive project
+    Given the project marker is "ABSENT"
+    When an nWave agent is dispatched in this project
+    Then the hook is allowed without blocking
+    And the gate never blocks the hook
+    And the project state is unchanged
 
   @contract-shape:bounded-change
   Scenario: An active project dispatches its hook to the handler

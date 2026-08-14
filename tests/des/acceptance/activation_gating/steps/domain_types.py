@@ -58,9 +58,8 @@ class HookCommand(Enum):
     """The hook command dispatched through ``hook_router.main()``.
 
     Names mirror ``hook_definitions.py`` / ``hook_router.py`` argv tokens.
-    ``PRE_TASK`` is the adopt-and-proceed command (DDD-9). ``SESSION_START``
-    is gone: the router has no session-start command since the session
-    ceremony was deleted (22ea19309).
+    ``SESSION_START`` is gone: the router has no session-start command since
+    the session ceremony was deleted (22ea19309).
     """
 
     PRE_TASK = "pre-task"
@@ -77,21 +76,6 @@ class GateOutcome(Enum):
 
     ALLOWED_EXIT_0 = "allowed-exit-0"  # inactive → sys.exit(0), handler skipped
     DISPATCHED = "dispatched"  # active → handler ran normally
-    ADOPTED_AND_DISPATCHED = "adopted-and-dispatched"  # pre-task detect-and-adopt
-
-
-class AdoptionTrigger(Enum):
-    """Which auto-marking trigger fired (DDD-7)."""
-
-    REAL_FEATURE_USE = "real-feature-use"  # pre-task nw-* dispatch
-
-
-class AdoptionResult(Enum):
-    """Outcome of ``AutoMarkingService.adopt_if_warranted`` (ADR-AG-003)."""
-
-    ADOPTED = "adopted"  # marker written
-    NOT_WARRANTED = "not-warranted"  # no evidence → no write
-    NO_OP_STICKY = "no-op-sticky"  # marker already present (any value) → no write
 
 
 class GitignoreVariant(Enum):

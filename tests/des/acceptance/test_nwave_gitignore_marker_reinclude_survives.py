@@ -1,14 +1,14 @@
 """Regression: a subsequent ensure_nwave_gitignore must not re-ignore the marker.
 
 Defect (DELIVER verification, feature nwave-project-activation-gating): after
-``nwave-ai project enable`` / auto-marking repairs the nested ``.nwave/.gitignore``
+``nwave-ai project enable`` repairs the nested ``.nwave/.gitignore``
 (adding ``!local-config.json`` so the activation marker ``.nwave/local-config.json`` is
 trackable), the very next runtime path that lazily creates ``.nwave/`` content
 calls ``ensure_nwave_gitignore`` — which unconditionally rewrote the nested
 ignore to ``"{marker}\n*\n"``, clobbering the ``!local-config.json`` re-include and
 re-hiding the marker from git.
 
-The two nested-gitignore writers (``AutoMarkingService`` and
+The two nested-gitignore writers (``ProjectGitignoreService`` and
 ``ensure_nwave_gitignore``) must agree on ONE canonical content so they cannot
 disagree. This drives the production fix through real ``git check-ignore``.
 """
@@ -19,7 +19,7 @@ import subprocess
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.git.git_track_probe import is_tracked
-from des.application.auto_marking_service import AutoMarkingService
+from des.application.project_gitignore_service import ProjectGitignoreService
 from des.domain.nwave_dir_gitignore import ensure_nwave_gitignore
 
 
@@ -53,7 +53,7 @@ def test_subsequent_ensure_preserves_marker_trackability(tmp_path: Path) -> None
     marker.write_text('{"enabled_for_repo": true}\n', encoding="utf-8")
 
     # Activation repairs both gitignore layers -> marker becomes trackable.
-    AutoMarkingService().fix_gitignore(project_root=project_root)
+    ProjectGitignoreService().fix_gitignore(project_root=project_root)
     assert is_tracked(project_root, marker), (
         "fix_gitignore should make marker trackable"
     )

@@ -1061,24 +1061,36 @@ def _sync_project_claude_section(
         )
 
 
+_PROJECT_USAGE = "Usage: nwave-ai project <enable|disable> [--yes]"
+
+
 def _handle_project(args: list[str]) -> int:
     """Handle 'project enable|disable' — write the marker + fix gitignore.
 
     On `enable`, also offers to inject the managed beta-feedback section into each
     supported host's guidance file (CLAUDE.md, AGENTS.md; consent-gated per host,
     `--yes` bypasses). On `disable`, removes it from all of them.
+
+    Fail-closed argument boundary: `--help`/`-h` anywhere in ``args`` prints
+    usage and returns 0 without touching the filesystem, and anything left
+    over besides the action and `--yes` (unknown option, extra positional)
+    is rejected with usage + nonzero -- both checked BEFORE any write, so a
+    malformed or informational invocation can never mutate the project.
     """
+    if any(a in ("--help", "-h") for a in args):
+        print(_PROJECT_USAGE)
+        return 0
     assume_yes = "--yes" in args
     positional = [a for a in args if a != "--yes"]
-    if not positional or positional[0] not in ("enable", "disable"):
-        print("Usage: nwave-ai project <enable|disable> [--yes]", file=sys.stderr)
+    if len(positional) != 1 or positional[0] not in ("enable", "disable"):
+        print(_PROJECT_USAGE, file=sys.stderr)
         return 1
-    from des.application.auto_marking_service import AutoMarkingService
+    from des.application.project_gitignore_service import ProjectGitignoreService
 
     action = positional[0]
     project_root = Path.cwd()
     _write_marker(project_root, enabled=action == "enable")
-    AutoMarkingService().fix_gitignore(project_root=project_root)
+    ProjectGitignoreService().fix_gitignore(project_root=project_root)
     state = "enabled" if action == "enable" else "disabled (sticky opt-out)"
     print(f"nWave activation for this project: {state}.")
     _sync_project_claude_section(action, project_root, assume_yes=assume_yes)

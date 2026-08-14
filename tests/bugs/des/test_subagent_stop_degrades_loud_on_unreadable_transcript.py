@@ -43,6 +43,10 @@ INACTIVE (opt-in), and an inactive project's ``apply_gate`` exits 0 BEFORE
 ``handle_subagent_stop`` ever runs, which would make every case in this file
 "pass" for the wrong reason (the activation gate, not the defect under test).
 
+``_fire`` opts out of the orthogonal startup freshness check and removes its
+one structured skip event.  These assertions therefore continue to own only
+SubagentStop transcript diagnostics; freshness behavior has separate tests.
+
 CRITICAL CONSTRAINT (Q5 in the RCA, preserved -- do NOT change): an ABSENT
 ``agent_transcript_path`` key is not a broken promise, it is the routine shape
 of a SubagentStop event from an agent-type that never populates transcript
@@ -201,6 +205,29 @@ def _envelope(
     return envelope
 
 
+_FRESHNESS_SKIP_EVENT = {
+    "event": "des.runtime.freshness.skipped",
+    "reason": "NWAVE_FRESHNESS=skip",
+}
+
+
+def _strip_freshness_skip_event(stderr: str) -> str:
+    """Remove exactly the freshness opt-out event; preserve every other byte."""
+    kept_lines: list[str] = []
+    skip_events = 0
+    for line in stderr.splitlines(keepends=True):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            payload = None
+        if payload == _FRESHNESS_SKIP_EVENT:
+            skip_events += 1
+            continue
+        kept_lines.append(line)
+    assert skip_events == 1, f"unexpected freshness stderr: {stderr!r}"
+    return "".join(kept_lines)
+
+
 def _fire(repo: Path, envelope: dict) -> tuple[int, str, str]:
     """Fire the REAL hook CLI surface over its JSON stdin protocol.
 
@@ -217,11 +244,15 @@ def _fire(repo: Path, envelope: dict) -> tuple[int, str, str]:
     resolve against) away from ``repo`` and into that leaked directory --
     a real Claude Code hook invocation never sets this var, so popping it
     keeps this fixture faithful to production.
+
+    The explicit freshness opt-out isolates that separate concern; its one
+    structured skip event is removed before returning transcript diagnostics.
     """
     env = dict(os.environ)
     env["PYTHONPATH"] = str(_SRC_DIR)
     env.pop("DES_AUDIT_LOG_DIR", None)
     env.pop("DES_PROJECT_DIR", None)
+    env["NWAVE_FRESHNESS"] = "skip"
     result = subprocess.run(
         [
             sys.executable,
@@ -236,7 +267,8 @@ def _fire(repo: Path, envelope: dict) -> tuple[int, str, str]:
         env=env,
         timeout=30,
     )
-    return result.returncode, result.stdout, result.stderr
+    stderr = _strip_freshness_skip_event(result.stderr)
+    return result.returncode, result.stdout, stderr
 
 
 def _write_readable_no_markers(path: Path) -> None:

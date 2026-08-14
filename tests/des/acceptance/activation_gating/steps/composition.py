@@ -2,7 +2,7 @@
 
 Pillar 3 — "app as in production": the SUT is built from the real production
 entry points (the pure ``resolve_activation`` policy, the real
-``AutoMarkingService`` over a ``FileSystemPort``, the real gitignore transforms,
+``ProjectGitignoreService``, the real gitignore transforms,
 the real ``DESConfig`` reader, the real ``hook_router.main()`` dispatch, and the
 real ``nwave_ai.cli.main`` CLI). Only the project filesystem is redirected to a
 ``tmp_path`` sandbox — that is the one "environment" substitution, exactly as
@@ -33,8 +33,6 @@ from pathlib import Path
 
 from tests.des.acceptance.activation_gating.steps.domain_types import (
     Activation,
-    AdoptionResult,
-    AdoptionTrigger,
     CliResult,
     CompletionShell,
     FsMode,
@@ -78,7 +76,6 @@ class ActivationGatingComposition:
     # Observable results captured by the most recent action (port-exposed).
     last_resolution: Activation | None = None
     last_gate_outcome: GateOutcome | None = None
-    last_adoption: AdoptionResult | None = None
     last_cli_result: CliResult | None = None
     last_cli_stdout: str = ""
     last_cli_stderr: str = ""
@@ -191,14 +188,15 @@ class ActivationGatingComposition:
     def dispatch_hook(self, envelope: HookEnvelope) -> None:
         """Drive a hook through the real ``hook_router.main()`` gate (DDD-5/6/9).
 
-        The router buffers stdin, resolves activation,
-        adopts-and-proceeds on pre-task, else allow/exit-0 when inactive. The
+        The router buffers stdin, resolves activation, and exits without
+        mutation when inactive. The
         composition records the observable gate outcome + the bytes the handler
         actually saw (rewind contract).
         """
         from des.adapters.drivers.hooks import activation_gate
 
         self.recorded.setdefault("before", self.capture_universe())
+        self.recorded.setdefault("project_tree_before", self.capture_project_tree())
         self.recorded["sent_stdin"] = envelope.raw
         outcome = activation_gate.run_gate(
             envelope=envelope,
@@ -211,33 +209,14 @@ class ActivationGatingComposition:
         self.captured_handler_stdin = outcome.handler_stdin
         self.recorded["exit_code"] = outcome.exit_code
 
-    def adopt(self, trigger: AdoptionTrigger) -> None:
-        """Drive the real ``AutoMarkingService.adopt_if_warranted`` (ADR-AG-003)."""
-        from des.application.auto_marking_service import (
-            AdoptionTrigger as ProdTrigger,
-        )
-        from des.application.auto_marking_service import (
-            AutoMarkingService,
-        )
-
-        self.recorded["before"] = self.capture_universe()
-        outcome = AutoMarkingService(
-            read_only=self.fs_mode is FsMode.READ_ONLY
-        ).adopt_if_warranted(
-            project_root=self.project_root, trigger=ProdTrigger[trigger.name]
-        )
-        # Adapt the production outcome enum to the test-domain enum at the
-        # boundary (production never imports test types; names are the contract).
-        self.last_adoption = AdoptionResult[outcome.name]
-
     def fix_gitignore(self) -> None:
         """Apply the dual-layer gitignore fix via the real transforms (ADR-AG-004)."""
-        from des.application.auto_marking_service import AutoMarkingService
+        from des.application.project_gitignore_service import ProjectGitignoreService
 
         self.recorded.setdefault("before", self.capture_universe())
-        AutoMarkingService(read_only=self.fs_mode is FsMode.READ_ONLY).fix_gitignore(
-            project_root=self.project_root
-        )
+        ProjectGitignoreService(
+            read_only=self.fs_mode is FsMode.READ_ONLY
+        ).fix_gitignore(project_root=self.project_root)
         self.recorded.setdefault(
             "gitignore_after_first", self.capture_universe()["root_gitignore.text"]
         )
@@ -290,8 +269,15 @@ class ActivationGatingComposition:
             "marker.git_tracked": self._marker_tracked(),
             "resolution": self.last_resolution,
             "gate.outcome": self.last_gate_outcome,
-            "adoption.result": self.last_adoption,
             "global_config.text": self._read_or_none(self.global_config_path),
+        }
+
+    def capture_project_tree(self) -> dict[str, bytes]:
+        """Return every project file as relative path plus exact bytes."""
+        return {
+            path.relative_to(self.project_root).as_posix(): path.read_bytes()
+            for path in self.project_root.rglob("*")
+            if path.is_file()
         }
 
     # ---- read helpers ----

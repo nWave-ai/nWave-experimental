@@ -22,6 +22,12 @@ _CAUSAL_MARKER = "DES-CAUSAL-ID"
 _TERMINAL_WORDS = ("completed", "committed", "executed", "shipped")
 
 
+def _enable_project(project: Path) -> None:
+    marker = project / ".nwave" / "local-config.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text('{"enabled_for_repo": true}\n', encoding="utf-8")
+
+
 def _render_intent(project: Path) -> str:
     exit_code, stdout, stderr = run_cli_in_process(
         [
@@ -111,6 +117,7 @@ def test_dispatch_intent_is_correlated_without_a_terminal_claim(tmp_path: Path) 
 
     # covers: R1 R2
     """
+    _enable_project(tmp_path)
     dispatch_text = _render_intent(tmp_path)
     causal_ids = _causal_ids(dispatch_text)
     assert len(causal_ids) == 1, (
@@ -164,6 +171,7 @@ def test_stop_hook_marks_markerless_return_as_causally_unavailable(
 
     # covers: R3
     """
+    _enable_project(tmp_path)
     before_files = _project_files(tmp_path)
     markerless_return = (
         "<!-- DES-VALIDATION : required -->\n"

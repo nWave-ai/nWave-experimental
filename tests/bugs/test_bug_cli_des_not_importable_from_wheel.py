@@ -2,7 +2,7 @@
 
 Reported defect (v3.21.0rc1): ``nwave-ai project enable`` exits with
 ``ModuleNotFoundError: No module named 'des'`` from ``cli.py`` doing a bare
-``from des.application.auto_marking_service import AutoMarkingService``.
+``from des.application.project_gitignore_service import ProjectGitignoreService``.
 
 Root cause: the PUBLISHED wheel ships the ``des`` package at
 ``site-packages/nWave/lib/python/des/`` (a Hatch force-include destination), NOT

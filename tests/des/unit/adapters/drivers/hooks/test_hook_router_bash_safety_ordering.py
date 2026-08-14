@@ -39,7 +39,7 @@ def _run_router(monkeypatch, argv_command: str, stdin_text: str) -> int:
 @pytest.fixture
 def inactive_project():
     with patch(
-        "des.adapters.drivers.hooks.activation_gate._is_active_failopen",
+        "des.adapters.drivers.hooks.activation_gate._is_active_or_inactive_on_error",
         return_value=False,
     ):
         yield
@@ -48,7 +48,7 @@ def inactive_project():
 @pytest.fixture
 def active_project():
     with patch(
-        "des.adapters.drivers.hooks.activation_gate._is_active_failopen",
+        "des.adapters.drivers.hooks.activation_gate._is_active_or_inactive_on_error",
         return_value=True,
     ):
         yield
