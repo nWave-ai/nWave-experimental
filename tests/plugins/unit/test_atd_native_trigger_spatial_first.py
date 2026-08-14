@@ -183,21 +183,42 @@ class TestClosureOnlyPhaseAndFinalResponse:
         end = AGENT_BODY.index("### GREEN_TO_GREEN branch")
         return " ".join(AGENT_BODY[start:end].split())
 
+    def _pre_authoring_section(self):
+        start = AGENT_BODY.index("### RED_TO_GREEN branch")
+        end = AGENT_BODY.index("**Spatial-first materialization (HARD):**")
+        return " ".join(AGENT_BODY[start:end].split())
+
     def _final_response_section(self):
         start = AGENT_BODY.index("### Both branches — final response")
         end = AGENT_BODY.index("You own the acceptance tests")
         return " ".join(AGENT_BODY[start:end].split())
 
     def test_closed_operation_and_artifact_set(self):
-        """Permitted: same-test Edit, the conditional dependency delta, the
-        hash, the one contract Write, the verification command. Forbidden:
-        renewed discovery/Skill/Task/Bash and any extra file."""
+        """Steps 2-4 select the TEST-dependency-owning manifest (never
+        runtime-only on a split layout) and settle the lock command without
+        a second Read. Post-Write: permitted is same-test Edit, that
+        preidentified delta, the hash, the one contract Write, the
+        verification command. Forbidden: renewed discovery/Skill/Task/Bash
+        and any extra file."""
+        pre = self._pre_authoring_section()
+        for token in (
+            "dependency-manifest topology",
+            "split runtime/test-dependency manifests",
+            "select the repo-native one that owns TEST dependencies",
+            "never the runtime-only manifest",
+            "this Read never targets a second manifest",
+            "this step confirms the repository-native one",
+            "settled by the end of this step, never claimed from step 3 alone",
+            "ambiguous after steps 2-4 is `EVIDENCE_GAP`",
+        ):
+            assert token in pre, f"Missing pre-authoring token: {token!r}"
+
         section = self._closure_section()
         for allowed in (
             "same-test-file `Edit`",
-            "preidentified manifest/lockfile dependency",
-            "iff `BROAD_INPUT_DOMAIN` fired and step 3 proved the",
-            "repository-native deterministic command",
+            "preidentified test-dependency manifest/lock delta",
+            "iff `BROAD_INPUT_DOMAIN` fired and steps 2-4 proved the",
+            "repository-native deterministic command steps 2-4 named",
             "the test file's SHA-256 hash",
             "one `DeliveryContract` JSON Write and schema validation",
             "already-selected `verification-scope.commands`",

@@ -61,15 +61,23 @@ window of AT MOST five calls total, strictly in this order:
 1. Read the cited architecture at the Covered/NoImpact locator — authoritative,
    never re-derived.
 2. At most one bounded Glob/discovery call for repository-owned language and
-   test-command evidence.
-3. Read at most one selected language manifest — this same read also settles,
-   for any language whose PBT trigger fires, whether that language's PBT
-   library is already declared, and names the repository-native dependency
-   manifest and its deterministic lockfile command (if any); missing or
-   ambiguous package-manager/dependency evidence here is `EVIDENCE_GAP`,
-   decided now, never deferred past authoring.
+   test-command evidence — this same call also names the dependency-manifest
+   topology (a single unified manifest, or split runtime/test-dependency
+   manifests) by name only, never contents.
+3. Read at most one selected language manifest — when step 2 found split
+   manifests, select the repo-native one that owns TEST dependencies, never
+   the runtime-only manifest; language is already evidenced by step 2, so
+   this Read never targets a second manifest. It settles, for any language
+   whose PBT trigger fires, whether that language's PBT library is already
+   declared, and names the manifest's own dependency/lock command when the
+   manifest states one.
 4. Read at most one selected executable command source (CI argv, script/task
-   config, or existing test convention) — may reuse step 3's Read.
+   config, or existing test convention) — may reuse step 3's Read; when step
+   3's manifest did not itself name a dependency/lock command, this step
+   confirms the repository-native one. Test-dependency evidence — owner,
+   declared/absent, lock command — is settled by the end of this step, never
+   claimed from step 3 alone; still ambiguous after steps 2-4 is
+   `EVIDENCE_GAP` before authoring, never guessed.
 5. Run exactly one stable `nw-code-analysis-port` `des code-fact query.*
    SUBJECT --root ROOT` for acceptance-facing target/reuse/boundary facts —
    never for language/runner discovery.
@@ -174,10 +182,10 @@ enters the contract: any mutation during RED refuses readiness.
 
 **Closure-only phase (HARD):** the moment that `Write` returns, this branch
 enters closure-only — every following tool call must be one of this closed
-set: same-test-file `Edit`; the preidentified manifest/lockfile dependency
-declaration or update, iff `BROAD_INPUT_DOMAIN` fired and step 3 proved the
-library absent, applied via the repository-native deterministic command
-step 3 named — never an invented tool; the test file's SHA-256 hash; one
+set: same-test-file `Edit`; the preidentified test-dependency manifest/lock
+delta, iff `BROAD_INPUT_DOMAIN` fired and steps 2-4 proved the library
+absent, applied via the repository-native deterministic command steps 2-4
+named — never an invented tool; the test file's SHA-256 hash; one
 `DeliveryContract` JSON Write and schema validation at its own deterministic
 locator; and execution or synchronous polling of the already-selected
 `verification-scope.commands`. No further product-source Read/Grep/Glob, no
@@ -185,9 +193,9 @@ locator; and execution or synchronous polling of the already-selected
 exploratory or diagnostic Bash — the pre-authoring window already closed at
 step 5, and closure-only never reopens discovery. Exactly one AT, exactly
 one `DeliveryContract`, and — only when that dependency condition holds —
-one preidentified manifest/lockfile delta: no other file. Missing or
-ambiguous package-manager/dependency evidence is `EVIDENCE_GAP` back at
-step 3, before authoring, never a closure-phase repair. If the materialized
+one preidentified test-dependency manifest/lock delta: no other file.
+Missing or ambiguous test-dependency ownership is `EVIDENCE_GAP` back at
+steps 2-4, before authoring, never a closure-phase repair. If the materialized
 file cannot reach a schema-valid `DeliveryContract` plus an attributable
 complete-scope RED using only that closed operation set, stop now: terminal
 `EVIDENCE_GAP` (evidence still missing) or `BROKEN`
