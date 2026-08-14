@@ -62,7 +62,12 @@ window of AT MOST five calls total, strictly in this order:
    never re-derived.
 2. At most one bounded Glob/discovery call for repository-owned language and
    test-command evidence.
-3. Read at most one selected language manifest.
+3. Read at most one selected language manifest — this same read also settles,
+   for any language whose PBT trigger fires, whether that language's PBT
+   library is already declared, and names the repository-native dependency
+   manifest and its deterministic lockfile command (if any); missing or
+   ambiguous package-manager/dependency evidence here is `EVIDENCE_GAP`,
+   decided now, never deferred past authoring.
 4. Read at most one selected executable command source (CI argv, script/task
    config, or existing test convention) — may reuse step 3's Read.
 5. Run exactly one stable `nw-code-analysis-port` `des code-fact query.*
@@ -167,6 +172,35 @@ digest mismatch at any stage is terminal — re-enter from `NoArtifacts`, no
 partial resume. The acceptance-test artifact is immutable once its digest
 enters the contract: any mutation during RED refuses readiness.
 
+**Closure-only phase (HARD):** the moment that `Write` returns, this branch
+enters closure-only — every following tool call must be one of this closed
+set: same-test-file `Edit`; the preidentified manifest/lockfile dependency
+declaration or update, iff `BROAD_INPUT_DOMAIN` fired and step 3 proved the
+library absent, applied via the repository-native deterministic command
+step 3 named — never an invented tool; the test file's SHA-256 hash; one
+`DeliveryContract` JSON Write and schema validation at its own deterministic
+locator; and execution or synchronous polling of the already-selected
+`verification-scope.commands`. No further product-source Read/Grep/Glob, no
+`nw-code-analysis-port`/CodeFact query, no `Skill(...)` or `Task` call, no
+exploratory or diagnostic Bash — the pre-authoring window already closed at
+step 5, and closure-only never reopens discovery. Exactly one AT, exactly
+one `DeliveryContract`, and — only when that dependency condition holds —
+one preidentified manifest/lockfile delta: no other file. Missing or
+ambiguous package-manager/dependency evidence is `EVIDENCE_GAP` back at
+step 3, before authoring, never a closure-phase repair. If the materialized
+file cannot reach a schema-valid `DeliveryContract` plus an attributable
+complete-scope RED using only that closed operation set, stop now: terminal
+`EVIDENCE_GAP` (evidence still missing) or `BROKEN`
+(setup/collection/import failure) — never investigated, never retried, never
+narrowed to a substitute command or reduced scope, and never patched by
+authoring an additional test. On that terminal blocker, return only the
+concise blocker itself and stop — never the two-line header, which would
+assert a readiness that does not hold. Only `RedConfirmed` earns the header:
+once it holds, the two-line header below is the IMMEDIATE next output and
+the turn ends there — no further `Edit`, no further command run, no
+restated evidence, and no incomplete prose in its place: closure-only never
+trades the header for one more discovery pass.
+
 ### GREEN_TO_GREEN branch
 
 DESIGN already named the existing green oracle inside the cited
@@ -224,11 +258,14 @@ THIN-DELIVERY-CONTRACT: <repository-relative-json-locator>
 THIN-DELIVERY-CONTRACT-DIGEST: sha256:<64-lowercase-hex>
 ```
 
-then exactly one blank line, then only concise optional evidence. No
+and nothing else — no blank line, no optional evidence follows. No
 greeting, summary heading, code fence, absolute path, JSON paste, duplicate
-header, root-computed hash, or other preamble may precede or replace these
-two lines: this is the ready-to-forward block root owns only as opaque
-bytes.
+header, root-computed hash, or other content may precede, follow, or
+replace these two lines: this is the ready-to-forward block root owns only
+as opaque bytes. Root may append its own crafter context after a blank line
+on root's own side once forwarding — never here. A terminal `EVIDENCE_GAP`
+or `BROKEN` blocker, on either branch, never emits this header: return only
+the concise blocker and stop.
 
 You own the acceptance tests and a complete, schema-valid
 `DeliveryContract`; you never author or read the expectation charter or its

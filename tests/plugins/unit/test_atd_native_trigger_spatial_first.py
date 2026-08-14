@@ -164,3 +164,89 @@ class TestThinRouteRequiresImmediateSpatialMaterialization:
         section = " ".join(AGENT_BODY[start:end].split())
         assert "the `Write` of exactly ONE consolidated" in section
         assert "acceptance-test artifact FILE" in section
+
+
+class TestClosureOnlyPhaseAndFinalResponse:
+    """K4 corrective, collapsed to 3 dense assertions.
+
+    Defect: after the spatial-first Write, ATD ran 51 more tool calls of
+    unbounded product discovery/refinement (171247 subagent tokens, 815348
+    ms) and ended at max-turn with incomplete prose -- no DeliveryContract,
+    no two-line handoff. Fix: bound post-Write work to a closed
+    operation/artifact set that still permits the one dependency the K4
+    clean-environment failure needed (an undeclared PBT library), keep a
+    terminal EVIDENCE_GAP/BROKEN silent on the THIN header, and make
+    RedConfirmed's final response exactly the two header lines."""
+
+    def _closure_section(self):
+        start = AGENT_BODY.index("**Closure-only phase (HARD):**")
+        end = AGENT_BODY.index("### GREEN_TO_GREEN branch")
+        return " ".join(AGENT_BODY[start:end].split())
+
+    def _final_response_section(self):
+        start = AGENT_BODY.index("### Both branches — final response")
+        end = AGENT_BODY.index("You own the acceptance tests")
+        return " ".join(AGENT_BODY[start:end].split())
+
+    def test_closed_operation_and_artifact_set(self):
+        """Permitted: same-test Edit, the conditional dependency delta, the
+        hash, the one contract Write, the verification command. Forbidden:
+        renewed discovery/Skill/Task/Bash and any extra file."""
+        section = self._closure_section()
+        for allowed in (
+            "same-test-file `Edit`",
+            "preidentified manifest/lockfile dependency",
+            "iff `BROAD_INPUT_DOMAIN` fired and step 3 proved the",
+            "repository-native deterministic command",
+            "the test file's SHA-256 hash",
+            "one `DeliveryContract` JSON Write and schema validation",
+            "already-selected `verification-scope.commands`",
+        ):
+            assert allowed in section, f"Missing permitted-operation token: {allowed!r}"
+        for forbidden in (
+            "No further product-source Read/Grep/Glob",
+            "`nw-code-analysis-port`/CodeFact query",
+            "no `Skill(...)` or `Task` call",
+            "no exploratory or diagnostic Bash",
+            "no other file",
+        ):
+            assert forbidden in section, f"Missing prohibition token: {forbidden!r}"
+        # Fix must not accidentally forbid the required contract Write.
+        assert "exactly two files" not in section
+        assert "second `Write`" not in section
+        assert "refused outright" not in section
+
+    def test_terminal_blocker_is_silent_only_redconfirmed_earns_the_header(self):
+        section = self._closure_section()
+        for token in (
+            "terminal `EVIDENCE_GAP`",
+            "or `BROKEN`",
+            "never investigated",
+            "never retried",
+            "never narrowed to a substitute command or reduced scope",
+            "never patched by authoring an additional test",
+            "return only the concise blocker itself and stop",
+            "never the two-line header",
+            "Only `RedConfirmed` earns the header",
+            "the two-line header below is the IMMEDIATE next output",
+        ):
+            assert token in section, f"Missing token: {token!r}"
+
+    def test_final_response_is_exactly_two_lines_root_owns_forwarding(self):
+        section = self._final_response_section()
+        assert "then exactly one blank line" not in section
+        assert "concise optional evidence" not in section
+        for token in (
+            "and nothing else",
+            "No greeting",
+            "summary heading",
+            "code fence",
+            "absolute path",
+            "JSON paste",
+            "duplicate header",
+            "root-computed hash",
+            "may precede, follow, or replace these two lines",
+            "Root may append its own crafter context",
+            "never emits this header",
+        ):
+            assert token in section, f"Missing token: {token!r}"
