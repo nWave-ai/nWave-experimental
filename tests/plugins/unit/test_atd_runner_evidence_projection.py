@@ -47,7 +47,10 @@ def _language_convention_frame() -> str:
 
 def test_root_never_names_language_or_runner_and_delegates_to_atd():
     section = _sibling_dispatch_bullet()
-    assert "four lines only, no design SSOT/language/framework" in section
+    assert (
+        "four non-empty lines total, exactly one blank line between the architecture line and ROOT, no design SSOT/language/framework"
+        in section
+    )
     for leaked_runner in ("pytest", "manage.py", "cucumber", "jest", "vitest"):
         assert leaked_runner not in section.lower()
 

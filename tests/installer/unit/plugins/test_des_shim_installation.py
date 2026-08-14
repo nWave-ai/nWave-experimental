@@ -14,8 +14,10 @@ Tests verify that _install_des_shims() correctly:
 10. Pre-existing $HOME entries are normalized to absolute paths on prepend
 11. Settings written by older installer versions (the broken
     '<des_bin>:<SYSTEM_PATH_FALLBACK>' signature) are auto-healed on re-install
+12. The installed shim resolves its runtime via CLAUDE_CONFIG_DIR (mirroring
+    PathUtils' SSOT two-branch rule) rather than a hardcoded Path.home()
 
-Test budget: 11 behaviors x 2 = 22 max tests. Using 15 (one per behavior + dogfood
+Test budget: 12 behaviors x 2 = 24 max tests. Using 17 (one per behavior + dogfood
 + 3 PBT amplifications).
 
 State-delta migration summary
@@ -75,6 +77,7 @@ PBT amplification results (cross-instance pilot):
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -613,6 +616,77 @@ class TestEnvPathContainsNoDollarHomeLiteral:
         assert "$HOME" not in env_path, (
             f"env.PATH contains unexpanded shell variable '$HOME': {env_path!r}. "
             "Claude Code passes env values verbatim to exec(); $HOME is never resolved."
+        )
+
+
+class TestInstalledShimResolvesRuntimeViaClaudeConfigDir:
+    """The installed shim must resolve its runtime from CLAUDE_CONFIG_DIR.
+
+    Behavior #12: the standalone shim (nWave/scripts/des/des) is copied
+    byte-for-byte by _install_des_shims -- it cannot import the installer's
+    PathUtils SSOT, so it must inline the same two-branch resolution rule
+    (non-empty CLAUDE_CONFIG_DIR wins, else Path.home()/".claude"). A shim
+    that hardcodes Path.home() instead fails whenever the runtime lives at
+    a custom CLAUDE_CONFIG_DIR distinct from HOME/.claude.
+    """
+
+    def test_installed_shim_resolves_runtime_via_claude_config_dir(
+        self, tmp_path: Path
+    ) -> None:
+        """
+        GIVEN: _install_des_shims() installs the REAL shim source
+               (nWave/scripts/des/des, not a test fixture stub) into a
+               custom claude_dir, and a minimal sentinel des.cli.__main__.main
+               exists only under that custom target's lib/python
+          AND: CLAUDE_CONFIG_DIR points at the custom target and HOME points
+               at a distinct, empty directory
+        WHEN: the installed shim is executed as a subprocess
+        THEN: it exits 0 and its stdout shows the sentinel ran (proving it
+              resolved the runtime via CLAUDE_CONFIG_DIR, not Path.home())
+        """
+        repo_root = Path(__file__).resolve().parents[4]
+        claude_dir = tmp_path / "custom-target"
+        claude_dir.mkdir(parents=True)
+        context = InstallContext(
+            claude_dir=claude_dir,
+            scripts_dir=tmp_path / "scripts",
+            templates_dir=tmp_path / "templates",
+            logger=MagicMock(),
+            project_root=tmp_path / "project",
+            framework_source=repo_root / "nWave",
+        )
+        DESPlugin()._install_des_shims(context)
+
+        sentinel_pkg = claude_dir / "lib" / "python" / "des" / "cli"
+        sentinel_pkg.mkdir(parents=True)
+        (claude_dir / "lib" / "python" / "des" / "__init__.py").write_text("")
+        (sentinel_pkg / "__init__.py").write_text("")
+        (sentinel_pkg / "__main__.py").write_text(
+            "def main():\n    print('SENTINEL_DES_RAN')\n    return 0\n"
+        )
+
+        distinct_home = tmp_path / "distinct_home"
+        distinct_home.mkdir()
+
+        env = dict(os.environ)
+        env["CLAUDE_CONFIG_DIR"] = str(claude_dir)
+        env["HOME"] = str(distinct_home)
+
+        shim_path = claude_dir / "bin" / "des"
+        result = subprocess.run(
+            [str(shim_path)],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        assert result.returncode == 0, (
+            f"Installed shim exited {result.returncode} instead of 0. "
+            f"stderr: {result.stderr!r}"
+        )
+        assert "SENTINEL_DES_RAN" in result.stdout, (
+            f"Installed shim did not run the sentinel des.cli.__main__.main "
+            f"under CLAUDE_CONFIG_DIR={claude_dir}. stdout: {result.stdout!r}"
         )
 
 

@@ -133,6 +133,10 @@ class TestThinRouteRequiresImmediateSpatialMaterialization:
             "the next tool call is the `Write`",
             "no extra Read/Grep/Glob/Bash",
             "no silent synthesis first",
+            "no git query",
+            "dependency probe",
+            "`nw-distill-red-scaffolding`/other Skill call may",
+            "intervene between the last triggered row and that `Write`",
         ):
             assert token in section, f"Missing ordering token: {token!r}"
 

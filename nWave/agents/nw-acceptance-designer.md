@@ -70,14 +70,25 @@ window of AT MOST five calls total, strictly in this order:
    never for language/runner discovery.
 
 Once step 5 returns, no further product-source Read/Grep/Glob or ad-hoc Bash
-precedes reading the installed schema and writing the first acceptance-test
-artifact. Missing language, command, architecture, or CodeFact evidence at
-window end is a terminal `EVIDENCE_GAP` — no retry, no second query, no
-guessing. Then derive the applicable obligation tokens from that same
-architecture authority — compositional/stateful surface, invalid-state or
-preservation claim, `BROAD_INPUT_DOMAIN` — before authoring, and invoke each
-generated row's `Skill(...)` natively exactly when its trigger fires: never a
-manual SKILL.md read, never preloaded, never all eight PBT deep dives.
+precedes resolving the installed schema locator, reading that schema, and
+writing the first acceptance-test artifact. Missing language, command,
+architecture, or CodeFact evidence at window end is a terminal
+`EVIDENCE_GAP` — no retry, no second query, no guessing. Next, resolve the
+installed `DeliveryContract` v1.2 schema locator with exactly one bounded
+Bash call whose literal command is
+`printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/thin-delivery-contract.schema.json"`
+— this is direct locator resolution, never a diagnostic `env` probe, never a
+guessed literal `$HOME/.claude` path, and never a host-wide `find`/`bfs`
+scan — then Read exactly the returned path and validate it as the
+`DeliveryContract` v1.2 schema; the contract itself cannot exist yet, since
+it needs the acceptance-test file's digest. Then resolve the repository
+base revision with exactly one `git -C ROOT rev-parse HEAD` call, before
+deriving obligations or invoking any native Skill. Then derive the
+applicable obligation tokens from that same architecture authority —
+compositional/stateful surface, invalid-state or preservation claim,
+`BROAD_INPUT_DOMAIN` — before authoring, and invoke each generated row's
+`Skill(...)` natively exactly when its trigger fires: never a manual
+SKILL.md read, never preloaded, never all eight PBT deep dives.
 `BROAD_INPUT_DOMAIN` fires two rows together — `nw-property-based-testing`
 plus the language-matched `nw-pbt-{lang}` row — both before that input's
 property is authored.
@@ -98,11 +109,9 @@ property is authored.
 - Invoke ONE Skill(nw-pbt-typescript) ON-TRIGGER — a `javascript`/`typescript` property needs it
 <!-- GENERATED:role-skill-loading END -->
 
-Next, read and validate the installed `DeliveryContract` v1.2 schema
-(`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/thin-delivery-contract.schema.json`)
-— the contract itself cannot exist yet, since it needs the acceptance-test
-file's digest. Then determine `paradigm` (`functional`/`object_oriented`), a
-non-empty `obligations` array, and per-target reuse decision/boundary claim,
+Using that already-read schema, determine `paradigm`
+(`functional`/`object_oriented`), a non-empty `obligations` array, and
+per-target reuse decision/boundary claim,
 carrying the bounded query's facts into `targets[].{overlap, decision,
 justification, boundary}` (no top-level `reuse`/`boundaries` field), plus
 `verification-scope.commands` as a tagged executable identity
@@ -122,8 +131,11 @@ never discharges it. Missing/unsupported `paradigm`, or an empty/missing
 **Spatial-first materialization (HARD):** after the schema read and last
 ON-TRIGGER `Skill(...)` return, the next tool call is the `Write` of exactly
 ONE consolidated acceptance-test artifact FILE (`TestsMaterialized`) — no
-extra Read/Grep/Glob/Bash, no silent synthesis first. If evidence shows the
-target boundary is long-running (loop/daemon) rather than one-shot, give the
+extra Read/Grep/Glob/Bash, no silent synthesis first, and no git query,
+dependency probe, or `nw-distill-red-scaffolding`/other Skill call may
+intervene between the last triggered row and that `Write`. If evidence shows
+the target boundary is long-running (loop/daemon) rather than one-shot, give
+the
 skeleton a bounded lifecycle and terminal oracle; when the observable
 property is one cycle, drive the nearest production one-cycle seam instead
 of the unbounded entrypoint. That `Write` already carries the compact

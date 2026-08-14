@@ -112,7 +112,7 @@ M and L share one floor. Root resolves (ADR-SSOT-002 §4b):
 
 **Dispatch sequence (foreground, `run_in_background=false`, issued together, root waits inline):**
 
-1. `nw-acceptance-designer` (every run): Forwards architecture authority line + ROOT/VALUE-SEED/DELIVERY-ROUTE (four lines only, no design SSOT/language/framework). Authors `DeliveryContract` v1.2 + acceptance tests (new RED oracle for `RED_TO_GREEN`, or bound existing for `GREEN_TO_GREEN`).
+1. `nw-acceptance-designer` (every run): Forwards architecture authority line, then one blank line, then ROOT/VALUE-SEED/DELIVERY-ROUTE (four non-empty lines total, exactly one blank line between the architecture line and ROOT, no design SSOT/language/framework). Authors `DeliveryContract` v1.2 + acceptance tests (new RED oracle for `RED_TO_GREEN`, or bound existing for `GREEN_TO_GREEN`).
 2. `nw-product-owner` (only if `examine=true, Author(Namespace)`): Receives architecture line + charter path. Fills Preconditions/start recipe from documented user-facing excerpt, sets oracle, stops.
 3. **Join**: After both validate (ATD always; PO only when dispatched), dispatch crafter by paradigm. Crafter implements to green and returns the ephemeral receipt `outcome: PASS|FAIL`, `argv`, `scope`, `exit_code`. PASS requires `argv` to equal the contract's projected `verification-scope.commands`, `scope` to cover them, and every exit code to be zero. Missing/malformed/truncated/mismatched/nonzero/FAIL → terminal FAIL (single-pass rule), preserve WIP; focused-AT green or Examiner PASS never substitutes. No receipt ledger/artifact.
 4. `nw-user-examiner` (only if `examine=true`): Examines using `ValidatedCharter`s + start recipe. One terminal pass.

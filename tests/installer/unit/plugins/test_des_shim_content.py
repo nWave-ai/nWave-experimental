@@ -43,13 +43,14 @@ def test_shebang_is_python3_env() -> None:
         )
 
 
-def test_shim_inserts_des_lib_into_sys_path() -> None:
-    """Each shim must insert ~/.claude/lib/python into sys.path[0]."""
-    expected = 'sys.path.insert(0, str(Path.home() / ".claude" / "lib" / "python"))'
+def test_shim_inserts_profile_aware_claude_dir_into_sys_path() -> None:
+    """Each shim must insert the profile-aware _CLAUDE_DIR/lib/python into sys.path[0]."""
+    expected = 'sys.path.insert(0, str(_CLAUDE_DIR / "lib" / "python"))'
     for name in SHIM_NAMES:
         content = _read_shim(name)
         assert expected in content, (
-            f"{name}: missing sys.path.insert line.\nExpected: {expected!r}"
+            f"{name}: missing profile-aware sys.path.insert line.\n"
+            f"Expected: {expected!r}"
         )
 
 

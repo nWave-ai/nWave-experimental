@@ -253,19 +253,32 @@ def test_atd_and_crafter_specs_reference_installed_schema_locator_only() -> None
 
 
 def test_atd_auto_route_honors_wave_order_before_red_execution() -> None:
-    """CONTRACT_SHAPE: bounded-change. ATD Auto route reads/validates schema,
-    determines paradigm/verification commands, invokes the last native
-    ON-TRIGGER `Skill(...)` return -- the hard boundary before
-    materializing the sole acceptance-test `Write` -- sha256s its bytes,
-    assembles/schema-validates the DeliveryContract, executes the expected
-    RED, re-verifies the digest, and gates crafter dispatch on RedConfirmed.
+    """CONTRACT_SHAPE: bounded-change. ATD Auto route reads/validates the
+    installed schema deterministically BEFORE any native obligation Skill
+    fires, invokes only triggered generated skills, then the very next tool
+    call is the sole acceptance-test `Write` -- the hard boundary -- sha256s
+    its bytes, assembles/schema-validates the DeliveryContract, executes the
+    expected RED, re-verifies the digest, and gates crafter dispatch on
+    RedConfirmed. No product Read/Grep/Glob/Bash, git query, dependency
+    probe, or legacy `nw-distill-red-scaffolding` Skill may sit between the
+    bounded pre-authoring window and that `Write`.
     """
     text = ATD_AGENT_PATH.read_text(encoding="utf-8")
     auto_section = text[
         text.index("## Route contract") : text.index("## Language Convention")
     ]
     compact = _compact(auto_section)
+    resolver_command = (
+        "printf '%s\\n' \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/"
+        'thin-delivery-contract.schema.json"'
+    )
     materialization_order = [
+        "Once step 5 returns",
+        resolver_command,
+        "then Read exactly the returned path",
+        "git -C ROOT rev-parse HEAD",
+        "Then derive the applicable obligation tokens",
+        "last ON-TRIGGER `Skill(...)` return",
         "the next tool call is the `Write`",
         "Sha256 its bytes",
         "assemble and schema-validate the `DeliveryContract` v1.2",
@@ -277,14 +290,29 @@ def test_atd_auto_route_honors_wave_order_before_red_execution() -> None:
     positions = [compact.index(token) for token in materialization_order]
     assert positions == sorted(positions)
     for prerequisite in (
-        "read and validate the installed `DeliveryContract` v1.2 schema",
+        "this is direct locator resolution",
+        "never a diagnostic `env` probe",
+        "never a guessed literal `$HOME/.claude` path",
+        "never a host-wide `find`/`bfs` scan",
         "determine `paradigm`",
         "verification-scope.commands",
-        "last ON-TRIGGER `Skill(...)` return",
         "acceptance-test artifact FILE",
         "command-not-found, import, collection, or setup failure is BROKEN",
+        "no git query, dependency probe, or `nw-distill-red-scaffolding`/other "
+        "Skill call may intervene between the last triggered row and that "
+        "`Write`",
     ):
         assert prerequisite in compact
+    assert "find /" not in compact
+    assert "bfs /" not in compact
+    assert (
+        compact.count(
+            "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/"
+            "thin-delivery-contract.schema.json"
+        )
+        == 1
+    )
+    assert "Using that already-read schema, determine" in compact
 
 
 def test_worktree_ownership_is_a_deterministic_two_probe_grammar() -> None:
@@ -384,11 +412,14 @@ def test_atd_closed_grammar_root_forbidden_projections() -> None:
 
     for token in (
         "architecture authority line",
+        "then one blank line",
         "ROOT/VALUE-SEED/DELIVERY-ROUTE",
-        "four lines only",
+        "four non-empty lines total",
+        "exactly one blank line between the architecture line and ROOT",
         "no design SSOT/language/framework",
     ):
         assert token in compact
+    assert "four lines only" not in compact
 
     # Four carrier lines total: the authority line precedes this exact
     # three-line ROOT/VALUE-SEED/DELIVERY-ROUTE grammar in the ATD spec.
