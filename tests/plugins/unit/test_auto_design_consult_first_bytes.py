@@ -151,6 +151,23 @@ class TestEscalationNamesSpecialistsWithoutDispatch:
             assert token in section, f"Missing escalation projection: {token!r}"
 
 
+class TestAutoArchitectNamesEveryRealObservationBoundary:
+    """K4 falsifier: DESIGN must not collapse multi-port value into state proxies."""
+
+    def test_red_substrate_covers_every_value_clause_without_internal_proxies(self):
+        section = _norm(_architect_branch_section(_architect_body())).lower()
+        for token in (
+            "atomic user-observable clauses",
+            "for every clause",
+            "multiple ports",
+            "internal state",
+            "outbound notification delivery",
+            "persisted history",
+            "architecture-blocked",
+        ):
+            assert token in section, f"Missing real-observation law: {token!r}"
+
+
 class TestNwAutoForwardsAuthorityAndNoImpactCitationForm:
     """(d) root resolves one authority and forwards it to dispatched roles."""
 

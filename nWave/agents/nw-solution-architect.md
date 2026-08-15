@@ -71,11 +71,17 @@ under `docs/product/architecture/` instead — never both. Never
 `Test substrate (RED_TO_GREEN only)` — omit this subsection entirely for
 `GREEN_TO_GREEN` (Section 4b Axis 1 of ADR-SSOT-002: the already-named
 existing oracle's locator/digest discharges the substrate-naming duty, no
-separate facts required). For `RED_TO_GREEN`, name only these facts, compactly
-and language-agnostically — never a test case, scenario, assertion, or
-implementation sketch:
+separate facts required). For `RED_TO_GREEN`, first decompose the immutable
+VALUE-SEED into atomic user-observable clauses, then name only these facts,
+compactly and language-agnostically — never a test case, scenario, assertion,
+or implementation sketch:
 
-- the existing production driving port ATD must invoke;
+- for every clause, the existing production driving or observing port ATD
+  must use and the real oracle surface where the user or integrator perceives
+  it; one vertical may span multiple ports and retains all clauses;
+- any internal state, status field, timestamp, or seam that resembles the
+  outcome but cannot substitute for outbound notification delivery, emitted
+  events, persisted history, or another promised observation;
 - the canonical repository test helper/import ATD must reuse (exact name/path,
   never invented);
 - exactly what shared fixture state that helper does and does not construct —
@@ -88,6 +94,9 @@ implementation sketch:
 - the exact repository-native verification argv; and
 - only when a required dependency is runtime-missing, the exact direct
   dependency-delta install argv (never a whole-manifest reinstall command).
+
+If any clause lacks a real port/oracle or only a proxy is available, return
+`ARCHITECTURE-BLOCKED` rather than writing a narrower substrate.
 
 This is the sole carrier for these facts — never a second artifact, schema
 field, or `docs/feature/...` file. Replace, do not append beside, any prior

@@ -121,16 +121,22 @@ M and L share one floor. Root resolves (ADR-SSOT-002 §4b):
 
 **Dispatch sequence (foreground, `run_in_background=false`, issued together, root waits inline):**
 
-**Value-closure floor:** a `RED_TO_GREEN` DeliveryContract must close a
-user-observable vertical from the immutable VALUE-SEED. An internal token,
-helper, seam, persistence primitive, or "foundation for a later slice" is not
-an independently value-bearing RED slice: either include it inside the
-vertical that makes the observation true, or route a behavior-preserving
-preparation as `GREEN_TO_GREEN` against an existing oracle. After each
-delivery unit, compare the observed result with the original VALUE-SEED. If
-part remains unfulfilled, do not report the feature complete; start the next
-distinct delivery unit and reuse the canonical roles with its new authority.
-No progress artifact or second carrier is created.
+**Value-closure floor:** a `RED_TO_GREEN` DeliveryContract must close every
+atomic user-observable clause of the immutable VALUE-SEED through the real
+driving or observing port where that clause is perceived. One vertical may
+span multiple ports and carry multiple oracles; port plurality never permits
+splitting or narrowing the promised value. An internal token, helper, seam,
+status field, timestamp, persistence primitive, or "foundation for a later
+slice" is not an independently value-bearing RED slice and never substitutes
+for an outbound notification, emitted event, persisted history, or other
+promised observation. Either include preparation inside the vertical that
+makes all clauses true, or route behavior-preserving preparation as
+`GREEN_TO_GREEN` against an existing oracle. Missing real-port coverage for
+one clause is `EVIDENCE_GAP`, not permission to accept an internal proxy.
+After each delivery unit, compare every observed result with the original
+VALUE-SEED. If any clause remains unfulfilled, do not report the feature
+complete; start the next distinct delivery unit and reuse the canonical roles
+with its new authority. No progress artifact or second carrier is created.
 
 1. `nw-acceptance-designer` (every run): Forwards architecture authority line, then one blank line, then ROOT/VALUE-SEED/DELIVERY-ROUTE (four non-empty lines total, exactly one blank line between the architecture line and ROOT, no design SSOT/language/framework). Authors `DeliveryContract` v1.2 + acceptance tests (new RED oracle for `RED_TO_GREEN`, or bound existing for `GREEN_TO_GREEN`).
 2. `nw-product-owner` (only if `examine=true, Author(Namespace)`): Receives architecture line + charter path. Fills Preconditions/start recipe from documented user-facing excerpt, sets oracle, stops.

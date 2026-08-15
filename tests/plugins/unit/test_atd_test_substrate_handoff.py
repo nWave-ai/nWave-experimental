@@ -40,7 +40,7 @@ PBT_PYTHON_SKILL = (SKILLS_DIR / "nw-pbt-python" / "SKILL.md").read_text(
 ADR = ADR_PATH.read_text(encoding="utf-8")
 
 SUBSTRATE_FACT_MARKERS = [
-    "driving port",
+    "driving or observing port",
     "test helper",
     "fixture",
     "executor",
@@ -86,9 +86,9 @@ class TestArchitectProjectsFactsLanguageAgnosticGreenToGreenKeepsOracle:
     """Architect projects all ADR facts, language-agnostic, facts only, GREEN_TO_GREEN omits."""
 
     def test_all_substrate_fact_markers_present_never_cases_language_agnostic(self):
-        # All ADR-named facts (driving port, test helper, fixture, manifest,
-        # declaration, runtime, verification argv, install argv) are projected
-        # into the subsection. Framing is facts only (never a test case,
+        # All ADR-named facts (driving/observing port, test helper, fixture,
+        # manifest, declaration, runtime, verification argv, install argv) are
+        # projected into the subsection. Framing is facts only (never a test case,
         # scenario, assert, def test_, or @given), never a specific language
         # (pytest, hypothesis, django, jest, cargo test).
         section_start = ARCHITECT.index("Test substrate (RED_TO_GREEN only)")
@@ -117,8 +117,8 @@ class TestArchitectProjectsFactsLanguageAgnosticGreenToGreenKeepsOracle:
         assert "omit" in section or "no separate facts" in section
 
 
-class TestAtdConsumesFactsImportsBaseSymbolsDrivingPortBrokenOnSetup:
-    """ATD consumes brief facts, base-revision symbols only, driving port, collection/setup failure BROKEN."""
+class TestAtdConsumesFactsImportsBaseSymbolsRealPortsBrokenOnSetup:
+    """ATD consumes brief facts, base symbols, real ports, setup failure BROKEN."""
 
     def test_atd_red_to_green_never_guesses_imports_base_revision_only(self):
         # RED_TO_GREEN branch states facts are consumed (never guessed/invented)

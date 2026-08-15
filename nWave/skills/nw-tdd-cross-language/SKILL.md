@@ -5,29 +5,16 @@ user-invocable: false
 disable-model-invocation: true
 ---
 
-# Cross-Language Paradigm Porting Guide
+# Cross-Language State-Delta Porting Guide
 
-The state-delta + property-based testing paradigm (see `nw-tdd-methodology::Paradigm Mandate`) is shipped natively in Python via `nwave_ai.state_delta`. This skill documents how to apply the same paradigm in other languages with idiomatic adaptations.
-
-**Open source positioning** (nwave-ai master): Python canonical + DIY porting guide. Users in other languages port the pattern using their language's PBT library + a small state-delta shim (~70-150 LOC).
-
-**Enterprise positioning** (nwave-pro bundle, deferred): pre-built language packages with tested implementations, kept consistent across versions.
-
----
-
-## Per-language framework + PBT library matrix
-
-| Language | Test framework | PBT library | State-delta port size | Idiomatic notes |
-|---|---|---|---|---|
-| **Python** | pytest | Hypothesis | shipped (`nwave_ai.state_delta`, ~250 LOC) | Reference implementation. Closure-over-parameters predicates, frozen dataclass `Violation`. |
-| **TypeScript / JS** | vitest, jest, mocha | `fast-check` | ~80 LOC | Generics over `Old, New`. Predicate = `(old: O, new: N) => boolean`. Use `expect.fail()` for AssertionError equivalent. |
-| **Java** | JUnit 5 | `jqwik` | ~120 LOC | Verbose generics (`Predicate<O, N>`). Builder pattern for `assertStateDelta(...)` fluent API. Use `AssertionError`. |
-| **Kotlin** | kotest (built-in PBT) | native | ~80 LOC | DSL idiomatic — `assertStateDelta { universe(...) ; expected(...) }`. Lambda predicates fit naturally. |
-| **F# / .NET** | xUnit, NUnit | `FsCheck` | ~70 LOC | Functional fit naturale. Discriminated unions for `Violation`, partial application for predicate factories. |
-| **Rust** | cargo test | `proptest` | ~100 LOC | `Fn` traits for predicates. `struct Violation` with derive(Clone, Debug). Returns `Result<(), AssertionError>`. |
-| **Go** | testing | `gopter`, `quick` | ~150 LOC | More verbose due to lack of closures over generics. Predicate = function accepting `interface{}`. Use `t.Errorf` for assertion. |
-| **OCaml** | alcotest | `qcheck` | ~70 LOC | Functional fit naturale. Variant types for `Violation`, partial application natural. |
-| **Scala** | ScalaTest | `ScalaCheck` | ~80 LOC | Pattern matching for `Violation`, implicit conversions for fluent predicate composition. |
+This is an implementation guide, not the language/PBT authority. The
+language-agnostic law and exact eight-adapter matrix live once in
+`nw-test-design-mandates-layered-mechanics`; framework-specific generator,
+shrinker/replay, and state-machine guidance lives in the matching
+`nw-pbt-*` skill. The recipes below show how to port the same state-delta
+observation algebra without making Python syntax normative. A language not
+covered by a shipped adapter returns `EVIDENCE_GAP` before PBT authoring; it
+never borrows Hypothesis as a substitute.
 
 ---
 

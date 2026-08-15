@@ -55,14 +55,20 @@ independently.
 
 ### RED_TO_GREEN branch
 
-**Vertical value floor (HARD):** the contract `outcome` and its RED oracle
-must close a user-observable vertical from VALUE-SEED through a real driving
-port. Never accept an internal token, helper, seam, storage primitive, or
-"foundation for a later slice" as the RED outcome. Such preparation is either
-included inside the value-bearing vertical or is behavior-preserving
-`GREEN_TO_GREEN` bound to an existing oracle. If VALUE-SEED cannot be closed
-by the proposed vertical, return `EVIDENCE_GAP` before writing tests rather
-than inventing a smaller internal product behavior.
+**Vertical value floor (HARD):** before writing, decompose VALUE-SEED into its
+atomic user-observable clauses. The contract `outcome` and RED oracles must
+close every clause through the real driving or observing port where the user
+or integrator perceives it. One vertical may require multiple ports and a
+deterministic non-empty sequence of oracles; never split or narrow the value
+merely because its observations cross ports. Never accept an internal token,
+helper, seam, status field, timestamp, storage primitive, or "foundation for
+a later slice" as a substitute for outbound notification delivery, emitted
+events, persisted history, or another promised observation. Such preparation
+is either included inside the value-bearing vertical or is behavior-preserving
+`GREEN_TO_GREEN` bound to an existing oracle. If the cited architecture omits
+a real port/oracle for any clause or offers only an internal proxy, return
+`EVIDENCE_GAP` before writing tests rather than inventing a smaller product
+behavior.
 
 Before authoring, this route grants a bounded pre-authoring product-evidence
 window of AT MOST five calls total, strictly in this order:
@@ -92,8 +98,9 @@ window of AT MOST five calls total, strictly in this order:
    never for language/runner discovery.
 
 Step 1's brief Read already carries the architect-named test substrate (ADR-
-SSOT-002 §4b Axis 1): the existing production driving port; the canonical
-repository test helper/import to reuse; exactly what shared fixture state
+SSOT-002 §4b Axis 1): for every VALUE-SEED clause, the existing production
+driving or observing port and real oracle surface; the canonical repository
+test helper/import to reuse; exactly what shared fixture state
 that helper does and does not construct; any executor/lifecycle isolation
 constraint on repeated or property-based cases; the test-dependency manifest owner;
 each required dependency's declaration-vs-runtime state; the exact

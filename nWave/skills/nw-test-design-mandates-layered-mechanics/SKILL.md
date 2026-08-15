@@ -119,23 +119,31 @@ The four mandates above (Universe, PBT mode, two-tier acceptance, sad-path treat
 | WS `@wiring_e2e` | 1-3s | yes (real stack) | example-only (1-2 representative) | traditional |
 | E2E | seconds | full real | example-only | traditional |
 
-**Polyglot note**: the Universe / state-delta contract is language-agnostic — the prose is the contract, the Python imports (`nwave_ai.state_delta`) are illustrative. Other host languages add their own matrix row + template lazily (Python is the current pilot).
+**Polyglot note**: the Universe / state-delta and PBT laws are
+language-agnostic — the prose is the contract, and Python imports
+(`nwave_ai.state_delta`, Hypothesis) are illustrative. Author the same
+semantic property with the host language's idiomatic generator,
+shrinker/replay, assertion, and runner. Never translate syntax and silently
+weaken the quantified law.
 
 ## Polyglot Adapter Matrix
 
-Contract layer (3 Pillars + Mandates 8-11) is language-agnostic. Implementation
-bindings per language are documented in the matrix below. Python ships ready;
-other languages are bootstrap-on-demand templates (Epic 3+).
+Contract layer (3 Pillars + Mandates 8-11) is language-agnostic. The eight
+distributed `nw-pbt-*` adapter families own the implementation bindings below;
+DISTILL selects exactly one from repository evidence. Missing toolchain
+availability makes that runtime probe `SKIP`/`INDETERMINATE`; it never selects
+Python as a substitute.
 
-| Lang | PBT lib | xunit equiv | Skip marker | Step composition idiom |
-|---|---|---|---|---|
-| Python | hypothesis | pytest | `pytest.mark.skip(reason="pending")` | pytest-bdd `.feature` + `steps_*.py` |
-| TypeScript | fast-check | Vitest/Jest | `it.skip(...)` | `*.scenarios.ts` + `*.specifications.ts` |
-| C# | FsCheck | xUnit | `[Fact(Skip="pending")]` | partial class `*Scenarios.cs` + `*Specifications.cs` |
-| Java | jqwik | JUnit | `@Disabled("pending")` | companion test class |
-| Kotlin | kotest-property | Kotest | `@Disabled` | extension functions split |
-| Rust | proptest | std `#[test]` | `#[ignore]` | `<feature>_scenarios.rs` + `<feature>_specifications.rs` (same module) |
-| Go | rapid o gopter | testing | `t.Skip("pending")` | `*_scenarios_test.go` + `*_specifications_test.go` |
+| Adapter family | Languages | PBT binding | Test/step idiom |
+|---|---|---|---|
+| `nw-pbt-python` | Python | Hypothesis | pytest / pytest-bdd |
+| `nw-pbt-typescript` | TypeScript, JavaScript | fast-check | Vitest/Jest; scenario + specification modules |
+| `nw-pbt-dotnet` | C#, F# | CsCheck/FsCheck | xUnit/NUnit; partial classes or modules |
+| `nw-pbt-jvm` | Java, Kotlin, Scala | jqwik/Kotest/ScalaCheck | JUnit/Kotest/ScalaTest companion tests |
+| `nw-pbt-rust` | Rust | proptest | cargo test; scenario + specification modules |
+| `nw-pbt-go` | Go | rapid | testing; `*_scenarios_test.go` + `*_specifications_test.go` |
+| `nw-pbt-haskell` | Haskell | QuickCheck/Hedgehog | Hspec/Tasty property modules |
+| `nw-pbt-erlang-elixir` | Erlang, Elixir | PropEr/PropCheck/StreamData | EUnit/Common Test/ExUnit property modules |
 
 **State-delta port** per language lives at the project-local path
 `tests/common/state_delta.<ext>` (apply-if-absent on first DISTILL in the

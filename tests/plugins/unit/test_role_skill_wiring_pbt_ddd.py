@@ -34,6 +34,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 NWAVE_DIR = PROJECT_ROOT / "nWave"
 AGENTS_DIR = NWAVE_DIR / "agents"
 SKILLS_DIR = NWAVE_DIR / "skills"
+DELIVERY_MODEL_ADR = (
+    PROJECT_ROOT / "docs/product/architecture/ADR-SSOT-002-canonical-delivery-model.md"
+)
 
 PBT_LANGUAGE_SKILLS = [
     "nw-pbt-python",
@@ -52,6 +55,17 @@ CRAFTER_AGENT_FILES = [
 ]
 
 BASELINE_PAIR = ["nw-algebraic-design-protocol", "nw-certainty-by-construction"]
+
+PBT_LANGUAGE_PROJECTION = {
+    "nw-pbt-python": ("pyproject.toml", "hypothesis"),
+    "nw-pbt-go": ("go.mod", "rapid"),
+    "nw-pbt-rust": ("cargo.toml", "proptest"),
+    "nw-pbt-haskell": ("*.cabal", "quickcheck"),
+    "nw-pbt-jvm": ("build.sbt", "jqwik"),
+    "nw-pbt-dotnet": ("*.csproj", "fscheck"),
+    "nw-pbt-typescript": ("package.json", "fast-check"),
+    "nw-pbt-erlang-elixir": ("mix.exs", "proper"),
+}
 
 
 def _frontmatter(agent_filename: str) -> dict:
@@ -109,6 +123,40 @@ class TestAcceptanceDesignerLoadsLanguagePbtOnDemand:
         )
         assert "Read exactly ONE deep dive per feature" in body
         assert "never all eight" in body
+
+    def test_distill_projects_every_adapter_without_python_fallback(self):
+        distill = " ".join(
+            (SKILLS_DIR / "nw-distill" / "SKILL.md")
+            .read_text(encoding="utf-8")
+            .lower()
+            .split()
+        )
+        matrix = " ".join(
+            (SKILLS_DIR / "nw-test-design-mandates-layered-mechanics" / "SKILL.md")
+            .read_text(encoding="utf-8")
+            .lower()
+            .split()
+        )
+        assert set(PBT_LANGUAGE_PROJECTION) == set(PBT_LANGUAGE_SKILLS)
+        for adapter, (manifest, library) in PBT_LANGUAGE_PROJECTION.items():
+            assert manifest in distill, f"DISTILL cannot detect {adapter}"
+            assert adapter in matrix, f"Canonical matrix omits {adapter}"
+            assert library in matrix, f"Canonical matrix omits {adapter} binding"
+        assert "neither permits python fallback" in distill
+        assert "evidence_gap` before authoring" in distill
+        assert "never selects python as a substitute" in matrix
+
+        porting = " ".join(
+            (SKILLS_DIR / "nw-tdd-cross-language" / "SKILL.md")
+            .read_text(encoding="utf-8")
+            .lower()
+            .split()
+        )
+        assert "not the language/pbt authority" in porting
+        assert "nw-test-design-mandates-layered-mechanics" in porting
+        assert "exact eight-adapter matrix" in porting
+        assert "evidence_gap` before pbt authoring" in porting
+        assert "## per-language framework + pbt library matrix" not in porting
 
     def test_pbt_skill_frontmatter_keeps_non_runtime_base_owner_hint(self):
         """CONTRACT_SHAPE: bounded-change. Distribution ownership stays on each skill."""
@@ -309,14 +357,26 @@ class TestAutoDispatchesAreSinglePassRolesAreReusable:
         for body in (auto, atd):
             normalized = " ".join(body.lower().split())
             for token in (
-                "user-observable vertical",
+                "atomic user-observable clause",
+                "multiple ports",
+                "internal proxy",
                 "foundation for a later slice",
                 "green_to_green",
+                "evidence_gap",
             ):
                 assert token in normalized
         assert "report the feature complete only when the original value-seed" in (
             " ".join(auto.lower().split())
         )
+
+        adr = " ".join(DELIVERY_MODEL_ADR.read_text(encoding="utf-8").lower().split())
+        for token in (
+            "every user-observable clause",
+            "multiple ports",
+            "never substitutes for an outbound notification",
+            "evidence_gap` before authoring",
+        ):
+            assert token in adr
 
 
 class TestDddReviewerUsesCodeAnalysisPort:

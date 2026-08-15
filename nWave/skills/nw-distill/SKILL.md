@@ -45,19 +45,22 @@ Load path: `~/.claude/skills/nw-{module}/SKILL.md`. Load the module whose trigge
 
 **Code examples in nw-distill modules: target-language-illustration ONLY.** NOT prescriptive about target language. nWave is language-agnostic per the "genericity and agnosticism" mandate (2026-05-24).
 
-**Before authoring ATs**, detect target project language from these manifest files (in order):
-- `package.json` → TypeScript / JavaScript (jest, vitest, cucumber-js, playwright)
-- `Cargo.toml` → Rust (cargo test, proptest, cucumber-rust)
-- `go.mod` → Go (testing, ginkgo, godog)
-- `pyproject.toml` / `setup.py` / `Pipfile` → Python (pytest, pytest-bdd, hypothesis)
-- `pom.xml` / `build.gradle` → Java / Kotlin (JUnit5, Cucumber-JVM, jqwik)
-- `*.csproj` / `*.fsproj` → C# / F# (xUnit, SpecFlow, FsCheck)
-- `Gemfile` → Ruby (RSpec, Cucumber-Ruby)
-- `Package.swift` → Swift (XCTest, swift-testing)
+**Before authoring ATs**, detect language/PBT family from repository evidence:
 
-**Target language NOT Python** — adapt EVERY code example to target-language conventions (naming, imports, type system, test-framework idioms, file extensions, directory conventions). **Project conventions ALWAYS WIN** over module examples: a repo with 50 TS files and zero Python files → ATs MUST be TypeScript, never Python pytest-bdd, however authoritative a module example looks.
+| Manifest evidence | Host binding |
+|---|---|
+| `package.json` | TypeScript/JavaScript · fast-check |
+| `Cargo.toml` / `go.mod` | Rust · proptest / Go · rapid |
+| `pyproject.toml` / `setup.py` / `Pipfile` | Python · Hypothesis |
+| `pom.xml` / `build.gradle` / `build.sbt` | Java/Kotlin/Scala · jqwik/Kotest/ScalaCheck |
+| `*.csproj` / `*.fsproj` | C#/F# · CsCheck/FsCheck |
+| `*.cabal` / `cabal.project` / `stack.yaml` / `mix.exs` / `rebar.config` | Haskell · QuickCheck/Hedgehog / Elixir/Erlang · StreamData/PropCheck/PropEr |
 
-**Empirical anchor**: Python-only examples once caused the LLM to infer Python conventions universal, emitting Python code in a greenfield TS project. Connects [[feedback_language_adapter_plugin_architecture_2026_05_24]] (genericity mandate) + F-LANGUAGE-ADAPTER-PLUGIN-INFRASTRUCTURE epic.
+For non-Python hosts, adapt every example and PBT law to the project's
+generator, shrinker/replay, types, runner and file conventions. Invoke exactly
+one matching `nw-pbt-*` adapter. Missing toolchain is `SKIP`/`INDETERMINATE`;
+no shipped adapter is `EVIDENCE_GAP` before authoring; neither permits Python
+fallback. Project conventions always win — never emit Python into a TS project.
 
 ## Reasoning Mandate (Caveman)
 
