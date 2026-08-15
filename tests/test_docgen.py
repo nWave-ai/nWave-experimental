@@ -1259,20 +1259,28 @@ class TestRoleSkillLoadingRegistry:
     def test_atd_broad_input_domain_dependency_completeness_is_atd_owned(
         self, root: Path
     ):
-        """A missing PBT library is ATD's own dependency to add -- never an
-        excuse to downgrade BROAD_INPUT_DOMAIN to enumerated examples or ship
-        an undeclared import."""
+        """ATD consumes the named PBT substrate fact and repairs only its owner.
+
+        A runtime-missing library never excuses downgrading BROAD_INPUT_DOMAIN
+        to enumerated examples, shipping an undeclared import, or reinstalling
+        an unrelated dependency manifest.
+        """
         text = (root / "nWave" / "agents" / "nw-acceptance-designer.md").read_text()
         start = text.index("`BROAD_INPUT_DOMAIN` is this agent's")
         end = text.index("**Spatial-first materialization (HARD):**")
-        paragraph = " ".join(text[start:end].split())
+        # Markdown wraps compound words after ``-``; normalize that layout so
+        # this assertion protects the semantic phrase rather than line width.
+        paragraph = " ".join(text[start:end].split()).replace("- ", "-")
         for token in (
             "never delegated to a crafter",
-            "is this agent's dependency to",
-            "declare and install here",
-            "downgrading to examples",
+            "named substrate fact consumed from the brief",
+            "dependency is declared but runtime-missing",
+            "edits only the named manifest owner",
+            "named direct dependency-delta install argv",
+            "never a whole test-dependency-manifest reinstall",
+            "Downgrading to examples",
             "an undeclared import",
-            "never discharges it",
+            "never discharges the obligation",
         ):
             assert token in paragraph, f"BROAD_INPUT_DOMAIN paragraph missing: {token}"
 

@@ -31,11 +31,13 @@ dispatched Agent prompt's first bytes are exactly
 ```
 AUTO-ARCHITECTURE-CONSULT: <bounded-subject>
 AUTO-ARCHITECTURE-ROOT: <absolute-root>
+AUTO-DELIVERY-ROUTE: <RED_TO_GREEN|GREEN_TO_GREEN>
 ```
 
-then one blank line, then a value seed/context, this marker selects an
-authoritative terminal branch and stops before all later full-workflow
-instructions in this file. It is NOT DESIGN-wave completion. Forbidden in
+as the entire prompt, this marker selects an authoritative terminal branch
+and stops before all later full-workflow instructions in this file. The route
+is an upstream fact: consume it verbatim, never infer or default it. It is NOT
+DESIGN-wave completion. Forbidden in
 this branch: TaskCreate/task plan, `feature-delta.md`, C4 diagrams,
 `component-manifest.yaml`, peer reviewer dispatch, the full Human
 requirements-analysis workflow, and any fan-out to another agent.
@@ -61,9 +63,35 @@ Durable write target: exactly one feature section, preferring
 deterministic heading `## Feature: <bounded-subject> — Auto Architecture
 Consult`, with concise subsections `Reuse decisions`, `Prefactoring
 assessment`, `Boundaries and ports`, `Paradigm`, `Delivery obligations`,
-`Escalation`. If a genuinely cross-feature decision is required, write
-exactly one new permanent ADR under `docs/product/architecture/` instead —
-never both. Never `docs/feature/...`.
+`Test substrate (RED_TO_GREEN only)`, `Escalation`. If a genuinely
+cross-feature decision is required, write exactly one new permanent ADR
+under `docs/product/architecture/` instead — never both. Never
+`docs/feature/...`.
+
+`Test substrate (RED_TO_GREEN only)` — omit this subsection entirely for
+`GREEN_TO_GREEN` (Section 4b Axis 1 of ADR-SSOT-002: the already-named
+existing oracle's locator/digest discharges the substrate-naming duty, no
+separate facts required). For `RED_TO_GREEN`, name only these facts, compactly
+and language-agnostically — never a test case, scenario, assertion, or
+implementation sketch:
+
+- the existing production driving port ATD must invoke;
+- the canonical repository test helper/import ATD must reuse (exact name/path,
+  never invented);
+- exactly what shared fixture state that helper does and does not construct —
+  state it names, never state ATD must assume;
+- any executor/lifecycle isolation constraint that changes how repeated or
+  property-based cases may share that fixture;
+- the test-dependency manifest's owner (file/path);
+- each required dependency's declaration-vs-runtime state (declared-but-maybe-
+  not-installed vs genuinely undeclared);
+- the exact repository-native verification argv; and
+- only when a required dependency is runtime-missing, the exact direct
+  dependency-delta install argv (never a whole-manifest reinstall command).
+
+This is the sole carrier for these facts — never a second artifact, schema
+field, or `docs/feature/...` file. Replace, do not append beside, any prior
+conflicting statement of these facts in this section.
 
 Your FINAL response begins at byte zero with exactly one of:
 

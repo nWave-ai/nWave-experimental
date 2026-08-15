@@ -40,7 +40,8 @@ HUMAN_ANCHOR = "**Human route:**"
 
 AUTO_HEADER_PAIR = (
     "AUTO-ARCHITECTURE-CONSULT: <bounded-subject>\n"
-    "AUTO-ARCHITECTURE-ROOT: <absolute-root>"
+    "AUTO-ARCHITECTURE-ROOT: <absolute-root>\n"
+    "AUTO-DELIVERY-ROUTE: <RED_TO_GREEN|GREEN_TO_GREEN>"
 )
 COVERED_TOKEN = "ARCHITECTURE-COVERED: <repo-relative-permanent-path>#<section-anchor>"
 BLOCKED_TOKEN = "ARCHITECTURE-BLOCKED: <what>; WHY: <why>; HOW: <how>"

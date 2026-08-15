@@ -194,12 +194,11 @@ class TestClosureOnlyPhaseAndFinalResponse:
         return " ".join(AGENT_BODY[start:end].split())
 
     def test_closed_operation_and_artifact_set(self):
-        """Steps 2-4 select the TEST-dependency-owning manifest (never
-        runtime-only on a split layout) and settle the lock command without
-        a second Read. Post-Write: permitted is same-test Edit, that
-        preidentified delta, the hash, the one contract Write, the
-        verification command. Forbidden: renewed discovery/Skill/Task/Bash
-        and any extra file."""
+        """Named manifest declaration edit, explicit runtime-missing, exact
+        named direct dependency-delta install argv, never whole manifest
+        reinstall. Post-Write: permitted is same-test Edit, that preidentified
+        delta, the hash, the one contract Write, the verification command.
+        Forbidden: renewed discovery/Skill/Task/Bash and any extra file."""
         pre = self._pre_authoring_section()
         for token in (
             "dependency-manifest topology",
@@ -213,12 +212,13 @@ class TestClosureOnlyPhaseAndFinalResponse:
         ):
             assert token in pre, f"Missing pre-authoring token: {token!r}"
 
-        section = self._closure_section()
+        section = " ".join(self._closure_section().split())
         for allowed in (
             "same-test-file `Edit`",
-            "preidentified test-dependency manifest/lock delta",
-            "iff `BROAD_INPUT_DOMAIN` fired and steps 2-4 proved the",
-            "repository-native deterministic command steps 2-4 named",
+            "named manifest owner's declaration edit",
+            "iff `BROAD_INPUT_DOMAIN` fired and the substrate facts state the dependency runtime-missing",
+            "named direct dependency-delta install argv",
+            "never an invented tool",
             "the test file's SHA-256 hash",
             "one `DeliveryContract` JSON Write and schema validation",
             "already-selected `verification-scope.commands`",
@@ -230,6 +230,7 @@ class TestClosureOnlyPhaseAndFinalResponse:
             "no `Skill(...)` or `Task` call",
             "no exploratory or diagnostic Bash",
             "no other file",
+            "whole test dependency manifest",
         ):
             assert forbidden in section, f"Missing prohibition token: {forbidden!r}"
         # Fix must not accidentally forbid the required contract Write.

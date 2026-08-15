@@ -18,7 +18,7 @@ import json
 import shlex
 import time
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from des.adapters.driven.time.system_time import SystemTimeProvider
 from des.adapters.drivers.hooks import des_task_signal, hook_protocol, service_factory
@@ -44,7 +44,6 @@ from des.adapters.drivers.hooks.root_activation_context import (
 )
 from des.application.commit_attribution_service import CommitAttributionService
 from des.application.skill_tracking_service import (
-    agent_role_already_dispatched,
     mode_select_observed_before_mutation,
     skill_observed_before_action,
 )
@@ -97,14 +96,21 @@ _THIN_HEADER_DIGEST_HEX_ALPHABET = frozenset("0123456789abcdef")
 
 # K4: exact-match roles whose Auto-root Agent dispatch must carry a
 # well-formed ARCHITECTURE-COVERED/ARCHITECTURE-NO-IMPACT first-bytes ref.
-_AUTO_ROOT_DESIGN_CONSULT_ROLES = frozenset(
-    {"nw-product-owner", "nw-acceptance-designer"}
-)
+_AUTO_ROOT_DESIGN_CONSULT_ROLES = frozenset({"nw-product-owner"})
+_ATD_ROLE_NAME = "nw-acceptance-designer"
 
 _ARCH_HEADER_COVERED_PREFIX = "ARCHITECTURE-COVERED: "
 _ARCH_HEADER_NO_IMPACT_PREFIX = "ARCHITECTURE-NO-IMPACT: "
 _ARCH_HEADER_PREFIXES = (_ARCH_HEADER_COVERED_PREFIX, _ARCH_HEADER_NO_IMPACT_PREFIX)
-_ARCH_HEADER_ANCHOR_ALPHABET = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-")
+
+_DELIVERY_ROUTE_TOKENS = frozenset({"RED_TO_GREEN", "GREEN_TO_GREEN"})
+_ARCHITECT_ROLE_NAME = "nw-solution-architect"
+_AUTO_ARCH_CONSULT_LINE_PREFIX = "AUTO-ARCHITECTURE-CONSULT: "
+_AUTO_ARCH_ROOT_LINE_PREFIX = "AUTO-ARCHITECTURE-ROOT: "
+_AUTO_ARCH_DELIVERY_ROUTE_LINE_PREFIX = "AUTO-DELIVERY-ROUTE: "
+_ATD_ROOT_LINE_PREFIX = "ROOT: "
+_ATD_VALUE_SEED_LINE_PREFIX = "VALUE-SEED: "
+_ATD_DELIVERY_ROUTE_LINE_PREFIX = "DELIVERY-ROUTE: "
 
 # Tool names for which the Auto-root lockdown check (`_is_auto_root`, a
 # transcript read + skill observation) is even worth paying for. Every other
@@ -350,8 +356,17 @@ def _is_lexical_repo_relative_md_locator(locator: str) -> bool:
 
 
 def _is_lexical_markdown_anchor(anchor: str) -> bool:
-    """Pure lexical markdown-anchor check: nonempty, lowercase `[a-z0-9-]`."""
-    return bool(anchor) and set(anchor) <= _ARCH_HEADER_ANCHOR_ALPHABET
+    """Accept a lowercase Markdown fragment without shell-significant syntax.
+
+    GitHub heading fragments preserve underscores and non-ASCII letters.  The
+    previous ASCII-only alphabet rejected valid architecture locators such as
+    ``#maintenance_windows`` before ATD could read their cited section.
+    """
+    return (
+        bool(anchor)
+        and anchor == anchor.lower()
+        and all(character.isalnum() or character in "-_" for character in anchor)
+    )
 
 
 def _auto_root_crafter_thin_header_block() -> dict[str, str]:
@@ -442,30 +457,35 @@ def _auto_root_design_consult_block() -> dict[str, str]:
     }
 
 
-def _evaluate_auto_root_design_consult_header(prompt: object) -> dict[str, str] | None:
-    """Lexical Auto-root PO/ATD design-consult header gate: shape-only,
-    never reads/parses the referenced doc. `None` (allow) when the prompt's
-    first line is a well-formed ARCHITECTURE-COVERED/-NO-IMPACT
-    `<path>.md#<anchor>` line, optionally followed by one blank line and
-    context with no duplicate header; else the block payload."""
-    if not isinstance(prompt, str):
-        return _auto_root_design_consult_block()
-    lines = prompt.split("\n")
-    header_line = lines[0]
+def _is_valid_arch_header_line(line: str) -> bool:
+    """Pure lexical check that `line` is a well-formed
+    ARCHITECTURE-COVERED/-NO-IMPACT `<path>.md#<anchor>` line -- shape only,
+    never reads/parses the referenced doc."""
     matched_prefix = next(
-        (prefix for prefix in _ARCH_HEADER_PREFIXES if header_line.startswith(prefix)),
+        (prefix for prefix in _ARCH_HEADER_PREFIXES if line.startswith(prefix)),
         None,
     )
     if matched_prefix is None:
-        return _auto_root_design_consult_block()
-
-    reference = header_line[len(matched_prefix) :]
+        return False
+    reference = line[len(matched_prefix) :]
     path, separator, anchor = reference.partition("#")
     if not separator:
-        return _auto_root_design_consult_block()
+        return False
     if not _is_lexical_repo_relative_md_locator(path):
+        return False
+    return _is_lexical_markdown_anchor(anchor)
+
+
+def _evaluate_auto_root_design_consult_header(prompt: object) -> dict[str, str] | None:
+    """Lexical Auto-root PO design-consult header gate: shape-only. `None`
+    (allow) when the prompt's first line is a well-formed
+    ARCHITECTURE-COVERED/-NO-IMPACT `<path>.md#<anchor>` line, optionally
+    followed by one blank line and context with no duplicate header; else
+    the block payload."""
+    if not isinstance(prompt, str):
         return _auto_root_design_consult_block()
-    if not _is_lexical_markdown_anchor(anchor):
+    lines = prompt.split("\n")
+    if not _is_valid_arch_header_line(lines[0]):
         return _auto_root_design_consult_block()
 
     remainder = lines[1:]
@@ -475,6 +495,93 @@ def _evaluate_auto_root_design_consult_header(prompt: object) -> dict[str, str] 
         context = "\n".join(remainder[1:])
         if any(prefix.rstrip() in context for prefix in _ARCH_HEADER_PREFIXES):
             return _auto_root_design_consult_block()
+
+    return None
+
+
+def _auto_root_atd_body_block() -> dict[str, str]:
+    return {
+        "decision": "block",
+        "reason": (
+            "WHAT: Auto-root ATD dispatch body malformed. "
+            "WHY: extra or missing context makes ATD infer upstream facts. "
+            "HOW: send exactly architecture authority, one blank line, "
+            "ROOT, VALUE-SEED, and DELIVERY-ROUTE."
+        ),
+    }
+
+
+def _evaluate_auto_root_atd_body(prompt: object) -> dict[str, str] | None:
+    """Lexical Auto-root ATD full-body gate: exactly five lines -- the
+    architecture header, one blank line, `ROOT:`, `VALUE-SEED:`, and
+    `DELIVERY-ROUTE:` -- and nothing else. Shape and route vocabulary only,
+    no referenced-file I/O."""
+    if not isinstance(prompt, str):
+        return _auto_root_atd_body_block()
+    lines = prompt.split("\n")
+    if len(lines) != 5:
+        return _auto_root_atd_body_block()
+
+    header_line, blank_line, root_line, value_seed_line, route_line = lines
+    if not _is_valid_arch_header_line(header_line):
+        return _auto_root_atd_body_block()
+    if blank_line != "":
+        return _auto_root_atd_body_block()
+    if not _has_absolute_value(root_line, _ATD_ROOT_LINE_PREFIX):
+        return _auto_root_atd_body_block()
+    if not _has_value(value_seed_line, _ATD_VALUE_SEED_LINE_PREFIX):
+        return _auto_root_atd_body_block()
+    if not _has_route(route_line, _ATD_DELIVERY_ROUTE_LINE_PREFIX):
+        return _auto_root_atd_body_block()
+
+    return None
+
+
+def _auto_root_architect_envelope_block() -> dict[str, str]:
+    return {
+        "decision": "block",
+        "reason": (
+            "WHAT: Auto-root architect envelope malformed. "
+            "WHY: DESIGN must consume, never infer, the upstream route. "
+            "HOW: send exactly AUTO-ARCHITECTURE-CONSULT, "
+            "AUTO-ARCHITECTURE-ROOT, and AUTO-DELIVERY-ROUTE."
+        ),
+    }
+
+
+def _has_value(line: str, prefix: str) -> bool:
+    return line.startswith(prefix) and bool(line[len(prefix) :].strip())
+
+
+def _has_absolute_value(line: str, prefix: str) -> bool:
+    if not line.startswith(prefix):
+        return False
+    value = line[len(prefix) :]
+    return PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
+
+
+def _has_route(line: str, prefix: str) -> bool:
+    return line.startswith(prefix) and line[len(prefix) :] in _DELIVERY_ROUTE_TOKENS
+
+
+def _evaluate_auto_root_architect_envelope(prompt: object) -> dict[str, str] | None:
+    """Lexical Auto-root architect envelope gate: exactly three non-empty
+    lines -- AUTO-ARCHITECTURE-CONSULT, AUTO-ARCHITECTURE-ROOT,
+    AUTO-DELIVERY-ROUTE -- and nothing else. Shape and route vocabulary
+    only, no referenced-file I/O."""
+    if not isinstance(prompt, str):
+        return _auto_root_architect_envelope_block()
+    lines = prompt.split("\n")
+    if len(lines) != 3:
+        return _auto_root_architect_envelope_block()
+
+    consult_line, root_line, route_line = lines
+    if not _has_value(consult_line, _AUTO_ARCH_CONSULT_LINE_PREFIX):
+        return _auto_root_architect_envelope_block()
+    if not _has_absolute_value(root_line, _AUTO_ARCH_ROOT_LINE_PREFIX):
+        return _auto_root_architect_envelope_block()
+    if not _has_route(route_line, _AUTO_ARCH_DELIVERY_ROUTE_LINE_PREFIX):
+        return _auto_root_architect_envelope_block()
 
     return None
 
@@ -916,32 +1023,6 @@ def handle_pre_tool_use() -> int:
                         )
                         exit_code = 2
                         return exit_code
-                    role_repeated = False
-                    try:
-                        role_repeated = bool(
-                            transcript_path
-                            and role
-                            and agent_role_already_dispatched(transcript_path, role)
-                        )
-                    except Exception:
-                        role_repeated = False
-                    if role_repeated:
-                        print(
-                            json.dumps(
-                                {
-                                    "decision": "block",
-                                    "reason": (
-                                        f"Auto role '{role}' was already "
-                                        "dispatched in this run: a repeat "
-                                        "Agent call for the same role is "
-                                        "blocked even if it creates a fresh "
-                                        "agent."
-                                    ),
-                                }
-                            )
-                        )
-                        exit_code = 2
-                        return exit_code
                     if (
                         role in _AUTO_ROOT_CRAFTER_ROLES
                         and not hook_input.get("agent_id")
@@ -952,6 +1033,32 @@ def handle_pre_tool_use() -> int:
                         )
                         if crafter_thin_block is not None:
                             print(json.dumps(crafter_thin_block))
+                            exit_code = 2
+                            return exit_code
+                    if (
+                        role == _ARCHITECT_ROLE_NAME
+                        and not hook_input.get("agent_id")
+                        and not hook_input.get("agent_type")
+                    ):
+                        architect_envelope_block = (
+                            _evaluate_auto_root_architect_envelope(
+                                tool_input.get("prompt")
+                            )
+                        )
+                        if architect_envelope_block is not None:
+                            print(json.dumps(architect_envelope_block))
+                            exit_code = 2
+                            return exit_code
+                    if (
+                        role == _ATD_ROLE_NAME
+                        and not hook_input.get("agent_id")
+                        and not hook_input.get("agent_type")
+                    ):
+                        design_consult_block = _evaluate_auto_root_atd_body(
+                            tool_input.get("prompt")
+                        )
+                        if design_consult_block is not None:
+                            print(json.dumps(design_consult_block))
                             exit_code = 2
                             return exit_code
                     if (

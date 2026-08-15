@@ -335,7 +335,7 @@ BULK_HASHES = {
     "nw-pbt-go": "629a6d1930c05f21da98f06225c3ebc3",
     "nw-pbt-haskell": "e28bba247b22609280214655f1b50747",
     "nw-pbt-jvm": "a6227b730ab646f9d006450c3752a788",
-    "nw-pbt-python": "54d535a53ef3392c433f129962852f2d",
+    "nw-pbt-python": "b37e6559b65816804992e988f55f7205",
     "nw-pbt-rust": "59f9328e4c1b6f94d8761c8440d1f316",
     "nw-pbt-stateful": "adb77facce00fe56c7ebc642abd59a27",
     "nw-pbt-typescript": "461d6e3987c13eb66005e755db39e5a6",

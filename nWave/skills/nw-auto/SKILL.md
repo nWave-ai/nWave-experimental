@@ -81,7 +81,11 @@ For Unresolved, dispatch to `nw-solution-architect`:
 ```
 AUTO-ARCHITECTURE-CONSULT: <bounded-subject>
 AUTO-ARCHITECTURE-ROOT: <absolute-root>
+AUTO-DELIVERY-ROUTE: <RED_TO_GREEN|GREEN_TO_GREEN>
 ```
+
+These are the entire prompt. The route is already resolved upstream; the
+architect consumes it and never infers or defaults it.
 
 Response must be exactly one of:
 
@@ -98,7 +102,7 @@ M and L share one floor. Root resolves (ADR-SSOT-002 §4b):
 
 | Axis | Source | Contract |
 |---|---|---|
-| `delivery-route` | ATD | `RED_TO_GREEN` or `GREEN_TO_GREEN`; never infer/default. Missing → blocker. |
+| `delivery-route` | value owner (`RED_TO_GREEN`) or durable upstream DESIGN authority (`GREEN_TO_GREEN`) | `RED_TO_GREEN` or `GREEN_TO_GREEN`; never infer/default. Missing → blocker before bounded architect dispatch. |
 | `applicability.examine` | charter/PO/Vera | Per table below. No new carrier/controller/field beyond schema. |
 
 **Examine resolution:**
@@ -112,11 +116,25 @@ M and L share one floor. Root resolves (ADR-SSOT-002 §4b):
 
 **Dispatch sequence (foreground, `run_in_background=false`, issued together, root waits inline):**
 
+**Value-closure floor:** a `RED_TO_GREEN` DeliveryContract must close a
+user-observable vertical from the immutable VALUE-SEED. An internal token,
+helper, seam, persistence primitive, or "foundation for a later slice" is not
+an independently value-bearing RED slice: either include it inside the
+vertical that makes the observation true, or route a behavior-preserving
+preparation as `GREEN_TO_GREEN` against an existing oracle. After each
+delivery unit, compare the observed result with the original VALUE-SEED. If
+part remains unfulfilled, do not report the feature complete; start the next
+distinct delivery unit and reuse the canonical roles with its new authority.
+No progress artifact or second carrier is created.
+
 1. `nw-acceptance-designer` (every run): Forwards architecture authority line, then one blank line, then ROOT/VALUE-SEED/DELIVERY-ROUTE (four non-empty lines total, exactly one blank line between the architecture line and ROOT, no design SSOT/language/framework). Authors `DeliveryContract` v1.2 + acceptance tests (new RED oracle for `RED_TO_GREEN`, or bound existing for `GREEN_TO_GREEN`).
 2. `nw-product-owner` (only if `examine=true, Author(Namespace)`): Receives architecture line + charter path. Fills Preconditions/start recipe from documented user-facing excerpt, sets oracle, stops.
 3. **Join**: After both validate (ATD always; PO only when dispatched), dispatch crafter by paradigm. Crafter implements to green and returns the ephemeral receipt `outcome: PASS|FAIL`, `argv`, `scope`, `exit_code`. PASS requires `argv` to equal the contract's projected `verification-scope.commands`, `scope` to cover them, and every exit code to be zero. Missing/malformed/truncated/mismatched/nonzero/FAIL → terminal FAIL (single-pass rule), preserve WIP; focused-AT green or Examiner PASS never substitutes. No receipt ledger/artifact.
 4. `nw-user-examiner` (only if `examine=true`): Examines using `ValidatedCharter`s + start recipe. One terminal pass.
-5. Report role verdicts + Git diff/status.
+5. Report role verdicts + Git diff/status. Report the feature complete only
+   when the original VALUE-SEED's observable outcome is satisfied; otherwise
+   continue with the next distinct delivery unit or report the concrete
+   blocker.
 
 ## Examiner input isolation
 
@@ -134,7 +152,12 @@ derives probes from the expectation and observes only the shipped user surface.
 
 ## Route boundaries
 
-- **Single-pass roles**: first result of each (ATD, PO, crafter, examiner) is terminal. No retry/resume/`SendMessage`-correction within run. New run only after upstream gap fixed.
+- **Single-pass dispatches, reusable roles**: each individual Agent result is terminal —
+  no retry/resume/`SendMessage` correction of that dispatch. Role
+  identity is not run or feature identity: a canonical role may be freshly
+  dispatched again for a distinct DeliveryContract/value input, including a
+  later vertical needed to close the original VALUE-SEED. Never disguise an
+  identical retry as a new slice.
 - **Foreground/sync only**: every dispatch `run_in_background=false`, results returned before root's next step. No `Task`/`SendMessage`/`ScheduleWakeup`.
 - **No infrastructure**: no `TaskCreate`, hook, schema, CLI verb, sequencer/controller.
 - **Terminal Git outcomes** (isolated worktree, no ledger): PASS = clean diff on non-`main`/`master` branch, commit with normal hooks; FAIL = preserve WIP, report observation; INDETERMINATE = report worktree + status + SHA.

@@ -161,6 +161,61 @@ settings.load_profile("ci")  # or via HYPOTHESIS_PROFILE env var
 # Replays them on subsequent runs
 ```
 
+## Django Integration
+
+`@given` never runs directly under a plain `django.test.TestCase` helper —
+Hypothesis's example-replay/database-reset interaction with Django's
+per-test transaction wrapping requires `hypothesis.extra.django.TestCase`
+(or `TransactionTestCase`) as the base. A property test class must subclass
+the matching `hypothesis.extra.django` base as documented, then:
+
+- if the repository's setup/assertion behavior is already a cooperative
+  mixin (no `TestCase` in its own bases, calls `super()` in `setUp`), mix it
+  with the Hypothesis base using the repository-validated ordering;
+- if the repository helper is a concrete `django.test.TestCase` subclass,
+  never blindly multiple-inherit two concrete `TestCase` hierarchies —
+  extract its behavior into a cooperative mixin, or write a repository-owned
+  Hypothesis-compatible helper, preserving the documented setup/fixtures and
+  validating the actual MRO (`ClassName.__mro__`) rather than assuming one.
+
+```python
+from hypothesis import given
+from hypothesis import strategies as st
+from hypothesis.extra.django import TestCase as HypothesisDjangoTestCase
+
+class RepositoryFixtureMixin:
+    """Cooperative mixin: no TestCase base and calls super()."""
+
+    def setUp(self):
+        super().setUp()
+        self.account_factory = AccountFactory()
+
+    def build_account(self):
+        return self.account_factory.create()
+
+class RepositoryPropertyTestCase(RepositoryFixtureMixin, HypothesisDjangoTestCase):
+    pass  # validate this ordering against the repository's fixture contract
+
+class PropertyTests(RepositoryPropertyTestCase):
+    @given(st.text(min_size=1))
+    def test_create_never_raises_on_valid_name(self, name):
+        # explicitly construct any state the property needs -- never assume
+        # an attribute the shared fixture does not document constructing
+        account = self.build_account()
+        account.rename(name)
+```
+
+Never assume a fixture attribute exists because a similarly named one exists
+elsewhere; if the property needs state the shared helper does not construct,
+construct it explicitly inside the test (or a documented composed helper
+method) rather than reading an undocumented attribute.
+
+Treat executor lifecycle as part of the named test substrate. If a focused
+probe proves that multiple `@given` methods on one concrete fixture class
+reuse uniqueness-constrained setup state, put one `@given` method in each leaf
+test class and share only a cooperative fixture mixin. Never hide the collision
+with manual database flushing or a suppressed health check.
+
 ## Unique Features
 
 - **Ghostwriter**: `hypothesis write json.dumps` auto-generates PBT from type annotations

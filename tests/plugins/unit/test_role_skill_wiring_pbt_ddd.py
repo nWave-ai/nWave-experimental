@@ -281,29 +281,42 @@ class TestUserExaminerAutoRouteIsBoundedNotExhaustive:
         assert "Human route below keeps its richer" in body
 
 
-class TestAutoRolesAreSinglePassNoContinuation:
-    """K4 overhead slice SSOT: Auto's first role result is terminal -- no
-    SendMessage/resume/retry/correction within the same run.
+class TestAutoDispatchesAreSinglePassRolesAreReusable:
+    """Each dispatch is terminal, while roles remain reusable across value units.
 
     CONTRACT_SHAPE: bounded-change
     """
 
-    def test_route_boundaries_declare_the_single_pass_no_send_message_rule(self):
+    def test_route_boundaries_separate_dispatch_identity_from_role_identity(self):
         body = (SKILLS_DIR / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
         route_boundaries = " ".join(
             body[body.index("## Route boundaries") :].lower().split()
         )
         for token in (
-            "single-pass",
-            "first result of each (atd, po, crafter, examiner)",
-            "is terminal",
+            "single-pass dispatches, reusable roles",
+            "each individual agent result is terminal",
             "sendmessage",
             "resume",
-            "retry",
             "correction",
-            "new run only",
+            "role identity is not run or feature identity",
+            "distinct deliverycontract/value input",
         ):
             assert token in route_boundaries
+
+    def test_red_route_closes_user_value_not_an_internal_foundation(self):
+        auto = (SKILLS_DIR / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
+        atd = (AGENTS_DIR / "nw-acceptance-designer.md").read_text(encoding="utf-8")
+        for body in (auto, atd):
+            normalized = " ".join(body.lower().split())
+            for token in (
+                "user-observable vertical",
+                "foundation for a later slice",
+                "green_to_green",
+            ):
+                assert token in normalized
+        assert "report the feature complete only when the original value-seed" in (
+            " ".join(auto.lower().split())
+        )
 
 
 class TestDddReviewerUsesCodeAnalysisPort:

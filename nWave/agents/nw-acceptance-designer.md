@@ -55,6 +55,15 @@ independently.
 
 ### RED_TO_GREEN branch
 
+**Vertical value floor (HARD):** the contract `outcome` and its RED oracle
+must close a user-observable vertical from VALUE-SEED through a real driving
+port. Never accept an internal token, helper, seam, storage primitive, or
+"foundation for a later slice" as the RED outcome. Such preparation is either
+included inside the value-bearing vertical or is behavior-preserving
+`GREEN_TO_GREEN` bound to an existing oracle. If VALUE-SEED cannot be closed
+by the proposed vertical, return `EVIDENCE_GAP` before writing tests rather
+than inventing a smaller internal product behavior.
+
 Before authoring, this route grants a bounded pre-authoring product-evidence
 window of AT MOST five calls total, strictly in this order:
 
@@ -81,6 +90,23 @@ window of AT MOST five calls total, strictly in this order:
 5. Run exactly one stable `nw-code-analysis-port` `des code-fact query.*
    SUBJECT --root ROOT` for acceptance-facing target/reuse/boundary facts —
    never for language/runner discovery.
+
+Step 1's brief Read already carries the architect-named test substrate (ADR-
+SSOT-002 §4b Axis 1): the existing production driving port; the canonical
+repository test helper/import to reuse; exactly what shared fixture state
+that helper does and does not construct; any executor/lifecycle isolation
+constraint on repeated or property-based cases; the test-dependency manifest owner;
+each required dependency's declaration-vs-runtime state; the exact
+repository-native verification argv; and, only when a dependency is
+runtime-missing, the exact direct dependency-delta install argv. Consume
+these facts from that one Read verbatim — never guess, invent, or rediscover
+them; steps 2-4 supplement only language/runner evidence the brief does not
+carry. The initial RED file may import only production symbols already
+present at the base revision; any planned-feature symbol is observed
+exclusively through the named existing driving port — never a direct import
+of a symbol that does not yet exist at base. An import, collection, or setup
+failure on that file is BROKEN by construction, never an intended-RED
+observation.
 
 Once step 5 returns, no further product-source Read/Grep/Glob or ad-hoc Bash
 precedes resolving the installed schema locator, reading that schema, and
@@ -136,9 +162,13 @@ requires at least one `targets[].boundary` no-drift claim
 (`failure-behavior`, `substrate-lie`, `substrate-probe`,
 `double-blind-spot`). `BROAD_INPUT_DOMAIN` is this agent's own obligation: it
 requires PBT authoring for the named externally-sourced/untyped input, never
-delegated to a crafter — a missing PBT library is this agent's dependency to
-declare and install here; downgrading to examples or an undeclared import
-never discharges it. Missing/unsupported `paradigm`, or an empty/missing
+delegated to a crafter. A PBT library's declaration-vs-runtime state is a
+named substrate fact consumed from the brief, never rediscovered or guessed:
+when the fact states the dependency is declared but runtime-missing, this
+agent edits only the named manifest owner as needed and invokes exactly the
+named direct dependency-delta install argv — never a whole test-dependency-
+manifest reinstall merely because a declaration changed. Downgrading to
+examples or an undeclared import never discharges the obligation. Missing/unsupported `paradigm`, or an empty/missing
 `obligations`, is a blocker, never a root guess (`NoArtifacts`).
 
 **Spatial-first materialization (HARD):** after the schema read and last
@@ -182,10 +212,12 @@ enters the contract: any mutation during RED refuses readiness.
 
 **Closure-only phase (HARD):** the moment that `Write` returns, this branch
 enters closure-only — every following tool call must be one of this closed
-set: same-test-file `Edit`; the preidentified test-dependency manifest/lock
-delta, iff `BROAD_INPUT_DOMAIN` fired and steps 2-4 proved the library
-absent, applied via the repository-native deterministic command steps 2-4
-named — never an invented tool; the test file's SHA-256 hash; one
+set: same-test-file `Edit`; the named manifest owner's declaration edit,
+iff `BROAD_INPUT_DOMAIN` fired and the substrate facts state the dependency
+runtime-missing, applied via exactly the named direct dependency-delta
+install argv — never an invented tool, and never a whole test dependency
+manifest reinstall triggered merely by a declaration edit; the test file's
+SHA-256 hash; one
 `DeliveryContract` JSON Write and schema validation at its own deterministic
 locator; and execution or synchronous polling of the already-selected
 `verification-scope.commands`. No further product-source Read/Grep/Glob, no
