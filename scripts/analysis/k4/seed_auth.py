@@ -63,7 +63,12 @@ _IDENTITY_KEYS = (
 )
 
 
-def seed(source_profile: Path, config_dir: Path) -> int:
+def seed(
+    source_profile: Path,
+    config_dir: Path,
+    *,
+    trust_project: Path | None = None,
+) -> int:
     source = source_profile / _CREDENTIALS
     if not source.is_file():
         sys.stderr.write(
@@ -117,6 +122,10 @@ def seed(source_profile: Path, config_dir: Path) -> int:
             "HOW:  sign that profile in interactively once, then re-run.\n"
         )
         return 1
+    if trust_project is not None:
+        identity["projects"] = {
+            str(trust_project.expanduser().resolve()): {"hasTrustDialogAccepted": True}
+        }
     (config_dir / _CONFIG).write_text(
         json.dumps(identity, indent=2) + "\n", encoding="utf-8"
     )
@@ -133,8 +142,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--from", dest="source", required=True, type=Path)
     parser.add_argument("--into", dest="config_dir", required=True, type=Path)
+    parser.add_argument(
+        "--trust-project",
+        type=Path,
+        help="trust only this isolated campaign checkout",
+    )
     args = parser.parse_args(argv)
-    return seed(args.source.expanduser(), args.config_dir.expanduser())
+    return seed(
+        args.source.expanduser(),
+        args.config_dir.expanduser(),
+        trust_project=args.trust_project,
+    )
 
 
 if __name__ == "__main__":

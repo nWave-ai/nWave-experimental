@@ -183,6 +183,8 @@ def seed_step(auth_profile: Path) -> list[str]:
         str(auth_profile),
         "--into",
         ".claude-k4",
+        "--trust-project",
+        ".",
     ]
 
 
@@ -254,10 +256,76 @@ def _arm_env() -> dict[str, str]:
     fixture_bin = "{workspace}/" + str(Path(pef.VENV_PYTHON).parent)
     inherited = os.environ.get("PATH", "")
     path = f"{fixture_bin}{os.pathsep}{inherited}" if inherited else fixture_bin
-    return {
+    environment = {
         "CLAUDE_CONFIG_DIR": "{workspace}/.claude-k4",
+        "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "{workspace}",
         "PATH": path,
     }
+    if library_path := os.environ.get("LD_LIBRARY_PATH"):
+        environment["LD_LIBRARY_PATH"] = (
+            "{workspace}/.k4-sandbox-lib" + os.pathsep + library_path
+        )
+    return environment
+
+
+_SANDBOX_SETTINGS = json.dumps(
+    {
+        "permissions": {
+            "allow": ["Read(/**)", "Edit(/**)", "Write(/**)"],
+            "deny": [
+                "Read(/.claude-k4/.credentials.json)",
+                "Read(/.claude-k4/.claude.json)",
+                "Edit(/.claude-k4/**)",
+                "Write(/.claude-k4/**)",
+                "WebFetch",
+                "WebSearch",
+            ],
+        },
+        "sandbox": {
+            "enabled": True,
+            "failIfUnavailable": True,
+            "allowUnsandboxedCommands": False,
+            "filesystem": {
+                "denyRead": [
+                    "~/",
+                    "/mnt/c/Users",
+                    "/root",
+                    "./.claude-k4/.credentials.json",
+                    "./.claude-k4/.claude.json",
+                ],
+                "allowRead": ["."],
+            },
+            "network": {"allowedDomains": ["localhost", "127.0.0.1", "[::1]"]},
+        },
+    },
+    separators=(",", ":"),
+    sort_keys=True,
+)
+
+
+def delivery_argv(model: str) -> list[str]:
+    """One identical, fail-closed Claude runner for both comparison arms."""
+    return [
+        "claude",
+        "-p",
+        "{task}",
+        "--model",
+        model,
+        "--output-format",
+        "json",
+        "--permission-mode",
+        "dontAsk",
+        "--tools",
+        "default",
+        "--settings",
+        _SANDBOX_SETTINGS,
+        "--setting-sources",
+        "user",
+        "--strict-mcp-config",
+        "--mcp-config",
+        '{"mcpServers":{}}',
+        "--no-chrome",
+    ]
 
 
 def _probe_workspace(root: Path) -> Path:
@@ -377,16 +445,7 @@ def main(argv: list[str] | None = None) -> int:
     if cleanup_probe_workspace(args.root, verdict, detail):
         print(f"probe clean : removed {_probe_workspace(args.root)}")
 
-    delivery = [
-        "claude",
-        "-p",
-        "{task}",
-        "--model",
-        args.model,
-        "--output-format",
-        "json",
-        "--dangerously-skip-permissions",
-    ]
+    delivery = delivery_argv(args.model)
     # IDENTICAL argv in both arms. The only declared difference is the setup,
     # which makes the campaign single-variable: anything the treatment arm does
     # differently, it does because nWave is installed, not because its prompt
