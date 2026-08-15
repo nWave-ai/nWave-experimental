@@ -39,6 +39,9 @@ ACCEPTANCE_DESIGNER = (AGENTS_DIR / "nw-acceptance-designer.md").read_text(
 PBT_PYTHON_SKILL = (SKILLS_DIR / "nw-pbt-python" / "SKILL.md").read_text(
     encoding="utf-8"
 )
+PBT_SKILL = (SKILLS_DIR / "nw-property-based-testing" / "SKILL.md").read_text(
+    encoding="utf-8"
+)
 ADR = ADR_PATH.read_text(encoding="utf-8")
 OBLIGATION_ENUM = json.loads(CONTRACT_SCHEMA_PATH.read_text(encoding="utf-8"))["$defs"][
     "obligations"
@@ -377,3 +380,47 @@ class TestPbtPythonComposesHypothesisDjangoBasePreservesSetupConstructsMissing:
         assert "manual database flushing" in section
         assert "never assume" in section.lower()
         assert "construct" in section.lower()
+
+
+class TestSemanticPbtConstructionRejectsVacuousGeneratedProperties:
+    """The generic authority and ATD projection reject the K4 false-green class."""
+
+    def test_generic_pbt_authority_requires_total_constructive_discriminating_map(self):
+        start = PBT_SKILL.index("## Non-vacuous generator construction")
+        section = _norm(PBT_SKILL[start:])
+
+        assert "SemanticCase -> ConcreteInput -> SUT -> Observation" in section
+        assert "every generated component must influence" in section
+        assert "independent oracle" in section
+        assert "generate the case tag first" in section
+        assert "by construction" in section
+        assert "diagnostics only" in section
+        assert "never substitute for constructive reachability" in section
+        assert "proxies unless that is the declared law itself" in section
+        assert "against base behavior" in section
+        assert "does not discharge `BROAD_INPUT_DOMAIN`" in section
+
+    def test_atd_applies_non_vacuity_before_write_and_red_confirmation(self):
+        marker = "For every property, apply `nw-property-based-testing`'s non-vacuous"
+        start = ACCEPTANCE_DESIGNER.index(marker)
+        paragraph = _norm(ACCEPTANCE_DESIGNER[start : start + 1500])
+
+        assert "before Write" in paragraph
+        assert "every generated component must influence" in paragraph
+        assert "generate the semantic case tag first" in paragraph
+        assert "by construction" in paragraph
+        assert "never hope random sampling reaches a rare branch" in paragraph
+        assert "shape/type/never-raises proxy" in paragraph
+        assert "fail on the base revision" in paragraph
+        assert "does not discharge `BROAD_INPUT_DOMAIN`" in paragraph
+        assert "cannot contribute to `RedConfirmed`" in paragraph
+
+    def test_adr_owns_the_same_non_vacuity_law_without_new_carrier(self):
+        start = ADR.index("**Semantic-PBT construction.**")
+        paragraph = _norm(ADR[start : start + 1500])
+
+        assert "generator-to-observation map is total" in paragraph
+        assert "every generated component influences" in paragraph
+        assert "construct each semantic alternative" in paragraph
+        assert "a property that already passes does not discharge" in paragraph
+        assert "language adapters project syntax only" in paragraph

@@ -129,6 +129,18 @@ fixture facts. A missing binding, selector, or compatible composition is
 `EVIDENCE_GAP` before Write — never a literal URL/key or concrete base guessed
 from the dominant repository pattern.
 
+For every property, apply `nw-property-based-testing`'s non-vacuous
+generator construction before Write: materialize the complete
+`SemanticCase -> ConcreteInput -> SUT -> Observation` map in the test
+structure; every generated component must influence the SUT input or an
+independent oracle. For branching laws, generate the semantic case tag first
+and derive a concrete member of that case by construction — never hope random
+sampling reaches a rare branch or filter one away. A shape/type/never-raises
+proxy cannot substitute for the promised observation. A property claimed as
+the RED oracle for a newly promised law must itself fail on the base revision
+for that missing or wrong observation; if it passes, it does not discharge
+`BROAD_INPUT_DOMAIN` and cannot contribute to `RedConfirmed`.
+
 Once step 5 returns, no further product-source Read/Grep/Glob or ad-hoc Bash
 precedes resolving the installed schema locator, reading that schema, and
 writing the first acceptance-test artifact. Missing language, command,

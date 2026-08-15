@@ -351,7 +351,7 @@ BULK_HASHES = {
     # Updated 2026-05-19: extended "When PBT Adds Value" with closed-world
     # falsifier-gate anti-pattern + empirical anchor (commit c2637f6c8). See
     # backlog F-TEST-SPEEDUP-PARADIGM-CATALOG for context.
-    "nw-property-based-testing": "5133a0c01a8b315ec99fefbf1d8bb5d0",
+    "nw-property-based-testing": "6c6a0ccd257a86836cc583ddf8aec246",
     # Hash updated 2026-06-17: decompose-and-recompose into 2 nw-proposal-structure-*
     # modules (b2b, cialdini); core is a lean composing router. §22.0 reviewed.
     "nw-proposal-structure": "bec9dd508f567c847da44cd41ee56821",

@@ -21,6 +21,37 @@ Framework generates hundreds/thousands of inputs checking property. Dramatically
 3. **Oracle**: "compare against reference implementation" (optimized vs correct-but-slow)
 4. **Metamorphic**: "different operations, same result" (add(a,b)==add(b,a), filter can't increase size)
 
+## Non-vacuous generator construction
+
+Compile the declared law before choosing framework syntax:
+
+```text
+SemanticCase -> ConcreteInput -> SUT -> Observation
+SemanticCase --------------------------> IndependentOracle
+```
+
+The map is total: every generated component must influence `ConcreteInput`,
+the SUT invocation, or the independent oracle, directly or through a named
+derivation. An unused generated component invalidates the property; delete it
+or make its semantic effect observable. The oracle must not copy the
+production algorithm it judges.
+
+For a branching or biconditional law, model the alternatives as a closed sum
+(`CaseA | CaseB`), generate the case tag first, and derive concrete inputs that
+satisfy that case by construction. Hoping random inputs reach a rare branch,
+filtering/assuming away a branch, or raising the example count does not prove
+reachability. Classification, labels and coverage events are diagnostics only;
+they never substitute for constructive reachability.
+
+The observation must distinguish the promised law. Assertions such as
+"returns a collection", "has the expected type", or "never raises" are
+proxies unless that is the declared law itself. On `RED_TO_GREEN`, run a
+property claimed as the RED oracle for a newly promised law against base
+behavior: it must fail because the promised observation is missing or wrong.
+If it passes, it does not discharge `BROAD_INPUT_DOMAIN`; correct or remove it
+before `RedConfirmed`. Keep one property per distinct law, combining laws only
+when one generated observation honestly falsifies every combined law.
+
 ## Shrinking
 
 When property fails, framework auto-finds minimal failing input. Dramatically accelerates debugging.
