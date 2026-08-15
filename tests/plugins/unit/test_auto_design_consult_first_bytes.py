@@ -167,6 +167,13 @@ class TestNwAutoForwardsAuthorityAndNoImpactCitationForm:
         normalized_consult = _norm(consult_section)
         assert "Covered/NoImpact" in normalized_consult
         assert "Unresolved" in normalized_consult
+        for token in (
+            "already holds a valid architecture authority line",
+            "Absence of an architecture SSOT",
+            "is Unresolved, never NoImpact",
+            "Dispatch one DESIGN consult immediately",
+        ):
+            assert token in normalized_consult
 
         route = _norm(body[floor_start : body.index("## Examiner input isolation")])
         assert "Forwards architecture authority line" in route

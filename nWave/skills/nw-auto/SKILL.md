@@ -74,7 +74,12 @@ find, nearest-repo, transcript inference, or another clone.
 Before PO/ATD dispatch, root resolves (ADR-SSOT-002 §4b): one prefix for M and L, no split.
 
 - **Intent**: Gap? Dispatch DISCUSS once. Gap remains → refuse blocker.
-- **Readiness**: Covered/NoImpact? Enter floor. Unresolved? Dispatch one DESIGN consult. Returns `ARCHITECTURE-COVERED` or `ARCHITECTURE-BLOCKED`. Gap remains → refuse.
+- **Readiness**: Covered/NoImpact means root already holds a valid architecture
+  authority line with a repo-relative permanent `.md#anchor`; enter the floor.
+  Absence of an architecture SSOT, a root opinion that the change is additive,
+  or "no new pattern" is Unresolved, never NoImpact. Dispatch one DESIGN
+  consult immediately. It returns `ARCHITECTURE-COVERED` or
+  `ARCHITECTURE-BLOCKED`; a remaining gap is refused.
 
 For Unresolved, dispatch to `nw-solution-architect`:
 
