@@ -167,15 +167,20 @@ paired with a literal `arguments` array — never a raw argv array.
 (`EXTEND`/`CREATE_NEW`), never implicit; `ARCHITECTURE_BOUNDARY_CHANGE`
 requires at least one `targets[].boundary` no-drift claim
 (`failure-behavior`, `substrate-lie`, `substrate-probe`,
-`double-blind-spot`). `BROAD_INPUT_DOMAIN` is this agent's own obligation: it
-requires PBT authoring for the named externally-sourced/untyped input, never
-delegated to a crafter. A PBT library's declaration-vs-runtime state is a
-named substrate fact consumed from the brief, never rediscovered or guessed:
-when the fact states the dependency is declared but runtime-missing, this
-agent edits only the named manifest owner as needed and invokes exactly the
-named direct dependency-delta install argv — never a whole test-dependency-
-manifest reinstall merely because a declaration changed. Downgrading to
-examples or an undeclared import never discharges the obligation. Missing/unsupported `paradigm`, or an empty/missing
+`double-blind-spot`). `BROAD_INPUT_DOMAIN` is DESIGN's obligation, never this
+agent's own: the architect names the token; this agent compiles it verbatim
+into `obligations`, never deriving, inventing, or dropping it. PBT authoring
+remains this agent's work, never delegated to a crafter. A missing
+token, dependency fact, or required command is `EVIDENCE_GAP` before any
+`Skill(...)` invocation or artifact `Write` — never a guess. The named PBT
+dependency's declaration-vs-runtime state and full four-state action are
+consumed from the brief, never rediscovered or guessed: declared and present
+takes no mutation; declared and missing takes only the named direct
+dependency-delta install argv; undeclared and present takes only the named
+manifest declaration/lock delta; undeclared and missing takes that delta
+followed by the named direct dependency-delta install argv. No ad-hoc
+install, whole-manifest reinstall, undeclared import, or downgrade to
+examples-only ever discharges the obligation. Missing/unsupported `paradigm`, or an empty/missing
 `obligations`, is a blocker, never a root guess (`NoArtifacts`).
 
 **Spatial-first materialization (HARD):** after the schema read and last
@@ -219,12 +224,14 @@ enters the contract: any mutation during RED refuses readiness.
 
 **Closure-only phase (HARD):** the moment that `Write` returns, this branch
 enters closure-only — every following tool call must be one of this closed
-set: same-test-file `Edit`; the named manifest owner's declaration edit,
-iff `BROAD_INPUT_DOMAIN` fired and the substrate facts state the dependency
-runtime-missing, applied via exactly the named direct dependency-delta
-install argv — never an invented tool, and never a whole test dependency
-manifest reinstall triggered merely by a declaration edit; the test file's
-SHA-256 hash; one
+set: same-test-file `Edit`; when `BROAD_INPUT_DOMAIN` fired, exactly the
+brief-named action for its dependency state — declared and present: no
+mutation; declared and missing: the named direct dependency-delta install
+argv only; undeclared and present: the named manifest declaration/lock delta
+only; undeclared and missing: that declaration delta followed by the named
+direct dependency-delta install argv — never new discovery, never an invented
+tool, and never a whole test dependency manifest reinstall; the test file's SHA-256
+hash; one
 `DeliveryContract` JSON Write and schema validation at its own deterministic
 locator; and execution or synchronous polling of the already-selected
 `verification-scope.commands`. No further product-source Read/Grep/Glob, no

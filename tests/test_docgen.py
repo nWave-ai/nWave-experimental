@@ -1256,31 +1256,36 @@ class TestRoleSkillLoadingRegistry:
             "obligation-token derivation must precede Skill invocation in reading order"
         )
 
-    def test_atd_broad_input_domain_dependency_completeness_is_atd_owned(
+    def test_atd_compiles_design_owned_broad_input_dependency_completeness(
         self, root: Path
     ):
-        """ATD consumes the named PBT substrate fact and repairs only its owner.
+        """DESIGN owns the broad-input fact; ATD compiles and materializes it.
 
-        A runtime-missing library never excuses downgrading BROAD_INPUT_DOMAIN
-        to enumerated examples, shipping an undeclared import, or reinstalling
-        an unrelated dependency manifest.
+        Every declaration/runtime state has one preidentified action. Missing
+        evidence never excuses examples-only downgrade or an ad-hoc install.
         """
         text = (root / "nWave" / "agents" / "nw-acceptance-designer.md").read_text()
-        start = text.index("`BROAD_INPUT_DOMAIN` is this agent's")
+        start = text.index("`BROAD_INPUT_DOMAIN` is DESIGN's obligation")
         end = text.index("**Spatial-first materialization (HARD):**")
         # Markdown wraps compound words after ``-``; normalize that layout so
         # this assertion protects the semantic phrase rather than line width.
         paragraph = " ".join(text[start:end].split()).replace("- ", "-")
         for token in (
+            "architect names the token",
+            "compiles it verbatim",
+            "never deriving, inventing, or dropping it",
             "never delegated to a crafter",
-            "named substrate fact consumed from the brief",
-            "dependency is declared but runtime-missing",
-            "edits only the named manifest owner",
+            "declaration-vs-runtime state",
+            "declared and present",
+            "declared and missing",
+            "undeclared and present",
+            "undeclared and missing",
             "named direct dependency-delta install argv",
-            "never a whole test-dependency-manifest reinstall",
-            "Downgrading to examples",
-            "an undeclared import",
-            "never discharges the obligation",
+            "No ad-hoc install",
+            "whole-manifest reinstall",
+            "undeclared import",
+            "examples-only",
+            "EVIDENCE_GAP",
         ):
             assert token in paragraph, f"BROAD_INPUT_DOMAIN paragraph missing: {token}"
 

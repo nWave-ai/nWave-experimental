@@ -50,6 +50,38 @@ trigger; each fired row is invoked natively/lazily — never an exclusive
 hardcoded skill list, and never preloaded. Own the recommendation: reuse,
 prefactoring, boundaries and ports, paradigm, no-drift, and DeliveryContract
 `obligations`.
+DESIGN is the sole semantic owner of obligation tokens: this agent emits
+every applicable existing schema token in `Delivery obligations`; DISTILL/
+ATD only compiles them, never derives, invents, or drops one.
+
+Before deriving obligations or making any durable Write, resolve and Read
+exactly the installed Draft 2020-12 schema at the single locator:
+
+```bash
+printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/thin-delivery-contract.schema.json"
+```
+
+Its non-empty `$defs.obligations.items.enum` is the sole authority for
+obligation tokens; there is no fallback or second candidate. An unavailable,
+unreadable, invalid, missing, or empty enum is `ARCHITECTURE-BLOCKED` before
+Write. Emit only exact enum members. Cross-cutting skill identifiers, gate
+identifiers, prose labels, and invented names remain prose and are forbidden
+as obligation tokens.
+
+`BROAD_INPUT_DOMAIN` names an externally sourced or untyped input domain
+that is infinite or otherwise non-enumerable and governed by a universal
+law; a finite enumerable input set never fires it.
+Obligation applicability is a semantic deduction completed before selecting
+the test substrate or dependencies. Once those predicates hold, the token
+MUST fire: existing example-based tests, repository convention, dependency
+absence, or a thin wrapper around a library cannot waive or negate it. Those
+facts constrain the later substrate/action and may force
+`ARCHITECTURE-BLOCKED`; they never erase the law. In particular, externally
+sourced schedules, timestamps, identifiers, messages, or comparable
+non-enumerable values remain broad inputs when a universal property ranges
+over them, even if a library parses them or a few concrete cases already
+exist. If a token does not fire, name the factual predicate that is false —
+never justify non-applicability from the current test style.
 
 Escalation: when `<bounded-subject>` genuinely needs explicit DDD
 bounded-context modeling, distributed-scale/concurrency design, or
@@ -91,12 +123,27 @@ or implementation sketch:
 - the test-dependency manifest's owner (file/path);
 - each required dependency's declaration-vs-runtime state (declared-but-maybe-
   not-installed vs genuinely undeclared);
+- when `BROAD_INPUT_DOMAIN` applies, the language-matched property-based-
+  testing dependency's fully resolved four-state action, language-
+  agnostically: select exactly one matching branch and emit only its action —
+  declared and present takes no mutation; declared and missing takes the
+  exact named direct install argv; undeclared and present takes the exact
+  named manifest declaration/lock delta; undeclared and missing takes that
+  declaration delta followed by that exact direct install argv; never emit
+  alternatives, optional extra commands, or duplicate routes;
 - the exact repository-native verification argv; and
 - only when a required dependency is runtime-missing, the exact direct
-  dependency-delta install argv (never a whole-manifest reinstall command).
+  dependency-delta install argv. It must bind the repository's evidenced
+  interpreter/environment and install only that dependency delta — never a
+  bare `pip`/`python` command or a whole-manifest `-r` install.
 
 If any clause lacks a real port/oracle or only a proxy is available, return
 `ARCHITECTURE-BLOCKED` rather than writing a narrower substrate.
+Any missing owner, state, or required command likewise blocks — never write
+incomplete authority. All dependency declaration/runtime states and actions
+must be final before durable Write: `confirm later`, maybe, unresolved, or
+ambiguous evidence is `ARCHITECTURE-BLOCKED`, as is an unevidenced bound
+direct-install argv.
 
 This is the sole carrier for these facts — never a second artifact, schema
 field, or `docs/feature/...` file. Replace, do not append beside, any prior

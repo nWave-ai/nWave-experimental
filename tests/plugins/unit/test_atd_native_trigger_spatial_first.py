@@ -194,11 +194,12 @@ class TestClosureOnlyPhaseAndFinalResponse:
         return " ".join(AGENT_BODY[start:end].split())
 
     def test_closed_operation_and_artifact_set(self):
-        """Named manifest declaration edit, explicit runtime-missing, exact
-        named direct dependency-delta install argv, never whole manifest
-        reinstall. Post-Write: permitted is same-test Edit, that preidentified
-        delta, the hash, the one contract Write, the verification command.
-        Forbidden: renewed discovery/Skill/Task/Bash and any extra file."""
+        """All four dependency states select only their preidentified action.
+
+        Post-Write permits the same-test Edit, selected declaration/install
+        action, hash, one contract Write, and verification command. Renewed
+        discovery, whole-manifest reinstall, and extra files stay forbidden.
+        """
         pre = self._pre_authoring_section()
         for token in (
             "dependency-manifest topology",
@@ -215,8 +216,12 @@ class TestClosureOnlyPhaseAndFinalResponse:
         section = " ".join(self._closure_section().split())
         for allowed in (
             "same-test-file `Edit`",
-            "named manifest owner's declaration edit",
-            "iff `BROAD_INPUT_DOMAIN` fired and the substrate facts state the dependency runtime-missing",
+            "brief-named action for its dependency state",
+            "declared and present",
+            "declared and missing",
+            "undeclared and present",
+            "undeclared and missing",
+            "named manifest declaration/lock delta",
             "named direct dependency-delta install argv",
             "never an invented tool",
             "the test file's SHA-256 hash",
