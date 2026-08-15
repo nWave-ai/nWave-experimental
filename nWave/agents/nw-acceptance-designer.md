@@ -99,14 +99,16 @@ window of AT MOST five calls total, strictly in this order:
 
 Step 1's brief Read already carries the architect-named test substrate (ADR-
 SSOT-002 §4b Axis 1): for every VALUE-SEED clause, the existing production
-driving or observing port and real oracle surface; the canonical repository
-test helper/import to reuse; exactly what shared fixture state
+driving or observing port and real oracle surface; its exact repository-native
+route/call-builder identity, literal arguments, and response selector or stable
+lookup key; the canonical repository test helper/import to reuse; exactly what shared fixture state
 that helper does and does not construct; any executor/lifecycle isolation
 constraint on repeated or property-based cases; the test-dependency manifest owner;
 each required dependency's declaration-vs-runtime state; the exact
 repository-native verification argv; and, only when a dependency is
 runtime-missing, the exact direct dependency-delta install argv. Consume
-these facts from that one Read verbatim — never guess, invent, or rediscover
+these facts from that one Read verbatim — never hand-assemble a path, guess a
+response key, invent, or rediscover
 them; steps 2-4 supplement only language/runner evidence the brief does not
 carry. The initial RED file may import only production symbols already
 present at the base revision; any planned-feature symbol is observed
@@ -114,6 +116,18 @@ exclusively through the named existing driving port — never a direct import
 of a symbol that does not yet exist at base. An import, collection, or setup
 failure on that file is BROKEN by construction, never an intended-RED
 observation.
+
+Before the first Write, compile one spatial portfolio over all clauses. Reuse
+one scenario when one real interaction honestly observes several clauses;
+combine equivalent invalid inputs into one parameterized/table-driven test;
+and author one property per distinct universal law. A clause count never
+becomes a test count. Each portfolio entry must bind verbatim to the brief's
+executable port and selector. For a DB-touching property, the brief-named
+specialized property lifecycle overrides the generic repository helper: use
+the exact compatible base/composition and reconstruct only the documented
+fixture facts. A missing binding, selector, or compatible composition is
+`EVIDENCE_GAP` before Write — never a literal URL/key or concrete base guessed
+from the dominant repository pattern.
 
 Once step 5 returns, no further product-source Read/Grep/Glob or ad-hoc Bash
 precedes resolving the installed schema locator, reading that schema, and

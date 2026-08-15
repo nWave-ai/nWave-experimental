@@ -110,7 +110,12 @@ or implementation sketch:
 
 - for every clause, the existing production driving or observing port ATD
   must use and the real oracle surface where the user or integrator perceives
-  it; one vertical may span multiple ports and retains all clauses;
+  it, plus the exact repository-native executable binding: route/call-builder
+  identity and literal arguments, and the response selector or stable lookup
+  key that observes the result. When the repository has a named route builder,
+  emit its name and arguments — never a hand-assembled path. One vertical may
+  span multiple ports and retains all clauses; a conceptual port name without
+  an executable binding is incomplete authority;
 - any internal state, status field, timestamp, or seam that resembles the
   outcome but cannot substitute for outbound notification delivery, emitted
   events, persisted history, or another promised observation;
@@ -119,7 +124,11 @@ or implementation sketch:
 - exactly what shared fixture state that helper does and does not construct —
   state it names, never state ATD must assume;
 - any executor/lifecycle isolation constraint that changes how repeated or
-  property-based cases may share that fixture;
+  property-based cases may share that fixture. Name the exact compatible base
+  or composition: a specialized property-test lifecycle overrides a generic
+  repository helper, whose reusable setup must then be composed explicitly or
+  reconstructed from its documented fixture facts. Never claim one concrete
+  helper applies uniformly when its lifecycle is incompatible;
 - the test-dependency manifest's owner (file/path);
 - each required dependency's declaration-vs-runtime state (declared-but-maybe-
   not-installed vs genuinely undeclared);
@@ -137,7 +146,8 @@ or implementation sketch:
   interpreter/environment and install only that dependency delta — never a
   bare `pip`/`python` command or a whole-manifest `-r` install.
 
-If any clause lacks a real port/oracle or only a proxy is available, return
+If any clause lacks a real port/oracle, its executable binding/selector, or
+only a proxy is available, return
 `ARCHITECTURE-BLOCKED` rather than writing a narrower substrate.
 Any missing owner, state, or required command likewise blocks — never write
 incomplete authority. All dependency declaration/runtime states and actions

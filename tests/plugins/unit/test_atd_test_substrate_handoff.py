@@ -122,6 +122,19 @@ class TestArchitectProjectsFactsLanguageAgnosticGreenToGreenKeepsOracle:
         assert "green_to_green" in section
         assert "omit" in section or "no separate facts" in section
 
+    def test_port_bindings_and_specialized_lifecycle_are_total_before_handoff(self):
+        section_start = ARCHITECT.index("Test substrate (RED_TO_GREEN only)")
+        section_end = ARCHITECT.index("This is the sole carrier", section_start)
+        section = _norm(ARCHITECT[section_start:section_end])
+
+        assert "exact repository-native executable binding" in section
+        assert "route/call-builder identity and literal arguments" in section
+        assert "response selector or stable lookup key" in section
+        assert "never a hand-assembled path" in section
+        assert "specialized property-test lifecycle overrides" in section
+        assert "Never claim one concrete helper applies uniformly" in section
+        assert "executable binding/selector" in section
+
 
 class TestAtdConsumesFactsImportsBaseSymbolsRealPortsBrokenOnSetup:
     """ATD consumes brief facts, base symbols, real ports, setup failure BROKEN."""
@@ -145,6 +158,29 @@ class TestAtdConsumesFactsImportsBaseSymbolsRealPortsBrokenOnSetup:
             "collection" in ACCEPTANCE_DESIGNER
             and "setup failure" in ACCEPTANCE_DESIGNER
         )
+
+    def test_atd_compiles_minimal_spatial_portfolio_without_binding_guesses(self):
+        marker = "Before the first Write, compile one spatial portfolio"
+        idx = ACCEPTANCE_DESIGNER.index(marker)
+        paragraph = _norm(ACCEPTANCE_DESIGNER[idx : idx + 1400])
+
+        assert (
+            "one scenario when one real interaction honestly observes several clauses"
+            in paragraph
+        )
+        assert (
+            "equivalent invalid inputs into one parameterized/table-driven test"
+            in paragraph
+        )
+        assert "one property per distinct universal law" in paragraph
+        assert "A clause count never becomes a test count" in paragraph
+        assert "brief's executable port and selector" in paragraph
+        assert (
+            "specialized property lifecycle overrides the generic repository helper"
+            in paragraph
+        )
+        assert "never a literal URL/key or concrete base guessed" in paragraph
+        assert "EVIDENCE_GAP" in paragraph
 
 
 class TestDeclarationRuntimeDeltaInstallForbidsWholeManifest:
