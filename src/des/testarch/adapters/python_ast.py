@@ -16,21 +16,17 @@ slice-03 (M8 universe-bound assertion gate) ADDS three capability realizations �
 query over the opaque ``ast`` tree. The slice-01 surface (``parse``,
 ``functions_with_decorator``, ``imports_in_function``) is preserved verbatim.
 
-slice-04 (M9/9-v2 PBT-layer-mode gate) ADDS one capability realization —
-``imports_in_module`` — a pure query over the opaque ``ast`` tree that reports
-every module-level import. The slice-01/03 surface is preserved verbatim.
-
 slice-05 (CM-I seam-tag-honesty gate) ADDS two capability realizations —
 ``marker_decorators`` (the pytest tags a test function carries) and
 ``spawn_shape_in_body`` (whether the body spawns a real subprocess, drives an
 in-process ``main(argv)``, or neither). Both are RED scaffolds here (created by
-DISTILL, implemented by DELIVER). The slice-01/03/04 surface is preserved
+DISTILL, implemented by DELIVER). The slice-01/03 surface is preserved
 verbatim.
 
 slice-09 (P3 composition-root gate) ADDS one capability realization —
 ``assignments_constructing_type`` — a pure query over the opaque ``ast`` tree that
 reports every ``name = Type(...)`` construction in a step body whose constructed
-type is in a requested set. The slice-01/03/04/05 surface is preserved verbatim.
+type is in a requested set. The slice-01/03/05 surface is preserved verbatim.
 """
 
 from __future__ import annotations
@@ -172,15 +168,13 @@ class PythonAstAdapter:
         return self._imports_from_nodes(ast.walk(function_node))
 
     def imports_in_module(self, tree: object) -> list[ImportInfo]:
-        """Return every module-level import statement (slice-04 M9/9-v2).
+        """Return every module-level import statement.
 
         Reads the module body for ``ast.Import`` / ``ast.ImportFrom`` nodes and
-        reports each as an ``ImportInfo`` (dotted source module + 1-based line),
-        so the M9 rule can spot a ``hypothesis`` / ``RuleBasedStateMachine``
-        import in a layer-3+ test file. Both ``import x`` and ``from x import y``
-        forms are reported, using the dotted source module as
-        ``ImportInfo.module``. Only top-level statements are read (module body),
-        not nested imports inside function bodies.
+        reports each as an ``ImportInfo`` (dotted source module + 1-based line).
+        Both ``import x`` and ``from x import y`` forms are reported, using the
+        dotted source module as ``ImportInfo.module``. Only top-level statements
+        are read, not nested imports inside function bodies.
         """
         return self._imports_from_nodes(self._as_module(tree).body)
 

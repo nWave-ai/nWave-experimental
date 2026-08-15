@@ -66,14 +66,21 @@ slice-02 expansion.)
 
 ---
 
-## Mandate 9 — PBT input mode is layer-dependent
+## Mandate 9 — PBT input mode is layer-dependent, with a semantic-PBT carve-out
 
 Property-based test machinery (Hypothesis `@given`, `RuleBasedStateMachine`, equivalent in other languages) is constrained by layer:
 
 - **Layers 1-2** (unit, in-memory acceptance with in-memory doubles): PBT full. Hypothesis explores the generative input space (100+ examples per property by default). Pinned `@example(...)` preserves a domain-readable canonical case for reviewers.
-- **Layers 3-6** (subprocess/FS acceptance, integration, walking-skeleton, E2E): example-only. Sad paths are enumerated explicitly, never PBT-generated. PBT runtime cost is incompatible with real-I/O tests where each example is 100ms–seconds.
+- **Layers 3-6** (subprocess/FS acceptance, integration, walking-skeleton, E2E): the REPRESENTATIVE test proving wiring and sad-path coverage is example-only — sad paths are enumerated explicitly (Mandate 11), never PBT-generated. PBT runtime cost is incompatible with real-I/O tests where each example is 100ms-seconds.
 
-Rationale: layer 3+ tests serve wiring proof and contract verification; coverage exploration happens at layers 1-2 where iteration is cheap.
+This layer default is NOT a blanket ban on generative testing at layer 3+. It never suppresses a separate semantic-PBT projection when a declared broad-input/state/failure law warrants one (most commonly the `BROAD_INPUT_DOMAIN` obligation — examples alone cannot discharge it, `nw-property-based-testing`). When one or more such laws fire:
+
+- Author the smallest sufficient SET of additional generative tests targeting the SAME promised observation each declared law already requires the representative example to prove — never a proxy, never a substitute oracle, never a duplicate of the representative example's assertions. Normally this is one property per distinct declared law; combine two or more laws into a single property only when one generated observation honestly falsifies all of them together — never combine merely to save authoring effort.
+- Site each property at the nearest deterministic, replayable, law-bearing surface reachable from that layer. If the layer's own driven adapter is slow or nondeterministic (subprocess/network/full real I/O), keep the representative example there unchanged and project the generated property onto the nearest honest cheap semantic model or seam that still carries the law. That seam need not perform real I/O — a fake/model is legitimate — but its generated observation must carry an explicit preservation map/equivalence to the promised real-port observation; without that map the seam is a proxy, not an honest one, and blocks.
+- If no honest law-bearing seam with such a preservation map exists at or near that layer, do not fabricate one, and never let the obligation become or remain example-only: return `EVIDENCE_GAP` back to DESIGN before authoring. DESIGN must either name a deterministic, replayable semantic surface plus its observation-preserving relationship to the promised real-port observation, or remove/correct the unsupported law. A declared broad law (e.g. `BROAD_INPUT_DOMAIN`) can never be discharged by examples alone — no seam is never a license to downgrade silently.
+- Each property keeps a bounded examples/runtime budget — never open-ended generation against a real-I/O boundary — regardless of how many properties the law set requires.
+
+Rationale: layer 3+ representative tests serve wiring proof and contract verification; broad generative coverage exploration happens at layers 1-2 where iteration is cheap, OR — when a law demands it and examples cannot discharge it — as the smallest sufficient set of budgeted semantic-PBT projections at the nearest cheap seam (one per distinct law, combined only when honestly justified), never as blanket per-scenario machinery, and never silently downgraded to example-only when no seam exists.
 
 ## Mandate 10 — Two-tier acceptance for rich journeys
 
@@ -105,6 +112,7 @@ Sad-path coverage at layers 3+ (subprocess / real adapter / integration / WS / E
 - `assert_state_delta` is OPTIONAL at layer 3+ (universe-guard is a Mandate 8 layer 1-3 requirement; layers 4+ may use traditional assertions per Mandate 8).
 - Each sad path is named explicitly: `Bug_<symptom>` or `Sad_<scenario>` test, with explicit input that triggers the failure.
 - Coverage requirement: every failure mode enumerated in DEVOPS environment matrix and every `failure_modes` entry from `docs/product/journeys/<name>.yaml` gets at least one named sad-path test.
+- This mandate governs the enumerated sad-path SET only. It does not ban the Mandate 9 semantic-PBT carve-out: a declared broad-input/state/failure law still gets its own budgeted generative test at the nearest law-bearing surface, living in its own generative test/file, never merged into or replacing the enumerated sad-path examples.
 
 ## Layered Test Discipline
 
@@ -114,10 +122,12 @@ The four mandates above (Universe, PBT mode, two-tier acceptance, sad-path treat
 |---|---|---|---|---|
 | Unit | <1ms | no | PBT full (`@given` 100+ examples) | state-delta + Universe |
 | In-memory acceptance | ~10ms | no (in-memory doubles) | PBT example-pinned if AC tagged `@property`; example-only otherwise | state-delta + Universe |
-| Subprocess / FS acceptance | ~100ms | yes (real adapter) | example-only — sad paths enumerated | state-delta + Universe |
-| Integration | ~100ms | yes | example-only, sad-path coverage | traditional OK; state-delta optional |
-| WS `@wiring_e2e` | 1-3s | yes (real stack) | example-only (1-2 representative) | traditional |
+| Subprocess / FS acceptance | ~100ms | yes (real adapter) | representative example-only, sad paths enumerated; + budgeted semantic-PBT projection at nearest cheap law-bearing seam when a declared law fires (Mandate 9 carve-out) | state-delta + Universe |
+| Integration | ~100ms | yes | representative example-only, sad-path coverage; + budgeted semantic-PBT projection when a declared law fires (Mandate 9 carve-out) | traditional OK; state-delta optional |
+| WS `@wiring_e2e` | 1-3s | yes (real stack) | example-only (1-2 representative) — wiring proof, never a law-bearing generative surface | traditional |
 | E2E | seconds | full real | example-only | traditional |
+
+The "budgeted semantic-PBT projection" cells are additive to, never a replacement for, the representative example on that row: the example still proves wiring through the real/composed port, the property proves the declared law at the nearest deterministic surface. See Mandate 9's carve-out for the siting and budget rules.
 
 **Polyglot note**: the Universe / state-delta and PBT laws are
 language-agnostic — the prose is the contract, and Python imports

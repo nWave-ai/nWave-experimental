@@ -1,10 +1,8 @@
-# slice-01 -- dead-code-sweep-testarch-rules (techdebt.md item
-# dead-code-sweep-2026-08-03-testarch-rules-eight-of-ten-unwired). A manual
-# AST-graph + import-graph audit found 8 of the 10 des.testarch.rules modules
-# had zero production importers; 6 are cleanly dead and removed by this slice.
-# 2 (assert_state_delta, pbt_layer_mode) are kept because registry_conformance's
-# own drift-guard self-check reads their AUDITED_LAYERS / PBT_FORBIDDEN_LAYERS
-# constants live (registry_conformance_composition.py:54-55). This is a
+# slice-01 -- dead-code-sweep-testarch-rules. Repeated AST-graph + import-graph
+# audits found unwired des.testarch.rules modules with zero production
+# importers; 7 are now removed. ``assert_state_delta`` stays
+# because registry_conformance's own drift-guard self-check reads its
+# AUDITED_LAYERS constant live. This is a
 # behavior-preserving prefactoring slice's own regression net: it pins BOTH the
 # removal and the exception so neither silently regresses.
 #
@@ -13,25 +11,25 @@
 # real I/O beyond reading files on disk under the repo already checked out.
 
 @feature-dead-code-sweep-testarch-rules @slice-01 @component
-Feature: The 6 confirmed-dead testarch rules stay removed and the 2 live exceptions stay present
+Feature: The 7 confirmed-dead testarch rules stay removed and the live exception stays present
 
   As the methodology maintainer
-  I want the 6 unwired des.testarch.rules modules gone and their exclusive test
-  families gone with them, while the 2 modules registry_conformance still reads
-  live constants from stay in place
+  I want the 7 unwired des.testarch.rules modules gone and their exclusive test
+  families gone with them, while the module whose live constant
+  registry_conformance still reads stays in place
   So that the dead-code sweep does not silently regress in either direction
 
   @slice-01 @contract-shape:pure-function
-  Scenario: The 6 confirmed-dead rule modules no longer exist
+  Scenario: The 7 confirmed-dead rule modules no longer exist
     Given the des.testarch.rules package directory
-    When I list the 6 modules retired by the 2026-08-03 dead-code sweep
-    Then none of the 6 retired modules exist on disk
+    When I list the 7 modules retired by the dead-code sweeps
+    Then none of the 7 retired modules exist on disk
 
   @slice-01 @contract-shape:pure-function
-  Scenario: The 2 exception modules registry_conformance depends on stay present
+  Scenario: The registry-conformance exception remains present
     Given the des.testarch.rules package directory
-    When I list the 2 modules registry_conformance's drift-guard still reads live constants from
-    Then both exception modules still exist on disk
+    When I list the module registry_conformance's drift-guard still reads live constants from
+    Then the exception module still exists on disk
 
   @slice-01 @contract-shape:pure-function
   Scenario: The mixed acceptance suite for this rule family still collects and passes

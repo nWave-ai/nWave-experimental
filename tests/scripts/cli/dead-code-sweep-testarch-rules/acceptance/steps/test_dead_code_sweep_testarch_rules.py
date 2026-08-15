@@ -2,13 +2,11 @@
 
 CONTRACT_SHAPE: pure-function
 
-Pins BOTH halves of techdebt.md item
-``dead-code-sweep-2026-08-03-testarch-rules-eight-of-ten-unwired``: the 6
-confirmed-dead ``des.testarch.rules`` modules stay removed, AND the 2 exception
-modules (``assert_state_delta``, ``pbt_layer_mode``) -- kept because
-``registry_conformance_composition.py`` reads their classification constants
-live -- stay present. A filesystem-existence + pytest-collection check, no
-business logic inlined (Mandate-12 criterion 3).
+Pins BOTH halves of the testarch dead-code sweep: the 7 confirmed-dead
+``des.testarch.rules`` modules stay removed, AND the exception module
+``assert_state_delta`` -- kept because ``registry_conformance_composition.py``
+reads its classification constant live -- stays present. A filesystem-existence
+and pytest-collection check, no business logic inlined (Mandate-12 criterion 3).
 
 Honest tagging: @component (auto-``unit`` under ``tests/build/``), NEVER
 @wiring_e2e/@subprocess -- in-process filesystem reads + an in-process pytest
@@ -39,12 +37,10 @@ _RETIRED_MODULES = (
     "registration_contract.py",
     "seam_tag_honesty.py",
     "driving_port_boundary.py",
-)
-
-_EXCEPTION_MODULES = (
-    "assert_state_delta.py",
     "pbt_layer_mode.py",
 )
+
+_EXCEPTION_MODULES = ("assert_state_delta.py",)
 
 
 # --- fixtures ----------------------------------------------------------------
@@ -67,7 +63,7 @@ def given_suite_dir() -> Path:
 
 
 @when(
-    "I list the 6 modules retired by the 2026-08-03 dead-code sweep",
+    "I list the 7 modules retired by the dead-code sweeps",
     target_fixture="retired_paths",
 )
 def when_list_retired(rules_dir: Path) -> tuple[Path, ...]:
@@ -76,7 +72,7 @@ def when_list_retired(rules_dir: Path) -> tuple[Path, ...]:
 
 @when(
     parsers.parse(
-        "I list the 2 modules registry_conformance's drift-guard still reads live constants from"
+        "I list the module registry_conformance's drift-guard still reads live constants from"
     ),
     target_fixture="exception_paths",
 )
@@ -98,13 +94,13 @@ def when_collect(suite_dir: Path) -> subprocess.CompletedProcess[str]:
 # --- Then ----------------------------------------------------------------
 
 
-@then("none of the 6 retired modules exist on disk")
+@then("none of the 7 retired modules exist on disk")
 def then_retired_absent(retired_paths: tuple[Path, ...]) -> None:
     still_present = [str(p) for p in retired_paths if p.exists()]
     assert still_present == [], f"retired module(s) still on disk: {still_present}"
 
 
-@then("both exception modules still exist on disk")
+@then("the exception module still exists on disk")
 def then_exceptions_present(exception_paths: tuple[Path, ...]) -> None:
     missing = [str(p) for p in exception_paths if not p.exists()]
     assert missing == [], f"exception module(s) unexpectedly missing: {missing}"

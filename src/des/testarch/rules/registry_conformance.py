@@ -81,8 +81,7 @@ class LayerValueViolation:
     """A flagged Layer-value-coverage breach (port-exposed observable).
 
     ``rule_set`` — the name of the classification set that references the
-                   non-producible layer value (e.g.
-                   ``pbt_layer_mode.PBT_FORBIDDEN_LAYERS``).
+                   non-producible layer value.
     ``layer_value`` — the ``Layer.value`` string referenced but never produced by
                    the reference adapter (e.g. ``"fs_acceptance"``).
     ``kind`` — ``"layer_value_not_adapter_producible"``.
@@ -145,8 +144,7 @@ def detect_layer_value_coverage(
 ) -> LayerValueCoverageVerdict:
     """Flag every layer value a classification set references that is not producible.
 
-    ``classification_sets`` maps a rule-set name (e.g.
-    ``"pbt_layer_mode.PBT_FORBIDDEN_LAYERS"``) to the ``Layer.value`` strings that
+    ``classification_sets`` maps a rule-set name to the ``Layer.value`` strings that
     set references. ``producible_layers`` is the set of ``Layer.value`` strings the
     reference adapter can actually produce (its ``_SEGMENT_TO_LAYER.values()``). A
     referenced value the adapter cannot produce is an unreachable-by-construction

@@ -17,18 +17,13 @@ vocabulary the rule consumes: ``CallInfo`` (a call site the adapter reports),
 (``calls_in_function``, ``keyword_arg_names``, ``layer_of_file``). The slice-01
 surface is preserved verbatim.
 
-slice-04 (M9/9-v2 PBT-layer-mode gate) ADDS the module-level import vocabulary
-the rule consumes: one new port method ``imports_in_module`` (every
-module-level import, used to spot a ``hypothesis``/``RuleBasedStateMachine``
-import in a layer-3+ test file). The slice-01/03 surface is preserved verbatim.
-
 slice-05 (CM-I seam-tag-honesty gate) ADDS the tag-vs-spawn vocabulary the rule
 consumes: the ``SpawnShape`` enum (what a test actually spawns — nothing, an
 in-process ``main(argv)`` call, or a real subprocess) plus two new port methods
 ``marker_decorators`` (the pytest tags a test function carries) and
 ``spawn_shape_in_body`` (the structural spawn shape of a test's body). The CM-I
 rule cross-checks a test's CLAIMED spawn (its ``@wiring_e2e``/``@subprocess``
-tags) against its ACTUAL spawn shape. The slice-01/03/04 surface is preserved
+tags) against its ACTUAL spawn shape. The slice-01/03 surface is preserved
 verbatim.
 
 slice-09 (P3 composition-root gate) ADDS the construction vocabulary the rule
@@ -39,7 +34,7 @@ constructs one of a named SUT-collaborator type set). The P3 rule cross-checks a
 step body's collaborator-constructing assignments against the presence/absence of
 a composition-root entry call. cap 10 (``ASSIGNMENTS_CONSTRUCTING_TYPE``)
 pre-exists in the capability enum + cap-table; slice-09 realizes it on the
-adapter. The slice-01/03/04/05 surface is preserved verbatim.
+adapter. The slice-01/03/05 surface is preserved verbatim.
 """
 
 from __future__ import annotations
@@ -243,12 +238,10 @@ class TestSuiteAstAdapter(Protocol):
         ...
 
     def imports_in_module(self, tree: object) -> list[ImportInfo]:
-        """Return every module-level import statement (slice-04 M9/9-v2).
+        """Return every module-level import statement.
 
         Both ``import x`` and ``from x import y`` forms are reported, using the
-        dotted source module as ``ImportInfo.module``. The M9 rule reads these to
-        spot a ``hypothesis`` / ``RuleBasedStateMachine`` import in a layer-3+
-        test file (where only example-based tests belong).
+        dotted source module as ``ImportInfo.module``.
         """
         ...
 

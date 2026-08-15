@@ -1284,6 +1284,46 @@ class TestRoleSkillLoadingRegistry:
         ):
             assert token in paragraph, f"BROAD_INPUT_DOMAIN paragraph missing: {token}"
 
+    def test_atd_semantic_pbt_carveout_preserves_one_observation_across_projections(
+        self, root: Path
+    ):
+        """A test layer cannot silently erase a declared semantic law.
+
+        The ATD and its three mandate projections must agree on one compact
+        property: representative real-port examples prove wiring, while any
+        cheap generative seam proves the same promised observation through an
+        explicit preservation map. Missing that map is an EVIDENCE_GAP, never
+        permission to downgrade a broad law to examples.
+        """
+        relative_paths = (
+            "nWave/agents/nw-acceptance-designer.md",
+            "nWave/skills/nw-test-design-mandates/SKILL.md",
+            "nWave/skills/nw-test-design-mandates-layered-mechanics/SKILL.md",
+            "nWave/skills/nw-ad-distill-dod/SKILL.md",
+        )
+        projections = {
+            path: " ".join((root / path).read_text(encoding="utf-8").split()).lower()
+            for path in relative_paths
+        }
+
+        for path, projection in projections.items():
+            for required in (
+                "broad-input/state/failure law",
+                "same promised observation",
+                "preservation map",
+                "evidence_gap",
+                "example-only",
+            ):
+                assert required in projection, f"{path} omits {required!r}"
+
+        combined = "\n".join(projections.values())
+        for retired_blanket_ban in (
+            "pbt decorators (`@given`, `rulebasedstatemachine`) appear only on layer 1-2 tests",
+            "layers 3+ use example-only — sad paths enumerated explicitly",
+            "no pbt machinery imported at those layers",
+        ):
+            assert retired_blanket_ban not in combined
+
     @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
     def test_frontmatter_disjoint_from_effective_conditional_skills(
         self, root: Path, roles: dict, agent_id: str

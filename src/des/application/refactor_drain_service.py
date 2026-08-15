@@ -513,6 +513,12 @@ class RefactorDrainService:
                     repo, item, handle.path, agent_cmd, None
                 )
 
+                lock.acquire(item.item_id)
+            except BaseException:
+                self._cleanup_worktree_and_branch(repo, handle.path, branch)
+                raise
+
+            try:
                 entry_gate_refusal = self._entry_gate_refusal(
                     repo,
                     handle.path,
@@ -525,12 +531,6 @@ class RefactorDrainService:
                 if entry_gate_refusal is not None:
                     return entry_gate_refusal
 
-                lock.acquire(item.item_id)
-            except BaseException:
-                self._cleanup_worktree_and_branch(repo, handle.path, branch)
-                raise
-
-            try:
                 changed_paths = self._git_worktree.changed_paths_since(
                     handle.path, handle.head_sha
                 )

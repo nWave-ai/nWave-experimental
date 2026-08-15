@@ -21,7 +21,7 @@ the same as every Tier-S gate slices 01-09):
     both drift facets. Stays GREEN forever — proves the gate CAN bite.
   * PRECISION — drives the detectors against the LIVE production surface, READ at
     runtime (criterion 4 — the live surface is READ, never transcribed): the actual
-    ``PBT_FORBIDDEN_LAYERS`` + ``AUDITED_LAYERS`` classification sets, the actual
+    ``AUDITED_LAYERS`` classification set, the actual
     reference-adapter producible-layer surface, the actual ``Capability`` enum +
     registry, and the actual ``PythonAstAdapter`` method-name surface. RED NOW (the
     live surface carries ``fs_acceptance`` + the dead caps), GREEN after A_GREEN
@@ -52,7 +52,6 @@ from des.testarch.adapters.python_ast import (
 from des.testarch.adapters.python_ast import PythonAstAdapter
 from des.testarch.capabilities import build_registry
 from des.testarch.rules.assert_state_delta import AUDITED_LAYERS
-from des.testarch.rules.pbt_layer_mode import PBT_FORBIDDEN_LAYERS
 from des.testarch.rules.registry_conformance import (
     CapabilityRealizationVerdict,
     LayerValueCoverageVerdict,
@@ -120,9 +119,8 @@ class RegistryConformanceService:
     def layer_value_coverage_of_live_substrate(self) -> LayerValueCoverageVerdict:
         """Drive the Layer-value detector against the LIVE rule sets + adapter.
 
-        Reads (never transcribes) the actual ``PBT_FORBIDDEN_LAYERS`` +
-        ``AUDITED_LAYERS`` classification sets and the actual reference-adapter
-        producible-layer surface.
+        Reads (never transcribes) the actual ``AUDITED_LAYERS`` classification
+        set and the actual reference-adapter producible-layer surface.
         """
         return detect_layer_value_coverage(
             self._live_classification_sets(), self._live_producible_layers()
@@ -146,7 +144,6 @@ class RegistryConformanceService:
     def _live_classification_sets() -> dict[str, frozenset[str]]:
         """The actual rule classification sets, read live from the rule modules."""
         return {
-            "pbt_layer_mode.PBT_FORBIDDEN_LAYERS": frozenset(PBT_FORBIDDEN_LAYERS),
             "assert_state_delta.AUDITED_LAYERS": frozenset(AUDITED_LAYERS),
         }
 

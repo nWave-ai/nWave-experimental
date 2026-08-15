@@ -24,7 +24,7 @@
 #     sets + reference-adapter producible layers + registered Capability values +
 #     real PythonAstAdapter method surface). Asserts CONFORMANT. This is the
 #     production-surface analogue of the clean snapshot — green now that A_GREEN
-#     dropped fs_acceptance from PBT_FORBIDDEN_LAYERS + AUDITED_LAYERS and removed
+#     dropped fs_acceptance from AUDITED_LAYERS and removed
 #     the dead caps string_literals_in_call + parametrize_arg_source. It closes the
 #     method-name-blind gap the slice-02 conformance check leaves (slice-02 validates
 #     the CompleteFixtureAdapter double, never the production adapter).

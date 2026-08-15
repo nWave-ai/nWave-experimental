@@ -405,7 +405,7 @@ BULK_HASHES = {
     # (COUNT->population / PARTITION->conservation / SILENCE->discriminator; methodology Cambio-1).
     # Hash updated 2026-07-26: add durable-outcome naming so delivery metadata
     # cannot become the public identifier of an acceptance test.
-    "nw-test-design-mandates": "3d4601294ae808770006e6f0c28cdd1f",
+    "nw-test-design-mandates": "19ad3da6f6272403055f18f528361985",
     "nw-test-organization-conventions": "b478170a1cccb0aac1811fa06daf0ba1",
     "nw-test-refactoring-catalog": "9dd4d17224b32058386f4413027253bd",
     "nw-tlaplus-verification": "39ba15e1845e237a9d2014c467aa56ff",

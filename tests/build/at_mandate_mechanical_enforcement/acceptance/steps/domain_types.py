@@ -47,7 +47,6 @@ StepFunctionName = NewType("StepFunctionName", str)
 from des.testarch.capabilities import _REGISTRY, Capability
 from des.testarch.rules import (  # noqa: F401  (import-for-side-effect: register)
     assert_state_delta,
-    pbt_layer_mode,
 )
 
 
@@ -163,121 +162,6 @@ EXPECTED_LEAKED_PRIVATE_FIELD: str = "_audit_rows"
 GUARD_CLEAN_CORPUS: Path = _GUARD_FIXTURES_DIR / "clean_universe_guarded.py"
 
 
-# ===========================================================================
-# slice-04 vocabulary — the M9/9-v2 PBT-layer-mode gate (@infrastructure)
-# ===========================================================================
-#
-# The domain nouns of the PBT-layer-mode contract:
-#
-#   * a *test file* under audit (a golden-fixture corpus file the gate scans);
-#   * its *layer mode verdict* (clean vs flagged) — the port-exposed observable;
-#   * the *kind* of corpus (given-at-layer-3+ / state-machine-at-layer-3+ /
-#     clean) the gate is asked about;
-#   * the *breach kind* the verdict names — a @given test at a layer-3+ file, or
-#     a RuleBasedStateMachine import/subclass at a layer-3+ file;
-#   * the *representative layer* a corpus is classified at — a layer-3+ file
-#     (PBT forbidden) vs a layer-1-2 file (PBT's home);
-#   * the named offenders: the @given test construct, the state-machine construct.
-
-
-# The name of a PBT construct as the gate reports it — a @given test function
-# name (e.g. "test_install_plan_is_total_at_integration") or the
-# RuleBasedStateMachine symbol.
-PbtConstructName = NewType("PbtConstructName", str)
-
-
-class PbtCorpusKind(Enum):
-    """Which golden-fixture corpus the PBT-layer-mode gate classifies.
-
-    GIVEN_AT_LAYER_3PLUS         — a @given property test classified at a
-                                   layer-3+ file. The gate MUST flag it
-                                   (recall half #1).
-    STATE_MACHINE_AT_LAYER_3PLUS — a RuleBasedStateMachine import/subclass
-                                   classified at a layer-3+ file. The gate MUST
-                                   flag it (recall half #2).
-    CLEAN_PBT_AT_LAYER_1_2       — a @given + RuleBasedStateMachine corpus
-                                   classified at a layer-1-2 file (PBT's home).
-                                   The gate MUST NOT flag it (precision half #1).
-    CLEAN_EXAMPLE_AT_LAYER_3PLUS — an example-based test classified at a layer-3+
-                                   file, carrying the textual near-miss trap. The
-                                   gate MUST NOT flag it (precision half #2).
-    """
-
-    GIVEN_AT_LAYER_3PLUS = "given_at_layer_3plus"
-    STATE_MACHINE_AT_LAYER_3PLUS = "state_machine_at_layer_3plus"
-    CLEAN_PBT_AT_LAYER_1_2 = "clean_pbt_at_layer_1_2"
-    CLEAN_EXAMPLE_AT_LAYER_3PLUS = "clean_example_at_layer_3plus"
-
-
-class PbtLayerOutcome(Enum):
-    """The port-exposed verdict the gate returns for a corpus.
-
-    FLAGGED — at least one PBT construct sits at a PBT-forbidden (layer-3+) file.
-    CLEAN   — every PBT construct sits at layers 1-2, or the file carries none;
-              no breach found.
-    """
-
-    FLAGGED = "flagged"
-    CLEAN = "clean"
-
-
-class PbtBreachKind(Enum):
-    """The kind of PBT-layer-mode breach the verdict names.
-
-    GIVEN_AT_LAYER_3PLUS         — a @given-decorated test in a layer-3+ file.
-    STATE_MACHINE_AT_LAYER_3PLUS — a RuleBasedStateMachine in a layer-3+ file.
-    """
-
-    GIVEN_AT_LAYER_3PLUS = "given_at_layer_3plus"
-    STATE_MACHINE_AT_LAYER_3PLUS = "state_machine_at_layer_3plus"
-
-
-# --- canonical slice-04 fixtures of record ---------------------------------
-
-_PBT_FIXTURES_DIR = (
-    Path(__file__).resolve().parent.parent / "fixtures" / "pbt_layer_mode"
-)
-
-# The @given-at-layer-3+ corpus + the exact offending construct it carries. The
-# representative path declares the layer (an ``integration`` segment → layer 4,
-# in the PBT-forbidden set); the fixture content is read off the real disk path.
-GIVEN_AT_LAYER_CORPUS: Path = _PBT_FIXTURES_DIR / "violation_given_at_layer_3plus.py"
-GIVEN_AT_LAYER_REPRESENTATIVE_PATH = (
-    "tests/des/integration/install/test_install_plan_property.py"
-)
-EXPECTED_GIVEN_CONSTRUCT: PbtConstructName = PbtConstructName(
-    "test_install_plan_is_total_at_integration"
-)
-
-# The state-machine-at-layer-3+ corpus + the exact offending construct. The
-# representative path declares the layer (an ``e2e`` segment → layer 6).
-STATE_MACHINE_AT_LAYER_CORPUS: Path = (
-    _PBT_FIXTURES_DIR / "violation_state_machine_at_layer_3plus.py"
-)
-STATE_MACHINE_AT_LAYER_REPRESENTATIVE_PATH = (
-    "tests/des/e2e/install/test_install_journey_state_machine.py"
-)
-EXPECTED_STATE_MACHINE_CONSTRUCT: PbtConstructName = PbtConstructName(
-    "RuleBasedStateMachine"
-)
-
-# The clean PBT-at-layer-1-2 corpus (PBT at its home layer). The representative
-# path declares the layer (a ``unit`` segment → layer 1, NOT in the forbidden
-# set).
-CLEAN_PBT_AT_LAYER_CORPUS: Path = _PBT_FIXTURES_DIR / "clean_pbt_at_layer_1_2.py"
-CLEAN_PBT_AT_LAYER_REPRESENTATIVE_PATH = "tests/des/unit/totals/test_totals_property.py"
-
-# The clean example-at-layer-3+ near-miss corpus (example test, no PBT construct,
-# at a layer-3+ file). The representative path declares the layer (an
-# ``integration`` segment → layer 4).
-CLEAN_EXAMPLE_AT_LAYER_CORPUS: Path = (
-    _PBT_FIXTURES_DIR / "clean_example_at_layer_3plus.py"
-)
-CLEAN_EXAMPLE_AT_LAYER_REPRESENTATIVE_PATH = (
-    "tests/des/integration/install/test_install_plan_example.py"
-)
-
-
 # ---------------------------------------------------------------------------
 # slice-11 vocabulary — the Tier-M golden-fixture-completeness meta-gate.
 #
@@ -340,8 +224,7 @@ META_INCOMPLETE_ACCEPTANCE: Path = (
 # D-C/D-E, Earned-Trust self-application; feature-delta slice-plan row 229):
 #
 #   * a *rule classification set* under audit — a set a gate-rule references to
-#     decide which ``Layer`` values it applies at (``PBT_FORBIDDEN_LAYERS``,
-#     ``AUDITED_LAYERS``);
+#     decide which ``Layer`` values it applies at (``AUDITED_LAYERS``);
 #   * a *producible layer value* — a ``Layer`` value the reference adapter can
 #     actually emit (present in ``_SEGMENT_TO_LAYER.values()``);
 #   * a *registered capability* — a ``Capability`` enum member;
