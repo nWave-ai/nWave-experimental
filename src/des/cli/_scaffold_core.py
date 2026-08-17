@@ -56,14 +56,9 @@ from typing import Literal
 #: ``--force`` escape hatch) -- no other policy is affected by ``force``.
 ExistsPolicy = Literal["skip", "refuse", "rebuild"]
 
-#: The verdict token `charter_scaffold`
-#: (and, for its new failure path, `examine_fixture`) already share via
-#: `des.cli.validate_feature_delta.VERDICT_ACCEPTED`. Re-declared here as the
-#: plain string literal (not imported) to keep this module free of a
-#: dependency on the feature-delta parser -- the two modules that import both
-#: already guarantee the two constants can never drift (see
-#: `test_scaffold_core_accepted_matches_validate_feature_delta`).
-_ACCEPTED_VERDICT = "accepted"
+#: Shared success verdict for scaffold commands.  This generic producer
+#: contract must not depend on any retired delivery carrier.
+ACCEPTED_VERDICT = "accepted"
 
 
 def decide_on_exists(
@@ -100,7 +95,7 @@ class ScaffoldDegradeError(Exception):
 
 
 def emit_scaffold_verdict(
-    payload: dict[str, object], *, accepted: str = _ACCEPTED_VERDICT
+    payload: dict[str, object], *, accepted: str = ACCEPTED_VERDICT
 ) -> int:
     """Print `payload` (which MUST carry a `"verdict"` key) as one line of
     JSON to stdout, and return the shared scaffold exit-code convention: `0`

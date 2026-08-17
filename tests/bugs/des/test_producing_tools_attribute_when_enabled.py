@@ -1,4 +1,4 @@
-"""Regression: `des commit` / `des commit-slice` never applied the nWave
+"""Regression: `des commit` applies the nWave
 attribution trailer -- the PRODUCING TOOLS run `git commit` inside a Python
 subprocess the PreToolUse Bash rewriter (`trailer_rewriter.py`) never
 observes, so the trailer never landed even with `attribution.enabled: true`
@@ -13,9 +13,9 @@ this repo carried the trailer.
 Fix (GDP-4, the PRODUCING TOOL attributes itself): a pure domain function
 `apply_attribution_trailer` (`src/des/domain/commit_attribution/
 attribution_trailer.py`) plus an application seam `attribute_commit_message`
-(`src/des/application/commit_message_attribution.py`) that both `commit.py`
-and `commit_slice.py` call before their own `git commit`. Five properties
-below, each traced to its demonstrated failing shape in the dispatch RCA.
+(`src/des/application/commit_message_attribution.py`) that `commit.py` calls
+before its own `git commit`. The retained properties below are traced to the
+demonstrated failing shapes in the dispatch RCA.
 
 Hermeticity: every test drives a REAL git repo under `tmp_path`, and every
 global-config lookup is redirected via `DESConfig._DEFAULT_GLOBAL_CONFIG_PATH`
@@ -393,48 +393,3 @@ class TestPropertyFiveAbsentConfigResolvesNotEnabled:
         )
 
         assert result == f"{message}\n{SENTINEL}"
-
-
-# ---------------------------------------------------------------------------
-# commit-slice: the trailer must survive `_amend_trailer`'s Gate-Scope
-# digest swap EXACTLY ONCE (duplication/loss risk called out by the dispatch).
-# ---------------------------------------------------------------------------
-
-
-class TestCommitSliceAmendPreservesTrailerExactlyOnce:
-    def test_trailer_survives_the_gate_scope_amend_exactly_once(
-        self, tmp_path: Path
-    ) -> None:
-        from des.application.commit_message_attribution import (
-            attribute_commit_message,
-        )
-        from des.cli.commit_slice import _amend_trailer, _commit_with_placeholder
-
-        repo = tmp_path / "repo"
-        _init_repo(repo)
-        _activate_repo(repo)
-        global_config = tmp_path / "global-config.json"
-        _global_config_enabled(global_config, enabled=True)
-
-        (repo / "b.py").write_text("y = 1\n")
-        _git(repo, "add", "b.py")
-
-        # Mirrors main()'s exact call order: attribute BEFORE the placeholder
-        # commit, then amend only the Gate-Scope digest afterwards.
-        message = attribute_commit_message(
-            repo, "feat: add b\n\nSlice-Id: slice-01", global_config_path=global_config
-        )
-        assert SENTINEL in message  # sanity: the fixture is actually active+on
-
-        _commit_with_placeholder(repo, message, no_verify=True)
-        after_placeholder = _head_message(repo)
-        assert after_placeholder.count(SENTINEL) == 1
-        assert "Gate-Scope:" in after_placeholder
-
-        _amend_trailer(repo, "a" * 64)  # a real digest is 64 hex chars
-
-        after_amend = _head_message(repo)
-        assert after_amend.count(SENTINEL) == 1
-        assert f"Gate-Scope: {'a' * 64}" in after_amend
-        assert "Slice-Id: slice-01" in after_amend
-        assert after_amend.startswith("feat: add b")

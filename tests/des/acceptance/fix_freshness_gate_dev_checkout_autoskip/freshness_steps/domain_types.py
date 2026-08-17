@@ -41,10 +41,10 @@ class GateVerdict(str, Enum):
 class StructuredEventName(str, Enum):
     """The structured stderr event names the gate emits at distinct outcomes.
 
-    `autoskipped` is the NEW audit-bearing event this bugfix adds. It is
+    `autoskipped` is the opt-in diagnostic this bugfix adds. It is
     DISTINCT from the pre-existing `skipped` (operator-set `NWAVE_FRESHNESS=
-    skip`) so post-hoc audit can answer "why did the gate not refuse" — the
-    audit-trail invariant from AT-03.
+    skip`) so an operator can ask why the gate did not refuse without adding
+    noise to every successful machine-readable command.
     """
 
     REFUSED = "des.runtime.freshness.refused"

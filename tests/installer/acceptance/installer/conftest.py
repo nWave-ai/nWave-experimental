@@ -110,7 +110,7 @@ def installer_result(project_root, tmp_path_factory):
         _attr_utils.write_attribution_preference = lambda *a, **kw: None
 
         # --- Set argv ---
-        sys.argv = ["install_nwave.py"]
+        sys.argv = ["install_nwave.py", "--platform", "claude-code"]
 
         # --- Capture stdout ---
         captured = io.StringIO()

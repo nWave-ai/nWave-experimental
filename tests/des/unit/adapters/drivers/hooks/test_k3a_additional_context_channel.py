@@ -55,18 +55,48 @@ def _pre_write_stdin(
     return json.dumps(payload)
 
 
-def _mode_select_observed_transcript(tmp_path) -> str:
-    """A transcript with an actual `Skill(nw-mode-select)` tool_use entry."""
+def _mode_select_observed_transcript(
+    tmp_path, selection: str = "direct S", *, engage_auto: bool = False
+) -> str:
+    """A real mode-select call followed by its exact ephemeral marker."""
     transcript = tmp_path / "transcript.jsonl"
-    transcript.write_text(
-        json.dumps(
+    entries = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Skill",
+                        "input": {"skill": "nw-mode-select"},
+                    }
+                ]
+            },
+        },
+        {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": f"NW-MODE-SELECTED: {selection}"}]
+            },
+        },
+    ]
+    if engage_auto:
+        entries.append(
             {
-                "type": "tool_use",
-                "name": "Skill",
-                "input": {"skill": "nw-mode-select"},
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Skill",
+                            "input": {"skill": "nw-auto"},
+                        }
+                    ]
+                },
             }
         )
-        + "\n",
+    transcript.write_text(
+        "".join(json.dumps(entry) + "\n" for entry in entries),
         encoding="utf-8",
     )
     return str(transcript)
@@ -165,6 +195,19 @@ class TestPreWriteModeSelectGate:
 
         assert exit_code == 0
         assert payload is None
+
+    def test_auto_selection_without_nw_auto_blocks_root_write(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = _mode_select_observed_transcript(tmp_path, "auto L")
+
+        exit_code, payload = _run_pre_write(
+            monkeypatch, capsys, _pre_write_stdin(transcript_path)
+        )
+
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+        assert "Invoke Skill(nw-auto)" in payload["reason"]
 
     def test_prose_mention_and_unrelated_skill_do_not_satisfy_the_gate(
         self, monkeypatch, capsys, audit_events, tmp_path
@@ -323,26 +366,7 @@ def _bash_stdin(transcript_path: str | None = None) -> str:
 def _real_nested_mode_select_transcript(tmp_path) -> str:
     """The REAL Claude Code transcript shape: tool_use nested under
     `message.content`, never a bare top-level `tool_use` entry."""
-    transcript = tmp_path / "real-nested-transcript.jsonl"
-    transcript.write_text(
-        json.dumps(
-            {
-                "type": "assistant",
-                "message": {
-                    "content": [
-                        {
-                            "type": "tool_use",
-                            "name": "Skill",
-                            "input": {"skill": "nw-mode-select"},
-                        }
-                    ]
-                },
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    return str(transcript)
+    return _mode_select_observed_transcript(tmp_path)
 
 
 class TestPreToolUseBashModeSelectGate:
@@ -389,6 +413,30 @@ class TestPreToolUseBashModeSelectGate:
 
         assert exit_code == 0
         assert payload is None or payload.get("decision") != "block"
+
+    @pytest.mark.parametrize("tool_name", ["Bash", "Agent", "TaskCreate"])
+    def test_auto_selection_requires_nw_auto_before_root_tools(
+        self, monkeypatch, capsys, audit_events, tmp_path, tool_name: str
+    ) -> None:
+        transcript_path = _mode_select_observed_transcript(tmp_path, "auto M")
+        tool_inputs = {
+            "Bash": {"command": "ls"},
+            "Agent": {"subagent_type": "nw-software-crafter", "prompt": "x"},
+            "TaskCreate": {"subject": "x", "description": "x"},
+        }
+        stdin = json.dumps(
+            {
+                "tool_name": tool_name,
+                "tool_input": tool_inputs[tool_name],
+                "transcript_path": transcript_path,
+            }
+        )
+
+        exit_code, payload = _run_pre_tool_use(monkeypatch, capsys, stdin)
+
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+        assert "Invoke Skill(nw-auto)" in payload["reason"]
 
     def test_prose_mention_and_unrelated_skill_do_not_unlock_bash(
         self, monkeypatch, capsys, audit_events, tmp_path
@@ -472,21 +520,34 @@ def _nw_mode_select_observed_transcript(tmp_path) -> str:
     not arm the nw-auto SendMessage gate."""
     transcript = tmp_path / "mode-select-only-transcript.jsonl"
     transcript.write_text(
-        json.dumps(
-            {
-                "type": "assistant",
-                "message": {
-                    "content": [
-                        {
-                            "type": "tool_use",
-                            "name": "Skill",
-                            "input": {"skill": "nw-mode-select"},
-                        }
-                    ]
+        "".join(
+            json.dumps(entry) + "\n"
+            for entry in [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "Skill",
+                                "input": {"skill": "nw-mode-select"},
+                            }
+                        ]
+                    },
                 },
-            }
-        )
-        + "\n",
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "NW-MODE-SELECTED: direct S",
+                            }
+                        ]
+                    },
+                },
+            ]
+        ),
         encoding="utf-8",
     )
     return str(transcript)
@@ -619,6 +680,21 @@ def _mode_select_and_nw_auto_transcript(
                         "type": "tool_use",
                         "name": "Skill",
                         "input": {"skill": "nw-mode-select"},
+                    }
+                ]
+            },
+        },
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "NW-MODE-SELECTED: auto L"
+                            if auto_author == "assistant"
+                            else "NW-MODE-SELECTED: direct S"
+                        ),
                     }
                 ]
             },

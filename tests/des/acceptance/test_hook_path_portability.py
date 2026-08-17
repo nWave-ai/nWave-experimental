@@ -547,7 +547,7 @@ class TestHookInstallIdempotency:
         GIVEN DES hooks are installed once
         WHEN hooks are installed a second time
         THEN no duplicate hooks exist
-        AND all 4+ PreToolUse hooks present (Agent, Write, Edit, Bash, Bash, Bash)
+        AND every current event/matcher/command registration is singular
 
         KEPT as-is: count-based assertion (matchers.count == 1, list len == N).
         idempotent_after targets PATH-prepend semantics; for list-deduplication
@@ -564,29 +564,16 @@ class TestHookInstallIdempotency:
         settings_file = install_context.claude_dir / "settings.json"
         config = json.loads(settings_file.read_text())
 
-        # Exactly 1 PreToolUse entry per (Agent, Write, Edit) matcher.
-        # Bash matcher legitimately appears 3 times post-slice-04 (each entry
-        # has a distinct command) so the per-matcher count is asserted on
-        # the unique-action matchers only.
-        pre_hooks = config["hooks"]["PreToolUse"]
-        matchers = [h.get("matcher") for h in pre_hooks]
-        assert matchers.count("Agent") == 1, f"Duplicate Agent hooks: {matchers}"
-        assert matchers.count("Write") == 1, f"Duplicate Write hooks: {matchers}"
-        assert matchers.count("Edit") == 1, f"Duplicate Edit hooks: {matchers}"
-        # Bash entries may share the matcher but must have distinct commands.
-        bash_commands = [
-            hook["command"]
-            for entry in pre_hooks
-            if entry.get("matcher") == "Bash"
+        registrations = [
+            (event, entry.get("matcher"), hook["command"])
+            for event, entries in config["hooks"].items()
+            for entry in entries
             for hook in entry.get("hooks", [])
         ]
-        assert len(bash_commands) == len(set(bash_commands)), (
-            f"Duplicate Bash commands across PreToolUse entries: {bash_commands}"
+        assert registrations
+        assert len(registrations) == len(set(registrations)), (
+            f"duplicate hook registrations after reinstall: {registrations}"
         )
-
-        # The normal stop hook remains singular.
-        assert len(config["hooks"]["SubagentStop"]) == 1
-        assert len(config["hooks"]["PostToolUse"]) == 1
 
 
 # =============================================================================

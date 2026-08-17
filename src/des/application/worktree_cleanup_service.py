@@ -15,10 +15,8 @@ in the universe is read, never written. ``--check-only`` (``check_only=True``
 here) narrows the whole sweep to a pure read: mutation is structurally
 unreachable regardless of verdict (D-2/D-3).
 
-Zero coupling to feature-end (D-D6): this service never imports or touches
-``AtCompletionLedgerPort`` or any feature-end machinery -- protected BY
-CONSTRUCTION (no such dependency exists to accidentally invoke), not by a
-runtime guard.
+The service has no workflow-controller or telemetry dependency; cleanup safety
+is protected by construction through the injected Git port and classifier.
 """
 
 from __future__ import annotations

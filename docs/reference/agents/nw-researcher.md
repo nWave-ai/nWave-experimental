@@ -11,7 +11,6 @@ Use for evidence-driven research with source verification. Gathers knowledge fro
 
 - [`/nw-diverge`](../commands/index.md)
 - [`/nw-document`](../commands/index.md)
-- [`/nw-execute`](../commands/index.md)
 - [`/nw-research`](../commands/index.md)
 
 ## Preloaded skills

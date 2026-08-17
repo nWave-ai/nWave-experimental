@@ -8,8 +8,7 @@ floor deflates.
 
 The argv strings below are real shapes taken from this repo's gate, not invented
 ones: the interpreter probe and the capability probe are what
-``pytest_interpreter()`` / ``can_import()`` actually spawn, and the worker line is
-what ``_run_arch_invariant_set`` actually spawns.
+``pytest_interpreter()`` / ``can_import()`` actually spawn.
 """
 
 from __future__ import annotations
@@ -31,8 +30,6 @@ pytestmark = pytest.mark.unit
 @pytest.mark.parametrize(
     "argv",
     [
-        "/repo/.venv/bin/python3 /repo/src/des/cli/_collect_scope_worker.py "
-        "--run --repo /tmp/sandbox --path /tmp/sandbox/tests/build",
         "/repo/.venv/bin/python3 -m pytest tests/des/unit/cli/test_a.py -q",
         "/repo/.venv/bin/python3 -m des.cli.__main__ run-contract-gate "
         "--repo /tmp/sandbox",

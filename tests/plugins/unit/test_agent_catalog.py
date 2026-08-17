@@ -372,11 +372,11 @@ class TestBuildOwnershipMapUnit:
         assert "not-a-list" not in result
         assert result["nw-valid"] == {"other-role"}
 
-    def test_real_atd_ownership_covers_all_22_former_frontmatter_skills(self):
+    def test_real_atd_ownership_covers_current_catalog_skills(self):
         """Every skill that used to be in nw-acceptance-designer.md's
         frontmatter must still resolve to an owner through either the
         `phase` field or the new `catalog_only` field."""
-        former_frontmatter_skills = {
+        catalog_skills = {
             "nw-bdd-methodology",
             "nw-test-design-mandates-scenario-design",
             "nw-test-design-mandates-layered-mechanics",
@@ -387,25 +387,20 @@ class TestBuildOwnershipMapUnit:
             "nw-tdd-methodology-walking-skeleton",
             "nw-distill",
             "nw-distill-prior-wave-reading",
-            "nw-distill-feature-delta-schema",
             "nw-distill-port-treatment-policy",
             "nw-distill-red-scaffolding",
-            "nw-distill-coverage-obligations",
             "nw-at-completeness-check",
             "nw-test-optimization-paradigm-match",
             "nw-test-optimization-consolidation",
             "nw-test-refactoring-catalog",
-            "nw-ad-mandate-summaries",
-            "nw-ad-distill-dod",
-            "nw-code-analysis-port",
             "nw-cross-cutting-invariants",
         }
-        assert len(former_frontmatter_skills) == 22
+        assert len(catalog_skills) == 17
 
         result = build_ownership_map(NWAVE_DIR / "agents")
         missing = {
             skill
-            for skill in former_frontmatter_skills
+            for skill in catalog_skills
             if "acceptance-designer" not in result.get(skill, set())
         }
         assert not missing, f"acceptance-designer lost ownership of: {missing}"
@@ -491,9 +486,9 @@ class TestBuildOwnershipMap:
 
     def test_known_public_skill_maps_to_correct_agent(self):
         result = build_ownership_map(self.AGENTS_DIR)
-        # nw-tdd-methodology is owned by software-crafter
-        assert "nw-tdd-methodology" in result
-        assert "software-crafter" in result["nw-tdd-methodology"]
+        # nw-crafter-discipline-delivery-contract is owned by software-crafter
+        assert "nw-crafter-discipline-delivery-contract" in result
+        assert "software-crafter" in result["nw-crafter-discipline-delivery-contract"]
 
     def test_detects_multi_agent_ownership(self):
         result = build_ownership_map(self.AGENTS_DIR)

@@ -60,10 +60,8 @@ _DEFAULT_OUT = ".nwave/perf/nested-spawn-census.jsonl"
 # this plugin exists to avoid.
 _NESTED_MARKERS = (
     "pytest",
-    "_collect_scope_worker",
     "run-contract-gate",
     "run_contract_gate",
-    "feature-end",
 )
 
 # A spawn that MENTIONS pytest is not a spawn that RUNS a suite. The gate probes

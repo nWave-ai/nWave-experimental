@@ -22,7 +22,6 @@ raises, and the call-sites translate that into their LOUD degrade signal
 
 from __future__ import annotations
 
-import subprocess
 from typing import TYPE_CHECKING, Any
 
 from des.adapters.driven.git.git_constants import GIT_REV_PARSE
@@ -30,6 +29,7 @@ from des.runtime.spawn import GIT_TIMEOUT_ENV, git_timeout_seconds, spawn
 
 
 if TYPE_CHECKING:
+    import subprocess
     from pathlib import Path
 
 
@@ -162,55 +162,6 @@ def _short_ref(ref: str) -> str:
         if ref.startswith(prefix):
             return ref[len(prefix) :]
     return ref
-
-
-def resolve_feature_genesis_base_ref(repo: Path, feature_delta_path: str) -> str | None:
-    """Resolve the commit BEFORE `feature_delta_path` first entered history, or `None`.
-
-    reuse-first-gate-branch-topology-false-positive: a delta-diff gate scoped
-    unconditionally to `master...HEAD` on a long-lived branch counts every
-    file EVER added by every OTHER feature that has landed on the branch
-    since it diverged -- not just the one feature under review. The genuine
-    scope boundary for ONE feature is its OWN genesis: the commit that first
-    introduced its `docs/feature/<id>/feature-delta.md`. This resolves that
-    commit's PARENT (`<sha>^`) via `git log --diff-filter=A --follow
-    --format=%H --reverse -- <feature_delta_path>` (oldest ADD first,
-    `--follow` so a later rename does not lose the original genesis).
-
-    Returns `None` (never raises) when: the path was never added on this
-    branch (a brand-new feature-delta not yet committed), the resolved
-    commit is the repo's own root commit (no parent to diff against), or git
-    itself is unavailable / `repo` is not a work-tree -- the caller degrades
-    to its own fallback chain (LOUD, never a silent scope choice).
-    """
-    try:
-        completed = _git_spawn(
-            [
-                "git",
-                "log",
-                "--diff-filter=A",
-                "--follow",
-                "--format=%H",
-                "--reverse",
-                "--",
-                feature_delta_path,
-            ],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-    if completed.returncode != 0:
-        return None
-    shas = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
-    if not shas:
-        return None
-    genesis_sha = shas[0]
-    if not _ref_resolves_to_commit(repo, f"{genesis_sha}^"):
-        return None  # the genesis commit IS the root commit -- no parent
-    return f"{genesis_sha}^"
 
 
 def is_ancestor(repo: Path, ancestor_sha: str, descendant_sha: str) -> bool:

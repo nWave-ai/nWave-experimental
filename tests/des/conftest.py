@@ -13,29 +13,9 @@ import pytest
 
 
 @pytest.fixture(scope="session")
-def tdd_schema():
+def tdd_phases():
     """
-    TDD schema loaded from step-tdd-cycle-schema.json.
-
-    This is the SINGLE SOURCE OF TRUTH for all TDD-related test data.
-    No hardcoded phase names or statuses in tests - use this fixture.
-
-    Returns:
-        TDDSchema: Immutable schema data container with:
-            - tdd_phases: Ordered tuple of phase names
-            - valid_statuses: Valid phase execution statuses
-            - valid_skip_prefixes: Skip prefixes that allow commit
-            - blocking_skip_prefixes: Skip prefixes that block commit
-    """
-    from des.domain.tdd_schema import TDDSchemaLoader
-
-    return TDDSchemaLoader().load()
-
-
-@pytest.fixture(scope="session")
-def tdd_phases(tdd_schema):
-    """
-    List of TDD phase names from schema for parametrized tests.
+    Canonical TDD phase names (3-phase v5 per ADR-025: RED, GREEN, COMMIT).
 
     Usage:
         @pytest.mark.parametrize("phase", tdd_phases)
@@ -43,42 +23,47 @@ def tdd_phases(tdd_schema):
             ...
 
     Returns:
-        tuple[str, ...]: ('PREPARE', 'RED_ACCEPTANCE', ..., 'COMMIT')
+        tuple[str, ...]: ('RED', 'GREEN', 'COMMIT')
     """
-    return tdd_schema.tdd_phases
+    return ("RED", "GREEN", "COMMIT")
 
 
 @pytest.fixture(scope="session")
-def valid_skip_prefixes(tdd_schema):
+def valid_skip_prefixes():
     """
-    Skip prefixes that allow commit, from schema.
+    Skip prefixes that allow commit.
 
     Returns:
         tuple[str, ...]: ('BLOCKED_BY_DEPENDENCY:', 'NOT_APPLICABLE:', ...)
     """
-    return tdd_schema.valid_skip_prefixes
+    return (
+        "BLOCKED_BY_DEPENDENCY:",
+        "NOT_APPLICABLE:",
+        "APPROVED_SKIP:",
+        "CHECKPOINT_PENDING:",
+    )
 
 
 @pytest.fixture(scope="session")
-def blocking_skip_prefixes(tdd_schema):
+def blocking_skip_prefixes():
     """
-    Skip prefixes that block commit, from schema.
+    Skip prefixes that block commit.
 
     Returns:
         tuple[str, ...]: ('DEFERRED:', ...)
     """
-    return tdd_schema.blocking_skip_prefixes
+    return ("DEFERRED:",)
 
 
 @pytest.fixture(scope="session")
-def valid_statuses(tdd_schema):
+def valid_statuses():
     """
-    Valid phase execution statuses from schema.
+    Valid phase execution statuses.
 
     Returns:
         tuple[str, ...]: ('NOT_EXECUTED', 'IN_PROGRESS', 'EXECUTED', 'SKIPPED')
     """
-    return tdd_schema.valid_statuses
+    return ("NOT_EXECUTED", "IN_PROGRESS", "EXECUTED", "SKIPPED")
 
 
 # =============================================================================

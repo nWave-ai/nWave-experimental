@@ -43,7 +43,7 @@ def utility_scripts_source(tmp_path: Path) -> Path:
     scripts_dir = tmp_path / "mock_project" / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create mock utility scripts with version info -- ALL THREE declared
+    # Create mock utility scripts with version info -- every declared utility.
     # UTILITY_SCRIPTS, matching a real dist payload (a fixture shipping fewer
     # than the full declared set silently exercised the "some are missing"
     # path without any test noticing -- see
@@ -54,10 +54,6 @@ def utility_scripts_source(tmp_path: Path) -> Path:
     (scripts_dir / "validate_step_file.py").write_text(
         '"""Step file validation script."""\n__version__ = "1.0.0"\n'
     )
-    (scripts_dir / "refactor_agent.py").write_text(
-        '"""Refactor agent script."""\n__version__ = "1.0.0"\n'
-    )
-
     return scripts_dir
 
 

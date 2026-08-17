@@ -20,7 +20,7 @@ It must be readable via GET and writable via POST and PUT on the existing check 
 
 Everything not stated above is your decision: where windows are stored, how recurrence and timezones are handled, how and where suppression happens, and how the work is structured and verified.
 
-If a file named `.k4-user-environment.md` exists in this workspace, you may consult it for the local run recipe and API key; never modify it or ship it as part of your delivery.
+The clone-local fixture interpreter is first on PATH as `python`; use it for project commands and tests.
 
 Deliver this as production code for a codebase other people maintain.
 

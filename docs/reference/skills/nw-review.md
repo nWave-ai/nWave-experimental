@@ -1,5 +1,5 @@
 # nw-review
 
-Dispatches an expert reviewer for a baseline, feature delta, task, or implementation. Use before relying on an artifact's quality verdict.
+Dispatches an independent reviewer for a durable authority, immutable oracle, candidate diff, charter set, or operational artifact.
 
 **Source:** [SKILL.md on GitHub](https://github.com/nWave-ai/nWave/blob/main/nWave/skills/nw-review/SKILL.md)

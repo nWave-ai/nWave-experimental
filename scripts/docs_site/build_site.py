@@ -155,7 +155,7 @@ def doc_url(path: str) -> str:
     """Map a repo-relative doc path to its site slug.
 
     ``docs/guides/tutorial-x/README.md`` -> ``guides/tutorial-x``
-    ``docs/guides/enforcement-recipes.md`` -> ``guides/enforcement-recipes``
+    ``docs/guides/activating-nwave-per-project.md`` -> ``guides/activating-nwave-per-project``
     ``docs/reference/agents/index.md`` -> ``reference/agents``
     ``docs/reference/agents/nw-x.md`` -> ``reference/agents/nw-x``
     """

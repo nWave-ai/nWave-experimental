@@ -46,5 +46,5 @@ Feature: DES install plugin writes the freshness-gate manifest
     Examples:
       | mutated_file                                 |
       | runtime/freshness.py                         |
-      | cli/run_contract_gate.py                     |
+      | cli/validate_delivery_contract.py            |
       | adapters/driven/freshness/repo_source_probe.py |

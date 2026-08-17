@@ -32,11 +32,9 @@ from des.adapters.drivers.hooks import hook_protocol
     "handler_name,expected_fallback,expected_exit_code",
     [
         ("handle_pre_tool_use", "allow", 0),
-        ("handle_subagent_stop", "allow", 0),
-        ("handle_post_tool_use", "allow", 0),
         ("handle_pre_write", "allow", 0),
     ],
-    ids=["pre_tool_use", "subagent_stop", "post_tool_use", "pre_write"],
+    ids=["pre_tool_use", "pre_write"],
 )
 def test_empty_stdin_produces_protocol_anomaly(
     handler_name, expected_fallback, expected_exit_code, monkeypatch, audit_events
@@ -73,11 +71,9 @@ def test_empty_stdin_produces_protocol_anomaly(
     "handler_name,expected_fallback,expected_exit_code",
     [
         ("handle_pre_tool_use", "error", 1),
-        ("handle_subagent_stop", "error", 1),
-        ("handle_post_tool_use", "allow", 0),
         ("handle_pre_write", "allow", 0),
     ],
-    ids=["pre_tool_use", "subagent_stop", "post_tool_use", "pre_write"],
+    ids=["pre_tool_use", "pre_write"],
 )
 def test_json_parse_error_produces_protocol_anomaly(
     handler_name, expected_fallback, expected_exit_code, monkeypatch, audit_events
@@ -115,14 +111,14 @@ def test_json_parse_error_produces_protocol_anomaly(
     [
         ("", "handle_pre_tool_use", 0),
         ("{bad json", "handle_pre_tool_use", 1),
-        ("", "handle_subagent_stop", 0),
-        ("{bad json", "handle_subagent_stop", 1),
+        ("", "handle_pre_write", 0),
+        ("{bad json", "handle_pre_write", 0),
     ],
     ids=[
         "empty_stdin_pre_tool_use",
         "bad_json_pre_tool_use",
-        "empty_stdin_subagent_stop",
-        "bad_json_subagent_stop",
+        "empty_stdin_pre_write",
+        "bad_json_pre_write",
     ],
 )
 def test_anomaly_logging_failure_does_not_change_exit_code(

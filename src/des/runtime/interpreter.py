@@ -373,43 +373,6 @@ def _des_root() -> str:
     return str(Path(__file__).resolve().parents[2])
 
 
-#: Relative location of the ``refactor`` fixer-swarm actuator script under a
-#: given "install anchor" directory (repo root in a dev checkout, or the
-#: Claude config dir when installed -- see ``actuator_search_paths``).
-_ACTUATOR_RELATIVE_PATH = ("scripts", "refactor_agent.py")
-
-
-def actuator_search_paths() -> tuple[Path, Path]:
-    """Candidate locations for the installed ``refactor_agent.py`` actuator,
-    derived from ``_des_root()`` alone -- never a name-based match on the
-    config dir (``parent.name == ".claude"`` breaks for ``CLAUDE_CONFIG_DIR``
-    and is a known defect elsewhere in this tree; this must not repeat it).
-
-    Two candidates because ``_des_root()``'s distance to the anchor differs
-    by layout: in a dev checkout ``_des_root()`` is ``<repo>/src`` -- one
-    hop up is ``<repo>``. In the installed standalone layout ``_des_root()``
-    is ``<claude_dir>/lib/python`` -- two hops up is ``<claude_dir>``. Both
-    candidates are always returned, in that order, so a caller can search
-    (first existing wins) or report both when neither exists.
-    """
-    root = Path(_des_root())
-    dev_anchor = root.parent
-    installed_anchor = root.parent.parent
-    return (
-        dev_anchor.joinpath(*_ACTUATOR_RELATIVE_PATH),
-        installed_anchor.joinpath(*_ACTUATOR_RELATIVE_PATH),
-    )
-
-
-def resolve_installed_actuator() -> Path | None:
-    """The installed ``refactor_agent.py`` actuator's real path, or ``None``
-    if it exists at neither candidate from ``actuator_search_paths()``."""
-    for candidate in actuator_search_paths():
-        if candidate.is_file():
-            return candidate
-    return None
-
-
 def des_subprocess_env(base: dict[str, str] | None = None) -> dict[str, str]:
     """Env for a ``des.cli`` subprocess spawn, with ``des`` guaranteed on PYTHONPATH.
 

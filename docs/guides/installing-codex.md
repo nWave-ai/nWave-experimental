@@ -199,4 +199,4 @@ If both tests pass (one for Bash, one for legacy schema rejection), your install
 
 - **Codex hooks documentation**: [developers.openai.com/codex/hooks](https://developers.openai.com/codex/hooks)
 - **nWave architecture**: See the [Architecture Guide](../architecture/) for details on DES enforcement and hook contracts
-- **Feature validation**: Codex support was delivered in Epic `codex-empirical-e2e-support` (2026-05-13). See [`docs/feature/codex-empirical-e2e-support/feature-delta.md`](../feature/codex-empirical-e2e-support/feature-delta.md) for the complete specification.
+- **Codex design authority**: See [Codex Empirical E2E Support](../product/architecture/brief.md#codex-empirical-e2e-support) for the permanent architecture and verification contract.

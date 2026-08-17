@@ -18,21 +18,7 @@ NWAVE_DIR = PROJECT_ROOT / "nWave"
 SKILLS_DIR = NWAVE_DIR / "skills"
 AGENTS_DIR = NWAVE_DIR / "agents"
 
-TARGET_SKILLS = {
-    "nw-agent-evals",
-    "nw-bugfix",
-    "nw-code-analysis-port",
-    "nw-crafter-discipline-atdd-pure",
-    "nw-deliver",
-    "nw-design",
-    "nw-distill-coverage-obligations",
-    "nw-execute",
-    "nw-mikado",
-    "nw-optimize-tests",
-    "nw-refactor",
-    "nw-root-why",
-    "nw-spike",
-}
+TARGET_SKILLS = {"nw-code-analysis-port"}
 
 ALLOWED_COMMAND_IDS = {
     "query.callers-of",

@@ -24,7 +24,7 @@ ledger / plugin whose construction or seed surface is shared between production 
 composition. Trigger by either signal:
 - the row's `Decision = PER_CALLER_MIGRATION`, OR
 - the substrate type matches the pattern `[A-Z]\w+Ledger | [A-Z]\w+Adapter | [A-Z]\w+Plugin`
-  AND is constructed in BOTH `src/` and `tests/` (e.g. `AtCompletionLedger`).
+  AND is constructed in BOTH `src/` and `tests/` (for example, a shared persistence adapter).
 
 **What the row MUST enumerate (with grep evidence).** Three cells, all mandatory:
 - **(a) Production Callers** — every production callsite, `file:line` for each.

@@ -33,10 +33,7 @@ MANIFEST_MARKERS = (
     "go.mod",
 )
 
-REQUIRED_PHRASE = {
-    "nw-ad-distill-dod": "dependency manifest",
-    "nw-crafter-discipline-atdd-pure": "dependency closure",
-}
+REQUIRED_PHRASE = {"nw-at-completeness-check": "dependency manifest"}
 
 
 @pytest.fixture(scope="module")
@@ -71,6 +68,18 @@ def test_skill_pins_manifest_vs_ambient_property(
         assert marker in content, (
             f"{skill_name}: manifest marker `{marker}` missing -- not Python-only"
         )
+
+
+def test_crafter_executes_only_the_contract_declared_substrate(public_skill_names):
+    skill_name = "nw-crafter-discipline-delivery-contract"
+    assert skill_name in public_skill_names
+    content = _skill_text(skill_name).lower()
+    for required in (
+        "literal verification command vectors",
+        "declared interpreter",
+        "ambient",
+    ):
+        assert required in content, f"{skill_name}: lost {required!r}"
 
 
 def test_red_scaffolding_still_classifies_missing_module_as_broken():

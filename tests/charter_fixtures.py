@@ -1,7 +1,7 @@
 """Shared test fixture: a FILLED expectation charter body.
 
 Tests that need the commit-time examine gate ARMED write a charter under
-``docs/product/expectations/{feature_id}/*.md``. Since the gate decides on the
+``docs/product/expectations/{delivery_id}/*.md``. Since the gate decides on the
 FILLED *property* rather than on the file's existence (GDP-8 --
 ``commit_slice._hollow_charter_refusal``, delegating to
 ``des verify-charter-filled``), a one-line stub like ``"# Charter\\n"`` no
@@ -26,7 +26,7 @@ def filled_charter(intent: str) -> str:
     """
     return (
         f"# {intent}\n"
-        "ID: EXP-fixture-1 - Spec rows: R1 - Persona: operator\n"
+        "ID: fixture-delivery · Persona: operator\n"
         "\n"
         "## Intent\n"
         f"{intent}\n"

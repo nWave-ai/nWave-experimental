@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 from scripts.analysis.k4.preflight import _arm_env
@@ -153,49 +154,28 @@ def test_work_hidden_in_a_setup_step_is_refused() -> None:
     assert any("SETUP step" in p for p in problems)
 
 
-def test_a_failing_setup_never_reaches_the_delivery(tmp_path: Path) -> None:
-    """The shell defect this feature could introduce, driven rather than argued.
-
-    An arm whose environment was never established would otherwise produce a
-    real-looking run whose only finding is that the harness broke. The delivery
-    argv here is `false`: if setup-failure fell through, the run would execute
-    it and the record would show a delivery that was attempted.
-    """
-    from scripts.analysis.paired_campaign import _run_arm
-
-    arm = ArmSpec(
-        "nwave",
-        ("sh", "-c", "echo DELIVERY_RAN"),
-        (("sh", "-c", "exit 3"),),
-    )
-
-    _run_arm(arm, task="irrelevant", pair_dir=tmp_path, timeout=60)
-
-    setup = json.loads((tmp_path / "nwave.setup.json").read_text())
-    assert setup["ok"] is False
-    assert setup["steps"][-1]["exit"] == 3
-    assert "SETUP FAILED" in (tmp_path / "nwave.err").read_text()
-    assert (tmp_path / "nwave.json").read_text() == ""
-
-
 def test_a_successful_setup_runs_in_the_arm_workspace(tmp_path: Path) -> None:
     """Setup must land in the workspace the delivery will run in — otherwise the
     arm is prepared somewhere the model never looks. The companion runner's
     original defect was exactly a path that resolved against the wrong
     directory, so this is checked, not assumed."""
-    from scripts.analysis.paired_campaign import _run_arm
+    from scripts.analysis.paired_campaign import _run_delivery, _run_pair_setup
 
+    delivery = json.dumps({"session_id": "s1", "is_error": False})
     arm = ArmSpec(
         "control",
-        ("sh", "-c", "cat marker"),
+        (sys.executable, "-c", f"print({delivery!r})", "{task}"),
         (("sh", "-c", "echo prepared > marker"),),
     )
 
-    _run_arm(arm, task="irrelevant", pair_dir=tmp_path, timeout=60)
-
-    assert json.loads((tmp_path / "control.setup.json").read_text())["ok"] is True
+    setup_ok, _ = _run_pair_setup(arm, pair_dir=tmp_path)
+    assert setup_ok is True
     assert (tmp_path / "control" / "marker").read_text().strip() == "prepared"
-    assert (tmp_path / "control.json").read_text().strip() == "prepared"
+
+    valid = _run_delivery(arm, task="irrelevant", pair_dir=tmp_path, timeout=60)
+    assert valid is True
+    output = json.loads((tmp_path / "control.json").read_text())
+    assert output["session_id"] == "s1"
 
 
 def test_a_bare_argv_list_is_still_a_valid_arm() -> None:
@@ -246,20 +226,29 @@ def test_the_declared_environment_reaches_both_setup_and_delivery(
     """Declaring an env that never reaches the child is the silent-wrong version
     of isolation: the record would show an isolated arm while the process ran
     against the operator's own configuration. So it is observed, not trusted."""
-    from scripts.analysis.paired_campaign import _run_arm
+    from scripts.analysis.paired_campaign import _run_delivery, _run_pair_setup
+
+    delivery = (
+        "import json, os; "
+        "print(json.dumps({'is_error': False, 'session_id': 'env-session', "
+        "'result': os.environ['K4_PROBE']}))"
+    )
 
     arm = ArmSpec(
         "nwave",
-        ("sh", "-c", 'printf "%s" "$K4_PROBE"'),
+        (sys.executable, "-c", delivery, "{task}"),
         (("sh", "-c", 'printf "%s" "$K4_PROBE" > from_setup'),),
         (("K4_PROBE", "{workspace}/isolated"),),
     )
 
-    _run_arm(arm, task="irrelevant", pair_dir=tmp_path, timeout=60)
+    setup_ok, _ = _run_pair_setup(arm, pair_dir=tmp_path)
+    assert setup_ok is True
+    valid = _run_delivery(arm, task="irrelevant", pair_dir=tmp_path, timeout=60)
 
     expected = f"{tmp_path / 'nwave'}/isolated"
+    assert valid is True
     assert (tmp_path / "nwave" / "from_setup").read_text() == expected
-    assert (tmp_path / "nwave.json").read_text() == expected
+    assert json.loads((tmp_path / "nwave.json").read_text())["result"] == expected
 
 
 def test_the_same_workspace_relative_env_in_both_arms_is_not_a_collision() -> None:

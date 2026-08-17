@@ -1,10 +1,4 @@
-"""des verify-charter-filled -- the backstop gate for expectation-charter
-scaffolds (charter-scaffold feature, slice-02).
-
-The enforcement half of the producing-tool vertical: slice-01
-(`des charter-scaffold`) PRODUCES a charter scaffold; this gate VERIFIES a
-charter is genuinely FILLED (not just scaffolded-and-forgotten) before an
-operator trusts it or lets it arm a downstream EXAMINE.
+"""Verify that one expectation charter contains an executable human oracle.
 
 A charter is FILLED iff every judgment section the scaffold left as a TODO
 placeholder has been replaced by real content:
@@ -21,6 +15,16 @@ still-incomplete section + HOW to fix it), INDETERMINATE (unreadable/
 malformed charter path -- missing file, empty file, directory -- LOUD
 what/why/how, never a bare traceback, never a false PASS). No sixth
 verdict.
+
+Structural, not semantic. This gate only detects scaffold residue and
+section presence -- it never judges whether a Preconditions body actually
+names a modality-appropriate PublicStartRecipe (exact CLI argv, public
+library import+setup+call, endpoint+request, or URL+ordered UI actions;
+ADR-SSOT-002 §4b "PublicStartRecipe precondition"). That semantic judgment
+belongs to value authority and the PO's construction contract and, at
+runtime, to the source-blind Examiner's start precondition (ADR-SSOT-002 §9b,
+"C -> D precondition") -- never a brittle regex/keyword sniff added here to
+approximate that judgment.
 
 CLI contract:
     des verify-charter-filled --charter <path> [--format json]
@@ -44,10 +48,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from des.cli._emit_json import emit_json_line as _emit
-from des.domain.expectation_charter_mapping import (
-    _SLICE_ID_PATTERN,
-    _SPEC_ROWS_PATTERN,
-)
 
 
 if TYPE_CHECKING:
@@ -180,7 +180,7 @@ def _analyze_charter(content: str) -> _CharterAnalysis:
 
     filled = oracle_ok and start_recipe_ok
     detail = (
-        "charter is fully filled and ready."
+        "charter is structurally filled; PublicStartRecipe semantics are not evaluated."
         if filled
         else "still incomplete: " + "; ".join(missing_sections)
     )
@@ -198,42 +198,6 @@ def charter_missing_sections(content: str) -> list[str]:
     re-deriving it. Pure.
     """
     return _analyze_charter(content).missing_sections
-
-
-def _spec_rows_violation(content: str) -> str | None:
-    """WHAT/WHY/HOW: is the ID line's ``Spec rows:`` field in the SAME
-    vocabulary ``resolve_slice_charter``
-    (``des.domain.expectation_charter_mapping``) actually accepts --
-    comma-separated ``slice-NN`` tokens, matched by the SAME
-    ``_SPEC_ROWS_PATTERN`` / ``_SLICE_ID_PATTERN`` that resolver uses?
-
-    None when the field is present and every token is in-vocabulary (this
-    gate's PASS path is unaffected). A WHAT/WHY/HOW reason string naming the
-    offending raw value otherwise -- this is a CLI-verdict-only check, never
-    folded into ``_analyze_charter``/``charter_missing_sections`` (those stay
-    byte-identical; `commit_slice.py` reuses them for a different gate). Pure.
-    """
-    match = _SPEC_ROWS_PATTERN.search(content)
-    if match is None:
-        return (
-            "spec-rows: the ID line has no `Spec rows:` field -- "
-            "resolve_slice_charter cannot map this charter to a slice "
-            "(WHY); add `Spec rows: slice-NN` to the ID line, "
-            "comma-separated for multiple slices (HOW)"
-        )
-    raw_value = match.group(1).strip()
-    tokens = [token.strip() for token in raw_value.split(",")]
-    invalid = [token for token in tokens if not _SLICE_ID_PATTERN.fullmatch(token)]
-    if not tokens or invalid:
-        offending = ", ".join(invalid) if invalid else raw_value
-        return (
-            f"spec-rows: `Spec rows: {raw_value}` is not in the vocabulary "
-            "resolve_slice_charter accepts -- offending value(s): "
-            f"{offending!r} (WHY: only comma-separated `slice-NN` tokens "
-            "resolve downstream); rewrite the ID line's Spec rows field to "
-            "slice-NN form, e.g. `Spec rows: slice-01` (HOW)"
-        )
-    return None
 
 
 def _read_charter(charter_path: Path) -> tuple[str | None, str | None]:
@@ -294,34 +258,18 @@ def main(argv: list[str] | None = None) -> int:
 
     assert content is not None  # invariant: read_error is None iff content is set
     analysis = _analyze_charter(content)
-    spec_rows_violation = _spec_rows_violation(content)
-
-    missing_sections = list(analysis.missing_sections)
-    if spec_rows_violation is not None:
-        missing_sections.append(spec_rows_violation)
-
-    # Never let a spec-rows vocabulary violation alone report PASS -- it
-    # names a DIFFERENT obligation (does this charter ARM downstream) than
-    # `analysis.filled` (are the prose sections compiled); both must hold.
-    filled = analysis.filled and spec_rows_violation is None
-    verdict = VERDICT_PASS if filled else VERDICT_FAIL
-    detail = (
-        "charter is fully filled and ready."
-        if filled
-        else "still incomplete: " + "; ".join(missing_sections)
-    )
 
     _emit(
         {
             "charter": str(charter_path),
-            "filled": filled,
-            "missing_sections": missing_sections,
+            "filled": analysis.filled,
+            "missing_sections": analysis.missing_sections,
             "has_negative_observation": analysis.has_negative_observation,
-            "verdict": verdict,
-            "detail": detail,
+            "verdict": analysis.verdict,
+            "detail": analysis.detail,
         }
     )
-    return 0 if verdict == VERDICT_PASS else 1
+    return 0 if analysis.verdict == VERDICT_PASS else 1
 
 
 if __name__ == "__main__":  # pragma: no cover

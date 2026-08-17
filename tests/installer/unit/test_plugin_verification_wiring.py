@@ -192,11 +192,6 @@ class TestValidateInstallationPluginVerification:
                 "_create_plugin_registry",
                 return_value=mock_registry,
             ),
-            patch.object(
-                type(installer),
-                "_validate_schema_template",
-                return_value=True,
-            ),
             patch("scripts.install.install_nwave.InstallationVerifier") as MockVerifier,
         ):
             mock_verifier_instance = MockVerifier.return_value
@@ -236,11 +231,6 @@ class TestValidateInstallationPluginVerification:
                 installer,
                 "_create_plugin_registry",
                 return_value=mock_registry,
-            ),
-            patch.object(
-                type(installer),
-                "_validate_schema_template",
-                return_value=True,
             ),
             patch("scripts.install.install_nwave.InstallationVerifier") as MockVerifier,
         ):
@@ -291,11 +281,6 @@ class TestValidateInstallationPluginVerification:
                 installer,
                 "_create_plugin_registry",
                 return_value=mock_registry,
-            ),
-            patch.object(
-                type(installer),
-                "_validate_schema_template",
-                return_value=True,
             ),
             patch("scripts.install.install_nwave.InstallationVerifier") as MockVerifier,
         ):

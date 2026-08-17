@@ -52,7 +52,7 @@ def _canonical_tree_hash(tree_root: Path) -> str:
     """Return ``"sha256:<hex>"`` for the canonical hash of ``tree_root``.
 
     Pure function — reads ``*.py`` files under ``tree_root`` once each. The
-    algorithm matches §1.6 of fix-des-self-hosted-gate-sync feature-delta.
+    algorithm matches §1.6 of fix-des-self-hosted-gate-sync.
 
     BOOTSTRAP-SELF INLINE COPY of `des.runtime.tree_hash.canonical_tree_hash`.
     Parity locked by tests/installer/unit/test_des_plugin_tree_hash_parity.py.
@@ -98,42 +98,14 @@ def _canonical_config_assets_hash(assets_root: Path) -> str:
     return f"sha256:{sha.hexdigest()}"
 
 
-# --- Slice-03: CLI shim discovery (feature-delta §2.2 Addition 2 + DDD-4) ---
+# --- CLI shim discovery ---
 #
 # The filesystem under `src/des/cli/` is the SSOT for the canonical CLI
 # module set the spine dispatches. `_discover_shims(source_dir)` globs the
 # directory and emits one shim name per CLI module — newly-added CLIs ship
 # automatically on next install, closing the drift-across-boundary (F1)
-# class the hand-maintained `DESPlugin.DES_SHIMS` list historically hit
-# (verify_environmental_e2e, verify_slice_commit_completeness,
-# run_contract_gate all got added to the CLI dir but missed by the constant).
+# class the hand-maintained `DESPlugin.DES_SHIMS` list historically hit.
 #
-# `DES_SHIMS_FLOOR` is the frozen regression-floor set the spine MUST keep:
-# discovery is asserted ≥ floor by `tests/installer/acceptance/
-# fix-des-self-hosted-gate-sync/slice-03-shim-discovery-floor.feature`.
-# A release-time engineer adding a new load-bearing CLI module adds its
-# stem to this constant; the constant never shrinks silently.
-
-DES_SHIMS_FLOOR = frozenset(
-    {
-        "at_review_verdict",
-        "carpaccio_slice_gate",
-        "check_slice_at_completeness",
-        "classify_features",
-        "convert_to_atdd_pure",
-        "health_check",
-        "reverify_slice_commit",
-        "run_contract_gate",
-        "verify_commit_trailers",
-        "verify_deliver_integrity",
-        "verify_environmental_e2e",
-        "verify_slice_commit_completeness",
-        "walking_skeleton_done_gate",
-        "walking_skeleton_gate",
-    }
-)
-
-
 def _discover_shims(source_dir: Path) -> frozenset[str]:
     """Enumerate CLI module stems under `source_dir` (filesystem is SSOT).
 
@@ -707,12 +679,9 @@ class DESPlugin(InstallationPlugin):
 
                 # Ship the nWave runtime assets the installed des package
                 # resolves as siblings of lib/python (Path(__file__).parents[N]
-                # / "nWave" / ...): flavors/ (carpaccio_intercept atdd_pure
-                # dispatch), data/ (log_persistence + doctor), templates/ +
-                # schemas/ (tdd / roadmap loaders), framework-catalog.yaml
-                # (carpaccio_slice_gate). The installer shipped the code but
-                # never these assets, so every atdd_pure dispatch crashed with
-                # a missing lib/nWave/flavors/atdd_pure.yaml
+                # / "nWave" / ...): data/, templates/, schemas/ and
+                # framework-catalog.yaml. The installer must ship code and the
+                # exact runtime data it still resolves.
                 # (F-DES-INSTALL-SHIPS-NWAVE-RUNTIME-ASSETS).
                 #
                 # Shipped BEFORE the manifest so the schema-v2 manifest can
@@ -791,14 +760,11 @@ class DESPlugin(InstallationPlugin):
 
     # nWave runtime assets the installed des package resolves as siblings of
     # lib/python (Path(__file__).parents[N] / "nWave" / ...). Code-only shipping
-    # leaves these absent and breaks every atdd_pure dispatch.
+    # leaves those readers incomplete.
     _NWAVE_RUNTIME_ASSET_DIRS = (
-        "flavors",
         "data",
         "templates",
         "schemas",
-        "dispatch",
-        "waves",
     )
     _NWAVE_RUNTIME_ASSET_FILES = ("framework-catalog.yaml",)
     _NWAVE_RUNTIME_HOOK_FILES: tuple[str, ...] = ()
@@ -813,12 +779,10 @@ class DESPlugin(InstallationPlugin):
         manifest), or ``None`` when the source is absent or this is a dry run.
 
         The installed des package reads config siblings of ``lib/python`` at
-        runtime: ``carpaccio_intercept`` loads ``nWave/flavors/atdd_pure.yaml``,
-        ``log_persistence`` + ``doctor`` read ``nWave/data/``, the tdd / roadmap
-        loaders read ``nWave/templates/`` + ``nWave/schemas/``, and
-        ``carpaccio_slice_gate`` reads ``nWave/framework-catalog.yaml``. The
-        installer shipped only the code, so these resolutions failed on every
-        installed instance (F-DES-INSTALL-SHIPS-NWAVE-RUNTIME-ASSETS).
+        runtime: installed readers consume ``nWave/data/``,
+        ``nWave/templates/``, ``nWave/schemas/`` and
+        ``nWave/framework-catalog.yaml``. The installer ships those assets
+        beside the code rather than carrying retired workflow registries.
 
         Two independent "prebuilt" channels ship different physical layouts
         under the same ``using_prebuilt`` flag: the GitHub-release ``dist/``
@@ -1919,6 +1883,32 @@ class DESPlugin(InstallationPlugin):
                     retained.append(reconciled)
                 if retained != entries:
                     config["hooks"][event] = retained
+
+            # Structural DES residue can also live under a retired event key
+            # (no longer in HOOK_EVENTS, e.g. SubagentStop) -- shared_hooks
+            # positively recognizes historical DES-owned command forms there
+            # too, but the reconciliation below only rewrites CURRENT events.
+            # Strip DES-owned entries from every non-current existing event
+            # so retired-event residue does not survive install; unrelated
+            # user hooks nested in the same event are preserved by
+            # strip_des_hooks_from_entries's positive-identification
+            # contract. _RETIRED_LIFECYCLE_EVENTS are excluded here: the
+            # exact-match pass above is their SOLE governor, because this
+            # generic classifier's broad leading '# des-hook:' match would
+            # also catch a user-modified near-match of a historical lifecycle
+            # command (exact command plus a user-supplied argument) that the
+            # exact pass correctly preserves.
+            for event, entries in config["hooks"].items():
+                if (
+                    event in self.HOOK_EVENTS
+                    or event in self._RETIRED_LIFECYCLE_EVENTS
+                    or not isinstance(entries, list)
+                ):
+                    continue
+                stripped = shared_hooks.strip_des_hooks_from_entries(entries)
+                if stripped != entries:
+                    retired_hook_removed = True
+                    config["hooks"][event] = stripped
 
             # Check if hooks already exist with correct format.
             # Both command AND matcher must match on the SAME entry to count

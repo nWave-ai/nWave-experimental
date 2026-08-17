@@ -61,11 +61,11 @@ class ArchBanViolation:
 class SanctionedDesModuleSubcommand:
     """A real, read-only ``des.cli`` subcommand safe to spawn in an AT (AC-2).
 
-    ``des.cli.verify_deliver_integrity --help`` is verified read-only (verb ``--help`` prints
+    ``des.cli.health_check --help`` is verified read-only (verb ``--help`` prints
     usage, mutates nothing) and exits 0 only if the child imported ``des``.
     """
 
-    module: str  # e.g. "des.cli.verify_deliver_integrity"
+    module: str  # e.g. "des.cli.health_check"
     readonly_arg: str  # e.g. "--help"
 
 

@@ -1,16 +1,4 @@
-"""Regression pin: linked git worktree `.git` FILE support.
-
-RCA: the `assert_fresh_or_explain` autoskip walk used `os.path.isdir` to detect
-`.git`, making it blind to linked worktrees where `.git` is a FILE containing
-`gitdir: <common-dir>/worktrees/<name>`.
-
-Fix: the predicate changed to `os.path.exists` so a `.git` file OR directory
-are both recognised as a developer-checkout / repo-root marker.
-
-The tested function has a companion pair:
-  - `.git` is a FILE  → must be detected (the regression case)
-  - `.git` is a DIR   → must still be detected (the existing behaviour)
-"""
+"""Git-checkout detection distinguishes valid markers from namesakes."""
 
 from __future__ import annotations
 
@@ -21,16 +9,12 @@ from __future__ import annotations
 
 
 def test_autoskip_fires_for_git_file_worktree(tmp_path, monkeypatch, capsys):
-    """assert_fresh_or_explain autoskip fires when .git is a FILE (worktree pointer).
-
-    The autoskip walk uses os.path.exists (post-fix), so a .git file is treated
-    as a developer checkout and the function returns early without calling
-    RepoSourceProbe, which would fail with DEGRADED / exit 78 on a manifest-less
-    tmp directory.
-    """
-    # Create a .git FILE in tmp_path, simulating a linked worktree.
+    """A linked-worktree pointer to an existing gitdir autoskips."""
+    gitdir = tmp_path / "common" / "worktrees" / "wt1"
+    gitdir.mkdir(parents=True)
+    (gitdir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
     git_file = tmp_path / ".git"
-    git_file.write_text("gitdir: /some/common/.git/worktrees/wt1\n")
+    git_file.write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
 
     # Force CWD to tmp_path so the autoskip walk starts there.
     monkeypatch.chdir(str(tmp_path))
@@ -45,9 +29,7 @@ def test_autoskip_fires_for_git_file_worktree(tmp_path, monkeypatch, capsys):
     # Must not raise SystemExit(78) — the autoskip should fire and return cleanly.
     assert_fresh_or_explain()  # raises SystemExit on REFUSE; autoskip returns None
 
-    stderr = capsys.readouterr().err
-    assert "autoskipped" in stderr
-    assert "adjacency" in stderr
+    assert capsys.readouterr().err == ""
 
 
 # ---------------------------------------------------------------------------
@@ -56,9 +38,10 @@ def test_autoskip_fires_for_git_file_worktree(tmp_path, monkeypatch, capsys):
 
 
 def test_autoskip_fires_for_git_directory(tmp_path, monkeypatch, capsys):
-    """assert_fresh_or_explain autoskip fires when .git is a DIRECTORY (normal checkout)."""
+    """A normal checkout directory containing HEAD autoskips."""
     git_dir = tmp_path / ".git"
     git_dir.mkdir()
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
 
     monkeypatch.chdir(str(tmp_path))
     monkeypatch.delenv("NWAVE_FRESHNESS", raising=False)
@@ -68,6 +51,48 @@ def test_autoskip_fires_for_git_directory(tmp_path, monkeypatch, capsys):
 
     assert_fresh_or_explain()
 
+    assert capsys.readouterr().err == ""
+
+
+def test_verbose_autoskip_names_checkout_reason(tmp_path, monkeypatch, capsys):
+    """An operator can request the structural success diagnostic explicitly."""
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+
+    monkeypatch.chdir(str(tmp_path))
+    monkeypatch.setenv("NWAVE_FRESHNESS", "verbose")
+    monkeypatch.delenv("NWAVE_FRESHNESS_FORCE_GATE", raising=False)
+
+    from des.runtime.freshness import assert_fresh_or_explain
+
+    assert_fresh_or_explain()
+
     stderr = capsys.readouterr().err
-    assert "autoskipped" in stderr
+    assert "des.runtime.freshness.autoskipped" in stderr
     assert "adjacency" in stderr
+
+
+def test_empty_git_named_ancestor_does_not_disable_freshness(
+    tmp_path, monkeypatch, capsys
+):
+    """A stray ancestor named `.git` is not sufficient checkout evidence."""
+    (tmp_path / ".git").mkdir()
+    cwd = tmp_path / "customer" / "work"
+    cwd.mkdir(parents=True)
+    monkeypatch.chdir(cwd)
+    monkeypatch.delenv("NWAVE_FRESHNESS", raising=False)
+    monkeypatch.delenv("NWAVE_FRESHNESS_FORCE_GATE", raising=False)
+
+    from des.runtime.freshness import assert_fresh_or_explain
+
+    try:
+        assert_fresh_or_explain()
+    except SystemExit as error:
+        assert error.code == 78
+    else:
+        raise AssertionError("manifest-less customer host must refuse")
+
+    stderr = capsys.readouterr().err
+    assert "freshness.refused" in stderr
+    assert "autoskipped" not in stderr

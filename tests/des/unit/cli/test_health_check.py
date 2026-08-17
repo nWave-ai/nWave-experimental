@@ -21,15 +21,11 @@ import pytest
 
 @pytest.fixture()
 def healthy_environment(tmp_path):
-    """Set up a mock environment where all 7 checks pass."""
+    """Set up a mock environment where all 6 checks pass."""
     version_dir = tmp_path / "version_dir"
     version_dir.mkdir()
     version_file = version_dir / "VERSION"
     version_file.write_text("2.5.1\n")
-
-    templates_dir = tmp_path / "templates"
-    templates_dir.mkdir()
-    (templates_dir / "step-tdd-cycle-schema.json").write_text("{}")
 
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()
@@ -48,7 +44,6 @@ def healthy_environment(tmp_path):
 
     return {
         "version_file": version_file,
-        "templates_dir": templates_dir,
         "logs_dir": logs_dir,
         "agents_dir": agents_dir,
         "skills_dir": skills_dir,
@@ -66,7 +61,6 @@ class TestHealthCheckAllPass:
         result = main(
             [],
             version_file=healthy_environment["version_file"],
-            templates_dir=healthy_environment["templates_dir"],
             logs_dir=healthy_environment["logs_dir"],
             agents_dir=healthy_environment["agents_dir"],
             skills_dir=healthy_environment["skills_dir"],
@@ -77,10 +71,9 @@ class TestHealthCheckAllPass:
         captured = capsys.readouterr()
         assert "nWave Health Check" in captured.out
         assert "HEALTHY" in captured.out
-        assert "7/7" in captured.out
+        assert "6/6" in captured.out
         assert "version" in captured.out
         assert "module_import" in captured.out
-        assert "templates" in captured.out
         assert "hook_actions" in captured.out
         assert "log_directory" in captured.out
         assert "agents_installed" in captured.out
@@ -103,7 +96,6 @@ class TestHealthCheckAnyFails:
         result = main(
             [],
             version_file=healthy_environment["version_file"],
-            templates_dir=healthy_environment["templates_dir"],
             logs_dir=healthy_environment["logs_dir"],
             agents_dir=healthy_environment["agents_dir"],
             skills_dir=healthy_environment["skills_dir"],
@@ -126,7 +118,6 @@ class TestHealthCheckJsonOutput:
         result = main(
             ["--json"],
             version_file=healthy_environment["version_file"],
-            templates_dir=healthy_environment["templates_dir"],
             logs_dir=healthy_environment["logs_dir"],
             agents_dir=healthy_environment["agents_dir"],
             skills_dir=healthy_environment["skills_dir"],
@@ -137,7 +128,7 @@ class TestHealthCheckJsonOutput:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["status"] == "healthy"
-        assert len(data["checks"]) == 7
+        assert len(data["checks"]) == 6
         assert data["version"] == "2.5.1"
         for check in data["checks"]:
             assert "name" in check
@@ -155,7 +146,6 @@ class TestHealthCheckJsonOutput:
         result = main(
             ["--json"],
             version_file=healthy_environment["version_file"],
-            templates_dir=healthy_environment["templates_dir"],
             logs_dir=healthy_environment["logs_dir"],
             agents_dir=healthy_environment["agents_dir"],
             skills_dir=healthy_environment["skills_dir"],
@@ -171,20 +161,18 @@ class TestHealthCheckJsonOutput:
 class TestHealthCheckIsolation:
     """Individual check failure does not block other checks from running."""
 
-    def test_all_seven_checks_reported_even_when_some_fail(
+    def test_all_six_checks_reported_even_when_some_fail(
         self, healthy_environment, capsys, monkeypatch
     ):
         from des.cli.health_check import main
 
-        # Break version and templates to cause 2 failures
+        # Break version to cause a failure
         healthy_environment["version_file"].unlink()
-        (healthy_environment["templates_dir"] / "step-tdd-cycle-schema.json").unlink()
         monkeypatch.chdir(healthy_environment["logs_dir"])
 
         result = main(
             ["--json"],
             version_file=healthy_environment["version_file"],
-            templates_dir=healthy_environment["templates_dir"],
             logs_dir=healthy_environment["logs_dir"],
             agents_dir=healthy_environment["agents_dir"],
             skills_dir=healthy_environment["skills_dir"],
@@ -194,23 +182,19 @@ class TestHealthCheckIsolation:
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
-        assert len(data["checks"]) == 7
+        assert len(data["checks"]) == 6
 
         check_names = [c["name"] for c in data["checks"]]
         assert "version" in check_names
         assert "module_import" in check_names
-        assert "templates" in check_names
         assert "hook_actions" in check_names
         assert "log_directory" in check_names
         assert "agents_installed" in check_names
         assert "skills_installed" in check_names
 
-        # version and templates should fail, others should pass
+        # version should fail, others should pass
         version_check = next(c for c in data["checks"] if c["name"] == "version")
         assert version_check["passed"] is False
-
-        templates_check = next(c for c in data["checks"] if c["name"] == "templates")
-        assert templates_check["passed"] is False
 
         # module_import should still pass
         module_check = next(c for c in data["checks"] if c["name"] == "module_import")

@@ -13,7 +13,7 @@ Use for any nWave question — methodology, project navigation, command help, wa
 
 ## Preloaded skills
 
-- [nw-buddy-command-catalog](../skills/nw-buddy-command-catalog.md) — All /nw-* commands — what they do, when to use them, which agent they invoke. For the buddy agent to help users pick the right command.
-- [nw-buddy-project-reading](../skills/nw-buddy-project-reading.md) — How the nWave buddy agent reads a project to answer questions — detection, order of inspection, and citation discipline.
+- [nw-buddy-command-catalog](../skills/nw-buddy-command-catalog.md) — Current nWave command map for routing users without teaching retired workflow ceremony.
+- [nw-buddy-project-reading](../skills/nw-buddy-project-reading.md) — Evidence-first project reading protocol based on durable authorities, DeliveryContracts, Git, tests, and installed surfaces.
 - [nw-buddy-ssot-knowledge](../skills/nw-buddy-ssot-knowledge.md) — Single Source of Truth detection — where truth lives in an nWave repo and how to avoid contradicting it.
-- [nw-buddy-wave-knowledge](../skills/nw-buddy-wave-knowledge.md) — Wave methodology knowledge for the buddy agent — what each wave does, its inputs and outputs, and how to route questions.
+- [nw-buddy-wave-knowledge](../skills/nw-buddy-wave-knowledge.md) — Current wave authority and handoff map for answering where product, design, delivery, and feedback facts belong.

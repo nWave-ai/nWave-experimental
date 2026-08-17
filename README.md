@@ -1,143 +1,56 @@
-# nWave — atdd_pure Preview (Experimental Channel)
+# nWave — Experimental Channel
 
-> ⚠️ **EXPERIMENTAL — NOT RECOMMENDED FOR PRODUCTION**
->
-> - **Breaking changes are expected.** The API, wave structure, and command behavior may change without notice. Use only for evaluation and feedback, not in production systems or critical projects.
-> - **No PyPI on this channel.** This preview is not published to PyPI. You install **locally from this clone**.
-> - **Token usage is materially higher than a plain coding session.** This preview runs delivery in parallel (see *Parallel delivery*, below) — concurrent lanes mean concurrent contexts, each reasoning independently. Parallelism buys wall-clock time; it costs tokens.
-> - **Standing loops are OFF by default.** A restart, a crash, or a killed session disarms nWave's background disciplines. They do NOT re-arm automatically. To enable standing loops, you must give explicit consent for this session only. Background agents spend tokens continuously, so you have an unconditional right to decide whether to enable them.
+> Experimental software: breaking changes are expected. Evaluate it on
+> non-critical work and report concrete friction or defects.
 
-**Build:** atdd-pure preview @ `3cb4d08` (source `feature/atdd-pure-staging` `3cb4d0814ed658aa2bb6f6442519df5fa9e46eef`)
+**Build:** `14c7bb1` from `feature/atdd-pure-staging` (`14c7bb173314bd5693dcb39e779745bc03577b38`)
 
----
+## What nWave does
 
-## What nWave Does
+nWave turns product value and permanent architecture decisions into a minimal
+executable oracle, an immutable `DeliveryContract`, test-driven implementation,
+independent user-surface observation and one terminal cleanup. It aims to keep
+the structural quality of disciplined software delivery while approaching the
+time, token and monetary cost of an unstructured coding session.
 
-nWave replaces ad-hoc AI coding with a structured, auditable, wave-based methodology. It orchestrates specialized AI agents through seven disciplined development waves — from discovery to deployment. Each wave produces artifacts you review and approve before the next begins. The machine never runs unsupervised end-to-end. Quality gates at each phase catch issues early and enforce TDD discipline automatically.
+The upstream waves remain available when their questions are genuinely open:
 
----
+`DISCOVER → DIVERGE → DISCUSS → DESIGN → DEVOPS → DISTILL → DELIVER`
 
-## How It Works — The Waves at a Glance
+The minimum delivery floor is DISTILL → DELIVER. Auto and Human routes share
+the same authorities and quality floor; they differ only in interaction
+cadence. A small, self-contained task may take the direct route after explicit
+mode and size selection.
 
-The seven waves form a methodology graph (entry point depends on your context):
+## Thin delivery model
 
-| Wave | One-line summary |
-|------|------------------|
-| **DISCOVER** (`/nw-discover`) | Explore the market and problem space; validate the opportunity |
-| **DIVERGE** (`/nw-diverge`) | Structured brainstorming; compare design directions and competitive landscape |
-| **DISCUSS** (`/nw-discuss`) | Gather requirements and user journeys; write user stories and acceptance criteria |
-| **DESIGN** (`/nw-design`) | Architecture, domain modeling, and component boundaries |
-| **DEVOPS** (`/nw-devops`) | Infrastructure, CI/CD, and deployment strategy |
-| **DISTILL** (`/nw-distill`) | Write acceptance tests (Given-When-Then scenarios) |
-| **DELIVER** (`/nw-deliver`) | TDD implementation (red → green → refactor) |
+- Existing product and architecture documents remain their own permanent
+  authorities; nWave does not copy them into a progress file.
+- DISTILL produces or binds one executable oracle and one schema-valid
+  `DeliveryContract`.
+- DELIVER implements that contract through the repository-native runner.
+- When `applicability.examine=true`, a source-blind examiner walks every valid
+  expectation charter once through the public surface.
+- Finalize is internal to the live delivery: it runs once and commits exactly
+  `AuthorizedDeliveryPaths`. F then performs clean-checkout closure;
+  pre-existing user-owned paths are untouched.
 
-**Mandatory floor**: DISTILL → DELIVER. Every feature ends with acceptance tests and test-driven code. The five upstream waves (DISCOVER through DEVOPS) are optional; entry point depends on your context (greenfield, brownfield, bug fix, refactoring).
+No feature-delta, completion ledger, standing-loop controller or mutable
+workflow state is part of this model.
 
----
-
-## What's New — Standing Loops, Parallel Delivery, DES Across the Waves
-
-### Standing loops
-
-The orchestrator runs recurring background disciplines while it works — standing checks it applies to its own behaviour:
-
-- routes feature work through the full methodology instead of firing off a lone agent
-- reconciles worktrees left behind by a task that stopped mid-way
-- never leaves a single in-flight task idling
-- checks delivery throughput before a heavy stage
-- makes every failure explain what went wrong, why, and how to fix it
-- drains two queues — one for tech debt, one for bugs — instead of letting them pile up
-
-Nine loops carry those six disciplines — each queue gets one loop that finds work and a separate one that drains it — and the orchestrator names them `Loop 1/9` through `Loop 9/9` when they are enabled, so a missing number is visible at a glance.
-
-They're session-scoped and OFF by default (see the warning at the top of this page): to enable them for this session, you must give explicit consent. Background agents spend tokens continuously, so you have an unconditional right to control whether they run. When you enable them, the orchestrator names what each one does and their approximate cost. To disable them, say *"disable the standing loops"*. They stop immediately and stay off for the rest of that session.
-
-### Parallel delivery — the worktree is the mechanism
-
-Delivery now runs in parallel, under one rule: **many cloud lanes, one lane on your box.** Reasoning work — investigating root causes, writing acceptance tests, reviewing — fans out across concurrent lanes, because it costs almost nothing on your machine. What stays serialized is the work that touches your machine directly: committing, running the full test suite, merging back.
-
-The mechanism that makes the fan-out safe is the **isolated worktree**: each unit of work gets its own checkout and its own environment, so concurrent agents never step on each other's files or share a test run. A unit's life cycle is create → author → implement → examine (an independent check that the result behaves as promised) → merge back (serially) → remove the worktree as soon as the merge succeeds.
-
-This also protects anything you have running. A build against your main checkout can restart a live service repeatedly while a fix is in progress; a build in an isolated worktree can't touch it.
-
-### Consolidation and bugfix loops
-
-Two of those loops turn what gets discovered mid-work into work that actually gets fixed, instead of a list that only grows.
-
-The **consolidation** loop watches the health of your main branch — drift, unmerged work, stale branches, failing gates — and files each real problem it finds as one queue item. The **bugfix** loop catches a defect the moment you hit it and works it through the full fix process, one bug per isolated worktree. A matching pair does the same for tech debt.
-
-Both loops are honest about what "done" means: an item counts as fixed when a ledger entry — a system record — says so, never just when a summary says so.
-
-### DES now spans the waves, not just delivery
-
-The Deterministic Execution System (DES) is nWave's enforcement layer. It guards every wave, not just DELIVER: DISCUSS, DESIGN, DEVOPS, DISTILL, DELIVER, and the feature-end cycle each get a generated dispatch envelope — the instructions and guardrails DES hands the wave — and every wave gate records its verdict to a ledger.
-
-The feature-end cycle is itself a phase you can invoke, rather than an informal habit: deep review, an end-to-end check against a real environment, a full test-suite run, and a signed, recorded result.
-
-That cycle is what catches *false-done* — work that looks finished piece by piece but doesn't hold together as a whole feature.
-
-### A CLI built for the assistant, not just for you
-
-`des`, nWave's CLI, is built so an LLM can drive it directly: every command either produces an artifact or fails with what went wrong, why, and exactly how to fix it — including which command to run next. The idea is that the orchestrating agent reaches for the tool that produces the right thing, instead of hand-assembling what a gate is checking for. For you, that mostly shows up as fewer dead ends: when a gate rejects something, the rejection carries its own fix.
-
-A few worth knowing:
+Useful provider-neutral commands:
 
 ```bash
-des next                  # read-only: what the delivery loop says to do next
-des blast-radius          # how big a change really is, measured, not guessed
-des feature-end run       # close one feature
-des refactor --pile       # work through a tech-debt pile, one item per worktree
-des --help                # the full command list
+des validate-delivery-contract --repo-root /absolute/repo --delivery-contract path/to/contract.json
+des dispatch --repo-root /absolute/repo --delivery-contract path/to/contract.json
+des charter-scaffold --delivery-id delivery-id --value "observable value" --repo-root /absolute/repo
+des verify-charter-filled --charter docs/product/expectations/delivery-id/intent.md
+des code-fact --help
 ```
 
----
+## Install
 
-## We Want Your Feedback
-
-This preview shapes the official release. **Please tell us what works, what's confusing, and where the friction is.** Your feedback directly influences what nWave ships next.
-
-### What to report
-
-Capture in your local feedback log (see "How to collect feedback" below):
-
-- **Methodology friction**: Did a wave feel unclear? Did a command's output mislead you? Did the gate reject something without explaining why? (Frame your feedback around the *tool's behavior*, not your specific project.)
-- **Time per wave**: How long did each wave take? Timeboxes help us tune defaults.
-- **Token and cost consumption**: Report estimated tokens and cost per wave so we can optimize efficiency.
-
-### How to collect feedback
-
-nWave maintains a **local, git-ignorable feedback log** at `.nwave/beta-feedback.md` in your project. After each wave, open this file and log your observations. Format is free-form — describe what happened and what confused you.
-
-**Privacy-critical**: This log must contain **ZERO project content, code snippets, usernames, secrets, or identifying details**. Describe *how nWave behaved* ("the DISCUSS gate rejected my requirements without explaining the validation rule" or "DELIVER took 45 minutes on a 200-line module"), never *what you were building* ("authentication service for medical records").
-
-**Transmission**: Nothing is auto-transmitted. You review `.nwave/beta-feedback.md` after your session, scrub any accidental project detail if needed, and share it manually via GitHub Issues on this experimental repo or email.
-
-### Feedback channel
-
-File issues at [github.com/nWave-ai/nWave-experimental/issues](https://github.com/nWave-ai/nWave-experimental/issues) with a label `feedback` or `beta`. Include relevant entries from `.nwave/beta-feedback.md` (scrubbed for privacy). Or email directly with the log attached.
-
----
-
-## Install (local — no PyPI for this preview)
-
-### Prerequisites
-
-- **Python 3.10+**
-- **Claude Code**
-- **`uv`** (recommended) or **`pipx`** (supported fallback)
-
-If you don't have `uv`:
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-If you prefer `pipx` (supported, not recommended):
-```bash
-pip install pipx
-pipx ensurepath
-```
-
-### One-step install
+Prerequisites: Python 3.10+ and either `uv` or `pipx`.
 
 ```bash
 git clone https://github.com/nWave-ai/nWave-experimental.git
@@ -145,72 +58,35 @@ cd nWave-experimental
 uv run python -m nwave_ai.cli install
 ```
 
-**Then restart Claude Code.** The installer wires nWave into your global Claude Code configuration in `~/.claude/`. Agents, skills, and commands are read once at startup, so a running session keeps the old versions until you reopen it.
-
-Restarting disarms the standing loops; they remain OFF until you explicitly consent again in the new session.
-
-**pip alternative** (Python 3.10+): `pip install -e . && nwave-ai install`
-
-**Windows**: Use WSL (`wsl --install`).
-
----
-
-## Activate nWave in Each Project You Test
-
-The install above wires nWave into Claude Code globally. In **each project** where
-you want to try nWave, run:
+Restart the host after installation. Enable nWave only in a project where you
+want its managed guidance:
 
 ```bash
-cd /path/to/your-project
+cd /path/to/project
 nwave-ai project enable
 ```
 
-This asks your permission, then adds a short **nWave (beta)** section to that
-project's `CLAUDE.md` — it tells the LLM how to drive the spine and how to log
-feedback locally. (No `CLAUDE.md` yet? It creates a minimal one.) Your own
-content is never touched. Pass `--yes` to skip the prompt.
-
-When you're done testing in a project:
+Disable it without touching user-owned guidance:
 
 ```bash
 nwave-ai project disable
 ```
 
-This removes the managed section (and the file, if nWave created it) — your
-content stays intact.
-
----
-
-## Update to the Latest Preview
-
-```bash
-cd nWave-experimental
-git pull
-uv run python -m nwave_ai.cli install
-```
-
----
-
-## Uninstall
+Uninstall globally with:
 
 ```bash
 uv run python -m nwave_ai.cli uninstall
 ```
 
-Both the CLI tool and all agents/commands/configuration are removed from `~/.claude/`. Your project files stay unchanged.
+## Parallel work and feedback
 
----
+Independent analysis and authoring may use isolated worktrees. Heavy local
+verification remains bounded so parallel lanes do not make the workstation
+unresponsive. A worktree is reconciled and removed after integration; it is
+never a durable project archive.
 
-## Important Notes
+nWave sends no telemetry. Share feedback manually through
+[the experimental issue tracker](https://github.com/nWave-ai/nWave-experimental/issues),
+after removing project content, credentials and identifying details.
 
-- **Use the local CLI install above.** The Claude plugin-marketplace install path does **not** enable DES enforcement (an upstream Claude Code limitation) — without the local CLI install you lose phase enforcement, TDD validation, rigor profiles, and audit logging, which are the core of nWave.
-
-- **This preview tracks `feature/atdd-pure-staging`.** The experimental publisher (`scripts/release/publish_experimental.py`) refreshes this repository periodically. The build SHA at the top of this README identifies the exact source commit.
-
-- **User-facing docs** are under `docs/guides/` (tutorials and how-to guides) and `docs/reference/` (agents, commands, configuration reference) in this tree.
-
-- **Privacy**: nWave stores all data locally. See [PRIVACY.md](../PRIVACY.md) in this repo for complete details. The experimental preview follows the same privacy guarantees — no telemetry, no automatic transmission of your project data.
-
----
-
-*Experimental channel — segregated from beta/rc/prod, no PyPI: you install locally from this clone.*
+This channel is installed from the clone and is not published to PyPI.

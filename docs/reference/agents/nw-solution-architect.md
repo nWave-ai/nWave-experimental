@@ -1,17 +1,16 @@
 # nw-solution-architect
 
-Use for DESIGN wave - collaborates with user to define system architecture, component boundaries, technology selection, and creates architecture documents with business value focus. Hands off to acceptance-designer.
+Designs application architecture, reuse, ports, boundaries, cross-layer failure laws, and prefactoring decisions in durable architecture authorities.
 
-**Wave:** DESIGN
+**Wave:** Other
 **Model:** sonnet
-**Max turns:** 45
+**Max turns:** 30
 **Tools:** Read, Write, Edit, Glob, Grep, Bash, Task, Skill
 
 ## Commands
 
 - [`/nw-design`](../commands/index.md)
 - [`/nw-diagram`](../commands/index.md)
-- [`/nw-discuss`](../commands/index.md)
 - [`/nw-spike`](../commands/index.md)
 
 ## Preloaded skills

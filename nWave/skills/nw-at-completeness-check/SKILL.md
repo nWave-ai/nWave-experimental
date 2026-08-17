@@ -1,45 +1,72 @@
 ---
 name: nw-at-completeness-check
-description: Canonical AT completeness gate (lean core) — composes a Tier-1 coverage taxonomy (C1-C7 + 15-item checklist), a Tier-2 structural-invariants gate (S-family), gap routing, and taxonomy lifecycle. Paradigm-neutral. Drives the acceptance-designer reviewer verdict deterministically.
+description: Verify that one minimal oracle falsifies every declared delivery obligation without checklist ceremony or duplicate tests.
 user-invocable: false
 disable-model-invocation: true
 ---
 
-# AT Completeness Check — Canonical Gate (core)
+# Acceptance completeness: obligation-to-observation closure
 
-Mechanical gate for acceptance-test completeness. Runs against any candidate AT set. Verdict deterministic by count, not judgment. This core is a lean dispatcher: the knowledge lives in four composed modules, each loaded by its own trigger.
+Review one candidate oracle against the schema-valid `DeliveryContract` and
+the permanent architecture authority it names. Completeness is a total
+relation, not a score:
 
-**Provenance**: research-anchored 7-category taxonomy, paradigm-neutral. See `docs/research/at-edge-case-taxonomy-2026-05-19.md` for the full literature review. Plan v3 §6 (ATDD-pure restructure) is the canonical specification.
+```text
+every declared obligation -> one or more falsifiable observations
+every oracle observation  -> exactly one declared obligation or boundary law
+```
 
-**Runtime note** (Ale 2026-05-24): nwave-dev has no sequencer / no engine — only hooks. This is a **contract document** loaded by acceptance-designer + reviewer agents at dispatch time. Enforcement is "the agent MUST run both gates before issuing AT verdict", not a runtime hook.
+PASS only when both directions hold. Never invent coverage from a fixed
+checklist, scenario count, percentage, test pyramid or framework convention.
 
-## Two-tier gate
+## Required closure
 
-Reviewer runs **both** gates before issuing verdict; they are independent and additive:
+For every applicable contract obligation, verify that the oracle observes:
 
-1. **Tier-1 Coverage Gate** — the canonical 7-category C1-C7 taxonomy + 15-item mechanical checklist + deterministic verdict thresholds. Audits **what the AT set covers** of the SUT's input/state/mode/error/env space. Module: `nw-at-completeness-check-coverage-taxonomy`.
-2. **Tier-2 Structural Invariants Gate** — the S-family (S1 step-text uniqueness, S2 driving-port-only boundary / no direct-domain testing per Mandate-13, S3 dormant-seam reconciliation per D11, S4 declared-runtime-contract conformance, S5 distinguishable outcomes / GDP-8, S6 installed-surface driving, S7 oracle reachability). S4 is mandatory whenever DESIGN declares a typed driven-port request, receipt or authority: an AT must observe the concrete production boundary and reject a field-compatible lookalike. S5 requires that every materially-different outcome pair the AT set exercises has an AT asserting their observable artifacts DIFFER, never two confusable states (verified/not-observed, success/degraded) tested only in isolation. S6 requires that a slice claiming a named user-facing entry point (CLI subcommand, HTTP route) has an AT driving that exact installed surface, not only the internal function implementing it. S7 requires every scenario's verdict be traceable to the specific semantic checkpoint it names, never ambiguous with a fixture/setup failure. Audits **how the AT set itself is structured** — SSOT/boundary/seam-witnessing invariants on the test code, not SUT coverage. A Tier-2 failure is independent of the Tier-1 score and BLOCKS regardless of coverage band. Module: `nw-at-completeness-check-structural-invariants`.
+- the promised outcome and every materially distinguishable result;
+- declared state, composition and preservation laws, using PBT for broad
+  domains and examples only for genuinely finite or singular observations;
+- declared failure and recovery modes across domain, application/port,
+  adapter/integration and infrastructure boundaries;
+- the real boundary type or protocol when a lookalike could pass falsely;
+- one assembled installed journey when the user consumes that surface;
+- the exact semantic checkpoint, so a dependency, fixture, import or setup
+  failure cannot masquerade as intentional RED.
 
-The 15-item count, IDs, and verdict thresholds in Tier-1 are **unchanged** by Tier-2 additions; the S-family lives in its own namespace.
+An iterative or empty case is required only when the declared law induces it.
+An additional test is required only when it adds a distinct observation.
+Collapse equivalent examples, parameterize finite variants and keep one
+property per independent universal law.
 
-**ZERO-obligation override** (Tier-1 C3): **Absence of an explicit Zero scenario for any iterative surface ⇒ INCOMPLETE verdict regardless of total checklist score.** The Zero gap is a hard block, not a documentable gap — enforced at the nWave hook spine (PreToolUse/SubagentStop — Python + filesystem, git-free). Full definition in the coverage-taxonomy module.
+## Environment closure
 
-## Composition — module → trigger
+The oracle's runner and dependencies must be reproducible from the repository
+dependency manifest, never from an ambient interpreter. Check the applicable
+cross-language manifests explicitly: `requirements`, `pyproject.toml`,
+`package.json`, `Cargo.toml`, and `go.mod`. Missing runtime or test dependency
+evidence is BROKEN, not RED.
 
-| Module | KIND | Trigger (when to load) |
-|--------|------|------------------------|
-| `nw-at-completeness-check-coverage-taxonomy` | KNOWLEDGE | Auditing whether the AT set COVERS the SUT's input/state/mode/error/env space (Tier-1: C1-C7, 15-item checklist, thresholds, PBT signatures, ZERO-obligation). |
-| `nw-at-completeness-check-structural-invariants` | KNOWLEDGE | Auditing whether the AT set itself is STRUCTURALLY sound (Tier-2: S1 step-text uniqueness, S2 driving-port-only, S3 dormant-seam, S5 distinguishable outcomes, S6 installed-surface driving, S7 oracle reachability; independent BLOCK). |
-| `nw-at-completeness-check-gap-routing` | KNOWLEDGE | A gap has been FOUND — emit the typed `ATGap` verdict (kind + severity) and route to the owning wave (SPECIFICATION_AMBIGUITY upstream vs AT_GAP_IN_DELIVERY_SCOPE loop-DISTILL). |
-| `nw-at-completeness-check-taxonomy-lifecycle` | KNOWLEDGE | Adapting the taxonomy itself — authoring/opting-in a `domain-extension` overlay, or a falsifier-gate prune/escalate decision from telemetry. |
+## Boundary and reuse closure
 
-Machine-readable Tier-1 form: `checklist-15-item.yaml` (this dir). Domain overlays: `domain-extensions/*.yaml` (this dir; lifecycle module).
+Drive the nearest honest port that preserves the promised observation. A
+cheaper seam is valid only with an explicit preservation map to the real
+surface. Reuse existing helpers and oracles when they already own the same
+law; do not duplicate them. New seams require an observation through the real
+entry point, and the oracle must not create an architectural dependency that
+the permanent design forbids.
 
-## How the reviewer uses this core
+For every broad-input/state/failure law projected below the real port, require
+an explicit preservation map to the same promised observation. Without it,
+return `EVIDENCE_GAP`; never downgrade the law to example-only coverage.
 
-1. Run **Tier-1** (load `nw-at-completeness-check-coverage-taxonomy`) → coverage count + ZERO-obligation check → Tier-1 verdict band.
-2. Run **Tier-2** (load `nw-at-completeness-check-structural-invariants`) → S1/S2/S3 → Tier-2 verdict (BLOCK overrides Tier-1 on any S-failure).
-3. For each gap found in step 1 or 2, route it (load `nw-at-completeness-check-gap-routing`) → typed `ATGap` + owning wave.
-4. Taxonomy evolution (overlays, falsifier prune) is out-of-band config/telemetry work (load `nw-at-completeness-check-taxonomy-lifecycle`), not part of a single AT-set run.
+## Verdict
 
-Tier-2 (S-family) is MANDATORY and not subject to the falsifier-prune; the 7 C-categories default active and are empirically falsifiable per the lifecycle module.
+- `APPROVE`: both relation directions close, the intended route state is
+  observed, and no duplicate or undeclared test remains.
+- `NEEDS_REVISION`: a declared obligation lacks an observation, an observation
+  lacks authority, or RED is ambiguous with BROKEN.
+- `INDETERMINATE`: required source, runner or execution evidence is absent.
+
+Route specification ambiguity to its owning upstream authority. Correct a
+delivery-scope oracle gap inside DISTILL. Reviewer findings are ephemeral;
+never create a checklist, gap ledger, receipt or parallel progress artifact.

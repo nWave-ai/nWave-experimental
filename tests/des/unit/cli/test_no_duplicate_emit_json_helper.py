@@ -13,28 +13,6 @@ that does something else entirely (there are three such shapes on this same
 CLI surface -- see below) is NOT flagged. See `test_the_guard_can_fail`,
 which plants a differently-named fifteenth copy and watches it go red.
 
-Three other `_emit`-shaped functions already live on `des.cli` and must NOT
-be flagged -- the guard is verified never to flag them, not just assumed to
-spare them:
-
-  * dual-stream / `sort_keys=True` variants (`_wave_review_cli`,
-    `record_examine_verdict`, `record_review_verdict`,
-    `verify_slice_commit_completeness`) -- multi-statement bodies, and/or a
-    keyword argument on the `print`/`json.dumps` call, and/or `sys.stdout.write`
-    instead of `print`. Any one of those already falls outside the shape;
-    collapsing them would silently reorder JSON keys for a consumer doing
-    exact-string comparison, so they stay separate on purpose.
-  * dataclass-outcome emitters (`walking_skeleton_gate._emit`,
-    `wave_clear._emit`) -- multi-statement bodies that build a `payload` dict
-    from the dataclass's fields; the `json.dumps` argument is never the
-    function's own parameter by identity.
-  * bespoke positional-argument emitters (`loop`,
-    `walking_skeleton_done_gate`,
-    `carpaccio_precheck`, `carpaccio_slice_gate`,
-    `run_contract_gate`) -- different arity, different body shape, or (for
-    `run_contract_gate`) an already-more-evolved injectable-`OutputPort`
-    signature.
-
 The canonical definition (`des/cli/_emit_json.py`) is excluded from the scan
 by construction: a definition cannot duplicate itself. That is the ONE
 designation-keyed exception, and it is inherent to what "duplicate" means,
@@ -134,34 +112,6 @@ def test_no_des_cli_module_reimplements_the_single_line_json_stdout_shape():
         "print(json.dumps(<param>)) shape already shared as "
         "des.cli._emit_json.emit_json_line -- import it instead of "
         f"reimplementing it: {offenders}"
-    )
-
-
-def test_the_guard_spares_the_three_known_honest_variants():
-    """Documents (and locks in) that the guard does not over-fire on the
-    variants D03 deliberately left uncollapsed -- a regression here would
-    mean the guard started keying on designation instead of property."""
-    spared = {
-        "_wave_review_cli.py": "_emit",
-        "record_examine_verdict.py": "_emit",
-        "record_review_verdict.py": "_emit",
-        "verify_slice_commit_completeness.py": "_emit",
-        "walking_skeleton_gate.py": "_emit",
-        "wave_clear.py": "_emit",
-        "loop.py": "_emit",
-        "walking_skeleton_done_gate.py": "_emit",
-        "carpaccio_precheck.py": "_emit",
-        "carpaccio_slice_gate.py": "_emit",
-        "run_contract_gate.py": "_emit",
-    }
-    offenders = set(_reimplementations_in(SRC_DES_CLI))
-    flagged_spared = {
-        f"src/des/cli/{filename}:{funcname}"
-        for filename, funcname in spared.items()
-        if f"src/des/cli/{filename}:{funcname}" in offenders
-    }
-    assert flagged_spared == set(), (
-        f"the guard flagged known-honest variant(s) it must spare: {flagged_spared}"
     )
 
 

@@ -37,7 +37,6 @@ scripts/
 │   └── backup_manager.py             # Backup creation adapter
 │
 ├── mutation/            # Mutation testing
-│   └── generate_scoped_configs.py     # Scoped Cosmic Ray configs
 │
 ├── build_dist.py                      # Build dist/ from source (copy + DES rewrite)
 ├── local_ci.py                        # Local CI/CD runner

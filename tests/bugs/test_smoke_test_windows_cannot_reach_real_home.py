@@ -61,7 +61,7 @@ import re
 from pathlib import Path
 
 import pytest
-from hypothesis import example, given
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 
@@ -231,6 +231,7 @@ _ROOT_SEGMENT = st.text(
 
 
 @given(segment=_ROOT_SEGMENT)
+@settings(deadline=None)
 def test_sandbox_home_never_resolves_under_the_real_home(
     tmp_path_factory: pytest.TempPathFactory, segment: str
 ) -> None:

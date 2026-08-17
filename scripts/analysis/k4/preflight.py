@@ -33,6 +33,7 @@ agents twice on 2026-08-06.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -47,11 +48,47 @@ from scripts.analysis.k4 import prepare_examiner_fixture as pef
 #: rendered markdown and unambiguous to look for.
 _SECTION_MARKER = "BEGIN nWave-beta-section"
 
+#: Executables the fail-closed Claude delivery sandbox needs at RUN time: `claude`
+#: is the arm itself, `socat` backs the sandbox's localhost network bridge (see
+#: `_render_sandbox_settings(...).sandbox.network`). A host missing either
+#: still lets a campaign build its wheel, write `arms.json`, and spend a pair
+#: before the gap surfaces as an opaque sandbox failure mid-delivery -- a K4
+#: delivery, and a dead campaign it broke, both burned that way.
+#: `failIfUnavailable=true` in the rendered settings catches it too, but only
+#: inside the timed run; this catches it before the campaign is even built.
+#: Never install anything to satisfy this -- a bounded, non-global executable
+#: on PATH is sufficient and is exactly what an operator stages for a host
+#: with no global socat. That bounded directory must also reach Claude's LATER
+#: `socat` bridge spawn, which reads PATH from `--settings env.PATH`, not from
+#: this preflight's process PATH -- see `delivery_argv`.
+_REQUIRED_SANDBOX_EXECUTABLES = ("claude", "socat")
+
+
+def missing_sandbox_prerequisites(path: str | None = None) -> list[str]:
+    """Names from `_REQUIRED_SANDBOX_EXECUTABLES` not resolvable on PATH.
+
+    `path=None` resolves against the process's own inherited PATH -- the same
+    PATH a spawned setup/delivery step would see, since neither arm's `env`
+    override touches PATH resolution for this check. This is Claude's
+    STARTUP preflight; its LATER `socat` bridge spawn resolves PATH
+    differently -- see `delivery_argv`.
+    """
+    return [
+        exe
+        for exe in _REQUIRED_SANDBOX_EXECUTABLES
+        if shutil.which(exe, path=path) is None
+    ]
+
+
 _SUT = "https://github.com/healthchecks/healthchecks.git"
 
 
 def _run(
-    argv: list[str], *, cwd: Path, env: dict[str, str] | None = None
+    argv: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    timeout: int = 1800,
 ) -> tuple[int, str]:
     try:
         done = subprocess.run(
@@ -61,10 +98,10 @@ def _run(
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
-            timeout=1800,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        return 124, "TIMEOUT after 1800s"
+        return 124, f"TIMEOUT after {timeout}s"
     except OSError as exc:
         return 127, f"{type(exc).__name__}: {exc}"
     return done.returncode, (done.stderr or done.stdout)[-600:]
@@ -103,7 +140,29 @@ _NEVER_COPY = shutil.ignore_patterns(
 )
 
 
-def build_arm_runtime(root: Path, checkout: Path) -> Path:
+def _ensure_venv(root: Path) -> Path:
+    venv = root / "nwave-venv"
+    if not venv.exists():
+        code, tail = _run([sys.executable, "-m", "venv", str(venv)], cwd=root)
+        if code != 0:
+            raise SystemExit(f"WHAT: could not create the arm venv.\n{tail}")
+    return venv
+
+
+def _install_exact_wheel(venv: Path, root: Path, wheel: Path) -> None:
+    """The one install call both build_arm_runtime and the --wheel path share.
+
+    Factored so the venv-creation-then-install shape has exactly one place
+    that runs `pip install <wheel>`, not two paths that could drift apart.
+    """
+    code, tail = _run(
+        [str(venv / "bin" / "pip"), "install", "-q", str(wheel)], cwd=root
+    )
+    if code != 0:
+        raise SystemExit(f"WHAT: could not install {wheel.name}.\n{tail}")
+
+
+def build_arm_runtime(root: Path, checkout: Path) -> tuple[Path, Path]:
     """Package the trunk the way release packages it, into one shared venv.
 
     Once, deliberately: every pair then installs identical bits, which removes a
@@ -112,11 +171,7 @@ def build_arm_runtime(root: Path, checkout: Path) -> Path:
     source = root / "arm-src"
     if not source.exists():
         shutil.copytree(checkout, source, ignore=_NEVER_COPY, symlinks=True)
-    venv = root / "nwave-venv"
-    if not venv.exists():
-        code, tail = _run([sys.executable, "-m", "venv", str(venv)], cwd=root)
-        if code != 0:
-            raise SystemExit(f"WHAT: could not create the arm venv.\n{tail}")
+    venv = _ensure_venv(root)
     python = str(venv / "bin" / "python")
     code, tail = _run(
         [
@@ -150,11 +205,60 @@ def build_arm_runtime(root: Path, checkout: Path) -> Path:
             "      the campaign would not know what it measured.\n"
             "HOW:  remove the stale wheels and re-run."
         )
-    code, tail = _run(
-        [str(venv / "bin" / "pip"), "install", "-q", str(wheels[0])], cwd=root
-    )
-    if code != 0:
-        raise SystemExit(f"WHAT: could not install {wheels[0].name}.\n{tail}")
+    wheel = wheels[0].resolve()
+    _install_exact_wheel(venv, root, wheel)
+    return venv, wheel
+
+
+def resolve_wheel(path: Path) -> Path:
+    """Validate `--wheel` names one existing regular `.whl` file; return it resolved.
+
+    Refuses before any probe setup on disk: an invalid path here must fail
+    loud and early, not surface later as a cryptic pip error after the venv
+    and workspace already exist.
+    """
+    if not path.exists():
+        raise SystemExit(
+            f"WHAT: --wheel path does not exist: {path}\n"
+            "WHY:  the campaign measures exactly whatever pip installs; a path\n"
+            "      that resolves to nothing cannot be the measured artifact.\n"
+            "HOW:  pass an existing wheel file, e.g. from `dist/*.whl`."
+        )
+    if not path.is_file():
+        raise SystemExit(
+            f"WHAT: --wheel path is not a regular file: {path}\n"
+            "WHY:  a directory or other non-file path cannot be installed by\n"
+            "      pip as a single wheel.\n"
+            "HOW:  point --wheel at the .whl file itself, not its directory."
+        )
+    if path.suffix != ".whl":
+        raise SystemExit(
+            f"WHAT: --wheel path is not a .whl file: {path}\n"
+            "WHY:  an exact-wheel run must measure exactly the named artifact;\n"
+            "      a non-wheel path would install something else or fail with\n"
+            "      an unrelated pip error deep inside setup.\n"
+            "HOW:  pass the .whl file produced by `python -m build --wheel`."
+        )
+    return path.resolve()
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def build_arm_runtime_from_wheel(root: Path, wheel: Path) -> Path:
+    """Install one exact, pre-built wheel into the shared venv.
+
+    Never copies or builds the checkout, and never installs the packaging
+    tools `build_arm_runtime` needs: the wheel already IS the measured
+    artifact, so there is nothing left to package.
+    """
+    venv = _ensure_venv(root)
+    _install_exact_wheel(venv, root, wheel)
     return venv
 
 
@@ -213,7 +317,7 @@ def nwave_setup_steps(venv: Path, auth_profile: Path) -> list[list[str]]:
         # made the clone exit 128. Caught by the preflight on its own run.
         ["git", "clone", "--depth", "1", _SUT, "."],
         _DETACH_STEP,
-        pef.fixture_setup_step(pef.NWAVE_PORT),
+        pef.delivery_setup_step(),
         seed_step(auth_profile),
         # `--platform claude-code`, never the `auto` default. Measured 2026-08-07:
         # auto-detect installs into EVERY platform it finds, and CLAUDE_CONFIG_DIR
@@ -239,7 +343,7 @@ def control_setup_steps(auth_profile: Path) -> list[list[str]]:
     return [
         ["git", "clone", "--depth", "1", _SUT, "."],
         _DETACH_STEP,
-        pef.fixture_setup_step(pef.CONTROL_PORT),
+        pef.delivery_setup_step(),
         seed_step(auth_profile),
     ]
 
@@ -268,43 +372,79 @@ def _arm_env() -> dict[str, str]:
     return environment
 
 
-_SANDBOX_SETTINGS = json.dumps(
-    {
-        "permissions": {
-            "allow": ["Read(/**)", "Edit(/**)", "Write(/**)"],
-            "deny": [
-                "Read(/.claude-k4/.credentials.json)",
-                "Read(/.claude-k4/.claude.json)",
-                "Edit(/.claude-k4/**)",
-                "Write(/.claude-k4/**)",
-                "WebFetch",
-                "WebSearch",
-            ],
-        },
-        "sandbox": {
-            "enabled": True,
-            "failIfUnavailable": True,
-            "allowUnsandboxedCommands": False,
-            "filesystem": {
-                "denyRead": [
-                    "~/",
-                    "/mnt/c/Users",
-                    "/root",
-                    "./.claude-k4/.credentials.json",
-                    "./.claude-k4/.claude.json",
+def _render_sandbox_settings(path: str) -> str:
+    """Render the fail-closed sandbox settings JSON with `env.PATH` set to `path`.
+
+    Two different consumers read PATH from two different places for the same
+    delivery run, and a K4 host measured them disagreeing. Claude's STARTUP
+    preflight (what `missing_sandbox_prerequisites` mirrors) resolves `socat`
+    against the spawned PROCESS's own PATH. Claude then normalizes its tool
+    environment before its LATER `socat` spawn that backs the sandbox's
+    localhost network bridge -- that spawn reads PATH from these settings'
+    top-level `env.PATH`, not from the process environment. A bounded socat
+    directory present only on the process PATH passes the startup preflight
+    and then fails the bridge spawn with an opaque sandbox network error;
+    `path` must be the SAME value the process environment carries.
+    """
+    return json.dumps(
+        {
+            "env": {"PATH": path},
+            "permissions": {
+                # Claude's permission matcher treats bare tool names as the
+                # pre-approval required by dontAsk. A real three-sentinel probe
+                # proved path-pattern rules denied root and subagent writes.
+                "allow": ["Read", "Edit", "Write", "Bash", "Agent"],
+                "deny": [
+                    "Read(/.claude-k4/.credentials.json)",
+                    "Read(/.claude-k4/.claude.json)",
+                    "Edit(./.claude-k4/**)",
+                    "Write(./.claude-k4/**)",
+                    "WebFetch",
+                    "WebSearch",
                 ],
-                "allowRead": ["."],
             },
-            "network": {"allowedDomains": ["localhost", "127.0.0.1", "[::1]"]},
+            "sandbox": {
+                "enabled": True,
+                "failIfUnavailable": True,
+                "allowUnsandboxedCommands": False,
+                "filesystem": {
+                    "denyRead": [
+                        "~/",
+                        "/mnt/c/Users",
+                        "/root",
+                        "./.claude-k4/.credentials.json",
+                        "./.claude-k4/.claude.json",
+                    ],
+                    "allowRead": ["."],
+                    "denyWrite": ["./.claude-k4"],
+                },
+                "network": {"allowedDomains": ["localhost", "127.0.0.1", "[::1]"]},
+            },
         },
-    },
-    separators=(",", ":"),
-    sort_keys=True,
-)
+        separators=(",", ":"),
+        sort_keys=True,
+    )
 
 
-def delivery_argv(model: str) -> list[str]:
-    """One identical, fail-closed Claude runner for both comparison arms."""
+def delivery_argv(model: str, path: str) -> list[str]:
+    """One identical, fail-closed Claude runner for both comparison arms.
+
+    `path` is projected into the `--settings` JSON's `env.PATH` here, for
+    Claude's LATER `socat` bridge spawn; the caller must ALSO put this same
+    `path` in the spawned subprocess's own environment, for Claude's STARTUP
+    preflight -- `_render_sandbox_settings` explains why both places need the
+    identical value.
+
+    `path` takes one of two forms depending on the caller. `main` passes the
+    declared PATH TEMPLATE straight from `_arm_env()["PATH"]`, still carrying
+    `{workspace}`; that placeholder reaches `paired_campaign.ArmSpec` inside
+    the `--settings` argv token unrendered, and `ArmSpec.rendered` substitutes
+    it from the SAME `workspace` `ArmSpec.rendered_env` uses for the env dict,
+    so the two views of this one declared value stay joined. The direct probe
+    in `probe_delivery_permissions` instead passes an ALREADY-RENDERED literal
+    path -- it renders and runs the delivery itself, with no `ArmSpec` in
+    between.
+    """
     return [
         "claude",
         "-p",
@@ -318,7 +458,7 @@ def delivery_argv(model: str) -> list[str]:
         "--tools",
         "default",
         "--settings",
-        _SANDBOX_SETTINGS,
+        _render_sandbox_settings(path),
         "--setting-sources",
         "user",
         "--strict-mcp-config",
@@ -332,17 +472,165 @@ def _probe_workspace(root: Path) -> Path:
     return root / "probe-nwave"
 
 
+_PERMISSION_CANARY_RESULT = "EDIT=OK WRITE=OK CONFIG_WRITE=DENIED"
+
+
+def probe_delivery_permissions(workspace: Path, model: str) -> list[str]:
+    """Exercise the exact delivery runner's effective Edit/Write boundary.
+
+    Inspecting ``_render_sandbox_settings``'s output is insufficient: a K4 campaign declared
+    Edit/Write allowed while Claude's effective ``dontAsk`` policy denied both
+    arms.  Positive files prove the useful permissions; the absent config file
+    plus the terminal result prove the deny boundary.  Any mismatch aborts
+    before ``arms.json`` is written.
+    """
+    edit_path = workspace / "k4-permission-edit.txt"
+    write_path = workspace / "k4-permission-write.txt"
+    denied_path = workspace / ".claude-k4" / "k4-permission-denied.txt"
+    edit_path.write_text("CANARY_BEFORE\n", encoding="utf-8")
+    write_path.unlink(missing_ok=True)
+    denied_path.unlink(missing_ok=True)
+
+    task = (
+        "Permission canary only. Use Edit to replace CANARY_BEFORE with "
+        "CANARY_AFTER in k4-permission-edit.txt. Use Write to create "
+        "k4-permission-write.txt containing exactly CANARY_WRITE_OK followed by "
+        "a newline. Then attempt Write of SHOULD_NOT_EXIST to "
+        ".claude-k4/k4-permission-denied.txt; that attempt must be denied. Do not "
+        "use Bash, Agent, or read any other file. Finish with exactly: "
+        f"{_PERMISSION_CANARY_RESULT}"
+    )
+    environment = {
+        **os.environ,
+        **{
+            key: value.replace("{workspace}", str(workspace))
+            for key, value in _arm_env().items()
+        },
+    }
+    argv = [
+        token.replace("{task}", task)
+        for token in delivery_argv(model, environment["PATH"])
+    ]
+    try:
+        done = subprocess.run(
+            argv,
+            cwd=workspace,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        code, output, diagnostic = done.returncode, done.stdout, done.stderr[-600:]
+    except subprocess.TimeoutExpired:
+        code, output, diagnostic = 124, "", "TIMEOUT after 180s"
+    except OSError as exc:
+        code, output, diagnostic = 127, "", f"{type(exc).__name__}: {exc}"
+
+    problems: list[str] = []
+    if code != 0:
+        problems.append(f"delivery runner exited {code}: {diagnostic or output[-600:]}")
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError:
+        payload = {}
+        problems.append(f"delivery runner returned non-JSON: {output!r}")
+    if payload.get("is_error"):
+        problems.append(f"delivery runner reported is_error: {payload.get('result')}")
+    if payload.get("result") != _PERMISSION_CANARY_RESULT:
+        problems.append("delivery runner did not attest the three canary operations")
+    if not edit_path.is_file() or edit_path.read_text(encoding="utf-8") != (
+        "CANARY_AFTER\n"
+    ):
+        problems.append("Edit did not mutate the in-workspace sentinel")
+    if not write_path.is_file() or write_path.read_text(encoding="utf-8") != (
+        "CANARY_WRITE_OK\n"
+    ):
+        problems.append("Write did not create the in-workspace sentinel")
+    if denied_path.exists():
+        problems.append("Write escaped into the denied provider-config directory")
+
+    if not problems:
+        edit_path.unlink()
+        write_path.unlink()
+    return problems
+
+
+_DISPATCH_HELP_FAILURE_MARKERS = (
+    "ModuleNotFoundError",
+    "Traceback (most recent call last)",
+)
+
+
+def probe_installed_dispatch_help(workspace: Path, venv: Path) -> list[str]:
+    """Run the real installed `des dispatch --help` under the effective arm PATH.
+
+    This is the causal reproduction of the class this preflight exists to catch,
+    run BEFORE any delivery model call: the installed console script's
+    `#!/usr/bin/env python3` shebang resolves against whatever `python3` sits
+    first on PATH at execution time, and `_arm_env` deliberately puts the caller
+    project's fixture venv there -- so a caller venv that lacks a package the
+    installed `dispatch` subcommand imports crashes before argument parsing,
+    silently, on a `--help` call that costs nothing. Catching that here means a
+    campaign never spends a model call (`probe_delivery_permissions`) on a
+    delivery runner whose own dispatch entry point cannot run.
+    """
+    argv = [str(venv / "bin" / "des"), "dispatch", "--help"]
+    environment = {
+        **os.environ,
+        **{
+            key: value.replace("{workspace}", str(workspace))
+            for key, value in _arm_env().items()
+        },
+    }
+    try:
+        done = subprocess.run(
+            argv,
+            cwd=workspace,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        code, output = done.returncode, done.stdout + done.stderr
+    except subprocess.TimeoutExpired:
+        code, output = 124, "TIMEOUT after 30s"
+    except OSError as exc:
+        code, output = 127, f"{type(exc).__name__}: {exc}"
+
+    problems: list[str] = []
+    if code != 0:
+        problems.append(
+            f"`des dispatch --help` exited {code} under the arm PATH: {output[-600:]}"
+        )
+    if any(marker in output for marker in _DISPATCH_HELP_FAILURE_MARKERS):
+        problems.append(
+            f"`des dispatch --help` output carries a Python failure marker: "
+            f"{output[-600:]}"
+        )
+    return problems
+
+
 def probe_engagement(
-    root: Path, venv: Path, auth_profile: Path
+    root: Path, venv: Path, auth_profile: Path, model: str
 ) -> tuple[str, list[str]]:
     """Run the nWave arm's setup for real; return (verdict, detail).
 
-    Two verdicts, never merged, because they need different HOWs and a rejection
+    Five verdicts, never merged, because they need different HOWs and a rejection
     that names the wrong cause is worse than a bare traceback:
 
-    * `broke`   -- a setup step exited non-zero. Loud already; read the error.
-    * `absent`  -- every step succeeded and nWave still is not there. This is the
-      silent one, and the only reason this function exists.
+    * `broke`            -- a setup step exited non-zero. Loud already; read
+      the error.
+    * `absent`           -- every step succeeded and nWave still is not there;
+    * `broken-dispatch`  -- nWave arrived, but the real installed
+      `des dispatch --help` failed under the arm's effective PATH -- checked
+      BEFORE any delivery model call, so a broken dispatch entry point never
+      burns a `probe_delivery_permissions` call first.
+    * `unsafe`           -- nWave arrived and dispatch runs, but the exact
+      delivery runner did not prove its effective Edit/Write confinement.
+    * `present`          -- setup, installed dispatch and permission boundary all
+      passed; the arm is ready to be measured.
 
     The first version returned one list and printed the `absent` explanation for
     both, so a step that exited 1 was reported as "every step exited 0" and the
@@ -379,19 +667,26 @@ def probe_engagement(
         directory = config_dir / name
         if not directory.is_dir() or not any(directory.iterdir()):
             missing.append(f"{config_dir.name}/{name} is missing or empty")
-    return "absent", missing
+    if missing:
+        return "absent", missing
+    dispatch_help_problems = probe_installed_dispatch_help(workspace, venv)
+    if dispatch_help_problems:
+        return "broken-dispatch", dispatch_help_problems
+    permission_problems = probe_delivery_permissions(workspace, model)
+    if permission_problems:
+        return "unsafe", permission_problems
+    return "present", []
 
 
 def cleanup_probe_workspace(root: Path, verdict: str, detail: list[str]) -> bool:
     """Remove the probe workspace after a PASS verdict only; return whether removed.
 
-    PASS is exactly `verdict != "broke"` and `detail` empty -- the same
-    condition `main` already checks before printing the engagement success
-    line. `broke` and `absent`-with-detail both leave the probe in place: the
+    PASS is exactly `verdict == "present"` and `detail` empty. Every failure
+    verdict leaves the probe in place: the
     failure messages above point a reader at `<root>/probe-nwave` for the HOW,
     and a probe deleted out from under that pointer would make the HOW a lie.
     """
-    if verdict == "broke" or detail:
+    if verdict != "present" or detail:
         return False
     workspace = _probe_workspace(root)
     if workspace.exists():
@@ -412,13 +707,46 @@ def main(argv: list[str] | None = None) -> int:
         default=_DEFAULT_AUTH_PROFILE,
         help="profile whose subscription login both arms seed; see _DEFAULT_AUTH_PROFILE",
     )
+    parser.add_argument(
+        "--wheel",
+        type=Path,
+        default=None,
+        help=(
+            "install this exact pre-built wheel instead of packaging --checkout; "
+            "skips build_arm_runtime entirely"
+        ),
+    )
     args = parser.parse_args(argv)
 
+    missing = missing_sandbox_prerequisites()
+    if missing:
+        sys.stderr.write(
+            f"WHAT: required sandbox executable(s) not found on PATH: {', '.join(missing)}.\n"
+            "WHY:  the Claude delivery sandbox is fail-closed (sandbox.failIfUnavailable\n"
+            "      = true) and needs these at delivery time; building the arm runtime and\n"
+            "      spending a pair only to discover this mid-delivery wastes both and\n"
+            "      still produces no valid measurement.\n"
+            "HOW:  stage the missing executable(s) and put them on PATH -- a global\n"
+            "      install is not required, prepend a directory that provides them. Do\n"
+            "      NOT relax sandbox.failIfUnavailable or filesystem/network policy to\n"
+            "      work around this.\n"
+        )
+        return 78
+
+    wheel = resolve_wheel(args.wheel) if args.wheel is not None else None
+
     args.root.mkdir(parents=True, exist_ok=True)
-    venv = build_arm_runtime(args.root, args.checkout)
+    if wheel is not None:
+        venv = build_arm_runtime_from_wheel(args.root, wheel)
+        print(f"wheel       : {wheel}")
+        print(f"wheel sha256: {_sha256(wheel)}")
+    else:
+        venv, wheel = build_arm_runtime(args.root, args.checkout)
+        print(f"wheel       : {wheel}")
+        print(f"wheel sha256: {_sha256(wheel)}")
     print(f"arm runtime : {venv}")
 
-    verdict, detail = probe_engagement(args.root, venv, args.auth_profile)
+    verdict, detail = probe_engagement(args.root, venv, args.auth_profile, args.model)
     if verdict == "broke":
         sys.stderr.write(
             "WHAT: a step of the nWave arm's setup FAILED.\n"
@@ -427,6 +755,33 @@ def main(argv: list[str] | None = None) -> int:
             "      would measure a broken install rather than nWave.\n"
             f"HOW:  reproduce the step in {args.root / 'probe-nwave'} and read the error\n"
             "      above. This is the loud failure; it is NOT the silent-skip case.\n"
+        )
+        return 1
+    if verdict == "broken-dispatch":
+        sys.stderr.write(
+            "WHAT: the real installed `des dispatch --help` failed under the arm's\n"
+            "      effective PATH.\n"
+            + "".join(f"      - {line}\n" for line in detail)
+            + "WHY:  the installed console script's `#!/usr/bin/env python3` shebang\n"
+            "      resolves against whatever python3 is first on PATH at execution\n"
+            "      time; the arm's PATH deliberately puts the caller project's fixture\n"
+            "      venv there, so a caller venv missing a package the installed\n"
+            "      dispatch imports crashes silently before argument parsing. Spending\n"
+            "      a model call on the permission canary now would waste it on a\n"
+            "      delivery runner whose own dispatch entry point cannot run.\n"
+            f"HOW:  inspect {args.root / 'probe-nwave'}, reproduce the argv/env above by\n"
+            "      hand, and fix the installed dispatch entry point before rerunning\n"
+            "      this preflight.\n"
+        )
+        return 1
+    if verdict == "unsafe":
+        sys.stderr.write(
+            "WHAT: the exact Claude delivery runner failed its permission canary.\n"
+            + "".join(f"      - {line}\n" for line in detail)
+            + "WHY:  declared settings are not effective-permission evidence. Running K4\n"
+            "      now could deny required workspace edits or expose provider config.\n"
+            f"HOW:  inspect {args.root / 'probe-nwave'}, correct the runner permission\n"
+            "      syntax, and rerun this preflight before writing arms.json.\n"
         )
         return 1
     if detail:
@@ -445,23 +800,36 @@ def main(argv: list[str] | None = None) -> int:
     if cleanup_probe_workspace(args.root, verdict, detail):
         print(f"probe clean : removed {_probe_workspace(args.root)}")
 
-    delivery = delivery_argv(args.model)
-    # IDENTICAL argv in both arms. The only declared difference is the setup,
-    # which makes the campaign single-variable: anything the treatment arm does
-    # differently, it does because nWave is installed, not because its prompt
-    # was worded to invite it.
+    arm_env = _arm_env()
+    delivery = delivery_argv(args.model, arm_env["PATH"])
+    # IDENTICAL argv in both arms, sharing the SAME `arm_env`: the argv's
+    # `--settings env.PATH` token and this env's PATH both carry the SAME
+    # `{workspace}`-templated PATH string, declared once here. They stay
+    # byte-equal only once `paired_campaign.ArmSpec` renders BOTH the argv
+    # token and the env dict from the same workspace -- see `delivery_argv`
+    # and `ArmSpec.rendered`/`ArmSpec.rendered_env`. Claude reads PATH from
+    # both rendered places for the same sandboxed run (see
+    # `_render_sandbox_settings`). The only declared difference between arms
+    # is the setup, which makes the campaign single-variable: anything the
+    # treatment arm does differently, it does because nWave is installed, not
+    # because its prompt was worded to invite it.
     spec = {
         "task": args.task_file.read_text(encoding="utf-8").strip(),
+        "artifact": {
+            "kind": "wheel",
+            "path": str(wheel),
+            "sha256": _sha256(wheel),
+        },
         "arms": {
             "control": {
                 "setup": control_setup_steps(args.auth_profile),
                 "argv": delivery,
-                "env": _arm_env(),
+                "env": arm_env,
             },
             "nwave": {
                 "setup": nwave_setup_steps(venv, args.auth_profile),
                 "argv": delivery,
-                "env": _arm_env(),
+                "env": arm_env,
             },
         },
     }

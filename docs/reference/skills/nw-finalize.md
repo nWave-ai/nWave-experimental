@@ -1,5 +1,5 @@
 # nw-finalize
 
-Archives a completed feature to docs/evolution/, migrates lasting artifacts to permanent directories, preserves the feature workspace, and cleans session artifacts. Use after completion evidence passes.
+Finalize one whole delivery by joining terminal evidence, proving exact AuthorizedDeliveryPaths scope, and creating the single commit used for clean-checkout closure.
 
 **Source:** [SKILL.md on GitHub](https://github.com/nWave-ai/nWave/blob/main/nWave/skills/nw-finalize/SKILL.md)

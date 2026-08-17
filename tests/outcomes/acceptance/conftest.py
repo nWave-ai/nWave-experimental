@@ -4,9 +4,8 @@ Shared fixtures for outcomes acceptance tests.
 Strategy C — Real local: real subprocess invocations of `nwave-ai outcomes`,
 real YAML filesystem under tmp_path. NO mocks at the acceptance boundary.
 
-Mirrors tests/feature_delta/acceptance/conftest.py. The driving-adapter
-mandate (Mandate 5) requires the walking-skeleton scenario to invoke the
-user-facing entry point via subprocess.
+The driving-adapter mandate requires the walking-skeleton scenario to invoke
+the user-facing entry point via subprocess.
 """
 
 from __future__ import annotations

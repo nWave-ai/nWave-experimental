@@ -1,16 +1,13 @@
-"""`nwave-ai outcomes` subcommand entry — register / check / check-delta.
+"""`nwave-ai outcomes` subcommand entry — register / check.
 
 Driving adapter: argparse-based CLI. Translates argv into application
-service calls (RegistryService.register, CollisionDetector.check,
-RegistryService.collision_check_for_id) and maps results to exit codes
-per feature-delta DESIGN:
+service calls (RegistryService.register, CollisionDetector.check) and maps
+results to exit codes:
 
     register:    0 success
                  2 refused — checked and rejected (invalid, or duplicate id)
                  3 refused — could NOT check (schema resource unavailable)
     check:       0 no collisions, 1 collision detected
-    check-delta: 0 zero collisions across delta, 1 if any collision
-
 2 and 3 are kept apart deliberately: "I checked it and said no" and "I never
 managed to check it" are different events for whoever is reading the exit code,
 and only one of them is fixed by reinstalling. Every other unexpected failure is
@@ -21,7 +18,6 @@ is never a user-facing outcome (see `handle_outcomes`).
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
@@ -35,12 +31,9 @@ from nwave_ai.outcomes.application.registry_service import (
     InvalidOutcomeError,
     RegistryService,
     SchemaUnavailableError,
-    UnknownOutcomeIdError,
 )
 from nwave_ai.outcomes.domain.outcome import InputShape, Outcome, OutputShape
 
-
-_OUT_ID_PATTERN = re.compile(r"\bOUT-[A-Z0-9-]+\b")
 
 # Exit codes. 2 = refused after checking; 3 = refused because checking was
 # impossible. Kept distinct so a damaged install cannot look like bad input.
@@ -86,19 +79,13 @@ def handle_outcomes(argv: list[str]) -> int:
     chk.add_argument("--output-shape", required=True)
     chk.add_argument("--keywords", default="")
 
-    chd = sub.add_parser(
-        "check-delta",
-        help="Aggregate scan: parse OUT-ids from a feature-delta.md and check each",
-    )
-    chd.add_argument("delta_path", type=Path)
-
     args = parser.parse_args(argv)
 
     # Everything downstream of argv parsing runs inside the guard, so no failure
     # mode reaches the user as a raw traceback: not the schema resource, and not
     # the several other unguarded throw sites either (registry mkdir/write ->
     # PermissionError, malformed registry YAML -> YAMLError, a row missing `id`
-    # -> KeyError, an unreadable feature-delta -> OSError). `Exception`, not
+    # -> KeyError). `Exception`, not
     # `BaseException`: argparse's SystemExit must still pass through.
     try:
         registry_path = _ensure_registry(args.registry)
@@ -113,8 +100,6 @@ def _dispatch(args: argparse.Namespace, registry_path: Path) -> int:
         return _run_register(args, registry_path)
     if args.cmd == "check":
         return _run_check(args, registry_path)
-    if args.cmd == "check-delta":
-        return _run_check_delta(args, registry_path)
     return _EXIT_REFUSED
 
 
@@ -195,51 +180,6 @@ def _run_check(args: argparse.Namespace, registry_path: Path) -> int:
     for line in _render_collision_lines(report):
         print(line)
     return 1
-
-
-def _run_check_delta(args: argparse.Namespace, registry_path: Path) -> int:
-    """Aggregate scan: extract OUT-ids from a feature-delta.md, run a
-    self-excluding collision check on each, emit aggregate report.
-
-    Stdout: ``N outcomes checked, M collisions found across K outcomes``
-    Exit:   0 when zero collisions, 1 otherwise.
-    """
-    delta_path: Path = args.delta_path
-    if not delta_path.exists():
-        print(f"ERROR: feature-delta not found: {delta_path}", file=sys.stderr)
-        return 2
-
-    out_ids = _extract_out_ids(delta_path.read_text(encoding="utf-8"))
-    adapter = YamlRegistryAdapter(registry_path)
-    service = RegistryService(reader=adapter, writer=adapter)
-
-    collision_count = 0
-    colliding_ids: list[str] = []
-    for out_id in out_ids:
-        try:
-            report = service.collision_check_for_id(out_id)
-        except UnknownOutcomeIdError:
-            print(f"WARNING: {out_id} referenced in delta but not in registry")
-            continue
-        if report.verdict == "collision":
-            collision_count += 1
-            colliding_ids.append(out_id)
-
-    n_checked = len(out_ids)
-    k_with_collision = len(colliding_ids)
-    print(
-        f"{n_checked} outcomes checked, {collision_count} "
-        f"collision{'s' if collision_count != 1 else ''} found "
-        f"across {k_with_collision} outcome{'s' if k_with_collision != 1 else ''}"
-    )
-    for out_id in colliding_ids:
-        print(f"  COLLISION: {out_id}")
-    return 0 if collision_count == 0 else 1
-
-
-def _extract_out_ids(text: str) -> list[str]:
-    """Return ordered-unique OUT-ids found in text via regex scan."""
-    return _ordered_unique(_OUT_ID_PATTERN.findall(text))
 
 
 def _render_collision_lines(report) -> list[str]:

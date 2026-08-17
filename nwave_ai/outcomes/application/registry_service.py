@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from importlib.resources import files
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from jsonschema import Draft7Validator, SchemaError
 from jsonschema import ValidationError as JsonSchemaValidationError
@@ -29,10 +29,6 @@ from nwave_ai.outcomes.ports.registry_io import (  # noqa: TC001  # runtime DI
     RegistryReader,
     RegistryWriter,
 )
-
-
-if TYPE_CHECKING:
-    from nwave_ai.outcomes.application.collision_detector import CollisionReport
 
 
 _SCHEMA_PACKAGE = "nwave_ai.outcomes"
@@ -61,10 +57,6 @@ class SchemaUnavailableError(Exception):
     damaged install must never be able to masquerade as a bad outcome — nor an
     unchecked outcome as a validated one.
     """
-
-
-class UnknownOutcomeIdError(Exception):
-    """Raised when a collision check is requested for an id not in registry."""
 
 
 def load_schema() -> dict[str, Any]:
@@ -135,36 +127,6 @@ class RegistryService:
         """Return an immutable snapshot of all registered outcomes."""
         return self._reader.read_outcomes()
 
-    def collision_check_for_id(self, outcome_id: str) -> CollisionReport:
-        """Run a collision check for `outcome_id` excluding itself from the
-        snapshot, so an outcome cannot collide with its own registry entry.
-
-        Drives US-3 aggregate scan over feature-delta.md.
-
-        Raises:
-            UnknownOutcomeIdError: when `outcome_id` is not in the registry.
-        """
-        # Local import keeps the module-level dependency graph minimal and
-        # avoids a circular import risk if collision_detector ever imports
-        # back from registry_service.
-        from nwave_ai.outcomes.application.collision_detector import (
-            CollisionDetector,
-            TargetShape,
-        )
-
-        snapshot = self._reader.read_outcomes()
-        target = self._find_outcome(snapshot, outcome_id)
-        others = tuple(o for o in snapshot if o.id != outcome_id)
-        detector = CollisionDetector()
-        return detector.check(
-            target=TargetShape(
-                input_shape=target.inputs[0].shape if target.inputs else "",
-                output_shape=target.output.shape,
-                keywords=target.keywords,
-            ),
-            snapshot=others,
-        )
-
     def _validate_against_schema(self, outcome: Outcome) -> None:
         """Check `outcome` against the schema.
 
@@ -184,9 +146,3 @@ class RegistryService:
         existing_ids = tuple(o.id for o in self._reader.read_outcomes())
         if outcome.id in existing_ids:
             raise DuplicateOutcomeIdError(f"duplicate outcome id: {outcome.id}")
-
-    def _find_outcome(self, snapshot: tuple[Outcome, ...], outcome_id: str) -> Outcome:
-        for outcome in snapshot:
-            if outcome.id == outcome_id:
-                return outcome
-        raise UnknownOutcomeIdError(f"unknown outcome id: {outcome_id}")

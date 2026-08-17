@@ -1,202 +1,128 @@
 ---
 name: nw-finalize
-description: "Archives a completed feature to docs/evolution/, migrates lasting artifacts to permanent directories, preserves the feature workspace, and cleans session artifacts. Use after completion evidence passes."
+description: "Finalize one whole delivery by joining terminal evidence, proving exact AuthorizedDeliveryPaths scope, and creating the single commit used for clean-checkout closure."
 user-invocable: false
-argument-hint: '[agent] [feature-id] - Example: @nw-platform-architect "auth-upgrade"'
 ---
 
-# NW-FINALIZE: Feature Completion and Archive
+# NW-FINALIZE: whole-delivery closure
 
 **Wave**: CROSS_WAVE
-**Agent**: @nw-platform-architect (default) or specified agent
 
-## Overview
+Finalize runs exactly once, called by `/nw-deliver` after the entire whole
+delivery, never per slice and never invoked a second time by a downstream
+consumer such as `/nw-bugfix`. Its authority is ADR-SSOT-002 Section 8. It
+owns documentary, filesystem and scoped Git hygiene; it creates no progress
+record, staging tree or second delivery model.
 
-Finalize a completed feature: verify current completion evidence|create evolution document|migrate lasting artifacts to permanent directories|preserve the feature workspace|clean session artifacts. The agent gathers project data, writes a concise summary, migrates lasting artifacts, and preserves the source history.
+## Inputs and completion floor
 
-`docs/feature/{feature-id}/` is the active feature workspace and remains the feature's living history after finalization. Lasting artifacts are copied to permanent directories for discoverability; only explicitly approved session artifacts are removed.
+Consume existing terminal evidence only:
 
-## Usage
+- every immutable DeliveryContract belonging to `delivery-id`;
+- the crafter's opaque candidate identity, `changed-targets` and terminal
+  verification results;
+- independent technical review;
+- one source-blind Examiner verdict for every validated charter when
+  `applicability.examine=true`, including the byte-identical candidate echo;
+- the current base revision and complete pending Git path set.
 
-```
-/nw-finalize @{agent} "{feature-id}"
-```
+Reject missing, stale, contradictory or nonterminal evidence as
+`INDETERMINATE`; reject a known failed obligation as `FAIL`. Never infer
+completion from a planning document, filename, status label or prior run.
 
-## Context Files Required
+## `AuthorizedDeliveryPaths`
 
-The completion-evidence files depend on `workflow.mode` — per-mode descriptor + audit substrate projected from the mode registry: <!-- mode-ref-ok -->
+Finalize computes one prompt-local, ephemeral union of pending
+repository-relative paths from already-existing terminal role results only —
+never a persisted set, registry or second carrier:
 
-<!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
-- `atdd_pure` — Per-slice AT-first loop; AT-completion ledger + commit trailers are the authority.
-  Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
-<!-- GENERATED:mode-descriptor END -->
+- any pending charter path the PO authored under `Resolve = Author(...)`
+  (Section 4b Axis 2) for this delivery;
+- ATD's authored acceptance/integration oracle path plus the
+  `DeliveryContract` path it wrote together (Section 4b item 1), for a
+  `RED_TO_GREEN` slice only — a `GREEN_TO_GREEN` slice binds an existing,
+  already-committed locator and contributes no pending path for either;
+- any permanent DESIGN authority path (architecture brief section or ADR)
+  DESIGN actually changed for this delivery;
+- `C`'s reported `changed-targets`;
+- this procedure's own explicitly authorized evolution/ADR-link updates
+  (step 2 below).
 
-- **atdd_pure mode** — the feature delta, executable acceptance-test results, EXAMINE/review evidence, and clean slice/feature completion attestations. <!-- mode-ref-ok -->
+A reused, already-committed artifact — a bound `GREEN_TO_GREEN` oracle, a
+`Reuse`d charter, an unchanged architecture page — contributes no pending
+path to this union: reuse is read-only. `AuthorizedDeliveryPaths` is
+recomputed fresh at each finalize attempt; it is never written to disk.
 
-## Pre-Dispatch Gate: All Work Complete
+## Procedure
 
-Before dispatching, verify that the feature's current completion evidence is internally consistent. Do not infer completion from the presence or contents of a planning or execution-history carrier. <!-- mode-ref-ok -->
+1. Join contract, candidate, oracle, review and applicable EXAMINE identities.
+   A partial or non-PASS join stops without retry or repair.
+2. Write or complete exactly the explicitly enumerated authorized
+   durable-document updates for this delivery directly to their permanent
+   owners — the evolution record and any architecture-brief/ADR link, the
+   fifth member of `AuthorizedDeliveryPaths` above. Never a copy, a staging
+   file or a second carrier, and never a charter or executable-oracle
+   rewrite.
+3. Compute the complete pending Git path set, including formerly-untracked paths, and verify it equals exactly `AuthorizedDeliveryPaths` above and nothing else. An unaccounted extra or missing path blocks as `FAIL`/`INDETERMINATE` rather than being silently included or dropped.
+4. Verify that no production target, the contract, the oracle or a charter
+   mutated after `C`'s terminal `PASS`, and that the current parent/base
+   revision still matches the base revision `C` (and, when dispatched, `D`)
+   reported.
+5. Verify no retired per-delivery root or nWave-owned session artifact (a
+   `docs/feature/` tree member, or another file/directory this step
+   positively identifies as nWave-owned delivery residue) is newly created
+   or changed in the pending diff computed at step 3. A path already
+   present, byte-for-byte unchanged, in `C`'s base revision is preexisting
+   user-owned state: it is preserved, excluded from this check by
+   construction, and is never a finalize input, defect classification target
+   or deletion candidate. Only a path that is new or modified in the pending
+   diff and positively matches the retired family is reported as a defect;
+   this step never deletes, promotes or classifies user-owned state, and
+   finalize never deletes any path outside its own verified
+   `AuthorizedDeliveryPaths` commit scope.
+6. Stage exactly the verified path set, run the normal commit hooks exactly once and create the single whole-delivery commit. Return its immutable SHA. Root must not create another commit.
 
-1. **Verify completion evidence** — Confirm every declared slice is shipped, its executable acceptance tests pass, observable value has independent EXAMINE evidence, and feature-level review/completion evidence is current. Gate: no declared outcome lacks evidence.
-2. **Block or proceed** — If evidence is missing or contradictory, list the exact slice or outcome and halt. Otherwise proceed to dispatch. Gate: completion evidence reconciled before dispatch.
+A scope or identity mismatch at step 3 or 4 blocks the commit as `FAIL`/
+`INDETERMINATE` rather than committing a partial or drifted diff.
 
-### atdd_pure mode <!-- mode-ref-ok -->
+Report `PASS`, `FAIL` or `INDETERMINATE` with WHAT/WHY/HOW. Finalize persists
+no state of its own.
 
-Completion is established from the feature delta plus current executable-test, EXAMINE/review, and clean-commit evidence. Every declared slice must be shipped and every observable outcome independently examined. Gate: the evidence set reconciles without missing slices or stale observations.
+## Clean-tree idempotence law
 
-## Phases
+A rerun against a clean working tree is `PASS` only when both hold against
+the current HEAD: its parent equals the exact base revision `C` (and, when
+dispatched, `D`) reported for this delivery, AND the committed path set at
+that HEAD equals exactly this delivery's recomputed `AuthorizedDeliveryPaths`.
+A clean HEAD that fails either equality — a foreign delivery's commit, a
+stale base, or a committed path set that has drifted from the expected
+union — is `INDETERMINATE` (or `FAIL` when the mismatch is a known
+contradiction), never a reused `PASS`. Finalize never infers success from a
+merely clean tree alone.
 
-### Phase A — Evolution Document
+## Global closure
 
-1. **Create evolution document** — Write `docs/evolution/YYYY-MM-DD-{feature-id}.md` from the feature outcome, decisions, executable-test results, EXAMINE/review observations, and relevant git history. Gate: concise current-state summary created.
-2. **Extract key decisions** — Pull lasting decisions, issues, and lessons from the feature workspace. Gate: decisions list assembled.
+Finalize PASS is local evidence for the commit it created. Global `F` uses a
+clean checkout of that exact SHA and reruns the DeliveryContract verification vectors,
+then proves installed Claude/Codex parity plus CI, Git and filesystem closure.
+Missing or failed `F` is not PASS.
 
-### Phase B — Migrate Lasting Artifacts
+## Invariants
 
-1. **Scan workspace** — List all files under `docs/feature/{feature-id}/`. Gate: file list produced.
-2. **Match against destination map** — For each file, apply the destination map below. Gate: migration plan assembled.
-3. **Create destination directories** — Create any missing permanent directories. Gate: directories exist.
-4. **Copy files** — Copy each matched file to its permanent destination. Gate: all copies verified.
-5. **Log files not copied** — Note the workspace files retained in living history rather than copied to a permanent discovery location. Gate: retention list documented.
+- One finalization and one commit per whole delivery; never per slice and
+  never invoked a second time by a downstream consumer such as `/nw-bugfix`.
+- Durable facts are written directly to their permanent owners.
+- No temporary feature root, promotion plan or cleanup runtime.
+- No new schema field, persisted verdict, receipt, ledger or controller.
+- No mutation of production, contract, charter or executable oracle after C.
+- Exact `AuthorizedDeliveryPaths` equality, clean-checkout replay and
+  idempotence are mandatory falsifiers.
 
-#### Destination Map
+## Expected result
 
-| Source (feature workspace) | Destination (permanent) | Condition |
-|---|---|---|
-| `design/architecture-design.md` | `docs/architecture/{feature}/` | If exists |
-| `design/component-boundaries.md` | `docs/architecture/{feature}/` | If exists |
-| `design/technology-stack.md` | `docs/architecture/{feature}/` | If exists |
-| `design/data-models.md` | `docs/architecture/{feature}/` | If exists |
-| `design/adrs/ADR-*.md` | `docs/adrs/` | Flat namespace, cross-feature |
-| `distill/walking-skeleton.md` | `docs/scenarios/{feature}/` | Walking skeleton specification |
-| `discuss/journey-*.yaml` | `docs/ux/{feature}/` | If UX journeys exist |
-| `discuss/journey-*-visual.md` | `docs/ux/{feature}/` | If UX visuals exist |
-
-Research docs (`docs/research/`) are already in a permanent location — no migration needed.
-
-#### Workspace Artifacts Not Copied
-
-These artifacts remain in `docs/feature/{feature-id}/` as living history. They are not copied to a second permanent location:
-
-| File pattern | Why retain only in the feature workspace |
-|---|---|
-| `design/review-*.md` | Review findings captured in evolution doc |
-| `discuss/dor-checklist.md` | Process gate, not lasting value |
-| `discuss/shared-artifacts-registry.md` | Process scaffolding |
-| `discuss/prioritization.md` | Superseded by the delivered outcome and evolution summary |
-| `*/wave-decisions.md` | Key decisions extracted into evolution doc |
-
-### Phase C — Preserve Workspace and Clean Session Artifacts
-
-1. **List removable session artifacts** — Enumerate only session markers and temporary files; exclude every wave artifact. Gate: bounded cleanup list produced.
-2. **Present for approval** — Show the exact bounded cleanup list to the user and request approval. Gate: user explicitly approves.
-3. **Preserve workspace** — `docs/feature/{feature-id}/` is NOT deleted. The evolution document is the concise summary; the feature directory remains the living history. Gate: workspace intact.
-4. **Clean session artifacts only** — Remove `.nwave/des/deliver-session.json` and any temp files. Do NOT remove wave artifacts (discuss/, design/, distill/, deliver/). Gate: session markers removed, wave artifacts intact.
-
-**NEVER delete without user approval.** Show exactly what will be removed.
-
-### Phase D — Post-Cleanup Verification
-
-1. **Verify migrated files** — Confirm every file copied in Phase B exists at its destination. Gate: all destinations present.
-2. **Update architecture doc statuses** — Change any "FUTURE DESIGN" labels to "IMPLEMENTED" in migrated architecture docs. Gate: no stale FUTURE DESIGN labels.
-3. **Optionally generate reference docs** — Invoke /nw-document unless `--skip-docs` flag provided. Gate: docs generated or skipped.
-4. **Commit evolution doc and artifacts** — Commit 1: evolution doc + migrated artifacts. Gate: commit created.
-5. **Commit session-artifact cleanup** — Commit 2: the session markers removed in Phase C step 4 (the feature workspace directory itself is preserved, per Phase C step 3 — never deleted). Gate: commit created and pushed.
-
-## Agent Invocation
-
-@{agent}
-
-<!-- DES-WAVE: feature-end -->
-
-Include the `<!-- DES-WAVE: feature-end -->` marker line above verbatim in the Agent dispatch prompt — it declares the wave so the PreToolUse hook can arm enforcement even on runtimes whose prompt-submission anchor never fired (INFERRED fallback; the marker can only ADD gating, never remove it).
-
-Finalize: {feature-id}
-
-**Key constraints:**
-
-1. Follow the 4-phase process (A → B → C → D) in order.
-2. Create evolution document BEFORE migration (needs source files).
-3. Migrate BEFORE cleanup (preserves artifacts).
-4. Show cleanup list and wait for user approval before removing anything.
-5. Commit and push after approval.
-
-## Success Criteria
-
-- [ ] Current feature completion evidence reconciled before dispatch
-- [ ] Evolution document created in docs/evolution/
-- [ ] Architecture docs migrated to docs/architecture/{feature}/
-- [ ] ADRs migrated to docs/adrs/ (if any)
-- [ ] Scenario docs migrated to docs/scenarios/{feature}/ (if any)
-- [ ] UX journeys migrated to docs/ux/{feature}/ (if any)
-- [ ] User approved the exact session-artifact cleanup list
-- [ ] Feature workspace preserved: docs/feature/{feature-id}/
-- [ ] Session artifacts removed without deleting wave artifacts
-- [ ] Architecture docs updated to "IMPLEMENTED" status
-- [ ] Committed and pushed
-
-## Permanent Directory Structure
-
-```
-docs/
-  adrs/                  # ADR-NNN-{slug}.md (flat, cross-feature)
-  architecture/          # Design docs by feature
-    {feature}/
-      architecture-design.md
-      component-boundaries.md
-      data-models.md
-      technology-stack.md
-  decisions/             # Product decisions by feature (optional)
-    {feature}/
-  evolution/             # Post-mortem summaries
-    YYYY-MM-DD-{feature-id}.md
-  research/              # Research docs (flat, cross-feature)
-  scenarios/             # Acceptance test documentation by feature
-    {feature}/
-      walking-skeleton.md
-  ux/                    # UX specs and journeys by feature
-    {feature}/
-      journey-*.yaml
-      journey-*-visual.md
-```
-
-## Error Handling
-
-| Error | Response |
-|-------|----------|
-| Invalid agent name | "Invalid agent. Available: nw-researcher, nw-software-crafter, nw-solution-architect, nw-product-owner, nw-acceptance-designer, nw-platform-architect" |
-| Missing feature ID | "Usage: /nw-finalize @agent 'feature-id'" |
-| Project directory not found | "Project not found: docs/feature/{feature-id}/" |
-| Incomplete or contradictory evidence | Block finalization and list the exact missing or stale outcome evidence |
-| No files to migrate | Log "No lasting artifacts found — skipping Phase B" and proceed to cleanup |
-
-## Examples
-
-### Example 1: Standard finalization
-```
-/nw-finalize @nw-platform-architect "auth-upgrade"
-```
-Reconciles completion evidence. Creates the evolution document. Migrates `design/architecture-design.md` → `docs/architecture/auth-upgrade/`, ADRs → `docs/adrs/`, and walking-skeleton material → `docs/scenarios/auth-upgrade/`. Shows session artifacts, obtains approval, removes only those artifacts, preserves the feature workspace, and commits.
-
-### Example 2: Blocked by incomplete steps
-```
-/nw-finalize @nw-platform-architect "data-pipeline"
-```
-Pre-dispatch validation finds a declared slice without current EXAMINE evidence. It returns the exact slice and missing evidence and does not finalize.
-
-## Next Wave
-
-**Handoff To**: Feature complete - no next wave
-**Deliverables**: docs/evolution/YYYY-MM-DD-{feature-id}.md, migrated artifacts, preserved feature workspace, cleaned session artifacts
-
-## Expected Outputs
-
-```
-docs/evolution/YYYY-MM-DD-{feature-id}.md
-docs/architecture/{feature}/ (migrated design docs)
-docs/adrs/ADR-*.md (migrated ADRs)
-docs/scenarios/{feature}/ (migrated test scenarios)
-docs/ux/{feature}/ (migrated UX journeys, if any)
-Preserved: docs/feature/{feature-id}/
-Removed: session artifacts explicitly approved by the user
+```text
+Validated: contract + candidate + oracle + review + applicable EXAMINE
+Committed: exact AuthorizedDeliveryPaths
+Commit: git-<algorithm>:<immutable-revision>
+Verdict: PASS | FAIL | INDETERMINATE
 ```

@@ -8,7 +8,7 @@ Acceptance criteria:
 - hook_id is a valid UUID4 string
 - hook_id is unique per handler invocation
 - hook_id appears in HOOK_INVOKED event data under key 'hook_id'
-- All four handlers generate hook_id
+- Both protocol-audited handlers generate hook_id
 - log_hook_invoked accepts optional hook_id (backward compatible: None omits field)
 """
 
@@ -46,22 +46,6 @@ def _build_pre_tool_use_stdin() -> str:
     )
 
 
-def _build_subagent_stop_stdin() -> str:
-    return json.dumps(
-        {
-            "session_id": "s1",
-            "hook_event_name": "SubagentStop",
-            "agent_id": "a1",
-            "agent_type": "code",
-            "cwd": "/tmp",
-        }
-    )
-
-
-def _build_post_tool_use_stdin() -> str:
-    return json.dumps({"tool_name": "Task", "tool_input": {"prompt": "done"}})
-
-
 def _build_pre_write_stdin() -> str:
     return json.dumps(
         {"tool_name": "Write", "tool_input": {"file_path": "/tmp/test.py"}}
@@ -72,11 +56,9 @@ def _build_pre_write_stdin() -> str:
     "handler_name,stdin_factory",
     [
         ("handle_pre_tool_use", _build_pre_tool_use_stdin),
-        ("handle_subagent_stop", _build_subagent_stop_stdin),
-        ("handle_post_tool_use", _build_post_tool_use_stdin),
         ("handle_pre_write", _build_pre_write_stdin),
     ],
-    ids=["pre_tool_use", "subagent_stop", "post_tool_use", "pre_write"],
+    ids=["pre_tool_use", "pre_write"],
 )
 def test_handler_generates_valid_uuid4_hook_id_in_hook_invoked_event(
     handler_name, stdin_factory, monkeypatch, audit_events

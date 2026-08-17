@@ -97,28 +97,22 @@ class TestWalkingSkeleton:
         assert "Agents verified" in output
         assert "Commands verified" in output
         assert "Manifest created" in output
-        assert "Schema validated" in output
 
-    # Step 9: Schema
-    def test_step_09_schema_validated(self, output: str):
-        """TDD cycle schema validation reports version and phase count."""
-        assert "TDD cycle schema" in output
-
-    # Step 10: Deployment validated
-    def test_step_10_deployment_validated(self, output: str):
+    # Step 9: Deployment validated
+    def test_step_09_deployment_validated(self, output: str):
         """Deployment validation succeeds with champagne emoji."""
         assert "\U0001f37e" in output  # 🍾
         assert "Deployment validated" in output
 
-    # Step 11: Celebration
-    def test_step_11_celebration(self, output: str):
+    # Step 10: Celebration
+    def test_step_10_celebration(self, output: str):
         """Success celebration with version number."""
         assert "\U0001f389" in output  # 🎉
         assert "installed and healthy" in output
         assert __version__ in output
 
-    # Step 12: Quick start
-    def test_step_12_quick_start_commands(self, output: str):
+    # Step 11: Quick start
+    def test_step_11_quick_start_commands(self, output: str):
         """Quick start section lists the core nWave commands.
 
         /nw-develop does not exist (nWave/tasks/nw/ has no develop.md) -- the
@@ -132,7 +126,7 @@ class TestWalkingSkeleton:
         assert "/nw-deliver" in output
         assert "/nw-develop" not in output
 
-    def test_step_12_docs_url(self, output: str):
+    def test_step_11_docs_url(self, output: str):
         """Docs URL points to the correct repository."""
         expected_url = "https://github.com/nWave-ai/nWave"
         # Find the line containing the URL and verify it's exact (not a substring of a mangled URL)

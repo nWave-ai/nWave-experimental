@@ -1,9 +1,7 @@
 """Shared pytest-bdd ``scenarios()`` binding detection (AST, stdlib only).
 
-Single-locus extraction (bug #64, twin of #29/#42): both
-:func:`des.cli.verify_negative_at._module_level_scenarios_call` and
-:func:`des.cli.carpaccio_format.count_pytest_regression_ats` need to
-recognize a module-level ``pytest_bdd.scenarios(<literal>)`` binding --
+The negative-AT verifier recognizes a module-level
+``pytest_bdd.scenarios(<literal>)`` binding --
 either the imported-name form (``from pytest_bdd import scenarios``) or the
 attribute form (``pytest_bdd.scenarios(...)``). pytest-bdd registers its
 tests dynamically at collection time, so a static AST walk over literal

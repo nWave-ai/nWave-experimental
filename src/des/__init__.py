@@ -26,7 +26,6 @@ _EXPORTS: dict[str, str] = {
     "StructuredLogger": "des.adapters.driven",
     "SystemTimeProvider": "des.adapters.driven",
     # Application
-    "CodexParityComposition": "des.application.codex_parity_journey",
     "ConfigLoader": "des.application.config_loader",
     "InvocationLimitsResult": "des.application.invocation_limits_validator",
     "InvocationLimitsValidator": "des.application.invocation_limits_validator",

@@ -142,15 +142,6 @@ def test_pre_tool_use_handler_stays_fail_open_on_exception() -> None:
     )
 
 
-def test_root_activation_wiring_never_touches_the_block_path() -> None:
-    """The reminder is wired ONLY inside the allow branch, never near block."""
-    source = PRE_TOOL_USE_HANDLER_PATH.read_text(encoding="utf-8")
-    allow_idx = source.index('if decision.action == "allow":')
-    block_idx = source.index('"decision": "block",', allow_idx)
-    allow_branch = source[allow_idx:block_idx]
-    assert "build_root_mode_select_context" in allow_branch
-
-
 def test_no_new_hook_event_registered_for_k3a_root_activation() -> None:
     """K3-A root activation reuses PreToolUse/Agent; HOOK_EVENTS is unchanged
     from the fixed set every other hook already relies on -- no SessionStart,

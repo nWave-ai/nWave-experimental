@@ -79,7 +79,6 @@ sections:
       - docs/guides/howto-resolve-outcomes-collision.md
       - docs/guides/outcomes-first-outcome
       - docs/guides/team-rollout.md
-      - docs/guides/enforcement-recipes.md
       - docs/guides/configuring-doc-density.md
       - docs/guides/activating-nwave-per-project.md
 
@@ -87,7 +86,6 @@ sections:
     title: "Reference"
     paths:
       - docs/reference
-      - docs/guides/feature-delta-l7-format.md
       - docs/guides/des-audit-trail-guide
 
   - id: explanation

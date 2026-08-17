@@ -1,0 +1,358 @@
+"""K4 architecture gap: Auto-root ATD dispatch body envelope.
+
+The checked-in `nw-auto` (ADR-SSOT-002 Section 4c) requires an Auto-root ATD
+dispatch to carry the architecture authority line, one blank line, and the
+twelve named non-empty facts below -- in this exact order -- so ATD never
+infers or defaults an upstream fact. Drives the real handler end-to-end
+(stdin -> stdout JSON / exit code), the same harness shape as
+`test_auto_root_bash_lockdown.py`.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+
+import pytest
+
+from des.adapters.drivers.hooks import pre_tool_use_handler
+from des.application.ordinary_request import compute_delivery_id, contract_locator_for
+
+
+_ATD = "nw-acceptance-designer"
+_ATD_BODY_GATE_SIGNATURE = "Auto-root ATD dispatch body malformed"
+
+_VALID_PATH = "docs/product/architecture/adr-ssot-document-model.md"
+_VALID_ANCHOR = "decision"
+_VALID_HEADER = f"ARCHITECTURE-COVERED: {_VALID_PATH}#{_VALID_ANCHOR}"
+
+# OUTCOME and VALUE-SEED are the SAME immutable value seed text, compiled by
+# `des prepare-ordinary-request` as compact JSON string literals
+# (`json.dumps(text, ensure_ascii=False)`), so DELIVERY-ID/CONTRACT-LOCATOR
+# below are the real recomputed projection, never a hand-picked constant.
+_VALID_SEED_TEXT = "Ship the widget end to end."
+_VALID_SEED_JSON = json.dumps(_VALID_SEED_TEXT, ensure_ascii=False)
+_VALID_DELIVERY_ID_VALUE = compute_delivery_id(_VALID_SEED_TEXT)
+
+_VALID_CONTRACT_LOCATOR = (
+    f"CONTRACT-LOCATOR: {contract_locator_for(_VALID_DELIVERY_ID_VALUE)}"
+)
+_VALID_CONTRACT_SCHEMA = (
+    "CONTRACT-SCHEMA: /home/user/.claude/lib/nWave/schemas/"
+    "thin-delivery-contract.schema.json"
+)
+_VALID_DELIVERY_ID = f"DELIVERY-ID: {_VALID_DELIVERY_ID_VALUE}"
+_VALID_OUTCOME = f"OUTCOME: {_VALID_SEED_JSON}"
+_VALID_ROOT = "ROOT: /abs/repo/root"
+_VALID_BASE_REVISION = "BASE-REVISION: git-sha1:" + "a" * 40
+_VALID_ROUTE = "DELIVERY-ROUTE: RED_TO_GREEN"
+_VALID_EXAMINE = "EXAMINE: true"
+_VALID_INDEPENDENT_REVIEW = "INDEPENDENT-REVIEW: false"
+_VALID_BUDGET_TOKEN_LIMIT = "BUDGET-TOKEN-LIMIT: 2000000"
+_VALID_BUDGET_WALL_CLOCK_MINUTES = "BUDGET-WALL-CLOCK-MINUTES: 30"
+_VALID_VALUE_SEED = f"VALUE-SEED: {_VALID_SEED_JSON}"
+
+
+def _atd_body(
+    *,
+    header: str = _VALID_HEADER,
+    blank_line: str = "",
+    contract_locator_line: str = _VALID_CONTRACT_LOCATOR,
+    contract_schema_line: str = _VALID_CONTRACT_SCHEMA,
+    delivery_id_line: str = _VALID_DELIVERY_ID,
+    outcome_line: str = _VALID_OUTCOME,
+    root_line: str = _VALID_ROOT,
+    base_revision_line: str = _VALID_BASE_REVISION,
+    route_line: str = _VALID_ROUTE,
+    examine_line: str = _VALID_EXAMINE,
+    independent_review_line: str = _VALID_INDEPENDENT_REVIEW,
+    budget_token_limit_line: str = _VALID_BUDGET_TOKEN_LIMIT,
+    budget_wall_clock_minutes_line: str = _VALID_BUDGET_WALL_CLOCK_MINUTES,
+    value_seed_line: str = _VALID_VALUE_SEED,
+) -> str:
+    return "\n".join(
+        [
+            header,
+            blank_line,
+            contract_locator_line,
+            contract_schema_line,
+            delivery_id_line,
+            outcome_line,
+            root_line,
+            base_revision_line,
+            route_line,
+            examine_line,
+            independent_review_line,
+            budget_token_limit_line,
+            budget_wall_clock_minutes_line,
+            value_seed_line,
+        ]
+    )
+
+
+_VALID_ATD_BODY = _atd_body()
+
+
+def _transcript(tmp_path, *, auto: bool) -> str:
+    transcript = tmp_path / "transcript.jsonl"
+    lines = []
+    if auto:
+        lines.append(
+            {"type": "tool_use", "name": "Skill", "input": {"skill": "nw-auto"}}
+        )
+    transcript.write_text(
+        "\n".join(json.dumps(line) for line in lines) + ("\n" if lines else ""),
+        encoding="utf-8",
+    )
+    return str(transcript)
+
+
+def _stdin(
+    *,
+    tool_name: str,
+    tool_input: dict,
+    transcript_path: str | None = None,
+    **identity: str,
+) -> str:
+    payload: dict[str, object] = {"tool_name": tool_name, "tool_input": tool_input}
+    if transcript_path is not None:
+        payload["transcript_path"] = transcript_path
+    payload.update(identity)
+    return json.dumps(payload)
+
+
+def _run(monkeypatch, capsys, stdin: str) -> tuple[int, dict | None]:
+    monkeypatch.setattr("sys.stdin", io.StringIO(stdin))
+    exit_code = pre_tool_use_handler.handle_pre_tool_use()
+    out = capsys.readouterr().out.strip()
+    payload = json.loads(out) if out else None
+    return exit_code, payload
+
+
+class TestAtdAcceptsOnlyTheCompiledFourteenLineBody:
+    @pytest.mark.parametrize(
+        "prompt",
+        [
+            _VALID_ATD_BODY,
+            _atd_body(route_line="DELIVERY-ROUTE: GREEN_TO_GREEN"),
+            _atd_body(root_line=r"ROOT: C:\repo\root"),
+            _atd_body(
+                contract_schema_line=r"CONTRACT-SCHEMA: C:\lib\thin-delivery-contract.schema.json"
+            ),
+            _atd_body(base_revision_line="BASE-REVISION: git-sha256:" + "b" * 64),
+            _atd_body(examine_line="EXAMINE: false"),
+            _atd_body(independent_review_line="INDEPENDENT-REVIEW: true"),
+            _atd_body(
+                header=f"ARCHITECTURE-COVERED: {_VALID_PATH}#maintenance_windows"
+            ),
+        ],
+        ids=[
+            "canonical",
+            "green_to_green",
+            "windows_root",
+            "windows_schema",
+            "sha256_revision",
+            "examine_false",
+            "independent_review_true",
+            "underscore_anchor",
+        ],
+    )
+    def test_valid_body_is_not_blocked_by_this_gate(
+        self, monkeypatch, capsys, audit_events, tmp_path, prompt
+    ) -> None:
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Agent",
+                tool_input={"prompt": prompt, "subagent_type": _ATD},
+                transcript_path=_transcript(tmp_path, auto=True),
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert _ATD_BODY_GATE_SIGNATURE not in payload.get("reason", "")
+
+
+class TestAtdRejectsMissingInferredReorderedOrInvalidFacts:
+    @pytest.mark.parametrize(
+        "case_id,prompt",
+        [
+            (
+                "five_line_legacy_body",
+                "\n".join(
+                    [_VALID_HEADER, "", _VALID_ROOT, _VALID_VALUE_SEED, _VALID_ROUTE]
+                ),
+            ),
+            ("missing_blank_line", _atd_body(blank_line="not blank")),
+            ("missing_one_line", "\n".join(_VALID_ATD_BODY.splitlines()[:-1])),
+            ("extra_trailing_line", _VALID_ATD_BODY + "\nEXTRA: context"),
+            (
+                "reordered_facts",
+                _atd_body(
+                    contract_locator_line=_VALID_CONTRACT_SCHEMA,
+                    contract_schema_line=_VALID_CONTRACT_LOCATOR,
+                ),
+            ),
+            (
+                "duplicate_root_line_displaces_base_revision",
+                _atd_body(base_revision_line=_VALID_ROOT),
+            ),
+            (
+                "duplicate_architecture_header_in_body",
+                _atd_body(value_seed_line=_VALID_HEADER),
+            ),
+            (
+                "retired_no_impact_header",
+                _atd_body(
+                    header=f"ARCHITECTURE-NO-IMPACT: {_VALID_PATH}#{_VALID_ANCHOR}"
+                ),
+            ),
+            (
+                "relative_contract_locator_missing",
+                _atd_body(contract_locator_line="CONTRACT-LOCATOR: "),
+            ),
+            (
+                "absolute_contract_locator",
+                _atd_body(
+                    contract_locator_line="CONTRACT-LOCATOR: /docs/delivery-contracts/x.json"
+                ),
+            ),
+            (
+                "contract_locator_traversal",
+                _atd_body(contract_locator_line="CONTRACT-LOCATOR: ../x.json"),
+            ),
+            (
+                "contract_locator_wrong_suffix",
+                _atd_body(
+                    contract_locator_line="CONTRACT-LOCATOR: docs/delivery-contracts/x.txt"
+                ),
+            ),
+            (
+                "relative_contract_schema",
+                _atd_body(contract_schema_line="CONTRACT-SCHEMA: relative/schema.json"),
+            ),
+            (
+                "contract_schema_wrong_suffix",
+                _atd_body(contract_schema_line="CONTRACT-SCHEMA: /abs/schema.txt"),
+            ),
+            ("empty_delivery_id", _atd_body(delivery_id_line="DELIVERY-ID: ")),
+            (
+                "delivery_id_uppercase",
+                _atd_body(delivery_id_line="DELIVERY-ID: Auto-0123"),
+            ),
+            (
+                "delivery_id_underscore",
+                _atd_body(delivery_id_line="DELIVERY-ID: auto_0123"),
+            ),
+            (
+                "delivery_id_dot",
+                _atd_body(delivery_id_line="DELIVERY-ID: auto.0123"),
+            ),
+            (
+                "delivery_id_slash",
+                _atd_body(delivery_id_line="DELIVERY-ID: auto/0123"),
+            ),
+            (
+                "delivery_id_whitespace",
+                _atd_body(delivery_id_line="DELIVERY-ID: auto 0123"),
+            ),
+            (
+                "delivery_id_leading_hyphen",
+                _atd_body(delivery_id_line="DELIVERY-ID: -auto0123"),
+            ),
+            ("empty_outcome", _atd_body(outcome_line="OUTCOME: ")),
+            ("relative_root", _atd_body(root_line="ROOT: relative/root")),
+            (
+                "base_revision_short_hex",
+                _atd_body(base_revision_line="BASE-REVISION: git-sha1:abc123"),
+            ),
+            (
+                "base_revision_uppercase_hex",
+                _atd_body(base_revision_line="BASE-REVISION: git-sha1:" + "A" * 40),
+            ),
+            (
+                "base_revision_unknown_tag",
+                _atd_body(base_revision_line="BASE-REVISION: svn-rev:12345"),
+            ),
+            ("unknown_route", _atd_body(route_line="DELIVERY-ROUTE: UNKNOWN")),
+            ("examine_not_bool", _atd_body(examine_line="EXAMINE: yes")),
+            (
+                "independent_review_not_bool",
+                _atd_body(independent_review_line="INDEPENDENT-REVIEW: maybe"),
+            ),
+            (
+                "budget_token_limit_zero",
+                _atd_body(budget_token_limit_line="BUDGET-TOKEN-LIMIT: 0"),
+            ),
+            (
+                "budget_token_limit_negative",
+                _atd_body(budget_token_limit_line="BUDGET-TOKEN-LIMIT: -5"),
+            ),
+            (
+                "budget_token_limit_leading_zero",
+                _atd_body(budget_token_limit_line="BUDGET-TOKEN-LIMIT: 007"),
+            ),
+            (
+                "budget_token_limit_non_digit",
+                _atd_body(budget_token_limit_line="BUDGET-TOKEN-LIMIT: many"),
+            ),
+            (
+                "budget_wall_clock_minutes_zero",
+                _atd_body(
+                    budget_wall_clock_minutes_line="BUDGET-WALL-CLOCK-MINUTES: 0"
+                ),
+            ),
+            ("empty_value_seed", _atd_body(value_seed_line="VALUE-SEED: ")),
+        ],
+    )
+    def test_malformed_body_blocks_with_this_gates_signature(
+        self, monkeypatch, capsys, audit_events, tmp_path, case_id, prompt
+    ) -> None:
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Agent",
+                tool_input={"prompt": prompt, "subagent_type": _ATD},
+                transcript_path=_transcript(tmp_path, auto=True),
+            ),
+        )
+        assert exit_code == 2, case_id
+        assert payload["decision"] == "block", case_id
+        assert _ATD_BODY_GATE_SIGNATURE in payload["reason"], case_id
+
+
+class TestScopeExclusionsPassThisSpecificGate:
+    @pytest.mark.parametrize(
+        "case_id,auto_observed,role,identity",
+        [
+            ("no_auto_observed", False, _ATD, {}),
+            ("subagent_identity_agent_id", True, _ATD, {"agent_id": "sub-1"}),
+            ("subagent_identity_agent_type", True, _ATD, {"agent_type": "nw-crafter"}),
+            ("non_exact_role", True, "nw-acceptance-designer-reviewer", {}),
+            ("other_nw_role", True, "nw-software-crafter", {}),
+        ],
+    )
+    def test_excluded_dispatch_is_not_blocked_by_this_gate(
+        self,
+        monkeypatch,
+        capsys,
+        audit_events,
+        tmp_path,
+        case_id,
+        auto_observed,
+        role,
+        identity,
+    ) -> None:
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Agent",
+                tool_input={"prompt": "Do the work", "subagent_type": role},
+                transcript_path=_transcript(tmp_path, auto=auto_observed),
+                **identity,
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert _ATD_BODY_GATE_SIGNATURE not in payload.get("reason", ""), case_id

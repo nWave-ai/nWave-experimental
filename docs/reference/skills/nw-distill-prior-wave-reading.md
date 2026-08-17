@@ -1,6 +1,6 @@
 # nw-distill-prior-wave-reading
 
-DISTILL prior-wave reading + reconciliation procedure — read all prior-wave SSOT + feature-delta, run the Wave-Decision Reconciliation HARD GATE, fire the DESIGN-absent + Total-AT Tier-A advisories, and back-propagate gaps. Run BEFORE writing any scenario.
+Reads and reconciles the durable product, architecture, platform, and delivery authorities before DISTILL compiles an executable oracle and DeliveryContract.
 
 **Used by:** [nw-acceptance-designer](../agents/nw-acceptance-designer.md)
 

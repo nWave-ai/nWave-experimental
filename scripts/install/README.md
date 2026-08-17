@@ -146,8 +146,7 @@ python scripts/install/install_nwave.py --restore
 ├── scripts/            # Utility scripts for target projects
 │   ├── install_nwave_target_hooks.py
 │   └── validate_step_file.py
-├── templates/          # Canonical schemas
-│   └── step-tdd-cycle-schema.json
+├── templates/          # Canonical templates
 ├── backups/            # Installation backups
 │   ├── pre_nwave_<timestamp>/
 │   ├── nwave-install-<timestamp>/

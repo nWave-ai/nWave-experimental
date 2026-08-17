@@ -68,6 +68,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -113,10 +114,23 @@ class ArmSpec:
     only one to have. Isolation is a parity requirement before it is a safety one.
     """
 
-    def rendered(self, task: str) -> list[str]:
-        """`{task}` is the ONLY substitution, so both arms provably get the
-        same task text and no arm can smuggle a different one."""
-        return [tok.replace("{task}", task) for tok in self.argv]
+    def rendered(self, task: str, workspace: Path) -> list[str]:
+        """`{task}` and `{workspace}` are the ONLY substitutions, using the
+        SAME `workspace` `rendered_env` renders for this call's env dict.
+
+        A single-token substitution here (`{task}` alone) let a `--settings`
+        JSON argv token carrying `{workspace}` (a K4 sandbox's `env.PATH`,
+        declared once and shared by argv and env) reach the spawned process
+        UNRENDERED, while `rendered_env` correctly substituted the same
+        placeholder in the env dict -- the two views of one declared value
+        then disagreed. Rendering both placeholders from one call, against
+        the one `workspace` the caller already resolved, keeps argv and env
+        joined on the same value by construction.
+        """
+        return [
+            tok.replace("{task}", task).replace("{workspace}", str(workspace))
+            for tok in self.argv
+        ]
 
     def rendered_env(self, workspace: Path) -> dict[str, str]:
         """`{workspace}` is the only substitution, so an arm can name a
@@ -324,7 +338,13 @@ def _run_setup(arm: ArmSpec, *, workspace: Path, pair_dir: Path) -> tuple[bool, 
 _DELIVERY_TIMEOUT_S = 5400
 
 
-def _run_arm(arm: ArmSpec, *, task: str, pair_dir: Path, timeout: int) -> None:
+def _run_pair_setup(arm: ArmSpec, *, pair_dir: Path) -> tuple[bool, float]:
+    """Setup half of the pair barrier: prepare `arm`'s workspace, return (ok, seconds).
+
+    Both arms' setups fan out together; a failing setup here must not let its
+    peer's delivery start -- the caller joins both results before either
+    delivery is attempted.
+    """
     workspace = pair_dir / arm.name
     workspace.mkdir(parents=True, exist_ok=True)
     setup_ok, setup_seconds = _run_setup(arm, workspace=workspace, pair_dir=pair_dir)
@@ -336,31 +356,103 @@ def _run_arm(arm: ArmSpec, *, task: str, pair_dir: Path, timeout: int) -> None:
             encoding="utf-8",
         )
         print(f"  {arm.name}: SETUP FAILED ({setup_seconds:.0f}s)", flush=True)
-        return
-    if arm.setup:
+    elif arm.setup:
         print(f"  {arm.name}: setup {setup_seconds:.0f}s", flush=True)
-    started = time.monotonic()
+    return setup_ok, setup_seconds
+
+
+def _delivery_is_valid(stdout: str, returncode: int) -> bool:
+    """Direct exit 0 alone does not mean the delivery produced a usable record,
+    and apparently valid JSON from a nonzero exit is not a usable record either.
+
+    Valid means: `returncode == 0`, stdout parses as exactly one JSON object,
+    `is_error` is not true, and `session_id` is a non-empty string. Anything
+    else is treated as invalid and must stop later pairs -- a malformed
+    record, or a well-formed one from a process that failed, that looked
+    executed is the exact silent-wrong this instrument exists to refuse.
+    """
+    if returncode != 0:
+        return False
     try:
-        done = subprocess.run(
-            arm.rendered(task),
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("is_error"):
+        return False
+    session_id = payload.get("session_id")
+    return isinstance(session_id, str) and session_id != ""
+
+
+def _run_delivery(arm: ArmSpec, *, task: str, pair_dir: Path, timeout: int) -> bool:
+    """Run only the timed invocation (setup must already have succeeded).
+
+    The PGID is captured immediately after `Popen(start_new_session=True)`
+    puts the child in its own process group, and `finally` ALWAYS attempts
+    TERM on that owned group -- not only when `proc.poll() is None` -- then
+    waits bounded for the group to disappear before KILL. A parent that races
+    ahead of a still-running child (the direct-Claude case this guards) must
+    not skip cleanup just because the poll happened to observe the process as
+    already reaped; killpg targets only the group this call itself owns, and
+    `ProcessLookupError` means the group is already gone, i.e. clean. This
+    runs on success, failure, timeout, OSError, and interruption
+    (KeyboardInterrupt/SystemExit unwind through `finally` too), so a
+    delivery's child never outlives the runner that spawned it.
+    """
+    workspace = pair_dir / arm.name
+    environment = {**os.environ, **arm.rendered_env(workspace)}
+    started = time.monotonic()
+    stdout, stderr = "", ""
+    returncode = -1
+    proc: subprocess.Popen | None = None
+    pgid: int | None = None
+    try:
+        proc = subprocess.Popen(
+            arm.rendered(task, workspace),
             cwd=workspace,
-            env={**os.environ, **arm.rendered_env(workspace)},
+            env=environment,
             stdin=subprocess.DEVNULL,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
+            start_new_session=True,
         )
-        stdout, stderr = done.stdout, done.stderr
+        pgid = os.getpgid(proc.pid)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+            returncode = proc.returncode
+        except subprocess.TimeoutExpired:
+            stdout, stderr = "", f"TIMEOUT after {timeout}s"
+            raise
     except subprocess.TimeoutExpired:
-        stdout, stderr = "", f"TIMEOUT after {timeout}s"
+        pass
     except OSError as exc:
         stdout, stderr = "", f"{type(exc).__name__}: {exc}"
+    finally:
+        if pgid is not None:
+            try:
+                os.killpg(pgid, signal.SIGTERM)
+                proc.wait(timeout=10)
+            except (subprocess.TimeoutExpired, ProcessLookupError):
+                try:
+                    os.killpg(pgid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass
+            except OSError:
+                pass
     # Absolute paths, resolved before any chdir: the shell version wrote every
     # artifact INSIDE the workspace it had cd'd into, because `dirname $0` was
     # relative and the redirect ran after the cd.
     (pair_dir / f"{arm.name}.json").write_text(stdout, encoding="utf-8")
     (pair_dir / f"{arm.name}.err").write_text(stderr, encoding="utf-8")
+    valid = _delivery_is_valid(stdout, returncode)
     print(f"  {arm.name}: {time.monotonic() - started:.0f}s", flush=True)
+    return valid
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -424,42 +516,57 @@ def main(argv: list[str] | None = None) -> int:
         return 78
 
     args.out.mkdir(parents=True, exist_ok=True)
+    campaign_record = {
+        "task": task,
+        "arms": {
+            a.name: {
+                "setup": [list(step) for step in a.setup],
+                "argv": list(a.argv),
+                "env": dict(a.env),
+            }
+            for a in arms
+        },
+        "pairs": args.pairs,
+        "delivery_timeout_s": args.timeout,
+        "trunk": _attested_trunk(),
+    }
+    if "artifact" in spec:
+        campaign_record["artifact"] = spec["artifact"]
     (args.out / "campaign.json").write_text(
-        json.dumps(
-            {
-                "task": task,
-                "arms": {
-                    a.name: {
-                        "setup": [list(step) for step in a.setup],
-                        "argv": list(a.argv),
-                        "env": dict(a.env),
-                    }
-                    for a in arms
-                },
-                "pairs": args.pairs,
-                "delivery_timeout_s": args.timeout,
-                "trunk": _attested_trunk(),
-            },
-            indent=1,
-        )
-        + "\n",
+        json.dumps(campaign_record, indent=1) + "\n",
         encoding="utf-8",
     )
 
     for index in range(1, args.pairs + 1):
         pair_dir = args.out / f"pair-{index}"
         pair_dir.mkdir(exist_ok=True)
-        print(f"--- pair {index}: both arms concurrently ---", flush=True)
+        print(
+            f"--- pair {index}: setup barrier, both arms concurrently ---", flush=True
+        )
         with ThreadPoolExecutor(max_workers=2) as pool:
             # Concurrent, not sequential. Sequential arms is the design that
             # made contention a confound in the first place.
             # `partial`, not a lambda: a closure over the loop variable binds
             # late, and this one is only safe today because `list()` drains
             # each pair before the next iteration rebinds it.
-            list(
+            setup_results = list(
+                pool.map(
+                    partial(_run_pair_setup, pair_dir=pair_dir),
+                    arms,
+                )
+            )
+        if not all(ok for ok, _ in setup_results):
+            print(
+                f"pair {index}: setup failed for at least one arm; stopping", flush=True
+            )
+            return 1
+
+        print(f"--- pair {index}: delivery, both arms concurrently ---", flush=True)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            delivery_results = list(
                 pool.map(
                     partial(
-                        _run_arm,
+                        _run_delivery,
                         task=task,
                         pair_dir=pair_dir,
                         timeout=args.timeout,
@@ -467,6 +574,12 @@ def main(argv: list[str] | None = None) -> int:
                     arms,
                 )
             )
+        if not all(delivery_results):
+            print(
+                f"pair {index}: an invalid delivery record; stopping before pair {index + 1}",
+                flush=True,
+            )
+            return 1
 
     print(f"done: {args.pairs} pairs under {args.out}")
     return 0

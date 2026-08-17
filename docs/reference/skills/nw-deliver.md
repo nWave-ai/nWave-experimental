@@ -1,6 +1,6 @@
 # nw-deliver
 
-Orchestrates the current DELIVER wave end-to-end. Use when all prior waves are complete and the feature is ready for implementation.
+Use for DELIVER wave orchestration from one validated DeliveryContract to one examined candidate and one whole-delivery finalization.
 
 **Used by:** [nw-platform-architect](../agents/nw-platform-architect.md)
 

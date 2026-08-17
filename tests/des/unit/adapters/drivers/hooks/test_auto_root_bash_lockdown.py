@@ -193,6 +193,139 @@ class TestAutoRootBashAllowlist:
         assert payload["decision"] == "block"
 
 
+class TestAutoRootBashDesAllowlist:
+    """A confirmed Auto-root process's Bash calls also allow a bare, single
+    `des dispatch|validate-delivery-contract|charter-scaffold` invocation --
+    the direct-cutover spine's only hook-controller-free CLI seam."""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "des dispatch F-EXAMPLE",
+            "des validate-delivery-contract docs/feature/x/delivery-contract.json",
+            "des charter-scaffold F-EXAMPLE",
+        ],
+        ids=["dispatch", "validate-delivery-contract", "charter-scaffold"],
+    )
+    def test_clean_des_allowlisted_command_is_not_auto_root_blocked(
+        self, monkeypatch, capsys, audit_events, tmp_path, command
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert "Auto-root" not in payload.get("reason", "")
+
+    def test_des_missing_subcommand_is_blocked(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": "des"},
+                transcript_path=transcript_path,
+            ),
+        )
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+        assert "Auto-root" in payload["reason"]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "des dispatc F-EXAMPLE",
+            "des Dispatch F-EXAMPLE",
+            "des validate_delivery_contract x.json",
+            "des status",
+            "des help",
+            "des dispatch-all",
+        ],
+        ids=[
+            "near_miss_typo",
+            "near_miss_case",
+            "near_miss_underscore",
+            "unknown_status",
+            "unknown_help",
+            "unknown_dispatch_all",
+        ],
+    )
+    def test_des_unknown_or_near_miss_subcommand_is_blocked(
+        self, monkeypatch, capsys, audit_events, tmp_path, command
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+        assert "Auto-root" in payload["reason"]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "des dispatch F-EXAMPLE && rm -rf /",
+            "des dispatch F-EXAMPLE || echo pwned",
+            "des dispatch F-EXAMPLE; rm -rf /",
+            "des dispatch F-EXAMPLE | tee /tmp/x",
+            "des dispatch `whoami`",
+            "des dispatch $(whoami)",
+            "des dispatch F-EXAMPLE < /etc/passwd",
+            "des dispatch F-EXAMPLE > /etc/passwd",
+            "des dispatch F-EXAMPLE\nrm -rf /",
+            "des dispatch F-EXAMPLE\rrm -rf /",
+            "des dispatch F-EXAMPLE; des dispatch OTHER",
+        ],
+    )
+    def test_des_composition_operator_blocks_even_with_leading_allowed_subcommand(
+        self, monkeypatch, capsys, audit_events, tmp_path, command
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+
+    def test_des_extra_executable_prefix_is_blocked(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": "python -m des dispatch F-EXAMPLE"},
+                transcript_path=transcript_path,
+            ),
+        )
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+        assert "Auto-root" in payload["reason"]
+
+
 class TestAutoRootBashMalformedCommandFailsClosed:
     """Once Auto-root is armed, a malformed `command` (missing/empty/
     whitespace-only/non-string) must fail CLOSED -- blocked -- not fall
@@ -365,9 +498,7 @@ class TestAutoRootAllowedGitCommitReachesAttribution:
 
 
 class TestAutoRootLockdownScopedToLockedDownTools:
-    """The `_is_auto_root` check (a transcript read + skill observation) is
-    paid ONLY for `Bash`/`TaskCreate`/`TaskUpdate` -- every other tool must
-    fall through with zero transcript read/skill observation."""
+    """Unrelated tools with no transcript pay no root-mode read."""
 
     @pytest.mark.parametrize("tool_name", ["Read", "Skill", "Agent", "ScheduleWakeup"])
     def test_non_lockdown_tool_never_observes_and_is_not_auto_root_blocked(
@@ -375,11 +506,11 @@ class TestAutoRootLockdownScopedToLockedDownTools:
     ) -> None:
         def _boom(*args, **kwargs):
             raise AssertionError(
-                "skill_observed_before_action must not be called for "
+                "resolve_root_mode_state must not be called for "
                 f"non-lockdown tool {tool_name!r}"
             )
 
-        monkeypatch.setattr(pre_tool_use_handler, "skill_observed_before_action", _boom)
+        monkeypatch.setattr(pre_tool_use_handler, "resolve_root_mode_state", _boom)
         _exit_code, payload = _run(
             monkeypatch,
             capsys,

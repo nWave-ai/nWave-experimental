@@ -23,14 +23,14 @@ what/why/how rule the product's own error surfaces obey.
 
 Every acceptance-test identifier must name the durable observable value it
 protects. Delivery bookkeeping is not value: never put `slice_NN` or
-`slice-NN` in a test file/function name. Put that provenance in the ledger,
-feature-delta, execution plan, or commit trailer instead. Before RED, derive
+`slice-NN` in a test file/function name. Do not create a ledger, delivery
+narrative or execution plan to preserve that bookkeeping; Git owns change
+provenance. Before RED, derive
 the identifier from the charter's value statement; a reader must understand
-what is protected without opening the delivery plan. For Python, run
-`des check-contract-shape --files <new-test-files>` before handoff: it blocks
-delivery tokens in test functions and test filenames. Scenario titles and
-parametrization IDs follow the same naming rule and are reviewer-checked
-until their native test-framework parsers are added to the portable gate.
+what is protected without opening delivery bookkeeping. Scenario titles and
+parametrization IDs follow the same naming rule. The acceptance designer and
+reviewer validate the observable meaning at authoring time; no language-specific
+post-hoc naming gate is part of the delivery spine.
 
 ## Closure obligations — COUNT / PARTITION / SILENCE (STANDING)
 

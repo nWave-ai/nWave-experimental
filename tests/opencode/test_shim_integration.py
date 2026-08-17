@@ -1,11 +1,13 @@
-"""Walking skeleton integration tests for the OpenCode DES shim.
+"""Integration test for the OpenCode DES shim's protocol parity.
 
-These tests invoke the Python DES adapter via subprocess with CC-format JSON,
-exactly as the TypeScript shim would. They verify the end-to-end contract:
-the adapter accepts CC-format JSON on stdin and returns allow/block decisions.
+This test invokes the Python DES adapter via subprocess with CC-format JSON,
+exactly as the TypeScript shim would. It verifies the end-to-end contract:
+the adapter accepts CC-format JSON on stdin and, in an enabled repo, an
+ordinary nWave-adjacent Agent dispatch with no retired DES markers is
+allowed, without requiring or recreating the retired execution-log carrier.
 
-WS-1: Valid DES markers -> exit 0 (allow)
-WS-2: Missing DES markers -> exit 2 (block)
+`tests/opencode/test_protocol_translation.py` separately owns the
+TypeScript action/tool mapping.
 """
 
 import json
@@ -55,86 +57,23 @@ def _run_adapter(
     )
 
 
-class TestWalkingSkeletonValidDispatch:
-    """WS-1: Valid DES markers -> adapter allows (exit 0).
+class TestOpenCodeShimProtocolParity:
+    """The OpenCode shim's current value: CC-format JSON reaches the Python
+    adapter, and an ordinary nWave-adjacent dispatch is allowed without any
+    retired DES marker or execution-log carrier."""
 
-    Scenario 1 from acceptance-scenarios.md:
-    Given the Python adapter receives CC-format JSON with valid DES markers,
-    When invoked with action 'pre-task',
-    Then exit code is 0 and decision is 'allow'.
-    """
-
-    def test_valid_des_markers_allowed(self, tmp_path):
-        """Adapter allows dispatch from a workspace with no retired carrier."""
-
-        cc_json = {
-            "tool_name": "Agent",
-            "tool_input": {
-                "prompt": (
-                    "DES-STEP-ID: step-01\n"
-                    "DES-PROJECT-ID: my-feature\n"
-                    "DES-VALIDATION: true\n"
-                    "Implement the user repository"
-                ),
-                "subagent_type": "nw-software-crafter",
-            },
-        }
-
-        result = _run_adapter(
-            "pre-task",
-            cc_json,
-            env_extra={"DES_PROJECT_DIR": str(tmp_path)},
-        )
-
-        # The adapter should allow (exit 0) with valid markers
-        assert result.returncode == 0, (
-            f"Expected exit 0 (allow), got {result.returncode}.\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-
-        # Allow path: silent exit 0, no stdout (Claude Code protocol)
-        assert result.stdout.strip() == "", (
-            f"Allow path should produce no stdout. Got: {result.stdout!r}"
-        )
-        assert not (tmp_path / ".des" / "execution-log.json").exists(), (
-            "a supported dispatch must not require or recreate the retired "
-            "execution-log carrier"
-        )
-
-
-class TestWalkingSkeletonMissingMarkers:
-    """WS-2: Missing DES markers -> adapter blocks (exit 2).
-
-    Scenario 2 from acceptance-scenarios.md:
-    Given the Python adapter receives CC-format JSON referencing a step-id
-    but WITHOUT DES validation markers,
-    When invoked with action 'pre-task',
-    Then exit code is 2 and decision is 'block'.
-
-    The DesEnforcementPolicy blocks prompts that contain a step-id pattern
-    (XX-XX) but lack the DES-VALIDATION marker. This is the bypass prevention
-    rule: if you reference a step, you must have DES markers.
-    """
-
-    def test_missing_markers_blocked(self, tmp_path):
-        """Adapter blocks dispatch when step-id referenced without DES markers."""
-        # Isolated tmp_path has no `.nwave/local-config.json`, so the
-        # activation gate's fresh-install default ("opt-in", inactive) would
-        # fail this test open before the marker-completeness check ever runs.
-        # Declare the project active, mirroring the real repo's own config
-        # that this test used to read by accident via the pre-isolation-fix
-        # Path.cwd() fallback.
+    def test_ordinary_agent_dispatch_allowed(self, tmp_path):
+        """Adapter allows an ordinary Agent dispatch with no DES markers."""
         config_dir = tmp_path / ".nwave"
         config_dir.mkdir()
         (config_dir / "local-config.json").write_text(
             json.dumps({"enabled_for_repo": True}), encoding="utf-8"
         )
 
-        # Prompt references step 01-01 but has NO DES markers
         cc_json = {
             "tool_name": "Agent",
             "tool_input": {
-                "prompt": ("Execute step 01-01: implement the user repository"),
+                "prompt": "Implement the user repository",
                 "subagent_type": "nw-software-crafter",
             },
         }
@@ -145,16 +84,22 @@ class TestWalkingSkeletonMissingMarkers:
             env_extra={"DES_PROJECT_DIR": str(tmp_path)},
         )
 
-        # The adapter should block (exit 2) -- step-id without DES markers
-        assert result.returncode == 2, (
-            f"Expected exit 2 (block), got {result.returncode}.\n"
+        assert result.returncode == 0, (
+            f"Expected exit 0 (allow), got {result.returncode}.\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
         response = json.loads(result.stdout)
-        assert response.get("decision") == "block"
-        # The block reason should mention missing DES markers
-        reason = response.get("reason", "")
-        assert "DES_MARKERS_MISSING" in reason, (
-            f"Block reason should mention DES_MARKERS_MISSING, got: {reason}"
+        hook_specific_output = response.get("hookSpecificOutput", {})
+        assert hook_specific_output.get("permissionDecision") == "allow", (
+            f"Expected permissionDecision 'allow', got: {response}"
+        )
+        additional_context = hook_specific_output.get("additionalContext", "")
+        assert "nw-mode-select" in additional_context, (
+            f"additionalContext should name nw-mode-select, got: {additional_context!r}"
+        )
+
+        assert not (tmp_path / ".des" / "execution-log.json").exists(), (
+            "a supported dispatch must not require or recreate the retired "
+            "execution-log carrier"
         )

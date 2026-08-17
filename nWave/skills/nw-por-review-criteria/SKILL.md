@@ -74,8 +74,8 @@ Uninstall from: ~/.claude/agents/nw/  <-- HARDCODED
 ### Pattern 4: Missing Commands
 CLI commands without slash equivalents. Check both contexts exist.
 ```
-Terminal: crafter run
-Claude Code: /nw-execute  <-- EXISTS?
+Terminal: installed product command
+Agent surface: discoverable canonical command exists
 ```
 
 ## Review Output Schema

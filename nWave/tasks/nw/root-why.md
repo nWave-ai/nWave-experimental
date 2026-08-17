@@ -33,7 +33,7 @@ When invoked as part of `/nw-deliver` Phase 3.5, analyze across 4 categories:
 3. **What worked badly** (5 Whys root cause, actionable fix)
 4. **What worked worse than before** (5 Whys root cause, prevent regression)
 
-**Inputs**: Evolution document|feature delta|current test, review, and EXAMINE evidence|git history.
+**Inputs**: Evolution document|current test, review, and EXAMINE evidence|git history.
 **Output**: Retrospective section appended to evolution document.
 **Skip**: If clean execution (no skips|no failures|no tooling issues), generate brief summary only.
 

@@ -40,7 +40,6 @@ class UtilitiesPlugin(InstallationPlugin):
     # Utility scripts installed (with version checking) to ~/.claude/scripts/
     UTILITY_SCRIPTS = [
         "install_nwave_target_hooks.py",
-        "refactor_agent.py",
         "validate_step_file.py",
     ]
 

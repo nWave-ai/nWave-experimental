@@ -16,7 +16,8 @@
 # Source of truth: this file. Consumed by scripts/sync/check_denylist.py.
 #
 # NOTE for distiller/implementer: This file covers path-glob rules ONLY.
-# There is ALSO a content-based rule — see wave-decisions.md §2 "Known
+# There is ALSO a content-based rule — see
+# docs/architecture/public-pr-sync/devops-decisions.md Section 2 "Known
 # content-based rule". The script must additionally flag files containing
 # rewritten `raw.githubusercontent.com/nWave-ai/nWave/main` URLs,
 # reported as `{"path": "...", "rule": "content:rewritten-raw-url"}`.

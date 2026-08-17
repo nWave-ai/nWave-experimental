@@ -171,16 +171,10 @@ def hooks_register_pre_tool_use(build_result: dict[str, Any]):
     assert "PreToolUse" in _get_registered_events(build_result)
 
 
-@then("the hook configuration registers a handler for task completion")
-def hooks_register_post_tool_use(build_result: dict[str, Any]):
-    """Verify PostToolUse hook is registered."""
-    assert "PostToolUse" in _get_registered_events(build_result)
-
-
 @then("the hook configuration registers a handler for subagent lifecycle")
 def hooks_register_subagent_stop(build_result: dict[str, Any]):
-    """Verify SubagentStop hook is registered."""
-    assert "SubagentStop" in _get_registered_events(build_result)
+    """Verify SubagentStart hook is registered."""
+    assert "SubagentStart" in _get_registered_events(build_result)
 
 
 # hooks_use_plugin_root is defined in conftest.py (shared with walking-skeleton)
@@ -207,22 +201,6 @@ def no_home_dir_in_hooks(build_result: dict[str, Any]):
                 cmd = hook.get("command", "")
                 assert "$HOME" not in cmd
                 assert "~/" not in cmd
-
-
-# ---------------------------------------------------------------------------
-# Then Steps: DES Templates
-# ---------------------------------------------------------------------------
-
-
-@then("the TDD cycle schema template exists in the plugin")
-def tdd_schema_exists(build_result: dict[str, Any]):
-    """Verify TDD cycle schema is bundled."""
-    plugin_dir = build_result["plugin_dir"]
-    # Check in scripts/templates or lib/des/templates
-    found = list(plugin_dir.rglob("step-tdd-cycle-schema.json")) or list(
-        plugin_dir.rglob("*tdd*schema*")
-    )
-    assert len(found) > 0, "TDD cycle schema template not found in plugin"
 
 
 # des_importable is defined in conftest.py (shared with walking-skeleton)
@@ -307,8 +285,6 @@ def hooks_have_every_event(build_result: dict[str, Any]):
     registered_events = set(_get_registered_events(build_result))
     expected_events = {
         "PreToolUse",
-        "PostToolUse",
-        "SubagentStop",
         "SubagentStart",
     }
     assert registered_events == expected_events, (

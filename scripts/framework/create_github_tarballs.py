@@ -149,16 +149,6 @@ class GitHubTarballCreator:
                 for script_file in scripts_src.glob("*.py"):
                     shutil.copy2(script_file, scripts_dst / script_file.name)
 
-            # Copy templates
-            templates_src = self.source_dir / "templates"
-            if templates_src.exists():
-                templates_dst = temp_dir / "templates"
-                templates_dst.mkdir(parents=True, exist_ok=True)
-                # Copy canonical schema
-                schema_file = templates_src / "step-tdd-cycle-schema.json"
-                if schema_file.exists():
-                    shutil.copy2(schema_file, templates_dst / schema_file.name)
-
         # Create package manifest
         self._create_package_manifest(temp_dir, package_name)
 

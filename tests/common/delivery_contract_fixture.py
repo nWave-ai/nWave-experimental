@@ -22,7 +22,7 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DELIVERY_CONTRACT_FIXTURE_REL = (
-    "docs/delivery-contracts/retarget-des-dispatch-contract.json"
+    "docs/delivery-contracts/fix-language-agnostic-contract-paths.json"
 )
 _DELIVERY_CONTRACT_FIXTURE = _REPO_ROOT / _DELIVERY_CONTRACT_FIXTURE_REL
 _DISPATCH_YAML_PARTS = ("nWave", "dispatch", "atdd_pure.yaml")
@@ -36,6 +36,20 @@ _DELIVERY_CONTRACT_SCHEMA_FIXTURE = _REPO_ROOT.joinpath(
 def load_valid_contract() -> dict:
     """Parse the real checked-in ThinDeliveryContract fixture."""
     return json.loads(_DELIVERY_CONTRACT_FIXTURE.read_text(encoding="utf-8"))
+
+
+def seed_referenced_oracle(root: Path, contract: dict) -> Path:
+    """Materialize the real oracle bytes `contract["acceptance-tests"]["locator"]`
+    names, under `root`, at that exact locator -- so a tmp `--repo-root` can
+    resolve the oracle `dispatch._resolve_oracle` reads, without embedding a
+    second oracle fixture. The locator itself never changes with route/examine,
+    so this is safe to call before or after those fields are overridden."""
+    locator = str(contract["acceptance-tests"]["locator"])
+    src = _REPO_ROOT / locator
+    dst = root / locator
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_bytes(src.read_bytes())
+    return dst
 
 
 def seed_delivery_contract(
@@ -53,12 +67,14 @@ def seed_delivery_contract(
     checkout root. Parses and re-serializes the fixture (rather than a raw
     byte copy) so `route` and `examine` always land in the written contract
     instead of silently reusing whatever the checked-in fixture happens to
-    contain."""
+    contain. Also materializes the fixture's referenced oracle under `root`,
+    since dispatch resolves `acceptance-tests.locator` against `root` too."""
     dst = root / rel_path
     dst.parent.mkdir(parents=True, exist_ok=True)
     contract = load_valid_contract()
     contract["delivery-route"] = route
     contract["applicability"]["examine"] = examine
+    seed_referenced_oracle(root, contract)
     dst.write_text(json.dumps(contract), encoding="utf-8")
     return rel_path
 

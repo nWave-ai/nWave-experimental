@@ -174,7 +174,7 @@ def validate_agent(filepath: Path, result: ValidationResult) -> None:
         if not re.search(pattern, body, re.MULTILINE):
             result.add("A04", "error", name, msg)
 
-    # Parsed once: frontmatter tools tokens, reused by A05/A06/A12.
+    # Parsed once: frontmatter tools tokens, reused by A05/A06/A07/A12.
     tools_raw = fm.get("tools", "")
     tools_tokens = (
         [t.strip() for t in tools_raw.split(",")]
@@ -182,11 +182,38 @@ def validate_agent(filepath: Path, result: ValidationResult) -> None:
         else list(tools_raw)
     )
 
+    # Parsed once: frontmatter skills list, reused by A05/A06/A07.
+    fm_skills = fm.get("skills") or []
+
     # A05: skill loading imperative (legacy, compact, or native Skill invocation)
     match = re.search(
         r"^## Skill Loading[^\n]*\n.*?(?=^## |\Z)", body, re.MULTILINE | re.DOTALL
     )
     section = match.group(0) if match else ""
+
+    # Extract the no-runtime declaration from the section.
+    declares_no_runtime = any(
+        line.strip() == "No runtime Skill loading." for line in section.splitlines()
+    )
+
+    # EagerPreloaded: nonempty frontmatter `skills:` means Claude preloads the
+    # skill body before this role ever runs — no runtime invocation prose is
+    # possible or required in the section. But if the section explicitly
+    # declares "No runtime Skill loading.", eager preload is false.
+    has_eager_preload = (
+        bool(fm_skills)
+        and all(isinstance(s, str) and s.strip() for s in fm_skills)
+        and not declares_no_runtime
+    )
+
+    # NoRuntimeSkill: an explicit exact "No runtime Skill loading." sentence
+    # is accepted ONLY when the runtime skill-loading capability is genuinely
+    # absent (no frontmatter skills, no `Skill` tool). If either is present,
+    # the sentence alone must never waive A05/A06 — it would misdescribe a
+    # real capability as absent.
+    has_no_runtime = (
+        declares_no_runtime and not fm_skills and "Skill" not in tools_tokens
+    )
     has_legacy = (
         "You MUST load your skill files" in section
         or "Your FIRST action before any other work" in section
@@ -211,7 +238,9 @@ def validate_agent(filepath: Path, result: ValidationResult) -> None:
             has_native_invoke = True
             break
     has_native = has_native_invoke and "Skill" in tools_tokens
-    if not (has_legacy or has_compact or has_native):
+    if not (
+        has_legacy or has_compact or has_native or has_eager_preload or has_no_runtime
+    ):
         result.add(
             "A05",
             "error",
@@ -219,26 +248,37 @@ def validate_agent(filepath: Path, result: ValidationResult) -> None:
             "Skill Loading section must contain imperative loading instructions "
             "(legacy 'You MUST load' or 'Your FIRST action', compact "
             "'Read ~/.claude/skills/nw-.../SKILL.md', or native 'Invoke Skill(nw-...)' "
-            "with 'Skill' declared in frontmatter tools)",
+            "with 'Skill' declared in frontmatter tools), or the frontmatter must "
+            "carry a nonempty 'skills:' list (eager preload), or the section must "
+            "contain the exact 'No runtime Skill loading.' sentence with no "
+            "frontmatter skills and no 'Skill' tool",
         )
 
     # A06: skills path documented (old: nw/{agent}/, new: nw-{skill}/SKILL.md,
-    # or native capability-backed Skill invocation in place of a path)
+    # native capability-backed Skill invocation, eager frontmatter preload, or
+    # the explicit no-runtime-skill route)
     has_old_path = "~/.claude/skills/nw/" in body
     has_new_path = "~/.claude/skills/nw-" in body
-    if not has_old_path and not has_new_path and not has_native:
+    if not (
+        has_old_path
+        or has_new_path
+        or has_native
+        or has_eager_preload
+        or has_no_runtime
+    ):
         result.add(
             "A06",
             "error",
             name,
-            "Missing skills path (~/.claude/skills/nw-) or native Skill invocation "
-            "route (Invoke Skill(nw-...) with 'Skill' declared in frontmatter tools)",
+            "Missing skills path (~/.claude/skills/nw-), native Skill invocation "
+            "route (Invoke Skill(nw-...) with 'Skill' declared in frontmatter "
+            "tools), nonempty frontmatter 'skills:' (eager preload), or the "
+            "explicit 'No runtime Skill loading.' route",
         )
 
     # A07: orphan skills (skill in frontmatter but no reference in body)
     # In flat layout, agents use a template path like nw-{skill-name}/SKILL.md.
     # If the body contains this template pattern, all frontmatter skills are covered.
-    fm_skills = fm.get("skills", []) or []
     has_skill_template = "nw-{skill-name}/SKILL.md" in body
     if not has_skill_template:
         for skill in fm_skills:

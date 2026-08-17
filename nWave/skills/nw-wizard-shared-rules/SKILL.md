@@ -1,39 +1,19 @@
 ---
 name: nw-wizard-shared-rules
-description: Shared rules for feature ID derivation and wave detection used by /nw-new, /nw-continue, and /nw-fast-forward wizards
+description: Shared routing rules for discovering the earliest missing nWave authority without persistent wizard state.
 user-invocable: false
 disable-model-invocation: true
 ---
 
 # Wizard Shared Rules
 
-Shared rules referenced by `/nw-new`, `/nw-continue`, and `/nw-fast-forward` wizards.
+Use stable identifiers already present in durable product/design authorities.
+When a new identifier is necessary, derive a short lowercase kebab-case name
+from the observable outcome and let its owning authority persist it.
 
-## Feature ID Derivation
+Detection order is evidence-based: product evidence, selected direction,
+durable product meaning, durable design, operational constraints, executable
+oracle/contract, terminal delivery evidence. Stop at the first missing owner.
 
-Derive a kebab-case feature ID from the feature description:
-
-1. Strip common prefixes: "implement", "add", "create", "build"
-2. Remove English stop words: "a", "the", "to", "for", "with", "and", "in", "on", "of"
-3. Convert to kebab-case (lowercase, hyphens between words)
-4. Limit to 5 hyphenated segments maximum
-
-**Examples:**
-- "Add rate limiting to the API gateway" → `rate-limiting-api-gateway`
-- "OAuth2 upgrade" → `oauth2-upgrade`
-- "Implement a real-time notification system with WebSocket support for mobile and desktop clients" → `real-time-notification-system-websocket`
-
-## Wave Detection Rules
-
-Check SSOT first, then feature delta:
-
-| Wave | Complete When | In Progress When |
-|------|--------------|-----------------|
-| DISCOVER | `docs/product/jobs.yaml` has a validated job for this feature | `docs/feature/{id}/discover/` exists but no validated job in SSOT |
-| DISCUSS | `docs/feature/{id}/discuss/user-stories.md` exists and is non-empty | `docs/feature/{id}/discuss/` exists but user-stories.md missing or empty |
-| DESIGN | `docs/product/architecture/brief.md` has a section for this feature | `docs/feature/{id}/design/` exists but brief.md not updated |
-| DEVOPS | `docs/product/kpi-contracts.yaml` has contracts for this feature | `docs/feature/{id}/devops/` exists but no KPI contracts in SSOT |
-| DISTILL | `tests/acceptance/{id}/` has feature files | `docs/feature/{id}/distill/` exists but test files incomplete |
-| DELIVER | every slice-plan row is `shipped` AND the AT-completion ledger `.nwave/telemetry/atdd-pure/{id}.jsonl` records `FeatureEndReviewVerdict` (or `EBatchRefactorCompleted`) — the real feature-end attesting events; there is no per-step `FeatureEndCheckpoint` record (named in ADR-028 D6, never implemented) | the ledger exists with at least one slice not yet `shipped`, or all slices `shipped` but neither `FeatureEndReviewVerdict` nor `EBatchRefactorCompleted` is recorded yet |
-
-"Not started" = neither SSOT entry nor feature delta directory exist for that wave.
+Never create progress state, feature workspaces or archive copies. Never treat
+a directory name as proof that a wave ran.

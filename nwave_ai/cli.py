@@ -625,155 +625,6 @@ def _handle_doctor(args: list[str]) -> int:
     return 0
 
 
-def _handle_sync(args: list[str]) -> int:
-    """Handle the `nwave-ai sync` subcommand (DDD-4).
-
-    Mirrors each feature worktree's `docs/feature/<id>/feature-delta.md` to
-    `<master>/.nwave/in-flight/<id>.md`, removing stale entries. On-demand
-    only — no post-commit hook (vendor-neutrality rule).
-    """
-    for arg in args:
-        if arg in ("--help", "-h"):
-            print("Usage: nwave-ai sync")
-            print()
-            print(
-                "Mirror in-flight feature-delta.md files from feature/* "
-                "worktrees into <master>/.nwave/in-flight/."
-            )
-            print()
-            print("Run from any path inside the master worktree.")
-            return 0
-        print(f"Unknown option for sync: {arg}", file=sys.stderr)
-        print("Run 'nwave-ai sync --help' for usage.", file=sys.stderr)
-        return 2
-
-    from nwave_ai.sync import main as sync_main
-
-    return sync_main()
-
-
-def _handle_extract_gherkin(args: list[str]) -> int:
-    """Handle 'extract-gherkin <path>' subcommand (US-06)."""
-    from nwave_ai.feature_delta.cli import extract_gherkin_command
-
-    if not args or args[0] in ("--help", "-h"):
-        print("Usage: nwave-ai extract-gherkin <path>")
-        print()
-        print("Extract embedded Gherkin blocks from a feature-delta.md file.")
-        print()
-        print("Output begins with 'Feature: <feature-id>' followed by all")
-        print("```gherkin ... ``` blocks concatenated in document order.")
-        print()
-        print("Exit codes:")
-        print("  0   Extraction successful — output written to stdout")
-        print("  1   No gherkin blocks found in the file")
-        print("  65  Input error (file not found, unreadable)")
-        return 0
-
-    return extract_gherkin_command(args[0])
-
-
-def _handle_migrate_feature(args: list[str]) -> int:
-    """Handle 'migrate-feature <directory>' subcommand (US-08)."""
-    from nwave_ai.feature_delta.cli import migrate_feature_command
-
-    if not args or args[0] in ("--help", "-h"):
-        print("Usage: nwave-ai migrate-feature <directory>")
-        print()
-        print("Migrate .feature files to embedded gherkin blocks in feature-delta.md.")
-        print()
-        print("Each .feature file is embedded as a fenced ```gherkin block.")
-        print("A byte-identical round-trip check is performed before any file")
-        print(
-            "is modified. On success, originals are renamed to .feature.pre-migration."
-        )
-        print()
-        print("Re-running on an already-migrated directory is a no-op (exit 0).")
-        print()
-        print("Exit codes:")
-        print("  0   Migration succeeded (or already migrated — no-op)")
-        print("  1   Round-trip check failed or input error")
-        return 0
-
-    return migrate_feature_command(args[0])
-
-
-def _handle_validate_feature_delta(args: list[str]) -> int:
-    """Handle 'validate-feature-delta <path> [--warn-only|--enforce] [--maturity-manifest <path>]'."""
-    from nwave_ai.feature_delta.cli import validate_feature_delta_command
-
-    if not args or args[0] in ("--help", "-h"):
-        print("Usage: nwave-ai validate-feature-delta <path> [--warn-only | --enforce]")
-        print()
-        print("Validate a feature-delta.md file for cross-wave drift.")
-        print()
-        print("Options:")
-        print("  --warn-only            (default) Exit 0 even when violations found.")
-        print("                         Violations are reported with [WARN] prefix.")
-        print("                         Switch criterion: 30 days post-ship OR >=3")
-        print("                         features migrated voluntarily (see CHANGELOG).")
-        print(
-            "  --enforce              Exit 1 when violations found. Refused (exit 78)"
-        )
-        print("                         when maturity manifest marks any rule pending.")
-        print(
-            "  --maturity-manifest    Path to rule maturity manifest (overrides default)."
-        )
-        print()
-        print("Exit codes:")
-        print("  0   No violations (or warn-only mode — violations non-blocking)")
-        print("  1   Violations found (enforce mode only)")
-        print("  65  Input error (file not found, empty, unreadable)")
-        print("  78  Misconfiguration (--enforce with pending rules in manifest)")
-        return 0
-
-    # Parse path + flags from args list.
-    mode = "warn-only"
-    fmt = "human"
-    maturity_manifest_path: Path | None = None
-    extra_rules: set[str] = set()
-    cleaned: list[str] = []
-    i = 0
-    while i < len(args):
-        token = args[i]
-        if token == "--warn-only":
-            mode = "warn-only"
-        elif token == "--enforce":
-            mode = "enforce"
-        elif token.startswith("--format="):
-            fmt = token[len("--format=") :]
-        elif token == "--format" and i + 1 < len(args):
-            fmt = args[i + 1]
-            i += 1
-        elif token == "--maturity-manifest" and i + 1 < len(args):
-            maturity_manifest_path = Path(args[i + 1])
-            i += 1
-        elif token == "--rule" and i + 1 < len(args):
-            extra_rules.add(args[i + 1].upper())
-            i += 1
-        elif token.startswith("--rule="):
-            extra_rules.add(token[len("--rule=") :].upper())
-        else:
-            cleaned.append(token)
-        i += 1
-
-    if not cleaned:
-        print(
-            "Usage: nwave-ai validate-feature-delta <path> [--warn-only | --enforce] [--format=json]",
-            file=sys.stderr,
-        )
-        return 2
-
-    enabled_rules = frozenset(extra_rules) if extra_rules else None
-    return validate_feature_delta_command(
-        cleaned[0],
-        mode=mode,
-        fmt=fmt,
-        maturity_manifest_path=maturity_manifest_path,
-        enabled_rules=enabled_rules,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Tool plugin install/uninstall (e.g. `nwave-ai plugin install dedup`)
 # ---------------------------------------------------------------------------
@@ -936,18 +787,8 @@ def _print_usage() -> int:
     print("  install        Install nWave framework to ~/.claude/")
     print("  uninstall      Remove nWave framework from ~/.claude/")
     print("  doctor         Run diagnostics on the nWave installation")
-    print(
-        "  sync           Mirror in-flight feature-delta files to "
-        "<master>/.nwave/in-flight/"
-    )
     print("  attribution    Toggle commit attribution (on/off/status)")
     print("  outcomes       Register / check shipped outcomes (Tier-1 collision)")
-    print("  validate-feature-delta  Validate feature-delta.md for cross-wave drift")
-    print(
-        "  extract-gherkin         Extract embedded Gherkin blocks from "
-        "feature-delta.md"
-    )
-    print("  migrate-feature         Migrate .feature files to embedded gherkin blocks")
     print("  plugin         Manage tool plugins (install/uninstall/list)")
     print("  project        Enable or disable nWave activation for this project")
     print("  mode           Set the global activation mode (all/opt-in)")
@@ -1205,14 +1046,6 @@ def main() -> int:
         return _handle_attribution(sys.argv[2:])
     elif command == "doctor":
         return _handle_doctor(sys.argv[2:])
-    elif command == "sync":
-        return _handle_sync(sys.argv[2:])
-    elif command == "validate-feature-delta":
-        return _handle_validate_feature_delta(sys.argv[2:])
-    elif command == "extract-gherkin":
-        return _handle_extract_gherkin(sys.argv[2:])
-    elif command == "migrate-feature":
-        return _handle_migrate_feature(sys.argv[2:])
     elif command == "outcomes":
         from nwave_ai.outcomes.cli import handle_outcomes
 

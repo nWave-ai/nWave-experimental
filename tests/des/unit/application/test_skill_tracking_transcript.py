@@ -17,8 +17,10 @@ import json
 import pytest
 
 from des.application.skill_tracking_service import (
+    RootModeState,
     SkillTrackingService,
     mode_select_observed_before_mutation,
+    resolve_root_mode_state,
     skill_observed_before_action,
 )
 from des.domain.skill_load_event import SkillLoadEvent
@@ -490,3 +492,90 @@ class TestSkillObservedBeforeActionIsGenericPerSkillName:
         )
 
         assert skill_observed_before_action(transcript_path, skill_name) is expected
+
+
+class TestRootModeState:
+    """The ephemeral handoff algebra is total over transcript evidence."""
+
+    @pytest.mark.parametrize(
+        "texts,skills,expected",
+        [
+            ([], [], RootModeState.UNSELECTED),
+            (["NW-MODE-SELECTED: auto L"], [], RootModeState.UNSELECTED),
+            ([], ["nw-mode-select"], RootModeState.INVALID),
+            (["NW-MODE-SELECTED: auto S"], ["nw-mode-select"], RootModeState.INVALID),
+            (
+                ["NW-MODE-SELECTED: direct S"],
+                ["nw-mode-select"],
+                RootModeState.SELECTED,
+            ),
+            (["NW-MODE-SELECTED: human M"], ["nw-mode-select"], RootModeState.SELECTED),
+            (
+                ["NW-MODE-SELECTED: auto M"],
+                ["nw-mode-select"],
+                RootModeState.AUTO_PENDING,
+            ),
+            (
+                ["NW-MODE-SELECTED: auto L"],
+                ["nw-mode-select", "nw-auto"],
+                RootModeState.AUTO_ENGAGED,
+            ),
+            ([], ["nw-auto"], RootModeState.AUTO_ENGAGED),
+        ],
+        ids=[
+            "unselected",
+            "user_prose_cannot_spoof",
+            "selection_missing",
+            "invalid_combination",
+            "direct_s",
+            "human_m",
+            "auto_m_pending",
+            "auto_l_engaged",
+            "legacy_auto_engaged",
+        ],
+    )
+    def test_resolves_each_semantic_partition(
+        self,
+        tmp_path,
+        texts: list[str],
+        skills: list[str],
+        expected: RootModeState,
+    ) -> None:
+        entries: list[dict] = []
+        if texts and not skills:
+            entries.append(
+                {
+                    "type": "user",
+                    "message": {"content": [{"type": "text", "text": texts[0]}]},
+                }
+            )
+        else:
+            for index, skill in enumerate(skills):
+                entries.append(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [
+                                {
+                                    "type": "tool_use",
+                                    "name": "Skill",
+                                    "input": {"skill": skill},
+                                }
+                            ]
+                        },
+                    }
+                )
+                if index == 0 and texts:
+                    entries.append(
+                        {
+                            "type": "assistant",
+                            "message": {
+                                "content": [
+                                    {"type": "text", "text": text} for text in texts
+                                ]
+                            },
+                        }
+                    )
+        transcript_path = _write_transcript(tmp_path, entries)
+
+        assert resolve_root_mode_state(transcript_path) is expected

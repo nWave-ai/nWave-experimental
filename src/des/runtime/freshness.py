@@ -73,6 +73,33 @@ _FORCE_GATE_ENV_VAR = "NWAVE_FRESHNESS_FORCE_GATE"
 _FORCE_GATE_ENABLED = "1"
 
 
+def _is_git_checkout_marker(marker: Path) -> bool:
+    """Return whether ``marker`` identifies an actual Git checkout.
+
+    A directory merely named ``.git`` is not evidence of a checkout.  Normal
+    repositories have a ``HEAD`` file in that directory.  Linked worktrees use
+    a small ``.git`` file whose ``gitdir:`` target has its own ``HEAD``.  The
+    distinction prevents unrelated ancestor artefacts from disabling the
+    installed-runtime freshness check.
+    """
+    if marker.is_dir():
+        return (marker / "HEAD").is_file()
+    if not marker.is_file():
+        return False
+    try:
+        prefix, target_text = (
+            marker.read_text(encoding="utf-8").strip().split(":", maxsplit=1)
+        )
+    except (OSError, UnicodeError, ValueError):
+        return False
+    if prefix != "gitdir" or not target_text.strip():
+        return False
+    target = Path(target_text.strip())
+    if not target.is_absolute():
+        target = marker.parent / target
+    return target.is_dir() and (target / "HEAD").is_file()
+
+
 def _emit_event(payload: dict[str, Any]) -> None:
     """Print one single-line structured JSON event to stderr (§1.9 telemetry)."""
     print(json.dumps(payload), file=sys.stderr)
@@ -134,7 +161,7 @@ def _refuse(verdict: FreshnessVerdict) -> None:
 
 # Advisory-throttle finding (measured 2026-07-28): the hook adapter fires this
 # gate as an IMPORT-TIME side effect on every single hook subprocess (PreToolUse,
-# PostToolUse, SubagentStop, SubagentStart, SessionStart — one fresh process per
+# SubagentStart — one fresh process per
 # Claude Code tool call). In an actively-edited multi-lane repo, `src/des`
 # diverges from the shared install within minutes of a reinstall and STAYS
 # diverged until the next manual reinstall — nothing auto-clears it. The result:
@@ -356,11 +383,12 @@ def assert_fresh_or_explain(
     # Developer-checkout auto-skip (friction #16): if invoked from anywhere
     # inside a git checkout (CWD or any ancestor has `.git/`), the operator is
     # in a dev tree and the installed-tree freshness check is structurally
-    # irrelevant. Walks parents because subprocess invocations (e.g. carpaccio
-    # gate fired by hook) may have CWD different from project root. Emits an
-    # audit-bearing `autoskipped` event distinguishable from operator-set
-    # `skipped` (NWAVE_FRESHNESS=skip). Customer installs (no `.git/` in any
-    # ancestor) preserve fail-closed DEGRADED REFUSE byte-identical.
+    # irrelevant. Walks parents because subprocess invocations may have CWD
+    # different from project root. The normal success path stays silent so a
+    # machine-readable command keeps stdout/stderr uncontaminated. Operators
+    # can request the existing structured `autoskipped` diagnostic with
+    # NWAVE_FRESHNESS=verbose. Customer installs (no `.git/` in any ancestor)
+    # preserve fail-closed DEGRADED REFUSE byte-identical.
     #
     # Test-only bypass (friction #12 closure, 2026-05-27): when
     # NWAVE_FRESHNESS_FORCE_GATE=1, skip the autoskip probe entirely and run
@@ -374,16 +402,17 @@ def assert_fresh_or_explain(
     ):
         cwd = Path.cwd()
         while True:
-            if (cwd / ".git").exists():  # file (worktree gitdir: pointer) or dir
-                _emit_event(
-                    {
-                        "event": "des.runtime.freshness.autoskipped",
-                        "reason": (
-                            "developer checkout detected via .git adjacency at "
-                            f"{str(cwd)!r}"
-                        ),
-                    }
-                )
+            if _is_git_checkout_marker(cwd / ".git"):
+                if opt_out_value == "verbose":
+                    _emit_event(
+                        {
+                            "event": "des.runtime.freshness.autoskipped",
+                            "reason": (
+                                "developer checkout detected via .git adjacency at "
+                                f"{str(cwd)!r}"
+                            ),
+                        }
+                    )
                 return
             parent = cwd.parent
             if parent == cwd:

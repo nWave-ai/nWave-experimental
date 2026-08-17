@@ -134,35 +134,13 @@ License preference: MIT > Apache 2.0 > BSD > MPL 2.0 > LGPL (caution) > GPL (car
 
 Document per selection: name/version, license, GitHub URL/stats, maintenance assessment, alternatives considered.
 
-## Component Manifest
+## Delivery boundary projection
 
-The `component-manifest.yaml` is the DESIGN wave's structured component contract -- the machine-readable form of the architect's tacit "what can this component be given, and what can it return". It lives at `docs/feature/{feature-id}/design/component-manifest.yaml` and is validated against `nWave/schemas/component-manifest.schema.json` (Draft 2020-12).
-
-**Three blocks (in priority order):**
-
-1. **`unbounded-input-domains:`** (mandatory-or-explicitly-empty, load-bearing). Each entry names a SUT symbol and the unbounded input/state domain it accepts. Both downstream gates (`fix-robustness-pbt-density-gate` and `fix-distill-human-signoff`) consume this block.
-2. **`typed-error-set:`** (optional). The typed errors each component port may raise.
-3. **`port-invariants:`** (optional). Per-driving-port invariants.
-
-**Entry anatomy:**
-```yaml
-unbounded-input-domains:
-  - id: tree-vs-commit-file-divergence   # stable kebab-case key
-    sut: src/des/cli/_reverify_core.py::_in_commit_at_presence  # path::symbol
-    domain: >
-      Prose description of the unbounded input/state domain.
-    why-unbounded: "one-line reason"
-    canonical-category: C6               # nw-at-completeness-check enum
-    declared-at: design                  # const -- must be "design"
-```
-
-**Fail-closed contract:** if a feature reaches DELIVER with no manifest (state C) or a schema-invalid manifest (state D), downstream gates exit non-zero. The only escape is a reviewer-vetoable `component-manifest: not-applicable` marker in the feature-delta.
-
-**Schema reference:** `nWave/schemas/component-manifest.schema.json`. Validate at DESIGN-exit:
-```
-python -m scripts.cli.validate_component_manifest docs/feature/{feature-id}/design/component-manifest.yaml
-```
-Exit 0 = schema-valid + every `sut:` symbol grep-findable. Exit 1 = stale symbol. Exit 2 = schema-invalid.
+Keep component boundaries, unbounded input/state domains, typed failures and
+port invariants in the durable architecture brief. For one delivery, project
+only the applicable facts into the existing `DeliveryContract.targets`
+boundary, contract shape and closed obligations. This preserves the design
+facts without a second per-feature manifest or validation gate.
 
 ## Contract Testing for External Integrations
 

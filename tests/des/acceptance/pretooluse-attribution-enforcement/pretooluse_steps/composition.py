@@ -226,22 +226,46 @@ class HookResult:
 
 
 def _mode_select_observed_transcript_path() -> str:
-    """A JSONL transcript recording an actual `Skill(nw-mode-select)` call.
+    """A JSONL transcript recording an actual `Skill(nw-mode-select)` call
+    followed by its one unambiguous `NW-MODE-SELECTED:` marker.
 
     The activation-routing-before-mutation gate (pre_tool_use_handler.py)
-    blocks every Bash call at an activated root until the transcript shows
-    this call was made -- orthogonal to the commit-attribution rewrite this
-    feature exercises. One process-wide fixture file satisfies the gate so
-    every scenario here reaches `emit_commit_attribution_mutation` unchanged.
+    blocks every Bash call at an activated root until the transcript resolves
+    to `RootModeState.SELECTED` -- orthogonal to the commit-attribution
+    rewrite this feature exercises. The skill call alone now resolves to
+    `INVALID` (no marker following it), which the same gate also blocks
+    (`root_mode_handoff_block_reason`), so the marker line is required too.
+    One process-wide fixture file satisfies the gate so every scenario here
+    reaches `emit_commit_attribution_mutation` unchanged.
     """
     fd, path = tempfile.mkstemp(suffix=".jsonl")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(
             json.dumps(
                 {
-                    "type": "tool_use",
-                    "name": "Skill",
-                    "input": {"skill": "nw-mode-select"},
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "Skill",
+                                "input": {"skill": "nw-mode-select"},
+                            }
+                        ]
+                    },
+                }
+            )
+            + "\n"
+        )
+        f.write(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": "NW-MODE-SELECTED: direct S"}
+                        ]
+                    },
                 }
             )
             + "\n"

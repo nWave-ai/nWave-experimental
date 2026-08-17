@@ -28,13 +28,9 @@ from scripts.install.plugins.codex_des_plugin import _build_hook_entry
 _VALID_EVENT_TOKENS: tuple[str, ...] = (
     "pre-tool-use",
     "pre-task",
-    "subagent-stop",
-    "post-tool-use",
     "pre-write",
     "pre-edit",
-    "session-start",
     "subagent-start",
-    "deliver-progress",
 )
 
 
@@ -55,7 +51,7 @@ class TestBuildHookEntryArgvContract:
         """Final argv token MUST be 'pre-tool-use'.
 
         Without the token, the shared DES adapter exits 1 with
-        ``"Missing command argument (pre-tool-use or subagent-stop)"`` on
+        ``"Missing hook command argument"`` on
         every Codex hook fire — the FM-2 root cause.
         """
         entry = _build_hook_entry(python_path, pythonpath)

@@ -58,7 +58,7 @@ def test_gate_proceeds_for_dev_checkout_after_fresh_install() -> None:
     "Mutating a representative installed file makes the gate REFUSE state D",
 )
 def test_gate_refuses_state_d_after_representative_installed_file_mutation() -> None:
-    """AT-02-C: parametrize over (freshness.py | run_contract_gate.py |
+    """AT-02-C: parametrize over (freshness.py | validate_delivery_contract.py |
     repo_source_probe.py) — 3 rows. Each row mutates one installed file
     and asserts the gate REFUSEs with state D citing the diverged file.
 

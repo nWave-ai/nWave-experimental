@@ -68,7 +68,6 @@ _GENERAL_PATTERN = re.compile(r"\bsrc\.des\.")
 # copied from scripts/<entry> into dist/scripts/<basename>.
 UTILITY_SCRIPTS = [
     "install_nwave_target_hooks.py",
-    "refactor_agent.py",
     "validate_step_file.py",
 ]
 
@@ -166,18 +165,16 @@ class DistBuilder:
         return count
 
     def build_nwave_runtime_assets(self) -> int:
-        """nWave/{data,flavors,schemas,dispatch,waves}/ + framework-catalog.yaml -> dist/.
+        """nWave/{data,schemas}/ + framework-catalog.yaml -> dist/.
 
         Mirrors ``build_templates`` (flat, no ``nWave/`` prefix under dist/) --
         this is the layout ``des_plugin.py``'s ``_install_nwave_runtime_assets``
         reads for a prebuilt (PyPI/pipx) install via ``framework_source / <subdir>``.
-        Without this, a consumer install never receives
-        ``nWave/flavors/`` (or schemas/dispatch/waves/framework-catalog.yaml) --
-        every atdd_pure runtime lookup against those
-        assets silently degrades on a pipx-installed nwave-ai.
+        Without this, a consumer install misses the runtime data and schemas
+        resolved by the installed package.
         """
         count = 0
-        for subdir in ("data", "flavors", "schemas", "dispatch", "waves"):
+        for subdir in ("data", "schemas"):
             src = self.nwave_dir / subdir
             if not src.exists():
                 continue
@@ -305,7 +302,7 @@ class DistBuilder:
         """scripts/*.py → dist/scripts/ (selected utility scripts only).
 
         Entries in UTILITY_SCRIPTS may include a subdirectory prefix
-        (e.g. "hooks/check_probe_method.py") — the file is copied flat
+        (e.g. "hooks/check_merge_conflicts.py") — the file is copied flat
         into dist/scripts/<basename>.
         """
         src = self.project_root / "scripts"

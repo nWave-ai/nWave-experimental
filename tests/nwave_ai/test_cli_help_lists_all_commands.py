@@ -1,11 +1,4 @@
-"""Regression: `nwave-ai --help` must list every command main() dispatches.
-
-Bug: `_print_usage()`'s printed command list omitted three commands the
-same file's dispatch table actually implements and routes
-(`validate-feature-delta`, `extract-gherkin`, `migrate-feature`) --
-documented in docs/reference/cli.md, but invisible to a user running
-`nwave-ai --help`, the in-tool discovery surface.
-"""
+"""Regression tests for the public ``nwave-ai`` discovery surface."""
 
 from __future__ import annotations
 
@@ -27,16 +20,27 @@ def _invoke(args: list[str]) -> tuple[int, str, str]:
     return code, out.getvalue(), err.getvalue()
 
 
-def test_help_text_lists_validate_feature_delta_extract_gherkin_migrate_feature() -> (
-    None
-):
-    """The three real, routed, publicly-documented commands must all appear
-    in `nwave-ai --help`'s printed command list."""
+def test_help_text_omits_retired_feature_delta_commands() -> None:
+    """The direct cutover must not advertise the retired carrier family."""
     code, stdout, _ = _invoke(["--help"])
     assert code == 0
-    assert "validate-feature-delta" in stdout
-    assert "extract-gherkin" in stdout
-    assert "migrate-feature" in stdout
+    for command in (
+        "sync",
+        "validate-feature-delta",
+        "extract-gherkin",
+        "migrate-feature",
+    ):
+        assert command not in stdout
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["sync", "validate-feature-delta", "extract-gherkin", "migrate-feature"],
+)
+def test_retired_feature_delta_commands_are_not_dispatched(command: str) -> None:
+    code, _, stderr = _invoke([command])
+    assert code == 1
+    assert f"Unknown command: {command}" in stderr
 
 
 @pytest.mark.parametrize(

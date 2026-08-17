@@ -2,6 +2,4 @@
 
 Python property-based testing with Hypothesis framework, strategies, and pytest integration
 
-**Used by:** [nw-acceptance-designer](../agents/nw-acceptance-designer.md)
-
 **Source:** [SKILL.md on GitHub](https://github.com/nWave-ai/nWave/blob/main/nWave/skills/nw-pbt-python/SKILL.md)

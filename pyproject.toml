@@ -30,7 +30,7 @@ path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave"
-version = "4.0.0+atddpure.3cb4d08"
+version = "4.0.0+atddpure.14c7bb1"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -155,14 +155,14 @@ dev = [
     # E2E container testing
     "testcontainers>=4.15.0",
     "docker>=7.2.0",
-    # JSON Schema validation (used by tests/outcomes + tests/feature_delta)
+    # JSON Schema validation (used by the outcomes registry)
     "jsonschema>=4.0.0",
     # Packaging (python -m build / scripts/build_dist.py)
     "build>=1.5.0,!=1.5.1",  # 1.5.1 yanked on PyPI, makes fresh resolves unsatisfiable
     # pip — the WS-floor installable build leg shells `python -m pip wheel`
     # (src/des/cli/walking_skeleton_gate.py). uv venvs OMIT pip by default
     # (unlike the prior pipenv venv), so it MUST be declared or every
-    # build-leg test (e.g. oss_feature_end_emit_cli) fails with
+    # build-leg test fails with
     # "No module named pip". Env-parity restore after the pipenv->uv merge.
     "pip>=24.0"
 ]
@@ -176,7 +176,6 @@ Issues = "https://github.com/nWave-ai/nWave/issues"
 [project.scripts]
 nwave-ai = "nwave_ai.cli:main"
 des = "des.cli.__main__:main"
-verify-environmental-e2e = "des.cli.verify_environmental_e2e:main"
 
 [tool.nwave]
 # Override floor for nwave-ai public version (PyPI + GitHub).

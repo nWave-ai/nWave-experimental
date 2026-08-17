@@ -116,20 +116,6 @@ class ImportInfo:
 
 
 @dataclass(frozen=True)
-class FailureModeCoverage:
-    """A plain-data cross-check of a component manifest against named tests (slice-07).
-
-    ``uncovered`` is the tuple of declared ``failure_modes`` entry ids for which no
-    test name in scope matched (empty == every declared mode is covered). The M11
-    coverage half reads only this — the manifest parse + name-match lives entirely
-    in the per-language adapter (genericità, ADR-TEST-002 D-A). Matching is
-    structural-by-name: a mode id is covered iff some named test mentions it.
-    """
-
-    uncovered: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class ConstructInfo:
     """A plain-data description of a ``name = Type(...)`` construction (slice-09).
 
@@ -282,20 +268,6 @@ class TestSuiteAstAdapter(Protocol):
         else ``IN_PROCESS_MAIN`` if the body calls an in-process ``main(...)``
         entry (a ``main`` / ``*.main`` callee); else ``NONE``. The CM-I rule
         cross-checks this ACTUAL shape against the test's CLAIMED tags.
-        """
-        ...
-
-    def failure_mode_coverage(
-        self, manifest_source: str, test_names: frozenset[str]
-    ) -> FailureModeCoverage:
-        """Cross-check a component manifest's failure modes against named tests (slice-07 M11).
-
-        Reads ``manifest_source`` (a component manifest declaring a ``failure_modes``
-        list of entries with ``id`` keys) and reports every declared mode id that no
-        name in ``test_names`` covers. A mode id is covered iff some test name mentions
-        it (structural-by-name match — the learning hypothesis of slice-07). The M11
-        coverage rule consumes only the resulting ``FailureModeCoverage``; the manifest
-        parse + the name match are the adapter's per-language concern.
         """
         ...
 

@@ -1,6 +1,6 @@
 # nw-expectation-charter
 
-Charter-authoring competence for ANY flow (DISCUSS wave, /nw-bugfix, technical fixes that skip DISCUSS) — how to write a user-side, discovery-preserving expectation charter that arms the DELIVER EXAMINE gate. Consult whenever an agent must author or judge a docs/product/expectations/ charter.
+Authors or reviews one value-side, source-blind expectation charter for a delivery whose validated contract requires EXAMINE.
 
 **Used by:** [nw-product-owner](../agents/nw-product-owner.md)
 

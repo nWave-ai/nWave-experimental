@@ -20,8 +20,7 @@ import time
 import uuid
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from des.adapters.driven.time.system_time import SystemTimeProvider
-from des.adapters.drivers.hooks import des_task_signal, hook_protocol, service_factory
+from des.adapters.drivers.hooks import des_task_signal
 from des.adapters.drivers.hooks.bash_command_guards import (
     _split_subcommands,
     evaluate_git_stash_command,
@@ -41,45 +40,34 @@ from des.adapters.drivers.hooks.hook_protocol import (
 )
 from des.adapters.drivers.hooks.root_activation_context import (
     build_root_mode_select_context,
+    root_mode_handoff_block_reason,
 )
 from des.application.commit_attribution_service import CommitAttributionService
-from des.application.skill_tracking_service import (
-    mode_select_observed_before_mutation,
-    skill_observed_before_action,
+from des.application.ordinary_request import (
+    ARCH_HEADER_PREFIXES,
+    ATD_BODY_LINE_COUNT,
+    compute_delivery_id,
+    contract_locator_for,
+    is_lexical_repo_relative_json_locator,
+    is_valid_arch_header_line,
 )
-from des.application.wave_activation_service import WaveActivationService
-from des.domain.atdd_pure_phases import ATDDPurePhase
-from des.domain.des_marker_parser import DesMarkerParser
-from des.domain.nwave_root import resolve_nwave_root
-from des.ports.driven_ports.audit_log_writer import AuditEvent
-from des.ports.driven_ports.committed_scope_port import Indeterminate
-from des.ports.driver_ports.pre_tool_use_port import PreToolUseInput
+from des.application.skill_tracking_service import (
+    RootModeState,
+    resolve_root_mode_state,
+)
 
 
 # Non-zero exit code paired with a `{decision:block}` body for an atdd_pure
 # U1 intercept block (matches the existing block path's exit_code convention).
 _ATDD_PURE_BLOCK_EXIT_CODE = 2
 
-# Tool names that constitute a DISPATCH (slice-07c): the wave-entering
-# peek -> validate(wave_entering=) -> clear-on-allow lifecycle applies to
-# agent dispatches only -- a Bash/Read tool-use is not the wave-entering
-# dispatch and must never consume the pending entry flag.
-_DISPATCH_TOOL_NAMES = ("Agent", "Task")
-
-# slice-02 (oss-hook-side-phase-injection -- G-DISTILL-PRE): the DISTILL-specific
-# block event the DISTILL dispatch marker-enforcement branch emits. It mirrors
-# the generic U1 `AtddPureMarkerSetIncomplete` block but names the DISTILL gate
-# so "a DISTILL dispatch was well-formed" is a mechanical, DISTILL-scoped fact.
-_DISTILL_DISPATCH_INCOMPLETE_EVENT = "DistillDispatchMarkerSetIncomplete"
-
-# The feature-end-cycle phase the G-DISTILL-PRE gate keys on. A D_DISTILL
-# dispatch is per-feature: its only coherent scope is the `feature-end` literal.
-_D_DISTILL_PHASE = ATDDPurePhase.D_DISTILL.value
-
 # Auto-root Bash lockdown (K4 architecture gap): tool names that carry DES
 # task-signal authority. Auto's root process must never call these directly
 # once nw-auto is engaged -- that authority belongs to a dispatched role.
 _AUTO_ROOT_BLOCKED_TASK_TOOL_NAMES = ("TaskCreate", "TaskUpdate")
+_ROOT_MODE_HANDOFF_TOOL_NAMES = frozenset(
+    {"Agent", "Bash", "SendMessage", "TaskCreate", "TaskUpdate"}
+)
 
 # Auto-root crafter first-dispatch THIN header gate (K4 architecture gap):
 # the exact role names for which an Auto-root Agent dispatch must carry a
@@ -95,13 +83,10 @@ _THIN_HEADER_DIGEST_HEX_LEN = 64
 _THIN_HEADER_DIGEST_HEX_ALPHABET = frozenset("0123456789abcdef")
 
 # K4: exact-match roles whose Auto-root Agent dispatch must carry a
-# well-formed ARCHITECTURE-COVERED/ARCHITECTURE-NO-IMPACT first-bytes ref.
+# well-formed ARCHITECTURE-COVERED first-bytes reference.
 _AUTO_ROOT_DESIGN_CONSULT_ROLES = frozenset({"nw-product-owner"})
 _ATD_ROLE_NAME = "nw-acceptance-designer"
 
-_ARCH_HEADER_COVERED_PREFIX = "ARCHITECTURE-COVERED: "
-_ARCH_HEADER_NO_IMPACT_PREFIX = "ARCHITECTURE-NO-IMPACT: "
-_ARCH_HEADER_PREFIXES = (_ARCH_HEADER_COVERED_PREFIX, _ARCH_HEADER_NO_IMPACT_PREFIX)
 
 _DELIVERY_ROUTE_TOKENS = frozenset({"RED_TO_GREEN", "GREEN_TO_GREEN"})
 _ARCHITECT_ROLE_NAME = "nw-solution-architect"
@@ -112,9 +97,25 @@ _ATD_ROOT_LINE_PREFIX = "ROOT: "
 _ATD_VALUE_SEED_LINE_PREFIX = "VALUE-SEED: "
 _ATD_DELIVERY_ROUTE_LINE_PREFIX = "DELIVERY-ROUTE: "
 
-# Tool names for which the Auto-root lockdown check (`_is_auto_root`, a
-# transcript read + skill observation) is even worth paying for. Every other
-# tool falls through untouched -- zero transcript read, zero observation.
+# K4 (nw-auto ADR-SSOT-002 Section 4c total constructor): the twelve named
+# non-empty facts an Auto-root ATD dispatch body must carry, each on its own
+# line and in this exact order, after the architecture authority line and one
+# blank line.
+_ATD_CONTRACT_LOCATOR_LINE_PREFIX = "CONTRACT-LOCATOR: "
+_ATD_CONTRACT_SCHEMA_LINE_PREFIX = "CONTRACT-SCHEMA: "
+_ATD_DELIVERY_ID_LINE_PREFIX = "DELIVERY-ID: "
+_ATD_OUTCOME_LINE_PREFIX = "OUTCOME: "
+_ATD_BASE_REVISION_LINE_PREFIX = "BASE-REVISION: "
+_ATD_EXAMINE_LINE_PREFIX = "EXAMINE: "
+_ATD_INDEPENDENT_REVIEW_LINE_PREFIX = "INDEPENDENT-REVIEW: "
+_ATD_BUDGET_TOKEN_LIMIT_LINE_PREFIX = "BUDGET-TOKEN-LIMIT: "
+_ATD_BUDGET_WALL_CLOCK_MINUTES_LINE_PREFIX = "BUDGET-WALL-CLOCK-MINUTES: "
+
+_ATD_BASE_REVISION_TAGS = {"git-sha1:": 40, "git-sha256:": 64}
+_HEX_ALPHABET = frozenset("0123456789abcdef")
+
+# Tool names for which the resolved Auto-root lockdown applies. Root mode is
+# projected once per root tool event and reused by every decision below.
 _AUTO_ROOT_TASK_TOOL_LOCKDOWN_NAMES = ("Bash", *_AUTO_ROOT_BLOCKED_TASK_TOOL_NAMES)
 
 # Shell-composition operators rejected BEFORE `shlex.split` runs: `shlex` has
@@ -140,28 +141,19 @@ _AUTO_ROOT_BASH_ALLOWED_GIT_SUBCOMMANDS = frozenset(
     {"status", "diff", "rev-parse", "branch", "worktree", "add", "commit"}
 )
 
-
-def _is_auto_root(hook_input: dict[str, object]) -> bool:
-    """True iff this dispatch is Auto's OWN root process (not a dispatched sub-agent).
-
-    Reuses the same transcript-observation authority the SendMessage/Agent
-    Auto guards above already call (`skill_observed_before_action(...,
-    "nw-auto")`) plus the exact root-identity predicate the Bash
-    mode-select gate already uses below (`agent_id`/`agent_type` both
-    absent -- a dispatched sub-agent always carries one or the other, root
-    carries neither). A transcript lookup failure fails OPEN (not root):
-    the lockdown only ever ADDS restriction on a confirmed Auto-root call,
-    never on an ambiguous one.
-    """
-    if hook_input.get("agent_id") or hook_input.get("agent_type"):
-        return False
-    transcript_path = extract_transcript_path(hook_input)
-    try:
-        return bool(
-            transcript_path and skill_observed_before_action(transcript_path, "nw-auto")
-        )
-    except Exception:
-        return False
+# The closed set of `des` CLI subcommands an Auto-root Bash call may run
+# directly (K4: the direct-cutover spine has no hook controller between
+# Auto-root and the dispatched role's own DES CLI invocation). Arguments
+# after this verb are literal argv already protected by the injection-marker
+# and shlex tokenization above -- never re-interpreted as shell.
+_AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS = frozenset(
+    {
+        "dispatch",
+        "validate-delivery-contract",
+        "charter-scaffold",
+        "prepare-ordinary-request",
+    }
+)
 
 
 def _auto_root_task_tool_block(tool_name: str) -> dict[str, str]:
@@ -186,59 +178,81 @@ def _auto_root_bash_block(reason: str) -> dict[str, str]:
 def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
     """Pure Auto-root Bash allowlist decision.
 
-    Restricts Auto-root's OWN Bash calls to a single, literal
-    `git status|diff|rev-parse|branch|worktree|add|commit` invocation.
-    Lexically rejects any shell-composition operator (see
+    Restricts Auto-root's OWN Bash calls to either a single, literal `git
+    status|diff|rev-parse|branch|worktree|add|commit` invocation, or a
+    single, literal `des dispatch|validate-delivery-contract|
+    charter-scaffold|prepare-ordinary-request` invocation (the direct-cutover
+    spine has no hook controller between Auto-root and the dispatched role's
+    own DES CLI call). Lexically rejects any shell-composition operator (see
     `_AUTO_ROOT_BASH_INJECTION_MARKERS`) BEFORE `shlex.split` runs -- a
     string like ``"git status; rm -rf /"`` tokenizes cleanly under shlex,
     so the composition check must happen on the raw string first. Returns
     `None` (allow) or a `{decision: block, reason: ...}` payload. A missing,
     empty, whitespace-only, or non-string command fails CLOSED (blocked),
     not allowed: once Auto-root is armed, there is no well-formed command
-    to fall through to the allowlist below on.
+    to fall through to the allowlist below on. Arguments after the allowed
+    `git`/`des` verb are literal argv, already protected from shell
+    composition by the injection-marker check above -- never re-interpreted
+    as shell.
     """
     if not isinstance(command, str) or not command.strip():
         return _auto_root_bash_block(
             "WHAT: an Auto-root Bash call carried no usable command. "
-            "WHY: Auto-root Bash is restricted to a single, literal git "
-            "call -- a missing, empty, or whitespace-only command cannot "
-            "be that call. "
-            "HOW: run one git subcommand per Bash call, or dispatch a "
-            "role instead."
+            "WHY: Auto-root Bash is restricted to a single, literal git or "
+            "des call -- a missing, empty, or whitespace-only command "
+            "cannot be that call. "
+            "HOW: run one git or des subcommand per Bash call, or dispatch "
+            "a role instead."
         )
     if any(marker in command for marker in _AUTO_ROOT_BASH_INJECTION_MARKERS):
         return _auto_root_bash_block(
             "WHAT: an Auto-root Bash command carrying a shell-composition "
             "operator (&&, ||, ;, |, `, $(...), <, >, or a newline/CR) was "
             "blocked. "
-            "WHY: Auto-root Bash is restricted to a single, literal git "
-            "call -- composition operators can smuggle a second command "
-            "past that allowlist. "
-            "HOW: run one git subcommand per Bash call; drop the operator."
+            "WHY: Auto-root Bash is restricted to a single, literal git or "
+            "des call -- composition operators can smuggle a second "
+            "command past that allowlist. "
+            "HOW: run one git or des subcommand per Bash call; drop the "
+            "operator."
         )
     try:
         argv = shlex.split(command)
     except ValueError:
         return _auto_root_bash_block(
             "WHAT: an Auto-root Bash command failed to tokenize. "
-            "WHY: Auto-root Bash must be a single well-formed git call. "
+            "WHY: Auto-root Bash must be a single well-formed git or des "
+            "call. "
             "HOW: fix the quoting, or dispatch a role to run it."
         )
-    if not argv or argv[0] != "git":
+    if not argv or argv[0] not in ("git", "des"):
         return _auto_root_bash_block(
-            "WHAT: an Auto-root Bash command is not a `git` invocation. "
+            "WHAT: an Auto-root Bash command is not a `git` or `des` "
+            "invocation. "
             "WHY: Auto-root Bash is restricted to git status/diff/"
-            "rev-parse/branch/worktree/add/commit. "
-            "HOW: dispatch a role for non-git work, or run the equivalent "
-            "git subcommand."
+            "rev-parse/branch/worktree/add/commit, or des dispatch/"
+            "validate-delivery-contract/charter-scaffold/"
+            "prepare-ordinary-request. "
+            "HOW: dispatch a role for other work, or run the equivalent "
+            "git/des subcommand."
         )
     subcommand = argv[1] if len(argv) > 1 else None
-    if subcommand not in _AUTO_ROOT_BASH_ALLOWED_GIT_SUBCOMMANDS:
+    if argv[0] == "git":
+        if subcommand not in _AUTO_ROOT_BASH_ALLOWED_GIT_SUBCOMMANDS:
+            return _auto_root_bash_block(
+                f"WHAT: an Auto-root `git {subcommand}` call was blocked. "
+                "WHY: Auto-root Bash only allows git status/diff/rev-parse/"
+                "branch/worktree/add/commit. "
+                "HOW: dispatch the appropriate nw-* role for any other git "
+                "subcommand."
+            )
+        return None
+    if subcommand not in _AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS:
         return _auto_root_bash_block(
-            f"WHAT: an Auto-root `git {subcommand}` call was blocked. "
-            "WHY: Auto-root Bash only allows git status/diff/rev-parse/"
-            "branch/worktree/add/commit. "
-            "HOW: dispatch the appropriate nw-* role for any other git "
+            f"WHAT: an Auto-root `des {subcommand}` call was blocked. "
+            "WHY: Auto-root Bash only allows des dispatch/"
+            "validate-delivery-contract/charter-scaffold/"
+            "prepare-ordinary-request. "
+            "HOW: dispatch the appropriate nw-* role for any other des "
             "subcommand."
         )
     return None
@@ -328,45 +342,10 @@ def _evaluate_nwave_subagent_host_scan(command: object) -> dict[str, str] | None
     return None
 
 
-def _is_lexical_repo_relative_locator(
-    locator: str, *, suffix: str, reject_leading_whitespace: bool = False
-) -> bool:
-    """Lexical repo-relative locator check (no I/O): rejects absolute path,
-    `..` traversal, empty segment, wrong suffix."""
-    if not locator or not locator.endswith(suffix):
-        return False
-    if reject_leading_whitespace and (locator[0].isspace() or locator[0] == "\ufeff"):
-        return False
-    if locator.startswith(("/", "~")) or ":" in locator:
-        return False
-    return all(part not in ("", "..") for part in locator.split("/"))
-
-
-def _is_lexical_repo_relative_json_locator(locator: str) -> bool:
-    """Lexical repo-relative `.json` locator check -- no filesystem I/O."""
-    return _is_lexical_repo_relative_locator(locator, suffix=".json")
-
-
-def _is_lexical_repo_relative_md_locator(locator: str) -> bool:
-    """Lexical repo-relative `.md` locator check, plus BOM/leading-whitespace
-    reject since this locator sits at prompt byte zero."""
-    return _is_lexical_repo_relative_locator(
-        locator, suffix=".md", reject_leading_whitespace=True
-    )
-
-
-def _is_lexical_markdown_anchor(anchor: str) -> bool:
-    """Accept a lowercase Markdown fragment without shell-significant syntax.
-
-    GitHub heading fragments preserve underscores and non-ASCII letters.  The
-    previous ASCII-only alphabet rejected valid architecture locators such as
-    ``#maintenance_windows`` before ATD could read their cited section.
-    """
-    return (
-        bool(anchor)
-        and anchor == anchor.lower()
-        and all(character.isalnum() or character in "-_" for character in anchor)
-    )
+# Lexical locator/anchor/header-line checks and the deterministic
+# `DeliveryId` projection are shared with `des.cli.prepare_ordinary_request`
+# (the producer for this gate's input) via `des.application.ordinary_request`, so the
+# two sides of the same boundary cannot drift apart.
 
 
 def _auto_root_crafter_thin_header_block() -> dict[str, str]:
@@ -410,7 +389,7 @@ def _evaluate_auto_root_crafter_thin_header(prompt: object) -> dict[str, str] | 
     if not locator_line.startswith(_THIN_HEADER_LOCATOR_PREFIX):
         return _auto_root_crafter_thin_header_block()
     locator = locator_line[len(_THIN_HEADER_LOCATOR_PREFIX) :]
-    if not _is_lexical_repo_relative_json_locator(locator):
+    if not is_lexical_repo_relative_json_locator(locator):
         return _auto_root_crafter_thin_header_block()
 
     if not digest_line.startswith(_THIN_HEADER_DIGEST_PREFIX):
@@ -443,49 +422,30 @@ def _auto_root_design_consult_block() -> dict[str, str]:
         "reason": (
             "WHAT: Auto-root design-consult header malformed -- the Agent "
             "prompt's first bytes are not exactly one ARCHITECTURE-COVERED: "
-            "or ARCHITECTURE-NO-IMPACT: <path>#<anchor> line. "
+            "<path>#<anchor> line. "
             "WHY: architecture readiness is the deterministic first-bytes "
             "authority a PO/ATD launch must carry -- no prose, BOM, "
             "duplication, or reconstructed path/anchor may precede or "
             "follow it; validating this only downstream wastes an entire "
             "wave/service activation on a dispatch that had no architecture "
             "reference to begin with. "
-            "HOW: forward the architect's exact ARCHITECTURE-COVERED / "
-            "ARCHITECTURE-NO-IMPACT <repo-relative-path>.md#<anchor> "
+            "HOW: forward the architect's exact ARCHITECTURE-COVERED: "
+            "<repo-relative-path>.md#<anchor> "
             "reference verbatim as the prompt's first bytes, with no reconstruction."
         ),
     }
 
 
-def _is_valid_arch_header_line(line: str) -> bool:
-    """Pure lexical check that `line` is a well-formed
-    ARCHITECTURE-COVERED/-NO-IMPACT `<path>.md#<anchor>` line -- shape only,
-    never reads/parses the referenced doc."""
-    matched_prefix = next(
-        (prefix for prefix in _ARCH_HEADER_PREFIXES if line.startswith(prefix)),
-        None,
-    )
-    if matched_prefix is None:
-        return False
-    reference = line[len(matched_prefix) :]
-    path, separator, anchor = reference.partition("#")
-    if not separator:
-        return False
-    if not _is_lexical_repo_relative_md_locator(path):
-        return False
-    return _is_lexical_markdown_anchor(anchor)
-
-
 def _evaluate_auto_root_design_consult_header(prompt: object) -> dict[str, str] | None:
     """Lexical Auto-root PO design-consult header gate: shape-only. `None`
     (allow) when the prompt's first line is a well-formed
-    ARCHITECTURE-COVERED/-NO-IMPACT `<path>.md#<anchor>` line, optionally
+    ARCHITECTURE-COVERED `<path>.md#<anchor>` line, optionally
     followed by one blank line and context with no duplicate header; else
     the block payload."""
     if not isinstance(prompt, str):
         return _auto_root_design_consult_block()
     lines = prompt.split("\n")
-    if not _is_valid_arch_header_line(lines[0]):
+    if not is_valid_arch_header_line(lines[0]):
         return _auto_root_design_consult_block()
 
     remainder = lines[1:]
@@ -493,7 +453,7 @@ def _evaluate_auto_root_design_consult_header(prompt: object) -> dict[str, str] 
         if remainder[0] != "":
             return _auto_root_design_consult_block()
         context = "\n".join(remainder[1:])
-        if any(prefix.rstrip() in context for prefix in _ARCH_HEADER_PREFIXES):
+        if any(prefix.rstrip() in context for prefix in ARCH_HEADER_PREFIXES):
             return _auto_root_design_consult_block()
 
     return None
@@ -504,34 +464,104 @@ def _auto_root_atd_body_block() -> dict[str, str]:
         "decision": "block",
         "reason": (
             "WHAT: Auto-root ATD dispatch body malformed. "
-            "WHY: extra or missing context makes ATD infer upstream facts. "
-            "HOW: send exactly architecture authority, one blank line, "
-            "ROOT, VALUE-SEED, and DELIVERY-ROUTE."
+            "WHY: extra, missing, reordered or invalid facts make ATD infer "
+            "or default upstream authority it must never guess. "
+            "HOW: send exactly the architecture authority line, one blank "
+            "line, then CONTRACT-LOCATOR, CONTRACT-SCHEMA, DELIVERY-ID, "
+            "OUTCOME, ROOT, BASE-REVISION, DELIVERY-ROUTE, EXAMINE, "
+            "INDEPENDENT-REVIEW, BUDGET-TOKEN-LIMIT, "
+            "BUDGET-WALL-CLOCK-MINUTES, VALUE-SEED, each on its own line in "
+            "that exact order, and nothing else."
         ),
     }
 
 
 def _evaluate_auto_root_atd_body(prompt: object) -> dict[str, str] | None:
-    """Lexical Auto-root ATD full-body gate: exactly five lines -- the
-    architecture header, one blank line, `ROOT:`, `VALUE-SEED:`, and
-    `DELIVERY-ROUTE:` -- and nothing else. Shape and route vocabulary only,
-    no referenced-file I/O."""
+    """Lexical Auto-root ATD full-body gate: exactly the architecture header,
+    one blank line, then the twelve named non-empty facts (ADR-SSOT-002
+    Section 4c) in this exact order -- and nothing else. Shape, enum and
+    numeric-format validation only, no referenced-file I/O."""
     if not isinstance(prompt, str):
         return _auto_root_atd_body_block()
     lines = prompt.split("\n")
-    if len(lines) != 5:
+    if len(lines) != ATD_BODY_LINE_COUNT:
         return _auto_root_atd_body_block()
 
-    header_line, blank_line, root_line, value_seed_line, route_line = lines
-    if not _is_valid_arch_header_line(header_line):
+    header_line, blank_line, *fact_lines = lines
+    if not is_valid_arch_header_line(header_line):
         return _auto_root_atd_body_block()
     if blank_line != "":
         return _auto_root_atd_body_block()
-    if not _has_absolute_value(root_line, _ATD_ROOT_LINE_PREFIX):
+
+    (
+        contract_locator_line,
+        contract_schema_line,
+        delivery_id_line,
+        outcome_line,
+        root_line,
+        base_revision_line,
+        delivery_route_line,
+        examine_line,
+        independent_review_line,
+        budget_token_limit_line,
+        budget_wall_clock_minutes_line,
+        value_seed_line,
+    ) = fact_lines
+
+    # Shape-only checks for every fact except CONTRACT-LOCATOR, DELIVERY-ID,
+    # OUTCOME and VALUE-SEED, which are cross-validated below instead of
+    # trusted at face value -- ATD must never infer/default the delivery
+    # identity from an unverified pair of independently-typed strings.
+    fact_checks = (
+        _has_absolute_schema_path_value(
+            contract_schema_line, _ATD_CONTRACT_SCHEMA_LINE_PREFIX
+        ),
+        _has_absolute_value(root_line, _ATD_ROOT_LINE_PREFIX),
+        _has_schema_tagged_base_revision(
+            base_revision_line, _ATD_BASE_REVISION_LINE_PREFIX
+        ),
+        _has_route(delivery_route_line, _ATD_DELIVERY_ROUTE_LINE_PREFIX),
+        _has_bool_value(examine_line, _ATD_EXAMINE_LINE_PREFIX),
+        _has_bool_value(independent_review_line, _ATD_INDEPENDENT_REVIEW_LINE_PREFIX),
+        _has_positive_integer_value(
+            budget_token_limit_line, _ATD_BUDGET_TOKEN_LIMIT_LINE_PREFIX
+        ),
+        _has_positive_integer_value(
+            budget_wall_clock_minutes_line,
+            _ATD_BUDGET_WALL_CLOCK_MINUTES_LINE_PREFIX,
+        ),
+    )
+    if not all(fact_checks):
         return _auto_root_atd_body_block()
-    if not _has_value(value_seed_line, _ATD_VALUE_SEED_LINE_PREFIX):
+
+    # OUTCOME and VALUE-SEED are compact JSON string literals (produced by
+    # `des prepare-ordinary-request` with `ensure_ascii=False`) so arbitrary
+    # newlines/quotes/shell metacharacters in the value seed cannot break the
+    # fixed 14-line shape. Both must decode to the SAME exact Unicode text --
+    # a producer that let them diverge could smuggle an unobserved outcome
+    # past ATD. DELIVERY-ID and CONTRACT-LOCATOR are then required to equal
+    # the deterministic projection recomputed from that decoded text, never
+    # merely lexically well-formed on their own.
+    outcome_value = _has_json_string_value(outcome_line, _ATD_OUTCOME_LINE_PREFIX)
+    value_seed_value = _has_json_string_value(
+        value_seed_line, _ATD_VALUE_SEED_LINE_PREFIX
+    )
+    if (
+        outcome_value is None
+        or value_seed_value is None
+        or outcome_value != value_seed_value
+    ):
         return _auto_root_atd_body_block()
-    if not _has_route(route_line, _ATD_DELIVERY_ROUTE_LINE_PREFIX):
+
+    recomputed_delivery_id = compute_delivery_id(value_seed_value)
+    if delivery_id_line != f"{_ATD_DELIVERY_ID_LINE_PREFIX}{recomputed_delivery_id}":
+        return _auto_root_atd_body_block()
+
+    recomputed_locator = contract_locator_for(recomputed_delivery_id)
+    if (
+        contract_locator_line
+        != f"{_ATD_CONTRACT_LOCATOR_LINE_PREFIX}{recomputed_locator}"
+    ):
         return _auto_root_atd_body_block()
 
     return None
@@ -553,6 +583,24 @@ def _has_value(line: str, prefix: str) -> bool:
     return line.startswith(prefix) and bool(line[len(prefix) :].strip())
 
 
+def _has_json_string_value(line: str, prefix: str) -> str | None:
+    """Decode `line`'s value as a compact JSON string literal, or `None`.
+
+    `des prepare-ordinary-request` emits OUTCOME/VALUE-SEED as
+    `json.dumps(text, ensure_ascii=False)` so an arbitrary Unicode value
+    seed (quotes, newlines, `$()`, globs) survives on one line without a new
+    transport carrier. Rejects anything that is not itself a JSON string
+    (e.g. a bare unquoted line, or a JSON number/object smuggled in).
+    """
+    if not line.startswith(prefix):
+        return None
+    try:
+        decoded = json.loads(line[len(prefix) :])
+    except json.JSONDecodeError:
+        return None
+    return decoded if isinstance(decoded, str) else None
+
+
 def _has_absolute_value(line: str, prefix: str) -> bool:
     if not line.startswith(prefix):
         return False
@@ -562,6 +610,37 @@ def _has_absolute_value(line: str, prefix: str) -> bool:
 
 def _has_route(line: str, prefix: str) -> bool:
     return line.startswith(prefix) and line[len(prefix) :] in _DELIVERY_ROUTE_TOKENS
+
+
+def _has_bool_value(line: str, prefix: str) -> bool:
+    return line.startswith(prefix) and line[len(prefix) :] in ("true", "false")
+
+
+def _has_positive_integer_value(line: str, prefix: str) -> bool:
+    if not line.startswith(prefix):
+        return False
+    value = line[len(prefix) :]
+    return bool(value) and value.isdigit() and value[0] != "0"
+
+
+def _has_schema_tagged_base_revision(line: str, prefix: str) -> bool:
+    if not line.startswith(prefix):
+        return False
+    value = line[len(prefix) :]
+    for tag, hex_len in _ATD_BASE_REVISION_TAGS.items():
+        if value.startswith(tag):
+            hex_part = value[len(tag) :]
+            return len(hex_part) == hex_len and set(hex_part) <= _HEX_ALPHABET
+    return False
+
+
+def _has_absolute_schema_path_value(line: str, prefix: str) -> bool:
+    if not line.startswith(prefix):
+        return False
+    value = line[len(prefix) :]
+    if not value.endswith(".json"):
+        return False
+    return PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
 
 
 def _evaluate_auto_root_architect_envelope(prompt: object) -> dict[str, str] | None:
@@ -584,172 +663,6 @@ def _evaluate_auto_root_architect_envelope(prompt: object) -> dict[str, str] | N
         return _auto_root_architect_envelope_block()
 
     return None
-
-
-def _classic_mode_removed_payload() -> dict[str, object]:
-    """Closed public refusal for a retired workflow carrier."""
-    return {
-        "outcome": "CLASSIC_MODE_REMOVED",
-        "reason_code": "MIGRATION_REQUIRED",
-        "effective_mode": None,
-        "diagnostic": (
-            "WHAT: the dispatch requested the retired classic spine. "
-            "WHY: classic is no longer executable. "
-            "HOW: migrate or repair the dispatch to explicit atdd_pure."
-        ),
-    }
-
-
-def _classic_prompt_refusal(prompt: str) -> dict[str, object] | None:
-    """Refuse a direct legacy carrier before any service or hook mutation."""
-    if DesMarkerParser().parse(prompt).mode == "classic":
-        return _classic_mode_removed_payload()
-    return None
-
-
-def _distill_dispatch_block(reason: str) -> dict[str, str]:
-    """Render the `{decision:block}` body for a G-DISTILL-PRE marker block."""
-    return {
-        "decision": "block",
-        "event": _DISTILL_DISPATCH_INCOMPLETE_EVENT,
-        "reason": reason,
-    }
-
-
-def _evaluate_distill_dispatch_gate(prompt: str) -> tuple[str, dict[str, str] | None]:
-    """The G-DISTILL-PRE marker-enforcement gate (slice-02 AT-1 / AT-2).
-
-    A `D_DISTILL` acceptance-designer dispatch is validated for its marker set
-    BEFORE it runs. The gate produces a terminal verdict for D_DISTILL dispatches
-    (short-circuiting the classic template-validation service path, which would
-    otherwise block the dispatch for missing the DELIVER template sections a
-    DISTILL dispatch does not carry):
-
-      * ("allow", None)       -- a complete, coherent D_DISTILL marker set
-                                 (mode atdd_pure + phase D_DISTILL + DES-PROJECT-ID
-                                 + feature-end scope) -- the dispatch may run.
-      * ("block", payload)    -- missing DES-PROJECT-ID, or a slice-N scope on the
-                                 feature-end D_DISTILL phase (incoherent XOR) --
-                                 blocked `DistillDispatchMarkerSetIncomplete`.
-      * ("not_distill", None) -- not a D_DISTILL dispatch -- the retired path and
-                                 the U1 carpaccio intercept run unchanged.
-
-    Mirrors the U1 marker-block pattern: the decision table is the closed-world
-    (project-id present + feature-end scope) coherence check the marker parser
-    already encodes.
-    """
-    markers = DesMarkerParser().parse(prompt)
-    if markers.mode != "atdd_pure" or markers.atdd_pure_phase != _D_DISTILL_PHASE:
-        return ("not_distill", None)
-
-    if not markers.project_id:
-        return (
-            "block",
-            _distill_dispatch_block(
-                "DISTILL acceptance-designer dispatch is missing its "
-                "DES-PROJECT-ID marker -- a whole-feature DISTILL dispatch needs "
-                "the feature id"
-            ),
-        )
-
-    if not markers.is_feature_end:
-        return (
-            "block",
-            _distill_dispatch_block(
-                "DISTILL acceptance-designer dispatch is scoped to "
-                f"'{markers.slice_id}' instead of the whole feature -- a "
-                "D_DISTILL dispatch's only coherent scope is the feature-end "
-                "literal"
-            ),
-        )
-
-    return ("allow", None)
-
-
-def _peek_wave_entering(
-    hook_input: dict[str, object], activation: WaveActivationService
-) -> tuple[bool, dict[str, str] | None]:
-    """Peek the STRUCTURAL wave-entering discriminant (slice-07c, F3 NORMATIVO).
-
-    Reads the anchor-owned ``entry_pending`` flag from the wave-active floor --
-    never prompt wording (AD-66 closed). Returns ``(wave_entering, block)``:
-
-      * ``(False, None)`` -- not a dispatch tool-use, or no entry pending.
-      * ``(True, None)``  -- this dispatch IS the wave-entering one.
-      * ``(False, {decision:block,...})`` -- corrupt floor = mechanism-absent
-        -> block degrade-LOUD (§17 N=0), never coerced to a bool.
-    """
-    if hook_input.get("tool_name") not in _DISPATCH_TOOL_NAMES:
-        return (False, None)
-    peeked = activation.peek_entry(resolve_nwave_root())
-    if isinstance(peeked, Indeterminate):
-        return (
-            False,
-            {
-                "decision": "block",
-                "reason": f"WAVE_ENTRY_INDETERMINATE: {peeked.reason}",
-            },
-        )
-    return (peeked, None)
-
-
-def _arm_inferred_fallback(
-    hook_input: dict[str, object],
-    prompt: str,
-    activation: WaveActivationService,
-) -> tuple[bool, dict[str, str] | None]:
-    """The INFERRED fallback strand (slice-07d, F4 -- closes S2 cross-runtime).
-
-    A wave-DECLARING dispatch (`<!-- DES-WAVE: <wave> -->`) on an EMPTY floor
-    arms enforcement by itself -- the submission anchor never fired (observe-
-    only / missed-write runtime). The armed record is INFERRED (lower trust
-    class, I3-bounded) with ``entry_pending=False``: arm and gate-IN coincide
-    in this SAME pass (self-entry NORMATIVE), so the caller proceeds as
-    wave-entering immediately. Returns ``(wave_entering, block)``:
-
-      * ``(False, None)`` -- not a dispatch tool-use, no declaration, an
-        out-of-vocabulary declaration (treated absent -- no arm, no garbage
-        record, K2/S1), or a floor already armed (I3: INFERRED never clobbers
-        COMMAND -- the declaration can only ADD gating, never remove it).
-      * ``(True, None)``  -- the fallback armed; this dispatch IS wave-entering.
-      * ``(False, {decision:block,...})`` -- corrupt floor -> degrade-LOUD
-        block (S17), never armed over.
-    """
-    if hook_input.get("tool_name") not in _DISPATCH_TOOL_NAMES:
-        return (False, None)
-    declared_wave = DesMarkerParser().parse(prompt).declared_wave
-    if declared_wave is None:
-        return (False, None)
-    armed = activation.arm_inferred(resolve_nwave_root(), declared_wave)
-    if isinstance(armed, Indeterminate):
-        return (
-            False,
-            {
-                "decision": "block",
-                "reason": f"WAVE_ARM_INDETERMINATE: {armed.reason}",
-            },
-        )
-    return (armed, None)
-
-
-def _log_wave_entry_clear_failed(exc: Exception, hook_id: str) -> None:
-    """LOUD audit event for a failed clear-on-allow (slice-07c).
-
-    The dispatch outcome stays UNCHANGED: a flag that could not clear fails
-    toward MORE enforcement (the next dispatch re-runs the idempotent entry
-    preconditions) -- never a silent pass.
-    """
-    try:
-        hook_protocol._audit_writer_factory().log_event(
-            AuditEvent(
-                event_type="WAVE_ENTRY_CLEAR_FAILED",
-                timestamp=SystemTimeProvider().now_utc().isoformat(),
-                hook_id=hook_id,
-                data={"reason": f"clear_entry raised: {exc!s}"},
-            )
-        )
-    except Exception:
-        pass  # the LOUD event must never change the dispatch outcome
 
 
 def emit_commit_attribution_mutation(
@@ -822,20 +735,6 @@ def emit_commit_attribution_mutation(
 # Bound so step-composition / future wiring reference a single seam, not a free
 # constructor call. DELIVER injects the real service here.
 _commit_attribution_service = CommitAttributionService()
-
-
-def _resolve_deliverable_type() -> str | None:
-    """Resolve the project deliverable type for this dispatch (ADR-PST-001).
-
-    Reads ``DESConfig(cwd=Path.cwd()).deliverable_type`` over the dispatch's
-    working directory: a plugin/skill declaration on disk threads through
-    ``service_factory`` into ``PreToolUseService.validate`` and exempts the
-    step dispatch. An unresolved/absent/``application`` project returns ``None``
-    so enforcement stays ON (fail-safe by construction).
-    """
-    from des.adapters.driven.config.des_config import DESConfig
-
-    return DESConfig(cwd=Path.cwd()).deliverable_type
 
 
 def evaluate_bash_safety_guards(
@@ -930,14 +829,41 @@ def handle_pre_tool_use() -> int:
             # Diagnostic: confirm hook was invoked
             tool_input = hook_input.get("tool_input", {})
 
+            tool_name = hook_input.get("tool_name")
+            is_root_invocation = not hook_input.get("agent_id") and not hook_input.get(
+                "agent_type"
+            )
+            transcript_path = (
+                extract_transcript_path(hook_input) if is_root_invocation else None
+            )
+            root_mode_state = RootModeState.UNSELECTED
+            if transcript_path:
+                root_mode_state = resolve_root_mode_state(transcript_path)
+
+            # Close the state gap between selecting Auto M/L and engaging
+            # nw-auto. The selection marker is ephemeral transcript evidence;
+            # no controller, receipt, or file is introduced. Established
+            # deliver sessions retain their existing route.
+            if (
+                is_root_invocation
+                and tool_name in _ROOT_MODE_HANDOFF_TOOL_NAMES
+                and not des_task_signal.DES_DELIVER_SESSION_FILE.exists()
+            ):
+                handoff_reason = root_mode_handoff_block_reason(root_mode_state)
+                if handoff_reason is not None:
+                    print(json.dumps({"decision": "block", "reason": handoff_reason}))
+                    exit_code = 2
+                    return exit_code
+
             # K4 architecture gap: Auto-root lockdown. Runs BEFORE the
             # existing mode-select observation gate and commit-attribution
             # mutation below (both scoped to "Bash"), so a locked-down call
             # never reaches either -- an armed but disallowed call is a
             # terminal block, not a fall-through to the general path.
-            tool_name = hook_input.get("tool_name")
-            if tool_name in _AUTO_ROOT_TASK_TOOL_LOCKDOWN_NAMES and _is_auto_root(
-                hook_input
+            if (
+                tool_name in _AUTO_ROOT_TASK_TOOL_LOCKDOWN_NAMES
+                and root_mode_state is RootModeState.AUTO_ENGAGED
+                and is_root_invocation
             ):
                 if tool_name in _AUTO_ROOT_BLOCKED_TASK_TOOL_NAMES:
                     print(json.dumps(_auto_root_task_tool_block(tool_name)))
@@ -966,16 +892,7 @@ def handle_pre_tool_use() -> int:
                     return exit_code
 
             if hook_input.get("tool_name") == "SendMessage":
-                transcript_path = extract_transcript_path(hook_input)
-                auto_observed = False
-                try:
-                    auto_observed = bool(
-                        transcript_path
-                        and skill_observed_before_action(transcript_path, "nw-auto")
-                    )
-                except Exception:
-                    auto_observed = False
-                if auto_observed:
+                if root_mode_state is RootModeState.AUTO_ENGAGED:
                     print(
                         json.dumps(
                             {
@@ -992,16 +909,7 @@ def handle_pre_tool_use() -> int:
                     return exit_code
 
             if hook_input.get("tool_name") == "Agent":
-                transcript_path = extract_transcript_path(hook_input)
-                auto_observed = False
-                try:
-                    auto_observed = bool(
-                        transcript_path
-                        and skill_observed_before_action(transcript_path, "nw-auto")
-                    )
-                except Exception:
-                    auto_observed = False
-                if auto_observed:
+                if root_mode_state is RootModeState.AUTO_ENGAGED:
                     role = tool_input.get("subagent_type")
                     if not isinstance(role, str) or not role.startswith("nw-"):
                         print(
@@ -1083,20 +991,10 @@ def handle_pre_tool_use() -> int:
                 # re-run it here; that would be a duplicate second evaluation
                 # of the same command on the active path.
                 if (
-                    not hook_input.get("agent_id")
-                    and not hook_input.get("agent_type")
+                    is_root_invocation
                     and not des_task_signal.DES_DELIVER_SESSION_FILE.exists()
                 ):
-                    transcript_path = extract_transcript_path(hook_input)
-                    observed = False
-                    try:
-                        observed = bool(
-                            transcript_path
-                            and mode_select_observed_before_mutation(transcript_path)
-                        )
-                    except Exception:
-                        observed = False
-                    if not observed:
+                    if root_mode_state is RootModeState.UNSELECTED:
                         print(
                             json.dumps(
                                 {
@@ -1131,191 +1029,31 @@ def handle_pre_tool_use() -> int:
                 hook_id=hook_id,
             )
 
-            # Extract protocol fields
-            # Claude Code sends: {"tool_name": "Agent", "tool_input": {...}, ...}
+            # The direct-cutover spine has no marker, slice-order, readiness,
+            # review-ledger, or feature-end hook controller.  The explicit
+            # Auto envelopes above are the only dispatch-shape checks at this
+            # boundary; the validated DeliveryContract is consumed by the
+            # dispatched role itself.  Preserve the existing root context
+            # projection without re-deriving workflow state.
             prompt = tool_input.get("prompt", "")
-
-            classic_refusal = _classic_prompt_refusal(prompt)
-            if classic_refusal is not None:
-                print(json.dumps(classic_refusal))
-                exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
-                return exit_code
-
-            # G-DISTILL-PRE (slice-02) -- DISTILL dispatch marker enforcement.
-            # A D_DISTILL acceptance-designer dispatch is validated for its
-            # marker set BEFORE it runs and resolves to a terminal verdict here
-            # (a complete set is ALLOWED -- short-circuiting the classic
-            # template-validation path that would otherwise block a DISTILL
-            # dispatch for the DELIVER template sections it does not carry; an
-            # incomplete set BLOCKS `DistillDispatchMarkerSetIncomplete`).
-            distill_verdict, distill_block = _evaluate_distill_dispatch_gate(prompt)
-            if distill_verdict == "block":
-                assert distill_block is not None  # narrowed by the verdict
-                print(json.dumps(distill_block))
-                exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
-                return exit_code
-            if distill_verdict == "allow":
-                # G-DISTILL-PRE short-circuits ONLY the classic template-
-                # validation service call below (its declared intent, see the
-                # comment above) -- it must NOT also short-circuit the
-                # wave-entering peek/clear-on-allow lifecycle that every other
-                # ALLOW path honours (slice-07c F3 NORMATIVO). Skipping it here
-                # left `entry_pending` stuck True, leaking into whatever
-                # dispatch ran next.
-                distill_activation = service_factory.create_wave_activation_service()
-                distill_wave_entering, distill_entry_block = _peek_wave_entering(
-                    hook_input, distill_activation
-                )
-                if distill_entry_block is not None:
-                    print(json.dumps(distill_entry_block))
-                    exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
-                    return exit_code
-                if distill_wave_entering:
-                    try:
-                        distill_activation.clear_entry(resolve_nwave_root())
-                    except Exception as clear_exc:
-                        _log_wave_entry_clear_failed(clear_exc, hook_id)
-                exit_code = 0
-                return exit_code
-
-            # slice-07c (F3 NORMATIVO): this adapter is the composition seat of
-            # the wave-entry lifecycle:
-            #   peek_entry -> validate(wave_entering=...) -> clear-on-allow.
-            # The service itself stays writer-free (§22.0: the veto path never
-            # writes); a BLOCKED entry stays pending so the retry re-runs the
-            # entry preconditions.
-            activation = service_factory.create_wave_activation_service()
-            wave_entering, entry_block = _peek_wave_entering(hook_input, activation)
-            if entry_block is not None:
-                print(json.dumps(entry_block))
-                exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
-                return exit_code
-
-            # slice-07d (F4 NORMATIVO): INFERRED fallback strand. No pending
-            # entry (empty floor on a runtime whose submission anchor never
-            # fired) + the dispatch DECLARES its wave -> arm INFERRED and
-            # proceed as wave-entering in this SAME pass (self-entry). The
-            # armed record is written BEFORE service.validate runs, so the
-            # service's WaveActiveReader sees it in this same invocation
-            # (read-after-write ordering). I3 + vocabulary validation live in
-            # arm_inferred -- an armed floor or a garbage declaration leaves
-            # everything untouched.
-            if not wave_entering:
-                wave_entering, fallback_block = _arm_inferred_fallback(
-                    hook_input, prompt, activation
-                )
-                if fallback_block is not None:
-                    print(json.dumps(fallback_block))
-                    exit_code = _ATDD_PURE_BLOCK_EXIT_CODE
-                    return exit_code
-            # Resolve the project deliverable type (ADR-PST-001, feature
-            # plugin-skill-deliverable-type) and thread it into the service so
-            # the enforcement policy can exempt plugin/skill projects. This is
-            # the handler SEAM the driving-adapter acceptance scenario drives.
-            deliverable_type = _resolve_deliverable_type()
-
-            # Delegate to application service
-            service = service_factory.create_pre_tool_use_service(
-                deliverable_type=deliverable_type
+            root_context = build_root_mode_select_context(
+                prompt=prompt,
+                subagent_type=tool_input.get("subagent_type"),
             )
-            decision = service.validate(
-                PreToolUseInput(
-                    prompt=prompt,
-                    subagent_type=tool_input.get("subagent_type"),
-                    wave_entering=wave_entering,
-                ),
-                hook_id=hook_id,
-            )
-
-            # Translate HookDecision to protocol response
-            if decision.action == "allow":
-                if wave_entering:
-                    # Clear-on-allow (NORMATIVE): the entry check ran and the
-                    # gate allowed -- the flag clears, the wave stays armed.
-                    try:
-                        activation.clear_entry(resolve_nwave_root())
-                    except Exception as clear_exc:
-                        _log_wave_entry_clear_failed(clear_exc, hook_id)
-                # Create DES task signal if this is a DES-validated task
-                if "DES-VALIDATION" in prompt:
-                    # Extract step-id and project-id from DES markers
-                    step_id_marker = ""
-                    project_id_marker = ""
-                    parser = DesMarkerParser()
-                    markers = parser.parse(prompt)
-                    if markers.step_id:
-                        step_id_marker = markers.step_id
-                    if markers.project_id:
-                        project_id_marker = markers.project_id
-                    task_correlation_id = des_task_signal.create_signal(
-                        step_id=step_id_marker, project_id=project_id_marker
-                    )
-                # GDP-6 (degrade-LOUD, never silent-wrong): an allow decision
-                # normally prints nothing (silence IS the signal, exit 0). A
-                # decision carrying a ``warning`` chose NOT to veto something it
-                # noticed (e.g. an expired-INFERRED wave floor) -- print it via
-                # the SAME allow-with-message protocol shape
-                # ``emit_commit_attribution_mutation`` already uses above, so
-                # the operator sees WHY the dispatch went through instead of
-                # mistaking silence for "nothing happened".
-                if decision.warning:
-                    print(
-                        json.dumps(
-                            {
-                                "hookSpecificOutput": {
-                                    "hookEventName": "PreToolUse",
-                                    "permissionDecision": "allow",
-                                    "permissionDecisionReason": decision.warning,
-                                }
+            if root_context:
+                print(
+                    json.dumps(
+                        {
+                            "hookSpecificOutput": {
+                                "hookEventName": "PreToolUse",
+                                "permissionDecision": "allow",
+                                "additionalContext": root_context,
                             }
-                        )
+                        }
                     )
-                else:
-                    # K3-A root activation: the root/orchestrator never gets a
-                    # SubagentStart event (only spawned sub-agents do), so this
-                    # is the one already-registered, already-executed hook that
-                    # fires in root's own process at dispatch time. Best-effort,
-                    # never changes the allow decision above.
-                    root_context = build_root_mode_select_context(
-                        prompt=prompt,
-                        subagent_type=tool_input.get("subagent_type"),
-                    )
-                    if root_context:
-                        print(
-                            json.dumps(
-                                {
-                                    "hookSpecificOutput": {
-                                        "hookEventName": "PreToolUse",
-                                        "permissionDecision": "allow",
-                                        # D2: permissionDecisionReason explains
-                                        # a permission decision; the installed
-                                        # runtime's own hook doc (Claude Code
-                                        # 2.1.224) documents only
-                                        # additionalContext as "Text injected
-                                        # into model context" -- that is the
-                                        # channel the reminder must use to be
-                                        # seen at all.
-                                        "additionalContext": root_context,
-                                    }
-                                }
-                            )
-                        )
-                exit_code = 0
-                return exit_code
-            else:
-                recovery = decision.recovery_suggestions or []
-                reason_with_recovery = decision.reason or "Validation failed"
-                if recovery:
-                    reason_with_recovery += "\n\nRecovery:\n" + "\n".join(
-                        f"  {i + 1}. {s}" for i, s in enumerate(recovery)
-                    )
-                response = {
-                    "decision": "block",
-                    "reason": reason_with_recovery,
-                }
-                print(json.dumps(response))
-                exit_code = decision.exit_code
-                return exit_code
+                )
+            exit_code = 0
+            return exit_code
 
     except Exception as e:
         # Fail-closed: any error blocks execution

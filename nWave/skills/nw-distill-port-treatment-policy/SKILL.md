@@ -46,7 +46,7 @@ Port unclassifiable by agent → ask the user with a soft prompt. Do NOT improvi
 
 The Driving default INVERTS the old "CLI = subprocess runner" assumption. A new acceptance test drives the entry point **in-process** by default: it calls the real `cli main(argv)` (or an application-service method) directly, threading a fake `OutputPort` that captures the terminal output a `Then` asserts on. No `subprocess.run([sys.executable, ...])` fork — the same Mandate-13 driving-port semantics, 10–100× faster. (Language-agnostic: the rule is "call the shipped entry in-process with a captured output sink"; the `cli main(argv)` form is the Python illustration.)
 
-**subprocess-e2e is reserved for `@walking_skeleton` — ONE per FEATURE.** Only the feature's single walking-skeleton scenario legitimately proves the installed CLI/artifact is wired end-to-end (real fork, real terminal). EVERY other AT defaults to in-process/in-memory. A non-`@walking_skeleton` AT that forks an interpreter is a speed regression flagged by the subprocess-overuse gate. Wiring coverage beyond the single WS is carried by Vera's EXAMINE (every charter observable exercised through the REAL surface) + the feature-end cycle (env-e2e + full-suite + deep-review) — never by multiplying E2E scenarios.
+**subprocess-e2e is reserved for `@walking_skeleton` — ONE per DeliveryContract.** That scenario proves the installed artifact is wired end-to-end. Every other AT defaults to in-process/in-memory. Wiring coverage beyond it comes from the independent Examiner exercising charter observables through the real surface and the final whole-delivery verification; never multiply E2E scenarios to imitate confidence.
 
 ### The "CLI = e2e by construction" caveat is DISSOLVED
 
@@ -57,7 +57,7 @@ The old caveat held that a CLI command can only be tested end-to-end (subprocess
 | **output-content / behaviour** | the command computes + emits the right output | **in-process** via the `OutputPort` (captured, asserted on the fake's buffer) |
 | **terminal-wiring** | the installed binary actually reaches a real terminal | **exactly one `@walking_skeleton`** per FEATURE (subprocess-e2e) |
 
-The content facet (the bulk of the ATs) drives in-process; the wiring facet is the single WS. A FEATURE therefore needs ONE subprocess AT (its WS), not one per scenario, slice, or command — a feature spanning multiple commands routes its single WS through the primary user journey, and the remaining commands' wiring is covered by Vera's real-surface EXAMINE + feature-end env-e2e.
+The content facet (the bulk of the ATs) drives in-process; the wiring facet is the single WS. A delivery therefore needs at most ONE subprocess AT, not one per scenario, slice or command. Route it through the primary user journey; the Examiner and final whole-delivery verification cover the remaining observable wiring.
 
 ### Config-switch — in-memory local default / testcontainers prod-like
 
@@ -72,7 +72,7 @@ This keeps the local loop fast (in-memory) while guaranteeing the prod-like path
 
 **THE RULE: the real adapter's provisioning + teardown (container start/stop, real subprocess/repo/filesystem setup) happens ONCE per test session (or module, if the project's runner cannot share across modules) — never once per test, never once per test class.** Test independence is a SEPARATE, cheap concern layered on top of that one shared instance: a unique namespace/schema/branch/directory per test, or a transaction-and-rollback boundary, or an explicit reset-between-tests step — never re-provisioning the whole real resource per test.
 
-Motivating evidence (this codebase, measured 2026-07-19/20): subprocess-spawning `@real-io` tests that provisioned their own real git repo/subprocess PER TEST accounted for **519s = 35% of total CPU in 19% of tests** in the whole-tree suite, and a separate feature-end gate leaked orphaned real-postgres clusters because each test's teardown ran independently instead of one shared teardown at session end. Both are the SAME root cause — per-test provisioning of a real resource — with two different symptoms (slow, and leaked).
+Motivating evidence (this codebase, measured 2026-07-19/20): subprocess-spawning `@real-io` tests that provisioned their own real repo or process per test accounted for **519s = 35% of total CPU in 19% of tests**. Another delivery check leaked orphaned real-postgres clusters because teardown was repeated per test. Both failures share one cause: per-test provisioning of a real resource.
 
 Applying the rule:
 - **Author the fixture at session/module scope**, not function scope: the real container/repo/process comes up once, is handed to every test that needs it, and comes down once at the end (or is explicitly reaped on every exit path, including a killed run — never assume the happy-path teardown always runs).
@@ -131,7 +131,7 @@ Edited in place. No per-row versioning — git history = audit trail.
 
 Architecture of Reference: "what kind of treatment for this port class?" (real vs fake). Project Policy: "which concrete implementation for that treatment?" (Testcontainers vs dedicated env, which fake class).
 
-Policy CANNOT override port-class defaults: a driven-internal port cannot become fake via policy (requires an explicit waiver in `distill/wave-decisions.md`). Policy records **mechanism** per default treatment only.
+Policy CANNOT override port-class defaults: a driven-internal port cannot become fake via policy. Policy records **mechanism** per default treatment only.
 
 ### Expansion `policy-bootstrap-template`
 
@@ -171,7 +171,7 @@ Default: **every feature is applicable** — it has a real entry point and a rea
 | 2 | Internal refactor, no new public interface | behavior-preserving restructure; existing ATs cover the surface | no net-new public symbol reachable from an entry point |
 | 3 | Config-or-docs-only | change is markdown/yaml/config; no executable behavior path | delta touches only `*.md` / `*.yaml` / config, zero `src/` behavior |
 
-Declaring not-applicable requires naming the case (1/2/3) in `wave-decisions.md`; a delta that contradicts the declaration (e.g. a new subcommand under case 1) is a BLOCKER. Reference: `docs/research/walking-skeleton-atdd-best-practices-2026-06-12.md` (findings A1–A6).
+Declaring not-applicable requires naming the case (1/2/3); a delta that contradicts the declaration (e.g. a new subcommand under case 1) is a BLOCKER. Reference: `docs/research/walking-skeleton-atdd-best-practices-2026-06-12.md` (findings A1–A6).
 
 Survives from the old section:
 
@@ -181,5 +181,3 @@ Survives from the old section:
   - `@in-memory` — scenario uses in-memory doubles (Tier B state-machine PBT, or in-memory acceptance per Mandate 10)
   - `@requires_external` — scenario needs an external system not in the project policy; skip if absent
   - Walking-skeleton scenarios MUST carry `@walking_skeleton @driving_port` and use the production composition root.
-
-**Migration note**: existing features naming Strategy A/B/C/D in `wave-decisions.md` still validate — historical record. NEW features express the same intent via Architecture of Reference defaults + per-port project-policy entry.

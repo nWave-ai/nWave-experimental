@@ -62,14 +62,11 @@ the whole stance exists to oppose; default-to-refuted (Pillar 2) and the exhibit
    different ones. (Empirical: an architecture lens caught a named-catch-all a test-fragility
    lens missed, and vice-versa — homogeneous refuters miss one.)
 
-   **Where this pillar fully lands — per-slice vs feature-end (do not over-claim).** A per-slice
-   `C_REVIEWER_AUDIT` is a SINGLE reviewer: it realizes Pillars 1 + 3 in FULL (assume-wrong +
-   default-to-refuted + exhibited counterexample) and can only APPROXIMATE Pillar 2 by running its
-   own passes under different named lenses — a weaker substitute, since one agent shares one blind
-   spot. GENUINE lens-diversity is a property of the per-feature `F_FINAL_REVIEW`, where ≥2 DISTINCT
-   reviewers each carry a distinct lens. Do NOT collapse lens-diversity into a single per-slice
-   prompt and call it covered — the empirical catch (the named-catch-all a homogeneous reviewer
-   missed) came from N DIFFERENT reviewers, not one reviewer's N passes. On a real per-slice review: 9 refutations all survived in ONE reviewer = Pillars 1+3, not 2.)
+   **Where this pillar fully lands (do not over-claim).** One reviewer can realize assume-wrong,
+   default-to-refuted and an exhibited counterexample, but only approximates perspective diversity
+   by changing named lenses. Genuine diversity requires distinct observers. Use it proportionately
+   at the whole-delivery join; do not multiply per-slice reviews or call one reviewer's passes an
+   independent swarm.
 
 ## Pillar 3 — evidence discipline (for REFUTE and for CLEAR)
 
@@ -98,7 +95,7 @@ mock-dominated / zero-assertion family, apply the **Testing-Theater Detection** 
 | **Oracle silent today** (the "true-positive oracle" does not actually fire) | Run the positive case — does the detector/AT actually FIRE? A confirmation review accepts "the AT asserts it fires" without verifying it fires. |
 | **Guard that does not guard** (the enforcement mechanism is itself bypassable) | Attack the guard: a fragile wildcard, a named catch-all `other =>`, a too-narrow regex — the guard-test passes but can false-green. |
 | **Byte-identity claimed-not-proven** ("behavior-preserving" without an exact-set oracle) | Demand the exact-set oracle (the full tuple), not a count-only check that misses a reordering/swap. |
-| **Scope-creep / silent-narrowing** (the slice ships more or less than declared) | Diff the delivered surface against the declared slice plan — anything extra or missing is unattested. |
+| **Scope-creep / silent-narrowing** (the delivery ships more or less than declared) | Diff the delivered surface against the validated contract targets and obligations — anything extra or missing is unattested. |
 | **Cross-language projection leakage** *(POLYGLOT / language-agnostic projects only)* | A language-specific sink/predicate fires on another language's file via callee name-collision. Run the projection against a SIBLING-language fixture carrying a colliding symbol (e.g. Python `exec("c"+x)` vs a TS/JS `exec` detector) — does it stay silent? If it fires on the wrong language, the projection leaks. Invisible to a single-language hermetic AT — the genericity-dual of catalogued-not-wired. |
 
 The first five modes are UNIVERSAL (any review, any stack). **Cross-language projection leakage**

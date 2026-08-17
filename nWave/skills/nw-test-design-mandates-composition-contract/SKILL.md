@@ -129,10 +129,10 @@ A new acceptance test is INDUCED onto exactly one of six composition levels. The
 
 - **Default = L2.** Absent a specific contract reason to descend, a new AT is L2 in-process acceptance — it is the speed default. Reaching for L1 subprocess on a non-WS scenario is the regression the subprocess-overuse gate flags.
 - **L1 is singular.** One walking-skeleton per command, never per scenario (the terminal-wiring facet of the CLI split; see `nw-distill-port-treatment-policy`).
-- **L3/L4 are mechanized coverage obligations, not agent-discipline.** A driven adapter without an L3 `@real-io` AT, or a port without an L4 contract test, BLOCKS at the readiness gate (cross-ref `nw-distill-coverage-obligations`).
-- **Sad-paths at every level.** Each level carries its own error-path / ZOMBIES enumeration (≥40% error/edge per `nw-distill-coverage-obligations`); a level proving only the happy path is incomplete.
+- **L3/L4 are induced by declared contract obligations, not quotas.** Add a real-I/O or port-contract observation only when the architecture exposes that boundary and the observation is not already preserved by another honest test.
+- **Failure paths are obligation-driven.** Every declared failure or recovery law needs a distinguishable observation; no fixed error-test percentage is evidence of completeness.
 
-The reference exemplar that proves the L2 in-process active-RED pattern is executable: `tests/des/acceptance/at_in_process_port_default/` driving `des.cli.run_contract_gate.main` through the `OutputPort` (`src/des/ports/driven_ports/output_port.py`). The active-RED authoring pattern (P1-P4) lives in `nw-distill-red-scaffolding`.
+The active-RED authoring pattern (P1-P4) lives in `nw-distill-red-scaffolding`. Drive the project's stable public entry through its real output boundary; do not copy an nWave-internal command as a universal exemplar.
 
 ## Mandate 14 — Contract Shape Classification
 

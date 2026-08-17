@@ -1,22 +1,4 @@
-"""Focused D/I/E proof for the role-skill wiring lane (2026-08-08).
-
-Bounded to the two confirmed defects from
-docs/analysis/2026-08-08-installed-role-skill-wiring-audit.md:
-
-1. nw-ddd-architect-reviewer loads the algebraic-design/certainty-by-
-   construction pair as lazy ON-TRIGGER skills via a native `Invoke
-   Skill(...)` call, not in frontmatter (consistent with peer
-   architect/reviewer roles). The canonical Claude source deliberately uses
-   the native invocation form; the Codex translation is covered elsewhere.
-2. The 8 language-specific nw-pbt-* skills remain distributed by their
-   skill-local ownership, while nw-acceptance-designer selects exactly one
-   from its body at authoring time instead of preloading all eight.
-
-D = declared ownership, I = installed/resolvable, E = emitted (a
-Skill-Loading-Strategy table row that actually instructs a native `Invoke
-Skill(...)` call). R (mechanically read) is explicitly out of scope for this
-lane -- see the joint installed provider probe.
-"""
+"""High-value role wiring laws for the thin delivery model."""
 
 from __future__ import annotations
 
@@ -30,15 +12,12 @@ from scripts.shared.agent_catalog import (
 from scripts.shared.frontmatter import parse_frontmatter_file
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-NWAVE_DIR = PROJECT_ROOT / "nWave"
-AGENTS_DIR = NWAVE_DIR / "agents"
-SKILLS_DIR = NWAVE_DIR / "skills"
-DELIVERY_MODEL_ADR = (
-    PROJECT_ROOT / "docs/product/architecture/ADR-SSOT-002-canonical-delivery-model.md"
-)
+ROOT = Path(__file__).resolve().parents[3]
+NWAVE = ROOT / "nWave"
+AGENTS = NWAVE / "agents"
+SKILLS = NWAVE / "skills"
 
-PBT_LANGUAGE_SKILLS = [
+PBT_SKILLS = (
     "nw-pbt-python",
     "nw-pbt-go",
     "nw-pbt-rust",
@@ -47,402 +26,147 @@ PBT_LANGUAGE_SKILLS = [
     "nw-pbt-dotnet",
     "nw-pbt-typescript",
     "nw-pbt-erlang-elixir",
-]
-
-CRAFTER_AGENT_FILES = [
-    "nw-software-crafter.md",
-    "nw-functional-software-crafter.md",
-]
-
-BASELINE_PAIR = ["nw-algebraic-design-protocol", "nw-certainty-by-construction"]
-
-PBT_LANGUAGE_PROJECTION = {
-    "nw-pbt-python": ("pyproject.toml", "hypothesis"),
-    "nw-pbt-go": ("go.mod", "rapid"),
-    "nw-pbt-rust": ("cargo.toml", "proptest"),
-    "nw-pbt-haskell": ("*.cabal", "quickcheck"),
-    "nw-pbt-jvm": ("build.sbt", "jqwik"),
-    "nw-pbt-dotnet": ("*.csproj", "fscheck"),
-    "nw-pbt-typescript": ("package.json", "fast-check"),
-    "nw-pbt-erlang-elixir": ("mix.exs", "proper"),
-}
+)
 
 
-def _frontmatter(agent_filename: str) -> dict:
-    metadata, _ = parse_frontmatter_file(AGENTS_DIR / agent_filename)
-    assert metadata is not None, f"{agent_filename} has no parseable frontmatter"
+def _body(agent: str) -> str:
+    return (AGENTS / agent).read_text(encoding="utf-8")
+
+
+def _frontmatter(agent: str) -> dict:
+    metadata, _ = parse_frontmatter_file(AGENTS / agent)
+    assert metadata is not None
     return metadata
 
 
-class TestDddArchitectReviewerLoadsBaselineOnTrigger:
-    """Fix A: nw-ddd-architect-reviewer loads baseline pair as lazy ON-TRIGGER skills."""
+def test_acceptance_designer_compiles_the_architect_selected_language_adapter():
+    metadata = _frontmatter("nw-acceptance-designer.md")
+    assert not set(PBT_SKILLS) & set(metadata.get("skills") or ())
 
-    def test_frontmatter_absent_baseline_pair(self):
-        skills = _frontmatter("nw-ddd-architect-reviewer.md").get("skills") or []
-        preloaded = [s for s in BASELINE_PAIR if s in skills]
-        assert preloaded == [], (
-            f"nw-ddd-architect-reviewer.md frontmatter preloaded {preloaded}; "
-            f"baseline pair must be lazy ON-TRIGGER, not host-preloaded"
-        )
-
-    def test_skill_loading_table_emits_a_native_invoke_row_for_each(self):
-        body = (AGENTS_DIR / "nw-ddd-architect-reviewer.md").read_text(encoding="utf-8")
-        missing = [
-            s for s in BASELINE_PAIR if f"Invoke Skill({s}) ON-TRIGGER" not in body
-        ]
-        assert missing == [], (
-            f"nw-ddd-architect-reviewer.md body has no imperative "
-            f'"Invoke Skill({{skill}}) ON-TRIGGER" row for {missing}'
-        )
-
-
-class TestAcceptanceDesignerLoadsLanguagePbtOnDemand:
-    """Language PBT deep dives are distributed but never frontmatter-preloaded."""
-
-    def test_skill_loading_table_emits_a_language_conditional_read_row(self):
-        skills = _frontmatter("nw-acceptance-designer.md").get("skills") or []
-        preloaded = [s for s in PBT_LANGUAGE_SKILLS if s in skills]
-        assert preloaded == [], f"language PBT deep dives were preloaded: {preloaded}"
-
-        public_agents = load_public_agents(NWAVE_DIR)
-        ownership = build_ownership_map(AGENTS_DIR)
-        retained = [
-            skill
-            for skill in PBT_LANGUAGE_SKILLS
-            if is_public_skill(skill, public_agents, ownership_map=ownership)
-        ]
-        assert retained == PBT_LANGUAGE_SKILLS, (
-            f"public catalog API dropped on-demand PBT deep dives: retained={retained}"
-        )
-
-        body = (AGENTS_DIR / "nw-acceptance-designer.md").read_text(encoding="utf-8")
-        assert "nw-pbt-{" in body or all(s in body for s in PBT_LANGUAGE_SKILLS), (
-            "nw-acceptance-designer.md body has no Skill-Loading-Strategy row "
-            "that Reads a nw-pbt-{language} skill -- catalogued without "
-            "emission reproduces the exact 'catalogued != wired' trap"
-        )
-        assert "Read exactly ONE deep dive per feature" in body
-        assert "never all eight" in body
-
-    def test_distill_projects_every_adapter_without_python_fallback(self):
-        distill = " ".join(
-            (SKILLS_DIR / "nw-distill" / "SKILL.md")
-            .read_text(encoding="utf-8")
-            .lower()
-            .split()
-        )
-        matrix = " ".join(
-            (SKILLS_DIR / "nw-test-design-mandates-layered-mechanics" / "SKILL.md")
-            .read_text(encoding="utf-8")
-            .lower()
-            .split()
-        )
-        assert set(PBT_LANGUAGE_PROJECTION) == set(PBT_LANGUAGE_SKILLS)
-        for adapter, (manifest, library) in PBT_LANGUAGE_PROJECTION.items():
-            assert manifest in distill, f"DISTILL cannot detect {adapter}"
-            assert adapter in matrix, f"Canonical matrix omits {adapter}"
-            assert library in matrix, f"Canonical matrix omits {adapter} binding"
-        assert "neither permits python fallback" in distill
-        assert "evidence_gap` before authoring" in distill
-        assert "never selects python as a substitute" in matrix
-
-        porting = " ".join(
-            (SKILLS_DIR / "nw-tdd-cross-language" / "SKILL.md")
-            .read_text(encoding="utf-8")
-            .lower()
-            .split()
-        )
-        assert "not the language/pbt authority" in porting
-        assert "nw-test-design-mandates-layered-mechanics" in porting
-        assert "exact eight-adapter matrix" in porting
-        assert "evidence_gap` before pbt authoring" in porting
-        assert "## per-language framework + pbt library matrix" not in porting
-
-    def test_pbt_skill_frontmatter_keeps_non_runtime_base_owner_hint(self):
-        """CONTRACT_SHAPE: bounded-change. Distribution ownership stays on each skill."""
-        changed = []
-        for skill in PBT_LANGUAGE_SKILLS:
-            metadata, _ = parse_frontmatter_file(SKILLS_DIR / skill / "SKILL.md")
-            assert metadata is not None, f"{skill}/SKILL.md has no frontmatter"
-            if metadata.get("agent") != "nw-functional-software-crafter":
-                changed.append((skill, metadata.get("agent")))
-        assert changed == [], f"skill-local non-runtime owner hints changed: {changed}"
-
-
-class TestThinAutoRoleRoutes:
-    """Auto ownership: independent PO/ATD derivations and examiner isolation."""
-
-    def test_auto_dispatches_siblings_then_joins_without_root_repair(self):
-        body = (SKILLS_DIR / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
-        route = " ".join(
-            body[
-                body.index("## M/L route — shared reuse floor") : body.index(
-                    "## Examiner input isolation"
-                )
-            ].split()
-        )
-        for token in (
-            "delivery-route",
-            "applicability.examine",
-            "Skip",
-            "Reuse",
-            "Author",
-            "Block",
-            "des charter-scaffold --seed-mode direct-value",
-            "run_in_background=false",
-            "nw-product-owner",
-            "nw-acceptance-designer",
-            "ATD always; PO only when dispatched",
-            "Join",
-            "nw-user-examiner` (only if `examine=true`)",
-        ):
-            assert token in route
-        assert route.index("des charter-scaffold") < route.index("**Dispatch sequence")
-        assert route.index("nw-acceptance-designer") < route.index("**Join**:")
-
-        boundaries = " ".join(body[body.index("## Route boundaries") :].split())
-        for token in ("Task", "SendMessage", "ScheduleWakeup"):
-            assert token in boundaries
-        dispatch = route[route.index("**Dispatch sequence") :]
-        for token in ("foreground", "run_in_background=false", "root waits inline"):
-            assert token in dispatch
-
-    def test_product_owner_owns_value_side_charter_and_embedded_recipe(self):
-        body = (AGENTS_DIR / "nw-product-owner.md").read_text(encoding="utf-8")
-        route = " ".join(
-            body[
-                body.index("## Thin Auto M/L Route") : body.index("## Core Principles")
-            ].split()
-        )
-        for token in (
-            "same immutable value seed",
-            "VALUE-SIDE INPUTS ONLY",
-            "never read the design SSOT",
-            "`DeliveryContract`/design contract",
-            "acceptance tests",
-            "des charter-scaffold",
-            "Preconditions/start recipe",
-            "oracle",
-            "stop before the Human workflow",
-            "repo-relative charter path root already created",
-            "never run `des charter-scaffold` itself",
-            "never use Task/Agent to delegate, locate, or retry a CLI gate",
-            "this route has no Bash",
-        ):
-            assert token in route
-
-    def test_product_owner_keeps_task_tool_and_human_workflow_peer_review(self):
-        """K4 fix scope guard: the Thin Auto route bans PO's Task/Agent use
-        for CLI delegation, but Task itself (and the Human workflow's own
-        use of it, e.g. peer review) stays untouched globally."""
-        metadata = _frontmatter("nw-product-owner.md")
-        assert "Task" in (metadata.get("tools") or [])
-
-        body = (AGENTS_DIR / "nw-product-owner.md").read_text(encoding="utf-8")
-        assert "Run peer review via Task, max 2 iterations" in body
-
-    def test_acceptance_designer_owns_contract_and_tests_not_charter(self):
-        body = (AGENTS_DIR / "nw-acceptance-designer.md").read_text(encoding="utf-8")
-        route = " ".join(
-            body[
-                body.index("## Route contract") : body.index("## Language Convention")
-            ].split()
-        )
-        for token in (
-            "same immutable value seed",
-            "design SSOT",
-            "acceptance tests",
-            "schema-valid `DeliveryContract`",
-            "never author or read the expectation charter",
-            "user-surface start recipe",
-        ):
-            assert token in route
-        assert "expectation charter, and the user-surface start recipe" not in route
-
-    def test_examiner_receives_one_charter_artifact_and_rejects_design_inputs(self):
-        body = (AGENTS_DIR / "nw-user-examiner.md").read_text(encoding="utf-8")
-        route = " ".join(
-            body[
-                body.index("## Route contract") : body.index("## Hard Boundary")
-            ].split()
-        )
-        for token in (
-            "exactly ONE artifact",
-            "expectation charter",
-            "Preconditions contain the start recipe",
-            "code facts",
-            "acceptance tests",
-            "test command",
-            "source paths",
-            "design contract",
-            "STOP before Human-only Step 6",
-        ):
-            assert token in route
-
-
-class TestUserExaminerAutoRouteIsBoundedNotExhaustive:
-    """Auto EXAMINE samples equivalence classes instead of exhaustively re-probing."""
-
-    @staticmethod
-    def _route_text():
-        body = (AGENTS_DIR / "nw-user-examiner.md").read_text(encoding="utf-8")
-        return " ".join(
-            body[
-                body.index("## Route contract") : body.index("## Hard Boundary")
-            ].split()
-        )
-
-    def test_auto_route_bounds_positive_journeys_to_one_representative_each(self):
-        """CONTRACT_SHAPE: bounded-change. One probe per distinct positive journey, not per phrasing."""
-        route = self._route_text()
-        assert "one" in route and "representative" in route
-        assert "distinct positive user journey" in route
-
-    def test_auto_route_bounds_negative_rows_to_exactly_one_probe(self):
-        """CONTRACT_SHAPE: bounded-change. No repeated attempts at the same must-NOT-happen row."""
-        route = self._route_text()
-        assert "probe per explicit negative oracle row" in route
-        assert "never more than one attempt" in route
-
-    def test_auto_route_bounds_determinism_check_to_one_repeat_call(self):
-        """CONTRACT_SHAPE: bounded-change. Idempotency/determinism gets one repeat, not a sweep."""
-        route = self._route_text()
-        assert "repeated call" in route
-        assert "determinism" in route or "idempotency" in route
-
-    def test_auto_route_stops_at_first_fail(self):
-        """CONTRACT_SHAPE: bounded-change. No curiosity probing after a charter row is violated."""
-        route = self._route_text()
-        assert "STOP at the first FAIL" in route
-        assert "no curiosity probes" in route
-
-    def test_auto_route_declares_a_ten_call_target_with_named_excess(self):
-        """CONTRACT_SHAPE: bounded-change. Live overrun was 26 calls; the bound must be explicit and auditable."""
-        route = self._route_text()
-        assert "10 CLI/API tool calls" in route
-        assert "state in your report exactly which" in route
-
-    def test_auto_route_bound_does_not_leak_into_human_route(self):
-        """CONTRACT_SHAPE: bounded-change. Human route keeps richer exploration, unbounded."""
-        body = (AGENTS_DIR / "nw-user-examiner.md").read_text(encoding="utf-8")
-        assert "Auto route only" in body
-        assert "Human route below keeps its richer" in body
-
-
-class TestAutoDispatchesAreSinglePassRolesAreReusable:
-    """Each dispatch is terminal, while roles remain reusable across value units.
-
-    CONTRACT_SHAPE: bounded-change
-    """
-
-    def test_route_boundaries_separate_dispatch_identity_from_role_identity(self):
-        body = (SKILLS_DIR / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
-        route_boundaries = " ".join(
-            body[body.index("## Route boundaries") :].lower().split()
-        )
-        for token in (
-            "single-pass dispatches, reusable roles",
-            "each individual agent result is terminal",
-            "sendmessage",
-            "resume",
-            "correction",
-            "role identity is not run or feature identity",
-            "distinct deliverycontract/value input",
-        ):
-            assert token in route_boundaries
-
-    def test_red_route_closes_user_value_not_an_internal_foundation(self):
-        auto = (SKILLS_DIR / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
-        atd = (AGENTS_DIR / "nw-acceptance-designer.md").read_text(encoding="utf-8")
-        for body in (auto, atd):
-            normalized = " ".join(body.lower().split())
-            for token in (
-                "atomic user-observable clause",
-                "multiple ports",
-                "internal proxy",
-                "foundation for a later slice",
-                "green_to_green",
-                "evidence_gap",
-            ):
-                assert token in normalized
-        assert "report the feature complete only when the original value-seed" in (
-            " ".join(auto.lower().split())
-        )
-
-        adr = " ".join(DELIVERY_MODEL_ADR.read_text(encoding="utf-8").lower().split())
-        for token in (
-            "every user-observable clause",
-            "multiple ports",
-            "never substitutes for an outbound notification",
-            "evidence_gap` before authoring",
-        ):
-            assert token in adr
-
-
-class TestDddReviewerUsesCodeAnalysisPort:
-    """Structural review evidence goes through the code-analysis port."""
-
-    def test_reviewer_has_no_tsunami_tool_dependency_or_raw_search_recipe(self):
-        """CONTRACT_SHAPE: bounded-change. DDD evidence uses one executable port argv."""
-        body = (AGENTS_DIR / "nw-ddd-architect-reviewer.md").read_text(encoding="utf-8")
-        frontmatter = body.split("---\n", 2)[1]
-        assert "mcp__tsunami" not in frontmatter
-        assert "nw-code-analysis-port" in body
-        assert "des code-fact query.callers-of AtCompletionLedger --root tests" in body
-        assert 'does not invent an "18 sites" claim' in body
-        for raw_recipe in ("grep -rn", "grep -rln", "xargs grep", "graphify"):
-            assert raw_recipe not in body.lower()
-
-
-class TestCraftersDoNotAuthorLanguagePbt:
-    """No crafter may declare or emit a language-specific PBT authoring skill.
-
-    PBT ownership belongs exclusively to acceptance-designer; crafters
-    consume property obligations but do not author tests.
-    """
-
-    def test_no_crafter_declares_any_pbt_language_skill(self):
-        for agent_file in CRAFTER_AGENT_FILES:
-            skills = _frontmatter(agent_file).get("skills") or []
-            leaked = [s for s in PBT_LANGUAGE_SKILLS if s in skills]
-            assert leaked == [], f"{agent_file} frontmatter declares {leaked}"
-
-    def test_no_crafter_body_mentions_a_pbt_language_skill(self):
-        for agent_file in CRAFTER_AGENT_FILES:
-            body = (AGENTS_DIR / agent_file).read_text(encoding="utf-8")
-            leaked = [s for s in PBT_LANGUAGE_SKILLS if s in body]
-            assert leaked == [], f"{agent_file} body mentions {leaked}"
-
-    def test_ownership_map_never_assigns_pbt_skill_to_a_crafter(self):
-        ownership = build_ownership_map(AGENTS_DIR)
-        crafter_names = {
-            f.removeprefix("nw-").removesuffix(".md") for f in CRAFTER_AGENT_FILES
-        }
-        for skill in PBT_LANGUAGE_SKILLS:
-            owners = ownership.get(skill, set())
-            leaked = owners & crafter_names
-            assert leaked == set(), f"{skill} owned by crafter(s) {leaked}"
-
-
-def test_auto_names_product_owner_as_charter_and_start_recipe_owner():
-    """Auto's own route text is the SSOT for who owns the expectation
-    charter and the user-facing local start recipe. The companion invariant
-    -- ATD never reads or authors the charter -- is proven separately by
-    TestThinAutoRoleRoutes.test_acceptance_designer_owns_contract_and_tests_not_charter,
-    which stays untouched here.
-    """
-    body = (SKILLS_DIR / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
-    route = " ".join(
-        body[
-            body.index("## M/L route — shared reuse floor") : body.index(
-                "## Examiner input isolation"
-            )
-        ].split()
+    public_agents = load_public_agents(NWAVE)
+    ownership = build_ownership_map(AGENTS)
+    assert all(
+        is_public_skill(skill, public_agents, ownership_map=ownership)
+        for skill in PBT_SKILLS
     )
-    for token in (
-        "nw-product-owner",
-        "charter path",
-        "start recipe",
-        "only if `examine=true, Author(Namespace)`",
+
+    body = _body("nw-acceptance-designer.md")
+    architect = _body("nw-solution-architect.md")
+    assert "exact language PBT adapter/framework" in architect
+    assert "PBT/language adapter selection as sealed compiler input" in " ".join(
+        body.split()
+    )
+    assert "holds no `Skill` tool" in body
+    assert "Skill" not in metadata.get("tools", "")
+
+
+def test_completeness_closes_cross_language_environment_without_python_fallback():
+    body = (SKILLS / "nw-at-completeness-check" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    for manifest in (
+        "requirements",
+        "pyproject.toml",
+        "package.json",
+        "Cargo.toml",
+        "go.mod",
     ):
-        assert token in route, f"nw-auto/SKILL.md route missing {token!r}"
+        assert manifest in body
+    assert "never from an ambient interpreter" in body
+    for layer in (
+        "domain",
+        "application/port",
+        "adapter/integration",
+        "infrastructure",
+    ):
+        assert layer in body
+
+
+def test_auto_resolves_charter_axis_independently_and_uses_single_cli_shape():
+    body = (SKILLS / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
+    route = body[body.index("## Root inputs and spatial AB batch") :]
+    normalized_route = " ".join(route.split())
+    for state in ("SKIP", "REUSE", "AUTHOR", "BLOCK"):
+        assert f"`{state}`" in route
+    assert "charter-scaffold" not in route
+    assert (
+        "des resolve-charters --repo-root <root> --delivery-id <producer id> "
+        "--examine <true|false>" in normalized_route
+    )
+    assert "ATD always receives producer stdout verbatim" in normalized_route
+    assert (
+        "For `examine=true, Author`, PO concurrently receives only the "
+        "producer-emitted DeliveryId, namespace, root and VALUE-SEED"
+        in normalized_route
+    )
+    assert "For Reuse/Skip, omit PO." in normalized_route
+
+
+def test_auto_hot_path_never_calls_charter_scaffold():
+    body = (SKILLS / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
+    assert "charter-scaffold" not in body
+
+
+def test_role_ownership_keeps_charter_and_executable_oracle_independent():
+    owner = _body("nw-product-owner.md")
+    designer = _body("nw-acceptance-designer.md")
+    examiner = _body("nw-user-examiner.md")
+
+    assert "value-side facts" in owner
+    assert "Do not read a design contract" in owner
+    assert "Do not create a feature workspace, plan, ledger" in " ".join(owner.split())
+    assert "never implement production code or author the expectation" in designer
+    assert "CONTRACT-LOCATOR:" in designer
+    assert "CONTRACT-SCHEMA:" in designer
+    assert "DELIVERY-CONTRACT-SHA256" not in designer
+    assert "Source blind" in examiner
+    assert "Every charter, no filtering" in examiner
+    assert "One pass" in examiner
+    assert "Create or edit nothing" in examiner
+
+
+def test_green_route_binds_existing_oracle_and_red_route_closes_whole_value():
+    designer = _body("nw-acceptance-designer.md")
+    auto = (SKILLS / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
+    normalized_auto = " ".join(auto.lower().split())
+    for token in (
+        "RED_TO_GREEN",
+        "GREEN_TO_GREEN",
+        "BROAD_INPUT_DOMAIN",
+        "EVIDENCE_GAP",
+    ):
+        assert token in designer
+    for token in (
+        "observe every value-seed clause at its real port",
+        "internal proxies and later-slice promises are `evidence_gap`",
+        "complete only when the original value-seed is observed",
+    ):
+        assert token in normalized_auto
+
+
+def test_crafters_neither_declare_nor_emit_language_pbt_authoring_skills():
+    ownership = build_ownership_map(AGENTS)
+    for filename in (
+        "nw-software-crafter.md",
+        "nw-functional-software-crafter.md",
+    ):
+        metadata = _frontmatter(filename)
+        body = _body(filename)
+        assert not set(PBT_SKILLS) & set(metadata.get("skills") or ())
+        assert not any(skill in body for skill in PBT_SKILLS)
+    for skill in PBT_SKILLS:
+        assert not ownership.get(skill, set()) & {
+            "software-crafter",
+            "functional-software-crafter",
+        }
+
+
+def test_ddd_reviewer_uses_lazy_algebra_and_provider_neutral_code_facts():
+    body = _body("nw-ddd-architect-reviewer.md")
+    metadata = _frontmatter("nw-ddd-architect-reviewer.md")
+    lazy = ("nw-algebraic-design-protocol", "nw-certainty-by-construction")
+    assert not set(lazy) & set(metadata.get("skills") or ())
+    assert all(f"Invoke Skill({skill}) ON-TRIGGER" in body for skill in lazy)
+    assert "nw-code-analysis-port" in body
+    assert "mcp__tsunami" not in body
+    assert "graphify" not in body.lower()

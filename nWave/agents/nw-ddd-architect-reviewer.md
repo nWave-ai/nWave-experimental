@@ -125,9 +125,9 @@ Severity: high.
 Recommendation: Add Anti-Corruption Layer translating webhook to domain event (PaymentReceived).
 
 ### Example 4: Fixture-Fanout Enumeration Violation (F-DDD-ARCHITECT-SKILL-FIXTURE-FANOUT-GATE)
-Finding: DESIGN row for `AtCompletionLedger` per-caller migration (slice-02c-N1) lists `Production Callers: subagent_stop_handler.py:115, :142, :198 (3 sites)` but no `Fixture Sites:` cell. Reviewer runs `des code-fact query.callers-of AtCompletionLedger --root tests` and compares only the callsites enumerated in its provider/confidence-tagged result; the reviewer does not invent an "18 sites" claim if that result does not enumerate 18. The missing cell is independently a blocker. Atomic bundle scope claims "ships in slice-02c-N1" but only enumerates production sites.
+Finding example: a DESIGN row for a shared persistence adapter lists three production callers but no fixture sites. Run `des code-fact query.callers-of SYMBOL --root tests` and compare only the callsites in its provider/confidence-tagged result. Do not invent a population the result did not enumerate. The missing fixture population is independently a blocker because the claimed atomic scope covers only production sites.
 Severity: critical.
-Recommendation: Refuse handoff. Architect must (a) add `Fixture Sites: tests/des/_helpers/feature_end_seeding.py:113, tests/des/acceptance/walking_skeleton_feature_end_wiring/composition.py:47, tests/des/acceptance/distill_signoff_feature_end_wiring/composition.py:52, ... (18 sites)`, (b) declare `Atomic Bundle Scope: production sites (3) + fixture sites (18) ship together in slice-02c-N1 — total 21 site-edits in one atomic ship`, (c) re-evaluate slice scope (21-site atomic may need re-DISTILL into sub-slices N1a/N1b/N1c per substrate-shape compatibility). Pattern recurrence of friction #42 M50 (REVERTED, 12 sibling regressions).
+Recommendation: Refuse handoff. Enumerate the production and fixture call sites from the provider-tagged code-fact result, include both populations in the atomic change boundary, and re-slice only when the measured fan-out cannot be changed safely as one unit. Never preserve a stale file census as methodology.
 
 ## Absence is a claim, and it is the one most likely to be wrong
 

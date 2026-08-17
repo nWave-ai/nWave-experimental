@@ -235,12 +235,9 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
         '"nWave/tasks/nw" = "nWave/tasks/nw"\n'
         '"nWave/templates" = "nWave/templates"\n'
         f'"{_TEMPLATE_BUILD_ALIAS}" = "nWave/nWave/templates"\n'
-        '"nWave/flavors" = "nWave/nWave/flavors"\n'
         '"nWave/data" = "nWave/data"\n'
         f'"{_DATA_BUILD_ALIAS}" = "nWave/nWave/data"\n'
         '"nWave/schemas" = "nWave/nWave/schemas"\n'
-        '"nWave/dispatch" = "nWave/nWave/dispatch"\n'
-        '"nWave/waves" = "nWave/nWave/waves"\n'
         f'"{_CATALOG_BUILD_ALIAS}" = "nWave/nWave/framework-catalog.yaml"\n'
         '"nWave/framework-catalog.yaml" = "nWave/framework-catalog.yaml"\n'
         f"{hook_scripts_block}"

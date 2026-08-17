@@ -204,10 +204,9 @@ even though the list now runs through GDP-10 — GDP-10 is separately registered
   were durable ledger events; they were CLI-stdout-only), `FeatureEndCheckpoint` (four shipped
   files described it as a firing resume-signal that was never implemented), and
   `DocumentationDensityEvent` (eleven citation sites claimed a telemetry event with zero
-  constructor call sites anywhere in the codebase). `des verify-declared-events` mechanizes this
-  check across shipped prose (skills, agents, commands, CLAUDE.md, permanent ADRs): every claimed
-  event/record name is cross-checked against a producer registry scanned from source,
-  PASS/FAIL/INDETERMINATE — never a silent pass over a phantom name.
+  constructor call sites anywhere in the codebase). Preserve the executable property: every
+  claimed event or record must name a reachable producer and a falsifier; otherwise label it
+  explicitly as designed-not-built. A prose name or catalog entry alone is never evidence.
 
 - **Wiring corollary — CATALOGUED is not WIRED.** A module's presence in a catalog, registry,
   manifest or import list says it EXISTS; it never says it FIRES. Existence is a designation and

@@ -106,7 +106,6 @@ PRIVATE_SKILL_DIRS: tuple[SkillName, ...] = tuple(
 LOAD_BEARING_PUBLIC_SKILLS: tuple[SkillName, ...] = tuple(
     SkillName(n)
     for n in (
-        "nw-density-resolution-contract",
         "nw-jtbd-core",
         "nw-jtbd-interviews",
         "nw-jtbd-opportunity-scoring",

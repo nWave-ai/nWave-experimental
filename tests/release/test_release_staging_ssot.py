@@ -1939,9 +1939,7 @@ def test_same_real_wheel_preserves_privacy_and_runtime_asset_population(
         "nWave/templates/",
         "nWave/nWave/templates/",
         "nWave/nWave/data/",
-        "nWave/nWave/flavors/",
         "nWave/nWave/schemas/",
-        "nWave/nWave/dispatch/",
     )
     missing_exact = [name for name in required_exact if names.count(name) != 1]
     missing_prefixes = [

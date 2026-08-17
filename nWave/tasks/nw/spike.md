@@ -24,10 +24,8 @@ If skipping: tell the user and recommend `/nw-design` directly.
 
 ## Prior Wave Consultation
 
-1. **DISCUSS artifacts**: Read `docs/feature/{feature-id}/discuss/` (required)
-   - `user-stories.md` -- scope and acceptance criteria
-   - `wave-decisions.md` -- constraints and assumptions to test
-2. **DIVERGE artifacts**: Read `docs/feature/{feature-id}/diverge/recommendation.md` (if present)
+1. **DISCUSS scope** (required): re-read the returned `user-stories.md` content from this delivery's DISCUSS pass -- scope, acceptance criteria and the constraint/assumption to test.
+2. **DIVERGE recommendation** (if a DIVERGE pass ran): re-read the returned recommendation and decision statement.
 
 ## Interactive Decision Points
 
@@ -64,7 +62,7 @@ Execute spike for "{feature-description}".
 - Print results to stdout.
 
 **After spike completes**:
-1. Write findings to `docs/feature/{feature-id}/spike/findings.md`
+1. Return the findings directly: binary verdict, timing, edge cases and design implications
 2. Delete the spike code from `/tmp/`
 3. Report the binary verdict: WORKS or DOESN'T WORK
 
@@ -77,35 +75,25 @@ The invoked agent MUST create a task list from its workflow phases at the start 
 - [ ] Exactly one assumption tested (not two, not zero)
 - [ ] Spike code lives in `/tmp/`, never in `src/`
 - [ ] Completed within 1 hour (or escalated with "BIGGER THAN EXPECTED")
-- [ ] `findings.md` written with binary verdict, timing, and edge cases
-- [ ] Spike code deleted after findings written
+- [ ] Findings returned with binary verdict, timing, and edge cases
+- [ ] Spike code deleted after findings returned
 - [ ] Design implications documented (what was assumed wrong)
 
 ## Next Wave
 
 **Handoff To**: nw-solution-architect (DESIGN wave)
-**Deliverables**: `docs/feature/{feature-id}/spike/findings.md`
-**Design reads findings before starting** -- spike results override any prior assumptions.
+**Deliverables**: The findings (verdict, timing, edge cases, design implications) are returned directly to DESIGN, which reads them before starting -- spike results override any prior assumptions.
 
-## Wave Decisions Summary
+## Propagating the Result
 
-Before completing SPIKE, produce `docs/feature/{feature-id}/spike/wave-decisions.md`:
-
-```markdown
-# SPIKE Decisions -- {feature-id}
-
-## Assumption Tested
-- {the one question}
-
-## Verdict
-- {WORKS / DOESN'T WORK}: {one-line summary}
-
-## Design Implications
-- {what DESIGN must account for based on spike results}
-
-## Constraints Discovered
-- {any new constraints from edge cases}
-```
+A spike is an ephemeral probe, not a durable decision carrier. Its findings
+result (verdict, timing, edge cases) carries no lasting authority on its own:
+- On promotion (design implications matter), DESIGN takes the returned
+  findings and writes the lasting fact directly into
+  `docs/product/architecture/brief.md` or the relevant ADR. No parallel
+  per-wave ledger is authored.
+- On discard, the findings are simply the returned result; no permanent
+  decision record is created.
 
 ## Examples
 
@@ -135,5 +123,4 @@ Agent writes hook installer, tests with concurrent access. Verdict: WORKS but ne
 ```
 docs/feature/{feature-id}/spike/
   findings.md
-  wave-decisions.md
 ```

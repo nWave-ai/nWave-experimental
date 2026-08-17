@@ -22,16 +22,11 @@ Dispatches Trim to inventory a test scope, detect duplication and anti-patterns,
 - The scope path (passed as argument or auto-detected)
 - `~/.claude/skills/nw-test-optimization/SKILL.md` — methodology (loaded by agent)
 
-## Timing Baseline by `workflow.mode` <!-- mode-ref-ok -->
+## Timing Baseline
 
-The timing baseline Trim compares against depends on `workflow.mode` — per-mode audit substrate projected from the mode registry: <!-- mode-ref-ok -->
-
-<!-- GENERATED:mode-descriptor START — source of truth: nWave/flavors/*.yaml; do not hand-edit (docgen renders this region) -->
-- `atdd_pure` — Per-slice AT-first loop; AT-completion ledger + commit trailers are the authority.
-  Deliver phase shape: `A_GREEN -> EXAMINE -> COMMIT`
-<!-- GENERATED:mode-descriptor END -->
-
-- **atdd_pure mode** — use the **AT-completion ledger** phase-boundary timestamps as the timing baseline. <!-- mode-ref-ok --> Each ledger slice records a phase-boundary timestamp per phase transition, and the deltas between consecutive phase-boundary marks give the per-slice timing baseline Trim measures improvement against.
+Compare the exact project-declared command vector before and after the proposed
+test consolidation. Use terminal process timing from the same environment and
+test scope; do not infer speed from a workflow mode or progress ledger.
 
 ## Agent Invocation
 

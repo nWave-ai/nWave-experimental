@@ -9,11 +9,8 @@ Extracted from claude_code_hook_adapter.py as part of P4 decomposition.
 import contextlib
 import io
 import json
-import os
-import subprocess
 import time
 import uuid
-from pathlib import Path
 
 from des.adapters.driven.time.system_time import SystemTimeProvider
 from des.adapters.drivers.hooks import des_task_signal, hook_protocol
@@ -28,14 +25,14 @@ from des.adapters.drivers.hooks.hook_protocol import (
 )
 from des.adapters.drivers.hooks.root_activation_context import (
     build_root_write_mode_select_context,
+    root_mode_handoff_block_reason,
 )
 from des.application.skill_tracking_service import (
-    mode_select_observed_before_mutation,
-    skill_observed_before_action,
+    RootModeState,
+    resolve_root_mode_state,
 )
 from des.domain.session_guard_policy import SessionGuardPolicy
 from des.ports.driven_ports.audit_log_writer import AuditEvent
-from des.runtime.interpreter import des_spawn
 
 
 def _log_pre_write_decision(
@@ -60,112 +57,6 @@ def _log_pre_write_decision(
         )
     except Exception:
         pass  # Diagnostic logging must never break the hook
-
-
-# --- Skill-normative gate intercept (ADR-SNCG-002 §Placement rule, H-1) ----
-
-_SKILLS_TREE_PARTS = ("nWave", "skills")
-_SKILL_GATE_MODULE = "des.cli.skill_normative_gate"
-_SKILL_GATE_TIMEOUT_S = 30
-_SKILL_GATE_FAULT_ENV = "NWAVE_SKILL_GATE_INJECT_FAULT"
-
-
-def _is_skill_tree_path(file_path: str) -> bool:
-    """True iff the edited path lies under the `nWave/skills/**` tree."""
-    parts = Path(file_path).parts
-    return any(parts[i : i + 2] == _SKILLS_TREE_PARTS for i in range(len(parts) - 1))
-
-
-def _run_skill_gate_subprocess() -> subprocess.CompletedProcess[str]:
-    """Run `des skill-normative-gate` over the repo; return the completed process.
-
-    Fail-stuck (timeout / signal-kill) maps to a non-zero exit (block) per the
-    ADR-030 D5 discipline. Honours `NWAVE_SKILL_GATE_INJECT_FAULT` so the AC-07
-    fault-injection AT can force the spawn to raise and prove the local
-    fail-closed except-arm is reached.
-
-    Returns the full ``CompletedProcess`` (not just the exit code): the gate's
-    stdout NAMES the failing/indeterminate clause(s) (`skill_normative_gate.py`
-    `_render`), and the caller must be able to propagate that fact into the
-    block reason rather than discard it (GDP-3 — the fact is already in scope).
-    """
-    if os.environ.get(_SKILL_GATE_FAULT_ENV) == "1":
-        raise RuntimeError("forced gate-subprocess spawn failure (fault injection)")
-    return des_spawn(
-        None,
-        _SKILL_GATE_MODULE,
-        capture_output=True,
-        text=True,
-        timeout=_SKILL_GATE_TIMEOUT_S,
-    )
-
-
-#: The gate's own exit codes (`des.domain.gate_outcome._EXIT_BY_VERDICT`) name
-#: TWO distinct verdict classes that both count as "non-zero" here: FAIL (1,
-#: a REAL violation) and INDETERMINATE (4, a could-not-verify claim the
-#: gate's own ratchet -- gate-ratchet-skill-normative -- refused to allow).
-#: Collapsing both into one "vetoed" reason lost the GDP-8 third state at
-#: this aggregate: an operator reading the block could not tell a real defect
-#: from a could-not-verify without re-running the gate by hand.
-_GATE_EXIT_KIND: dict[int, str] = {
-    1: "a REAL violation (FAIL)",
-    4: (
-        "a COULD-NOT-VERIFY finding this edit did not clear "
-        "(INDETERMINATE, ratchet-refused)"
-    ),
-}
-
-
-def _gate_exit_kind(returncode: int) -> str:
-    """Name which verdict class a non-zero gate exit code belongs to."""
-    return _GATE_EXIT_KIND.get(returncode, f"an unrecognised exit ({returncode})")
-
-
-def _evaluate_skill_normative_intercept(file_path: str) -> dict[str, str] | None:
-    """Guard a skill-tree edit, fail-closed (ADR-SNCG-002 §Placement rule, H-1).
-
-    Returns the `{decision:block}` body when the edit must be blocked, or None
-    when it is allowed / is not a `nWave/skills/**` edit. The body is wrapped in
-    its OWN try/except so a gate-subprocess spawn failure degrades LOUD to a
-    block — making the outer `handle_pre_write` fail-OPEN catch-all unreachable
-    from this intercept (no-silent-pass).
-
-    The block reason propagates the gate subprocess's own stdout (capped at
-    `STDERR_CAPTURE_MAX_CHARS`, the file's established truncation convention):
-    the subprocess already names the violated clause(s) before this function
-    ever sees the exit code, so reporting only "gate exit N" would silently
-    drop a fact already in hand -- an operator would have to re-run
-    `des skill-normative-gate` by hand to learn what this call already knew.
-    The reason also NAMES which verdict class the exit code belongs to
-    (`_gate_exit_kind`) -- FAIL vs INDETERMINATE -- never just the bare code;
-    this intercept still blocks on BOTH, unconditionally propagating whatever
-    exit code the gate itself decided (the gate now owns the ratchet decision
-    on the INDETERMINATE delta; this intercept never second-guesses it).
-    """
-    if not file_path or not _is_skill_tree_path(file_path):
-        return None
-    try:
-        completed = _run_skill_gate_subprocess()
-        if completed.returncode != 0:
-            gate_output = (completed.stdout or "").strip()
-            kind = _gate_exit_kind(completed.returncode)
-            return {
-                "decision": "block",
-                "reason": (
-                    f"skill-normative gate vetoed the skill edit — {kind} "
-                    f"(gate exit {completed.returncode}): "
-                    f"{gate_output[:STDERR_CAPTURE_MAX_CHARS]}"
-                    if gate_output
-                    else f"skill-normative gate vetoed the skill edit — {kind} "
-                    f"(gate exit {completed.returncode}, no gate output captured)"
-                ),
-            }
-        return None
-    except Exception as exc:
-        return {
-            "decision": "block",
-            "reason": f"skill-normative-gate intercept error: {exc!s}",
-        }
 
 
 def handle_pre_write() -> int:
@@ -201,19 +92,6 @@ def handle_pre_write() -> int:
             # Extract file path from tool_input
             tool_input = hook_input.get("tool_input", {})
             file_path = tool_input.get("file_path", "")
-
-            # --- Skill-normative gate intercept (ADR-SNCG-002 §Placement) ---
-            skill_block = _evaluate_skill_normative_intercept(file_path)
-            if skill_block is not None:
-                _log_pre_write_decision(
-                    hook_id=hook_id,
-                    event_type="HOOK_PRE_WRITE_BLOCKED",
-                    file_path=file_path,
-                    reason=skill_block["reason"],
-                )
-                print(json.dumps(skill_block))
-                exit_code = 2
-                return exit_code
 
             # --- Execution log guard: always block direct writes ---
             if file_path and file_path.endswith("execution-log.json"):
@@ -295,15 +173,10 @@ def handle_pre_write() -> int:
                 ) and not hook_input.get("agent_type")
                 if root_context and is_root_invocation:
                     transcript_path = extract_transcript_path(hook_input)
-                    observed = False
-                    try:
-                        observed = bool(
-                            transcript_path
-                            and mode_select_observed_before_mutation(transcript_path)
-                        )
-                    except Exception:
-                        observed = False
-                    if not observed:
+                    root_mode_state = RootModeState.UNSELECTED
+                    if transcript_path:
+                        root_mode_state = resolve_root_mode_state(transcript_path)
+                    if root_mode_state is RootModeState.UNSELECTED:
                         _log_pre_write_decision(
                             hook_id=hook_id,
                             event_type="HOOK_PRE_WRITE_BLOCKED",
@@ -318,15 +191,21 @@ def handle_pre_write() -> int:
                         exit_code = 2
                         return exit_code
 
-                    auto_root_observed = False
-                    try:
-                        auto_root_observed = bool(
-                            transcript_path
-                            and skill_observed_before_action(transcript_path, "nw-auto")
+                    handoff_reason = root_mode_handoff_block_reason(root_mode_state)
+                    if handoff_reason is not None:
+                        _log_pre_write_decision(
+                            hook_id=hook_id,
+                            event_type="HOOK_PRE_WRITE_BLOCKED",
+                            file_path=file_path,
+                            reason=root_mode_state.value,
                         )
-                    except Exception:
-                        auto_root_observed = False
-                    if auto_root_observed:
+                        print(
+                            json.dumps({"decision": "block", "reason": handoff_reason})
+                        )
+                        exit_code = 2
+                        return exit_code
+
+                    if root_mode_state is RootModeState.AUTO_ENGAGED:
                         _log_pre_write_decision(
                             hook_id=hook_id,
                             event_type="HOOK_PRE_WRITE_BLOCKED",

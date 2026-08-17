@@ -54,17 +54,14 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DELIVERY_CONTRACT_FIXTURE = (
     _REPO_ROOT / "docs" / "delivery-contracts" / "retarget-des-dispatch-contract.json"
 )
-_DELIVER_ARGS = (
-    "--mode",
-    "atdd_pure",
-    "--project-id",
-    "demo",
-    "--slice",
-    "slice-01",
-    "--phase",
-    "A_GREEN",
+# The fixture's `applicability.examine=true` axis requires its real, checked-in
+# expectation charter namespace to exist under the dispatched `--repo-root` --
+# copied verbatim (never embedded/synthesized here) so product validation is
+# not weakened for this installed-shape test.
+_EXPECTATION_CHARTER_REL = Path(
+    "docs", "product", "expectations", "retarget-des-dispatch-contract"
 )
-
+_EXPECTATION_CHARTER_FIXTURE = _REPO_ROOT / _EXPECTATION_CHARTER_REL
 _SKILLS_ROOT = {"claude": (".claude", "skills"), "codex": (".agents", "skills")}
 _REPRESENTATIVE_AGENT_GLOB = {
     "claude": (".claude", "agents/nw", "*.md"),
@@ -272,12 +269,20 @@ def test_installed_dispatch_accepts_valid_delivery_contract_without_pythonpath(
     ``lib/python3.12/nWave/schemas/`` path (checkout/Claude-runtime-shaped
     locator applied to a PyPI/pipx site-packages install), so a schema-valid
     explicit contract exited 2 instead of dispatching.
+
+    The real, checked-in fixture has ``applicability.examine=true``, so a
+    genuine dispatch also requires its real, checked-in expectation charter
+    namespace (``docs/product/expectations/retarget-des-dispatch-contract/``)
+    to exist under ``--repo-root``; this test supplies both the real Contract
+    and its real required charter, copied verbatim into the isolated repo,
+    rather than weakening ``examine`` or synthesizing a charter.
     """
     host, home, _ = host_install
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     contract_rel = "delivery-contract.json"
     shutil.copyfile(_DELIVERY_CONTRACT_FIXTURE, repo_root / contract_rel)
+    shutil.copytree(_EXPECTATION_CHARTER_FIXTURE, repo_root / _EXPECTATION_CHARTER_REL)
 
     des_script = _venv_with_wheel / "bin" / "des"
     env = {"HOME": str(home), "PATH": str(_venv_with_wheel / "bin")}
@@ -285,7 +290,6 @@ def test_installed_dispatch_accepts_valid_delivery_contract_without_pythonpath(
         [
             str(des_script),
             "dispatch",
-            *_DELIVER_ARGS,
             "--repo-root",
             str(repo_root),
             "--delivery-contract",
@@ -303,8 +307,16 @@ def test_installed_dispatch_accepts_valid_delivery_contract_without_pythonpath(
         f"{host}: installed des dispatch rejected a schema-valid, installed "
         f"thin-delivery-contract schema lookup:\nSTDOUT:\n{out}\nSTDERR:\n{err}"
     )
-    assert "retarget-des-dispatch-contract" in out, (
-        f"{host}: compact DeliveryContract context missing from rendered prompt:\n{out}"
+    digest = hashlib.sha256((repo_root / contract_rel).read_bytes()).hexdigest()
+    expected_out = (
+        f"THIN-DELIVERY-CONTRACT: {contract_rel}\n"
+        f"THIN-DELIVERY-CONTRACT-DIGEST: sha256:{digest}\n"
+    )
+    assert out == expected_out, (
+        f"{host}: installed des dispatch must emit exactly the thin-contract "
+        f"locator + digest headers -- route, outcome, delivery-id and charter "
+        f"paths stay in their canonical authorities, never copied into prompt "
+        f"output:\n{out}"
     )
 
 
@@ -366,10 +378,10 @@ def test_same_wheel_installs_matching_skill_catalog_across_hosts(
 
 
 @pytest.mark.e2e
-def test_loop_consent_projected_and_temp_write_cleaned_up(
+def test_project_guidance_has_no_retired_loop_controller_and_temp_write_is_clean(
     host_install, _venv_with_wheel: Path, tmp_path: Path
 ) -> None:
-    """``project enable --yes`` splices the installed loop-consent fragment, no tmp leftover."""
+    """Project enable injects no standing-loop controller or temp residue."""
     host, home, _ = host_install
     if host != "claude":
         pytest.skip("project enable --yes CLAUDE.md splice is Claude-specific here")
@@ -393,9 +405,8 @@ def test_loop_consent_projected_and_temp_write_cleaned_up(
     assert proc.returncode == 0, f"project enable --yes failed:\n{out}"
 
     claude_md = (project_root / "CLAUDE.md").read_text(encoding="utf-8")
-    assert "Standing Loops" in claude_md and "Consent Required" in claude_md, (
-        "installed loop-consent fragment was not projected into CLAUDE.md"
-    )
+    assert "Standing Loops" not in claude_md
+    assert "standing-loop" not in claude_md.casefold()
     leftover_tmp = list(project_root.glob(".claude-md-*.tmp"))
     assert not leftover_tmp, f"atomic-write temp file not cleaned up: {leftover_tmp}"
 

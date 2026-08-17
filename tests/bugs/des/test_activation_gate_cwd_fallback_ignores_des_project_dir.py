@@ -42,7 +42,7 @@ from des.adapters.drivers.hooks.activation_gate import apply_gate
 # = session-start only; `_PRE_TASK_COMMANDS` = pre-task/pre-tool-use;
 # `_USER_PROMPT_SUBMIT` = user-prompt-submit) so `apply_gate`'s activation
 # resolution is the ONLY thing deciding dispatch-vs-silence for this call.
-_NEUTRAL_COMMAND = "post-tool-use"
+_NEUTRAL_COMMAND = "subagent-start"
 
 
 def _write_local_config(root: Path, *, enabled_for_repo: bool) -> None:

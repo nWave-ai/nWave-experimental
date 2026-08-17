@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import tempfile
 import textwrap
 from pathlib import Path
 
@@ -17,7 +16,6 @@ from scripts.docgen import (
     _role_skill_loading_body,
     check_links,
     check_pages,
-    check_registry_runtime_agreement,
     enrich,
     extract_agent,
     extract_all,
@@ -407,16 +405,16 @@ class TestSkillLinks:
         assert "## Preloaded skills" in detail
         assert "## Skills\n" not in detail
 
-    def test_real_tree_lists_conditional_owner_in_skill_used_by(self):
-        """On the real tree, nw-acceptance-designer owns nw-property-based-testing
-        via role-skill-loading.yaml's phase field, not its frontmatter — the
-        generated skill page's 'Used by' must still surface it."""
+    def test_real_tree_omits_atd_as_owner_of_removed_pbt_skill(self):
+        """nw-property-based-testing was removed from ATD's role-skill-loading
+        entry and was never in its catalog_only — the generated skill page's
+        'Used by' must not list nw-acceptance-designer as a runtime owner."""
         from scripts.docgen import scan
 
         root = Path(__file__).resolve().parents[1]
         pages = render(enrich(extract_all(scan(root))), root=root)
         page = pages["skills/nw-property-based-testing.md"]
-        assert "nw-acceptance-designer" in page
+        assert "nw-acceptance-designer" not in page
         agent_frontmatter = (
             root / "nWave" / "agents" / "nw-acceptance-designer.md"
         ).read_text(encoding="utf-8")
@@ -535,6 +533,7 @@ class TestIntegration:
         CONTRACT_SHAPE: bounded-change
         """
         expected_public_shared = {
+            "nw-adversarial-refutation",
             "nw-auto",
             "nw-pbt-dotnet",
             "nw-pbt-erlang-elixir",
@@ -555,6 +554,7 @@ class TestIntegration:
                 str(real_root),
                 "--output-dir",
                 str(output_dir),
+                "--public-only",
             ],
             cwd=real_root,
             capture_output=True,
@@ -778,88 +778,6 @@ class TestPreservesUserAuthoredDocs:
 
 
 # ---------------------------------------------------------------------------
-# Registry <-> runtime phase-vocabulary agreement
-# (F-DOCGEN-PHASE-VOCAB-COMPARATOR-ALIAS-BLIND regression coverage)
-# ---------------------------------------------------------------------------
-class TestRegistryRuntimePhaseVocabAgreement:
-    """`check_registry_runtime_agreement` must normalize display-vocabulary
-    phase tokens (EXAMINE/COMMIT) through the enum's own alias map
-    (`normalize_phase_token`) before comparing against `CANONICAL_PHASES`.
-
-    A literal, alias-blind string compare false-fails on every velocity-v2
-    EXAMINE/COMMIT display token -- this reddened 8 of the ~10 real
-    `mode_registry` acceptance tests on trunk (commits `58feae54b` +
-    `a91bf4f6b` renamed the display vocabulary; the enum's own value-alias
-    shielded Python call-sites but not this comparator).
-    """
-
-    def test_docgen_check_recognizes_examine_commit_aliases(self):
-        """The real, shipped default flavor's `deliver_phase_shape` speaks the
-        EXAMINE/COMMIT display vocabulary -- the comparator must normalize
-        both aliases and agree with `CANONICAL_PHASES`: zero disagreements on
-        the live repo tree. This is `docgen --check`'s own registry-agreement
-        leg, run directly (not just observed via CLI exit code)."""
-        root = Path(__file__).resolve().parent.parent
-        if not (root / "nWave" / "flavors").exists():
-            pytest.skip("nWave/flavors directory not found")
-
-        disagreements = check_registry_runtime_agreement(root)
-
-        assert disagreements == [], (
-            "docgen --check must recognize EXAMINE/COMMIT as display-vocab "
-            f"aliases of the canonical phase slots -- got: {disagreements}"
-        )
-
-    def test_normalize_phase_token_resolves_examine_and_commit_from_the_enum(self):
-        """DRY SSOT pin: the alias resolution is DERIVED from
-        `ATDDPurePhase` -- EXAMINE resolves to the enum's own
-        `C_REVIEWER_AUDIT`-sharing value, COMMIT resolves to
-        `D_REFACTOR_COMMIT`'s value. No second hand-authored alias table."""
-        from des.domain.atdd_pure_phases import ATDDPurePhase, normalize_phase_token
-
-        assert normalize_phase_token("EXAMINE") == ATDDPurePhase["EXAMINE"].value
-        assert normalize_phase_token("COMMIT") == ATDDPurePhase.D_REFACTOR_COMMIT.value
-
-    def test_unrecognized_phase_token_is_still_reported_as_disagreement(
-        self, tmp_path: Path
-    ):
-        """Negative oracle: a genuinely INCORRECT phase token (neither the
-        canonical name nor a recognized display-vocab alias) must still be
-        caught -- alias-awareness must not become a blanket pass-anything."""
-        from des.application.workflow_mode import resolve_workflow_mode
-
-        with tempfile.TemporaryDirectory() as empty:
-            # `.effective_mode`: the resolver now returns a decision OBJECT
-            # (outcome + mode + reason), not a bare mode string. This site
-            # uses the value as a flavor id and a filename, so the object's
-            # repr would silently become the filename -- the fixture would
-            # build a differently-named flavor and this negative oracle
-            # would report the wrong disagreement instead of the planted one.
-            resolver_default = resolve_workflow_mode(Path(empty)).effective_mode
-
-        flavors_dir = tmp_path / "nWave" / "flavors"
-        flavors_dir.mkdir(parents=True)
-        (flavors_dir / f"{resolver_default}.yaml").write_text(
-            textwrap.dedent(f"""\
-                flavor_id: {resolver_default}
-                default: true
-                deliver_phase_shape: "A_GREEN -> TOTALLY_BOGUS_PHASE -> COMMIT"
-            """),
-            encoding="utf-8",
-        )
-
-        disagreements = check_registry_runtime_agreement(tmp_path)
-
-        assert disagreements, (
-            "an incorrect (non-canonical, non-alias) phase token must still "
-            "produce a disagreement, never be silently accepted"
-        )
-        assert any("TOTALLY_BOGUS_PHASE" in entry for entry in disagreements), (
-            f"the disagreement must name the unrecognized token. got: {disagreements}"
-        )
-
-
-# ---------------------------------------------------------------------------
 # role-skill-loading.yaml: build-time-only universal-lens registry
 # ---------------------------------------------------------------------------
 _ROLE_SKILL_TARGETS = [
@@ -867,17 +785,21 @@ _ROLE_SKILL_TARGETS = [
     "nw-acceptance-designer",
     "nw-ddd-architect-reviewer",
     "nw-ddd-architect",
-    "nw-functional-software-crafter",
     "nw-platform-architect-reviewer",
     "nw-platform-architect",
     "nw-software-crafter-reviewer",
-    "nw-software-crafter",
     "nw-solution-architect-reviewer",
     "nw-solution-architect",
     "nw-system-designer-reviewer",
     "nw-system-designer",
 ]
 _CRAFTER_ROLES = ["nw-software-crafter", "nw-functional-software-crafter"]
+# ATD compiles at build time and must not invoke runtime Skill/CodeFact --
+# excluded from assertions that require every targeted role to declare/
+# invoke Skill; those assertions still apply to every other runtime role.
+_RUNTIME_SKILL_TARGETS = [
+    role for role in _ROLE_SKILL_TARGETS if role != "nw-acceptance-designer"
+]
 # {authoring role: single-owner reviewer} — every design-lens architect that
 # projects native algebra + certainty on_demand, paired with its reviewer.
 _ARCHITECT_REVIEWER_PAIRS = [
@@ -984,7 +906,65 @@ class TestRoleSkillLoadingRegistry:
             f"found skills: {fm.get('skills')}"
         )
 
-    def test_atd_generated_body_excludes_catalog_only_and_includes_code_analysis(
+    @pytest.mark.parametrize("role", _CRAFTER_ROLES)
+    def test_crafter_eager_preload_is_only_the_compact_kernel(
+        self, root: Path, role: str
+    ):
+        import yaml
+
+        text = (root / "nWave" / "agents" / f"{role}.md").read_text()
+        fm = yaml.safe_load(text.split("---")[1])
+        assert fm["skills"] == ["nw-crafter-discipline-delivery-contract"]
+        assert "nw-cross-cutting-invariants" not in fm["skills"]
+
+    def test_crafter_kernel_is_preloadable_but_not_user_invocable(self, root: Path):
+        text = (
+            root
+            / "nWave"
+            / "skills"
+            / "nw-crafter-discipline-delivery-contract"
+            / "SKILL.md"
+        ).read_text()
+        front = text.split("---")[1]
+        assert "user-invocable: false" in front
+        assert "disable-model-invocation" not in front
+
+    @pytest.mark.parametrize("role", _CRAFTER_ROLES)
+    def test_every_crafter_lazy_lens_is_model_invocable(
+        self, root: Path, roles: dict, role: str
+    ):
+        entry = roles[role]
+        names = set(entry.get("catalog_only", []))
+        assert names
+        for name in names:
+            text = (root / "nWave" / "skills" / name / "SKILL.md").read_text(
+                encoding="utf-8"
+            )
+            front = text.split("---")[1]
+            assert "disable-model-invocation" not in front, (
+                f"{role} renders Skill({name}) ON-TRIGGER but {name} is disabled"
+            )
+
+    @pytest.mark.parametrize("role", _CRAFTER_ROLES)
+    def test_crafter_resolves_matching_lazy_lenses_before_baseline(
+        self, root: Path, role: str
+    ):
+        agent = (root / "nWave" / "agents" / f"{role}.md").read_text()
+        discipline = (
+            root
+            / "nWave"
+            / "skills"
+            / "nw-crafter-discipline-delivery-contract"
+            / "SKILL.md"
+        ).read_text()
+        resolve = agent.split("**RESOLVE LENSES**", 1)[1].split("**BASELINE**", 1)[0]
+        assert '"Mandatory lens resolution"' in " ".join(resolve.split())
+        assert "sole normative routing authority" in agent
+        assert "before BASELINE" in discipline
+        assert "No matched row is optional" in discipline
+        assert "first-mutation bound" in discipline
+
+    def test_atd_generated_body_excludes_catalog_only_and_design_owned_code_analysis(
         self, root: Path, roles: dict
     ):
         body = _role_skill_loading_body("nw-acceptance-designer", root)
@@ -993,10 +973,10 @@ class TestRoleSkillLoadingRegistry:
             assert f"Skill({skill})" not in body, (
                 f"catalog_only skill {skill} must not render in the generated body"
             )
-        assert "Invoke Skill(nw-code-analysis-port) ON-TRIGGER" in body, (
-            "nw-code-analysis-port must render ON-TRIGGER"
+        assert "Skill(nw-code-analysis-port)" not in body, (
+            "DESIGN owns code-fact resolution; projecting it into ATD would "
+            "reintroduce duplicate repository discovery during DISTILL"
         )
-        assert "F — code/test fact query" in body
 
     @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
     def test_installed_spec_has_exactly_one_generated_region(
@@ -1137,7 +1117,6 @@ class TestRoleSkillLoadingRegistry:
         targets = [
             root / "nWave" / "agents" / "nw-solution-architect.md",
             root / "nWave" / "skills" / "nw-design" / "SKILL.md",
-            root / "nWave" / "skills" / "nw-design-discovery-flow" / "SKILL.md",
             root / "nWave" / "skills" / "nw-stress-analysis" / "SKILL.md",
         ]
         stale_phrases = (
@@ -1163,131 +1142,35 @@ class TestRoleSkillLoadingRegistry:
                 "exclusively by nw-acceptance-designer, never a crafter"
             )
 
-    def test_atd_auto_route_projects_author_skills_and_lenses_on_trigger(
+    def test_atd_auto_route_projects_zero_runtime_rows_and_preserves_catalog_only(
         self, root: Path, roles: dict
     ):
-        """ATD's author lenses and eight language PBT deep dives render
-        ON-TRIGGER with zero NOW rows; generic PBT is phase-owned (author
-        only, never on_demand); the reviewer mirrors on_demand lenses only,
-        never the phase-owned generic PBT skill."""
+        """DESIGN owns proof-protocol selection; ATD compiles and must not
+        invoke runtime Skill/CodeFact -- its generated region is a static
+        catalog-only placeholder with zero ON-TRIGGER/NOW rows, while its
+        catalog_only ownership (e.g. nw-bdd-methodology) is preserved."""
         body = _role_skill_loading_body("nw-acceptance-designer", root)
+        assert "Skill(" not in body, f"ATD rendered body must invoke no Skill: {body}"
         assert "NOW" not in body, f"ATD rendered body must have zero NOW rows: {body}"
-
-        for lens in (
-            "nw-test-design-mandates",
-            "nw-property-based-testing",
-            "nw-algebraic-design-protocol",
-            "nw-certainty-by-construction",
-        ):
-            assert f"Invoke Skill({lens}) ON-TRIGGER" in body, (
-                f"{lens} must render as ON-TRIGGER"
-            )
-
-        pbt_rows = [
-            line for line in body.splitlines() if "Invoke ONE Skill(nw-pbt-" in line
-        ]
-        assert len(pbt_rows) == 8, f"expected 8 language PBT rows, got {pbt_rows}"
+        assert "ON-TRIGGER" not in body, (
+            f"ATD rendered body must have zero ON-TRIGGER rows: {body}"
+        )
+        assert "(no universal lens applies to this role)" in body
 
         atd_entry = roles["nw-acceptance-designer"]
-        assert "nw-property-based-testing" in atd_entry.get("phase", {}), (
-            "nw-property-based-testing must be in ATD phase (author-only)"
-        )
-        assert "nw-property-based-testing" not in atd_entry.get("on_demand", {}), (
-            "nw-property-based-testing must not be in ATD on_demand"
-        )
+        for field in ("on_demand", "phase", "language_pbt"):
+            assert field not in atd_entry, f"ATD must not carry {field}"
+        catalog_only = atd_entry.get("catalog_only") or []
+        assert catalog_only, "ATD must keep a nonempty catalog_only"
+        assert "nw-bdd-methodology" in catalog_only
+        assert "nw-at-completeness-check" in catalog_only
 
         reviewer_body = _role_skill_loading_body(
             "nw-acceptance-designer-reviewer", root
         )
         assert "nw-property-based-testing" not in reviewer_body, (
-            "reviewer must not include phase-owned nw-property-based-testing"
+            "reviewer must not include catalog_only nw-property-based-testing"
         )
-        assert "nw-algebraic-design-protocol" in reviewer_body, (
-            "reviewer must mirror on_demand algebra lens"
-        )
-        assert "nw-certainty-by-construction" in reviewer_body, (
-            "reviewer must mirror on_demand certainty lens"
-        )
-
-        pbt_trigger = roles["nw-acceptance-designer"]["phase"][
-            "nw-property-based-testing"
-        ]
-        assert "BROAD_INPUT_DOMAIN" in pbt_trigger
-        assert "BROAD_INPUT_DOMAIN" in body
-        assert "BROAD_INPUT_DOMAIN" not in reviewer_body, (
-            "the reviewer must not inherit the ATD-only PBT authoring obligation"
-        )
-
-    def test_atd_route_contract_paragraph_mandates_native_skill_and_obligation_order(
-        self, root: Path
-    ):
-        """K4 (2026-08-13): the hand-authored paragraph wrapping the generated
-        Skill rows must never call them "Read rows" or send Claude to the Read
-        tool -- that exact language let a real ATD run skip algebra/certainty/
-        PBT before authoring while still emitting BROAD_INPUT_DOMAIN. It must
-        derive obligation tokens before authoring, invoke every fired row's
-        Skill(...) natively, and bind BROAD_INPUT_DOMAIN to both the generic
-        and language-matched PBT rows."""
-        text = (root / "nWave" / "agents" / "nw-acceptance-designer.md").read_text()
-        start = text.index("**Thin Auto M/L route")
-        end = text.index("<!-- GENERATED:role-skill-loading START")
-        paragraph = " ".join(text[start:end].split())
-
-        for forbidden in ("Read row", "Read directive", "with the Read tool"):
-            assert forbidden not in paragraph, (
-                f"ATD route-contract paragraph must not say {forbidden!r} -- "
-                "the generated rows are native Skill invocations, never Read targets"
-            )
-
-        for token in (
-            "Skill directive",
-            "derive the applicable obligation tokens",
-            "before authoring",
-            "invoke each generated row's `Skill(...)` natively",
-            "never a manual SKILL.md read",
-            "`BROAD_INPUT_DOMAIN` fires two rows together",
-            "the language-matched `nw-pbt-{lang}` row",
-        ):
-            assert token in paragraph, f"ATD route-contract paragraph missing: {token}"
-
-        assert paragraph.index(
-            "derive the applicable obligation tokens"
-        ) < paragraph.index("invoke each generated row's `Skill(...)` natively"), (
-            "obligation-token derivation must precede Skill invocation in reading order"
-        )
-
-    def test_atd_compiles_design_owned_broad_input_dependency_completeness(
-        self, root: Path
-    ):
-        """DESIGN owns the broad-input fact; ATD compiles and materializes it.
-
-        Every declaration/runtime state has one preidentified action. Missing
-        evidence never excuses examples-only downgrade or an ad-hoc install.
-        """
-        text = (root / "nWave" / "agents" / "nw-acceptance-designer.md").read_text()
-        start = text.index("`BROAD_INPUT_DOMAIN` is DESIGN's obligation")
-        end = text.index("**Spatial-first materialization (HARD):**")
-        # Markdown wraps compound words after ``-``; normalize that layout so
-        # this assertion protects the semantic phrase rather than line width.
-        paragraph = " ".join(text[start:end].split()).replace("- ", "-")
-        for token in (
-            "architect names the token",
-            "compiles it verbatim",
-            "never deriving, inventing, or dropping it",
-            "never delegated to a crafter",
-            "declaration-vs-runtime state",
-            "declared and present",
-            "declared and missing",
-            "undeclared and present",
-            "undeclared and missing",
-            "named direct dependency-delta install argv",
-            "No ad-hoc install",
-            "whole-manifest reinstall",
-            "undeclared import",
-            "examples-only",
-            "EVIDENCE_GAP",
-        ):
-            assert token in paragraph, f"BROAD_INPUT_DOMAIN paragraph missing: {token}"
 
     def test_atd_semantic_pbt_carveout_preserves_one_observation_across_projections(
         self, root: Path
@@ -1304,7 +1187,7 @@ class TestRoleSkillLoadingRegistry:
             "nWave/agents/nw-acceptance-designer.md",
             "nWave/skills/nw-test-design-mandates/SKILL.md",
             "nWave/skills/nw-test-design-mandates-layered-mechanics/SKILL.md",
-            "nWave/skills/nw-ad-distill-dod/SKILL.md",
+            "nWave/skills/nw-at-completeness-check/SKILL.md",
         )
         projections = {
             path: " ".join((root / path).read_text(encoding="utf-8").split()).lower()
@@ -1395,40 +1278,29 @@ class TestRoleSkillLoadingRegistry:
             }
             assert not (frontmatter_skills & banned), frontmatter_skills & banned
 
-    def test_atd_auto_route_directive_is_reachable_from_auto_terminal_branch(
-        self, root: Path
-    ):
-        """The generated block must sit inside the Auto-reachable Route
-        contract paragraph, before the Human-only branch marker -- placing it
-        after `## Workflow` (as the pre-fix location did) is unreachable
-        because Auto stops before that heading."""
-        text = (root / "nWave" / "agents" / "nw-acceptance-designer.md").read_text()
-        route_idx = text.index("## Route contract")
-        human_idx = text.index("**Human route:**")
-        marker_idx = text.index("GENERATED:role-skill-loading START")
-        assert route_idx < marker_idx < human_idx, (
-            "role-skill-loading directive must render between the Auto Route "
-            "contract heading and the Human-route marker"
-        )
-        assert text.count("Invoke Skill(nw-algebraic-design-protocol)") == 1, (
-            "the algebra directive must not be duplicated as stale hand-authored prose"
-        )
-
     def test_oo_and_fp_crafters_read_lens_at_point_of_need_without_test_authoring(
-        self, root: Path
+        self, root: Path, roles: dict
     ):
+        discipline = (
+            root
+            / "nWave"
+            / "skills"
+            / "nw-crafter-discipline-delivery-contract"
+            / "SKILL.md"
+        ).read_text()
         for agent_id, design_skill in (
             ("nw-software-crafter", "nw-code-design-oo"),
             ("nw-functional-software-crafter", "nw-code-design-fp"),
         ):
-            body = _role_skill_loading_body(agent_id, root)
-            assert f"Invoke Skill({design_skill})" in body, body
-            assert "Invoke Skill(nw-algebraic-design-protocol)" in body, body
-            assert "Invoke Skill(nw-certainty-by-construction)" in body, body
+            catalog = roles[agent_id]["catalog_only"]
+            assert design_skill in catalog
+            assert design_skill in discipline
+            assert "nw-algebraic-design-protocol" in discipline
+            assert "nw-certainty-by-construction" in discipline
             for banned in ("nw-property-based-testing", "nw-test-design-mandates"):
-                assert banned not in body, (
+                assert banned not in discipline, (
                     f"{agent_id} must never load a test-authoring skill -- SLIM "
-                    f"scope forbids it, found {banned!r} in {body!r}"
+                    f"scope forbids it, found {banned!r} in the compact discipline"
                 )
 
             for token in (
@@ -1437,32 +1309,18 @@ class TestRoleSkillLoadingRegistry:
                 "INVALID_STATE",
                 "PRESERVATION",
             ):
-                assert token in body, (
+                assert token in discipline, (
                     f"{agent_id}: DeliveryContract obligation {token} must "
-                    "deterministically appear in the generated trigger projection"
+                    "appear in the sole normative routing table"
                 )
 
             text = (root / "nWave" / "agents" / f"{agent_id}.md").read_text()
-            assert "REUSE_CANDIDATE" in text
-            assert "ARCHITECTURE_BOUNDARY_CHANGE" in text
-            assert "authoring or editing a test" in text
+            assert '"Mandatory lens resolution"' in " ".join(text.split())
+            assert "REUSE_CANDIDATE" in discipline
+            assert "ARCHITECTURE_BOUNDARY_CHANGE" in discipline
+            assert "Do not author" in text
 
-    def test_crafters_directive_is_reachable_from_dispatch_authority(self, root: Path):
-        for agent_id in _CRAFTER_ROLES:
-            text = (root / "nWave" / "agents" / f"{agent_id}.md").read_text()
-            dispatch_idx = text.index("## Dispatch authority")
-            workflow_idx = text.index("## Workflow")
-            marker_idx = text.index("GENERATED:role-skill-loading START")
-            assert dispatch_idx < marker_idx < workflow_idx, (
-                f"{agent_id}: role-skill-loading directive must render inside "
-                "Dispatch authority, the section the thin/Auto path executes"
-            )
-            assert text.count("Invoke Skill(nw-algebraic-design-protocol)") == 1, (
-                f"{agent_id}: the algebra directive must not be duplicated as "
-                "stale hand-authored prose"
-            )
-
-    @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
+    @pytest.mark.parametrize("agent_id", _RUNTIME_SKILL_TARGETS)
     def test_frontmatter_tools_declares_skill(self, root: Path, agent_id: str):
         text = (root / "nWave" / "agents" / f"{agent_id}.md").read_text()
         tools_line = next(
@@ -1472,7 +1330,18 @@ class TestRoleSkillLoadingRegistry:
         assert "Skill" in tools, f"{agent_id}: frontmatter tools must declare Skill"
         assert tools.count("Skill") == 1, f"{agent_id}: Skill declared more than once"
 
-    @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
+    def test_atd_frontmatter_tools_excludes_skill(self, root: Path):
+        """ATD compiles and must not invoke runtime Skill -- its tools are
+        the compiler-boundary set: Read, Write, Edit."""
+        text = (root / "nWave" / "agents" / "nw-acceptance-designer.md").read_text()
+        tools_line = next(
+            line for line in text.splitlines() if line.startswith("tools:")
+        )
+        tools = [tool.strip() for tool in tools_line.removeprefix("tools:").split(",")]
+        assert "Skill" not in tools
+        assert set(tools) == {"Read", "Write", "Edit"}
+
+    @pytest.mark.parametrize("agent_id", _RUNTIME_SKILL_TARGETS)
     def test_generated_region_invokes_skill_natively_never_reads_a_path(
         self, root: Path, agent_id: str
     ):
@@ -1489,6 +1358,18 @@ class TestRoleSkillLoadingRegistry:
         assert "Read `" not in region, (
             f"{agent_id}: generated region must never render a Read directive"
         )
+
+    def test_atd_generated_region_forbids_skill_and_codefact_invocation(
+        self, root: Path
+    ):
+        """DESIGN owns proof-protocol selection; the compiled ATD region must
+        not invoke a runtime Skill or CodeFact."""
+        text = (root / "nWave" / "agents" / "nw-acceptance-designer.md").read_text()
+        start = text.index("GENERATED:role-skill-loading START")
+        end = text.index("GENERATED:role-skill-loading END")
+        region = text[start:end]
+        assert "Skill(" not in region
+        assert "CodeFact" not in region
 
     @pytest.mark.parametrize("agent_id", _ROLE_SKILL_TARGETS)
     def test_every_registered_role_still_projects_a_nonempty_body(

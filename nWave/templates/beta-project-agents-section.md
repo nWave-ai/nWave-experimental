@@ -4,8 +4,6 @@ nWave is in **active development**. Feature work should follow discovery, design
 
 {{TOOL_BATCHING_FRAGMENT}}
 
-{{LOOP_CONSENT_FRAGMENT}}
-
 ### Privacy — Non-Negotiable
 
 nWave runs entirely local: no telemetry, no automatic transmission of any kind. See [PRIVACY.md](../../PRIVACY.md) for the complete policy. Feedback on nWave itself is welcome via GitHub Issues on the experimental repo, at your discretion — never a required step of doing the work.

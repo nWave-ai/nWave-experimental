@@ -38,7 +38,6 @@ from typing import TYPE_CHECKING
 from des.testarch.ports import (
     CallInfo,
     ConstructInfo,
-    FailureModeCoverage,
     FunctionInfo,
     ImportInfo,
     Layer,
@@ -85,19 +84,6 @@ _WHITESPACE_RUN_RE = re.compile(r"\s+")
 # CM-I). A ``main`` / ``*.main`` callee with no real-subprocess spawn is the
 # IN_PROCESS_MAIN shape — the very shape that is dishonest under a subprocess tag.
 _MAIN_CALLEE = "main"
-
-# Component-manifest shape the slice-07 M11 coverage half reads. A manifest
-# declares a list of failure modes under a ``failure_modes:`` key; each entry
-# names a mode as a ``- id: <value>`` list item. The adapter extracts the ids
-# with a stdlib line-scan (no third-party YAML dependency — the DES-bundle
-# stdlib-only contract, ADR-PLAT-001 + ARCH "the only runtime dependency is
-# Python") and matches each id against the named tests in scope; the rule layer
-# never sees the parse.
-_FAILURE_MODES_HEADER = "failure_modes:"
-# Matches a ``- id: <value>`` list entry (optional surrounding quotes), capturing
-# the bare mode id. Indentation is permissive; the entry must be a ``-`` item.
-_MODE_ID_ENTRY = re.compile(r"^\s*-\s*id:\s*[\"']?([A-Za-z0-9_./-]+)[\"']?\s*$")
-
 
 # Path-segment → structural layer convention (first match wins). Pure-string,
 # git-free, language-agnostic — the adapter classifies a file by its directory
@@ -262,26 +248,6 @@ class PythonAstAdapter:
         if any(self._is_main_callee(callee) for callee in callees):
             return SpawnShape.IN_PROCESS_MAIN
         return SpawnShape.NONE
-
-    def failure_mode_coverage(
-        self, manifest_source: str, test_names: frozenset[str]
-    ) -> FailureModeCoverage:
-        """Cross-check a manifest's failure modes against named tests (slice-07 M11).
-
-        Scans ``manifest_source`` for its ``failure_modes:`` list and reports every
-        declared mode ``id`` that no name in ``test_names`` mentions. Matching is
-        structural-by-name: a mode is covered iff its id is a substring of some test
-        name (the slice-07 learning hypothesis — a failure mode maps to its covering
-        test by name, no judgment). A manifest with no ``failure_modes`` declares
-        nothing to cover, so nothing is uncovered.
-        """
-        declared = self._declared_failure_modes(manifest_source)
-        uncovered = tuple(
-            mode_id
-            for mode_id in declared
-            if not any(mode_id in test_name for test_name in test_names)
-        )
-        return FailureModeCoverage(uncovered=uncovered)
 
     def step_shapes_in_module(self, tree: object) -> StepShapeCorpus:
         """Census the step-shape corpus of a test module (sustainable-test-suite slice-09).
@@ -451,32 +417,6 @@ class PythonAstAdapter:
             return None
         target = targets[0]
         return target.id if isinstance(target, ast.Name) else None
-
-    @staticmethod
-    def _declared_failure_modes(manifest_source: str) -> list[str]:
-        """The ordered ``failure_modes`` entry ids declared in a component manifest.
-
-        A stdlib line-scan (no third-party YAML dependency — DES-bundle stdlib-only
-        contract): once the ``failure_modes:`` header is seen, every following
-        indented ``- id: <value>`` list entry contributes its id. A list item is
-        always indented under its key, so a manifest's other top-level keys (which
-        are never ``- id:`` list items) cannot be mistaken for failure modes. A
-        manifest with no ``failure_modes`` header declares nothing — the adapter
-        degrades to "nothing declared" rather than crashing on a malformed manifest.
-        """
-        modes: list[str] = []
-        in_section = False
-        for raw_line in manifest_source.splitlines():
-            line = raw_line.rstrip()
-            if not line or line.lstrip().startswith("#"):
-                continue
-            if line == _FAILURE_MODES_HEADER:
-                in_section = True
-                continue
-            match = _MODE_ID_ENTRY.match(line) if in_section else None
-            if match is not None:
-                modes.append(match.group(1))
-        return modes
 
     @staticmethod
     def _marker_name(decorator: ast.expr) -> str:

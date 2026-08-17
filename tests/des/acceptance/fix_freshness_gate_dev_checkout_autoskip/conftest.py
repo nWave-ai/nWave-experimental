@@ -190,21 +190,26 @@ class FreshnessAutoskipFixture:
     ) -> CheckoutProbe:
         """Lay out a synthetic CWD with the requested `.git/` adjacency.
 
-        DEV_CHECKOUT: creates a `tmp_path/dev-checkout/.git/` directory so the
-        bugfix's CWD-adjacency probe detects the structural marker.
+        DEV_CHECKOUT: creates a minimal valid `.git/HEAD` marker so the
+        CWD-adjacency probe detects an actual checkout rather than a directory
+        that merely happens to be named `.git`.
         CUSTOMER_HOST: returns a plain tmp_path subdirectory with no `.git/`
         adjacency — the regression-pin baseline.
         """
         cwd = tmp_path / "operator-cwd"
         cwd.mkdir(parents=True, exist_ok=True)
         if adjacency is CheckoutAdjacency.DEV_CHECKOUT:
-            (cwd / ".git").mkdir(parents=True, exist_ok=True)
+            git_dir = cwd / ".git"
+            git_dir.mkdir(parents=True, exist_ok=True)
+            (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
         return CheckoutProbe(cwd=cwd, adjacency=adjacency)
 
     def spawn_gate_against(
         self,
         installed: InstalledTreeProbe,
         checkout: CheckoutProbe,
+        *,
+        freshness_mode: str | None = None,
     ) -> GateInvocationOutcome:
         """Run `python -c "import des.cli"` against the synthetic installed tree.
 
@@ -226,6 +231,8 @@ class FreshnessAutoskipFixture:
             "PATH": os.environ.get("PATH", ""),
             "PYTHONPATH": str(lib_python),
         }
+        if freshness_mode is not None:
+            env["NWAVE_FRESHNESS"] = freshness_mode
         for var in ("LC_ALL", "LANG", "PYTHONIOENCODING"):
             if var in os.environ:
                 env[var] = os.environ[var]

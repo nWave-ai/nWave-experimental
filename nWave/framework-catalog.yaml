@@ -280,11 +280,9 @@ commands:
     - competitive_research
     - taste_evaluation
   discuss:
-    description: Conducts Jobs-to-be-Done analysis, UX journey design, and requirements
-      gathering through interactive discovery. Use when starting feature analysis,
-      defining user stories, or creating acceptance criteria.
-    argument_hint: '[feature-name] - Optional: --epic=[epic-id] --phase=[jtbd|journey|requirements]
-      --interactive=[high|moderate] --output-format=[md|yaml]'
+    description: Clarifies durable jobs, journeys, outcomes, and product measures
+      without creating delivery state.
+    argument_hint: '[product question or outcome]'
     agents:
     - product-owner
     wave: DISCUSS
@@ -326,10 +324,10 @@ commands:
     - architecture_document
     - architecture_diagrams
   distill:
-    description: Creates E2E acceptance tests in Given-When-Then format from requirements
-      and architecture. Use when preparing executable specifications before implementation.
-    argument_hint: '[story-id] - Optional: --test-framework=[cucumber|specflow|pytest-bdd]
-      --integration=[real-services|mocks]'
+    description: Compiles permanent architecture and value authority into one minimal
+      executable oracle and one validated DeliveryContract for a RED_TO_GREEN or GREEN_TO_GREEN
+      route.
+    argument_hint: '[delivery-id]'
     agents:
     - acceptance-designer
     wave: DISTILL
@@ -337,11 +335,10 @@ commands:
     - acceptance_tests
     - test_scenarios
   deliver:
-    description: Delivers feature-delta Slice Plan slices through AT-first implementation,
-      review/EXAMINE, and finalize. Use when prior waves are complete and the feature
-      is ready for implementation.
-    argument_hint: '[feature-description] - Example: "Implement user authentication
-      with JWT"'
+    description: Delivers one validated DeliveryContract through the selected paradigm
+      crafter, independent review, source-blind EXAMINE when applicable, and one terminal
+      finalization.
+    argument_hint: --repo-root <ROOT> --delivery-contract <repository-relative-json>
     agents:
     - platform-architect
     wave: DELIVER
@@ -384,9 +381,9 @@ commands:
     - hotspot_ranking
     - churn_annotated_report
   bugfix:
-    description: "Bug fix workflow: root cause analysis \u2192 user review \u2192\
-      \ regression test + fix via TDD"
-    argument_hint: '[bug-description] - Describe the defect observed'
+    description: Resolves one observed defect through the canonical DeliveryContract
+      flow.
+    argument_hint: --repo-root <ROOT> --delivery-contract <repository-relative-json>
     agents:
     - troubleshooter
     - software-crafter
@@ -421,54 +418,19 @@ commands:
     - updated_diagrams
     - visual_architecture
   review:
-    description: Dispatches an expert reviewer for a baseline, feature delta, task,
-      or implementation.
-    argument_hint: '[agent] [artifact-type] [artifact-path] - Example: @<base-agent>
-      feature-delta "docs/feature-delta.md"'
+    description: Routes an actual artifact or candidate diff to the matching independent
+      reviewer.
+    argument_hint: '[owner] [repository-relative artifact or diff identity]'
     outputs:
     - review_report
     agents: []
-  execute:
-    description: Dispatches one unit of DELIVER work to a specialized agent for executable-AT
-      delivery. Active execution is one atdd-pure carpaccio slice.
-    argument_hint: '[agent] [feature-id] [step-id] - Example: @nw-software-crafter
-      "auth-upgrade" "01-01"'
-    outputs:
-    - task_results
-    agents: []
-  finalize:
-    description: Archives a completed feature to docs/evolution/, migrates lasting
-      artifacts to permanent directories, and preserves the feature workspace as living
-      history. Use after current feature completion evidence passes.
-    argument_hint: '[agent] [feature-id] - Example: @nw-platform-architect "auth-upgrade"'
-    outputs:
-    - evolution_document
-    agents: []
   new:
-    description: Guided wizard to start a new feature. Asks what you want to build,
-      recommends the right starting wave, and launches it.
-    argument_hint: '[feature-description] - Example: "Add rate limiting to the API
-      gateway"'
+    description: Routes a new request to the earliest authority that lacks evidence.
+    argument_hint: '[request]'
     agents: []
     wave: CROSS_WAVE
     outputs:
     - wave_dispatch
-  continue:
-    description: Detects current wave progress for a feature and resumes at the next
-      step. Scans docs/feature/ for artifacts.
-    argument_hint: '[feature-id] - Optional: omit to auto-detect from docs/feature/'
-    agents: []
-    wave: CROSS_WAVE
-    outputs:
-    - wave_dispatch
-  fast-forward:
-    description: Fast-forwards through remaining waves end-to-end without stopping
-      for review between waves.
-    argument_hint: '[feature-description] - Optional: --from=[discuss|design|devops|distill|deliver]'
-    agents: []
-    wave: CROSS_WAVE
-    outputs:
-    - complete_feature
   rigor:
     description: Selects a quality-vs-token-consumption profile (lean, standard, thorough,
       exhaustive, custom, inherit) and persists it globally (~/.nwave/global-config.json)
@@ -491,12 +453,9 @@ commands:
     - contextual_answer
     - command_recommendation
   optimize-tests:
-    description: Minimizes test count while preserving coverage. Detects byte-identical
-      pairs, parametrize-inflation, language-guarantee tests, AST-shape tests, stale
-      migration nets. Approval gate before any change.
-    argument_hint: '[scope] - Optional: a path (e.g. tests/des/unit/), a feature-id
-      (auto-resolves to tests/<id>/), or omit for full unit suite. --reviewer to chain
-      reviewer agent.'
+    description: Minimizes a test portfolio while preserving observable behavior and
+      mutation value.
+    argument_hint: '[test scope]'
     agents:
     - test-optimizer
     - test-optimizer-reviewer
@@ -527,22 +486,6 @@ commands:
     outputs:
     - research_document
 quality_gates:
-  component-manifest:
-    gate: validate_component_manifest
-    coverage: DESIGN-exit
-    signals:
-      manifest.not_applicable: countable
-  robustness-pbt-density-gate:
-    gate: check_robustness_density
-    coverage: DISTILL-exit
-    cli: scripts/cli/check_robustness_density.py
-    hook: scripts/hooks/subagent_stop_robustness_gate.py
-    consumer: src/des/cli/at_review_verdict.py
-    signals:
-      robustness.coverage_miss: countable
-      robustness.pbt_shallow: countable
-      robustness.pbt_not_falsifiable: countable
-      robustness.layer2_unavailable: countable
   knowledge_preservation:
     software-crafter: 925_lines_methodology
     systematic_refactorer: complete_refactoring_mechanics
@@ -612,12 +555,3 @@ integration:
   cross_wave_coordination: true
   knowledge_base_accessibility: true
   template_orchestration_support: true
-slice_kinds:
-- id: walking_skeleton
-  description: First slice end-to-end wiring proof
-- id: coupled
-  description: ATs coupled by single contract; size-ceiling escape
-- id: regression-pin
-  description: Pin existing behavior under refactor
-- id: adapter-integration
-  description: "SUT = adapter itself; coverage matrix per spike v2 \xA75"

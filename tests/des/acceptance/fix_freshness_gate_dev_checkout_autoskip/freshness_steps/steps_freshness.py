@@ -104,6 +104,11 @@ def given_operator_cwd_adjacency(
     )
 
 
+@given("the operator requests verbose freshness diagnostics")
+def given_verbose_freshness_diagnostics(state) -> None:
+    state["freshness_mode"] = "verbose"
+
+
 # --- When -----------------------------------------------------------------
 
 
@@ -111,7 +116,9 @@ def given_operator_cwd_adjacency(
 def when_operator_imports_des_cli(autoskip_fixture, state) -> None:
     state["before"] = _snapshot(state)
     state["outcome"] = autoskip_fixture.spawn_gate_against(
-        state["installed"], state["checkout"]
+        state["installed"],
+        state["checkout"],
+        freshness_mode=state.get("freshness_mode"),
     )
 
 
@@ -162,6 +169,11 @@ def then_gate_does_not_emit_event(state, forbidden_event: str) -> None:
         f"{forbidden_event!r} (must be distinguishable from this name); "
         f"stderr={state['outcome'].stderr_text!r}"
     )
+
+
+@then("the gate emits no freshness diagnostic")
+def then_gate_emits_no_freshness_diagnostic(state) -> None:
+    assert state["outcome"].stderr_text == ""
 
 
 # Closed-enum sanity: cite every StructuredEventName the assertions can

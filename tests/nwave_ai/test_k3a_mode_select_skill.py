@@ -69,6 +69,13 @@ def test_skill_carries_operative_human_auto_decision_procedure() -> None:
         assert marker in text, f"missing operative marker: {marker!r}"
 
 
+def test_auto_ml_handoff_is_exact_ephemeral_and_immediate() -> None:
+    text = _skill_text()
+    assert "NW-MODE-SELECTED: <direct|human|auto> <S|M|L>" in text
+    assert "next tool" in text and "`Skill(nw-auto)`" in text
+    assert "never a file, setting, receipt, or workflow state" in text
+
+
 def test_skill_forbids_ledger_sequencer_and_new_hook_scope_creep() -> None:
     """K3-A's binding fence: no sequencer/engine/DSL/ledger, no new hook code."""
     text = _skill_text()

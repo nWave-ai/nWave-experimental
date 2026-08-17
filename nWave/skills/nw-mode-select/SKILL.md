@@ -24,6 +24,17 @@ Ask yourself, from the request text and repo evidence — not from vibes:
 
 State the classification and the ONE observable reason for it (file count, presence of a design decision, unknown shape) before proceeding.
 
+Then emit exactly one standalone line, once:
+
+```
+NW-MODE-SELECTED: <direct|human|auto> <S|M|L>
+```
+
+Valid combinations are `direct S`, `human S|M|L`, and `auto M|L`. This is an
+ephemeral handoff observation, never a file, setting, receipt, or workflow state.
+A root tool action with a missing, malformed, or conflicting line is blocked
+because the selected route would be ambiguous.
+
 ## Step 3 — Choose the path
 
 | Size | Default mode | What that means operationally |
@@ -41,6 +52,10 @@ Human mode is a sequence of LOCAL HTML documents you produce and hand to the Art
 ## Auto mode: what "minimal context" means here
 
 Auto mode asks for authorization exactly once — naming what you are about to do and its blast radius — then executes with minimal further interaction: no per-stage HTML, just the working diff and a short end-of-run summary. After classification, delegate explicit Auto M/L to `nw-auto`; that skill is the sole route authority. Do not restate or execute its M/L algorithm here, and do not route Auto through `nw-deliver`, `nw-distill`, or a generic wave command. Direct S and Human routes are unchanged.
+
+After `NW-MODE-SELECTED: auto M` or `NW-MODE-SELECTED: auto L`, the next tool
+call is exactly `Skill(nw-auto)`. Do not inspect the repository, dispatch a
+role, or mutate anything between the marker and that Skill call.
 
 ## What this skill is explicitly NOT
 

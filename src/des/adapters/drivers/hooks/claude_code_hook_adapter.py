@@ -6,8 +6,6 @@ This module is the installed entry point for DES hooks:
 
 All handler logic lives in dedicated modules:
 - pre_tool_use_handler.py  — PreToolUse (Task/Agent validation)
-- subagent_stop_handler.py — SubagentStop (step completion validation)
-- post_tool_use_handler.py — PostToolUse (failure notification injection)
 - pre_write_handler.py     — PreWrite/PreEdit (session guard)
 - subagent_start_handler.py — SubagentStart (agent lifecycle)
 
@@ -33,27 +31,14 @@ if __name__ == "__main__":
 
 # Re-export handler functions for backward compatibility with tests
 from des.adapters.drivers.hooks.hook_router import main
-from des.adapters.drivers.hooks.post_tool_use_handler import (  # noqa: F401
-    handle_post_tool_use,
-)
 from des.adapters.drivers.hooks.pre_tool_use_handler import (  # noqa: F401
     handle_pre_tool_use,
 )
 from des.adapters.drivers.hooks.pre_write_handler import (  # noqa: F401
     handle_pre_write,
 )
-
-# Re-export service factory functions for test patching
-from des.adapters.drivers.hooks.service_factory import (  # noqa: F401
-    create_pre_tool_use_service,
-    create_subagent_stop_service,
-)
 from des.adapters.drivers.hooks.subagent_start_handler import (  # noqa: F401
     handle_subagent_start,
-)
-from des.adapters.drivers.hooks.subagent_stop_handler import (  # noqa: F401
-    extract_des_context_from_transcript,
-    handle_subagent_stop,
 )
 
 

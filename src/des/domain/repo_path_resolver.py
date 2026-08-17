@@ -1,7 +1,7 @@
-"""Shared repo-root + feature-delta path resolution (SSOT).
+"""Shared repo-root + feature path resolution (SSOT).
 
-Single source of truth for two path conventions that were hand-copied across
-several CLI modules and the subagent-stop hook:
+Single source of truth for the repo-root convention that was hand-copied
+across several CLI modules and the subagent-stop hook:
 
 - ``resolve_repo_root`` -- the repo root: ``--repo-root`` flag, then
   ``NWAVE_REPO_ROOT`` env, then ``Path.cwd()``. As shipped ``des.`` modules
@@ -9,16 +9,6 @@ several CLI modules and the subagent-stop hook:
   ``__file__``-relative ``parents[N]`` fallback is broken-by-design on an
   installed instance. Both authoritative inputs name the root explicitly;
   ``Path.cwd()`` is the layout-independent fallback.
-- ``feature_delta_path`` -- the feature-delta markdown file for a feature id
-  under a given repo root (a pure path-join convention), composed from
-  ``feature_dir_path`` (the ``docs/feature/<id>`` directory) and
-  ``feature_delta_in_dir`` (the delta file inside an already-resolved feature
-  directory). Call sites that hold only a feature directory -- a caller
-  parameter, a CLI argument, a directory iteration -- have no ``feature_id``
-  to pass and use ``feature_delta_in_dir``; that missing affordance is why 29
-  call sites hand-built the join instead of importing one. Glob patterns and
-  filename comparisons use ``FEATURE_DELTA_FILENAME`` rather than a fresh
-  literal.
 
 DRY consolidation (behavior-preserving): the bodies were byte-identical across
 ``des.cli.carpaccio_slice_gate``, ``des.cli.carpaccio_precheck``,
@@ -43,12 +33,6 @@ def resolve_repo_root(override: str | None) -> Path:
     return Path.cwd()
 
 
-#: The feature-delta markdown filename. The ONE spelling of this literal in
-#: the tree -- glob patterns and filename comparisons import it rather than
-#: writing their own copy (a local copy is an uncoordinated duplicate, and an
-#: aliased copy blinds the inline-construction guard).
-FEATURE_DELTA_FILENAME = "feature-delta.md"
-
 #: The repo-relative directory holding one feature's documents.
 FEATURE_DOCS_SEGMENTS = ("docs", "feature")
 
@@ -56,20 +40,6 @@ FEATURE_DOCS_SEGMENTS = ("docs", "feature")
 def feature_dir_path(repo: Path, feature_id: str) -> Path:
     """The ``docs/feature/<feature_id>`` directory under ``repo``."""
     return repo.joinpath(*FEATURE_DOCS_SEGMENTS, feature_id)
-
-
-def feature_delta_in_dir(feature_dir: Path) -> Path:
-    """The feature-delta markdown file inside an already-resolved feature dir.
-
-    For call sites that received the feature directory from elsewhere and so
-    have no ``feature_id`` to pass to :func:`feature_delta_path`.
-    """
-    return feature_dir / FEATURE_DELTA_FILENAME
-
-
-def feature_delta_path(repo: Path, feature_id: str) -> Path:
-    """The feature-delta markdown file for ``feature_id`` under ``repo``."""
-    return feature_delta_in_dir(feature_dir_path(repo, feature_id))
 
 
 #: The repo-relative directory holding one feature's expectation charter
@@ -91,9 +61,9 @@ def has_expectation_charter(repo: Path, feature_id: str) -> bool:
     from the byte-identical predicate previously private to
     ``des.cli.verify_readiness_pre_dispatch`` -- second call site
     (``des.cli.at_review_verdict``) makes this a shared concept, so it moves
-    to the domain-layer SSOT alongside ``feature_delta_path`` (AD-05: no
-    shared logic in ``cli/``) rather than being imported cross-module as a
-    private symbol or re-implemented a third time.
+    to the domain-layer SSOT (AD-05: no shared logic in ``cli/``) rather than
+    being imported cross-module as a private symbol or re-implemented a third
+    time.
     """
     charter_dir = expectation_charter_dir_path(repo, feature_id)
     return charter_dir.is_dir() and any(charter_dir.glob("*.md"))

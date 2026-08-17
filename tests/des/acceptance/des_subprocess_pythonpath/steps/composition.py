@@ -51,10 +51,10 @@ _SANCTIONED_HELPER = _DES_ROOT / "runtime" / "interpreter.py"
 
 _SCAFFOLD_MARKER = "fix-des-subprocess-pythonpath RED scaffold"
 
-# A real, read-only des.cli subcommand (verified: `des.cli.verify_deliver_integrity --help`
+# A real, read-only des.cli subcommand (verified: `des.cli.health_check --help`
 # exits 0, prints usage, mutates nothing).
 SANCTIONED_SUBCOMMAND = SanctionedDesModuleSubcommand(
-    module="des.cli.verify_deliver_integrity", readonly_arg="--help"
+    module="des.cli.health_check", readonly_arg="--help"
 )
 
 

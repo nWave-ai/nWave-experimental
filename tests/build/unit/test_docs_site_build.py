@@ -39,7 +39,6 @@ def bs():
     "path,expected",
     [
         ("docs/guides/tutorial-x/README.md", "guides/tutorial-x"),
-        ("docs/guides/enforcement-recipes.md", "guides/enforcement-recipes"),
         ("docs/reference/index.md", "reference"),
         ("docs/reference/agents/index.md", "reference/agents"),
         ("docs/reference/agents/nw-x.md", "reference/agents/nw-x"),

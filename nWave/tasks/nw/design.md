@@ -44,26 +44,28 @@ Before beginning DESIGN work, read SSOT and prior wave artifacts:
    - `docs/product/architecture/brief.md` — current architecture to extend (if exists)
    - `docs/product/architecture/adr-*.md` — existing architectural decisions
    - `docs/product/journeys/{name}.yaml` — journey schema for port identification
-2. **DISCUSS** (primary input): Read from `docs/feature/{feature-id}/discuss/`:
-   - `wave-decisions.md` — decision summary
-   - `user-stories.md` — functional requirements, system constraints, and scope (includes AC per story)
-   - `story-map.md` — walking skeleton, release slicing, and priority rationale
-   - `outcome-kpis.md` — quality attributes informing architecture
-3. **DISCOVER** (synthesis check only): Read `docs/feature/{feature-id}/discover/wave-decisions.md` — only if architecturally relevant
+   - `docs/product/vision.md`, `docs/product/jobs.yaml`, `docs/product/kpi-contracts.yaml` — value context that bounds the design
+2. **DISCUSS** (primary input, ephemeral workspace while the delivery is open): read the current `user-stories.md`, `story-map.md` and `outcome-kpis.md` under the feature's DISCUSS output — functional requirements, scope, priority rationale and quality attributes. There is no separate decision-summary ledger to read; the durable product SSOT above is the authority these artifacts must agree with.
 
-DISCUSS already synthesizes evidence into structured user stories. DESIGN reads SSOT architecture first (to extend, not recreate), then feature-level artifacts for the delta.
+DISCUSS already synthesizes evidence into structured user stories. DESIGN reads SSOT architecture first (to extend, not recreate), then the open delivery's ephemeral DISCUSS artifacts for the delta.
 
 **READING ENFORCEMENT**: You MUST read every file listed in Prior Wave Consultation above using the Read tool before proceeding. After reading, output a confirmation checklist (`✓ {file}` for each read, `⊘ {file} (not found)` for missing). Do NOT skip files that exist — skipping causes architectural decisions disconnected from requirements.
 
 After reading, check whether any DESIGN decisions would contradict DISCUSS requirements. Flag contradictions and resolve with user before proceeding. Example: DISCUSS requires "real-time updates" but DESIGN chooses batch processing — this must be resolved.
 
-## Document Update (Back-Propagation)
+## Downstream Correction (No Delta Artifact)
 
-When DESIGN decisions change assumptions from prior waves:
-1. Document the change in a `## Changed Assumptions` section at the end of the affected DESIGN artifact
-2. Reference the original prior-wave document and quote the original assumption
-3. State the new assumption and the rationale for the change
-4. If architecture constraints require changes to user stories or acceptance criteria, note them in `docs/feature/{feature-id}/design/upstream-changes.md` for the product owner to review
+When a DESIGN decision contradicts a fact from an earlier wave, name the
+conflicting canonical owner and correct it there — never in a side file:
+- A stale user-story or acceptance-criterion assumption is returned to the
+  product owner and corrected at its source (DISCUSS's own artifact, or
+  `docs/product/` if it was already promoted).
+- A stale architecture assumption is corrected in `docs/product/architecture/brief.md`
+  or the relevant ADR directly.
+
+State the original assumption, the new one and the rationale inline in the
+corrected owner document. There is no `upstream-changes.md` ledger; the
+correction *is* the update to the owning artifact (ADR Section 7).
 
 ## Discovery Flow
 
@@ -113,18 +115,11 @@ When not activated: skip entirely, do not mention.
 - C4 Container diagram (Mermaid) -- MANDATORY
 - C4 Component diagrams (Mermaid) -- only for complex subsystems
 - ADRs for significant decisions
-- `component-manifest.yaml` -- the structured component contract (see Component Manifest below)
 
-#### Component Manifest
-
-For each component whose boundary is defined, enumerate unbounded input/state domains into `docs/feature/{feature-id}/design/component-manifest.yaml`. This is a design-completeness activity: the architect's tacit "what inputs can this component be given" judgment made an explicit, schema-valid, grep-grounded work product.
-
-Procedure:
-1. Ask "what input/state domains does this component accept that are NOT finite-enumerable?"
-2. Write one `unbounded-input-domains:` entry per such domain; grep-verify each `sut:` symbol in its cited file before emission.
-3. If the component genuinely has no unbounded input domain, write `unbounded-input-domains: []` with a one-line rationale -- never omit the block.
-
-Validate before DESIGN-exit: `python -m scripts.cli.validate_component_manifest docs/feature/{feature-id}/design/component-manifest.yaml` must exit 0.
+Record component boundaries, unbounded input/state domains, typed failures and
+port invariants once in the durable architecture brief. Project only the facts
+needed by one delivery into its existing `DeliveryContract.targets` boundary,
+contract shape and obligations; do not create a per-feature design manifest.
 
 ## Rigor Profile Integration
 
@@ -211,36 +206,10 @@ The invoked agent MUST create a task list from its workflow phases at the start 
 **Handoff To**: nw-platform-architect (DEVOPS wave)
 **Deliverables**: See Morgan's handoff package specification in agent file
 
-## Wave Decisions Summary
-
-Before completing DESIGN, produce `docs/feature/{feature-id}/design/wave-decisions.md`:
-
-```markdown
-# DESIGN Decisions — {feature-id}
-
-## Key Decisions
-- [D1] {decision}: {rationale} (see: {source-file})
-
-## Architecture Summary
-- Pattern: {e.g., modular monolith with ports-and-adapters}
-- Paradigm: {OOP|FP}
-- Key components: {list top-level components}
-
-## Technology Stack
-- {language/framework}: {rationale}
-
-## Constraints Established
-- {architectural constraint}
-
-## Upstream Changes
-- {any DISCUSS assumptions changed, with rationale}
-```
-
-This summary enables DEVOPS and DISTILL to quickly assess architecture decisions without reading all DESIGN files.
-
 ## SSOT Update
 
-After producing feature-level artifacts, update the product-level SSOT:
+The durable product-level SSOT is the only normative handoff DEVOPS and
+DISTILL read — not a per-wave decision file. Update it directly:
 
 1. **Architecture SSOT**: Update `docs/product/architecture/brief.md` with new component boundaries, driving ports, and key decisions. Add consumer-labeled sections: `## For Acceptance Designer` (driving ports, test entry points) and `## For Software Crafter` (component boundaries, key decisions). If `brief.md` does not exist, create it.
 2. **ADRs**: Write new ADRs to `docs/product/architecture/adr-*.md`. ADRs are permanent — they accumulate, never replaced.
@@ -249,12 +218,6 @@ After producing feature-level artifacts, update the product-level SSOT:
 If `docs/product/architecture/` does not exist, create it. This is SSOT bootstrap for architecture.
 
 ## Expected Outputs
-
-### Feature delta (in `docs/feature/{feature-id}/design/`)
-```
-  wave-decisions.md              (appends ## DESIGN Decisions section)
-  component-manifest.yaml        (structured component contract -- unbounded input domains)
-```
 
 ### SSOT updates (in `docs/product/architecture/`)
 ```

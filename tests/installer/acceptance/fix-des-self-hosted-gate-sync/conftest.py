@@ -513,31 +513,6 @@ class FreshnessProbeFixture:
             ) from exc
         return frozenset(_discover_shims(source_dir))
 
-    def discovery_floor(self) -> frozenset[str]:
-        """Return the production `DES_SHIMS_FLOOR` regression-floor constant.
-
-        Per Pillar 3 the constant lives in production code (`des_plugin`),
-        NOT in this test fixture — the test reads it from the production
-        module so the floor is the canonical SSOT a release-time engineer
-        edits when introducing a new load-bearing CLI module. Returns a
-        frozenset of shim names.
-
-        Raises AssertionError when the production constant is not yet
-        defined, so the AT fails for the right reason (missing production
-        artifact) rather than NameError.
-        """
-        from scripts.install.plugins import des_plugin as _des_plugin_mod
-
-        floor = getattr(_des_plugin_mod, "DES_SHIMS_FLOOR", None)
-        if floor is None:
-            raise AssertionError(
-                "Not yet implemented -- RED scaffold: "
-                "`scripts.install.plugins.des_plugin.DES_SHIMS_FLOOR` is missing. "
-                "DELIVER must declare the frozen regression-floor set per "
-                "feature-delta §2.2 Addition 2 + DDD-4 (slice-03)."
-            )
-        return frozenset(floor)
-
 
 @pytest.fixture
 def freshness_probe() -> FreshnessProbeFixture:

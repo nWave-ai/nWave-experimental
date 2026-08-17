@@ -1045,14 +1045,8 @@ class TestCodexHookPayloadCompatibility:
     never accesses ``transcript_path`` — so both shapes are accepted without
     any translation shim.
 
-    For the SubagentStop / Stop boundary there IS a field-name gap:
-    Claude Code sends ``agent_transcript_path``; Codex's ``Stop`` hook sends
-    ``transcript_path`` (different key).  The DES subagent-stop handler calls
-    ``hook_input.get("agent_transcript_path")`` which returns None on a Codex
-    payload, causing the handler to fall through to ``{"decision": "allow"}``
-    (graceful pass-through, no crash).
-
-    These tests document both behaviours so future adapters know the exact gap.
+    These tests keep the live PreToolUse boundary compatible without a
+    provider-specific translation shim.
     """
 
     def _invoke_pre_tool_use_handler(
@@ -1063,7 +1057,6 @@ class TestCodexHookPayloadCompatibility:
         Patches:
         - sys.stdin: supplies the JSON payload
         - hook_protocol._audit_writer_factory: returns NullAuditLogWriter
-        - service_factory.create_pre_tool_use_service: returns allow-all stub
         - des_task_signal.DES_DELIVER_SESSION_FILE: an active-session marker,
           bypassing the root activation-routing-before-mutation gate (added
           after this test was written) — orthogonal to the payload-shape
@@ -1074,25 +1067,14 @@ class TestCodexHookPayloadCompatibility:
             (exit_code, stdout_text)
         """
         import io
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
-        from des.adapters.drivers.hooks import (
-            des_task_signal,
-            hook_protocol,
-            service_factory,
-        )
+        from des.adapters.drivers.hooks import des_task_signal, hook_protocol
         from des.adapters.drivers.hooks.pre_tool_use_handler import handle_pre_tool_use
-        from des.ports.driver_ports.pre_tool_use_port import HookDecision
 
         stdin_data = json.dumps(payload)
         captured_stdout = io.StringIO()
-
-        # Stub service returns allow for any input — we are testing the
-        # payload parsing layer, not the enforcement logic.
-        allow_decision = HookDecision(action="allow", reason="stub allow")
-        stub_service = MagicMock()
-        stub_service.validate.return_value = allow_decision
 
         session_file = tmp_path / "deliver-session.json"
         session_file.write_text("{}", encoding="utf-8")
@@ -1104,11 +1086,6 @@ class TestCodexHookPayloadCompatibility:
                 hook_protocol,
                 "_audit_writer_factory",
                 return_value=NullAuditLogWriter(),
-            ),
-            patch.object(
-                service_factory,
-                "create_pre_tool_use_service",
-                return_value=stub_service,
             ),
             patch.object(des_task_signal, "DES_DELIVER_SESSION_FILE", session_file),
         ):

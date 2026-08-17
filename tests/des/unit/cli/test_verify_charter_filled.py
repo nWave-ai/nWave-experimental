@@ -141,20 +141,25 @@ def _invoke(charter_path: Path, capsys) -> tuple[int, dict]:
     return exit_code, json.loads(captured.out)
 
 
-def test_filled_charter_is_reported_as_filled_and_ready(tmp_path: Path, capsys) -> None:
+def test_filled_charter_is_reported_as_structurally_filled(
+    tmp_path: Path, capsys
+) -> None:
     charter_path = tmp_path / "a-visitor-books-two-seats.md"
     charter_path.write_text(FILLED_CHARTER, encoding="utf-8")
 
     exit_code, payload = _invoke(charter_path, capsys)
 
-    # "you're good to go" -- not just a bare exit code: a plain-language
-    # verdict token an operator recognizes, and it's the FILLED verdict, not
-    # a generic pass-through.
+    # Structural filledness is explicit without claiming the recipe is a
+    # genuine public action; that semantic check belongs to value authority
+    # and the source-blind Examiner.
     assert exit_code == 0
     assert payload["filled"] is True
     assert payload["verdict"] == "PASS"
     assert payload["missing_sections"] == []
     assert payload["has_negative_observation"] is True
+    assert payload["detail"] == (
+        "charter is structurally filled; PublicStartRecipe semantics are not evaluated."
+    )
 
 
 def test_hollow_charter_names_each_still_incomplete_section(
@@ -177,9 +182,7 @@ def test_hollow_charter_names_each_still_incomplete_section(
 
 @pytest.mark.negative_at
 def test_hollow_charter_is_never_reported_as_filled(tmp_path: Path, capsys) -> None:
-    """Negative AT: a false 'ready' verdict is the exact failure this
-    command exists to prevent -- a HOLLOW charter must NOT be reported as
-    filled/ready under any circumstance."""
+    """A hollow charter must never be reported as structurally filled."""
     charter_path = tmp_path / "a-visitor-books-two-seats.md"
     charter_path.write_text(HOLLOW_CHARTER, encoding="utf-8")
 

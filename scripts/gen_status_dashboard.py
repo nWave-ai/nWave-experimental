@@ -24,17 +24,14 @@ OUT = (
 # Derived thematic epics (first match wins; keyword on id+title lowercased).
 EPICS = [
     (
-        "Gates &amp; Feature-End",
+        "Gates &amp; Finalize",
         [
             "gate",
-            "feature-end",
             "seal",
             "examine",
             "readiness",
-            "commit-slice",
-            "slice-commit",
+            "finalize",
             "oracle",
-            "carpaccio",
         ],
     ),
     (

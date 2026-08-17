@@ -34,10 +34,9 @@ import pytest
 # ---------------------------------------------------------------------------
 _REPO_ROOT = Path(__file__).parent.parent.parent
 
-# Representative tracks that lacked a local pytest_bdd_apply_tag hook and so
+# Representative track that lacked a local pytest_bdd_apply_tag hook and so
 # failed collection under genuinely-enforced --strict-markers.
 _PREVIOUSLY_FAILING_DIRS = [
-    "tests/feature_delta/acceptance/",
     "tests/des/acceptance/activation_gating/",
 ]
 

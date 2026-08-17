@@ -4,9 +4,6 @@ DES Configuration Adapter - Driven Port Implementation.
 Loads configuration from .nwave/des-config.json and provides access to settings.
 Falls back to safe defaults (audit logging ON) when file is missing or invalid.
 
-Rigor cascade: project config -> global config -> standard defaults.
-When a project has a "rigor" key, the entire global rigor block is ignored.
-
 Hexagonal Architecture:
 - DRIVEN ADAPTER: Implements configuration port (driven by business logic)
 - ON BY DEFAULT: Audit logging enabled unless explicitly disabled in config
@@ -19,11 +16,6 @@ from typing import Any, cast
 
 from des.domain.blast_radius import BlastRadiusConfigRejected, BlastRadiusThresholds
 from des.domain.nwave_root import resolve_nwave_root
-from des.domain.rigor.review_step_registry import (
-    REVIEW_STEP_CATALOG,
-    ResolvedReviewStepSet,
-    ReviewStepResolver,
-)
 
 
 # Closed set of declarable deliverable types (ADR-PST-002). A declared value
@@ -351,107 +343,9 @@ class DESConfig:
             current = current.parent
         return None
 
-    def _rigor(self) -> dict:
-        """Return rigor sub-config via cascade: project -> global -> empty dict.
-
-        When the project config contains a "rigor" key (even if empty),
-        the entire global rigor block is ignored -- full block override.
-        """
-        if "rigor" in self._config_data:
-            return self._config_data["rigor"]
-        return self._global_config_data.get("rigor", {})
-
     def _housekeeping(self) -> dict:
         """Return housekeeping sub-config dict, defaulting to empty dict."""
         return self._config_data.get("housekeeping", {})
-
-    @property
-    def rigor_profile(self) -> str:
-        """Get rigor profile name. Default: 'standard'."""
-        return self._rigor().get("profile", "standard")
-
-    @property
-    def rigor_agent_model(self) -> str:
-        """Get agent model from rigor config. Default: 'sonnet'."""
-        return self._rigor().get("agent_model", "sonnet")
-
-    @property
-    def rigor_reviewer_model(self) -> str:
-        """Get reviewer model. Default: 'haiku'."""
-        return self._rigor().get("reviewer_model", "haiku")
-
-    @property
-    def rigor_human_authorization(self) -> bool:
-        """Whether a two-party HUMAN authorization (GO) is required for the
-        AT-review verdict. Default: ``False`` (velocity-v2, Ale 2026-07-04).
-
-        Off by default: EXAMINE (the independent examiner) provides the default
-        outcome-independence, and the mechanical seal + the AT-completeness check
-        provide the AT attestation, so the two-party human GO is an OPT-IN
-        compliance layer (regulated industry), not the baseline. When ``True`` the
-        readiness gate hard-requires a recorded ``ATReviewVerdict APPROVED``; when
-        ``False`` that invariant is advisory (the carpaccio seal-check covers the
-        attestation at the same dispatch.pre) -- this closes the beta-tester
-        "asked several times per slice" grind.
-        """
-        return bool(self._rigor().get("human_authorization", False))
-
-    @property
-    def rigor_feature_total_at_advisory_threshold(self) -> int:
-        """Get the whole-feature AT-volume advisory threshold.
-
-        Read from the rigor cascade (project -> global -> @property default).
-        When a feature's total AT count exceeds this threshold, the DISTILL
-        Total-AT trigger emits a (never-blocking) advisory proposing
-        ``/nw-discuss`` (elephant-carpaccio split). Default: 12 (DD-3 -- the
-        default lives in this fallback, NOT hard-wired elsewhere; per-profile
-        numbers are a rigor-profile build detail). Distinct locus from
-        ``carpaccio_slice_max`` (``config.yaml`` ``atdd_pure.``) so the two
-        thresholds never collapse onto one knob (C3).
-        """
-        return self._rigor().get("feature_total_at_advisory_threshold", 12)
-
-    @property
-    def rigor_review_enabled(self) -> bool:
-        """Check if peer review is enabled. Default: True."""
-        return self._rigor().get("review_enabled", True)
-
-    @property
-    def rigor_double_review(self) -> bool:
-        """Check if double review is enabled. Default: False."""
-        return self._rigor().get("double_review", False)
-
-    # ------------------------------------------------------------------
-    # Rigor review-step registry (EXTEND -- feature rigor-review-step-toggles,
-    # ADR-RST-001 / DSN-1..DSN-3). DISTILL active-RED scaffold (slice-01):
-    # the method EXISTS so collection + the in-process driving call resolve,
-    # but the body delegates to the pure-domain resolver. DELIVER (slice-01)
-    # reads the ``rigor.review_steps`` overrides + the master
-    # ``rigor_review_enabled`` flag and delegates to
-    # ``des.domain.rigor.review_step_registry.ReviewStepResolver``.
-    # ------------------------------------------------------------------
-    def resolve_review_steps(self) -> ResolvedReviewStepSet:
-        """Resolve the active DISTILL review-step set for this project.
-
-        Reads the per-step ``rigor.review_steps`` overrides and the
-        profile-level ``rigor_review_enabled`` flag, then delegates to the pure
-        ``ReviewStepResolver``. Per DSN-3 the precedence is ``enabled = True if
-        always_on else (override.enabled if present else review_enabled)``; the
-        returned ``ResolvedReviewStepSet.active()`` yields the firing steps
-        (each carrying ``.id``).
-        """
-        overrides = self._rigor().get("review_steps", {})
-        return ReviewStepResolver().resolve(
-            REVIEW_STEP_CATALOG,
-            overrides,
-            self.rigor_review_enabled,
-            self.rigor_reviewer_model,
-        )
-
-    @property
-    def rigor_refactor_pass(self) -> bool:
-        """Check if refactoring pass is enabled. Default: True."""
-        return self._rigor().get("refactor_pass", True)
 
     @property
     def housekeeping_enabled(self) -> bool:

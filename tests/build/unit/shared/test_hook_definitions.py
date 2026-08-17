@@ -33,7 +33,7 @@ class TestHookEventDefinitions:
 
     def test_defines_independent_hook_registrations(self):
         """The shared definition contains only the current independent hooks."""
-        assert len(HOOK_EVENTS) == 9
+        assert len(HOOK_EVENTS) == 7
 
         # Verify exact event/matcher/action triples
         events_matchers = [(h.event, h.matcher, h.action) for h in HOOK_EVENTS]
@@ -72,8 +72,6 @@ class TestHookEventDefinitions:
             if h.event == "PreToolUse" and h.matcher == "Bash"
         ]
         assert bash_entries == [("PreToolUse", "Bash", "pre-tool-use")]
-        assert ("PostToolUse", "Agent", "post-tool-use") in events_matchers
-        assert ("SubagentStop", None, "subagent-stop") in events_matchers
         assert ("SubagentStop", None, "deliver-progress") not in events_matchers
         assert ("SessionStart", "startup", "session-start") not in events_matchers
         assert ("SubagentStart", None, "subagent-start") in events_matchers
@@ -86,8 +84,6 @@ class TestHookEventDefinitions:
             frozenset(
                 {
                     "PreToolUse",
-                    "PostToolUse",
-                    "SubagentStop",
                     "SubagentStart",
                 }
             )
@@ -218,7 +214,7 @@ class TestGenerateHookConfig:
     def test_entries_without_matcher_omit_matcher_key(self):
         """Subagent lifecycle entries have no matcher key."""
         config = generate_hook_config(self._simple_command)
-        for event in ("SubagentStop", "SubagentStart"):
+        for event in ("SubagentStart",):
             for entry in config[event]:
                 assert "matcher" not in entry
 

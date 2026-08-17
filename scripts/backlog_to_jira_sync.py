@@ -27,7 +27,6 @@ import argparse
 import base64
 import json
 import os
-import re
 import sys
 import urllib.error
 import urllib.request
@@ -46,9 +45,6 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
 
 from backlog_to_jira_csv import parse  # noqa: E402
 
-from des.domain.repo_path_resolver import feature_delta_path  # noqa: E402
-from des.domain.telemetry_paths import LedgerFamily, ledger_path  # noqa: E402
-
 
 _REPO = Path(__file__).resolve().parents[1]
 _BACKLOG = _REPO / "docs" / "product" / "backlog.md"
@@ -61,62 +57,6 @@ _STATUS_TO_JIRA = {
     "In Progress": "In corso",
     "To Do": "Da completare",
 }
-
-#: A Slice-Plan table data row: ``| slice-NN | value statement | ...``.
-_SLICE_ROW_RE = re.compile(r"^\|\s*(slice-\d+)\s*\|\s*([^|]+?)\s*\|")
-
-
-def _slice_plan(fid: str) -> list[tuple[str, str]]:
-    """Parse a feature's Slice Plan into ``(slice_id, value_statement)`` rows so
-    each slice can mirror as a Sub-task. Scoped to the ``[REF] Slice Plan``
-    section (slice-ids in DoD/Test-Reuse tables are NOT miscounted). Empty list
-    when the feature has no ``docs/feature/{fid}/feature-delta.md`` -- degrade-safe.
-    """
-    fd = feature_delta_path(_REPO, fid)
-    if not fd.is_file():
-        return []
-    rows: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    in_plan = False
-    for line in fd.read_text(encoding="utf-8").splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("#") and "Slice Plan" in line:
-            in_plan = True
-            continue
-        if in_plan and stripped.startswith("## ") and "Slice Plan" not in line:
-            break  # reached the next section
-        if not in_plan:
-            continue
-        m = _SLICE_ROW_RE.match(line.strip())
-        if m and m.group(1) not in seen:
-            seen.add(m.group(1))
-            rows.append((m.group(1), m.group(2).strip()[:180]))
-    return rows
-
-
-def _done_slices(fid: str) -> set[str]:
-    """Slice-ids attested ``SliceCommitVerified`` in the AT-completion ledger --
-    the substance of 'this slice is done'. Empty set when no ledger exists."""
-    led = ledger_path(_REPO, LedgerFamily.ATDD_PURE, fid)
-    if not led.is_file():
-        return set()
-    done: set[str] = set()
-    for raw in led.read_text(encoding="utf-8").splitlines():
-        raw = raw.strip()
-        if not raw.startswith("{"):
-            continue
-        try:
-            d = json.loads(raw)
-        except json.JSONDecodeError:
-            continue
-        if d.get("event") == "SliceCommitVerified":
-            # the ledger records the singular ``slice_id``; the CLI STDOUT event
-            # uses the plural ``slice_ids`` list -- accept BOTH.
-            if d.get("slice_id"):
-                done.add(d["slice_id"])
-            for s in d.get("slice_ids", []):
-                done.add(s)
-    return done
 
 
 def _env(name: str) -> str:
@@ -233,56 +173,6 @@ class Jira:
         print(f"created {key} {moved}")
         return key
 
-    def subtask_type_id(self, project: str) -> str | None:
-        """Discover the project's Sub-task issue-type id at runtime (never
-        hard-code -- the name is locale-dependent, e.g. 'Sottotask'). Returns
-        None if the project has no subtask type (slices then skip, degrade-safe).
-        """
-        r = self._call("GET", f"/rest/api/3/issue/createmeta/{project}/issuetypes")
-        for it in r.get("issueTypes", r.get("values", [])):
-            if it.get("subtask"):
-                return str(it["id"])
-        return None
-
-    def upsert_subtask(
-        self,
-        project: str,
-        parent_key: str,
-        label: str,
-        summary: str,
-        status: str,
-        subtask_type_id: str,
-        dry: bool,
-    ) -> None:
-        """Mirror ONE slice as a Sub-task under its feature's Story. Matched by
-        the unique ``mirror:<fid>:<slice-id>`` label (idempotent upsert)."""
-        existing = self.find_by_label(project, label)
-        if existing:
-            if dry:
-                print(f"  UPDATE-SUB {existing} -> {status}")
-                return
-            self._call(
-                "PUT", f"/rest/api/3/issue/{existing}", {"fields": {"summary": summary}}
-            )
-            self._sync_status(existing, status)
-            print(f"  updated-sub {existing} -> {status}")
-            return
-        if dry:
-            print(f"  CREATE-SUB {label} -> {status}")
-            return
-        fields = {
-            "project": {"key": project},
-            "parent": {"key": parent_key},
-            "issuetype": {"id": subtask_type_id},
-            "summary": summary[:250],
-            "labels": [label, "backlog-mirror-slice"],
-        }
-        r = self._call("POST", "/rest/api/3/issue", {"fields": fields})
-        key = r.get("key")
-        if key:
-            self._sync_status(key, status)
-        print(f"  created-sub {key} -> {status}")
-
     def _sync_status(self, key: str, target_status: str) -> str:
         """Transition the issue to the backlog status (Jira create ignores status).
 
@@ -383,33 +273,9 @@ def main() -> int:
     )
     project = _env("JIRA_PROJECT_KEY")
     jira.verify_auth()  # fail LOUD on a dead token -- never run anonymously
-    subtask_type = jira.subtask_type_id(project)
     for it in items:
         fid = it["Labels"]
-        story_key = jira.upsert(project, it, f"mirror:{fid}", args.dry_run)
-        # Mirror each slice of an in-flight feature as a Sub-task so the board
-        # shows slice-level progress ("a che punto siamo"). Done iff the ledger
-        # attests SliceCommitVerified; every other slice is To Do.
-        slices = _slice_plan(fid)
-        if not slices:
-            continue
-        done = _done_slices(fid)
-        for sid, val in slices:
-            status = "Done" if sid in done else "To Do"
-            if story_key and subtask_type:
-                jira.upsert_subtask(
-                    project,
-                    story_key,
-                    f"mirror:{fid}:{sid}",
-                    f"{sid}: {val}",
-                    status,
-                    subtask_type,
-                    args.dry_run,
-                )
-            else:
-                print(
-                    f"  (skipped SUB {fid}:{sid} -> {status}: no parent/subtask-type)"
-                )
+        jira.upsert(project, it, f"mirror:{fid}", args.dry_run)
     if not args.dry_run:
         jira.rerank_by_priority(project)  # To Do column reads most-urgent-first
     print(f"\n{len(items)} backlog items mirrored to {project}")

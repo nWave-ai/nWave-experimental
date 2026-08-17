@@ -88,8 +88,6 @@ def test_property_hook_config_event_keys():
     config = generate_hook_config()
     assert set(config.keys()) == {
         "PreToolUse",
-        "PostToolUse",
-        "SubagentStop",
         "SubagentStart",
     }
     # Every event must have at least one entry with a non-empty command

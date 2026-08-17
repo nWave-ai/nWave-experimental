@@ -96,7 +96,6 @@ def test_codex_health_fails_closed_for_a_healthy_claude_only_tree(
         "scripts.install.install_nwave.InstallationVerifier",
         lambda **_kwargs: SimpleNamespace(run_verification=lambda: generic_result),
     )
-    monkeypatch.setattr(subject, "_validate_schema_template", lambda: True)
     monkeypatch.setattr(
         subject,
         "_create_plugin_registry",
@@ -135,7 +134,6 @@ def test_all_platform_health_composes_codex_validation(
             )
         ),
     )
-    monkeypatch.setattr(subject, "_validate_schema_template", lambda: True)
     monkeypatch.setattr(
         subject,
         "_create_plugin_registry",

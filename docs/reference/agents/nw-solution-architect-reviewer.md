@@ -1,15 +1,11 @@
 # nw-solution-architect-reviewer
 
-Architecture design and patterns review specialist - Optimized for cost-efficient review operations using Haiku model.
+Reviews durable architecture decisions for evidence, reuse, boundaries, cross-layer algebra, residual stress behavior, test substrate, and absence of drift.
 
-**Wave:** DESIGN
+**Wave:** Other
 **Model:** sonnet
-**Max turns:** 25
+**Max turns:** 20
 **Tools:** Read, Glob, Grep, Task, Bash, Skill
-
-## Commands
-
-- [`/nw-distill`](../commands/index.md)
 
 ## Preloaded skills
 

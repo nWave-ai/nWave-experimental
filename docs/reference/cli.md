@@ -42,18 +42,10 @@ nwave-ai version
 
 nwave-ai --version
 
-nwave-ai outcomes [--registry PATH] register | check | check-delta
-nwave-ai outcomes [--registry PATH] check-delta DELTA_PATH
+nwave-ai outcomes [--registry PATH] register | check
 
 nwave-ai plugin <list|install|uninstall> [name]
 
-nwave-ai sync
-
-nwave-ai validate-feature-delta <path> [--warn-only|--enforce] [--maturity-manifest <path>]
-
-nwave-ai extract-gherkin <path>
-
-nwave-ai migrate-feature <directory>
 ```
 
 ---
@@ -571,10 +563,6 @@ source ~/.zshrc
 The following subcommands are supported but are not part of the everyday user surface. Refer to their sources or existing documentation for details:
 
 - **outcomes** — Register / check shipped outcomes (Tier-1 collision detection). See **[Outcomes CLI Reference](./outcomes-cli.md)**.
-- **sync** — Mirror in-flight `feature-delta.md` files from feature worktrees into `<master>/.nwave/in-flight/`.
-- **validate-feature-delta** — Validate `feature-delta.md` for cross-wave drift.
-- **extract-gherkin** — Extract embedded Gherkin blocks from `feature-delta.md`.
-- **migrate-feature** — Migrate `.feature` files to embedded gherkin blocks in `feature-delta.md`.
 - **plugin** — Install, uninstall, or list nWave tool plugins.
 
 ---

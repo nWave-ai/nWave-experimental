@@ -142,6 +142,21 @@ def test_occupied_port_is_refused_before_migrate_seed_or_doc(tmp_path):
         sock.close()
 
 
+def test_delivery_prepare_migrates_without_seeding_or_rendering_a_key(tmp_path):
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    workspace = _make_workspace(tmp_path)
+    log_path = _install_fake_venv_python(workspace, seed_key="must-not-leak")
+
+    returned = pef.prepare_delivery(workspace)
+
+    assert returned == workspace / pef.VENV_PYTHON
+    calls = log_path.read_text().splitlines()
+    assert any("migrate" in call for call in calls)
+    assert not any(pef.SEED_ARGV[0] in call for call in calls)
+    assert not (workspace / pef.DOC_NAME).exists()
+
+
 def test_migrate_precedes_seed_repeated_prepare_is_idempotent_and_renders_the_seed_key(
     tmp_path,
 ):

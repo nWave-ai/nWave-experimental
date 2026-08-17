@@ -116,6 +116,12 @@ class TestDESHookIdempotence:
                     {
                         "command": "python3 src/des/adapters/drivers/hooks/claude_code_hook_adapter.py subagent-stop",
                     },
+                    {
+                        "matcher": "*",
+                        "hooks": [
+                            {"type": "command", "command": "echo user-defined-hook"},
+                        ],
+                    },
                 ],
             }
         }
@@ -141,6 +147,20 @@ class TestDESHookIdempotence:
             f"Expected {expected_count} DES hooks, found {des_count}. "
             f"Legacy hooks were not fully replaced."
         )
+
+        # Structural DES residue under a retired event (SubagentStop is no
+        # longer in HOOK_EVENTS) must also be reconciled away, while an
+        # unrelated user hook nested as a sibling under that same retired
+        # event survives.
+        subagent_stop_entries = settings["hooks"].get("SubagentStop", [])
+        assert any(
+            hook.get("command") == "echo user-defined-hook"
+            for entry in subagent_stop_entries
+            for hook in entry.get("hooks", [])
+        ), "Unrelated user hook nested under a retired event must survive."
+        assert not any(
+            shared_hooks.is_des_hook_entry(entry) for entry in subagent_stop_entries
+        ), "DES-owned entry under a retired event must be removed."
 
     @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")
     def test_upgrade_removes_retired_spine_ledger_hooks_when_current_hooks_match(

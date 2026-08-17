@@ -1,19 +1,23 @@
 version: 1
 roles:
   nw-software-crafter:
-    on_demand:
-      nw-algebraic-design-protocol: CONTESTED_LAW or REPRESENTATION_CHANGE obligation, or contested law/representation change
-      nw-certainty-by-construction: INVALID_STATE or PRESERVATION obligation, or invalid-state/preservation claim
-    phase:
-      nw-code-design-oo: GREEN or refactor on an object-oriented route
+    catalog_only:
+      - nw-code-design-oo
+      - nw-refactor
+      - nw-code-analysis-port
+      - nw-mutation-test
+      - nw-algebraic-design-protocol
+      - nw-certainty-by-construction
   nw-functional-software-crafter:
-    on_demand:
-      nw-algebraic-design-protocol: CONTESTED_LAW or REPRESENTATION_CHANGE obligation, or contested law/representation change
-      nw-certainty-by-construction: INVALID_STATE or PRESERVATION obligation, or invalid-state/preservation claim
-    phase:
-      nw-fp-principles: PREPARE on a functional route
-      nw-fp-algebra-driven-design: GREEN on a functional route
-      nw-code-design-fp: GREEN or refactor on a functional route
+    catalog_only:
+      - nw-fp-principles
+      - nw-fp-algebra-driven-design
+      - nw-code-design-fp
+      - nw-refactor
+      - nw-code-analysis-port
+      - nw-mutation-test
+      - nw-algebraic-design-protocol
+      - nw-certainty-by-construction
   nw-software-crafter-reviewer:
     reviewer_of:
       - nw-software-crafter
@@ -70,13 +74,6 @@ roles:
       nw-par-review-criteria: dimension review
       nw-review-output-format: output generation
   nw-acceptance-designer:
-    on_demand:
-      nw-algebraic-design-protocol: compositional or stateful surface
-      nw-certainty-by-construction: invalid-state or preservation claim
-    phase:
-      nw-test-design-mandates: Phase 0 policy detection
-      nw-property-based-testing: BROAD_INPUT_DOMAIN obligation, or Phase 2 property authoring
-      nw-code-analysis-port: F — code/test fact query
     catalog_only:
       - nw-bdd-methodology
       - nw-test-design-mandates-scenario-design
@@ -88,32 +85,13 @@ roles:
       - nw-tdd-methodology-walking-skeleton
       - nw-distill
       - nw-distill-prior-wave-reading
-      - nw-distill-feature-delta-schema
       - nw-distill-port-treatment-policy
       - nw-distill-red-scaffolding
-      - nw-distill-coverage-obligations
       - nw-at-completeness-check
       - nw-test-optimization-paradigm-match
       - nw-test-optimization-consolidation
       - nw-test-refactoring-catalog
-      - nw-ad-mandate-summaries
-      - nw-ad-distill-dod
       - nw-cross-cutting-invariants
-    language_pbt:
-      python: nw-pbt-python
-      typescript: nw-pbt-typescript
-      javascript: nw-pbt-typescript
-      rust: nw-pbt-rust
-      go: nw-pbt-go
-      java: nw-pbt-jvm
-      kotlin: nw-pbt-jvm
-      scala: nw-pbt-jvm
-      dotnet: nw-pbt-dotnet
-      csharp: nw-pbt-dotnet
-      fsharp: nw-pbt-dotnet
-      haskell: nw-pbt-haskell
-      erlang: nw-pbt-erlang-elixir
-      elixir: nw-pbt-erlang-elixir
   nw-acceptance-designer-reviewer:
     reviewer_of:
       - nw-acceptance-designer

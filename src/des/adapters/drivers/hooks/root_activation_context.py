@@ -28,6 +28,8 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
+from des.application.skill_tracking_service import RootModeState
+
 
 #: Markers that mean the dispatch already carries an explicit mode/wave
 #: declaration -- re-surfacing the reminder would be friction, not orientation.
@@ -49,6 +51,23 @@ ROOT_MODE_SELECT_REMINDER = (
     "classify the work S/M/L -- unless the mode is already explicit in this "
     "conversation."
 )
+
+
+def root_mode_handoff_block_reason(state: RootModeState) -> str | None:
+    """Explain the two invalid root states after mode selection."""
+    if state is RootModeState.INVALID:
+        return (
+            "After nw-mode-select, emit exactly one valid "
+            "'NW-MODE-SELECTED: <direct|human|auto> <S|M|L>' line before "
+            "the next root tool action."
+        )
+    if state is RootModeState.AUTO_PENDING:
+        return (
+            "Auto M/L is selected but nw-auto is not engaged. Invoke "
+            "Skill(nw-auto) as the next tool call; root must not inspect, "
+            "dispatch, or mutate directly."
+        )
+    return None
 
 
 def is_nwave_adjacent_dispatch(subagent_type: str | None) -> bool:

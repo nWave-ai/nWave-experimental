@@ -1,16 +1,9 @@
-"""K4 test-substrate handoff regression (2026-08-15, ADR-SSOT-002 §4b Axis 1).
+"""K4 test-substrate handoff (ADR-SSOT-002 Axis 1): source-level projections.
 
-Confirmed defect: a K4 run with compact evidence still invented helper
-imports, assumed fixture attributes, used a plain Django `TestCase` under
-`@given`, and imported a not-yet-existing production symbol, making RED
-uncollectable; a whole-manifest dev-dependency reinstall also failed on an
-unrelated package. The ADR correction makes DESIGN's existing architecture
-brief authority (Section 3/4b) name the minimum exact test substrate ATD
-cannot safely invent -- no new carrier, no second artifact.
-
-Source-level projections only: this module reads the checked-in prose of the
-three consumer files plus the ADR and asserts textual properties. It never
-hard-codes a line number and never inspects AST/implementation shape.
+This module reads the checked-in prose of the architect, ATD, the two PBT/
+completeness skills and the thin-delivery-contract schema and asserts stable
+textual/token properties. It never hard-codes a line number and never
+inspects AST/implementation shape.
 """
 
 from __future__ import annotations
@@ -36,391 +29,172 @@ ARCHITECT = (AGENTS_DIR / "nw-solution-architect.md").read_text(encoding="utf-8"
 ACCEPTANCE_DESIGNER = (AGENTS_DIR / "nw-acceptance-designer.md").read_text(
     encoding="utf-8"
 )
-PBT_PYTHON_SKILL = (SKILLS_DIR / "nw-pbt-python" / "SKILL.md").read_text(
-    encoding="utf-8"
-)
 PBT_SKILL = (SKILLS_DIR / "nw-property-based-testing" / "SKILL.md").read_text(
     encoding="utf-8"
 )
-ADR = ADR_PATH.read_text(encoding="utf-8")
-OBLIGATION_ENUM = json.loads(CONTRACT_SCHEMA_PATH.read_text(encoding="utf-8"))["$defs"][
-    "obligations"
-]["items"]["enum"]
-
-SUBSTRATE_FACT_MARKERS = [
-    "driving or observing port",
-    "test helper",
-    "fixture",
-    "executor",
-    "manifest",
-    "declaration",
-    "runtime",
-    "verification argv",
-    "install argv",
-]
+AT_COMPLETENESS_SKILL = (
+    SKILLS_DIR / "nw-at-completeness-check" / "SKILL.md"
+).read_text(encoding="utf-8")
+CONTRACT_SCHEMA = json.loads(CONTRACT_SCHEMA_PATH.read_text(encoding="utf-8"))
+OBLIGATION_ENUM = CONTRACT_SCHEMA["$defs"]["obligations"]["items"]["enum"]
 
 
 def _norm(text: str) -> str:
     return " ".join(text.split())
 
 
-class TestBriefCarriesFactsLanguageAgnosticNoNewArtifact:
-    """ADR is the single brief carrier naming all ratified facts, no new artifact."""
-
-    def test_architect_test_substrate_subsection_sole_carrier_no_schema_field(self):
-        # Substrate facts live in the existing "Test substrate (RED_TO_GREEN
-        # only)" subsection of architect, never a new DeliveryContract field or
-        # separately authored file. Positioning: listed with other durable-brief
-        # subsections in the "Durable write target:" paragraph.
-        assert "Test substrate (RED_TO_GREEN only)" in ARCHITECT
-        durable_target_start = ARCHITECT.index("Durable write target:")
-        subsection_mention = ARCHITECT.index(
-            "Test substrate (RED_TO_GREEN only)", durable_target_start
-        )
-        never_both_marker = ARCHITECT.index("never both", durable_target_start)
-        assert durable_target_start < subsection_mention < never_both_marker
-
-        # No schema field or second artifact introduced.
-        for forbidden_field in (
-            "test_substrate",
-            "test-substrate-facts",
-            "substrateFacts",
-        ):
-            assert forbidden_field not in ARCHITECT
-            assert forbidden_field not in ACCEPTANCE_DESIGNER
+def _required_terms_present(haystack: str, terms) -> list:
+    normalized = _norm(haystack)
+    return [term for term in terms if term not in normalized]
 
 
-class TestArchitectProjectsFactsLanguageAgnosticGreenToGreenKeepsOracle:
-    """Architect projects all ADR facts, language-agnostic, facts only, GREEN_TO_GREEN omits."""
-
-    def test_all_substrate_fact_markers_present_never_cases_language_agnostic(self):
-        # All ADR-named facts (driving/observing port, test helper, fixture,
-        # manifest, declaration, runtime, verification argv, install argv) are
-        # projected into the subsection. Framing is facts only (never a test case,
-        # scenario, assert, def test_, or @given), never a specific language
-        # (pytest, hypothesis, django, jest, cargo test).
-        section_start = ARCHITECT.index("Test substrate (RED_TO_GREEN only)")
-        section_end = ARCHITECT.index("This is the sole carrier", section_start)
-        section = _norm(ARCHITECT[section_start:section_end]).lower()
-
-        missing = [m for m in SUBSTRATE_FACT_MARKERS if m not in section]
-        assert not missing, f"substrate subsection is missing facts: {missing}"
-
-        assert (
-            "never a test case" in section or "never a test case, scenario" in section
-        )
-        for forbidden in ("assert ", "def test_", "@given"):
-            assert forbidden not in section
-
-        for language_specific in (
-            "pytest",
-            "hypothesis",
-            "django",
-            "jest",
-            "cargo test",
-        ):
-            assert language_specific not in section
-
-        # GREEN_TO_GREEN omits separate substrate facts and keeps its named oracle.
-        assert "green_to_green" in section
-        assert "omit" in section or "no separate facts" in section
-
-    def test_port_bindings_and_specialized_lifecycle_are_total_before_handoff(self):
-        section_start = ARCHITECT.index("Test substrate (RED_TO_GREEN only)")
-        section_end = ARCHITECT.index("This is the sole carrier", section_start)
-        section = _norm(ARCHITECT[section_start:section_end])
-
-        assert "exact repository-native executable binding" in section
-        assert "route/call-builder identity and literal arguments" in section
-        assert "response selector or stable lookup key" in section
-        assert "never a hand-assembled path" in section
-        assert "specialized property-test lifecycle overrides" in section
-        assert "Never claim one concrete helper applies uniformly" in section
-        assert "executable binding/selector" in section
+def test_architect_owns_substrate_facts_and_closed_obligation_enum():
+    architect = _norm(ARCHITECT)
+    missing = _required_terms_present(
+        ARCHITECT,
+        [
+            "the real observation point — driving/observing port",
+            "the base-revision production symbols plus canonical repository test helper/import",
+            "canonical-manifest/lock declaration",
+            "fixture construction",
+            "executor/lifecycle isolation",
+            "owner, exact version/identity, declared=yes, present=yes",
+            "exact repository-native verification",
+            "exact authority-grounded manifest delta and direct dependency-delta install",
+            "facts for DISTILL, never test cases or a new artifact/schema field",
+            "derive obligations only from its closed enum",
+            "emitting only exact enum members",
+        ],
+    )
+    assert not missing, f"architect substrate handoff missing: {missing}"
+    assert set(OBLIGATION_ENUM) == {
+        "CONTESTED_LAW",
+        "REPRESENTATION_CHANGE",
+        "INVALID_STATE",
+        "PRESERVATION",
+        "BROAD_INPUT_DOMAIN",
+        "REUSE_CANDIDATE",
+        "ARCHITECTURE_BOUNDARY_CHANGE",
+    }
+    assert architect
 
 
-class TestAtdConsumesFactsImportsBaseSymbolsRealPortsBrokenOnSetup:
-    """ATD consumes brief facts, base symbols, real ports, setup failure BROKEN."""
+def test_atd_consumes_sealed_dependency_readiness_without_inventing():
+    missing = _required_terms_present(
+        ACCEPTANCE_DESIGNER,
+        [
+            "name every promised observable",
+            "its real driving/observing port",
+            "test substrate, fixture and lifecycle facts",
+            "final owner/version plus declared=yes, present=yes readiness facts",
+            "Any dependency recorded as undeclared or absent returns `EVIDENCE_GAP` immediately",
+        ],
+    )
+    assert not missing, f"ATD sealed-input consumption missing: {missing}"
 
-    def test_atd_red_to_green_never_guesses_imports_base_revision_only(self):
-        # RED_TO_GREEN branch states facts are consumed (never guessed/invented)
-        # from the brief. Initial RED file imports only base-revision production
-        # symbols via the driving port; planned feature symbols are forbidden
-        # (not yet existing). Import/collection/setup failure is BROKEN by
-        # construction.
-        branch_start = ACCEPTANCE_DESIGNER.index("### RED_TO_GREEN branch")
-        branch = ACCEPTANCE_DESIGNER[branch_start : branch_start + 6000]
-
-        assert "never guess" in branch or "never guess, invent" in branch
-        assert "brief" in branch.lower()
-        assert "base revision" in branch
-        assert "driving port" in branch
-        assert "does not yet exist" in branch
-        assert "BROKEN by construction" in ACCEPTANCE_DESIGNER
-        assert (
-            "collection" in ACCEPTANCE_DESIGNER
-            and "setup failure" in ACCEPTANCE_DESIGNER
-        )
-
-    def test_atd_compiles_minimal_spatial_portfolio_without_binding_guesses(self):
-        marker = "Before the first Write, compile one spatial portfolio"
-        idx = ACCEPTANCE_DESIGNER.index(marker)
-        paragraph = _norm(ACCEPTANCE_DESIGNER[idx : idx + 1400])
-
-        assert (
-            "one scenario when one real interaction honestly observes several clauses"
-            in paragraph
-        )
-        assert (
-            "equivalent invalid inputs into one parameterized/table-driven test"
-            in paragraph
-        )
-        assert "one property per distinct universal law" in paragraph
-        assert "A clause count never becomes a test count" in paragraph
-        assert "brief's executable port and selector" in paragraph
-        assert (
-            "specialized property lifecycle overrides the generic repository helper"
-            in paragraph
-        )
-        assert "never a literal URL/key or concrete base guessed" in paragraph
-        assert "EVIDENCE_GAP" in paragraph
+    compact = _norm(ACCEPTANCE_DESIGNER)
+    assert "never edits a manifest/lock file" in compact
+    assert "never installs, repairs, executes or validates a dependency" in compact
+    assert "EVIDENCE_GAP" in ACCEPTANCE_DESIGNER
+    assert "RED_TO_GREEN" in compact
+    assert "BROKEN" in ACCEPTANCE_DESIGNER
 
 
-class TestDeclarationRuntimeDeltaInstallForbidsWholeManifest:
-    """Declaration/runtime distinction + direct delta-only install survives BROAD_INPUT and Closure phases."""
-
-    def test_broad_input_domain_explicit_runtime_missing_delta_install_argv(self):
-        # BROAD_INPUT_DOMAIN paragraph names declaration-vs-runtime distinction
-        # and "named direct dependency-delta install argv", forbidding whole
-        # test-dependency manifest reinstall. Old authorization for full install
-        # (pre-2026-08-15) is gone.
-        marker = "`BROAD_INPUT_DOMAIN` is DESIGN's obligation, never this"
-        idx = ACCEPTANCE_DESIGNER.index(marker)
-        paragraph_end = ACCEPTANCE_DESIGNER.index(
-            "**Spatial-first materialization (HARD):**", idx
-        )
-        paragraph = _norm(ACCEPTANCE_DESIGNER[idx:paragraph_end])
-
-        assert (
-            "declaration-vs-runtime" in paragraph
-            or "declared but runtime-missing" in paragraph
-        )
-        assert "named direct dependency-delta install argv" in paragraph
-        assert "whole-manifest reinstall" in paragraph
-        assert "never" in paragraph
-
-        assert (
-            "a missing PBT library is this agent's dependency to\ndeclare and install here"
-            not in ACCEPTANCE_DESIGNER
-        )
-
-        # Closure-only phase (HARD) enforces named direct dependency-delta
-        # install argv, forbids whole test-dependency manifest reinstall and
-        # invented tools. Same atomic-operation boundary applies: manifest
-        # declaration edit, explicit runtime-missing, exact named direct
-        # dependency-delta install argv.
-        marker = "**Closure-only phase (HARD):**"
-        idx = ACCEPTANCE_DESIGNER.index(marker)
-        closure = _norm(ACCEPTANCE_DESIGNER[idx : idx + 1200])
-
-        assert "whole test dependency manifest" in closure
-        assert "named direct dependency-delta install argv" in closure
-        assert "never an invented tool" in closure
+def test_atd_reads_contract_schema_first_for_grammar_only() -> None:
+    compact = _norm(ACCEPTANCE_DESIGNER)
+    assert (
+        "CONTRACT-SCHEMA: <absolute installed thin-delivery-contract.schema.json>"
+        in compact
+    )
+    assert "this role's first `Read` is exactly `CONTRACT-SCHEMA`" in compact
+    assert (
+        "A missing, unreadable or non-schema JSON `CONTRACT-SCHEMA` is "
+        "`EVIDENCE_GAP` with zero artifact writes" in compact
+    )
+    assert "The schema owns serialization grammar only" in compact
+    assert "never invents or widens a semantic fact to satisfy the schema" in compact
+    assert (
+        "`CONTRACT-SCHEMA` is ephemeral dispatch context, never a contract "
+        "field or persistent output" in compact
+    )
 
 
-class TestArchitectSoleOwnershipAndFourStateAcrossArtifacts:
-    """Architect owns obligation semantics; ATD compiles all four states."""
+def test_semantic_pbt_non_vacuity_preservation_and_fresh_lifecycle():
+    pbt_start = PBT_SKILL.index("## Non-vacuous generator construction")
+    pbt_section = _norm(PBT_SKILL[pbt_start:])
 
-    @staticmethod
-    def _atd_broad_input_paragraph() -> str:
-        start = ACCEPTANCE_DESIGNER.index(
-            "`BROAD_INPUT_DOMAIN` is DESIGN's obligation, never this"
-        )
-        end = ACCEPTANCE_DESIGNER.index(
-            "**Spatial-first materialization (HARD):**", start
-        )
-        return _norm(ACCEPTANCE_DESIGNER[start:end])
+    assert "SemanticCase -> ConcreteInput -> SUT -> Observation" in pbt_section
+    assert "every generated component must influence" in pbt_section
+    assert "independent oracle" in pbt_section
+    assert "generate the case tag first" in pbt_section
+    assert "does not prove" in pbt_section and "reachability" in pbt_section
+    assert "diagnostics only" in pbt_section
+    assert "never substitute for constructive reachability" in pbt_section
+    assert "proxies unless that is the declared law itself" in pbt_section
+    assert "does not discharge `BROAD_INPUT_DOMAIN`" in pbt_section
 
-    def test_architect_owns_obligations_and_defines_broad_input(self):
-        assert "DESIGN is the sole semantic owner of obligation tokens" in ARCHITECT
-        assert "every applicable existing schema token" in ARCHITECT
-        marker = "`BROAD_INPUT_DOMAIN` names an externally sourced"
-        idx = ARCHITECT.index(marker)
-        definition = _norm(ARCHITECT[idx : idx + 400])
-        assert "infinite" in definition
-        assert "non-enumerable" in definition
-        assert "finite enumerable" in definition
+    missing = _required_terms_present(
+        ACCEPTANCE_DESIGNER,
+        [
+            "Every generated value must influence SUT input or an independent oracle",
+            "Rare branches are generated by construction, not filtering",
+            "require an explicit preservation map to the same promised observation",
+            "own fresh mutable fixture/lifecycle state per generated case",
+            "never downgrade the law to example-only coverage",
+        ],
+    )
+    assert not missing, f"ATD non-vacuity/preservation obligations missing: {missing}"
 
-    def test_semantic_trigger_cannot_be_waived_by_test_precedent_or_dependency(self):
-        marker = "Obligation applicability is a semantic deduction"
-        idx = ARCHITECT.index(marker)
-        paragraph = _norm(ARCHITECT[idx : idx + 1000])
-
-        assert "before selecting the test substrate or dependencies" in paragraph
-        assert "the token MUST fire" in paragraph
-        for non_veto in (
-            "existing example-based tests",
-            "repository convention",
-            "dependency absence",
-            "thin wrapper around a library",
-        ):
-            assert non_veto in paragraph
-        assert "they never erase the law" in paragraph
-        assert "name the factual predicate that is false" in paragraph
-        assert (
-            "never justify non-applicability from the current test style" in paragraph
-        )
-
-    def test_schema_enum_is_read_before_obligation_derivation_and_write(self):
-        locator = (
-            "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/"
-            "thin-delivery-contract.schema.json"
-        )
-        assert locator in ARCHITECT
-        schema_read = ARCHITECT.index("Before deriving obligations")
-        obligation_authority = ARCHITECT.index(
-            "`$defs.obligations.items.enum` is the sole authority"
-        )
-        durable_write = ARCHITECT.index("Durable write target:")
-        assert schema_read < obligation_authority < durable_write
-        assert "there is no fallback or second candidate" in ARCHITECT
-        assert "unavailable,\nunreadable, invalid, missing, or empty enum" in ARCHITECT
-        assert OBLIGATION_ENUM
-
-    def test_only_closed_enum_members_are_tokens_not_cross_cutting_labels(self):
-        assert "Emit only exact enum members" in ARCHITECT
-        assert "forbidden\nas obligation tokens" in ARCHITECT
-        for non_schema_label in (
-            "data:consumer-known-before-produced",
-            "gate:design-principles-gdp-1-9",
-            "gate:self-explaining-what-why-how",
-        ):
-            assert non_schema_label not in OBLIGATION_ENUM
-
-    def test_dependency_state_and_single_action_are_final_before_write(self):
-        section_start = ARCHITECT.index("Test substrate (RED_TO_GREEN only)")
-        section_end = ARCHITECT.index("This is the sole carrier", section_start)
-        section = _norm(ARCHITECT[section_start:section_end])
-
-        assert "select exactly one matching branch and emit only its action" in section
-        assert (
-            "never emit alternatives, optional extra commands, or duplicate routes"
-            in section
-        )
-        assert "bind the repository's evidenced interpreter/environment" in section
-        assert "never a bare `pip`/`python` command" in section
-        assert "whole-manifest `-r` install" in section
-        assert (
-            "All dependency declaration/runtime states and actions must be final before durable Write"
-            in section
-        )
-        assert "`confirm later`, maybe, unresolved, or ambiguous evidence" in section
-        assert "ARCHITECTURE-BLOCKED" in section
-
-    def test_atd_compiles_verbatim_without_self_ownership(self):
-        assert "is this agent's own obligation" not in ACCEPTANCE_DESIGNER
-        paragraph = self._atd_broad_input_paragraph()
-        assert "compiles it verbatim" in paragraph
-        assert "never deriving, inventing, or dropping it" in paragraph
-
-    def test_four_states_present_in_architect_atd_and_closure(self):
-        four_states = (
-            "declared and present",
-            "declared and missing",
-            "undeclared and present",
-            "undeclared and missing",
-        )
-        closure_start = ACCEPTANCE_DESIGNER.index("**Closure-only phase (HARD):**")
-        closure_end = ACCEPTANCE_DESIGNER.index(
-            "Missing or ambiguous test-dependency ownership", closure_start
-        )
-        closure = _norm(ACCEPTANCE_DESIGNER[closure_start:closure_end])
-        for state in four_states:
-            assert state in ARCHITECT
-            assert state in ACCEPTANCE_DESIGNER
-            assert state in closure
-        assert "named direct dependency-delta install argv" in closure
-        assert "never new discovery" in closure
-
-    def test_missing_evidence_blocks_before_skill_or_write(self):
-        paragraph = self._atd_broad_input_paragraph()
-        assert "EVIDENCE_GAP" in paragraph
-        assert "before any" in paragraph
-
-    def test_ad_hoc_install_and_examples_fallback_forbidden(self):
-        paragraph = self._atd_broad_input_paragraph()
-        assert "No ad-hoc" in paragraph
-        assert "whole-manifest reinstall" in paragraph
-        assert "undeclared import" in paragraph
-        assert "examples-only" in paragraph
+    assert "obligation-to-observation closure" in AT_COMPLETENESS_SKILL
+    assert "every declared obligation -> one or more falsifiable observations" in _norm(
+        AT_COMPLETENESS_SKILL
+    )
 
 
-class TestPbtPythonComposesHypothesisDjangoBasePreservesSetupConstructsMissing:
-    """Python PBT rule composes repository helper with Hypothesis Django base, preserves setup, constructs missing state."""
+def test_both_routes_closed_and_terminal_handoff_contract_ready():
+    green_start = ACCEPTANCE_DESIGNER.index("### GREEN_TO_GREEN")
+    green_section = _norm(ACCEPTANCE_DESIGNER[green_start : green_start + 1200])
+    assert "Do not search for, create, edit or broaden it" in green_section
+    assert (
+        "delivery-route: GREEN_TO_GREEN" in green_section
+        or "delivery-route" in green_section
+    )
+    assert "write one complete schema-valid DeliveryContract" in green_section
+    assert "without any test edit" in green_section.lower()
+    assert "never executes the stored scope" in green_section
+    assert (
+        "`des dispatch` alone validates, resolves and hashes the contract"
+        in green_section
+    )
+    assert (
+        "the crafter's own BASELINE step alone classifies RED, GREEN or "
+        "BROKEN" in green_section
+    )
+    assert "locator-only" not in ACCEPTANCE_DESIGNER
 
-    def test_django_integration_hypothesis_extra_django_testcase_composition(self):
-        # Django Integration section mandates: never runs @given under plain
-        # Django TestCase; must compose hypothesis.extra.django.TestCase with
-        # repository helper (RepositoryPropertyTestCase / HypothesisDjangoTestCase).
-        # Preserves existing helper setup. Never assumes fixture attributes;
-        # explicitly constructs missing state.
-        assert "## Django Integration" in PBT_PYTHON_SKILL
+    red_start = ACCEPTANCE_DESIGNER.index("### RED_TO_GREEN")
+    red_end = ACCEPTANCE_DESIGNER.index("### GREEN_TO_GREEN", red_start)
+    red_section = _norm(ACCEPTANCE_DESIGNER[red_start:red_end])
+    assert "write one complete schema-valid DeliveryContract" in red_section
+    assert "exact given `CONTRACT-LOCATOR`" in red_section
+    assert (
+        "`des dispatch` alone validates, resolves and hashes the contract "
+        "after this role" in red_section
+    )
+    assert (
+        "the crafter's own BASELINE step alone classifies RED, GREEN or "
+        "BROKEN" in red_section
+    )
+    assert "Any later oracle edit invalidates readiness" in red_section
 
-        section_start = PBT_PYTHON_SKILL.index("## Django Integration")
-        section = PBT_PYTHON_SKILL[section_start:]
-
-        assert "never runs directly under a plain" in section
-        assert "django.test.TestCase" in section
-        assert "hypothesis.extra.django" in section
-        assert "class RepositoryPropertyTestCase" in section
-        assert "HypothesisDjangoTestCase" in section
-        assert "preserving the documented setup/fixtures" in section
-        assert "never blindly multiple-inherit two concrete" in section
-        assert "one `@given` method in each leaf" in section
-        assert "manual database flushing" in section
-        assert "never assume" in section.lower()
-        assert "construct" in section.lower()
-
-
-class TestSemanticPbtConstructionRejectsVacuousGeneratedProperties:
-    """The generic authority and ATD projection reject the K4 false-green class."""
-
-    def test_generic_pbt_authority_requires_total_constructive_discriminating_map(self):
-        start = PBT_SKILL.index("## Non-vacuous generator construction")
-        section = _norm(PBT_SKILL[start:])
-
-        assert "SemanticCase -> ConcreteInput -> SUT -> Observation" in section
-        assert "every generated component must influence" in section
-        assert "independent oracle" in section
-        assert "generate the case tag first" in section
-        assert "by construction" in section
-        assert "diagnostics only" in section
-        assert "never substitute for constructive reachability" in section
-        assert "proxies unless that is the declared law itself" in section
-        assert "against base behavior" in section
-        assert "does not discharge `BROAD_INPUT_DOMAIN`" in section
-
-    def test_atd_applies_non_vacuity_before_write_and_red_confirmation(self):
-        marker = "For every property, apply `nw-property-based-testing`'s non-vacuous"
-        start = ACCEPTANCE_DESIGNER.index(marker)
-        paragraph = _norm(ACCEPTANCE_DESIGNER[start : start + 1500])
-
-        assert "before Write" in paragraph
-        assert "every generated component must influence" in paragraph
-        assert "generate the semantic case tag first" in paragraph
-        assert "by construction" in paragraph
-        assert "never hope random sampling reaches a rare branch" in paragraph
-        assert "shape/type/never-raises proxy" in paragraph
-        assert "fail on the base revision" in paragraph
-        assert "does not discharge `BROAD_INPUT_DOMAIN`" in paragraph
-        assert "cannot contribute to `RedConfirmed`" in paragraph
-
-    def test_adr_owns_the_same_non_vacuity_law_without_new_carrier(self):
-        start = ADR.index("**Semantic-PBT construction.**")
-        paragraph = _norm(ADR[start : start + 1500])
-
-        assert "generator-to-observation map is total" in paragraph
-        assert "every generated component influences" in paragraph
-        assert "construct each semantic alternative" in paragraph
-        assert "a property that already passes does not discharge" in paragraph
-        assert "language adapters project syntax only" in paragraph
+    idx = ACCEPTANCE_DESIGNER.index("DISTILL-RESULT:")
+    block = ACCEPTANCE_DESIGNER[idx : idx + 300]
+    for field in (
+        "DISTILL-RESULT: CONTRACT_READY",
+        "REPO-ROOT: <absolute physical repository root>",
+        "DELIVERY-CONTRACT: <repo-relative locator>",
+    ):
+        assert field in block
+    assert "DELIVERY-CONTRACT-SHA256:" not in block
+    assert "ORACLE-SHA256:" not in block
+    assert "oracle" not in block.lower()

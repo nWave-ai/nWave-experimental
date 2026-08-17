@@ -10,13 +10,11 @@ Waves, in order: `/nw-discover` `/nw-diverge` `/nw-discuss` `/nw-design` `/nw-de
 
 **Mandatory floor**: DISTILL → DELIVER — acceptance tests, test-driven code; upstream waves optional.
 
-**Never hand-roll feature work** bypassing the spine. For Auto mode on M/L work, load the `nw-auto` skill directly — never `/nw-deliver` first, never in parallel with it; `nw-auto` owns the floor: `nw-acceptance-designer` authors the contract and acceptance tests, one crafter implements, one independent examiner verifies — never substitute the three roles. For Human mode, `/nw-deliver` adds staged review to the same floor; its feature-end cycle runs once per feature, not per slice. Auto mode has no separate feature-end cycle: `nw-auto`'s own examiner verdict is the re-verification.
+**Never hand-roll delivery work** bypassing the spine. For Auto mode on M/L work, load the `nw-auto` skill directly — never `/nw-deliver` first, never in parallel with it; `nw-auto` owns the floor: `nw-acceptance-designer` compiles the immutable DeliveryContract into acceptance tests, one crafter implements, and one independent examiner verifies the real surface — the root must never substitute any of these roles itself. Human mode adds staged review to the same floor. Both routes join evidence and finalize the whole delivery exactly once; neither runs a per-slice closure cycle.
 
-Resuming work: `/nw-continue`.
+After an interruption, re-enter through `/nw-new` — it reads durable product/design authorities and routes to the earliest missing owner; it does not infer progress from a feature directory.
 
 {{TOOL_BATCHING_FRAGMENT}}
-
-{{LOOP_CONSENT_FRAGMENT}}
 
 ### Privacy — Non-Negotiable
 

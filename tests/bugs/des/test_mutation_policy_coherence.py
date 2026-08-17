@@ -3,7 +3,7 @@
 Owner decision (2026-08-10): this repo opts into `nightly-delta` — the
 checked-in `.github/workflows/mutation-nightly.yml` is its project-level
 authority. Mutation testing is NOT a per-feature DELIVER gate and NOT a
-rigor-profile knob. For other installed projects, an unspecified project
+delivery-profile knob. For other installed projects, an unspecified project
 strategy remains fail-safe `disabled`; `/nw-mutation-test` stays usable as an
 explicit, on-demand command regardless of strategy. PBT is active and
 independent, and must not carry mutation-policy prose.
@@ -27,7 +27,6 @@ _WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "mutation-nightly.yml"
 _PBT_SKILL = _REPO_ROOT / "nWave" / "skills" / "nw-property-based-testing" / "SKILL.md"
 _MUTATION_SKILL = _REPO_ROOT / "nWave" / "skills" / "nw-mutation-test" / "SKILL.md"
 _MUTATION_TASK = _REPO_ROOT / "nWave" / "tasks" / "nw" / "mutation-test.md"
-_RIGOR_SKILL = _REPO_ROOT / "nWave" / "skills" / "nw-rigor" / "SKILL.md"
 _DELIVER_SKILL = _REPO_ROOT / "nWave" / "skills" / "nw-deliver" / "SKILL.md"
 _FRAMEWORK_CATALOG = _REPO_ROOT / "nWave" / "framework-catalog.yaml"
 
@@ -50,20 +49,10 @@ def test_pbt_skill_has_no_mutation_policy_prose() -> None:
     assert "mutation" not in text
 
 
-@pytest.mark.parametrize("path", [_DELIVER_SKILL, _RIGOR_SKILL])
-def test_deliver_and_rigor_have_no_mutation_enabled_or_per_feature_gate(
-    path: Path,
-) -> None:
-    text = path.read_text(encoding="utf-8")
+def test_deliver_has_no_mutation_enabled_or_per_feature_gate() -> None:
+    text = _DELIVER_SKILL.read_text(encoding="utf-8")
     assert "mutation_enabled" not in text
     assert "Phase 5" not in text
-
-
-def test_rigor_skill_states_mutation_is_project_level_not_a_rigor_axis() -> None:
-    text = _RIGOR_SKILL.read_text(encoding="utf-8").lower()
-    assert "not a rigor axis" in text
-    assert "no longer a rigor axis" not in text
-    assert "deprecated" not in text.split("mutation testing")[1][:200]
 
 
 def test_deliver_skill_has_no_per_feature_mutation_route() -> None:

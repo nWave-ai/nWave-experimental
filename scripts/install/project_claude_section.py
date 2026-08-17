@@ -38,7 +38,6 @@ END_MARKER = "<!-- END nWave-beta-section -->"
 # composed bytes are identical across hosts.
 _FRAGMENTS = (
     ("{{TOOL_BATCHING_FRAGMENT}}", ("nWave", "templates", "tool-batching-fragment.md")),
-    ("{{LOOP_CONSENT_FRAGMENT}}", ("nWave", "templates", "loop-consent-fragment.md")),
 )
 
 

@@ -281,11 +281,6 @@ def when_invoke_validate(scenario_state: _ScenarioState):
             "_create_plugin_registry",
             return_value=mock_registry,
         ),
-        patch.object(
-            type(installer),
-            "_validate_schema_template",
-            return_value=True,
-        ),
         patch(
             "scripts.install.install_nwave.InstallationVerifier"
         ) as mock_verifier_cls,

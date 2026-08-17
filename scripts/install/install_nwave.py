@@ -1497,78 +1497,6 @@ class NWaveInstaller:
 
         return True
 
-    def _validate_schema_template(self) -> bool:
-        """Validate TDD cycle schema template has required fields.
-
-        The schema file is shipped by TemplatesPlugin, which -- like
-        CommandsPlugin and SkillsPlugin -- _create_plugin_registry registers
-        only when "claude_code" is in the requested platforms. A Copilot/
-        OpenCode-only install never receives it, so the check is not
-        applicable there (fourth instance of the same gap in this module).
-        """
-        if "claude_code" not in self.effective_target_platforms:
-            return True
-
-        schema_file = (
-            self.claude_config_dir / "templates" / "step-tdd-cycle-schema.json"
-        )
-
-        if not schema_file.exists():
-            self.logger.error("  ❌ Schema template not found")
-            return False
-
-        try:
-            import json
-
-            with open(schema_file) as f:
-                schema = json.load(f)
-
-            # Check for schema_version field
-            if "schema_version" not in schema:
-                self.logger.error("  ❌ Schema missing 'schema_version' field")
-                return False
-
-            schema_version = schema.get("schema_version")
-
-            # Validate schema version and phase count
-            valid_schemas = {
-                "2.0": {"phases": 8, "description": "8-phase TDD optimization"},
-                "3.0": {
-                    "phases": 7,
-                    "description": "7-phase TDD (L4-L6 moved to orchestrator)",
-                },
-                "4.0": {
-                    "phases": 5,
-                    "description": "5-phase TDD (REVIEW/REFACTOR moved to deliver)",
-                },
-            }
-
-            if schema_version not in valid_schemas:
-                self.logger.warn(
-                    f"  ⚠️ Schema version {schema_version}, expected 2.0, 3.0, or 4.0"
-                )
-                return False
-
-            # Check phase count matches schema version
-            phase_exec_log = schema.get("tdd_cycle", {}).get("phase_execution_log", [])
-            expected_phases = valid_schemas[schema_version]["phases"]
-
-            if len(phase_exec_log) != expected_phases:
-                self.logger.error(
-                    f"  ❌ Schema has {len(phase_exec_log)} phases, expected {expected_phases} for v{schema_version}"
-                )
-                return False
-
-            schema_desc = valid_schemas[schema_version]["description"]
-            self.logger.info(
-                f"    👍 TDD cycle schema: v{schema_version} with {expected_phases} phases ({schema_desc})"
-            )
-            return True
-
-        except Exception as e:
-            self.logger.error(f"  ❌ Schema validation failed: {e}")
-            return False
-
     def validate_installation(self) -> bool:
         """Validate installation using shared InstallationVerifier.
 
@@ -1597,9 +1525,6 @@ class NWaveInstaller:
                 check_manifest="claude_code" in target_platforms,
             )
             result = verifier.run_verification()
-
-            # Validate schema template (additional check specific to installer)
-            schema_valid = self._validate_schema_template()
 
         # Plugin verification via registry.verify_all()
         plugin_registry = self._create_plugin_registry(
@@ -1752,7 +1677,6 @@ class NWaveInstaller:
         self.logger.info(
             f"    {'✅' if result.manifest_exists else '❌'} Manifest created"
         )
-        self.logger.info(f"    {'✅' if schema_valid else '❌'} Schema validated")
 
         # Report missing essential files
         if result.missing_essential_files:
@@ -1772,11 +1696,7 @@ class NWaveInstaller:
 
         # Determine overall success
         overall_success = (
-            result.success
-            and schema_valid
-            and all_synced
-            and not plugin_failures
-            and codex_valid
+            result.success and all_synced and not plugin_failures and codex_valid
         )
 
         if overall_success:
@@ -1787,8 +1707,6 @@ class NWaveInstaller:
             failures: list[str] = []
             if not result.success:
                 failures.append("essential files missing")
-            if not schema_valid:
-                failures.append("schema validation failed")
             if not all_synced:
                 failures.append(_format_sync_mismatch(components))
             if plugin_failures:

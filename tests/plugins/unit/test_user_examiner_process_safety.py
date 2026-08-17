@@ -3,10 +3,10 @@
 K4 incident: while examining a live app, nw-user-examiner ran
 `killall -9 python`, which killed the parent orchestrator process (not a
 process it started), losing the result payload and costing ~449s recovery.
-This locks the fix — an explicit prohibition on process-wide/name-matching
-kill commands plus a positive exact-owned-PID cleanup rule — into the public
-agent spec, without weakening the source-blind (never-read-code) epistemology
-the agent otherwise depends on.
+This locks the fix -- an explicit prohibition on process-wide/name-matching
+kill commands plus a positive exact-owned-PID cleanup rule -- into the public
+agent spec's Constraints section, without weakening the source-blind
+(never-read-code) epistemology the agent otherwise depends on.
 """
 
 import re
@@ -31,14 +31,14 @@ def _agent_text() -> str:
 
 
 def _process_safety_bullet(text: str) -> str:
-    """Extract the single Critical-Rules bullet that governs kill safety.
+    """Extract the single Constraints bullet governing kill safety.
 
-    Bounded from its own anchor to the start of the next top-level bullet
-    (a line beginning with "- **"), so assertions below are scoped to this
-    rule rather than matching incidentally anywhere in the file.
+    Bounded from the "if a supplied public start recipe" anchor to the next
+    top-level bullet (a line beginning with "- "), so assertions below are
+    scoped to this rule rather than matching incidentally elsewhere.
     """
     match = re.search(
-        r"- \*\*Never kill by process name or pattern.*?(?=\n- \*\*|\n## )",
+        r"- If a supplied public start recipe starts a process.*?(?=\n- |\Z)",
         text,
         re.DOTALL,
     )
@@ -46,125 +46,49 @@ def _process_safety_bullet(text: str) -> str:
     return match.group(0)
 
 
-class TestProcessKillProhibition:
-    """Every dangerous kill family must be explicitly named as forbidden."""
+@pytest.mark.parametrize("dangerous_command", DANGEROUS_COMMAND_FAMILIES)
+def test_dangerous_kill_families_are_forbidden_and_scoped(dangerous_command):
+    """Every dangerous kill family is named forbidden inside the bullet, and
+    does not appear sanctioned anywhere else in the agent spec."""
+    text = _agent_text()
+    bullet = _process_safety_bullet(text)
+    assert dangerous_command in bullet, (
+        f"'{dangerous_command}' must be explicitly named forbidden in the "
+        "process-safety Constraints bullet"
+    )
+    assert "forbidden" in bullet.lower()
 
-    @pytest.mark.parametrize("dangerous_command", DANGEROUS_COMMAND_FAMILIES)
-    def test_dangerous_command_family_named_forbidden(self, dangerous_command):
-        bullet = _process_safety_bullet(_agent_text())
-        assert dangerous_command in bullet, (
-            f"'{dangerous_command}' must be explicitly named in the "
-            "process-safety prohibition"
+    remainder = text.replace(bullet, "", 1)
+    assert dangerous_command not in remainder, (
+        f"'{dangerous_command}' appears outside the prohibition bullet -- "
+        "it may be sanctioned elsewhere in the spec"
+    )
+
+
+def test_owned_pid_capture_reverify_and_no_kill_without_handle():
+    """Positive rule: capture exact PID/ownership at creation, re-verify
+    ownership before signaling, kill nothing without a reverified owned
+    handle, and report an orphan as a concrete observation."""
+    bullet = _process_safety_bullet(_agent_text())
+    assert "PID" in bullet
+    assert "ownership handle" in bullet
+    assert "at creation" in bullet
+    assert "re-verif" in bullet.lower()
+    assert "kill nothing" in bullet.lower()
+    assert "report" in bullet.lower() and "orphan" in bullet.lower()
+
+
+def test_source_blindness_and_verdict_contract_preserved_no_new_controller():
+    """The fix must not weaken source-blindness, must not introduce a
+    controller/ledger/hook/registry, and must preserve the terminal
+    PASS/FAIL/INDETERMINATE verdict contract."""
+    text = _agent_text()
+    bullet = _process_safety_bullet(text)
+
+    assert "Source blind" in text
+    assert "PASS | FAIL | INDETERMINATE" in text
+
+    for forbidden_term in ("controller", "ledger", "hook", "registry"):
+        assert forbidden_term not in bullet.lower(), (
+            f"'{forbidden_term}' must not appear in the process-safety bullet"
         )
-
-    def test_prohibition_bullet_uses_forbidden_language(self):
-        bullet = _process_safety_bullet(_agent_text())
-        assert "Forbidden" in bullet or "never" in bullet.lower()
-
-    @pytest.mark.parametrize("dangerous_command", DANGEROUS_COMMAND_FAMILIES)
-    def test_dangerous_command_family_not_sanctioned_elsewhere(self, dangerous_command):
-        """The literal command must not appear outside the prohibition bullet
-        (e.g. as a sanctioned example in some other section)."""
-        text = _agent_text()
-        bullet = _process_safety_bullet(text)
-        remainder = text.replace(bullet, "", 1)
-        assert dangerous_command not in remainder, (
-            f"'{dangerous_command}' appears outside the prohibition bullet — "
-            "it may be sanctioned elsewhere in the spec"
-        )
-
-    def test_incident_anchor_present(self):
-        bullet = _process_safety_bullet(_agent_text())
-        assert "449s" in bullet or "K4" in bullet
-
-
-class TestOwnedPidCleanupRule:
-    """Positive rule: capture, re-verify, and kill only an exact owned PID."""
-
-    def test_requires_capturing_exact_pid_at_creation(self):
-        bullet = _process_safety_bullet(_agent_text())
-        assert "PID" in bullet
-        assert "$!" in bullet or "ownership handle" in bullet
-
-    def test_requires_reverification_before_signaling(self):
-        bullet = _process_safety_bullet(_agent_text())
-        assert "re-verify" in bullet.lower()
-
-    def test_requires_no_kill_when_no_owned_handle(self):
-        bullet = _process_safety_bullet(_agent_text())
-        assert "kill nothing" in bullet.lower()
-
-    def test_orphan_reported_as_observation_not_fixed(self):
-        bullet = _process_safety_bullet(_agent_text())
-        assert "report" in bullet.lower()
-        assert "observation" in bullet.lower()
-
-
-class TestSourceBlindEpistemologyPreserved:
-    """The fix must not weaken the never-read-code / no-controller rules."""
-
-    def test_never_read_code_principle_intact(self):
-        text = _agent_text()
-        assert "must never read code" in text
-
-    def test_no_controller_or_ledger_language_introduced(self):
-        bullet = _process_safety_bullet(_agent_text())
-        for forbidden_term in ("controller", "ledger", "hook"):
-            assert forbidden_term not in bullet.lower()
-
-    def test_verdict_contract_unchanged(self):
-        text = _agent_text()
-        assert "PASS | FAIL | INDETERMINATE" in text
-
-
-class TestPrinciple8ProvenanceAnchors:
-    """Principle 8 must retain unique examples and provenance after compression."""
-
-    def _extract_principle_8(self, text: str) -> str:
-        """Extract Principle 8 from Core Principles section.
-
-        Scoped from "8. **Absence ≠ incapacity.**" to the start of principle 9
-        (or end of section if no principle 9), so tests verify this rule only.
-        """
-        match = re.search(
-            r"8\. \*\*Absence ≠ incapacity\.\*\*.*?(?=\n9\. \*\*|\n## |\Z)",
-            text,
-            re.DOTALL,
-        )
-        assert match, "Principle 8 not found in Core Principles"
-        return match.group(0)
-
-    def test_provenance_date_anchor_present(self):
-        text = _agent_text()
-        principle_8 = self._extract_principle_8(text)
-        assert "Ale 2026-07-12" in principle_8, (
-            "Principle 8 must name the provenance anchor (Ale 2026-07-12)"
-        )
-
-    def test_enum_unknown_symbol_example_present(self):
-        text = _agent_text()
-        principle_8 = self._extract_principle_8(text)
-        assert "unknown_symbol" in principle_8.lower(), (
-            "Principle 8 must retain the enum unknown_symbol example"
-        )
-
-    def test_confidence_unread_tree_example_present(self):
-        text = _agent_text()
-        principle_8 = self._extract_principle_8(text)
-        assert "confidence 1.0" in principle_8.lower() or (
-            "confidence" in principle_8.lower() and "unread" in principle_8.lower()
-        ), "Principle 8 must retain the confidence 1.0 / unread tree example"
-
-    def test_complete_zero_legs_example_present(self):
-        text = _agent_text()
-        principle_8 = self._extract_principle_8(text)
-        assert (
-            "complete" in principle_8.lower() and "zero legs" in principle_8.lower()
-        ), "Principle 8 must retain the Complete / zero legs example"
-
-    def test_python_ast_phantom_example_present(self):
-        text = _agent_text()
-        principle_8 = self._extract_principle_8(text)
-        assert "python" in principle_8.lower() and (
-            "phantom" in principle_8 or "invented" in principle_8
-        ), "Principle 8 must retain the Python-AST phantom/invented example"

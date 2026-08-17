@@ -214,9 +214,9 @@ def test_fp_crafter_references_shared_fp_skill() -> None:
     """
     spec = FP_CRAFTER_SPEC.read_text(encoding="utf-8")
     assert "nw-code-design-fp" in spec, (
-        "nw-functional-software-crafter.md frontmatter `skills:` must reference "
-        "nw-code-design-fp so the FP crafter and the architect share the same "
-        "FP code-design SSOT."
+        "nw-functional-software-crafter.md must reference nw-code-design-fp "
+        "(reachable via the discipline's Mandatory lens resolution table) so "
+        "the FP crafter and the architect share the same FP code-design SSOT."
     )
 
 
@@ -285,10 +285,9 @@ def test_software_crafter_references_shared_oo_skill() -> None:
     """
     spec = OO_CRAFTER_SPEC.read_text(encoding="utf-8")
     assert "nw-code-design-oo" in spec, (
-        "nw-software-crafter.md must reference nw-code-design-oo in its Skill "
-        "Loading Strategy table (OO paradigm branch) so the OO crafter and the "
-        "architect share the same OO code-design SSOT — symmetry with the FP "
-        "crafter wired in slice-02."
+        "nw-software-crafter.md must reference nw-code-design-oo "
+        "(reachable via the discipline's Mandatory lens resolution table) so "
+        "the OO crafter and the architect share the same OO code-design SSOT."
     )
 
 

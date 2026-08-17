@@ -2,11 +2,10 @@
 # Based on: architecture-design.md - Roadmap Step 01-02
 # Acceptance Criteria:
 #   - DES module importable from plugin scripts/des/
-#   - hooks.json registers PreToolUse, PostToolUse, SubagentStop, SubagentStart.
+#   - hooks.json registers PreToolUse and SubagentStart.
 #     SessionStart and UserPromptSubmit were the session-ceremony anchors; both
-#     were deleted with that ceremony (22ea19309).
+#     and completion-notification hooks were deleted with that ceremony.
 #   - DES enforcement returns allow/block decisions with error messages on phase violations
-#   - DES runtime templates bundled in plugin
 # Date: 2026-02-27
 
 Feature: DES Bundle with Hooks Generation
@@ -39,19 +38,12 @@ Feature: DES Bundle with Hooks Generation
   Scenario: Hook registrations cover all DES enforcement events
     When the plugin assembler builds the plugin
     Then the hook configuration registers a handler for tool validation
-    And the hook configuration registers a handler for task completion
     And the hook configuration registers a handler for subagent lifecycle
 
   Scenario: Hook commands use plugin-relative paths
     When the plugin assembler builds the plugin
     Then every hook command references the plugin root variable
     And no hook command references a home directory path
-
-  # --- Happy Path: DES Templates ---
-
-  Scenario: DES runtime templates are bundled in the plugin
-    When the plugin assembler builds the plugin
-    Then the TDD cycle schema template exists in the plugin
 
   # --- Error Paths ---
 

@@ -4,8 +4,8 @@
 # Slice: 01 — the entire bugfix in one carpaccio slice (slice cap 3 ATs).
 #         AT-01: walking skeleton (dev checkout → auto-skip PROCEED).
 #         AT-02: regression pin (customer install → DEGRADED REFUSE preserved).
-#         AT-03: audit-trail (auto-skip emits a NEW structured event distinct
-#                from the existing operator-set NWAVE_FRESHNESS=skip event).
+#         AT-03: opt-in diagnostic (verbose auto-skip emits a structured event
+#                distinct from operator-set NWAVE_FRESHNESS=skip).
 #
 # RCA SOURCE: docs/product/backlog.md friction #16 (autonomous night 2026-05-24). The
 # `des` CLI dispatcher refuses every invocation with DEGRADED + "no install
@@ -23,9 +23,9 @@
 #   (manifest, content match) --------> C         → PROCEED
 #
 # NEW short-circuit (THIS BUGFIX), fired BEFORE the four-state classification:
-#   (CWD has `.git/` adjacency) ------> AUTOSKIP  → PROCEED, exit 0, audit
-#                                        event `des.runtime.freshness.autoskipped`
-#                                        on stderr (load-bearing audit evidence).
+#   (CWD has `.git/` adjacency) ------> AUTOSKIP  → PROCEED, exit 0, silent
+#   (+ NWAVE_FRESHNESS=verbose) ------> AUTOSKIP  → PROCEED, exit 0, structured
+#                                        diagnostic on stderr.
 #
 # Composition root (Pillar 3): every AT spawns `python -c "import des.cli"`
 # against a synthetic installed tree under tmp_path, with PYTHONPATH pointing
@@ -44,7 +44,7 @@ Feature: The freshness gate auto-skips when invoked from a developer git checkou
   As a developer running `des` CLI from a local git checkout
   I want the gate to PROCEED without requiring `NWAVE_FRESHNESS=skip` ceremony
   So that every spine cycle, test run, and hook fire stops paying daily friction
-  And the audit trail keeps "why did the gate not refuse" answerable post-hoc
+  And verbose diagnostics keep "why did the gate not refuse" answerable on demand
   And customer installs (no checkout adjacency) preserve their fail-closed REFUSE
 
   @walking_skeleton @driving_port @real-io @slice-01 @dev-checkout @contract-shape:bounded-change
@@ -54,7 +54,7 @@ Feature: The freshness gate auto-skips when invoked from a developer git checkou
     And the operator runs from a developer checkout with a `.git` directory present
     When the operator imports `des.cli` against that installed tree
     Then the freshness gate PROCEEDS the invocation with exit code 0
-    And the gate emits a structured event `des.runtime.freshness.autoskipped`
+    And the gate emits no freshness diagnostic
 
   @driving_port @real-io @slice-01 @error @customer @contract-shape:unbounded-preservation
   Scenario: Customer install on a host with no git checkout still REFUSES on stale manifest
@@ -66,10 +66,11 @@ Feature: The freshness gate auto-skips when invoked from a developer git checkou
     And the gate emits a structured event `des.runtime.freshness.refused`
 
   @driving_port @real-io @slice-01 @adapter-integration @audit-trail @contract-shape:bounded-change
-  Scenario: Auto-skip emits a structured event distinguishable from operator-set skip
+  Scenario: Verbose auto-skip names a diagnostic distinguishable from operator-set skip
     Given a synthetic installed DES tree at the standard install path
     And the installed tree has no `_install_manifest.json`
     And the operator runs from a developer checkout with a `.git` directory present
+    And the operator requests verbose freshness diagnostics
     When the operator imports `des.cli` against that installed tree
     Then the gate emits a structured event `des.runtime.freshness.autoskipped`
     And the gate does not emit a structured event `des.runtime.freshness.skipped`

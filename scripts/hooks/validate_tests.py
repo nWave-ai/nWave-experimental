@@ -252,7 +252,6 @@ def main():
 
         # Pre-commit runs unit/acceptance tests only.
         # Integration, e2e, build acceptance, and heavy smoke tests run at pre-push.
-        # feature_delta/acceptance: calls nwave-ai CLI with 30s timeout — pre-push.
         # polyglot-pilot: compiles Kotlin/Rust/Go/Java/TS/C# — pre-push.
         base_args = [
             *test_targets,
@@ -261,7 +260,6 @@ def main():
             "--ignore-glob=**/integration/**",
             "--ignore-glob=**/e2e/**",
             "--ignore-glob=**/build/acceptance/**",
-            "--ignore-glob=**/feature_delta/acceptance/**",
             "--ignore-glob=**/polyglot-pilot/**",
         ]
 

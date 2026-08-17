@@ -1,13 +1,13 @@
 ---
 name: nw-tdd-methodology-walking-skeleton
-description: Building and validating a walking skeleton - the WS protocol, per-slice JIT E2E management, Mandate 5 adapter-strategy decision tree (A/B/C/D + resource table), and Mandate 6 adapter-integration real-I/O requirement
+description: Building and validating a walking skeleton - the WS protocol, per-slice JIT E2E management, Mandate 5 adapter port-class real-I/O treatment (resource table), and Mandate 6 adapter-integration real-I/O requirement
 user-invocable: false
 disable-model-invocation: true
 ---
 
 # Walking Skeleton — Protocol, Adapter Strategy, Real-I/O Mandates
 
-**Trigger**: building or validating a walking skeleton — choosing the WS adapter strategy (A/B/C/D), managing per-slice E2E scenarios, or deciding adapter-integration real-I/O coverage.
+**Trigger**: building or validating a walking skeleton — classifying WS adapter port-class real-I/O treatment, managing per-slice E2E scenarios, or deciding adapter-integration real-I/O coverage.
 
 ## Walking Skeleton Protocol
 
@@ -24,23 +24,14 @@ Integration tests for adapters (real filesystem, real subprocess) are naturally 
 
 ## E2E Test Management
 
-**atdd_pure (the path)**: per-slice JIT — only the current slice's scenarios exist on disk (active-RED). Future-slice scenarios are absent. No @skip. Implement the current slice's active-RED scenarios to GREEN, commit, then DISTILL authors the next slice's scenarios. <!-- mode-ref-ok -->
+**DeliveryContract path**: DISTILL compiles the minimal executable oracle for the current delivery. Do not author speculative future scenarios and do not use `@skip` as a plan. Implement the smallest causally complete RED scope to GREEN, then extend only when the next observable requires it.
 
-**Test-pyramid default (Ale-ratified 2026-07-18): ONE `@walking_skeleton` subprocess-E2E per FEATURE — never per slice, never per command.** The feature's single WS lands with the first slice and proves the installed wiring once; every other scenario (all slices) drives IN-PROCESS/in-memory through the driving port. Wiring coverage beyond the single WS is a declared triple, not scenario multiplication: (a) the feature's WS; (b) Vera's EXAMINE exercising every charter observable through the REAL surface (the user-perspective manual test); (c) the feature-end cycle (env-e2e + full-suite + deep-review) backstopping paths no observable reaches. An additional subprocess-E2E requires an explicit written justification (e.g. the slice's value IS an integration boundary).
+**Test-pyramid default (Ale-ratified 2026-07-18): at most ONE `@walking_skeleton` subprocess-E2E per DeliveryContract — never per slice, never per command.** It proves installed wiring once; every other scenario drives in-process/in-memory through the driving port. The evidence is the union of that skeleton, the Examiner exercising charter observables through the real surface, and final whole-delivery verification. An additional subprocess E2E requires an observable integration boundary the first skeleton cannot exercise.
 
 
-## Mandate 5: Walking Skeleton E2E Strategy
+## Mandate 5: Walking Skeleton Real-I/O Treatment
 
-The DISTILL acceptance designer determines the WS adapter strategy for each feature. This is auto-detected with user confirmation, not a question to the user.
-
-### Decision Tree
-
-```
-Feature is pure domain (no driven ports with I/O)? → Strategy A (InMemory)
-Feature has only local resources (filesystem, git, in-process)? → Strategy C (Real local)
-Feature has costly external dependencies (paid APIs, LLM calls)? → Strategy B (Real local + fake costly)
-Team needs CI flexibility? → Strategy D (Configurable via env var)
-```
+The DISTILL acceptance designer classifies each port per the Architecture of Reference (`nw-distill-port-treatment-policy`): driving ports run in-process; driven-internal/local-resource ports default to real I/O; driven-external/costly ports default to a fake with output capture. Treatment follows port CLASS — it is structural, not a per-feature choice, and is auto-detected with user confirmation, not a question to the user.
 
 ### Resource Classification Table
 
@@ -56,15 +47,15 @@ Team needs CI flexibility? → Strategy D (Configurable via env var)
 
 ### Walking Skeleton Adapter Rule
 
-Under strategies B/C/D, the WS uses real adapters for local resources. InMemory is ONLY for costly external resources that have a separate contract test.
+The WS uses real adapters for driven-internal/local resources by default. InMemory is ONLY for costly external resources that have a separate contract test.
 
 ### Determinism Contract
 
 Real-adapter WS tests accept non-determinism as a trade-off for environmental realism. InMemory acceptance tests remain the fast deterministic inner loop. The WS is the slow truth-checking outer loop. Both are necessary. If WS fails, triage: logic failure (fix code) or environment failure (retry, investigate infra).
 
-### Rollback Policy
+### Infrastructure-Failure Handling
 
-If WS with Strategy C fails due to infrastructure issues (not code bugs), downgrade to Strategy B for that step. Document the downgrade in wave-decisions.md with justification.
+If a driven-internal/local-resource port's real adapter fails for infrastructure reasons (not code bugs), fall back to a fake for that step ONLY when the fake can still observe the declared law/failure; otherwise refuse the fake and escalate the infrastructure gap — never silently swap in a fake that cannot observe the promised failure.
 
 ## Mandate 6: Adapter Integration Tests Are Real I/O
 
@@ -88,7 +79,7 @@ Every driven adapter has at least ONE integration test with real I/O. This is no
 
 - Scenarios using real adapters: `@real-io`
 - Scenarios using InMemory: `@in-memory`
-- Walking skeleton: `@walking_skeleton` + `@real-io` (for strategies B/C/D)
+- Walking skeleton: `@walking_skeleton` + `@real-io` (when a driven port requires real I/O)
 
 ## Adapter Integration Slice RED-Phase Semantics
 
@@ -99,7 +90,7 @@ Reference: design spike v2 `docs/analysis/adapter-integration-slice-design-2026-
 ### Two RED-phase modes — distinguished by the failure source
 
 - **acceptance RED**: the AT fails because the feature behavior is not implemented. The driving port returns the unimplemented-default response; the assertion against expected end-state fails. Implementing the feature inside the hexagon (domain + application + new wiring through existing adapters) turns the AT GREEN. Fail-for-right-reason token: `AssertionError` against expected feature outcome.
-- **adapter-integration RED**: the AT fails because a property-matrix row contract is not satisfied against the (still-stub-or-partial) adapter implementation. The SUT is the adapter itself, not the feature; the assertion is about the property declared in the slice plan (error-class taxonomy / concurrency / atomicity / idempotency / recovery / edge case / observability / fail-mode / resource-leak / driving-port purity). Implementing the adapter contract row turns the AT GREEN. Fail-for-right-reason token: `AssertionError` (or expected-exception-not-raised) against the declared property — NOT against feature behavior.
+- **adapter-integration RED**: the AT fails because a declared adapter obligation is not satisfied against the still-stub-or-partial adapter. The SUT is the adapter boundary; the assertion is about a contract property such as error taxonomy, concurrency, atomicity, idempotency, recovery, observability, fail mode, resource safety or driving-port purity. Implementing that obligation turns the AT GREEN. It must fail for the declared property, not for fixture or environment setup.
 
 The distinguishing token between the two modes is **property-matrix row contract**: an adapter-integration AT names the property it exercises (one row of the 10-property matrix), and the assertion shape verifies that the adapter satisfies the named row. The acceptance AT does NOT cite a property-matrix row — it asserts feature outcome through the driving port.
 
@@ -109,4 +100,4 @@ The fail-for-right-reason gate is mandatory in both modes. Crafters MUST verify 
 
 ### Practical implication for DELIVER crafters
 
-When the slice plan declares an adapter-integration slice, the crafter knows the GREEN target is the adapter contract row, not the feature behavior. A crafter who tries to GREEN an adapter-integration AT by changing the feature workflow violates the mode — they are answering an acceptance question with an adapter answer, or vice versa. Surface to the Phase C reviewer if the slice plan does not declare which mode applies.
+When the DeliveryContract declares an adapter-integration obligation, the crafter's GREEN target is that boundary property, not unrelated product behavior. A crafter who changes the product workflow to satisfy an adapter oracle crosses the declared boundary; return the mismatch to its owning design or DISTILL authority.

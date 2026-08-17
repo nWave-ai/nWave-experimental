@@ -1,4 +1,4 @@
-"""CLI: Verify nWave installation health with 7 diagnostic checks.
+"""CLI: Verify nWave installation health with 6 diagnostic checks.
 
 Usage:
     des health-check
@@ -7,11 +7,10 @@ Usage:
 Checks:
     1. version         - Read VERSION file, report version
     2. module_import   - Try importing des module
-    3. templates       - Verify step-tdd-cycle-schema.json exists
-    4. hook_actions    - Verify hook adapter module is importable
-    5. log_directory   - Verify ~/.nwave/logs/ is writable
-    6. agents_installed - Count .md files in agents directory
-    7. skills_installed - Count nw-*/SKILL.md in skills directory
+    3. hook_actions    - Verify hook adapter module is importable
+    4. log_directory   - Verify ~/.nwave/logs/ is writable
+    5. agents_installed - Count .md files in agents directory
+    6. skills_installed - Count nw-*/SKILL.md in skills directory
 
 Exit codes:
     0 = All checks pass (HEALTHY)
@@ -104,19 +103,8 @@ def _check_module_import() -> CheckResult:
         return CheckResult("module_import", False, str(exc))
 
 
-def _check_templates(templates_dir: Path) -> CheckResult:
-    """Check 3: Verify step-tdd-cycle-schema.json exists."""
-    try:
-        schema_path = templates_dir / "step-tdd-cycle-schema.json"
-        if schema_path.exists():
-            return CheckResult("templates", True, "step-tdd-cycle-schema.json found")
-        return CheckResult("templates", False, "step-tdd-cycle-schema.json not found")
-    except Exception as exc:
-        return CheckResult("templates", False, str(exc))
-
-
 def _check_hook_actions() -> CheckResult:
-    """Check 4: Verify hook adapter module is importable."""
+    """Check 3: Verify hook adapter module is importable."""
     try:
         mod = importlib.import_module(
             "des.adapters.drivers.hooks.claude_code_hook_adapter"
@@ -133,7 +121,7 @@ def _check_hook_actions() -> CheckResult:
 
 
 def _check_log_directory(logs_dir: Path) -> CheckResult:
-    """Check 5: Verify logs directory is writable (or can be created)."""
+    """Check 4: Verify logs directory is writable (or can be created)."""
     try:
         if logs_dir.exists():
             if logs_dir.is_dir():
@@ -179,12 +167,12 @@ def _check_artifact_count(
 
 
 def _check_agents_installed(agents_dir: Path) -> CheckResult:
-    """Check 6: Count .md files in agents directory."""
+    """Check 5: Count .md files in agents directory."""
     return _check_artifact_count("agents_installed", agents_dir, "*.md", "agents")
 
 
 def _check_skills_installed(skills_dir: Path) -> CheckResult:
-    """Check 7: Count nw-*/SKILL.md dirs in skills directory."""
+    """Check 6: Count nw-*/SKILL.md dirs in skills directory."""
     return _check_artifact_count(
         "skills_installed", skills_dir, "nw-*/SKILL.md", "skills"
     )
@@ -192,16 +180,14 @@ def _check_skills_installed(skills_dir: Path) -> CheckResult:
 
 def _run_all_checks(
     version_file: Path,
-    templates_dir: Path,
     logs_dir: Path,
     agents_dir: Path,
     skills_dir: Path,
 ) -> list[CheckResult]:
-    """Run all 7 checks, each independently (one failure does not block others)."""
+    """Run all 6 checks, each independently (one failure does not block others)."""
     return [
         _check_version(version_file),
         _check_module_import(),
-        _check_templates(templates_dir),
         _check_hook_actions(),
         _check_log_directory(logs_dir),
         _check_agents_installed(agents_dir),
@@ -264,7 +250,6 @@ def _default_paths() -> dict[str, Path]:
     claude_dir = home / ".claude"
     return {
         "version_file": claude_dir / "VERSION",
-        "templates_dir": claude_dir / "templates",
         "logs_dir": home / ".nwave" / "logs",
         "agents_dir": claude_dir / "agents" / "nw",
         "skills_dir": claude_dir / "skills",
@@ -275,7 +260,6 @@ def main(
     argv: list[str] | None = None,
     *,
     version_file: Path | None = None,
-    templates_dir: Path | None = None,
     logs_dir: Path | None = None,
     agents_dir: Path | None = None,
     skills_dir: Path | None = None,
@@ -285,7 +269,6 @@ def main(
     Args:
         argv: Command-line arguments. Uses sys.argv[1:] if None.
         version_file: Override path to VERSION file (for testing).
-        templates_dir: Override path to templates directory (for testing).
         logs_dir: Override path to logs directory (for testing).
         agents_dir: Override path to agents directory (for testing).
         skills_dir: Override path to skills directory (for testing).
@@ -298,14 +281,12 @@ def main(
 
     defaults = _default_paths()
     resolved_version_file = version_file or defaults["version_file"]
-    resolved_templates_dir = templates_dir or defaults["templates_dir"]
     resolved_logs_dir = logs_dir or defaults["logs_dir"]
     resolved_agents_dir = agents_dir or defaults["agents_dir"]
     resolved_skills_dir = skills_dir or defaults["skills_dir"]
 
     checks = _run_all_checks(
         resolved_version_file,
-        resolved_templates_dir,
         resolved_logs_dir,
         resolved_agents_dir,
         resolved_skills_dir,

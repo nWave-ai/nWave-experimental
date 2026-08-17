@@ -48,24 +48,24 @@ Default if not chosen: **per-feature**.
 Before beginning DEVOPS work, read SSOT and prior wave artifacts:
 
 1. **SSOT** (if `docs/product/` exists):
-   - `docs/product/architecture/brief.md` — current architecture (driving ports, component topology)
+   - `docs/product/architecture/brief.md` and `docs/product/architecture/adr-*.md` — current architecture (driving ports, component topology) and durable design decisions; this is the primary input for infrastructure decisions
    - `docs/product/kpi-contracts.yaml` — existing KPI contracts (if any — extend, don't duplicate)
-2. **DISCUSS** (KPIs only): Read `docs/feature/{feature-id}/discuss/outcome-kpis.md` — drives observability and instrumentation design
-3. **DESIGN** (primary input): Read `docs/feature/{feature-id}/design/wave-decisions.md` + SSOT architecture — architecture drives infrastructure decisions
+2. **DISCUSS** (KPIs only, ephemeral workspace while the delivery is open): read the current `outcome-kpis.md` under the feature's DISCUSS output — drives observability and instrumentation design for this specific feature
 
-SSOT architecture is the primary input for infrastructure design. Feature-level `outcome-kpis.md` defines what to instrument for this specific feature.
+There is no separate DESIGN decision-summary ledger to read: `docs/product/architecture/brief.md`/ADRs already carry every durable DESIGN decision DEVOPS needs.
 
 **READING ENFORCEMENT**: You MUST read every file listed in Prior Wave Consultation above using the Read tool before proceeding. After reading, output a confirmation checklist (`✓ {file}` for each read, `⊘ {file} (not found)` for missing). Do NOT skip files that exist — skipping causes infrastructure decisions disconnected from architecture.
 
 After reading, check whether any DEVOPS decisions would contradict DESIGN architecture. Flag contradictions and resolve with user before proceeding. Example: DESIGN specifies "single-region deployment" but DEVOPS discovers latency requirements from outcome-kpis.md that demand multi-region — this must be resolved.
 
-## Document Update (Back-Propagation)
+## Downstream Correction (No Delta Artifact)
 
-When DEVOPS decisions change assumptions from prior waves:
-1. Document the change in a `## Changed Assumptions` section at the end of the affected DEVOPS artifact
-2. Reference the original prior-wave document and quote the original assumption
-3. State the new assumption and the rationale for the change
-4. If infrastructure constraints require architecture changes, note them in `docs/feature/{feature-id}/devops/upstream-changes.md` for the architect to review
+When a DEVOPS decision contradicts an earlier-wave fact, name the conflicting
+canonical owner and correct it there directly — never in a side file. An
+infrastructure constraint that requires an architecture change is returned to
+`docs/product/architecture/brief.md` or the relevant ADR, stated inline with
+the original assumption, the new one and the rationale (ADR Section 7). There
+is no `upstream-changes.md` ledger.
 
 ## Agent Invocation
 
@@ -129,50 +129,16 @@ User selects: cloud-native, Kubernetes, GitHub Actions, no existing infra, OpenT
 ```
 User selects: hybrid, Docker Compose, GitLab CI (existing), existing CI/CD only, Datadog, rolling, GitFlow. Apex extends existing pipelines with branch-specific stages for develop, release, and hotfix branches.
 
-## Wave Decisions Summary
-
-Before completing DEVOPS, produce `docs/feature/{feature-id}/devops/wave-decisions.md`:
-
-```markdown
-# DEVOPS Decisions — {feature-id}
-
-## Key Decisions
-- [D1] {decision}: {rationale} (see: {source-file})
-
-## Infrastructure Summary
-- Deployment: {target + strategy}
-- CI/CD: {platform + branching strategy}
-- Observability: {stack}
-- Mutation testing: {strategy}
-
-## Constraints Established
-- {infrastructure constraint}
-
-## Upstream Changes
-- {any DESIGN assumptions changed, with rationale}
-```
-
 ## SSOT Update
 
-After producing feature-level artifacts, update the product-level SSOT:
+The durable product-level SSOT is the only normative handoff DISTILL reads —
+not a per-wave decision file. Update it directly:
 
 1. **KPI contracts**: Translate `outcome-kpis.md` (from DISCUSS) into machine-readable contracts in `docs/product/kpi-contracts.yaml`. Each contract needs: `id`, `feature`, `job`, `metric`, `baseline`, `target`, `threshold_alert`, `measurement_method`, `status`. Add changelog entry. If `kpi-contracts.yaml` does not exist, create it with `schema_version: 1`.
 
 If `docs/product/` does not exist, create it. This is SSOT bootstrap for KPI contracts.
 
 ## Expected Outputs
-
-### Feature delta (internal planning, not persisted in SSOT model)
-```
-docs/feature/{feature-id}/devops/
-  platform-architecture.md
-  ci-cd-pipeline.md
-  observability-design.md
-  monitoring-alerting.md
-  infrastructure-integration.md    (if existing infra)
-  branching-strategy.md
-  wave-decisions.md
-```
 
 ### SSOT updates (in `docs/product/`)
 ```

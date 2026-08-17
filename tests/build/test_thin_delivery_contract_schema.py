@@ -34,10 +34,10 @@ ALL_OBLIGATION_KINDS = (
 
 def _target_plan() -> dict[str, Any]:
     return {
-        "candidate": "nWave/schemas/component-manifest.schema.json",
-        "overlap": "Draft 2020-12 identity and closed-object vocabulary.",
+        "candidate": "nWave/schemas/nwave.test_observation.v1.schema.json",
+        "overlap": "Existing versioned test-observation schema vocabulary.",
         "decision": "CREATE_NEW",
-        "justification": "The component manifest is feature-component-specific.",
+        "justification": "The delivery contract has a distinct authority boundary.",
         "declared-imports": [],
         "contract-shape": "bounded-change",
         "boundary": {
@@ -78,7 +78,6 @@ def _contract(paradigm: str) -> dict[str, Any]:
         "obligations": ["REUSE_CANDIDATE"],
         "acceptance-tests": {
             "locator": "tests/build/test_thin_delivery_contract_schema.py",
-            "digest": f"sha256:{'b' * 64}",
         },
         "verification-scope": {
             "commands": [
@@ -244,8 +243,8 @@ def test_schema_has_no_finalize_property() -> None:
     assert "finalize" not in schema["properties"]
     assert "finalize" not in schema["$defs"], (
         "WHAT: the schema defines a finalize shape. "
-        "WHY: finalize is end-of-delivery promotion and filesystem cleanup, not "
-        "per-slice DeliveryContract data. "
+        "WHY: finalize is the direct-owner exact-scope commit plus a separate F "
+        "clean-checkout closure, not per-slice DeliveryContract data. "
         "HOW: keep finalize outside this schema and run it once after the whole "
         "delivery completes."
     )
@@ -384,6 +383,7 @@ def test_contract_rejects_incomplete_or_invalid_target_plan(
         ("contract-shapes", None),
         ("substrate-lies", None),
         ("targets", "verification-scope"),
+        ("digest", "acceptance-tests"),
     ],
 )
 def test_contract_rejects_parallel_target_authority(

@@ -9,7 +9,6 @@ Use for investigating system failures, recurring issues, unexpected behaviors, o
 
 ## Commands
 
-- [`/nw-bugfix`](../commands/index.md)
 - [`/nw-root-why`](../commands/index.md)
 
 ## Preloaded skills

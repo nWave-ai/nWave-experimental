@@ -1,279 +1,109 @@
-"""K4 ATD-economics regression (2026-08-13).
+"""K4 ATD compiler-boundary regression (2026-08-16).
 
-Confirmed defect: the ATD route's generated Skill-Loading block and
-nWave/data/role-skill-loading.yaml both require native `Invoke Skill(...)
-ON-TRIGGER` for nw-test-design-mandates / nw-property-based-testing /
-nw-pbt-python, but all three skill frontmatters carried
-`disable-model-invocation: true` -- contradicting the registry and silently
-blocking the native trigger the agent body promises. The one skill that DID
-load (nw-certainty-by-construction) never carried that line. Separately, the
-route synthesized the whole acceptance-test portfolio in one long silent
-inference after the last triggered skill returned, instead of materializing
-the first acceptance-test file immediately.
+DESIGN owns proof-protocol selection; ATD compiles and must not invoke a
+runtime Skill or CodeFact. Dense semantic projections, resilient to Markdown
+heading/prose refactors:
 
-Three independently useful projections:
-1. The three registry-required knowledge skills are model-invocable
-   (no `disable-model-invocation: true`) while staying `user-invocable: false`
-   -- native trigger without broadening public command UX.
-2. The registry's ON-TRIGGER skill names line up with the agent body's
-   generated `Invoke Skill(...) ON-TRIGGER` rows -- no drift between the
-   registry (SSOT) and its rendered projection.
-3. The thin Auto route requires the very next tool call after the schema
-   read and the last triggered skill to be the `Write` of the single
-   acceptance-test file, carrying a spatial skeleton, refined only by `Edit`
-   on that same file -- never a separate design/proof document.
+1. The generated role-skill-loading region renders zero runtime ON-TRIGGER
+   rows and no `Skill` tool for the acceptance-designer.
+2. Source prose explicitly forbids Skill/CodeFact invocation and restricts
+   tools to exact set {Read, Write, Edit}, excluding Bash and Skill.
+3. `catalog_only` stays nonempty and every listed skill is installed (SSOT
+   parity between the registry and the skills tree).
+4. RED_TO_GREEN orders compiling the smallest spatial portfolio before
+   writing exactly one consolidated executable oracle, and forbids any
+   legacy delivery carrier or progress ledger.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
-
-from scripts.shared.frontmatter import parse_frontmatter_file
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 NWAVE_DIR = PROJECT_ROOT / "nWave"
 AGENTS_DIR = NWAVE_DIR / "agents"
 SKILLS_DIR = NWAVE_DIR / "skills"
-REGISTRY_PATH = NWAVE_DIR / "data" / "role-skill-loading.yaml"
+ROLE_SKILL_LOADING_PATH = NWAVE_DIR / "data" / "role-skill-loading.yaml"
 
-REGISTRY_REQUIRED_NATIVE_TRIGGER_SKILLS = [
-    "nw-test-design-mandates",
-    "nw-property-based-testing",
-    "nw-pbt-python",
-]
+ACCEPTANCE_DESIGNER_PATH = AGENTS_DIR / "nw-acceptance-designer.md"
+ACCEPTANCE_DESIGNER = ACCEPTANCE_DESIGNER_PATH.read_text(encoding="utf-8")
 
-AGENT_BODY = (AGENTS_DIR / "nw-acceptance-designer.md").read_text(encoding="utf-8")
-REGISTRY = yaml.safe_load(REGISTRY_PATH.read_text(encoding="utf-8"))
-
-
-class TestRegistryRequiredSkillsAreNativelyModelInvocable:
-    """Fix: drop the contradictory disable-model-invocation: true frontmatter line."""
-
-    def test_frontmatter_stays_user_invocable_false_but_model_invocable(self):
-        contradictions = []
-        for skill in REGISTRY_REQUIRED_NATIVE_TRIGGER_SKILLS:
-            metadata, _ = parse_frontmatter_file(SKILLS_DIR / skill / "SKILL.md")
-            assert metadata is not None, (
-                f"{skill}/SKILL.md has no parseable frontmatter"
-            )
-            if metadata.get("user-invocable") is not False:
-                contradictions.append(
-                    (skill, "user-invocable", metadata.get("user-invocable"))
-                )
-            if metadata.get("disable-model-invocation"):
-                contradictions.append(
-                    (
-                        skill,
-                        "disable-model-invocation",
-                        metadata.get("disable-model-invocation"),
-                    )
-                )
-        assert contradictions == [], (
-            f"registry-required native-trigger skills still contradict the "
-            f"registry: {contradictions}"
-        )
-
-    def test_certainty_by_construction_baseline_stays_unset(self):
-        """The one skill that DID load natively is the control: it never
-        carried disable-model-invocation, and this fix must not add it."""
-        metadata, _ = parse_frontmatter_file(
-            SKILLS_DIR / "nw-certainty-by-construction" / "SKILL.md"
-        )
-        assert metadata is not None
-        assert not metadata.get("disable-model-invocation")
+_GENERATED_BLOCK = re.search(
+    r"GENERATED:role-skill-loading START.*?GENERATED:role-skill-loading END",
+    ACCEPTANCE_DESIGNER,
+    re.DOTALL,
+)
+assert _GENERATED_BLOCK, (
+    "acceptance-designer must carry a generated skill-loading block"
+)
 
 
-class TestRegistryAndAgentBodyNativeNamesStayAligned:
-    """No drift between role-skill-loading.yaml (SSOT) and the rendered agent body."""
-
-    def test_registry_phase_skills_all_emit_a_native_invoke_row(self):
-        role = REGISTRY["roles"]["nw-acceptance-designer"]
-        registry_names = set(role.get("phase", {})) | set(role.get("on_demand", {}))
-        missing = [
-            name
-            for name in registry_names
-            if f"Invoke Skill({name}) ON-TRIGGER" not in AGENT_BODY
-        ]
-        assert missing == [], (
-            f"role-skill-loading.yaml names {missing} for nw-acceptance-designer "
-            f"but the generated agent body emits no matching native Invoke row"
-        )
-
-    def test_agent_body_native_rows_all_resolve_to_an_installed_skill_dir(self):
-        for skill in REGISTRY_REQUIRED_NATIVE_TRIGGER_SKILLS:
-            expected_row = (
-                f"Invoke ONE Skill({skill}) ON-TRIGGER"
-                if skill == "nw-pbt-python"
-                else f"Invoke Skill({skill}) ON-TRIGGER"
-            )
-            assert expected_row in AGENT_BODY, (
-                f"{skill} missing its native ON-TRIGGER row in nw-acceptance-designer.md"
-            )
-            assert (SKILLS_DIR / skill / "SKILL.md").is_file(), (
-                f"{skill} has a native trigger row but no installed skill directory"
-            )
+def _norm(text: str) -> str:
+    return " ".join(text.split())
 
 
-class TestThinRouteRequiresImmediateSpatialMaterialization:
-    """After the schema read + last triggered skill, the next tool is the AT Write."""
+def test_atd_generated_region_has_zero_runtime_on_trigger_rows_and_no_skill_tool() -> (
+    None
+):
+    region = _GENERATED_BLOCK.group(0)
+    assert "ON-TRIGGER" not in region
+    assert "Skill(" not in region
 
-    def test_spatial_first_mandate_is_present_and_hard(self):
-        assert "Spatial-first materialization (HARD)" in AGENT_BODY
-
-    def test_mandate_orders_write_immediately_after_schema_and_last_trigger(self):
-        start = AGENT_BODY.index("**Spatial-first materialization (HARD):**")
-        end = AGENT_BODY.index("### GREEN_TO_GREEN branch")
-        section = " ".join(AGENT_BODY[start:end].split())
-        for token in (
-            "after the schema read and last",
-            "ON-TRIGGER `Skill(...)` return",
-            "the next tool call is the `Write`",
-            "no extra Read/Grep/Glob/Bash",
-            "no silent synthesis first",
-            "no git query",
-            "dependency probe",
-            "`nw-distill-red-scaffolding`/other Skill call may",
-            "intervene between the last triggered row and that `Write`",
-        ):
-            assert token in section, f"Missing ordering token: {token!r}"
-
-    def test_mandate_requires_spatial_skeleton_not_prose_planning(self):
-        start = AGENT_BODY.index("**Spatial-first materialization (HARD):**")
-        end = AGENT_BODY.index("### GREEN_TO_GREEN branch")
-        section = " ".join(AGENT_BODY[start:end].split())
-        for token in (
-            "states, failure modes, observables, properties",
-            "test/docstring structure",
-            "never prose planning",
-        ):
-            assert token in section
-
-    def test_refinement_stays_in_the_same_file_no_new_artifact_type(self):
-        start = AGENT_BODY.index("**Spatial-first materialization (HARD):**")
-        end = AGENT_BODY.index("### GREEN_TO_GREEN branch")
-        section = " ".join(AGENT_BODY[start:end].split())
-        assert "refine only via `Edit` on this same file" in section
-        assert "never a separate design document" in section
-
-    def test_only_one_acceptance_test_artifact_file_is_named(self):
-        start = AGENT_BODY.index("**Spatial-first materialization (HARD):**")
-        end = AGENT_BODY.index("### GREEN_TO_GREEN branch")
-        section = " ".join(AGENT_BODY[start:end].split())
-        assert "the `Write` of exactly ONE consolidated" in section
-        assert "acceptance-test artifact FILE" in section
+    front, _, _ = ACCEPTANCE_DESIGNER.partition("\n---\n")
+    tools_line = next(line for line in front.splitlines() if line.startswith("tools:"))
+    tools = [tool.strip() for tool in tools_line.removeprefix("tools:").split(",")]
+    assert "Skill" not in tools
 
 
-class TestClosureOnlyPhaseAndFinalResponse:
-    """K4 corrective, collapsed to 3 dense assertions.
+def test_atd_source_forbids_runtime_skill_and_codefact_and_restricts_to_read_write_edit() -> (
+    None
+):
+    front, _, _ = ACCEPTANCE_DESIGNER.partition("\n---\n")
+    tools_line = next(line for line in front.splitlines() if line.startswith("tools:"))
+    tools = [tool.strip() for tool in tools_line.removeprefix("tools:").split(",")]
+    assert "Skill" not in tools, "Skill must be absent from parsed tools"
+    assert "Bash" not in tools, "Bash must be absent from parsed tools"
+    assert set(tools) == {"Read", "Write", "Edit"}, (
+        f"tools must be exactly {{Read, Write, Edit}}, got {set(tools)}"
+    )
 
-    Defect: after the spatial-first Write, ATD ran 51 more tool calls of
-    unbounded product discovery/refinement (171247 subagent tokens, 815348
-    ms) and ended at max-turn with incomplete prose -- no DeliveryContract,
-    no two-line handoff. Fix: bound post-Write work to a closed
-    operation/artifact set that still permits the one dependency the K4
-    clean-environment failure needed (an undeclared PBT library), keep a
-    terminal EVIDENCE_GAP/BROKEN silent on the THIN header, and make
-    RedConfirmed's final response exactly the two header lines."""
+    body = _norm(ACCEPTANCE_DESIGNER)
+    assert "code-fact" in body.lower(), (
+        "source must name code-fact to explicitly forbid it"
+    )
+    forbidding_terms = ("must not invoke", "forbids", "forbidden", "no ", "never")
+    skill_codefact_forbidden = any(term in body.lower() for term in forbidding_terms)
+    assert skill_codefact_forbidden, "source must explicitly forbid Skill/code-fact"
 
-    def _closure_section(self):
-        start = AGENT_BODY.index("**Closure-only phase (HARD):**")
-        end = AGENT_BODY.index("### GREEN_TO_GREEN branch")
-        return " ".join(AGENT_BODY[start:end].split())
 
-    def _pre_authoring_section(self):
-        start = AGENT_BODY.index("### RED_TO_GREEN branch")
-        end = AGENT_BODY.index("**Spatial-first materialization (HARD):**")
-        return " ".join(AGENT_BODY[start:end].split())
+def test_atd_catalog_only_nonempty_and_all_catalog_skills_installed() -> None:
+    roles = yaml.safe_load(ROLE_SKILL_LOADING_PATH.read_text(encoding="utf-8"))["roles"]
+    atd_entry = roles["nw-acceptance-designer"]
+    catalog_only = atd_entry.get("catalog_only") or []
+    assert catalog_only, "ATD must keep a nonempty catalog_only"
+    assert "nw-bdd-methodology" in catalog_only
+    assert "nw-at-completeness-check" in catalog_only
+    for field in ("on_demand", "phase", "language_pbt"):
+        assert field not in atd_entry, f"ATD must not carry {field}"
 
-    def _final_response_section(self):
-        start = AGENT_BODY.index("### Both branches — final response")
-        end = AGENT_BODY.index("You own the acceptance tests")
-        return " ".join(AGENT_BODY[start:end].split())
+    for skill_name in catalog_only:
+        skill_path = SKILLS_DIR / skill_name / "SKILL.md"
+        assert skill_path.is_file(), f"{skill_name} is catalog_only but not installed"
 
-    def test_closed_operation_and_artifact_set(self):
-        """All four dependency states select only their preidentified action.
 
-        Post-Write permits the same-test Edit, selected declaration/install
-        action, hash, one contract Write, and verification command. Renewed
-        discovery, whole-manifest reinstall, and extra files stay forbidden.
-        """
-        pre = self._pre_authoring_section()
-        for token in (
-            "dependency-manifest topology",
-            "split runtime/test-dependency manifests",
-            "select the repo-native one that owns TEST dependencies",
-            "never the runtime-only manifest",
-            "this Read never targets a second manifest",
-            "this step confirms the repository-native one",
-            "settled by the end of this step, never claimed from step 3 alone",
-            "ambiguous after steps 2-4 is `EVIDENCE_GAP`",
-        ):
-            assert token in pre, f"Missing pre-authoring token: {token!r}"
-
-        section = " ".join(self._closure_section().split())
-        for allowed in (
-            "same-test-file `Edit`",
-            "brief-named action for its dependency state",
-            "declared and present",
-            "declared and missing",
-            "undeclared and present",
-            "undeclared and missing",
-            "named manifest declaration/lock delta",
-            "named direct dependency-delta install argv",
-            "never an invented tool",
-            "the test file's SHA-256 hash",
-            "one `DeliveryContract` JSON Write and schema validation",
-            "already-selected `verification-scope.commands`",
-        ):
-            assert allowed in section, f"Missing permitted-operation token: {allowed!r}"
-        for forbidden in (
-            "No further product-source Read/Grep/Glob",
-            "`nw-code-analysis-port`/CodeFact query",
-            "no `Skill(...)` or `Task` call",
-            "no exploratory or diagnostic Bash",
-            "no other file",
-            "whole test dependency manifest",
-        ):
-            assert forbidden in section, f"Missing prohibition token: {forbidden!r}"
-        # Fix must not accidentally forbid the required contract Write.
-        assert "exactly two files" not in section
-        assert "second `Write`" not in section
-        assert "refused outright" not in section
-
-    def test_terminal_blocker_is_silent_only_redconfirmed_earns_the_header(self):
-        section = self._closure_section()
-        for token in (
-            "terminal `EVIDENCE_GAP`",
-            "or `BROKEN`",
-            "never investigated",
-            "never retried",
-            "never narrowed to a substitute command or reduced scope",
-            "never patched by authoring an additional test",
-            "return only the concise blocker itself and stop",
-            "never the two-line header",
-            "Only `RedConfirmed` earns the header",
-            "the two-line header below is the IMMEDIATE next output",
-        ):
-            assert token in section, f"Missing token: {token!r}"
-
-    def test_final_response_is_exactly_two_lines_root_owns_forwarding(self):
-        section = self._final_response_section()
-        assert "then exactly one blank line" not in section
-        assert "concise optional evidence" not in section
-        for token in (
-            "and nothing else",
-            "No greeting",
-            "summary heading",
-            "code fence",
-            "absolute path",
-            "JSON paste",
-            "duplicate header",
-            "root-computed hash",
-            "may precede, follow, or replace these two lines",
-            "Root may append its own crafter context",
-            "never emits this header",
-        ):
-            assert token in section, f"Missing token: {token!r}"
+def test_red_to_green_orders_smallest_spatial_portfolio_before_one_consolidated_oracle() -> (
+    None
+):
+    body = _norm(ACCEPTANCE_DESIGNER)
+    spatial_marker = "Compile the smallest spatial portfolio"
+    oracle_marker = "Write exactly one consolidated executable oracle"
+    assert spatial_marker in body
+    assert oracle_marker in body
+    assert body.index(spatial_marker) < body.index(oracle_marker), (
+        "spatial-portfolio compilation must precede authoring the single oracle"
+    )
+    assert "No legacy delivery carrier, slice vocabulary or progress ledger" in body

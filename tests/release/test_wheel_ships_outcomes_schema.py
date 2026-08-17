@@ -1,12 +1,4 @@
-"""Regression ATs: the built wheel SHIPS the JSON Schemas the CLI needs.
-
-Two sibling bugs of the same class live here — a resource resolved by walking
-OUT of the package is a resource that ships nowhere. They share this module so
-they share the ONE module-scoped `built_wheel` build; splitting them into two
-files would build the wheel twice for the same question.
-
-    nWave-ai/nWave#63          `outcomes register`         (fixed, cfaaaf192)
-    fix-feature-delta-schema-path  `validate-feature-delta` (slice-01)
+"""Regression AT: the built wheel SHIPS the outcomes JSON Schema the CLI needs.
 
 Issue: nWave-ai/nWave#63 — `nwave-ai outcomes register` dies with a raw
 `FileNotFoundError` on `<site-packages>/docs/product/outcomes/schema.json` from
@@ -45,38 +37,8 @@ from tests.build.unit.test_wheel_contract import built_wheel  # noqa: F401
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-NWAVE_DATA = REPO_ROOT / "nWave" / "data"
 
 SCHEMA_IN_WHEEL = "nwave_ai/outcomes/schema.json"
-
-# The sibling site (fix-feature-delta-schema-path, D-5a/D-6). FIVE runtime
-# resources are resolved by walking four `.parent` hops out of the package —
-# which lands on the repo root from a checkout, and on site-packages from an
-# install, where neither `schemas/` nor `nWave/data/` exists. Post-fix home: all
-# five inside the package, shipped by the same `packages = [...]` entry with no
-# force-include line for anyone to remember (that forgetting is the systemic
-# root, F-PACKAGED-RESOURCE-PATH-GATE).
-FEATURE_DELTA_SCHEMA_IN_WHEEL = "nwave_ai/feature_delta/schema.json"
-FEATURE_DELTA_DATA_IN_WHEEL = "nwave_ai/feature_delta/data"
-_ASSET_DIRS = ("protocol-verbs", "substantive-verbs", "gherkin-keywords")
-
-
-def _feature_delta_resources_expected_in_wheel() -> tuple[str, ...]:
-    """The five feature-delta runtime resources, derived from the repo.
-
-    Derived rather than hard-coded so the pin cannot drift from the assets it
-    protects — and so a fix that ships only `en.txt`, silently degrading the
-    documented `--lang es|fr|it` to empty verb lists, is caught here.
-    """
-    names = [
-        FEATURE_DELTA_SCHEMA_IN_WHEEL,
-        f"{FEATURE_DELTA_DATA_IN_WHEEL}/feature-delta-rule-maturity.json",
-    ]
-    for asset_dir in _ASSET_DIRS:
-        for txt in sorted((NWAVE_DATA / asset_dir).glob("*.txt")):
-            names.append(f"{FEATURE_DELTA_DATA_IN_WHEEL}/{asset_dir}/{txt.name}")
-    return tuple(names)
-
 
 # The proof that a data file under a `packages` entry ships with no
 # force-include: this one already does. Asserted alongside, so a RED on the
@@ -112,55 +74,6 @@ def test_wheel_ships_outcomes_schema_inside_the_package(built_wheel: Path) -> No
         "still lives outside the package (docs/product/outcomes/schema.json), so "
         "it ships in NO distribution channel and `outcomes register` cannot "
         "validate from an install (nWave-ai/nWave#63)."
-    )
-
-
-# ---------------------------------------------------------------------------
-# AT6 (fix-feature-delta-schema-path, slice-01) — ALL FIVE sibling resources.
-# @real-io @slow  @contract-shape:pure-function
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.slow
-def test_wheel_ships_every_feature_delta_runtime_resource(
-    built_wheel: Path,
-) -> None:
-    """All five feature-delta runtime resources are packaged in the built wheel.
-
-    Companion (the behavioural half):
-        tests/bugs/feature_delta/test_validate_feature_delta_schema_install_shape.py
-
-    Today NONE of them is inside the package. The schema sits at the repo's
-    top-level `schemas/`; the four data assets sit under `nWave/data/`. The DEV
-    wheel carries neither, so `validate-feature-delta` refuses at startup (exit
-    70) from any install built here. The PUBLIC wheel survives the schema hop
-    only because `patch_pyproject.py:191` force-includes `schemas/` into
-    site-packages root — and it does NOT survive the data hop at all: the
-    published 3.21.0 payload has no `nWave/data` directory, so the shipped
-    product dies on the `verbs.py:81` assert (a raw traceback).
-
-    The fix moves all five inside the package, where the existing
-    `packages = [... "nwave_ai"]` entry ships them on every channel with no
-    force-include to remember. This is the pin that keeps that true.
-
-    RED today: the wheel carries none of them.
-    """
-    names = set(ZipFile(built_wheel).namelist())
-
-    assert KNOWN_SHIPPED_DATA_FILE in names, (
-        f"{KNOWN_SHIPPED_DATA_FILE} is missing from the wheel — the packaging "
-        "premise of this test (data files under a `packages` entry ship "
-        "automatically) no longer holds; investigate the build config before "
-        "reading the assertion below."
-    )
-
-    expected = _feature_delta_resources_expected_in_wheel()
-    missing = [name for name in expected if name not in names]
-    assert not missing, (
-        "these feature-delta runtime resources are absent from the built wheel. "
-        "They still live outside the package (top-level `schemas/` and "
-        "`nWave/data/`), so they reach an install on no channel and the command "
-        "cannot read its own validation rules:\n  " + "\n  ".join(missing)
     )
 
 

@@ -13,7 +13,6 @@ import argparse
 import ast
 import re
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
@@ -40,16 +39,7 @@ if Path(_project_src).is_dir():
     sys.path.insert(0, _project_src)
 
 from des._internal import subset_parser  # noqa: E402
-from des.application.flavor_dispatcher import (  # noqa: E402
-    resolve_mode_descriptor,
-    resolve_skill_load_set,
-)
-from des.application.workflow_mode import resolve_workflow_mode  # noqa: E402
 from des.cli.__main__ import _REGISTRY  # noqa: E402
-from des.domain.atdd_pure_phases import (  # noqa: E402
-    CANONICAL_PHASES,
-    normalize_phase_token,
-)
 from scripts.shared.agent_catalog import (  # noqa: E402
     build_ownership_map,
     detect_command_skills,
@@ -172,7 +162,18 @@ def scan(root: Path, *, public_only: bool = False) -> dict[str, list[Path]]:
     skills_dir = nwave / "skills"
     skill_dirs = sorted(d for d in skills_dir.iterdir() if d.is_dir())
     if public_agents:
-        skill_dirs = [d for d in skill_dirs if is_public_skill(d.name, public_agents)]
+        ownership = build_ownership_map(nwave / "agents")
+        command_skills = detect_command_skills(skills_dir)
+        skill_dirs = [
+            d
+            for d in skill_dirs
+            if is_public_skill(
+                d.name,
+                public_agents,
+                ownership_map=ownership,
+                command_skills=command_skills,
+            )
+        ]
     skills = sorted(md for d in skill_dirs for md in d.rglob("*.md"))
 
     templates = sorted(
@@ -559,7 +560,6 @@ def render_master_index(data: dict[str, list]) -> str:
             "`~/.nwave/global-config.json` keys",
             "- [Outcomes CLI Reference](outcomes-cli.md) — `nwave-ai outcomes …`",
             "- [DES Markers Reference](des-markers.md) — DES task-prompt markers",
-            "- [Feature-delta Format](feature-format.md) — feature-delta.md schema",
             "",
         ]
     )
@@ -770,15 +770,12 @@ def check_pages(pages: dict[str, str], output_dir: Path) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# GENERATED region projection (mode-registry-single-locus slice-02)
+# GENERATED region projection
 #
 # Marker grammar per the DESIGN SSOT (analysis §2.3.2):
 #   <!-- GENERATED:<region-id> START ... --> body <!-- GENERATED:<region-id> END -->
 #
-# The mode registry (`nWave/flavors/*.yaml`) is the sole author of every
-# region body; assets carry projections only. Region read APIs are the
-# flavor_dispatcher seams (`resolve_skill_load_set`, `resolve_mode_descriptor`)
-# — one registry-read SSOT, two consumers: gates + docgen.
+# Each region marker names its source; assets carry projections only.
 # ---------------------------------------------------------------------------
 _GENERATED_REGION_RE = re.compile(
     r"<!--\s*GENERATED:(?P<region_id>[a-z][a-z0-9-]*)\s+START[^>]*-->\n"
@@ -801,13 +798,6 @@ class AssetProjection:
         return self.current_text != self.projected_text
 
 
-def _declared_flavor_ids(flavors_dir: Path) -> list[str]:
-    """Every declared mode, one per flavor file (schema file excluded)."""
-    return sorted(
-        p.stem for p in flavors_dir.glob("*.yaml") if not p.name.startswith("_")
-    )
-
-
 # A region's marker DECLARES where its body comes from; a marker naming a source
 # that did not produce the body is a false fact shipped inside generated prose,
 # so each region names its own source instead of inheriting the flavors default.
@@ -815,48 +805,23 @@ _REGION_SOURCE_OF_TRUTH = {
     "des-command-catalog": "src/des/cli/__main__.py::_REGISTRY",
     "role-skill-loading": "role-skill-loading.yaml (build-time registry, not shipped)",
 }
-_DEFAULT_REGION_SOURCE_OF_TRUTH = "nWave/flavors/*.yaml"
 _ROLE_SKILL_REGISTRY_REL = Path("nWave") / "data" / "role-skill-loading.yaml"
 
 
 def _generated_region(region_id: str, body: str) -> str:
     """The canonical full region text (markers + body) docgen owns."""
-    source = _REGION_SOURCE_OF_TRUTH.get(region_id, _DEFAULT_REGION_SOURCE_OF_TRUTH)
+    source = _REGION_SOURCE_OF_TRUTH.get(region_id)
+    if source is None:
+        raise DocgenError(
+            f"Unknown GENERATED region id '{region_id}' — refusing to serve "
+            "a region with no declared source"
+        )
     return (
         f"<!-- GENERATED:{region_id} START — source of truth: "
         f"{source}; do not hand-edit (docgen renders this region) -->\n"
         f"{body}\n"
         f"<!-- GENERATED:{region_id} END -->"
     )
-
-
-def _skill_load_set_body(agent_id: str, flavors_dir: Path) -> str:
-    """Render the per-mode conditional-skill directive for one agent.
-
-    Body content comes from the slice-01 registry-read seam
-    `resolve_skill_load_set` — never a second YAML read, never a baked table.
-    """
-    lines = [
-        "Conditional skills by active workflow mode — projected from the mode",
-        "registry `skill_load_set` via `flavor_dispatcher.resolve_skill_load_set`;",
-        "re-render with `python scripts/docgen.py`:",
-        "",
-    ]
-    for flavor_id in _declared_flavor_ids(flavors_dir):
-        skills = resolve_skill_load_set(agent_id, flavor_id, flavors_dir=flavors_dir)
-        rendered = ", ".join(f"`{skill}`" for skill in skills) or "(none)"
-        lines.append(f"- `{flavor_id}`: {rendered}")
-    return "\n".join(lines)
-
-
-def _mode_descriptor_body(flavors_dir: Path) -> str:
-    """Render one descriptor + DELIVER phase shape per declared mode."""
-    lines: list[str] = []
-    for flavor_id in _declared_flavor_ids(flavors_dir):
-        mode = resolve_mode_descriptor(flavor_id, flavors_dir=flavors_dir)
-        lines.append(f"- `{flavor_id}` — {mode.descriptor}")
-        lines.append(f"  Deliver phase shape: `{mode.deliver_phase_shape}`")
-    return "\n".join(lines)
 
 
 def _module_first_docstring_line(module_path: str) -> str:
@@ -946,13 +911,7 @@ def _role_skill_loading_body(agent_id: str, root: Path) -> str:
     return "\n".join(lines) if lines else "- (no universal lens applies to this role)"
 
 
-def _render_region_body(
-    region_id: str, asset_path: Path, flavors_dir: Path, root: Path
-) -> str:
-    if region_id == "skill-load-set":
-        return _skill_load_set_body(asset_path.stem, flavors_dir)
-    if region_id == "mode-descriptor":
-        return _mode_descriptor_body(flavors_dir)
+def _render_region_body(region_id: str, asset_path: Path, root: Path) -> str:
     if region_id == "des-command-catalog":
         return _command_catalog_body()
     if region_id == "role-skill-loading":
@@ -963,14 +922,10 @@ def _render_region_body(
     )
 
 
-def _project_asset(
-    path: Path, text: str, flavors_dir: Path, root: Path
-) -> AssetProjection:
+def _project_asset(path: Path, text: str, root: Path) -> AssetProjection:
     def _replace(match: re.Match[str]) -> str:
         region_id = match.group("region_id")
-        return _generated_region(
-            region_id, _render_region_body(region_id, path, flavors_dir, root)
-        )
+        return _generated_region(region_id, _render_region_body(region_id, path, root))
 
     return AssetProjection(
         path=path,
@@ -983,7 +938,6 @@ def project_generated_regions(
     root: Path, asset_paths: dict[str, list[Path]]
 ) -> list[AssetProjection]:
     """Re-render every GENERATED region across the scanned asset tree."""
-    flavors_dir = root / "nWave" / "flavors"
     files = [
         *asset_paths["agents"],
         *asset_paths["commands"],
@@ -994,7 +948,7 @@ def project_generated_regions(
         text = path.read_text(encoding="utf-8")
         if not _GENERATED_REGION_RE.search(text):
             continue
-        projections.append(_project_asset(path, text, flavors_dir, root))
+        projections.append(_project_asset(path, text, root))
     return projections
 
 
@@ -1141,104 +1095,6 @@ def check_command_front_matter(
 
 
 # ---------------------------------------------------------------------------
-# Resolver↔registry + registry↔runtime agreement (mode-registry-single-locus
-# slice-05, Layer C / analysis §3.3)
-#
-# The elevated `docgen --check` leg: beyond "projection == source", it asserts
-# the registry AGREES with the running system:
-#   (1) the flavor declaring `default: true` equals
-#       `workflow_mode.resolve_workflow_mode`'s absent-config default — closing
-#       the historic two-default divergence mechanically;
-#   (2) the default flavor's `deliver_phase_shape` names exactly the runtime
-#       canonical DELIVER phases (`atdd_pure_phases.CANONICAL_PHASES`) in order
-#       — closing the KEEP-row-10 registry↔runtime parity open leg.
-# Refuses on drift, NAMING the disagreement (each entry carries the drifted
-# field name so the operator can act). The write pass never invokes this — it
-# is a `--check`-only agreement assertion, so a clean copy still writes/exits 0.
-# ---------------------------------------------------------------------------
-def _resolver_absent_config_default() -> str:
-    """The mode the resolver returns for a project with no `.nwave/config.yaml`.
-
-    Derived from the REAL resolver behaviour (a throwaway empty dir has no
-    config), never a hand-restated constant — so the agreement leg cannot drift
-    from the resolver.
-    """
-    with tempfile.TemporaryDirectory() as empty:
-        return resolve_workflow_mode(Path(empty)).effective_mode
-
-
-def _declared_phase_tokens(shape: str) -> tuple[str, ...]:
-    """The ordered phase tokens a `deliver_phase_shape` string names."""
-    return tuple(token.strip() for token in shape.split("->") if token.strip())
-
-
-_DELIVER_PHASE_SHAPE_RE = re.compile(r"^deliver_phase_shape:\s*(.+)$", re.MULTILINE)
-
-
-def _authoritative_phase_shape(flavor_file: Path) -> str | None:
-    """The flavor's FIRST `deliver_phase_shape` declaration.
-
-    A well-formed registry declares the field EXACTLY ONCE — that invariant
-    is enforced fail-closed by the Layer-B gate (`mode_registry_completeness`
-    refuses any flavor carrying a duplicate top-level mode-field declaration).
-    Under that invariant first == only == the effective value the runtime
-    reads, so this read names the registry's authoritative phase shape and an
-    in-place drift is caught here. The duplicate-shadowing state (an appended
-    second declaration that a last-wins parser would silently prefer) is NOT
-    this leg's territory: it is refused by Layer B — the §3.4 orthogonality
-    property (a one-layer bypass is caught by ≥1 of the other gates).
-    """
-    match = _DELIVER_PHASE_SHAPE_RE.search(flavor_file.read_text(encoding="utf-8"))
-    if match is None:
-        return None
-    return match.group(1).strip().strip("'\"")
-
-
-def check_registry_runtime_agreement(root: Path) -> list[str]:
-    """Disagreement list (each NAMING the drifted field). Empty = in agreement.
-
-    The Layer-C agreement leg (mode-registry-single-locus slice-05, analysis
-    §3.3): asserts the registry AGREES with the running system —
-      (1) the flavor declaring `default: true` equals the resolver's
-          absent-config default;
-      (2) that default flavor's authoritative `deliver_phase_shape` names
-          exactly the runtime canonical DELIVER phases, in order.
-    Pure read; never invoked by the write pass.
-    """
-    flavors_dir = root / "nWave" / "flavors"
-    flavor_ids = _declared_flavor_ids(flavors_dir)
-    disagreements: list[str] = []
-
-    resolver_default = _resolver_absent_config_default()
-    defaulting = [
-        flavor_id
-        for flavor_id in flavor_ids
-        if subset_parser.load_file(flavors_dir / f"{flavor_id}.yaml").get("default")
-        is True
-    ]
-    if defaulting != [resolver_default]:
-        disagreements.append(
-            "resolver↔registry disagreement: the resolver's absent-config "
-            f"default is {resolver_default!r} but the flavor(s) declaring "
-            f"`default: true` are {defaulting!r}"
-        )
-
-    if resolver_default in flavor_ids:
-        shape = _authoritative_phase_shape(flavors_dir / f"{resolver_default}.yaml")
-        declared = tuple(
-            normalize_phase_token(token)
-            for token in _declared_phase_tokens(shape or "")
-        )
-        if declared != tuple(CANONICAL_PHASES):
-            disagreements.append(
-                "registry↔runtime disagreement: the default flavor's "
-                f"`deliver_phase_shape` names {list(declared)} but the running "
-                f"system's canonical DELIVER phases are {list(CANONICAL_PHASES)}"
-            )
-    return disagreements
-
-
-# ---------------------------------------------------------------------------
 # Link validation
 # ---------------------------------------------------------------------------
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
@@ -1345,7 +1201,6 @@ def main(argv: list[str] | None = None) -> int:
         stale = (
             check_generated_regions(root, projections)
             + check_command_front_matter(root, front_matter_projections)
-            + check_registry_runtime_agreement(root)
             + check_pages(pages, output_dir)
         )
         if stale:

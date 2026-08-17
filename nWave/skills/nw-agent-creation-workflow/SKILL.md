@@ -18,7 +18,7 @@ Every agent that carries `skills:` in frontmatter needs two things, kept aligned
 1. **A `## Skill Loading` section with a MANDATORY-first-action instruction** — the agent's FIRST action is reading the table and loading, via Read tool at the exact path, ONLY the skill(s) whose Trigger matches its CURRENT phase/task. Every other skill loads on-demand the moment its trigger fires; never preload the whole set. Then a `| Phase | Load | Trigger |` table, one row per skill, where **Trigger is a precise load-when condition**, not a vague "when needed".
 
    Well-formed row (from `nw-product-owner`):
-   `| 6.5 Expectation Charter Authoring | nw-expectation-charter | after the Slice Plan is authored — one charter per observable-value slice; also outside DISCUSS |`
+   `| Expectation Charter Authoring | nw-expectation-charter | when examine=true and total charter discovery returns Missing or Empty |`
 
 2. **Frontmatter <-> table coherence (avoids the D1 packaging-bug)** — every skill in frontmatter `skills:` MUST have a row in the table, and every row's skill MUST be in frontmatter. Declaring in only one is D1 (checklist items #12/#13 exist to catch it). Direction to converge on: GENERATE the frontmatter list FROM the table (one SSOT) instead of hand-keeping two lists in sync — not built yet; prescribe double-declaration-with-coherence-check until it is.
 

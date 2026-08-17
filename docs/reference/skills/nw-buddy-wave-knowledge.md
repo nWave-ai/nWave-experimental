@@ -1,6 +1,6 @@
 # nw-buddy-wave-knowledge
 
-Wave methodology knowledge for the buddy agent — what each wave does, its inputs and outputs, and how to route questions.
+Current wave authority and handoff map for answering where product, design, delivery, and feedback facts belong.
 
 **Used by:** [nw-nwave-buddy](../agents/nw-nwave-buddy.md)
 

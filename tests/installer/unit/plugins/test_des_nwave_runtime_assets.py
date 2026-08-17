@@ -2,12 +2,9 @@
 
 F-DES-INSTALL-SHIPS-NWAVE-RUNTIME-ASSETS — the installed des package resolves
 config siblings of lib/python at runtime (Path(__file__).parents[N] / "nWave" /
-...): carpaccio_intercept reads nWave/flavors/atdd_pure.yaml, log_persistence
-reads nWave/data/, the tdd/roadmap loaders read nWave/templates +
-nWave/schemas, carpaccio_slice_gate reads nWave/framework-catalog.yaml. The
-installer shipped only the code (lib/python/des) and never these assets, so
-every atdd_pure dispatch crashed with a missing lib/nWave/flavors/atdd_pure.yaml.
-These tests pin the shipping so the gap cannot silently reopen.
+...): installed readers consume nWave/data/, nWave/templates/,
+nWave/schemas/ and nWave/framework-catalog.yaml. These tests pin that exact
+live asset set without preserving retired workflow registries.
 """
 
 from pathlib import Path
@@ -21,10 +18,12 @@ def _context_with_nwave(base: Path) -> tuple[InstallContext, Path]:
     """Build an InstallContext whose project_root/nWave carries runtime assets."""
     project_root = base / "project"
     nwave = project_root / "nWave"
-    (nwave / "flavors").mkdir(parents=True)
-    (nwave / "flavors" / "atdd_pure.yaml").write_text("id: atdd_pure\n")
+    (nwave / "data").mkdir(parents=True)
+    (nwave / "data" / "doctor.json").write_text("{}\n")
+    (nwave / "schemas").mkdir(parents=True)
+    (nwave / "schemas" / "thin-delivery-contract.schema.json").write_text("{}\n")
     (nwave / "templates").mkdir(parents=True)
-    (nwave / "templates" / "step-tdd-cycle-schema.json").write_text("{}\n")
+    (nwave / "templates" / "AGENT_TEMPLATE.md").write_text("# template\n")
     (nwave / "framework-catalog.yaml").write_text("agents: []\n")
 
     claude_dir = base / ".claude"
@@ -41,20 +40,17 @@ def _context_with_nwave(base: Path) -> tuple[InstallContext, Path]:
 
 
 def test_runtime_assets_shipped_to_lib_nwave(tmp_path: Path) -> None:
-    """The flavor, data, template, schema dirs + catalog land under lib/nWave/.
-
-    The carpaccio_intercept crash that broke every atdd_pure dispatch was the
-    absence of lib/nWave/flavors/atdd_pure.yaml — this is the load-bearing slot.
-    """
+    """The live data, template, schema dirs + catalog land under lib/nWave/."""
     context, claude_dir = _context_with_nwave(tmp_path)
 
     DESPlugin()._install_nwave_runtime_assets(context=context, using_prebuilt=False)
 
     lib_nwave = claude_dir / "lib" / "nWave"
-    # The load-bearing slot: the flavor the carpaccio_intercept resolves.
-    assert (lib_nwave / "flavors" / "atdd_pure.yaml").is_file()
-    assert (lib_nwave / "templates" / "step-tdd-cycle-schema.json").is_file()
+    assert (lib_nwave / "data" / "doctor.json").is_file()
+    assert (lib_nwave / "templates" / "AGENT_TEMPLATE.md").is_file()
+    assert (lib_nwave / "schemas" / "thin-delivery-contract.schema.json").is_file()
     assert (lib_nwave / "framework-catalog.yaml").is_file()
+    assert not (lib_nwave / "flavors").exists()
     assert not (lib_nwave / "hooks").exists()
 
 
@@ -130,7 +126,7 @@ def test_nested_wheel_runtime_uses_flat_des_templates_when_required(
     assert expected.is_file(), (
         f"WHAT  {expected} was not created.\n"
         "WHY   Hatch normalizes the two force-include keys "
-        "('nWave/templates' and 'nWave/templates/') to the SAME source "
+        "('nWave/templates' and its build alias) to the SAME source "
         "path, so `_install_nwave_runtime_assets` must fall back to the "
         "flat `framework_source / 'templates'` tree when populating "
         "`lib/nWave/templates` for a nested wheel runtime -- that "

@@ -10,11 +10,11 @@ import json
 import pytest
 
 from des.cli._scaffold_core import (
+    ACCEPTED_VERDICT,
     ScaffoldDegradeError,
     decide_on_exists,
     emit_scaffold_verdict,
 )
-from des.cli.validate_feature_delta import VERDICT_ACCEPTED
 
 
 # --- decide_on_exists -------------------------------------------------------
@@ -58,14 +58,14 @@ def test_force_is_a_no_op_on_a_fresh_target():
 
 
 def test_emit_scaffold_verdict_prints_the_payload_as_one_json_line(capsys):
-    payload = {"feature_id": "demo", "verdict": VERDICT_ACCEPTED, "detail": "ok"}
+    payload = {"feature_id": "demo", "verdict": ACCEPTED_VERDICT, "detail": "ok"}
     emit_scaffold_verdict(payload)
     out = capsys.readouterr().out
     assert out == json.dumps(payload) + "\n"
 
 
 def test_emit_scaffold_verdict_returns_zero_on_accepted():
-    exit_code = emit_scaffold_verdict({"verdict": VERDICT_ACCEPTED, "detail": "ok"})
+    exit_code = emit_scaffold_verdict({"verdict": ACCEPTED_VERDICT, "detail": "ok"})
     assert exit_code == 0
 
 
@@ -103,16 +103,3 @@ def test_scaffold_degrade_error_is_raisable_and_catchable():
         raise ScaffoldDegradeError("x", "y")
     assert excinfo.value.verdict == "x"
     assert excinfo.value.detail == "y"
-
-
-# --- no drift between this module's accepted-token literal and the SSOT ----
-
-
-def test_scaffold_core_accepted_matches_validate_feature_delta():
-    """`_scaffold_core`'s default `accepted` token is NOT imported from
-    `validate_feature_delta.VERDICT_ACCEPTED` (this module stays free of a
-    dependency on the feature-delta parser -- see module docstring); this
-    test is the mechanical anti-drift guard for that choice, run every time
-    either constant changes."""
-    exit_code = emit_scaffold_verdict({"verdict": VERDICT_ACCEPTED})
-    assert exit_code == 0

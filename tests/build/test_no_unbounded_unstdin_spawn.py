@@ -11,10 +11,8 @@ A).
 
 THE INVARIANT. *No spawn without an explicit stdin decision and an explicit bound.*
 Framed as a pure-AST, import-free predicate on purpose, NOT as "must call the
-wrapper": ``scripts/refactor_agent.py`` may not import ``des`` by policy (its
-docstring, ``:41-42`` -- nWave assets must run on any target with Python and
-nothing else assumed present), so it must be able to satisfy the ban with two
-literal kwargs and zero new dependency (RCA §7, risk #8).
+wrapper": standalone scripts need to satisfy the ban with literal kwargs and
+zero new dependency.
 
 PERIMETER = EXECUTION PERIMETER, not just the package. ``src/des/**`` AND
 ``scripts/**``. ``test_no_inline_des_module_spawn.py:41-42`` roots at ``src/des``
@@ -44,7 +42,7 @@ violation count, and the ratchet is ``actual <= allowed``:
   ``test_no_inline_des_module_spawn.py:148-153`` guards against for its sanctioned
   exception.
 
-Allowlist dated 2026-07-22: 104 files, 182 violation sites, AST census over
+Allowlist dated 2026-07-22: 63 files, 130 violation sites, AST census over
 ``src/des/**`` + ``scripts/**`` at the HEAD of ``bugfix/inherited-stdin-deadlocks-spawns``.
 Burning it down is tracked separately (RCA §10 "Should change (migration behind the
 ban)"); do NOT narrow the predicate to make a violation go away.
@@ -78,38 +76,20 @@ _SPAWNERS = _BOUNDABLE_SPAWNERS | {"Popen"}
 # Ratchet: actual <= allowed. Entries may only shrink. Every path must exist.
 # --------------------------------------------------------------------------- #
 PRE_EXISTING_2026_07_22: dict[str, int] = {
-    "src/des/adapters/driven/e2e/pytest_e2e_runner.py": 1,
-    "src/des/adapters/driven/environment/real_environment_probe.py": 1,
     "src/des/adapters/driven/filesystem/feature_scan_adapter.py": 2,
     "src/des/adapters/driven/git/committed_scope_adapter.py": 1,
     "src/des/adapters/driven/git/git_commit_diff_adapter.py": 1,
-    "src/des/adapters/driven/git/git_history_probe.py": 1,
     "src/des/adapters/driven/git/git_mutate.py": 1,
     "src/des/adapters/driven/git/git_track_probe.py": 1,
     "src/des/adapters/driven/package_managers/package_manager_detector.py": 1,
     "src/des/adapters/driven/parallel_safety/subprocess_blast_radius_adapter.py": 1,
-    "src/des/adapters/driven/refactor/shell_agent_invocation_adapter.py": 1,
-    "src/des/adapters/driven/refactor/uv_env_provision_adapter.py": 1,
-    "src/des/adapters/drivers/hooks/carpaccio_intercept.py": 2,
     "src/des/adapters/drivers/hooks/project_root_validator.py": 1,
-    "src/des/adapters/drivers/hooks/subagent_stop_handler.py": 1,
-    "src/des/application/slice_at_completeness.py": 1,
-    "src/des/cli/_reverify_core.py": 2,
     "src/des/cli/commit.py": 1,
-    "src/des/cli/commit_slice.py": 3,
-    "src/des/cli/convert_to_atdd_pure.py": 1,
-    "src/des/cli/examine_fixture.py": 1,
-    "src/des/cli/run_contract_gate.py": 2,
-    "src/des/cli/verify_deliver_entry_contract.py": 1,
-    "src/des/cli/verify_environmental_e2e.py": 1,
     "src/des/cli/verify_fresh_clone.py": 2,
     "src/des/cli/verify_red_green.py": 1,
     "src/des/runtime/interpreter.py": 4,
     "scripts/build_offline_bundle.py": 1,
-    "scripts/cli/check_reuse_first_design.py": 1,
-    "scripts/cli/check_scorecard_freshness.py": 1,
     "scripts/docs_site/build_site.py": 4,
-    "scripts/flow_v2_closure_scorecard.py": 1,
     "scripts/framework/backlog_audit.py": 1,
     "scripts/hooks/autofix_python.py": 4,
     "scripts/hooks/check_end_of_file.py": 2,
@@ -125,8 +105,6 @@ PRE_EXISTING_2026_07_22: dict[str, int] = {
     "scripts/hooks/reject_placeholder_git_identity.py": 1,
     "scripts/hooks/run_e2e_if_master.py": 1,
     "src/des/runtime/test_execution.py": 1,
-    "scripts/hooks/run_wave_contract_coherence.py": 1,
-    "scripts/hooks/subagent_stop_robustness_gate.py": 1,
     "scripts/hooks/validate_author_identity.py": 1,
     "scripts/hooks/validate_docs.py": 2,
     "scripts/hooks/validate_push_identity.py": 2,
@@ -143,7 +121,6 @@ PRE_EXISTING_2026_07_22: dict[str, int] = {
     "scripts/polyglot/smoke_kotlin_pilot.py": 1,
     "scripts/polyglot/smoke_rust_pilot.py": 1,
     "scripts/polyglot/smoke_typescript_pilot.py": 2,
-    "scripts/refactor_agent.py": 1,
     "scripts/release/cleanup/cleanup_tags.py": 2,
     "scripts/release/cleanup/test_cleanup_tags.py": 8,
     "scripts/release/collect_coauthors.py": 2,
@@ -155,7 +132,6 @@ PRE_EXISTING_2026_07_22: dict[str, int] = {
     "scripts/release/validate_published_rc_locally.py": 1,
     "scripts/reports/daily_usage_report.py": 2,
     "scripts/research/ab_token_probe.py": 1,
-    "scripts/roadmap_e1_e12_closure_scorecard.py": 1,
     "scripts/shared/git_hooks_paths.py": 1,
     "scripts/sync/check_denylist.py": 2,
     "scripts/testpypi_validation.py": 1,
@@ -255,8 +231,8 @@ def test_no_new_spawn_without_explicit_stdin_and_bound():
         "`stdin=subprocess.DEVNULL` when the caller passed neither stdin= nor "
         "input=, applies a tiered env-overridable bound (RCA §8), and reaps the "
         "process group on the timeout path. Where importing `des` is forbidden by "
-        "policy (`scripts/refactor_agent.py:41-42`), satisfy the ban with two "
-        "literal kwargs instead. Do NOT add the site to the allowlist: the "
+        "caller cannot use that boundary, satisfy the ban with two literal "
+        "kwargs instead. Do NOT add the site to the allowlist: the "
         "allowlist is dated and may only shrink.\n"
         "--- offending sites ---\n" + "\n".join(offences)
     )

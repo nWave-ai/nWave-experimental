@@ -158,7 +158,7 @@ def test_claude_md_section_never_hand_roll_claim_names_the_role_floor() -> None:
     The acceptance-designer ownership and no-substitution boundary therefore
     belong to the same regression contract."""
     content = load_section_content()
-    idx = content.index("Never hand-roll feature work")
+    idx = content.index("Never hand-roll delivery work")
     nearby = content[idx : idx + 700]
     assert "nw-acceptance-designer" in nearby
     assert "never substitute" in nearby
@@ -174,13 +174,15 @@ def test_claude_md_section_no_longer_makes_an_unqualified_in_full_claim() -> Non
     assert "in full" not in content
 
 
-def test_claude_md_section_scopes_feature_end_cycle_to_once_per_feature() -> None:
-    """The feature-end cycle must read as bounded -- once per feature, not a
-    second per-slice multi-agent round."""
+def test_claude_md_section_finalizes_the_whole_delivery_exactly_once() -> None:
+    """ADR-SSOT-002: the legacy feature-end cycle is retired -- both routes
+    join evidence and finalize the whole delivery exactly once, with no
+    per-slice closure cycle."""
     content = load_section_content()
-    idx = content.index("feature-end cycle")
+    idx = content.index("Both routes join evidence")
     nearby = content[idx : idx + 200]
-    assert "once" in nearby
+    assert "finalize the whole delivery exactly once" in nearby
+    assert "neither runs a per-slice closure cycle" in nearby
 
 
 # --- nw-mode-select has NO unattended/headless fallback: silence never
@@ -305,14 +307,6 @@ def test_mode_select_auto_m_l_enters_nw_auto_directly_not_deliver() -> None:
     assert "do not route Auto through `nw-deliver`, `nw-distill`" in nearby
 
 
-def test_nw_auto_owns_thin_routing_and_bounded_code_fact_lookup() -> None:
-    """CONTRACT_SHAPE: bounded-change. Thin Auto owns executable code-fact lookup."""
-    mode_text = _mode_select_text()
-    auto_text = " ".join(AUTO_SKILL_PATH.read_text(encoding="utf-8").split())
-    assert "`nw-auto`; that skill is the sole route authority" in mode_text
-    assert "des code-fact query.* SUBJECT --root ROOT" in auto_text
-
-
 def test_claude_md_section_auto_m_l_uses_nw_auto_not_deliver() -> None:
     content = load_section_content()
     assert "For Auto mode on M/L work, load the `nw-auto` skill directly" in content
@@ -320,14 +314,3 @@ def test_claude_md_section_auto_m_l_uses_nw_auto_not_deliver() -> None:
     nearby = content[idx : idx + 150]
     assert "never `/nw-deliver` first" in nearby
     assert "never in parallel with it" in nearby
-
-
-def test_claude_md_section_scopes_feature_end_cycle_to_human_only() -> None:
-    """Feature-end wording must be scoped to Human mode -- Auto's floor ends
-    with the terminal Auto branch's own examiner verdict, not a second
-    feature-end cycle."""
-    content = load_section_content()
-    idx = content.index("For Human mode")
-    nearby = content[idx : idx + 250]
-    assert "feature-end cycle runs once per feature" in nearby
-    assert "Auto mode has no separate feature-end cycle" in content

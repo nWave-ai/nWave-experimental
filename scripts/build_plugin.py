@@ -7,7 +7,6 @@ a plugin layout:
   nWave/tasks/nw/*.md   -> plugin/commands/*.md         (flat — plugin name provides /nw: prefix)
   nWave/skills/*/       -> plugin/skills/*/           (preserving structure)
   src/des/              -> plugin/scripts/des/         (imports rewritten)
-  nWave/templates/*.json-> plugin/scripts/templates/   (DES runtime templates)
   pyproject.toml        -> plugin/.claude-plugin/plugin.json (version extraction)
   (generated)           -> plugin/hooks/hooks.json     (5 DES hook events)
   (generated)           -> plugin/scripts/des-hook     (thin shell wrapper)
@@ -602,24 +601,6 @@ def copy_des_module(config: BuildConfig, plugin_dir: Path) -> StepResult:
     return StepResult.ok("des_module", files_rewritten)
 
 
-def copy_templates(config: BuildConfig, plugin_dir: Path) -> StepResult:
-    """Copy DES runtime templates to plugin/scripts/templates/."""
-    templates_dir = config.nwave_dir / "templates"
-    dest_dir = plugin_dir / "scripts" / "templates"
-    dest_dir.mkdir(parents=True, exist_ok=True)
-
-    template_files = ("step-tdd-cycle-schema.json",)
-
-    count = 0
-    for template_name in template_files:
-        source_file = templates_dir / template_name
-        if source_file.exists():
-            shutil.copy2(source_file, dest_dir / template_name)
-            count += 1
-
-    return StepResult.ok("templates", count)
-
-
 def generate_hooks_json(
     plugin_dir: Path, hook_template_override: dict | None = None
 ) -> StepResult:
@@ -721,7 +702,7 @@ def build(config: BuildConfig, *, version_override: str | None = None) -> BuildR
     """Execute the plugin assembly pipeline.
 
     Pipeline: validate -> read_version -> copy_agents -> copy_commands
-              -> copy_skills -> copy_des_module -> copy_templates
+              -> copy_skills -> copy_des_module
               -> generate_hooks_json -> generate_hook_wrapper
               -> generate_metadata -> write_metadata
 
@@ -798,10 +779,6 @@ def build(config: BuildConfig, *, version_override: str | None = None) -> BuildR
     steps.append(des_result)
     if not des_result.success:
         return _fail(des_result.error, tuple(steps))
-
-    # Step 8: DES runtime templates
-    templates_result = copy_templates(config, plugin_dir)
-    steps.append(templates_result)
 
     # Step 9: Hook configuration
     hooks_result = generate_hooks_json(plugin_dir, config.hook_template_override)

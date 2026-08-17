@@ -1,9 +1,8 @@
-"""Unit tests for hook adapter resilience (UT-14 through UT-17).
+"""Unit tests for the live hook adapter resilience paths.
 
 Tests resilience fixes:
-- 9a: Empty stdin → exit 0 (allow passthrough) for both PreToolUse and SubagentStop
-- 9c: Missing transcript → None with no HOOK_TRANSCRIPT_ERROR
-- task_start_time read from des-task-active signal
+- Empty stdin → exit 0 (allow passthrough) for PreToolUse
+- task signal reads tolerate missing files
 """
 
 from __future__ import annotations
@@ -48,38 +47,11 @@ class TestEmptyStdinResilience:
         assert exit_code == 0
         assert response == {}, f"Allow path should produce no stdout. Got: {response}"
 
-    def test_empty_stdin_subagent_stop_exits_0(self) -> None:
-        """UT-15: SubagentStop with empty stdin exits 0 with allow."""
-        exit_code, response = _invoke_hook("subagent-stop", "")
-        assert exit_code == 0
-        assert response == {}, f"Allow path should produce no stdout. Got: {response}"
-
     def test_whitespace_only_stdin_pre_tool_use_exits_0(self) -> None:
         """PreToolUse with whitespace-only stdin exits 0."""
         exit_code, response = _invoke_hook("pre-tool-use", "   \n  ")
         assert exit_code == 0
         assert response == {}, f"Allow path should produce no stdout. Got: {response}"
-
-    def test_whitespace_only_stdin_subagent_stop_exits_0(self) -> None:
-        """SubagentStop with whitespace-only stdin exits 0."""
-        exit_code, response = _invoke_hook("subagent-stop", "   \n  ")
-        assert exit_code == 0
-        assert response == {}, f"Allow path should produce no stdout. Got: {response}"
-
-
-class TestMissingTranscriptResilience:
-    """UT-16: Missing transcript file returns None without HOOK_TRANSCRIPT_ERROR."""
-
-    def test_missing_transcript_returns_none(self, tmp_path: Path) -> None:
-        """UT-16: Non-existent transcript path returns None silently."""
-        from des.adapters.drivers.hooks.subagent_stop_handler import (
-            extract_des_context_from_transcript,
-        )
-
-        result = extract_des_context_from_transcript(
-            str(tmp_path / "nonexistent-transcript.jsonl")
-        )
-        assert result is None
 
 
 class TestTaskStartTimeFromSignal:

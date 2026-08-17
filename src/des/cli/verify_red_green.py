@@ -45,7 +45,6 @@ import tempfile
 from pathlib import Path
 from xml.etree import ElementTree
 
-from des.adapters.driven.logging.at_completion_ledger import AtCompletionLedger
 from des.cli._emit_json import emit_json_line as _emit
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.domain.telemetry_paths import TelemetrySubtree, subtree_dir
@@ -244,12 +243,10 @@ def _run_and_collect(
                 how=(
                     f"ensure the run command emits JUnit XML at {junit_out} "
                     "(pytest --junitxml / cargo-nextest / vitest all can) "
-                    "-- OR, if this is a pre-implementation RED on a "
-                    "compiled language (the acceptance test is a compile "
-                    "error because the production code does not exist "
-                    "yet), it produces no per-test XML: seal it via "
-                    "`des record-at-review-verdict` (two-part attestation) "
-                    "instead."
+                    "-- for a pre-implementation compile failure, configure "
+                    "the project's language adapter or run command to expose "
+                    "that failure as JUnit; an unobserved compile error cannot "
+                    "be sealed as semantic RED."
                 ),
                 cmd=cmd,
             )
@@ -382,9 +379,6 @@ def _record_red(
     repo: Path,
     test_file: Path,
     run_cmd: tuple[str, ...],
-    *,
-    feature_id: str | None = None,
-    slice_id: str | None = None,
 ) -> int:
     outcomes = _run_and_collect(repo, test_file, run_cmd)
     if isinstance(outcomes, int):
@@ -435,10 +429,6 @@ def _record_red(
         }
     )
     print(f"✓ RED observed — {len(failing)} failing (witness candidates) recorded")
-    if feature_id is not None and slice_id is not None:
-        AtCompletionLedger(feature_id, repo).append_gate_event(
-            "RedObserved", slice_id, feature_id=feature_id, gate="verify-red-green"
-        )
     return _EXIT_OK
 
 
@@ -446,9 +436,6 @@ def _verify_green(
     repo: Path,
     test_file: Path,
     run_cmd: tuple[str, ...],
-    *,
-    feature_id: str | None = None,
-    slice_id: str | None = None,
 ) -> int:
     seal = _seal_path(repo, test_file)
     if not seal.is_file():
@@ -533,10 +520,6 @@ def _verify_green(
         f"✓ SEALED — {len(sealed)} test(s) witnessed red→green; "
         f"{len(pins)} regression pin(s) (not new-behavior coverage)"
     )
-    if feature_id is not None and slice_id is not None:
-        AtCompletionLedger(feature_id, repo).append_gate_event(
-            "RedGreenSealed", slice_id, feature_id=feature_id, gate="verify-red-green"
-        )
     return _EXIT_OK
 
 
@@ -551,22 +534,6 @@ def main(argv: list[str] | None = None) -> int:
     add_repo_root_argument(parser, "--repo", default=".", help="Repository root.")
     parser.add_argument(
         "--test-file", required=True, help="The AT file (repo-relative or absolute)."
-    )
-    parser.add_argument(
-        "--feature-id",
-        default=None,
-        help=(
-            "Feature id to key an AT-completion ledger RedObserved/"
-            "RedGreenSealed gate event (optional; requires --slice-id)."
-        ),
-    )
-    parser.add_argument(
-        "--slice-id",
-        default=None,
-        help=(
-            "Slice id to key an AT-completion ledger RedObserved/"
-            "RedGreenSealed gate event (optional; requires --feature-id)."
-        ),
     )
     phase = parser.add_mutually_exclusive_group(required=True)
     phase.add_argument("--record-red", action="store_true")
@@ -629,16 +596,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         run_cmd = _default_run_cmd(repo)
     if args.record_red:
-        return _record_red(
-            repo,
-            test_file,
-            run_cmd,
-            feature_id=args.feature_id,
-            slice_id=args.slice_id,
-        )
-    return _verify_green(
-        repo, test_file, run_cmd, feature_id=args.feature_id, slice_id=args.slice_id
-    )
+        return _record_red(repo, test_file, run_cmd)
+    return _verify_green(repo, test_file, run_cmd)
 
 
 if __name__ == "__main__":

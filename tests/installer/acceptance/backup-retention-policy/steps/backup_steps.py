@@ -311,7 +311,7 @@ def when_marco_runs_installer_create_backup(claude_config_home, scenario_state):
     pre_call_backups = set(_list_nwave_backups(claude_config_home))
     scenario_state["pre_call_backups"] = pre_call_backups
 
-    installer = NWaveInstaller()
+    installer = NWaveInstaller(platform_override={"claude_code"})
     try:
         installer.create_backup()
     except Exception as err:

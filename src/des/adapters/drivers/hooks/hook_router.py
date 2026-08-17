@@ -11,14 +11,12 @@ import json
 import sys
 
 from des.adapters.drivers.hooks.activation_gate import apply_gate
-from des.adapters.drivers.hooks.post_tool_use_handler import handle_post_tool_use
 from des.adapters.drivers.hooks.pre_tool_use_handler import (
     evaluate_bash_safety_guards,
     handle_pre_tool_use,
 )
 from des.adapters.drivers.hooks.pre_write_handler import handle_pre_write
 from des.adapters.drivers.hooks.subagent_start_handler import handle_subagent_start
-from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
 
 
 _PRE_TOOL_USE_COMMANDS = ("pre-tool-use", "pre-task")
@@ -64,7 +62,7 @@ def main() -> None:
             json.dumps(
                 {
                     "status": "error",
-                    "reason": "Missing command argument (pre-tool-use or subagent-stop)",
+                    "reason": "Missing hook command argument",
                 }
             )
         )
@@ -72,12 +70,7 @@ def main() -> None:
 
     command = sys.argv[1]
 
-    # Accept both the hyphenated CLI form and the underscore form of each
-    # command name. Claude Code's hook event names are PascalCase
-    # (``SubagentStop``); the operator-facing invocation may spell the command
-    # with either a hyphen (``subagent-stop``) or an underscore
-    # (``subagent_stop``), so the router normalises a leading underscore form
-    # to its hyphenated canonical before dispatch.
+    # Accept both hyphenated and underscore spellings.
     command = command.replace("_", "-")
     # Activation gate (ADR-AG-001): buffer stdin at the top, before any handler
     # reads it, so the gate can resolve the project and re-inject the bytes
@@ -108,10 +101,6 @@ def main() -> None:
     if command in ("pre-tool-use", "pre-task"):
         # "pre-task" accepted for backward compatibility
         exit_code = handle_pre_tool_use()
-    elif command == "subagent-stop":
-        exit_code = handle_subagent_stop()
-    elif command == "post-tool-use":
-        exit_code = handle_post_tool_use()
     elif command in ("pre-write", "pre-edit"):
         exit_code = handle_pre_write()
     elif command == "subagent-start":

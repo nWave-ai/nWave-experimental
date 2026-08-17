@@ -12,8 +12,8 @@ canonical one writes `context-consumption.jsonl` (HYPHEN). Tell records apart
 by `reducer_version` -- `"d71-reducer-1.0.0"` here, `"1"` canonical -- never
 by the filename you believe you opened. Whether this file should be retired
 now that its discovery, aggregate, and transcript-derived-identity
-capabilities have been ported into the canonical reducer with tests is an
-open decision, recorded in the f-context-consumption-probe feature-delta.
+capabilities have been ported into the canonical reducer with tests remains a
+maintenance decision; this file is retained only for its measurement history.
 
 Reduces Claude Code subagent transcripts to `context_consumption` records in
 the shape frozen with lane-store (node D80), written to `.nwave/staging/d71/`.

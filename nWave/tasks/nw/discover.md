@@ -22,27 +22,17 @@ Scout establishes product-market fit through rigorous customer development using
 
 None (DISCOVER is the first wave).
 
-## Wave Decisions Summary
+## SSOT Update
 
-Before completing DISCOVER, produce `docs/feature/{feature-id}/discover/wave-decisions.md`:
-
-```markdown
-# DISCOVER Decisions — {feature-id}
-
-## Key Decisions
-- [D1] {decision}: {rationale} (see: {source-file})
-
-## Constraints Established
-- {constraint from evidence}
-
-## Validated Assumptions
-- {assumption validated by evidence, with confidence level}
-
-## Invalidated Assumptions
-- {assumption disproved, with evidence reference}
-```
-
-This summary enables downstream waves to quickly assess DISCOVER outcomes without reading all artifacts.
+DISCOVER writes its lasting facts directly to the durable product SSOT — not
+to a per-wave decision file. Update the artifact that owns each fact:
+validated/invalidated assumptions and problem evidence go to
+`docs/product/vision.md` and/or `docs/product/jobs.yaml` (create under
+`docs/product/` if it does not yet exist — this is SSOT bootstrap); a
+quantified KPI baseline goes to `docs/product/kpi-contracts.yaml`. Preserve
+provenance (source, sample size, date, confidence) inline in the updated
+artifact. Downstream waves read these SSOT files directly; there is no
+DISCOVER decision-summary ledger to assess instead.
 
 ## Document Update (Back-Propagation)
 
@@ -88,12 +78,12 @@ Scout conducts customer development interviews, validates problem-solution fit t
 
 ## Expected Outputs
 
+DISCOVER returns concise evidence directly — problem validation, opportunity
+assessment, solution testing signal, lean-canvas shape and interview
+citations — and updates only the durable product SSOT it owns:
+
 ```
-docs/feature/{feature-id}/discover/
-  problem-validation.md
-  opportunity-tree.md
-  solution-testing.md
-  lean-canvas.md
-  interview-log.md
-  wave-decisions.md
+docs/product/
+  vision.md and/or jobs.yaml     (updated with validated/invalidated assumptions + provenance)
+  kpi-contracts.yaml             (updated, if a quantified baseline was established)
 ```

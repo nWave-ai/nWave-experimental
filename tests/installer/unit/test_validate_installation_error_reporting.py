@@ -105,7 +105,6 @@ class _InstallerTestHelper:
     def run_validate_with(
         installer,
         verifier_result=None,
-        schema_valid=True,
         plugin_results=None,
     ):
         """Run validate_installation with controlled mocks, capture logs."""
@@ -138,11 +137,6 @@ class _InstallerTestHelper:
                 "_create_plugin_registry",
                 return_value=mock_registry,
             ),
-            patch.object(
-                type(installer),
-                "_validate_schema_template",
-                return_value=schema_valid,
-            ),
             patch("scripts.install.install_nwave.InstallationVerifier") as MockVerifier,
         ):
             mock_verifier_instance = MockVerifier.return_value
@@ -160,7 +154,7 @@ class TestValidationFailureNamesFailingCondition:
 
     def test_all_synced_false_names_components_out_of_sync(self, tmp_path):
         """
-        GIVEN: result.success=True, schema_valid=True, all_synced=False, no plugin_failures
+        GIVEN: result.success=True, all_synced=False, no plugin_failures
         WHEN: validate_installation() is called
         THEN: The error message names "components out of sync" (not "0 errors")
         """
@@ -189,7 +183,7 @@ class TestValidationFailureNamesFailingCondition:
 
     def test_plugin_failure_names_failing_plugin(self, tmp_path):
         """
-        GIVEN: result.success=True, schema_valid=True, all_synced=True, plugin_failures exists
+        GIVEN: result.success=True, all_synced=True, plugin_failures exists
         WHEN: validate_installation() is called
         THEN: The error message includes the failing plugin count
         """
@@ -226,28 +220,6 @@ class TestValidationFailureNamesFailingCondition:
             "Must not produce contradictory '0 errors' message"
         )
 
-    def test_schema_invalid_counted_in_errors(self, tmp_path):
-        """
-        GIVEN: schema_valid=False (only failing condition)
-        WHEN: validate_installation() is called
-        THEN: error_count includes schema failure (not 0 errors)
-        """
-        # ARRANGE
-        installer = _InstallerTestHelper.build_installer(tmp_path)
-
-        # ACT
-        result, log_messages = _InstallerTestHelper.run_validate_with(
-            installer,
-            schema_valid=False,
-        )
-
-        # ASSERT
-        assert result is False
-        error_messages = [msg for level, msg in log_messages if level == "ERROR"]
-        all_error_text = " ".join(error_messages)
-        # At minimum, schema failure should be counted
-        assert "(0 errors)" not in all_error_text or "schema" in all_error_text.lower()
-
 
 class TestVerificationLogsEachCheck:
     """Each verification check should be logged with pass/fail and reason."""
@@ -256,9 +228,8 @@ class TestVerificationLogsEachCheck:
         "condition_name,setup_kwargs",
         [
             ("plugin", {"plugin_results": _InstallerTestHelper.failing_des_plugin()}),
-            ("schema", {"schema_valid": False}),
         ],
-        ids=["plugin-failure", "schema-failure"],
+        ids=["plugin-failure"],
     )
     def test_failing_condition_logged_with_reason(
         self, tmp_path, condition_name, setup_kwargs
@@ -335,26 +306,3 @@ class TestScriptsComponentIsPlatformAware:
             "Copilot-only install must pass validation when everything it "
             f"actually owns is synced. Log: {log_messages}"
         )
-
-    def test_copilot_only_install_does_not_expect_the_schema_template(self, tmp_path):
-        """
-        GIVEN: platform_override={"copilot"} and NO templates directory at all
-               (TemplatesPlugin, like UtilitiesPlugin, never registers for a
-               non-Claude target -- fourth instance of the same gap)
-        WHEN: _validate_schema_template() is called directly (unmocked)
-        THEN: Returns True -- the schema file is not expected on this
-              platform, not silently absent
-        """
-        # ARRANGE
-        installer = _InstallerTestHelper.build_installer(
-            tmp_path, platform_override={"copilot"}
-        )
-        assert not (
-            installer.claude_config_dir / "templates" / "step-tdd-cycle-schema.json"
-        ).exists()
-
-        # ACT
-        schema_valid = installer._validate_schema_template()
-
-        # ASSERT
-        assert schema_valid is True

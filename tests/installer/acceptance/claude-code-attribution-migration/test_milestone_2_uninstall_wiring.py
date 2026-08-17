@@ -79,16 +79,25 @@ def _settings_with_managed_payload() -> OrderedDict:
 
 @pytest.fixture
 def claude_sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Isolated ``CLAUDE_CONFIG_DIR`` — the real uninstaller's isolation seam.
+    """Isolate every host root reached by the real multi-host uninstaller.
 
     ``NWaveUninstaller`` resolves ``self.claude_config_dir`` via
     ``PathUtils.get_claude_config_dir()``, which honours ``CLAUDE_CONFIG_DIR``.
-    Setting it here points the REAL command at the sandbox, never the live
-    ``~/.claude``.
+    Native hosts and the shared DES runtime resolve through ``HOME`` and their
+    explicit overrides, so isolating only Claude would still expose the real
+    Codex/Copilot/OpenCode manifests and ``~/.nwave/runtime`` to this wiring
+    test.
     """
+    home_dir = tmp_path / "dev-home"
+    home_dir.mkdir()
     claude_dir = tmp_path / "claude-config"
     claude_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home_dir))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_dir))
+    monkeypatch.setenv("CODEX_HOME", str(home_dir / ".codex"))
+    monkeypatch.setenv("COPILOT_HOME", str(home_dir / ".copilot"))
+    monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(home_dir / ".config" / "opencode"))
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(home_dir / ".agents"))
     # A recognisable installation so check_installation() lets main() proceed.
     (claude_dir / "agents" / "nw").mkdir(parents=True)
     return claude_dir

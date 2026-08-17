@@ -10,11 +10,10 @@ That is not a missing input: the runtime has ALREADY detected the developer
 checkout and printed `developer checkout detected via .git adjacency at '<the
 worktree>'` on the very same run. It knows where you are and reads elsewhere.
 
-Measured on this machine, 2026-07-29: of nine module-relative packaged-asset
-defaults, four differ between the installed tree and the repo
-(`skill-normative-clauses.json` 9 clauses vs 12, `nWave/flavors` at two call
-sites), one is byte-identical, four are absent on
-the installed side.
+This boundary exists because packaged assets can legitimately be present in
+both a developer checkout and an installed distribution. Their contents may
+differ, so choosing one tree implicitly would validate a different artifact
+from the one the operator named.
 
 The rule this module implements
 -------------------------------

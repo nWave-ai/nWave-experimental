@@ -1,15 +1,11 @@
 # nw-acceptance-designer-reviewer
 
-Use for review and critique tasks - Acceptance criteria and BDD review specialist. Runs on Haiku for cost efficiency.
+Independently falsifies the acceptance oracle bound by one DeliveryContract, with emphasis on observable value, cross-layer failure handling, PBT, and real driving-port wiring.
 
 **Wave:** DISTILL
 **Model:** sonnet
-**Max turns:** 25
+**Max turns:** 20
 **Tools:** Read, Glob, Grep, Task, Bash, Skill
-
-## Commands
-
-- [`/nw-distill`](../commands/index.md)
 
 ## Preloaded skills
 

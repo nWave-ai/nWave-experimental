@@ -165,12 +165,9 @@ issues_identified:
       recommendation: "Add walking skeleton with Given clause: 'Given a {env} environment with {preconditions}'"
 
   walking_skeleton_boundary:
-    - issue: "WS strategy not declared in wave-decisions.md"
+    - issue: "WS uses @in-memory for a driven-internal/local resource adapter"
       severity: "blocker"
-      recommendation: "Auto-detect strategy and confirm with user"
-    - issue: "WS uses @in-memory under Strategy {C/B/D} for local resource adapter"
-      severity: "blocker"
-      recommendation: "Replace InMemory with real adapter (tmp_path, real subprocess)"
+      recommendation: "Replace InMemory with real adapter (tmp_path, real subprocess) per the Architecture of Reference"
     - issue: "Driven adapter '{name}' has no real I/O integration test"
       severity: "blocker"
       recommendation: "Add integration test with real I/O for this adapter"
@@ -193,29 +190,24 @@ If a finding touches KPI measurement or infrastructure readiness, tag it `@escal
 
 For walking skeleton scenarios, validate that the WS actually proves adapter wiring with real I/O.
 
-### 9a: WS Strategy Declaration
+### 9a: Port-Class Treatment Match
 
-Is the WS strategy declared in wave-decisions.md?
-- NOT declared: BLOCKER (ask the user to confirm auto-detected strategy)
+Does the WS implementation match the port-class defaults from the Architecture of Reference (`nw-distill-port-treatment-policy`)?
+- Driven-internal/local-resource port uses @in-memory: BLOCKER
+- Driven-external/costly port has no @requires_external marker: HIGH
 
-### 9b: WS Strategy-Implementation Match
-
-Does the WS implementation match the declared strategy?
-- Strategy C declared but WS uses @in-memory for all adapters: BLOCKER
-- Strategy B declared but no @requires_external marker for costly deps: HIGH
-
-### 9c: Adapter Integration Coverage
+### 9b: Adapter Integration Coverage
 
 Does every driven adapter have a real I/O integration test?
-- Missing adapter test: BLOCKER regardless of WS strategy
+- Missing adapter test: BLOCKER regardless of port treatment
 
-### 9d: Walking Skeleton Fixture Tier
+### 9c: Walking Skeleton Fixture Tier
 
 Walking skeleton fixtures — what adapter tier do they use?
 - Litmus test: "If I deleted the real adapter, would this WS still pass?"
-- If YES for a local resource adapter: WS is testing InMemory, not wiring. REJECT.
+- If YES for a driven-internal/local-resource port: WS is testing InMemory, not wiring, and cannot observe the declared failure. REJECT.
 
-### 9e: Strategy Drift Detection
+### 9d: Fake-Cannot-Observe-Failure Detection
 
-Grep for @in-memory on walking skeleton scenarios under strategies B/C/D.
-- If found: HIGH — WS claims real adapters but uses InMemory
+Grep for @in-memory on walking skeleton scenarios that exercise a driven-internal/local-resource port.
+- If found: HIGH — WS claims real-I/O boundary proof but uses a fake that cannot observe the promised failure

@@ -5,7 +5,7 @@ Emits on stdout a complete commit message body, ready for
 block parsed by `.github/workflows/close-public-pr.yml` and the
 release-shipped step in `.github/workflows/release-prod.yml`.
 
-CLI contract: docs/feature/public-pr-sync/devops/wave-decisions.md §3.
+CLI contract: docs/architecture/public-pr-sync/devops-decisions.md Section 3.
 
     python scripts/sync/compose_trailer_commit.py \\
         --pr-number <N> \\

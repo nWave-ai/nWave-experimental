@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import tiktoken
 
 from scripts.install.project_claude_section import (
     BEGIN_MARKER,
@@ -206,59 +207,17 @@ def test_sync_project_claude_section_drives_both_hosts_at_once(tmp_path: Path) -
         assert not (tmp_path / guidance.filename).exists()
 
 
-# --- standing loops consent fragment ---------------------------------------
-
-
-def _fragment_source_bytes(fragment_name: str = "loop-consent-fragment") -> bytes:
+def _fragment_source_bytes(fragment_name: str = "tool-batching-fragment") -> bytes:
     repo_root = resolve_section_template(host="claude").parents[2]
     fragment_path = repo_root / "nWave" / "templates" / f"{fragment_name}.md"
     return fragment_path.read_text(encoding="utf-8").strip().encode("utf-8")
 
 
 @pytest.mark.parametrize("host", HOST_IDS)
-def test_consent_fragment_bytes_match_source_verbatim(host: str) -> None:
-    """Extract the fragment as spliced into each host's projection and compare
-    its bytes against the fragment source file — not a hash of derived content
-    against itself, an independent byte-for-byte extraction per host."""
-    fragment_bytes = _fragment_source_bytes()
-    content_bytes = load_section_content(host=host).encode("utf-8")
-
-    start = content_bytes.find(fragment_bytes)
-    assert start != -1, f"fragment not found verbatim in {host} projection"
-    extracted = content_bytes[start : start + len(fragment_bytes)]
-    assert extracted == fragment_bytes
-
-
-def test_consent_fragment_semantics_and_token_cap() -> None:
-    from scripts.measure_doc_tokens import count_tokens
-
-    fragment = _fragment_source_bytes().decode("utf-8")
-    lowered = fragment.lower()
-
-    # Required semantics: optional/OFF, explicit repo+scope+mode+budget consent,
-    # session-scoped with no restart/compact rearm, stop/status, details on demand.
-    assert "off" in lowered
-    assert "repo" in lowered and "scope" in lowered
-    assert "mode" in lowered and "budget" in lowered
-    assert "session" in lowered
-    assert "restart" in lowered and "compaction" in lowered
-    assert "stop" in lowered and "status" in lowered
-
-    forbidden = ["auto-arm", "auto-rearm", "opt-out", "opt out", "on by default"]
-    for term in forbidden:
-        assert term not in lowered, f"forbidden term '{term}' found in fragment"
-
-    token_count = count_tokens(fragment)
-    assert token_count <= 51, f"fragment too large: {token_count} tokens (max 51)"
-
-
-@pytest.mark.parametrize("host", HOST_IDS)
 def test_tool_batching_fragment_exact_bytes_once_and_semantics(host: str) -> None:
     """Verify tool-batching fragment appears verbatim once, has required semantics,
     is under token cap, and has no host-specific language."""
-    from scripts.measure_doc_tokens import count_tokens
-
-    fragment_bytes = _fragment_source_bytes("tool-batching-fragment")
+    fragment_bytes = _fragment_source_bytes()
     content_bytes = load_section_content(host=host).encode("utf-8")
     fragment_str = fragment_bytes.decode("utf-8")
     lowered = fragment_str.lower()
@@ -278,5 +237,5 @@ def test_tool_batching_fragment_exact_bytes_once_and_semantics(host: str) -> Non
     assert "skill tool" not in lowered
 
     # Token cap.
-    token_count = count_tokens(fragment_str)
+    token_count = len(tiktoken.get_encoding("cl100k_base").encode(fragment_str))
     assert token_count <= 30, f"fragment too large: {token_count} tokens (max 30)"

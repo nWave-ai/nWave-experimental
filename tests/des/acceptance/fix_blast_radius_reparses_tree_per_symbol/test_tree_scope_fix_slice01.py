@@ -55,8 +55,8 @@ and `composition_coherence_codefact.py:275`).
 
 from __future__ import annotations
 
-import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -226,11 +226,10 @@ def test_blast_radius_excludes_declared_vendor_directory_end_to_end(
     exclude-list "fix" does not know `target/` and would still count 2,
     failing this AT exactly as today's zero-exclusion code does.
     """
-    des_binary = shutil.which("des")
-    assert des_binary is not None, (
-        "the `des` console-script must be on PATH for the feature's single "
-        "walking-skeleton subprocess AT to run -- if this fails, the dev "
-        "environment install is the problem, not this AT"
+    des_binary = Path(sys.executable).with_name("des")
+    assert des_binary.is_file(), (
+        "the `des` console-script must sit beside the interpreter running the "
+        "suite; shell activation and the ambient PATH are not test inputs"
     )
 
     repo = tmp_path / "repo"

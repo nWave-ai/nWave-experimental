@@ -182,10 +182,9 @@
     "evidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["locator", "digest"],
+      "required": ["locator"],
       "properties": {
-        "locator": { "$ref": "#/$defs/repositoryRelativePath" },
-        "digest": { "$ref": "#/$defs/sha256Digest" }
+        "locator": { "$ref": "#/$defs/repositoryRelativePath" }
       }
     },
     "verificationScope": {

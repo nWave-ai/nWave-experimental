@@ -1,5 +1,10 @@
 # What's New in nWave v3.14
 
+> **Historical release note.** The L7 `feature-delta.md` carrier, its validator,
+> enforcement recipes and `outcomes check-delta` integration described below
+> have been retired by the canonical DeliveryContract cutover. They are not
+> current authoring or CLI guidance.
+
 ## Lean Wave Documentation (L7 single-file)
 
 Each feature now lives in **one** `feature-delta.md` instead of ~26 files across per-wave subdirectories. Section headings carry the wave + content type as schema-typed labels (`## Wave: <WAVE> / [REF|WHY|HOW] <name>`).
@@ -18,7 +23,7 @@ A new CLI command — `nwave-ai validate-feature-delta <path>` — checks struct
 
 **What it does**: Catches silent cross-wave commitment erosion (DISCUSS commits to X, DESIGN downgrades to Y without flagging it). Emits JSON for CI integration. Pure stdlib, no network call, zero side effects.
 
-**When to use**: As a CI gate on every PR touching `feature-delta.md`. Pick a recipe from [Enforcement Recipes](../enforcement-recipes.md) — 12 platforms covered (GitHub Actions, GitLab, pre-commit, Bazel, Make, etc.).
+**Historical use**: this was offered as a CI gate on changes to the retired carrier.
 
 **When to skip**: Vendor-neutral by design — no hooks auto-installed. You opt in to the integration surface that fits your stack.
 

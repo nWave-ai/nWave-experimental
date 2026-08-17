@@ -6,7 +6,3 @@ Use for review and critique tasks - Platform design, CI/CD pipeline, infrastruct
 **Model:** sonnet
 **Max turns:** 25
 **Tools:** Read, Glob, Grep, Task, Skill
-
-## Commands
-
-- [`/nw-distill`](../commands/index.md)

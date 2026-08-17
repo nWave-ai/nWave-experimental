@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Context-consumption REDUCER -- D71 (component 2 of 2).
 
-Full design: `docs/feature/f-context-consumption-probe/feature-delta.md`
-("Wave: DESIGN / [REF] Record Schemas", "... Failure Behaviour") +
-`docs/product/architecture/ADR-D71-context-consumption-probe.md`.
+Design authority: `docs/product/architecture/ADR-D71-context-consumption-probe.md`.
 
 Two legs, both stdlib-only, zero `des` import, zero external tool:
 
@@ -24,8 +22,7 @@ Two legs, both stdlib-only, zero `des` import, zero external tool:
 
 `main(argv)` is the standalone CLI entry (direct script invocation) that
 ties both legs together for offline, repo-local use. It is NOT a Claude
-Code hook and never ships to an end-user install (see the feature-delta's
-Reuse Analysis, Alternative 3).
+Code hook and never ships to an end-user install.
 
 GDP-6 (degrade LOUD): an unopenable file, a zero-valid-line transcript, or
 an unpairable admission always yields `determination: "could_not_verify"`

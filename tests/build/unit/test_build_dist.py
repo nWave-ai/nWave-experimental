@@ -42,10 +42,9 @@ def mock_project(tmp_path):
         "---\nname: nw-researcher\ndescription: test\ntools: Read\n---\n"
     )
 
-    # nWave/templates/ — schema and config templates
+    # nWave/templates/ — generic config templates
     templates_dir = tmp_path / "nWave" / "templates"
     templates_dir.mkdir(parents=True)
-    (templates_dir / "step-tdd-cycle-schema.json").write_text('{"type": "object"}')
     (templates_dir / "roadmap-compact.yaml").write_text("roadmap: compact")
 
     # nWave/skills/ — nw-prefixed skill directories with SKILL.md

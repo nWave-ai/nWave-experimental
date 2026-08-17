@@ -233,6 +233,27 @@ def prepare(workspace: Path, *, port: int) -> Path:
     return doc_target
 
 
+def prepare_delivery(workspace: Path) -> Path:
+    """Prepare the clone-local runtime without creating any credential.
+
+    Delivery agents need the subject interpreter and migrated database, not an
+    examiner API key.  Keeping seed+documentation behind ``prepare`` prevents
+    a transient credential from entering the external model's readable
+    workspace during timed delivery.
+    """
+    workspace = Path(workspace)
+    venv_python = _ensure_venv(workspace)
+    _migrate(venv_python, workspace)
+    _add_exclude_entries(workspace)
+    (workspace / DOC_NAME).unlink(missing_ok=True)
+    return venv_python
+
+
+def delivery_setup_step() -> list[str]:
+    """Stable, credential-free setup argv shared verbatim by both arms."""
+    return [sys.executable, str(Path(__file__).resolve()), "--delivery-only"]
+
+
 def fixture_setup_step(port: int) -> list[str]:
     """One stable argv shape shared by both arms; only the trailing port differs."""
     return [sys.executable, str(Path(__file__).resolve()), str(port)]
@@ -255,6 +276,9 @@ def integration_probe_argv(base_url: str, api_key: str) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if argv == ["--delivery-only"]:
+        prepare_delivery(Path.cwd())
+        return 0
     port = int(argv[0])
     prepare(Path.cwd(), port=port)
     return 0

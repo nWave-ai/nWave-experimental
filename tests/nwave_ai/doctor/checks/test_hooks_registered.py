@@ -11,20 +11,15 @@ import json
 from typing import TYPE_CHECKING
 
 import pytest
-from nwave_ai.doctor.checks.hooks_registered import HooksRegisteredCheck
+from nwave_ai.doctor.checks.hooks_registered import (
+    REQUIRED_HOOK_TYPES,
+    HooksRegisteredCheck,
+)
 from nwave_ai.doctor.context import DoctorContext
 
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-REQUIRED_HOOK_TYPES = [
-    "PreToolUse",
-    "PostToolUse",
-    "SubagentStop",
-    "SubagentStart",
-]
 
 
 def _write_settings(context: DoctorContext, hooks: dict) -> None:
@@ -38,7 +33,7 @@ def context(tmp_path: Path) -> DoctorContext:
 
 
 def test_passes_when_all_hook_types_present(context: DoctorContext) -> None:
-    """run() returns passed=True when all 5 required hook type keys are present."""
+    """run() returns passed=True when all required hook type keys are present."""
     hooks = {
         hook: [{"matcher": "", "hooks": [{"type": "command", "command": "x"}]}]
         for hook in REQUIRED_HOOK_TYPES
@@ -52,13 +47,14 @@ def test_passes_when_all_hook_types_present(context: DoctorContext) -> None:
 
 def test_fails_when_hook_type_missing(context: DoctorContext) -> None:
     """run() returns passed=False when a required hook type is absent."""
-    hooks = {hook: [] for hook in REQUIRED_HOOK_TYPES if hook != "SubagentStop"}
+    omitted = REQUIRED_HOOK_TYPES[0]
+    hooks = {hook: [] for hook in REQUIRED_HOOK_TYPES if hook != omitted}
     _write_settings(context, hooks)
 
     check = HooksRegisteredCheck()
     result = check.run(context)
     assert result.passed is False
-    assert "SubagentStop" in result.message
+    assert omitted in result.message
     assert result.remediation is not None
 
 

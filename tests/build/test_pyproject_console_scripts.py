@@ -11,11 +11,8 @@ nwave-ai directly in source so its presence does not depend on the patcher.
 Slice-01 of fix-des-single-entry-point-consolidation collapses the 5 prior
 des-* entries into one ``des`` dispatcher (DDD-8).
 
-Slice-04 of fix-oss-environmental-e2e-gate adds ``verify-environmental-e2e``
-as a third console-script entry (residuality R3 -- the gate's own CLI must be
-in the shipped command set so it cannot be silently removed); the
-gate-wiring arch test at ``tests/build/test_environmental_gate_wiring.py``
-is the SSOT for that addition.
+Retired gate-specific scripts are deliberately absent: observable delivery
+verification is composed through the consolidated ``des`` surface.
 """
 
 from pathlib import Path
@@ -32,7 +29,6 @@ PYPROJECT_PATH = Path(__file__).parent.parent.parent / "pyproject.toml"
 EXPECTED_SCRIPTS = {
     "nwave-ai": "nwave_ai.cli:main",
     "des": "des.cli.__main__:main",
-    "verify-environmental-e2e": "des.cli.verify_environmental_e2e:main",
 }
 
 

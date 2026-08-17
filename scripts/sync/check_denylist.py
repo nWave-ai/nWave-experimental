@@ -2,9 +2,10 @@
 
 Blocks a pr-mirror/<N> push if any changed path matches a gitignore-style
 rule in `denylist.txt` or if any changed file contains a rewritten
-`raw.githubusercontent.com/nWave-ai/nWave/main` URL (content rule §7.1).
+`raw.githubusercontent.com/nWave-ai/nWave/main` URL (the "Known
+content-based rule" named in Section 2 below).
 
-CLI contract: docs/feature/public-pr-sync/devops/wave-decisions.md §2 + §7.1
+CLI contract: docs/architecture/public-pr-sync/devops-decisions.md Section 2
 
     python scripts/sync/check_denylist.py \\
         --base-sha <40-hex-sha> \\
@@ -168,7 +169,8 @@ def git_diff_names(base_sha: str, head_sha: str) -> list[str]:
 
     Deletions excluded (diff-filter ACMRT) — a deleted file adds no sensitive
     content. T (type-change, e.g. file -> symlink) is included so a path that
-    swaps type still gets denylist-scanned. Reference: wave-decisions.md §2
+    swaps type still gets denylist-scanned. Reference:
+    docs/architecture/public-pr-sync/devops-decisions.md Section 2
     "Reference behaviour".
     """
     out = _git(

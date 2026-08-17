@@ -162,7 +162,7 @@ The default acceptance level (L2 in-process, per `nw-test-design-mandates-compos
 
 **Collection-semantics premise (the WHY behind P1+P3).** The runner's collection phase imports the test module and traverses it to find test functions but does NOT execute function bodies. Therefore a lazy import (or any reference to the absent name) placed INSIDE a function body is never evaluated during collection — it runs only when the test executes, after collection. P1 keeps the absent name out of the collection-traversed module top; P3 places its reach in a body the collection phase provably never runs. (Per-language analogue: if a target runner cannot guarantee collection does not execute bodies, degrade-LOUD to INDETERMINATE rather than assume the premise.)
 
-**Proven reference exemplar** (point new in-process ATs at it): `tests/des/acceptance/at_in_process_port_default/` — the slice-01 exemplar drives the REAL `des.cli.run_contract_gate.main(argv)` in-process through the `OutputPort` (`src/des/ports/driven_ports/output_port.py`; fake `CapturingOutput` at `src/des/testing/output_capture.py`). It is active-RED at HEAD with no `subprocess.run([sys.executable, ...])`: collected ≥1 (module top imports only `main` + the composition), fails-for-right-reason (the missing route + OutputPort injection makes the observable assertions RED), no collection error (the absent names appear nowhere at module top). It is the executable proof the P1-P4 topology yields active-RED, not BROKEN.
+**Executable proof**: run the focused AT before handoff. It must collect, reach the project's stable public entry, and fail at the captured output boundary because behavior is missing. A repository-specific exemplar is evidence only for that repository; never copy its command or module name as a cross-project rule.
 
 ## Pre-DELIVER fail-for-the-right-reason gate
 
@@ -190,7 +190,7 @@ Proposed to the user BEFORE step-method generation. One row per Given/When/Then 
 | user receives magic link | `Then_the_user_should_have_received_a_magic_link` |
 | order is rejected | `Then_the_order_is_rejected` |
 
-Emitted into `feature-delta.md` under `## Wave: DISTILL / [HOW] Domain language` on user request (or `density.mode = "full"`).
+Use this mapping while authoring the executable oracle; do not persist a second prose copy.
 
 ## Success Criteria
 

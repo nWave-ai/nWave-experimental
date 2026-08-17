@@ -109,20 +109,15 @@ _VENV_DIR_NAME = ".venv"
 # the same integration branch. It must never be staged/committed at all.
 _PROMPT_SCRATCH_FILENAME = ".refactor-prompt.md"
 
-# The harness's OWN bookkeeping files (Interface = the pile, feature-delta
-# Value section) always sit uncommitted next to the repo -- they are never
+# The harness's own bookkeeping files always sit uncommitted next to the repo;
+# they are never
 # git's business and must never be mistaken for operator dirt when deciding
 # whether the integration branch's tree is safe to merge into.
 _PILE_BOOKKEEPING_FILENAMES = frozenset({"techdebt.md", "paidtechdebt.md"})
 
-# The harness's OWN telemetry directory (``AtCompletionLedger`` -- the
-# ``self._ledger.append_gate_event`` call every drained item makes) writes
-# ``.nwave/telemetry/...`` inside ``repo`` too -- the SAME "never git's
-# business" category as the pile files above (slice-02 latent-bug fix: a
-# batch's SECOND merge_into call is the first caller to ever re-run this
-# dirty check after a ledger write has already landed; slice-01's single-item
-# ``drain_one`` never exercised this path, since its own ledger write always
-# happens strictly AFTER its one and only merge).
+# Runtime telemetry under ``.nwave/`` is also harness-owned rather than a
+# product change, so it must not make a clean integration worktree appear
+# dirty.
 _HARNESS_BOOKKEEPING_DIR_PREFIX = ".nwave/"
 
 _PROBE_BRANCH = "refactor-probe-health-check"

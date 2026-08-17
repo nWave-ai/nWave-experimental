@@ -207,40 +207,6 @@ def test_default_scan_still_flags_readme_and_reference_dead_paths(
 
 
 @pytest.mark.negative_at
-def test_feature_end_precondition_mirror_stays_in_parity_with_the_gate() -> None:
-    """``feature_end_cycle_service`` mirrors the gate's exemption set (L-5: it
-    must not import the CLI) to decide whether a repo carries any checkable doc
-    claim at all. The two must agree: a repo whose only doc is the backlog would
-    otherwise pass the precondition, dispatch the gate, and get a spurious
-    INDETERMINATE back from a scan that found zero files.
-
-    Pins the PROPERTY (the two classifiers agree), not this one entry -- any
-    future addition to either set that forgets the other is caught here.
-    """
-    from des.application.feature_end_cycle_service import (
-        _DOC_COHERENCE_NOT_CURRENT_CLAIM_PREFIXES,
-        _is_current_tree_claim_doc,
-    )
-    from des.cli.verify_doc_coherence import (
-        _NOT_CURRENT_CLAIM_DOC_PREFIXES,
-        _is_not_current_claim_doc,
-    )
-
-    assert _DOC_COHERENCE_NOT_CURRENT_CLAIM_PREFIXES == _NOT_CURRENT_CLAIM_DOC_PREFIXES
-
-    for path in (
-        "docs/product/backlog.md",
-        "docs/product/vision.md",
-        "docs/reference/commands/index.md",
-        "docs/guides/tutorial-x/README.md",
-        "docs/feature/f/feature-delta.md",
-    ):
-        assert _is_not_current_claim_doc(path) is not _is_current_tree_claim_doc(
-            path
-        ), f"the gate and the feature-end precondition disagree on {path!r}"
-
-
-@pytest.mark.negative_at
 def test_explicit_docs_override_still_scans_the_backlog(
     backlog_repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

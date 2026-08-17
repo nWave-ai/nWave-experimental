@@ -142,8 +142,6 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
     # above, this uses the distribution's portable DES module command so the
     # existing pre_tool_use handler is reached on every installed Bash event.
     HookEvent(event="PreToolUse", matcher="Bash", action="pre-tool-use"),
-    HookEvent(event="PostToolUse", matcher="Agent", action="post-tool-use"),
-    HookEvent(event="SubagentStop", matcher=None, action="subagent-stop"),
     HookEvent(event="SubagentStart", matcher=None, action="subagent-start"),
 )
 
@@ -245,7 +243,10 @@ _LEGACY_SCRIPT_INVOCATION_RE = re.compile(
     r"^python3?\s+src/des/adapters/drivers/hooks/claude_code_hook_adapter\.py\s+(\S+)"
 )
 
-_KNOWN_HOOK_ACTIONS: frozenset[str] = frozenset(h.action for h in HOOK_EVENTS)
+_RETIRED_HOOK_ACTIONS: frozenset[str] = frozenset({"subagent-stop", "post-tool-use"})
+_KNOWN_HOOK_ACTIONS: frozenset[str] = (
+    frozenset(h.action for h in HOOK_EVENTS) | _RETIRED_HOOK_ACTIONS
+)
 
 
 def _is_des_command(command: str) -> bool:

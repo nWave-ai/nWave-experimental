@@ -1,19 +1,17 @@
-"""K4 language-vs-runner projection (2026-08-12).
+"""Tool surface, sealed readiness, and dispatch-boundary projection (2026-08-16).
 
-Confirmed defect: root dispatched ATD with an unevidenced "Python/pytest"
-assertion, matching the ATD spec's own manifest table which mapped a Python
-manifest directly to pytest/pytest-bdd/Hypothesis — conflating language
-(manifest-evidenced) with test runner (target: Django, native runner
-`manage.py test`, not pytest). ATD then burned its single pass exploring
-pytest/Hypothesis and editing requirements-dev.txt without ever producing a
-contract.
+Dense semantic projections, resilient to Markdown heading/prose refactors:
 
-Two tests, one per independently useful projection:
-1. nw-auto/SKILL.md forbids root from naming/guessing language or test
-   runner in the ATD dispatch prompt, and delegates evidence discovery to ATD.
-2. nw-acceptance-designer.md separates language detection (manifest-evidenced)
-   from test-runner discovery (repository-owned executable evidence only),
-   and forbids generic-example-driven dependency edits.
+1. ATD's tool surface is exactly Read/Write/Edit — no Bash, no Skill — so it
+   can compile a contract but never execute, install or discover anything.
+2. Dependency readiness (owner/version, declared=yes, present=yes) is sealed
+   compiler input from the architecture authority; any undeclared or absent
+   dependency is `EVIDENCE_GAP` before any write, and ATD never edits a
+   manifest/lock file or installs, repairs, executes or validates a
+   dependency.
+3. Root's single `des dispatch` call is the only bridge from CONTRACT_READY
+   to a crafter, and RED/BROKEN classification belongs to the crafter's own
+   BASELINE step, never to ATD.
 """
 
 from __future__ import annotations
@@ -24,57 +22,64 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 NWAVE_DIR = PROJECT_ROOT / "nWave"
 
+ACCEPTANCE_DESIGNER = (NWAVE_DIR / "agents" / "nw-acceptance-designer.md").read_text(
+    encoding="utf-8"
+)
+AUTO_SKILL = (NWAVE_DIR / "skills" / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
+
 
 def _norm(text: str) -> str:
     return " ".join(text.split())
 
 
-def _sibling_dispatch_bullet() -> str:
-    body = (NWAVE_DIR / "skills" / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
-    start = body.index("1. `nw-acceptance-designer` (every run)")
-    end = body.index("3. **Join**:")
-    return _norm(body[start:end])
+def test_atd_tool_surface_is_read_write_edit_only() -> None:
+    header = _norm(ACCEPTANCE_DESIGNER[:400])
+    assert "tools: Read, Write, Edit" in header
+    assert "Bash" not in ACCEPTANCE_DESIGNER
+    body = _norm(ACCEPTANCE_DESIGNER)
+    assert "This role holds no `Skill` tool" in body
 
 
-def _language_convention_frame() -> str:
-    body = (NWAVE_DIR / "agents" / "nw-acceptance-designer.md").read_text(
-        encoding="utf-8"
-    )
-    start = body.index("## Language Convention Frame")
-    end = body.index("## Reasoning Mandate")
-    return _norm(body[start:end])
-
-
-def test_root_never_names_language_or_runner_and_delegates_to_atd():
-    section = _sibling_dispatch_bullet()
+def test_atd_serializes_exact_schema_shapes_and_never_embeds_forbidden_dependency_metadata() -> (
+    None
+):
+    body = _norm(ACCEPTANCE_DESIGNER)
     assert (
-        "four non-empty lines total, exactly one blank line between the architecture line and ROOT, no design SSOT/language/framework"
-        in section
+        "Serialize every field in the exact shape and enum the read "
+        "`CONTRACT-SCHEMA` requires" in body
     )
-    for leaked_runner in ("pytest", "manage.py", "cucumber", "jest", "vitest"):
-        assert leaked_runner not in section.lower()
-
-
-def test_atd_separates_manifest_language_evidence_from_runner_evidence():
-    frame = _language_convention_frame()
-    required = (
-        "evidence for LANGUAGE ONLY",
-        "never sufficient evidence for the test runner",
-        "discover the project-native test command from repository-owned",
-        "EXECUTABLE evidence",
-        "that convention always wins over any",
-        "Never add or change a test dependency merely because",
-        "repository authority",
+    assert "`schema-version`, `repository.worktree`, `targetPlan`, `paradigm`" in body
+    assert "each `verification-scope` command object" in body
+    assert "add no property the schema's `additionalProperties` forbids" in body
+    assert (
+        "dependency metadata is never embedded unless the schema names that "
+        "property" in body
     )
-    for token in required:
-        assert token in frame, (
-            f"Missing language/runner separation projection: {token!r}"
-        )
 
-    table_line = frame[
-        frame.index("Before authoring ATs") : frame.index("A manifest is evidence")
-    ]
-    for leaked_framework in ("pytest-bdd", "hypothesis", "cucumber-js", "godog"):
-        assert leaked_framework not in table_line.lower(), (
-            f"Manifest table still prescribes a runner: {leaked_framework}"
-        )
+
+def test_atd_never_performs_dependency_mutation() -> None:
+    body = _norm(ACCEPTANCE_DESIGNER)
+    assert (
+        "for each dependency (including any `BROAD_INPUT_DOMAIN` language PBT "
+        "adapter) its final owner/version plus declared=yes, present=yes "
+        "readiness facts" in body
+    )
+    assert (
+        "Any dependency recorded as undeclared or absent returns `EVIDENCE_GAP` "
+        "immediately, before any example read or artifact write" in body
+    )
+    assert (
+        "It never edits a manifest/lock file and never installs, repairs, "
+        "executes or validates a dependency" in body
+    )
+
+
+def test_root_single_dispatch_and_classification_belongs_to_crafter_baseline() -> None:
+    body = _norm(ACCEPTANCE_DESIGNER)
+    assert (
+        "this role never returns a thin header, a digest or a RED/GREEN/BROKEN "
+        "classification" in body
+    )
+    auto = _norm(AUTO_SKILL)
+    assert "Root never calls `des dispatch` a second time" in auto
+    assert "des dispatch --repo-root ROOT --delivery-contract PATH" in auto

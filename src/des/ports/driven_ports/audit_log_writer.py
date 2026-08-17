@@ -45,8 +45,6 @@ class AuditLogWriter(ABC):
     Event types logged:
         HOOK_PRE_TOOL_USE_ALLOWED  - Task invocation permitted
         HOOK_PRE_TOOL_USE_BLOCKED  - Task invocation rejected (with reason)
-        HOOK_SUBAGENT_STOP_PASSED  - Step completion validated successfully
-        HOOK_SUBAGENT_STOP_FAILED  - Step completion validation failed
         SCOPE_VIOLATION            - Out-of-scope file modification detected
     """
 

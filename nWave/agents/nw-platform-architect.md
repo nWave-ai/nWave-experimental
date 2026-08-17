@@ -105,7 +105,7 @@ At the start of DEVOPS wave execution, create these tasks using TaskCreate and f
 
 **Environment Inventory (mandatory, BEFORE DEVOPS completes).** Produce `docs/feature/{feature-id}/devops/environments.yaml` — target environments (name/description/platform/preconditions), coexistence matrix (tools that must not break alongside the deployment), platform coverage, deployment assumptions. This is the declared, parseable machine artifact DISTILL consumes to parametrize acceptance scenarios over environments (Mandate 4 / Environmental Realism). Structure and population steps: `nw-devops-environment-inventory` skill. For features that do not install into systems (pure business logic), the inventory reduces to `target_environments: [{name: clean, platform: [linux, macos]}]`. If missing, DISTILL falls back to defaults (clean, with-pre-commit, with-stale-config) — but coverage gaps are Apex's responsibility. Gate: file present, at least one environment entry, coexistence matrix present.
 
-> **Governed flow-v2 scope boundary (f-devops-wave-migration, C7 G-3).** Steps 8–10 below (Stakeholder Demonstration · Deployment Execution · Outcome Measurement & sign-off) are a LIVE production rollout. They are **OUT OF SCOPE for the governed flow-v2 DEVOPS wave**, which DESIGNS the deployment pipeline + KPI→telemetry observability + the security-gate seam and **ends at FEATURE-END, not a live deploy** (see `[REF] Out-of-Scope`). Steps 8–10 apply ONLY to a non-governed / manual `/nw-devops` invocation where the operator explicitly intends a production rollout — the governed flow does not execute them. (The KPI→telemetry mapping that the governed wave DOES own is the design-time map built at the gate-IN/gate-OUT, not the after-the-fact step-10 measurement.)
+> **DEVOPS scope boundary.** Steps 8–10 below (Stakeholder Demonstration · Deployment Execution · Outcome Measurement & sign-off) are a LIVE production rollout. They are **OUT OF SCOPE for a delivery whose DEVOPS work only designs** the deployment pipeline, KPI→telemetry observability and security boundary. Run them only when the operator explicitly intends a production rollout. The design-time KPI→telemetry map remains part of the DeliveryContract evidence; it is not an after-the-fact progress record.
 
 8. **Stakeholder Demonstration** *(non-governed / manual only — see scope boundary above)* — Load `~/.claude/skills/nw-stakeholder-engagement/SKILL.md`. Prepare demonstration tailored to audience. Frame technical results in business value terms. Collect structured feedback. Gate: stakeholder acceptance obtained.
 9. **Deployment Execution** — Execute staged deployment (canary|blue-green|rolling). Monitor production metrics during rollout. Validate smoke tests in production. Gate: production validation passes.
@@ -182,7 +182,7 @@ Designs rollback first (migration revert|feature flag kill switch|previous image
 
 ### Example 6: *deliver Command (DEVOPS Wave)
 `*deliver "Implement JWT authentication"`
-Loads `deliver-orchestration` skill and executes the delivery workflow. Resume evidence comes from the feature-delta Slice Plan, AT-completion ledger, and commit trailers. Stops if review fails after 2 attempts.
+Loads `nw-deliver` and executes one validated `DeliveryContract`. Resume is not inferred from prose or a ledger: require matching terminal contract, candidate, review and EXAMINE identities. Stops when applicable review fails.
 
 ## Commands
 

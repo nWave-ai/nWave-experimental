@@ -1,5 +1,5 @@
 # nw-new
 
-Guided wizard to start a new feature. Asks what you want to build, recommends the right starting wave, and launches it.
+Routes a new request to the earliest authority that lacks evidence, without creating a feature workspace.
 
 **Source:** [SKILL.md on GitHub](https://github.com/nWave-ai/nWave/blob/main/nWave/skills/nw-new/SKILL.md)

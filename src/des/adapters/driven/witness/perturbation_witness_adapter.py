@@ -9,7 +9,7 @@ WHY-NEW-FILE: src/des/adapters/driven/witness/perturbation_witness_adapter.py
     no-git-stash mandate). It perturbs an ISOLATED tempfile copy and reverts by
     ``shutil.rmtree`` discard. Folding it into the git family would re-introduce
     the live-tree mutation the design exists to forbid.
-  PARALLEL-RATIONALE: architecture.md sec.4 + component-manifest.yaml adjudicated
+  PARALLEL-RATIONALE: architecture.md sec.4 adjudicated
     this as a CREATE_NEW driven adapter realizing ``ClauseWitnessPort``; it holds
     ONLY a sandbox-root capability (effect-isolation principle 12) -- a distinct
     capability set + lifecycle from every existing adapter.
