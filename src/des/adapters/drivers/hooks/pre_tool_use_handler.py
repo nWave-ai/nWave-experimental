@@ -126,6 +126,7 @@ _AUTO_ROOT_BASH_INJECTION_MARKERS = (
     "||",
     ";",
     "|",
+    "&",
     "`",
     "$(",
     "<",
@@ -175,6 +176,111 @@ def _auto_root_bash_block(reason: str) -> dict[str, str]:
     return {"decision": "block", "reason": reason}
 
 
+# ADR-SSOT-002 "VALUE-SEED transport": the value seed must reach
+# `prepare-ordinary-request` as raw UTF-8 bytes on stdin -- never argv,
+# env, temp file or transcript scrape, and never re-interpreted by the
+# shell (the seed is arbitrary human text, not a safe shell token). The
+# blanket injection-marker block above would otherwise make that producer
+# permanently unreachable from Auto-root Bash: every stdin-feeding
+# construct needs either `|` or `<<`, both unconditionally rejected.
+#
+# Exactly one shape is carved out below: a single `des
+# prepare-ordinary-request <bounded argv>` header line ending in a
+# QUOTED heredoc redirect (`<<'NW_SEED'` or `<<"NW_SEED"` -- quoting is
+# mandatory so the shell performs zero expansion inside the body, the
+# same "opaque bytes" guarantee a pipe would give), followed by an
+# arbitrary-content body, terminated by a line that is exactly the
+# delimiter and nothing after it. A quoted heredoc body is never
+# shell-interpreted, so it is the one construct that can carry a seed
+# containing quotes, `|`, backticks or any other byte without escaping.
+# Every other shape -- unquoted delimiter, unterminated body, trailing
+# content after the terminator, a disallowed flag, any composition
+# marker in the header -- still falls through to the generic block.
+_VALUE_SEED_HEREDOC_ARGV_PREFIX = ("des", "prepare-ordinary-request")
+_VALUE_SEED_HEREDOC_DELIMITER = "NW_SEED"
+_VALUE_SEED_HEREDOC_HEADER_SUFFIXES = (
+    f" <<'{_VALUE_SEED_HEREDOC_DELIMITER}'",
+    f' <<"{_VALUE_SEED_HEREDOC_DELIMITER}"',
+)
+# The exact closed flag vocabulary `des prepare-ordinary-request --help`
+# accepts (src/des/cli/prepare_ordinary_request.py `_parser`) -- no other
+# flag is permitted on the heredoc header line.
+_VALUE_SEED_HEREDOC_ALLOWED_FLAGS = frozenset(
+    {
+        "--size",
+        "--repo-root",
+        "--architecture-authority",
+        "--delivery-route",
+        "--examine",
+        "--independent-review",
+        "--budget-token-limit",
+        "--budget-wall-clock-minutes",
+    }
+)
+
+
+def _value_seed_heredoc_header_argv(header: str) -> list[str] | None:
+    """`shlex`-tokenized argv of a matched heredoc header's pre-`<<` argv
+    prefix, or `None` if the prefix carries any composition marker, fails
+    to tokenize, is not `des prepare-ordinary-request`, or carries any
+    flag token outside the closed vocabulary above."""
+    prefix = None
+    for suffix in _VALUE_SEED_HEREDOC_HEADER_SUFFIXES:
+        if header.endswith(suffix):
+            prefix = header[: -len(suffix)]
+            break
+    if prefix is None:
+        return None
+    if any(marker in prefix for marker in _AUTO_ROOT_BASH_INJECTION_MARKERS):
+        return None
+    try:
+        argv = shlex.split(prefix)
+    except ValueError:
+        return None
+    if len(argv) < 2 or tuple(argv[:2]) != _VALUE_SEED_HEREDOC_ARGV_PREFIX:
+        return None
+    flags = argv[2:]
+    i = 0
+    while i < len(flags):
+        token = flags[i]
+        flag_name = token.partition("=")[0]
+        if flag_name not in _VALUE_SEED_HEREDOC_ALLOWED_FLAGS:
+            return None
+        if "=" in token:
+            # `--flag=value` is one self-contained token.
+            i += 1
+            continue
+        # `--flag value` is two tokens -- a flag with no following value
+        # token is malformed, not a value-less flag in this vocabulary.
+        if i + 1 >= len(flags):
+            return None
+        i += 2
+    return argv
+
+
+def _is_value_seed_stdin_heredoc(command: str) -> bool:
+    """True iff `command` is the one hook-permitted seed-transport
+    heredoc: a bounded `des prepare-ordinary-request` header ending in a
+    quoted `<<'NW_SEED'`/`<<"NW_SEED"` redirect, an opaque body, and a
+    terminator line that is exactly the delimiter with nothing after it.
+    Fails closed (`False`) on anything else -- an unquoted delimiter, a
+    missing/duplicated terminator, trailing content past it, or a header
+    that does not tokenize into exactly `des prepare-ordinary-request`
+    plus the closed flag vocabulary.
+    """
+    if "\r" in command or "\n" not in command:
+        return False
+    header, _, rest = command.partition("\n")
+    if _value_seed_heredoc_header_argv(header) is None:
+        return False
+    body_lines = rest.split("\n")
+    try:
+        terminator_index = body_lines.index(_VALUE_SEED_HEREDOC_DELIMITER)
+    except ValueError:
+        return False
+    return terminator_index == len(body_lines) - 1
+
+
 def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
     """Pure Auto-root Bash allowlist decision.
 
@@ -204,10 +310,12 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
             "HOW: run one git or des subcommand per Bash call, or dispatch "
             "a role instead."
         )
+    if _is_value_seed_stdin_heredoc(command):
+        return None
     if any(marker in command for marker in _AUTO_ROOT_BASH_INJECTION_MARKERS):
         return _auto_root_bash_block(
             "WHAT: an Auto-root Bash command carrying a shell-composition "
-            "operator (&&, ||, ;, |, `, $(...), <, >, or a newline/CR) was "
+            "operator (&&, ||, ;, |, &, `, $(...), <, >, or a newline/CR) was "
             "blocked. "
             "WHY: Auto-root Bash is restricted to a single, literal git or "
             "des call -- composition operators can smuggle a second "

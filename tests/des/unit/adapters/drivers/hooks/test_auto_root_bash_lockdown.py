@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import json
+from pathlib import Path
 
 import pytest
 
@@ -143,6 +144,7 @@ class TestAutoRootBashAllowlist:
             "git status || echo pwned",
             "git status; rm -rf /",
             "git status | tee /tmp/x",
+            "git status & rm -rf /",
             "git status `whoami`",
             "git status $(whoami)",
             "git status < /etc/passwd",
@@ -283,6 +285,7 @@ class TestAutoRootBashDesAllowlist:
             "des dispatch F-EXAMPLE || echo pwned",
             "des dispatch F-EXAMPLE; rm -rf /",
             "des dispatch F-EXAMPLE | tee /tmp/x",
+            "des dispatch F-EXAMPLE & rm -rf /",
             "des dispatch `whoami`",
             "des dispatch $(whoami)",
             "des dispatch F-EXAMPLE < /etc/passwd",
@@ -324,6 +327,199 @@ class TestAutoRootBashDesAllowlist:
         assert exit_code == 2
         assert payload["decision"] == "block"
         assert "Auto-root" in payload["reason"]
+
+
+_K4_TASK_TXT = (
+    Path(__file__).resolve().parents[6] / "scripts" / "analysis" / "k4" / "task.txt"
+)
+
+
+class TestAutoRootBashValueSeedStdinHeredoc:
+    """ADR-SSOT-002 'VALUE-SEED transport' mandates delivering the exact
+    value-seed bytes to `des prepare-ordinary-request`'s stdin, never
+    shell-reinterpreted -- never argv/env/temp-file. The generic
+    composition-operator block would otherwise make that producer
+    permanently unreachable from Auto-root Bash, since both stdin-feeding
+    constructs (`|`, `<<`) are unconditionally rejected. Exactly one shape
+    is carved out: a bounded `des prepare-ordinary-request <argv>` header
+    ending in a QUOTED heredoc redirect, an opaque body, and a terminator
+    line that is exactly the delimiter with nothing after it."""
+
+    _HEADER = (
+        "des prepare-ordinary-request --size M --repo-root /tmp/repo "
+        '--architecture-authority "ARCHITECTURE-COVERED: docs/x.md#anchor" '
+        "--delivery-route RED_TO_GREEN --examine true --independent-review false"
+    )
+
+    @staticmethod
+    def _heredoc(
+        body: str,
+        *,
+        header: str | None = None,
+        quote: str = "'",
+        delimiter: str = "NW_SEED",
+    ) -> str:
+        head = (
+            header
+            if header is not None
+            else TestAutoRootBashValueSeedStdinHeredoc._HEADER
+        )
+        return f"{head} <<{quote}{delimiter}{quote}\n{body}\n{delimiter}"
+
+    def test_plain_seed_heredoc_is_not_auto_root_blocked(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        command = self._heredoc("the value seed text")
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert "Auto-root" not in payload.get("reason", "")
+
+    def test_double_quoted_delimiter_is_not_auto_root_blocked(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        command = self._heredoc("the value seed text", quote='"')
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert "Auto-root" not in payload.get("reason", "")
+
+    def test_flag_equals_value_token_form_is_not_auto_root_blocked(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        header = (
+            "des prepare-ordinary-request --size=M --repo-root=/tmp/repo "
+            '--architecture-authority="ARCHITECTURE-COVERED: docs/x.md#anchor" '
+            "--delivery-route=RED_TO_GREEN --examine=true --independent-review=false"
+        )
+        command = self._heredoc("the value seed text", header=header)
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert "Auto-root" not in payload.get("reason", "")
+
+    def test_real_k4_task_body_containing_apostrophes_pipes_and_blank_lines_round_trips(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        """The real seed corpus this repo already carries -- multi-line,
+        blank lines, punctuation, no escaping applied -- must pass through
+        the heredoc carve-out unblocked, exactly the property a quoted
+        heredoc (vs. the abandoned printf-pipe shape) is chosen for."""
+        seed_body = _K4_TASK_TXT.read_text(encoding="utf-8")
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        command = self._heredoc(seed_body)
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert "Auto-root" not in payload.get("reason", "")
+
+    def test_bare_ampersand_after_the_matched_shape_still_blocks(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        """The exact bypass the reviewer found against the abandoned
+        printf-pipe carve-out: a trailing `& <second command>` riding an
+        otherwise-recognized shape must still block."""
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        command = self._heredoc("seed", header=self._HEADER + " & rm -rf ~")
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            # unquoted delimiter -- shell would expand `$(...)`/backticks
+            # inside the body; must never be trusted as opaque.
+            f"{_HEADER} <<NW_SEED\nseed\nNW_SEED",
+            # unterminated heredoc -- no line is exactly the delimiter
+            f"{_HEADER} <<'NW_SEED'\nseed with no terminator",
+            # extra command riding after the terminator line
+            f"{_HEADER} <<'NW_SEED'\nseed\nNW_SEED\nrm -rf /",
+            # a second heredoc redirect appended to the header
+            f"{_HEADER} <<'NW_SEED' <<'OTHER'\nseed\nNW_SEED\nx\nOTHER",
+            # bare & riding the header before the redirect
+            f"{_HEADER} & rm -rf ~ <<'NW_SEED'\nseed\nNW_SEED",
+            # composition marker inside the header prefix
+            f"{_HEADER}; rm -rf / <<'NW_SEED'\nseed\nNW_SEED",
+            # a flag outside the closed vocabulary
+            "des prepare-ordinary-request --size M --unknown-flag x <<'NW_SEED'\nseed\nNW_SEED",
+            # wrong subcommand
+            "des dispatch F-EXAMPLE <<'NW_SEED'\nseed\nNW_SEED",
+            # not even a des call
+            "cat <<'NW_SEED'\nseed\nNW_SEED",
+            # mismatched delimiter -- terminator does not match the opener
+            f"{_HEADER} <<'NW_SEED'\nseed\nOTHER",
+            # delimiter line has trailing content on the same line
+            f"{_HEADER} <<'NW_SEED'\nseed\nNW_SEED extra",
+        ],
+        ids=[
+            "unquoted_delimiter",
+            "unterminated_heredoc",
+            "trailing_command_after_terminator",
+            "second_heredoc_redirect",
+            "bare_ampersand_before_redirect",
+            "semicolon_in_header",
+            "unknown_flag",
+            "wrong_des_subcommand",
+            "not_a_des_call",
+            "mismatched_delimiter",
+            "trailing_content_on_terminator_line",
+        ],
+    )
+    def test_anything_off_the_exact_seed_heredoc_shape_still_blocks(
+        self, monkeypatch, capsys, audit_events, tmp_path, command
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        assert exit_code == 2
+        assert payload["decision"] == "block"
 
 
 class TestAutoRootBashMalformedCommandFailsClosed:

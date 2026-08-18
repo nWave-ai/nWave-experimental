@@ -136,19 +136,36 @@ valid charter, authors exactly one through PO for a Missing/Empty namespace,
 and blocks on Invalid. A RED contract must observe every VALUE-SEED clause at
 its real port; internal proxies and later-slice promises are `EVIDENCE_GAP`.
 
-1. Run exactly once, with VALUE-SEED bytes on stdin:
+1. Run exactly once, with VALUE-SEED bytes on stdin. The Auto-root Bash
+   allowlist permits exactly one stdin shape for this one producer — the
+   `des prepare-ordinary-request` call header ending in a QUOTED heredoc
+   redirect, all as a single Bash invocation:
 
    ```
-     des prepare-ordinary-request --size <M|L> --repo-root <absolute physical root>
-     --architecture-authority "ARCHITECTURE-COVERED: path.md#anchor"
-     --delivery-route <RED_TO_GREEN|GREEN_TO_GREEN> --examine <true|false>
-     --independent-review <true|false> [numeric budget overrides]
+   des prepare-ordinary-request \
+     --size <M|L> --repo-root <absolute physical root> \
+     --architecture-authority "ARCHITECTURE-COVERED: path.md#anchor" \
+     --delivery-route <RED_TO_GREEN|GREEN_TO_GREEN> --examine <true|false> \
+     --independent-review <true|false> [numeric budget overrides] <<'NW_SEED'
+   <exact value-seed text, byte-for-byte, over as many lines as it needs>
+   NW_SEED
    ```
 
-   Do not precede it with `des --help`, `which des`,
-   `des validate-delivery-contract`, hashing, recounting or another producer
-   probe. VALUE-SEED is never argv/env/temp/transcript data. Nonzero is the
-   terminal `Blocked` WHAT/WHY/HOW; root never repairs or retries.
+   The delimiter (`NW_SEED`) MUST be quoted — `<<'NW_SEED'` or
+   `<<"NW_SEED"` — never bare `<<NW_SEED`: an unquoted heredoc lets the
+   shell expand `$(...)`/backticks/variables inside the body, which would
+   silently corrupt the seed. Quoted, the body between the header and the
+   closing `NW_SEED` line is opaque to the shell — copy the seed in
+   verbatim, no escaping, no re-typing, no paraphrase, and it tolerates
+   quotes, `|`, blank lines and any other byte. The closing line must be
+   exactly `NW_SEED` with nothing else on it, and nothing may follow that
+   line — no other pipe/heredoc/composition shape is permitted, and the
+   header line before `<<` accepts only the flags shown above, nothing
+   else. Do not precede it with `des --help`, `which des`,
+   `des validate-delivery-contract`, hashing, recounting or another
+   producer probe. VALUE-SEED is never argv/env/temp/transcript data.
+   Nonzero is the terminal `Blocked` WHAT/WHY/HOW; root never repairs or
+   retries.
 
 2. On `Prepared(SeededAuthority)`, run exactly one command:
 
