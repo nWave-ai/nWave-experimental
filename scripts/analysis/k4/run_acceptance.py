@@ -48,6 +48,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from collections import Counter
 from dataclasses import dataclass
@@ -199,20 +200,23 @@ def _dev_requirements_delta(workspace: Path) -> list[str]:
     return delta
 
 
-def _examine_snapshot(
-    snapshot: Path, suite: Path, dev_delta: list[str]
-) -> tuple[bool, str]:
-    """Run both suites against the disposable copy. Whatever this writes into
-    `snapshot` (venv, delta requirements file, suite file) dies with it in
-    `examine`'s `finally` -- nothing here needs its own cleanup."""
+def _install_suite_venv(
+    snapshot: Path, dev_delta: list[str]
+) -> tuple[bool, str, Path | None]:
+    """Create the disposable venv and install exactly what a scored delivery
+    gets: its own requirements.txt, its own dev-requirements delta, and the
+    suite's clock dependency. Returns the venv's python executable on
+    success. Shared by `_examine_snapshot` (the real scored run) and
+    `_self_probe_oracle_red` (the RED proof, GDP-8 witness corollary) so the
+    two never drift apart on what "installed" means."""
     venv = snapshot / _ACCEPTANCE_VENV_NAME
     code, tail = _run([sys.executable, "-m", "venv", str(venv)], snapshot)
     if code != 0:
-        return False, f"could not create the acceptance venv: {tail}"
+        return False, f"could not create the acceptance venv: {tail}", None
     pip = str(venv / "bin" / "pip")
     code, tail = _run([pip, "install", "-q", "-r", "requirements.txt"], snapshot)
     if code != 0:
-        return False, f"the delivery's requirements.txt does not install: {tail}"
+        return False, f"the delivery's requirements.txt does not install: {tail}", None
     if dev_delta:
         delta_reqs = snapshot / _DEV_DELTA_REQUIREMENTS_NAME
         delta_reqs.write_text("\n".join(dev_delta) + "\n", encoding="utf-8")
@@ -222,21 +226,33 @@ def _examine_snapshot(
                 False,
                 "the delivery's test-dependency delta "
                 f"{dev_delta} does not install: {tail}",
+                None,
             )
     code, tail = _run([pip, "install", "-q", "time-machine"], snapshot)
     if code != 0:
-        return False, f"could not install the suite's clock dependency: {tail}"
+        return False, f"could not install the suite's clock dependency: {tail}", None
+    return True, "", venv / "bin" / "python"
+
+
+def _examine_snapshot(
+    snapshot: Path, suite: Path, dev_delta: list[str]
+) -> tuple[bool, str]:
+    """Run both suites against the disposable copy. Whatever this writes into
+    `snapshot` (venv, delta requirements file, suite file) dies with it in
+    `examine`'s `finally` -- nothing here needs its own cleanup."""
+    ok, evidence, python = _install_suite_venv(snapshot, dev_delta)
+    if not ok:
+        return False, evidence
 
     target = snapshot / _SUITE_TARGET
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(suite, target)
-    python = str(venv / "bin" / "python")
 
     feature_code, feature_tail = _run(
-        [python, "manage.py", "test", _SUITE_LABEL], snapshot
+        [str(python), "manage.py", "test", _SUITE_LABEL], snapshot
     )
     regression_code, regression_tail = _run(
-        [python, "manage.py", "test", "hc", "--exclude-tag", "k4"],
+        [str(python), "manage.py", "test", "hc", "--exclude-tag", "k4"],
         snapshot,
         timeout=3600,
     )
@@ -249,7 +265,132 @@ def _examine_snapshot(
     return accepted, evidence
 
 
-def examine(workspace: Path, suite: Path) -> tuple[bool, str]:
+#: Row 2 (K4 matrix): the acceptance oracle itself once inverted the verdict
+#: (`ef37b76b0` -- a fixture bug flipped which day the flip landed on, so a
+#: CORRECT delivery read as a failure). Red-alone is half a verification; a
+#: campaign that never watches the oracle fail against a subject with no
+#: feature at all is trusting the other half by promise, not by evidence.
+#: This prefix marks the self-probe's OWN disposable snapshot so a caller
+#: (or a test double) can tell it apart from the snapshot a real delivery is
+#: scored in -- see `_self_probe_oracle_red`.
+_SELF_PROBE_DIR_MARKER = "k4-self-probe-"
+
+
+def _base_commit_sha(workspace: Path) -> str | None:
+    """This workspace's own pristine base commit: the shallow clone's root,
+    or HEAD itself when the delivery added no commits on top. Never an
+    externally-pinned SUT revision -- `preflight.py` clones `--depth 1` off
+    the SUT's default branch at whatever moment a campaign happens to run,
+    so no such pin exists to read anywhere. Resolving it from the
+    workspace's OWN history means the self-probe below reconstructs exactly
+    the state THIS campaign actually started from, for every campaign,
+    without needing to know the subject's identity.
+
+    A real subprocess call, like `_dev_requirements_delta`'s git calls --
+    not routed through the mockable `_run` seam, because what it inspects
+    (this workspace's actual commit graph) is not something a build/test
+    double can stand in for."""
+    try:
+        done = subprocess.run(
+            ["git", "rev-list", "--max-parents=0", "HEAD"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if done.returncode != 0:
+        return None
+    roots = [line.strip() for line in done.stdout.splitlines() if line.strip()]
+    # More than one root is a merged/grafted history this harness has never
+    # seen from a `--depth 1` SUT clone; refuse rather than guess which root
+    # the delivery actually started from.
+    return roots[0] if len(roots) == 1 else None
+
+
+def _extract_base_tree(workspace: Path, base_sha: str, dest: Path) -> tuple[bool, str]:
+    """Materialize `base_sha` -- exactly as committed, ignoring the
+    delivery's own tracked and untracked changes -- into `dest`. A real
+    `git archive`, for the same reason `_base_commit_sha` is real: there is
+    no double for "what did this commit actually contain"."""
+    dest.mkdir(parents=True, exist_ok=True)
+    archive = dest.parent / "base.tar"
+    try:
+        done = subprocess.run(
+            ["git", "archive", "--format=tar", "-o", str(archive), base_sha],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"`git archive {base_sha}` did not run: {exc}"
+    if done.returncode != 0:
+        return (
+            False,
+            f"`git archive {base_sha}` exited {done.returncode}: {done.stderr}",
+        )
+    with tarfile.open(archive) as handle:
+        try:
+            handle.extractall(dest, filter="data")  # Python >= 3.12 (PEP 706)
+        except TypeError:
+            handle.extractall(dest)  # Python 3.10/3.11: no `filter` parameter
+    return True, ""
+
+
+def _self_probe_oracle_red(
+    workspace: Path, base_sha: str, suite: Path
+) -> tuple[bool, str]:
+    """GDP-8 witness corollary: prove the oracle can go RED before trusting
+    it to score anything against `base_sha` -- the checker is not exempt
+    from the class it checks. Runs the oracle, UNMODIFIED, against a clean
+    extraction of `workspace`'s own base commit: on the undelivered subject
+    it must fail, never exit clean. A GREEN here means the oracle cannot
+    discriminate delivered from undelivered and no pair sharing this base
+    commit may be scored from it.
+
+    Feature suite only, not the subject's full regression suite: proving RED
+    is the whole job here, and doubling every campaign's runtime with the
+    ~200-module regression pass `_examine_snapshot` runs for a REAL score
+    would make this the opposite of cheap."""
+    probe_root = Path(tempfile.mkdtemp(prefix=_SELF_PROBE_DIR_MARKER))
+    try:
+        snapshot = probe_root / "base"
+        ok, evidence = _extract_base_tree(workspace, base_sha, snapshot)
+        if not ok:
+            return False, f"could not extract the undelivered base: {evidence}"
+
+        ok, evidence, python = _install_suite_venv(snapshot, [])
+        if not ok:
+            return False, f"could not prepare the undelivered-base venv: {evidence}"
+
+        target = snapshot / _SUITE_TARGET
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(suite, target)
+
+        code, tail = _run([str(python), "manage.py", "test", _SUITE_LABEL], snapshot)
+        if code == 0:
+            return False, (
+                f"the oracle exited 0 (GREEN) against its own undelivered base "
+                f"{base_sha} -- it cannot discriminate delivered from undelivered"
+            )
+        return (
+            True,
+            f"oracle exit {code} on undelivered base {base_sha} [{_verdict_line(tail)}]",
+        )
+    finally:
+        shutil.rmtree(probe_root, ignore_errors=True)
+
+
+def examine(
+    workspace: Path,
+    suite: Path,
+    *,
+    probe_cache: dict[str, tuple[bool, str]] | None = None,
+) -> tuple[bool, str]:
     """Measure a disposable snapshot of the delivery, never the delivery
     itself. The original is written to only for the setup-owned user-
     environment doc, removed here regardless of outcome; every other
@@ -257,6 +398,14 @@ def examine(workspace: Path, suite: Path) -> tuple[bool, str]:
     unchanged. Because each call owns its own snapshot, two concurrent
     `examine` calls over the same workspace share no mutable state and
     cannot race on a target file or a venv.
+
+    Refuses to score anything until `_self_probe_oracle_red` has proven the
+    oracle goes RED on THIS workspace's own undelivered base commit (row 2,
+    K4 matrix -- GDP-8 witness corollary). `probe_cache`, keyed by base
+    commit sha, lets a caller scoring many pairs from the same campaign (see
+    `main`) pay for that proof once per distinct base commit rather than
+    once per pair -- proof, not ceremony, is what row 2 asks for. A caller
+    that passes nothing gets a private cache scoped to this one call.
     """
     workspace = Path(workspace)
     if not (workspace / "manage.py").is_file():
@@ -266,6 +415,26 @@ def examine(workspace: Path, suite: Path) -> tuple[bool, str]:
         return (
             False,
             f"the delivery already contains {_SUITE_TARGET}; refusing to overwrite",
+        )
+
+    if probe_cache is None:
+        probe_cache = {}
+    base_sha = _base_commit_sha(workspace)
+    if base_sha is None:
+        return False, (
+            "could not resolve this workspace's own base commit via `git "
+            "rev-list --max-parents=0 HEAD`; the oracle self-probe (row 2, "
+            "GDP-8 witness corollary) cannot run without it, so this pair "
+            "is refused rather than scored unproven"
+        )
+    if base_sha not in probe_cache:
+        probe_cache[base_sha] = _self_probe_oracle_red(workspace, base_sha, suite)
+    proved_red, probe_evidence = probe_cache[base_sha]
+    if not proved_red:
+        return False, (
+            f"refused: the acceptance oracle did not prove RED on this "
+            f"campaign's undelivered base {base_sha} before scoring -- "
+            f"{probe_evidence}"
         )
 
     try:
@@ -291,13 +460,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     outcomes: list[Outcome] = []
+    # Shared across every pair in this campaign: pairs cloned from the same
+    # SUT run share the same base commit, so the row-2 self-probe (GDP-8
+    # witness corollary) proves RED once per distinct base sha, not once per
+    # pair -- see `examine`'s `probe_cache` parameter.
+    probe_cache: dict[str, tuple[bool, str]] = {}
     for payload in sorted(args.campaign.glob("pair-*/*.json")):
         if payload.name in ("campaign.json",) or payload.stem.endswith(".setup"):
             continue
         workspace = payload.parent / payload.stem
         if not workspace.is_dir():
             continue
-        accepted, evidence = examine(workspace, args.suite.resolve())
+        accepted, evidence = examine(
+            workspace, args.suite.resolve(), probe_cache=probe_cache
+        )
         outcomes.append(Outcome(payload.stem, _session_id(payload), accepted, evidence))
         print(f"{payload.parent.name}/{payload.stem}: accepted={accepted}", flush=True)
 

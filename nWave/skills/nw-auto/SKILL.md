@@ -191,7 +191,15 @@ its real port; internal proxies and later-slice promises are `EVIDENCE_GAP`.
 
    Neither call observes the other result or shares a write target. Join every
    terminal batch result before any dependent action; a partial/non-PASS batch
-   stops without retry.
+   stops without retry. Did that role's own response end with its own
+   terminal result block (`DISTILL-RESULT:`, `CHARTER-RESULT:`, ...), or does
+   its absence make a subagent killed mid-turn (budget exhaustion, timeout,
+   an interrupted process) indistinguishable from one still working? A
+   response carrying NO terminal result line is `INDETERMINATE` for that
+   role, never a nonterminal batch to retry: report the missing terminal
+   receipt in one sentence and stop — never re-dispatch the same role
+   blindly on the unproven assumption that a second try will simply finish
+   what silence already refused to confirm.
 
 3. Validate the charter when applicable, then run the one `des dispatch`
    command from “CLI dispatch” above. Forward its two lines verbatim to the

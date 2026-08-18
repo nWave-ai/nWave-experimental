@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -197,7 +198,8 @@ class TestAutoRootBashAllowlist:
 
 class TestAutoRootBashDesAllowlist:
     """A confirmed Auto-root process's Bash calls also allow a bare, single
-    `des dispatch|validate-delivery-contract|charter-scaffold` invocation --
+    `des dispatch|validate-delivery-contract|charter-scaffold|
+    resolve-charters` invocation --
     the direct-cutover spine's only hook-controller-free CLI seam."""
 
     @pytest.mark.parametrize(
@@ -206,8 +208,14 @@ class TestAutoRootBashDesAllowlist:
             "des dispatch F-EXAMPLE",
             "des validate-delivery-contract docs/feature/x/delivery-contract.json",
             "des charter-scaffold F-EXAMPLE",
+            "des resolve-charters --repo-root /tmp/repo --delivery-id auto-abc123 --examine true",
         ],
-        ids=["dispatch", "validate-delivery-contract", "charter-scaffold"],
+        ids=[
+            "dispatch",
+            "validate-delivery-contract",
+            "charter-scaffold",
+            "resolve-charters",
+        ],
     )
     def test_clean_des_allowlisted_command_is_not_auto_root_blocked(
         self, monkeypatch, capsys, audit_events, tmp_path, command
@@ -329,9 +337,66 @@ class TestAutoRootBashDesAllowlist:
         assert "Auto-root" in payload["reason"]
 
 
-_K4_TASK_TXT = (
-    Path(__file__).resolve().parents[6] / "scripts" / "analysis" / "k4" / "task.txt"
-)
+_REPO_ROOT = Path(__file__).resolve().parents[6]
+_K4_TASK_TXT = _REPO_ROOT / "scripts" / "analysis" / "k4" / "task.txt"
+_NW_AUTO_SKILL_MD = _REPO_ROOT / "nWave" / "skills" / "nw-auto" / "SKILL.md"
+
+
+def _des_subcommands_root_is_told_to_run(skill_md_text: str) -> set[str]:
+    """The `des <subcommand>` tokens that appear inside a FENCED code block
+    in `nw-auto/SKILL.md` -- i.e. a literal command root is instructed to
+    run verbatim, as opposed to a backtick-prose mention (a prohibition
+    like "Root never calls `des validate-delivery-contract` itself", or a
+    descriptive aside like "`des verify-charter-filled` is a structural
+    gate only"). Fences may be indented under a numbered step, so the
+    fence marker is matched with leading whitespace stripped.
+    """
+    in_fence = False
+    subcommands: set[str] = set()
+    for line in skill_md_text.split("\n"):
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            continue
+        subcommands.update(
+            match.group(1)
+            for match in re.finditer(r"\bdes\s+([a-zA-Z][a-zA-Z-]*)", line)
+        )
+    return subcommands
+
+
+class TestAutoRootBashAllowlistCoversSkillMandatedSubcommands:
+    """Regression guard for the `des resolve-charters` drift class: the
+    root's Auto-root Bash allowlist must be a SUPERSET of every `des
+    <subcommand>` nw-auto/SKILL.md's root steps actually instruct root to
+    run -- never the reverse (the allowlist may legitimately carry extra
+    subcommands other callers of this same gate need, e.g. `charter-
+    scaffold` for nw-bugfix). A missing entry here reproduces the exact
+    installed defect: the skill tells root to run a command the hook then
+    denies."""
+
+    def test_parser_is_not_vacuous(self) -> None:
+        """A parser that finds nothing can never fail the coverage check
+        below -- a silent, undiscriminating pass. Pin the known baseline
+        so a SKILL.md format change that breaks the fence parser is
+        itself caught, not silently swallowed."""
+        found = _des_subcommands_root_is_told_to_run(
+            _NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
+        )
+        assert {"dispatch", "prepare-ordinary-request", "resolve-charters"} <= found
+
+    def test_every_skill_mandated_subcommand_is_allowlisted(self) -> None:
+        mandated = _des_subcommands_root_is_told_to_run(
+            _NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
+        )
+        allowed = pre_tool_use_handler._AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS
+        missing = mandated - allowed
+        assert not missing, (
+            f"nw-auto/SKILL.md instructs root to run {sorted(missing)}, but "
+            "the Auto-root Bash allowlist does not permit it -- the hook "
+            "would deny root's own documented next step."
+        )
 
 
 class TestAutoRootBashValueSeedStdinHeredoc:

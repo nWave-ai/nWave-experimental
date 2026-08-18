@@ -33,16 +33,36 @@ def _workspace(tmp_path):
     (workspace / "manage.py").write_text("# django manage.py stub\n")
     suite = tmp_path / "suite.py"
     suite.write_text("# hidden suite\n")
+    # Row 2, K4 matrix: `examine` now refuses to score anything until the
+    # row-2 self-probe (GDP-8 witness corollary) has proven the oracle goes
+    # RED on this workspace's own base commit -- resolved via REAL git,
+    # never the mockable `_run` seam (see `_base_commit_sha`). Every
+    # workspace under test needs a real commit to serve as that base.
+    _git("init", "-q", "-b", "master", cwd=workspace)
+    _git("config", "user.email", "k4@example.test", cwd=workspace)
+    _git("config", "user.name", "k4", cwd=workspace)
+    _git("add", "-A", cwd=workspace)
+    _git("commit", "-q", "-m", "seed", cwd=workspace)
     return workspace, suite
 
 
 def _stub_run(*, feature=(0, "OK"), regression=(0, "OK"), raise_on=None):
-    """A drop-in for `_run` that skips real subprocesses entirely."""
+    """A drop-in for `_run` that skips real subprocesses entirely.
+
+    The row-2 self-probe runs the SAME `_SUITE_LABEL` command this fake
+    already recognizes, but in its own extracted-base snapshot (tagged
+    `_SELF_PROBE_DIR_MARKER` in its cwd) rather than the delivery snapshot
+    these tests exercise -- so it is matched FIRST and always answers RED,
+    true to what an undelivered subject actually does, letting every
+    existing assertion here keep measuring what it always measured.
+    """
 
     def fake(argv, cwd, timeout=2400):
         joined = " ".join(argv)
         if raise_on and raise_on in joined:
             raise RuntimeError(f"boom during: {joined}")
+        if ra._SELF_PROBE_DIR_MARKER in str(cwd) and ra._SUITE_LABEL in argv:
+            return 1, "FAIL: self-probe -- undelivered base, as expected"
         if "venv" in argv:
             return 0, ""
         if "install" in argv:
@@ -126,12 +146,7 @@ def test_user_environment_fixture_artifact_is_absent_and_workspace_git_clean_aft
     does not pin down."""
     from scripts.analysis.k4 import prepare_examiner_fixture as pef
 
-    workspace, suite = _workspace(tmp_path)
-    _git("init", "-q", "-b", "master", cwd=workspace)
-    _git("config", "user.email", "k4@example.test", cwd=workspace)
-    _git("config", "user.name", "k4", cwd=workspace)
-    _git("add", "-A", cwd=workspace)
-    _git("commit", "-q", "-m", "seed", cwd=workspace)
+    workspace, suite = _workspace(tmp_path)  # already a git repo with one commit
 
     leftover = workspace / pef.DOC_NAME
     leftover.write_text("stale user-environment fixture doc\n")

@@ -32,7 +32,32 @@ def _workspace(tmp_path):
     (workspace / "requirements.txt").write_text("# no real deps\n")
     suite = tmp_path / "suite.py"
     suite.write_text("# hidden suite\n")
+    # Row 2, K4 matrix: `examine` now refuses to score anything until the
+    # row-2 self-probe (GDP-8 witness corollary) has proven the oracle goes
+    # RED on this workspace's own base commit -- resolved via REAL git,
+    # never the mockable `_run` seam (see `_base_commit_sha`). Every
+    # workspace under test needs a real commit to serve as that base; a
+    # test that commits more content of its own afterwards just adds a
+    # second commit on top, which does not change what the root resolves to.
+    _git("init", "-q", "-b", "master", cwd=workspace)
+    _git("config", "user.email", "k4@example.test", cwd=workspace)
+    _git("config", "user.name", "k4", cwd=workspace)
+    _git("add", "-A", cwd=workspace)
+    _git("commit", "-q", "-m", "seed", cwd=workspace)
     return workspace, suite
+
+
+#: Every fake `_run` below must intercept the row-2 self-probe's suite run
+#: BEFORE its own generic `ra._SUITE_LABEL in argv` branch: the self-probe
+#: uses the identical label, distinguished only by running in its own
+#: extracted-base snapshot, tagged `_SELF_PROBE_DIR_MARKER` in its cwd.
+#: Answering RED there is not a stub convenience -- it is what an
+#: undelivered subject actually does, so every existing assertion below
+#: keeps measuring exactly what it always measured.
+def _self_probe_branch(argv, cwd):
+    if ra._SELF_PROBE_DIR_MARKER in str(cwd) and ra._SUITE_LABEL in argv:
+        return 1, "FAIL: self-probe -- undelivered base, as expected"
+    return None
 
 
 def _digest(root: Path) -> dict[str, bytes]:
@@ -47,6 +72,8 @@ def _digest(root: Path) -> dict[str, bytes]:
 
 def _passing_run(seen: dict | None = None):
     def fake(argv, cwd, timeout=2400):
+        if (probed := _self_probe_branch(argv, cwd)) is not None:
+            return probed
         if "venv" in argv or "install" in argv:
             return 0, ""
         if ra._SUITE_LABEL in argv or "--exclude-tag" in argv:
@@ -68,12 +95,7 @@ def test_examine_measures_the_delivered_tree_and_leaves_the_original_untouched(
     modification to a tracked file (proving it measures the delivered tree,
     not HEAD), yet the original digest is byte-identical afterwards and
     neither the hidden-suite target nor the acceptance venv exist in it."""
-    workspace, suite = _workspace(tmp_path)
-    _git("init", "-q", "-b", "master", cwd=workspace)
-    _git("config", "user.email", "k4@example.test", cwd=workspace)
-    _git("config", "user.name", "k4", cwd=workspace)
-    _git("add", "-A", cwd=workspace)
-    _git("commit", "-q", "-m", "seed", cwd=workspace)
+    workspace, suite = _workspace(tmp_path)  # already a git repo with one commit
 
     (workspace / "manage.py").write_text("# modified after commit\n")
     untracked = workspace / "hc" / "api" / "tests" / "untracked_delivery.py"
@@ -112,6 +134,10 @@ def test_concurrent_examine_calls_do_not_race_and_leave_the_original_unchanged(
     suite_cwds: list[str] = []
 
     def fake(argv, cwd, timeout=2400):
+        if (probed := _self_probe_branch(argv, cwd)) is not None:
+            with lock:
+                call_count["n"] += 1
+            return probed
         with lock:
             call_count["n"] += 1
             if ra._SUITE_LABEL in argv or "--exclude-tag" in argv:
@@ -171,12 +197,16 @@ def test_snapshot_excludes_measurement_bulk_from_the_copy(
     production content does."""
     workspace, suite = _workspace(tmp_path)
     bulky = workspace / bulky_name
-    bulky.mkdir()
+    # `.git` already exists -- `_workspace()` makes every workspace a real
+    # git repo now, for the row-2 self-probe's own base-commit resolution.
+    bulky.mkdir(exist_ok=True)
     (bulky / "marker").write_text("bulk, not production content\n")
 
     seen: dict = {}
 
     def fake(argv, cwd, timeout=2400):
+        if (probed := _self_probe_branch(argv, cwd)) is not None:
+            return probed
         if "venv" in argv or "install" in argv:
             return 0, ""
         if ra._SUITE_LABEL in argv or "--exclude-tag" in argv:
@@ -217,6 +247,8 @@ def test_examine_preserves_delivery_symlinks_semantically(tmp_path, monkeypatch)
     seen: dict = {}
 
     def fake(argv, cwd, timeout=2400):
+        if (probed := _self_probe_branch(argv, cwd)) is not None:
+            return probed
         if "venv" in argv or "install" in argv:
             return 0, ""
         if ra._SUITE_LABEL in argv or "--exclude-tag" in argv:
@@ -284,6 +316,14 @@ def test_examine_dev_requirements_delta_install_order_and_failure_handling(
     seen: dict = {}
 
     def fake(argv, cwd, timeout=2400):
+        if ra._SELF_PROBE_DIR_MARKER in str(cwd):
+            # Row-2 self-probe traffic, satisfied transparently and never
+            # recorded: the install-order assertions below are about the
+            # MAIN scored run, and the self-probe never has a dev delta to
+            # install, so mixing it into `calls` would misorder them.
+            if ra._SUITE_LABEL in argv:
+                return 1, "FAIL: self-probe -- undelivered base, as expected"
+            return 0, ""
         joined = " ".join(argv)
         calls.append(joined)
         if "venv" in argv:

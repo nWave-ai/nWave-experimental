@@ -4,7 +4,7 @@ description: "Use for DISTILL wave — compiles architecture and value authority
 model: sonnet
 effort: low
 tools: Read, Write, Edit
-maxTurns: 12
+maxTurns: 30
 ---
 
 # nw-acceptance-designer

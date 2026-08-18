@@ -4,7 +4,7 @@ Use for DISTILL wave — compiles architecture and value authority into a minima
 
 **Wave:** DISTILL
 **Model:** sonnet
-**Max turns:** 12
+**Max turns:** 30
 **Tools:** Read, Write, Edit
 
 ## Commands
