@@ -8,8 +8,7 @@
   ],
   "providers": [
     "ast",
-    "textsearch",
-    "tsunami"
+    "textsearch"
   ],
   "confidences": [
     "approx",

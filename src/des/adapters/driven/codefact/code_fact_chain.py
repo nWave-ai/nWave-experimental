@@ -1,26 +1,29 @@
 """``CodeFactChain`` — the provider-chain negotiation (ADR-LA-001 §5).
 
-Walks the fallback chain ``Tsunami -> Ast -> TextSearch`` top-down and returns the
-first provider that *covers* the capability at the floor, tagging the answer
-``{provider, confidence, reason_code}``. For a stable-core capability there is NO
-"no provider" outcome — the universal :class:`TextSearchAdapter` floor (and the
-structural :class:`AstAdapter`) always answer (ADR-LA-001 §5).
-
-slice-01 (the walking skeleton) wired ONLY the floor. slice-02 prepends the two
-precision tiers ahead of it:
+Walks the fallback chain ``Ast -> TextSearch`` top-down and returns the first
+provider that *covers* the capability at the floor, tagging the answer
+``{provider, confidence, reason_code}``. For a stable-core capability there is
+NO "no provider" outcome — the universal :class:`TextSearchAdapter` floor
+always answers (ADR-LA-001 §5).
 
 * the :class:`AstAdapter` (``approx``) — the structural tier, always present on a
   parseable target.
-* the :class:`TsunamiAdapter` (``binding-resolved``) — the paid open-core tier,
-  wired only when its ``probe()`` passes (``ADR-LA-001`` §3, Earned-Trust). On a
-  plain Python-only target it is ABSENT (the NORMAL case): the chain SKIPS it
-  LOUDLY — emitting a ``health.gate.code-fact.*`` skip event — and PROCEEDS to the
-  next tier (degrade-LOUD, never silent-fail, never a hang).
+* the :class:`TextSearchAdapter` (``noisy``) — the universal pure-Python floor,
+  always present.
 
-A capability only the paid tier can honor (outside the LOCKED 5-capability stable
-core, e.g. ``query.tsunami-call-graph``) with Tsunami ABSENT is SKIPPED LOUDLY and
-the gate PROCEEDS (C8) — the chain does NOT block on Tsunami absence and does NOT
-fabricate a lower-tier answer for a capability only Tsunami can honor.
+ADR-LA-001 D6-R1 / D9 RED_TO_GREEN(b): the paid ``TsunamiAdapter`` stub (a
+fabricated ``binding-resolved`` precision tier no production caller ever
+wired) and its ``tsunami_present`` ctor flag, ``tsunami-absent`` skip event,
+and mutable ``_health_events``/``health_events()`` side channel are DELETED —
+they are unrepresentable in OSS (LA1-L7: a ``binding-resolved`` answer
+requires a real ``TransportWitness``). The per-query, immutable
+``Resolution.trace`` (D5, LA1-L9) is the ONLY diagnostic projection left; a
+caller reads scan-scope honesty (``complete`` / ``filtered`` / ``unfiltered``)
+directly off the answering ``TraceEntry.scope``, never off a side channel.
+
+The chain holds no mutable state: :meth:`resolve` is a pure fold over its
+composed provider tuple, so long-lived and concurrent reuse is safe by
+construction (D5).
 
 The chain is the seam a code-fact gate re-derives a fact THROUGH (one honest
 provider) instead of a per-gate hand-rolled ``import ast`` — so a gate's answer is
@@ -34,7 +37,11 @@ from typing import TYPE_CHECKING
 
 from des.adapters.driven.codefact.ast_code_fact_adapter import AstAdapter
 from des.adapters.driven.codefact.text_search_code_fact_adapter import TextSearchAdapter
-from des.adapters.driven.codefact.tsunami_code_fact_adapter import TsunamiAdapter
+from des.ports.code_fact_port import (
+    Answered,
+    resolve_through_fold,
+    verify_composition_coverage,
+)
 
 
 if TYPE_CHECKING:
@@ -43,107 +50,51 @@ if TYPE_CHECKING:
     from des.ports.code_fact_port import (
         CapabilityDescriptor,
         CodeFactResult,
+        Resolution,
     )
-
-
-# The LOUD-skip health-event family (ADR-LA-001 §5a). A skip event whose name
-# carries this prefix is the degrade-LOUD observable a gate reads off the chain.
-_HEALTH_SKIP_PREFIX = "health.gate.code-fact"
-# The specific LOUD-skip event the chain emits when it skips the absent paid tier.
-_TSUNAMI_ABSENT_SKIP = f"{_HEALTH_SKIP_PREFIX}.tsunami-absent"
-# The floor-tier scan-scope signals (fix-blast-radius-reparses-tree-per-symbol,
-# GDP-6): joins the SAME family so a gate reads every degrade-LOUD condition off
-# one vocabulary, never a second parallel signal surface.
-_UNFILTERED_SCAN_SKIP = f"{_HEALTH_SKIP_PREFIX}.unfiltered-no-ignore-file"
-_FILTERED_SCAN_SKIP = f"{_HEALTH_SKIP_PREFIX}.filtered"
 
 
 class CodeFactChain:
     """The composition that walks the provider chain and tags the answer.
 
-    Constructed with the ``root`` of the tree to query and whether the paid Tsunami
-    tier is present (``tsunami_present``; ``False`` is the normal OSS case). The
-    chain wires ``Tsunami -> Ast -> TextSearch`` in descending precision and returns
-    the first provider that *covers* the capability — emitting a LOUD
-    ``health.gate.code-fact.*`` skip event when it skips the absent paid tier.
+    Constructed with the ``root`` of the tree to query. The chain wires
+    ``Ast -> TextSearch`` in descending precision and returns the first
+    provider that *covers* the capability — a pure, stateless fold (D5); no
+    mutable per-instance diagnostic channel, only the per-query
+    ``Resolution.trace``.
     """
 
-    def __init__(self, root: Path | str, tsunami_present: bool = False) -> None:
-        self._tsunami = TsunamiAdapter(root=root, present=tsunami_present)
+    def __init__(self, root: Path | str) -> None:
         self._ast = AstAdapter(root=root)
         self._floor = TextSearchAdapter(root=root)
-        self._health_events: list[str] = []
+        self._providers = (self._ast, self._floor)
+        verify_composition_coverage(self._providers)
+
+    def resolve(
+        self, descriptor: CapabilityDescriptor, request: dict[str, object]
+    ) -> Resolution:
+        """Re-derive the fact THROUGH the port chain (one honest provider).
+
+        ADR-LA-001 D9: one ``resolve_through_fold`` over the whole
+        ``(Ast, TextSearch)`` tuple (D2/D5) — no provider-specific dispatch,
+        no ``isinstance`` / ``getattr`` / arity branching on provider
+        identity (LA1-L2). A pure fold: no side effects, no mutable state
+        (concurrency-safe by construction). Returns the full ``Resolution``
+        so a caller needing the bounded trace alongside the answer can read
+        both off one fold; :meth:`query` is the thin legacy edge over this
+        same operation.
+        """
+        return resolve_through_fold(descriptor, request, self._providers)
 
     def query(
         self, descriptor: CapabilityDescriptor, request: dict[str, object]
     ) -> CodeFactResult | None:
         """Re-derive the fact THROUGH the port chain (one honest provider).
 
-        Walks the chain top-down. The paid Tsunami tier is consulted only if its
-        ``probe`` passes; an absent paid tier is SKIPPED LOUDLY (a
-        ``health.gate.code-fact.*`` event) and the chain PROCEEDS. A stable-core
-        capability is then answered by the structural floor tiers. A Tsunami-only
-        capability with Tsunami absent has no covering lower tier: it returns
-        ``None`` (no answer faked) while the loud skip is recorded and the gate
-        proceeds (C8).
-        """
-        if self._tsunami.probe():
-            return self._tsunami.query(descriptor, request)
-        self._record_tsunami_skip()
-        return self._negotiate_floor_tiers(descriptor, request)
-
-    def health_events(self) -> list[str]:
-        """The LOUD ``health.gate.code-fact.*`` skip events the chain emitted.
-
-        Read by a gate to observe a degrade-LOUD skip (the paid tier was absent).
-        Empty when no tier was skipped (e.g. the paid tier was present).
-        """
-        return list(self._health_events)
-
-    # -- negotiation internals --------------------------------------------
-
-    def _negotiate_floor_tiers(
-        self, descriptor: CapabilityDescriptor, request: dict[str, object]
-    ) -> CodeFactResult | None:
-        """The first non-paid tier whose manifest COVERS the capability (Ast, floor).
-
-        Walks ``Ast -> TextSearch`` and returns the first tier whose ``probe``
-        manifest lists the capability — the structural ``AstAdapter`` (``approx``)
-        wins for a stable-core capability, the universal ``TextSearchAdapter`` floor
-        is the always-present fallback. A Tsunami-only capability is in NEITHER
-        manifest, so no lower tier is dressed up as covering it: the walk returns
-        ``None`` (the loud skip is already recorded; the gate proceeds, C8).
-        """
-        for tier in (self._ast, self._floor):
-            if self._covers(tier, descriptor.id, request):
-                result = tier.query(descriptor, request)
-                self._record_scope_health(tier)
-                return result
-        return None
-
-    @staticmethod
-    def _covers(tier: object, capability_id: str, request: dict[str, object]) -> bool:
-        """True iff ``tier``'s ``probe`` manifest lists ``capability_id`` as ``ok``."""
-        probe = getattr(tier, "probe", None)
-        if not callable(probe):
-            return False
-        manifest = probe(request) if isinstance(tier, AstAdapter) else probe()
-        return any(
-            entry.get("capability_id") == capability_id and entry.get("ok")
-            for entry in manifest
-        )
-
-    def _record_tsunami_skip(self) -> None:
-        """Emit the LOUD skip event for the absent paid tier (degrade-LOUD)."""
-        self._health_events.append(_TSUNAMI_ABSENT_SKIP)
-
-    def _record_scope_health(self, tier: AstAdapter | TextSearchAdapter) -> None:
-        """Emit the LOUD scan-scope signal (GDP-6) for the floor tier that
-        answered -- ``"unfiltered"`` (no ignore file, nothing COULD have been
-        excluded) or ``"filtered"`` (the walk actually dropped >=1 path, so an
-        empty answer must never read as an unqualified verified zero)."""
-        event = tier.scope_health_event()
-        if event == "unfiltered":
-            self._health_events.append(_UNFILTERED_SCAN_SKIP)
-        elif event == "filtered":
-            self._health_events.append(_FILTERED_SCAN_SKIP)
+        For a stable-core capability the universal floor always covers it, so
+        this always answers (``Unsupported``/``Failed`` render ``None`` — no
+        answer faked)."""
+        resolution = self.resolve(descriptor, request)
+        if not isinstance(resolution, Answered):
+            return None
+        return resolution.payload

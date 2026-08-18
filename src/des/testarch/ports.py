@@ -104,6 +104,23 @@ class CallInfo:
 
 
 @dataclass(frozen=True)
+class ReadInfo:
+    """A plain-data description of a non-call name reference found inside a
+    function (CodeFact ``query.reads-of``, WS-9 reads-of slice-01).
+
+    ``name`` is the referenced identifier (e.g. ``target`` in
+    ``observed = target``); ``lineno`` is the 1-based source line. A name
+    used as a bare call callee (``target()``) is NOT reported here -- that
+    occurrence is a call site, reported by ``calls_in_function`` instead --
+    so ``reads_in_function`` and ``calls_in_function`` never double-count the
+    same occurrence.
+    """
+
+    name: str
+    lineno: int
+
+
+@dataclass(frozen=True)
 class ImportInfo:
     """A plain-data description of an import statement found inside a function.
 
@@ -131,25 +148,6 @@ class ConstructInfo:
     constructed: str
     target: str
     lineno: int
-
-
-@dataclass(frozen=True)
-class StepShapeCorpus:
-    """A plain-data step-shape census of a test module (sustainable-test-suite slice-09).
-
-    ``total_step_definitions`` is the count of pytest-bdd step definitions
-    (``@given`` / ``@when`` / ``@then`` functions) in the module;
-    ``near_duplicate_groups`` is the number of step-shape groups that contain MORE than one
-    step definition sharing a normalized body shape (each such group is one collapsible
-    near-duplicate cluster). A module with every step distinct has
-    ``near_duplicate_groups == 0``. The existing-base near-duplicate-step ratio is
-    ``near_duplicate_groups / total_step_definitions``; the rule layer reads only this
-    plain-data census — the normalization + grouping is the per-language adapter's concern
-    (genericità, ADR-TEST-002 D-A).
-    """
-
-    near_duplicate_groups: int
-    total_step_definitions: int
 
 
 @dataclass(frozen=True)
@@ -235,6 +233,20 @@ class TestSuiteAstAdapter(Protocol):
         """Return every call site inside ``fn``'s body (dotted callee + handle)."""
         ...
 
+    def reads_in_function(self, tree: object, fn: FunctionInfo) -> list[ReadInfo]:
+        """Return every non-call name reference inside ``fn``'s body (CodeFact
+        ``query.reads-of``, WS-9 reads-of slice-01).
+
+        A bare identifier read as a value (e.g. ``target`` in
+        ``observed = target``) is reported; the SAME identifier used as a
+        call callee (``target()``) is NOT -- that occurrence belongs to
+        ``calls_in_function`` -- so ``reads-of`` and ``callers-of`` stay
+        structurally disjoint over the same source. An assignment TARGET
+        (e.g. the ``observed`` in ``observed = target``) is a write, not a
+        read, and is never reported either.
+        """
+        ...
+
     def keyword_arg_names(self, call: CallInfo, kw: str) -> list[str]:
         """Return the names passed inside the ``kw`` keyword arg of ``call``.
 
@@ -268,19 +280,6 @@ class TestSuiteAstAdapter(Protocol):
         else ``IN_PROCESS_MAIN`` if the body calls an in-process ``main(...)``
         entry (a ``main`` / ``*.main`` callee); else ``NONE``. The CM-I rule
         cross-checks this ACTUAL shape against the test's CLAIMED tags.
-        """
-        ...
-
-    def step_shapes_in_module(self, tree: object) -> StepShapeCorpus:
-        """Census the step-shape corpus of a test module (sustainable-test-suite slice-09).
-
-        Counts the pytest-bdd step definitions (``@given`` / ``@when`` / ``@then``
-        functions) in ``tree``, groups them by normalized body shape, and reports
-        ``total_step_definitions`` + the number of groups holding MORE than one step
-        (``near_duplicate_groups`` — each a collapsible near-duplicate cluster). The
-        normalization is structural (the sequence of statement/call shapes in the body),
-        so two step defs that perform the same body shape group together regardless of
-        their step-text literal. A module with no step definitions reports a zero census.
         """
         ...
 

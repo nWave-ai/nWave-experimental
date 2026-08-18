@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,37 @@ def _bounded_sandbox_prerequisites(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
 
 
+def _make_checkout(tmp_path):
+    """A disposable, always-clean git repo for `--checkout`.
+
+    `preflight.main`'s `--checkout` defaults to `Path.cwd()`, and row 16's
+    `resolve_clean_commit_sha` refuses a dirty tree BEFORE any packaging or
+    probe step -- so a test that omits `--checkout` couples its own pass/fail
+    to whatever state the SUITE'S OWN working tree happens to be in at the
+    moment it runs, not to the packaging/probe behavior under test. Every
+    call below passes this instead.
+    """
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    for args in (
+        ["init", "-q", "-b", "master"],
+        ["config", "user.email", "k4@example.test"],
+        ["config", "user.name", "k4"],
+    ):
+        subprocess.run(["git", *args], cwd=checkout, check=True, capture_output=True)
+    (checkout / "README.md").write_text("seed\n")
+    subprocess.run(
+        ["git", "add", "README.md"], cwd=checkout, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "seed"],
+        cwd=checkout,
+        check=True,
+        capture_output=True,
+    )
+    return checkout
+
+
 def _make_probe(root):
     probe = root / "probe-nwave"
     probe.mkdir(parents=True)
@@ -55,7 +87,7 @@ def test_pass_removes_exact_probe_and_leaves_sibling_untouched(tmp_path):
     probe = _make_probe(tmp_path)
     sibling = _make_sibling_sentinel(tmp_path)
 
-    removed = preflight.cleanup_probe_workspace(tmp_path, "present", [])
+    removed = preflight.cleanup_probe_workspace(tmp_path, "absent", [])
 
     assert removed is True
     assert not probe.exists()
@@ -99,13 +131,23 @@ def test_main_removes_probe_and_still_writes_arms_json_on_pass(tmp_path, monkeyp
     monkeypatch.setattr(
         preflight,
         "probe_engagement",
-        lambda root, venv, auth_profile, model: ("present", []),
+        lambda root, venv, auth_profile, model: ("absent", []),
     )
 
     task_file = tmp_path / "task.md"
     task_file.write_text("do the thing\n")
+    checkout = _make_checkout(tmp_path)
 
-    code = preflight.main(["--root", str(root), "--task-file", str(task_file)])
+    code = preflight.main(
+        [
+            "--root",
+            str(root),
+            "--task-file",
+            str(task_file),
+            "--checkout",
+            str(checkout),
+        ]
+    )
 
     assert code == 0
     assert not probe.exists()
@@ -145,8 +187,18 @@ def test_wheel_flag_reaches_exact_wheel_branch_without_build_arm_runtime(
         lambda root, venv, auth_profile, model: ("absent", []),
     )
 
+    checkout = _make_checkout(tmp_path)
     code = preflight.main(
-        ["--root", str(root), "--task-file", str(task_file), "--wheel", str(wheel)]
+        [
+            "--root",
+            str(root),
+            "--task-file",
+            str(task_file),
+            "--wheel",
+            str(wheel),
+            "--checkout",
+            str(checkout),
+        ]
     )
 
     assert code == 0
@@ -181,7 +233,17 @@ def test_checkout_branch_unchanged_when_wheel_flag_absent(tmp_path, monkeypatch)
         lambda root, venv, auth_profile, model: ("absent", []),
     )
 
-    code = preflight.main(["--root", str(root), "--task-file", str(task_file)])
+    checkout = _make_checkout(tmp_path)
+    code = preflight.main(
+        [
+            "--root",
+            str(root),
+            "--task-file",
+            str(task_file),
+            "--checkout",
+            str(checkout),
+        ]
+    )
 
     assert code == 0
     assert calls == ["checkout"]
@@ -221,6 +283,7 @@ def test_invalid_wheel_path_refuses_before_probe_setup(
     monkeypatch.setattr(preflight, "build_arm_runtime_from_wheel", _refuse_any_setup)
     monkeypatch.setattr(preflight, "probe_engagement", _refuse_any_setup)
 
+    checkout = _make_checkout(tmp_path)
     with pytest.raises(SystemExit) as excinfo:
         preflight.main(
             [
@@ -230,6 +293,8 @@ def test_invalid_wheel_path_refuses_before_probe_setup(
                 str(task_file),
                 "--wheel",
                 str(bad_path),
+                "--checkout",
+                str(checkout),
             ]
         )
 
@@ -260,8 +325,18 @@ def test_wheel_identity_path_and_digest_are_emitted(tmp_path, monkeypatch, capsy
         lambda root, venv, auth_profile, model: ("absent", []),
     )
 
+    checkout = _make_checkout(tmp_path)
     code = preflight.main(
-        ["--root", str(root), "--task-file", str(task_file), "--wheel", str(wheel)]
+        [
+            "--root",
+            str(root),
+            "--task-file",
+            str(task_file),
+            "--wheel",
+            str(wheel),
+            "--checkout",
+            str(checkout),
+        ]
     )
 
     assert code == 0

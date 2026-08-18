@@ -1,10 +1,9 @@
 """Public read-only CLI over the vendor-neutral ``CodeFactChain``.
 
-The OSS baseline assumes no paid or external analyzer.  The existing chain
-therefore degrades loudly from its optional Tsunami seam to the bundled AST
-tier, then to the zero-dependency textual floor.  This module adds no analysis
-logic and owns no state; it only parses a bounded request and renders the
-existing result envelope as JSON.
+The OSS baseline assumes no paid or external analyzer.  The chain degrades
+from the bundled AST tier to the zero-dependency textual floor.  This module
+adds no analysis logic and owns no state; it only parses a bounded request and
+renders the resolved envelope + its bounded ``Resolution`` trace as JSON.
 """
 
 from __future__ import annotations
@@ -19,6 +18,7 @@ from des.ports.code_fact_port import (
     CAPABILITY_ADR_SECTION,
     CAPABILITY_ATOMS_IN_FILE,
     STABLE_CORE_CAPABILITY_IDS,
+    Answered,
     CapabilityDescriptor,
 )
 
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as error:
         parser.error(str(error))
 
-    chain = CodeFactChain(root=Path(args.root), tsunami_present=False)
+    chain = CodeFactChain(root=Path(args.root))
     descriptor = CapabilityDescriptor(
         id=args.capability,
         stability="stable",
@@ -75,12 +75,13 @@ def main(argv: list[str] | None = None) -> int:
         io_schema="code-fact.v1",
         providing_adapter="negotiated",
     )
-    result = chain.query(descriptor, request)
-    if result is None:  # Stable-core invariant; kept honest if the registry drifts.
+    resolution = chain.resolve(descriptor, request)
+    if not isinstance(resolution, Answered):
+        # Stable-core invariant; kept honest if the registry drifts.
         parser.error(f"no provider covers stable capability {args.capability!r}")
 
-    output = asdict(result)
-    output["health_events"] = chain.health_events()
+    output = asdict(resolution.payload)
+    output["trace"] = [asdict(entry) for entry in resolution.trace]
     print(json.dumps(output, sort_keys=True))
     return 0
 

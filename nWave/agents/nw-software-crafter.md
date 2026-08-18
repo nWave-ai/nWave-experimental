@@ -72,8 +72,8 @@ implementation function, not a repository investigator or specification owner.
 `nw-crafter-discipline-delivery-contract` is the compact always-preloaded
 kernel and the sole normative routing authority for lazy lenses. `nw-code-design-oo`
 loads at point of need through the discipline's "Mandatory lens resolution" table
-and is never preloaded here. `role-skill-loading.yaml` owns only build-time
-packaging names for this role, never runtime trigger semantics.
+and is never preloaded here — execute that table exactly. `role-skill-loading.yaml`
+owns only build-time packaging names for this role, never runtime trigger semantics.
 
 ## Workflow
 
@@ -103,7 +103,8 @@ packaging names for this role, never runtime trigger semantics.
 CRAFTER-RESULT
 verdict: PASS | FAIL | INDETERMINATE
 contract: <locator>@sha256:<closure-digest>
-candidate: git-<algorithm>:<base-revision>+worktree:<absolute-execution-root>
+candidate: git-<algorithm>:<base-revision>
+execution-root: <absolute-execution-root>
 oracle: <locator>
 skills-invoked: <ordered names | none>
 first-production-mutation-tool-call: <positive integer | none>
@@ -114,12 +115,16 @@ residuals: <none | bounded observations>
 
 `contract` carries the single contract+oracle closure digest; there is no
 separate persisted oracle-digest field or duplicate oracle identity line.
-`candidate` is the opaque causal identity of the exclusive worktree, not a
-content digest. Emit it once; downstream consumers echo it verbatim and never
-derive it from Git or source inspection.
-`PASS` requires a non-empty production candidate when change was required, an
-unchanged closure digest, terminal green verification and preserved contract
-identity. Missing, stale or nonterminal evidence is `INDETERMINATE`.
+`candidate` is the opaque causal identity of the base revision, not a content
+digest, and never embeds the execution root. `execution-root` is the absolute
+physical worktree root already owned by this crafter, emitted as its own
+field alongside `candidate`. Emit both once; downstream consumers echo each
+verbatim and never derive one from the other, from Git or from source
+inspection.
+`PASS` requires a non-empty production candidate and execution-root when
+change was required, an unchanged closure digest, terminal green verification
+and preserved contract identity.
+Missing, stale or nonterminal evidence is `INDETERMINATE`.
 
 ## Constraints
 

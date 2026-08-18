@@ -245,15 +245,85 @@ def test_installed_code_fact_resolves_via_ast_or_textsearch_without_pythonpath(
         f"(no Graphify/Tsunami in an OSS install): {result}"
     )
     assert result["confidence"] in {"approx", "noisy"}
-    assert "health.gate.code-fact.tsunami-absent" in result["health_events"], (
-        "chain did not honestly LOUD-skip the absent Tsunami/Graphify tier"
+    # ADR-LA-001 D6-R1/R5, D9 slice (b): the retired ``health_events`` skip
+    # text is gone from the installed envelope -- the provider-neutral
+    # ``Resolution`` trace is the honest journey surface; the trace's
+    # answering entry must name the same provider as the public envelope.
+    answering_entries = [
+        entry for entry in result["trace"] if entry["event"] == "answered"
+    ]
+    assert len(answering_entries) == 1, (
+        f"expected exactly one answering trace entry, got: {result['trace']}"
     )
-    # tsunami-absent health text is expected and legitimate; what must never
-    # appear is an instruction to acquire/run a direct provider (dependency,
-    # executable, or MCP server) instead of degrading through Ast/TextSearch.
+    assert answering_entries[0]["provider_id"] == result["provider"], (
+        "trace's answering provider must match the public envelope's provider"
+    )
+    # what must never appear is an instruction to acquire/run a direct
+    # provider (dependency, executable, or MCP server) instead of degrading
+    # through Ast/TextSearch.
     forbidden = re.compile(r"graphify|pip install|npm install|\bmcp\b", re.IGNORECASE)
     assert not forbidden.search(out), (
         f"code-fact output leaked a dependency/executable/MCP instruction: {out}"
+    )
+
+
+@pytest.mark.e2e
+def test_installed_find_similar_responsibility_resolves_through_the_fold_without_pythonpath(
+    _venv_with_wheel: Path, tmp_path: Path
+) -> None:
+    """The installed ``des find-similar-responsibility`` console script routes
+    through the SAME composed ``CodeFactChain`` fold ``des code-fact`` uses
+    (ADR-LA-001 D6-R7) rather than constructing an adapter directly.
+
+    ADR-LA-001 D9 slice (i), D6-R16: parity assertions follow the envelope
+    through BOTH installed routes -- this is the second route (the first is
+    ``test_installed_code_fact_resolves_via_ast_or_textsearch_without_
+    pythonpath`` above), added so the installed surface cannot silently
+    freeze the pre-retarget direct-``AstAdapter`` bypass shape either. No
+    ``PYTHONPATH`` set, no Graphify/Tsunami binary on PATH -- the ordinary
+    OSS shape, mirroring that sibling test's harness.
+    """
+    site_packages = next((_venv_with_wheel / "lib").glob("python3.*/site-packages"))
+    des_pkg = site_packages / "des"
+    assert des_pkg.is_dir(), f"installed des package missing at {des_pkg}"
+
+    des_script = _venv_with_wheel / "bin" / "des"
+    env = {"HOME": str(tmp_path), "PATH": str(_venv_with_wheel / "bin")}
+    proc = subprocess.run(
+        [
+            str(des_script),
+            "find-similar-responsibility",
+            "--name",
+            "measure_blast_radius_v2",
+            "--scope",
+            str(des_pkg / "cli"),
+        ],
+        capture_output=True,
+        env=env,
+        timeout=60,
+        check=False,
+    )
+    out = proc.stdout.decode("utf-8", errors="replace")
+    err = proc.stderr.decode("utf-8", errors="replace")
+    assert proc.returncode == 0, (
+        f"des find-similar-responsibility failed:\nSTDOUT:\n{out}\nSTDERR:\n{err}"
+    )
+    result = json.loads(out)
+    assert set(result) == {"candidates", "reason_code", "detail", "unparsed_count"}, (
+        f"the installed envelope must be this CLI's own stable contract, got: {result}"
+    )
+    assert result["reason_code"] in {"live-non-callable", "absent"}, (
+        f"reason_code must be the CLI's own LOCKED vocabulary token, got: {result}"
+    )
+    if result["reason_code"] == "absent":
+        assert result["candidates"] == [], (
+            f"an absent reason_code must never carry a fabricated candidate "
+            f"list: {result}"
+        )
+    forbidden = re.compile(r"graphify|pip install|npm install|\bmcp\b", re.IGNORECASE)
+    assert not forbidden.search(out), (
+        f"find-similar-responsibility output leaked a dependency/executable/MCP "
+        f"instruction: {out}"
     )
 
 

@@ -262,6 +262,79 @@ def build_arm_runtime_from_wheel(root: Path, wheel: Path) -> Path:
     return venv
 
 
+class GitProvenanceUnavailable(RuntimeError):
+    """`git` is not resolvable on PATH.
+
+    K4 matrix row 16: provenance must bind the packaged wheel to a clean
+    EXACT commit SHA, never just the wheel's own digest. `git` is optional
+    tooling, never a runtime dependency of this harness's own job -- so its
+    absence degrades LOUD as this exception (INDETERMINATE provenance),
+    never a silent skip that lets a campaign proceed with no binding at all.
+    """
+
+
+def resolve_clean_commit_sha(checkout: Path, *, git: str | None = None) -> str:
+    """Return `checkout`'s exact HEAD commit SHA, refusing a dirty tree.
+
+    A wheel built from an uncommitted change cannot be reproduced from its
+    recorded commit SHA alone -- the SHA would name a source state the tree
+    was not actually in when the wheel was packaged. This must run BEFORE
+    packaging (`build_arm_runtime`) or wheel resolution (`--wheel`), so a
+    dirty checkout is refused before either path spends any work.
+    """
+    git = git if git is not None else shutil.which("git")
+    if git is None:
+        raise GitProvenanceUnavailable(
+            "WHAT: `git` is not on PATH.\n"
+            "WHY:  wheel provenance must bind to the exact clean commit SHA\n"
+            "      the wheel was packaged from; without git this cannot be\n"
+            "      established, and proceeding would silently record no\n"
+            "      provenance at all.\n"
+            "HOW:  install git or run this preflight where it is on PATH.\n"
+            "      This failure is INDETERMINATE, not a pass.\n"
+        )
+    status = subprocess.run(
+        [git, "-C", str(checkout), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        stdin=subprocess.DEVNULL,
+    )
+    if status.returncode != 0:
+        raise SystemExit(
+            f"WHAT: `git -C {checkout} status --porcelain` exited "
+            f"{status.returncode}.\n"
+            "WHY:  provenance cannot be bound to a commit without a working\n"
+            "      git status read.\n"
+            f"HOW:  reproduce the command and read the error below.\n{status.stderr}"
+        )
+    if status.stdout.strip():
+        raise SystemExit(
+            f"WHAT: {checkout} has uncommitted changes:\n{status.stdout}"
+            "WHY:  a wheel built from a dirty tree cannot be reproduced from\n"
+            "      its recorded commit SHA alone -- the SHA would name a\n"
+            "      state the tree was not actually in.\n"
+            "HOW:  commit or stash the changes, then rerun. This refusal is\n"
+            "      deliberate: provenance must bind to a CLEAN exact SHA.\n"
+        )
+    sha = subprocess.run(
+        [git, "-C", str(checkout), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        stdin=subprocess.DEVNULL,
+    )
+    if sha.returncode != 0 or not sha.stdout.strip():
+        raise SystemExit(
+            f"WHAT: `git -C {checkout} rev-parse HEAD` failed.\n"
+            "WHY:  no resolvable HEAD means there is no commit to bind\n"
+            "      provenance to.\n"
+            f"HOW:  ensure {checkout} is a git checkout with at least one\n"
+            f"      commit.\n{sha.stderr}"
+        )
+    return sha.stdout.strip()
+
+
 #: Both arms seed the SAME subscription login into their own config dir, first.
 #: Measured 2026-08-07, after it cost $15.04: an isolated `CLAUDE_CONFIG_DIR`
 #: does NOT inherit the subscription. It authenticates -- and bills API CREDIT,
@@ -352,16 +425,63 @@ def _arm_env() -> dict[str, str]:
     """The one declared env, identical for both arms; only `{workspace}`
     differs once `ArmSpec.rendered_env` substitutes it per arm.
 
-    PATH prepends the fixture-owned interpreter's bin dir (see
-    `pef.VENV_PYTHON`) ahead of the inherited PATH, so a bare `python` on
-    either arm's PATH resolves to the SAME clone-local venv the user-facing
-    fixture doc points a human at -- without a role-specific carrier for it.
+    PATH prepends, in order: the DES shims directory
+    `{workspace}/.claude-k4/bin`, then the fixture-owned interpreter's bin
+    dir (see `pef.VENV_PYTHON`), then the inherited PATH.
+
+    The shims entry closes row 9/14 (K4 matrix), found in an installed run:
+    `scripts/install/plugins/des_plugin.py`'s `_install_des_shims` copies
+    `des` (and friends) to `context.claude_dir / "bin"` -- `{workspace}/
+    .claude-k4/bin` for this arm's own `CLAUDE_CONFIG_DIR` -- and separately
+    writes that SAME absolute path into `.claude-k4/settings.json`'s
+    `env.PATH`, which is how Claude's HOOKS resolve `des`. This harness's
+    OWN `--settings` JSON (`_render_sandbox_settings`, built from THIS
+    PATH) governs the delivery agent's Bash tool instead, and previously
+    never carried that directory -- so hooks could resolve `des` while the
+    agent's own Bash got `des: command not found` (exit 127). Deriving the
+    value from `CLAUDE_CONFIG_DIR` (declared once, two lines below) rather
+    than a second hardcoded `.claude-k4/bin` string keeps the two
+    mechanisms reading the SAME path by construction, not by both authors
+    remembering to update two literals in sync.
+
+    The fixture-owned interpreter's bin dir lets a bare `python` on either
+    arm's PATH resolve to the SAME clone-local venv the user-facing fixture
+    doc points a human at -- without a role-specific carrier for it.
+
+    Row 22 (K4 matrix): `CLAUDE_CONFIG_DIR` scopes ONLY the Claude-platform
+    install. `scripts/install/install_nwave.py`'s Codex backup/skills path
+    resolves a SEPARATE `agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME",
+    Path.home()))` -- unset, it falls through to the operator's real
+    `Path.home()` and writes `.nwave/backups` and `.agents/skills` there
+    regardless of CLAUDE_CONFIG_DIR. Its Codex-agents root resolves the
+    SAME way from a separate `CODEX_HOME` (four call sites in
+    install_nwave.py: `create_backup`, `_legacy_codex_dev_candidates`,
+    `validate_codex_ownership_preflight`, `validate_codex_installation`, all
+    sharing the identical `Path(os.environ.get("CODEX_HOME", Path.home() /
+    ".codex"))` expression -- pinning the ONE env var closes all four
+    uniformly). `nwave_setup_steps` pins `--platform claude-code` today, so
+    none of these branches is exercised by the declared campaign, but a
+    defensive isolation boundary must not depend on which platform happens
+    to be requested. `OPENCODE_CONFIG_DIR` (`PathUtils.get_opencode_config_dir`,
+    default `~/.config/opencode`) and `COPILOT_HOME`
+    (`copilot_des_plugin._copilot_config_dir`, default `~/.copilot`) are the
+    same established per-platform override shape; pinned here for symmetry.
+    Pinning all of these here closes the escape for every current and
+    future arm, not just the one in use.
     """
+    claude_config_dir = "{workspace}/.claude-k4"
+    des_shims_bin = f"{claude_config_dir}/bin"
     fixture_bin = "{workspace}/" + str(Path(pef.VENV_PYTHON).parent)
     inherited = os.environ.get("PATH", "")
-    path = f"{fixture_bin}{os.pathsep}{inherited}" if inherited else fixture_bin
+    path = f"{des_shims_bin}{os.pathsep}{fixture_bin}"
+    if inherited:
+        path = f"{path}{os.pathsep}{inherited}"
     environment = {
-        "CLAUDE_CONFIG_DIR": "{workspace}/.claude-k4",
+        "CLAUDE_CONFIG_DIR": claude_config_dir,
+        "NWAVE_AGENTS_HOME": "{workspace}",
+        "CODEX_HOME": "{workspace}/.codex",
+        "OPENCODE_CONFIG_DIR": "{workspace}/.opencode",
+        "COPILOT_HOME": "{workspace}/.copilot",
         "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "{workspace}",
         "PATH": path,
     }
@@ -370,6 +490,32 @@ def _arm_env() -> dict[str, str]:
             "{workspace}/.k4-sandbox-lib" + os.pathsep + library_path
         )
     return environment
+
+
+def _rendered_arm_env(workspace: Path) -> dict[str, str]:
+    """The ONE arm env, actually rendered against a concrete `workspace` --
+    no `{workspace}` template placeholders left, overlaid on the inherited
+    process environment. Every step that can touch real filesystem config
+    (setup steps, permission canary, verification probe, delivery argv
+    construction) must build its env through this single function, never a
+    hand-rolled dict.
+
+    Row 22 (K4 matrix), found again in an installed run: `probe_engagement`
+    built its OWN inline `{**os.environ, "CLAUDE_CONFIG_DIR": ...}` for the
+    nWave arm's SETUP steps (`nwave-ai install`) instead of reusing
+    `_arm_env()` -- a second copy that pinned only CLAUDE_CONFIG_DIR, so
+    `install_nwave.py`'s `record_install_metadata` fell through to the
+    operator's real `Path.home()`. The three OTHER call sites
+    (`probe_delivery_permissions`, `probe_installed_dispatch_help`,
+    `probe_persisted_verification_commands`) already rendered `_arm_env()`
+    inline, correctly, each in their own copy of this exact expression --
+    also consolidated here so there is exactly one rendering, not four.
+    """
+    rendered = {
+        key: value.replace("{workspace}", str(workspace))
+        for key, value in _arm_env().items()
+    }
+    return {**os.environ, **rendered}
 
 
 def _render_sandbox_settings(path: str) -> str:
@@ -426,7 +572,7 @@ def _render_sandbox_settings(path: str) -> str:
     )
 
 
-def delivery_argv(model: str, path: str) -> list[str]:
+def delivery_argv(model: str, path: str, *, safe_mode: bool = False) -> list[str]:
     """One identical, fail-closed Claude runner for both comparison arms.
 
     `path` is projected into the `--settings` JSON's `env.PATH` here, for
@@ -444,8 +590,21 @@ def delivery_argv(model: str, path: str) -> list[str]:
     in `probe_delivery_permissions` instead passes an ALREADY-RENDERED literal
     path -- it renders and runs the delivery itself, with no `ArmSpec` in
     between.
+
+    `safe_mode=True` appends `--safe-mode`, which starts Claude with EVERY
+    customization disabled (CLAUDE.md, skills, plugins, hooks, MCP servers,
+    agents...). Row 18 (K4 matrix): a launcher friction note measured three
+    external Claude writers spending ~USD 3.70 and 3.5M cached/read tokens
+    over ~3 minutes with ZERO edits under a non-safe-mode cold start, while
+    safe-mode reached edits quickly. That makes `safe_mode=True` correct for
+    a narrow diagnostic writer that needs no customization at all -- exactly
+    `probe_delivery_permissions`'s Edit/Write canary -- but WRONG as the
+    default for the real nWave/control delivery arms below, whose entire
+    measured behavior depends on nWave's installed customizations being
+    active. Defaulting to False here, and opting in per call site, keeps
+    that distinction explicit rather than silently blanket-applied.
     """
-    return [
+    argv = [
         "claude",
         "-p",
         "{task}",
@@ -466,6 +625,9 @@ def delivery_argv(model: str, path: str) -> list[str]:
         '{"mcpServers":{}}',
         "--no-chrome",
     ]
+    if safe_mode:
+        argv.append("--safe-mode")
+    return argv
 
 
 def _probe_workspace(root: Path) -> Path:
@@ -483,6 +645,12 @@ def probe_delivery_permissions(workspace: Path, model: str) -> list[str]:
     arms.  Positive files prove the useful permissions; the absent config file
     plus the terminal result prove the deny boundary.  Any mismatch aborts
     before ``arms.json`` is written.
+
+    Runs with ``safe_mode=True`` (row 18, K4 matrix): this canary is a
+    three-tool-call diagnostic writer that needs none of nWave's installed
+    customizations, so `--safe-mode` is correct for it and cuts the
+    measured cold-start cost -- unlike the real delivery arms in `main`,
+    whose whole point is exercising those customizations.
     """
     edit_path = workspace / "k4-permission-edit.txt"
     write_path = workspace / "k4-permission-write.txt"
@@ -500,16 +668,10 @@ def probe_delivery_permissions(workspace: Path, model: str) -> list[str]:
         "use Bash, Agent, or read any other file. Finish with exactly: "
         f"{_PERMISSION_CANARY_RESULT}"
     )
-    environment = {
-        **os.environ,
-        **{
-            key: value.replace("{workspace}", str(workspace))
-            for key, value in _arm_env().items()
-        },
-    }
+    environment = _rendered_arm_env(workspace)
     argv = [
         token.replace("{task}", task)
-        for token in delivery_argv(model, environment["PATH"])
+        for token in delivery_argv(model, environment["PATH"], safe_mode=True)
     ]
     try:
         done = subprocess.run(
@@ -576,13 +738,7 @@ def probe_installed_dispatch_help(workspace: Path, venv: Path) -> list[str]:
     delivery runner whose own dispatch entry point cannot run.
     """
     argv = [str(venv / "bin" / "des"), "dispatch", "--help"]
-    environment = {
-        **os.environ,
-        **{
-            key: value.replace("{workspace}", str(workspace))
-            for key, value in _arm_env().items()
-        },
-    }
+    environment = _rendered_arm_env(workspace)
     try:
         done = subprocess.run(
             argv,
@@ -609,6 +765,116 @@ def probe_installed_dispatch_help(workspace: Path, venv: Path) -> list[str]:
             f"`des dispatch --help` output carries a Python failure marker: "
             f"{output[-600:]}"
         )
+    return problems
+
+
+#: Marker recorded verbatim, never paraphrased -- row 4's first divergence
+#: was a persisted `python3 manage.py` command dying against the WRONG
+#: interpreter. This is what that death looks like on stdout/stderr.
+_MODULE_NOT_FOUND_MARKER = "ModuleNotFoundError"
+
+
+def verification_command_argv(command: dict) -> list[str]:
+    """Flatten one schema v1.1 verification-scope command into a runnable
+    argv: the named executable followed by its arguments, VERBATIM -- no
+    rewriting, no reinterpretation of `executable.kind`. A real verification
+    executor invokes exactly this shape."""
+    executable = command.get("executable", {})
+    name = executable.get("name") or executable.get("path")
+    if not name:
+        raise ValueError(f"verification command names no executable: {command!r}")
+    return [name, *command.get("arguments", [])]
+
+
+#: ADR-SSOT-002 Section 4c: "`docs/delivery-contracts/{DeliveryId}.json` is
+#: the one admitted deterministic authoring-time projection" -- the SAME
+#: section also states plainly that this is "not a second path convention
+#: or a CLI-side discovery/fallback mechanism": `des dispatch` itself NEVER
+#: infers a contract path (no marker-walk, no cwd/env inference, no
+#: registry/receipt/self-digest -- Section 4a item 3/5, deliberately). This
+#: constant names the one canonical DIRECTORY that projection always
+#: resolves under; it is not a search path, and `discover_delivery_contract`
+#: below performs no walk beyond it.
+_CANONICAL_DELIVERY_CONTRACTS_DIR = Path("docs") / "delivery-contracts"
+
+
+def discover_delivery_contract(workspace: Path) -> Path | None:
+    """Return the ONE DeliveryContract at the canonical authoring-time
+    location inside `workspace`, or None when zero or more than one
+    candidate exists there.
+
+    This is a convenience lookup owned entirely by THIS harness for what
+    value to pass its own `probe_persisted_verification_commands`; it does
+    not change, extend, or shortcut `des dispatch`'s own resolution rule,
+    which still requires an explicit `--delivery-contract` and still
+    refuses any implicit discovery on its own boundary (ADR-SSOT-002
+    Section 4a items 3 and 5). Ambiguity (more than one candidate) refuses
+    exactly like absence: guessing which contract to verify would be worse
+    than not verifying one.
+    """
+    contracts_dir = workspace / _CANONICAL_DELIVERY_CONTRACTS_DIR
+    if not contracts_dir.is_dir():
+        return None
+    candidates = sorted(contracts_dir.glob("*.json"))
+    if len(candidates) != 1:
+        return None
+    return candidates[0]
+
+
+def probe_persisted_verification_commands(
+    contract_path: Path, workspace: Path
+) -> list[str]:
+    """Execute every schema v1.1 `verification-scope.commands` entry VERBATIM
+    against the SAME effective PATH/env a real K4 delivery arm runs under
+    (`_arm_env`) -- the causal reproduction of row 4's first divergence: a
+    persisted `python3 manage.py` command that resolved the wrong
+    interpreter and died with `ModuleNotFoundError` in a clean fixture.
+
+    This is a reusable capability, not wired into the default campaign
+    pipeline: the exact contract a K4 delivery produces is discovered only
+    after DISTILL, ahead of any given campaign run. A caller with a
+    concrete DeliveryContract path calls this directly before trusting it.
+    """
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    commands = contract.get("verification-scope", {}).get("commands", [])
+    if not commands:
+        raise SystemExit(
+            f"WHAT: {contract_path} carries no verification-scope commands.\n"
+            "WHY:  a preflight that finds nothing to execute proves nothing about\n"
+            "      whether the persisted argv actually runs.\n"
+            "HOW:  point --contract at a schema v1.1 DeliveryContract with a\n"
+            "      non-empty verification-scope.commands list.\n"
+        )
+    environment = _rendered_arm_env(workspace)
+    problems: list[str] = []
+    for command in commands:
+        argv = verification_command_argv(command)
+        try:
+            done = subprocess.run(
+                argv,
+                cwd=workspace,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            code, output = done.returncode, done.stdout + done.stderr
+        except subprocess.TimeoutExpired:
+            problems.append(f"`{' '.join(argv)}` timed out after 300s")
+            continue
+        except OSError as exc:
+            problems.append(
+                f"`{' '.join(argv)}` did not run: {type(exc).__name__}: {exc}"
+            )
+            continue
+        if _MODULE_NOT_FOUND_MARKER in output:
+            problems.append(
+                f"`{' '.join(argv)}` hit {_MODULE_NOT_FOUND_MARKER} under the "
+                f"fixture env: {output[-400:]}"
+            )
+        elif code != 0:
+            problems.append(f"`{' '.join(argv)}` exited {code}: {output[-400:]}")
     return problems
 
 
@@ -642,7 +908,7 @@ def probe_engagement(
         shutil.rmtree(workspace)
     workspace.mkdir(parents=True)
     config_dir = workspace / ".claude-k4"
-    env = {**os.environ, "CLAUDE_CONFIG_DIR": str(config_dir)}
+    env = _rendered_arm_env(workspace)
 
     for step in nwave_setup_steps(venv, auth_profile):
         code, tail = _run(step, cwd=workspace, env=env)
@@ -679,14 +945,22 @@ def probe_engagement(
 
 
 def cleanup_probe_workspace(root: Path, verdict: str, detail: list[str]) -> bool:
-    """Remove the probe workspace after a PASS verdict only; return whether removed.
+    """Remove the probe workspace after a PASS engagement only; return whether removed.
 
-    PASS is exactly `verdict == "present"` and `detail` empty. Every failure
-    verdict leaves the probe in place: the
-    failure messages above point a reader at `<root>/probe-nwave` for the HOW,
-    and a probe deleted out from under that pointer would make the HOW a lie.
+    PASS is decided on the PROPERTY `main` itself acts on -- `detail` empty --
+    never on the `verdict` DESIGNATION (GDP-8). `main`'s own control flow
+    only special-cases `verdict in {"broke", "broken-dispatch", "unsafe"}`
+    explicitly; every OTHER verdict falls through to its `if detail:` gate,
+    so a verdict this function does not yet know about still reaches success
+    there whenever `detail` is empty. Gating cleanup on the literal string
+    `"present"` would silently diverge from that: leaving a probe workspace
+    behind precisely when `main` already reported success and moved on.
+    Every verdict carrying non-empty `detail` still preserves the probe: the
+    failure messages above point a reader at `<root>/probe-nwave` for the
+    HOW, and a probe deleted out from under that pointer would make the HOW
+    a lie.
     """
-    if verdict != "present" or detail:
+    if detail:
         return False
     workspace = _probe_workspace(root)
     if workspace.exists():
@@ -716,6 +990,16 @@ def main(argv: list[str] | None = None) -> int:
             "skips build_arm_runtime entirely"
         ),
     )
+    parser.add_argument(
+        "--contract",
+        type=Path,
+        default=None,
+        help=(
+            "a schema v1.1 DeliveryContract whose verification-scope.commands "
+            "must run verbatim, no ModuleNotFound, in the clean nWave fixture "
+            "before arms.json is written; see probe_persisted_verification_commands"
+        ),
+    )
     args = parser.parse_args(argv)
 
     missing = missing_sandbox_prerequisites()
@@ -734,6 +1018,15 @@ def main(argv: list[str] | None = None) -> int:
         return 78
 
     wheel = resolve_wheel(args.wheel) if args.wheel is not None else None
+
+    # Row 16 (K4 matrix): refuse a dirty checkout BEFORE any packaging or
+    # wheel resolution spends work -- the recorded commit_sha below is only
+    # a valid provenance claim if the tree it names is exactly what it says.
+    try:
+        commit_sha = resolve_clean_commit_sha(args.checkout)
+    except GitProvenanceUnavailable as exc:
+        sys.stderr.write(str(exc))
+        return 78
 
     args.root.mkdir(parents=True, exist_ok=True)
     if wheel is not None:
@@ -797,6 +1090,63 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("engagement  : nWave section injected, agents and skills present")
 
+    contract_path = args.contract
+    contract_source = "--contract"
+    if contract_path is None:
+        contract_path = discover_delivery_contract(_probe_workspace(args.root))
+        contract_source = "discovered"
+    verification_status: dict[str, object]
+    if contract_path is None:
+        reason = (
+            "no --contract was given, and no single DeliveryContract exists "
+            f"at the canonical {_CANONICAL_DELIVERY_CONTRACTS_DIR}/ location "
+            "inside the nWave arm's workspace"
+        )
+        verification_status = {"status": "indeterminate", "reason": reason}
+        sys.stderr.write(
+            f"WHAT: {reason}.\n"
+            "WHY:  row 4's ADMISSION requires proving the persisted "
+            "verification-scope argv actually runs, no ModuleNotFound, in a\n"
+            "      clean fixture. ADR-SSOT-002 Section 4c names `docs/"
+            "delivery-contracts/{DeliveryId}.json` as the one admitted\n"
+            "      deterministic authoring-time projection, but `des dispatch` "
+            "itself never discovers a contract path (no marker-walk,\n"
+            "      no cwd/env inference, no registry -- Section 4a items 3 "
+            "and 5, deliberately). Before a real delivery has produced\n"
+            "      exactly one contract there, this harness has nothing to "
+            "execute either.\n"
+            "HOW:  pass --contract <path> explicitly once a DeliveryContract "
+            f"exists, or let a real delivery populate {_CANONICAL_DELIVERY_CONTRACTS_DIR}/\n"
+            "      in the arm workspace first. INDETERMINATE, not a skip: "
+            "the campaign proceeds, but row 4's ADMISSION is UNPROVEN for "
+            "this run.\n"
+        )
+    else:
+        verification_problems = probe_persisted_verification_commands(
+            contract_path, _probe_workspace(args.root)
+        )
+        if verification_problems:
+            sys.stderr.write(
+                f"WHAT: the persisted verification-scope.commands ({contract_source} "
+                f"contract {contract_path}) did not run cleanly in the clean fixture.\n"
+                + "".join(f"      - {p}\n" for p in verification_problems)
+                + "WHY:  a verification command that dies in a clean fixture (row 4, K4\n"
+                "      matrix) makes every K4 subject execution built on it "
+                "non-reproducible.\n"
+                f"HOW:  inspect {_probe_workspace(args.root)}, reproduce the argv/env "
+                "above by hand, and fix the persisted command before rerunning.\n"
+            )
+            return 1
+        verification_status = {
+            "status": "proven",
+            "contract": str(contract_path),
+            "source": contract_source,
+        }
+        print(
+            f"verification: persisted verification-scope commands ({contract_source} "
+            f"contract {contract_path}) ran clean"
+        )
+
     if cleanup_probe_workspace(args.root, verdict, detail):
         print(f"probe clean : removed {_probe_workspace(args.root)}")
 
@@ -819,17 +1169,30 @@ def main(argv: list[str] | None = None) -> int:
             "kind": "wheel",
             "path": str(wheel),
             "sha256": _sha256(wheel),
+            "commit_sha": commit_sha,
         },
         "arms": {
+            # `verification` (row 4, K4 matrix -- GDP-8 arity corollary: the
+            # third state must reach the AGGREGATE, not stop at stdout) is
+            # IDENTICAL on both arms deliberately: the check is a property of
+            # this campaign's candidate SHA/wheel, established once in
+            # preflight against the nWave arm's probe workspace -- the
+            # control arm never runs DES or produces a DeliveryContract of
+            # its own to verify. Duplicating the one fact onto both arm
+            # records (rather than only "nwave") means a downstream reader
+            # of EITHER arm's record can see it without knowing that
+            # asymmetry, and neither arm's record silently omits it.
             "control": {
                 "setup": control_setup_steps(args.auth_profile),
                 "argv": delivery,
                 "env": arm_env,
+                "verification": verification_status,
             },
             "nwave": {
                 "setup": nwave_setup_steps(venv, args.auth_profile),
                 "argv": delivery,
                 "env": arm_env,
+                "verification": verification_status,
             },
         },
     }

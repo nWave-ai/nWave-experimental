@@ -32,7 +32,6 @@ type is in a requested set. The slice-01/03/05 surface is preserved verbatim.
 from __future__ import annotations
 
 import ast
-import re
 from typing import TYPE_CHECKING
 
 from des.testarch.ports import (
@@ -41,8 +40,8 @@ from des.testarch.ports import (
     FunctionInfo,
     ImportInfo,
     Layer,
+    ReadInfo,
     SpawnShape,
-    StepShapeCorpus,
     SymbolInfo,
 )
 
@@ -65,20 +64,6 @@ _REAL_SUBPROCESS_CALLEES: frozenset[str] = frozenset(
         "check_output",
     }
 )
-
-# The pytest-bdd step-definition decorator base names (sustainable-test-suite slice-09
-# ``step_shapes_in_module``). A function decorated with one of these is a step definition
-# whose step-text literal (the decorator's first string argument) is the near-duplicate-step
-# similarity signal the existing-base ratio counts.
-_STEP_DECORATOR_NAMES: frozenset[str] = frozenset({"given", "when", "then"})
-
-# A trailing numeric token of a normalized step-text key (sustainable-test-suite slice-09).
-# Stripping the trailing index collapses the per-variant suffix ("... variant 0" / "...
-# variant 1") so the two variants of one near-duplicate cluster share a normalized shape.
-_TRAILING_INDEX_RE = re.compile(r"\s+\d+$")
-
-# Collapse every run of whitespace to a single space (step-text normalization).
-_WHITESPACE_RUN_RE = re.compile(r"\s+")
 
 # The in-process CLI-entry callee name a ``main(argv)`` body drives (slice-05
 # CM-I). A ``main`` / ``*.main`` callee with no real-subprocess spawn is the
@@ -183,6 +168,32 @@ class PythonAstAdapter:
             for node in self._calls_in(fn)
         ]
 
+    def reads_in_function(self, tree: object, fn: FunctionInfo) -> list[ReadInfo]:
+        """Return every non-call name reference inside ``fn``'s body.
+
+        A ``Name`` node in ``Load`` context is a read; the same node used as
+        the ``.func`` of an ``ast.Call`` (a bare call callee, ``target()``)
+        is excluded by node identity -- it is a call site, not a read, so
+        ``reads_in_function`` and ``calls_in_function`` never report the same
+        occurrence. ``tree`` is unused -- ``fn.node_ref`` anchors the
+        function subtree.
+        """
+        function_node = fn.node_ref
+        if not isinstance(function_node, ast.AST):
+            raise TypeError("FunctionInfo.node_ref must be an ast.AST handle")
+        call_callee_ids = {
+            id(call.func)
+            for call in ast.walk(function_node)
+            if isinstance(call, ast.Call)
+        }
+        return [
+            ReadInfo(name=node.id, lineno=node.lineno)
+            for node in ast.walk(function_node)
+            if isinstance(node, ast.Name)
+            and isinstance(node.ctx, ast.Load)
+            and id(node) not in call_callee_ids
+        ]
+
     def keyword_arg_names(self, call: CallInfo, kw: str) -> list[str]:
         """Return the literal names passed in ``call``'s ``kw`` keyword (slice-03 M8).
 
@@ -248,64 +259,6 @@ class PythonAstAdapter:
         if any(self._is_main_callee(callee) for callee in callees):
             return SpawnShape.IN_PROCESS_MAIN
         return SpawnShape.NONE
-
-    def step_shapes_in_module(self, tree: object) -> StepShapeCorpus:
-        """Census the step-shape corpus of a test module (sustainable-test-suite slice-09).
-
-        Finds every pytest-bdd step definition (a function decorated ``@given`` / ``@when``
-        / ``@then``), normalizes each one's step-text literal into a similarity key (lower-
-        case, whitespace-collapsed, trailing per-variant index stripped), groups by that key,
-        and reports ``total_step_definitions`` + the number of groups holding more than one
-        step (each a collapsible near-duplicate cluster). A module with no step definitions
-        reports a zero census — never a crash.
-        """
-        module = self._as_module(tree)
-        keys: list[str] = [
-            self._normalize_step_text(text)
-            for node in ast.walk(module)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and (text := self._step_text_of(node)) is not None
-        ]
-        groups: dict[str, int] = {}
-        for key in keys:
-            groups[key] = groups.get(key, 0) + 1
-        near_duplicate_groups = sum(1 for count in groups.values() if count > 1)
-        return StepShapeCorpus(
-            near_duplicate_groups=near_duplicate_groups,
-            total_step_definitions=len(keys),
-        )
-
-    @classmethod
-    def _step_text_of(cls, node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
-        """The step-text literal of a pytest-bdd step definition, else None.
-
-        A step definition is decorated with ``@given`` / ``@when`` / ``@then`` (bare,
-        called with a string, or attribute-accessed). The step text is the first string
-        argument of the decorator call (``@given("a maintainer ...")``); a bare decorator
-        with no call has no step text and yields the empty string (still a step definition).
-        A function decorated with none of the step decorators is not a step definition.
-        """
-        for decorator in node.decorator_list:
-            base = cls._decorator_base_name(decorator)
-            if base not in _STEP_DECORATOR_NAMES:
-                continue
-            if isinstance(decorator, ast.Call) and decorator.args:
-                first = decorator.args[0]
-                if isinstance(first, ast.Constant) and isinstance(first.value, str):
-                    return first.value
-            return ""
-        return None
-
-    @staticmethod
-    def _normalize_step_text(text: str) -> str:
-        """Normalize a step-text literal into a near-duplicate similarity key.
-
-        Lowercase, collapse internal whitespace to single spaces, strip a single trailing
-        numeric index (the per-variant suffix), so the two variants of one near-duplicate
-        cluster ("... variant 0" / "... variant 1") share a normalized key.
-        """
-        collapsed = _WHITESPACE_RUN_RE.sub(" ", text.strip().lower())
-        return _TRAILING_INDEX_RE.sub("", collapsed)
 
     def module_level_symbols_in_module(self, tree: object) -> list[SymbolInfo]:
         """Return every module-level ``def``/``class`` symbol (WS-9b, similar-

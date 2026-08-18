@@ -36,6 +36,9 @@ _REPO_ROOT = Path(__file__).parent.parent.parent
 
 # Representative track that lacked a local pytest_bdd_apply_tag hook and so
 # failed collection under genuinely-enforced --strict-markers.
+# `tests/feature_delta/acceptance/` was retired (directory no longer exists)
+# and dropped from this list; `activation_gating/` remains as the single
+# real BDD track witness.
 _PREVIOUSLY_FAILING_DIRS = [
     "tests/des/acceptance/activation_gating/",
 ]
@@ -45,7 +48,7 @@ _MARKER_ERROR_SUBSTRING = "not found in `markers` configuration option"
 
 @pytest.mark.fast_gate
 def test_strict_markers_collection_is_clean() -> None:
-    """Previously-failing tracks collect cleanly under --strict-markers."""
+    """Previously-failing track collects cleanly under --strict-markers."""
     result = subprocess.run(
         [
             sys.executable,
@@ -68,6 +71,6 @@ def test_strict_markers_collection_is_clean() -> None:
         f"not consuming metadata tags.\n{combined_output}"
     )
     assert result.returncode == 0, (
-        f"Collection of previously-failing tracks exited {result.returncode}, "
+        f"Collection of previously-failing track exited {result.returncode}, "
         f"expected 0.\n{combined_output}"
     )

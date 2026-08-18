@@ -28,9 +28,10 @@ Contract under test (DOES NOT EXIST YET -- active-RED by design):
     UNFILTERED `rglob`, `ast_code_fact_adapter.py:444-452` /
     `text_search_code_fact_adapter.py:196-202`) must derive exclusions from the
     target repo's own root `.gitignore`.
-  * `CodeFactChain.health_events()` (currently only ever emits the
-    `health.gate.code-fact.tsunami-absent` member) must gain a NEW "filtered"/
-    "unfiltered" signal member of the SAME `health.gate.code-fact.*` family.
+  * `CodeFactChain.resolve(...)` must return a `Resolution` whose answering
+    `TraceEntry.scope` names the scan-scope qualification ("filtered" /
+    "unfiltered") of the tier that answered -- read off the SAME immutable
+    `Resolution.trace`, never a mutable side channel.
   * A single adapter instance answering N `query.callers-of` calls for N distinct
     symbols must not re-walk/re-parse/re-read the tree N times (observed via an
     in-memory call-count seam -- an injected counting parser wrapping the REAL
@@ -328,34 +329,31 @@ def test_absent_ignore_file_walks_everything_and_signals_loud(tmp_path: Path) ->
     With NO ignore file present at all, the walk must include EVERYTHING it
     always did -- a `.venv`-named directory (today's de-facto scanned reality)
     stays scanned; the fix must never silently apply a default exclude list
-    that was never configured. AND the answer must be accompanied by a LOUD
-    `CodeFactChain.health_events()` signal naming the unfiltered condition, so
-    a caller can tell "no filtering was possible" apart from "filtering ran
-    and excluded nothing" -- both look identical in the raw `sites` list alone.
+    that was never configured. AND the answer must be accompanied by the
+    answering `Resolution.trace` entry's `scope == "unfiltered"`, so a caller
+    can tell "no filtering was possible" apart from "filtering ran and
+    excluded nothing" -- both look identical in the raw `sites` list alone.
     """
     from des.adapters.driven.codefact.code_fact_chain import CodeFactChain
+    from des.ports.code_fact_port import Answered
 
     repo = _seed_no_ignore_file_with_dotvenv_caller(tmp_path)
-    chain = CodeFactChain(root=repo, tsunami_present=False)
+    chain = CodeFactChain(root=repo)
 
-    result = chain.query(_callers_descriptor(), {"symbol": "helper"})
+    resolution = chain.resolve(_callers_descriptor(), {"symbol": "helper"})
 
-    assert result is not None
-    sites = list(result.payload["sites"])
+    assert isinstance(resolution, Answered)
+    sites = list(resolution.payload.payload["sites"])
     assert any(".venv" in site for site in sites), (
         "with NO ignore file present, today's unfiltered walk must be "
         f"preserved -- a .venv-named dir must still be scanned when nothing "
         f"declares it excluded. got {sites!r}"
     )
-    events = chain.health_events()
-    assert any(
-        "unfiltered" in event.lower() or "no-ignore" in event.lower()
-        for event in events
-    ), (
-        "an unfiltered scan (no ignore file present) must emit a LOUD "
-        "health_events() signal naming the no-ignore-file condition (the "
-        "health.gate.code-fact.* family) -- never a silent full walk that "
-        f"looks identical to a filtered-and-found-nothing one. got {events!r}"
+    assert resolution.trace[-1].scope == "unfiltered", (
+        "an unfiltered scan (no ignore file present) must be recorded as "
+        "scope='unfiltered' on the answering Resolution.trace entry -- never "
+        f"a silent full walk that looks identical to a filtered-and-found-"
+        f"nothing one. got trace={resolution.trace!r}"
     )
 
 
@@ -373,32 +371,33 @@ def test_symbol_with_only_excluded_consumer_is_never_a_silent_verified_zero(
     indistinguishable from a genuinely verified zero-callers answer, and a
     downstream consumer (`blast_radius_measurement`) would silently under-report
     the blast radius as S when it might be far larger. Whenever the underlying
-    walk excluded at least one path, the SAME `health_events()` "filtered"
-    signal `test_absent_ignore_file_walks_everything_and_signals_loud` proves
-    for the unfiltered case must ALSO fire here for the filtered case -- the
-    two are one signal family, not two independent ones (errors degrade toward
-    L, per GDP-6, never silently toward a smaller S).
+    walk excluded at least one path, the SAME `Resolution.trace` `scope ==
+    "filtered"` qualification `test_absent_ignore_file_walks_everything_and_signals_loud`
+    proves for the unfiltered case must ALSO fire here for the filtered case --
+    the two are one scope vocabulary, not two independent ones (errors degrade
+    toward L, per GDP-6, never silently toward a smaller S).
     """
     from des.adapters.driven.codefact.code_fact_chain import CodeFactChain
+    from des.ports.code_fact_port import Answered
 
     repo = _seed_only_excluded_caller(tmp_path)
-    chain = CodeFactChain(root=repo, tsunami_present=False)
+    chain = CodeFactChain(root=repo)
 
-    result = chain.query(_callers_descriptor(), {"symbol": "helper"})
+    resolution = chain.resolve(_callers_descriptor(), {"symbol": "helper"})
 
-    assert result is not None
-    sites = list(result.payload["sites"])
+    assert isinstance(resolution, Answered)
+    sites = list(resolution.payload.payload["sites"])
     assert sites == [], (
         f"the declared-excluded vendor-dir caller must not appear in the "
         f"answer. got {sites!r}"
     )
-    events = chain.health_events()
-    assert any("filter" in event.lower() for event in events), (
-        "a scan that excluded at least one path must emit a LOUD 'filtered' "
-        "health_events() signal -- a bare empty `sites` list here is "
-        "otherwise indistinguishable from a genuinely verified zero-callers "
-        "answer, which is the exact dangerous silent-narrowing (a false S) "
-        f"this AT guards against. got {events!r}"
+    assert resolution.trace[-1].scope == "filtered", (
+        "a scan that excluded at least one path must be recorded as "
+        "scope='filtered' on the answering Resolution.trace entry -- a bare "
+        "empty `sites` list here is otherwise indistinguishable from a "
+        "genuinely verified zero-callers answer, which is the exact "
+        f"dangerous silent-narrowing (a false S) this AT guards against. "
+        f"got trace={resolution.trace!r}"
     )
 
 

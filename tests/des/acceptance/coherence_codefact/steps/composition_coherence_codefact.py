@@ -21,8 +21,10 @@ DESIGN-pinned seam paths (slice-01 Code-Design + Reuse table):
   * port              : src/des/ports/code_fact_port.py
                         -> CodeFactPort (Protocol, query(descriptor, request)
                            -> CodeFactResult), CodeFactResult (frozen dataclass
-                           {provider, confidence, reason_code, payload}),
-                           CapabilityDescriptor (frozen
+                           {provider, confidence, payload} -- ADR-LA-001 D9
+                           slice (c): `reason_code` moved into the
+                           capability-owned payload schema, no longer an
+                           envelope field), CapabilityDescriptor (frozen
                            {id, stability, contract_version, io_schema,
                            providing_adapter}), the 5 locked capability-id
                            constants.
@@ -116,7 +118,8 @@ class CoherenceCodeFactComposition:
 
     # =====================================================================
     # AT-3 -- ONE code-fact gate re-derives query.never-wired via the port
-    #         + the answer is {provider, confidence, reason_code} tagged
+    #         + the answer is {provider, confidence} tagged, its payload
+    #         owning the never_wired disambiguating flag
     # =====================================================================
 
     def when_gate_rederives_never_wired(self, tmp_path: Path) -> None:
@@ -184,14 +187,20 @@ class CoherenceCodeFactComposition:
             f"provider={obs.provider!r}. {self._observed()}"
         )
 
-    def then_never_wired_reason_is_locked(self) -> None:
-        """A never-wired verdict carries a LOCKED reason_code (absent / live-non-callable)."""
+    def then_never_wired_payload_is_locked(self) -> None:
+        """A never-wired verdict carries its OWN payload-owned disambiguating flag.
+
+        ADR-LA-001 D9 slice (c), D6-R3: ``absent``/``live-non-callable`` is no
+        longer an envelope ``reason_code`` -- it is the ``never-wired``
+        payload's own ``never_wired`` bool (owned by that capability's
+        schema, never the generic envelope).
+        """
         obs = self._require_observable()
-        assert obs.reason_code in LOCKED_REASON_CODES, (
-            f"a never-wired re-derivation must tag a LOCKED reason_code from "
-            f"{sorted(LOCKED_REASON_CODES)!r} (ADR-LA-001 §5a -- disambiguating "
-            f"genuinely-absent from live-but-non-callable) -- got "
-            f"reason_code={obs.reason_code!r}. {self._observed()}"
+        assert obs.never_wired is not None, (
+            "a never-wired re-derivation must tag its payload with the LOCKED "
+            "disambiguating `never_wired` bool (ADR-LA-001 §5a/D9(c) -- "
+            "disambiguating genuinely-absent from live-but-non-callable) -- got "
+            f"never_wired={obs.never_wired!r}. {self._observed()}"
         )
 
     # =====================================================================
@@ -345,22 +354,24 @@ class CoherenceCodeFactComposition:
     # =====================================================================
 
     def _read_envelope(self, result: object) -> CodeFactObservable:
-        """Read the port-exposed {provider, confidence, reason_code} + answered."""
+        """Read the port-exposed {provider, confidence} + answered + the
+        never-wired payload's own `never_wired` disambiguating flag (ADR-LA-001
+        D9 slice (c): `reason_code` is no longer an envelope field)."""
         provider = getattr(result, "provider", None)
         confidence = getattr(result, "confidence", None)
-        reason_code = getattr(result, "reason_code", None)
         payload = getattr(result, "payload", None)
+        never_wired = payload.get("never_wired") if isinstance(payload, dict) else None
         return CodeFactObservable(
             answered=payload is not None,
             provider=self._token(provider),
             confidence=self._token(confidence),
-            reason_code=self._token(reason_code),
+            never_wired=never_wired,
         )
 
     def _absent_observable(self, exc: Exception) -> CodeFactObservable:
         """The seam is absent -> no observable; the Then names the missing seam."""
         return CodeFactObservable(
-            answered=False, provider=None, confidence=None, reason_code=None
+            answered=False, provider=None, confidence=None, never_wired=None
         )
 
     @staticmethod

@@ -43,7 +43,6 @@ class CapabilityId(Enum):
 class Provider(Enum):
     """Which adapter answered (ADR-LA-001 §5a; additive field, 1:1 with confidence)."""
 
-    TSUNAMI = "tsunami"
     AST = "ast"
     TEXTSEARCH = "textsearch"
 
@@ -107,11 +106,14 @@ class CodeFactObservable:
     """The observable slice of a ``CodeFactResult`` the ATs assert on.
 
     Port-exposed names only (Mandate-8 universe discipline): the envelope's
-    ``{provider, confidence, reason_code}`` provenance + whether a usable
-    (non-empty) answer came back. NEVER an internal adapter field.
+    ``{provider, confidence}`` provenance + whether a usable (non-empty)
+    answer came back + the ``never-wired`` capability's own payload-owned
+    disambiguating flag (ADR-LA-001 D9 slice (c), D6-R3: the envelope-level
+    ``reason_code`` is deleted -- ``absent``/``live-non-callable`` is now a
+    ``never-wired`` *payload* distinction, never an envelope field).
     """
 
     answered: bool  # a usable answer came back (the always-answer floor)
     provider: str | None  # which adapter answered (LOCKED token)
     confidence: str | None  # the cross-seam-readable confidence (LOCKED token)
-    reason_code: str | None  # the disambiguating reason (LOCKED token, may be None)
+    never_wired: bool | None  # the never-wired payload's own disambiguating flag

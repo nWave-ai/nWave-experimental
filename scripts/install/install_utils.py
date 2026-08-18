@@ -531,7 +531,11 @@ Backup contents: {files_count} framework files
     backups so they share a single retention pool.
     """
 
-    def apply_retention(self, max_count: int | None = None) -> "RetentionResult":
+    def apply_retention(
+        self,
+        max_count: int | None = None,
+        nwave_config_dir: Path | None = None,
+    ) -> "RetentionResult":
         """Prune oldest nwave-* backup directories until count <= max_count.
 
         Pool semantics (D1): sums across types — ``nwave-install-*``,
@@ -546,6 +550,15 @@ Backup contents: {files_count} framework files
         Args:
             max_count: Cap to enforce. If None, reads from global config or
                 falls back to DEFAULT_MAX_BACKUP_COUNT.
+            nwave_config_dir: Where to read ``global-config.json`` from when
+                resolving the config-driven cap. Forwarded verbatim to
+                ``read_backup_retention_config`` (None there defaults to
+                ``Path.home() / ".nwave"``) -- an isolated caller (e.g. a K4
+                harness campaign arm with NWAVE_AGENTS_HOME pinned) must pass
+                its own pinned dir here, or this read-only config lookup
+                still reaches the operator's real home even though nothing
+                gets WRITTEN there. Byte-diff sentinel tests cannot see a
+                read; this parameter is the fix, not a test technique.
 
         Returns:
             RetentionResult with the list of pruned directory names and the
@@ -555,7 +568,11 @@ Backup contents: {files_count} framework files
             ConfigValidationError: when the global config provides an invalid
                 max_count (negative, non-integer, etc.) — see scenario S9.
         """
-        cap = max_count if max_count is not None else read_backup_retention_config()
+        cap = (
+            max_count
+            if max_count is not None
+            else read_backup_retention_config(nwave_config_dir)
+        )
         # Defensive: positional args bypass config validation. Validate again
         # so explicit max_count=-1 from a caller gets the same treatment as
         # config-driven invalid values.

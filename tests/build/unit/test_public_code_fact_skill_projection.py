@@ -1,5 +1,6 @@
 """Regression test: public skills are free of Graphify/MCP residue and project des code-fact."""
 
+import json
 import re
 from pathlib import Path
 
@@ -122,3 +123,38 @@ def test_code_analysis_port_projects_all_five_exact_command_forms():
         assert command_form in content, (
             f"nw-code-analysis-port: missing exact command form `{command_form}`"
         )
+
+
+ENVELOPE_LINE_PATTERN = re.compile(r"The CLI returns JSON: `\{([^}]*)\}`")
+
+
+def test_skill_documented_envelope_matches_real_cli_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """The `{provider, confidence, payload, trace}` envelope SKILL.md documents
+    must be the exact key set `des code-fact` actually emits. Guards against
+    doc drift on the next envelope-shape change (e.g. the reason_code
+    relocation into payload, ADR-LA-001 D9 slice (c))."""
+    from des.cli.code_fact import main
+
+    (tmp_path / "subject.py").write_text(
+        "def target():\n    return 1\n\ndef caller():\n    return target()\n",
+        encoding="utf-8",
+    )
+    exit_code = main(["query.callers-of", "target", "--root", str(tmp_path)])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    real_keys = set(json.loads(captured.out))
+
+    content = (SKILLS_DIR / "nw-code-analysis-port" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    match = ENVELOPE_LINE_PATTERN.search(content)
+    assert match, "nw-code-analysis-port: no documented CLI envelope line found"
+    documented_keys = {token.strip() for token in match.group(1).split(",")}
+
+    assert documented_keys == real_keys, (
+        f"nw-code-analysis-port SKILL.md documents envelope keys "
+        f"{sorted(documented_keys)!r} but `des code-fact` actually emits "
+        f"{sorted(real_keys)!r} -- fix the SKILL.md envelope line"
+    )

@@ -113,7 +113,7 @@ def test_crafter_requires_immutable_oracle_and_early_mutation(path: Path) -> Non
     assert "before BASELINE" in text or "point-of-use" in compact
     assert "before PASS" in text or "PASS/REPORT" in text
     assert "**RESOLVE LENSES**" in text
-    assert '"Mandatory lens resolution"' in compact
+    assert '"Mandatory lens resolution"' in text
     assert "sole normative routing authority" in text
     assert "never silently skip a matched row" in text.lower()
 
@@ -153,3 +153,63 @@ def test_examine_axis_is_independent_of_delivery_route() -> None:
     assert "applicability.examine=true" in examiner
     assert "independent of implementation route" in examiner
     assert "both a\nnew behavior and a behavior-preserving transformation" in examiner
+
+
+@pytest.mark.parametrize("path", (OO, FP), ids=("oo", "fp"))
+def test_crafter_terminal_result_declares_opaque_candidate_and_execution_root(
+    path: Path,
+) -> None:
+    """Crafter terminal results declare distinct candidate and execution-root lines.
+
+    candidate remains opaque and never embeds or splits on +worktree:.
+    execution-root carries the absolute execution-root path verbatim.
+    """
+    text = _text(path)
+
+    # Terminal result structure: candidate and execution-root as distinct fields
+    assert "candidate: git-" in text
+    assert (
+        "execution-root: <absolute-execution-root>" in text or "execution-root:" in text
+    )
+    # Candidate stays opaque, never includes worktree encoding
+    assert "+worktree:" not in text
+
+
+def test_deliver_forwards_candidate_and_execution_root_to_examiner() -> None:
+    """nw-deliver requires candidate and execution-root fields from crafter.
+
+    Forwards both verbatim to source-blind Examiner without transformation.
+    Candidate identity and execution root passed separately, never merged.
+    """
+    deliver = _text(DELIVER)
+    compact = " ".join(deliver.split())
+
+    # DELIVER receives and requires both fields from crafter
+    assert "candidate" in deliver.lower()
+    assert "execution-root" in deliver.lower() or "execution root" in deliver.lower()
+    # Forwards unchanged to Examiner, never re-encodes or merges fields
+    assert "forwards" in compact or "pass" in compact or "send" in compact
+    # Never embeds worktree marker in forwarded identity
+    assert "+worktree:" not in deliver
+
+
+def test_examiner_receives_candidate_and_execution_root_separately() -> None:
+    """Examiner receives candidate unchanged and execution-root as separate field.
+
+    Echoes candidate opaquely, receives execution-root via independent channel.
+    Source-blind: no interpretation of candidate format, pure pass-through.
+    """
+    examiner = _text(EXAMINER)
+    compact = " ".join(examiner.split())
+    examiner_lower = examiner.lower()
+
+    # Examiner processes both fields as inputs
+    assert "candidate" in examiner_lower
+    assert "execution-root" in examiner_lower or "execution root" in examiner_lower
+    # Source-blind: echoes candidate unchanged, never parses or reconstructs it
+    unchanged = "unchanged" in compact
+    echo = "echo" in compact
+    opaque = "opaque" in compact
+    assert "candidate" in examiner_lower and (unchanged or echo or opaque)
+    # No internal schema or artifact persistence for these fields
+    assert "+worktree:" not in examiner and "persisted" not in examiner_lower

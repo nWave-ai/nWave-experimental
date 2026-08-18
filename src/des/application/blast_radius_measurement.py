@@ -44,12 +44,13 @@ from des.domain.blast_radius import (
 from des.ports.code_fact_port import (
     CAPABILITY_ATOMS_IN_FILE,
     CAPABILITY_CALLERS_OF,
+    Answered,
     CapabilityDescriptor,
 )
 
 
 if TYPE_CHECKING:
-    from des.ports.code_fact_port import CodeFactResult
+    from des.ports.code_fact_port import Resolution
 
 
 __all__ = [
@@ -287,7 +288,14 @@ def _consumer_counts(repo: Path, scope_paths: list[str]) -> dict[str, int | None
 
     D1 key format: `"<module-stem>.<symbol-name>"`. D2: an unparseable touched
     file keys on its repo-relative path with value `None`. Non-Python touched
-    files contribute no entries.
+    files contribute no entries. ADR-LA-001 D9 slice (h), D6-R14: resolves
+    through the composed port's `Resolution` (`CodeFactChain.resolve`, never
+    the legacy `.query()` thin edge) so a real `Failed` degrades the SAME
+    way the payload's `unparseable` flag always has, and a zero
+    caller-count is recorded ONLY when LA1-L11's verified-zero holds (the
+    answering `Resolution.trace` entry shows no fault and no scope
+    degradation) -- an unrelated unparseable file elsewhere in the repo
+    must never let a genuinely-unverified zero read as a confident one.
     """
     consumer_counts: dict[str, int | None] = {}
     repo_chain = CodeFactChain(root=repo)
@@ -305,25 +313,56 @@ def _consumer_counts(repo: Path, scope_paths: list[str]) -> dict[str, int | None
             consumer_counts[rel_path] = None
             continue
         file_chain = CodeFactChain(root=repo / rel_path)
-        atoms_result = file_chain.query(_ATOMS_DESCRIPTOR, {})
-        payload = _payload(atoms_result)
-        if payload.get("unparseable"):
+        atoms_resolution = file_chain.resolve(_ATOMS_DESCRIPTOR, {})
+        atoms_payload = _answered_payload(atoms_resolution)
+        if atoms_payload is None or atoms_payload.get("unparseable"):
             consumer_counts[rel_path] = None
             continue
         module_stem = Path(rel_path).stem
-        for atom in _string_list(payload.get("atoms")):
+        for atom in _string_list(atoms_payload.get("atoms")):
             key = f"{module_stem}.{atom}"
-            callers_result = repo_chain.query(_CALLERS_DESCRIPTOR, {"symbol": atom})
-            sites = _payload(callers_result).get("sites")
-            consumer_counts[key] = len(sites) if isinstance(sites, list) else 0
+            callers_resolution = repo_chain.resolve(
+                _CALLERS_DESCRIPTOR, {"symbol": atom}
+            )
+            consumer_counts[key] = _verified_caller_count(callers_resolution)
     return consumer_counts
 
 
-def _payload(result: CodeFactResult | None) -> dict[str, object]:
-    """The result's payload as a dict, or `{}` when no tier answered (defensive)."""
-    if result is None or not isinstance(result.payload, dict):
-        return {}
-    return result.payload
+def _answered_payload(resolution: Resolution) -> dict[str, object] | None:
+    """``resolution``'s payload dict when it is a real ``Answered`` -- ``None``
+    for ``Failed``/``Unsupported`` (no tier answered; the caller degrades the
+    SAME way an unparseable payload flag always has, D6-R14)."""
+    if not isinstance(resolution, Answered):
+        return None
+    payload = resolution.payload.payload
+    return payload if isinstance(payload, dict) else {}
+
+
+def _verified_caller_count(resolution: Resolution) -> int | None:
+    """The caller count off ``resolution``, honoring LA1-L11 (verified zero).
+
+    A non-``Answered`` resolution or an empty ``sites`` list under scope
+    degradation / any fault is an UNVERIFIED result -- ``None``, never a
+    fabricated ``0``. A non-empty ``sites`` list is always a real, counted
+    observation regardless of trace faults elsewhere.
+    """
+    if not isinstance(resolution, Answered):
+        return None
+    payload = resolution.payload.payload
+    payload = payload if isinstance(payload, dict) else {}
+    sites = _string_list(payload.get("sites"))
+    if sites:
+        return len(sites)
+    answering = next(
+        (entry for entry in resolution.trace if entry.event == "answered"), None
+    )
+    if (
+        answering is not None
+        and answering.fault_count == 0
+        and answering.scope in ("complete", "unfiltered")
+    ):
+        return 0
+    return None
 
 
 def _string_list(value: object) -> list[str]:

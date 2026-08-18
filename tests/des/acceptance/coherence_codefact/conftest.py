@@ -21,7 +21,8 @@ DRIVING SURFACES (Mandate-13 driving-port-only):
   * AT-1 / AT-2 / AT-3 -> Layer 3 composition: the REAL ``CodeFactPort`` /
     ``TextSearchAdapter`` / slice-01 gate via the production composition root; the
     observable is the ``CodeFactResult`` envelope (``{provider, confidence,
-    reason_code, payload}``) / the gate verdict + its provenance tag.
+    payload}``, ADR-LA-001 D9 slice (c): ``reason_code`` moved into the
+    capability-owned payload schema) / the gate verdict + its provenance tag.
   * AT-4 -> the REAL byte-lock guard mechanism: it asserts the OSS-serialized
     locked-vocabulary token set is byte-identical to the committed
     ``locked-vocabulary.json`` fixture, AND is SELF-PROBED (a planted-drift variant

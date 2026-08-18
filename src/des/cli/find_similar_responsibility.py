@@ -10,9 +10,12 @@ the operator writes a parallel implementation.
 
 Advisory, GDP-6-safe: this command ALWAYS exits 0 -- it informs, it never
 blocks. The signal distinguishing "I looked and found nothing" from "I could
-not look" is the ``reason_code`` field on the JSON payload, mirroring the
-LOCKED ``CodeFactResult.reason_code`` vocabulary (``des.ports.code_fact_port
-.ReasonCode``): ``"live-non-callable"`` (a real, parseable scope was
+not look" is this CLI's OWN ``reason_code`` field on the JSON payload
+(``des.ports.code_fact_port.ReasonCode``'s vocabulary, rendered locally --
+ADR-LA-001 D9 slice (c) / D6-R3 moved the equivalent port-level distinction
+out of the generic envelope and into the ``Resolution`` mode itself: a real
+search is an ``Answered``, "could not look" is a real ``Failed``, never a
+fabricated ``Answered``): ``"live-non-callable"`` (a real, parseable scope was
 searched) vs ``"absent"`` (the scope could not be searched at all --
 nonexistent path / empty directory / nothing parseable). An ``"absent"``
 reason_code always reports an empty candidate list -- but never the reverse
@@ -29,14 +32,21 @@ stdout token (JSON):
 coverage-gap signal: the count of candidate files under ``--scope`` the AST
 adapter could not parse during the SAME ranking pass -- so an operator can
 tell "searched everything and found nothing" apart from "searched what
-parsed". A fully-parseable corpus reports zero and is otherwise unchanged.
+parsed". A fully-parseable corpus reports zero and is otherwise unchanged. On
+the ``Failed`` ("could not look") path this count is read off the bounded
+``Resolution.trace``'s ``fault_count`` -- the SAME generic per-query fault
+accumulator every other capability's trace uses, never a second signal.
 
 Exit code is ALWAYS 0 (advisory, GDP-6 -- never blocks).
 
-Thin shell: builds an ``AstAdapter`` scoped to ``--scope``, queries the
-``query.similar-responsibility`` capability, and renders the ``CodeFactResult``
-envelope as the CLI's JSON contract -- no parallel fingerprint logic here (the
-adapter owns the structural computation).
+Thin shell: builds the composed ``CodeFactChain`` scoped to ``--scope`` (ADR-LA-001
+D6-R7 -- the SAME driving surface ``des code-fact`` uses; TextSearch's manifest
+never covers this additive capability, so Ast is the only, first-consulted
+covering provider -- observationally identical to calling it directly, but now
+composition-verified, LA1-L8), resolves the ``query.similar-responsibility``
+capability, and renders the ``Resolution`` as this CLI's own JSON contract --
+no parallel fingerprint logic here (the adapter owns the structural
+computation).
 """
 
 from __future__ import annotations
@@ -45,10 +55,12 @@ import argparse
 import json
 import sys
 
-from des.adapters.driven.codefact.ast_code_fact_adapter import AstAdapter
+from des.adapters.driven.codefact.code_fact_chain import CodeFactChain
 from des.ports.code_fact_port import (
     CAPABILITY_SIMILAR_RESPONSIBILITY,
+    Answered,
     CapabilityDescriptor,
+    Failed,
     ReasonCode,
 )
 
@@ -59,7 +71,7 @@ _ABSENT_DETAIL = (
 )
 
 
-def _detail_for(reason_code: str | None, candidate_count: int) -> str:
+def _detail_for(reason_code: str, candidate_count: int) -> str:
     """The self-explaining ``detail`` line for the JSON contract. Pure.
 
     ``absent`` always reports the fixed "could not look" explanation; a live
@@ -94,13 +106,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Query ``query.similar-responsibility`` and print the JSON contract.
+    """Resolve ``query.similar-responsibility`` and print the JSON contract.
 
     ALWAYS returns 0 -- advisory (GDP-6), it informs and never blocks.
     """
     args = _build_parser().parse_args(argv)
 
-    adapter = AstAdapter(root=args.scope)
+    chain = CodeFactChain(root=args.scope)
     descriptor = CapabilityDescriptor(
         id=CAPABILITY_SIMILAR_RESPONSIBILITY,
         stability="stable",
@@ -108,17 +120,30 @@ def main(argv: list[str] | None = None) -> int:
         io_schema="similar-responsibility.v1",
         providing_adapter="ast",
     )
-    result = adapter.query(descriptor, {"name": args.name})
-    payload = result.payload if isinstance(result.payload, dict) else {}
-    candidates = payload.get("candidates", [])
-    unparsed_count = payload.get("unparsed_count", 0)
+    resolution = chain.resolve(descriptor, {"name": args.name})
+
+    if isinstance(resolution, Answered):
+        payload = resolution.payload.payload
+        payload = payload if isinstance(payload, dict) else {}
+        candidates = payload.get("candidates", [])
+        unparsed_count = payload.get("unparsed_count", 0)
+        reason_code = ReasonCode.LIVE_NON_CALLABLE.value
+    else:
+        # A real Failed ("could not look") -- never a fabricated Answered
+        # (ADR-LA-001 D9 slice (c)). The bounded Resolution.trace already
+        # carries the exact unparseable-file count this CLI has always
+        # declared as `unparsed_count` -- no second signal.
+        assert isinstance(resolution, Failed)
+        candidates = []
+        unparsed_count = resolution.trace[0].fault_count if resolution.trace else 0
+        reason_code = ReasonCode.ABSENT.value
 
     print(
         json.dumps(
             {
                 "candidates": candidates,
-                "reason_code": result.reason_code,
-                "detail": _detail_for(result.reason_code, len(candidates)),
+                "reason_code": reason_code,
+                "detail": _detail_for(reason_code, len(candidates)),
                 "unparsed_count": unparsed_count,
             }
         )

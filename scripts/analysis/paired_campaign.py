@@ -282,6 +282,78 @@ def _auth_is_live() -> tuple[bool, str]:
     return True, "ok"
 
 
+#: One line, cheap. `_AUTH_PROBE` above is a HARD-CODED `claude` invocation
+#: that cannot see per-arm env, so it can only prove auth is live once,
+#: globally. Row 21 (K4 matrix) needs a probe PER ARM, through that arm's
+#: own declared env -- the confound this exists to catch is both arms
+#: drawing on ONE shared credit/quota pool, which a single global probe
+#: cannot distinguish from two disjoint healthy accounts.
+_HEADROOM_PROBE_TASK = "Reply with exactly: OK"
+
+#: Markers that name QUOTA/CREDIT exhaustion specifically. A transient
+#: network blip or an unrelated `is_error` must never read as "this arm is
+#: out of headroom" -- conflating them would refuse a campaign for the
+#: wrong reason, and the refusal message would lie about WHY.
+_HEADROOM_EXHAUSTION_MARKERS = (
+    "Credit balance is too low",
+    "rate_limit",
+    "rate limit",
+    "quota",
+)
+
+
+def _headroom_names_exhaustion(result: str) -> bool:
+    lowered = result.lower()
+    return any(marker.lower() in lowered for marker in _HEADROOM_EXHAUSTION_MARKERS)
+
+
+def _arm_headroom_is_sufficient(arm: ArmSpec, workspace: Path) -> tuple[bool, str]:
+    """One-line probe through THIS arm's own env, checked for a known
+    exhaustion marker before any pair is timed.
+
+    Refuses to CLASSIFY an unrecognized `is_error` as exhaustion: a probe
+    that cannot reach the provider at all (network, malformed spec) is a
+    different failure than a provider that reached back and said "no
+    headroom" -- the caller decides what a plain probe failure means;
+    this function answers only the exhaustion question.
+    """
+    environment = {**os.environ, **arm.rendered_env(workspace)}
+    probe_argv = arm.rendered(_HEADROOM_PROBE_TASK, workspace)
+    try:
+        done = subprocess.run(
+            probe_argv,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            cwd=workspace,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return (
+            True,
+            f"probe could not run, not classified as exhaustion: "
+            f"{type(exc).__name__}: {exc}",
+        )
+    try:
+        payload = json.loads(done.stdout)
+    except json.JSONDecodeError:
+        return (
+            True,
+            f"unparseable probe output, not classified as exhaustion: {done.stdout[:160]!r}",
+        )
+    if not isinstance(payload, dict):
+        return (
+            True,
+            "probe output is not a JSON object, not classified as exhaustion: "
+            f"{done.stdout[:160]!r}",
+        )
+    result = str(payload.get("result", ""))
+    if payload.get("is_error") and _headroom_names_exhaustion(result):
+        return False, result[:200]
+    return True, "ok"
+
+
 def _run_setup(arm: ArmSpec, *, workspace: Path, pair_dir: Path) -> tuple[bool, float]:
     """Run the arm's declared setup, sequentially, before the timer that counts.
 
@@ -515,7 +587,33 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 78
 
+    # Row 21 (K4 matrix): both arms can draw on ONE shared credit/quota
+    # pool; exhaustion then hits them in a correlated way mid-pair, and the
+    # pair the timer already started is not recoverable. Refuse to start
+    # rather than run degraded -- checked per arm, through that arm's own
+    # declared env, BEFORE campaign.json is written or any pair begins.
     args.out.mkdir(parents=True, exist_ok=True)
+    exhausted: list[tuple[str, str]] = []
+    for arm in arms:
+        probe_workspace = args.out / f".headroom-probe-{arm.name}"
+        probe_workspace.mkdir(parents=True, exist_ok=True)
+        sufficient, detail = _arm_headroom_is_sufficient(arm, probe_workspace)
+        if not sufficient:
+            exhausted.append((arm.name, detail))
+    if exhausted:
+        sys.stderr.write(
+            "WHAT: at least one arm's quota/credit headroom probe reports "
+            "exhaustion.\n"
+            + "".join(f"      - arm '{name}': {detail}\n" for name, detail in exhausted)
+            + "WHY:  both arms may share one credit/quota pool; running a pair now\n"
+            "      would hit exhaustion mid-pair in a CORRELATED way, invalidating\n"
+            "      the pair rather than measuring anything -- and the timer already\n"
+            "      started is not recoverable.\n"
+            "HOW:  restore headroom on the exhausted arm's account, or use disjoint\n"
+            "      or serialized credit sources per arm, then rerun. This refusal is\n"
+            "      deliberate: the campaign never runs degraded.\n"
+        )
+        return 78
     campaign_record = {
         "task": task,
         "arms": {

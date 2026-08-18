@@ -77,20 +77,24 @@ no alternate carrier or textual bypass, and no second schema implementation.
    targets and returns one terminal `CRAFTER-RESULT`. Root never fills in a
    missing implementation.
 4. **VALIDATE CANDIDATE** — require the crafter result's contract/oracle
-   identities to match input, its opaque candidate identity to contain the
-   validated base revision and exclusive execution root. Require
-   `changed-targets` to be non-empty and contained by contract targets, and every verification
-   command to have a terminal result. Otherwise the candidate is
-   `INDETERMINATE`. This PASS opens the no-mutation causal window through the
-   single terminal commit.
+   identities to match input, its opaque `candidate` identity to carry the
+   validated base revision, and its separate `execution-root` field to equal
+   the crafter's exclusive worktree root. Never decompose or parse `candidate`
+   to recover the root; the two fields are independent and both required.
+   Require `changed-targets` to be non-empty and contained by contract
+   targets, and every verification command to have a terminal result.
+   Otherwise the candidate is `INDETERMINATE`. This PASS opens the
+   no-mutation causal window through the single terminal commit.
 5. **JOIN REVIEW** — when `applicability.independent-review=true`, require an
    independent actual-diff verdict on the same contract and candidate identity.
 6. **EXAMINE** — when `applicability.examine=true`, give Vera every validated
-   charter in deterministic order plus its start recipe, the execution root
-   and the crafter's candidate identity verbatim. Send no changed-targets,
-   source, tests or producer claims. Vera performs one source-blind pass and
-   echoes the identity unchanged; it never derives it with Git/source. When
-   false, record only that the axis was not applicable.
+   charter in deterministic order plus its start recipe, the crafter's
+   `execution-root` field and its `candidate` identity, both forwarded
+   verbatim as the two distinct fields the crafter emitted. Send no
+   changed-targets, source, tests or producer claims. Vera performs one
+   source-blind pass and echoes the candidate identity unchanged; it never
+   derives it with Git/source. When false, record only that the axis was not
+   applicable.
 7. **HAND OFF** — join applicable verdicts with `PASS` as identity, `FAIL` as
    absorbing and `INDETERMINATE` preventing `PASS`. A terminal candidate exists
    only when required crafter, review and EXAMINE evidence joins without stale
@@ -108,7 +112,8 @@ Return exactly one concise block:
 DELIVERY-RESULT
 verdict: PASS | FAIL | INDETERMINATE
 contract: <locator>@sha256:<closure-digest>
-candidate: git-<algorithm>:<base-revision>+worktree:<absolute-execution-root>
+candidate: git-<algorithm>:<base-revision>
+execution-root: <absolute-execution-root>
 oracle: <locator>
 mutation: <first production mutation tool-call, or none>
 changed-targets: <non-empty repository-relative paths>
@@ -118,7 +123,9 @@ examine: PASS | FAIL | INDETERMINATE | NOT_APPLICABLE
 ```
 
 `contract` carries the single contract+oracle closure digest; there is no
-separate oracle digest field.
+separate oracle digest field. `candidate` and `execution-root` are the two
+distinct fields the selected crafter emitted, forwarded here verbatim as a
+product, never merged, split or re-derived from one another.
 
 `PASS` requires an accepted terminal result from every applicable owner.
 `FAIL` is absorbing. Missing, nonterminal, stale or identity-mismatched evidence

@@ -288,8 +288,14 @@ def test_preflight_arms_share_one_path_rule_to_the_fixture_interpreter(
     control_path = control.rendered_env(Path("/pairs/p1/control"))["PATH"]
     nwave_path = nwave.rendered_env(Path("/pairs/p1/nwave"))["PATH"]
 
-    assert control_path.startswith(f"/pairs/p1/control/k4-fixture-venv/bin{os.pathsep}")
-    assert nwave_path.startswith(f"/pairs/p1/nwave/k4-fixture-venv/bin{os.pathsep}")
+    assert control_path.startswith(
+        f"/pairs/p1/control/.claude-k4/bin{os.pathsep}"
+        f"/pairs/p1/control/k4-fixture-venv/bin{os.pathsep}"
+    )
+    assert nwave_path.startswith(
+        f"/pairs/p1/nwave/.claude-k4/bin{os.pathsep}"
+        f"/pairs/p1/nwave/k4-fixture-venv/bin{os.pathsep}"
+    )
     assert control_path.endswith(f"{os.pathsep}/usr/bin:/bin")
     assert nwave_path.endswith(f"{os.pathsep}/usr/bin:/bin")
 

@@ -44,7 +44,6 @@ from des.ports.code_fact_port import (
     CAPABILITY_NEVER_WIRED,
     CapabilityDescriptor,
     Confidence,
-    Provider,
 )
 
 
@@ -148,7 +147,7 @@ def test_mixed_python_typescript_tree_routes_to_text_floor_with_exact_atoms(
     result = CodeFactChain(root=tmp_path).query(_atoms_descriptor(), {})
 
     assert result is not None
-    assert result.provider == Provider.TEXTSEARCH.value
+    assert result.provider == "textsearch"
     assert result.confidence == Confidence.NOISY.value
     assert result.payload == {"atoms": ["TsWorker", "python_task", "tsTask"]}
 

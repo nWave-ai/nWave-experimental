@@ -12,7 +12,14 @@ cross-tier Published Language is the SAME SSOT, ``ADR-LA-001`` §2/§5a, ratifie
 with SF 2026-06-14, kebab-lowercase, byte-locked) -- re-importing them rather
 than re-authoring the locked vocabulary (Mandate-12: one body per domain noun).
 This module ADDS only the slice-02-specific scenario vocabulary (the
-fallback-chain tiers, the Tsunami-presence cases, the chain observable).
+fallback-chain scope + the chain observable).
+
+ADR-LA-001 D6-R1: the paid Tsunami tier was a fabricated precision stub no
+production caller ever wired (LA1-L7: a ``binding-resolved`` answer requires a
+real ``TransportWitness``, which OSS ships none of). Its vocabulary
+(``TsunamiPresence``, ``ChainScope.TSUNAMI_ONLY``, the loud-skip / gate-proceeds
+observable fields) is deleted WITH the stub, never frozen here -- the feature
+this module backs never seeds Tsunami state.
 
 These types are TEST-LOCAL (they never import production code) -- the ATs drive
 the SUT only through composition-root driving ports (Mandate-13).
@@ -38,39 +45,19 @@ from .domain_types_coherence_codefact import (  # noqa: F401  (re-exported vocab
 
 
 # ---------------------------------------------------------------------------
-# slice-02 scenario vocabulary -- the fallback chain tiers + Tsunami presence
+# slice-02 scenario vocabulary -- the fallback chain scope
 # ---------------------------------------------------------------------------
 
 
-class TsunamiPresence(Enum):
-    """Whether the paid-tier Tsunami precision adapter is wired at the chain head.
-
-    ABSENT is the NORMAL case on a target machine (``ADR-LA-001`` C7): Tsunami is
-    the paid open-core seam, wired only when its ``probe()`` passes. Its absence
-    must degrade LOUD (the chain continues to the next tier), never silent-fail.
-    PRESENT is the paid-tier case (a test double of the probe passes): the chain
-    head answers ``binding-resolved``.
-    """
-
-    ABSENT = "absent"  # paid Tsunami tier not wired -- the normal case
-    PRESENT = "present"  # paid Tsunami tier wired (probe passes)
-
-
 class ChainScope(Enum):
-    """Which capability class the chain query targets (C8).
+    """Which capability class the chain query targets.
 
     STABLE_CORE -- one of the LOCKED 5-capability stable core; the universal floor
                    always answers it, so the chain NEVER has a "no provider"
                    outcome (degrade to a lower tier, never a refuse).
-    TSUNAMI_ONLY -- a premium capability only the paid Tsunami tier can honor; with
-                    Tsunami ABSENT the chain SKIPS it LOUDLY (a
-                    ``health.gate.code-fact.*`` ledger event) and the gate PROCEEDS
-                    (C8) -- it does NOT block, does NOT fabricate a stable-core
-                    answer, does NOT hang.
     """
 
     STABLE_CORE = "stable-core"
-    TSUNAMI_ONLY = "tsunami-only"
 
 
 @dataclass(frozen=True)
@@ -78,26 +65,16 @@ class ChainObservable:
     """The observable slice of a chain negotiation the slice-02 ATs assert on.
 
     Port-exposed names only (Mandate-8 universe discipline): the answering
-    provider + its declared confidence + whether a usable answer came back +
-    whether the chain emitted a LOUD skip signal (the
-    ``health.gate.code-fact.*`` event) and whether the gate PROCEEDED. NEVER an
-    internal adapter field.
+    provider + its declared confidence + whether a usable answer came back.
+    NEVER an internal adapter field.
 
-    ``answered``        -- a usable (non-empty) answer came back from some tier.
-    ``provider``        -- which tier answered (LOCKED token), or None when a
-                           Tsunami-only capability was skipped loudly.
-    ``confidence``      -- the answering tier's declared confidence (LOCKED token).
-    ``reason_code``     -- the disambiguating reason (LOCKED token, may be None).
-    ``loud_skip_event`` -- a LOUD ``health.gate.code-fact.*`` skip signal was
-                           emitted (the degrade-LOUD observable; True when a tier
-                           was skipped because it was absent).
-    ``gate_proceeded``  -- the gate continued (did NOT block / hang) after a
-                           skip -- the C8 "gate PROCEEDS" observable.
+    ``answered``    -- a usable (non-empty) answer came back from some tier.
+    ``provider``    -- which tier answered (LOCKED token).
+    ``confidence``  -- the answering tier's declared confidence (LOCKED token).
+    ``reason_code`` -- the disambiguating reason (LOCKED token, may be None).
     """
 
     answered: bool
     provider: str | None
     confidence: str | None
     reason_code: str | None
-    loud_skip_event: bool
-    gate_proceeded: bool

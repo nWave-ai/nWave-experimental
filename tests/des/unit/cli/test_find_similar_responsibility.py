@@ -7,10 +7,9 @@ Feature-delta: docs/feature/codefact-similar-responsibility/feature-delta.md
 A NEW thin observable CLI (`src/des/cli/find_similar_responsibility.py`,
 `main(argv) -> int`) that invokes a NEW additive `CodeFactPort` capability
 (`query.similar-responsibility`, AST-tier, dispatched in
-`AstAdapter.query()` mirroring the shipped `_step_shape_corpus` pattern) so
-an operator about to author a new symbol sees the RANKED existing symbols
-whose structural fingerprint (name-token Jaccard + arity) overlaps the
-proposed name -- before writing a parallel implementation.
+`AstAdapter.query()`) so an operator about to author a new symbol sees the
+RANKED existing symbols whose structural fingerprint (name-token Jaccard +
+arity) overlaps the proposed name -- before writing a parallel implementation.
 
 Advisory, GDP-6-safe (never blocks): the tool always exits 0 -- it informs,
 it never gates (charter, "Expected observations" bullet 4). The signal that
@@ -19,8 +18,7 @@ distinguishes "I looked and found nothing" from "I could not look" is the
 `CodeFactResult.reason_code` vocabulary (`ReasonCode`, `code_fact_port.py`):
 `"live-non-callable"` -- a real, parseable scope was searched (whether or
 not it yielded candidates) -- vs `"absent"` -- the scope could not be
-searched at all (nonexistent path / empty directory / nothing parseable) --
-mirroring `AstAdapter._step_shape_corpus`'s own absent-vs-live split. An
+searched at all (nonexistent path / empty directory / nothing parseable). An
 `"absent"` reason_code with a fabricated `"candidates": []` that looks
 identical to a genuine empty search is exactly the silent-wrong failure the
 design (GDP-6) and the charter's two NEGATIVE oracle bullets forbid.

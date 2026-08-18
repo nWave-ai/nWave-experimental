@@ -115,3 +115,58 @@ def test_validator_is_a_public_des_subcommand() -> None:
     row = next(row for row in _REGISTRY if row.name == "validate-delivery-contract")
 
     assert row.module_path == "des.cli.validate_delivery_contract"
+
+
+def _seed_source_file(root: Path, repo_relative_path: str) -> None:
+    src = ROOT / repo_relative_path
+    dst = root / repo_relative_path
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_bytes(src.read_bytes())
+
+
+def test_declared_import_naming_a_real_symbol_is_accepted(
+    tmp_path: Path, capsys
+) -> None:
+    """K4 matrix row 12 admission: a real base-tree symbol still validates."""
+    contract_dict = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    target_path = next(iter(contract_dict["targets"]))
+    contract_dict["targets"][target_path]["declared-imports"] = [
+        "des.domain.repo_path_resolver.resolve_repo_root"
+    ]
+    contract_path = tmp_path / "delivery.json"
+    contract_path.write_text(json.dumps(contract_dict), encoding="utf-8")
+    seed_referenced_oracle(tmp_path, contract_dict)
+    _seed_source_file(tmp_path, "src/des/domain/repo_path_resolver.py")
+
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "--delivery-contract", "delivery.json"]
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["verdict"] == "VALID"
+
+
+def test_declared_import_naming_a_nonexistent_symbol_is_rejected(
+    tmp_path: Path, capsys
+) -> None:
+    """K4 matrix row 12 admission: an invented symbol is rejected loudly."""
+    contract_dict = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    target_path = next(iter(contract_dict["targets"]))
+    contract_dict["targets"][target_path]["declared-imports"] = [
+        "des.domain.this_symbol_does_not_exist_zzz"
+    ]
+    contract_path = tmp_path / "delivery.json"
+    contract_path.write_text(json.dumps(contract_dict), encoding="utf-8")
+    seed_referenced_oracle(tmp_path, contract_dict)
+
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "--delivery-contract", "delivery.json"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "des.domain.this_symbol_does_not_exist_zzz" in captured.err
+    assert "WHAT:" in captured.err
+    assert "WHY:" in captured.err
+    assert "HOW:" in captured.err

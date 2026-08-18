@@ -512,8 +512,12 @@ class NWaveInstaller:
                 runs — see scope.md S9 ("no backup is touched if config is
                 invalid"); equivalently, no install proceeds either.
         """
+        # Read-only, but still an isolation boundary: `apply_retention` below
+        # reads `global-config.json`'s `backups.max_count` regardless of
+        # platform, and a sentinel byte-diff test cannot observe a READ the
+        # way it observes a write. Computed once, for both branches.
+        agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME") or Path.home())
         if "codex" in self.effective_target_platforms:
-            agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME", Path.home()))
             codex_dir = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
             self.backup_manager.backup_root = agents_home / ".nwave" / "backups"
             self.backup_manager.backup_dir = (
@@ -530,7 +534,9 @@ class NWaveInstaller:
             self.backup_manager.create_backup(dry_run=self.dry_run)
         if self.dry_run:
             return
-        self.backup_manager.apply_retention(max_count=None)
+        self.backup_manager.apply_retention(
+            max_count=None, nwave_config_dir=agents_home / ".nwave"
+        )
 
     def _legacy_codex_dev_candidates(self) -> list[tuple[Path, Path]]:
         """Return only safe, non-manifested legacy dev assets for quarantine.
@@ -1304,7 +1310,16 @@ class NWaveInstaller:
             registry.register(AgentsPlugin())
             registry.register(CommandsPlugin())
             registry.register(SkillsPlugin())
-            registry.register(AttributionPlugin())
+            # NWAVE_AGENTS_HOME honored here too (same override every other
+            # ~/.nwave-rooted read/write in this file already honors): left
+            # at AttributionPlugin's own default (None -> Path.home()), an
+            # isolated caller with NWAVE_AGENTS_HOME pinned still had this
+            # plugin's config_dir/hooks_dir/global-config.json read-and-write
+            # (migrate_legacy_hook, install_prepare_commit_msg_hook,
+            # read/write_global_config) land in the operator's real home.
+            # Default is unchanged when unset.
+            agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME") or Path.home())
+            registry.register(AttributionPlugin(config_dir=agents_home / ".nwave"))
         # OpenCode plugins (registered when opencode detected)
         if target_platforms and "opencode" in target_platforms:
             opencode_skills = OpenCodeSkillsPlugin()
@@ -2181,9 +2196,17 @@ def main():
         return 0
 
     if installer.validate_installation():
-        # Record install provenance (machine-scoped ~/.nwave) so the doctor
-        # VersionSyncCheck can later detect a package
-        # upgraded without re-running install. Best-effort; never fails the run.
+        # Record install provenance (machine-scoped ~/.nwave by default) so
+        # the doctor VersionSyncCheck can later detect a package upgraded
+        # without re-running install. Best-effort; never fails the run.
+        #
+        # NWAVE_AGENTS_HOME honored here too (same override every other
+        # ~/.nwave-rooted read/write in this file already honors -- see
+        # create_backup, _legacy_codex_dev_candidates,
+        # validate_codex_ownership_preflight, show_installation_summary's
+        # helper): an isolated caller (e.g. a K4 harness campaign arm) that
+        # pins it must never have this write land in the operator's real
+        # home instead. Default is unchanged when unset.
         #
         # Known limitation: the record is keyed to the machine, NOT the install
         # target. A `--target` install shares this single ~/.nwave record with
@@ -2192,8 +2215,9 @@ def main():
         # installed. Single-target is the norm; left as-is deliberately.
         installed_version = _detect_installed_version()
         if installed_version is not None:
+            agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME") or Path.home())
             record_install_metadata(
-                Path.home() / ".nwave" / "global-config.json",
+                agents_home / ".nwave" / "global-config.json",
                 installed_version=installed_version,
             )
 

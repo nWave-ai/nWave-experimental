@@ -8,14 +8,11 @@ The code-fact provider family behind :class:`des.ports.code_fact_port.CodeFactPo
 * :class:`~des.adapters.driven.codefact.ast_code_fact_adapter.AstAdapter`
   — the per-language structural tier (``approx`` confidence); delegates to the
   sole testarch parser (NO second ``import ast``).
-* :class:`~des.adapters.driven.codefact.tsunami_code_fact_adapter.TsunamiAdapter`
-  — the paid-tier precision seam (``binding-resolved`` confidence); wired only
-  when its ``probe`` passes (absence is the normal OSS case).
 * :class:`~des.adapters.driven.codefact.code_fact_chain.CodeFactChain`
-  — the negotiation that walks ``Tsunami -> Ast -> TextSearch`` top-down, tags the
-  answer, and degrades LOUD past an absent paid tier.
+  — the negotiation that walks ``Ast -> TextSearch`` top-down and tags the
+  answer.
 
-slice-01 shipped the floor + a floor-backed chain (the walking-skeleton
-substrate); slice-02 adds the ``AstAdapter`` / ``TsunamiAdapter`` precision tiers
-and the full fallback-chain negotiation.
+ADR-LA-001 D6-R1: the paid ``TsunamiAdapter`` precision seam was a fabricated
+tier (no production caller ever wired it; a ``binding-resolved`` answer
+requires a real ``TransportWitness``, LA1-L7) — deleted, not shipped in OSS.
 """

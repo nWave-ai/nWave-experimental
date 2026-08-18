@@ -1727,6 +1727,7 @@ TIER_MAP = {
     "tests/bugs/": "acceptance",
     # Feature delta tiers
     "tests/feature_delta/unit/": "unit",
+    "tests/feature_delta/acceptance/": "e2e",  # calls nwave-ai CLI; runs at e2e stage
     # Polyglot smoke tests (Kotlin/Rust/Go/Java/TS/C# builds) — not unit/acceptance
     "tests/polyglot-pilot/": "polyglot_smoke",
     # Root-level tests

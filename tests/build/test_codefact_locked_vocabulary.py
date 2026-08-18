@@ -10,6 +10,13 @@ An OSS edit that renames ``binding-resolved -> precise``, adds a 6th ``confidenc
 label, or drifts a capability id makes the guard RED — so a future OSS edit cannot
 silently erode the SF-shared vocabulary (R2, Critical/cross-tier).
 
+ADR-LA-001 D4/D9 slice (g), D6-R10: ``provider`` is an OPEN, non-empty string —
+the closed ``Provider`` enum is deleted, so ``tsunami`` is retired from the
+"providers" vocabulary this guard serializes. The bundled OSS providers are
+derived from the real shipped adapters' own ``provider_id`` class attribute
+(never a hand-typed duplicate list, never the deleted enum) — the SAME two ids
+the public envelope actually emits: ``"ast"``, ``"textsearch"``.
+
 Auto-discovered by the existing ``run_contract_gate._arch_invariant_paths`` glob
 (it returns the ``tests/build/`` directory; a new file here is picked up
 automatically — no change to ``_arch_invariant_paths`` itself).
@@ -25,10 +32,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from des.adapters.driven.codefact.ast_code_fact_adapter import AstAdapter
+from des.adapters.driven.codefact.text_search_code_fact_adapter import (
+    TextSearchAdapter,
+)
 from des.ports.code_fact_port import (
     STABLE_CORE_CAPABILITY_IDS,
     Confidence,
-    Provider,
     ReasonCode,
 )
 
@@ -41,16 +51,17 @@ _COMMITTED_FIXTURE = (
 
 
 def serialize_locked_vocabulary() -> dict[str, list[str]]:
-    """The OSS-serialized LOCKED token set, derived from the PRODUCTION port enums.
+    """The OSS-serialized LOCKED token set, derived from PRODUCTION.
 
     This is the single source the guard compares the committed fixture against —
     the production capability ids + the ``{provider, confidence, reason_code}``
     value vocabularies (ADR-LA-001 §2/§5a), kebab-lowercase, sorted for a stable,
-    byte-comparable serialization.
+    byte-comparable serialization. ``providers`` reads each bundled adapter's OWN
+    ``provider_id`` (D4, open identity) rather than a closed enum.
     """
     return {
         "capability_ids": sorted(STABLE_CORE_CAPABILITY_IDS),
-        "providers": sorted(member.value for member in Provider),
+        "providers": sorted({AstAdapter.provider_id, TextSearchAdapter.provider_id}),
         "confidences": sorted(member.value for member in Confidence),
         "reason_codes": sorted(member.value for member in ReasonCode),
     }

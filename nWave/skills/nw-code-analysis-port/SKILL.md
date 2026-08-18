@@ -24,7 +24,7 @@ des code-fact query.atoms-in-file --root FILE_OR_ROOT
 des code-fact query.adr-section ANCHOR --root ROOT
 ```
 
-The CLI returns JSON: `{ provider, confidence, payload, reason_code, health_events }`. Agents consume that envelope and degrade LOUD; they never probe/install/select an analyzer themselves.
+The CLI returns JSON: `{ provider, confidence, payload, trace }`. Agents consume that envelope and degrade LOUD; they never probe/install/select an analyzer themselves.
 
 ## The resolution rule (one order, every time)
 
@@ -43,7 +43,7 @@ The CLI delegates to the best available bundled adapter. You report the answer t
 - Always state which adapter answered and at what confidence: `approx` | `noisy`.
 - If the answer came from **TextSearch (grep)**, announce the degradation AND its limits. Example: "AST unavailable → grep fallback (`noisy`): may include false positives, miss dynamic/indirect references, and conflate same-named symbols."
 - Never silently let grep stand in for the port. A `noisy` answer presented as fact is the failure mode this skill exists to prevent.
-- The CLI emits `health_events` when it degrades to a lower tier — that signal is the loud announcement a gate reads.
+- The CLI's `trace` array names which provider answered and its scan-scope honesty (`complete` | `filtered` | `unfiltered`) — that per-query record is the loud announcement a gate reads.
 
 ## Operations quick-reference (question → CLI command)
 
@@ -56,7 +56,7 @@ The CLI delegates to the best available bundled adapter. You report the answer t
 | What does an ADR / design-prose section say? | `des code-fact query.adr-section ANCHOR --root ROOT` | yes |
 | Call graph / change-scope / scope-delta | **unsupported by stable CLI** — use bounded stable queries + manual inspection with explicit limitation note | no |
 
-The five stable-core capabilities answer on any Python-only target. A capability with no covering adapter returns no answer (none faked), records the loud degrade event, and the work proceeds — do NOT substitute grep and call it the same fact.
+The five stable-core capabilities answer on any Python-only target. A capability with no covering adapter returns no answer (none faked), records the honest failure in `trace`, and the work proceeds — do NOT substitute grep and call it the same fact.
 
 ## Invocation — how to use the CLI
 
@@ -64,7 +64,7 @@ For ANY structural code fact, call the CLI directly:
 
 1. **Stable-core queries** — use `des code-fact query.<capability>` with the exact form above.
    - The CLI parses JSON and emits it; consume the `provider`, `confidence`, and `payload` fields.
-   - Inspect `health_events` for loud degrade signals (AST unavailable → TextSearch fallback).
+   - Inspect `trace` for the answering provider + scan-scope honesty (AST unavailable → TextSearch fallback).
 2. **Beyond the five capabilities** — feature-level change-scope / call-graph analysis has no stable CLI today.
    Say so and take the fallback: bounded stable queries (e.g. `query.callers-of` per known seams) + manual inspection + explicit limitation note.
 3. **Bundled additive tool** — `des find-similar-responsibility --scope ROOT --name NAME` is a purpose-specific addition to `des code-fact`, not an external provider dependency.
@@ -75,17 +75,16 @@ Tag every answer with provider + confidence (`approx` | `noisy`). Defaulting to 
 ## WHY through the CLI, not grep
 
 - **Structural vs lexical.** AST is structural and reports `approx` confidence; TextSearch (grep) is lexical and reports `noisy` confidence. grep over-reports (same-named symbols, comments, strings) and under-reports (dynamic/indirect refs).
-- **Confidence is carried, not assumed.** Every answer comes back in a `{provider, confidence, reason_code, health_events}` envelope. The confidence label is the honesty signal — a consumer can see whether a fact is `approx` or merely `noisy`.
-- **`reason_code` disambiguates** `live-non-callable` from `absent` — a distinction grep cannot make.
+- **Confidence is carried, not assumed.** Every answer comes back in a `{provider, confidence, payload, trace}` envelope. The confidence label is the honesty signal — a consumer can see whether a fact is `approx` or merely `noisy`.
+- **`reason_code` disambiguates** `live-non-callable` from `absent` inside a capability's own `payload` (e.g. `query.never-wired`) — a distinction grep cannot make. Degrade signals — which adapter answered, and its scan-scope honesty — live in the envelope's `trace`: per-query entries carrying `provider_id`, `event`, `fault_count` and `scope`.
 - **One seam, no per-task `import ast`.** Re-deriving a fact through one honest provider beats each agent hand-rolling its own search.
 
 ## Implementation (internal reference)
 
 The public CLI wraps:
-- Port: `src/des/ports/code_fact_port.py` — `CodeFactPort.query(descriptor, request) -> CodeFactResult`; `Confidence {approx, noisy}`, `ReasonCode {live-non-callable, absent}`; 5-capability stable core.
-- Resolution chain (the fallback order): `src/des/adapters/driven/codefact/code_fact_chain.py` — `CodeFactChain` supports an optional internal paid-provider seam ahead of the bundled adapters; in the effective public OSS CLI path, `src/des/cli/code_fact.py` constructs the chain with that optional provider absent, so it walks `Ast -> TextSearch`, returns the first covering provider, and emits `health.gate.code-fact.*` on a LOUD degrade.
+- Port: `src/des/ports/code_fact_port.py` — `CodeFactPort.query(descriptor, request) -> CodeFactResult`; `Confidence {approx, noisy}`, `ReasonCode {live-non-callable, absent}`; 5-capability stable core; `resolve_through_fold` is the resolution algebra (`Resolution = Answered | Unsupported | Failed`, each with a bounded `trace`).
+- Resolution chain (the fallback order): `src/des/adapters/driven/codefact/code_fact_chain.py` — `CodeFactChain` is a stateless `Ast -> TextSearch` fold (ADR-LA-001 D6-R1: the retired paid precision seam was a fabricated stub no production caller ever wired — deleted, not shipped in OSS); `src/des/cli/code_fact.py` renders the winning `Answered.payload` + the bounded `Resolution.trace` as JSON.
 - Bundled adapters: `ast_code_fact_adapter.py` (`approx`), `text_search_code_fact_adapter.py` (`noisy` floor).
-- Optional internal paid-provider seam: not exposed to OSS public distribution; internal consumers may use a higher-tier adapter when available — the public CLI never provisions or selects it.
 
 ## Scope note
 

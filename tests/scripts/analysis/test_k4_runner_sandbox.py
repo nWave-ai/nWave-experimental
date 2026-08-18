@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -125,7 +128,7 @@ def test_arm_environment_scrubs_provider_credentials_from_bash(monkeypatch):
         "{workspace}/.k4-sandbox-lib:/sandbox-tools/lib"
     )
     assert environment["PATH"].startswith(
-        "{workspace}/k4-fixture-venv/bin:/sandbox-tools:"
+        "{workspace}/.claude-k4/bin:{workspace}/k4-fixture-venv/bin:/sandbox-tools:"
     )
 
 
@@ -292,3 +295,49 @@ def test_healthy_dispatch_proceeds_to_permission_probe(
 
     assert verdict == expected_verdict
     assert detail == permission_problems
+
+
+def test_arm_env_path_resolves_the_installed_des_shim(tmp_path, monkeypatch):
+    """Row 9/14 (K4 matrix): `delivery_argv`'s PATH template (from
+    `_arm_env()`) never carried the DES shims directory
+    (`{workspace}/.claude-k4/bin`, where `des_plugin._install_des_shims`
+    actually copies `des`), while Claude's hooks resolved `des` through a
+    SEPARATE hardcoded absolute path written into `.claude-k4/settings.
+    json`'s own `env.PATH` -- two different resolution mechanisms silently
+    disagreeing. The delivery agent's own Bash tool (governed by
+    `_arm_env()`'s PATH, not settings.json's) got `des: command not found`
+    (exit 127).
+
+    Real PATH resolution and a real subprocess spawn -- no mock of
+    `shutil.which` or `subprocess.run` -- against a fake `des` executable
+    planted at the EXACT location the real install puts it.
+    """
+    workspace = tmp_path / "workspace"
+    shims_bin = workspace / ".claude-k4" / "bin"
+    shims_bin.mkdir(parents=True)
+    des_shim = shims_bin / "des"
+    des_shim.write_text(f"#!{sys.executable}\nprint('des shim ran')\n")
+    des_shim.chmod(0o755)
+
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    rendered_path = preflight._arm_env()["PATH"].replace("{workspace}", str(workspace))
+
+    resolved = shutil.which("des", path=rendered_path)
+    assert resolved == str(des_shim), (
+        f"`des` must resolve to the installed shim via the arm's own PATH; "
+        f"got {resolved!r}"
+    )
+
+    done = subprocess.run(
+        ["des", "--help"],
+        cwd=workspace,
+        env={**{"PATH": rendered_path}},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert done.returncode == 0, (
+        f"the real spawn under the arm PATH must succeed, not "
+        f"'des: command not found': {done.stderr or done.stdout}"
+    )
+    assert "des shim ran" in done.stdout

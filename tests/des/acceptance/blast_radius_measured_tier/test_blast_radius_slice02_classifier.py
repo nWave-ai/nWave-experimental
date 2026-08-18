@@ -468,6 +468,57 @@ def test_consumer_count_strictly_above_large_min_consumers_is_unambiguously_larg
     )
 
 
+def test_untouched_unparseable_file_elsewhere_degrades_a_zero_consumer_count_to_null(
+    tmp_path: Path, capsys
+) -> None:
+    """CONTRACT_SHAPE: bounded-change
+
+    Outcome anchor: DISCUSS Elevator Pitch
+
+    # covers: b -- MANDATORY NEGATIVE, ADR-LA-001 D9 slice (h)/D6-R14, LA1-L11
+
+    A ZERO `consumer_counts` entry is a "verified zero" only when the
+    repo-wide `query.callers-of` scan that produced it hit NO fault and NO
+    scope degradation (LA1-L11 -- the `Resolution.trace` must be inspected,
+    never the payload's `sites` list alone). The touched file's own symbol
+    has genuinely zero callers, but an UNRELATED, UNTOUCHED file elsewhere in
+    the repo cannot be parsed -- the repo-wide scan for callers therefore did
+    NOT fully observe the tree, so a `0` here would be indistinguishable from
+    a genuine verified zero (the exact silent-false-S this feature exists to
+    prevent, sister of `fix_blast_radius_reparses_tree_per_symbol`'s
+    `test_symbol_with_only_excluded_consumer_is_never_a_silent_verified_zero`).
+    `consumer_counts` must report `null`, escalating to L, never a fabricated
+    `0`.
+    """
+    repo = tmp_path / "repo"
+    _init_git_repo(repo)
+    plain = repo / "plain_module.py"
+    plain.write_text("def f():\n    return 1\n", encoding="utf-8")
+    (repo / "broken_elsewhere.py").write_text(
+        "def broken(:\n    pass\n", encoding="utf-8"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "seed plain module + an unrelated broken file")
+    _touch(plain)
+
+    exit_code, _stderr, payload = _invoke_in_process(
+        repo, ["--repo", str(repo), "--paths", "plain_module.py"], capsys
+    )
+
+    assert exit_code == 0
+    assert payload is not None
+    consumer_counts = payload["measures"]["consumer_counts"]
+    assert _consumer_value(consumer_counts, "f") is None, (
+        "the repo-wide callers-of scan for `f` could not fully observe the "
+        "tree (an unrelated file elsewhere is unparseable) -- a `0` reads as "
+        "a verified zero it is not (LA1-L11); got "
+        f"{_consumer_value(consumer_counts, 'f')!r} in {consumer_counts!r}"
+    )
+    assert payload["tier"] == "L", (
+        "a null consumer_counts value must escalate to L, never resolve S/M"
+    )
+
+
 def test_unparseable_touched_file_degrades_consumer_count_to_null_never_zero(
     tmp_path: Path, capsys
 ) -> None:

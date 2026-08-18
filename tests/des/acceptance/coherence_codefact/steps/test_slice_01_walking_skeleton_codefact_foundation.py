@@ -121,11 +121,11 @@ def then_floor_noisy(codefact: CoherenceCodeFactComposition) -> None:
     codefact.then_provider_is_text_search_floor()
 
 
-@then("the never-wired answer carries a locked reason code")
-def then_never_wired_reason_locked(
+@then("the never-wired answer carries a locked payload distinction")
+def then_never_wired_payload_locked(
     codefact: CoherenceCodeFactComposition,
 ) -> None:
-    codefact.then_never_wired_reason_is_locked()
+    codefact.then_never_wired_payload_is_locked()
 
 
 @then("the byte-lock guard passes")

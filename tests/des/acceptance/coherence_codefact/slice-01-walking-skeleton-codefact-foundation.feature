@@ -77,15 +77,17 @@ Feature: A code-fact gate always gets an honest, provider-tagged answer through 
     And the answer is tagged as the text-search floor at noisy confidence
 
   # AT-3 -- one code-fact gate re-derives query.never-wired THROUGH the port (not
-  # a per-gate import ast), and the answer is tagged {provider, confidence,
-  # reason_code}. The never-wired symbol case carries a locked reason_code.
+  # a per-gate import ast), and the answer is tagged {provider, confidence}.
+  # ADR-LA-001 D9 slice (c): the never-wired symbol case's disambiguating
+  # signal (absent / live-non-callable) is owned by the never-wired PAYLOAD
+  # schema (the `never_wired` bool), never the envelope.
   @slice-01 @walking-skeleton @driving_port @real-io @us-codefact-gate @contract-shape:bounded-change
   Scenario: A code-fact gate re-derives never-wired through the port and tags the provenance
     Given a net-new symbol with no production call-site
     When a code-fact gate re-derives whether it is never-wired through the port
     Then a usable answer comes back
     And the answer carries provider and confidence provenance
-    And the never-wired answer carries a locked reason code
+    And the never-wired answer carries a locked payload distinction
 
   # AT-4 -- the cross-tier Published-Language byte-lock guard: the committed
   # locked-vocabulary is byte-identical to the LOCKED language (PASS), and the
