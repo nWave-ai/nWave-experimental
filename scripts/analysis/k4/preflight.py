@@ -41,6 +41,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -425,6 +426,18 @@ def nwave_setup_steps(venv: Path, auth_profile: Path) -> list[list[str]]:
         ["git", "clone", _SUT, "."],
         _detach_step(),
         pef.delivery_setup_step(),
+        # Row 11 (K4 matrix): provisions `pef.DOC_NAME` -- the value
+        # authority `nw-user-examiner` reads its `PublicStartRecipe` from
+        # -- before any model call. Runs AFTER `delivery_setup_step`
+        # (which unlinks it), so it is the doc actually present when
+        # setup finishes. Supersedes the earlier "examiner-only credential"
+        # rationale: `pef.DOC_NAME`'s API key is a throwaway
+        # fixture-owned dev credential the clone-local DB alone
+        # recognizes, not a real secret, and every agent touching this
+        # workspace -- architect, crafter, examiner alike -- now sees the
+        # SAME facts from turn one instead of the examiner alone
+        # discovering them empirically (Run 8: 40 wasted calls).
+        pef.fixture_setup_step(pef.NWAVE_PORT),
         seed_step(auth_profile),
         # `--platform claude-code`, never the `auto` default. Measured 2026-08-07:
         # auto-detect installs into EVERY platform it finds, and CLAUDE_CONFIG_DIR
@@ -451,6 +464,13 @@ def control_setup_steps(auth_profile: Path) -> list[list[str]]:
         ["git", "clone", _SUT, "."],
         _detach_step(),
         pef.delivery_setup_step(),
+        # Symmetric with the nWave arm's own step above, at the arm-
+        # declared control port so the two fixtures never collide on one
+        # port if a campaign ever ran them side by side. Kept identical
+        # on BOTH arms deliberately: the fixture facts are a property of
+        # the SUBJECT, not of nWave being installed, so the comparison
+        # arms must still differ only in what their setup installs.
+        pef.fixture_setup_step(pef.CONTROL_PORT),
         seed_step(auth_profile),
     ]
 
@@ -598,7 +618,9 @@ def _render_sandbox_settings(path: str) -> str:
                     "allowRead": ["."],
                     "denyWrite": ["./.claude-k4"],
                 },
-                "network": {"allowedDomains": ["localhost", "127.0.0.1", "[::1]"]},
+                "network": {
+                    "allowedDomains": list(k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS)
+                },
             },
         },
         separators=(",", ":"),
@@ -1808,6 +1830,143 @@ def route_walk(root: Path, venv: Path, auth_profile: Path) -> dict:
     return result
 
 
+_START_RECIPE_SERVER_TIMEOUT = 20.0
+_START_RECIPE_POLL_INTERVAL = 0.2
+
+
+def probe_examiner_start_recipe(workspace: Path, *, port: int) -> list[str]:
+    """Prove the examiner's ACTUAL rendered start recipe -- the SAME
+    `pef.DOC_NAME` file `fixture_setup_step` already wrote into this exact
+    workspace, at this exact `port` -- runs under this harness's actual
+    rendered env (`_rendered_arm_env`), deterministically, with NO model
+    call, before a single (expensive, long) delivery/examiner turn is
+    spent. One source: the API key comes from the rendered doc itself
+    (`pef._existing_api_key`), the runserver command from the SAME
+    `pef._runserver_argv_and_env` the doc's own display text derives
+    from -- never a synthetic stand-in server or a second hand-typed key.
+
+    Run 8 (K4 matrix): the examiner burned 40 calls trying to stand up a
+    Django dev server and drive it with real HTTP requests, and got zero
+    usable evidence. This canary answers, cheaply and up front, whether
+    the recipe it will later read is even executable under this arm's
+    env. A non-empty return here is a campaign INDETERMINATE (the harness
+    itself could not prove the recipe executable, or never provisioned
+    one at all), never a finding against Vera, who never got the chance
+    to try.
+    """
+    api_key = pef._existing_api_key(workspace)
+    if api_key is None:
+        return [
+            f"no {pef.DOC_NAME} (or no API key line in it) exists in "
+            f"{workspace} -- row 11's start recipe was never provisioned "
+            "for this arm before this canary ran"
+        ]
+
+    env = _rendered_arm_env(workspace)
+    argv, env_overrides = pef._runserver_argv_and_env(port)
+    server_env = {**env, **env_overrides}
+
+    problems: list[str] = []
+    try:
+        server = subprocess.Popen(
+            argv,
+            cwd=workspace,
+            env=server_env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    except OSError as exc:
+        return [
+            "the recipe's own server-start command could not even start "
+            f"under the arm's rendered env: {type(exc).__name__}: {exc}"
+        ]
+
+    try:
+        deadline = time.monotonic() + _START_RECIPE_SERVER_TIMEOUT
+        up = False
+        while time.monotonic() < deadline:
+            if server.poll() is not None:
+                break
+            if pef._port_is_occupied(port):
+                up = True
+                break
+            time.sleep(_START_RECIPE_POLL_INTERVAL)
+
+        if not up:
+            tail = server.stdout.read()[-600:] if server.stdout else ""
+            problems.append(
+                "the recipe's own server-start command never bound port "
+                f"{port} under the arm's rendered env within "
+                f"{_START_RECIPE_SERVER_TIMEOUT}s: {tail}"
+            )
+        else:
+            base_url = f"http://127.0.0.1:{port}"
+
+            # Negative control, same discipline as row 11's own proof:
+            # nothing listens on a dead port under the SAME arm env -- a
+            # probe that passes anyway proves nothing about the recipe.
+            dead_port = pef.free_port()
+            dead_argv = pef.integration_probe_argv(
+                f"http://127.0.0.1:{dead_port}", api_key
+            )
+            try:
+                dead = subprocess.run(
+                    dead_argv,
+                    cwd=workspace,
+                    env=env,
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                dead = None
+            if dead is not None and dead.returncode == 0:
+                problems.append(
+                    "the probe succeeded against a dead port under the "
+                    "arm's rendered env -- it does not discriminate"
+                )
+
+            recipe_argv = pef.integration_probe_argv(base_url, api_key)
+            try:
+                done = subprocess.run(
+                    recipe_argv,
+                    cwd=workspace,
+                    env=env,
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+            except subprocess.TimeoutExpired:
+                problems.append(
+                    "the recipe's own probe timed out against its own "
+                    "live server under the arm's rendered env"
+                )
+            except OSError as exc:
+                problems.append(
+                    "the recipe's own probe could not even start under "
+                    f"the arm's rendered env: {type(exc).__name__}: {exc}"
+                )
+            else:
+                if done.returncode != 0:
+                    problems.append(
+                        "the recipe's own probe failed against its own "
+                        "live server under the arm's rendered env: "
+                        f"{(done.stderr or done.stdout)[-400:]}"
+                    )
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=5)
+    return problems
+
+
 def probe_engagement(
     root: Path, venv: Path, auth_profile: Path, model: str
 ) -> tuple[str, list[str]]:
@@ -2055,6 +2214,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    # Row 11 (K4 matrix), Run 8 evidence: the examiner's server-start +
+    # HTTP-probe MECHANISM proven under this arm's rendered env, still
+    # with NO model call, before arms.json is written. A non-empty result
+    # is a campaign INDETERMINATE recorded into `spec["sandbox"]` below --
+    # never a hard refusal: the crafter side can still be measured even
+    # when the harness cannot prove the examiner's own recipe executable.
+    start_recipe_problems = probe_examiner_start_recipe(
+        _probe_workspace(args.root), port=pef.NWAVE_PORT
+    )
+    if start_recipe_problems:
+        start_recipe_status: dict[str, object] = {
+            "status": "indeterminate",
+            "problems": start_recipe_problems,
+        }
+        print("start recipe: INDETERMINATE -- see arms.json sandbox.start_recipe")
+    else:
+        start_recipe_status = {"status": "proven"}
+        print("start recipe: proven under the arm's rendered env")
+
     contract_path = args.contract
     contract_source = "--contract"
     if contract_path is None:
@@ -2136,6 +2314,14 @@ def main(argv: list[str] | None = None) -> int:
         # `arms.json`. Kept as a real field (not folded away) so a reader of
         # arms.json can see WHICH steps were proven, not just a boolean.
         "route_walk": route_walk_result,
+        # Row 11 (K4 matrix): the sandbox facts every arm's project
+        # fragment states (`pef.render_project_fragment`) and the row-11
+        # start-recipe canary's own verdict, so a reader of arms.json sees
+        # WHAT was proven about the sandbox, not just that a campaign ran.
+        "sandbox": {
+            "network_allowed_domains": list(k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS),
+            "start_recipe": start_recipe_status,
+        },
         "artifact": {
             "kind": "wheel",
             "path": str(wheel),

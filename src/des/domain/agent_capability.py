@@ -96,6 +96,7 @@ _INSTALLED_AGENT_SPEC_PARTS: tuple[str, ...] = ("agents", "nw")
 
 _FRONTMATTER_DELIMITER = "---"
 _TOOLS_KEY = "tools:"
+_MAX_TURNS_KEY = "maxTurns:"
 
 
 def tool_reaches_source(tool: str) -> bool:
@@ -255,3 +256,48 @@ def resolve_declared_capability(
         if candidate.is_file():
             return _capability_from_spec(candidate)
     return DeclaredCapability.unknown(None)
+
+
+def _declared_max_turns(frontmatter: tuple[str, ...]) -> int | None:
+    """The ``maxTurns:`` value as a positive int, or ``None`` when the key
+    is absent or its value does not parse as one -- never a guessed
+    default budget for a role whose spec omits the key entirely."""
+    for line in frontmatter:
+        if not line.startswith(_MAX_TURNS_KEY):
+            continue
+        raw = line[len(_MAX_TURNS_KEY) :].strip()
+        try:
+            value = int(raw)
+        except ValueError:
+            return None
+        return value if value > 0 else None
+    return None
+
+
+def resolve_declared_max_turns(
+    agent: str, *, repo_root: Path, claude_dir: Path | None = None
+) -> int | None:
+    """Resolve ``agent``'s declared ``maxTurns`` from its published spec, or
+    ``None`` when no candidate spec exists, the existing one will not parse,
+    or it declares no ``maxTurns`` at all.
+
+    Same candidate order and fail-closed-on-first-existing-candidate
+    discipline as ``resolve_declared_capability`` -- deliberately NOT a
+    silent 0/unlimited default: a caller gating a hard turn budget on this
+    value must be able to tell "no budget declared" (``None``, gate never
+    applies) from "budget is zero" (never produced; ``_declared_max_turns``
+    rejects a non-positive value the same way).
+    """
+    for candidate in candidate_spec_paths(
+        agent, repo_root=repo_root, claude_dir=claude_dir
+    ):
+        if candidate.is_file():
+            try:
+                text = candidate.read_text(encoding="utf-8")
+            except OSError:
+                return None
+            frontmatter = _frontmatter_lines(text)
+            if frontmatter is None:
+                return None
+            return _declared_max_turns(frontmatter)
+    return None

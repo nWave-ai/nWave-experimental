@@ -143,6 +143,43 @@ def test_first_mutation_bound_is_friction_evidence_not_a_gate(path: Path) -> Non
     assert "never a research detour into facts the contract never named" in compact
 
 
+@pytest.mark.parametrize("path", (OO, FP), ids=("oo", "fp"))
+def test_self_flagged_oracle_gap_is_indeterminate_never_pass(path: Path) -> None:
+    """Run 8: a self-flagged coverage/oracle gap must be terminal
+    INDETERMINATE citing the oracle -- never a PASS with the gap merely
+    noted as an FYI in `residuals`, which records a bounded observation
+    AFTER a genuine PASS only."""
+    compact = " ".join(_text(path).split())
+
+    assert (
+        "A self-flagged coverage/oracle gap is terminal `INDETERMINATE` "
+        "citing the oracle, never `PASS` with the gap merely noted in "
+        "`residuals`" in compact
+    )
+    assert (
+        "`residuals` records a bounded observation AFTER a genuine `PASS`, "
+        "it never demotes an unresolved oracle defect to an FYI" in compact
+    )
+
+
+def test_examiner_bounds_start_reachability_before_indeterminate() -> None:
+    """Run 8: Vera lost 213.6s / 40 tool calls trying to stand up a live
+    server within her own budget, the worst return in the run. She must
+    stop and report INDETERMINATE well before exhausting the whole budget,
+    naming the exact failing step -- never spend it on infrastructure."""
+    compact = " ".join(_text(EXAMINER).split())
+
+    assert (
+        "If the recipe's surface is not reachable/responsive within 8 tool "
+        "calls total spent on START" in compact
+    )
+    assert (
+        "stop and return terminal `INDETERMINATE` naming the exact failing "
+        "step (the last command run and its observed result)" in compact
+    )
+    assert "never spend the remaining budget standing up infrastructure" in compact
+
+
 def test_deliver_refuses_nonterminal_crafter_completion() -> None:
     text = _text(DELIVER)
     compact = " ".join(text.split())

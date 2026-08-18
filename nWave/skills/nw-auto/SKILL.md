@@ -167,6 +167,16 @@ valid charter, authors exactly one through PO for a Missing/Empty namespace,
 and blocks on Invalid. A RED contract must observe every VALUE-SEED clause at
 its real port; internal proxies and later-slice promises are `EVIDENCE_GAP`.
 
+**Before the first `des prepare-ordinary-request` call, when `examine=true`:**
+does the VALUE-SEED already carry the literal public start recipe (exact
+method+path+example body) PO's `## Preconditions` requires — or are you about
+to pass the abstract feature text alone and let PO discover the gap for you?
+PO is Write-only (no Read access, by design, source-blind) and can only
+project a recipe already present in the seed; root is not. Read the project's
+own API/README docs (docs only — never source, tests or architecture) and
+complete the seed with the exact recipe those docs already state BEFORE the
+first producer call, not after an `INDETERMINATE` reports it missing.
+
 1. Run exactly once, with VALUE-SEED bytes on stdin. The Auto-root Bash
    allowlist permits exactly one stdin shape for this one producer — the
    `des prepare-ordinary-request` call header ending in a QUOTED heredoc
@@ -244,6 +254,23 @@ its real port; internal proxies and later-slice promises are `EVIDENCE_GAP`.
    blindly on the unproven assumption that a second try will simply finish
    what silence already refused to confirm.
 
+   `CHARTER-RESULT` `INDETERMINATE` citing a missing/vague `PublicStartRecipe`
+   or any other value-side authority gap (`CLARIFICATION_NEEDED` — PO's own
+   scope) is a PO-scope gap, never a DISTILL/ATD defect: never route it to ATD
+   via `REVISE-CONTRACT` (Run 8's own mistake — ATD correctly bounces it back
+   `EVIDENCE_GAP`, costing a full wasted dispatch). `DeliveryId` is `auto-`
+   plus the first 16 hex characters of the SHA-256 digest over the exact
+   VALUE-SEED bytes (ADR-SSOT-002); completing the seed with the missing
+   recipe changes those bytes, so it is a DIFFERENT `DeliveryId` — restart
+   from step 1 with the corrected seed (a fresh `des prepare-ordinary-request`
+   / `resolve-charters` / AB batch), never reuse the old id, locator or any
+   already-authored contract/charter under it. If instead the SAME
+   `DeliveryId`'s contract already exists and only the charter needed a fix
+   (no seed-byte change — e.g. a charter citation error caught downstream),
+   dispatch ATD via `REVISE-CONTRACT` exactly as the crafter-citing-contract
+   row below, never a fresh re-author: the contract's targets/oracle did not
+   change, only the charter did.
+
 3. Validate the charter when applicable, then run the one `des dispatch`
    command from “CLI dispatch” above. Forward its two lines verbatim to the
    paradigm crafter. Require terminal `CRAFTER-RESULT` with matching contract,
@@ -259,7 +286,7 @@ its real port; internal proxies and later-slice promises are `EVIDENCE_GAP`.
    |---|---|
    | `PASS` | the examiner pass below (`examine=true`) or step 4 finalize |
    | `FAIL` | Is this a genuine terminal FAIL, not a timeout/partial narration (those are `INDETERMINATE` — nw-crafter-discipline-delivery-contract)? A real FAIL is terminal: report the FAIL evidence verbatim and stop — never redispatch hoping a second attempt succeeds where the evidence already says it cannot |
-   | `INDETERMINATE` citing the contract/oracle itself (an invented import, a self-referential obligation, or any other defect the crafter names IN the delivered contract/oracle — nw-crafter-discipline-delivery-contract item 6, "return an oracle defect to DISTILL") | Does the citation name a real defect IN the contract/oracle, not just an inability to satisfy it? If so, dispatch `nw-acceptance-designer` exactly once more with the two-line revision body — `REVISE-CONTRACT: <the SAME CONTRACT-LOCATOR already produced>` then `CITATION: <the crafter's citation, as a JSON string literal>` — never a fresh `des prepare-ordinary-request` run: the producer already ran exactly once for this DeliveryId and now refuses a second run, naming this exact revision shape in its WHAT/WHY/HOW. On the returned `DISTILL-RESULT: CONTRACT_READY`, run `des dispatch` again and redispatch the crafter fresh; `des resolve-charters`/PO are NOT rerun — the charter's validity did not change |
+   | `INDETERMINATE` citing the contract/oracle itself (an invented import, a self-referential obligation, a self-flagged coverage/oracle gap, or any other defect the crafter names IN the delivered contract/oracle — nw-crafter-discipline-delivery-contract item 6, "return an oracle defect to DISTILL"; a self-flagged gap is never `PASS` with the gap only noted in `residuals`) | Does the citation name a real defect IN the contract/oracle, not just an inability to satisfy it? If so, dispatch `nw-acceptance-designer` exactly once more with the two-line revision body — `REVISE-CONTRACT: <the SAME CONTRACT-LOCATOR already produced>` then `CITATION: <the crafter's citation, as a JSON string literal>` — never a fresh `des prepare-ordinary-request` run: the producer already ran exactly once for this DeliveryId and now refuses a second run, naming this exact revision shape in its WHAT/WHY/HOW. On the returned `DISTILL-RESULT: CONTRACT_READY`, run `des dispatch` again and redispatch the crafter fresh; `des resolve-charters`/PO are NOT rerun — the charter's validity did not change |
    | `INDETERMINATE` citing environment/tooling/sandbox (nw-crafter-discipline-delivery-contract item 9, "terminal INDETERMINATE after the first failed attempt") | Is this actually a harness gap no contract revision can fix? If so it is terminal: report the INDETERMINATE evidence and stop — never redispatch ATD, the crafter, or restart the cycle hoping the environment resolves itself |
    | No terminal `CRAFTER-RESULT` block at all | Same rule as the batch-join above: `INDETERMINATE`, report the missing terminal receipt, stop — never re-dispatch blindly |
 

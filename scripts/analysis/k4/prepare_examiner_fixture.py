@@ -17,7 +17,10 @@ import re
 import socket
 import subprocess
 import sys
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+
+from scripts.analysis.k4 import subject as k4_subject
 
 
 #: The doc a blind examiner reads, framed as user-facing, not examiner-labelled.
@@ -64,6 +67,38 @@ SEED_ARGV = ["shell", "-c", _SEED_CODE]
 #: tighter bound.
 _SETUP_TIMEOUT = 1800
 _SEED_TIMEOUT = 300
+
+
+def make_checks_list_handler(expected_api_key: str) -> type[BaseHTTPRequestHandler]:
+    """A stdlib stand-in for healthchecks' `GET /api/v3/checks/` -- 200
+    with a non-empty JSON body when `X-Api-Key` matches, 403 otherwise.
+
+    The ONE handler both `test_k4_row11_start_recipe.py` (the recipe's own
+    executability proof, no arm env involved) and
+    `preflight.probe_examiner_start_recipe` (the SAME proof run through the
+    arm's rendered env, before any model call) build their fake server
+    from -- never a second hand-typed copy of the same 15 lines.
+    """
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path == "/api/v3/checks/" and (
+                self.headers.get("X-Api-Key") == expected_api_key
+            ):
+                body = b'{"checks": []}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.send_response(403)
+                self.end_headers()
+
+        def log_message(self, *_args: object) -> None:
+            pass  # keep runs quiet; failures are asserted/reported, not printed
+
+    return _Handler
 
 
 def _run(argv: list[str], cwd: Path, timeout: int = _SETUP_TIMEOUT) -> tuple[int, str]:
@@ -122,6 +157,18 @@ def _port_is_occupied(port: int) -> bool:
     finally:
         sock.close()
     return False
+
+
+def free_port() -> int:
+    """One OS-assigned free port on 127.0.0.1 -- the ONE source
+    `test_k4_row11_start_recipe.py` and `preflight.probe_examiner_start_
+    recipe` both use to stand up their fake server, never a second
+    hand-typed bind-and-release copy."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
 
 
 def _ensure_venv(workspace: Path) -> Path:
@@ -305,13 +352,45 @@ def _seed(venv_python: Path, workspace: Path, existing_api_key: str | None) -> s
     return key
 
 
+def _runserver_argv_and_env(port: int) -> tuple[list[str], dict[str, str]]:
+    """The ONE structured source for the runserver command: its directly
+    executable argv + env-var overrides. `_service_start_commands`'s
+    human-readable display string (quoted in every rendered recipe)
+    DERIVES from this; `preflight.probe_examiner_start_recipe` (which
+    must actually RUN it, not just quote it) uses this directly -- never
+    a second hand-typed copy of the same command in either direction."""
+    return (
+        [VENV_PYTHON, "manage.py", "runserver", f"127.0.0.1:{port}"],
+        {"ALLOWED_HOSTS": "localhost,127.0.0.1"},
+    )
+
+
+def _service_start_commands(port: int | str) -> tuple[str, str]:
+    """The two-line service-start recipe -- migrate then runserver -- the
+    ONE source both `_render`'s examiner-facing doc and
+    `render_project_fragment`'s sandbox-facts doc quote verbatim. `port`
+    accepts the real int `_runserver_argv_and_env` needs, or the
+    `"<port>"` placeholder `render_project_fragment` uses when no
+    specific arm/port is yet chosen -- display-only, never executed."""
+    migrate = f"{VENV_PYTHON} manage.py migrate --noinput"
+    if isinstance(port, int):
+        argv, env_overrides = _runserver_argv_and_env(port)
+    else:
+        argv, env_overrides = _runserver_argv_and_env(0)
+        argv[-1] = f"127.0.0.1:{port}"
+    env_prefix = " ".join(f"{name}={value}" for name, value in env_overrides.items())
+    runserver = f"{env_prefix} {' '.join(argv)}"
+    return migrate, runserver
+
+
 def _render(port: int, api_key: str) -> str:
     base = f"http://127.0.0.1:{port}"
+    migrate, runserver = _service_start_commands(port)
     return (
         "# User environment\n\n"
         "Local run recipe:\n\n"
-        f"    {VENV_PYTHON} manage.py migrate --noinput\n"
-        f"    ALLOWED_HOSTS=localhost,127.0.0.1 {VENV_PYTHON} manage.py runserver 127.0.0.1:{port}\n\n"
+        f"    {migrate}\n"
+        f"    {runserver}\n\n"
         f"Base URL: {base}\n\n"
         f"API key: {api_key} (read/write, preprovisioned for this environment)\n\n"
         "## HTTP journeys\n\n"
@@ -321,6 +400,99 @@ def _render(port: int, api_key: str) -> str:
         f"- Readback: GET {base}/api/v3/checks/<uuid>\n"
         "- Invalid input: POST a malformed body, expect a 400 response\n"
     )
+
+
+#: Run 8 (K4 matrix): the architect had Read access to this the whole
+#: time and never used it before hand-deriving an API shape from prompt
+#: text alone. Fixed for the pinned subject revision -- verified present
+#: at `SUT_PINNED_REV` (`healthchecks/templates/docs/api.md`, the v3 API
+#: reference the recipe's own HTTP journeys target).
+_API_DOCS_PATH = "templates/docs/api.md"
+
+
+def _installed_dependency_names(venv_python: Path, workspace: Path) -> list[str]:
+    """Top-level installed package names in the fixture's clone-local venv
+    -- the SAME venv every subject/migrate/test command already runs
+    through, read via `pip list`, never a second hand-typed dependency
+    list. Empty on any failure -- the fragment degrades to a shorter,
+    still-true doc rather than block delivery setup over a diagnostic
+    extra."""
+    try:
+        done = subprocess.run(
+            [str(venv_python), "-m", "pip", "list", "--format=freeze"],
+            cwd=workspace,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if done.returncode != 0:
+        return []
+    names = []
+    for line in done.stdout.splitlines():
+        name = line.split("==", 1)[0].strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def render_project_fragment(
+    venv_python: Path,
+    workspace: Path,
+    *,
+    network_allowed_domains: tuple[str, ...] = (
+        k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS
+    ),
+) -> str:
+    """The arm's project-level sandbox-facts fragment (<=25 lines) --
+    written into BOTH arms' workspaces (`prepare_delivery`, shared by
+    `control_setup_steps` and `nwave_setup_steps`) so every agent that
+    explores the workspace -- architect, crafter, examiner alike -- reads
+    these facts instead of re-discovering them by trial and error.
+
+    Every fact is DERIVED, never hand-typed: installed deps come from
+    THIS venv's own `pip list` (`_installed_dependency_names`); the
+    service-start recipe is the SAME `_service_start_commands` `_render`
+    quotes for the examiner's own doc; the network fact is the SAME
+    `SANDBOX_ALLOWED_NETWORK_DOMAINS` `preflight._render_sandbox_settings`
+    enforces. Run 8 (K4 matrix): the architect spent a round trip on `pip
+    install hypothesis` (no outbound network here), and the examiner
+    burned 40 calls trying to stand up the subject's dev server with no
+    start recipe in view -- both a missing fact at the point of use, not
+    missing capability.
+    """
+    deps = ", ".join(_installed_dependency_names(venv_python, workspace)) or (
+        "(pip list failed; treat the venv as fixed regardless)"
+    )
+    migrate, runserver = _service_start_commands("<port>")
+    domains = ", ".join(network_allowed_domains)
+    test_command = f"{VENV_PYTHON} {' '.join(_SUBJECT_DEPENDENCY_PROBE_ARGV)}"
+    return (
+        "## K4 sandbox facts\n\n"
+        f"- Outbound network: NONE reachable except {domains}. `pip install` "
+        "or any other package fetch will fail (no proxy egress) -- use only "
+        "what this venv already has:\n"
+        f"  {deps}\n"
+        f"- Run the subject's own tests: `{test_command}`\n"
+        f"- Start the service: `{migrate}` then `{runserver}`\n"
+        f"- API documentation: `{_API_DOCS_PATH}`\n"
+    )
+
+
+def _write_project_fragment(workspace: Path, content: str) -> None:
+    """Create-or-append, never clobber: `nwave-ai project enable` (nwave
+    arm only, later in `nwave_setup_steps`) itself appends its own managed
+    section to an existing `CLAUDE.md` rather than overwriting one, and
+    this write must be equally safe run twice (idempotent `prepare_delivery`)
+    or ahead of a subject that ships its own `CLAUDE.md` one day."""
+    claude_md = workspace / "CLAUDE.md"
+    existing = claude_md.read_text(encoding="utf-8") if claude_md.exists() else ""
+    if content.strip() in existing:
+        return
+    joined = f"{existing.rstrip(chr(10))}\n\n{content}" if existing else content
+    claude_md.write_text(joined, encoding="utf-8")
 
 
 def _add_exclude_entries(workspace: Path) -> None:
@@ -371,6 +543,7 @@ def prepare_delivery(workspace: Path) -> Path:
     venv_python = _ensure_venv(workspace)
     _migrate(venv_python, workspace)
     _probe_subject_test_dependencies(venv_python, workspace)
+    _write_project_fragment(workspace, render_project_fragment(venv_python, workspace))
     _add_exclude_entries(workspace)
     (workspace / DOC_NAME).unlink(missing_ok=True)
     return venv_python

@@ -37,56 +37,20 @@ succeed against the live fake server.
 
 from __future__ import annotations
 
-import socket
 import subprocess
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 
 from scripts.analysis.k4 import prepare_examiner_fixture as pef
 
 
-def _free_port() -> int:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
-    sock.close()
-    return port
-
-
-def _make_checks_list_handler(expected_api_key: str):
-    """A stand-in for healthchecks' `GET /api/v3/checks/` -- 200 with a
-    non-empty JSON body when `X-Api-Key` matches, 403 otherwise. This is
-    the ONE journey `integration_probe_argv` targets; see module docstring
-    for what it does NOT cover."""
-
-    class _Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            if self.path == "/api/v3/checks/" and (
-                self.headers.get("X-Api-Key") == expected_api_key
-            ):
-                body = b'{"checks": []}'
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-            else:
-                self.send_response(403)
-                self.end_headers()
-
-        def log_message(self, *_args: object) -> None:
-            pass  # keep test output quiet; failures are asserted, not printed
-
-    return _Handler
-
-
 def test_the_rendered_start_recipe_is_executable_against_a_running_server():
-    port = _free_port()
+    port = pef.free_port()
     api_key = "k4-fixture-recipe-9c31"
     base_url = f"http://127.0.0.1:{port}"
 
     server = ThreadingHTTPServer(
-        ("127.0.0.1", port), _make_checks_list_handler(api_key)
+        ("127.0.0.1", port), pef.make_checks_list_handler(api_key)
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -106,7 +70,7 @@ def test_the_rendered_start_recipe_is_executable_against_a_running_server():
 
         # Negative control 2: nothing is listening on this port -- the
         # recipe's Base URL is load-bearing, not decorative.
-        dead_port = _free_port()
+        dead_port = pef.free_port()
         assert dead_port != port
         wrong_port_argv = pef.integration_probe_argv(
             f"http://127.0.0.1:{dead_port}", api_key
@@ -133,3 +97,129 @@ def test_the_rendered_start_recipe_is_executable_against_a_running_server():
     finally:
         server.shutdown()
         thread.join(timeout=5)
+
+
+def _install_fake_runserver_venv_python(workspace, *, api_key: str) -> None:
+    """A fake clone-local interpreter that answers ONLY `manage.py
+    runserver <host>:<port>` (the ONE command
+    `preflight.probe_examiner_start_recipe` actually executes) by binding
+    a real stdlib HTTP server that plays healthchecks' `GET
+    /api/v3/checks/` -- the SAME response shape
+    `pef.make_checks_list_handler` produces, reimplemented here as a
+    standalone subprocess script since it must run in its OWN
+    interpreter, not import this test's process."""
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    venv_python = workspace / pef.VENV_PYTHON
+    venv_python.parent.mkdir(parents=True, exist_ok=True)
+    script = f"""#!/usr/bin/env python3
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+argv = sys.argv[1:]
+if len(argv) >= 3 and argv[0] == "manage.py" and argv[1] == "runserver":
+    host, _, port_s = argv[2].partition(":")
+    port = int(port_s)
+    expected_api_key = {api_key!r}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/api/v3/checks/" and (
+                self.headers.get("X-Api-Key") == expected_api_key
+            ):
+                body = b'{{"checks": []}}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.send_response(403)
+                self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    ThreadingHTTPServer((host, port), Handler).serve_forever()
+sys.exit(0)
+"""
+    venv_python.write_text(script, encoding="utf-8")
+    venv_python.chmod(0o755)
+
+
+class TestExaminerStartRecipeProvenUnderTheArmEnv:
+    """Run 8 (K4 matrix): the examiner burned 40 calls trying to stand up
+    a Django dev server and never got evidence. `preflight.
+    probe_examiner_start_recipe` proves the examiner's ACTUAL rendered
+    recipe (`pef.DOC_NAME`, API key included) starts and answers under
+    the SAME rendered env every arm's setup/delivery subprocess already
+    runs under -- deterministically, with NO model call, before a single
+    expensive turn is spent. One source: the same doc, the same port, the
+    same key `nw-user-examiner` would later read."""
+
+    def test_the_mechanism_is_proven_against_the_real_rendered_recipe(self, tmp_path):
+        from scripts.analysis.k4 import preflight
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        port = pef.free_port()
+        api_key = "k4-row11-arm-env-9c31"
+        _install_fake_runserver_venv_python(workspace, api_key=api_key)
+        (workspace / pef.DOC_NAME).write_text(
+            pef._render(port, api_key), encoding="utf-8"
+        )
+
+        problems = preflight.probe_examiner_start_recipe(workspace, port=port)
+
+        assert problems == []
+
+    def test_a_missing_recipe_doc_is_reported_not_silently_passed(self, tmp_path):
+        """Negative control: row 11's own gap -- no `pef.DOC_NAME` in the
+        workspace at all (exactly what every arm's setup produced before
+        `fixture_setup_step` was wired in) -- must be REPORTED, never
+        silently treated as proven."""
+        from scripts.analysis.k4 import preflight
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        problems = preflight.probe_examiner_start_recipe(
+            workspace, port=pef.free_port()
+        )
+
+        assert problems, (
+            "a workspace with no examiner recipe doc must be reported, "
+            "not silently treated as proven"
+        )
+
+    def test_a_server_that_never_binds_is_reported_not_silently_passed(self, tmp_path):
+        """Negative control: the recipe's own server-start command runs
+        but never actually binds the port (a broken/hung interpreter) --
+        must be REPORTED, proving the canary genuinely observes the
+        server rather than passing unconditionally once a doc exists."""
+        from scripts.analysis.k4 import preflight
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        port = pef.free_port()
+        api_key = "k4-row11-arm-env-broken"
+        venv_python = workspace / pef.VENV_PYTHON
+        venv_python.parent.mkdir(parents=True, exist_ok=True)
+        venv_python.write_text(
+            "#!/usr/bin/env python3\nimport sys\nsys.exit(1)\n",
+            encoding="utf-8",
+        )
+        venv_python.chmod(0o755)
+        (workspace / pef.DOC_NAME).write_text(
+            pef._render(port, api_key), encoding="utf-8"
+        )
+
+        problems = preflight.probe_examiner_start_recipe(workspace, port=port)
+
+        assert problems, (
+            "a server that never binds its port must be reported, not "
+            "silently treated as proven"
+        )

@@ -337,3 +337,211 @@ def test_integration_probe_contract_authenticates_get_list_against_a_real_clone(
     assert "checks" in joined.lower(), (
         "the probe must target the checks list endpoint the doc documents"
     )
+
+
+def _install_fake_pip_venv_python(workspace, *, freeze_lines: list[str]):
+    """A tiny executable fake standing in for the fixture-owned interpreter,
+    answering ONLY `<venv_python> -m pip list --format=freeze` -- the ONE
+    invocation `_installed_dependency_names` makes -- with `freeze_lines`,
+    one per line. Any other argv exits nonzero, so a test asserting on the
+    fragment's derived deps can never pass by accident against an
+    unrelated command."""
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    venv_python = workspace / pef.VENV_PYTHON
+    venv_python.parent.mkdir(parents=True, exist_ok=True)
+    body = "\n".join(freeze_lines)
+    script = f"""#!/usr/bin/env python3
+import sys
+
+if sys.argv[1:] == ["-m", "pip", "list", "--format=freeze"]:
+    print({body!r})
+    sys.exit(0)
+sys.exit(1)
+"""
+    venv_python.write_text(script, encoding="utf-8")
+    venv_python.chmod(0o755)
+    return venv_python
+
+
+def test_project_fragment_derives_every_fact_from_its_one_source(tmp_path):
+    """Row 8 (K4 matrix): the arm's project fragment must carry sandbox
+    facts DERIVED from the harness's own sources -- never a second
+    hand-typed copy -- and stay within the declared 25-line budget."""
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+    from scripts.analysis.k4 import subject as k4_subject
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    venv_python = _install_fake_pip_venv_python(
+        workspace, freeze_lines=["Django==5.0", "time-machine==2.14.0"]
+    )
+
+    fragment = pef.render_project_fragment(venv_python, workspace)
+
+    assert fragment.count("\n") <= 25, (
+        f"fragment must stay <=25 lines, got {fragment.count(chr(10))}"
+    )
+    # Deps: read from THIS venv's own `pip list`, not hand-typed.
+    assert "Django" in fragment
+    assert "time-machine" in fragment
+    # Network: the SAME constant `_render_sandbox_settings` enforces.
+    for domain in k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS:
+        assert domain in fragment
+    # Service-start: the SAME two commands `_render`'s examiner-facing doc
+    # quotes for a real port -- here with the placeholder port.
+    migrate, runserver = pef._service_start_commands("<port>")
+    assert migrate in fragment
+    assert runserver in fragment
+    # Subject test command: the SAME argv `_probe_subject_test_dependencies`
+    # already runs at setup time.
+    assert " ".join(pef._SUBJECT_DEPENDENCY_PROBE_ARGV) in fragment
+    # API docs location.
+    assert pef._API_DOCS_PATH in fragment
+
+
+def test_project_fragment_survives_a_pip_list_failure(tmp_path):
+    """`_installed_dependency_names` degrades to an empty list, never an
+    exception, on a broken/missing pip -- the fragment must still render a
+    true, shorter doc rather than block delivery setup."""
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    venv_python = workspace / pef.VENV_PYTHON
+    venv_python.parent.mkdir(parents=True, exist_ok=True)
+    venv_python.write_text("#!/usr/bin/env python3\nimport sys\nsys.exit(1)\n")
+    venv_python.chmod(0o755)
+
+    fragment = pef.render_project_fragment(venv_python, workspace)
+
+    assert "pip list failed" in fragment
+    assert fragment.count("\n") <= 25
+
+
+def test_project_fragment_is_written_once_and_never_duplicated(tmp_path):
+    """`prepare_delivery` writes the fragment into a fresh `CLAUDE.md`;
+    running it again (idempotency, the SAME discipline every other
+    `prepare_delivery` step already carries) must not duplicate it."""
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    content = "## K4 sandbox facts\n\nsome fact\n"
+
+    pef._write_project_fragment(workspace, content)
+    pef._write_project_fragment(workspace, content)
+
+    claude_md = (workspace / "CLAUDE.md").read_text(encoding="utf-8")
+    assert claude_md.count("## K4 sandbox facts") == 1
+
+
+def test_project_fragment_preserves_pre_existing_claude_md_content(tmp_path):
+    """A `CLAUDE.md` the subject (or `nwave-ai project enable`) already
+    wrote must be preserved, never clobbered -- the same append-safe
+    discipline `project enable`'s own managed-section injection follows."""
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "CLAUDE.md").write_text("# Existing project guidance\n")
+
+    pef._write_project_fragment(workspace, "## K4 sandbox facts\n\nsome fact\n")
+
+    claude_md = (workspace / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "# Existing project guidance" in claude_md
+    assert "## K4 sandbox facts" in claude_md
+
+
+def _run_step(step, *, cwd) -> None:
+    subprocess.run(step, cwd=cwd, check=True, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize(
+    "arm_name,port_name", [("control", "CONTROL_PORT"), ("nwave", "NWAVE_PORT")]
+)
+def test_arm_setup_provisions_the_examiner_recipe_before_any_model_call(
+    tmp_path, monkeypatch, arm_name, port_name
+):
+    """Row 11 (K4 matrix): the examiner burned 40 calls trying to stand up
+    a Django dev server with no start recipe in view -- because
+    `fixture_setup_step`/`pef.prepare` existed but no driver ever called
+    it. RED on base: `delivery_setup_step` alone (which `prepare_delivery`
+    actively unlinks `pef.DOC_NAME` at the end of, see
+    `test_delivery_prepare_migrates_without_seeding_or_rendering_a_key`
+    above) leaves the workspace WITHOUT the recipe. GREEN once the arm's
+    full declared setup runs, which must ALSO run `fixture_setup_step`
+    after it: the workspace ends up carrying `pef.DOC_NAME` with the SAME
+    rendered recipe -- run commands, Base URL, a REAL seed-produced API
+    key -- `nw-user-examiner` reads its `PublicStartRecipe` from.
+
+    Runs the real git clone/detach steps against a local throwaway SUT (no
+    network, `test_k4_arm_workspace_is_detached.py`'s own pattern) and a
+    fake clone-local interpreter (`_install_fake_venv_python`, no real
+    Django install) -- proving the WIRING, not just its declared shape.
+    """
+    from scripts.analysis.k4 import preflight
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    sut = tmp_path / "sut"
+    sut.mkdir()
+    _git("init", "-q", "-b", "master", cwd=sut)
+    _git("config", "user.email", "k4@example.test", cwd=sut)
+    _git("config", "user.name", "k4", cwd=sut)
+    (sut / "README.md").write_text("seed\n")
+    _git("add", "README.md", cwd=sut)
+    _git("commit", "-q", "-m", "seed", cwd=sut)
+    sut_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=sut,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    monkeypatch.setattr(preflight, "_SUT", str(sut))
+    monkeypatch.setattr(preflight, "_SUT_PINNED_REV", sut_head)
+
+    port = getattr(pef, port_name)
+    if arm_name == "control":
+        steps = preflight.control_setup_steps(tmp_path / "auth-unused")
+    else:
+        steps = preflight.nwave_setup_steps(
+            tmp_path / "venv-unused", tmp_path / "auth-unused"
+        )
+
+    workspace = tmp_path / arm_name
+    workspace.mkdir()
+    doc_path = workspace / pef.DOC_NAME
+
+    # Only the git/fixture steps are exercised here -- `seed_step`/install/
+    # `project enable` need a real auth profile and a real nWave venv,
+    # orthogonal to whether the examiner recipe lands (the SAME scoping
+    # `test_k4_arm_workspace_is_detached.py`'s own tests already use).
+    for step in (s for s in steps if s[0] == "git"):
+        _run_step(step, cwd=workspace)
+
+    _install_fake_venv_python(workspace, seed_key="k4-arm-setup-fixture-key")
+
+    delivery_step = pef.delivery_setup_step()
+    _run_step(delivery_step, cwd=workspace)
+    assert not doc_path.exists(), (
+        "delivery_setup_step alone must NOT leave the examiner recipe "
+        "behind -- prepare_delivery unlinks it deliberately"
+    )
+
+    fixture_step = pef.fixture_setup_step(port)
+    assert fixture_step in steps, (
+        f"{arm_name}_setup_steps must itself include fixture_setup_step "
+        f"at {port_name}, not just happen to work when run by hand"
+    )
+    _run_step(fixture_step, cwd=workspace)
+
+    assert doc_path.exists(), (
+        f"{arm_name} arm's full declared setup must provision {pef.DOC_NAME} "
+        "-- fixture_setup_step must run in this arm's step list"
+    )
+    rendered = doc_path.read_text(encoding="utf-8")
+    assert f"127.0.0.1:{port}" in rendered
+    assert "k4-arm-setup-fixture-key" in rendered
+    assert "manage.py migrate --noinput" in rendered
+    assert "manage.py runserver" in rendered

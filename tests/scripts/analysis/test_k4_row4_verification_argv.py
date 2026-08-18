@@ -347,3 +347,43 @@ def test_main_persists_proven_verification_status_when_contract_runs_clean(
         assert verification["status"] == "proven"
         assert verification["contract"] == str(contract)
         assert verification["source"] == "--contract"
+
+
+def test_main_records_sandbox_facts_into_arms_json(tmp_path, monkeypatch):
+    """Row 11/8 (K4 matrix): arms.json must carry the sandbox facts every
+    arm's project fragment states and the row-11 start-recipe canary's own
+    verdict -- a downstream reader sees WHAT was proven about the sandbox,
+    not just that a campaign ran."""
+    from scripts.analysis.k4 import subject as k4_subject
+
+    root, checkout, task_file = _prepare_main_run(tmp_path, monkeypatch)
+
+    wheel = tmp_path / "fake.whl"
+    wheel.write_bytes(b"not a real wheel")
+
+    code = preflight.main(
+        [
+            "--root",
+            str(root),
+            "--checkout",
+            str(checkout),
+            "--task-file",
+            str(task_file),
+            "--wheel",
+            str(wheel),
+        ]
+    )
+
+    assert code == 0
+    spec = json.loads((root / "arms.json").read_text(encoding="utf-8"))
+    sandbox = spec["sandbox"]
+    assert sandbox["network_allowed_domains"] == list(
+        k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS
+    )
+    # This helper's stubbed `probe_engagement` only `mkdir`s the probe
+    # workspace (see `_prepare_main_run`'s own docstring) -- no real
+    # clone/fixture -- so the honest outcome here is INDETERMINATE, not a
+    # false "proven"; `test_k4_row11_start_recipe.py` covers the genuine
+    # proven path against a real rendered recipe.
+    assert sandbox["start_recipe"]["status"] == "indeterminate"
+    assert sandbox["start_recipe"]["problems"]

@@ -47,6 +47,10 @@ These principles diverge from defaults because this role is a bounded
 implementation function, not a repository investigator or specification owner.
 
 1. **Production only.** Do not author, edit, regenerate or weaken tests/PBT.
+   A self-flagged coverage/oracle gap is terminal `INDETERMINATE` citing the
+   oracle, never `PASS` with the gap merely noted in `residuals` --
+   `residuals` records a bounded observation AFTER a genuine `PASS`, it
+   never demotes an unresolved oracle defect to an FYI.
 2. **One vertical.** Work only on the contract's targets and observable outcome.
 3. **Implementation first.** Read the contract, oracle, declared targets and
    only directly necessary code. `targets[].overlap`, `.justification`,

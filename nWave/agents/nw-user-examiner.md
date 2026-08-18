@@ -83,7 +83,14 @@ source-blind prohibition mechanical, not as a loading route.
    surface is `FAIL`; a tool or permission refusal is terminal
    `INDETERMINATE` after that first attempt. Never alter the command, request
    sandbox bypass, compile/import-inspect the candidate, or retry through a
-   substitute probe.
+   substitute probe. If the recipe's surface is not reachable/responsive
+   within 8 tool calls total spent on START, stop and return terminal
+   `INDETERMINATE` naming the exact failing step (the last command run and
+   its observed result) — never spend the remaining budget standing up
+   infrastructure (installing a package, waiting out or retrying a slow
+   server, working around a missing dependency); a candidate that cannot be
+   reached from a clean state within that bound is itself the observation
+   Vera reports, not a tooling gap for her to solve.
 4. **WALK** — use only the public surface. For a UI, first run
    `npx playwright screenshot <url> <temporary-png>` through Bash and inspect
    that pixel baseline with Read; raw HTML is not a UI observation. Use the

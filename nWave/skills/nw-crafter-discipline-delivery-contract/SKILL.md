@@ -87,7 +87,11 @@ result. Never load PBT/test-authoring skills: ATD owns the immutable oracle.
    infrastructure/recovery failures through the repository's native language
    so required handling is explicit. Keep the design language-agnostic.
 6. Never author, edit, weaken or replace an acceptance test. Return an oracle
-   defect to DISTILL.
+   defect to DISTILL: a self-flagged coverage/oracle gap is `INDETERMINATE`
+   citing the oracle, never `PASS` with the gap merely noted in
+   `residuals` -- `residuals` records a bounded, non-blocking observation
+   AFTER a genuine `PASS`, it never demotes an unresolved oracle defect to
+   an FYI on an otherwise-green verdict.
 7. Run the contract's literal verification command vectors through the exact
    declared interpreter. Never substitute an ambient `.venv`, shell string or
    guessed command.

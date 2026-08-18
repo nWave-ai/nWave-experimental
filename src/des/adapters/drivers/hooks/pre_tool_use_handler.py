@@ -57,6 +57,7 @@ from des.application.skill_tracking_service import (
     RootModeState,
     resolve_root_mode_state,
 )
+from des.domain.agent_capability import resolve_declared_max_turns
 
 
 # Non-zero exit code paired with a `{decision:block}` body for an atdd_pure
@@ -430,6 +431,231 @@ def _is_nwave_subagent(hook_input: dict[str, object]) -> bool:
     never a non-nWave agent (some other `agent_type` prefix)."""
     agent_type = hook_input.get("agent_type")
     return isinstance(agent_type, str) and agent_type.startswith(_NWAVE_AGENT_PREFIX)
+
+
+# Run 8 (Vera hit maxTurns:40 mid-work, zero terminal result -- the same
+# silent-kill class as ATD in run 3): a subagent's OWN declared `maxTurns`
+# is a hard boundary Claude Code enforces by simply stopping the agent --
+# no terminal <ROLE>-RESULT, and root cannot tell that apart from "still
+# working". A subagent must never be killed silently: once its own
+# transcript shows its budget nearly exhausted, every further tool call is
+# denied so its NEXT turn has no option left but the terminal text result
+# (INDETERMINATE, with the reason, if the work genuinely is not done).
+#
+# Margin: `maxTurns - 2`, not `- 1` or `- 0` -- the agent needs the CURRENT
+# turn free to actually emit the terminal result text, and one turn of
+# slack for a hook round-trip; team lead's own spec ("allow up to N-3, deny
+# at N-2") is the exact threshold this implements.
+_SUBAGENT_BUDGET_MARGIN = 2
+
+
+def _subagent_transcript_turn_count(transcript_path: str) -> int | None:
+    """Tool-use count so far in a subagent's OWN transcript -- calibrated
+    live against three real killed transcripts (run 8's nw-user-examiner,
+    maxTurns 40; run 3's two nw-acceptance-designer dispatches, maxTurns
+    12): counting `tool_use` content BLOCKS across every recorded
+    assistant message reproduces the SDK's OWN self-reported `tool_uses`
+    usage field EXACTLY in all three (40, 17, 18) -- raw assistant-entry
+    count does not (it also counts pure thinking/text-only assistant
+    messages that carry no tool call at all, and was found ~2x inflated
+    against the real kill point in the same evidence). Blocks, not
+    tool-use-bearing MESSAGES, so a future batched turn (several
+    `tool_use` blocks in one assistant message) is still counted
+    faithfully rather than undercounted by one. `None` on a missing,
+    unreadable or non-UTF-8 transcript -- the caller must never guess a
+    count it cannot observe.
+
+    Residual, disclosed limitation: this reproduces the SDK's own
+    `tool_uses` counter exactly, but that counter is not always identical
+    to the declared `maxTurns` AT THE ACTUAL KILL POINT -- run 3's two
+    ATD dispatches were cut off at `tool_uses` 17 and 18 against a
+    declared `maxTurns: 12` (5-6 over), an older build's enforcement
+    apparently allowing some slack this hook cannot see or control. This
+    guard's margin (`_SUBAGENT_BUDGET_MARGIN`) denies well before either
+    the declared budget or that observed slack in both real cases, but a
+    third SDK behavior this evidence does not cover remains possible.
+    """
+    count = 0
+    try:
+        with open(transcript_path, encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if entry.get("type") != "assistant":
+                    continue
+                message = entry.get("message")
+                content = message.get("content") if isinstance(message, dict) else None
+                if not isinstance(content, list):
+                    continue
+                count += sum(
+                    1
+                    for block in content
+                    if isinstance(block, dict) and block.get("type") == "tool_use"
+                )
+    except (OSError, UnicodeDecodeError):
+        return None
+    return count
+
+
+def _subagent_budget_exhaustion_block(
+    role: str, *, max_turns: int, turn_count: int
+) -> dict[str, str]:
+    return {
+        "decision": "block",
+        "reason": (
+            f"WHAT: {role}'s declared budget (maxTurns: {max_turns}) is "
+            f"nearly exhausted -- {turn_count} assistant turns already "
+            "observed in its own transcript. "
+            "WHY: a subagent silently stopped at its hard maxTurns boundary "
+            "mid-work returns NO terminal result at all -- root cannot "
+            "distinguish that from a subagent still working, and the whole "
+            "dispatch becomes unusable evidence. "
+            f"HOW: emit your terminal {role.upper()}-RESULT now -- verdict "
+            "INDETERMINATE with the exact reason it is unfinished if the "
+            "work genuinely is not done -- instead of spending another tool "
+            "call; this is the last turn with budget to do so."
+        ),
+    }
+
+
+def _evaluate_subagent_budget_exhaustion(
+    hook_input: dict[str, object],
+) -> dict[str, str] | None:
+    """Pure budget-exhaustion decision for a dispatched nw-* subagent's OWN
+    tool call. `None` (allow) unless ALL of: this is a real nWave subagent
+    (`_is_nwave_subagent`), its own published spec declares a positive
+    `maxTurns` (`resolve_declared_max_turns` -- `None` for a role that
+    declares none is never gated here, matching Claude Code's own
+    unlimited-turn default), and its OWN transcript already shows
+    `maxTurns - _SUBAGENT_BUDGET_MARGIN` or more assistant turns. Applies to
+    every tool call uniformly -- there is no "terminal" tool call to
+    exempt; the terminal result is plain text, never a tool call, so this
+    guard denying every tool call is exactly what forces it."""
+    if not _is_nwave_subagent(hook_input):
+        return None
+    transcript_path = hook_input.get("transcript_path")
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return None
+    agent_type = hook_input.get("agent_type")
+    assert isinstance(agent_type, str)  # guaranteed by _is_nwave_subagent
+    cwd = hook_input.get("cwd")
+    repo_root = Path(cwd) if isinstance(cwd, str) and cwd else Path.cwd()
+    max_turns = resolve_declared_max_turns(agent_type, repo_root=repo_root)
+    if max_turns is None:
+        return None
+    turn_count = _subagent_transcript_turn_count(transcript_path)
+    if turn_count is None:
+        return None
+    if turn_count < max_turns - _SUBAGENT_BUDGET_MARGIN:
+        return None
+    return _subagent_budget_exhaustion_block(
+        agent_type, max_turns=max_turns, turn_count=turn_count
+    )
+
+
+# Run 8 (B): root Read four test files plus models.py, drafted a full test
+# addition, THEN had its Edit denied for touching role-owned source -- the
+# denial arrived after the wasted reads, not before (GDP-1 violated). Root
+# never Reads implementation/test source at all: only the docs/config
+# authority roots below, or a physical path outside the repo entirely (the
+# arm's own installed config, never this repo's source). Everything else is
+# denied -- `nw-auto`'s "Root verification discipline" names the one
+# permitted deterministic spot-check (`des code-fact`) and the only other
+# route (dispatch the owning role) for anything a code-fact query cannot
+# answer.
+_AUTO_ROOT_SOURCE_READ_TOOL_NAMES = frozenset({"Read", "Grep", "Glob"})
+_AUTO_ROOT_ALLOWED_READ_PATH_ROOTS = ("docs", "templates/docs", ".nwave")
+_AUTO_ROOT_ALLOWED_READ_PATH_PREFIXES = tuple(
+    f"{root}/" for root in _AUTO_ROOT_ALLOWED_READ_PATH_ROOTS
+)
+_AUTO_ROOT_ALLOWED_TOP_LEVEL_FILES = frozenset({"CLAUDE.md", "AGENTS.md"})
+
+
+def _is_auto_root_allowed_read_path(relative_posix: str) -> bool:
+    """True iff a repo-relative POSIX path sits under a docs/config
+    authority root: `docs` itself or anything under `docs/**` (which
+    already covers `docs/delivery-contracts/**`; `templates/docs` is
+    separate since that tree does not nest under `docs/`), `.nwave` itself
+    or anything under `.nwave/**`, or a top-level `CLAUDE.md`/`AGENTS.md`/
+    `README*`/`*.md`. Bare `relative_posix in _AUTO_ROOT_ALLOWED_READ_PATH_
+    ROOTS` covers a `Grep`/`Glob` `path` naming the directory ITSELF with
+    no trailing content (`"docs"`, not `"docs/x"`) -- `startswith` alone
+    never matches that exact string. A "top-level" file has no `/` in its
+    relative path -- a same-named file nested in a subdirectory (a
+    package's own README, a vendored CLAUDE.md) is NOT this repo's own
+    root-level authority file and is not exempted by name alone."""
+    if relative_posix in _AUTO_ROOT_ALLOWED_READ_PATH_ROOTS:
+        return True
+    if relative_posix.startswith(_AUTO_ROOT_ALLOWED_READ_PATH_PREFIXES):
+        return True
+    if "/" in relative_posix:
+        return False
+    return (
+        relative_posix in _AUTO_ROOT_ALLOWED_TOP_LEVEL_FILES
+        or relative_posix.startswith("README")
+        or relative_posix.endswith(".md")
+    )
+
+
+def _auto_root_source_read_block(tool_name: str, relative_posix: str) -> dict[str, str]:
+    return {
+        "decision": "block",
+        "reason": (
+            f"WHAT: an Auto-root {tool_name} of {relative_posix!r} was "
+            "blocked -- outside the docs/config authority roots root may "
+            "read. "
+            "WHY: root fact-checking implementation/test source duplicates "
+            "work the architect/ATD/crafter already do and do again "
+            "downstream (Run 5: 263s/185K tokens root spent re-reading "
+            "files a role reads again); Run 8: root Read four test files "
+            "plus models.py and drafted a test addition before its own Edit "
+            "was denied for the same reason -- the wasted reads must never "
+            "happen at all, not merely be caught one tool later. "
+            "HOW: for a structural code fact, run the one bounded "
+            "`des code-fact` call (`nw-auto`, 'Root verification "
+            "discipline'); for anything needing real judgment about the "
+            "source, dispatch the owning nw-* role instead of reading it "
+            "yourself."
+        ),
+    }
+
+
+def _evaluate_auto_root_source_read(
+    tool_name: str, tool_input: dict[str, object], hook_input: dict[str, object]
+) -> dict[str, str] | None:
+    """Pure Auto-root Read/Grep/Glob allowlist decision. `None` (allow) for
+    a path under a docs/config authority root, or a path resolving OUTSIDE
+    the repo entirely (the arm's own installed config, never this repo's
+    source). Denies everything else under the repo. `Grep`/`Glob` with no
+    explicit `path` (their default, unscoped cwd search) is outside this
+    guard's evidenced scope -- Run 8's own defect was `Read` of named
+    files, never an unscoped Grep/Glob -- and is never denied here."""
+    raw_path = (
+        tool_input.get("file_path") if tool_name == "Read" else tool_input.get("path")
+    )
+    if not isinstance(raw_path, str) or not raw_path:
+        return None
+    cwd_raw = hook_input.get("cwd")
+    repo_root = Path(cwd_raw) if isinstance(cwd_raw, str) and cwd_raw else Path.cwd()
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        candidate = repo_root / candidate
+    try:
+        resolved = candidate.resolve()
+        resolved_repo_root = repo_root.resolve()
+    except OSError:
+        return None
+    if not resolved.is_relative_to(resolved_repo_root):
+        return None
+    relative_posix = resolved.relative_to(resolved_repo_root).as_posix()
+    if _is_auto_root_allowed_read_path(relative_posix):
+        return None
+    return _auto_root_source_read_block(tool_name, relative_posix)
 
 
 def _host_scan_traversal_roots(argv: list[str]) -> list[str]:
@@ -1027,6 +1253,17 @@ def handle_pre_tool_use() -> int:
             if transcript_path:
                 root_mode_state = resolve_root_mode_state(transcript_path)
 
+            # Run 8: a dispatched nw-* subagent's own declared maxTurns
+            # budget nearly exhausted -- deny every further tool call so its
+            # terminal result is forced out as text, never silently killed.
+            # Runs before every other gate below: no other check should get
+            # a chance to allow one more wasted tool call past this point.
+            budget_block = _evaluate_subagent_budget_exhaustion(hook_input)
+            if budget_block is not None:
+                print(json.dumps(budget_block))
+                exit_code = 2
+                return exit_code
+
             # Close the state gap between selecting Auto M/L and engaging
             # nw-auto. The selection marker is ephemeral transcript evidence;
             # no controller, receipt, or file is introduced. Established
@@ -1064,6 +1301,22 @@ def handle_pre_tool_use() -> int:
                         print(json.dumps(auto_root_bash_block))
                         exit_code = 2
                         return exit_code
+
+            # Run 8 (B): Auto-root Read/Grep/Glob of implementation/test
+            # source is denied before the read happens, not caught later at
+            # an Edit denial that arrives after the reads already ran.
+            if (
+                tool_name in _AUTO_ROOT_SOURCE_READ_TOOL_NAMES
+                and root_mode_state is RootModeState.AUTO_ENGAGED
+                and is_root_invocation
+            ):
+                source_read_block = _evaluate_auto_root_source_read(
+                    tool_name, tool_input, hook_input
+                )
+                if source_read_block is not None:
+                    print(json.dumps(source_read_block))
+                    exit_code = 2
+                    return exit_code
 
             # K4 architecture gap: nWave subagent host-scan lockdown. Cheap
             # for the overwhelming majority of Bash calls (non-find/bfs

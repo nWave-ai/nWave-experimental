@@ -37,3 +37,11 @@ SUT_URL = "https://github.com/healthchecks/healthchecks.git"
 #: silently drift onto whatever the SUT's default branch happens to be that
 #: day.
 SUT_PINNED_REV = "49653c350cddc47fc00a471bd1b08b5771a7967c"
+
+#: The K4 delivery sandbox's network policy
+#: (`preflight._render_sandbox_settings`'s `sandbox.network.allowedDomains`).
+#: The ONE source both the rendered settings JSON and the arm's project
+#: fragment (`prepare_examiner_fixture.render_project_fragment`) derive
+#: from, so an agent reading the fragment and the settings enforcing it
+#: can never disagree.
+SANDBOX_ALLOWED_NETWORK_DOMAINS = ("localhost", "127.0.0.1", "[::1]")

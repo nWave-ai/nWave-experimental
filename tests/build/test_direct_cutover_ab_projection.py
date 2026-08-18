@@ -690,3 +690,65 @@ def test_auto_skill_warns_off_spine_crafter_dispatch_before_the_attempt() -> Non
     # The warning is inside the CLI-dispatch section, before the mechanics.
     assert heading_index != -1
     assert warning_index < atd_returns_index
+
+
+def test_auto_skill_pins_pre_producer_recipe_check() -> None:
+    """Run 8 debrief: root had Read access to the project's own API/README
+    docs the whole time and never used it before writing the first
+    VALUE-SEED, forcing a wasted PO round (INDETERMINATE) plus a full ATD
+    re-author under a new DeliveryId. The interrogative must fire BEFORE the
+    first `des prepare-ordinary-request` call, not after PO reports the gap."""
+    auto = _text(AUTO_SKILL)
+    compact = " ".join(auto.split())
+
+    check_index = compact.index(
+        "does the VALUE-SEED already carry the literal public start recipe"
+    )
+    first_call_index = compact.index("Run exactly once, with VALUE-SEED bytes on stdin")
+    assert check_index < first_call_index
+    assert "PO is Write-only" in compact
+    assert "Read the project's own API/README docs" in compact
+    assert "BEFORE the first producer call, not after an `INDETERMINATE`" in compact
+
+
+def test_auto_skill_routes_po_scope_gap_to_po_never_atd() -> None:
+    """Run 8 debrief: root misrouted a PO-scope INDETERMINATE (missing
+    PublicStartRecipe) to ATD via REVISE-CONTRACT, costing a full wasted
+    dispatch when ATD correctly bounced it back EVIDENCE_GAP. Pin both the
+    routing rule and the DeliveryId-changes-with-the-seed consequence
+    (ADR-SSOT-002), plus the complementary same-DeliveryId REVISE-CONTRACT
+    rule for a charter-only fix."""
+    compact = " ".join(_text(AUTO_SKILL).split())
+
+    assert (
+        "is a PO-scope gap, never a DISTILL/ATD defect: never route it to "
+        "ATD via `REVISE-CONTRACT`" in compact
+    )
+    assert "Run 8's own mistake" in compact
+    assert (
+        "`DeliveryId` is `auto-` plus the first 16 hex characters of the "
+        "SHA-256 digest over the exact VALUE-SEED bytes" in compact
+    )
+    assert "so it is a DIFFERENT `DeliveryId`" in compact
+    assert "restart from step 1 with the corrected seed" in compact
+    assert (
+        "If instead the SAME `DeliveryId`'s contract already exists and "
+        "only the charter needed a fix" in compact
+    )
+    assert (
+        "dispatch ATD via `REVISE-CONTRACT` exactly as the crafter-citing-contract"
+        in compact
+    )
+
+
+def test_auto_skill_routing_table_names_self_flagged_oracle_gap() -> None:
+    """The crafter's own self-flagged coverage/oracle gap must route exactly
+    like an invented import or self-referential obligation -- REVISE-CONTRACT
+    to ATD, never accepted as a silent PASS."""
+    compact = " ".join(_text(AUTO_SKILL).split())
+
+    assert "a self-flagged coverage/oracle gap" in compact
+    assert (
+        "a self-flagged gap is never `PASS` with the gap only noted in "
+        "`residuals`" in compact
+    )
