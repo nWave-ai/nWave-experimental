@@ -37,6 +37,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -995,6 +996,82 @@ def des_subcommands_root_is_told_to_run(skill_md_text: str) -> set[str]:
     return subcommands
 
 
+# The exact quoted-delimiter suffixes a seed-heredoc header line ends in --
+# must stay byte-identical to `pre_tool_use_handler._VALUE_SEED_HEREDOC_
+# HEADER_SUFFIXES`, the ONE other place this exact pair is spelled out.
+_HEREDOC_HEADER_SUFFIXES = (" <<'NW_SEED'", ' <<"NW_SEED"')
+_ANGLE_PLACEHOLDER_RE = re.compile(r"<([^>]+)>")
+_BRACKETED_OPTIONAL_RE = re.compile(r"\[[^\]]*\]")
+
+
+def substitute_example_placeholder(name: str, *, root: str, delivery_id: str) -> str:
+    """One concrete value for a documentation placeholder NAME (the
+    contents of a `<...>` span) shaped by what it claims to hold -- an
+    enum (`M|L`, `true|false`, ...) resolves to its first member; anything
+    naming "root" or "id" resolves to the caller's own real value. Callers
+    needing a broader placeholder vocabulary (files, symbols, anchors,
+    locators -- the ones no single real value can stand in for) are
+    `tests/build/test_des_examples_are_executable.py`'s own concern, not
+    this one: this function exists ONLY for `route_walk_steps`, which
+    feeds the hook exactly two known heredoc headers with exactly these
+    two placeholder kinds."""
+    if "|" in name:
+        return name.split("|", 1)[0].strip()
+    lowered = name.lower()
+    if "root" in lowered:
+        return root
+    if "id" in lowered:
+        return delivery_id
+    return name
+
+
+def substitute_heredoc_header(header: str, *, root: str, delivery_id: str) -> str:
+    """`header` (one `des_fenced_lines` entry ending in the seed-heredoc
+    redirect) with every `<...>`/bracketed-optional placeholder resolved
+    to a concrete value. Never touches the heredoc redirect suffix itself
+    or an already-literal token -- a quoted `"ARCHITECTURE-COVERED:
+    path.md#anchor"` example is already a valid architecture-authority
+    line and needs no substitution."""
+    resolved = _BRACKETED_OPTIONAL_RE.sub("", header)
+    resolved = _ANGLE_PLACEHOLDER_RE.sub(
+        lambda match: substitute_example_placeholder(
+            match.group(1), root=root, delivery_id=delivery_id
+        ),
+        resolved,
+    )
+    return " ".join(resolved.split())
+
+
+def route_walk_heredoc_command(
+    skill_md_text: str, *, subcommand: str, root: str, delivery_id: str, seed: str
+) -> str | None:
+    """The EXACT fenced `des <subcommand> ... <<'NW_SEED'` header from
+    `skill_md_text` -- never hand-retyped -- with its placeholders resolved
+    to this walk's own real `root`/`delivery_id`, and `seed` as the
+    heredoc body. `None` when no fenced example for `subcommand` exists at
+    all (a genuine documentation gap `route_walk_steps` must report as a
+    failing step, never paper over with a fallback command it invents).
+    Genesis: `nw-auto/SKILL.md` mandated the seed heredoc into `des
+    resolve-charters` once it started building the PO envelope; the
+    hand-typed `resolve-charters-allow` step in `route_walk_steps` kept
+    using the OLD plain-argv shape and never caught the drift -- this is
+    THE fix for that class, not just that one instance: any future
+    heredoc-header example change in SKILL.md is picked up automatically,
+    never re-hand-typed here.
+    """
+    for line in des_fenced_lines(skill_md_text):
+        if not line.endswith(_HEREDOC_HEADER_SUFFIXES):
+            continue
+        try:
+            tokens = shlex.split(line.split("<<", 1)[0])
+        except ValueError:
+            continue
+        if len(tokens) >= 2 and tokens[0] == "des" and tokens[1] == subcommand:
+            header = substitute_heredoc_header(line, root=root, delivery_id=delivery_id)
+            return f"{header}\n{seed}\nNW_SEED"
+    return None
+
+
 def _route_walk_workspace(root: Path) -> Path:
     return root / "probe-route-walk"
 
@@ -1212,7 +1289,16 @@ def route_walk_steps(
 
     # --- root-Bash: the heredoc shape, hook-level -- independent of whether
     # the CLI chain below actually executes cleanly, so it runs first and
-    # unconditionally.
+    # unconditionally. Fed the EXACT fenced example `skill_md_text` itself
+    # documents (`route_walk_heredoc_command`), never a hand-retyped
+    # reconstruction -- the drift class this walk exists to catch.
+    prep_heredoc_command = route_walk_heredoc_command(
+        skill_md_text,
+        subcommand="prepare-ordinary-request",
+        root=repo_root,
+        delivery_id="auto-0000000000000000",
+        seed=_ROUTE_WALK_SEED,
+    )
     steps.append(
         _hook_step(
             "seed-heredoc-allow",
@@ -1223,13 +1309,8 @@ def route_walk_steps(
             payload={
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": (
-                        "des prepare-ordinary-request --size M "
-                        f"--repo-root {repo_root} --architecture-authority "
-                        f'"{_ROUTE_WALK_ARCH_AUTHORITY}" --delivery-route RED_TO_GREEN '
-                        f"--examine true --independent-review false <<'NW_SEED'\n"
-                        f"{_ROUTE_WALK_SEED}\nNW_SEED"
-                    )
+                    "command": prep_heredoc_command
+                    or "# no fenced prepare-ordinary-request heredoc example found"
                 },
                 "transcript_path": transcript_path,
             },
@@ -1380,21 +1461,32 @@ def route_walk_steps(
     # --- root-Bash: resolve-charters, real shape, not just a coverage --help -
     # `prep_step` is guaranteed to have passed here -- the early return above
     # already handles the failure case -- so `delivery_id` is always real.
+    # Fed the EXACT fenced example `skill_md_text` documents (heredoc
+    # included -- resolve-charters now needs the seed on stdin to build the
+    # PO envelope on AUTHOR), never a hand-retyped reconstruction. This is
+    # the genesis defect this walk missed: the OLD hand-typed plain-argv
+    # command here never exercised the heredoc shape SKILL.md actually
+    # mandates, so it stayed green while a real run was denied.
+    rc_heredoc_command = route_walk_heredoc_command(
+        skill_md_text,
+        subcommand="resolve-charters",
+        root=repo_root,
+        delivery_id=delivery_id,
+        seed=_ROUTE_WALK_SEED,
+    )
     steps.append(
         _hook_step(
             "resolve-charters-allow",
             "nw-auto/SKILL.md step 2: 'On Prepared(SeededAuthority), run exactly "
             "one command: des resolve-charters --repo-root <root> --delivery-id "
-            "<producer id> --examine <true|false>'.",
+            "<producer id> --examine <true|false> <<\\'NW_SEED\\' ...'.",
             expect_allow=True,
             hook_run=hook_run,
             payload={
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": (
-                        f"des resolve-charters --repo-root {repo_root} "
-                        f"--delivery-id {delivery_id} --examine true"
-                    )
+                    "command": rc_heredoc_command
+                    or "# no fenced resolve-charters heredoc example found"
                 },
                 "transcript_path": transcript_path,
             },

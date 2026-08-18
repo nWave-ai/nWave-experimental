@@ -197,54 +197,76 @@ def _auto_root_bash_block(reason: str) -> dict[str, str]:
     return {"decision": "block", "reason": reason}
 
 
-# ADR-SSOT-002 "VALUE-SEED transport": the value seed must reach
-# `prepare-ordinary-request` as raw UTF-8 bytes on stdin -- never argv,
+# ADR-SSOT-002 "VALUE-SEED transport": the value seed must reach every
+# producer that consumes it as raw UTF-8 bytes on stdin -- never argv,
 # env, temp file or transcript scrape, and never re-interpreted by the
 # shell (the seed is arbitrary human text, not a safe shell token). The
-# blanket injection-marker block above would otherwise make that producer
-# permanently unreachable from Auto-root Bash: every stdin-feeding
-# construct needs either `|` or `<<`, both unconditionally rejected.
+# blanket injection-marker block above would otherwise make those
+# producers permanently unreachable from Auto-root Bash: every
+# stdin-feeding construct needs either `|` or `<<`, both unconditionally
+# rejected.
 #
-# Exactly one shape is carved out below: a single `des
-# prepare-ordinary-request <bounded argv>` header line ending in a
-# QUOTED heredoc redirect (`<<'NW_SEED'` or `<<"NW_SEED"` -- quoting is
-# mandatory so the shell performs zero expansion inside the body, the
-# same "opaque bytes" guarantee a pipe would give), followed by an
-# arbitrary-content body, terminated by a line that is exactly the
+# Exactly one shape is carved out below, generalized over the CLOSED SET
+# of seed-bearing producers nw-auto/SKILL.md's route mandates root run
+# with the seed on stdin (Run 7: `des resolve-charters` joined `des
+# prepare-ordinary-request` here once it started building the PO envelope
+# and needed the same seed -- the carve-out must generalize to every such
+# producer, not be hand-extended one subcommand at a time; THE one place
+# both this hook and the SKILL.md-coverage guard read is the dict below):
+# a single `des <one of these subcommands> <ITS OWN bounded argv>` header
+# line ending in a QUOTED heredoc redirect (`<<'NW_SEED'` or `<<"NW_SEED"`
+# -- quoting is mandatory so the shell performs zero expansion inside the
+# body, the same "opaque bytes" guarantee a pipe would give), followed by
+# an arbitrary-content body, terminated by a line that is exactly the
 # delimiter and nothing after it. A quoted heredoc body is never
 # shell-interpreted, so it is the one construct that can carry a seed
 # containing quotes, `|`, backticks or any other byte without escaping.
-# Every other shape -- unquoted delimiter, unterminated body, trailing
-# content after the terminator, a disallowed flag, any composition
-# marker in the header -- still falls through to the generic block.
-_VALUE_SEED_HEREDOC_ARGV_PREFIX = ("des", "prepare-ordinary-request")
+# Every other shape -- a subcommand outside this set, a flag from a
+# DIFFERENT producer's vocabulary, an unquoted delimiter, unterminated
+# body, trailing content after the terminator, any composition marker in
+# the header -- still falls through to the generic block.
 _VALUE_SEED_HEREDOC_DELIMITER = "NW_SEED"
 _VALUE_SEED_HEREDOC_HEADER_SUFFIXES = (
     f" <<'{_VALUE_SEED_HEREDOC_DELIMITER}'",
     f' <<"{_VALUE_SEED_HEREDOC_DELIMITER}"',
 )
-# The exact closed flag vocabulary `des prepare-ordinary-request --help`
-# accepts (src/des/cli/prepare_ordinary_request.py `_parser`) -- no other
-# flag is permitted on the heredoc header line.
-_VALUE_SEED_HEREDOC_ALLOWED_FLAGS = frozenset(
-    {
-        "--size",
-        "--repo-root",
-        "--architecture-authority",
-        "--delivery-route",
-        "--examine",
-        "--independent-review",
-        "--budget-token-limit",
-        "--budget-wall-clock-minutes",
-    }
-)
+# THE one place naming which `des` subcommands may take the seed heredoc,
+# and each one's own closed flag vocabulary (never shared across
+# subcommands -- prepare-ordinary-request's `--size` must never leak into
+# resolve-charters' argv, and vice versa). `des <sub> --help`
+# (src/des/cli/prepare_ordinary_request.py `_parser`,
+# src/des/cli/resolve_charters.py `_build_parser`) is each vocabulary's
+# own source. `tests/build/test_des_examples_are_executable.py` imports
+# this SAME dict to assert nw-auto/SKILL.md's fenced heredoc examples
+# name exactly this set, in both directions -- one drift class, one fix.
+_VALUE_SEED_HEREDOC_ALLOWED_COMMANDS: dict[str, frozenset[str]] = {
+    "prepare-ordinary-request": frozenset(
+        {
+            "--size",
+            "--repo-root",
+            "--architecture-authority",
+            "--delivery-route",
+            "--examine",
+            "--independent-review",
+            "--budget-token-limit",
+            "--budget-wall-clock-minutes",
+        }
+    ),
+    "resolve-charters": frozenset(
+        {
+            "--repo-root",
+            "--delivery-id",
+            "--examine",
+        }
+    ),
+}
 
 
 def _value_seed_heredoc_header_argv(header: str) -> list[str] | None:
     """`shlex`-tokenized argv of a matched heredoc header's pre-`<<` argv
     prefix, or `None` if the prefix carries any composition marker, fails
-    to tokenize, is not `des prepare-ordinary-request`, or carries any
-    flag token outside the closed vocabulary above."""
+    to tokenize, is not `des <allowed-subcommand>`, or carries any flag
+    token outside THAT subcommand's own closed vocabulary."""
     prefix = None
     for suffix in _VALUE_SEED_HEREDOC_HEADER_SUFFIXES:
         if header.endswith(suffix):
@@ -258,14 +280,17 @@ def _value_seed_heredoc_header_argv(header: str) -> list[str] | None:
         argv = shlex.split(prefix)
     except ValueError:
         return None
-    if len(argv) < 2 or tuple(argv[:2]) != _VALUE_SEED_HEREDOC_ARGV_PREFIX:
+    if len(argv) < 2 or argv[0] != "des":
+        return None
+    allowed_flags = _VALUE_SEED_HEREDOC_ALLOWED_COMMANDS.get(argv[1])
+    if allowed_flags is None:
         return None
     flags = argv[2:]
     i = 0
     while i < len(flags):
         token = flags[i]
         flag_name = token.partition("=")[0]
-        if flag_name not in _VALUE_SEED_HEREDOC_ALLOWED_FLAGS:
+        if flag_name not in allowed_flags:
             return None
         if "=" in token:
             # `--flag=value` is one self-contained token.
@@ -280,14 +305,15 @@ def _value_seed_heredoc_header_argv(header: str) -> list[str] | None:
 
 
 def _is_value_seed_stdin_heredoc(command: str) -> bool:
-    """True iff `command` is the one hook-permitted seed-transport
-    heredoc: a bounded `des prepare-ordinary-request` header ending in a
-    quoted `<<'NW_SEED'`/`<<"NW_SEED"` redirect, an opaque body, and a
-    terminator line that is exactly the delimiter with nothing after it.
-    Fails closed (`False`) on anything else -- an unquoted delimiter, a
-    missing/duplicated terminator, trailing content past it, or a header
-    that does not tokenize into exactly `des prepare-ordinary-request`
-    plus the closed flag vocabulary.
+    """True iff `command` is one hook-permitted seed-transport heredoc: a
+    bounded `des <subcommand>` header, where `<subcommand>` is one of
+    `_VALUE_SEED_HEREDOC_ALLOWED_COMMANDS`, ending in a quoted
+    `<<'NW_SEED'`/`<<"NW_SEED"` redirect, an opaque body, and a terminator
+    line that is exactly the delimiter with nothing after it. Fails closed
+    (`False`) on anything else -- an unquoted delimiter, a missing/
+    duplicated terminator, trailing content past it, or a header that does
+    not tokenize into `des <allowed-subcommand>` plus THAT subcommand's own
+    closed flag vocabulary.
     """
     if "\r" in command or "\n" not in command:
         return False

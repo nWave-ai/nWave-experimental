@@ -200,3 +200,57 @@ def test_every_documented_des_example_parses_without_an_argparse_error(
                 f"full stderr:\n{result.stderr.strip()}"
             )
     assert not problems, "\n\n".join(problems)
+
+
+def _documented_heredoc_subcommands() -> set[str]:
+    """The `des <subcommand>` name of every fenced example across
+    `nWave/skills/**/SKILL.md` that ends in the quoted seed-heredoc
+    redirect."""
+    documented: set[str] = set()
+    for path in sorted(REPO_ROOT.glob("nWave/skills/**/SKILL.md")):
+        for line in des_fenced_lines(path.read_text(encoding="utf-8")):
+            if not (line.endswith("<<'NW_SEED'") or line.endswith('<<"NW_SEED"')):
+                continue
+            head = line.split("<<", 1)[0]
+            try:
+                tokens = shlex.split(head)
+            except ValueError:
+                continue
+            if len(tokens) >= 2 and tokens[0] == "des":
+                documented.add(tokens[1])
+    return documented
+
+
+def test_skill_heredoc_examples_match_hook_allowed_commands_exactly() -> None:
+    """Run 7 evidence: nw-auto/SKILL.md mandated piping the VALUE-SEED
+    heredoc into `des resolve-charters` once it started building the PO
+    envelope; the Auto-root Bash hook's carve-out only ever recognized
+    `prepare-ordinary-request` as heredoc-eligible, so root's own
+    documented next command was denied -- the drift class this repo's own
+    guards exist to kill. THE one place naming the heredoc-eligible
+    subcommand set is `pre_tool_use_handler._VALUE_SEED_HEREDOC_ALLOWED_
+    COMMANDS`; this test asserts BOTH directions against it, imported
+    directly rather than re-declared, so the two can never independently
+    drift again: every fenced example ending in the heredoc redirect must
+    name a subcommand the hook allows, and every subcommand the hook
+    allows must be demonstrated by at least one fenced example."""
+    from des.adapters.drivers.hooks import pre_tool_use_handler
+
+    allowed = set(pre_tool_use_handler._VALUE_SEED_HEREDOC_ALLOWED_COMMANDS)
+    documented = _documented_heredoc_subcommands()
+
+    # Non-vacuity: an extraction bug that finds nothing can never fail
+    # either coverage assertion below -- a silent, undiscriminating pass.
+    assert documented, "no fenced seed-heredoc example found at all"
+    assert allowed, "the hook's heredoc-eligible command set is empty"
+
+    missing_from_docs = allowed - documented
+    assert not missing_from_docs, (
+        f"the hook allows the seed heredoc for {sorted(missing_from_docs)} but "
+        "no fenced nw-auto/SKILL.md example demonstrates it"
+    )
+    undocumented_in_hook = documented - allowed
+    assert not undocumented_in_hook, (
+        "a fenced nw-auto/SKILL.md example pipes the seed heredoc into "
+        f"{sorted(undocumented_in_hook)}, which the hook does not allow"
+    )

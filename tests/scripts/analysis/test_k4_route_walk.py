@@ -337,18 +337,73 @@ class TestRouteWalkRealHookCases:
         code, _ = _real_hook_run(monkeypatch, capsys, payload)
         assert code == 0
 
+    def test_seed_heredoc_is_fed_from_the_real_skill_md_example(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        """Same real-extraction proof as the resolve-charters case below,
+        for `prepare-ordinary-request` -- both heredoc-eligible producers
+        are now fed the SAME checked-in text, never two independently
+        hand-typed reconstructions of it."""
+        skill_md_text = k4_preflight._NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
+        command = k4_preflight.route_walk_heredoc_command(
+            skill_md_text,
+            subcommand="prepare-ordinary-request",
+            root=str(tmp_path),
+            delivery_id="auto-probeprobeprobe",
+            seed="probe seed",
+        )
+        assert command is not None
+        transcript = _transcript(tmp_path)
+        payload = {
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "transcript_path": str(transcript),
+        }
+        code, _ = _real_hook_run(monkeypatch, capsys, payload)
+        assert code == 0
+
     def test_resolve_charters_is_allowed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     ) -> None:
+        """Run 7 correction: this test used the OLD plain-argv shape and
+        stayed green while the REAL current mandate (the seed heredoc,
+        needed since `resolve-charters` builds the PO envelope on AUTHOR)
+        was denied -- exercise the shape root actually sends now."""
         transcript = _transcript(tmp_path)
         payload = {
             "tool_name": "Bash",
             "tool_input": {
                 "command": (
                     f"des resolve-charters --repo-root {tmp_path} "
-                    "--delivery-id auto-probeprobeprobe --examine true"
+                    "--delivery-id auto-probeprobeprobe --examine true "
+                    "<<'NW_SEED'\nprobe seed\nNW_SEED"
                 )
             },
+            "transcript_path": str(transcript),
+        }
+        code, _ = _real_hook_run(monkeypatch, capsys, payload)
+        assert code == 0
+
+    def test_resolve_charters_heredoc_is_fed_from_the_real_skill_md_example(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        """`route_walk_heredoc_command` extracts this from the ACTUAL
+        checked-in nw-auto/SKILL.md text -- never a hand-retyped
+        reconstruction -- so a future change to the documented shape is
+        picked up automatically."""
+        skill_md_text = k4_preflight._NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
+        command = k4_preflight.route_walk_heredoc_command(
+            skill_md_text,
+            subcommand="resolve-charters",
+            root=str(tmp_path),
+            delivery_id="auto-probeprobeprobe",
+            seed="probe seed",
+        )
+        assert command is not None
+        transcript = _transcript(tmp_path)
+        payload = {
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
             "transcript_path": str(transcript),
         }
         code, _ = _real_hook_run(monkeypatch, capsys, payload)

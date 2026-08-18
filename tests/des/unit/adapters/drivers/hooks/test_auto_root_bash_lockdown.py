@@ -573,6 +573,151 @@ class TestAutoRootBashValueSeedStdinHeredoc:
         assert payload["decision"] == "block"
 
 
+class TestAutoRootBashValueSeedStdinHeredocResolveCharters:
+    """Run 7 evidence: `des resolve-charters` now needs the SAME VALUE-SEED
+    on stdin (to build the PO envelope on AUTHOR) that
+    `des prepare-ordinary-request` does, and nw-auto/SKILL.md step 2
+    documents the identical quoted-heredoc shape for it -- but the
+    Auto-root Bash carve-out only ever recognized `prepare-ordinary-request`
+    as a heredoc-eligible subcommand, so root's own documented next command
+    was denied. The carve-out is generalized to the closed SET of seed-
+    bearing producers, each with its own bounded flag vocabulary."""
+
+    _HEADER = (
+        "des resolve-charters --repo-root /tmp/repo "
+        "--delivery-id auto-0123456789abcdef --examine true"
+    )
+
+    @staticmethod
+    def _heredoc(
+        body: str,
+        *,
+        header: str | None = None,
+        quote: str = "'",
+        delimiter: str = "NW_SEED",
+    ) -> str:
+        head = (
+            header
+            if header is not None
+            else TestAutoRootBashValueSeedStdinHeredocResolveCharters._HEADER
+        )
+        return f"{head} <<{quote}{delimiter}{quote}\n{body}\n{delimiter}"
+
+    def test_plain_seed_heredoc_is_not_auto_root_blocked(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        command = self._heredoc("the value seed text")
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert "Auto-root" not in payload.get("reason", "")
+
+    def test_double_quoted_delimiter_is_not_auto_root_blocked(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        command = self._heredoc("the value seed text", quote='"')
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert "Auto-root" not in payload.get("reason", "")
+
+    def test_flag_equals_value_token_form_is_not_auto_root_blocked(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        header = (
+            "des resolve-charters --repo-root=/tmp/repo "
+            "--delivery-id=auto-0123456789abcdef --examine=true"
+        )
+        command = self._heredoc("the value seed text", header=header)
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert "Auto-root" not in payload.get("reason", "")
+
+    def test_real_k4_task_body_round_trips(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        seed_body = _K4_TASK_TXT.read_text(encoding="utf-8")
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        command = self._heredoc(seed_body)
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert "Auto-root" not in payload.get("reason", "")
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            # a flag outside resolve-charters' own closed vocabulary --
+            # prepare-ordinary-request's flags must NOT leak across
+            "des resolve-charters --repo-root /tmp/repo --delivery-id "
+            "auto-0123456789abcdef --examine true --size M <<'NW_SEED'\nseed\nNW_SEED",
+            # a subcommand outside the whole heredoc-eligible SET
+            "des charter-scaffold --repo-root /tmp/repo --delivery-id "
+            "auto-0123456789abcdef <<'NW_SEED'\nseed\nNW_SEED",
+            # unquoted delimiter
+            f"{_HEADER} <<NW_SEED\nseed\nNW_SEED",
+            # unterminated
+            f"{_HEADER} <<'NW_SEED'\nseed with no terminator",
+            # trailing command after terminator
+            f"{_HEADER} <<'NW_SEED'\nseed\nNW_SEED\nrm -rf /",
+        ],
+        ids=[
+            "prepare_ordinary_request_flag_does_not_leak",
+            "charter_scaffold_not_in_heredoc_set",
+            "unquoted_delimiter",
+            "unterminated_heredoc",
+            "trailing_command_after_terminator",
+        ],
+    )
+    def test_anything_off_the_exact_shape_still_blocks(
+        self, monkeypatch, capsys, audit_events, tmp_path, command
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+
+
 class TestAutoRootBashMalformedCommandFailsClosed:
     """Once Auto-root is armed, a malformed `command` (missing/empty/
     whitespace-only/non-string) must fail CLOSED -- blocked -- not fall
