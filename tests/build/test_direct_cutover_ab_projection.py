@@ -522,6 +522,36 @@ def test_agent_pins_declared_imports_self_check_without_a_bash_tool() -> None:
     )
 
 
+def test_agent_pins_bare_vs_dotted_declared_import_form() -> None:
+    """Run 6 false-reject: the resolver now accepts a bare name bound in the
+    target's own file (third-party/stdlib included), but the FORM still
+    matters -- a dotted third-party reference (`cronsim.CronSim`) is still
+    unresolvable and rejected as invented. ATD must write the form that
+    matches what the authority showed, never guess between them."""
+    agent = _text(AGENT)
+    compact = " ".join(agent.split())
+
+    assert (
+        "Write the FORM the authority actually showed: a bare name "
+        "(`CronSim`, `ZoneInfo`) when it is bound at the top of THIS "
+        "target's own file" in compact
+    )
+    assert "third-party/stdlib included" in compact
+    assert (
+        "a dotted base-tree path "
+        "(`des.domain.repo_path_resolver.resolve_repo_root`) only for an "
+        "in-repo symbol the target does not itself import" in compact
+    )
+    assert (
+        "Never write a dotted form for a third-party/stdlib symbol "
+        "(`cronsim.CronSim`) — unresolvable there by design, rejected as "
+        "invented" in compact
+    )
+    # The stale disqualifier this row removes: third-party/stdlib names are
+    # a legitimate bare-form citation now, never blanket-excluded.
+    assert "or from a third-party/" not in compact
+
+
 def test_agent_pins_lossless_overlap_projection_and_single_regular_oracle_file() -> (
     None
 ):

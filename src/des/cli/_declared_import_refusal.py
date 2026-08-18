@@ -19,6 +19,17 @@ separately-documented, ADR-anchored rule that DISTILL/the acceptance
 designer itself never calls `des validate-delivery-contract` (that call
 stays exclusively `des dispatch`'s and the crafter's own BASELINE
 point-of-use verification).
+
+Run 6 (K4 matrix): the resolver ALSO accepted a false-reject regression --
+a bare name genuinely bound at the top of the target's OWN file (e.g.
+`CronSim`, imported via `from cronsim import CronSim` in that exact
+`hc/api/models.py`) is a real base-tree reference, not an invented one, even
+though it never resolves as a dotted module path (there is no file literally
+named `CronSim.py`, and `cronsim` itself is never vendored into the tree for
+`resolve_declared_import` to walk into). `is_name_bound_in_target_file`
+checks the target's own file first; `resolve_declared_import`'s dotted
+resolution runs second, unchanged, so a genuinely invented DOTTED reference
+(Run 4's `cronsim.CronSim`) still rejects.
 """
 
 from __future__ import annotations
@@ -26,6 +37,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from des.domain.declared_import_resolver import (
+    is_name_bound_in_target_file,
     resolve_declared_import,
     unresolved_declared_import_owner,
 )
@@ -50,6 +62,8 @@ def all_missing_declared_imports(
     missing: list[tuple[str, str]] = []
     for target_path, target_plan in contract["targets"].items():
         for reference in target_plan.get("declared-imports", []):
+            if is_name_bound_in_target_file(repo_root, target_path, reference):
+                continue
             if not resolve_declared_import(repo_root, reference):
                 missing.append((target_path, reference))
     return missing
@@ -89,7 +103,10 @@ def unresolved_declared_import_how(
         )
     return (
         f"'{reference}' is not present at base revision {base_revision}: "
-        "cite only existing base-tree symbols, or if this delivery creates "
-        "it, document that in the creating target's own justification "
-        "field instead of declared-imports"
+        "declared-imports accepts either a bare name bound at the top of "
+        "the TARGET's own file (an import alias or a module-level "
+        "definition), or a dotted base-tree module/symbol path -- cite one "
+        "of those forms, or if this delivery creates it, document that in "
+        "the creating target's own justification field instead of "
+        "declared-imports"
     )

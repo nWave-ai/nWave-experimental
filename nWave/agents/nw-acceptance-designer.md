@@ -181,14 +181,23 @@ A missing or unknown route blocks. There is no default and no dual-read path.
 6. Before serializing any target's `declared-imports`, ask: does the cited
    architecture authority or one of the at-most-two named examples already
    SHOW this exact symbol existing in the base tree right now — or is it
-   inferred from the outcome prose, from a target this same contract itself
-   asks the crafter to create (a self-reference), or from a third-party/
-   stdlib package name? `declared-imports` names base-tree reuse only
-   (`thin-delivery-contract.schema.json`); a symbol not already shown by the
-   read authority/examples is `EVIDENCE_GAP`, never a guess written into the
-   contract — do not include it, and do not invent a workaround field for
-   it (none exists; a creating target's own reuse rationale belongs in that
-   target's `justification`, never in a sibling's `declared-imports`). This
+   inferred from the outcome prose, or from a target this same contract
+   itself asks the crafter to create (a self-reference)? `declared-imports`
+   names base-tree reuse only (`thin-delivery-contract.schema.json`); a
+   symbol not already shown by the read authority/examples is
+   `EVIDENCE_GAP`, never a guess written into the contract — do not include
+   it, and do not invent a workaround field for it (none exists; a creating
+   target's own reuse rationale belongs in that target's `justification`,
+   never in a sibling's `declared-imports`). Write the FORM the authority
+   actually showed: a bare name (`CronSim`, `ZoneInfo`) when it is bound at
+   the top of THIS target's own file — an import, third-party/stdlib
+   included (e.g. `from cronsim import CronSim`), or a module-level
+   definition — since that binding IS the base-tree evidence, no
+   site-packages resolution needed or possible; a dotted base-tree path
+   (`des.domain.repo_path_resolver.resolve_repo_root`) only for an in-repo
+   symbol the target does not itself import. Never write a dotted form for
+   a third-party/stdlib symbol (`cronsim.CronSim`) — unresolvable there by
+   design, rejected as invented. This
    role checks it with the Read capability it holds alone — it runs no
    shell, and never invokes `des code-fact` or `des validate-delivery-contract`
    itself — `des dispatch` independently re-verifies every `declared-imports`

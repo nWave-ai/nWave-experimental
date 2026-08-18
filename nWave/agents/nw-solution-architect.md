@@ -72,10 +72,30 @@ call:
   honestly certify a line claim — do not substitute either for a `Read`.
 - A symbol-only citation naming no line: `des code-fact
   query.atoms-in-file --root <cited-file>` confirms the symbol is present
-  in that file's atoms; a caller/reader claim instead uses
-  `query.callers-of`/`query.reads-of` for that exact relationship — no
+  in that file's atoms (`--root` takes the FILE directly for this one
+  capability — its `subject` positional is inert for `atoms-in-file` and
+  never scopes the query, verified against this repository's own `src/
+  des`: passing the file as `subject` instead silently falls back to
+  scanning the whole tree). A caller/reader claim instead uses:
+
+  ```
+  des code-fact query.callers-of <symbol> --root <repo-root>
+  des code-fact query.reads-of <symbol> --root <repo-root>
+  ```
+
+  `--root` here is the REPO ROOT, never the cited file alone — scoping
+  `--root` to one file silently drops real call sites outside it (verified:
+  scoping to a single file returned only that file's own call site, one
+  fewer than the same query against the repo root), and no
   `query.where-defined` capability exists in the closed five-capability CLI
-  (`nw-code-analysis-port`), never invent one.
+  (`nw-code-analysis-port`), never invent one. Use the exact shape above —
+  `<symbol>` before `--root` — every time: it is the one argument order
+  verified to parse across Python patch versions. The reordered form
+  (`--root <repo-root> <symbol>`, subject trailing an already-satisfied
+  `--root`) is unreliable, not merely unrecommended — argparse's handling
+  of it differs across CPython 3.12.x patch releases (local 3.12.3 accepts
+  it, CI's 3.12.13 rejects it as "unrecognized arguments"), so it must
+  never be relied on even where it happens to work today.
 - A citation naming neither a checkable line nor a checkable file/
   relationship cannot be self-verified deterministically and never counts
   as verified.

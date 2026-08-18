@@ -8,11 +8,14 @@ writes, and byte-identical tree state before/after every invocation.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
+from des.application.ordinary_request import build_po_envelope, compute_delivery_id
 from des.cli import resolve_charters
 
 
@@ -29,7 +32,18 @@ Start a clean checkout and run `make demo`.
 """
 
 
-def _run(capsys, argv: list[str]) -> tuple[int, dict]:
+class _FakeStdin:
+    """A genuine byte stream on `.buffer`, matching `sys.stdin`'s shape."""
+
+    def __init__(self, seed_bytes: bytes) -> None:
+        self.buffer = io.BytesIO(seed_bytes)
+
+
+def _run(
+    capsys, argv: list[str], *, monkeypatch=None, seed_bytes: bytes | None = None
+) -> tuple[int, dict]:
+    if monkeypatch is not None:
+        monkeypatch.setattr(sys, "stdin", _FakeStdin(seed_bytes or b""))
     exit_code = resolve_charters.main(argv)
     captured = capsys.readouterr()
     assert captured.out.count("\n") == 1
@@ -81,24 +95,81 @@ def test_examine_false_skips_with_hostile_namespace_untouched(tmp_path, capsys):
     assert (namespace_parent / "hostile-id").is_symlink()
 
 
-def test_missing_namespace_returns_author(tmp_path, capsys):
-    exit_code, payload = _run(capsys, _base_argv(tmp_path, "missing-id", "true"))
+def test_missing_namespace_returns_author(tmp_path, capsys, monkeypatch):
+    seed = "Ship the widget end to end."
+    delivery_id = compute_delivery_id(seed)
+    exit_code, payload = _run(
+        capsys,
+        _base_argv(tmp_path, delivery_id, "true"),
+        monkeypatch=monkeypatch,
+        seed_bytes=seed.encode("utf-8"),
+    )
     assert exit_code == 0
+    namespace = f"docs/product/expectations/{delivery_id}"
     assert payload == {
         "status": "AUTHOR",
-        "namespace": "docs/product/expectations/missing-id",
+        "namespace": namespace,
+        "envelope": build_po_envelope(
+            delivery_id=delivery_id,
+            namespace=namespace,
+            root=str(tmp_path.resolve()),
+            value_seed=seed,
+        ),
     }
 
 
-def test_empty_namespace_returns_author(tmp_path, capsys):
-    namespace = tmp_path / "docs" / "product" / "expectations" / "empty-id"
-    namespace.mkdir(parents=True)
-    exit_code, payload = _run(capsys, _base_argv(tmp_path, "empty-id", "true"))
+def test_empty_namespace_returns_author(tmp_path, capsys, monkeypatch):
+    seed = "Ship a different widget."
+    delivery_id = compute_delivery_id(seed)
+    namespace_dir = tmp_path / "docs" / "product" / "expectations" / delivery_id
+    namespace_dir.mkdir(parents=True)
+    exit_code, payload = _run(
+        capsys,
+        _base_argv(tmp_path, delivery_id, "true"),
+        monkeypatch=monkeypatch,
+        seed_bytes=seed.encode("utf-8"),
+    )
     assert exit_code == 0
+    namespace = f"docs/product/expectations/{delivery_id}"
     assert payload == {
         "status": "AUTHOR",
-        "namespace": "docs/product/expectations/empty-id",
+        "namespace": namespace,
+        "envelope": build_po_envelope(
+            delivery_id=delivery_id,
+            namespace=namespace,
+            root=str(tmp_path.resolve()),
+            value_seed=seed,
+        ),
     }
+
+
+def test_author_without_stdin_seed_blocks(tmp_path, capsys, monkeypatch):
+    """The producer never persists VALUE-SEED anywhere -- `AUTHOR` without a
+    piped seed must refuse, never emit an envelope with a missing/invented
+    VALUE-SEED."""
+    exit_code, payload = _run(
+        capsys,
+        _base_argv(tmp_path, "missing-id", "true"),
+        monkeypatch=monkeypatch,
+        seed_bytes=b"",
+    )
+    assert exit_code != 0
+    assert payload["status"] == "BLOCK"
+    assert "value seed" in payload["what"]
+
+
+def test_author_with_mismatched_seed_blocks(tmp_path, capsys, monkeypatch):
+    """A piped VALUE-SEED that does not hash to the given --delivery-id
+    must refuse -- never silently embed a mismatched seed in the envelope."""
+    exit_code, payload = _run(
+        capsys,
+        _base_argv(tmp_path, "missing-id", "true"),
+        monkeypatch=monkeypatch,
+        seed_bytes=b"This seed does not hash to missing-id.",
+    )
+    assert exit_code != 0
+    assert payload["status"] == "BLOCK"
+    assert "missing-id" in payload["what"]
 
 
 def test_deterministic_multi_valid_returns_ordered_repo_relative_reuse(
@@ -275,3 +346,107 @@ def test_byte_identical_tree_digest_no_mutation(tmp_path, capsys):
 
     after = _tree_digest(tmp_path)
     assert before == after
+
+
+class TestPoEnvelopeIsPrintedVerbatimAndAcceptedByTheRealHook:
+    """K4 Run 6 evidence: the root hand-authored the PO dispatch envelope,
+    was rejected by the hook twice (malformed header), then forwarded the
+    architecture anchor into PO's own context (`CHARTER-AUTHOR-DISQUALIFIED`
+    -- a matrix row 10 regression), ~8 minutes lost. `des resolve-charters`
+    must print the exact ready-to-paste envelope on `AUTHOR` -- sourced from
+    a REAL `des prepare-ordinary-request` run, never a hand-built fixture --
+    and that printed envelope must be accepted by the real hook gate, while
+    a hand-authored variant carrying an architecture anchor is denied."""
+
+    @staticmethod
+    def _init_repo(tmp_path) -> Path:
+        import subprocess
+
+        root = tmp_path / "repo"
+        root.mkdir()
+        env = {
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t.example",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t.example",
+        }
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        (root / "README.md").write_text("x", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], cwd=root, check=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "init"], cwd=root, check=True, env=env
+        )
+        return root
+
+    def test_envelope_from_a_real_prepared_request_is_allowed_by_the_hook(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        from des.adapters.drivers.hooks.pre_tool_use_handler import (
+            _evaluate_auto_root_po_envelope,
+        )
+        from des.cli import prepare_ordinary_request
+
+        root = self._init_repo(tmp_path)
+        seed = "FEATURE -- maintenance windows end to end."
+
+        monkeypatch.setattr(sys, "stdin", _FakeStdin(seed.encode("utf-8")))
+        prep_exit = prepare_ordinary_request.main(
+            [
+                "--size",
+                "M",
+                "--repo-root",
+                str(root),
+                "--architecture-authority",
+                "ARCHITECTURE-COVERED: docs/architecture/adrs/adr-1.md#decision",
+                "--delivery-route",
+                "RED_TO_GREEN",
+                "--examine",
+                "true",
+                "--independent-review",
+                "false",
+            ]
+        )
+        atd_body = capsys.readouterr().out
+        assert prep_exit == 0
+        delivery_id = compute_delivery_id(seed)
+        assert f"DELIVERY-ID: {delivery_id}" in atd_body
+
+        exit_code, payload = _run(
+            capsys,
+            _base_argv(root, delivery_id, "true"),
+            monkeypatch=monkeypatch,
+            seed_bytes=seed.encode("utf-8"),
+        )
+        assert exit_code == 0
+        assert payload["status"] == "AUTHOR"
+        envelope = payload["envelope"]
+
+        # PO-side check: the printed envelope never carries the
+        # architecture-authority anchor -- PO disqualifies itself as
+        # charter author the instant its context carries one.
+        assert "ARCHITECTURE-COVERED" not in envelope
+        assert f"DELIVERY-ID: {delivery_id}" in envelope
+
+        # The real hook gate allows this envelope verbatim.
+        assert _evaluate_auto_root_po_envelope(envelope) is None
+
+    def test_hand_authored_variant_with_an_architecture_anchor_is_denied(
+        self, tmp_path
+    ) -> None:
+        from des.adapters.drivers.hooks.pre_tool_use_handler import (
+            _evaluate_auto_root_po_envelope,
+        )
+
+        delivery_id = compute_delivery_id("Ship it.")
+        envelope = build_po_envelope(
+            delivery_id=delivery_id,
+            namespace=f"docs/product/expectations/{delivery_id}",
+            root=str(tmp_path.resolve()),
+            value_seed="Ship it.",
+        )
+        hand_variant = (
+            "ARCHITECTURE-COVERED: docs/architecture/adrs/adr-1.md#decision\n\n"
+            + envelope
+        )
+
+        assert _evaluate_auto_root_po_envelope(hand_variant) is not None

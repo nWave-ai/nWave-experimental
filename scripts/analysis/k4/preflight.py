@@ -922,33 +922,72 @@ _ROUTE_WALK_REPO_ROOT = Path(__file__).resolve().parents[3]
 _NW_AUTO_SKILL_MD = _ROUTE_WALK_REPO_ROOT / "nWave" / "skills" / "nw-auto" / "SKILL.md"
 
 
-def des_subcommands_root_is_told_to_run(skill_md_text: str) -> set[str]:
-    """The `des <subcommand>` tokens that appear inside a FENCED code block
-    in `nw-auto/SKILL.md` -- i.e. a literal command root is instructed to
-    run verbatim, as opposed to a backtick-prose mention (a prohibition
-    like "Root never calls `des validate-delivery-contract` itself", or a
-    descriptive aside like "`des verify-charter-filled` is a structural
-    gate only"). Fences may be indented under a numbered step, so the fence
-    marker is matched with leading whitespace stripped.
+def des_fenced_lines(markdown_text: str) -> list[str]:
+    """Every literal `des ...` invocation inside a FENCED code block --
+    i.e. a command a reader is meant to copy verbatim, as opposed to a
+    backtick-prose mention (a prohibition like "Root never calls `des
+    validate-delivery-contract` itself", or a descriptive aside like
+    "`des verify-charter-filled` is a structural gate only"). A fenced
+    line counts only when its STRIPPED form starts with `des ` -- prose
+    mentioning `des X` mid-sentence inside a fence (there is none today,
+    but the stricter anchor keeps a future one from being misread as a
+    command). `\\`-continued lines are joined into one logical command
+    before the `des `-prefix check, so a multi-line invocation (e.g.
+    `des prepare-ordinary-request \\` continuing across several
+    `--flag value \\` lines) is returned as a single string. Fences may be
+    indented under a numbered step, so the fence marker itself is matched
+    with leading whitespace stripped.
 
-    THE one shared source for "which `des` subcommands does root's own
-    documented route mandate": `route_walk_steps` below drives its root-Bash
-    coverage checks off this same parser, and
-    `tests/des/unit/adapters/drivers/hooks/test_auto_root_bash_lockdown.py`'s
-    `TestAutoRootBashAllowlistCoversSkillMandatedSubcommands` imports this
-    exact function rather than carrying its own copy -- two independently
-    hand-typed lists is exactly the drift class that let `des
-    resolve-charters` go missing from the allowlist while SKILL.md mandated
-    it (`fix(auto): allow every des subcommand the root route mandates`).
+    THE one shared fence parser: `des_subcommands_root_is_told_to_run`
+    below (subcommand-name-only view) and the executable-example guard
+    (`tests/build/test_des_examples_are_executable.py`, full-argv view)
+    both derive from this single extraction -- two independently
+    hand-typed views is exactly the drift class that let `des
+    resolve-charters` go missing from the allowlist while SKILL.md
+    mandated it (`fix(auto): allow every des subcommand the root route
+    mandates`), and that let a malformed `des code-fact` example ship
+    unnoticed (`fix(auto): documented des examples must parse`).
     """
     in_fence = False
-    subcommands: set[str] = set()
-    for line in skill_md_text.split("\n"):
-        if line.strip().startswith("```"):
+    lines: list[str] = []
+    pending: str | None = None
+    for raw_line in markdown_text.split("\n"):
+        if raw_line.strip().startswith("```"):
             in_fence = not in_fence
+            if pending is not None:
+                lines.append(pending)
+                pending = None
             continue
         if not in_fence:
             continue
+        stripped = raw_line.strip()
+        if pending is not None:
+            pending = f"{pending} {stripped}"
+        elif stripped.startswith("des "):
+            pending = stripped
+        else:
+            continue
+        if pending.endswith("\\"):
+            pending = pending[:-1].rstrip()
+        else:
+            lines.append(pending)
+            pending = None
+    if pending is not None:
+        lines.append(pending)
+    return lines
+
+
+def des_subcommands_root_is_told_to_run(skill_md_text: str) -> set[str]:
+    """The `des <subcommand>` tokens named by every `des_fenced_lines`
+    entry -- THE one shared source for "which `des` subcommands does
+    root's own documented route mandate": `route_walk_steps` below drives
+    its root-Bash coverage checks off this same parser, and
+    `tests/des/unit/adapters/drivers/hooks/test_auto_root_bash_lockdown.py`'s
+    `TestAutoRootBashAllowlistCoversSkillMandatedSubcommands` imports this
+    exact function rather than carrying its own copy.
+    """
+    subcommands: set[str] = set()
+    for line in des_fenced_lines(skill_md_text):
         subcommands.update(
             match.group(1)
             for match in re.finditer(r"\bdes\s+([a-zA-Z][a-zA-Z-]*)", line)

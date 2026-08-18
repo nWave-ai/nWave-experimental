@@ -44,7 +44,6 @@ from des.adapters.drivers.hooks.root_activation_context import (
 )
 from des.application.commit_attribution_service import CommitAttributionService
 from des.application.ordinary_request import (
-    ARCH_HEADER_PREFIXES,
     ATD_BODY_LINE_COUNT,
     DELIVERY_ID_HEX_LEN,
     DELIVERY_ID_PREFIX,
@@ -52,6 +51,7 @@ from des.application.ordinary_request import (
     contract_locator_for,
     is_lexical_repo_relative_json_locator,
     is_valid_arch_header_line,
+    is_well_formed_po_envelope,
 )
 from des.application.skill_tracking_service import (
     RootModeState,
@@ -84,9 +84,12 @@ _THIN_HEADER_DIGEST_PREFIX = "THIN-DELIVERY-CONTRACT-DIGEST: sha256:"
 _THIN_HEADER_DIGEST_HEX_LEN = 64
 _THIN_HEADER_DIGEST_HEX_ALPHABET = frozenset("0123456789abcdef")
 
-# K4: exact-match roles whose Auto-root Agent dispatch must carry a
-# well-formed ARCHITECTURE-COVERED first-bytes reference.
-_AUTO_ROOT_DESIGN_CONSULT_ROLES = frozenset({"nw-product-owner"})
+# K4: exact-match roles whose Auto-root Agent dispatch must carry the
+# value-only four-line PO envelope `des resolve-charters` prints on AUTHOR
+# (`des.application.ordinary_request.build_po_envelope`) -- never an
+# ARCHITECTURE-COVERED anchor, which disqualifies `nw-product-owner` as
+# charter author by its own role logic the instant its context carries one.
+_AUTO_ROOT_PO_ENVELOPE_ROLES = frozenset({"nw-product-owner"})
 _ATD_ROLE_NAME = "nw-acceptance-designer"
 
 
@@ -543,47 +546,39 @@ def _evaluate_auto_root_crafter_thin_header(prompt: object) -> dict[str, str] | 
     return None
 
 
-def _auto_root_design_consult_block() -> dict[str, str]:
-    """Render the block payload for a malformed Auto-root PO/ATD header."""
+def _auto_root_po_envelope_block() -> dict[str, str]:
+    """Render the block payload for a malformed/hand-authored Auto-root PO
+    dispatch prompt."""
     return {
         "decision": "block",
         "reason": (
-            "WHAT: Auto-root design-consult header malformed -- the Agent "
-            "prompt's first bytes are not exactly one ARCHITECTURE-COVERED: "
-            "<path>#<anchor> line. "
-            "WHY: architecture readiness is the deterministic first-bytes "
-            "authority a PO/ATD launch must carry -- no prose, BOM, "
-            "duplication, or reconstructed path/anchor may precede or "
-            "follow it; validating this only downstream wastes an entire "
-            "wave/service activation on a dispatch that had no architecture "
-            "reference to begin with. "
-            "HOW: forward the architect's exact ARCHITECTURE-COVERED: "
-            "<repo-relative-path>.md#<anchor> "
-            "reference verbatim as the prompt's first bytes, with no reconstruction."
+            "WHAT: Auto-root PO dispatch envelope malformed -- the Agent "
+            "prompt is not exactly the four-line value-only "
+            "DELIVERY-ID/NAMESPACE/ROOT/VALUE-SEED envelope, or it carries "
+            "an ARCHITECTURE-COVERED anchor. "
+            "WHY: `nw-product-owner` disqualifies itself as charter author "
+            "the instant its own context carries an architecture-authority "
+            "anchor (ADR-SSOT-002 Section 2 authority typing, Section 4c "
+            "single-author route); root must never hand-compose this "
+            "envelope -- a malformed or contaminated retry burns a full PO "
+            "activation before the role's own refusal is even reached. "
+            "HOW: run `des resolve-charters --repo-root <root> "
+            "--delivery-id <id> --examine <true|false>` with the SAME "
+            "VALUE-SEED bytes on stdin already piped to "
+            "`des prepare-ordinary-request`, then paste its printed "
+            "`AUTHOR` envelope verbatim as the prompt -- never author, "
+            "reconstruct or augment it by hand."
         ),
     }
 
 
-def _evaluate_auto_root_design_consult_header(prompt: object) -> dict[str, str] | None:
-    """Lexical Auto-root PO design-consult header gate: shape-only. `None`
-    (allow) when the prompt's first line is a well-formed
-    ARCHITECTURE-COVERED `<path>.md#<anchor>` line, optionally
-    followed by one blank line and context with no duplicate header; else
-    the block payload."""
-    if not isinstance(prompt, str):
-        return _auto_root_design_consult_block()
-    lines = prompt.split("\n")
-    if not is_valid_arch_header_line(lines[0]):
-        return _auto_root_design_consult_block()
-
-    remainder = lines[1:]
-    if remainder:
-        if remainder[0] != "":
-            return _auto_root_design_consult_block()
-        context = "\n".join(remainder[1:])
-        if any(prefix.rstrip() in context for prefix in ARCH_HEADER_PREFIXES):
-            return _auto_root_design_consult_block()
-
+def _evaluate_auto_root_po_envelope(prompt: object) -> dict[str, str] | None:
+    """Lexical Auto-root PO envelope gate: shape-only. `None` (allow) iff
+    `prompt` is exactly the four-line value-only envelope
+    `des.application.ordinary_request.build_po_envelope` emits, with no
+    ARCHITECTURE-COVERED-shaped line anywhere; else the block payload."""
+    if not isinstance(prompt, str) or not is_well_formed_po_envelope(prompt):
+        return _auto_root_po_envelope_block()
     return None
 
 
@@ -1136,17 +1131,15 @@ def handle_pre_tool_use() -> int:
                             exit_code = 2
                             return exit_code
                     if (
-                        role in _AUTO_ROOT_DESIGN_CONSULT_ROLES
+                        role in _AUTO_ROOT_PO_ENVELOPE_ROLES
                         and not hook_input.get("agent_id")
                         and not hook_input.get("agent_type")
                     ):
-                        design_consult_block = (
-                            _evaluate_auto_root_design_consult_header(
-                                tool_input.get("prompt")
-                            )
+                        po_envelope_block = _evaluate_auto_root_po_envelope(
+                            tool_input.get("prompt")
                         )
-                        if design_consult_block is not None:
-                            print(json.dumps(design_consult_block))
+                        if po_envelope_block is not None:
+                            print(json.dumps(po_envelope_block))
                             exit_code = 2
                             return exit_code
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from des.domain.declared_import_resolver import (
+    is_name_bound_in_target_file,
     resolve_declared_import,
     unresolved_declared_import_owner,
 )
@@ -137,3 +138,82 @@ def test_owner_is_none_for_a_non_python_shaped_reference() -> None:
     )
 
     assert owner is None
+
+
+#: Run 6 false-reject: a bare name imported at the TOP of the target's own
+#: file (third-party, stdlib, or sibling module) is a real, bound base-tree
+#: reference even though it never resolves as a dotted module path -- the
+#: resolver must never require site-packages resolution to accept it.
+_IMPORTING_MODULE = """
+from cronsim import CronSim
+from zoneinfo import ZoneInfo
+
+
+class Check:
+    pass
+"""
+
+
+def test_bare_name_bound_by_a_from_import_in_the_target_file_is_accepted(
+    tmp_path: Path,
+) -> None:
+    _seed_module(tmp_path, "hc/api/models.py", _IMPORTING_MODULE)
+
+    assert is_name_bound_in_target_file(tmp_path, "hc/api/models.py", "CronSim") is True
+    assert (
+        is_name_bound_in_target_file(tmp_path, "hc/api/models.py", "ZoneInfo") is True
+    )
+
+
+def test_bare_name_bound_by_a_module_level_class_in_the_target_file_is_accepted(
+    tmp_path: Path,
+) -> None:
+    _seed_module(tmp_path, "hc/api/models.py", _IMPORTING_MODULE)
+
+    assert is_name_bound_in_target_file(tmp_path, "hc/api/models.py", "Check") is True
+
+
+def test_bare_name_not_bound_anywhere_in_the_target_file_is_rejected(
+    tmp_path: Path,
+) -> None:
+    _seed_module(tmp_path, "hc/api/models.py", _IMPORTING_MODULE)
+
+    assert (
+        is_name_bound_in_target_file(tmp_path, "hc/api/models.py", "NotBoundAnywhere")
+        is False
+    )
+
+
+def test_bound_bare_name_makes_the_full_resolver_accept_the_declared_import(
+    tmp_path: Path,
+) -> None:
+    """The end-to-end property Run 6 needs: `resolve_declared_import` alone
+    is dotted-path-only by design, so callers combine it with
+    `is_name_bound_in_target_file` -- this proves the combination accepts
+    exactly what the false-reject repro needed."""
+    _seed_module(tmp_path, "hc/api/models.py", _IMPORTING_MODULE)
+
+    bound = is_name_bound_in_target_file(tmp_path, "hc/api/models.py", "CronSim")
+    dotted = resolve_declared_import(tmp_path, "CronSim")
+
+    assert bound is True
+    assert dotted is False  # bare "CronSim" alone is not a dotted base-tree path
+    assert bound or dotted  # the caller accepts on this OR, per Run 6's fix
+
+
+def test_dotted_invented_symbol_is_still_rejected_even_with_a_target_file(
+    tmp_path: Path,
+) -> None:
+    """Run 4's admission must not regress: a DOTTED reference to a module
+    that is genuinely absent from the base tree stays rejected, even though
+    it superficially resembles the bound third-party import this row now
+    accepts in bare form."""
+    _seed_module(tmp_path, "hc/api/models.py", _IMPORTING_MODULE)
+
+    bound = is_name_bound_in_target_file(
+        tmp_path, "hc/api/models.py", "cronsim.CronSim"
+    )
+    dotted = resolve_declared_import(tmp_path, "cronsim.CronSim")
+
+    assert bound is False
+    assert dotted is False

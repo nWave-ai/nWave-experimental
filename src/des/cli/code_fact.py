@@ -25,9 +25,38 @@ from des.ports.code_fact_port import (
 
 _SUBJECT_FREE = frozenset({CAPABILITY_ATOMS_IN_FILE})
 
+_UNRECOGNIZED_ARGUMENTS_MARKER = "unrecognized arguments"
+_UNRECOGNIZED_ARGUMENTS_HOW = (
+    " HOW: put `subject` BEFORE `--root`, e.g. `des code-fact "
+    "query.callers-of SYMBOL --root ROOT` (or `--root ROOT query.callers-of "
+    "SYMBOL`, --root first) -- a bare positional trailing an "
+    "already-satisfied `--root` is unrecognized under this parser; "
+    "`query.atoms-in-file` never takes a `subject` at all, pass the target "
+    "through `--root` instead."
+)
+
+
+class _CodeFactArgumentParser(argparse.ArgumentParser):
+    """Argparse keeps its own standard error text (so a caller or the
+    build-time executable-example guard can still recognize the exact
+    failure class by its fixed vocabulary) with one HOW line appended for
+    the specific class root actually hit. Run 6 evidence: a bare
+    "unrecognized arguments" message with no example sent root into 3
+    failed retries of a mis-ordered `--root`/`subject` invocation, then a
+    19-file source-Read fallback this CLI's own error message could have
+    prevented outright."""
+
+    def error(self, message: str) -> None:
+        hint = (
+            _UNRECOGNIZED_ARGUMENTS_HOW
+            if _UNRECOGNIZED_ARGUMENTS_MARKER in message
+            else ""
+        )
+        super().error(message + hint)
+
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _CodeFactArgumentParser(
         prog="des code-fact",
         description=(
             "Query a bundled vendor-neutral code fact and emit its provider, "

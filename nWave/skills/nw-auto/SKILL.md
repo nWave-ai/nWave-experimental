@@ -139,9 +139,18 @@ exact cited symbol/file — never a broad `Read`:
 des code-fact query.atoms-in-file --root <cited-file-path>
 ```
 
-A mismatch is a real architecture defect: refuse with WHAT/WHY/HOW and
-re-dispatch the architect naming the exact mismatch — never repair it by
-reading further source or editing the authority directly.
+Verified against this repository's own installed CLI (`--root` takes the
+FILE for this one capability). For any other `des code-fact` capability, use
+the subject-before-`--root` shape every time (see `nw-solution-architect`,
+"Citation self-verification" for the verified working shapes) — the
+reordered form (`--root <value>` before the subject) is unreliable, not
+merely unrecommended: argparse's handling of a positional trailing an
+already-satisfied `--root` differs across CPython 3.12.x patch releases, so
+it must never be relied on even where it happens to parse today. A mismatch
+is a real architecture defect:
+refuse with WHAT/WHY/HOW and re-dispatch the architect naming the exact
+mismatch — never repair it by reading further source or editing the
+authority directly.
 
 ## Root inputs and spatial AB batch
 
@@ -192,15 +201,23 @@ its real port; internal proxies and later-slice promises are `EVIDENCE_GAP`.
 2. On `Prepared(SeededAuthority)`, run exactly one command:
 
    ```
-   des resolve-charters --repo-root <root> --delivery-id <producer id> --examine <true|false>
+   des resolve-charters --repo-root <root> --delivery-id <producer id> --examine <true|false> <<'NW_SEED'
+   <the SAME VALUE-SEED bytes already piped to prepare-ordinary-request, byte-for-byte>
+   NW_SEED
    ```
 
    Route only by its closed `status`: `SKIP` omits PO and Vera; `AUTHOR`
-   dispatches PO with the returned namespace; `REUSE` omits PO and retains
-   the returned charter paths only for source-blind Vera; `BLOCK` is terminal
-   WHAT/WHY/HOW. Root never runs `find`, a global search, or any ad-hoc
-   filesystem inference in its place. ATD always receives only the original
-   fourteen-line producer stdout verbatim.
+   prints one ready-to-paste `envelope` field alongside `namespace` and
+   dispatches PO with THAT envelope, verbatim, as its entire prompt — root
+   never authors, reconstructs or augments a PO prompt by hand, the exact
+   Run 6 defect (hand-composed PO envelopes rejected twice for a malformed
+   header, then a hand-added architecture anchor forwarded into PO's own
+   context, `CHARTER-AUTHOR-DISQUALIFIED`, ~8 minutes lost); `REUSE` omits
+   PO and retains the returned charter paths only for source-blind Vera;
+   `BLOCK` is terminal WHAT/WHY/HOW. Root never runs `find`, a global
+   search, or any ad-hoc filesystem inference in its place. ATD always
+   receives only the original fourteen-line producer stdout verbatim —
+   likewise never hand-authored, never reconstructed.
 
    Then emit one **AB batch in the same assistant
    message**, foreground (`run_in_background=false`):
@@ -209,7 +226,11 @@ its real port; internal proxies and later-slice promises are `EVIDENCE_GAP`.
    - For `examine=true, Author`, PO concurrently receives only the
      producer-emitted DeliveryId, namespace, root and VALUE-SEED — never the
      architecture-authority anchor, which remains a DESIGN/ATD readiness
-     input; it alone writes the charter. For Reuse/Skip, omit PO.
+     input PO's own role logic disqualifies itself over the instant its
+     context carries one; it alone writes the charter. These are
+     `resolve-charters`' printed `envelope` field, pasted verbatim as PO's
+     entire prompt — root never authors, reconstructs or augments it by
+     hand. For Reuse/Skip, omit PO.
 
    Neither call observes the other result or shares a write target. Join every
    terminal batch result before any dependent action; a partial/non-PASS batch

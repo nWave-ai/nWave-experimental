@@ -237,3 +237,31 @@ def unresolved_declared_import_owner(repo_root: Path, reference: str) -> str | N
             continue
 
     return None
+
+
+def is_name_bound_in_target_file(
+    repo_root: Path, target_candidate: str, name: str
+) -> bool:
+    """K4 Run 6 admission: a declared-import naming a bare identifier the
+    TARGET'S OWN file binds at module level -- an import alias (third-party,
+    stdlib or sibling module) or a def/class/assignment -- is a real
+    base-tree reference, even though it never resolves as a dotted module
+    path (`resolve_declared_import("CronSim")` looks for a file literally
+    named `CronSim.py`, which does not exist; `cronsim` is never vendored
+    into this tree to walk into). `target_candidate` is `targets.<path>`'s
+    own key/`candidate` -- the exact file the contract already names, not a
+    module-path search. A dotted reference (e.g. `cronsim.CronSim`) is never
+    bound as a single AST name and correctly returns `False` here, falling
+    through to `resolve_declared_import`'s dotted resolution unchanged (Run
+    4's invented-symbol admission is not weakened).
+    """
+    target_file = repo_root / target_candidate
+    if not target_file.is_file():
+        return False
+    try:
+        source = target_file.read_text(encoding="utf-8")
+        tree = _parser.parse(source, str(target_file))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return False
+    assert isinstance(tree, ast.Module)
+    return _module_level_lookup(tree, name) is not None

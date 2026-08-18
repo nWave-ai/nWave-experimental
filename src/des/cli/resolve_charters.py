@@ -18,6 +18,11 @@ from des._internal.delivery_contract_schema import (
 )
 from des._internal.json_schema_subset import JsonSchemaSubsetError
 from des._internal.json_schema_subset import validate as _validate_contract_schema
+from des.application.ordinary_request import (
+    build_po_envelope,
+    compute_delivery_id,
+    read_value_seed_text,
+)
 from des.cli._charter_resolution import (
     _assert_never,
     _Author,
@@ -148,12 +153,39 @@ def main(argv: list[str] | None = None) -> int:
     resolution = _resolve_charter_namespace(examine=examine, discovered=discovered)
 
     if isinstance(resolution, _Author):
+        namespace_rel = resolution.namespace.relative_to(repo_root.resolve()).as_posix()
+        value_seed = read_value_seed_text()
+        if value_seed is None:
+            return _refuse(
+                "resolve-charters resolved AUTHOR but stdin carried no "
+                "valid non-empty UTF-8 value seed",
+                "the PO dispatch envelope must carry the exact VALUE-SEED "
+                "bytes the prepared request used -- never re-typed, "
+                "paraphrased or reconstructed",
+                "pipe the SAME VALUE-SEED bytes already piped to "
+                "`des prepare-ordinary-request` to this command's stdin, "
+                "the identical quoted-heredoc shape",
+            )
+        if compute_delivery_id(value_seed) != args.delivery_id:
+            return _refuse(
+                f"the piped VALUE-SEED does not hash to --delivery-id "
+                f"{args.delivery_id!r}",
+                "DeliveryId is a deterministic projection of the exact "
+                "VALUE-SEED bytes (ADR-SSOT-002 Section 4c/4d); a mismatch "
+                "means the wrong seed was piped to this command",
+                "pipe the exact VALUE-SEED bytes that produced this "
+                "DeliveryId at `des prepare-ordinary-request`",
+            )
         _emit(
             {
                 "status": "AUTHOR",
-                "namespace": resolution.namespace.relative_to(
-                    repo_root.resolve()
-                ).as_posix(),
+                "namespace": namespace_rel,
+                "envelope": build_po_envelope(
+                    delivery_id=args.delivery_id,
+                    namespace=namespace_rel,
+                    root=str(repo_root.resolve()),
+                    value_seed=value_seed,
+                ),
             }
         )
         return 0

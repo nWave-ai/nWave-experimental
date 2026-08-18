@@ -180,6 +180,37 @@ def test_unknown_capability_is_an_argparse_usage_error(
     assert "invalid choice" in capsys.readouterr().err
 
 
+def test_unrecognized_arguments_carries_a_how_line_with_a_working_example(
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """Run 6 evidence: root mis-ordered `subject` after an already-consumed
+    `--root VALUE` (`query.callers-of --root . SYMBOL`), hit a bare
+    "unrecognized arguments" message with no example 3x, then fell back to
+    19 direct source Reads. Argparse's own fixed error text is preserved
+    (a caller/guard can still recognize the failure class), with one HOW
+    line appended naming the actual working order.
+
+    CI correction: the mis-ordered-positional trigger itself
+    (`query.callers-of --root . target`) is NOT a portable way to force
+    this error -- CI's Python 3.12.13 parses it cleanly where local 3.12.3
+    does not (argparse's handling of a positional trailing an
+    already-satisfied optional differs across CPython 3.12.x patch
+    releases). A trailing genuinely-unknown flag is unrecognized on every
+    Python version argparse has ever shipped -- use that instead to force
+    the SAME error path/message this test actually verifies."""
+    from des.cli.code_fact import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["query.callers-of", "target", "--root", ".", "--bogus-flag"])
+
+    assert exc_info.value.code == 2
+    err = capsys.readouterr().err
+    assert "unrecognized arguments" in err
+    assert "--bogus-flag" in err
+    assert "HOW:" in err
+    assert "query.callers-of SYMBOL --root ROOT" in err
+
+
 @pytest.mark.parametrize(
     ("file_name", "file_source", "expected_provider"),
     [

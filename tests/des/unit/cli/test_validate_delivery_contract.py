@@ -146,6 +146,46 @@ def test_declared_import_naming_a_real_symbol_is_accepted(
     assert json.loads(capsys.readouterr().out)["verdict"] == "VALID"
 
 
+def test_declared_import_naming_a_bare_name_bound_in_the_target_file_is_accepted(
+    tmp_path: Path, capsys
+) -> None:
+    """Run 6 false-reject repro: `repo_path_resolver.py` imports `Path` via
+    `from pathlib import Path` -- a bare name bound at the top of the exact
+    target file, never resolvable as a dotted module path (no file is
+    literally named `Path.py`, and `pathlib` is never vendored into this
+    tree). The validator must accept it, matching the K4 evidence's
+    `CronSim`/`OnCalendar`/`ZoneInfo` bound-in-`hc/api/models.py` case."""
+    contract_dict = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    target_path = next(iter(contract_dict["targets"]))
+    del contract_dict["targets"][target_path]
+    contract_dict["targets"]["src/des/domain/repo_path_resolver.py"] = {
+        "candidate": "src/des/domain/repo_path_resolver.py",
+        "overlap": "reuse",
+        "decision": "EXTEND",
+        "justification": "reuse",
+        "declared-imports": ["Path", "os", "resolve_repo_root"],
+        "contract-shape": "bounded-change",
+        "boundary": {
+            "failure-behavior": "n/a",
+            "substrate-lie": "n/a",
+            "substrate-probe": "n/a",
+            "double-blind-spot": "n/a",
+        },
+    }
+    contract_path = tmp_path / "delivery.json"
+    contract_path.write_text(json.dumps(contract_dict), encoding="utf-8")
+    seed_referenced_oracle(tmp_path, contract_dict)
+    _seed_source_file(tmp_path, "src/des/domain/repo_path_resolver.py")
+
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "--delivery-contract", "delivery.json"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0, captured.err
+    assert json.loads(captured.out)["verdict"] == "VALID"
+
+
 def test_declared_import_naming_a_nonexistent_symbol_is_rejected(
     tmp_path: Path, capsys
 ) -> None:
@@ -194,7 +234,8 @@ def test_module_absent_entirely_names_the_base_revision_in_how(
     assert exit_code == 2
     assert "cronsim.CronSim" in captured.err
     assert f"not present at base revision {base_revision}" in captured.err
-    assert "cite only existing" in captured.err.lower()
+    assert "bare name bound" in captured.err.lower()
+    assert "dotted base-tree module/symbol path" in captured.err.lower()
     assert "creating target" in captured.err.lower()
     assert "WHAT:" in captured.err
     assert "WHY:" in captured.err

@@ -36,6 +36,7 @@ from des.application.ordinary_request import (
     compute_delivery_id,
     contract_locator_for,
     is_valid_arch_header_line,
+    read_value_seed_text,
 )
 
 
@@ -92,18 +93,6 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _read_value_seed_text() -> str | None:
-    """Raw UTF-8 stdin bytes to EOF, decoded strictly. `None` on invalid or
-    empty UTF-8 -- the caller reports the exact WHAT/WHY/HOW."""
-    raw = sys.stdin.buffer.read()
-    if not raw:
-        return None
-    try:
-        return raw.decode("utf-8", errors="strict")
-    except UnicodeDecodeError:
-        return None
-
-
 def _resolved_repo_root(repo_root: Path) -> Path | None:
     try:
         real_stat = repo_root.lstat()
@@ -158,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         code = exit_signal.code
         return code if isinstance(code, int) else _EXIT_BLOCKED
 
-    value_seed = _read_value_seed_text()
+    value_seed = read_value_seed_text()
     if value_seed is None:
         return _blocked(
             what="stdin carried no valid non-empty UTF-8 value seed",
