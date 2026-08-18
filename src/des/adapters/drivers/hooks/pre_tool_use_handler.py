@@ -170,6 +170,7 @@ _AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS = frozenset(
         "charter-scaffold",
         "prepare-ordinary-request",
         "resolve-charters",
+        "code-fact",
     }
 )
 
@@ -304,7 +305,8 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
     Restricts Auto-root's OWN Bash calls to either a single, literal `git
     status|diff|rev-parse|branch|worktree|add|commit` invocation, or a
     single, literal `des dispatch|validate-delivery-contract|
-    charter-scaffold|prepare-ordinary-request|resolve-charters` invocation
+    charter-scaffold|prepare-ordinary-request|resolve-charters|code-fact`
+    invocation
     (the direct-cutover spine has no hook controller between Auto-root and
     the dispatched role's own DES CLI call). Lexically rejects any
     shell-composition operator (see
@@ -357,7 +359,7 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
             "WHY: Auto-root Bash is restricted to git status/diff/"
             "rev-parse/branch/worktree/add/commit, or des dispatch/"
             "validate-delivery-contract/charter-scaffold/"
-            "prepare-ordinary-request/resolve-charters. "
+            "prepare-ordinary-request/resolve-charters/code-fact. "
             "HOW: dispatch a role for other work, or run the equivalent "
             "git/des subcommand."
         )
@@ -377,7 +379,7 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
             f"WHAT: an Auto-root `des {subcommand}` call was blocked. "
             "WHY: Auto-root Bash only allows des dispatch/"
             "validate-delivery-contract/charter-scaffold/"
-            "prepare-ordinary-request/resolve-charters. "
+            "prepare-ordinary-request/resolve-charters/code-fact. "
             "HOW: dispatch the appropriate nw-* role for any other des "
             "subcommand."
         )

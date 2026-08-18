@@ -35,6 +35,15 @@ executor boundary, dependency owner, declaration/runtime distinction and
 literal verification argv. Require an existing green oracle for prefactoring.
 Verify the human explanation is a faithful projection of the rigorous decision.
 
+Does the reviewed brief/ADR section carry `Citations verified: N/N
+(line-checked: k, symbol-checked: m)` (`k+m=N`) naming every citation as
+self-checked by what it claims, or is a citation still unverified prose?
+Missing, uncounted or mismatched verification blocks outright — spot check
+at least one cited `path:line` yourself with `Read` (a symbol-presence check
+alone never certifies a line claim) and at least one symbol-only citation
+with `des code-fact query.atoms-in-file` before approving; a citation your
+own check contradicts is `NEEDS_REVISION`, never a nit.
+
 Every finding cites authority path/line plus an executable or structural
 counterexample. Return `APPROVE`, `NEEDS_REVISION` or `INDETERMINATE`; never edit.
 

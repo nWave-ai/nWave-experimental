@@ -199,7 +199,7 @@ class TestAutoRootBashAllowlist:
 class TestAutoRootBashDesAllowlist:
     """A confirmed Auto-root process's Bash calls also allow a bare, single
     `des dispatch|validate-delivery-contract|charter-scaffold|
-    resolve-charters` invocation --
+    resolve-charters|code-fact` invocation --
     the direct-cutover spine's only hook-controller-free CLI seam."""
 
     @pytest.mark.parametrize(
@@ -209,12 +209,14 @@ class TestAutoRootBashDesAllowlist:
             "des validate-delivery-contract docs/feature/x/delivery-contract.json",
             "des charter-scaffold F-EXAMPLE",
             "des resolve-charters --repo-root /tmp/repo --delivery-id auto-abc123 --examine true",
+            "des code-fact query.atoms-in-file --root /tmp/repo/sendalerts.py",
         ],
         ids=[
             "dispatch",
             "validate-delivery-contract",
             "charter-scaffold",
             "resolve-charters",
+            "code-fact",
         ],
     )
     def test_clean_des_allowlisted_command_is_not_auto_root_blocked(

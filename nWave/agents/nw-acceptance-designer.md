@@ -206,7 +206,25 @@ A missing or unknown route blocks. There is no default and no dual-read path.
    `repository.worktree`, `targetPlan`, `paradigm` and each
    `verification-scope` command object — and add no property the schema's
    `additionalProperties` forbids; dependency metadata is never embedded
-   unless the schema names that property. This role never executes the verification command, hashes the
+   unless the schema names that property. Each target's `overlap`/
+   `justification` is a LOSSLESS projection of the cited architecture
+   authority's own reuse-decision facts for that target — the same
+   value-conservation law the charter's own PO authorship already applies
+   (ADR-SSOT-002 Section 4b): projection may clarify wording, but every
+   file:line citation, existing symbol name and exemplar call-site pattern
+   the authority already gives for that target must survive into
+   `overlap`/`justification` verbatim, never compressed into a shorter
+   paraphrase that drops one. Ask before writing each: does every file:line
+   citation the authority gives for THIS target appear in what you are
+   about to serialize — or did you summarize and quietly drop one? A
+   dropped citation forces the crafter to re-investigate from scratch what
+   the authority already named; do not drop it. `acceptance-tests.locator`
+   names exactly ONE regular file this role wrote or extended, never a
+   directory, symlink or fifo (`des dispatch` rejects those as "not a
+   stable oracle identity"); when the oracle's observable behavior spans
+   several test files, designate exactly one as the primary locator and
+   route every other file through `verification-scope.commands`, which
+   already accepts more than one command. This role never executes the verification command, hashes the
    oracle, calls `des validate-delivery-contract` or classifies the result
    as RED, GREEN or BROKEN; `des dispatch` alone validates, resolves and
    hashes the contract after this role, and the crafter's own BASELINE step
@@ -218,7 +236,9 @@ A missing or unknown route blocks. There is no default and no dual-read path.
 1. After the `CONTRACT-SCHEMA` read above, the architecture authority names
    the existing oracle and its verification scope. Do not search for,
    create, edit or broaden it.
-2. `declared-imports` obeys the RED_TO_GREEN step 6 question unchanged here.
+2. `declared-imports` obeys the RED_TO_GREEN step 6 question unchanged here;
+   `overlap`/`justification` obey RED_TO_GREEN step 7's lossless-projection
+   law unchanged too.
 3. Without any test edit, write one complete schema-valid DeliveryContract
    to the exact given `CONTRACT-LOCATOR`, in one Write call, using the
    Seeded facts verbatim (`delivery-id`, `outcome`, `repository`, `budget`,

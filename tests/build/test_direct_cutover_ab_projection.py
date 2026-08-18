@@ -8,6 +8,7 @@ AGENT = ROOT / "nWave/agents/nw-acceptance-designer.md"
 SKILL = ROOT / "nWave/skills/nw-distill/SKILL.md"
 TASK = ROOT / "nWave/tasks/nw/distill.md"
 ARCHITECT = ROOT / "nWave/agents/nw-solution-architect.md"
+ARCHITECT_REVIEWER = ROOT / "nWave/agents/nw-solution-architect-reviewer.md"
 AUTO_SKILL = ROOT / "nWave/skills/nw-auto/SKILL.md"
 ADR = ROOT / "docs/product/architecture/ADR-SSOT-002-canonical-delivery-model.md"
 CHARTER_SKILL = ROOT / "nWave/skills/nw-expectation-charter/SKILL.md"
@@ -519,8 +520,143 @@ def test_agent_pins_declared_imports_self_check_without_a_bash_tool() -> None:
         "entry against the base tree immediately after `CONTRACT_READY`, "
         "before any crafter is dispatched" in compact
     )
+
+
+def test_agent_pins_lossless_overlap_projection_and_single_regular_oracle_file() -> (
+    None
+):
+    """Run 5 evidence: the DESIGN authority already carried precise file:line
+    reuse citations, but the compiled DeliveryContract's overlap/
+    justification dropped most of them, forcing the crafter to re-discover
+    them at a cost of 30 Read/Bash calls before its first production edit
+    (nw-software-crafter.md's bound is 15). Pin the lossless-projection law
+    plus the oracle-locator regularity rule Run 5's third dispatch rejection
+    named (a directory locator is not a stable oracle identity)."""
+    agent = _text(AGENT)
+    compact = " ".join(agent.split())
+
+    assert (
+        "`overlap`/ `justification` is a LOSSLESS projection of the cited "
+        "architecture authority's own reuse-decision facts for that target" in compact
+    )
+    assert "ADR-SSOT-002 Section 4b" in compact
+    assert (
+        "every file:line citation, existing symbol name and exemplar "
+        "call-site pattern the authority already gives for that target "
+        "must survive into `overlap`/`justification` verbatim" in compact
+    )
+    assert (
+        "`acceptance-tests.locator` names exactly ONE regular file this "
+        "role wrote or extended, never a directory, symlink or fifo" in compact
+    )
+    assert (
+        "designate exactly one as the primary locator and route every "
+        "other file through `verification-scope.commands`" in compact
+    )
+    # Both routes carry the law -- GREEN_TO_GREEN points back rather than
+    # dropping it, mirroring the declared-imports pointer pattern.
+    assert "RED_TO_GREEN step 7's lossless-projection law unchanged" in compact
     # RED_TO_GREEN and GREEN_TO_GREEN both carry the check (or GREEN_TO_GREEN
     # points back to the shared RED_TO_GREEN rule) -- not authored once and
     # silently dropped from the other route.
     assert agent.count("declared-imports") >= 4
     assert "RED_TO_GREEN step 6 question" in compact
+
+
+def test_auto_skill_routes_contract_fact_gap_as_friction_not_a_gate() -> None:
+    """Run 5: root's routing table must not turn a high first-mutation
+    tool-call number into a routing branch -- it is evidence for ATD's next
+    contract, reported alongside the verdict-driven route, never a reason to
+    change it."""
+    compact = " ".join(_text(AUTO_SKILL).split())
+
+    assert (
+        "A non-`none` `contract-fact-gap` (`first-production-mutation-tool-call` "
+        "past 15) never changes the row above" in compact
+    )
+    assert "friction evidence for ATD's next contract" in compact
+    assert "not a gate on this one" in compact
+
+
+def test_architect_self_verifies_every_citation_before_covered() -> None:
+    """Run 5 evidence: the architect returned `ARCHITECTURE-COVERED` with a
+    factually wrong citation in brief.md; root then spent 263s/185K tokens
+    fact-checking it by Reading source files itself. The architect must
+    self-verify every citation with the deterministic tool it already has
+    before it ever returns `COVERED`."""
+    architect = _text(ARCHITECT)
+    compact = " ".join(architect.split())
+
+    assert "Citation self-verification" in architect
+    assert "des code-fact query.atoms-in-file" in compact
+    assert "Citations verified: N/N (line-checked: k, symbol-checked: m)" in compact
+    assert "return `ARCHITECTURE-BLOCKED`" in compact
+    # The self-check is positioned before the terminal one-line return, not
+    # after -- an afterthought check race-condition-loses to a fast COVERED.
+    assert compact.index("Citation self-verification") < compact.index(
+        "Return exactly one line, nothing else"
+    )
+
+
+def test_architect_verifies_each_citation_by_what_it_claims() -> None:
+    """Team-lead review of 241507fff: `query.atoms-in-file` returns symbol
+    names only (no line numbers) and `callers-of`/`reads-of` return usage
+    sites, not definitions -- neither can honestly certify a `path:line`
+    citation. A `path:line` claim must be Read at the exact line; only a
+    symbol-only claim with no line goes through code-fact; no
+    `query.where-defined` capability exists in the closed five-capability
+    CLI, so the text must not invent one."""
+    compact = " ".join(_text(ARCHITECT).split())
+
+    assert "path:line` citation" in compact
+    assert "`Read` that exact line" in compact
+    assert "symbol-only citation" in compact
+    assert "no `query.where-defined` capability exists" in compact
+    assert "cannot be self-verified deterministically" in compact
+    assert "never a partial `COVERED`" in compact
+    assert "batch Reads by file" in compact
+
+
+def test_architect_reviewer_falsifies_citation_verification() -> None:
+    reviewer = _text(ARCHITECT_REVIEWER)
+    compact = " ".join(reviewer.split())
+
+    assert "Citations verified: N/N (line-checked: k, symbol-checked: m)" in compact
+    assert "spot check at least one cited" in compact
+    assert "NEEDS_REVISION" in compact
+
+
+def test_auto_skill_forbids_root_source_reads_and_names_one_verification_command() -> (
+    None
+):
+    """Run 5 evidence: root re-read whole implementation/test files to
+    fact-check a returned brief -- 44% of its total token spend in one
+    block. Root's only allowed verification is one bounded `des code-fact`
+    call; it must never Read source, and never hand-edit the durable
+    authority itself (root Edited brief.md directly in the same run)."""
+    auto = _text(AUTO_SKILL)
+    compact = " ".join(auto.split())
+
+    assert "Root verification discipline" in auto
+    assert "des code-fact query.atoms-in-file --root" in compact
+    assert "never a broad `Read`" in compact
+    assert (
+        "never repair it by reading further source or editing the authority directly"
+        in compact
+    )
+
+
+def test_auto_skill_warns_off_spine_crafter_dispatch_before_the_attempt() -> None:
+    """Run 5 evidence: root attempted a bare off-spine crafter Agent
+    dispatch, wasting ~44s before the existing guard denied it. The warning
+    must sit at the point root is about to act, not only be discoverable
+    after rejection."""
+    auto = _text(AUTO_SKILL)
+    compact = " ".join(auto.split())
+
+    heading_index = auto.index("## CLI dispatch — the only bridge")
+    warning_index = compact.index("cryptographically gated and refused every time")
+    atd_returns_index = compact.index("ATD returns exactly")
+    # The warning is inside the CLI-dispatch section, before the mechanics.
+    assert heading_index != -1
+    assert warning_index < atd_returns_index

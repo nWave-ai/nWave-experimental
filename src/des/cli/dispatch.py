@@ -30,7 +30,7 @@ from des.cli._charter_resolution import (
     _Skip,
 )
 from des.cli._declared_import_refusal import (
-    first_missing_declared_import as _first_missing_declared_import,
+    all_missing_declared_imports as _all_missing_declared_imports,
 )
 from des.cli._declared_import_refusal import (
     unresolved_declared_import_how as _unresolved_declared_import_how,
@@ -45,6 +45,79 @@ def _handoff_refusal(*, what: str, why: str, how: str) -> int:
     """Emit one actionable refusal and no success-shaped output."""
     print(f"WHAT: {what} WHY: {why} HOW: {how}", file=sys.stderr)
     return _EXIT_USAGE_ERROR
+
+
+def _batched_contract_defects_refusal(findings: list[tuple[str, str, str]]) -> int:
+    """One refusal naming every collected `(what, why, how)` defect.
+
+    Run 5 (K4 matrix): `des dispatch` rejected the same contract three
+    times in sequence, one defect per REVISE cycle (invented import ->
+    self-referential import -> non-regular-file oracle path), each costing
+    a full ATD REVISE round (~236s + up to 676K cache-read tokens on the
+    third). GDP-3/5: the validator must report every defect it can find in
+    one pass, so one REVISE fixes all of them.
+
+    A single-item batch reduces to exactly `_handoff_refusal`'s own
+    single-defect message, byte for byte -- every EXISTING single-defect
+    test keeps matching. Exit code is `_EXIT_USAGE_ERROR` either way.
+    """
+    if len(findings) == 1:
+        what, why, how = findings[0]
+        return _handoff_refusal(what=what, why=why, how=how)
+    lines = [f"WHAT: this DeliveryContract has {len(findings)} defects:"]
+    for index, (what, why, how) in enumerate(findings, start=1):
+        lines.append(f"  {index}. {what}")
+        lines.append(f"     WHY: {why}")
+        lines.append(f"     HOW: {how}")
+    print("\n".join(lines), file=sys.stderr)
+    return _EXIT_USAGE_ERROR
+
+
+#: A repository-relative file paired with a line number, e.g.
+#: `hc/api/models.py:1149` -- the shape DESIGN's own architecture authority
+#: cites for an exact insertion point. Extension-agnostic (not `.py`-only):
+#: an EXTEND target's insertion point can equally be a non-Python file (a
+#: schema, a config) -- the K4/healthchecks arm and this repo's own
+#: DeliveryContracts both go through `des dispatch`.
+_FILE_LINE_CITATION_RE = re.compile(r"[\w/.-]+\.\w+:\d+")
+
+
+def _extend_targets_missing_citation(contract: dict) -> list[tuple[str, str, str]]:
+    """Every `decision: EXTEND` target (`$defs/targetPlan`,
+    thin-delivery-contract.schema.json) whose `overlap`/`justification`
+    text carries zero file:line-shaped citation.
+
+    GDP-8 second axis on "lossless contract projection": DESIGN's
+    architecture authority names an exact insertion point for every EXTEND
+    target it declares; a contract target that extends existing code but
+    cites none lost that fact projecting from authority into the contract,
+    leaving the crafter to relocate the insertion point itself instead of
+    reading it verbatim. `CREATE_NEW` targets are exempt -- there is no
+    existing insertion point to cite.
+    """
+    findings: list[tuple[str, str, str]] = []
+    for target_path, target_plan in contract["targets"].items():
+        if target_plan.get("decision") != "EXTEND":
+            continue
+        overlap = str(target_plan.get("overlap", ""))
+        justification = str(target_plan.get("justification", ""))
+        if _FILE_LINE_CITATION_RE.search(overlap) or _FILE_LINE_CITATION_RE.search(
+            justification
+        ):
+            continue
+        findings.append(
+            (
+                f"the contract carries no insertion point for {target_path!r}",
+                "DESIGN's architecture authority cites an exact insertion "
+                "point for an EXTEND target; a DeliveryContract must project "
+                "it losslessly, not drop it on the way from authority to "
+                "contract",
+                f"cite the exact file:line insertion point (e.g. "
+                f"'hc/api/models.py:1149') DESIGN named for {target_path!r} "
+                "in this target's own overlap or justification field",
+            )
+        )
+    return findings
 
 
 def _unsafe_delivery_contract_path_reason(path_str: str) -> str | None:
@@ -166,58 +239,70 @@ def _load_delivery_contract(
     return contract, path_str, contract_bytes
 
 
-def _resolve_oracle(repo_root: Path, locator: str) -> bytes | None:
-    """Load one safe, regular acceptance-tests oracle or refuse WHAT/WHY/HOW."""
+def _oracle_path_finding(repo_root: Path, locator: str) -> tuple[str, str, str] | None:
+    """Pure check: `(what, why, how)` for the first reason `locator` cannot
+    be trusted as an oracle path, or `None` when it is safe to read.
+
+    Extracted from `_resolve_oracle` so `main()`'s batched defect
+    aggregation (Run 5, K4 matrix) can collect this as ONE finding among
+    possibly several, while `_resolve_oracle` itself keeps printing and
+    returning immediately, unchanged, for `validate_delivery_contract.py`'s
+    own single-defect caller.
+    """
     unsafe_reason = _unsafe_delivery_contract_path_reason(locator)
     if unsafe_reason is not None:
-        _handoff_refusal(
-            what=unsafe_reason.replace(
+        return (
+            unsafe_reason.replace(
                 "--delivery-contract PATH", "acceptance-tests locator"
             ),
-            why="an unsafe oracle locator could escape the repository boundary",
-            how=(
-                "pass a repository-relative acceptance-tests locator without an "
-                "absolute prefix, traversal, backslash, drive letter or glob token"
-            ),
+            "an unsafe oracle locator could escape the repository boundary",
+            "pass a repository-relative acceptance-tests locator without an "
+            "absolute prefix, traversal, backslash, drive letter or glob token",
         )
-        return None
 
     candidate = repo_root / locator
     try:
         resolved_root = repo_root.resolve()
         resolved_candidate = candidate.resolve()
     except OSError as exc:
-        _handoff_refusal(
-            what=f"oracle path resolution failed ({exc})",
-            why="path safety cannot be established",
-            how="pass an accessible acceptance-tests locator below --repo-root",
+        return (
+            f"oracle path resolution failed ({exc})",
+            "path safety cannot be established",
+            "pass an accessible acceptance-tests locator below --repo-root",
         )
-        return None
     if not resolved_candidate.is_relative_to(resolved_root):
-        _handoff_refusal(
-            what=f"the oracle path {candidate} escapes --repo-root",
-            why="the resolved path does not belong to the declared repository",
-            how="pass an acceptance-tests locator below --repo-root",
+        return (
+            f"the oracle path {candidate} escapes --repo-root",
+            "the resolved path does not belong to the declared repository",
+            "pass an acceptance-tests locator below --repo-root",
         )
-        return None
 
     try:
         file_stat = candidate.lstat()
     except OSError:
-        _handoff_refusal(
-            what=f"the oracle file does not exist at {candidate}",
-            why="DELIVER requires a real acceptance-tests oracle",
-            how="pass an existing repository-relative acceptance-tests locator",
+        return (
+            f"the oracle file does not exist at {candidate}",
+            "DELIVER requires a real acceptance-tests oracle",
+            "pass an existing repository-relative acceptance-tests locator",
         )
-        return None
     if not stat.S_ISREG(file_stat.st_mode):
-        _handoff_refusal(
-            what=f"the oracle path {candidate} is not a regular file",
-            why="a symlink, directory or fifo is not a stable oracle identity",
-            how="pass a regular acceptance-tests file",
+        return (
+            f"the oracle path {candidate} is not a regular file",
+            "a symlink, directory or fifo is not a stable oracle identity",
+            "pass a regular acceptance-tests file",
         )
+    return None
+
+
+def _resolve_oracle(repo_root: Path, locator: str) -> bytes | None:
+    """Load one safe, regular acceptance-tests oracle or refuse WHAT/WHY/HOW."""
+    finding = _oracle_path_finding(repo_root, locator)
+    if finding is not None:
+        what, why, how = finding
+        _handoff_refusal(what=what, why=why, how=how)
         return None
 
+    candidate = repo_root / locator
     try:
         return candidate.read_bytes()
     except OSError as exc:
@@ -292,19 +377,29 @@ def main(argv: list[str] | None = None) -> int:
         return _EXIT_USAGE_ERROR
     contract, locator, contract_bytes = loaded
 
-    missing_declared_import = _first_missing_declared_import(repo_root, contract)
-    if missing_declared_import is not None:
-        target_path, reference = missing_declared_import
-        return _handoff_refusal(
-            what=f"target {target_path!r} declares import {reference!r}, "
-            "which does not resolve to a base-tree module or symbol",
-            why="a DeliveryContract citing an invented symbol reintroduces "
-            "ATD-invented substrate (K4 failure-to-design matrix row 12)",
-            how=_unresolved_declared_import_how(repo_root, contract, reference),
+    # Run 5 (K4 matrix): collect EVERY contract-content defect this pass can
+    # find -- every missing declared-import across every target, every
+    # EXTEND target missing a lossless insertion-point citation, plus the
+    # one oracle-path/self-reference problem -- into ONE batched refusal
+    # below, instead of returning on the first and forcing a fresh dispatch
+    # cycle per defect. An OSError during oracle path resolution stays an
+    # immediate return: a filesystem anomaly, not a contract content defect
+    # an ATD REVISE can fix by editing the contract.
+    findings: list[tuple[str, str, str]] = [*_extend_targets_missing_citation(contract)]
+    for target_path, reference in _all_missing_declared_imports(repo_root, contract):
+        findings.append(
+            (
+                f"target {target_path!r} declares import {reference!r}, "
+                "which does not resolve to a base-tree module or symbol",
+                "a DeliveryContract citing an invented symbol reintroduces "
+                "ATD-invented substrate (K4 failure-to-design matrix row 12)",
+                _unresolved_declared_import_how(repo_root, contract, reference),
+            )
         )
 
     oracle_locator = str(contract["acceptance-tests"]["locator"])
     oracle_unsafe_reason = _unsafe_delivery_contract_path_reason(oracle_locator)
+    self_reference_finding: tuple[str, str, str] | None = None
     if oracle_unsafe_reason is None:
         try:
             resolved_contract_path = (repo_root / locator).resolve()
@@ -316,18 +411,23 @@ def main(argv: list[str] | None = None) -> int:
                 how="pass an accessible acceptance-tests locator below --repo-root",
             )
         if resolved_oracle_candidate == resolved_contract_path:
-            return _handoff_refusal(
-                what=(
-                    f"the acceptance-tests locator {oracle_locator!r} resolves "
-                    f"to the same physical path as --delivery-contract {locator!r}"
-                ),
-                why=(
-                    "ContractLocator and OracleLocator are distinct nominal "
-                    "roles; a self-referencing oracle could never be "
-                    "independently validated"
-                ),
-                how="point acceptance-tests.locator at a distinct oracle file",
+            self_reference_finding = (
+                f"the acceptance-tests locator {oracle_locator!r} resolves "
+                f"to the same physical path as --delivery-contract {locator!r}",
+                "ContractLocator and OracleLocator are distinct nominal "
+                "roles; a self-referencing oracle could never be "
+                "independently validated",
+                "point acceptance-tests.locator at a distinct oracle file",
             )
+    if self_reference_finding is not None:
+        findings.append(self_reference_finding)
+    else:
+        oracle_path_finding = _oracle_path_finding(repo_root, oracle_locator)
+        if oracle_path_finding is not None:
+            findings.append(oracle_path_finding)
+
+    if findings:
+        return _batched_contract_defects_refusal(findings)
 
     oracle_bytes = _resolve_oracle(repo_root, oracle_locator)
     if oracle_bytes is None:

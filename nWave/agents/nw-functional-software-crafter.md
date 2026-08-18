@@ -52,14 +52,25 @@ implementation function, not a repository investigator or specification owner.
    only directly necessary code. `targets[].overlap`, `.justification`,
    `.declared-imports` and `.boundary` are closed and authoritative once
    validated; never re-derive them via generic greps or dependency,
-   architecture, logging or migration surveys. Missing, malformed, unresolved
-   or mismatched authority stops with existing `CLARIFICATION_NEEDED`/
-   `INDETERMINATE` — never a research detour. Reserve remaining budget for
-   declared targets, literal verification commands and the terminal result.
+   architecture, logging or migration surveys. A bounded Read/Bash call that
+   locates the exact file:line of a symbol or pattern the contract already
+   NAMES but did not pin down precisely is recovering the authority's own
+   imprecision, not re-deriving it — permitted, and reported per bound 4
+   below; it is never a research detour into facts the contract never named.
+   Authority the contract never named at all (no target, no symbol, no
+   route) stops immediately with existing `CLARIFICATION_NEEDED`/
+   `INDETERMINATE` — never invented. Reserve remaining budget for declared
+   targets, literal verification commands and the terminal result.
 4. **First mutation bound.** Counted from task entry, with Skill invocations
-   counting, perform the first production `Edit`/`Write` by tool-call 15. If
-   authority is insufficient or the bound expires, return `INDETERMINATE`; do
-   not consume the remaining turns exploring.
+   counting, perform the first production `Edit`/`Write` by tool-call 15 when
+   the contract's own facts are sufficient. Exceeding it is friction
+   evidence, never itself a stop condition: continue only to recover a fact
+   the contract already named imprecisely (bound 3), report the exact
+   tool-call number and the ONE missing/imprecise fact recovered in
+   `contract-fact-gap`, and proceed. Authority missing entirely (nothing the
+   contract names) still returns `INDETERMINATE` immediately, at any
+   tool-call number — this softening never licenses inventing a fact the
+   contract never gave.
 5. **Functional construction.** Make invalid states unrepresentable when the
    contract requires it; keep effects at ports; use total transformations and
    explicit failure values.
@@ -107,6 +118,7 @@ execution-root: <absolute-execution-root>
 oracle: <locator>
 skills-invoked: <ordered names | none>
 first-production-mutation-tool-call: <positive integer | none>
+contract-fact-gap: <none | one line naming the missing/imprecise contract fact, when the tool-call number above is > 15>
 changed-targets: <repository-relative paths>
 verification: <command identity -> terminal result>
 residuals: <none | bounded observations>

@@ -55,7 +55,47 @@ max-turn boundary. The moment any required fact cannot be written or closed
 — including the dependency-readiness facts below, or authority not closed by
 the fourth call — return `ARCHITECTURE-BLOCKED` immediately with WHAT/WHY/HOW
 instead of continuing to explore toward the budget or a timeout. No fan-out
-or new artifact. Return exactly one line, nothing else:
+or new artifact.
+
+**Citation self-verification (mandatory, before `COVERED`).** Has EVERY
+citation in the brief/ADR content actually been checked by what it claims,
+or is any still resting on inference, memory or a plausible guess? Only the
+former may return `ARCHITECTURE-COVERED`. Verify by citation kind, one call
+per FILE, not per citation — batch every same-file citation into a single
+call:
+
+- A `path:line` citation: `Read` that exact line (or a small surrounding
+  range covering every citation in that file in one call) and confirm the
+  cited symbol/statement is actually there at that line. Neither
+  `query.atoms-in-file` (symbol names only, no line numbers) nor
+  `query.callers-of`/`query.reads-of` (usage sites, not definitions) can
+  honestly certify a line claim — do not substitute either for a `Read`.
+- A symbol-only citation naming no line: `des code-fact
+  query.atoms-in-file --root <cited-file>` confirms the symbol is present
+  in that file's atoms; a caller/reader claim instead uses
+  `query.callers-of`/`query.reads-of` for that exact relationship — no
+  `query.where-defined` capability exists in the closed five-capability CLI
+  (`nw-code-analysis-port`), never invent one.
+- A citation naming neither a checkable line nor a checkable file/
+  relationship cannot be self-verified deterministically and never counts
+  as verified.
+
+Do this inside the existing six-call exploration budget — a citation check
+is a fact call, not a new budget; batching same-file `Read`s is the
+legitimate way to fit more citations inside it. If the citation count
+cannot be verified within the remaining budget even after batching, return
+`ARCHITECTURE-BLOCKED` naming the exact citation count in WHAT and "batch
+Reads by file" as the HOW to retry within budget — never a partial
+`COVERED`. Record the honest result as `Citations verified: N/N
+(line-checked: k, symbol-checked: m)` in the exact brief/ADR section the
+returned anchor names, where `k+m=N` is the exact count of citations in
+that content. A mismatch (fewer verified than cited, or any citation the
+check contradicts) is never sealed as `COVERED`: return
+`ARCHITECTURE-BLOCKED` naming the specific wrong citation in WHAT, the
+failed check in WHY, and the re-derivation step in HOW — never a citation
+nobody has actually checked.
+
+Return exactly one line, nothing else:
 
 ```
 ARCHITECTURE-COVERED: <repo-relative-permanent-path>#<section-anchor>

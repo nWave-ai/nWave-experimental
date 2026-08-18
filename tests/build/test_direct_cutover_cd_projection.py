@@ -118,6 +118,31 @@ def test_crafter_requires_immutable_oracle_and_early_mutation(path: Path) -> Non
     assert "never silently skip a matched row" in text.lower()
 
 
+@pytest.mark.parametrize("path", (OO, FP), ids=("oo", "fp"))
+def test_first_mutation_bound_is_friction_evidence_not_a_gate(path: Path) -> None:
+    """Run 5 evidence: a real 30-call investigation (bound 15) succeeded --
+    the crafter was recovering file:line facts the architecture authority
+    already named but the compiled contract dropped, not inventing them.
+    Exceeding the bound must report friction, never abort a delivery that is
+    otherwise on track; authority the contract never named at all must still
+    stop immediately, at any tool-call number."""
+    text = _text(path)
+    compact = " ".join(text.split())
+
+    assert "Exceeding it is friction evidence, never itself a stop condition" in compact
+    assert "contract-fact-gap" in text
+    assert (
+        "this softening never licenses inventing a fact the contract "
+        "never gave" in compact
+    )
+    assert (
+        "Authority missing entirely (nothing the contract names) still "
+        "returns `INDETERMINATE` immediately, at any tool-call number" in compact
+    )
+    assert "recovering the authority's own" in compact
+    assert "never a research detour into facts the contract never named" in compact
+
+
 def test_deliver_refuses_nonterminal_crafter_completion() -> None:
     text = _text(DELIVER)
     compact = " ".join(text.split())

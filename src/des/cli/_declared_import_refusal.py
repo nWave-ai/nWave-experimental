@@ -35,15 +35,31 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+def all_missing_declared_imports(
+    repo_root: Path, contract: dict
+) -> list[tuple[str, str]]:
+    """Every `(target_path, reference)` absent from the base tree, across
+    ALL targets -- not only the first.
+
+    Run 5 (K4 matrix): `des dispatch` rejected the same contract three
+    times in sequence, one defect per REVISE cycle, because only the FIRST
+    missing declared-import was ever reported. Reporting every one lets a
+    single ATD REVISE round fix them all instead of costing one full
+    dispatch/REVISE cycle per defect.
+    """
+    missing: list[tuple[str, str]] = []
+    for target_path, target_plan in contract["targets"].items():
+        for reference in target_plan.get("declared-imports", []):
+            if not resolve_declared_import(repo_root, reference):
+                missing.append((target_path, reference))
+    return missing
+
+
 def first_missing_declared_import(
     repo_root: Path, contract: dict
 ) -> tuple[str, str] | None:
     """Return the first `(target_path, reference)` absent from the base tree."""
-    for target_path, target_plan in contract["targets"].items():
-        for reference in target_plan.get("declared-imports", []):
-            if not resolve_declared_import(repo_root, reference):
-                return target_path, reference
-    return None
+    return next(iter(all_missing_declared_imports(repo_root, contract)), None)
 
 
 def unresolved_declared_import_how(

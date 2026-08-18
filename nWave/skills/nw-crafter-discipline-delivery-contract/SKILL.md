@@ -67,8 +67,13 @@ If a matched skill is unavailable or cannot be invoked, return
 result. Never load PBT/test-authoring skills: ATD owns the immutable oracle.
 
 1. Read the validated contract, immutable oracle and declared target files.
-   Bound orientation; when production must change, make the first production
-   edit by tool-call 15 or return `INDETERMINATE`.
+   Bound orientation: make the first production edit by tool-call 15 when the
+   contract's own facts are sufficient. Exceeding 15 is friction evidence,
+   never itself a stop condition -- continue only to recover a fact the
+   contract already named imprecisely (never to invent one it never named),
+   and report the tool-call number plus the one recovered fact in
+   `contract-fact-gap`. Authority missing entirely still returns
+   `INDETERMINATE` immediately, at any tool-call number.
 2. Before creating a responsibility, use `des code-fact` and the repository's
    durable design authority to find an existing port, type or implementation to
    extend. Degrade LOUD if structural facts are approximate.
@@ -102,6 +107,7 @@ contract: <locator>@sha256:<digest>
 candidate: git-<algorithm>:<base-revision>+worktree:<absolute-execution-root>
 oracle: <locator>
 mutation: <first production mutation tool-call, or none>
+contract-fact-gap: <none | one line, when mutation's tool-call number > 15>
 skills-invoked: <ordered names | none>
 changed-targets: <repository-relative paths>
 verification: <literal command identities and terminal results>

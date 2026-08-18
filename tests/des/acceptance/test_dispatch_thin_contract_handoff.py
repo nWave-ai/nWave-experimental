@@ -364,3 +364,120 @@ def test_schema_invalid_contract_refuses_before_handoff(tmp_path: Path) -> None:
     assert out == ""
     assert "schema" in err.casefold()
     assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+
+
+def test_three_distinct_defects_are_all_named_in_one_refusal(tmp_path: Path) -> None:
+    """Run 5 (K4 matrix): `des dispatch` rejected the same contract three
+    times in sequence, one defect per REVISE cycle, each costing a full ATD
+    REVISE round (~236s + up to 676K cache-read tokens on the third). ONE
+    dispatch call, with three distinct real defects present at once --
+    TWO invented declared-imports across TWO different targets, plus a
+    non-regular-file oracle path -- must name all three in its single
+    refusal, not only the first."""
+    contract = load_valid_contract()
+    _original_target_path, original_target_plan = next(
+        iter(contract["targets"].items())
+    )
+
+    # Defect A: an invented import absent from the base tree entirely.
+    original_target_plan["declared-imports"] = ["nonexistent_module_xyz.invented"]
+
+    # Defect B: a SECOND target, its own independently invented import --
+    # proves "across ALL targets", not only the first target checked.
+    second_target_path = "src/des/fake_second_target.py"
+    second_target_plan = json.loads(json.dumps(original_target_plan))
+    second_target_plan["declared-imports"] = ["another_nonexistent_module.Invented"]
+    contract["targets"][second_target_path] = second_target_plan
+
+    seed_referenced_oracle(tmp_path, contract)
+    contract_path = tmp_path / "delivery-contract.json"
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    # Defect C: the oracle locator resolves to a directory, not a regular
+    # file -- reproducing Run 5's third rejected cycle verbatim.
+    oracle_locator = str(contract["acceptance-tests"]["locator"])
+    oracle_path = tmp_path / oracle_locator
+    oracle_path.unlink()
+    oracle_path.mkdir()
+
+    exit_code, out, err = _run(
+        "--repo-root",
+        str(tmp_path),
+        "--delivery-contract",
+        contract_path.name,
+    )
+
+    assert exit_code != 0
+    assert out == ""
+    assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+    assert "nonexistent_module_xyz.invented" in err, (
+        "defect A (first target's invented import) must be named"
+    )
+    assert "another_nonexistent_module.Invented" in err, (
+        "defect B (second target's invented import) must be named"
+    )
+    assert "not a regular file" in err, "defect C (oracle path) must be named"
+    assert err.count("HOW:") == 3, (
+        f"each of the three defects must carry its own HOW; got {err.count('HOW:')} "
+        f"in: {err!r}"
+    )
+
+
+def test_extend_target_without_insertion_citation_is_refused(tmp_path: Path) -> None:
+    """GDP-8 second axis on "lossless contract projection": an EXTEND
+    target whose `overlap`/`justification` carries zero file:line-shaped
+    citation must be refused -- DESIGN's architecture authority always
+    names an exact insertion point for an EXTEND target; dropping it on
+    the way into the DeliveryContract leaves the crafter to relocate it
+    itself instead of reading it verbatim."""
+    contract = load_valid_contract()
+    target_path, target_plan = next(iter(contract["targets"].items()))
+    assert target_plan["decision"] == "EXTEND"
+    target_plan["overlap"] = "The existing schema is the sole shape authority."
+    target_plan["justification"] = "Relax syntax at the existing boundary."
+
+    seed_referenced_oracle(tmp_path, contract)
+    contract_path = tmp_path / "delivery-contract.json"
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    exit_code, out, err = _run(
+        "--repo-root",
+        str(tmp_path),
+        "--delivery-contract",
+        contract_path.name,
+    )
+
+    assert exit_code != 0
+    assert out == ""
+    assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+    assert target_path in err, "the uncited EXTEND target must be named"
+    assert "insertion" in err.lower()
+
+
+def test_extend_target_with_citation_in_either_field_is_accepted(
+    tmp_path: Path,
+) -> None:
+    """A citation in `overlap` alone (not just `justification`) must
+    satisfy the check -- the rule is "somewhere in this target's own
+    text", not one specific field."""
+    contract = load_valid_contract()
+    _target_path, target_plan = next(iter(contract["targets"].items()))
+    assert target_plan["decision"] == "EXTEND"
+    target_plan["overlap"] = (
+        "See nWave/schemas/thin-delivery-contract.schema.json:64 for the "
+        "existing shape authority."
+    )
+    target_plan["justification"] = "Relax syntax at the existing boundary."
+
+    seed_referenced_oracle(tmp_path, contract)
+    contract_path = tmp_path / "delivery-contract.json"
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    exit_code, _out, err = _run(
+        "--repo-root",
+        str(tmp_path),
+        "--delivery-contract",
+        contract_path.name,
+    )
+
+    assert exit_code == 0, err
