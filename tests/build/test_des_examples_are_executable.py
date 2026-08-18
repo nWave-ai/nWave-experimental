@@ -13,22 +13,36 @@ Reads source" rule exists to prevent. An example nobody can execute is
 worse than no example: it sends the reader into the exact failure mode
 the guidance was written to close off.
 
+Run 9 correction: the original implementation dry-ran every example as a
+real `python -m des ...` SUBPROCESS, which failed nondeterministically
+under box load (~1 in 3 combined-suite runs -- many `des` spawns
+contending for the same box, not order-dependence: the hermetic env fix
+already ruled that out). Parses IN-PROCESS instead: each subcommand's own
+`argparse.ArgumentParser` factory (`_parser`/`_build_parser`, resolved via
+`des.cli.__main__`'s own subcommand registry -- never a second hand-typed
+module-path mapping) is called directly and its `.parse_known_args(argv)`
+is exercised with no subprocess, no env, no timeout, nothing left for a
+loaded box to contend over.
+
 Placeholders are substituted with dummy values of the right SHAPE (a real
 existing file/dir in this checkout, a plain identifier, an enum member --
-never a value chosen to make a borderline case pass) and the real `des`
-CLI parses the result. A downstream WHAT/WHY/HOW application refusal (a
-nonexistent delivery-contract, an unresolved symbol) is expected and fine;
-only argparse's own fixed error vocabulary ("unrecognized arguments",
-"invalid choice", "the following arguments are required", "expected ...
-argument") counts as a documentation defect here.
+never a value chosen to make a borderline case pass) and the real
+argparse instance parses the result. A downstream WHAT/WHY/HOW application
+refusal (a nonexistent delivery-contract, an unresolved symbol) never
+happens here at all now -- IN-PROCESS parsing stops at argv acceptance,
+never reaching application logic -- so only argparse's own fixed error
+vocabulary ("unrecognized arguments", "invalid choice", "the following
+arguments are required", "expected ... argument") counts as a
+documentation defect here.
 """
 
 from __future__ import annotations
 
-import os
+import contextlib
+import importlib
+import io
 import re
 import shlex
-import subprocess
 import sys
 from pathlib import Path
 
@@ -145,21 +159,56 @@ def _all_des_example_argv() -> list[tuple[str, list[str]]]:
     return examples
 
 
-def _hermetic_subprocess_env(home: Path) -> dict[str, str]:
-    """A minimal, deliberately clean subprocess environment -- verified
-    live to produce byte-identical CLI output with and without the
-    ambient session's environment: this CLI needs only `PATH` (interpreter/
-    shared-library resolution) and a real `HOME`. Every other ambient var
-    -- `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `NWAVE_AGENTS_HOME`,
-    `DES_PROJECT_DIR`, `GIT_*` overrides, anything a sibling test's
-    `monkeypatch.setenv` or a session-scoped autouse fixture set earlier in
-    THIS pytest session -- is deliberately absent. `subprocess.run` with no
-    `env=` inherits the CALLING process's full `os.environ`, so without
-    this the dry-run silently tests "the CLI plus whatever this pytest
-    session happened to touch first," not the CLI's own argparse grammar
-    in isolation -- an order-dependent pass/fail unrelated to whether the
-    documented example is actually well-formed."""
-    return {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home)}
+# The parser-factory function names actually used across `src/des/cli/*`
+# today -- `dispatch.py`/`resolve_charters.py` use `_build_parser`,
+# `code_fact.py`/`prepare_ordinary_request.py`/`charter_scaffold.py`/
+# `validate_delivery_contract.py` use `_parser`. Either is a zero-arg
+# callable returning one fresh `argparse.ArgumentParser` -- never invoked
+# module `main()`, so no application logic (file I/O, network, mutation)
+# ever runs for this guard.
+_PARSER_FACTORY_NAMES = ("_parser", "_build_parser")
+
+
+def _resolve_parser_factory(subcommand: str):
+    """The zero-arg `argparse.ArgumentParser` factory for a registered
+    `des` subcommand, resolved via `des.cli.__main__`'s OWN subcommand
+    registry -- never a second, hand-typed subcommand-to-module mapping
+    that could independently drift from the real dispatcher. `None` when
+    the subcommand is not registered, or its module exposes neither known
+    factory name (a real documentation-vs-CLI gap, not swallowed here)."""
+    from des.cli.__main__ import _REGISTRY
+
+    row = next((entry for entry in _REGISTRY if entry.name == subcommand), None)
+    if row is None:
+        return None
+    module = importlib.import_module(row.module_path)
+    for name in _PARSER_FACTORY_NAMES:
+        factory = getattr(module, name, None)
+        if callable(factory):
+            return factory
+    return None
+
+
+def _in_process_argparse_error_text(parser_factory, argv: list[str]) -> str:
+    """Attempt `parser_factory().parse_known_args(argv)` IN-PROCESS (no
+    subprocess) and return whatever argparse-generated error text
+    resulted, or `""` on a clean parse. Standard `argparse.ArgumentParser`
+    prints its message to stderr then raises `SystemExit` (`self.exit()`)
+    -- captured via a redirected `stderr`. Some modules override `error()`
+    to raise a different, module-private exception carrying the SAME
+    argparse-generated message text instead of exiting (`des
+    resolve-charters`'s `_RefusingArgumentParser`, `des prepare-ordinary-
+    request`'s own refusing parser) -- that exception's own `str()` is
+    appended too, so either path's message text reaches the caller."""
+    stderr_capture = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(stderr_capture):
+            parser_factory().parse_known_args(argv)
+    except SystemExit:
+        pass
+    except Exception as exc:
+        return stderr_capture.getvalue() + str(exc)
+    return stderr_capture.getvalue()
 
 
 def test_extraction_finds_a_known_nonempty_baseline() -> None:
@@ -173,32 +222,31 @@ def test_extraction_finds_a_known_nonempty_baseline() -> None:
     assert len(examples) >= 5
 
 
-def test_every_documented_des_example_parses_without_an_argparse_error(
-    tmp_path: Path,
-) -> None:
-    home = tmp_path / "home"
-    home.mkdir()
-    env = _hermetic_subprocess_env(home)
-
+def test_every_documented_des_example_parses_without_an_argparse_error() -> None:
     problems: list[str] = []
+    unresolved_subcommands: set[str] = set()
     for source, argv in _all_des_example_argv():
-        result = subprocess.run(
-            [sys.executable, "-m", "des", *argv[1:]],
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-        )
+        subcommand = argv[1] if len(argv) > 1 else ""
+        parser_factory = _resolve_parser_factory(subcommand)
+        if parser_factory is None:
+            unresolved_subcommands.add(subcommand)
+            continue
+        error_text = _in_process_argparse_error_text(parser_factory, argv[2:])
         hit = next(
-            (marker for marker in _ARGPARSE_ERROR_MARKERS if marker in result.stderr),
+            (marker for marker in _ARGPARSE_ERROR_MARKERS if marker in error_text),
             None,
         )
         if hit is not None:
             problems.append(
-                f"{source}: `{' '.join(argv)}` -> argparse error ({hit!r}), "
-                f"full stderr:\n{result.stderr.strip()}"
+                f"{source}: `{' '.join(argv)}` -> argparse error ({hit!r}): "
+                f"{error_text.strip()}"
             )
+    assert not unresolved_subcommands, (
+        "no argparse-factory could be resolved for "
+        f"{sorted(unresolved_subcommands)} via des.cli.__main__'s registry "
+        f"-- expose one of {_PARSER_FACTORY_NAMES} on that subcommand's "
+        "module, or this guard cannot verify its documented examples at all"
+    )
     assert not problems, "\n\n".join(problems)
 
 
