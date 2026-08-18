@@ -32,8 +32,10 @@ Two tiers:
 
 from __future__ import annotations
 
+import inspect
 import io
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -367,3 +369,104 @@ class TestRouteWalkRealHookCases:
         }
         code, _ = _real_hook_run(monkeypatch, capsys, payload)
         assert code == 2
+
+
+# ---------------------------------------------------------------------------
+# Tier 3: `_installed_cli_run` must resolve `des` the way a real Bash call
+# would -- via PATH, into the WORKSPACE's own arm-shaped install -- never a
+# hardcoded path into the harness's separate build venv.
+#
+# Genesis (run 5, preflight.stderr): `cli-charter-scaffold` blocked with
+# `missing-charter-template: template absent at .../nwave-venv/lib/
+# python3.12/nWave/templates/expectation-charter.md`. `des charter_scaffold`
+# resolves its packaged template relative to `Path(__file__).resolve()` of
+# the `des` package Python actually imported -- correct when `des` is
+# imported via the workspace's own `.claude-k4/bin/des` shim (which inserts
+# `{workspace}/.claude-k4/lib/python` onto `sys.path`, landing 3 parents up
+# on `.claude-k4/lib/`, sibling to the `nWave/` tree `nwave-ai install`
+# populated there). `_installed_cli_run` was hardcoding
+# `venv / "bin" / "des"` -- the harness's own SHARED build venv's console
+# script, whose package-relative template lookup lands in that venv's
+# generic `site-packages`, which has no `nWave/` tree at all. Root cause
+# was the harness bypassing PATH resolution, not a product defect: `des`
+# DOES resolve its installed assets correctly when invoked the way a real
+# arm session invokes it.
+# ---------------------------------------------------------------------------
+
+
+class TestInstalledCliRunResolvesTheWorkspaceShim:
+    def test_argv_is_never_rewritten_to_a_hardcoded_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`_installed_cli_run` must pass `argv[0]` through as the literal
+        string `"des"` -- exactly what a root/subagent Bash call actually
+        types -- and let PATH resolve it, never substitute an absolute path
+        into some OTHER install (the harness's own build venv, or anything
+        else)."""
+        captured = {}
+
+        def _fake_run(argv, **kwargs):
+            captured["argv"] = argv
+            captured["kwargs"] = kwargs
+
+            class _Result:
+                returncode = 0
+                stdout = "ok"
+                stderr = ""
+
+            return _Result()
+
+        monkeypatch.setattr(k4_preflight.subprocess, "run", _fake_run)
+
+        workspace = tmp_path / "probe-route-walk"
+        workspace.mkdir()
+        k4_preflight._installed_cli_run(
+            workspace, ["des", "charter-scaffold", "--delivery-id", "x"], None
+        )
+        assert captured["argv"] == [
+            "des",
+            "charter-scaffold",
+            "--delivery-id",
+            "x",
+        ], (
+            "argv must be the literal command unchanged -- a rewritten "
+            "argv[0] is exactly the run-5 regression"
+        )
+        assert captured["kwargs"]["stdin"] is subprocess.DEVNULL
+
+    def test_env_path_puts_the_workspace_shim_bin_first(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The PATH `_installed_cli_run` hands to `subprocess.run` must put
+        `{workspace}/.claude-k4/bin` first -- the SAME directory
+        `nwave-ai install` populates the per-arm `des` shim into -- so a
+        bare `"des"` argv[0] resolves there, not into any other install on
+        the inherited PATH."""
+        captured = {}
+
+        def _fake_run(argv, **kwargs):
+            captured["env"] = kwargs.get("env")
+
+            class _Result:
+                returncode = 0
+                stdout = "ok"
+                stderr = ""
+
+            return _Result()
+
+        monkeypatch.setattr(k4_preflight.subprocess, "run", _fake_run)
+        monkeypatch.setenv("PATH", "/some/decoy/bin")
+
+        workspace = tmp_path / "probe-route-walk"
+        workspace.mkdir()
+        k4_preflight._installed_cli_run(workspace, ["des", "--help"], None)
+
+        path_entries = captured["env"]["PATH"].split(":")
+        assert path_entries[0] == str(workspace / ".claude-k4" / "bin")
+
+    def test_installed_cli_run_signature_carries_no_venv_parameter(self) -> None:
+        """A `venv` parameter is exactly the surface that invited the run-5
+        regression (a hardcoded `venv / "bin" / "des"` substitution) --
+        pinned absent so it cannot silently return."""
+        params = inspect.signature(k4_preflight._installed_cli_run).parameters
+        assert "venv" not in params

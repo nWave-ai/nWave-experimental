@@ -1558,13 +1558,31 @@ def _installed_hook_run(workspace: Path, venv: Path, payload: dict) -> tuple[int
 
 
 def _installed_cli_run(
-    workspace: Path, venv: Path, argv: list[str], stdin: str | None
+    workspace: Path, argv: list[str], stdin: str | None
 ) -> tuple[int, str]:
     """Invoke the arm's INSTALLED `des` CLI shim for real -- `argv[0]` is
     always the literal string `"des"` (matching what a root/subagent Bash
-    call actually types); this substitutes the real installed binary path.
+    call actually types), resolved via PATH exactly as a real Bash call
+    would resolve it: `_rendered_arm_env(workspace)["PATH"]` already puts
+    `{workspace}/.claude-k4/bin` first (`_arm_env`'s own doc), so
+    `subprocess.run` (given an explicit `env=`, POSIX `execvpe` PATH search)
+    finds the workspace's own per-arm shim.
+
+    `venv` names the harness's SHARED build venv `nwave-ai` was pip-
+    installed into to produce the wheel -- NEVER substitute `venv / "bin" /
+    "des"` for the workspace shim here. That console-script entry point
+    resolves `des.cli.charter_scaffold`'s package-relative asset lookups
+    (`Path(__file__).resolve().parents[3]`) against the SHARED venv's own
+    `site-packages`, which carries no co-located `nWave/` assets -- a real
+    installed run never hits that path because `des` always resolves via
+    the shim, which imports `des` from `{workspace}/.claude-k4/lib/python`
+    instead (3 parents up from THERE is `.claude-k4/lib/`, sibling to the
+    `nWave/` tree `nwave-ai install` populated). Caught live: run 5's
+    preflight blocked on `cli-charter-scaffold` --
+    `missing-charter-template: template absent at
+    .../nwave-venv/lib/python3.12/nWave/templates/expectation-charter.md`
+    -- exactly the shared-venv site-packages path, proving this exact bug.
     """
-    real_argv = [str(venv / "bin" / "des"), *argv[1:]]
     env = _rendered_arm_env(workspace)
     try:
         # `subprocess.run(input=None)` inherits the CALLER's stdin rather
@@ -1579,7 +1597,7 @@ def _installed_cli_run(
         # through a dynamic kwargs dict.
         if stdin is not None:
             done = subprocess.run(
-                real_argv,
+                argv,
                 input=stdin,
                 cwd=workspace,
                 env=env,
@@ -1589,7 +1607,7 @@ def _installed_cli_run(
             )
         else:
             done = subprocess.run(
-                real_argv,
+                argv,
                 stdin=subprocess.DEVNULL,
                 cwd=workspace,
                 env=env,
@@ -1645,7 +1663,7 @@ def route_walk(root: Path, venv: Path, auth_profile: Path) -> dict:
         return _installed_hook_run(workspace, venv, payload)
 
     def cli_run(argv: list[str], stdin: str | None) -> tuple[int, str]:
-        return _installed_cli_run(workspace, venv, argv, stdin)
+        return _installed_cli_run(workspace, argv, stdin)
 
     result = route_walk_steps(
         repo_root=str(workspace),
