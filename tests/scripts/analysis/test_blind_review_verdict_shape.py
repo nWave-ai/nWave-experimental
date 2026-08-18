@@ -2,11 +2,17 @@
 a session, not after.
 
 Four reviewer attempts on the paired run produced incompatible rankings; one
-observed failure was a criteria array instead of the twelve required keys.
+observed failure was a criteria array instead of the required keyed object.
 The base `unseal` maps whatever JSON it is given straight through -- these
 tests go RED against that and GREEN once malformed verdicts are refused with
 a WHAT/WHY/HOW before any mapping happens, while valid verdicts still flow
 through the existing unknown/unscored conservation check untouched.
+
+The criteria count is read from `br._CRITERIA_KEYS` (itself sourced from
+`scripts.analysis.k4.quality_rubric.CRITERIA_KEYS`), never hardcoded here --
+the rubric grew from 12 to 18 criteria in the fix that added this note
+(ADR-SSOT-002 Section 1a coverage), and this file must not need editing the
+next time it grows again.
 
 Run: uv run pytest -q tests/scripts/analysis/test_blind_review_verdict_shape.py
 """
@@ -20,13 +26,16 @@ import pytest
 from scripts.analysis import blind_review as br
 
 
+_N = len(br._CRITERIA_KEYS)
+
+
 def _valid_verdict(**over):
     criteria = {
-        str(n): {"score": 1, "evidence": f"criterion {n}"} for n in range(1, 13)
+        str(n): {"score": 1, "evidence": f"criterion {n}"} for n in range(1, _N + 1)
     }
     verdict = {
         "criteria": criteria,
-        "total": 12,
+        "total": _N,
         "blocking_quality_findings": [],
         "summary": "fine",
     }
@@ -44,14 +53,14 @@ def test_valid_verdict_has_no_problems():
         (lambda v: v["criteria"].pop("7"), "missing-criterion-key"),
         (
             lambda v: v.__setitem__(
-                "criteria", [v["criteria"][str(n)] for n in range(1, 13)]
+                "criteria", [v["criteria"][str(n)] for n in range(1, _N + 1)]
             ),
             "criteria-as-array-not-keyed-object",
         ),
         (lambda v: v.pop("criteria"), "criteria-key-missing-entirely"),
         (
             lambda v: (
-                v.update({str(n): v["criteria"][str(n)] for n in range(1, 13)})
+                v.update({str(n): v["criteria"][str(n)] for n in range(1, _N + 1)})
                 or v.pop("criteria")
             ),
             "criteria-flattened-to-top-level",
@@ -124,4 +133,4 @@ def test_unseal_accepts_valid_verdict_and_maps_it(tmp_path):
     assert code == 0
     written = json.loads(out.read_text())
     assert set(written) == {"sess-1"}
-    assert written["sess-1"]["total"] == 12
+    assert written["sess-1"]["total"] == _N

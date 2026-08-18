@@ -29,6 +29,12 @@ from des.cli._charter_resolution import (
     _Reuse,
     _Skip,
 )
+from des.cli._declared_import_refusal import (
+    first_missing_declared_import as _first_missing_declared_import,
+)
+from des.cli._declared_import_refusal import (
+    unresolved_declared_import_how as _unresolved_declared_import_how,
+)
 
 
 _EXIT_USAGE_ERROR = 2
@@ -285,6 +291,17 @@ def main(argv: list[str] | None = None) -> int:
     if loaded is None:
         return _EXIT_USAGE_ERROR
     contract, locator, contract_bytes = loaded
+
+    missing_declared_import = _first_missing_declared_import(repo_root, contract)
+    if missing_declared_import is not None:
+        target_path, reference = missing_declared_import
+        return _handoff_refusal(
+            what=f"target {target_path!r} declares import {reference!r}, "
+            "which does not resolve to a base-tree module or symbol",
+            why="a DeliveryContract citing an invented symbol reintroduces "
+            "ATD-invented substrate (K4 failure-to-design matrix row 12)",
+            how=_unresolved_declared_import_how(repo_root, contract, reference),
+        )
 
     oracle_locator = str(contract["acceptance-tests"]["locator"])
     oracle_unsafe_reason = _unsafe_delivery_contract_path_reason(oracle_locator)

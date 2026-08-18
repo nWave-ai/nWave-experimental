@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from des.domain.declared_import_resolver import resolve_declared_import
+from des.domain.declared_import_resolver import (
+    resolve_declared_import,
+    unresolved_declared_import_owner,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -104,3 +107,33 @@ def test_attribute_access_beyond_a_leaf_is_not_decidable_and_not_rejected(
     _seed_module(tmp_path, "mypkg.py", _NESTED_CLASS_MODULE)
 
     assert resolve_declared_import(tmp_path, "mypkg.Outer.Inner.CONST.sub_attr") is True
+
+
+#: Run 4 defect B: a declared-import citing a symbol that the SAME
+#: DeliveryContract's own target creates (self-reference) -- the symbol
+#: does not exist YET at the base revision, but its owning module DOES
+#: (this delivery is going to add the symbol to it).
+def test_owner_of_an_unresolved_symbol_in_an_existing_module_is_reported(
+    tmp_path: Path,
+) -> None:
+    _seed_module(tmp_path, "mypkg.py", _NESTED_CLASS_MODULE)
+
+    owner = unresolved_declared_import_owner(tmp_path, "mypkg.NotThere")
+
+    assert owner == "mypkg.py"
+
+
+def test_owner_is_none_when_the_module_does_not_exist_anywhere() -> None:
+    owner = unresolved_declared_import_owner(
+        Path(__file__).resolve().parents[4], "cronsim.CronSim"
+    )
+
+    assert owner is None
+
+
+def test_owner_is_none_for_a_non_python_shaped_reference() -> None:
+    owner = unresolved_declared_import_owner(
+        Path(__file__).resolve().parents[4], "crate::module"
+    )
+
+    assert owner is None

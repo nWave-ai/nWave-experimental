@@ -81,6 +81,38 @@ def _run(argv: list[str], cwd: Path, timeout: int = _SETUP_TIMEOUT) -> tuple[int
     return done.returncode, (done.stderr or done.stdout)[-800:]
 
 
+#: Packages `requirements-dev.txt` names that this fixture never installs --
+#: see `_ensure_venv`'s inline note for the measured incident (a real
+#: install attempt failed building `mysqlclient` for lack of MySQL client
+#: headers) and the verification that nothing in the subject's own package
+#: or test suite imports it. A named, single-item exclusion, not a policy:
+#: if the pinned revision ever adds a genuinely-needed unbuildable package,
+#: this set is the wrong tool -- that needs a real fix (a system package, or
+#: dropping the pin), not a silent addition here.
+_DEV_REQUIREMENTS_SKIP = frozenset({"mysqlclient"})
+
+_REQUIREMENT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+")
+
+
+def _dev_requirement_lines_excluding_unbuildable(text: str) -> list[str]:
+    """`requirements-dev.txt`'s own lines, verbatim, minus any whose package
+    name is in `_DEV_REQUIREMENTS_SKIP`. Comments and blank lines are
+    dropped; every other line (an exact pin, an extras marker, a hash) is
+    preserved byte-for-byte -- this never rewrites a requirement, only
+    omits whole lines."""
+    kept: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = _REQUIREMENT_NAME_RE.match(line)
+        name = match.group(0) if match else line
+        if name in _DEV_REQUIREMENTS_SKIP:
+            continue
+        kept.append(line)
+    return kept
+
+
 def _port_is_occupied(port: int) -> bool:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -119,6 +151,55 @@ def _ensure_venv(workspace: Path) -> Path:
             f"HOW:  reproduce `{pip} install -r {req}` in {workspace} and read "
             f"the error below.\n{tail}"
         )
+    # Row 4 (K4 matrix): a real BASELINE run hit `ModuleNotFoundError: No
+    # module named 'time_machine'` importing the SUBJECT's own pre-existing
+    # `hc/api/tests/test_sendalerts.py` -- declared in requirements-dev.txt
+    # (test-only deps), never installed here. BASELINE runs network-
+    # sandboxed (see `_render_sandbox_settings`'s allowedDomains), so a gap
+    # discovered mid-delivery cannot be repaired there; installing it HERE,
+    # once, at setup time (network available, workspace still the pristine
+    # pinned-revision clone -- no delivery-added drift possible yet), closes
+    # it before a single model call is spent. Unlike `run_acceptance.py`'s
+    # POST-delivery `_dev_requirements_delta` (which deliberately installs
+    # only what a delivery itself ADDED, to avoid a pre-existing dev dep
+    # needing an unavailable system package failing a snapshot that has
+    # nothing to do with the delivery under test), there is no delivery yet
+    # to isolate from here -- but the SAME class of hazard still applies to
+    # the whole file at setup time: a real attempt to install the pinned
+    # revision's requirements-dev.txt verbatim failed building
+    # `mysqlclient` ("Can not find valid pkg-config name ... Specify
+    # MYSQLCLIENT_CFLAGS and MYSQLCLIENT_LDFLAGS env vars manually" -- no
+    # MySQL client headers in this sandbox). `grep -rln "MySQLdb|mysqlclient"
+    # hc/` returns zero hits (2026-08-18): nothing in the subject's own
+    # package or test suite ever imports it: it is a dev-only alternate-
+    # backend convenience for a human running a real MySQL locally, never
+    # exercised by `manage.py test`. Excluded by name, not by a blanket
+    # best-effort/catch-and-skip policy that could silently drop a package
+    # a future pin genuinely needs.
+    dev_req = workspace / "requirements-dev.txt"
+    if dev_req.is_file():
+        install_lines = _dev_requirement_lines_excluding_unbuildable(
+            dev_req.read_text(encoding="utf-8")
+        )
+        if install_lines:
+            filtered_req = venv_dir / "requirements-dev-filtered.txt"
+            filtered_req.write_text("\n".join(install_lines) + "\n", encoding="utf-8")
+            code, tail = _run(
+                [str(pip), "install", "-q", "-r", str(filtered_req)], workspace
+            )
+            if code != 0:
+                raise SystemExit(
+                    "WHAT: could not install requirements-dev.txt (minus "
+                    f"{sorted(_DEV_REQUIREMENTS_SKIP)}) into the fixture "
+                    "venv.\n"
+                    "WHY:  the subject's own pre-existing test suite "
+                    "declares its test-only dependencies there (e.g. "
+                    "time-machine, imported by "
+                    "hc/api/tests/test_sendalerts.py), and BASELINE runs "
+                    "with no network access to install one mid-delivery.\n"
+                    f"HOW:  reproduce `{pip} install -r {filtered_req}` in "
+                    f"{workspace} and read the error below.\n{tail}"
+                )
     return venv_python
 
 
@@ -131,6 +212,51 @@ def _migrate(venv_python: Path, workspace: Path) -> None:
             "be seeded.\n"
             f"HOW:  reproduce `{venv_python} manage.py migrate --noinput` in "
             f"{workspace} and read the error below.\n{tail}"
+        )
+
+
+#: Scoped small, per row 4 (K4 matrix): exercises the SAME Django test
+#: import/collection machinery a real BASELINE run uses, over the one app
+#: both crafter BASELINE and the hidden acceptance suite exercise -- without
+#: running the whole subject suite.
+_SUBJECT_DEPENDENCY_PROBE_ARGV = ("manage.py", "test", "hc.api", "--noinput")
+
+_MODULE_NOT_FOUND_MARKER = "ModuleNotFoundError"
+
+
+def _probe_subject_test_dependencies(venv_python: Path, workspace: Path) -> None:
+    """Run the subject's own `hc.api` test command for real, once, refusing
+    LOUD on `ModuleNotFoundError` -- the causal reproduction of row 4's
+    first divergence: a real BASELINE run hit `ModuleNotFoundError: No
+    module named 'time_machine'` importing `hc/api/tests/test_sendalerts.py`
+    mid-delivery, with no network access there to install it (see
+    `_render_sandbox_settings`'s `network.allowedDomains`). Catching the
+    SAME failure class HERE, at setup time (network available, before a
+    single model call is spent), means a missing test dependency refuses
+    the campaign loud and early instead of surfacing as an opaque
+    INDETERMINATE mid-delivery.
+
+    Runs on the PRISTINE pinned-revision checkout, before ATD/crafter ever
+    touch it -- this proves the SUBJECT's own pre-existing test suite
+    imports cleanly; it says nothing about dependencies a not-yet-authored
+    acceptance test might need (out of scope: that gap belongs to the
+    delivery contract's own obligations, not this fixture).
+    """
+    _code, tail = _run([str(venv_python), *_SUBJECT_DEPENDENCY_PROBE_ARGV], workspace)
+    if _MODULE_NOT_FOUND_MARKER in tail:
+        raise SystemExit(
+            "WHAT: the subject's own test command (`"
+            f"{venv_python.name} {' '.join(_SUBJECT_DEPENDENCY_PROBE_ARGV)}"
+            f"`) hit {_MODULE_NOT_FOUND_MARKER} in the fixture venv.\n"
+            "WHY:  row 4 (K4 matrix) -- BASELINE runs network-sandboxed; a "
+            "test dependency missing from the fixture venv cannot be "
+            "installed mid-delivery, and every K4 subject execution built "
+            "on this fixture is non-reproducible until it is.\n"
+            f"HOW:  reproduce `{venv_python} {' '.join(_SUBJECT_DEPENDENCY_PROBE_ARGV)}` "
+            f"in {workspace}, find the missing import, and add it to "
+            "requirements-dev.txt (or requirements.txt, if it belongs to "
+            "the subject's runtime rather than its tests) before rerunning."
+            f"\n{tail}"
         )
 
 
@@ -244,6 +370,7 @@ def prepare_delivery(workspace: Path) -> Path:
     workspace = Path(workspace)
     venv_python = _ensure_venv(workspace)
     _migrate(venv_python, workspace)
+    _probe_subject_test_dependencies(venv_python, workspace)
     _add_exclude_entries(workspace)
     (workspace / DOC_NAME).unlink(missing_ok=True)
     return venv_python

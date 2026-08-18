@@ -12,11 +12,17 @@ from __future__ import annotations
 
 import io
 import json
+from pathlib import Path
 
 import pytest
 
 from des.adapters.drivers.hooks import pre_tool_use_handler
 from des.application.ordinary_request import compute_delivery_id, contract_locator_for
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[6]
+_NW_AUTO_SKILL_MD = _REPO_ROOT / "nWave" / "skills" / "nw-auto" / "SKILL.md"
+_ATD_AGENT_MD = _REPO_ROOT / "nWave" / "agents" / "nw-acceptance-designer.md"
 
 
 _ATD = "nw-acceptance-designer"
@@ -322,6 +328,143 @@ class TestAtdRejectsMissingInferredReorderedOrInvalidFacts:
         assert _ATD_BODY_GATE_SIGNATURE in payload["reason"], case_id
 
 
+_VALID_REVISE_LOCATOR_VALUE = contract_locator_for(_VALID_DELIVERY_ID_VALUE)
+_VALID_REVISE_LOCATOR_LINE = f"REVISE-CONTRACT: {_VALID_REVISE_LOCATOR_VALUE}"
+_VALID_CITATION_TEXT = "The crafter cited an invented import that does not exist."
+_VALID_CITATION_LINE = (
+    f"CITATION: {json.dumps(_VALID_CITATION_TEXT, ensure_ascii=False)}"
+)
+
+
+def _atd_revision_body(
+    *,
+    locator_line: str = _VALID_REVISE_LOCATOR_LINE,
+    citation_line: str = _VALID_CITATION_LINE,
+) -> str:
+    return "\n".join([locator_line, citation_line])
+
+
+class TestAtdAcceptsTheContractRevisionBody:
+    """Run 4 evidence / ADR-SSOT-002 Section 4c/4d: a crafter INDETERMINATE
+    citing the contract/oracle routes back to ATD with this alternate
+    two-line body on the SAME already-produced DeliveryId -- never a fresh
+    fourteen-line envelope from a second `prepare-ordinary-request` run."""
+
+    def test_valid_revision_body_is_not_blocked_by_this_gate(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Agent",
+                tool_input={"prompt": _atd_revision_body(), "subagent_type": _ATD},
+                transcript_path=_transcript(tmp_path, auto=True),
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert _ATD_BODY_GATE_SIGNATURE not in payload.get("reason", "")
+
+    @pytest.mark.parametrize(
+        "case_id,prompt",
+        [
+            (
+                "missing_citation_line",
+                _VALID_REVISE_LOCATOR_LINE,
+            ),
+            (
+                "extra_trailing_line",
+                _atd_revision_body() + "\nEXTRA: context",
+            ),
+            (
+                "wrong_first_line_prefix",
+                _atd_revision_body(
+                    locator_line=f"CONTRACT-LOCATOR: {_VALID_REVISE_LOCATOR_VALUE}"
+                ),
+            ),
+            (
+                "locator_wrong_directory",
+                _atd_revision_body(
+                    locator_line=f"REVISE-CONTRACT: docs/other/{_VALID_DELIVERY_ID_VALUE}.json"
+                ),
+            ),
+            (
+                "locator_wrong_suffix",
+                _atd_revision_body(
+                    locator_line=f"REVISE-CONTRACT: docs/delivery-contracts/{_VALID_DELIVERY_ID_VALUE}.txt"
+                ),
+            ),
+            (
+                "locator_absolute",
+                _atd_revision_body(
+                    locator_line=f"REVISE-CONTRACT: /docs/delivery-contracts/{_VALID_DELIVERY_ID_VALUE}.json"
+                ),
+            ),
+            (
+                "locator_traversal",
+                _atd_revision_body(
+                    locator_line="REVISE-CONTRACT: docs/delivery-contracts/../x.json"
+                ),
+            ),
+            (
+                "locator_missing_auto_prefix",
+                _atd_revision_body(
+                    locator_line="REVISE-CONTRACT: docs/delivery-contracts/0123456789abcdef.json"
+                ),
+            ),
+            (
+                "locator_short_hex",
+                _atd_revision_body(
+                    locator_line="REVISE-CONTRACT: docs/delivery-contracts/auto-0123.json"
+                ),
+            ),
+            (
+                "locator_uppercase_hex",
+                _atd_revision_body(
+                    locator_line="REVISE-CONTRACT: docs/delivery-contracts/auto-"
+                    + "A" * 16
+                    + ".json"
+                ),
+            ),
+            (
+                "citation_missing_prefix",
+                _atd_revision_body(citation_line='"a bare unlabeled citation"'),
+            ),
+            (
+                "citation_empty_string",
+                _atd_revision_body(citation_line='CITATION: ""'),
+            ),
+            (
+                "citation_whitespace_only",
+                _atd_revision_body(citation_line='CITATION: "   "'),
+            ),
+            (
+                "citation_not_json_string",
+                _atd_revision_body(citation_line="CITATION: a bare unquoted citation"),
+            ),
+            (
+                "citation_json_number_not_string",
+                _atd_revision_body(citation_line="CITATION: 42"),
+            ),
+        ],
+    )
+    def test_malformed_revision_body_blocks_with_this_gates_signature(
+        self, monkeypatch, capsys, audit_events, tmp_path, case_id, prompt
+    ) -> None:
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Agent",
+                tool_input={"prompt": prompt, "subagent_type": _ATD},
+                transcript_path=_transcript(tmp_path, auto=True),
+            ),
+        )
+        assert exit_code == 2, case_id
+        assert payload["decision"] == "block", case_id
+        assert _ATD_BODY_GATE_SIGNATURE in payload["reason"], case_id
+
+
 class TestScopeExclusionsPassThisSpecificGate:
     @pytest.mark.parametrize(
         "case_id,auto_observed,role,identity",
@@ -356,3 +499,31 @@ class TestScopeExclusionsPassThisSpecificGate:
         )
         if payload is not None and payload.get("decision") == "block":
             assert _ATD_BODY_GATE_SIGNATURE not in payload.get("reason", ""), case_id
+
+
+class TestRevisionGrammarDoesNotDriftAcrossAuthoringSurfaces:
+    """The two-line `REVISE-CONTRACT:`/`CITATION:` shape is documented in
+    TWO prose surfaces (root's routing skill, ATD's own agent spec) but
+    enforced by a THIRD (this hook). A prefix changed in only one of the
+    three would desync root's routing prose from what the hook actually
+    admits -- pin the exact hook constants as literal substrings of both
+    documents so that drift fails a test, not a live redispatch loop."""
+
+    def test_revise_contract_and_citation_prefixes_appear_in_both_documents(
+        self,
+    ) -> None:
+        skill_text = _NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
+        agent_text = _ATD_AGENT_MD.read_text(encoding="utf-8")
+        for prefix in (
+            pre_tool_use_handler._ATD_REVISE_CONTRACT_LINE_PREFIX.rstrip(),
+            pre_tool_use_handler._ATD_CITATION_LINE_PREFIX.rstrip(),
+        ):
+            assert prefix in skill_text, f"{prefix!r} missing from nw-auto/SKILL.md"
+            assert prefix in agent_text, (
+                f"{prefix!r} missing from nw-acceptance-designer.md"
+            )
+
+    def test_skill_names_the_revision_route_never_a_fresh_producer_run(self) -> None:
+        skill_text = _NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
+        assert "INDETERMINATE" in skill_text
+        assert "never a fresh `des prepare-ordinary-request` run" in skill_text

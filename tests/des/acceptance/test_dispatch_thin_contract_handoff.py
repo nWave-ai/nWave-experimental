@@ -319,6 +319,36 @@ def test_oracle_locator_matching_contract_path_refuses_before_read(
     assert "same physical path" in err
 
 
+def test_declared_import_absent_from_the_base_tree_refuses_before_handoff(
+    tmp_path: Path,
+) -> None:
+    """Run 4 shift-left: `des dispatch` is the documented early gate called
+    immediately after CONTRACT_READY, before any crafter subagent starts
+    (`nWave/skills/nw-distill/SKILL.md`); it must catch an ATD-invented
+    declared-import here, not only later at the crafter's own BASELINE
+    `des validate-delivery-contract` call."""
+    contract_path = _seed_contract(tmp_path)
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    target_path = next(iter(contract["targets"]))
+    contract["targets"][target_path]["declared-imports"] = ["cronsim.CronSim"]
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    exit_code, out, err = _run(
+        "--repo-root",
+        str(tmp_path),
+        "--delivery-contract",
+        contract_path.name,
+    )
+
+    assert exit_code != 0
+    assert out == ""
+    assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+    assert "cronsim.CronSim" in err
+    assert (
+        f"not present at base revision {contract['repository']['base-revision']}" in err
+    )
+
+
 def test_schema_invalid_contract_refuses_before_handoff(tmp_path: Path) -> None:
     contract_path = tmp_path / "delivery-contract.json"
     contract_path.write_text("{}", encoding="utf-8")

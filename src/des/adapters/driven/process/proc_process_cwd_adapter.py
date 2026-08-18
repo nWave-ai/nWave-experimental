@@ -24,20 +24,27 @@ candidate is unreadable:
    lane here runs under -- excluded from the candidate set, not escalated.
 2. A short, named non-candidate `comm` allowlist (`_NON_CANDIDATE_COMM_NAMES`)
    for same-user daemons that are STRUCTURALLY non-dumpable (self-protected
-   via `prctl(PR_SET_DUMPABLE, 0)`, a standard systemd hardening practice --
-   NOT a fact about this one box) and therefore permission-denied on `cwd`
-   for every unprivileged reader, including same-user ones: `systemd --user`
-   and its child `(sd-pam)`. `/proc/<pid>/comm` is always world-readable
-   (unlike `cwd`), so this check costs nothing extra to make. These two
-   daemons can categorically never be a git worktree lane process, so
-   excluding them by name is a bounded, well-understood exception --
-   NOT the "escalate on any unreadable PID" arity corollary being weakened;
-   a same-user PID with any OTHER comm that is unreadable still escalates.
-   Without this exception the guard would refuse UNCONDITIONALLY on any
-   systemd-user-session host (measured on this project's own dev box:
-   these two PIDs are always present and always permission-denied),
-   training operators to reach for the override reflexively -- the
-   normalize-the-bypass failure mode a guard must not create.
+   via `prctl(PR_SET_DUMPABLE, 0)`, a standard hardening practice -- NOT a
+   fact about this one box) and therefore permission-denied on `cwd` for
+   every unprivileged reader, including same-user ones: `systemd --user`
+   and its child `(sd-pam)`, and `gpg-agent` (GnuPG calls
+   `prctl(PR_SET_DUMPABLE, 0)` on Linux specifically so nothing -- including
+   its own same-uid owner -- can ptrace it or read `/proc/<pid>/cwd`,
+   because that process holds decrypted secret-key material; found on
+   contact 2026-08-18: a dev box running `gpg-agent --supervised` --
+   routine for anyone with commit signing or an SSH agent forwarded
+   through GnuPG -- made every Sentinel sweep on that box degrade to
+   `UNDECIDABLE` for every worktree probed, not just ones near the agent).
+   `/proc/<pid>/comm` is always world-readable (unlike `cwd`), so this
+   check costs nothing extra to make. These daemons can categorically
+   never be a git worktree lane process, so excluding them by name is a
+   bounded, well-understood exception -- NOT the "escalate on any
+   unreadable PID" arity corollary being weakened; a same-user PID with
+   any OTHER comm that is unreadable still escalates. Without this
+   exception the guard would refuse UNCONDITIONALLY on any host running
+   one of these ordinary, widely-deployed daemons, training operators to
+   reach for the override reflexively -- the normalize-the-bypass failure
+   mode a guard must not create.
 """
 
 from __future__ import annotations
@@ -54,10 +61,10 @@ from des.ports.driven_ports.process_cwd_probe_port import (
 
 _PROC_ROOT = Path("/proc")
 
-# Same-user daemons that are structurally non-dumpable (systemd hardening,
-# not a per-box quirk) and therefore permission-denied on `cwd` for every
-# unprivileged reader. See module docstring layer 2.
-_NON_CANDIDATE_COMM_NAMES = frozenset({"systemd", "(sd-pam)"})
+# Same-user daemons that are structurally non-dumpable (systemd/GnuPG
+# hardening, not a per-box quirk) and therefore permission-denied on `cwd`
+# for every unprivileged reader. See module docstring layer 2.
+_NON_CANDIDATE_COMM_NAMES = frozenset({"systemd", "(sd-pam)", "gpg-agent"})
 
 
 def _comm(entry: Path) -> str | None:

@@ -202,3 +202,38 @@ def resolve_declared_import(repo_root: Path, reference: str) -> bool:
             return True
 
     return False
+
+
+def unresolved_declared_import_owner(repo_root: Path, reference: str) -> str | None:
+    """For an UNRESOLVED `reference`, the repository-relative path (POSIX,
+    forward slashes) of the base-tree module its longest dotted prefix maps
+    to -- `None` when no prefix of `reference` corresponds to any real file
+    under `repo_root` at all (Run 4 defect A: the module is absent
+    entirely, e.g. a third-party package never vendored into the tree).
+
+    A non-`None` result does not mean `reference` resolves -- it names which
+    EXISTING module a caller should check against this same
+    `DeliveryContract`'s own `targets` keys, to distinguish Run 4 defect B
+    (a self-reference to a symbol this same delivery is creating in that
+    module) from a genuinely invented symbol in an unrelated real file. This
+    function does not re-decide `resolve_declared_import`'s own verdict.
+    """
+    if _NON_PYTHON_SHAPE.search(reference):
+        return None
+
+    dotted = reference.removeprefix("@")
+    segments = tuple(dotted.split("."))
+    if not segments or not all(segments):
+        return None
+
+    for root in _candidate_roots(repo_root):
+        located = _longest_module_prefix(root, segments)
+        if located is None:
+            continue
+        module_file, _remaining = located
+        try:
+            return module_file.relative_to(repo_root).as_posix()
+        except ValueError:
+            continue
+
+    return None

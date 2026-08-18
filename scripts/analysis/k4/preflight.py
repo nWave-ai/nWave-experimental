@@ -36,12 +36,19 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from scripts.analysis.k4 import prepare_examiner_fixture as pef
+from scripts.analysis.k4 import subject as k4_subject
 
 
 #: Injected by `nwave-ai project enable`. An HTML comment, so it is invisible in
@@ -80,7 +87,15 @@ def missing_sandbox_prerequisites(path: str | None = None) -> list[str]:
     ]
 
 
-_SUT = "https://github.com/healthchecks/healthchecks.git"
+#: Mirrors `k4_subject.SUT_URL`/`SUT_PINNED_REV` as plain module attributes
+#: (rather than referencing `k4_subject.*` inline everywhere below) so a test
+#: can monkeypatch either one -- e.g. pointing `_SUT` at a local throwaway
+#: repo and `_SUT_PINNED_REV` at that repo's own HEAD commit -- without
+#: reaching into a second module. `scripts/analysis/k4/subject.py` is the
+#: canonical source both this module and `run_acceptance.py` read; bump the
+#: pin there, never here.
+_SUT = k4_subject.SUT_URL
+_SUT_PINNED_REV = k4_subject.SUT_PINNED_REV
 
 
 def _run(
@@ -378,7 +393,18 @@ def seed_step(auth_profile: Path) -> list[str]:
 #: workspace match Auto's OTHER branch of that same rule ("if the current
 #: checkout is already an isolated detached worktree, keep using it") by
 #: construction, so Auto reuses this directory instead of relocating.
-_DETACH_STEP = ["git", "checkout", "--detach", "HEAD"]
+#:
+#: The checkout target is `_SUT_PINNED_REV`, read at CALL time (never
+#: baked into a module-level literal) so a test can monkeypatch it -- e.g.
+#: to a local throwaway repo's own HEAD commit, the way
+#: `test_k4_arm_workspace_is_detached.py` already monkeypatches `_SUT`.
+#: Reproducibility (K4 matrix rows 2/4) needs BOTH arms of every pair, and
+#: every pair of a campaign, checked out to the identical commit -- a bare
+#: `--detach HEAD` merely detaches from whatever the shallow clone's
+#: default-branch tip happened to be at that exact moment, which can differ
+#: run to run and even arm to arm.
+def _detach_step() -> list[str]:
+    return ["git", "checkout", "--detach", _SUT_PINNED_REV]
 
 
 def nwave_setup_steps(venv: Path, auth_profile: Path) -> list[list[str]]:
@@ -388,8 +414,15 @@ def nwave_setup_steps(venv: Path, auth_profile: Path) -> list[list[str]]:
         # Clone FIRST. `git clone <url> .` refuses a non-empty directory, and the
         # seed creates `.claude-k4/` in exactly that directory - so seeding first
         # made the clone exit 128. Caught by the preflight on its own run.
-        ["git", "clone", "--depth", "1", _SUT, "."],
-        _DETACH_STEP,
+        #
+        # No `--depth 1`: pinning to a specific historical commit needs the
+        # commit reachable in the local object store, and a shallow clone
+        # only guarantees the CURRENT default-branch tip -- which, for an
+        # older pin, it may not even be an ancestor of. A full clone of a
+        # small OSS repo costs seconds, not the reproducibility this pin
+        # exists for.
+        ["git", "clone", _SUT, "."],
+        _detach_step(),
         pef.delivery_setup_step(),
         seed_step(auth_profile),
         # `--platform claude-code`, never the `auto` default. Measured 2026-08-07:
@@ -414,8 +447,8 @@ def control_setup_steps(auth_profile: Path) -> list[list[str]]:
     # convention would make the workspace construction asymmetric, and the
     # comparison arms must differ only in what their setup installs.
     return [
-        ["git", "clone", "--depth", "1", _SUT, "."],
-        _DETACH_STEP,
+        ["git", "clone", _SUT, "."],
+        _detach_step(),
         pef.delivery_setup_step(),
         seed_step(auth_profile),
     ]
@@ -878,6 +911,754 @@ def probe_persisted_verification_commands(
     return problems
 
 
+#: Repo root for THIS checkout of nwave-dev, resolved from preflight.py's own
+#: location (`scripts/analysis/k4/preflight.py` -> parents[3]) -- the same
+#: computation `tests/des/unit/adapters/drivers/hooks/
+#: test_auto_root_bash_lockdown.py::_REPO_ROOT` does from its own deeper
+#: location. `route_walk` reads nw-auto/SKILL.md from the CHECKOUT (never
+#: from an installed arm's copy), matching what a live delivery agent's own
+#: session actually consults.
+_ROUTE_WALK_REPO_ROOT = Path(__file__).resolve().parents[3]
+_NW_AUTO_SKILL_MD = _ROUTE_WALK_REPO_ROOT / "nWave" / "skills" / "nw-auto" / "SKILL.md"
+
+
+def des_subcommands_root_is_told_to_run(skill_md_text: str) -> set[str]:
+    """The `des <subcommand>` tokens that appear inside a FENCED code block
+    in `nw-auto/SKILL.md` -- i.e. a literal command root is instructed to
+    run verbatim, as opposed to a backtick-prose mention (a prohibition
+    like "Root never calls `des validate-delivery-contract` itself", or a
+    descriptive aside like "`des verify-charter-filled` is a structural
+    gate only"). Fences may be indented under a numbered step, so the fence
+    marker is matched with leading whitespace stripped.
+
+    THE one shared source for "which `des` subcommands does root's own
+    documented route mandate": `route_walk_steps` below drives its root-Bash
+    coverage checks off this same parser, and
+    `tests/des/unit/adapters/drivers/hooks/test_auto_root_bash_lockdown.py`'s
+    `TestAutoRootBashAllowlistCoversSkillMandatedSubcommands` imports this
+    exact function rather than carrying its own copy -- two independently
+    hand-typed lists is exactly the drift class that let `des
+    resolve-charters` go missing from the allowlist while SKILL.md mandated
+    it (`fix(auto): allow every des subcommand the root route mandates`).
+    """
+    in_fence = False
+    subcommands: set[str] = set()
+    for line in skill_md_text.split("\n"):
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            continue
+        subcommands.update(
+            match.group(1)
+            for match in re.finditer(r"\bdes\s+([a-zA-Z][a-zA-Z-]*)", line)
+        )
+    return subcommands
+
+
+def _route_walk_workspace(root: Path) -> Path:
+    return root / "probe-route-walk"
+
+
+def _write_auto_engaged_transcript(workspace: Path) -> Path:
+    """A minimal, self-contained transcript observing `Skill(nw-mode-select)`
+    then `Skill(nw-auto)` -- the two tool_use markers
+    `des.application.skill_tracking_service.resolve_root_mode_state` reads
+    to project `RootModeState.AUTO_ENGAGED`. `route_walk` never depends on
+    any prior real run's transcript file existing on disk; it manufactures
+    its own evidence of the one precondition the Auto-root lockdown arms on.
+    """
+    path = workspace / "route-walk-auto-engaged-transcript.jsonl"
+    entries = [
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Skill",
+                        "input": {"skill": "nw-mode-select"},
+                    }
+                ]
+            },
+        },
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "tool_use", "name": "Skill", "input": {"skill": "nw-auto"}}
+                ]
+            },
+        },
+    ]
+    path.write_text(
+        "\n".join(json.dumps(entry) for entry in entries) + "\n", encoding="utf-8"
+    )
+    return path
+
+
+def _parse_producer_stdout(text: str) -> dict[str, str]:
+    """Split one `des prepare-ordinary-request`/`des dispatch`-shaped
+    stdout into its `KEY: value` lines, keyed by KEY, value kept RAW (JSON
+    string literals stay encoded) -- callers that need the decoded text
+    (e.g. re-deriving VALUE-SEED) decode it themselves. `OUTCOME`/
+    `VALUE-SEED` values can themselves contain embedded newlines once
+    decoded, but the PRODUCER always emits them as one JSON-encoded line,
+    so a plain line-by-line split is exact here."""
+    fields: dict[str, str] = {}
+    for line in text.split("\n"):
+        if ": " not in line:
+            continue
+        key, _, value = line.partition(": ")
+        fields[key] = value
+    return fields
+
+
+#: Fixed, non-secret probe seed: `route_walk` never delivers this, it only
+#: proves the deterministic gate chain accepts and threads a well-formed
+#: seed end to end. Kept short and unambiguous as a probe, never mistakable
+#: for a real value-seed if it ever leaked into a log.
+_ROUTE_WALK_SEED = (
+    "K4 route-walk canonical probe -- exercises the deterministic gate chain "
+    "end to end with no model call. Not a real feature request; never delivered."
+)
+_ROUTE_WALK_ARCH_AUTHORITY = "ARCHITECTURE-COVERED: docs/product/architecture/route-walk-probe.md#route-walk-probe"
+_ROUTE_WALK_CHARTER_VALUE = (
+    "Route-walk probe: an operator-facing value statement is required by the "
+    "charter-scaffold producer's contract, never actually read by a human."
+)
+
+
+def _minimal_delivery_contract(
+    *, delivery_id: str, outcome: str, base_revision: str, oracle_locator: str
+) -> dict:
+    """The smallest instance of `nWave/schemas/thin-delivery-contract.schema.json`
+    that validates -- built directly against the schema's own `required`
+    lists, never against an ATD's real design judgment. `route_walk` uses
+    this ONLY to exercise `des validate-delivery-contract`/`des dispatch`'s
+    own CLI mechanics; it says nothing about what a real DeliveryContract's
+    `targets`/`obligations`/`boundary` content should be."""
+    return {
+        "schema-version": "1.2",
+        "delivery-id": delivery_id,
+        "repository": {"worktree": ".", "base-revision": base_revision},
+        "outcome": outcome,
+        "targets": {
+            "route-walk-probe.txt": {
+                "candidate": "route-walk-probe.txt",
+                "overlap": "route-walk probe -- no real target",
+                "decision": "CREATE_NEW",
+                "justification": "smallest schema-valid instance for CLI-mechanics probing",
+                "declared-imports": [],
+                "contract-shape": "bounded-change",
+                "boundary": {
+                    "failure-behavior": "probe-only placeholder",
+                    "substrate-lie": "probe-only placeholder",
+                    "substrate-probe": "probe-only placeholder",
+                    "double-blind-spot": "probe-only placeholder",
+                },
+            }
+        },
+        "paradigm": "object_oriented",
+        "delivery-route": "RED_TO_GREEN",
+        "obligations": ["PRESERVATION"],
+        "acceptance-tests": {"locator": oracle_locator},
+        "verification-scope": {
+            "commands": [
+                {
+                    "executable": {"kind": "toolchain", "name": "pytest"},
+                    "arguments": [oracle_locator],
+                }
+            ]
+        },
+        "applicability": {"independent-review": False, "examine": True},
+        "budget": {"token-limit": 2000000, "wall-clock-minutes": 30},
+    }
+
+
+def _hook_step(
+    name: str,
+    mandate: str,
+    *,
+    expect_allow: bool,
+    hook_run: Callable[[dict], tuple[int, str]],
+    payload: dict,
+) -> dict:
+    code, output = hook_run(payload)
+    allowed = code == 0
+    passed = allowed == expect_allow
+    return {
+        "name": name,
+        "kind": "hook",
+        "mandate": mandate,
+        "expected": "allow" if expect_allow else "deny",
+        "observed": "allow" if allowed else f"deny (exit {code})",
+        "detail": output[:400],
+        "passed": passed,
+    }
+
+
+def _cli_step(
+    name: str,
+    mandate: str,
+    *,
+    expect_exit: int,
+    cli_run: Callable[[list[str], str | None], tuple[int, str]],
+    argv: list[str],
+    stdin: str | None = None,
+) -> tuple[dict, str]:
+    code, output = cli_run(argv, stdin)
+    passed = code == expect_exit
+    step = {
+        "name": name,
+        "kind": "cli",
+        "mandate": mandate,
+        "expected": f"exit {expect_exit}",
+        "observed": f"exit {code}",
+        "detail": output[:400],
+        "passed": passed,
+    }
+    return step, output
+
+
+def _skipped_step(name: str, mandate: str, reason: str) -> dict:
+    """A step that never ran because an upstream step it depends on already
+    failed -- reported explicitly as a failing entry in the table, never
+    silently dropped. `route_walk`'s CLI chain is sequential (each stage
+    consumes the previous stage's real stdout), so one failure invalidates
+    every input downstream of it."""
+    return {
+        "name": name,
+        "kind": "skipped",
+        "mandate": mandate,
+        "expected": "not evaluated",
+        "observed": f"skipped: {reason}",
+        "detail": "",
+        "passed": False,
+    }
+
+
+def route_walk_steps(
+    *,
+    repo_root: str,
+    hook_run: Callable[[dict], tuple[int, str]],
+    cli_run: Callable[[list[str], str | None], tuple[int, str]],
+    skill_md_text: str,
+    transcript_path: str,
+) -> dict:
+    """Walk the canonical Auto route through the deterministic layer only --
+    no model call -- and classify it `proven` or `blocked`.
+
+    Pure(ish) evaluator: `hook_run`/`cli_run` are injected, so this never
+    itself spawns a subprocess or touches any file outside `repo_root`
+    (where it writes the probe DeliveryContract/oracle so `cli_run`'s real
+    binding has something real to validate against). `route_walk` below
+    binds both callables to the actual installed arm; tests inject fakes
+    for RED/GREEN classification, or the real
+    `pre_tool_use_handler.handle_pre_tool_use()` in-process for the two
+    genesis cases.
+
+    Order: the real CLI chain runs FIRST (`prepare-ordinary-request` ->
+    `charter-scaffold` -> the hand-built minimal contract -> `validate-
+    delivery-contract` -> `dispatch`), because the root-Bash envelope checks
+    for the ATD/crafter Agent dispatch need that chain's REAL stdout --
+    forwarding it verbatim is the entire point of the two envelope gates
+    (`nw-auto/SKILL.md` 'CLI dispatch'). A CLI-chain failure short-circuits
+    every step whose input it would have produced, each reported as an
+    explicit failing `skipped` entry rather than silently absent from the
+    table.
+    """
+    steps: list[dict] = []
+    repo_root_path = Path(repo_root)
+
+    # --- root-Bash: the heredoc shape, hook-level -- independent of whether
+    # the CLI chain below actually executes cleanly, so it runs first and
+    # unconditionally.
+    steps.append(
+        _hook_step(
+            "seed-heredoc-allow",
+            "nw-auto/SKILL.md step 1: 'Run exactly once, with VALUE-SEED bytes on "
+            "stdin ... des prepare-ordinary-request ... <<\\'NW_SEED\\' ...'.",
+            expect_allow=True,
+            hook_run=hook_run,
+            payload={
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": (
+                        "des prepare-ordinary-request --size M "
+                        f"--repo-root {repo_root} --architecture-authority "
+                        f'"{_ROUTE_WALK_ARCH_AUTHORITY}" --delivery-route RED_TO_GREEN '
+                        f"--examine true --independent-review false <<'NW_SEED'\n"
+                        f"{_ROUTE_WALK_SEED}\nNW_SEED"
+                    )
+                },
+                "transcript_path": transcript_path,
+            },
+        )
+    )
+
+    # --- real CLI chain, canonical stub inputs -------------------------------
+    prep_step, prep_stdout = _cli_step(
+        "cli-prepare-ordinary-request",
+        "nw-auto/SKILL.md step 1: `des prepare-ordinary-request ... <<'NW_SEED' ... NW_SEED`.",
+        expect_exit=0,
+        cli_run=cli_run,
+        argv=[
+            "des",
+            "prepare-ordinary-request",
+            "--size",
+            "M",
+            "--repo-root",
+            repo_root,
+            "--architecture-authority",
+            _ROUTE_WALK_ARCH_AUTHORITY,
+            "--delivery-route",
+            "RED_TO_GREEN",
+            "--examine",
+            "true",
+            "--independent-review",
+            "false",
+        ],
+        stdin=_ROUTE_WALK_SEED,
+    )
+    steps.append(prep_step)
+
+    if not prep_step["passed"]:
+        for name, mandate in (
+            (
+                "cli-charter-scaffold",
+                "the DISTILL charter producer, `des charter-scaffold`.",
+            ),
+            (
+                "cli-validate-delivery-contract",
+                "`des validate-delivery-contract`, the crafter's own consumer-boundary check.",
+            ),
+            (
+                "cli-dispatch",
+                "nw-auto/SKILL.md 'CLI dispatch': `des dispatch --repo-root ROOT --delivery-contract PATH`.",
+            ),
+            (
+                "resolve-charters-allow",
+                "nw-auto/SKILL.md step 2: root's mandated next command after "
+                "prepare-ordinary-request.",
+            ),
+            (
+                "atd-dispatch-envelope-allow",
+                "nw-auto/SKILL.md AB batch: ATD receives producer stdout verbatim.",
+            ),
+            (
+                "crafter-dispatch-envelope-allow",
+                "nw-auto/SKILL.md 'CLI dispatch': crafter receives dispatch stdout verbatim.",
+            ),
+        ):
+            steps.append(
+                _skipped_step(name, mandate, "cli-prepare-ordinary-request failed")
+            )
+        return {"status": "blocked", "steps": steps}
+
+    producer_fields = _parse_producer_stdout(prep_stdout)
+    delivery_id = producer_fields.get("DELIVERY-ID", "")
+    base_revision = producer_fields.get("BASE-REVISION", "")
+    outcome_raw = producer_fields.get("OUTCOME", '""')
+    try:
+        outcome_text = json.loads(outcome_raw)
+    except json.JSONDecodeError:
+        outcome_text = _ROUTE_WALK_SEED
+
+    charter_step, _ = _cli_step(
+        "cli-charter-scaffold",
+        "the DISTILL charter producer, `des charter-scaffold`.",
+        expect_exit=0,
+        cli_run=cli_run,
+        argv=[
+            "des",
+            "charter-scaffold",
+            "--delivery-id",
+            delivery_id,
+            "--repo-root",
+            repo_root,
+            "--value",
+            _ROUTE_WALK_CHARTER_VALUE,
+        ],
+    )
+    steps.append(charter_step)
+
+    oracle_relative = f"route_walk_probe_oracle_{delivery_id}.py"
+    oracle_path = repo_root_path / oracle_relative
+    oracle_path.write_text(
+        '"""route_walk probe oracle placeholder -- not a real acceptance test."""\n\n\n'
+        "def test_probe_placeholder() -> None:\n    assert True\n",
+        encoding="utf-8",
+    )
+    contract_relative = f"docs/delivery-contracts/{delivery_id}.json"
+    contract_path = repo_root_path / contract_relative
+    contract_path.parent.mkdir(parents=True, exist_ok=True)
+    contract_path.write_text(
+        json.dumps(
+            _minimal_delivery_contract(
+                delivery_id=delivery_id,
+                outcome=outcome_text,
+                base_revision=base_revision,
+                oracle_locator=oracle_relative,
+            ),
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    validate_step, _ = _cli_step(
+        "cli-validate-delivery-contract",
+        "`des validate-delivery-contract`, the crafter's own consumer-boundary check.",
+        expect_exit=0,
+        cli_run=cli_run,
+        argv=[
+            "des",
+            "validate-delivery-contract",
+            "--repo-root",
+            repo_root,
+            "--delivery-contract",
+            contract_relative,
+        ],
+    )
+    steps.append(validate_step)
+
+    dispatch_step, dispatch_stdout = _cli_step(
+        "cli-dispatch",
+        "nw-auto/SKILL.md 'CLI dispatch': `des dispatch --repo-root ROOT --delivery-contract PATH`.",
+        expect_exit=0,
+        cli_run=cli_run,
+        argv=[
+            "des",
+            "dispatch",
+            "--repo-root",
+            repo_root,
+            "--delivery-contract",
+            contract_relative,
+        ],
+    )
+    steps.append(dispatch_step)
+
+    # --- root-Bash: resolve-charters, real shape, not just a coverage --help -
+    # `prep_step` is guaranteed to have passed here -- the early return above
+    # already handles the failure case -- so `delivery_id` is always real.
+    steps.append(
+        _hook_step(
+            "resolve-charters-allow",
+            "nw-auto/SKILL.md step 2: 'On Prepared(SeededAuthority), run exactly "
+            "one command: des resolve-charters --repo-root <root> --delivery-id "
+            "<producer id> --examine <true|false>'.",
+            expect_allow=True,
+            hook_run=hook_run,
+            payload={
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": (
+                        f"des resolve-charters --repo-root {repo_root} "
+                        f"--delivery-id {delivery_id} --examine true"
+                    )
+                },
+                "transcript_path": transcript_path,
+            },
+        )
+    )
+
+    # --- root-Bash envelope checks, fed the CLI chain's REAL stdout ----------
+    if prep_step["passed"]:
+        atd_body = prep_stdout
+        atd_payload = {
+            "tool_name": "Agent",
+            "tool_input": {
+                "subagent_type": "nw-acceptance-designer",
+                "description": "route-walk probe: ATD dispatch envelope",
+                "prompt": atd_body,
+                "run_in_background": False,
+            },
+            "transcript_path": transcript_path,
+        }
+        steps.append(
+            _hook_step(
+                "atd-dispatch-envelope-allow",
+                "nw-auto/SKILL.md AB batch: ATD receives producer stdout verbatim.",
+                expect_allow=True,
+                hook_run=hook_run,
+                payload=atd_payload,
+            )
+        )
+    if dispatch_step["passed"]:
+        crafter_prompt = dispatch_stdout.strip() + f"\n\nREPO-ROOT: {repo_root}"
+        crafter_payload = {
+            "tool_name": "Agent",
+            "tool_input": {
+                "subagent_type": "nw-software-crafter",
+                "description": "route-walk probe: crafter dispatch envelope",
+                "prompt": crafter_prompt,
+                "run_in_background": False,
+            },
+            "transcript_path": transcript_path,
+        }
+        steps.append(
+            _hook_step(
+                "crafter-dispatch-envelope-allow",
+                "nw-auto/SKILL.md 'CLI dispatch': crafter receives dispatch stdout verbatim.",
+                expect_allow=True,
+                hook_run=hook_run,
+                payload=crafter_payload,
+            )
+        )
+    else:
+        steps.append(
+            _skipped_step(
+                "crafter-dispatch-envelope-allow",
+                "nw-auto/SKILL.md 'CLI dispatch': crafter receives dispatch stdout verbatim.",
+                "cli-dispatch failed",
+            )
+        )
+
+    # --- root-Bash allowlist coverage, driven off the ONE shared parser ------
+    mandated_subcommands = des_subcommands_root_is_told_to_run(skill_md_text)
+    for subcommand in sorted(mandated_subcommands):
+        steps.append(
+            _hook_step(
+                f"root-bash-mandated-{subcommand}-allow",
+                f"nw-auto/SKILL.md's root route instructs root to run `des {subcommand}` directly.",
+                expect_allow=True,
+                hook_run=hook_run,
+                payload={
+                    "tool_name": "Bash",
+                    "tool_input": {"command": f"des {subcommand} --help"},
+                    "transcript_path": transcript_path,
+                },
+            )
+        )
+
+    # --- root-Bash negative controls: the allowlist must stay CLOSED ---------
+    steps.append(
+        _hook_step(
+            "root-bash-negative-git-log-denied",
+            "pre_tool_use_handler._AUTO_ROOT_BASH_ALLOWED_GIT_SUBCOMMANDS: `log` is not a member.",
+            expect_allow=False,
+            hook_run=hook_run,
+            payload={
+                "tool_name": "Bash",
+                "tool_input": {"command": "git log --oneline -1"},
+                "transcript_path": transcript_path,
+            },
+        )
+    )
+    steps.append(
+        _hook_step(
+            "root-bash-negative-unknown-des-subcommand-denied",
+            "pre_tool_use_handler._AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS: an unlisted subcommand is denied.",
+            expect_allow=False,
+            hook_run=hook_run,
+            payload={
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": "des route-walk-probe-unknown-subcommand --help"
+                },
+                "transcript_path": transcript_path,
+            },
+        )
+    )
+
+    # --- subagent Bash calls (crafter), no Auto-root allowlist applies -------
+    for name, mandate, command in (
+        (
+            "subagent-git-diff-allow",
+            "the dispatched crafter's own verification Bash calls run unrestricted "
+            "except the host-scan control below.",
+            "git diff",
+        ),
+        (
+            "subagent-pytest-allow",
+            "the crafter runs its own verification-scope test command as a subagent.",
+            "python -m pytest route_walk_probe_oracle.py",
+        ),
+        (
+            "subagent-validate-delivery-contract-allow",
+            "nw-auto/SKILL.md 'CLI dispatch': "
+            "'that consumer-boundary check belongs to the selected crafter, not to root.'",
+            "des validate-delivery-contract --repo-root . --delivery-contract docs/delivery-contracts/probe.json",
+        ),
+        (
+            "subagent-find-repo-scoped-allow",
+            "a repo-scoped find is never a host-wide traversal root.",
+            "find . -iname '*.py'",
+        ),
+    ):
+        steps.append(
+            _hook_step(
+                name,
+                mandate,
+                expect_allow=True,
+                hook_run=hook_run,
+                payload={
+                    "tool_name": "Bash",
+                    "tool_input": {"command": command},
+                    "agent_type": "nw-software-crafter",
+                    "agent_id": "route-walk-probe-crafter",
+                },
+            )
+        )
+    steps.append(
+        _hook_step(
+            "subagent-find-root-denied",
+            "pre_tool_use_handler._evaluate_nwave_subagent_host_scan: an nWave "
+            "subagent's find/bfs call rooted at the filesystem root is denied.",
+            expect_allow=False,
+            hook_run=hook_run,
+            payload={
+                "tool_name": "Bash",
+                "tool_input": {"command": "find / -iname '*.py'"},
+                "agent_type": "nw-software-crafter",
+                "agent_id": "route-walk-probe-crafter",
+            },
+        )
+    )
+
+    status = "proven" if all(step["passed"] for step in steps) else "blocked"
+    return {"status": status, "steps": steps}
+
+
+def _installed_hook_run(workspace: Path, venv: Path, payload: dict) -> tuple[int, str]:
+    """Invoke the arm's INSTALLED PreToolUse hook exactly as Claude Code
+    itself does -- `python3 -m
+    des.adapters.drivers.hooks.claude_code_hook_adapter pre-tool-use`, JSON
+    on stdin, `PYTHONPATH` pointed at the arm's own `.claude-k4/lib/python`
+    -- against `workspace`'s own config dir, never the operator's
+    `~/.claude`. Mirrors `.claude-k4/settings.json`'s own `hooks.PreToolUse`
+    command verbatim (the SAME file `nwave-ai install` wrote for this
+    workspace), so this is the exact command Claude Code itself would run,
+    not an approximation of it.
+    """
+    env = {
+        **_rendered_arm_env(workspace),
+        "PYTHONPATH": str(workspace / ".claude-k4" / "lib" / "python"),
+    }
+    try:
+        done = subprocess.run(
+            [
+                str(venv / "bin" / "python3"),
+                "-m",
+                "des.adapters.drivers.hooks.claude_code_hook_adapter",
+                "pre-tool-use",
+            ],
+            input=json.dumps(payload),
+            cwd=workspace,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return done.returncode, (done.stdout or done.stderr).strip()
+    except subprocess.TimeoutExpired:
+        return 124, "TIMEOUT after 30s"
+    except OSError as exc:
+        return 127, f"{type(exc).__name__}: {exc}"
+
+
+def _installed_cli_run(
+    workspace: Path, venv: Path, argv: list[str], stdin: str | None
+) -> tuple[int, str]:
+    """Invoke the arm's INSTALLED `des` CLI shim for real -- `argv[0]` is
+    always the literal string `"des"` (matching what a root/subagent Bash
+    call actually types); this substitutes the real installed binary path.
+    """
+    real_argv = [str(venv / "bin" / "des"), *argv[1:]]
+    env = _rendered_arm_env(workspace)
+    try:
+        # `subprocess.run(input=None)` inherits the CALLER's stdin rather
+        # than closing it -- fine for `des prepare-ordinary-request`'s
+        # heredoc (`input=stdin` sets PIPE and writes it), but every other
+        # call here reads no stdin at all and must not silently inherit a
+        # live/attached one, matching `_run`'s own explicit
+        # `stdin=subprocess.DEVNULL` convention elsewhere in this file. Two
+        # literal branches, not a `**{...}` splat: `tests/build/
+        # test_no_unbounded_unstdin_spawn.py` statically checks for a
+        # literal `stdin=`/`input=` keyword in the AST and cannot see
+        # through a dynamic kwargs dict.
+        if stdin is not None:
+            done = subprocess.run(
+                real_argv,
+                input=stdin,
+                cwd=workspace,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        else:
+            done = subprocess.run(
+                real_argv,
+                stdin=subprocess.DEVNULL,
+                cwd=workspace,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        return done.returncode, (done.stdout or done.stderr)
+    except subprocess.TimeoutExpired:
+        return 124, "TIMEOUT after 60s"
+    except OSError as exc:
+        return 127, f"{type(exc).__name__}: {exc}"
+
+
+def route_walk(root: Path, venv: Path, auth_profile: Path) -> dict:
+    """Build one throwaway workspace under `root`, install the real nWave
+    arm into it (reusing `nwave_setup_steps`/`_rendered_arm_env` -- the SAME
+    build/install/arm-env `probe_engagement` uses, never a second install
+    path), and walk the canonical Auto route through it with NO model call.
+
+    Called from `main()` AFTER the arm's own engagement probe passes and
+    BEFORE `arms.json` is written: GDP-1, intercept the paid run's exact
+    deterministic-layer blockers before the run is even built, not after
+    burning a `claude -p` call on them.
+    """
+    workspace = _route_walk_workspace(root)
+    if workspace.exists():
+        shutil.rmtree(workspace)
+    workspace.mkdir(parents=True)
+    env = _rendered_arm_env(workspace)
+
+    for step in nwave_setup_steps(venv, auth_profile):
+        code, tail = _run(step, cwd=workspace, env=env)
+        if code != 0:
+            return {
+                "status": "blocked",
+                "steps": [
+                    {
+                        "name": "route-walk-workspace-setup",
+                        "kind": "setup",
+                        "mandate": "the nWave arm's own declared setup, `nwave_setup_steps`.",
+                        "expected": "exit 0",
+                        "observed": f"exit {code}",
+                        "detail": tail.strip()[:400],
+                        "passed": False,
+                    }
+                ],
+            }
+
+    transcript_path = str(_write_auto_engaged_transcript(workspace))
+
+    def hook_run(payload: dict) -> tuple[int, str]:
+        return _installed_hook_run(workspace, venv, payload)
+
+    def cli_run(argv: list[str], stdin: str | None) -> tuple[int, str]:
+        return _installed_cli_run(workspace, venv, argv, stdin)
+
+    result = route_walk_steps(
+        repo_root=str(workspace),
+        hook_run=hook_run,
+        cli_run=cli_run,
+        skill_md_text=_NW_AUTO_SKILL_MD.read_text(encoding="utf-8"),
+        transcript_path=transcript_path,
+    )
+    if result["status"] == "proven":
+        shutil.rmtree(workspace)
+    return result
+
+
 def probe_engagement(
     root: Path, venv: Path, auth_profile: Path, model: str
 ) -> tuple[str, list[str]]:
@@ -1090,6 +1871,41 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("engagement  : nWave section injected, agents and skills present")
 
+    # GDP-1: intercept the paid run's exact deterministic-layer blockers
+    # BEFORE the run is even built, not after burning a `claude -p` call on
+    # them. `route_walk` walks the canonical Auto route through the
+    # installed hook and installed `des` CLI with NO model call, in its own
+    # throwaway workspace.
+    route_walk_result = route_walk(args.root, venv, args.auth_profile)
+    print(f"route walk  : {route_walk_result['status']}")
+    for step in route_walk_result["steps"]:
+        mark = "ok  " if step["passed"] else "FAIL"
+        print(
+            f"  [{mark}] {step['name']:45s} expected={step['expected']:10s} observed={step['observed']}"
+        )
+    if route_walk_result["status"] != "proven":
+        first_blocked = next(
+            step for step in route_walk_result["steps"] if not step["passed"]
+        )
+        sys.stderr.write(
+            "WHAT: route_walk's canonical Auto-route step "
+            f"`{first_blocked['name']}` did not behave as mandated -- "
+            f"expected {first_blocked['expected']}, observed "
+            f"{first_blocked['observed']}.\n"
+            f"      mandate: {first_blocked['mandate']}\n"
+            f"      detail:  {first_blocked['detail']}\n"
+            "WHY:  the deterministic layer would deny (or wrongly allow) root's "
+            "own documented next step during the real paid run -- exactly the "
+            "class of defect a manual K4 replay caught after burning a\n"
+            "      full delivery's tokens finding it live. Proving it here costs "
+            "nothing.\n"
+            f"HOW:  reproduce {first_blocked['name']} in "
+            f"{_route_walk_workspace(args.root)}, fix the deterministic layer "
+            "(or the mandate itself, if the SKILL.md route changed), and rerun "
+            "this preflight before writing arms.json.\n"
+        )
+        return 1
+
     contract_path = args.contract
     contract_source = "--contract"
     if contract_path is None:
@@ -1165,6 +1981,12 @@ def main(argv: list[str] | None = None) -> int:
     # because its prompt was worded to invite it.
     spec = {
         "task": args.task_file.read_text(encoding="utf-8").strip(),
+        # Recorded even though `route_walk_result["status"] != "proven"`
+        # already returned 1 above -- only a "proven" result ever reaches
+        # this write, so `route_walk.status` is always "proven" in a written
+        # `arms.json`. Kept as a real field (not folded away) so a reader of
+        # arms.json can see WHICH steps were proven, not just a boolean.
+        "route_walk": route_walk_result,
         "artifact": {
             "kind": "wheel",
             "path": str(wheel),

@@ -74,6 +74,15 @@ def _prepare_main_run(tmp_path, monkeypatch):
 
     monkeypatch.setattr(preflight, "probe_engagement", _probe_engagement_stub)
     monkeypatch.setattr(preflight, "cleanup_probe_workspace", lambda *a, **k: False)
+    # `route_walk` builds its OWN throwaway workspace via `nwave_setup_steps`
+    # (a real git clone + install) -- exactly the heavy setup this helper's
+    # own docstring says is stubbed out so only the verification wiring
+    # under test actually runs. Left unstubbed, every test using this
+    # fixture would silently start cloning healthchecks and building a real
+    # venv on every run.
+    monkeypatch.setattr(
+        preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
+    )
 
     root = tmp_path / "root"
     task_file = tmp_path / "task.md"

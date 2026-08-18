@@ -187,7 +187,10 @@ def test_both_routes_closed_and_terminal_handoff_contract_ready():
     )
     assert "Any later oracle edit invalidates readiness" in red_section
 
-    idx = ACCEPTANCE_DESIGNER.index("DISTILL-RESULT:")
+    # rindex, not index: an earlier prose sentence also names the literal
+    # token "DISTILL-RESULT:" describing the terminal block -- the real
+    # three-line block is the LAST occurrence.
+    idx = ACCEPTANCE_DESIGNER.rindex("DISTILL-RESULT:")
     block = ACCEPTANCE_DESIGNER[idx : idx + 300]
     for field in (
         "DISTILL-RESULT: CONTRACT_READY",

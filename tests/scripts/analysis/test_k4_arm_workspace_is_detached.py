@@ -35,10 +35,24 @@ def _git(*args: str, cwd) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
+def _head_sha(repo) -> str:
+    done = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return done.stdout.strip()
+
+
 def _make_local_sut(tmp_path):
     """A tiny local repo standing in for the real SUT -- `git clone` accepts
     a local path exactly as it accepts a URL, so this proves the same
-    behaviour without touching the network."""
+    behaviour without touching the network. Returns (repo path, HEAD sha):
+    the pinned-revision checkout step (`preflight._SUT_PINNED_REV`) needs a
+    commit that actually exists in THIS throwaway repo, never the real
+    SUT's pin."""
     sut = tmp_path / "sut"
     sut.mkdir()
     _git("init", "-q", "-b", "master", cwd=sut)
@@ -47,7 +61,7 @@ def _make_local_sut(tmp_path):
     (sut / "README.md").write_text("seed\n")
     _git("add", "README.md", cwd=sut)
     _git("commit", "-q", "-m", "seed", cwd=sut)
-    return sut
+    return sut, _head_sha(sut)
 
 
 def _is_detached(workspace) -> bool:
@@ -86,8 +100,9 @@ def _make_nwave_steps(venv, auth):
     ],
 )
 def test_arm_workspace_is_detached_after_setup(tmp_path, monkeypatch, steps_factory):
-    sut = _make_local_sut(tmp_path)
+    sut, sut_head = _make_local_sut(tmp_path)
     monkeypatch.setattr(preflight, "_SUT", str(sut))
+    monkeypatch.setattr(preflight, "_SUT_PINNED_REV", sut_head)
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 

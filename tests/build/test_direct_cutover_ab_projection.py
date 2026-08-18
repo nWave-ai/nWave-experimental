@@ -493,4 +493,34 @@ def test_auto_skill_forbids_duplicate_producer_probes() -> None:
         "hashing, recounting or another producer probe",
     ):
         assert forbidden_probe in compact
-    assert "never recomputes, revalidates or restates those formulas" in compact
+
+
+def test_agent_pins_declared_imports_self_check_without_a_bash_tool() -> None:
+    """Run 4 defects A/B (K4 matrix row 12 self-reference variant): ATD must
+    self-audit `declared-imports` against what it actually read, but it
+    holds no `Bash` tool -- the interrogative must not tell it to run
+    `des code-fact`/`des validate-delivery-contract` itself; `des dispatch`
+    (root, immediately after CONTRACT_READY, before any crafter starts)
+    remains the sole independent re-verification."""
+    agent = _text(AGENT)
+    compact = " ".join(agent.split())
+
+    assert "`EVIDENCE_GAP`, never a guess written into the contract" in compact
+    assert "a target this same contract itself" in compact
+    assert "asks the crafter to create (a self-reference)" in compact
+    assert "checks it with the Read capability it holds alone" in compact
+    assert "it runs no shell" in compact
+    assert (
+        "never invokes `des code-fact` or `des validate-delivery-contract`" in compact
+    )
+    assert "Bash" not in agent
+    assert (
+        "`des dispatch` independently re-verifies every `declared-imports` "
+        "entry against the base tree immediately after `CONTRACT_READY`, "
+        "before any crafter is dispatched" in compact
+    )
+    # RED_TO_GREEN and GREEN_TO_GREEN both carry the check (or GREEN_TO_GREEN
+    # points back to the shared RED_TO_GREEN rule) -- not authored once and
+    # silently dropped from the other route.
+    assert agent.count("declared-imports") >= 4
+    assert "RED_TO_GREEN step 6 question" in compact

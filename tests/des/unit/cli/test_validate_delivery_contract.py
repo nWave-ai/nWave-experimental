@@ -170,3 +170,71 @@ def test_declared_import_naming_a_nonexistent_symbol_is_rejected(
     assert "WHAT:" in captured.err
     assert "WHY:" in captured.err
     assert "HOW:" in captured.err
+
+
+def test_module_absent_entirely_names_the_base_revision_in_how(
+    tmp_path: Path, capsys
+) -> None:
+    """Run 4 defect A: a declared-import whose MODULE does not exist
+    anywhere in the base tree (e.g. an un-vendored third-party package) --
+    the refusal must name the exact base-revision it checked against."""
+    contract_dict = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    target_path = next(iter(contract_dict["targets"]))
+    contract_dict["targets"][target_path]["declared-imports"] = ["cronsim.CronSim"]
+    contract_path = tmp_path / "delivery.json"
+    contract_path.write_text(json.dumps(contract_dict), encoding="utf-8")
+    seed_referenced_oracle(tmp_path, contract_dict)
+
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "--delivery-contract", "delivery.json"]
+    )
+
+    captured = capsys.readouterr()
+    base_revision = contract_dict["repository"]["base-revision"]
+    assert exit_code == 2
+    assert "cronsim.CronSim" in captured.err
+    assert f"not present at base revision {base_revision}" in captured.err
+    assert "cite only existing" in captured.err.lower()
+    assert "creating target" in captured.err.lower()
+    assert "WHAT:" in captured.err
+    assert "WHY:" in captured.err
+    assert "HOW:" in captured.err
+
+
+def test_self_created_symbol_cited_as_declared_import_names_the_owning_target(
+    tmp_path: Path, capsys
+) -> None:
+    """Run 4 defect B: a declared-import citing a symbol that the SAME
+    contract's own target creates -- the refusal must say so explicitly and
+    name the owning target's path so the field is not left ambiguous."""
+    contract_dict = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    original_target_path = next(iter(contract_dict["targets"]))
+    original_target = contract_dict["targets"].pop(original_target_path)
+    creating_target_path = "src/des/domain/repo_path_resolver.py"
+    contract_dict["targets"][creating_target_path] = {
+        **original_target,
+        "candidate": creating_target_path,
+        "declared-imports": [
+            "des.domain.repo_path_resolver.BRAND_NEW_CONSTANT_NOT_YET_ADDED"
+        ],
+    }
+    contract_path = tmp_path / "delivery.json"
+    contract_path.write_text(json.dumps(contract_dict), encoding="utf-8")
+    seed_referenced_oracle(tmp_path, contract_dict)
+    _seed_source_file(tmp_path, creating_target_path)
+
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "--delivery-contract", "delivery.json"]
+    )
+
+    captured = capsys.readouterr()
+    base_revision = contract_dict["repository"]["base-revision"]
+    assert exit_code == 2
+    assert "BRAND_NEW_CONSTANT_NOT_YET_ADDED" in captured.err
+    assert f"not present at base revision {base_revision}" in captured.err
+    assert creating_target_path in captured.err
+    assert "creates it" in captured.err
+    assert "justification" in captured.err
+    assert "WHAT:" in captured.err
+    assert "WHY:" in captured.err
+    assert "HOW:" in captured.err

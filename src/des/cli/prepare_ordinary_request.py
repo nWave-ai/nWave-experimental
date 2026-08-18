@@ -13,7 +13,11 @@ argv fact, never inferred, defaulted or guessed here.
 Writes no file, mutates no repository state, and persists no value seed
 anywhere -- its entire output is the envelope text on stdout. Non-persistent
 and side-effect-free beyond the one `git` observation of the declared
-`--repo-root`.
+`--repo-root`, and one read-only existence check of the DELIVERY-ID's own
+`ContractLocator`: a second run for the SAME value seed, once ATD has
+already written that contract, is `Blocked` naming the `nw-acceptance-
+designer` REVISE-CONTRACT/CITATION revision path -- never a silent
+re-derivation of a contract that already exists.
 """
 
 from __future__ import annotations
@@ -243,6 +247,32 @@ def main(argv: list[str] | None = None) -> int:
 
     delivery_id = compute_delivery_id(value_seed)
     contract_locator = contract_locator_for(delivery_id)
+
+    if (resolved_root / contract_locator).exists():
+        return _blocked(
+            what=(
+                f"a DeliveryContract already exists at {contract_locator} "
+                f"for DeliveryId {delivery_id} -- this exact value seed "
+                "already produced one"
+            ),
+            why=(
+                "the value seed deterministically owns exactly one "
+                "DeliveryId and one contract (ADR-SSOT-002 Section 4c/4d); "
+                "a second prepare-ordinary-request run for the SAME seed "
+                "would redispatch an already-produced contract instead of "
+                "revising it, burning a full producer-to-crafter cycle on "
+                "a request that already has one"
+            ),
+            how=(
+                "a crafter INDETERMINATE citing this contract/oracle routes "
+                "back to nw-acceptance-designer for a revision on the SAME "
+                "DeliveryId -- dispatch it with the two-line body "
+                f"`REVISE-CONTRACT: {contract_locator}` then `CITATION: "
+                "<the crafter's cited defect, as a JSON string literal>`, "
+                "never a new prepare-ordinary-request run"
+            ),
+        )
+
     outcome_and_seed_json = json.dumps(value_seed, ensure_ascii=False)
 
     body = "\n".join(

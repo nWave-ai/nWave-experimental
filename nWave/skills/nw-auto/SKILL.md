@@ -208,6 +208,18 @@ its real port; internal proxies and later-slice promises are `EVIDENCE_GAP`.
    terminal zero-exit results for every declared verification command. A PASS
    opens the single-writer causal window: until the terminal commit, no actor
    may mutate production targets, contract, oracle or charters.
+
+   Route by `verdict` — each row is a question the router answers honestly
+   before acting, paired with the imperative for the honest-no case:
+
+   | `CRAFTER-RESULT` verdict | Root routes to |
+   |---|---|
+   | `PASS` | the examiner pass below (`examine=true`) or step 4 finalize |
+   | `FAIL` | Is this a genuine terminal FAIL, not a timeout/partial narration (those are `INDETERMINATE` — nw-crafter-discipline-delivery-contract)? A real FAIL is terminal: report the FAIL evidence verbatim and stop — never redispatch hoping a second attempt succeeds where the evidence already says it cannot |
+   | `INDETERMINATE` citing the contract/oracle itself (an invented import, a self-referential obligation, or any other defect the crafter names IN the delivered contract/oracle — nw-crafter-discipline-delivery-contract item 6, "return an oracle defect to DISTILL") | Does the citation name a real defect IN the contract/oracle, not just an inability to satisfy it? If so, dispatch `nw-acceptance-designer` exactly once more with the two-line revision body — `REVISE-CONTRACT: <the SAME CONTRACT-LOCATOR already produced>` then `CITATION: <the crafter's citation, as a JSON string literal>` — never a fresh `des prepare-ordinary-request` run: the producer already ran exactly once for this DeliveryId and now refuses a second run, naming this exact revision shape in its WHAT/WHY/HOW. On the returned `DISTILL-RESULT: CONTRACT_READY`, run `des dispatch` again and redispatch the crafter fresh; `des resolve-charters`/PO are NOT rerun — the charter's validity did not change |
+   | `INDETERMINATE` citing environment/tooling/sandbox (nw-crafter-discipline-delivery-contract item 9, "terminal INDETERMINATE after the first failed attempt") | Is this actually a harness gap no contract revision can fix? If so it is terminal: report the INDETERMINATE evidence and stop — never redispatch ATD, the crafter, or restart the cycle hoping the environment resolves itself |
+   | No terminal `CRAFTER-RESULT` block at all | Same rule as the batch-join above: `INDETERMINATE`, report the missing terminal receipt, stop — never re-dispatch blindly |
+
    Then, only when examine=true, dispatch one source-blind Vera pass with the
    validated charter sequence, execution root and the candidate identity
    forwarded byte-for-byte. Never send changed-targets to Vera and never ask

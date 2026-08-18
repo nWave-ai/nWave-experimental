@@ -7,19 +7,13 @@ import json
 import sys
 from pathlib import Path
 
+from des.cli._declared_import_refusal import (
+    first_missing_declared_import as _first_missing_declared_import,
+)
+from des.cli._declared_import_refusal import (
+    unresolved_declared_import_how as _unresolved_declared_import_how,
+)
 from des.cli.dispatch import _load_delivery_contract, _resolve_oracle, closure_digest
-from des.domain.declared_import_resolver import resolve_declared_import
-
-
-def _first_missing_declared_import(
-    repo_root: Path, contract: dict
-) -> tuple[str, str] | None:
-    """Return the first `(target_path, reference)` absent from the base tree."""
-    for target_path, target_plan in contract["targets"].items():
-        for reference in target_plan.get("declared-imports", []):
-            if not resolve_declared_import(repo_root, reference):
-                return target_path, reference
-    return None
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -76,8 +70,7 @@ def main(argv: list[str] | None = None) -> int:
             "which does not resolve to a base-tree module or symbol "
             "WHY: a DeliveryContract citing an invented symbol reintroduces "
             "ATD-invented substrate (K4 failure-to-design matrix row 12) "
-            "HOW: correct declared-imports to name a real base-tree module "
-            "or symbol, or land the base-tree change the target relies on first",
+            f"HOW: {_unresolved_declared_import_how(args.repo_root, contract, reference)}",
             file=sys.stderr,
         )
         return 2

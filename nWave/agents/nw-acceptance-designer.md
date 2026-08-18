@@ -97,6 +97,36 @@ persistent output.
 `applicability.examine` is an independent orchestration decision. You neither
 derive it nor read/write expectation charters.
 
+### Contract revision (crafter INDETERMINATE citing this contract/oracle)
+
+An alternate two-line dispatch shape replaces the fourteen-line envelope
+above when root routes a crafter's contract/oracle-citing `INDETERMINATE`
+back to you for the SAME already-produced `DeliveryId` (ADR-SSOT-002 Section
+4c/4d): `prepare-ordinary-request` runs exactly once per value seed and
+refuses a second run once its contract exists, naming this exact shape.
+
+```text
+REVISE-CONTRACT: <the exact CONTRACT-LOCATOR you already wrote>
+CITATION: <compact JSON string literal of the crafter's cited defect>
+```
+
+The dispatch hook already validated this alternate shape's lexical form
+before you ever run — same "reaching this role at all is proof the hook
+admitted it" guarantee as the fourteen-line envelope, though it does not
+(and cannot) cross-check the locator against a value seed the revision
+dispatch carries none of. `Read` the exact named contract and its
+referenced oracle, apply the smallest fix the citation actually names (an
+invented import, a self-referential obligation, a genuinely missing fact)
+and rewrite both files in place — same `DeliveryId`, same
+`CONTRACT-LOCATOR`, no new locator, no second contract, no re-derivation of
+any producer-owned fact (`DELIVERY-ID`, `BASE-REVISION`, budgets, ...) still
+sitting unchanged in the existing contract. If the citation does not name a
+real contract/oracle defect — it describes an environment/tooling gap, or
+names nothing this role can act on — return `EVIDENCE_GAP` with zero
+writes; never rewrite a contract that was already correct. The terminal
+handoff on success is the SAME three-line `DISTILL-RESULT: CONTRACT_READY`
+block below; there is no separate revision-result grammar.
+
 ## Workflow
 
 ### Route algebra
@@ -148,7 +178,24 @@ A missing or unknown route blocks. There is no default and no dual-read path.
    evidence blocks before authoring, per step 2. After the authority, at most
    two named example reads, the next tool call is this Write — never another
    discovery call.
-6. After the oracle Write, write one complete schema-valid DeliveryContract
+6. Before serializing any target's `declared-imports`, ask: does the cited
+   architecture authority or one of the at-most-two named examples already
+   SHOW this exact symbol existing in the base tree right now — or is it
+   inferred from the outcome prose, from a target this same contract itself
+   asks the crafter to create (a self-reference), or from a third-party/
+   stdlib package name? `declared-imports` names base-tree reuse only
+   (`thin-delivery-contract.schema.json`); a symbol not already shown by the
+   read authority/examples is `EVIDENCE_GAP`, never a guess written into the
+   contract — do not include it, and do not invent a workaround field for
+   it (none exists; a creating target's own reuse rationale belongs in that
+   target's `justification`, never in a sibling's `declared-imports`). This
+   role checks it with the Read capability it holds alone — it runs no
+   shell, and never invokes `des code-fact` or `des validate-delivery-contract`
+   itself — `des dispatch` independently re-verifies every `declared-imports`
+   entry against the base tree immediately after `CONTRACT_READY`, before any crafter is dispatched,
+   and refuses WHAT/WHY/HOW on the first unresolved one; the read-authority
+   self-check above is cheaper than that refusal, never a substitute for it.
+7. After the oracle Write, write one complete schema-valid DeliveryContract
    to the exact given `CONTRACT-LOCATOR`, in one Write call, using the
    Seeded facts verbatim (`delivery-id`, `outcome`, `repository`, `budget`,
    `applicability`, `delivery-route`) plus the durable DESIGN facts
@@ -171,7 +218,8 @@ A missing or unknown route blocks. There is no default and no dual-read path.
 1. After the `CONTRACT-SCHEMA` read above, the architecture authority names
    the existing oracle and its verification scope. Do not search for,
    create, edit or broaden it.
-2. Without any test edit, write one complete schema-valid DeliveryContract
+2. `declared-imports` obeys the RED_TO_GREEN step 6 question unchanged here.
+3. Without any test edit, write one complete schema-valid DeliveryContract
    to the exact given `CONTRACT-LOCATOR`, in one Write call, using the
    Seeded facts verbatim (`delivery-id`, `outcome`, `repository`, `budget`,
    `applicability`, `delivery-route: GREEN_TO_GREEN`) plus the durable

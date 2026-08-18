@@ -55,6 +55,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.analysis.k4 import prepare_examiner_fixture as pef
+from scripts.analysis.k4 import subject as k4_subject
 
 
 _SUITE_TARGET = Path("hc") / "api" / "tests" / "test_k4_acceptance.py"
@@ -390,6 +391,7 @@ def examine(
     suite: Path,
     *,
     probe_cache: dict[str, tuple[bool, str]] | None = None,
+    pinned_subject_rev: str | None = None,
 ) -> tuple[bool, str]:
     """Measure a disposable snapshot of the delivery, never the delivery
     itself. The original is written to only for the setup-owned user-
@@ -406,6 +408,16 @@ def examine(
     `main`) pay for that proof once per distinct base commit rather than
     once per pair -- proof, not ceremony, is what row 2 asks for. A caller
     that passes nothing gets a private cache scoped to this one call.
+
+    `pinned_subject_rev`, when given, must equal this workspace's own
+    resolved base commit or the pair is refused -- reproducibility (K4
+    matrix rows 2/4) needs every pair of every campaign measured against the
+    IDENTICAL subject state, and `_base_commit_sha` alone only proves a
+    self-consistent one. `main` passes `scripts.analysis.k4.subject
+    .SUT_PINNED_REV` for a real campaign; left `None` (the default) for
+    every other caller -- unit tests exercising this function against a
+    synthetic workspace never share a commit with the real SUT and are not
+    what this check is for.
     """
     workspace = Path(workspace)
     if not (workspace / "manage.py").is_file():
@@ -426,6 +438,14 @@ def examine(
             "rev-list --max-parents=0 HEAD`; the oracle self-probe (row 2, "
             "GDP-8 witness corollary) cannot run without it, so this pair "
             "is refused rather than scored unproven"
+        )
+    if pinned_subject_rev is not None and base_sha != pinned_subject_rev:
+        return False, (
+            f"refused: this workspace's own base commit {base_sha} does not "
+            f"match the pinned subject revision {pinned_subject_rev} "
+            "(scripts/analysis/k4/subject.py) -- reproducibility (K4 matrix "
+            "rows 2/4) needs every pair measured against the identical "
+            "subject state; re-run preflight so the clone pins to it"
         )
     if base_sha not in probe_cache:
         probe_cache[base_sha] = _self_probe_oracle_red(workspace, base_sha, suite)
@@ -472,7 +492,10 @@ def main(argv: list[str] | None = None) -> int:
         if not workspace.is_dir():
             continue
         accepted, evidence = examine(
-            workspace, args.suite.resolve(), probe_cache=probe_cache
+            workspace,
+            args.suite.resolve(),
+            probe_cache=probe_cache,
+            pinned_subject_rev=k4_subject.SUT_PINNED_REV,
         )
         outcomes.append(Outcome(payload.stem, _session_id(payload), accepted, evidence))
         print(f"{payload.parent.name}/{payload.stem}: accepted={accepted}", flush=True)

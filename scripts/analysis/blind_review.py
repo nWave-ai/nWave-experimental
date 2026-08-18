@@ -39,6 +39,12 @@ and on any issued id the reviewer did not score — the same conservation rule t
 join itself enforces, applied one step earlier, because a delivery that silently
 loses its verdict here reappears downstream as a shrinking denominator.
 
+The scored criteria keys ('1'..N) are NOT hardcoded here — they are read from
+`scripts.analysis.k4.quality_rubric.CRITERIA_KEYS`, the single place the rubric
+TEXT and its ADR-SSOT-002 Section 1a citations live. Fix a criterion or extend
+the rubric there; this module only enforces the SHAPE that module's key set
+implies.
+
 Stdlib only.
 """
 
@@ -55,6 +61,8 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+from scripts.analysis.k4 import quality_rubric
 
 
 #: Never copied into a review packet. Measured 2026-08-07, before the first seal:
@@ -662,7 +670,9 @@ def seal(campaign: Path, out: Path, map_path: Path) -> int:
     return 0
 
 
-_CRITERIA_KEYS = {str(n) for n in range(1, 13)}
+#: Sourced from the rubric module, never hardcoded here — see the module
+#: docstring's "Stdlib only" note above.
+_CRITERIA_KEYS = quality_rubric.CRITERIA_KEYS
 _VERDICT_TOP_KEYS = {"criteria", "total", "blocking_quality_findings", "summary"}
 
 
@@ -709,9 +719,8 @@ def _validate_one_verdict(opaque: str, verdict: object) -> list[str]:
             if extra:
                 detail.append(f"unexpected {extra}")
             problems.append(
-                f"{opaque}: criteria keys must be exactly '1'..'12' ("
-                + ", ".join(detail)
-                + ")"
+                f"{opaque}: criteria keys must be exactly "
+                f"'1'..'{len(_CRITERIA_KEYS)}' (" + ", ".join(detail) + ")"
             )
 
     score_sum = 0
@@ -778,16 +787,17 @@ def unseal(sealed: Path, scored: Path, out: Path) -> int:
 
     malformed = validate_verdict_shape(verdicts)
     if malformed:
+        n = len(_CRITERIA_KEYS)
         sys.stderr.write(
             "WHAT: the scored file contains malformed reviewer verdicts.\n"
             + "".join(f"      - {p}\n" for p in malformed)
             + "WHY:  the rubric is source-blind but not shape-blind: a verdict that\n"
-            "      does not carry all 12 scored criteria, or whose total the reviewer\n"
-            "      cannot add up, is not a disagreement about quality -- it is not a\n"
-            "      verdict this instrument can trust downstream.\n"
+            f"      does not carry all {n} scored criteria, or whose total the\n"
+            "      reviewer cannot add up, is not a disagreement about quality -- it\n"
+            "      is not a verdict this instrument can trust downstream.\n"
             "HOW:  fix the verdict JSON so each delivery is exactly {criteria, total,\n"
             "      blocking_quality_findings, summary}, with 'criteria' an object\n"
-            "      keyed '1'..'12' of {score: int 0..2, evidence: str}, an int\n"
+            f"      keyed '1'..'{n}' of {{score: int 0..2, evidence: str}}, an int\n"
             "      'total' equal to their sum, 'blocking_quality_findings' as a list\n"
             "      of strings, and a string 'summary'. Nothing was mapped.\n"
         )

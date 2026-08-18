@@ -46,6 +46,8 @@ from des.application.commit_attribution_service import CommitAttributionService
 from des.application.ordinary_request import (
     ARCH_HEADER_PREFIXES,
     ATD_BODY_LINE_COUNT,
+    DELIVERY_ID_HEX_LEN,
+    DELIVERY_ID_PREFIX,
     compute_delivery_id,
     contract_locator_for,
     is_lexical_repo_relative_json_locator,
@@ -96,6 +98,20 @@ _AUTO_ARCH_DELIVERY_ROUTE_LINE_PREFIX = "AUTO-DELIVERY-ROUTE: "
 _ATD_ROOT_LINE_PREFIX = "ROOT: "
 _ATD_VALUE_SEED_LINE_PREFIX = "VALUE-SEED: "
 _ATD_DELIVERY_ROUTE_LINE_PREFIX = "DELIVERY-ROUTE: "
+
+# Run 4 evidence / ADR-SSOT-002 Section 4c/4d: a crafter INDETERMINATE
+# citing the contract/oracle itself routes back to ATD for a revision on
+# the SAME already-produced DeliveryId/locator -- never a fresh
+# `prepare-ordinary-request` run (that producer now refuses a second run
+# for the same seed, naming this exact two-line shape). This is an
+# alternate, equally strict, lexical-only ATD dispatch body -- no value
+# seed to recompute a hash against, so unlike the fourteen-line envelope
+# it does not cross-validate the locator against a DeliveryId; it only
+# proves the locator has the one shape ATD ever legitimately writes to.
+_ATD_REVISE_CONTRACT_LINE_PREFIX = "REVISE-CONTRACT: "
+_ATD_CITATION_LINE_PREFIX = "CITATION: "
+_ATD_REVISION_BODY_LINE_COUNT = 2
+_CONTRACT_LOCATOR_DIR_PREFIX = "docs/delivery-contracts/"
 
 # K4 (nw-auto ADR-SSOT-002 Section 4c total constructor): the twelve named
 # non-empty facts an Auto-root ATD dispatch body must carry, each on its own
@@ -581,9 +597,45 @@ def _auto_root_atd_body_block() -> dict[str, str]:
             "OUTCOME, ROOT, BASE-REVISION, DELIVERY-ROUTE, EXAMINE, "
             "INDEPENDENT-REVIEW, BUDGET-TOKEN-LIMIT, "
             "BUDGET-WALL-CLOCK-MINUTES, VALUE-SEED, each on its own line in "
-            "that exact order, and nothing else."
+            "that exact order, and nothing else; OR, to revise an "
+            "already-produced contract on a crafter's contract/oracle "
+            "citation, send exactly REVISE-CONTRACT then CITATION, each on "
+            "its own line and nothing else."
         ),
     }
+
+
+def _is_well_formed_contract_locator_for_revision(locator: str) -> bool:
+    """True iff `locator` has the ONE shape `contract_locator_for` ever
+    produces (`docs/delivery-contracts/auto-<16 lowercase hex>.json`) --
+    lexical only, no filesystem I/O, no delivery-id/seed cross-check (a
+    revision dispatch carries no value seed to recompute a hash against)."""
+    if not is_lexical_repo_relative_json_locator(locator):
+        return False
+    if not locator.startswith(_CONTRACT_LOCATOR_DIR_PREFIX):
+        return False
+    stem = locator[len(_CONTRACT_LOCATOR_DIR_PREFIX) : -len(".json")]
+    if not stem.startswith(DELIVERY_ID_PREFIX):
+        return False
+    hex_part = stem[len(DELIVERY_ID_PREFIX) :]
+    return len(hex_part) == DELIVERY_ID_HEX_LEN and set(hex_part) <= _HEX_ALPHABET
+
+
+def _is_well_formed_atd_revision_body(prompt: str) -> bool:
+    """True iff `prompt` is exactly the two-line contract-revision shape:
+    `REVISE-CONTRACT: <locator>` then `CITATION: <non-empty JSON string>`,
+    nothing else."""
+    lines = prompt.split("\n")
+    if len(lines) != _ATD_REVISION_BODY_LINE_COUNT:
+        return False
+    locator_line, citation_line = lines
+    if not locator_line.startswith(_ATD_REVISE_CONTRACT_LINE_PREFIX):
+        return False
+    locator = locator_line[len(_ATD_REVISE_CONTRACT_LINE_PREFIX) :]
+    if not _is_well_formed_contract_locator_for_revision(locator):
+        return False
+    citation = _has_json_string_value(citation_line, _ATD_CITATION_LINE_PREFIX)
+    return bool(citation) and bool(citation.strip())
 
 
 def _evaluate_auto_root_atd_body(prompt: object) -> dict[str, str] | None:
@@ -593,6 +645,8 @@ def _evaluate_auto_root_atd_body(prompt: object) -> dict[str, str] | None:
     numeric-format validation only, no referenced-file I/O."""
     if not isinstance(prompt, str):
         return _auto_root_atd_body_block()
+    if _is_well_formed_atd_revision_body(prompt):
+        return None
     lines = prompt.split("\n")
     if len(lines) != ATD_BODY_LINE_COUNT:
         return _auto_root_atd_body_block()

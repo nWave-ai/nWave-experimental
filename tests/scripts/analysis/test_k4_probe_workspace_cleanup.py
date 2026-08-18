@@ -133,6 +133,9 @@ def test_main_removes_probe_and_still_writes_arms_json_on_pass(tmp_path, monkeyp
         "probe_engagement",
         lambda root, venv, auth_profile, model: ("absent", []),
     )
+    monkeypatch.setattr(
+        preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
+    )
 
     task_file = tmp_path / "task.md"
     task_file.write_text("do the thing\n")
@@ -186,6 +189,9 @@ def test_wheel_flag_reaches_exact_wheel_branch_without_build_arm_runtime(
         "probe_engagement",
         lambda root, venv, auth_profile, model: ("absent", []),
     )
+    monkeypatch.setattr(
+        preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
+    )
 
     checkout = _make_checkout(tmp_path)
     code = preflight.main(
@@ -231,6 +237,9 @@ def test_checkout_branch_unchanged_when_wheel_flag_absent(tmp_path, monkeypatch)
         preflight,
         "probe_engagement",
         lambda root, venv, auth_profile, model: ("absent", []),
+    )
+    monkeypatch.setattr(
+        preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
     )
 
     checkout = _make_checkout(tmp_path)
@@ -323,6 +332,9 @@ def test_wheel_identity_path_and_digest_are_emitted(tmp_path, monkeypatch, capsy
         preflight,
         "probe_engagement",
         lambda root, venv, auth_profile, model: ("absent", []),
+    )
+    monkeypatch.setattr(
+        preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
     )
 
     checkout = _make_checkout(tmp_path)

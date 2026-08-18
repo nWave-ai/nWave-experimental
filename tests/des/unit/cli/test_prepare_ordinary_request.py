@@ -320,6 +320,89 @@ class TestProducerOutputIsAcceptedByTheRealHook:
         assert _evaluate_auto_root_atd_body(tampered) is not None
 
 
+class TestExactlyOnceProducerPerDeliveryId:
+    """Run 4 evidence: root re-ran the entire producer->crafter cycle on
+    EVERY crafter INDETERMINATE, burning the producer 4x for one DeliveryId.
+    ADR-SSOT-002 SS4c/4d: one DeliveryContract is written exactly once by
+    ATD for a given (deterministic) DeliveryId. Enforced here, at the
+    cheapest possible point, by refusing a second producer run once that
+    contract exists on disk -- never by tracking a call count."""
+
+    @staticmethod
+    def _locator_from(body: str) -> str:
+        for line in body.splitlines():
+            if line.startswith("CONTRACT-LOCATOR: "):
+                return line[len("CONTRACT-LOCATOR: ") :]
+        raise AssertionError("no CONTRACT-LOCATOR line")
+
+    def test_second_run_for_same_seed_after_contract_exists_is_blocked(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        root = _init_repo(tmp_path)
+        _exit_a, out_a, _err_a = _run(
+            monkeypatch, capsys, seed_bytes=b"Ship it.", argv=_base_argv(root)
+        )
+        assert _exit_a == 0
+        locator = self._locator_from(out_a)
+        contract_path = tmp_path / "repo" / locator
+        contract_path.parent.mkdir(parents=True, exist_ok=True)
+        contract_path.write_text("{}", encoding="utf-8")
+
+        exit_code, out, err = _run(
+            monkeypatch, capsys, seed_bytes=b"Ship it.", argv=_base_argv(root)
+        )
+
+        assert exit_code == 2
+        assert out == ""
+        assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+        assert locator in err
+        assert "REVISE-CONTRACT" in err
+        assert "CITATION" in err
+
+    def test_a_different_seed_is_unaffected_by_an_unrelated_existing_contract(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        root = _init_repo(tmp_path)
+        _exit_a, out_a, _err_a = _run(
+            monkeypatch, capsys, seed_bytes=b"Ship it.", argv=_base_argv(root)
+        )
+        locator = self._locator_from(out_a)
+        contract_path = tmp_path / "repo" / locator
+        contract_path.parent.mkdir(parents=True, exist_ok=True)
+        contract_path.write_text("{}", encoding="utf-8")
+
+        exit_code, out, _err = _run(
+            monkeypatch,
+            capsys,
+            seed_bytes=b"A wholly different request.",
+            argv=_base_argv(root),
+        )
+
+        assert exit_code == 0
+        assert out != ""
+        assert self._locator_from(out) != locator
+
+    def test_a_non_file_at_the_contract_locator_still_blocks(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        """Fails closed on ANY pre-existing thing at that path -- a
+        directory left behind by a crashed run is not proof of absence."""
+        root = _init_repo(tmp_path)
+        _exit_a, out_a, _err_a = _run(
+            monkeypatch, capsys, seed_bytes=b"Ship it.", argv=_base_argv(root)
+        )
+        locator = self._locator_from(out_a)
+        contract_path = tmp_path / "repo" / locator
+        contract_path.mkdir(parents=True)
+
+        exit_code, _out, err = _run(
+            monkeypatch, capsys, seed_bytes=b"Ship it.", argv=_base_argv(root)
+        )
+
+        assert exit_code == 2
+        assert "WHAT:" in err
+
+
 class TestInvocationIsHostNeutral:
     @pytest.mark.parametrize(
         "env_overrides",

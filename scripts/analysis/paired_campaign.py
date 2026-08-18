@@ -173,6 +173,21 @@ def _flag_values(argv: tuple[str, ...], flag: str) -> list[str]:
     return [argv[i + 1] for i, t in enumerate(argv) if t == flag and i + 1 < len(argv)]
 
 
+def _git_checkout_targets(setup: tuple[tuple[str, ...], ...]) -> list[str]:
+    """The commit/ref each declared `git checkout` step in this arm's setup
+    targets, in order -- the last token, which is where the target lands
+    whether the step is a bare `git checkout <ref>` or carries `--detach`
+    first. Deliberately generic: this module "knows nothing about any
+    harness" (module docstring), so it compares whatever the arms
+    THEMSELVES declared rather than importing any subject's own pin
+    constant -- K4's `scripts/analysis/k4/subject.SUT_PINNED_REV` included."""
+    return [
+        step[-1]
+        for step in setup
+        if len(step) >= 2 and step[0] == "git" and step[1] == "checkout"
+    ]
+
+
 def declared_identity_violations(arms: list[ArmSpec]) -> list[str]:
     """Everything the operator declared that would make the arms incomparable.
 
@@ -193,6 +208,18 @@ def declared_identity_violations(arms: list[ArmSpec]) -> list[str]:
         seen = {arm.name: _flag_values(arm.argv, flag) for arm in arms}
         if len({tuple(v) for v in seen.values()}) > 1:
             problems.append(f"{flag} differs across arms: {seen}")
+    # Reproducibility (K4 matrix rows 2/4): a `git checkout` an arm's setup
+    # declares names the exact subject state it measures. Two arms
+    # comparable in every other declared way but checked out to two
+    # different commits are not measuring the same subject, and nothing
+    # about their argv would show it.
+    checkout_targets = {arm.name: _git_checkout_targets(arm.setup) for arm in arms}
+    if len({tuple(v) for v in checkout_targets.values()}) > 1:
+        problems.append(
+            f"declared `git checkout` targets differ across arms: "
+            f"{checkout_targets} -- every arm must be measured against the "
+            "identical pinned subject revision"
+        )
     for arm in arms:
         for step in arm.setup:
             if any("{task}" in token for token in step):

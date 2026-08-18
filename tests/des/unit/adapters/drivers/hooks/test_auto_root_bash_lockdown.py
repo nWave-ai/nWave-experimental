@@ -14,12 +14,12 @@ from __future__ import annotations
 
 import io
 import json
-import re
 from pathlib import Path
 
 import pytest
 
 from des.adapters.drivers.hooks import pre_tool_use_handler
+from scripts.analysis.k4.preflight import des_subcommands_root_is_told_to_run
 
 
 def _transcript(
@@ -342,30 +342,6 @@ _K4_TASK_TXT = _REPO_ROOT / "scripts" / "analysis" / "k4" / "task.txt"
 _NW_AUTO_SKILL_MD = _REPO_ROOT / "nWave" / "skills" / "nw-auto" / "SKILL.md"
 
 
-def _des_subcommands_root_is_told_to_run(skill_md_text: str) -> set[str]:
-    """The `des <subcommand>` tokens that appear inside a FENCED code block
-    in `nw-auto/SKILL.md` -- i.e. a literal command root is instructed to
-    run verbatim, as opposed to a backtick-prose mention (a prohibition
-    like "Root never calls `des validate-delivery-contract` itself", or a
-    descriptive aside like "`des verify-charter-filled` is a structural
-    gate only"). Fences may be indented under a numbered step, so the
-    fence marker is matched with leading whitespace stripped.
-    """
-    in_fence = False
-    subcommands: set[str] = set()
-    for line in skill_md_text.split("\n"):
-        if line.strip().startswith("```"):
-            in_fence = not in_fence
-            continue
-        if not in_fence:
-            continue
-        subcommands.update(
-            match.group(1)
-            for match in re.finditer(r"\bdes\s+([a-zA-Z][a-zA-Z-]*)", line)
-        )
-    return subcommands
-
-
 class TestAutoRootBashAllowlistCoversSkillMandatedSubcommands:
     """Regression guard for the `des resolve-charters` drift class: the
     root's Auto-root Bash allowlist must be a SUPERSET of every `des
@@ -374,20 +350,28 @@ class TestAutoRootBashAllowlistCoversSkillMandatedSubcommands:
     subcommands other callers of this same gate need, e.g. `charter-
     scaffold` for nw-bugfix). A missing entry here reproduces the exact
     installed defect: the skill tells root to run a command the hook then
-    denies."""
+    denies.
+
+    The fence parser itself now lives in `scripts/analysis/k4/preflight.py`
+    (`des_subcommands_root_is_told_to_run`), imported here rather than
+    redefined -- `route_walk_steps` in that same module drives its own
+    root-Bash coverage checks off the identical parser, so this guard and
+    the permanent preflight gate can never carry two independently
+    hand-typed mandated-subcommand lists that silently drift apart.
+    """
 
     def test_parser_is_not_vacuous(self) -> None:
         """A parser that finds nothing can never fail the coverage check
         below -- a silent, undiscriminating pass. Pin the known baseline
         so a SKILL.md format change that breaks the fence parser is
         itself caught, not silently swallowed."""
-        found = _des_subcommands_root_is_told_to_run(
+        found = des_subcommands_root_is_told_to_run(
             _NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
         )
         assert {"dispatch", "prepare-ordinary-request", "resolve-charters"} <= found
 
     def test_every_skill_mandated_subcommand_is_allowlisted(self) -> None:
-        mandated = _des_subcommands_root_is_told_to_run(
+        mandated = des_subcommands_root_is_told_to_run(
             _NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
         )
         allowed = pre_tool_use_handler._AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS
