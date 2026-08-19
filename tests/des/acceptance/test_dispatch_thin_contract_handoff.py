@@ -380,6 +380,43 @@ def test_verification_command_naming_a_wrong_test_path_refuses_before_handoff(
     assert "does not resolve to a base-tree test module or file" in err
 
 
+def test_oracle_with_a_test_spliced_inside_another_refuses_before_handoff(
+    tmp_path: Path,
+) -> None:
+    """K4 Run 10: ATD spliced a new test method into the MIDDLE of an
+    existing one -- syntactically valid, structurally broken (never
+    collected by any runner, silently swallowing the host method's own
+    tail). crafter-1 hit it only at BASELINE after a full production
+    change (~435s of the run). Catch it here, before any crafter starts."""
+    contract_path = _seed_contract(tmp_path)
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    oracle_locator = str(contract["acceptance-tests"]["locator"])
+    oracle_path = tmp_path / oracle_locator
+    oracle_path.write_text(
+        "class CreateCheckTestCase:\n"
+        "    def test_it_works(self) -> None:\n"
+        "        r = 1\n\n"
+        "        def test_it_saves_maintenance_windows(self) -> None:\n"
+        "            r = 2\n"
+        "            assert r == 2\n\n"
+        "        assert r == 1\n",
+        encoding="utf-8",
+    )
+
+    exit_code, out, err = _run(
+        "--repo-root",
+        str(tmp_path),
+        "--delivery-contract",
+        contract_path.name,
+    )
+
+    assert exit_code != 0
+    assert out == ""
+    assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+    assert "nested-test" in err
+    assert "never collected by any test runner" in err
+
+
 def test_schema_invalid_contract_refuses_before_handoff(tmp_path: Path) -> None:
     contract_path = tmp_path / "delivery-contract.json"
     contract_path.write_text("{}", encoding="utf-8")

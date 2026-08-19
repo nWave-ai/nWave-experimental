@@ -138,6 +138,9 @@ verification: <command identity -> terminal result>
 residuals: <none | bounded observations>
 ```
 
+If the budget guard stops you, return your terminal result as
+`INDETERMINATE` naming what is unfinished — never a partial `PASS`.
+
 `contract` carries the single contract+oracle closure digest; there is no
 separate persisted oracle-digest field or duplicate oracle identity line.
 `candidate` is the opaque causal identity of the base revision, not a content

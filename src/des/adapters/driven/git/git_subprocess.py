@@ -183,12 +183,112 @@ def is_ancestor(repo: Path, ancestor_sha: str, descendant_sha: str) -> bool:
     return result.returncode == 0
 
 
-def is_merged_contribution(repo: Path, head_sha: str, target_ref: str) -> bool:
-    """True iff ``head_sha``'s OWN work genuinely merged onto ``target_ref``.
+def _content_already_present(repo: Path, commit_sha: str, target_ref: str) -> bool:
+    """Second content check (GDP-8 witness corollary), independent of
+    patch-id: True iff every path ``commit_sha`` touches already holds
+    byte-identical content (or the SAME absence) at ``target_ref``'s tip.
 
-    Stronger than bare ``is_ancestor`` -- the fix for the non-diverged-worktree
-    data-loss bug. ``is_ancestor(head, target)`` is TRUE in two structurally
-    different situations, and only the FIRST is a real merge:
+    Catches a squashed or rebuilt cherry-pick whose diff SHAPE no longer
+    patch-id-matches the original but whose net file content already
+    landed -- ``content_unmatched_commits`` tries this only for a commit
+    ``git cherry`` itself could not equate. Any git failure degrades to
+    False: still reported as unmerged, the same safe-conservative
+    direction ``is_merged_contribution`` always took, never a silent
+    "assume present".
+    """
+    changed = _git_spawn(
+        ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", commit_sha],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    if changed.returncode != 0:
+        return False
+    paths = [line for line in changed.stdout.splitlines() if line]
+    if not paths:
+        return False
+    for path in paths:
+        ours = _git_spawn(
+            ["git", "show", f"{commit_sha}:{path}"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        )
+        theirs = _git_spawn(
+            ["git", "show", f"{target_ref}:{path}"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        )
+        if (ours.returncode == 0) != (theirs.returncode == 0):
+            return False
+        if ours.returncode == 0 and ours.stdout != theirs.stdout:
+            return False
+    return True
+
+
+def content_unmatched_commits(
+    repo: Path, head_sha: str, target_ref: str
+) -> list[str] | None:
+    """Subject lines of every commit reachable from ``head_sha`` but not
+    ``target_ref`` whose CONTENT has not already landed on ``target_ref``.
+
+    Our integration model is cherry-pick onto trunk, which mints a brand
+    new sha for identical content -- so sha ancestry alone
+    (``is_ancestor``) reports every fully-integrated lane as "not yet
+    merged": a DESIGNATION (the sha never being an ancestor), never the
+    PROPERTY under test (whether the work is actually there). Fixed by
+    judging integration by content, with two independent checks (GDP-8
+    witness corollary), either sufficient:
+
+    1. Patch-id equivalence -- ``git cherry``, git's own comparison of
+       ``git patch-id --stable`` over each commit's diff against every
+       commit already unique to ``target_ref`` since the same
+       merge-base (git resolves this via the same reachability
+       exclusion ``rev-list``'s two-dot range uses -- no explicit
+       merge-base call needed here). This IS "compute
+       ``git patch-id --stable`` and look for an equal patch-id", git's
+       own battle-tested implementation of exactly that, not a
+       re-derived copy.
+    2. Blob-content equivalence (``_content_already_present``) for a
+       patch-id near-miss.
+
+    CAVEAT (row4 incident, 2026-07-20): when ``head_sha`` IS an ancestor
+    of ``target_ref``, this range is empty regardless of whether
+    ``head_sha`` ever made a commit of its own -- callers with that
+    ambiguity to resolve (a worktree that may simply never have
+    diverged, versus one whose real work genuinely merged) must check
+    ``is_ancestor`` themselves and use ``_is_genuine_ancestor_merge``
+    for that branch; this function alone cannot and does not draw that
+    distinction, since ``git cherry``'s own reachability exclusion
+    treats both the same way (empty).
+
+    None on any git failure -- the caller degrades LOUD, never silently
+    assumes either merged or unmerged.
+    """
+    result = _git_spawn(
+        ["git", "cherry", "-v", target_ref, head_sha],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    unmatched: list[str] = []
+    for line in result.stdout.splitlines():
+        if not line.startswith("+ "):
+            continue
+        sha, _, subject = line[2:].partition(" ")
+        if _content_already_present(repo, sha, target_ref):
+            continue
+        unmatched.append(subject)
+    return unmatched
+
+
+def _is_genuine_ancestor_merge(repo: Path, head_sha: str, target_ref: str) -> bool:
+    """Row4 incident, 2026-07-20 (data-loss bugfix): ``is_ancestor(head,
+    target)`` is TRUE in two structurally different situations, and only
+    the FIRST is a real merge:
 
     1. ``head``'s own commits reached ``target`` (via a fast-forward that made
        ``head`` the tip, or via a merge that brought ``head`` in off ``target``'s
@@ -196,7 +296,8 @@ def is_merged_contribution(repo: Path, head_sha: str, target_ref: str) -> bool:
     2. ``head`` made NO commits of its own and ``target`` merely advanced PAST
        it, on ``target``'s own first-parent mainline, via unrelated work -- so
        ``head`` sits on ``target``'s mainline as a PROPER ancestor. Nothing of
-       ``head``'s own could have merged, because there was nothing to merge.
+       ``head``'s own could have merged, because there was nothing to merge --
+       and the worktree may still be an active, unfinished lane.
 
     The two are told apart WITHOUT any recorded creation-base (worktrees here are
     created by many surfaces, not one): ``head`` is a genuine contribution iff it
@@ -206,12 +307,9 @@ def is_merged_contribution(repo: Path, head_sha: str, target_ref: str) -> bool:
     in doubt it refuses cleanup (never a false removal), since deleting a live
     worktree is data loss while leaving one is a cosmetic loose end.
 
-    Pure read (git + Python only, target-machine agnostic). Outside
-    ``git_text``'s ``check=True`` seam for the same reason ``is_ancestor`` is:
-    "not merged" is a legitimate answer, never an error.
+    Caller's responsibility: only call this once ``is_ancestor(head, target)``
+    is already known True -- it does not itself re-check ancestry.
     """
-    if not is_ancestor(repo, head_sha, target_ref):
-        return False
     first_parent_line = _git_spawn(
         ["git", "rev-list", "--first-parent", target_ref],
         cwd=repo,
@@ -229,3 +327,41 @@ def is_merged_contribution(repo: Path, head_sha: str, target_ref: str) -> bool:
     if head_sha == tip:
         return True
     return head_sha not in set(proper_ancestors)
+
+
+def is_merged_contribution(repo: Path, head_sha: str, target_ref: str) -> bool:
+    """True iff ``head_sha``'s OWN work is integrated onto ``target_ref``.
+
+    Two branches, neither touching the other's territory:
+
+    1. ``head_sha`` IS an ancestor of ``target_ref``: delegate to
+       ``_is_genuine_ancestor_merge`` -- the row4 incident fix, UNCHANGED
+       by the content-check fix below. This branch alone can never see a
+       cherry-picked commit (a cherry-pick mints a brand new sha, so a
+       cherry-picked ``head_sha`` is never an ancestor of ``target_ref``
+       in the first place) -- so widening it to "ancestor implies safe"
+       would silently readmit the row4 false-positive for the OTHER
+       reason ancestor-is-true can hold (case 2 above).
+    2. ``head_sha`` is NOT an ancestor at all: our integration model is
+       cherry-pick onto trunk, which mints a brand new sha for identical
+       content -- so sha ancestry alone reported every fully-integrated
+       lane as "not yet merged" here: a DESIGNATION (the sha never being
+       an ancestor), never the PROPERTY under test (whether the work is
+       actually there). Fixed by delegating to
+       ``content_unmatched_commits``, which judges by CONTENT
+       (patch-id, then blob-content) instead.
+
+    A git failure on either branch degrades SAFE (refuse cleanup), the
+    conservative direction this function has always taken -- deleting a
+    live worktree is data loss, leaving one is a cosmetic loose end.
+
+    Pure read (git + Python only, target-machine agnostic). Outside
+    ``git_text``'s ``check=True`` seam for the same reason ``is_ancestor``
+    is: "not merged" is a legitimate answer, never an error.
+    """
+    if is_ancestor(repo, head_sha, target_ref):
+        return _is_genuine_ancestor_merge(repo, head_sha, target_ref)
+    unmatched = content_unmatched_commits(repo, head_sha, target_ref)
+    if unmatched is None:
+        return False
+    return not unmatched

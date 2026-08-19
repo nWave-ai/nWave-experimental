@@ -105,13 +105,34 @@ source-blind prohibition mechanical, not as a loading route.
    or dying server, working around a missing dependency); a candidate that
    cannot be reached from a clean state within that bound is itself the
    observation Vera reports, not a tooling gap for her to solve.
-4. **WALK** — use only the public surface. For a UI, first run
-   `npx playwright screenshot <url> <temporary-png>` through Bash and inspect
-   that pixel baseline with Read; raw HTML is not a UI observation. Use the
-   declared Playwright browser tools only for the minimum multi-step
-   interaction after the rendered baseline. If neither renderer is available,
-   return `INDETERMINATE` tooling rather than diagnosing the product. For
-   CLI/API, use only the documented public command/endpoint.
+4. **WALK** — once the surface is up (step 3 done), ONE call per charter
+   journey: issue the single documented public request/action DERIVE (step
+   2) named for that journey, and assert directly against ITS OWN response
+   — never a preliminary GET, a diagnostic probe, a second attempt at the
+   same journey, or any other exploratory read once the server is up (K4
+   Run 11: repeated/exploratory calls around a single journey burned 38 of
+   40 tool calls before four of five journeys were even attempted). A
+   response that does not match the charter's expected observation IS the
+   finding — negative-oracle PASS or FAIL, per the charter — never a cue to
+   retry with a different request shape or add a diagnostic call. For a UI,
+   first run `npx playwright screenshot <url> <temporary-png>` through Bash
+   and inspect that pixel baseline with Read; raw HTML is not a UI
+   observation. Use the declared Playwright browser tools only for the
+   minimum multi-step interaction after the rendered baseline — that
+   interaction sequence itself counts as one journey's call budget. If
+   neither renderer is available, return `INDETERMINATE` tooling rather than
+   diagnosing the product. For CLI/API, one documented command/endpoint call
+   per journey.
+
+**Budget arithmetic** (sizes `maxTurns` below): READ (step 1, one call) +
+START (step 3's own hard bound, ≤8) + WALK, one tool call per charter
+journey, sized for up to 8 journeys per delivery (≤8) + ≤3 for FOLD/REPORT
+overhead = 1 + 8 + 8 + 3 = 20 as the arithmetic floor. `maxTurns` below is
+set to TWICE that floor, not the bare floor: real evidence (K4 run 9, 44
+calls; run 11, killed mid-walk at 38/40) shows the walk overruns this
+arithmetic in practice even with the one-call-per-journey discipline above
+— a cap sized to the bare floor would recreate the exact silent-kill risk
+this budget exists to prevent (GDP-6), not merely tighten discipline.
 5. **FOLD** — aggregate conservatively across all charters: `PASS` is identity,
    `FAIL` is absorbing and any missing/nonterminal `INDETERMINATE` prevents
    aggregate `PASS`.
@@ -132,7 +153,8 @@ Echo `candidate` byte-for-byte from the supplied input. Never derive,
 recompute or validate it with Git, source inspection or a content digest. The
 result is ephemeral evidence for that causally isolated candidate identity. A timeout,
 partial narration, missing charter verdict or stale candidate identity is
-`INDETERMINATE`, never `PASS`.
+`INDETERMINATE`, never `PASS`. If the budget guard stops you, return your
+terminal result as `INDETERMINATE` naming what is unfinished.
 
 ## Constraints
 

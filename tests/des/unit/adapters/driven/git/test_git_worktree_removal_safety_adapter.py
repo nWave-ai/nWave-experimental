@@ -112,7 +112,14 @@ def test_real_repo_proper_ancestor_with_zero_commits_ahead_is_indeterminate(
     the caller counted it as "1 commit(s)" -- a number nobody measured
     (`git log --oneline master..lane` on this exact fixture returns nothing).
     The fix must report `Indeterminate` naming the real uncertainty, never a
-    non-empty tuple."""
+    non-empty tuple.
+
+    UNCHANGED by the content-not-sha integration-check fix (K4 matrix):
+    that fix only ever applies when `head_sha` is NOT an ancestor of
+    `target_branch` at all (the cherry-pick case) -- `lane` here IS an
+    ancestor, so this row4-incident protection still gates it exactly as
+    before.
+    """
     repo = tmp_path / "repo"
     _init_repo(repo)
     wt = tmp_path / "wt"
@@ -210,3 +217,74 @@ def test_real_repo_uncommitted_change_is_dirty_even_when_branch_is_merged(
     adapter = GitWorktreeRemovalSafetyAdapter()
     assert adapter.has_dirty_state(repo, wt) is True
     assert adapter.has_unmerged_commits(repo, wt, "master") == ()
+
+
+def test_real_repo_cherry_picked_lane_commit_reports_integrated(
+    tmp_path: Path,
+) -> None:
+    """K4 matrix: our whole integration model is cherry-pick onto trunk, so
+    every clean, fully integrated lane's own commits carry a BRAND NEW sha
+    on trunk -- sha ancestry alone (`is_ancestor`) is FALSE for every one
+    of them, wrongly refusing a lane that has nothing left unintegrated.
+    `has_unmerged_commits` must judge by CONTENT (`git cherry`'s own
+    patch-id comparison) and report the lane as fully integrated (empty
+    tuple), not merely "not an ancestor"."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    wt = tmp_path / "wt"
+    _git(repo, "worktree", "add", "-b", "lane", str(wt), "HEAD")
+
+    (wt / "feature.txt").write_text("lane work\n", encoding="utf-8")
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "add feature (unique content)")
+    lane_sha = _git(wt, "rev-parse", "HEAD").strip()
+
+    # Trunk advances FIRST, on unrelated work -- guarantees the cherry-pick
+    # below lands on a DIFFERENT parent than `lane`'s own commit had, so
+    # the resulting commit object is guaranteed a genuinely different sha
+    # (never relying on same-second timestamp coincidence for that).
+    (repo / "trunk-only.txt").write_text("trunk work\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "unrelated trunk work")
+
+    # Integrate the SAME content onto trunk via cherry-pick -- a brand new
+    # sha for identical content, never an ancestor of `lane`'s commit or
+    # vice versa.
+    _git(repo, "cherry-pick", lane_sha)
+    trunk_sha = _git(repo, "rev-parse", "HEAD").strip()
+    assert trunk_sha != lane_sha, "test setup invalid: cherry-pick must mint a new sha"
+
+    adapter = GitWorktreeRemovalSafetyAdapter()
+    result = adapter.has_unmerged_commits(repo, wt, "master")
+
+    assert result == (), (
+        f"a cherry-picked lane commit must read as integrated by content, "
+        f"got {result!r}"
+    )
+
+
+def test_real_repo_truly_unique_commit_is_still_refused(tmp_path: Path) -> None:
+    """The negative control for the fix above: a lane commit that was
+    NEVER integrated anywhere on trunk -- by sha or by content -- must
+    still be named unmerged, proving the content check genuinely
+    discriminates rather than passing unconditionally."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    wt = tmp_path / "wt"
+    _git(repo, "worktree", "add", "-b", "lane", str(wt), "HEAD")
+
+    (wt / "unintegrated.txt").write_text("never landed anywhere\n", encoding="utf-8")
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "truly unique lane commit")
+
+    # Trunk advances via UNRELATED work -- never touching the lane's content.
+    (repo / "trunk-only.txt").write_text("trunk work\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "unrelated trunk work")
+
+    adapter = GitWorktreeRemovalSafetyAdapter()
+    result = adapter.has_unmerged_commits(repo, wt, "master")
+
+    assert result != ()
+    assert not isinstance(result, Indeterminate)
+    assert any("truly unique lane commit" in subject for subject in result)

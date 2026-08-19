@@ -408,6 +408,26 @@ def _detach_step() -> list[str]:
     return ["git", "checkout", "--detach", _SUT_PINNED_REV]
 
 
+def _git_identity_steps(arm_name: str) -> list[list[str]]:
+    """Repo-local git commit identity for this arm -- deterministic,
+    neutral, never the operator's own identity.
+
+    Run 10 (K4 matrix): the delivered feature staged cleanly and `git
+    commit` failed `fatal: empty ident name` -- the arm env's isolated
+    HOME/config carries no `user.name`/`user.email`. The crafter
+    correctly refused to set git config itself, then correctly had its
+    retry (`git -c user.name=<the OPERATOR's real name> ...`) blocked by
+    Auto-root's own Bash allowlist -- exactly the IP/authorship leak this
+    repo-LOCAL config forecloses at the source. `git config` with no
+    `--global` writes ONLY this workspace's `.git/config`, never the
+    operator's real identity anywhere.
+    """
+    return [
+        ["git", "config", "user.name", f"K4 {arm_name} arm"],
+        ["git", "config", "user.email", f"k4-{arm_name}@nwave.invalid"],
+    ]
+
+
 def nwave_setup_steps(venv: Path, auth_profile: Path) -> list[list[str]]:
     """The nWave arm's declared setup. `--yes` is load-bearing, see module doc."""
     cli = str(venv / "bin" / "nwave-ai")
@@ -424,6 +444,7 @@ def nwave_setup_steps(venv: Path, auth_profile: Path) -> list[list[str]]:
         # exists for.
         ["git", "clone", _SUT, "."],
         _detach_step(),
+        *_git_identity_steps("nwave"),
         pef.delivery_setup_step(),
         # Row 11 (K4 matrix): provisions `pef.DOC_NAME` -- the value
         # authority `nw-user-examiner` reads its `PublicStartRecipe` from
@@ -462,6 +483,7 @@ def control_setup_steps(auth_profile: Path) -> list[list[str]]:
     return [
         ["git", "clone", _SUT, "."],
         _detach_step(),
+        *_git_identity_steps("control"),
         pef.delivery_setup_step(),
         # Symmetric with the nWave arm's own step above, at the arm-
         # declared control port so the two fixtures never collide on one
@@ -1184,6 +1206,73 @@ def _write_route_walk_subagent_transcript(repo_root_path: Path) -> Path:
     return transcript_path
 
 
+#: Turn count for the budget-guard route-walk probe below -- deliberately
+#: far past ANY plausible declared `maxTurns - margin` (every checked-in
+#: nw-* role today declares 12-45) rather than the crafter's OWN exact
+#: value, so this step never needs updating if that spec value changes.
+_ROUTE_WALK_BUDGET_PROBE_TURN_COUNT = 100
+
+
+def _write_route_walk_budget_exhausted_subagent_transcript(
+    repo_root_path: Path,
+) -> tuple[Path, str]:
+    """Run 10 correction: the budget guard (`pre_tool_use_handler.
+    _evaluate_subagent_budget_exhaustion`) was TWICE proven dead in real
+    runs (run 9: `agent_type` absent from the live envelope; run 10: a real
+    crafter's `transcript_path` named the PARENT session's own transcript,
+    not her dedicated one) while every unit test for it kept passing --
+    each fix closed the specific gap a UNIT test could show, but neither
+    ever ran through the REAL installed hook subprocess the way Claude Code
+    itself invokes it. This step closes that gap: it writes a `subagents/
+    agent-<id>.jsonl` transcript carrying `_ROUTE_WALK_BUDGET_PROBE_TURN_
+    COUNT` real `tool_use` blocks (far past any plausible declared budget)
+    with a co-located `.meta.json` sidecar, and the ROOT-shaped sibling
+    `transcript_path` `route_walk_steps` below actually sends -- exercising
+    BOTH the sidecar identity fallback AND the run-10 transcript-path
+    derivation (via `agent_id`) end-to-end, through the SAME
+    `_installed_hook_run` subprocess as every other route-walk step. A
+    route-walk that stays green after this ships without ever having
+    proven the budget guard fires live in the installed arm is exactly the
+    silent-regression class runs 9 and 10 both hit."""
+    agent_id = "route-walk-budget-probe-crafter"
+    session_dir = repo_root_path / "route-walk-budget-probe-session"
+    subagents_dir = session_dir / "subagents"
+    subagents_dir.mkdir(parents=True, exist_ok=True)
+    transcript_path = subagents_dir / f"agent-{agent_id}.jsonl"
+    turn = json.dumps(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}
+                ]
+            },
+        }
+    )
+    transcript_path.write_text(
+        "\n".join([turn] * _ROUTE_WALK_BUDGET_PROBE_TURN_COUNT) + "\n",
+        encoding="utf-8",
+    )
+    meta_path = subagents_dir / f"agent-{agent_id}.meta.json"
+    meta_path.write_text(
+        json.dumps(
+            {
+                "agentType": "nw-software-crafter",
+                "description": "route-walk budget-guard probe crafter",
+                "toolUseId": f"toolu_{agent_id}",
+                "spawnDepth": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    # The ROOT-shaped sibling path a real subagent's OWN PreToolUse envelope
+    # was verified (run 10) to actually carry -- `resolve_subagent_own_
+    # transcript_path` must DERIVE `transcript_path` above from this plus
+    # `agent_id`, never receive it directly.
+    root_shaped_transcript_path = str(session_dir) + ".jsonl"
+    return transcript_path, root_shaped_transcript_path
+
+
 def _parse_producer_stdout(text: str) -> dict[str, str]:
     """Split one `des prepare-ordinary-request`/`des dispatch`-shaped
     stdout into its `KEY: value` lines, keyed by KEY, value kept RAW (JSON
@@ -1360,6 +1449,10 @@ def route_walk_steps(
     subagent_transcript_path = str(
         _write_route_walk_subagent_transcript(repo_root_path)
     )
+    (
+        _budget_probe_own_transcript_path,
+        budget_probe_root_shaped_transcript_path,
+    ) = _write_route_walk_budget_exhausted_subagent_transcript(repo_root_path)
 
     # --- root-Bash: the heredoc shape, hook-level -- independent of whether
     # the CLI chain below actually executes cleanly, so it runs first and
@@ -1718,6 +1811,29 @@ def route_walk_steps(
             },
         )
     )
+    steps.append(
+        _hook_step(
+            "subagent-budget-guard-fires-live",
+            "pre_tool_use_handler._evaluate_subagent_budget_exhaustion: a real "
+            "nw-software-crafter transcript far past its declared maxTurns is "
+            "denied through the INSTALLED hook subprocess -- proves the budget "
+            "guard is actually wired in this arm, not merely unit-tested in "
+            "isolation (runs 9 and 10 both shipped it silently dead in a real "
+            "run while every unit test stayed green). `transcript_path` is the "
+            "ROOT-shaped sibling path a real subagent's own PreToolUse "
+            "envelope was verified (run 10) to carry, plus `agent_id` -- "
+            "exercising the transcript-path derivation this route-walk step "
+            "exists to keep proven, not the direct-match shortcut.",
+            expect_allow=False,
+            hook_run=hook_run,
+            payload={
+                "tool_name": "Bash",
+                "tool_input": {"command": "git status"},
+                "transcript_path": budget_probe_root_shaped_transcript_path,
+                "agent_id": "route-walk-budget-probe-crafter",
+            },
+        )
+    )
 
     status = "proven" if all(step["passed"] for step in steps) else "blocked"
     return {"status": status, "steps": steps}
@@ -1904,11 +2020,18 @@ def probe_examiner_start_recipe(workspace: Path, *, port: int) -> list[str]:
     to the project's own test suite. This canary reproduces that EXACT
     call-boundary shape: the block runs to completion in ONE
     `subprocess.run` (its own bounded readiness wait already inside it),
-    then a SEPARATE, later `subprocess.run` probes the server -- proving
-    it survives the boundary, not merely that it started. A non-empty
-    return here is a campaign INDETERMINATE (the harness itself could
-    not prove the recipe executable, or never provisioned one at all),
-    never a finding against Vera, who never got the chance to try.
+    then a SEPARATE, later `subprocess.run` probes the server with the
+    documented key -- proving it survives the boundary AND genuinely
+    authenticates, not merely that it started.
+
+    Run 11: the caller (`main`) now treats a non-empty return as a HARD
+    refusal, not a campaign INDETERMINATE -- a documented key that
+    cannot authenticate against the real running server is not a
+    readiness gap Vera could work around; it is the SAME structural
+    defect that cost 3 examiner dispatches + 3 troubleshooter
+    diagnostics rediscovering it independently. This function itself
+    still only ever REPORTS problems (never mutates the workspace); the
+    severity decision belongs to the caller.
     """
     api_key = pef._existing_api_key(workspace)
     if api_key is None:
@@ -2022,6 +2145,42 @@ def probe_examiner_start_recipe(workspace: Path, *, port: int) -> list[str]:
             timeout=10,
         )
     return problems
+
+
+def probe_git_identity(workspace: Path, env: dict[str, str]) -> list[str]:
+    """Prove a commit is possible in this arm workspace, under the arm's
+    OWN rendered env, before any model call.
+
+    Run 10 (K4 matrix): a crafter staged the whole delivered feature
+    cleanly and `git commit` failed `fatal: empty ident name` -- the arm
+    env's isolated HOME/config carries no `user.name`/`user.email` for
+    git to fall back on. `git var GIT_COMMITTER_IDENT` is the SAME
+    identity check `git commit` itself performs before touching the
+    object store -- read-only, no branch or commit created here, so this
+    canary can never itself mutate the workspace it is proving.
+    """
+    try:
+        done = subprocess.run(
+            ["git", "var", "GIT_COMMITTER_IDENT"],
+            cwd=workspace,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return [
+            "git var GIT_COMMITTER_IDENT could not even run under the "
+            f"arm's rendered env: {type(exc).__name__}: {exc}"
+        ]
+    if done.returncode != 0:
+        return [
+            "the arm workspace has no usable git commit identity under "
+            "the arm's rendered env: "
+            f"{(done.stderr or done.stdout).strip()[-400:]}"
+        ]
+    return []
 
 
 def probe_engagement(
@@ -2271,24 +2430,75 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    # Row 11 (K4 matrix), Run 8 evidence: the examiner's server-start +
+    # Row 11 (K4 matrix), Run 8/9 evidence: the examiner's server-start +
     # HTTP-probe MECHANISM proven under this arm's rendered env, still
-    # with NO model call, before arms.json is written. A non-empty result
-    # is a campaign INDETERMINATE recorded into `spec["sandbox"]` below --
-    # never a hard refusal: the crafter side can still be measured even
-    # when the harness cannot prove the examiner's own recipe executable.
+    # with NO model call, before arms.json is written.
+    #
+    # Run 11: upgraded from a campaign INDETERMINATE to a hard refusal.
+    # `probe_examiner_start_recipe` authenticates against the REAL
+    # running Django server with the REAL seeded key -- a failure here
+    # means the documented key CANNOT authenticate ANY request, the
+    # exact structural defect that burned 3 examiner dispatches + 3
+    # troubleshooter diagnostics (~25 minutes) discovering the same
+    # broken fixture three separate ways before finalize refused to
+    # commit anyway. Softly proceeding into a campaign whose EXAMINE
+    # stage is guaranteed to fail this same way is strictly worse than
+    # refusing before a single (expensive) delivery/examiner turn is
+    # spent -- unlike a merely-unprovisioned recipe (row 11's original
+    # softer case), a real auth failure here is not "not yet ready", it
+    # is "structurally cannot work".
     start_recipe_problems = probe_examiner_start_recipe(
         _probe_workspace(args.root), port=pef.NWAVE_PORT
     )
     if start_recipe_problems:
-        start_recipe_status: dict[str, object] = {
-            "status": "indeterminate",
-            "problems": start_recipe_problems,
-        }
-        print("start recipe: INDETERMINATE -- see arms.json sandbox.start_recipe")
-    else:
-        start_recipe_status = {"status": "proven"}
-        print("start recipe: proven under the arm's rendered env")
+        sys.stderr.write(
+            "WHAT: the examiner's start recipe did not authenticate "
+            "against the real running server under the arm's rendered "
+            "env.\n"
+            + "".join(f"      - {p}\n" for p in start_recipe_problems)
+            + "WHY:  a documented key that cannot authenticate ANY "
+            "request is not a readiness gap the examiner can work "
+            "around -- every EXAMINE-stage dispatch in a real campaign "
+            "would fail the same way, for the same reason, discovered "
+            "independently and expensively each time (Run 11: 3 "
+            "examiner dispatches + 3 troubleshooter diagnostics, ~25 "
+            "minutes, before finalize refused to commit anyway).\n"
+            f"HOW:  inspect {_probe_workspace(args.root)}, reproduce "
+            "`pef.start_and_wait_block`'s own printed block by hand, "
+            "and the seed step's own self-verification "
+            "(`project.compare_api_key(raw)` immediately after "
+            "`refresh_from_db()`) before rerunning this preflight.\n"
+        )
+        return 1
+    start_recipe_status: dict[str, object] = {"status": "proven"}
+    print("start recipe: proven under the arm's rendered env")
+
+    # Row 10 (K4 matrix): a crafter commit died `fatal: empty ident name`
+    # -- no model call spent (`probe_git_identity`, `git var
+    # GIT_COMMITTER_IDENT`), and a hard refusal, not an INDETERMINATE:
+    # unlike the examiner's own recipe, EVERY delivery needs a working
+    # commit identity, so a campaign with none would measure nothing.
+    identity_problems = probe_git_identity(
+        _probe_workspace(args.root), _rendered_arm_env(_probe_workspace(args.root))
+    )
+    if identity_problems:
+        sys.stderr.write(
+            "WHAT: the arm workspace has no usable git commit identity "
+            "under the arm's rendered env.\n"
+            + "".join(f"      - {p}\n" for p in identity_problems)
+            + "WHY:  the arm env's isolated HOME/config carries no "
+            "user.name/user.email, and `git commit` fails `fatal: empty "
+            "ident name` mid-delivery -- after the crafter has already "
+            "done the real work, and the crafter can never fix this "
+            "itself without either a forbidden global write or injecting "
+            "the operator's own real identity (an IP/authorship leak).\n"
+            "HOW:  fix `_git_identity_steps`/`nwave_setup_steps`/"
+            "`control_setup_steps` so the arm workspace carries a "
+            "repo-local `user.name`/`user.email` before this preflight "
+            "runs, then rerun it before writing arms.json.\n"
+        )
+        return 1
+    print("git identity: proven under the arm's rendered env")
 
     contract_path = args.contract
     contract_source = "--contract"
@@ -2378,6 +2588,9 @@ def main(argv: list[str] | None = None) -> int:
         "sandbox": {
             "network_allowed_domains": list(k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS),
             "start_recipe": start_recipe_status,
+            # Row 10: only ever reaches this write as "proven" -- a
+            # failure returns 1 above, before arms.json exists at all.
+            "git_identity": "proven",
         },
         "artifact": {
             "kind": "wheel",

@@ -42,6 +42,7 @@ from des.adapters.drivers.hooks.root_activation_context import (
     build_root_mode_select_context,
     hook_input_has_agent_identity,
     resolve_subagent_agent_type,
+    resolve_subagent_own_transcript_path,
     root_mode_handoff_block_reason,
 )
 from des.application.commit_attribution_service import CommitAttributionService
@@ -538,19 +539,25 @@ def _evaluate_subagent_budget_exhaustion(
     already shows `maxTurns - _SUBAGENT_BUDGET_MARGIN` or more assistant
     turns. Applies to every tool call uniformly -- there is no "terminal"
     tool call to exempt; the terminal result is plain text, never a tool
-    call, so this guard denying every tool call is exactly what forces it."""
+    call, so this guard denying every tool call is exactly what forces it.
+
+    Run 10 correction: turn-counting reads the subagent's OWN transcript
+    (`resolve_subagent_own_transcript_path`), never the raw envelope field
+    on faith -- a real crafter's `transcript_path` was verified to name the
+    PARENT/root session log, not her own file; counting tool_use blocks
+    there would count ROOT's activity, not hers."""
     agent_type = resolve_subagent_agent_type(hook_input)
     if agent_type is None:
         return None
-    transcript_path = hook_input.get("transcript_path")
-    if not isinstance(transcript_path, str) or not transcript_path:
+    own_transcript_path = resolve_subagent_own_transcript_path(hook_input)
+    if own_transcript_path is None:
         return None
     cwd = hook_input.get("cwd")
     repo_root = Path(cwd) if isinstance(cwd, str) and cwd else Path.cwd()
     max_turns = resolve_declared_max_turns(agent_type, repo_root=repo_root)
     if max_turns is None:
         return None
-    turn_count = _subagent_transcript_turn_count(transcript_path)
+    turn_count = _subagent_transcript_turn_count(own_transcript_path)
     if turn_count is None:
         return None
     if turn_count < max_turns - _SUBAGENT_BUDGET_MARGIN:

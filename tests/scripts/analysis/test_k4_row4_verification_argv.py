@@ -83,6 +83,21 @@ def _prepare_main_run(tmp_path, monkeypatch):
     monkeypatch.setattr(
         preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
     )
+    # `probe_examiner_start_recipe` (row 11) now hard-refuses `main()`
+    # (Run 11) unless the arm workspace carries a REAL rendered examiner
+    # recipe that genuinely authenticates -- orthogonal to what this
+    # file's own tests exercise (row 4's verification-scope wiring), so
+    # stubbed the same way `route_walk`/`probe_engagement` are above.
+    monkeypatch.setattr(preflight, "probe_examiner_start_recipe", lambda *a, **k: [])
+    # `probe_git_identity` (row 10) ALSO now hard-refuses `main()` unless
+    # the arm workspace carries a repo-local git identity -- set for real
+    # by `_git_identity_steps`, one of the setup steps this stub skips.
+    # It runs AFTER those steps in a real run, so passes for real; here,
+    # with NO real setup, it must be stubbed the same way. Locally this
+    # was masked by the box's own global git identity leaking through
+    # (`git var GIT_COMMITTER_IDENT` resolves from HOME when no repo-local
+    # config exists) -- CI runners carry no such ambient identity.
+    monkeypatch.setattr(preflight, "probe_git_identity", lambda *a, **k: [])
 
     root = tmp_path / "root"
     task_file = tmp_path / "task.md"
@@ -380,10 +395,50 @@ def test_main_records_sandbox_facts_into_arms_json(tmp_path, monkeypatch):
     assert sandbox["network_allowed_domains"] == list(
         k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS
     )
-    # This helper's stubbed `probe_engagement` only `mkdir`s the probe
-    # workspace (see `_prepare_main_run`'s own docstring) -- no real
-    # clone/fixture -- so the honest outcome here is INDETERMINATE, not a
-    # false "proven"; `test_k4_row11_start_recipe.py` covers the genuine
-    # proven path against a real rendered recipe.
-    assert sandbox["start_recipe"]["status"] == "indeterminate"
-    assert sandbox["start_recipe"]["problems"]
+    # Run 11: `probe_examiner_start_recipe` now HARD-refuses `main()`
+    # entirely on a genuine failure (see `test_k4_row11_start_recipe.py`
+    # for that path), so `_prepare_main_run` stubs it to `[]` -- the same
+    # treatment `route_walk`/`probe_engagement` already get here, since
+    # this file exercises row-4 verification-scope wiring, not row 11.
+    assert sandbox["start_recipe"]["status"] == "proven"
+
+
+def test_main_hard_refuses_when_the_start_recipe_does_not_authenticate(
+    tmp_path, monkeypatch
+):
+    """Run 11 (K4 matrix): upgraded from a campaign INDETERMINATE to a
+    HARD refusal -- a documented key that cannot authenticate ANY
+    request cost 3 examiner dispatches + 3 troubleshooter diagnostics
+    (~25 minutes) rediscovering the same broken fixture three separate
+    ways before finalize refused to commit anyway. `main()` must refuse
+    LOUD (WHAT/WHY/HOW, nonzero exit, arms.json never written) rather
+    than let a campaign proceed into a guaranteed-broken EXAMINE stage.
+    """
+    root, checkout, task_file = _prepare_main_run(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        preflight,
+        "probe_examiner_start_recipe",
+        lambda *a, **k: ["the recipe's own probe failed: wrong api key"],
+    )
+
+    wheel = tmp_path / "fake.whl"
+    wheel.write_bytes(b"not a real wheel")
+
+    code = preflight.main(
+        [
+            "--root",
+            str(root),
+            "--checkout",
+            str(checkout),
+            "--task-file",
+            str(task_file),
+            "--wheel",
+            str(wheel),
+        ]
+    )
+
+    assert code != 0
+    assert not (root / "arms.json").exists(), (
+        "a campaign whose examiner recipe cannot authenticate must never "
+        "reach arms.json"
+    )

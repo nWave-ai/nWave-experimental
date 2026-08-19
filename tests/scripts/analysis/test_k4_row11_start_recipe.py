@@ -118,7 +118,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 argv = sys.argv[1:]
 if len(argv) >= 3 and argv[0] == "manage.py" and argv[1] == "runserver":
-    host, _, port_s = argv[2].partition(":")
+    host, _, port_s = argv[-1].partition(":")
     port = int(port_s)
     expected_api_key = {api_key!r}
 
@@ -147,6 +147,77 @@ sys.exit(0)
     venv_python.chmod(0o755)
 
 
+def _install_fake_runserver_venv_python_keyed_on_db_content(
+    workspace, *, api_key: str, required_db_content: str
+) -> None:
+    """Like `_install_fake_runserver_venv_python`, but additionally
+    requires the WORKING db file (`pef.DB_FILE_NAME`) to hold
+    `required_db_content` at request time -- standing in for the real
+    subject's actual defect shape (Run 11: a corrupted API key ROW
+    inside the working sqlite file, not a corrupted config value). Lets
+    a test prove the restore-precedes-serve ordering the same way the
+    real bug was proven: a GET must observe whatever
+    `start_and_wait_block` put in the working db file immediately
+    before starting the server, never whatever an earlier dispatch left
+    there."""
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    venv_python = workspace / pef.VENV_PYTHON
+    venv_python.parent.mkdir(parents=True, exist_ok=True)
+    db_path = workspace / pef.DB_FILE_NAME
+    script = f"""#!/usr/bin/env python3
+import sys
+from pathlib import Path
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+argv = sys.argv[1:]
+if len(argv) >= 3 and argv[0] == "manage.py" and argv[1] == "runserver":
+    host, _, port_s = argv[-1].partition(":")
+    port = int(port_s)
+    expected_api_key = {api_key!r}
+    required_db_content = {required_db_content!r}
+    db_path = Path({str(db_path)!r})
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            db_ok = (
+                db_path.exists()
+                and db_path.read_text(encoding="utf-8") == required_db_content
+            )
+            if self.path == "/api/v3/checks/" and (
+                self.headers.get("X-Api-Key") == expected_api_key
+            ) and db_ok:
+                body = b'{{"checks": []}}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.send_response(403)
+                self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    ThreadingHTTPServer((host, port), Handler).serve_forever()
+sys.exit(0)
+"""
+    venv_python.write_text(script, encoding="utf-8")
+    venv_python.chmod(0o755)
+
+
+def _install_pristine_db_snapshot(workspace) -> None:
+    """The pristine-DB restore is a precondition `start_and_wait_block`
+    now enforces before ANY server start (see
+    `test_k4_examiner_fixture.py`'s
+    `TestExaminerWalksAPristineSeededDatabase`); these fake-server tests
+    stand in for `manage.py runserver`, not for the real seed/migrate
+    step, so they provision the snapshot directly -- content is
+    irrelevant here, only its PRESENCE is under test by this file."""
+    (workspace / "hc.sqlite.pristine").write_text("fake-pristine", encoding="utf-8")
+
+
 class TestExaminerStartRecipeProvenUnderTheArmEnv:
     """Run 8 (K4 matrix): the examiner burned 40 calls trying to stand up
     a Django dev server and never got evidence. `preflight.
@@ -169,6 +240,7 @@ class TestExaminerStartRecipeProvenUnderTheArmEnv:
         (workspace / pef.DOC_NAME).write_text(
             pef._render(port, api_key), encoding="utf-8"
         )
+        _install_pristine_db_snapshot(workspace)
 
         problems = preflight.probe_examiner_start_recipe(workspace, port=port)
 
@@ -216,6 +288,7 @@ class TestExaminerStartRecipeProvenUnderTheArmEnv:
         (workspace / pef.DOC_NAME).write_text(
             pef._render(port, api_key), encoding="utf-8"
         )
+        _install_pristine_db_snapshot(workspace)
 
         problems = preflight.probe_examiner_start_recipe(workspace, port=port)
 
@@ -275,6 +348,7 @@ class TestExaminerStartRecipeProvenUnderTheArmEnv:
         (workspace / pef.DOC_NAME).write_text(
             pef._render(port, api_key), encoding="utf-8"
         )
+        _install_pristine_db_snapshot(workspace)
         block = pef.start_and_wait_block(port, api_key)
 
         first = subprocess.run(
@@ -303,3 +377,114 @@ class TestExaminerStartRecipeProvenUnderTheArmEnv:
             )
         finally:
             subprocess.run(["kill", pid], capture_output=True)
+
+    def test_a_corrupted_working_db_is_restored_before_the_first_authenticated_get(
+        self, tmp_path
+    ):
+        """Run 11 (next incident, same matrix row): an earlier dispatch
+        (crafter/troubleshooter/tests) may mutate the working db between
+        setup and the examiner's turn -- exactly what an ad-hoc
+        troubleshooter script did to a real Project's api_key row,
+        undetected across three examiner dispatches. The examiner must
+        never observe that mutation: `start_and_wait_block` restores the
+        working db from the pristine snapshot BEFORE the server starts,
+        so the FIRST authenticated GET a fresh, SEPARATE subprocess call
+        makes must already be 200 -- proving restore precedes serve, not
+        merely that a restore eventually happens somewhere."""
+        import re
+
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        port = pef.free_port()
+        api_key = "k4-row11-pristine-9c31"
+        pristine_content = "pristine-seeded-state"
+
+        _install_fake_runserver_venv_python_keyed_on_db_content(
+            workspace, api_key=api_key, required_db_content=pristine_content
+        )
+        (workspace / pef.DOC_NAME).write_text(
+            pef._render(port, api_key), encoding="utf-8"
+        )
+        (workspace / pef.DB_PRISTINE_SNAPSHOT_NAME).write_text(
+            pristine_content, encoding="utf-8"
+        )
+        # The corruption: a later dispatch overwrote the WORKING db with
+        # something else entirely, harmlessly, per the real incident.
+        (workspace / pef.DB_FILE_NAME).write_text(
+            "corrupted-by-an-unrelated-troubleshooter-dispatch", encoding="utf-8"
+        )
+
+        block = pef.start_and_wait_block(port, api_key)
+        started = subprocess.run(
+            ["bash", "-c", block],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=40,
+        )
+        assert started.returncode == 0, started.stderr or started.stdout
+        assert (workspace / pef.DB_FILE_NAME).read_text(
+            encoding="utf-8"
+        ) == pristine_content, (
+            "the working db must be byte-for-byte restored from the "
+            "pristine snapshot before the server was allowed to start"
+        )
+
+        pid_match = re.search(r"Server PID: (\d+)", started.stdout)
+        assert pid_match, f"no PID printed: {started.stdout!r}"
+        pid = pid_match.group(1)
+        try:
+            probe = subprocess.run(
+                pef.integration_probe_argv(f"http://127.0.0.1:{port}", api_key),
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            assert probe.returncode == 0, (
+                "the examiner's FIRST authenticated GET, from a SEPARATE "
+                "subprocess call, must already succeed -- the working db "
+                "was restored from the pristine snapshot before serving: "
+                f"{probe.stdout!r} {probe.stderr!r}"
+            )
+        finally:
+            subprocess.run(["kill", pid], capture_output=True)
+
+    def test_a_missing_pristine_snapshot_refuses_loud_instead_of_serving_the_working_db_as_is(
+        self, tmp_path
+    ):
+        """Negative control: without a pristine snapshot to restore from,
+        the block must refuse LOUD -- never silently start against
+        whatever the working db currently holds. Silently serving is
+        exactly how the real corruption incident went undetected across
+        three examiner dispatches."""
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        port = pef.free_port()
+        api_key = "k4-row11-missing-snapshot-9c31"
+        _install_fake_runserver_venv_python(workspace, api_key=api_key)
+        (workspace / pef.DOC_NAME).write_text(
+            pef._render(port, api_key), encoding="utf-8"
+        )
+        # Deliberately NO pristine snapshot installed.
+
+        block = pef.start_and_wait_block(port, api_key)
+        result = subprocess.run(
+            ["bash", "-c", block],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        assert result.returncode != 0, (
+            "a missing pristine snapshot must refuse LOUD, never silently "
+            "start the server against whatever the working db holds"
+        )
+        assert pef.DB_PRISTINE_SNAPSHOT_NAME in (result.stderr or ""), (
+            "the refusal must name the missing snapshot file"
+        )

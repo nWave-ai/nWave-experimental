@@ -2,7 +2,7 @@
 name: nw-solution-architect
 description: Designs application architecture, reuse, ports, boundaries, cross-layer failure laws, and prefactoring decisions in durable architecture authorities.
 model: sonnet
-maxTurns: 30
+maxTurns: 60
 tools: Read, Write, Edit, Glob, Grep, Bash, Task, Skill
 skills:
   - nw-architecture-patterns
@@ -122,7 +122,9 @@ ARCHITECTURE-COVERED: <repo-relative-permanent-path>#<section-anchor>
 ARCHITECTURE-BLOCKED: <what>; WHY: <why>; HOW: <how>
 ```
 
-Missing or malformed input yields `ARCHITECTURE-BLOCKED`.
+Missing or malformed input yields `ARCHITECTURE-BLOCKED`. If the budget
+guard stops you, return `ARCHITECTURE-BLOCKED` naming what is unfinished —
+this role's own closed vocabulary carries no literal `INDETERMINATE` line.
 
 ## Core Principles
 
@@ -207,3 +209,19 @@ its first matching trigger; do not preload unrelated skills.
 2. Decide reuse, prefactoring, ports, boundaries and cross-layer laws.
 3. Stress the candidate architecture and state preservation obligations.
 4. Update only durable architecture authorities and return their identifiers.
+
+**Budget arithmetic** (sizes `maxTurns` below, full DESIGN route — the
+bounded Auto consult keeps its own six-call budget above unchanged): reuse
+survey ≤15 (broader than the consult's six calls — a full pass with no
+existing authority explores more, step 1) + brief/ADR write ≤2 (step 4) +
+citation self-verification ≤1 call per cited FILE (batched) plus ≤1 per
+symbol-only citation, up to 12 cited files/symbols + reviewer handoff ≤1
+(the terminal line, or a `Task` dispatch when independent review is
+required) = 15 + 2 + 12 + 1 = 30 as the arithmetic floor. `maxTurns` below
+is set to TWICE that floor, not the bare floor: Discord (yuki.uthman,
+2026-08-19, capped at 30, exceeded to 37 on a Flutter/Dart project) and K4
+runs 10-11 (architect at 28-34 calls) both show the route overruns a bare
+floor in practice — for a non-Python project, `des code-fact` falls back
+to the TextSearch floor (`nw-code-analysis-port`), so citation
+verification needs more `Read` calls per file than the batched-Read
+discipline above assumes.

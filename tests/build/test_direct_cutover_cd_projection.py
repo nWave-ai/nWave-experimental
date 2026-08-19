@@ -210,6 +210,62 @@ def test_examiner_bounds_start_reachability_before_indeterminate() -> None:
     assert "run the project's own test suite as a stand-in for observing it" in compact
 
 
+def test_examiner_walks_one_call_per_journey_with_stated_budget_arithmetic() -> None:
+    """K4 Run 11: Vera got the server up, verified POST create, then the
+    budget guard stopped her at 38/40 before four of five journeys were
+    even attempted -- repeated/exploratory calls around the one journey she
+    did drive burned the budget. WALK must be one call per journey, and the
+    agent must state the arithmetic sizing its own maxTurns."""
+    text = _text(EXAMINER)
+    compact = " ".join(text.split())
+
+    assert (
+        "once the surface is up (step 3 done), ONE call per charter journey" in compact
+    )
+    assert (
+        "never a preliminary GET, a diagnostic probe, a second attempt at "
+        "the same journey, or any other exploratory read once the server "
+        "is up" in compact
+    )
+    assert "K4 Run 11: repeated/exploratory calls around a single journey" in compact
+    assert (
+        "never a cue to retry with a different request shape or add a "
+        "diagnostic call" in compact
+    )
+    assert (
+        "**Budget arithmetic** (sizes `maxTurns` below): READ (step 1, one "
+        "call) +" in compact
+    )
+    assert "sized for up to 8 journeys per delivery (≤8)" in compact
+    assert "1 + 8 + 8 + 3 = 20 as the arithmetic floor" in compact
+    # K4 run 9 (44 calls) and run 11 (killed mid-walk at 38/40) both show
+    # the walk overruns the bare arithmetic floor in practice -- maxTurns
+    # is twice the floor, never the bare floor itself (GDP-6).
+    assert "maxTurns: 40" in text
+    assert (
+        "set to TWICE that floor, not the bare floor: real evidence (K4 "
+        "run 9, 44 calls; run 11, killed mid-walk at 38/40)" in compact
+    )
+    assert (
+        "a cap sized to the bare floor would recreate the exact "
+        "silent-kill risk this budget exists to prevent" in compact
+    )
+
+
+@pytest.mark.parametrize("path", (OO, FP, EXAMINER), ids=("oo", "fp", "examiner"))
+def test_guard_stop_returns_a_terminal_result(path: Path) -> None:
+    """The installed budget guard turns any overrun into a clean terminal
+    at N-2; the crafters and examiner must return their own literal
+    `INDETERMINATE` verdict naming what is unfinished, never a silent
+    kill a caller cannot distinguish from success (GDP-6)."""
+    compact = " ".join(_text(path).split())
+
+    assert (
+        "If the budget guard stops you, return your terminal result as "
+        "`INDETERMINATE` naming what is unfinished" in compact
+    )
+
+
 def test_deliver_refuses_nonterminal_crafter_completion() -> None:
     text = _text(DELIVER)
     compact = " ".join(text.split())

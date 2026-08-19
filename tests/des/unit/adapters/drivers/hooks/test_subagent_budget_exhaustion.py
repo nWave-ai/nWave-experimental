@@ -57,6 +57,33 @@ _META_SIDECAR_FIXTURE = (
     / "subagent_meta_sidecar_nw_user_examiner.json"
 )
 
+# nw-software-crafter's own checked-in spec declares `maxTurns: 45` -- the
+# real value run 10's threshold (N-2 = 43) is computed against.
+_CRAFTER_MAX_TURNS = 45
+
+# Structurally faithful, content-shortened copy of the run 10 evidence
+# transcript: agent-a9783006eb9c709dd.jsonl under
+# /tmp/nwave-k4-a9360df05/k4-root/.claude-k4/projects/**/subagents/ --
+# nw-software-crafter, 54 real tool calls (24 Bash/15 Read/11 Edit/4 Skill),
+# maxTurns 45, ZERO guard denials despite crossing the threshold at call 43
+# and making 10 further Bash calls after it. Same line-by-line entry-type
+# sequence as the real transcript; only text/thinking/tool-input payloads
+# are truncated.
+_RUN10_CRAFTER_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "run10_crafter_killed_transcript_trimmed.jsonl"
+)
+
+# Verbatim copy of run 10's REAL `subagents/agent-a9783006eb9c709dd.meta.json`
+# sidecar (nw-software-crafter, "Implement maintenance windows delivery
+# contract").
+_CRAFTER_META_SIDECAR_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "subagent_meta_sidecar_nw_software_crafter.json"
+)
+
 
 def _transcript_with_assistant_turns(tmp_path: Path, count: int) -> str:
     """`count` synthetic assistant turns, each carrying exactly ONE
@@ -445,6 +472,122 @@ class TestSubagentBudgetExhaustionWithoutALiveAgentTypeField:
                 "tool_name": "Bash",
                 "tool_input": {"command": "ls"},
                 "transcript_path": str(transcript),
+                "cwd": str(REPO_ROOT),
+            }
+        )
+        monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+        pre_tool_use_handler.handle_pre_tool_use()
+        out = capsys.readouterr().out.strip()
+        payload_out = json.loads(out) if out else None
+        if payload_out is not None and payload_out.get("decision") == "block":
+            assert "budget" not in payload_out.get("reason", "").lower()
+
+
+class TestSubagentBudgetExhaustionWithTranscriptPathNamingTheParentSession:
+    """Run 10 root cause: a real nw-software-crafter (maxTurns 45) made 54
+    real tool calls (24 Bash) with the guard denying NONE of them, even
+    after the run 9 fix (agent_type resolved via the transcript
+    meta-sidecar). Live repro against the real installed hook confirmed the
+    reason: her OWN PreToolUse `transcript_path` did not point at her
+    dedicated `subagents/agent-<id>.jsonl` file the way run 9's fix assumed
+    -- it named the PARENT/root session's own top-level `<session-id>.jsonl`
+    log instead (a real, different file). `resolve_subagent_agent_type`'s
+    sidecar lookup silently found nothing there (`path.parent.name !=
+    "subagents"`), for both identity AND turn-counting.
+
+    This class drives the exact real shape: `transcript_path` names a
+    ROOT-shaped sibling file (`<session-id>.jsonl`, next to a real
+    `<session-id>/subagents/` directory -- the same structural pattern
+    verified on every captured K4 run), plus `agent_id` (the field
+    `resolve_subagent_own_transcript_path` derives the subagent's own file
+    from), no `agent_type` key at all."""
+
+    @staticmethod
+    def _crafter_transcript_and_root_path(tmp_path: Path, line_count: int) -> str:
+        """Builds `<tmp>/session/subagents/agent-<id>.jsonl` (the real
+        subagent shape, populated from the trimmed run 10 fixture) plus its
+        `.meta.json` sidecar, and returns the ROOT-shaped sibling path
+        (`<tmp>/session.jsonl`) a caller should pass as `transcript_path` --
+        mirroring the real `<session-id>.jsonl` next to `<session-id>/
+        subagents/` layout. The root-shaped file itself need not exist:
+        `resolve_subagent_own_transcript_path` only uses its PATH structure
+        (parent + stem) to derive the real subagent file, then verifies
+        THAT one exists on disk."""
+        real_lines = _RUN10_CRAFTER_FIXTURE.read_text(encoding="utf-8").splitlines()
+        session_dir = tmp_path / "session"
+        subagents_dir = session_dir / "subagents"
+        subagents_dir.mkdir(parents=True)
+        transcript = subagents_dir / "agent-run10-crafter-probe.jsonl"
+        transcript.write_text(
+            "\n".join(real_lines[:line_count]) + "\n", encoding="utf-8"
+        )
+        meta_sidecar_text = _CRAFTER_META_SIDECAR_FIXTURE.read_text(encoding="utf-8")
+        (subagents_dir / "agent-run10-crafter-probe.meta.json").write_text(
+            meta_sidecar_text, encoding="utf-8"
+        )
+        return str(tmp_path / "session.jsonl")
+
+    def test_deny_fires_at_calibrated_threshold_via_derived_transcript_path(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        root_shaped_transcript_path = self._crafter_transcript_and_root_path(
+            tmp_path, 113
+        )
+        payload = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git diff --stat"},
+                "transcript_path": root_shaped_transcript_path,
+                "agent_id": "run10-crafter-probe",
+                "cwd": str(REPO_ROOT),
+                # No "agent_type" key at all -- the real PreToolUse shape.
+            }
+        )
+        monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+        exit_code = pre_tool_use_handler.handle_pre_tool_use()
+        out = capsys.readouterr().out.strip()
+        payload_out = json.loads(out) if out else None
+        assert exit_code == 2
+        assert payload_out["decision"] == "block"
+        assert "NW-SOFTWARE-CRAFTER-RESULT" in payload_out["reason"]
+        assert str(_CRAFTER_MAX_TURNS) in payload_out["reason"]
+
+    def test_one_turn_earlier_still_allows_via_derived_transcript_path(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        root_shaped_transcript_path = self._crafter_transcript_and_root_path(
+            tmp_path, 110
+        )
+        payload = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git diff --stat"},
+                "transcript_path": root_shaped_transcript_path,
+                "agent_id": "run10-crafter-probe",
+                "cwd": str(REPO_ROOT),
+            }
+        )
+        monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+        pre_tool_use_handler.handle_pre_tool_use()
+        out = capsys.readouterr().out.strip()
+        payload_out = json.loads(out) if out else None
+        if payload_out is not None and payload_out.get("decision") == "block":
+            assert "budget" not in payload_out.get("reason", "").lower()
+
+    def test_no_agent_id_and_root_shaped_path_never_gates(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        """Without `agent_id`, a root-shaped `transcript_path` cannot be
+        derived into any subagent file at all -- must never guess, must
+        stay allowed (this is root's own genuinely root-shaped call)."""
+        root_shaped_transcript_path = self._crafter_transcript_and_root_path(
+            tmp_path, 113
+        )
+        payload = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git diff --stat"},
+                "transcript_path": root_shaped_transcript_path,
                 "cwd": str(REPO_ROOT),
             }
         )

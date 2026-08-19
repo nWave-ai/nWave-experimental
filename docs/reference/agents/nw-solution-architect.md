@@ -4,7 +4,7 @@ Designs application architecture, reuse, ports, boundaries, cross-layer failure 
 
 **Wave:** Other
 **Model:** sonnet
-**Max turns:** 30
+**Max turns:** 60
 **Tools:** Read, Write, Edit, Glob, Grep, Bash, Task, Skill
 
 ## Commands

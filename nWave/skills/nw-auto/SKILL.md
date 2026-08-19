@@ -167,6 +167,22 @@ valid charter, authors exactly one through PO for a Missing/Empty namespace,
 and blocks on Invalid. A RED contract must observe every VALUE-SEED clause at
 its real port; internal proxies and later-slice promises are `EVIDENCE_GAP`.
 
+**Deciding `--examine`, before it is ever passed to `des
+prepare-ordinary-request`:** does the VALUE-SEED name a user-observable
+surface the request drives — an API endpoint, a CLI, a UI, a workflow a
+human or an external client exercises? Then `--examine true`. Does it name
+only an internal-only refactor with no new or changed user-observable
+surface? Then `--examine false` (ADR-SSOT-002 Section 5: "A pure internal
+prefactoring can set `examine=false`... A user-observable UI/CLI/API/
+workflow prefactoring can set `examine=true`"). This is root's own closed
+evidence rule, resolved from the seed text alone before the producer call —
+`des prepare-ordinary-request` deliberately never infers, defaults or
+guesses `examine` itself (its own docstring: "every semantic decision...
+is consumed as an explicit already-closed-rule-resolved argv fact, never
+inferred, defaulted or guessed here"), so `--examine` stays required and
+explicit at the CLI boundary; the criterion above is what root applies to
+supply it, never a flip-a-coin or copy-the-last-run's value.
+
 **Before the first `des prepare-ordinary-request` call, when `examine=true`:**
 does the VALUE-SEED already carry the literal public start recipe (exact
 method+path+example body) PO's `## Preconditions` requires — or are you about

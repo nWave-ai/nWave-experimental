@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from des.domain.verification_command_resolver import missing_verification_paths
+from des.domain.verification_command_resolver import (
+    missing_verification_paths,
+    resolve_existing_oracle_files,
+)
 
 
 def _seed_test_module(root: Path, relative: str) -> None:
@@ -156,3 +159,34 @@ def test_non_test_command_is_never_flagged(tmp_path: Path) -> None:
     )
 
     assert missing_verification_paths(tmp_path, contract) == []
+
+
+def test_resolve_existing_oracle_files_includes_locator_and_verification_labels(
+    tmp_path: Path,
+) -> None:
+    _seed_test_module(tmp_path, "hc/api/tests/test_update_check.py")
+    _seed_test_module(tmp_path, "hc/api/tests/test_create_check.py")
+    contract = _contract(
+        [
+            _django_command(
+                "hc.api.tests.test_update_check", "hc.api.tests.test_create_check"
+            )
+        ],
+        oracle_locator="hc/api/tests/test_update_check.py",
+    )
+
+    resolved = {p.as_posix() for p in resolve_existing_oracle_files(tmp_path, contract)}
+
+    assert resolved == {
+        (tmp_path / "hc/api/tests/test_update_check.py").as_posix(),
+        (tmp_path / "hc/api/tests/test_create_check.py").as_posix(),
+    }
+
+
+def test_resolve_existing_oracle_files_skips_a_missing_path(tmp_path: Path) -> None:
+    contract = _contract(
+        [_django_command("hc.api.tests.test_missing")],
+        oracle_locator="hc/api/tests/test_missing_oracle.py",
+    )
+
+    assert resolve_existing_oracle_files(tmp_path, contract) == []

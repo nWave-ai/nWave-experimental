@@ -11,15 +11,16 @@ assumption of what fields are populated), this adapter carries its OWN
 narrow, single-purpose porcelain parse -- mirroring how `CommitDiffPort`
 owns a narrow git read rather than widening a shared one.
 
-`has_unmerged_commits` reuses `is_merged_contribution` (already shipped in
-`git_subprocess.py` for the worktree-cleanup sweep) rather than re-deriving
-the ancestor-vs-genuine-contribution distinction. `has_dirty_state` reuses
-`GitWorktreeAdapter.has_uncommitted_changes` (`adapters/driven/refactor/
-git_worktree_adapter.py`, the SAME `git status --porcelain` read the
-worktree-cleanup sweep already trusts) rather than re-deriving the porcelain
-parse for dirty state a second time -- that method returns a bare `bool`
-(its callers assume git is present), so this adapter wraps the call with the
-degrade-LOUD translation `WorktreeRemovalSafetyPort` requires.
+`has_unmerged_commits` reuses `content_unmatched_commits` (already shipped
+in `git_subprocess.py` for the worktree-cleanup sweep) rather than
+re-deriving the content-vs-sha-ancestry distinction. `has_dirty_state`
+reuses `GitWorktreeAdapter.has_uncommitted_changes` (`adapters/driven/
+refactor/git_worktree_adapter.py`, the SAME `git status --porcelain` read
+the worktree-cleanup sweep already trusts) rather than re-deriving the
+porcelain parse for dirty state a second time -- that method returns a
+bare `bool` (its callers assume git is present), so this adapter wraps the
+call with the degrade-LOUD translation `WorktreeRemovalSafetyPort`
+requires.
 
 git enters here ONLY (AD-21 git-free mandate). Every git failure -- binary
 absent, non-work-tree, unresolvable ref, or the worktree not being a
@@ -28,20 +29,24 @@ registered entry at all -- degrades LOUD to `Indeterminate`, never a silent
 
 FIXED (fabricated-commit-count bugfix, 2026-07-29): `has_unmerged_commits`
 used to synthesize a ONE-ELEMENT tuple holding an explanation string
-(`f"unmerged into {target_branch!r}"`) whenever `is_merged_contribution`
-conservatively refused (a proper-ancestor worktree with zero commits of its
-own) AND `git log target..head` genuinely returned nothing. The caller
-counts the tuple's length and reports "N commit(s)" -- so that fabricated
-placeholder was counted and printed as "1 commit(s)", a number nobody
-measured. A commit-subjects LIST and a REASON-FOR-UNCERTAINTY were being
-carried in the same tuple, so the caller could not tell them apart; that
-conflation was the defect, the wrong sentence only its symptom. Fixed by
-returning `Indeterminate` for that case -- a real, separate channel this
-port already declares -- never a synthetic tuple element. This does NOT
-flip `is_merged_contribution`'s conservative refuse-to-remove direction:
-`INDETERMINATE` blocks removal exactly as `ABANDONED_CANDIDATE` did (see
-`worktree_removal_guard.py`'s consumption rule); only the REPORTED reason
-changed, from a fabricated count to the true uncertainty.
+whenever the (then sha-ancestry-only) merge check conservatively refused
+AND a `git log target..head` fallback genuinely returned nothing. Fixed
+by returning `Indeterminate` for that case instead of a synthetic tuple
+element -- see git history for the full account.
+
+FIXED (content-not-sha integration check): the SAME sha-ancestry-only
+check ALSO refused every fully-integrated lane whenever the integration
+model is cherry-pick onto trunk (the mint-a-new-sha-for-identical-content
+case) -- a designation (the sha never being an ancestor), never the
+property under test (whether the work is actually there). Replaced the
+ancestor-then-`git log target..head` pipeline with
+`content_unmatched_commits` (`git_subprocess.py`), which judges by
+CONTENT: patch-id equivalence (`git cherry`) first, blob-content
+equivalence for a patch-id near-miss second. This also retires the
+"proper-ancestor, cannot tell nothing-to-merge from unlanded-work"
+`Indeterminate` case entirely -- that ambiguity was an artifact of the
+old ancestry-gated fallback, not a real uncertainty the content check
+still has.
 """
 
 from __future__ import annotations
@@ -51,7 +56,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from des.adapters.driven.git.git_subprocess import is_merged_contribution
+from des.adapters.driven.git.git_subprocess import (
+    content_unmatched_commits,
+    is_ancestor,
+    is_merged_contribution,
+)
 from des.adapters.driven.refactor.git_worktree_adapter import GitWorktreeAdapter
 from des.ports.driven_ports.worktree_removal_safety_port import (
     Indeterminate,
@@ -197,49 +206,50 @@ class GitWorktreeRemovalSafetyAdapter(WorktreeRemovalSafetyPort):
                 "-- unmerged-commit status unknown"
             )
         try:
-            merged = is_merged_contribution(repo, entry.head_sha, target_branch)
+            ancestor = is_ancestor(repo, entry.head_sha, target_branch)
         except FileNotFoundError as exc:
             return Indeterminate(f"git binary not found: {exc}")
-        if merged:
-            return ()
-        try:
-            result = spawn(
-                ["git", "log", "--oneline", f"{target_branch}..{entry.head_sha}"],
-                cwd=repo,
-                capture_output=True,
-                text=True,
-                timeout=_GIT_READ_TIMEOUT_SECONDS,
-            )
-        except FileNotFoundError as exc:
-            return Indeterminate(f"git binary not found: {exc}")
-        except SpawnTimeout as exc:
-            return Indeterminate(f"git log timed out: {exc}")
-        if result.returncode != 0:
+        if ancestor:
+            # Row4 incident, 2026-07-20 -- UNCHANGED by the content-check
+            # fix below, which only ever applies in the `else` branch: a
+            # cherry-picked commit mints a brand new sha, so a
+            # cherry-picked `head_sha` is never an ancestor of
+            # `target_branch` in the first place. `is_merged_contribution`
+            # itself draws the genuine-merge-vs-proper-ancestor
+            # distinction (`_is_genuine_ancestor_merge`); reused here
+            # rather than re-derived.
+            try:
+                merged = is_merged_contribution(repo, entry.head_sha, target_branch)
+            except FileNotFoundError as exc:
+                return Indeterminate(f"git binary not found: {exc}")
+            if merged:
+                return ()
             return Indeterminate(
-                f"git log failed (exit {result.returncode}): "
-                f"{result.stderr.strip()[:200]}"
+                f"{worktree_path} carries no commits of its own ahead of "
+                f"{target_branch!r} (it sits as a proper ancestor on that "
+                "branch's own mainline) -- with no recorded creation base, "
+                "'nothing to merge' cannot be told apart from 'work that "
+                "never landed', so unmerged-commit status is unknown"
             )
-        subjects = tuple(line for line in result.stdout.splitlines() if line)
-        if subjects:
-            return subjects
-        # `is_merged_contribution` refused (its conservative direction) yet
-        # `target_branch..head_sha` is genuinely empty: `head_sha` is a
-        # PROPER ancestor sitting on `target_branch`'s own first-parent
-        # mainline (case 2 of `is_merged_contribution`'s docstring --
-        # "target advanced past it", not "head's own work merged onto it").
-        # Without a recorded creation base (worktrees here are made by many
-        # surfaces, not one) this cannot be told apart from "head's work
-        # never landed at all" -- report the real uncertainty. Returning a
-        # synthetic placeholder string INSIDE the commit-subjects tuple (the
-        # prior behavior) let the caller count it as "1 commit(s)" -- a
-        # count that was never measured, not merely a vague message.
-        return Indeterminate(
-            f"{worktree_path} carries no commits of its own ahead of "
-            f"{target_branch!r} (it sits as a proper ancestor on that "
-            "branch's own mainline) -- with no recorded creation base, "
-            "'nothing to merge' cannot be told apart from 'work that never "
-            "landed', so unmerged-commit status is unknown"
-        )
+        # Not an ancestor at all (K4 matrix): our integration model is
+        # cherry-pick onto trunk, which mints a brand new sha for
+        # identical content -- sha ancestry alone reported every
+        # fully-integrated lane as "not yet merged" here (a designation,
+        # not the property). `content_unmatched_commits` judges by
+        # CONTENT (patch-id equivalence, then blob equivalence for a
+        # patch-id near-miss) -- see its own docstring; its own CAVEAT
+        # is why it is never called for the ancestor branch above.
+        try:
+            unmatched = content_unmatched_commits(repo, entry.head_sha, target_branch)
+        except FileNotFoundError as exc:
+            return Indeterminate(f"git binary not found: {exc}")
+        if unmatched is None:
+            return Indeterminate(
+                f"{worktree_path}'s unmerged-commit status against "
+                f"{target_branch!r} could not be determined by content "
+                "(git cherry/git show failed)"
+            )
+        return tuple(unmatched)
 
     def has_dirty_state(self, repo: Path, worktree_path: Path) -> bool | Indeterminate:
         entry = self._find(repo, worktree_path)

@@ -95,6 +95,7 @@ def _install_fake_venv_python(workspace, *, seed_key: str):
     venv_python.parent.mkdir(parents=True, exist_ok=True)
     log_path = workspace / "manage.log"
     seed_marker = pef.SEED_ARGV[0]
+    db_path = workspace / pef.DB_FILE_NAME
     script = f"""#!/usr/bin/env python3
 import sys
 from pathlib import Path
@@ -103,6 +104,13 @@ log = Path({str(log_path)!r})
 argv = sys.argv[1:]
 with log.open("a", encoding="utf-8") as handle:
     handle.write(" ".join(argv) + "\\n")
+
+if "migrate" in argv:
+    # Real `manage.py migrate --noinput` creates the sqlite file if it
+    # doesn't exist yet; `_snapshot_pristine_db` requires it to be
+    # present right after this fake migrate step runs, same as the
+    # real subject.
+    Path({str(db_path)!r}).write_text("fake-migrated-db", encoding="utf-8")
 
 if {seed_marker!r} in argv:
     print({seed_key!r})
@@ -227,9 +235,17 @@ def test_rendered_doc_is_a_public_only_user_environment_recipe(tmp_path):
         "the doc must show noninteractive migration through the "
         "fixture-owned clone-local Python environment, before runserver"
     )
-    assert f"{pef.VENV_PYTHON} manage.py runserver 127.0.0.1:{port}" in rendered, (
+    assert (
+        f"{pef.VENV_PYTHON} manage.py runserver --noreload 127.0.0.1:{port}" in rendered
+    ), (
         "the doc must carry the exact public run recipe for the declared port, "
-        "through the same clone-local interpreter"
+        "through the same clone-local interpreter -- --noreload (Run 11) "
+        "removes the autoreloader's restart window"
+    )
+    assert "server.pid" in rendered, (
+        "the block must persist the server PID to a file so a SEPARATE, "
+        "later tool call can re-check liveness without depending on the "
+        "first call's own captured output"
     )
     assert "ALLOWED_HOSTS=localhost,127.0.0.1" in rendered, (
         "the recipe must declare ALLOWED_HOSTS=localhost,127.0.0.1 -- both the "
@@ -545,3 +561,115 @@ def test_arm_setup_provisions_the_examiner_recipe_before_any_model_call(
     assert "k4-arm-setup-fixture-key" in rendered
     assert "manage.py migrate --noinput" in rendered
     assert "manage.py runserver" in rendered
+
+
+def test_seed_step_executes_seed_code_verbatim_one_source(tmp_path):
+    """K4 matrix (Run 11): 'fake-subject seed argv capture' -- the seed
+    step must invoke exactly `pef._SEED_CODE`, byte-for-byte, as the `-c`
+    argument -- never a second, drifted copy of the seeding logic. The
+    fake interpreter logs the FULL argv it receives (including the
+    multi-line code string), so this test proves WIRING (what actually
+    got executed), not merely that `_SEED_CODE`'s source text exists
+    somewhere in the module.
+    """
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    workspace = _make_workspace(tmp_path)
+    port = _free_port()
+    log_path = _install_fake_venv_python(workspace, seed_key="k4-fake-83jd92kx")
+
+    pef.prepare(workspace, port=port)
+
+    log_text = log_path.read_text(encoding="utf-8")
+    assert pef._SEED_CODE in log_text, (
+        "the seed step must execute pef._SEED_CODE verbatim -- found a "
+        "different script logged instead"
+    )
+
+
+def test_seed_code_self_verifies_through_the_subjects_own_code_path(tmp_path):
+    """Run 11 (K4 matrix): the DB's ONE Project row held a literal 32-`Y`
+    placeholder, structurally incapable of ever matching
+    `compare_api_key`'s stored-hash format -- root cause (see
+    `prepare_examiner_fixture`'s own module docstring for the full RCA,
+    reproduced live against the real Run 11 checkout): NOT this seed
+    step, which was and remains correct, but a LATER, unrelated
+    troubleshooter dispatch overwriting the shared fixture DB directly.
+
+    `_SEED_CODE`'s STRUCTURE is asserted statically here (healthchecks'
+    `hc.accounts.models` is not a project dependency and is not
+    importable in this test suite -- see
+    `test_seed_code_hashing_roundtrip_against_the_real_subject_model`
+    immediately below for the real, executable roundtrip, skipped unless
+    that dependency happens to be importable). What is asserted here:
+    the seed step calls the SUBJECT's OWN `Project.set_api_key()` (never
+    a hand-rolled hash), then immediately self-verifies via
+    `refresh_from_db()` + `compare_api_key()` before ever printing/
+    documenting the key, exiting nonzero (LOUD) rather than silently
+    trusting an unproven write.
+    """
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    code = pef._SEED_CODE
+    assert "project.set_api_key()" in code, (
+        "must seed through the subject's OWN Project.set_api_key(), "
+        "never a hand-rolled hash"
+    )
+    assert "project.save()" in code
+    assert "project.refresh_from_db()" in code, (
+        "must re-read from the DB after saving -- proving the write "
+        "actually persisted, not merely that Python's in-memory object "
+        "holds the expected value"
+    )
+    assert "project.compare_api_key(raw)" in code, (
+        "must verify the freshly-read row authenticates against the "
+        "SAME raw key about to be printed/documented"
+    )
+    assert "sys.exit(1)" in code, (
+        "a failed self-verification must exit nonzero (LOUD) -- never "
+        "silently print/document an unproven key"
+    )
+    # The failure branch must come before the ONLY print(raw) in the
+    # else-branch, so a verification failure genuinely prevents the key
+    # from ever being printed/documented.
+    exit_at = code.index("sys.exit(1)")
+    print_raw_at = code.index("print(raw)")
+    assert exit_at < print_raw_at, (
+        "the verification-failure exit must be reachable BEFORE the key "
+        "is ever printed, not merely present somewhere in the script"
+    )
+
+
+def test_seed_code_hashing_roundtrip_against_the_real_subject_model():
+    """The real, executable roundtrip for the assertions in
+    `test_seed_code_self_verifies_through_the_subjects_own_code_path`
+    above -- run for real ONLY if healthchecks' `hc.accounts.models` is
+    importable (it is not a project dependency of this repo, and is not
+    installed in this test suite's own venv by design -- portability,
+    same reasoning `test_k4_row11_start_recipe.py`'s own module
+    docstring gives for why it never clones/imports the real subject
+    either).
+
+    How this is ACTUALLY verified when that dependency is unavailable
+    here: (1) reproduced live, by hand, against the real Run 11 checkout
+    while diagnosing this defect -- `set_api_key()` + `save()` +
+    `refresh_from_db()` + `compare_api_key(raw)` returned `True`,
+    documented in `prepare_examiner_fixture`'s own module docstring; (2)
+    every real campaign run: `preflight.probe_examiner_start_recipe`
+    authenticates the documented key against the REAL running Django
+    server before any model call, hard-refusing the whole campaign
+    (Run 11) if it does not -- see `test_k4_row11_start_recipe.py`.
+    """
+    django_models = pytest.importorskip(
+        "hc.accounts.models",
+        reason=(
+            "healthchecks is not a project dependency of nwave-dev; the "
+            "real hashing roundtrip only runs inside an actual K4 arm "
+            "workspace, never in this repo's own test suite"
+        ),
+    )
+    Project = django_models.Project
+
+    project = Project()
+    raw = project.set_api_key()
+    assert project.compare_api_key(raw)

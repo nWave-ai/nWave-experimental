@@ -8,12 +8,43 @@ read/write API key, then render a plain user onboarding doc carrying only
 the public run recipe, localhost base URL, the SEED-PRODUCED key, and
 concise HTTP journeys -- never a source path, model/storage symbol, expected
 verdict, or hidden-acceptance fact. The port stays a parameter.
+
+Run 11 (K4 matrix): the examiner's documented key rejected every request --
+the DB's ONE Project row held a literal 32-`Y` placeholder, structurally
+incapable of matching `compare_api_key`'s stored-hash format for ANY input.
+Root cause: NOT this seed step (`project.set_api_key()` -- the subject's own
+code path, `hc/accounts/models.py`'s `_make_api_key`/`set_api_key` -- was and
+remains correct, reproduced live against the real Run 11 checkout while
+diagnosing this). An UNRELATED troubleshooter dispatch, debugging a
+different PUT-crash defect much later in the same run, ran its own ad-hoc
+`p.api_key = 'Y' * 32; p.save()` directly against the shared fixture DB --
+overwriting the correctly-seeded row for its own reproduction convenience,
+permanently corrupting the fixture state three later examiner dispatches
+then inherited. `_SEED_CODE` now self-verifies immediately after writing:
+`refresh_from_db()` then `compare_api_key(raw)` must hold, or the seed step
+itself exits nonzero rather than ever printing/documenting an unproven key.
+This closes the "seed step lies" class of defect.
+
+CLOSED (same matrix row, next incident): "a later dispatch corrupts shared
+fixture state after a correct seed" -- a troubleshooter, debugging an
+UNRELATED bug, ran `p.api_key = 'Y' * 32; p.save()` directly against the
+shared working DB, and three later examiner dispatches inherited the
+corruption. `prepare()` now snapshots the just-seeded, just-verified DB to
+a READ-ONLY pristine copy (`DB_PRISTINE_SNAPSHOT_NAME`) right after
+`_seed()` succeeds; `start_and_wait_block` (quoted in the rendered doc AND
+executed by `preflight.probe_examiner_start_recipe`, one source either
+way) restores the WORKING db from that pristine copy -- refusing LOUD if
+the snapshot is missing -- before every server start. Any earlier
+dispatch (crafter/troubleshooter/tests) may still mutate the working DB;
+it no longer matters, because the examiner never walks against it -- only
+ever against a byte-for-byte restore of the pristine, self-verified seed.
 """
 
 from __future__ import annotations
 
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -31,6 +62,20 @@ DOC_NAME = ".k4-user-environment.md"
 CONTROL_PORT = 18771
 NWAVE_PORT = 18772
 
+#: healthchecks' own default sqlite path (`hc/settings.py`:
+#: `BASE_DIR / "hc.sqlite"`, `BASE_DIR` == this workspace root) -- the ONE
+#: working DB every dispatch (crafter, troubleshooter, tests, the
+#: examiner) reads/writes through `manage.py`.
+DB_FILE_NAME = "hc.sqlite"
+
+#: A read-only copy of `DB_FILE_NAME`, taken right after `_seed()`
+#: succeeds -- the ONE known-good state `start_and_wait_block` restores
+#: the working DB from before every server start, so any earlier
+#: dispatch's mutation to the working DB (Run 11: a troubleshooter
+#: overwrote the seeded Project's api_key directly, debugging an
+#: unrelated bug) never reaches the examiner.
+DB_PRISTINE_SNAPSHOT_NAME = "hc.sqlite.pristine"
+
 #: Fixture-owned clone-local venv, workspace-relative. Never the operator's
 #: own environment -- migrate/seed/runserver all run through this.
 _VENV_DIR_NAME = "k4-fixture-venv"
@@ -40,6 +85,7 @@ MIGRATE_ARGV = ["migrate", "--noinput"]
 
 _SEED_CODE = (
     "import os\n"
+    "import sys\n"
     "from django.contrib.auth import get_user_model\n"
     "from hc.accounts.models import Project\n"
     "User = get_user_model()\n"
@@ -53,6 +99,14 @@ _SEED_CODE = (
     "else:\n"
     "    raw = project.set_api_key()\n"
     "    project.save()\n"
+    "    project.refresh_from_db()\n"
+    "    if not project.compare_api_key(raw):\n"
+    "        sys.stderr.write(\n"
+    "            'SEED VERIFICATION FAILED: the just-written api_key does '\n"
+    "            'not authenticate against its own just-generated raw key, '\n"
+    "            'even immediately after refresh_from_db()\\n'\n"
+    "        )\n"
+    "        sys.exit(1)\n"
     "    print(raw)\n"
 )
 
@@ -352,13 +406,31 @@ def _seed(venv_python: Path, workspace: Path, existing_api_key: str | None) -> s
     return key
 
 
+#: Written by `start_and_wait_block` right after backgrounding the server;
+#: a SEPARATE, later tool call can re-check liveness (`kill -0 $(cat
+#: server.pid)`) without depending on having captured the first call's
+#: own printed text.
+SERVER_PID_FILE_NAME = "server.pid"
+
+
 def _runserver_argv_and_env(port: int) -> tuple[list[str], dict[str, str]]:
     """The ONE structured source for the runserver command: its directly
     executable argv + env-var overrides. `start_and_wait_block`'s
     rendered/executed Bash block derives its command line from this --
-    never a second hand-typed copy of the same command."""
+    never a second hand-typed copy of the same command.
+
+    `--noreload` (Run 11, K4 matrix): Django's default StatReloader forks
+    a watcher/worker pair and restarts the worker on any file-system
+    change it observes under the workspace -- `server.log`'s own growth
+    lives inside that same tree. An examiner dispatch (attempt #2)
+    documented the server going unresponsive across several later tool
+    calls despite a clean `nohup ... & disown` start; her own later,
+    independent empirical fix in the SAME transcript was exactly
+    `--noreload`. A single-process, non-reloading server has no restart
+    window to be caught mid-cycle by a later, separate request.
+    """
     return (
-        [VENV_PYTHON, "manage.py", "runserver", f"127.0.0.1:{port}"],
+        [VENV_PYTHON, "manage.py", "runserver", "--noreload", f"127.0.0.1:{port}"],
         {"ALLOWED_HOSTS": "localhost,127.0.0.1"},
     )
 
@@ -385,15 +457,46 @@ def start_and_wait_block(port: int, api_key: str) -> str:
     for real readiness inside this SAME call, so the very next tool call
     can act on a server already confirmed reachable -- never a second,
     separate "is it up yet" round trip.
+
+    Run 11: `--noreload` (see `_runserver_argv_and_env`) removes the
+    autoreloader restart window; `SERVER_PID_FILE_NAME` gives a LATER,
+    separate tool call a persistent liveness check
+    (`kill -0 $(cat server.pid)`) that does not depend on that call
+    having captured THIS call's own printed "Server PID:" line.
+
+    Run 11 (next incident, same matrix row): the examiner must never
+    walk against a mutated working DB -- an earlier troubleshooter
+    dispatch, debugging an unrelated bug, overwrote the seeded Project's
+    api_key directly, and three later examiner dispatches inherited the
+    corruption. Before touching the server at all, this block: (1) stops
+    any server ALREADY running under `SERVER_PID_FILE_NAME` (a stale
+    process from a prior attempt would otherwise hold the working DB
+    open while step 3 overwrites it underneath it); (2) refuses LOUD if
+    `DB_PRISTINE_SNAPSHOT_NAME` is missing -- never silently starts
+    against whatever the working DB currently holds; (3) restores the
+    working DB from that snapshot, byte-for-byte. Only then does it
+    start the server.
     """
     base_url = f"http://127.0.0.1:{port}"
     argv, env_overrides = _runserver_argv_and_env(port)
     env_prefix = " ".join(f"{name}={value}" for name, value in env_overrides.items())
     runserver = f"{env_prefix} nohup {' '.join(argv)} > server.log 2>&1 &"
     return (
+        f"if [ -f {SERVER_PID_FILE_NAME} ] && "
+        f'kill -0 "$(cat {SERVER_PID_FILE_NAME})" 2>/dev/null; then\n'
+        f'    kill "$(cat {SERVER_PID_FILE_NAME})" 2>/dev/null\n'
+        "    sleep 1\n"
+        "fi\n"
+        f"if [ ! -f {DB_PRISTINE_SNAPSHOT_NAME} ]; then\n"
+        '    echo "pristine seed snapshot missing: '
+        f'{DB_PRISTINE_SNAPSHOT_NAME}" >&2\n'
+        "    exit 1\n"
+        "fi\n"
+        f"cp {DB_PRISTINE_SNAPSHOT_NAME} {DB_FILE_NAME}\n"
         f"{runserver}\n"
         "SERVER_PID=$!\n"
         "disown\n"
+        f"echo $SERVER_PID > {SERVER_PID_FILE_NAME}\n"
         "i=0\n"
         f"until curl -fsS {base_url}/api/v3/checks/ "
         f'-H "X-Api-Key: {api_key}" > /dev/null 2>&1; do\n'
@@ -404,7 +507,8 @@ def start_and_wait_block(port: int, api_key: str) -> str:
         "    fi\n"
         "    sleep 1\n"
         "done\n"
-        'echo "Server PID: $SERVER_PID (stop with: kill $SERVER_PID)"\n'
+        f'echo "Server PID: $SERVER_PID (stop with: kill $SERVER_PID, or: '
+        f'kill \\$(cat {SERVER_PID_FILE_NAME}))"\n'
     )
 
 
@@ -536,7 +640,11 @@ def _add_exclude_entries(workspace: Path) -> None:
     exclude.parent.mkdir(parents=True, exist_ok=True)
     existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
     lines = existing.splitlines()
-    to_add = [entry for entry in (DOC_NAME, f"{_VENV_DIR_NAME}/") if entry not in lines]
+    to_add = [
+        entry
+        for entry in (DOC_NAME, f"{_VENV_DIR_NAME}/", DB_PRISTINE_SNAPSHOT_NAME)
+        if entry not in lines
+    ]
     if not to_add:
         return
     with exclude.open("a", encoding="utf-8") as handle:
@@ -545,10 +653,43 @@ def _add_exclude_entries(workspace: Path) -> None:
         handle.write("\n".join(to_add) + "\n")
 
 
+def _snapshot_pristine_db(workspace: Path) -> None:
+    """Copy the just-seeded, just-self-verified working DB to a read-only
+    pristine snapshot -- the ONE known-good state `start_and_wait_block`
+    restores from before every server start (Run 11: closes "a later
+    dispatch corrupts shared fixture state after a correct seed", see
+    this module's own docstring for the full incident).
+
+    Runs immediately after `_seed()` returns, so the snapshot captures
+    the database at the earliest point it is provably correct (migrated,
+    seeded, and the seed step's own `refresh_from_db()` +
+    `compare_api_key()` already held) -- before any model dispatch has
+    had a chance to touch it.
+    """
+    db_path = workspace / DB_FILE_NAME
+    if not db_path.exists():
+        raise SystemExit(
+            "WHAT: cannot snapshot the pristine seeded database -- "
+            f"{db_path} does not exist.\n"
+            "WHY:  `start_and_wait_block` restores the working DB from "
+            "this snapshot before every server start; without it, a "
+            "later dispatch's mutation to the working DB would reach "
+            "the examiner undetected -- exactly the Run 11 incident.\n"
+            f"HOW:  reproduce migrate+seed in {workspace} and confirm "
+            f"{DB_FILE_NAME} exists before this snapshot step runs."
+        )
+    snapshot_path = workspace / DB_PRISTINE_SNAPSHOT_NAME
+    if snapshot_path.exists():
+        snapshot_path.chmod(0o644)
+    shutil.copy2(db_path, snapshot_path)
+    snapshot_path.chmod(0o444)
+
+
 def prepare(workspace: Path, *, port: int) -> Path:
-    """Refuse an occupied port before any mutation; else migrate, seed, and
-    (re)render the public user-environment doc with the seed-produced key,
-    idempotently, confined to `workspace`."""
+    """Refuse an occupied port before any mutation; else migrate, seed,
+    snapshot the pristine seeded DB, and (re)render the public
+    user-environment doc with the seed-produced key, idempotently,
+    confined to `workspace`."""
     workspace = Path(workspace)
     if _port_is_occupied(port):
         raise SystemExit(
@@ -561,6 +702,7 @@ def prepare(workspace: Path, *, port: int) -> Path:
     venv_python = _ensure_venv(workspace)
     _migrate(venv_python, workspace)
     api_key = _seed(venv_python, workspace, _existing_api_key(workspace))
+    _snapshot_pristine_db(workspace)
     _add_exclude_entries(workspace)
     doc_target = workspace / DOC_NAME
     doc_target.write_text(_render(port, api_key), encoding="utf-8")

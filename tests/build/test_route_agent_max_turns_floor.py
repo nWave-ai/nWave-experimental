@@ -54,6 +54,14 @@ _ROUTE_AGENTS = (
 
 _MAX_TURNS_RE = re.compile(r"^maxTurns:\s*(\d+)\s*$", re.MULTILINE)
 _NUMBERED_STEP_RE = re.compile(r"^(\d+)\.\s", re.MULTILINE)
+#: K4 Run 11: a mechanical step-count floor cannot see a journey-driven
+#: budget (`nw-user-examiner`'s WALK cost scales with the charter's own
+#: journey count, not a fixed step number). When an agent states its own
+#: literal "... = N as the arithmetic floor" sum, that stated total is a
+#: second, independent floor -- changing the agent's own stated journey
+#: count without updating the sum leaves the OLD total enforced, never a
+#: silently-shrinking budget.
+_STATED_ARITHMETIC_FLOOR_RE = re.compile(r"=\s*(\d+)\s+as the arithmetic floor")
 
 
 def frontmatter_max_turns(text: str) -> int:
@@ -102,7 +110,12 @@ def mandated_tool_call_floor(text: str) -> int:
             groups[-1].append(n)
     max_steps = max((max(group) for group in groups), default=0)
     skill_loads = workflow.count("SKILL.md")
-    return max_steps + skill_loads
+    mechanical_floor = max_steps + skill_loads
+
+    stated = _STATED_ARITHMETIC_FLOOR_RE.search(workflow)
+    stated_floor = int(stated.group(1)) if stated else 0
+
+    return max(mechanical_floor, stated_floor)
 
 
 @pytest.mark.parametrize("agent_name", _ROUTE_AGENTS)
@@ -145,3 +158,49 @@ def test_the_floor_computation_discriminates_a_planted_insufficient_maxturns():
         "the planted fixture must be genuinely insufficient, or this test "
         "proves nothing about the real assertion's discriminating power"
     )
+
+
+def test_a_stated_arithmetic_floor_outranks_a_smaller_mechanical_step_count():
+    """K4 Run 11: `nw-user-examiner`'s WALK cost scales with the charter's
+    own journey count, invisible to the mechanical step-count floor (a
+    fixed 4-step Workflow). When the agent states its own literal
+    '... = N as the arithmetic floor' sum, that stated total must win even
+    though the numbered-step count alone would compute a much smaller
+    floor -- proving the journey-aware path is load-bearing, not a dead
+    branch that happens to agree with the mechanical count."""
+    planted = (
+        "---\n"
+        "name: nw-fake-journey-agent\n"
+        "maxTurns: 10\n"
+        "---\n\n"
+        "## Workflow\n\n"
+        "1. First step.\n"
+        "2. Second step, sized for up to 8 journeys: "
+        "1 + 8 + 8 + 3 = 20 as the arithmetic floor.\n"
+    )
+
+    max_turns = frontmatter_max_turns(planted)
+    floor = mandated_tool_call_floor(planted)
+
+    assert floor == 20, f"expected the STATED total (20) to win, got {floor}"
+    assert max_turns < floor, (
+        "the planted fixture must be genuinely insufficient against the "
+        "stated arithmetic floor, or this test proves nothing"
+    )
+
+
+def test_stated_arithmetic_floor_absent_falls_back_to_the_mechanical_count():
+    """No stated formula: the floor is exactly the mechanical step count,
+    unchanged from before this row (no accidental floor inflation for
+    agents that never state a budget formula)."""
+    planted = (
+        "---\n"
+        "name: nw-fake-plain-agent\n"
+        "maxTurns: 3\n"
+        "---\n\n"
+        "## Workflow\n\n"
+        "1. First step.\n"
+        "2. Second step.\n"
+    )
+
+    assert mandated_tool_call_floor(planted) == 2

@@ -613,6 +613,25 @@ def test_agent_pins_verification_command_copied_from_authority() -> None:
     )
 
 
+def test_agent_pins_oracle_read_back_indentation_check() -> None:
+    """K4 Run 10: a test method spliced into the MIDDLE of another's body
+    compiled fine but was never collected by any runner, silently
+    swallowing the host method's own tail assertions -- a crafter hit it
+    only at BASELINE after implementing a full production change. ATD must
+    read the oracle back once immediately after writing it and confirm
+    every test def sits at class-body indentation."""
+    compact = " ".join(_text(AGENT).split())
+
+    assert "Immediately after that Write, Read the oracle back whole once" in compact
+    assert "not the forbidden discovery call" in compact
+    assert (
+        "confirm every `def test_`/`async def test_` line starts at "
+        "class-body indentation" in compact
+    )
+    assert "never nested inside another `def`/`async def`" in compact
+    assert "no runner ever collects it" in compact
+
+
 def test_auto_skill_routes_contract_fact_gap_as_friction_not_a_gate() -> None:
     """Run 5: root's routing table must not turn a high first-mutation
     tool-call number into a routing branch -- it is evidence for ATD's next
@@ -626,6 +645,32 @@ def test_auto_skill_routes_contract_fact_gap_as_friction_not_a_gate() -> None:
     )
     assert "friction evidence for ATD's next contract" in compact
     assert "not a gate on this one" in compact
+
+
+def test_auto_skill_pins_deterministic_examine_criterion() -> None:
+    """K4 Run 10: `--examine` flipped between runs (true, then false) with
+    no stated reason -- root guessed. `des prepare-ordinary-request` itself
+    deliberately never infers this (it is a closed-rule semantic decision,
+    not a producer projection); the deterministic criterion belongs at
+    root's own decision point, before the producer call, citing
+    ADR-SSOT-002 Section 5."""
+    compact = " ".join(_text(AUTO_SKILL).split())
+
+    assert (
+        "does the VALUE-SEED name a user-observable surface the request "
+        "drives — an API endpoint, a CLI, a UI, a workflow a human or an "
+        "external client exercises? Then `--examine true`" in compact
+    )
+    assert (
+        "Does it name only an internal-only refactor with no new or "
+        "changed user-observable surface? Then `--examine false`" in compact
+    )
+    assert "ADR-SSOT-002 Section 5" in compact
+    assert (
+        "`des prepare-ordinary-request` deliberately never infers, "
+        "defaults or guesses `examine` itself" in compact
+    )
+    assert "never a flip-a-coin or copy-the-last-run's value" in compact
 
 
 def test_architect_self_verifies_every_citation_before_covered() -> None:
@@ -771,4 +816,56 @@ def test_auto_skill_routing_table_names_self_flagged_oracle_gap() -> None:
     assert (
         "a self-flagged gap is never `PASS` with the gap only noted in "
         "`residuals`" in compact
+    )
+
+
+def test_architect_states_budget_arithmetic_and_doubles_it_for_maxturns() -> None:
+    """Discord (yuki.uthman, 2026-08-19): nw-solution-architect capped at 30
+    exceeded to 37 on a Flutter/Dart project. K4 runs 10-11: architect at
+    28-34 calls. The mechanical 4-step Workflow floor cannot see the real
+    cost -- citation self-verification (bb77997f9) scales with cited-file
+    count, and a non-Python project falls back to the TextSearch floor,
+    needing more Reads per file. The agent must state its own arithmetic
+    and maxTurns must double it, not merely meet it."""
+    text = _text(ARCHITECT)
+    compact = " ".join(text.split())
+
+    assert "maxTurns: 60" in text
+    assert "reuse survey ≤15 (broader than the consult's six calls" in compact
+    assert (
+        "citation self-verification ≤1 call per cited FILE (batched) plus "
+        "≤1 per symbol-only citation, up to 12 cited files/symbols" in compact
+    )
+    assert "= 15 + 2 + 12 + 1 = 30 as the arithmetic floor" in compact
+    assert (
+        "`maxTurns` below is set to TWICE that floor, not the bare floor: "
+        "Discord (yuki.uthman, 2026-08-19, capped at 30, exceeded to 37 on "
+        "a Flutter/Dart project) and K4 runs 10-11 (architect at 28-34 "
+        "calls)" in compact
+    )
+    assert "`des code-fact` falls back to the TextSearch floor" in compact
+
+
+def test_guard_stop_returns_a_terminal_result_atd_po_architect() -> None:
+    """The installed budget guard turns any overrun into a clean terminal at
+    N-2; each route agent must return ITS OWN closed vocabulary's blocking
+    state naming what is unfinished, never a silent kill (GDP-6). ATD and
+    the architect carry no literal `INDETERMINATE` verdict field, so they
+    use their own closed terms (`EVIDENCE_GAP`, `ARCHITECTURE-BLOCKED`)
+    rather than an invented token their own spec never declares."""
+    atd = " ".join(_text(AGENT).split())
+    po = " ".join(_text(PRODUCT_OWNER).split())
+    architect = " ".join(_text(ARCHITECT).split())
+
+    assert (
+        "If the budget guard stops you, return `EVIDENCE_GAP` naming what "
+        "is unfinished" in atd
+    )
+    assert (
+        "If the budget guard stops you, return your terminal result as "
+        "`INDETERMINATE` naming what is unfinished" in po
+    )
+    assert (
+        "If the budget guard stops you, return `ARCHITECTURE-BLOCKED` "
+        "naming what is unfinished" in architect
     )

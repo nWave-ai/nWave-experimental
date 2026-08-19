@@ -35,6 +35,9 @@ from des.cli._declared_import_refusal import (
 from des.cli._declared_import_refusal import (
     unresolved_declared_import_how as _unresolved_declared_import_how,
 )
+from des.cli._oracle_structure_refusal import (
+    all_oracle_structure_findings as _all_oracle_structure_findings,
+)
 from des.cli._verification_command_refusal import (
     all_missing_verification_paths as _all_missing_verification_paths,
 )
@@ -404,6 +407,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     for path in _all_missing_verification_paths(repo_root, contract):
         findings.append(_missing_verification_path_finding(path))
+    findings.extend(_all_oracle_structure_findings(repo_root, contract))
 
     oracle_locator = str(contract["acceptance-tests"]["locator"])
     oracle_unsafe_reason = _unsafe_delivery_contract_path_reason(oracle_locator)

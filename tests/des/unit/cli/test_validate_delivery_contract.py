@@ -334,3 +334,67 @@ def test_verification_command_naming_a_correct_dotted_test_path_is_accepted(
     captured = capsys.readouterr()
     assert exit_code == 0, captured.err
     assert json.loads(captured.out)["verdict"] == "VALID"
+
+
+_SPLICED_ORACLE_SOURCE = """\
+class CreateCheckTestCase:
+    def test_it_works(self) -> None:
+        r = 1
+
+        def test_it_saves_maintenance_windows(self) -> None:
+            r = 2
+            assert r == 2
+
+        assert r == 1
+"""
+
+
+def test_oracle_locator_with_a_test_spliced_inside_another_is_rejected(
+    tmp_path: Path, capsys
+) -> None:
+    """K4 Run 10 repro: `test_it_saves_maintenance_windows` spliced into the
+    MIDDLE of `test_it_works`'s own body -- syntactically valid Python, but
+    a nested test method no runner ever collects, and the outer method
+    silently lost its own tail assertion until a crafter hit it at
+    BASELINE after implementing a full production change."""
+    contract_dict = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    oracle_locator = str(contract_dict["acceptance-tests"]["locator"])
+    contract_path = tmp_path / "delivery.json"
+    contract_path.write_text(json.dumps(contract_dict), encoding="utf-8")
+    oracle_path = tmp_path / oracle_locator
+    oracle_path.parent.mkdir(parents=True, exist_ok=True)
+    oracle_path.write_text(_SPLICED_ORACLE_SOURCE, encoding="utf-8")
+
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "--delivery-contract", "delivery.json"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "nested-test" in captured.err
+    assert "never collected by any test runner" in captured.err
+    assert "WHAT:" in captured.err
+    assert "WHY:" in captured.err
+    assert "HOW:" in captured.err
+
+
+def test_oracle_locator_with_a_well_formed_test_is_accepted(
+    tmp_path: Path, capsys
+) -> None:
+    contract_dict = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    oracle_locator = str(contract_dict["acceptance-tests"]["locator"])
+    contract_path = tmp_path / "delivery.json"
+    contract_path.write_text(json.dumps(contract_dict), encoding="utf-8")
+    oracle_path = tmp_path / oracle_locator
+    oracle_path.parent.mkdir(parents=True, exist_ok=True)
+    oracle_path.write_text(
+        "def test_it_works() -> None:\n    assert 1 == 1\n", encoding="utf-8"
+    )
+
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "--delivery-contract", "delivery.json"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0, captured.err
+    assert json.loads(captured.out)["verdict"] == "VALID"

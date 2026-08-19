@@ -177,7 +177,16 @@ A missing or unknown route blocks. There is no default and no dual-read path.
    installs, repairs, executes or validates a dependency. Missing readiness
    evidence blocks before authoring, per step 2. After the authority, at most
    two named example reads, the next tool call is this Write — never another
-   discovery call.
+   discovery call. Immediately after that Write, Read the oracle back whole
+   once — a verification read of what was just written, not the forbidden
+   discovery call — and confirm every `def test_`/`async def test_` line
+   starts at class-body indentation (one level inside its `class` line,
+   never nested inside another `def`/`async def`). A test spliced into
+   another's body still compiles, but no runner ever collects it, and it
+   silently swallows whatever code follows it at that indentation (K4 Run
+   10: a spliced method absorbed its host method's own tail assertions,
+   undetected until a crafter hit it at BASELINE after a full production
+   change).
 6. Before serializing any target's `declared-imports`, ask: does the cited
    architecture authority or one of the at-most-two named examples already
    SHOW this exact symbol existing in the base tree right now — or is it
@@ -327,7 +336,9 @@ role never returns a thin header, a digest or a RED/GREEN/BROKEN
 classification. An interrupted, timed-out or nonterminal turn is
 `INDETERMINATE`; it cannot enable a crafter. A blocker returns only its
 evidence and performs no partial handoff. Missing authority stays
-`EVIDENCE_GAP`.
+`EVIDENCE_GAP`. If the budget guard stops you, return `EVIDENCE_GAP` naming
+what is unfinished — this role's own closed vocabulary carries no literal
+`INDETERMINATE` verdict field to set.
 
 ## Constraints
 

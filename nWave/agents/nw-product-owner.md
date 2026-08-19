@@ -107,4 +107,5 @@ including an exact modality-appropriate `PublicStartRecipe` in
 `## Preconditions`. Missing authority — including an absent or vague
 `PublicStartRecipe` — is `INDETERMINATE` (`CLARIFICATION_NEEDED`); conflicting
 product authority is `FAIL` and must be reconciled at its owner rather than
-copied into the charter.
+copied into the charter. If the budget guard stops you, return your
+terminal result as `INDETERMINATE` naming what is unfinished.

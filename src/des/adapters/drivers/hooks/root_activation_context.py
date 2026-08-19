@@ -79,20 +79,70 @@ def _agent_type_from_transcript_meta_sidecar(transcript_path: str) -> str | None
     return sidecar_agent_type if isinstance(sidecar_agent_type, str) else None
 
 
+def resolve_subagent_own_transcript_path(hook_input: dict[str, object]) -> str | None:
+    """The dispatched subagent's OWN transcript file -- run 10 correction.
+
+    A real nw-software-crafter's `transcript_path` in her own PreToolUse
+    envelope was verified (run 10, 54 real tool calls, maxTurns 45, zero
+    guard denials) to NOT already point at her dedicated `subagents/
+    agent-<id>.jsonl` file the way run 9's diagnosis assumed -- the sidecar
+    lookup's own `path.parent.name != "subagents"` guard silently failed
+    for every one of her calls, exactly reproducing the observed silence.
+    `hook_input.get("transcript_path")` still resolves this handler's
+    OTHER working checks (root's mode-select tracking), so it is not
+    absent -- it names a DIFFERENT, real file: the platform's own
+    `<session-id>.jsonl` (the root/parent session log), a SIBLING of the
+    `<session-id>/subagents/` directory that holds every one of that
+    session's dispatched subagents' own transcripts (verified structurally
+    against every captured K4 run: `0f13f427-...-....jsonl` always sits
+    directly next to `0f13f427-...-..../subagents/`).
+
+    Returns `transcript_path` unchanged when it ALREADY matches the
+    subagent shape (still the cheap, no-I/O common case for whichever
+    caller pattern DOES send it directly). Otherwise DERIVES the real
+    subagent file from that structural convention plus `agent_id`
+    (`<transcript_path's parent>/<transcript_path's stem>/subagents/
+    agent-<agent_id>.jsonl`), using it only if it actually exists on disk
+    -- never a guessed path a caller could be tricked into reading. Falls
+    through to `transcript_path` UNCHANGED when neither the direct match
+    nor the derivation succeeds (no `agent_id`, or the derived file does
+    not exist) -- a caller that already resolved identity some other way
+    (`agent_type` present directly) still gets its own given transcript
+    counted rather than being refused outright; the derivation is a
+    best-effort SECOND axis, never a stricter requirement than the
+    pre-run-10 behavior it replaces."""
+    transcript_path = hook_input.get("transcript_path")
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return None
+    path = Path(transcript_path)
+    if path.parent.name == "subagents" and path.name.startswith("agent-"):
+        return transcript_path
+    agent_id = hook_input.get("agent_id")
+    if isinstance(agent_id, str) and agent_id and path.suffix == ".jsonl":
+        derived = path.parent / path.stem / "subagents" / f"agent-{agent_id}.jsonl"
+        if derived.is_file():
+            return str(derived)
+    return transcript_path
+
+
 def resolve_subagent_agent_type(hook_input: dict[str, object]) -> str | None:
     """The dispatched nw-* subagent's own declared role name -- resolved
     from the live envelope's `agent_type` field first (cheap, no I/O),
     falling back to the platform's own durable `subagents/agent-<id>.meta.
     json` sidecar (one extra read) only when that field is absent or not an
-    `nw-` role. `None` for root/user (no resolvable identity from either
-    source) and for a non-nWave agent."""
+    `nw-` role. The sidecar is looked up against the subagent's OWN
+    transcript (`resolve_subagent_own_transcript_path` -- direct match or,
+    per the run 10 correction, derived from a root-shaped `transcript_path`
+    plus `agent_id`), never the raw envelope field taken on faith. `None`
+    for root/user (no resolvable identity from either source) and for a
+    non-nWave agent."""
     agent_type = hook_input.get("agent_type")
     if isinstance(agent_type, str) and agent_type.startswith(_NWAVE_AGENT_PREFIX):
         return agent_type
-    transcript_path = hook_input.get("transcript_path")
-    if not isinstance(transcript_path, str) or not transcript_path:
+    own_transcript_path = resolve_subagent_own_transcript_path(hook_input)
+    if own_transcript_path is None:
         return None
-    sidecar_agent_type = _agent_type_from_transcript_meta_sidecar(transcript_path)
+    sidecar_agent_type = _agent_type_from_transcript_meta_sidecar(own_transcript_path)
     if isinstance(sidecar_agent_type, str) and sidecar_agent_type.startswith(
         _NWAVE_AGENT_PREFIX
     ):

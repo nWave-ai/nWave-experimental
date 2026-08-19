@@ -13,6 +13,9 @@ from des.cli._declared_import_refusal import (
 from des.cli._declared_import_refusal import (
     unresolved_declared_import_how as _unresolved_declared_import_how,
 )
+from des.cli._oracle_structure_refusal import (
+    all_oracle_structure_findings as _all_oracle_structure_findings,
+)
 from des.cli._verification_command_refusal import (
     first_missing_verification_path as _first_missing_verification_path,
 )
@@ -84,6 +87,12 @@ def main(argv: list[str] | None = None) -> int:
     missing_verification = _first_missing_verification_path(args.repo_root, contract)
     if missing_verification is not None:
         what, why, how = _missing_verification_path_finding(missing_verification)
+        print(f"WHAT: {what} WHY: {why} HOW: {how}", file=sys.stderr)
+        return 2
+
+    structure_findings = _all_oracle_structure_findings(args.repo_root, contract)
+    if structure_findings:
+        what, why, how = structure_findings[0]
         print(f"WHAT: {what} WHY: {why} HOW: {how}", file=sys.stderr)
         return 2
 

@@ -58,6 +58,7 @@ _NEGATIVE_CONTROL_MARKERS = (
     "git log",
     "route-walk-probe-unknown-subcommand",
     "find / ",
+    "route-walk-budget-probe-crafter",
 )
 
 

@@ -119,19 +119,58 @@ def test_arm_workspace_is_detached_after_setup(tmp_path, monkeypatch, steps_fact
 
 
 def test_both_arms_detach_the_same_way(tmp_path):
-    """No treatment-only locator convention: the git steps that establish
-    workspace identity must be identical across arms, not merely both
-    'detached' by coincidentally different means."""
+    """No treatment-only locator convention: the git clone/checkout steps
+    that establish workspace COMMIT identity must be identical across
+    arms, not merely both 'detached' by coincidentally different means.
+
+    Excludes `git config` (row 10, K4 matrix): those steps establish this
+    arm's COMMIT AUTHOR identity, which is deliberately arm-named
+    (`test_both_arms_get_a_symmetric_repo_local_git_identity` below
+    proves that pair's own symmetry -- same structure, different name),
+    not a workspace-identity property this test governs.
+    """
     control_git = [
-        s for s in preflight.control_setup_steps(tmp_path / "auth") if s[0] == "git"
+        s
+        for s in preflight.control_setup_steps(tmp_path / "auth")
+        if s[0] == "git" and s[1] != "config"
     ]
     nwave_git = [
         s
         for s in preflight.nwave_setup_steps(tmp_path / "venv", tmp_path / "auth")
-        if s[0] == "git"
+        if s[0] == "git" and s[1] != "config"
     ]
 
     assert control_git == nwave_git
+
+
+def test_both_arms_get_a_symmetric_repo_local_git_identity(tmp_path):
+    """Row 10 (K4 matrix): both arms must set a repo-local git commit
+    identity, symmetric in STRUCTURE (never a treatment-only step), never
+    the operator's own real name/email, and never `--global` (which would
+    write outside this one throwaway workspace)."""
+    control_steps = preflight.control_setup_steps(tmp_path / "auth")
+    nwave_steps = preflight.nwave_setup_steps(tmp_path / "venv", tmp_path / "auth")
+
+    for arm_name, steps in (("control", control_steps), ("nwave", nwave_steps)):
+        config_steps = [s for s in steps if s[:2] == ["git", "config"]]
+        assert len(config_steps) == 2, (
+            f"{arm_name} must set exactly user.name and user.email"
+        )
+        keys = {s[2] for s in config_steps}
+        assert keys == {"user.name", "user.email"}
+        for step in config_steps:
+            assert "--global" not in step
+            value = step[3]
+            assert arm_name in value.lower(), (
+                f"{arm_name}'s identity must name this arm, not be generic "
+                "or the other arm's"
+            )
+        joined = " ".join(" ".join(s) for s in config_steps)
+        for real_identity_fragment in ("Parajao", "alex", "alcor", "Ale "):
+            assert real_identity_fragment not in joined, (
+                "the operator's own real identity must never appear in "
+                "the arm's git config steps"
+            )
 
 
 def test_delivery_fixture_step_is_shared_and_credential_free(tmp_path):

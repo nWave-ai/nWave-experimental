@@ -76,6 +76,18 @@ def _make_probe(root):
     return probe
 
 
+def _absent_engagement_with_probe_dir(root, venv, auth_profile, model):
+    """`("absent", [])` -- same DESIGNATION `probe_engagement` returns
+    when setup completed but nWave never landed -- but this stub, unlike
+    a bare lambda, also creates the probe workspace directory: the REAL
+    `probe_engagement` always does so as a side effect, and later
+    preflight steps (row 10's `probe_git_identity` among them) need a
+    real `cwd` to run in, not a directory that only production ever
+    creates."""
+    preflight._probe_workspace(root).mkdir(parents=True, exist_ok=True)
+    return ("absent", [])
+
+
 def _make_sibling_sentinel(root):
     sibling = root / "sibling-sentinel"
     sibling.mkdir(parents=True)
@@ -129,13 +141,22 @@ def test_main_removes_probe_and_still_writes_arms_json_on_pass(tmp_path, monkeyp
         lambda root, checkout: (root / "venv-stub", _make_wheel(root)),
     )
     monkeypatch.setattr(
-        preflight,
-        "probe_engagement",
-        lambda root, venv, auth_profile, model: ("absent", []),
+        preflight, "probe_engagement", _absent_engagement_with_probe_dir
     )
     monkeypatch.setattr(
         preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
     )
+    # `probe_examiner_start_recipe` (row 11) now hard-refuses `main()`
+    # (Run 11) unless the arm workspace carries a REAL authenticating
+    # recipe -- orthogonal to what this file's own tests exercise (wheel
+    # identity/probe-cleanup wiring), stubbed the same way as above.
+    monkeypatch.setattr(preflight, "probe_examiner_start_recipe", lambda *a, **k: [])
+    # `probe_git_identity` (row 10) ALSO now hard-refuses `main()` unless
+    # the arm workspace carries a repo-local git identity -- set for real
+    # by `_git_identity_steps`, one of the setup steps this stub skips.
+    # Locally this was masked by the box's own global git identity
+    # leaking through; CI runners carry no such ambient identity.
+    monkeypatch.setattr(preflight, "probe_git_identity", lambda *a, **k: [])
 
     task_file = tmp_path / "task.md"
     task_file.write_text("do the thing\n")
@@ -185,13 +206,22 @@ def test_wheel_flag_reaches_exact_wheel_branch_without_build_arm_runtime(
         lambda root, wheel: root / "venv-stub",
     )
     monkeypatch.setattr(
-        preflight,
-        "probe_engagement",
-        lambda root, venv, auth_profile, model: ("absent", []),
+        preflight, "probe_engagement", _absent_engagement_with_probe_dir
     )
     monkeypatch.setattr(
         preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
     )
+    # `probe_examiner_start_recipe` (row 11) now hard-refuses `main()`
+    # (Run 11) unless the arm workspace carries a REAL authenticating
+    # recipe -- orthogonal to what this file's own tests exercise (wheel
+    # identity/probe-cleanup wiring), stubbed the same way as above.
+    monkeypatch.setattr(preflight, "probe_examiner_start_recipe", lambda *a, **k: [])
+    # `probe_git_identity` (row 10) ALSO now hard-refuses `main()` unless
+    # the arm workspace carries a repo-local git identity -- set for real
+    # by `_git_identity_steps`, one of the setup steps this stub skips.
+    # Locally this was masked by the box's own global git identity
+    # leaking through; CI runners carry no such ambient identity.
+    monkeypatch.setattr(preflight, "probe_git_identity", lambda *a, **k: [])
 
     checkout = _make_checkout(tmp_path)
     code = preflight.main(
@@ -234,13 +264,22 @@ def test_checkout_branch_unchanged_when_wheel_flag_absent(tmp_path, monkeypatch)
 
     monkeypatch.setattr(preflight, "build_arm_runtime_from_wheel", _refuse_wheel_build)
     monkeypatch.setattr(
-        preflight,
-        "probe_engagement",
-        lambda root, venv, auth_profile, model: ("absent", []),
+        preflight, "probe_engagement", _absent_engagement_with_probe_dir
     )
     monkeypatch.setattr(
         preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
     )
+    # `probe_examiner_start_recipe` (row 11) now hard-refuses `main()`
+    # (Run 11) unless the arm workspace carries a REAL authenticating
+    # recipe -- orthogonal to what this file's own tests exercise (wheel
+    # identity/probe-cleanup wiring), stubbed the same way as above.
+    monkeypatch.setattr(preflight, "probe_examiner_start_recipe", lambda *a, **k: [])
+    # `probe_git_identity` (row 10) ALSO now hard-refuses `main()` unless
+    # the arm workspace carries a repo-local git identity -- set for real
+    # by `_git_identity_steps`, one of the setup steps this stub skips.
+    # Locally this was masked by the box's own global git identity
+    # leaking through; CI runners carry no such ambient identity.
+    monkeypatch.setattr(preflight, "probe_git_identity", lambda *a, **k: [])
 
     checkout = _make_checkout(tmp_path)
     code = preflight.main(
@@ -329,13 +368,22 @@ def test_wheel_identity_path_and_digest_are_emitted(tmp_path, monkeypatch, capsy
         lambda root, wheel: root / "venv-stub",
     )
     monkeypatch.setattr(
-        preflight,
-        "probe_engagement",
-        lambda root, venv, auth_profile, model: ("absent", []),
+        preflight, "probe_engagement", _absent_engagement_with_probe_dir
     )
     monkeypatch.setattr(
         preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
     )
+    # `probe_examiner_start_recipe` (row 11) now hard-refuses `main()`
+    # (Run 11) unless the arm workspace carries a REAL authenticating
+    # recipe -- orthogonal to what this file's own tests exercise (wheel
+    # identity/probe-cleanup wiring), stubbed the same way as above.
+    monkeypatch.setattr(preflight, "probe_examiner_start_recipe", lambda *a, **k: [])
+    # `probe_git_identity` (row 10) ALSO now hard-refuses `main()` unless
+    # the arm workspace carries a repo-local git identity -- set for real
+    # by `_git_identity_steps`, one of the setup steps this stub skips.
+    # Locally this was masked by the box's own global git identity
+    # leaking through; CI runners carry no such ambient identity.
+    monkeypatch.setattr(preflight, "probe_git_identity", lambda *a, **k: [])
 
     checkout = _make_checkout(tmp_path)
     code = preflight.main(
