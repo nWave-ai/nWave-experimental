@@ -330,6 +330,7 @@ class TestAtdRejectsMissingInferredReorderedOrInvalidFacts:
 
 _VALID_REVISE_LOCATOR_VALUE = contract_locator_for(_VALID_DELIVERY_ID_VALUE)
 _VALID_REVISE_LOCATOR_LINE = f"REVISE-CONTRACT: {_VALID_REVISE_LOCATOR_VALUE}"
+_VALID_REVISE_ROUND_LINE = "REVISE-ROUND: 1/3"
 _VALID_CITATION_TEXT = "The crafter cited an invented import that does not exist."
 _VALID_CITATION_LINE = (
     f"CITATION: {json.dumps(_VALID_CITATION_TEXT, ensure_ascii=False)}"
@@ -339,16 +340,19 @@ _VALID_CITATION_LINE = (
 def _atd_revision_body(
     *,
     locator_line: str = _VALID_REVISE_LOCATOR_LINE,
+    round_line: str = _VALID_REVISE_ROUND_LINE,
     citation_line: str = _VALID_CITATION_LINE,
 ) -> str:
-    return "\n".join([locator_line, citation_line])
+    return "\n".join([locator_line, round_line, citation_line])
 
 
 class TestAtdAcceptsTheContractRevisionBody:
     """Run 4 evidence / ADR-SSOT-002 Section 4c/4d: a crafter INDETERMINATE
     citing the contract/oracle routes back to ATD with this alternate
-    two-line body on the SAME already-produced DeliveryId -- never a fresh
-    fourteen-line envelope from a second `prepare-ordinary-request` run."""
+    three-line body (stable-design report 2026-08-19 §1.2 added
+    REVISE-ROUND, emitted only by `des revise-contract-round`) on the SAME
+    already-produced DeliveryId -- never a fresh fourteen-line envelope
+    from a second `prepare-ordinary-request` run."""
 
     def test_valid_revision_body_is_not_blocked_by_this_gate(
         self, monkeypatch, capsys, audit_events, tmp_path
@@ -446,6 +450,38 @@ class TestAtdAcceptsTheContractRevisionBody:
                 "citation_json_number_not_string",
                 _atd_revision_body(citation_line="CITATION: 42"),
             ),
+            (
+                "round_missing_prefix",
+                _atd_revision_body(round_line="1/3"),
+            ),
+            (
+                "round_not_a_fraction",
+                _atd_revision_body(round_line="REVISE-ROUND: one"),
+            ),
+            (
+                "round_exceeds_its_own_bound",
+                _atd_revision_body(round_line="REVISE-ROUND: 4/3"),
+            ),
+            (
+                "round_zero",
+                _atd_revision_body(round_line="REVISE-ROUND: 0/3"),
+            ),
+            (
+                "round_negative",
+                _atd_revision_body(round_line="REVISE-ROUND: -1/3"),
+            ),
+            (
+                "round_leading_zero",
+                _atd_revision_body(round_line="REVISE-ROUND: 01/3"),
+            ),
+            (
+                "round_missing_denominator",
+                _atd_revision_body(round_line="REVISE-ROUND: 1/"),
+            ),
+            (
+                "two_line_body_missing_round_entirely",
+                "\n".join([_VALID_REVISE_LOCATOR_LINE, _VALID_CITATION_LINE]),
+            ),
         ],
     )
     def test_malformed_revision_body_blocks_with_this_gates_signature(
@@ -516,6 +552,7 @@ class TestRevisionGrammarDoesNotDriftAcrossAuthoringSurfaces:
         agent_text = _ATD_AGENT_MD.read_text(encoding="utf-8")
         for prefix in (
             pre_tool_use_handler._ATD_REVISE_CONTRACT_LINE_PREFIX.rstrip(),
+            pre_tool_use_handler._ATD_REVISE_ROUND_LINE_PREFIX.rstrip(),
             pre_tool_use_handler._ATD_CITATION_LINE_PREFIX.rstrip(),
         ):
             assert prefix in skill_text, f"{prefix!r} missing from nw-auto/SKILL.md"

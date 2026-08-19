@@ -88,36 +88,6 @@ def _oracle_equivalent_forms(oracle_locator: str) -> set[str]:
     return {dotted, oracle_locator}
 
 
-def resolve_existing_oracle_files(repo_root: Path, contract: dict) -> list[Path]:
-    """Every EXISTING file this contract names as an oracle/test file: the
-    `acceptance-tests.locator` itself, plus every `verification-scope`
-    command argument that resolves to a real file on disk (K4 Run 10:
-    structural checks only make sense on files this checker can already
-    prove exist -- an absent path is Run 9's own, separate finding)."""
-    found: dict[Path, None] = {}  # de-duplicating, order-preserving
-
-    oracle_locator = str(contract.get("acceptance-tests", {}).get("locator", ""))
-    if oracle_locator:
-        oracle_path = repo_root / oracle_locator
-        if oracle_path.is_file():
-            found[oracle_path] = None
-
-    for command in contract.get("verification-scope", {}).get("commands", []):
-        for label in django_test_labels(command):
-            module_file, package_init = _dotted_to_candidate_paths(repo_root, label)
-            if module_file.is_file():
-                found[module_file] = None
-            elif package_init.is_file():
-                found[package_init] = None
-        for path_arg in pytest_file_arguments(command):
-            file_part = path_arg.split("::", 1)[0]
-            candidate = repo_root / file_part
-            if candidate.is_file():
-                found[candidate] = None
-
-    return list(found)
-
-
 def missing_verification_paths(repo_root: Path, contract: dict) -> list[str]:
     """Every `verification-scope.commands` argument naming a test module or
     file absent from the base tree and not this contract's own oracle --

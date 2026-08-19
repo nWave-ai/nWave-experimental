@@ -8,6 +8,7 @@ All handler logic lives in dedicated modules:
 - pre_tool_use_handler.py  — PreToolUse (Task/Agent validation)
 - pre_write_handler.py     — PreWrite/PreEdit (session guard)
 - subagent_start_handler.py — SubagentStart (agent lifecycle)
+- subagent_stop_handler.py — SubagentStop (terminal-by-construction result)
 
 Routing lives in hook_router.py. This facade re-exports handler functions
 so that existing test imports (``from ... import adapter; adapter.handle_*``)
@@ -39,6 +40,9 @@ from des.adapters.drivers.hooks.pre_write_handler import (  # noqa: F401
 )
 from des.adapters.drivers.hooks.subagent_start_handler import (  # noqa: F401
     handle_subagent_start,
+)
+from des.adapters.drivers.hooks.subagent_stop_handler import (  # noqa: F401
+    handle_subagent_stop,
 )
 
 

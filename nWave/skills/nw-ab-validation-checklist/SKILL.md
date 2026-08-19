@@ -16,7 +16,7 @@ user-invocable: false
 | 4 | Language Tone | zero CRITICAL/MANDATORY/ABSOLUTE outside skill loading |
 | 5 | Examples | 3-5 `### Example` sections |
 | 6 | Least Privilege | tools list minimal; no Write/Edit for reviewers |
-| 7 | Safety | safety via frontmatter + hooks, not prose |
+| 7 | Safety by construction (GDP-0) | tool-surface frontmatter + typed grammar first, not prose; a hook only last-resort with a recorded reason |
 | 8 | Affirmative Phrasing | zero negatively-phrased rules |
 | 9 | Terminology | one term per concept |
 | 10 | Description Quality | description states WHEN to delegate |

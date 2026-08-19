@@ -42,6 +42,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -49,6 +50,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+from des.application.ordinary_request import contract_locator_for
 from scripts.analysis.k4 import prepare_examiner_fixture as pef
 from scripts.analysis.k4 import subject as k4_subject
 
@@ -458,7 +460,16 @@ def nwave_setup_steps(venv: Path, auth_profile: Path) -> list[list[str]]:
         # workspace -- architect, crafter, examiner alike -- now sees the
         # SAME facts from turn one instead of the examiner alone
         # discovering them empirically (Run 8: 40 wasted calls).
-        pef.fixture_setup_step(pef.NWAVE_PORT),
+        #
+        # Run 14 (K4 matrix): a FIXED port meant any leaked prior server
+        # (setsid survives every ancestor's teardown by design) collided
+        # with EVERY later run forever. `pef.free_port()` binds a fresh
+        # OS-assigned ephemeral port at setup time -- baked into this
+        # exact argv, and the SAME value `prepare()` renders into
+        # `pef.DOC_NAME` (`_render`) and the project CLAUDE.md fragment
+        # reads back via `pef.existing_port` -- one source, never a
+        # second hand-typed 18772.
+        pef.fixture_setup_step(pef.free_port()),
         seed_step(auth_profile),
         # `--platform claude-code`, never the `auto` default. Measured 2026-08-07:
         # auto-detect installs into EVERY platform it finds, and CLAUDE_CONFIG_DIR
@@ -486,13 +497,15 @@ def control_setup_steps(auth_profile: Path) -> list[list[str]]:
         _detach_step(),
         *_git_identity_steps("control"),
         pef.delivery_setup_step(),
-        # Symmetric with the nWave arm's own step above, at the arm-
-        # declared control port so the two fixtures never collide on one
-        # port if a campaign ever ran them side by side. Kept identical
-        # on BOTH arms deliberately: the fixture facts are a property of
-        # the SUBJECT, not of nWave being installed, so the comparison
-        # arms must still differ only in what their setup installs.
-        pef.fixture_setup_step(pef.CONTROL_PORT),
+        # Symmetric with the nWave arm's own step above, at its OWN fresh
+        # ephemeral port (Run 14) so the two fixtures never collide on
+        # one port if a campaign ever ran them side by side -- same
+        # reasoning as `pef.free_port()` above, independently bound.
+        # Kept identical on BOTH arms deliberately: the fixture facts are
+        # a property of the SUBJECT, not of nWave being installed, so
+        # the comparison arms must still differ only in what their setup
+        # installs.
+        pef.fixture_setup_step(pef.free_port()),
         seed_step(auth_profile),
     ]
 
@@ -1116,6 +1129,27 @@ def route_walk_heredoc_command(
     return None
 
 
+def route_walk_fenced_command(skill_md_text: str, *, subcommand: str) -> str | None:
+    """The EXACT fenced `des <subcommand> ...` invocation from
+    `skill_md_text` -- RAW, unsubstituted -- for a non-heredoc example
+    (`des compile-contract`'s own fenced block, `\\`-continued across
+    several lines, `des_fenced_lines` already joins). `None` when no
+    fenced example exists. Unlike `route_walk_heredoc_command`, this never
+    substitutes placeholders: the ONE hook this feeds
+    (`_evaluate_auto_root_bash_command`'s subcommand allowlist) decides on
+    the SUBCOMMAND NAME alone, never on flag values, so the example's own
+    `<root>`/`<producer id>`/anchor placeholder text is exactly as valid a
+    probe as any real value would be."""
+    for line in des_fenced_lines(skill_md_text):
+        try:
+            tokens = shlex.split(line)
+        except ValueError:
+            continue
+        if len(tokens) >= 2 and tokens[0] == "des" and tokens[1] == subcommand:
+            return line
+    return None
+
+
 def _route_walk_workspace(root: Path) -> Path:
     return root / "probe-route-walk"
 
@@ -1305,52 +1339,68 @@ _ROUTE_WALK_CHARTER_VALUE = (
     "charter-scaffold producer's contract, never actually read by a human."
 )
 
+#: Run 14 take 2 (K4 matrix): `des compile-contract` derives its ONE
+#: `targets` entry from a REAL file:line citation, resolved against the
+#: repo `route_walk`'s own workspace actually is -- the cloned healthchecks
+#: SUT (`nwave_setup_steps`'s first step), never a made-up path. `hc/api/
+#: models.py:1` is real in every pinned checkout (verified: `hc/api/tests/`
+#: exists too, so `resolve_oracle_locator` finds a real convention -- an
+#: EXTEND decision, not a CREATE_NEW one with no discoverable test dir).
+_ROUTE_WALK_CITATION_TARGET = "hc/api/models.py:1"
 
-def _minimal_delivery_contract(
-    *, delivery_id: str, outcome: str, base_revision: str, oracle_locator: str
-) -> dict:
-    """The smallest instance of `nWave/schemas/thin-delivery-contract.schema.json`
-    that validates -- built directly against the schema's own `required`
-    lists, never against an ATD's real design judgment. `route_walk` uses
-    this ONLY to exercise `des validate-delivery-contract`/`des dispatch`'s
-    own CLI mechanics; it says nothing about what a real DeliveryContract's
-    `targets`/`obligations`/`boundary` content should be."""
-    return {
-        "schema-version": "1.2",
-        "delivery-id": delivery_id,
-        "repository": {"worktree": ".", "base-revision": base_revision},
-        "outcome": outcome,
-        "targets": {
-            "route-walk-probe.txt": {
-                "candidate": "route-walk-probe.txt",
-                "overlap": "route-walk probe -- no real target",
-                "decision": "CREATE_NEW",
-                "justification": "smallest schema-valid instance for CLI-mechanics probing",
-                "declared-imports": [],
-                "contract-shape": "bounded-change",
-                "boundary": {
-                    "failure-behavior": "probe-only placeholder",
-                    "substrate-lie": "probe-only placeholder",
-                    "substrate-probe": "probe-only placeholder",
-                    "double-blind-spot": "probe-only placeholder",
-                },
-            }
-        },
-        "paradigm": "object_oriented",
-        "delivery-route": "RED_TO_GREEN",
-        "obligations": ["PRESERVATION"],
-        "acceptance-tests": {"locator": oracle_locator},
-        "verification-scope": {
-            "commands": [
-                {
-                    "executable": {"kind": "toolchain", "name": "pytest"},
-                    "arguments": [oracle_locator],
-                }
-            ]
-        },
-        "applicability": {"independent-review": False, "examine": True},
-        "budget": {"token-limit": 2000000, "wall-clock-minutes": 30},
-    }
+#: A CamelCase symbol the walk's OWN filled `justification` names, and its
+#: stub oracle's failure message ALSO names -- `des dispatch`'s red-reason
+#: probe (`oracle_execution_classifier.classify_probe_output`) accepts a
+#: nonzero oracle exit as the missing-feature reason ONLY when the output
+#: contains one of the contract's own declared symbols; a stub that merely
+#: fails proves nothing without this correlation.
+_ROUTE_WALK_DECLARED_SYMBOL = "RouteWalkProbeCapability"
+
+
+def _write_route_walk_architecture_brief(repo_root_path: Path) -> None:
+    """Write the REAL architecture-brief file `_ROUTE_WALK_ARCH_AUTHORITY`
+    points at -- `des compile-contract` reads this file's own text for a
+    file:line citation (`_ROUTE_WALK_CITATION_TARGET`) and a bold-labelled
+    schema obligation token, never a hand-typed skeleton (Run 14 take 2:
+    the walk's OLD `_minimal_delivery_contract` bypassed this compiler
+    entirely, so it never proved the compiled route actually works)."""
+    prefix = "ARCHITECTURE-COVERED: "
+    brief_relative, _, _anchor = _ROUTE_WALK_ARCH_AUTHORITY[len(prefix) :].partition(
+        "#"
+    )
+    brief_path = repo_root_path / brief_relative
+    brief_path.parent.mkdir(parents=True, exist_ok=True)
+    brief_path.write_text(
+        "# route-walk-probe\n\n"
+        "Route-walk probe brief -- exercises `des compile-contract`'s real "
+        "citation/obligation parsing end to end, never delivered.\n\n"
+        f"Extends `{_ROUTE_WALK_CITATION_TARGET}`.\n\n"
+        "Obligation: **PRESERVATION**.\n",
+        encoding="utf-8",
+    )
+
+
+def _fill_route_walk_contract_placeholders(contract: dict) -> None:
+    """Replace every `<ATD: fill>` placeholder `des compile-contract` wrote
+    with minimal-but-valid content, in place -- the walk's own stand-in for
+    ATD's fill pass (Run 14 take 2). Every target's `justification` names
+    `_ROUTE_WALK_DECLARED_SYMBOL`: `declared_symbol_candidates` (`des
+    dispatch`'s red-reason probe) scans exactly `justification`/`overlap`
+    for a CamelCase symbol a nonzero oracle exit is allowed to fail on --
+    the stub oracle below names the SAME symbol, one source, so the two
+    correlate by construction rather than by luck."""
+    contract["outcome"] = (
+        "Route-walk probe outcome -- exercises the compiled contract route "
+        "end to end with no model call, never delivered."
+    )
+    for target in contract.get("targets", {}).values():
+        target["justification"] = (
+            f"Adds {_ROUTE_WALK_DECLARED_SYMBOL}, a probe-only capability "
+            "route_walk exercises end to end; never a real feature."
+        )
+        boundary = target.get("boundary", {})
+        for key in boundary:
+            boundary[key] = "probe-only placeholder"
 
 
 def _hook_step(
@@ -1518,6 +1568,15 @@ def route_walk_steps(
                 "the DISTILL charter producer, `des charter-scaffold`.",
             ),
             (
+                "compile-contract-allow",
+                "nw-auto/SKILL.md step 3: root's mandated skeleton compiler "
+                "before ATD dispatch.",
+            ),
+            (
+                "cli-compile-contract",
+                "the DeliveryContract skeleton compiler, `des compile-contract`.",
+            ),
+            (
                 "cli-validate-delivery-contract",
                 "`des validate-delivery-contract`, the crafter's own consumer-boundary check.",
             ),
@@ -1546,12 +1605,6 @@ def route_walk_steps(
 
     producer_fields = _parse_producer_stdout(prep_stdout)
     delivery_id = producer_fields.get("DELIVERY-ID", "")
-    base_revision = producer_fields.get("BASE-REVISION", "")
-    outcome_raw = producer_fields.get("OUTCOME", '""')
-    try:
-        outcome_text = json.loads(outcome_raw)
-    except json.JSONDecodeError:
-        outcome_text = _ROUTE_WALK_SEED
 
     charter_step, _ = _cli_step(
         "cli-charter-scaffold",
@@ -1571,28 +1624,89 @@ def route_walk_steps(
     )
     steps.append(charter_step)
 
-    oracle_relative = f"route_walk_probe_oracle_{delivery_id}.py"
+    # Run 14 take 2 (K4 matrix): the walk now follows the COMPILED route
+    # (compile -> fill -> dispatch), not a hand-built minimal skeleton.
+    # `_write_route_walk_architecture_brief` writes the REAL brief file
+    # `_ROUTE_WALK_ARCH_AUTHORITY` names, so `des compile-contract` derives
+    # a REAL target/oracle-locator from a REAL citation, exactly like a
+    # genuine DESIGN brief would.
+    _write_route_walk_architecture_brief(repo_root_path)
+
+    compile_fenced_command = route_walk_fenced_command(
+        skill_md_text, subcommand="compile-contract"
+    )
+    steps.append(
+        _hook_step(
+            "compile-contract-allow",
+            "nw-auto/SKILL.md step 3: 'des compile-contract --repo-root "
+            "<root> --delivery-id <producer id> --architecture-authority "
+            "... --route ... --examine ... --independent-review ...'.",
+            expect_allow=True,
+            hook_run=hook_run,
+            payload={
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": compile_fenced_command
+                    or "# no fenced compile-contract example found"
+                },
+                "transcript_path": transcript_path,
+            },
+        )
+    )
+
+    compile_step, _ = _cli_step(
+        "cli-compile-contract",
+        "the DeliveryContract skeleton compiler, `des compile-contract`.",
+        expect_exit=0,
+        cli_run=cli_run,
+        argv=[
+            "des",
+            "compile-contract",
+            "--repo-root",
+            repo_root,
+            "--delivery-id",
+            delivery_id,
+            "--architecture-authority",
+            _ROUTE_WALK_ARCH_AUTHORITY,
+            "--route",
+            "RED_TO_GREEN",
+            "--examine",
+            "true",
+            "--independent-review",
+            "false",
+        ],
+    )
+    steps.append(compile_step)
+
+    contract_relative = contract_locator_for(delivery_id)
+    if not compile_step["passed"]:
+        for name, mandate in (
+            (
+                "cli-validate-delivery-contract",
+                "`des validate-delivery-contract`, the crafter's own consumer-boundary check.",
+            ),
+            (
+                "cli-dispatch",
+                "nw-auto/SKILL.md 'CLI dispatch': `des dispatch --repo-root ROOT --delivery-contract PATH`.",
+            ),
+        ):
+            steps.append(_skipped_step(name, mandate, "cli-compile-contract failed"))
+        return {"status": "blocked", "steps": steps}
+
+    contract_path = repo_root_path / contract_relative
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    _fill_route_walk_contract_placeholders(contract)
+
+    oracle_relative = contract["acceptance-tests"]["locator"]
     oracle_path = repo_root_path / oracle_relative
+    oracle_path.parent.mkdir(parents=True, exist_ok=True)
     oracle_path.write_text(
         '"""route_walk probe oracle placeholder -- not a real acceptance test."""\n\n\n'
-        "def test_probe_placeholder() -> None:\n    assert True\n",
+        "def test_probe_placeholder() -> None:\n"
+        f'    assert False, "{_ROUTE_WALK_DECLARED_SYMBOL} is not implemented yet"\n',
         encoding="utf-8",
     )
-    contract_relative = f"docs/delivery-contracts/{delivery_id}.json"
-    contract_path = repo_root_path / contract_relative
-    contract_path.parent.mkdir(parents=True, exist_ok=True)
-    contract_path.write_text(
-        json.dumps(
-            _minimal_delivery_contract(
-                delivery_id=delivery_id,
-                outcome=outcome_text,
-                base_revision=base_revision,
-                oracle_locator=oracle_relative,
-            ),
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    contract_path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
 
     validate_step, _ = _cli_step(
         "cli-validate-delivery-contract",
@@ -2004,14 +2118,17 @@ def route_walk(root: Path, venv: Path, auth_profile: Path) -> dict:
 _START_RECIPE_SERVER_TIMEOUT = 40.0
 
 
-def probe_examiner_start_recipe(workspace: Path, *, port: int) -> list[str]:
+def probe_examiner_start_recipe(workspace: Path) -> list[str]:
     """Prove the examiner's ACTUAL rendered start recipe -- the SAME
     `pef.DOC_NAME` file `fixture_setup_step` already wrote into this exact
-    workspace, at this exact `port` -- runs under this harness's actual
-    rendered env (`_rendered_arm_env`), deterministically, with NO model
-    call, before a single (expensive, long) delivery/examiner turn is
-    spent. One source, twice over: the API key comes from the rendered
-    doc itself (`pef._existing_api_key`), and the server is started by
+    workspace -- runs under this harness's actual rendered env
+    (`_rendered_arm_env`), deterministically, with NO model call, before a
+    single (expensive, long) delivery/examiner turn is spent. One source,
+    three times over: the API key AND the port both come from the rendered
+    doc itself (`pef._existing_api_key` / `pef.existing_port` -- Run 14: no
+    caller-supplied port parameter, since `nwave_setup_steps`/
+    `control_setup_steps` bind a fresh ephemeral one per call and the doc is
+    the one place that recorded which), and the server is started by
     EXECUTING `pef.start_and_wait_block` verbatim -- the identical Bash
     text the rendered doc quotes for a real examiner to copy/paste --
     never a synthetic stand-in server or a second hand-typed command.
@@ -2058,6 +2175,12 @@ def probe_examiner_start_recipe(workspace: Path, *, port: int) -> list[str]:
             f"no {pef.DOC_NAME} (or no API key line in it) exists in "
             f"{workspace} -- row 11's start recipe was never provisioned "
             "for this arm before this canary ran"
+        ]
+    port = pef.existing_port(workspace)
+    if port is None:
+        return [
+            f"no {pef.DOC_NAME} (or no Base URL line in it) exists in "
+            f"{workspace} -- its port cannot be recovered for this canary"
         ]
 
     env = _rendered_arm_env(workspace)
@@ -2341,7 +2464,32 @@ def main(argv: list[str] | None = None) -> int:
             "before arms.json is written; see probe_persisted_verification_commands"
         ),
     )
+    parser.add_argument(
+        "--wall-clock-minutes",
+        type=int,
+        default=60,
+        help=(
+            "the campaign's own declared wall-clock ceiling (stable-design "
+            "report 2026-08-19 Sec.1.3: 'root-level wall-clock budget as a "
+            "proactive loop check') -- declared HERE, once, by the harness "
+            "that owns the delivery route, never re-derived downstream. "
+            "Rendered into both arms.json's own spec and each arm's project "
+            "fragment (render_project_fragment) alongside the campaign's "
+            "start epoch, so the root reads its OWN declared ceiling and "
+            "elapsed time directly from its own project context and can "
+            "stop before an external kill, not merely be killed by one"
+        ),
+    )
     args = parser.parse_args(argv)
+
+    # Run 14 debrief stable-design report Sec.1.3: the campaign's OWN start
+    # moment, recorded ONCE here, propagated to every arm's setup subprocess
+    # through the SAME `_rendered_arm_env`/`os.environ` channel every OTHER
+    # arm-specific fact already travels through -- never a second, parallel
+    # plumbing mechanism.
+    campaign_start_epoch = int(time.time())
+    os.environ["K4_WALL_CLOCK_CEILING_MINUTES"] = str(args.wall_clock_minutes)
+    os.environ["K4_CAMPAIGN_START_EPOCH"] = str(campaign_start_epoch)
 
     missing = missing_sandbox_prerequisites()
     if missing:
@@ -2483,9 +2631,12 @@ def main(argv: list[str] | None = None) -> int:
     # spent -- unlike a merely-unprovisioned recipe (row 11's original
     # softer case), a real auth failure here is not "not yet ready", it
     # is "structurally cannot work".
-    start_recipe_problems = probe_examiner_start_recipe(
-        _probe_workspace(args.root), port=pef.NWAVE_PORT
-    )
+    # Run 14: `probe_examiner_start_recipe` now recovers its own port from
+    # the workspace's rendered doc internally (`pef.existing_port`) -- no
+    # caller-supplied port, since `nwave_setup_steps` binds a fresh
+    # ephemeral one per call and the doc is the one place that recorded
+    # which.
+    start_recipe_problems = probe_examiner_start_recipe(_probe_workspace(args.root))
     if start_recipe_problems:
         sys.stderr.write(
             "WHAT: the examiner's start recipe did not authenticate "
@@ -2611,6 +2762,16 @@ def main(argv: list[str] | None = None) -> int:
     # because its prompt was worded to invite it.
     spec = {
         "task": args.task_file.read_text(encoding="utf-8").strip(),
+        # Stable-design report 2026-08-19 Sec.1.3: the campaign's ONE
+        # declared wall-clock ceiling and start epoch, the SAME two values
+        # `os.environ["K4_WALL_CLOCK_CEILING_MINUTES"/"K4_CAMPAIGN_START_
+        # EPOCH"]` already carried into every arm's setup subprocess and
+        # `render_project_fragment`'s own fragment text -- one source,
+        # three surfaces, never three independently re-derived numbers.
+        "budget": {
+            "wall_clock_minutes": args.wall_clock_minutes,
+            "start_epoch": campaign_start_epoch,
+        },
         # Recorded even though `route_walk_result["status"] != "proven"`
         # already returned 1 above -- only a "proven" result ever reaches
         # this write, so `route_walk.status` is always "proven" in a written

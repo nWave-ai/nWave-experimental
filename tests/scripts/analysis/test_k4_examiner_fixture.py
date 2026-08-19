@@ -150,6 +150,70 @@ def test_occupied_port_is_refused_before_migrate_seed_or_doc(tmp_path):
         sock.close()
 
 
+def test_prepare_stops_our_own_leaked_runserver_and_proceeds_instead_of_refusing(
+    tmp_path,
+):
+    """Run 14 (K4 matrix): `setsid` (Run 12) makes a leaked examiner
+    server survive every ancestor's process-group teardown BY DESIGN --
+    refusing outright on ANY occupied port treats our own past leak the
+    same as a genuinely unknown collision, which is exactly what fired
+    in Run 14 ('port 18772 is already occupied'). `prepare()` must
+    instead recognize the EXACT runserver invocation shape it renders
+    (`_runserver_argv_and_env`) and stop it LOUDLY, then PROCEED --
+    never refuse. The occupant here is a REAL process with a REAL
+    command line matching that shape, never a mocked check."""
+    import time
+
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    workspace = _make_workspace(tmp_path)
+    port = _free_port()
+    _install_fake_venv_python(workspace, seed_key="k4-row14-leak-9c31")
+
+    leaked = subprocess.Popen(
+        [
+            "python3",
+            "-c",
+            "import socket, time\n"
+            "s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+            "s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n"
+            f"s.bind(('127.0.0.1', {port}))\n"
+            "s.listen(1)\n"
+            "time.sleep(60)\n",
+            # Everything from here on is what `pgrep -f` actually finds --
+            # the same shape `_runserver_argv_and_env` renders, proving
+            # this canary matches the PROPERTY, not a mock.
+            "manage.py",
+            "runserver",
+            "--noreload",
+            f"127.0.0.1:{port}",
+        ]
+    )
+    try:
+        for _ in range(20):
+            if pef._port_is_occupied(port):
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("the leaked stand-in process never bound its port")
+
+        try:
+            doc_target = pef.prepare(workspace, port=port)
+        except SystemExit as exc:
+            raise AssertionError(
+                "prepare() must stop our own leaked server and proceed, "
+                f"never refuse for it: {exc}"
+            ) from exc
+
+        assert doc_target.exists(), (
+            "prepare() must have completed and rendered the doc after "
+            "stopping the leaked occupant"
+        )
+    finally:
+        leaked.kill()
+        leaked.wait(timeout=5)
+
+
 def test_delivery_prepare_migrates_without_seeding_or_rendering_a_key(tmp_path):
     from scripts.analysis.k4 import prepare_examiner_fixture as pef
 
@@ -416,6 +480,57 @@ def test_project_fragment_derives_every_fact_from_its_one_source(tmp_path):
     assert pef._API_DOCS_PATH in fragment
 
 
+def test_project_fragment_states_the_wall_clock_ceiling_when_declared(
+    tmp_path, monkeypatch
+):
+    """Stable-design report 2026-08-19 Sec.1.3: when `preflight.main()`
+    has declared a campaign wall-clock ceiling (`K4_WALL_CLOCK_CEILING_
+    MINUTES`/`K4_CAMPAIGN_START_EPOCH`, propagated through the SAME env
+    channel every other arm-specific fact travels through), the arm's
+    OWN project fragment must state it directly -- the root reads its
+    own declared ceiling and elapsed time from its own project context,
+    not merely from a `des prepare-ordinary-request` envelope it saw
+    once at the start of the delivery."""
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    venv_python = _install_fake_pip_venv_python(workspace, freeze_lines=["Django==5.0"])
+
+    monkeypatch.setenv("K4_WALL_CLOCK_CEILING_MINUTES", "42")
+    monkeypatch.setenv("K4_CAMPAIGN_START_EPOCH", "1755000000")
+
+    fragment = pef.render_project_fragment(venv_python, workspace)
+
+    assert "42 minutes" in fragment
+    assert "1755000000" in fragment
+    assert "INDETERMINATE" in fragment, (
+        "the bullet must name the terminal outcome once the ceiling is "
+        "reached, not merely state the numbers"
+    )
+
+
+def test_project_fragment_omits_the_wall_clock_bullet_when_undeclared(
+    tmp_path, monkeypatch
+):
+    """Negative control: an older harness run, or any non-K4 caller of
+    `render_project_fragment`, sets neither env var -- the fragment must
+    silently omit the bullet, never fabricate a ceiling nothing
+    declared."""
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    venv_python = _install_fake_pip_venv_python(workspace, freeze_lines=["Django==5.0"])
+
+    monkeypatch.delenv("K4_WALL_CLOCK_CEILING_MINUTES", raising=False)
+    monkeypatch.delenv("K4_CAMPAIGN_START_EPOCH", raising=False)
+
+    fragment = pef.render_project_fragment(venv_python, workspace)
+
+    assert "wall-clock ceiling" not in fragment.lower()
+
+
 def test_project_fragment_survives_a_pip_list_failure(tmp_path):
     """`_installed_dependency_names` degrades to an empty list, never an
     exception, on a broken/missing pip -- the fragment must still render a
@@ -473,11 +588,9 @@ def _run_step(step, *, cwd) -> None:
     subprocess.run(step, cwd=cwd, check=True, capture_output=True, text=True)
 
 
-@pytest.mark.parametrize(
-    "arm_name,port_name", [("control", "CONTROL_PORT"), ("nwave", "NWAVE_PORT")]
-)
+@pytest.mark.parametrize("arm_name", ["control", "nwave"])
 def test_arm_setup_provisions_the_examiner_recipe_before_any_model_call(
-    tmp_path, monkeypatch, arm_name, port_name
+    tmp_path, monkeypatch, arm_name
 ):
     """Row 11 (K4 matrix): the examiner burned 40 calls trying to stand up
     a Django dev server with no start recipe in view -- because
@@ -495,6 +608,12 @@ def test_arm_setup_provisions_the_examiner_recipe_before_any_model_call(
     network, `test_k4_arm_workspace_is_detached.py`'s own pattern) and a
     fake clone-local interpreter (`_install_fake_venv_python`, no real
     Django install) -- proving the WIRING, not just its declared shape.
+
+    Run 14: the port is no longer a fixed `pef.CONTROL_PORT`/`NWAVE_PORT`
+    constant -- `control_setup_steps`/`nwave_setup_steps` each bind a
+    fresh `pef.free_port()` at call time. This test recovers the ACTUAL
+    port from the fixture step `steps` itself already carries (its own
+    trailing argv element), never a separately re-derived guess.
     """
     from scripts.analysis.k4 import preflight
     from scripts.analysis.k4 import prepare_examiner_fixture as pef
@@ -517,13 +636,21 @@ def test_arm_setup_provisions_the_examiner_recipe_before_any_model_call(
     monkeypatch.setattr(preflight, "_SUT", str(sut))
     monkeypatch.setattr(preflight, "_SUT_PINNED_REV", sut_head)
 
-    port = getattr(pef, port_name)
     if arm_name == "control":
         steps = preflight.control_setup_steps(tmp_path / "auth-unused")
     else:
         steps = preflight.nwave_setup_steps(
             tmp_path / "venv-unused", tmp_path / "auth-unused"
         )
+    fixture_step = next(
+        (s for s in steps if len(s) == 3 and s[0] == sys.executable and s[2].isdigit()),
+        None,
+    )
+    assert fixture_step is not None, (
+        f"{arm_name}_setup_steps must itself include fixture_setup_step, "
+        "not just happen to work when run by hand"
+    )
+    port = int(fixture_step[2])
 
     workspace = tmp_path / arm_name
     workspace.mkdir()
@@ -545,11 +672,6 @@ def test_arm_setup_provisions_the_examiner_recipe_before_any_model_call(
         "behind -- prepare_delivery unlinks it deliberately"
     )
 
-    fixture_step = pef.fixture_setup_step(port)
-    assert fixture_step in steps, (
-        f"{arm_name}_setup_steps must itself include fixture_setup_step "
-        f"at {port_name}, not just happen to work when run by hand"
-    )
     _run_step(fixture_step, cwd=workspace)
 
     assert doc_path.exists(), (

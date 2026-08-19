@@ -18,7 +18,7 @@ Run against every agent under review. Each item pass/fail.
 5. **Examples present**: 3-5 canonical for critical/subtle behaviors
 6. **Least privilege tools**: Minimum needed in frontmatter
 7. **maxTurns set**: Present in frontmatter
-8. **Platform safety**: Via frontmatter/hooks, not prose
+8. **Platform safety by construction (GDP-0)**: tool-surface frontmatter + typed grammar first, not prose; a hook only last-resort with a recorded reason
 9. **Affirmative phrasing**: "Do X" not "Don't do Y"
 10. **Consistent terminology**: One term per concept
 11. **Clear delegation**: Description states when to delegate

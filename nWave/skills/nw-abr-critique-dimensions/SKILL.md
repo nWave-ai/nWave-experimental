@@ -34,9 +34,11 @@ Does the agent specify only what diverges from Claude defaults?
 
 **Severity**: Medium -- redundant instructions waste tokens, cause overtriggering.
 
-## Dimension 4: Safety Implementation
+## Dimension 4: Safety Implementation by Construction (GDP-0)
 
-**Check**: Tools restricted via frontmatter `tools` field | maxTurns set | No prose-based security layers (use hooks) | No embedded enterprise safety frameworks | permissionMode set for risky actions
+Which producer could make the unsafe action unrepresentable — did the spec construct it away, or reach for a check?
+
+**Check**: Tools restricted via frontmatter `tools` field | maxTurns set | permissionMode set for risky actions | typed terminal grammar / producer-emitted envelope preferred over prose checks | any hook present only as last resort with a recorded reason | No embedded enterprise safety frameworks
 
 **Severity**: High -- prose safety is ineffective and token-wasteful.
 

@@ -93,7 +93,14 @@ def test_auto_resolves_charter_axis_independently_and_uses_single_cli_shape():
         "des resolve-charters --repo-root <root> --delivery-id <producer id> "
         "--examine <true|false>" in normalized_route
     )
-    assert "ATD always receives producer stdout verbatim" in normalized_route
+    # fa7d9730a: compile-contract now runs between resolve-charters and
+    # ATD's dispatch; the property protected here (ATD receives only the
+    # CLI-printed producer envelope verbatim, never root-authored) is
+    # unchanged -- only the exact pinned wording moved.
+    assert (
+        "ATD always receives the original fourteen-line producer stdout "
+        "verbatim, unchanged by this step" in normalized_route
+    )
     assert (
         "For `examine=true, Author`, PO concurrently receives only the "
         "producer-emitted DeliveryId, namespace, root and VALUE-SEED"

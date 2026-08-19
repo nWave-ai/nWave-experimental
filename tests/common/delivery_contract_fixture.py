@@ -38,17 +38,42 @@ def load_valid_contract() -> dict:
     return json.loads(_DELIVERY_CONTRACT_FIXTURE.read_text(encoding="utf-8"))
 
 
+#: `des dispatch`'s oracle red-reason probe (`des.cli.
+#: _oracle_red_reason_refusal`) is never switchable off (GDP-7): it always
+#: executes `verification-scope.commands` for real. The real, checked-in
+#: `acceptance-tests.locator` this fixture names
+#: (`tests/build/test_thin_delivery_contract_schema.py`) is a genuine,
+#: already-passing schema test -- correct in the real repo, but GREEN at
+#: base is exactly the defect that probe refuses for a RED_TO_GREEN route.
+#: `seed_referenced_oracle` therefore writes this synthetic body instead of
+#: copying the real file's bytes: a plain `AssertionError` needs no
+#: declared-symbol correlation and is always an acceptable RED reason,
+#: regardless of route (`GREEN_TO_GREEN` does not require GREEN either --
+#: this probe only refuses GREEN under `RED_TO_GREEN`). This never touches
+#: the real file in the actual checkout; only the copy under a test's own
+#: `tmp_path`.
+_SYNTHETIC_RED_ORACLE_SOURCE = (
+    "def test_it_awaits_the_missing_feature() -> None:\n"
+    '    """Deliberately RED: this shared dispatch-test fixture\'s oracle\n'
+    "    stays a genuine RED-for-the-right-reason under the always-on\n"
+    '    oracle red-reason probe."""\n'
+    '    assert False, "fixture oracle: intentionally not implemented"\n'
+)
+
+
 def seed_referenced_oracle(root: Path, contract: dict) -> Path:
-    """Materialize the real oracle bytes `contract["acceptance-tests"]["locator"]`
-    names, under `root`, at that exact locator -- so a tmp `--repo-root` can
-    resolve the oracle `dispatch._resolve_oracle` reads, without embedding a
-    second oracle fixture. The locator itself never changes with route/examine,
-    so this is safe to call before or after those fields are overridden."""
+    """Materialize a genuinely RED-for-the-right-reason oracle body at
+    `contract["acceptance-tests"]["locator"]`, under `root`, so a tmp
+    `--repo-root` can resolve the oracle `dispatch._resolve_oracle` reads,
+    without embedding a second oracle fixture. The locator itself never
+    changes with route/examine, so this is safe to call before or after
+    those fields are overridden. The written bytes are synthetic
+    (`_SYNTHETIC_RED_ORACLE_SOURCE`), not a copy of the real file's bytes --
+    see that constant's own comment for why."""
     locator = str(contract["acceptance-tests"]["locator"])
-    src = _REPO_ROOT / locator
     dst = root / locator
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_bytes(src.read_bytes())
+    dst.write_text(_SYNTHETIC_RED_ORACLE_SOURCE, encoding="utf-8")
     return dst
 
 

@@ -35,7 +35,7 @@ The invoked agent MUST create a task list from its workflow phases at the start 
 - [ ] 3-5 canonical examples included
 - [ ] Domain knowledge extracted to Skills if >50 lines
 - [ ] No aggressive language (no CRITICAL/MANDATORY/ABSOLUTE)
-- [ ] Safety via platform features (frontmatter/hooks), not prose
+- [ ] Safety by construction first (frontmatter tool surface, typed grammar), not prose; hooks last resort with a recorded reason (GDP-0)
 
 ## Next Wave
 

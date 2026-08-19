@@ -116,8 +116,13 @@ _ATD_DELIVERY_ROUTE_LINE_PREFIX = "DELIVERY-ROUTE: "
 # it does not cross-validate the locator against a DeliveryId; it only
 # proves the locator has the one shape ATD ever legitimately writes to.
 _ATD_REVISE_CONTRACT_LINE_PREFIX = "REVISE-CONTRACT: "
+# Stable-design report 2026-08-19 §1.2: `des revise-contract-round` (the
+# bounded PRODUCER -- the bound itself lives THERE, never re-enforced here;
+# this gate only checks the envelope's own lexical `n/N` shape) inserts
+# this line between REVISE-CONTRACT and CITATION.
+_ATD_REVISE_ROUND_LINE_PREFIX = "REVISE-ROUND: "
 _ATD_CITATION_LINE_PREFIX = "CITATION: "
-_ATD_REVISION_BODY_LINE_COUNT = 2
+_ATD_REVISION_BODY_LINE_COUNT = 3
 _CONTRACT_LOCATOR_DIR_PREFIX = "docs/delivery-contracts/"
 
 # K4 (nw-auto ADR-SSOT-002 Section 4c total constructor): the twelve named
@@ -178,6 +183,7 @@ _AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS = frozenset(
         "prepare-ordinary-request",
         "resolve-charters",
         "code-fact",
+        "compile-contract",
     }
 )
 
@@ -338,8 +344,8 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
     Restricts Auto-root's OWN Bash calls to either a single, literal `git
     status|diff|rev-parse|branch|worktree|add|commit` invocation, or a
     single, literal `des dispatch|validate-delivery-contract|
-    charter-scaffold|prepare-ordinary-request|resolve-charters|code-fact`
-    invocation
+    charter-scaffold|prepare-ordinary-request|resolve-charters|code-fact|
+    compile-contract` invocation
     (the direct-cutover spine has no hook controller between Auto-root and
     the dispatched role's own DES CLI call). Lexically rejects any
     shell-composition operator (see
@@ -529,7 +535,27 @@ def _subagent_budget_exhaustion_block(
 def _evaluate_subagent_budget_exhaustion(
     hook_input: dict[str, object],
 ) -> dict[str, str] | None:
-    """Pure budget-exhaustion decision for a dispatched nw-* subagent's OWN
+    """GDP-0 / stable-design report 2026-08-19 §1.1 -- REMOVE FALSIFIER (do
+    not delete yet): this is a LAW re-deriving a fact
+    `subagent_stop_handler.py`'s SubagentStop handler now consumes
+    authoritatively (the platform's own completion event, `agent_type`
+    always present there, `agent_transcript_path` needing no parent-session
+    derivation). This function survives ONLY as a PRE-EMPTION courtesy --
+    denying a tool call BEFORE the budget is exhausted is strictly better
+    than a SubagentStop-time synthesized INDETERMINATE after the fact, when
+    the heuristic count happens to be right. REMOVE this function once ALL
+    of: (a) the SubagentStop handler has been running in production long
+    enough to show its synthesized-terminal-result path reliably fires on
+    every real silent stop (no third Run-9/10-class miss), (b) the
+    preemption benefit is shown empirically not to matter economically
+    (the report's own §4 found 6/6 sampled real firings already followed a
+    clean terminal result even without SubagentStop -- the preemption case
+    is not yet proven to earn its own maintenance cost), (c) team-lead/Ale
+    authorizes the removal explicitly (GDP-0: a gate's removal is an
+    authorization act, not a self-granted one). Until then this stays,
+    unchanged in behaviour.
+
+    Pure budget-exhaustion decision for a dispatched nw-* subagent's OWN
     tool call. `None` (allow) unless ALL of: this is a real nWave subagent
     (`root_activation_context.resolve_subagent_agent_type` -- live envelope
     field OR transcript meta-sidecar, see Run 9/10 correction), its own
@@ -857,8 +883,12 @@ def _auto_root_atd_body_block() -> dict[str, str]:
             "BUDGET-WALL-CLOCK-MINUTES, VALUE-SEED, each on its own line in "
             "that exact order, and nothing else; OR, to revise an "
             "already-produced contract on a crafter's contract/oracle "
-            "citation, send exactly REVISE-CONTRACT then CITATION, each on "
-            "its own line and nothing else."
+            "citation, run `des revise-contract-round --repo-root <root> "
+            "--contract-locator <locator> --citation <text>` and send its "
+            "exact three-line stdout (REVISE-CONTRACT, REVISE-ROUND, "
+            "CITATION, each on its own line) verbatim -- never hand-type "
+            "this body, and never redispatch ATD once that producer "
+            "refuses (its bound is exhausted)."
         ),
     }
 
@@ -879,18 +909,47 @@ def _is_well_formed_contract_locator_for_revision(locator: str) -> bool:
     return len(hex_part) == DELIVERY_ID_HEX_LEN and set(hex_part) <= _HEX_ALPHABET
 
 
+def _is_well_formed_revise_round_value(value: str) -> bool:
+    """True iff `value` is exactly `<n>/<N>` with both positive base-10
+    integers (no leading zeros beyond a bare `0`, no sign, no whitespace)
+    and `n <= N`. Lexical only -- the BOUND `N` itself is never re-checked
+    against `revise_contract_round.REVISE_ROUND_BOUND` here: enforcing the
+    same bound in both the producer and this gate would be exactly the
+    "three checks on one artefact" pattern GDP-0 names as the alarm to
+    redesign the producer, not the gate. This only refuses a value the
+    producer could never have emitted (malformed shape, or `n > N`)."""
+    parts = value.split("/")
+    if len(parts) != 2:
+        return False
+    n_text, bound_text = parts
+    if not (n_text.isdigit() and bound_text.isdigit()):
+        return False
+    if (n_text != "0" and n_text.startswith("0")) or (
+        bound_text != "0" and bound_text.startswith("0")
+    ):
+        return False
+    n, bound = int(n_text), int(bound_text)
+    return n >= 1 and bound >= 1 and n <= bound
+
+
 def _is_well_formed_atd_revision_body(prompt: str) -> bool:
-    """True iff `prompt` is exactly the two-line contract-revision shape:
-    `REVISE-CONTRACT: <locator>` then `CITATION: <non-empty JSON string>`,
+    """True iff `prompt` is exactly the three-line contract-revision shape
+    `des revise-contract-round` emits: `REVISE-CONTRACT: <locator>` then
+    `REVISE-ROUND: <n>/<N>` then `CITATION: <non-empty JSON string>`,
     nothing else."""
     lines = prompt.split("\n")
     if len(lines) != _ATD_REVISION_BODY_LINE_COUNT:
         return False
-    locator_line, citation_line = lines
+    locator_line, round_line, citation_line = lines
     if not locator_line.startswith(_ATD_REVISE_CONTRACT_LINE_PREFIX):
         return False
     locator = locator_line[len(_ATD_REVISE_CONTRACT_LINE_PREFIX) :]
     if not _is_well_formed_contract_locator_for_revision(locator):
+        return False
+    if not round_line.startswith(_ATD_REVISE_ROUND_LINE_PREFIX):
+        return False
+    round_value = round_line[len(_ATD_REVISE_ROUND_LINE_PREFIX) :]
+    if not _is_well_formed_revise_round_value(round_value):
         return False
     citation = _has_json_string_value(citation_line, _ATD_CITATION_LINE_PREFIX)
     return bool(citation) and bool(citation.strip())

@@ -112,9 +112,21 @@ class TestDESHookIdempotence:
                         "command": "python3 src/des/adapters/drivers/hooks/claude_code_hook_adapter.py pre-task",
                     },
                 ],
-                "SubagentStop": [
+                # Notification has zero trace anywhere in this repo's hook
+                # wiring, and is NOT one of `_RETIRED_LIFECYCLE_EVENTS`
+                # (`des_plugin.py`: `("SessionStart", "UserPromptSubmit")`,
+                # governed by a SEPARATE exact-digest reconciliation pass,
+                # not the generic `shared_hooks.strip_des_hooks_from_entries`
+                # classifier this assertion exercises) -- unlike PostToolUse
+                # (now genuinely registered, ADR-SSOT-002 Section 4/4b item
+                # 1's oracle-write classifier) or SubagentStop (stable-design
+                # report 2026-08-19 §1.1), Notification stays retired-and-
+                # generically-swept regardless of feature landings, so this
+                # fixture uses it for the "residue under a still-retired
+                # event" assertion below.
+                "Notification": [
                     {
-                        "command": "python3 src/des/adapters/drivers/hooks/claude_code_hook_adapter.py subagent-stop",
+                        "command": "python3 src/des/adapters/drivers/hooks/claude_code_hook_adapter.py post-tool-use",
                     },
                     {
                         "matcher": "*",
@@ -148,18 +160,18 @@ class TestDESHookIdempotence:
             f"Legacy hooks were not fully replaced."
         )
 
-        # Structural DES residue under a retired event (SubagentStop is no
-        # longer in HOOK_EVENTS) must also be reconciled away, while an
-        # unrelated user hook nested as a sibling under that same retired
-        # event survives.
-        subagent_stop_entries = settings["hooks"].get("SubagentStop", [])
+        # Structural DES residue under a retired event (Notification is not
+        # in HOOK_EVENTS) must also be reconciled away, while an unrelated
+        # user hook nested as a sibling under that same retired event
+        # survives.
+        notification_entries = settings["hooks"].get("Notification", [])
         assert any(
             hook.get("command") == "echo user-defined-hook"
-            for entry in subagent_stop_entries
+            for entry in notification_entries
             for hook in entry.get("hooks", [])
         ), "Unrelated user hook nested under a retired event must survive."
         assert not any(
-            shared_hooks.is_des_hook_entry(entry) for entry in subagent_stop_entries
+            shared_hooks.is_des_hook_entry(entry) for entry in notification_entries
         ), "DES-owned entry under a retired event must be removed."
 
     @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")

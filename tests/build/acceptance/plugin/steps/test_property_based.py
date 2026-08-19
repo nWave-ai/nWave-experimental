@@ -22,6 +22,7 @@ from scripts.build_plugin import (
     generate_plugin_metadata,
     rewrite_des_imports,
 )
+from scripts.shared.hook_definitions import HOOK_EVENT_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -82,14 +83,21 @@ def test_property_rewrite_preserves_non_des_imports(content: str):
 def test_property_hook_config_event_keys():
     """generate_hook_config produces exactly the declared event keys.
 
-    SessionStart and UserPromptSubmit were the session-ceremony anchors and went
-    with it (22ea19309); a reappearance here means the ceremony came back.
+    Compared against the HOOK_EVENTS SSOT (scripts/shared/hook_definitions.
+    py), never a literal set here -- a legitimate new event (e.g.
+    PostToolUse, 1d5035131's oracle-write hook) must not need a second
+    place updated. The retired-ceremony guard below is a SEPARATE, still-
+    literal check on purpose: comparing against the SSOT alone would move
+    in lockstep with it and could never catch SessionStart/UserPromptSubmit
+    reappearing IN the SSOT itself.
     """
     config = generate_hook_config()
-    assert set(config.keys()) == {
-        "PreToolUse",
-        "SubagentStart",
-    }
+    assert set(config.keys()) == set(HOOK_EVENT_TYPES)
+    # SessionStart and UserPromptSubmit were the session-ceremony anchors
+    # and went with it (22ea19309) -- a reappearance here means the
+    # ceremony came back.
+    assert "SessionStart" not in config
+    assert "UserPromptSubmit" not in config
     # Every event must have at least one entry with a non-empty command
     for event, entries in config.items():
         assert len(entries) > 0, f"No entries for event {event}"

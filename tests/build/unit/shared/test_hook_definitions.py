@@ -33,7 +33,7 @@ class TestHookEventDefinitions:
 
     def test_defines_independent_hook_registrations(self):
         """The shared definition contains only the current independent hooks."""
-        assert len(HOOK_EVENTS) == 7
+        assert len(HOOK_EVENTS) == 10
 
         # Verify exact event/matcher/action triples
         events_matchers = [(h.event, h.matcher, h.action) for h in HOOK_EVENTS]
@@ -75,8 +75,20 @@ class TestHookEventDefinitions:
         assert ("SubagentStop", None, "deliver-progress") not in events_matchers
         assert ("SessionStart", "startup", "session-start") not in events_matchers
         assert ("SubagentStart", None, "subagent-start") in events_matchers
+        # Stable-design report 2026-08-19 §1.1: reinstated so a killed/silent
+        # subagent's own turn always produces a terminal result instead of
+        # relying solely on the PreToolUse budget guard's heuristic re-
+        # derivation of a fact the platform already owns.
+        assert ("SubagentStop", None, "subagent-stop") in events_matchers
         assert ("UserPromptSubmit", None, "user-prompt-submit") not in events_matchers
         assert not any(event == "SessionStart" for event, _, _ in events_matchers)
+        # ADR-SSOT-002 Section 4/4b item 1: the oracle-write classifier --
+        # advisory only, never a guard (no shell fast-path; the handler's
+        # own ATD-role check is the cheap early exit).
+        assert ("PostToolUse", "Write", "post-write") in events_matchers
+        assert ("PostToolUse", "Edit", "post-edit") in events_matchers
+        post_tool_use_entries = [h for h in HOOK_EVENTS if h.event == "PostToolUse"]
+        assert all(not h.is_guard for h in post_tool_use_entries)
 
     def test_hook_event_types_excludes_retired_session_and_prompt_hooks(self):
         """Only active hook events are registered by the installer."""
@@ -85,6 +97,8 @@ class TestHookEventDefinitions:
                 {
                     "PreToolUse",
                     "SubagentStart",
+                    "PostToolUse",
+                    "SubagentStop",
                 }
             )
             == HOOK_EVENT_TYPES

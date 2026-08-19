@@ -143,6 +143,27 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
     # existing pre_tool_use handler is reached on every installed Bash event.
     HookEvent(event="PreToolUse", matcher="Bash", action="pre-tool-use"),
     HookEvent(event="SubagentStart", matcher=None, action="subagent-start"),
+    # ADR-SSOT-002 Section 4/4b item 1: classifies an ATD-authored oracle
+    # AT THE WRITE against the compiled DeliveryContract's own verification
+    # command (des.domain.oracle_write_classifier), so a K4 Run 13-class
+    # oracle defect (SyntaxError, system-check violation, a fixture gap)
+    # reaches ATD in the SAME turn instead of costing a full REVISE
+    # round-trip after `des dispatch`'s own BASE probe catches it later.
+    # Advisory only -- always exits 0, relays a classification via
+    # additionalContext, never blocks (a PostToolUse hook cannot undo an
+    # already-completed Write/Edit). No shell fast-path guard: the handler's
+    # own role check (ATD only) is the cheap early exit.
+    HookEvent(event="PostToolUse", matcher="Write", action="post-write"),
+    HookEvent(event="PostToolUse", matcher="Edit", action="post-edit"),
+    # Stable-design report 2026-08-19 §1.1: terminal-by-construction subagent
+    # results. Reinstated (was `_RETIRED_HOOK_ACTIONS` since fix-execution-
+    # log-bash-guard-consolidation) so a killed/silent subagent's own turn
+    # always produces a SubagentOutcome value -- never silence -- consuming
+    # the platform's OWN SubagentStop completion event instead of the
+    # PreToolUse budget guard's heuristic transcript re-derivation. See
+    # `subagent_stop_handler.py`'s module docstring for the verified real
+    # payload shape and the residual obligation this closes.
+    HookEvent(event="SubagentStop", matcher=None, action="subagent-stop"),
 )
 
 # The distinct event types DES registers (for validation).
@@ -243,7 +264,11 @@ _LEGACY_SCRIPT_INVOCATION_RE = re.compile(
     r"^python3?\s+src/des/adapters/drivers/hooks/claude_code_hook_adapter\.py\s+(\S+)"
 )
 
-_RETIRED_HOOK_ACTIONS: frozenset[str] = frozenset({"subagent-stop", "post-tool-use"})
+_RETIRED_HOOK_ACTIONS: frozenset[str] = frozenset({"post-tool-use"})
+# "subagent-stop" reinstated 2026-08-19 (stable-design report §1.1) -- see
+# HOOK_EVENTS above. Kept OUT of this frozenset (it is a live action again,
+# already present in `HOOK_EVENTS`); `_KNOWN_HOOK_ACTIONS` below still
+# recognises it via `HOOK_EVENTS` alone.
 _KNOWN_HOOK_ACTIONS: frozenset[str] = (
     frozenset(h.action for h in HOOK_EVENTS) | _RETIRED_HOOK_ACTIONS
 )

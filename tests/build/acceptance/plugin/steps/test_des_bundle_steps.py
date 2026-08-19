@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from pytest_bdd import given, scenarios, then
 
+from scripts.shared.hook_definitions import HOOK_EVENT_TYPES
+
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -279,15 +281,19 @@ def rewritten_file_valid_python(build_result: dict[str, Any]):
 def hooks_have_every_event(build_result: dict[str, Any]):
     """Property: the registered event set is exactly the declared one.
 
-    SessionStart and UserPromptSubmit are absent by design: they carried the
-    session ceremony deleted in 22ea19309, and nothing registers them now.
+    Compared against the HOOK_EVENTS SSOT (scripts/shared/hook_definitions.
+    py), never a literal set here -- a legitimate new event (e.g.
+    PostToolUse, 1d5035131's oracle-write hook) must not need a second
+    place updated. SessionStart and UserPromptSubmit are absent by design:
+    they carried the session ceremony deleted in 22ea19309; that guard
+    stays a separate, still-literal check below since comparing against
+    the SSOT alone could never catch them reappearing IN the SSOT itself.
     """
     registered_events = set(_get_registered_events(build_result))
-    expected_events = {
-        "PreToolUse",
-        "SubagentStart",
-    }
+    expected_events = set(HOOK_EVENT_TYPES)
     assert registered_events == expected_events, (
         f"Missing events: {expected_events - registered_events}, "
         f"Extra events: {registered_events - expected_events}"
     )
+    assert "SessionStart" not in registered_events
+    assert "UserPromptSubmit" not in registered_events

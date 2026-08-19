@@ -18,6 +18,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -401,6 +402,55 @@ def test_main_records_sandbox_facts_into_arms_json(tmp_path, monkeypatch):
     # treatment `route_walk`/`probe_engagement` already get here, since
     # this file exercises row-4 verification-scope wiring, not row 11.
     assert sandbox["start_recipe"]["status"] == "proven"
+
+
+def test_main_declares_the_wall_clock_ceiling_once_into_arms_json(
+    tmp_path, monkeypatch
+):
+    """Stable-design report 2026-08-19 Sec.1.3: the campaign's own
+    wall-clock ceiling and start epoch must be declared ONCE by the
+    harness (GDP-0: construction in the producer of the route, not a
+    hook) and recorded into `arms.json` -- a downstream reader (or the
+    root itself, via its own project fragment) can compute elapsed/
+    remaining budget without re-deriving a ceiling nothing else stated."""
+    root, checkout, task_file = _prepare_main_run(tmp_path, monkeypatch)
+
+    wheel = tmp_path / "fake.whl"
+    wheel.write_bytes(b"not a real wheel")
+
+    before = int(time.time())
+    code = preflight.main(
+        [
+            "--root",
+            str(root),
+            "--checkout",
+            str(checkout),
+            "--task-file",
+            str(task_file),
+            "--wheel",
+            str(wheel),
+            "--wall-clock-minutes",
+            "42",
+        ]
+    )
+    after = int(time.time())
+
+    # `main()` sets these directly on `os.environ` (the SAME channel every
+    # other arm-specific fact travels through to setup subprocesses), not
+    # via `monkeypatch` -- clean them up explicitly so this test's own
+    # declared ceiling never leaks into a sibling test sharing this
+    # process (pytest runs the whole file in one interpreter).
+    monkeypatch.delenv("K4_WALL_CLOCK_CEILING_MINUTES", raising=False)
+    monkeypatch.delenv("K4_CAMPAIGN_START_EPOCH", raising=False)
+
+    assert code == 0
+    spec = json.loads((root / "arms.json").read_text(encoding="utf-8"))
+    budget = spec["budget"]
+    assert budget["wall_clock_minutes"] == 42
+    assert before <= budget["start_epoch"] <= after, (
+        "the recorded start epoch must be the REAL campaign start time, "
+        "not a placeholder or a stale re-derivation"
+    )
 
 
 def test_main_hard_refuses_when_the_start_recipe_does_not_authenticate(

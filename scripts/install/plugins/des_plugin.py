@@ -1795,7 +1795,10 @@ class DESPlugin(InstallationPlugin):
         """Install DES hooks into settings.json (global config).
 
         CRITICAL: Preserves ALL existing settings (permissions, other hooks, etc.).
-        Only modifies the hooks.PreToolUse and hooks.SubagentStop arrays.
+        Only modifies the hook-event arrays `shared_hooks.HOOK_EVENT_TYPES`
+        actually declares (driven by `self.HOOK_EVENTS`, not a hardcoded
+        pair) -- adding a new event to that SSOT (e.g. `PostToolUse`) is
+        picked up here automatically, no separate installer change needed.
 
         Hook commands use PYTHONPATH to point to installed location:
         ~/.claude/lib/python/des/
@@ -1885,9 +1888,13 @@ class DESPlugin(InstallationPlugin):
                     config["hooks"][event] = retained
 
             # Structural DES residue can also live under a retired event key
-            # (no longer in HOOK_EVENTS, e.g. SubagentStop) -- shared_hooks
-            # positively recognizes historical DES-owned command forms there
-            # too, but the reconciliation below only rewrites CURRENT events.
+            # (never registered in HOOK_EVENTS at all, e.g. Notification --
+            # SubagentStop and PostToolUse both graduated INTO HOOK_EVENTS,
+            # stable-design report 2026-08-19 §1.1 and ADR-SSOT-002 Section
+            # 4/4b item 1 respectively, so neither is this class's example
+            # any longer) -- shared_hooks positively recognizes historical
+            # DES-owned command forms there too, but the reconciliation
+            # below only rewrites CURRENT events.
             # Strip DES-owned entries from every non-current existing event
             # so retired-event residue does not survive install; unrelated
             # user hooks nested in the same event are preserved by

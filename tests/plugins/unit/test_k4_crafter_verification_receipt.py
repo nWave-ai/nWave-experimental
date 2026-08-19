@@ -1,5 +1,6 @@
 """Crafter terminal evidence is one CRAFTER-RESULT, never a second receipt."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -32,12 +33,25 @@ def _crafter_result(path: Path) -> str:
     return body[body.index("## Terminal Result") : body.index("## Constraints")]
 
 
+#: Matched by step TEXT, not its leading digit -- fa7d9730a's compile-
+#: contract insertion already renumbered these once (3->4, 4->5); a
+#: literal "3."/"4." pin breaks on the next insertion too.
+_VALIDATE_CHARTER_STEP = re.compile(r"^\d+\. Validate the charter", re.MULTILINE)
+_FINALIZE_STEP = re.compile(r"^\d+\. Invoke the `nw-finalize`", re.MULTILINE)
+
+
+def _step_index(pattern: re.Pattern[str], body: str) -> int:
+    match = pattern.search(body)
+    assert match is not None, f"step matching {pattern.pattern!r} not found"
+    return match.start()
+
+
 def _auto_join() -> str:
+    """The route step that dispatches the crafter and reads its
+    `CRAFTER-RESULT`, up to (not including) the finalize step."""
     body = _text(AUTO)
     return body[
-        body.index("3. Validate the charter") : body.index(
-            "4. Invoke the `nw-finalize`"
-        )
+        _step_index(_VALIDATE_CHARTER_STEP, body) : _step_index(_FINALIZE_STEP, body)
     ]
 
 
@@ -59,9 +73,7 @@ def test_both_crafters_emit_the_same_terminal_result(crafter: Path) -> None:
 def test_auto_validates_result_identity_scope_and_commands_before_examiner() -> None:
     body = _text(AUTO)
     join = " ".join(_auto_join().split())
-    assert body.index("3. Validate the charter") < body.index(
-        "4. Invoke the `nw-finalize`"
-    )
+    assert _step_index(_VALIDATE_CHARTER_STEP, body) < _step_index(_FINALIZE_STEP, body)
     assert "terminal `CRAFTER-RESULT`" in join
     for obligation in (
         "matching contract",
@@ -92,5 +104,5 @@ def test_retired_mini_receipt_does_not_survive_the_join() -> None:
     for retired in ("outcome: PASS|FAIL", "`argv`", "`scope`", "`exit_code`"):
         assert retired not in join
     body = _text(AUTO)
-    finalize_section = body[body.index("4. Invoke the `nw-finalize`") :]
+    finalize_section = body[_step_index(_FINALIZE_STEP, body) :]
     assert "create no receipt, ledger or progress artifact" in finalize_section

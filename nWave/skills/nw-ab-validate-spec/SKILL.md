@@ -20,7 +20,7 @@ At execution start create these as TaskCreate items and run in order:
 4. **Language Tone** — scan for CRITICAL/MANDATORY/ABSOLUTE (exception: skill-loading MUST). Gate: zero violations outside skill loading.
 5. **Examples** — count `### Example` sections. Gate: 3-5 present.
 6. **Least Privilege** — tools list contains only what the agent needs; no Write/Edit for reviewers. Gate: no unnecessary tools.
-7. **Safety** — safety via frontmatter fields + hooks, not prose. Gate: zero prose security sections.
+7. **Safety by construction (GDP-0)** — which producer makes the unsafe action unrepresentable? Tool-surface frontmatter fields and typed grammar first; a hook only with a recorded reason, never prose. Gate: zero prose security sections; any hook cites its construction-can't-cover reason.
 8. **Affirmative Phrasing** — convert "Don't do Y" to "Do X". Gate: zero negative phrasings.
 9. **Terminology** — one term per concept. Gate: consistent terminology.
 10. **Description Quality** — description states WHEN to delegate. Gate: trigger condition present.

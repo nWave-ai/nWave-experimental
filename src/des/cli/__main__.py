@@ -99,6 +99,13 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     _SubcommandRow(
         "prepare-ordinary-request", "des.cli.prepare_ordinary_request", "main"
     ),
+    # Stable-design report 2026-08-19 §1.2: bounded producer of the
+    # REVISE-CONTRACT/REVISE-ROUND/CITATION dispatch body -- refuses once a
+    # DeliveryId's revision round would exceed the declared bound instead
+    # of an unbounded ATD redispatch loop (Run 11's own incident: 4
+    # sequential revisions on one DeliveryId). Writes only its own durable
+    # per-DeliveryId round counter under `.nwave/des/revise-rounds/`.
+    _SubcommandRow("revise-contract-round", "des.cli.revise_contract_round", "main"),
     # Produces one expectation charter in the DeliveryContract's delivery-id
     # namespace. Idempotent and loud on malformed ids or path ambiguity.
     _SubcommandRow("charter-scaffold", "des.cli.charter_scaffold", "main"),
@@ -153,6 +160,14 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # PID/lock/dirty/unmerged evidence and adds the two missing axes
     # (declared ownership, recent HEAD/index activity) on top.
     _SubcommandRow("sentinel", "des.cli.worktree_sentinel", "main"),
+    # ADR-SSOT-002 Section 4/4b item 1: the point-of-use skeleton COMPILER --
+    # mechanically derives targets/verification-scope/obligations from one
+    # architecture brief's own citations, the same resolvers `des dispatch`'s
+    # validators already use in CHECK mode, run here in GENERATE mode.
+    # Semantic fields ATD alone can author land as the literal `<ATD: fill>`
+    # placeholder (`des.domain.contract_placeholder_resolver`), which `des
+    # dispatch`/`des validate-delivery-contract` both refuse until filled.
+    _SubcommandRow("compile-contract", "des.cli.compile_contract", "main"),
     # fix-shipped-regression-file-backfill: the historical regression-gap
     # backfill producer -- attests a SHIPPED slice's regression file
     # genuinely existed and passed at a real historical commit, recording a

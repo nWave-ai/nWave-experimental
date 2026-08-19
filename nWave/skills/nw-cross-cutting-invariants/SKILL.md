@@ -135,9 +135,21 @@ SHIPPED home of these definitions: everywhere else in the framework (skills, age
 cites "GDP-N" by number resolves against this list. Audit every gate you design against it;
 a gap is a plan item to correct that gate. The clause id below retains its original
 `gdp-1-9` suffix for citation stability (11+ existing citation sites across agents/skills/ADRs)
-even though the list now runs through GDP-10 — GDP-10 is separately registered as
-`gate:design-principles-gdp-10-parsimony` for anyone citing it specifically.
+even though the list now runs from GDP-0 through GDP-10 — GDP-0 is separately registered as
+`gate:design-principles-gdp-0-representation-first`, and GDP-10 is separately registered as
+`gate:design-principles-gdp-10-parsimony`, for anyone citing either specifically.
 
+- **GDP-0 — Representation before validation (STANDING, Ale 2026-08-19).** Gates are the LAST
+  RESORT, never the default. Before designing a gate, name the PRODUCER that made the wrong
+  state representable, and change IT so the state cannot be built: compile the mechanical
+  fields, give the author the check at the moment of authoring, type the invalid value away,
+  keep one writer for shared state. A gate is admitted only with a recorded reason why the
+  producer cannot change, and ships with a REMOVE falsifier; three checks landing on the same
+  artefact is the alarm to redesign the producer, not license to add a fourth check. Gates cost
+  wall-clock and tokens at EVERY run; a construction costs once. Anchor (2026-08-19, K4 runs
+  4-13): six `des dispatch` validators were added in three days, each a symptom of the
+  acceptance designer hand-compiling fields the tree already derived — wall grew from 1886s to
+  4553s, and the validators also lied at the language boundary.
 - **GDP-1 — Intercept EARLY (timing).** Fire at the earliest point the defect is detectable —
   BEFORE the effort it guards is spent and the value delivered. A gate that fires after
   delivery only COMMENTS, it cannot prevent. Efficacy ladder: **proactive-inline ≫
@@ -241,7 +253,10 @@ even though the list now runs through GDP-10 — GDP-10 is separately registered
 - **GDP-10 — Parsimony: prefer removing/relaxing over adding a special case (STANDING, Ale
   2026-08-03 — "simplicity is the ultimate sophistication").** GDP-1..9 govern the QUALITY of a
   gate once it is justified; GDP-10 governs whether it should exist, or exist in that form, at
-  all. When an edge case surfaces, the default move is NOT "add a new gate, token, lane, or
+  all. Parsimony PRESUPPOSES GDP-0: first ask whether the producer can make the gate vacuous —
+  a gate that guards a state the producer no longer permits is a special case with zero
+  remaining risk, GDP-10's own paradigm case. When an edge case surfaces, the default move is
+  NOT "add a new gate, token, lane, or
   scope-recognition rule to cover it" — it is to ask whether an EXISTING, more general rule
   already covers the risk, or whether the risk is small enough that a MORE PERMISSIVE answer is
   correct. Every new named exception multiplies the surface every other gate, reader, and future
@@ -280,6 +295,44 @@ even though the list now runs through GDP-10 — GDP-10 is separately registered
     check would have caught something real. The asymmetry that justifies the extra step: adding
     ceremony wastes time repeatedly, every time the gate fires; removing a load-bearing check
     wrongly can cost far more, once, silently, later.
+
+---
+
+## `construction:moves-catalogue` — the six ways to make a wrong state unrepresentable, before reaching for a gate (KNOWLEDGE)
+
+GDP-0 says the producer, not a gate, is the default fix. This catalogues the concrete moves —
+each with one verified repo example, so "construct it away" is not left abstract. Before
+proposing a gate/guard/hook/validator, check whether one of these already applies.
+
+- **Compile the derivable fields.** If a value can be computed from what the system already
+  knows, generate it — never let an author hand-type it. *Example*: `des dispatch` validates one
+  `DeliveryContract` and emits the DELIVER handoff mechanically (`src/des/cli/dispatch.py`);
+  CLAUDE.md: "Pass the `des dispatch` envelope VERBATIM — specifics belong in `--intent`, never
+  in hand-edited envelope prose."
+- **Give the author the check at authoring time.** Move the validation to the moment of writing,
+  not a later gate. *Example*: `des charter-scaffold` copies the valid template shape into place
+  and fails closed with `missing-charter-template` / `invalid-delivery-id` at scaffold time — the
+  author never gets the chance to originate a malformed charter (`src/des/cli/charter_scaffold.py`).
+- **Type the invalid value away.** Replace a string/bool status with a closed variant an
+  exhaustiveness check enforces. *Example*: the `_Author | _Reuse | _Block | _Skip` charter-
+  resolution outcome in `des.cli._charter_resolution` (shared by `resolve-charters` and
+  `dispatch`) — an unhandled branch is a type error via `_assert_never`, never a silent
+  fallthrough.
+- **One writer for shared state.** Concurrent writers make "who last wrote this" unrepresentable
+  as a single fact; give the state exactly one writer instead of a lock/check. *Example*: this
+  project's own rule — "Trunk (`feature/atdd-pure-staging`) has exactly ONE writer: the
+  orchestrator" (CLAUDE.md, Swarm & the shared box).
+- **Pristine environments.** Let accumulated state contaminate the run and every green becomes
+  unfalsifiable; run from a clean substrate instead of checking for contamination after the
+  fact. *Example*: `des verify-fresh-clone` replays `DeliveryContract` verification on a clean
+  checkout, so worktree-accumulated state cannot masquerade as passing evidence.
+- **Producer-emitted envelope.** A human-assembled envelope can drift from what the system
+  actually resolved; have the resolving tool print the envelope instead of describing it in
+  prose. *Example*: `des resolve-charters` prints "one JSON line describing the closed
+  EXAMINE/charter precondition" — read-only, machine-emitted, never hand-typed
+  (`src/des/cli/resolve_charters.py`).
+
+A gate is admitted only when none of these six apply and the reason is recorded (GDP-0).
 
 ---
 

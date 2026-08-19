@@ -43,7 +43,7 @@ Run the `nw-ab-create-agent` procedure to create the {agent-name} agent.
 - [ ] 3-5 canonical examples included
 - [ ] Domain knowledge extracted to Skills if >50 lines
 - [ ] No aggressive language (no CRITICAL/MANDATORY/ABSOLUTE)
-- [ ] Safety via platform features (frontmatter/hooks), not prose
+- [ ] Safety by construction first (frontmatter tool surface, typed grammar), not prose; hooks last resort with a recorded reason (GDP-0)
 - [ ] Caveman house style — dry/declarative, tables and compact lists, lean body, deep knowledge in skills
 - [ ] `## Reasoning Mandate` section present (verdict-first, tables, evidence-dense)
 - [ ] A05/A06 literal anchors present (`You MUST load your skill files` or `Your FIRST action before any other work`, AND `~/.claude/skills/nw-`)

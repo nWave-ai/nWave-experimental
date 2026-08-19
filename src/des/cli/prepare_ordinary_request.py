@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -38,12 +37,13 @@ from des.application.ordinary_request import (
     is_valid_arch_header_line,
     read_value_seed_text,
 )
+from des.domain.base_revision_resolver import git_output as _git_output
+from des.domain.base_revision_resolver import (
+    observed_base_revision as _observed_base_revision,
+)
 
 
 _EXIT_BLOCKED = 2
-
-_BASE_REVISION_HEX_LEN_TO_TAG = {40: "git-sha1:", 64: "git-sha256:"}
-_HEX_ALPHABET = frozenset("0123456789abcdef")
 
 
 def _blocked(*, what: str, why: str, how: str) -> int:
@@ -102,33 +102,6 @@ def _resolved_repo_root(repo_root: Path) -> Path | None:
     if not repo_root.is_absolute() or not repo_root.is_dir() or repo_root.is_symlink():
         return None
     return repo_root.resolve()
-
-
-def _git_output(repo_root: Path, *args: str) -> str | None:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(repo_root), *args],
-            capture_output=True,
-            text=True,
-            check=False,
-            stdin=subprocess.DEVNULL,
-            timeout=5,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip()
-
-
-def _observed_base_revision(repo_root: Path) -> str | None:
-    head = _git_output(repo_root, "rev-parse", "HEAD")
-    if not head:
-        return None
-    tag = _BASE_REVISION_HEX_LEN_TO_TAG.get(len(head))
-    if tag is None or not set(head) <= _HEX_ALPHABET:
-        return None
-    return f"{tag}{head}"
 
 
 def _positive_override(value: int | None, field: str) -> int | None | str:

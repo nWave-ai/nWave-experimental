@@ -30,9 +30,11 @@ from the current directory.
 ## Flow
 
 1. **RCA** — dispatch `nw-troubleshooter` over the observed defect. Require an
-   evidence chain from the nearest manifestation outward, one falsifiable root
-   cause and the smallest correction boundary. Do not start from a broad repo
-   theory when the local failure can discriminate candidates.
+   evidence chain from the nearest manifestation outward to one falsifiable root
+   cause naming the producer or type that admitted the wrong state (GDP-0), and
+   the smallest correction boundary. A gate/check is not the root cause unless
+   that producer genuinely cannot change, with the reason recorded. Do not start
+   from a broad repo theory when the local failure can discriminate candidates.
 2. **Architecture decision** — compare the proposed correction with existing
    ports, responsibilities and durable design authority. Prefer reuse; reject
    duplication, boundary erosion and architectural drift. If the defect reveals

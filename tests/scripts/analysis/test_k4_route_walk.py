@@ -118,7 +118,16 @@ _FIXED_SKILL_MD = """
    des resolve-charters --repo-root <root> --delivery-id <producer id> --examine <true|false>
    ```
 
-3. Validate the charter, then run the one `des dispatch` command.
+3. Then, still before dispatching ATD, run exactly one more command:
+
+   ```
+   des compile-contract --repo-root <root> --delivery-id <producer id> \\
+     --architecture-authority "ARCHITECTURE-COVERED: path.md#anchor" \\
+     --route <RED_TO_GREEN|GREEN_TO_GREEN> --examine <true|false> \\
+     --independent-review <true|false>
+   ```
+
+4. Validate the charter, then run the one `des dispatch` command.
 """
 
 
@@ -145,10 +154,71 @@ _DISPATCH_STDOUT = (
 )
 
 
+def _fake_compiled_contract(delivery_id: str) -> dict:
+    """A minimal schema-shaped `<ATD: fill>` skeleton -- the SAME shape a
+    real `des compile-contract` write produces, standing in for it in
+    Tier 1's fully-faked `cli_run` (no real CLI, no real filesystem
+    derivation from a brief)."""
+    oracle_locator = f"tests/test_{delivery_id.replace('-', '_')}.py"
+    return {
+        "schema-version": "1.2",
+        "delivery-id": delivery_id,
+        "repository": {
+            "worktree": ".",
+            "base-revision": "git-sha1:" + "0" * 40,
+        },
+        "outcome": "<ATD: fill>",
+        "targets": {
+            "fake/target.py": {
+                "candidate": "fake/target.py",
+                "overlap": "fake/target.py:1",
+                "decision": "EXTEND",
+                "justification": "<ATD: fill>",
+                "declared-imports": [],
+                "contract-shape": "bounded-change",
+                "boundary": {
+                    "failure-behavior": "<ATD: fill>",
+                    "substrate-lie": "<ATD: fill>",
+                    "substrate-probe": "<ATD: fill>",
+                    "double-blind-spot": "<ATD: fill>",
+                },
+            }
+        },
+        "paradigm": "object_oriented",
+        "delivery-route": "RED_TO_GREEN",
+        "obligations": ["PRESERVATION"],
+        "acceptance-tests": {"locator": oracle_locator},
+        "verification-scope": {
+            "commands": [
+                {
+                    "executable": {"kind": "toolchain", "name": "pytest"},
+                    "arguments": [oracle_locator],
+                }
+            ]
+        },
+        "applicability": {"independent-review": False, "examine": True},
+        "budget": {"token-limit": 2000000, "wall-clock-minutes": 30},
+    }
+
+
 def _fake_cli_all_pass(argv: list[str], stdin: str | None = None) -> tuple[int, str]:
     joined = " ".join(argv)
     if "prepare-ordinary-request" in joined:
         return 0, _PRODUCER_STDOUT
+    if "compile-contract" in joined:
+        repo_root_arg = Path(argv[argv.index("--repo-root") + 1])
+        delivery_id_arg = argv[argv.index("--delivery-id") + 1]
+        contract = _fake_compiled_contract(delivery_id_arg)
+        contract_path = (
+            repo_root_arg / f"docs/delivery-contracts/{delivery_id_arg}.json"
+        )
+        contract_path.parent.mkdir(parents=True, exist_ok=True)
+        contract_path.write_text(json.dumps(contract, indent=2), encoding="utf-8")
+        return (
+            0,
+            f"DELIVERY-CONTRACT-SKELETON: docs/delivery-contracts/{delivery_id_arg}.json\n"
+            f"ORACLE-LOCATOR: {contract['acceptance-tests']['locator']}",
+        )
     if "charter-scaffold" in joined:
         return 0, json.dumps({"verdict": "accepted"})
     if "validate-delivery-contract" in joined:
@@ -270,7 +340,11 @@ class TestDesSubcommandsSkillMdParserIsTheOneSharedSource:
 
     def test_parser_finds_the_fenced_commands_not_the_prose(self) -> None:
         found = k4_preflight.des_subcommands_root_is_told_to_run(_FIXED_SKILL_MD)
-        assert found == {"prepare-ordinary-request", "resolve-charters"}
+        assert found == {
+            "prepare-ordinary-request",
+            "resolve-charters",
+            "compile-contract",
+        }
 
 
 # ---------------------------------------------------------------------------

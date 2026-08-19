@@ -48,6 +48,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -56,11 +57,6 @@ from scripts.analysis.k4 import subject as k4_subject
 
 #: The doc a blind examiner reads, framed as user-facing, not examiner-labelled.
 DOC_NAME = ".k4-user-environment.md"
-
-#: Declared, arm-specific high ports so control and nwave fixtures can run
-#: side by side without colliding on one port.
-CONTROL_PORT = 18771
-NWAVE_PORT = 18772
 
 #: healthchecks' own default sqlite path (`hc/settings.py`:
 #: `BASE_DIR / "hc.sqlite"`, `BASE_DIR` == this workspace root) -- the ONE
@@ -211,6 +207,47 @@ def _port_is_occupied(port: int) -> bool:
     finally:
         sock.close()
     return False
+
+
+def _stop_our_own_leaked_runserver(port: int) -> bool:
+    """Run 14 (K4 matrix): `setsid` (Run 12) makes the server survive
+    every ancestor's process-group teardown BY DESIGN -- a test or probe
+    that started one and never reached its own cleanup (an assertion
+    failure skipping a bare try/finally, a killed pytest process, an
+    interrupted campaign) leaves it running forever, occupying its port
+    for every LATER run too. GDP-0: `_port_is_occupied` refusing outright
+    treats our own leak as an unknown collision; this instead recognizes
+    the SPECIFIC property (a live process whose full command line is
+    EXACTLY the runserver invocation `_runserver_argv_and_env` itself
+    renders for this port, one source, never a second hand-typed
+    pattern) and stops it LOUDLY -- never silently -- before `prepare`
+    ever has to refuse. A process that does not match this exact shape
+    is left alone; refusing is still correct for a genuinely unknown
+    occupant."""
+    argv, _ = _runserver_argv_and_env(port)
+    pattern = " ".join(argv[1:])  # drop the interpreter path -- workspace-specific
+    try:
+        found = subprocess.run(
+            ["pgrep", "-f", re.escape(pattern)],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    pids = [p for p in found.stdout.split() if p]
+    if not pids:
+        return False
+    for pid in pids:
+        sys.stderr.write(
+            f"K4: stopping our own leaked examiner server (PID {pid}, "
+            f"matching `{pattern}`) occupying port {port} before setup.\n"
+        )
+        subprocess.run(
+            ["kill", pid], stdin=subprocess.DEVNULL, capture_output=True, timeout=5
+        )
+    return True
 
 
 def free_port() -> int:
@@ -371,6 +408,24 @@ def _existing_api_key(workspace: Path) -> str | None:
     return match.group(1) if match else None
 
 
+def existing_port(workspace: Path) -> int | None:
+    """Run 14 (K4 matrix): the port a prior `prepare()` bound for THIS
+    workspace, recovered from the SAME rendered doc `_render` wrote it
+    into (`Base URL: http://127.0.0.1:<port>`) -- the ONE source a later,
+    separate process (`preflight`'s own `main()`, re-checking an
+    already-prepared workspace) reads back, never a re-derived or
+    hand-typed guess. Mirrors `_existing_api_key`'s exact shape."""
+    doc = workspace / DOC_NAME
+    if not doc.exists():
+        return None
+    match = re.search(
+        r"Base URL:\s*http://127\.0\.0\.1:(\d+)",
+        doc.read_text(encoding="utf-8"),
+        re.IGNORECASE,
+    )
+    return int(match.group(1)) if match else None
+
+
 def _seed(venv_python: Path, workspace: Path, existing_api_key: str | None) -> str:
     env = dict(os.environ)
     if existing_api_key:
@@ -412,6 +467,14 @@ def _seed(venv_python: Path, workspace: Path, existing_api_key: str | None) -> s
 #: own printed text.
 SERVER_PID_FILE_NAME = "server.pid"
 
+#: Stable-design report 2026-08-19 Sec.1.4: the SAME single-writer
+#: discipline `des commit` already uses (`fcntl.flock` on a lock file) --
+#: `flock` here, the bash-native equivalent -- held for the restore +
+#: hash-verify + migrate window only, never across the server's own
+#: runtime (a second `start_and_wait_block` run, or a concurrent
+#: dispatch, must still be able to acquire it).
+DB_LOCK_FILE_NAME = "hc.sqlite.lock"
+
 
 def _runserver_argv_and_env(port: int) -> tuple[list[str], dict[str, str]]:
     """The ONE structured source for the runserver command: its directly
@@ -436,8 +499,10 @@ def _runserver_argv_and_env(port: int) -> tuple[list[str], dict[str, str]]:
 
 
 def _migrate_command() -> str:
-    """The ONE migrate command line every consumer quotes."""
-    return f"{VENV_PYTHON} manage.py migrate --noinput"
+    """The ONE migrate command line every consumer quotes -- derived from
+    `MIGRATE_ARGV`, the SAME tokens `_migrate()` itself runs, never a
+    second hand-typed `migrate --noinput` copy."""
+    return f"{VENV_PYTHON} manage.py {' '.join(MIGRATE_ARGV)}"
 
 
 def start_and_wait_block(port: int, api_key: str) -> str:
@@ -487,6 +552,34 @@ def start_and_wait_block(port: int, api_key: str) -> str:
     survives the group teardown, not merely the shell's own job
     control; `< /dev/null` detaches stdin too, so the child never blocks
     waiting on a pipe the dying call closes.
+
+    Run 13 (K4 matrix): the pristine snapshot was taken once, right
+    after the ORIGINAL `_seed()` -- a later delivery adding its own
+    migrations leaves the restored working DB one migration behind the
+    code about to serve it, `runserver` crashing or 500ing on the first
+    request that touches the new schema. `_migrate_command()` (the SAME
+    command `_render`'s "before runserver" line already quotes, one
+    source) now runs against the just-restored working DB, right after
+    the restore and before `runserver` -- idempotent, so a pristine
+    snapshot that already carries every migration costs one fast no-op
+    check. LOUD on failure: a migration that cannot apply against the
+    just-restored DB is a real defect the examiner must see, never a
+    silently-stale schema serving wrong answers.
+
+    Stable-design report 2026-08-19 Sec.1.4: extends the SAME single-
+    writer lock idiom `des commit` already uses (`commit.py`,
+    `fcntl.flock` on `.nwave/des/commit.lock`) to this examine-time
+    database, `flock`'s bash-native form here. Held ONLY across the
+    restore + hash-verify + migrate window (`DB_LOCK_FILE_NAME`, fd 9,
+    released by closing the fd before `runserver` starts -- a
+    long-running `setsid`'d server must never hold it, or a later
+    restart could never acquire it): a concurrent crafter/troubleshooter
+    write racing into that exact window is now serialized against it,
+    not merely accepted as harmless-because-restored-later. AND: the
+    working DB is hash-verified against the pristine snapshot
+    immediately after the `cp` -- the examiner's server now starts ONLY
+    from a copy PROVEN byte-for-byte identical to the pristine snapshot,
+    by construction, never merely "we just ran cp so it probably is."
     """
     base_url = f"http://127.0.0.1:{port}"
     argv, env_overrides = _runserver_argv_and_env(port)
@@ -495,6 +588,8 @@ def start_and_wait_block(port: int, api_key: str) -> str:
         f"{env_prefix} setsid nohup {' '.join(argv)} > server.log 2>&1 < /dev/null &"
     )
     return (
+        f"exec 9>{DB_LOCK_FILE_NAME}\n"
+        "flock -x 9\n"
         f"if [ -f {SERVER_PID_FILE_NAME} ] && "
         f'kill -0 "$(cat {SERVER_PID_FILE_NAME})" 2>/dev/null; then\n'
         f'    kill "$(cat {SERVER_PID_FILE_NAME})" 2>/dev/null\n'
@@ -506,6 +601,16 @@ def start_and_wait_block(port: int, api_key: str) -> str:
         "    exit 1\n"
         "fi\n"
         f"cp {DB_PRISTINE_SNAPSHOT_NAME} {DB_FILE_NAME}\n"
+        f"if [ \"$(sha256sum {DB_PRISTINE_SNAPSHOT_NAME} | cut -d' ' -f1)\" "
+        f"!= \"$(sha256sum {DB_FILE_NAME} | cut -d' ' -f1)\" ]; then\n"
+        '    echo "restored db does not match the pristine snapshot hash" >&2\n'
+        "    exit 1\n"
+        "fi\n"
+        f"if ! {_migrate_command()}; then\n"
+        '    echo "migrate after pristine restore failed" >&2\n'
+        "    exit 1\n"
+        "fi\n"
+        "exec 9>&-\n"
         f"{runserver}\n"
         "SERVER_PID=$!\n"
         "disown\n"
@@ -530,11 +635,12 @@ def _render(port: int, api_key: str) -> str:
     block = start_and_wait_block(port, api_key)
     return (
         "# User environment\n\n"
-        "Run once first:\n\n"
-        f"    {_migrate_command()}\n\n"
-        "Then run this ONE block to start the server and wait until it "
-        "is ready -- copy/paste it verbatim; it survives across "
-        "separate tool calls:\n\n"
+        "Run this ONE block to start the server and wait until it is "
+        "ready -- copy/paste it verbatim; it survives across separate "
+        f"tool calls. It restores the data store, then runs "
+        f"`{_migrate_command()}` against it (idempotent -- a no-op when "
+        "already current) before starting the server, so no separate "
+        "migrate step is needed first:\n\n"
         "```\n"
         f"{block}"
         "```\n\n"
@@ -631,6 +737,29 @@ def render_project_fragment(
         f"  {deps}\n"
         f"- Run the subject's own tests: `{test_command}`\n"
         f"- API documentation: `{_API_DOCS_PATH}`\n"
+        f"{_wall_clock_budget_bullet()}"
+    )
+
+
+def _wall_clock_budget_bullet() -> str:
+    """Stable-design report 2026-08-19 Sec.1.3: the campaign's ONE
+    declared wall-clock ceiling and start epoch, read back from the SAME
+    `K4_WALL_CLOCK_CEILING_MINUTES`/`K4_CAMPAIGN_START_EPOCH` env vars
+    `preflight.main()` sets once and propagates through `_rendered_arm_
+    env` to every setup subprocess -- one source, never a second
+    hand-typed ceiling. Empty string (no bullet) when either is absent
+    (a non-K4 caller of `prepare_delivery`, or an older harness run) --
+    silence here is the correct degrade, not a refusal."""
+    ceiling = os.environ.get("K4_WALL_CLOCK_CEILING_MINUTES")
+    start_epoch = os.environ.get("K4_CAMPAIGN_START_EPOCH")
+    if not ceiling or not start_epoch:
+        return ""
+    return (
+        f"- Wall-clock ceiling: {ceiling} minutes, started at epoch "
+        f"{start_epoch} (compare against `date +%s`). Has now minus that "
+        "start already reached the ceiling? If it has, STOP: report a "
+        "terminal INDETERMINATE naming the stage you reached -- never "
+        "continue past a ceiling you have already exceeded.\n"
     )
 
 
@@ -702,8 +831,20 @@ def prepare(workspace: Path, *, port: int) -> Path:
     """Refuse an occupied port before any mutation; else migrate, seed,
     snapshot the pristine seeded DB, and (re)render the public
     user-environment doc with the seed-produced key, idempotently,
-    confined to `workspace`."""
+    confined to `workspace`.
+
+    Run 14: an occupied port is first checked for being OUR OWN leaked
+    examiner server (`_stop_our_own_leaked_runserver`) and stopped LOUDLY
+    if so -- only a port still occupied by something else afterward is a
+    genuine, refusal-worthy collision.
+    """
     workspace = Path(workspace)
+    if _port_is_occupied(port):
+        if _stop_our_own_leaked_runserver(port):
+            for _ in range(10):
+                if not _port_is_occupied(port):
+                    break
+                time.sleep(0.5)
     if _port_is_occupied(port):
         raise SystemExit(
             f"WHAT: port {port} is already occupied on 127.0.0.1.\n"

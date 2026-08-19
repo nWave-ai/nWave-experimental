@@ -61,6 +61,46 @@ algebra/certainty/PBT/residuality properties of the proof protocol. DISTILL's
 own remaining scope is minimal tests and one complete DeliveryContract — no
 extra bureaucracy.
 
+### `des compile-contract` — an optional mechanical skeleton producer
+
+`des compile-contract --repo-root <root> --delivery-id <id>
+--architecture-authority <brief-path>#<anchor> [--route ...]` is a
+root-invocable, Bash-driven producer (never something DISTILL/ATD itself
+calls — DISTILL holds no `Bash`) that derives
+`targets.*.candidate/decision/overlap/declared-imports`,
+`verification-scope.commands`, `obligations` and `acceptance-tests.locator`
+from the architecture authority's own citations, reusing the IDENTICAL
+resolvers `des dispatch`'s existing content validators (declared-import
+resolution, EXTEND-citation, verification-command, whole-suite-scope)
+already run in CHECK mode — this producer runs them in DERIVE mode instead,
+so a skeleton it writes passes those validators by construction. Every
+field DESIGN/ATD alone can judge (`outcome`, `targets.*.justification`,
+every `targets.*.boundary.*`) is left as the literal `<ATD: fill>`
+placeholder, which both `des dispatch` and `des validate-delivery-contract`
+refuse until replaced with real prose — see `nw-acceptance-designer.md`,
+"Compiled skeleton", for ATD's fill-not-author handling when
+`CONTRACT-LOCATOR` already resolves to one of these files. The oracle
+locator is a CONVENTION this producer decides too (the primary EXTEND
+target's own sibling `tests/` directory, else the repository's top-level
+`tests/`), not a judgment call root or ATD supplies — ATD `Write`s the
+oracle at that exact given path. No discoverable test-directory convention
+is a construction refusal (WHAT/WHY/HOW) at the producer, never a guessed
+directory.
+
+The six existing `des dispatch` content validators remain in place as
+backstops regardless of whether a skeleton was compiled — this producer
+narrows how often they fire, it does not replace them (GDP-10: a candidate
+for removal only after real runs show zero firings, not on introduction).
+
+An installed PostToolUse hook (`des.adapters.drivers.hooks.
+post_write_handler`, `des.domain.oracle_write_classifier`) observes ATD's
+own `Write`/`Edit` on the oracle file a compiled skeleton names and
+classifies the linked `verification-scope` command's BASE outcome
+immediately, relaying it back via `additionalContext` — the same evidence
+`des dispatch`'s own BASE red-reason probe proves later, just earlier and
+advisory (it never blocks). See `nw-acceptance-designer.md`, "Compiled
+skeleton", for the classification labels.
+
 ## Spatial portfolio before prose
 
 Compile `state/failure -> input -> real port -> observation -> oracle` before

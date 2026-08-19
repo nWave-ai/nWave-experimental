@@ -35,8 +35,11 @@ from des.cli._declared_import_refusal import (
 from des.cli._declared_import_refusal import (
     unresolved_declared_import_how as _unresolved_declared_import_how,
 )
-from des.cli._oracle_structure_refusal import (
-    all_oracle_structure_findings as _all_oracle_structure_findings,
+from des.cli._oracle_red_reason_refusal import (
+    oracle_red_reason_check as _oracle_red_reason_check,
+)
+from des.cli._placeholder_refusal import (
+    all_unfilled_placeholder_findings as _all_unfilled_placeholder_findings,
 )
 from des.cli._verification_command_refusal import (
     all_missing_verification_paths as _all_missing_verification_paths,
@@ -397,7 +400,10 @@ def main(argv: list[str] | None = None) -> int:
     # cycle per defect. An OSError during oracle path resolution stays an
     # immediate return: a filesystem anomaly, not a contract content defect
     # an ATD REVISE can fix by editing the contract.
-    findings: list[tuple[str, str, str]] = [*_extend_targets_missing_citation(contract)]
+    findings: list[tuple[str, str, str]] = [
+        *_all_unfilled_placeholder_findings(contract),
+        *_extend_targets_missing_citation(contract),
+    ]
     for target_path, reference in _all_missing_declared_imports(repo_root, contract):
         findings.append(
             (
@@ -410,7 +416,6 @@ def main(argv: list[str] | None = None) -> int:
         )
     for path in _all_missing_verification_paths(repo_root, contract):
         findings.append(_missing_verification_path_finding(path))
-    findings.extend(_all_oracle_structure_findings(repo_root, contract))
     whole_suite_finding = _missing_whole_suite_scope_finding(repo_root, contract)
     if whole_suite_finding is not None:
         findings.append(whole_suite_finding)
@@ -447,6 +452,16 @@ def main(argv: list[str] | None = None) -> int:
     if findings:
         return _batched_contract_defects_refusal(findings)
 
+    # K4 Run 13: only after every cheaper STATIC check already passed --
+    # no reason to spend a real bounded subprocess proving an oracle's RED
+    # reason when a static defect would refuse this contract anyway.
+    red_reason_findings, red_reason_notes = _oracle_red_reason_check(
+        repo_root, contract
+    )
+    findings.extend(red_reason_findings)
+    if findings:
+        return _batched_contract_defects_refusal(findings)
+
     oracle_bytes = _resolve_oracle(repo_root, oracle_locator)
     if oracle_bytes is None:
         return _EXIT_USAGE_ERROR
@@ -476,6 +491,8 @@ def main(argv: list[str] | None = None) -> int:
         _assert_never(resolution)
 
     digest = closure_digest(contract_bytes, oracle_bytes)
+    for note in red_reason_notes:
+        print(note, file=sys.stderr)
     print(f"THIN-DELIVERY-CONTRACT: {locator}")
     print(f"THIN-DELIVERY-CONTRACT-DIGEST: sha256:{digest}")
     return 0

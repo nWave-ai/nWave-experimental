@@ -11,7 +11,7 @@ user-invocable: false
 | Anti-Pattern | Why It Fails | Fix |
 |-------------|-------------|-----|
 | Monolithic agent (2000+ lines) | Context rot; 3x token cost | Extract to Skills, target 200-400 lines |
-| Embedded safety frameworks | Duplicates platform; wastes tokens | Use frontmatter fields and hooks |
+| Embedded safety frameworks | Duplicates platform; wastes tokens | Construct safety first — tool surface (frontmatter `tools`/`permissionMode`), typed grammar; hooks last resort (GDP-0) |
 | Aggressive language | Overtriggering on Opus 4.6 | Calm, direct statements |
 | Zero examples | Fails on subtle/critical behaviors | Include 3-5 canonical examples |
 | Exhaustive examples (30+) | Diminishing returns; context rot | Keep 3-5 diverse canonical cases |

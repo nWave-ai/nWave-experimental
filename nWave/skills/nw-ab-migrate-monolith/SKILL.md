@@ -16,7 +16,7 @@ At execution start create these as TaskCreate items and run in order:
 
 1. **MEASURE** — Load `~/.claude/skills/nw-design-patterns/SKILL.md`. `wc -l` the source; measure prose share. Gate: before-count + prose-share recorded.
 2. **EXTRACT FRONTMATTER** — Move any embedded YAML config to frontmatter (name, description, model, tools, maxTurns, skills). Gate: frontmatter valid.
-3. **REMOVE DUPLICATION** — Delete platform-duplicating frameworks (safety/security prose → frontmatter+hooks) and default-behavior specifications. Gate: zero platform-duplicating sections.
+3. **REMOVE DUPLICATION** — Delete platform-duplicating frameworks; replace safety/security prose with construction first (frontmatter tool surface, typed grammar), a hook only last-resort with a recorded reason (GDP-0). Gate: zero platform-duplicating sections.
 4. **EXTRACT KNOWLEDGE (REUSE-first)** — grep existing skills FIRST; extract ONLY still-inline blocks. Move domain knowledge into skills. Gate: core body lean, knowledge in skills, zero duplication.
 5. **DECOMPOSE-AND-RECOMPOSE OVERSIZED SKILLS (recursive)** — for EVERY skill the migrated agent references (new OR reused), if it is over ~250L OR bundles more than one job, it is itself a migrate-monolith target. Apply this same procedure recursively:
    - **DECOMPOSE** — split each bundled job into its own one-job-one-trigger skill (KNOWLEDGE vs PROCEDURE classified). One skill per Mandate / per concern / per rubric — never one parameterized skill behind a switch.

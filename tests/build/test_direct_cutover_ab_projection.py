@@ -316,10 +316,28 @@ def test_auto_skill_pins_exact_atd_envelope_and_root_fact_resolution() -> None:
     assert "with VALUE-SEED bytes on stdin" in auto_compact
     assert "VALUE-SEED is never argv/env/temp/transcript data" in auto_compact
     assert "Prepared(SeededAuthority)" in auto_compact
-    assert "ATD always receives producer stdout verbatim" in auto_compact
+    # fa7d9730a: compile-contract now runs between resolve-charters and ATD's
+    # dispatch, but the property this pin protects is unchanged -- ATD still
+    # receives only the CLI-printed producer envelope verbatim, never a
+    # root-authored or root-augmented one.
+    assert (
+        "ATD always receives the original fourteen-line producer stdout "
+        "verbatim, unchanged by this step" in auto_compact
+    )
+    assert (
+        "never hand-authored, never reconstructed, never re-augmented with "
+        "compile-contract's own output" in auto_compact
+    )
     assert "Nonzero is the terminal `Blocked` WHAT/WHY/HOW" in auto_compact
 
-    assert "alone owns oracle plus complete contract" in auto_compact
+    # ATD now FILLS a compiler-written skeleton (never authors one from
+    # scratch) but remains the sole owner of writing the oracle.
+    assert "ATD fills it" in auto_compact
+    assert "rather than authoring from scratch" in auto_compact
+    assert (
+        "alone owns writing the oracle at the skeleton's own given locator"
+        in auto_compact
+    )
     assert "returns `DISTILL-RESULT: CONTRACT_READY`" in auto_compact
 
     # `CONTRACT-SCHEMA` is ephemeral dispatch context, never a contract field:
@@ -357,7 +375,10 @@ def test_auto_skill_pins_exact_atd_envelope_and_root_fact_resolution() -> None:
     assert "M = 2,000,000 processed tokens" not in auto
 
     # One contract, written once, by ATD alone.
-    assert "alone owns oracle plus complete contract" in auto_compact
+    assert (
+        "alone owns writing the oracle at the skeleton's own given locator"
+        in auto_compact
+    )
     assert "ATD remains the sole final contract author" in adr_compact
 
 
@@ -477,9 +498,13 @@ def test_auto_skill_projects_exact_resolve_charters_command_and_routing() -> Non
         "never runs `find`, a global search, or any ad-hoc filesystem "
         "inference" in compact
     )
+    # fa7d9730a: compile-contract now runs between resolve-charters and
+    # ATD's dispatch; the property protected here (ATD receives only the
+    # CLI-printed producer envelope verbatim, never root-authored) is
+    # unchanged -- only the exact pinned wording moved.
     assert (
-        "ATD always receives only the original fourteen-line producer stdout "
-        "verbatim" in compact
+        "ATD always receives the original fourteen-line producer stdout "
+        "verbatim, unchanged by this step" in compact
     )
 
 

@@ -97,16 +97,65 @@ persistent output.
 `applicability.examine` is an independent orchestration decision. You neither
 derive it nor read/write expectation charters.
 
+### Compiled skeleton (`des compile-contract`)
+
+Before your first `Read` of `CONTRACT-LOCATOR`'s target path, `Read` it —
+never assume it is absent. When root ran `des compile-contract` first (the
+mechanical DERIVE-mode counterpart of `des dispatch`'s own CHECK-mode
+validators: target candidate/decision/declared-imports, `verification-scope`
+commands and `obligations`, all built the identical way those validators
+already verify them), that path already holds a schema-shaped skeleton, not
+an absent file. In that case you FILL, you never re-author: every mechanical
+field the skeleton already derived correctly (`targets.*.candidate`,
+`.decision`, `.overlap`, `.declared-imports`, `verification-scope.commands`,
+`obligations`) is trusted as given, exactly like every other producer-owned
+envelope fact above — re-deriving one from scratch risks a second, drifting
+answer, never a safer one. Every field the skeleton could not derive is the
+literal string `<ATD: fill>` (`targets.*.justification`, every
+`targets.*.boundary.*`, top-level `outcome`) — `Edit` each with real
+value-side/architecture prose from the authority and examples this role
+already reads; `des dispatch` and `des validate-delivery-contract` both
+refuse a contract that still carries the literal placeholder. Two fields the
+schema constrains to a closed enum (`paradigm`, `targets.*.contract-shape`)
+arrive with a mechanical default rather than a placeholder (the schema
+cannot represent "unfilled" there) — treat a wrong default as an ordinary
+`Edit`, the same as any other authored fact you find incorrect. The oracle
+itself is never pre-authored by the skeleton (step 5 below is still yours in
+full) — but WHERE it lives is: `acceptance-tests.locator` is a convention
+`des compile-contract` decides (the primary EXTEND target's own sibling
+test directory, or the repository's top-level one), not your choice. You
+`Write` the oracle at that exact given path — you fill it, you never choose
+it — the same trust discipline as every other producer-owned fact above.
+When `CONTRACT-LOCATOR` is absent (no skeleton was compiled), every step
+below is unchanged: author every field from scratch exactly as documented,
+including choosing the oracle's own locator.
+
+When a skeleton exists, your `Write`/`Edit` on the oracle file itself is
+also observed by an installed PostToolUse hook: it runs the linked
+`verification-scope` command (bounded 60s) and relays one classification
+(`RED-right-reason`, `RED-wrong-reason`, `GREEN-for-RED_TO_GREEN`, ...) back
+into your own context via `additionalContext`, immediately, in the same
+turn — the identical evidence `des dispatch`'s own BASE probe proves later,
+just earlier and cheaper. It is advisory only (it cannot block or undo the
+write); a `RED-wrong-reason`/`GREEN-for-RED_TO_GREEN` classification is
+worth fixing in THIS turn, before `CONTRACT_READY`, rather than waiting for
+the REVISE round-trip `des dispatch` would otherwise force.
+
 ### Contract revision (crafter INDETERMINATE citing this contract/oracle)
 
-An alternate two-line dispatch shape replaces the fourteen-line envelope
+An alternate three-line dispatch shape replaces the fourteen-line envelope
 above when root routes a crafter's contract/oracle-citing `INDETERMINATE`
 back to you for the SAME already-produced `DeliveryId` (ADR-SSOT-002 Section
 4c/4d): `prepare-ordinary-request` runs exactly once per value seed and
 refuses a second run once its contract exists, naming this exact shape.
+Stable-design report 2026-08-19 section 1.2 adds the middle `REVISE-ROUND`
+line -- produced ONLY by `des revise-contract-round`, which bounds how many
+times this route can be taken for the SAME `DeliveryId` (root never
+hand-types this body).
 
 ```text
 REVISE-CONTRACT: <the exact CONTRACT-LOCATOR you already wrote>
+REVISE-ROUND: <n>/<N>
 CITATION: <compact JSON string literal of the crafter's cited defect>
 ```
 
@@ -186,7 +235,24 @@ A missing or unknown route blocks. There is no default and no dual-read path.
    silently swallows whatever code follows it at that indentation (K4 Run
    10: a spliced method absorbed its host method's own tail assertions,
    undetected until a crafter hit it at BASELINE after a full production
-   change).
+   change). Would this oracle pass once the feature exists, or does it fail
+   for a reason the crafter cannot fix by implementing it — a field name
+   colliding with a framework method, a fixture missing a required value, an
+   undefined name in setUp? `des dispatch` now runs each `verification-
+   scope` command at BASE, language-agnostic (a plain declared-symbol token
+   match, never a language-specific diagnosis): a command that already
+   passes is refused for a `RED_TO_GREEN` route (K4 Run 13: 3 of 4 crafter
+   dispatches were wasted implementing against an oracle broken for a
+   reason no production change could fix — an FK field named `check`
+   colliding with Django's own `Model.check()`, and two fixture gaps —
+   before a crafter ever ran); a failure whose output names a symbol this
+   contract's own targets declare is accepted as the missing-feature
+   reason; a failure matching a small, language-neutral build/compile
+   marker (any toolchain's own "cannot compile" wording) is refused too,
+   quoting that real output — never claiming which language broke; every
+   other failure is reported informationally, never refused — this probe
+   never claims to know WHY an oracle is broken beyond those two checks,
+   across any language.
 6. Before serializing any target's `declared-imports`, ask: does the cited
    architecture authority or one of the at-most-two named examples already
    SHOW this exact symbol existing in the base tree right now — or is it
