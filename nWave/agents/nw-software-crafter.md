@@ -94,12 +94,21 @@ owns only build-time packaging names for this role, never runtime trigger semant
 
 1. **VALIDATE** — verify the two headers and the compact authority checks
    above, including the first `des validate-delivery-contract` call.
-2. **RESOLVE LENSES** — execute the preloaded discipline's sole "Mandatory
-   lens resolution" table before BASELINE. Never silently skip a matched row.
-3. **BASELINE** — execute the contract command vectors literally. A
+2. **BASELINE** — the first Bash call after VALIDATE, before reading any
+   file beyond the contract itself (no oracle, target or source Read
+   first): execute the contract's literal verification command vectors. A
    `RED_TO_GREEN` route requires the focused intended RED and no unrelated
-   harness failure. A `GREEN_TO_GREEN` route requires the declared observations
-   green before mutation.
+   harness failure. A `GREEN_TO_GREEN` route requires the declared
+   observations green before mutation. A command that cannot even run (a
+   module/file/test the runner itself cannot resolve, not a legitimate
+   RED/GREEN observation) is immediate terminal `INDETERMINATE` citing the
+   contract's own `verification-scope` entry, within 3 tool calls total
+   (VALIDATE, this attempt, the terminal report) — GDP-1: a broken command
+   the contract itself carries is caught before any exploration effort is
+   spent understanding it (K4 Run 9: a wrong test path cost 525.8s/62 calls
+   discovered only after extensive unrelated reading).
+3. **RESOLVE LENSES** — execute the preloaded discipline's sole "Mandatory
+   lens resolution" table before MUTATE. Never silently skip a matched row.
 4. **MUTATE** — implement the smallest production change within the first-
    mutation bound. Prefer `EXTEND` and declared overlap; create a new component
    only when the contract says `CREATE_NEW`.

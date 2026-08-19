@@ -41,7 +41,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -1135,6 +1134,56 @@ def _write_auto_engaged_transcript(workspace: Path) -> Path:
     return path
 
 
+def _write_route_walk_subagent_transcript(repo_root_path: Path) -> Path:
+    """Run 9/10 correction: the walk's own "subagent Bash calls (crafter)"
+    steps used to carry `{"agent_type": "nw-software-crafter", "agent_id":
+    "route-walk-probe-crafter"}` directly in the payload -- a shape Claude
+    Code's own hooks reference never documents for an ordinary PreToolUse
+    envelope (only for SubagentStart/SubagentStop), and empirically absent
+    from every one of run 9's real nw-user-examiner PreToolUse calls. That
+    made these steps prove the fixed-up guard accepts a payload no real
+    subagent call would ever carry, not the real one.
+
+    This writes the REAL platform shape instead: a `subagents/agent-<id>
+    .jsonl` transcript with a co-located `agent-<id>.meta.json` sidecar
+    (`{"agentType": "nw-software-crafter", ...}`, the same schema verified
+    universal across every captured K4 run) -- `des.adapters.drivers.hooks.
+    root_activation_context.resolve_subagent_agent_type`'s intended second
+    axis. The step payloads below now carry ONLY this `transcript_path`, no
+    `agent_type`/`agent_id` key at all -- the exact shape a real dispatched
+    crafter's own Bash call has."""
+    subagents_dir = repo_root_path / "subagents"
+    subagents_dir.mkdir(parents=True, exist_ok=True)
+    transcript_path = subagents_dir / "agent-route-walk-probe-crafter.jsonl"
+    transcript_path.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}
+                    ]
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    meta_path = subagents_dir / "agent-route-walk-probe-crafter.meta.json"
+    meta_path.write_text(
+        json.dumps(
+            {
+                "agentType": "nw-software-crafter",
+                "description": "route-walk probe crafter",
+                "toolUseId": "toolu_route-walk-probe-crafter",
+                "spawnDepth": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return transcript_path
+
+
 def _parse_producer_stdout(text: str) -> dict[str, str]:
     """Split one `des prepare-ordinary-request`/`des dispatch`-shaped
     stdout into its `KEY: value` lines, keyed by KEY, value kept RAW (JSON
@@ -1308,6 +1357,9 @@ def route_walk_steps(
     """
     steps: list[dict] = []
     repo_root_path = Path(repo_root)
+    subagent_transcript_path = str(
+        _write_route_walk_subagent_transcript(repo_root_path)
+    )
 
     # --- root-Bash: the heredoc shape, hook-level -- independent of whether
     # the CLI chain below actually executes cleanly, so it runs first and
@@ -1648,8 +1700,7 @@ def route_walk_steps(
                 payload={
                     "tool_name": "Bash",
                     "tool_input": {"command": command},
-                    "agent_type": "nw-software-crafter",
-                    "agent_id": "route-walk-probe-crafter",
+                    "transcript_path": subagent_transcript_path,
                 },
             )
         )
@@ -1663,8 +1714,7 @@ def route_walk_steps(
             payload={
                 "tool_name": "Bash",
                 "tool_input": {"command": "find / -iname '*.py'"},
-                "agent_type": "nw-software-crafter",
-                "agent_id": "route-walk-probe-crafter",
+                "transcript_path": subagent_transcript_path,
             },
         )
     )
@@ -1830,8 +1880,11 @@ def route_walk(root: Path, venv: Path, auth_profile: Path) -> dict:
     return result
 
 
-_START_RECIPE_SERVER_TIMEOUT = 20.0
-_START_RECIPE_POLL_INTERVAL = 0.2
+# Above the Bash block's OWN internal readiness-wait bound (30 x 1s
+# sleeps, `pef.start_and_wait_block`) -- this timeout must never fire
+# before the block's own bounded loop has a chance to exit(1) and
+# report readiness failure on its own terms.
+_START_RECIPE_SERVER_TIMEOUT = 40.0
 
 
 def probe_examiner_start_recipe(workspace: Path, *, port: int) -> list[str]:
@@ -1840,19 +1893,22 @@ def probe_examiner_start_recipe(workspace: Path, *, port: int) -> list[str]:
     workspace, at this exact `port` -- runs under this harness's actual
     rendered env (`_rendered_arm_env`), deterministically, with NO model
     call, before a single (expensive, long) delivery/examiner turn is
-    spent. One source: the API key comes from the rendered doc itself
-    (`pef._existing_api_key`), the runserver command from the SAME
-    `pef._runserver_argv_and_env` the doc's own display text derives
-    from -- never a synthetic stand-in server or a second hand-typed key.
+    spent. One source, twice over: the API key comes from the rendered
+    doc itself (`pef._existing_api_key`), and the server is started by
+    EXECUTING `pef.start_and_wait_block` verbatim -- the identical Bash
+    text the rendered doc quotes for a real examiner to copy/paste --
+    never a synthetic stand-in server or a second hand-typed command.
 
-    Run 8 (K4 matrix): the examiner burned 40 calls trying to stand up a
-    Django dev server and drive it with real HTTP requests, and got zero
-    usable evidence. This canary answers, cheaply and up front, whether
-    the recipe it will later read is even executable under this arm's
-    env. A non-empty return here is a campaign INDETERMINATE (the harness
-    itself could not prove the recipe executable, or never provisioned
-    one at all), never a finding against Vera, who never got the chance
-    to try.
+    Run 9 (K4 matrix): the examiner's server died between separate Bash
+    tool calls and she burned 25 calls restarting it before falling back
+    to the project's own test suite. This canary reproduces that EXACT
+    call-boundary shape: the block runs to completion in ONE
+    `subprocess.run` (its own bounded readiness wait already inside it),
+    then a SEPARATE, later `subprocess.run` probes the server -- proving
+    it survives the boundary, not merely that it started. A non-empty
+    return here is a campaign INDETERMINATE (the harness itself could
+    not prove the recipe executable, or never provisioned one at all),
+    never a finding against Vera, who never got the chance to try.
     """
     api_key = pef._existing_api_key(workspace)
     if api_key is None:
@@ -1863,107 +1919,108 @@ def probe_examiner_start_recipe(workspace: Path, *, port: int) -> list[str]:
         ]
 
     env = _rendered_arm_env(workspace)
-    argv, env_overrides = pef._runserver_argv_and_env(port)
-    server_env = {**env, **env_overrides}
+    block = pef.start_and_wait_block(port, api_key)
 
-    problems: list[str] = []
     try:
-        server = subprocess.Popen(
-            argv,
+        started = subprocess.run(
+            ["bash", "-c", block],
             cwd=workspace,
-            env=server_env,
+            env=env,
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            capture_output=True,
             text=True,
+            timeout=_START_RECIPE_SERVER_TIMEOUT,
         )
+    except subprocess.TimeoutExpired:
+        return [
+            "the recipe's own start-and-wait block did not return within "
+            f"{_START_RECIPE_SERVER_TIMEOUT}s under the arm's rendered env"
+        ]
     except OSError as exc:
         return [
-            "the recipe's own server-start command could not even start "
+            "the recipe's own start-and-wait block could not even run "
             f"under the arm's rendered env: {type(exc).__name__}: {exc}"
         ]
 
-    try:
-        deadline = time.monotonic() + _START_RECIPE_SERVER_TIMEOUT
-        up = False
-        while time.monotonic() < deadline:
-            if server.poll() is not None:
-                break
-            if pef._port_is_occupied(port):
-                up = True
-                break
-            time.sleep(_START_RECIPE_POLL_INTERVAL)
+    pid_match = re.search(r"Server PID: (\d+)", started.stdout)
+    problems: list[str] = []
+    if started.returncode != 0 or pid_match is None:
+        problems.append(
+            "the recipe's own start-and-wait block did not reach "
+            "readiness under the arm's rendered env: "
+            f"{(started.stderr or started.stdout)[-600:]}"
+        )
+        return problems
 
-        if not up:
-            tail = server.stdout.read()[-600:] if server.stdout else ""
+    try:
+        base_url = f"http://127.0.0.1:{port}"
+
+        # Negative control, same discipline as row 11's own proof:
+        # nothing listens on a dead port under the SAME arm env -- a
+        # probe that passes anyway proves nothing about the recipe.
+        dead_port = pef.free_port()
+        dead_argv = pef.integration_probe_argv(f"http://127.0.0.1:{dead_port}", api_key)
+        try:
+            dead = subprocess.run(
+                dead_argv,
+                cwd=workspace,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            dead = None
+        if dead is not None and dead.returncode == 0:
             problems.append(
-                "the recipe's own server-start command never bound port "
-                f"{port} under the arm's rendered env within "
-                f"{_START_RECIPE_SERVER_TIMEOUT}s: {tail}"
+                "the probe succeeded against a dead port under the "
+                "arm's rendered env -- it does not discriminate"
+            )
+
+        # The property under test: a SEPARATE, later subprocess.run call
+        # -- the SAME call-boundary shape as two distinct Bash tool
+        # calls -- must still reach the server the first call started.
+        recipe_argv = pef.integration_probe_argv(base_url, api_key)
+        try:
+            done = subprocess.run(
+                recipe_argv,
+                cwd=workspace,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            problems.append(
+                "the recipe's own probe timed out against its own "
+                "live server, from a SEPARATE call, under the arm's "
+                "rendered env"
+            )
+        except OSError as exc:
+            problems.append(
+                "the recipe's own probe could not even start under "
+                f"the arm's rendered env: {type(exc).__name__}: {exc}"
             )
         else:
-            base_url = f"http://127.0.0.1:{port}"
-
-            # Negative control, same discipline as row 11's own proof:
-            # nothing listens on a dead port under the SAME arm env -- a
-            # probe that passes anyway proves nothing about the recipe.
-            dead_port = pef.free_port()
-            dead_argv = pef.integration_probe_argv(
-                f"http://127.0.0.1:{dead_port}", api_key
-            )
-            try:
-                dead = subprocess.run(
-                    dead_argv,
-                    cwd=workspace,
-                    env=env,
-                    stdin=subprocess.DEVNULL,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-            except (OSError, subprocess.TimeoutExpired):
-                dead = None
-            if dead is not None and dead.returncode == 0:
+            if done.returncode != 0:
                 problems.append(
-                    "the probe succeeded against a dead port under the "
-                    "arm's rendered env -- it does not discriminate"
+                    "the recipe's own probe failed against its own "
+                    "live server, from a SEPARATE call, under the "
+                    f"arm's rendered env: {(done.stderr or done.stdout)[-400:]}"
                 )
-
-            recipe_argv = pef.integration_probe_argv(base_url, api_key)
-            try:
-                done = subprocess.run(
-                    recipe_argv,
-                    cwd=workspace,
-                    env=env,
-                    stdin=subprocess.DEVNULL,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-            except subprocess.TimeoutExpired:
-                problems.append(
-                    "the recipe's own probe timed out against its own "
-                    "live server under the arm's rendered env"
-                )
-            except OSError as exc:
-                problems.append(
-                    "the recipe's own probe could not even start under "
-                    f"the arm's rendered env: {type(exc).__name__}: {exc}"
-                )
-            else:
-                if done.returncode != 0:
-                    problems.append(
-                        "the recipe's own probe failed against its own "
-                        "live server under the arm's rendered env: "
-                        f"{(done.stderr or done.stdout)[-400:]}"
-                    )
     finally:
-        server.terminate()
-        try:
-            server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=5)
+        pid = pid_match.group(1)
+        subprocess.run(
+            ["kill", pid],
+            cwd=workspace,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
     return problems
 
 

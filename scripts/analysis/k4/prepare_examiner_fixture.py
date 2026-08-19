@@ -354,43 +354,73 @@ def _seed(venv_python: Path, workspace: Path, existing_api_key: str | None) -> s
 
 def _runserver_argv_and_env(port: int) -> tuple[list[str], dict[str, str]]:
     """The ONE structured source for the runserver command: its directly
-    executable argv + env-var overrides. `_service_start_commands`'s
-    human-readable display string (quoted in every rendered recipe)
-    DERIVES from this; `preflight.probe_examiner_start_recipe` (which
-    must actually RUN it, not just quote it) uses this directly -- never
-    a second hand-typed copy of the same command in either direction."""
+    executable argv + env-var overrides. `start_and_wait_block`'s
+    rendered/executed Bash block derives its command line from this --
+    never a second hand-typed copy of the same command."""
     return (
         [VENV_PYTHON, "manage.py", "runserver", f"127.0.0.1:{port}"],
         {"ALLOWED_HOSTS": "localhost,127.0.0.1"},
     )
 
 
-def _service_start_commands(port: int | str) -> tuple[str, str]:
-    """The two-line service-start recipe -- migrate then runserver -- the
-    ONE source both `_render`'s examiner-facing doc and
-    `render_project_fragment`'s sandbox-facts doc quote verbatim. `port`
-    accepts the real int `_runserver_argv_and_env` needs, or the
-    `"<port>"` placeholder `render_project_fragment` uses when no
-    specific arm/port is yet chosen -- display-only, never executed."""
-    migrate = f"{VENV_PYTHON} manage.py migrate --noinput"
-    if isinstance(port, int):
-        argv, env_overrides = _runserver_argv_and_env(port)
-    else:
-        argv, env_overrides = _runserver_argv_and_env(0)
-        argv[-1] = f"127.0.0.1:{port}"
+def _migrate_command() -> str:
+    """The ONE migrate command line every consumer quotes."""
+    return f"{VENV_PYTHON} manage.py migrate --noinput"
+
+
+def start_and_wait_block(port: int, api_key: str) -> str:
+    """The ONE copy-paste Bash block every consumer of the examiner
+    recipe uses to start the server: `_render`'s rendered doc quotes it
+    verbatim, and `preflight.probe_examiner_start_recipe` EXECUTES it
+    verbatim under the arm's rendered env -- one source, never a second
+    hand-typed copy that could drift from what a real examiner runs.
+
+    Run 9 (K4 matrix): the examiner's server died between separate Bash
+    tool calls -- a bare `cmd &` only backgrounds for the CURRENT shell,
+    which this harness's tool-call boundary tears down -- and she burned
+    25 calls restarting it before falling back to the project's own test
+    suite. `nohup ... & disown` detaches the process from that shell so
+    it survives the tool-call boundary; the bounded `until curl ...; do
+    sleep 1; done` loop (exits 1 past 30s, never silently proceeds) waits
+    for real readiness inside this SAME call, so the very next tool call
+    can act on a server already confirmed reachable -- never a second,
+    separate "is it up yet" round trip.
+    """
+    base_url = f"http://127.0.0.1:{port}"
+    argv, env_overrides = _runserver_argv_and_env(port)
     env_prefix = " ".join(f"{name}={value}" for name, value in env_overrides.items())
-    runserver = f"{env_prefix} {' '.join(argv)}"
-    return migrate, runserver
+    runserver = f"{env_prefix} nohup {' '.join(argv)} > server.log 2>&1 &"
+    return (
+        f"{runserver}\n"
+        "SERVER_PID=$!\n"
+        "disown\n"
+        "i=0\n"
+        f"until curl -fsS {base_url}/api/v3/checks/ "
+        f'-H "X-Api-Key: {api_key}" > /dev/null 2>&1; do\n'
+        "    i=$((i+1))\n"
+        '    if [ "$i" -ge 30 ]; then\n'
+        '        echo "server did not become ready within 30s" >&2\n'
+        "        exit 1\n"
+        "    fi\n"
+        "    sleep 1\n"
+        "done\n"
+        'echo "Server PID: $SERVER_PID (stop with: kill $SERVER_PID)"\n'
+    )
 
 
 def _render(port: int, api_key: str) -> str:
     base = f"http://127.0.0.1:{port}"
-    migrate, runserver = _service_start_commands(port)
+    block = start_and_wait_block(port, api_key)
     return (
         "# User environment\n\n"
-        "Local run recipe:\n\n"
-        f"    {migrate}\n"
-        f"    {runserver}\n\n"
+        "Run once first:\n\n"
+        f"    {_migrate_command()}\n\n"
+        "Then run this ONE block to start the server and wait until it "
+        "is ready -- copy/paste it verbatim; it survives across "
+        "separate tool calls:\n\n"
+        "```\n"
+        f"{block}"
+        "```\n\n"
         f"Base URL: {base}\n\n"
         f"API key: {api_key} (read/write, preprovisioned for this environment)\n\n"
         "## HTTP journeys\n\n"
@@ -454,29 +484,35 @@ def render_project_fragment(
 
     Every fact is DERIVED, never hand-typed: installed deps come from
     THIS venv's own `pip list` (`_installed_dependency_names`); the
-    service-start recipe is the SAME `_service_start_commands` `_render`
-    quotes for the examiner's own doc; the network fact is the SAME
-    `SANDBOX_ALLOWED_NETWORK_DOMAINS` `preflight._render_sandbox_settings`
-    enforces. Run 8 (K4 matrix): the architect spent a round trip on `pip
-    install hypothesis` (no outbound network here), and the examiner
-    burned 40 calls trying to stand up the subject's dev server with no
-    start recipe in view -- both a missing fact at the point of use, not
-    missing capability.
+    environment-file pointer names the SAME `DOC_NAME` `_render` writes
+    to; the network fact is the SAME `SANDBOX_ALLOWED_NETWORK_DOMAINS`
+    `preflight._render_sandbox_settings` enforces. Run 8 (K4 matrix): the
+    architect spent a round trip on `pip install hypothesis` (no outbound
+    network here). Run 9: the examiner never opened `DOC_NAME` (present
+    the whole time) and instead hand-derived a start sequence that died
+    between separate Bash calls, burning 25 calls before falling back to
+    the project's own test suite -- both a missing fact at the point of
+    use, not missing capability, and (Run 9 specifically) a fact that
+    EXISTED but was never the first thing read. The GDP-9 form of the
+    first bullet below names that lazy alternative directly.
     """
     deps = ", ".join(_installed_dependency_names(venv_python, workspace)) or (
         "(pip list failed; treat the venv as fixed regardless)"
     )
-    migrate, runserver = _service_start_commands("<port>")
     domains = ", ".join(network_allowed_domains)
     test_command = f"{VENV_PYTHON} {' '.join(_SUBJECT_DEPENDENCY_PROBE_ARGV)}"
     return (
         "## K4 sandbox facts\n\n"
+        f"- Open `{DOC_NAME}` FIRST: did you open the environment file "
+        "this workspace provides before trying to start anything "
+        "yourself? It has the exact Base URL, API key, and the ONE "
+        "copy-paste block that starts the service and survives across "
+        "tool calls -- open it now if you have not.\n"
         f"- Outbound network: NONE reachable except {domains}. `pip install` "
         "or any other package fetch will fail (no proxy egress) -- use only "
         "what this venv already has:\n"
         f"  {deps}\n"
         f"- Run the subject's own tests: `{test_command}`\n"
-        f"- Start the service: `{migrate}` then `{runserver}`\n"
         f"- API documentation: `{_API_DOCS_PATH}`\n"
     )
 

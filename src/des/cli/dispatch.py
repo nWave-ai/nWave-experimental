@@ -35,6 +35,12 @@ from des.cli._declared_import_refusal import (
 from des.cli._declared_import_refusal import (
     unresolved_declared_import_how as _unresolved_declared_import_how,
 )
+from des.cli._verification_command_refusal import (
+    all_missing_verification_paths as _all_missing_verification_paths,
+)
+from des.cli._verification_command_refusal import (
+    missing_verification_path_finding as _missing_verification_path_finding,
+)
 
 
 _EXIT_USAGE_ERROR = 2
@@ -396,6 +402,8 @@ def main(argv: list[str] | None = None) -> int:
                 _unresolved_declared_import_how(repo_root, contract, reference),
             )
         )
+    for path in _all_missing_verification_paths(repo_root, contract):
+        findings.append(_missing_verification_path_finding(path))
 
     oracle_locator = str(contract["acceptance-tests"]["locator"])
     oracle_unsafe_reason = _unsafe_delivery_contract_path_reason(oracle_locator)

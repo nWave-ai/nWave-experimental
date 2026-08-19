@@ -26,9 +26,102 @@ has been observed -- so root context is not merely advisory end-to-end.
 
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+import json
+from pathlib import Path, PurePosixPath
 
 from des.application.skill_tracking_service import RootModeState
+
+
+# Run 9/10 correction: `agent_id`/`agent_type` are documented (Claude Code's
+# own hooks reference) as fields specific to the SubagentStart/SubagentStop
+# lifecycle events -- NEVER guaranteed on an ordinary PreToolUse/PreWrite
+# envelope. Every identity-keyed decision in `pre_tool_use_handler.py` and
+# `pre_write_handler.py` (the budget guard, host-scan lockdown, the
+# crafter/architect/ATD/PO envelope gates, and `is_root_invocation` itself)
+# either read `hook_input.get("agent_type")` directly or duplicated the same
+# `not agent_id and not agent_type` expression inline -- each one a second,
+# independent chance to silently misread a real subagent's own call as
+# root's. THIS module is the ONE resolver both handlers already import from
+# (`pre_tool_use_handler.py` imports `root_mode_handoff_block_reason` from
+# here; `pre_write_handler.py` imports `build_root_write_mode_select_context`
+# from here) -- the identity resolution belongs in the same one place, not
+# reimplemented per call site.
+_NWAVE_AGENT_PREFIX = "nw-"
+
+
+def _agent_type_from_transcript_meta_sidecar(transcript_path: str) -> str | None:
+    """Independent of whatever a live PreToolUse/PreWrite envelope carries
+    turn-by-turn, every subagent transcript at
+    `.../subagents/agent-<id>.jsonl` has a co-located `agent-<id>.meta.json`
+    written ONCE at spawn time -- verified universal across every captured
+    K4 run on this box (run 9's own nw-user-examiner, and independently a
+    nw-software-crafter dispatch from an unrelated run): always
+    `{"agentType": "nw-...", ...}`, always sitting next to its own
+    `.jsonl`. GDP-8's witness corollary: a second, platform-authored axis of
+    identity, consulted whenever the primary envelope field is not locally
+    inspectable. Root is never mistakenly matched here: root's OWN
+    transcript never sits inside a `subagents/` directory."""
+    path = Path(transcript_path)
+    if path.parent.name != "subagents" or not path.name.startswith("agent-"):
+        return None
+    meta_path = path.parent / f"{path.stem}.meta.json"
+    try:
+        meta_text = meta_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        meta = json.loads(meta_text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(meta, dict):
+        return None
+    sidecar_agent_type = meta.get("agentType")
+    return sidecar_agent_type if isinstance(sidecar_agent_type, str) else None
+
+
+def resolve_subagent_agent_type(hook_input: dict[str, object]) -> str | None:
+    """The dispatched nw-* subagent's own declared role name -- resolved
+    from the live envelope's `agent_type` field first (cheap, no I/O),
+    falling back to the platform's own durable `subagents/agent-<id>.meta.
+    json` sidecar (one extra read) only when that field is absent or not an
+    `nw-` role. `None` for root/user (no resolvable identity from either
+    source) and for a non-nWave agent."""
+    agent_type = hook_input.get("agent_type")
+    if isinstance(agent_type, str) and agent_type.startswith(_NWAVE_AGENT_PREFIX):
+        return agent_type
+    transcript_path = hook_input.get("transcript_path")
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return None
+    sidecar_agent_type = _agent_type_from_transcript_meta_sidecar(transcript_path)
+    if isinstance(sidecar_agent_type, str) and sidecar_agent_type.startswith(
+        _NWAVE_AGENT_PREFIX
+    ):
+        return sidecar_agent_type
+    return None
+
+
+def hook_input_has_agent_identity(hook_input: dict[str, object]) -> bool:
+    """True iff this PreToolUse/PreWrite call did NOT originate from root --
+    the canonical `not is_root_invocation` resolver. Resolved from the live
+    envelope's `agent_id`/`agent_type` fields first (either truthy is
+    sufficient: ANY identifiable caller, nWave role or not, is not root),
+    falling back to the transcript meta-sidecar's OWN presence when both are
+    absent -- a `subagents/agent-<id>.jsonl` transcript path with a
+    co-located `.meta.json` proves a real dispatched agent owns this call,
+    independent of whether that role happens to be an `nw-*` one, or of
+    whether the sidecar's own `agentType` value parses. Root's own
+    transcript never sits inside a `subagents/` directory, so this can
+    never mistake root's own call for a subagent's."""
+    if hook_input.get("agent_id") or hook_input.get("agent_type"):
+        return True
+    transcript_path = hook_input.get("transcript_path")
+    if not isinstance(transcript_path, str) or not transcript_path:
+        return False
+    path = Path(transcript_path)
+    if path.parent.name != "subagents" or not path.name.startswith("agent-"):
+        return False
+    meta_path = path.parent / f"{path.stem}.meta.json"
+    return meta_path.is_file()
 
 
 #: Markers that mean the dispatch already carries an explicit mode/wave

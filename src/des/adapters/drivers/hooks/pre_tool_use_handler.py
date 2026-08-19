@@ -40,6 +40,8 @@ from des.adapters.drivers.hooks.hook_protocol import (
 )
 from des.adapters.drivers.hooks.root_activation_context import (
     build_root_mode_select_context,
+    hook_input_has_agent_identity,
+    resolve_subagent_agent_type,
     root_mode_handoff_block_reason,
 )
 from des.application.commit_attribution_service import CommitAttributionService
@@ -421,16 +423,16 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
 # traversal root -- `find /` (or an option-prefixed equivalent) walks the
 # whole host instead of the active project. Root/user Bash and non-nWave
 # agents are untouched (see `_is_nwave_subagent`).
-_NWAVE_AGENT_PREFIX = "nw-"
 _HOST_SCAN_COMMAND_NAMES = frozenset({"find", "bfs"})
 
 
 def _is_nwave_subagent(hook_input: dict[str, object]) -> bool:
-    """True iff this dispatch is a running nWave subagent (`agent_type`
-    starting with `nw-`) -- never root/user (neither identity field set) and
-    never a non-nWave agent (some other `agent_type` prefix)."""
-    agent_type = hook_input.get("agent_type")
-    return isinstance(agent_type, str) and agent_type.startswith(_NWAVE_AGENT_PREFIX)
+    """True iff this dispatch is a running nWave subagent -- resolved via
+    `root_activation_context.resolve_subagent_agent_type` (the ONE shared
+    resolver: live envelope field, or its transcript meta-sidecar; see Run
+    9/10 correction there) -- never root/user (neither source resolves) and
+    never a non-nWave agent (some other prefix on both sources)."""
+    return resolve_subagent_agent_type(hook_input) is not None
 
 
 # Run 8 (Vera hit maxTurns:40 mid-work, zero terminal result -- the same
@@ -528,21 +530,21 @@ def _evaluate_subagent_budget_exhaustion(
 ) -> dict[str, str] | None:
     """Pure budget-exhaustion decision for a dispatched nw-* subagent's OWN
     tool call. `None` (allow) unless ALL of: this is a real nWave subagent
-    (`_is_nwave_subagent`), its own published spec declares a positive
-    `maxTurns` (`resolve_declared_max_turns` -- `None` for a role that
-    declares none is never gated here, matching Claude Code's own
-    unlimited-turn default), and its OWN transcript already shows
-    `maxTurns - _SUBAGENT_BUDGET_MARGIN` or more assistant turns. Applies to
-    every tool call uniformly -- there is no "terminal" tool call to
-    exempt; the terminal result is plain text, never a tool call, so this
-    guard denying every tool call is exactly what forces it."""
-    if not _is_nwave_subagent(hook_input):
+    (`root_activation_context.resolve_subagent_agent_type` -- live envelope
+    field OR transcript meta-sidecar, see Run 9/10 correction), its own
+    published spec declares a positive `maxTurns` (`resolve_declared_max_turns`
+    -- `None` for a role that declares none is never gated here, matching
+    Claude Code's own unlimited-turn default), and its OWN transcript
+    already shows `maxTurns - _SUBAGENT_BUDGET_MARGIN` or more assistant
+    turns. Applies to every tool call uniformly -- there is no "terminal"
+    tool call to exempt; the terminal result is plain text, never a tool
+    call, so this guard denying every tool call is exactly what forces it."""
+    agent_type = resolve_subagent_agent_type(hook_input)
+    if agent_type is None:
         return None
     transcript_path = hook_input.get("transcript_path")
     if not isinstance(transcript_path, str) or not transcript_path:
         return None
-    agent_type = hook_input.get("agent_type")
-    assert isinstance(agent_type, str)  # guaranteed by _is_nwave_subagent
     cwd = hook_input.get("cwd")
     repo_root = Path(cwd) if isinstance(cwd, str) and cwd else Path.cwd()
     max_turns = resolve_declared_max_turns(agent_type, repo_root=repo_root)
@@ -1243,9 +1245,14 @@ def handle_pre_tool_use() -> int:
             tool_input = hook_input.get("tool_input", {})
 
             tool_name = hook_input.get("tool_name")
-            is_root_invocation = not hook_input.get("agent_id") and not hook_input.get(
-                "agent_type"
-            )
+            # Run 9/10 correction: `not agent_id and not agent_type` alone
+            # misreads a real subagent's own call as root's whenever the
+            # live envelope carries neither field (proven true for every
+            # ordinary PreToolUse call in run 9 -- see
+            # `root_activation_context.hook_input_has_agent_identity`). The
+            # shared resolver adds the transcript meta-sidecar as a second
+            # axis before concluding "no identity at all -> root".
+            is_root_invocation = not hook_input_has_agent_identity(hook_input)
             transcript_path = (
                 extract_transcript_path(hook_input) if is_root_invocation else None
             )
@@ -1371,11 +1378,7 @@ def handle_pre_tool_use() -> int:
                         )
                         exit_code = 2
                         return exit_code
-                    if (
-                        role in _AUTO_ROOT_CRAFTER_ROLES
-                        and not hook_input.get("agent_id")
-                        and not hook_input.get("agent_type")
-                    ):
+                    if role in _AUTO_ROOT_CRAFTER_ROLES and is_root_invocation:
                         crafter_thin_block = _evaluate_auto_root_crafter_thin_header(
                             tool_input.get("prompt")
                         )
@@ -1383,11 +1386,7 @@ def handle_pre_tool_use() -> int:
                             print(json.dumps(crafter_thin_block))
                             exit_code = 2
                             return exit_code
-                    if (
-                        role == _ARCHITECT_ROLE_NAME
-                        and not hook_input.get("agent_id")
-                        and not hook_input.get("agent_type")
-                    ):
+                    if role == _ARCHITECT_ROLE_NAME and is_root_invocation:
                         architect_envelope_block = (
                             _evaluate_auto_root_architect_envelope(
                                 tool_input.get("prompt")
@@ -1397,11 +1396,7 @@ def handle_pre_tool_use() -> int:
                             print(json.dumps(architect_envelope_block))
                             exit_code = 2
                             return exit_code
-                    if (
-                        role == _ATD_ROLE_NAME
-                        and not hook_input.get("agent_id")
-                        and not hook_input.get("agent_type")
-                    ):
+                    if role == _ATD_ROLE_NAME and is_root_invocation:
                         design_consult_block = _evaluate_auto_root_atd_body(
                             tool_input.get("prompt")
                         )
@@ -1409,11 +1404,7 @@ def handle_pre_tool_use() -> int:
                             print(json.dumps(design_consult_block))
                             exit_code = 2
                             return exit_code
-                    if (
-                        role in _AUTO_ROOT_PO_ENVELOPE_ROLES
-                        and not hook_input.get("agent_id")
-                        and not hook_input.get("agent_type")
-                    ):
+                    if role in _AUTO_ROOT_PO_ENVELOPE_ROLES and is_root_invocation:
                         po_envelope_block = _evaluate_auto_root_po_envelope(
                             tool_input.get("prompt")
                         )

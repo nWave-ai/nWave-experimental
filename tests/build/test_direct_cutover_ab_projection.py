@@ -593,6 +593,26 @@ def test_agent_pins_lossless_overlap_projection_and_single_regular_oracle_file()
     assert "RED_TO_GREEN step 6 question" in compact
 
 
+def test_agent_pins_verification_command_copied_from_authority() -> None:
+    """K4 Run 9: ATD-1 constructed a `manage.py test` dotted path itself
+    (`api.tests.*`) instead of copying the architecture authority's own
+    fragment (`hc.api.tests.*`), a wrong-package-prefix defect `des
+    dispatch` now catches, but only after ATD guessed it in the first
+    place. One interrogative line: copy the command, never construct it."""
+    compact = " ".join(_text(AGENT).split())
+
+    assert (
+        "Does the read architecture authority's own fragment already "
+        "state the exact test invocation" in compact
+    )
+    assert "or are you constructing the package/module prefix yourself?" in compact
+    assert "Copy it verbatim" in compact
+    assert (
+        "K4 Run 9: `api.tests.*` guessed instead of the authority's own "
+        "`hc.api.tests.*`" in compact
+    )
+
+
 def test_auto_skill_routes_contract_fact_gap_as_friction_not_a_gate() -> None:
     """Run 5: root's routing table must not turn a high first-mutation
     tool-call number into a routing branch -- it is evidence for ATD's next

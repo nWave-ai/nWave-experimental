@@ -388,11 +388,11 @@ def test_project_fragment_derives_every_fact_from_its_one_source(tmp_path):
     # Network: the SAME constant `_render_sandbox_settings` enforces.
     for domain in k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS:
         assert domain in fragment
-    # Service-start: the SAME two commands `_render`'s examiner-facing doc
-    # quotes for a real port -- here with the placeholder port.
-    migrate, runserver = pef._service_start_commands("<port>")
-    assert migrate in fragment
-    assert runserver in fragment
+    # Run 9 (K4 matrix): the environment file must be named as the FIRST
+    # file to open, GDP-9 form (names the lazy alternative directly).
+    assert pef.DOC_NAME in fragment
+    assert "FIRST" in fragment
+    assert "did you open the environment file" in fragment.lower()
     # Subject test command: the SAME argv `_probe_subject_test_dependencies`
     # already runs at setup time.
     assert " ".join(pef._SUBJECT_DEPENDENCY_PROBE_ARGV) in fragment

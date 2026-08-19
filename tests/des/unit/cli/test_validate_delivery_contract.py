@@ -279,3 +279,58 @@ def test_self_created_symbol_cited_as_declared_import_names_the_owning_target(
     assert "WHAT:" in captured.err
     assert "WHY:" in captured.err
     assert "HOW:" in captured.err
+
+
+def test_verification_command_naming_a_wrong_dotted_test_path_is_rejected(
+    tmp_path: Path, capsys
+) -> None:
+    """K4 Run 9 repro: a `manage.py test`-shaped command citing a dotted
+    path missing its real package prefix (mirrors the actual `api.tests.*`
+    vs `hc.api.tests.*` defect) must be caught before dispatch, not
+    discovered by a crafter burning 500+s finding the command is wrong."""
+    contract_dict = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    contract_dict["verification-scope"]["commands"].append(
+        {
+            "executable": {"kind": "repository", "path": "manage.py"},
+            "arguments": ["test", "build.test_thin_delivery_contract_schema"],
+        }
+    )
+    contract_path = tmp_path / "delivery.json"
+    contract_path.write_text(json.dumps(contract_dict), encoding="utf-8")
+    seed_referenced_oracle(tmp_path, contract_dict)
+
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "--delivery-contract", "delivery.json"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "build.test_thin_delivery_contract_schema" in captured.err
+    assert "does not resolve to a base-tree test module or file" in captured.err
+    assert "WHAT:" in captured.err
+    assert "WHY:" in captured.err
+    assert "HOW:" in captured.err
+
+
+def test_verification_command_naming_a_correct_dotted_test_path_is_accepted(
+    tmp_path: Path, capsys
+) -> None:
+    contract_dict = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    contract_dict["verification-scope"]["commands"].append(
+        {
+            "executable": {"kind": "repository", "path": "manage.py"},
+            "arguments": ["test", "tests.build.test_thin_delivery_contract_schema"],
+        }
+    )
+    contract_path = tmp_path / "delivery.json"
+    contract_path.write_text(json.dumps(contract_dict), encoding="utf-8")
+    seed_referenced_oracle(tmp_path, contract_dict)
+    _seed_source_file(tmp_path, "tests/build/test_thin_delivery_contract_schema.py")
+
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "--delivery-contract", "delivery.json"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0, captured.err
+    assert json.loads(captured.out)["verdict"] == "VALID"

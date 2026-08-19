@@ -349,6 +349,37 @@ def test_declared_import_absent_from_the_base_tree_refuses_before_handoff(
     )
 
 
+def test_verification_command_naming_a_wrong_test_path_refuses_before_handoff(
+    tmp_path: Path,
+) -> None:
+    """K4 Run 9: ATD-1 wrote a `manage.py test`-shaped verification command
+    citing a dotted path missing its real package prefix; `des dispatch`
+    accepted it and crafter-1 spent 525.8s/62 tool calls discovering the
+    command itself was wrong. Catch it here, before any crafter starts."""
+    contract_path = _seed_contract(tmp_path)
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    contract["verification-scope"]["commands"].append(
+        {
+            "executable": {"kind": "repository", "path": "manage.py"},
+            "arguments": ["test", "totally.invented.test_module"],
+        }
+    )
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    exit_code, out, err = _run(
+        "--repo-root",
+        str(tmp_path),
+        "--delivery-contract",
+        contract_path.name,
+    )
+
+    assert exit_code != 0
+    assert out == ""
+    assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+    assert "totally.invented.test_module" in err
+    assert "does not resolve to a base-tree test module or file" in err
+
+
 def test_schema_invalid_contract_refuses_before_handoff(tmp_path: Path) -> None:
     contract_path = tmp_path / "delivery-contract.json"
     contract_path.write_text("{}", encoding="utf-8")

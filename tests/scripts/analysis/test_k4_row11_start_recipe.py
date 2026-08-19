@@ -223,3 +223,83 @@ class TestExaminerStartRecipeProvenUnderTheArmEnv:
             "a server that never binds its port must be reported, not "
             "silently treated as proven"
         )
+
+    def test_probe_genuinely_executes_start_and_wait_block_one_source(
+        self, tmp_path, monkeypatch
+    ):
+        """One source, proven by dependency, not coincidence: the probe
+        must genuinely EXECUTE `pef.start_and_wait_block`'s own output --
+        swapping it for a broken block must change the probe's result,
+        proving the probe does not carry an independent reimplementation
+        that merely happens to behave the same as a working recipe."""
+        from scripts.analysis.k4 import preflight
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        port = pef.free_port()
+        api_key = "k4-row11-one-source-9c31"
+        _install_fake_runserver_venv_python(workspace, api_key=api_key)
+        (workspace / pef.DOC_NAME).write_text(
+            pef._render(port, api_key), encoding="utf-8"
+        )
+
+        def _broken_block(_port: int, _api_key: str) -> str:
+            return "exit 1\n"
+
+        monkeypatch.setattr(pef, "start_and_wait_block", _broken_block)
+
+        problems = preflight.probe_examiner_start_recipe(workspace, port=port)
+
+        assert problems, (
+            "swapping start_and_wait_block for a broken one must change "
+            "the probe's result -- the probe must genuinely execute it, "
+            "not carry an independent copy of the same logic"
+        )
+
+    def test_survives_across_two_separate_subprocess_calls(self, tmp_path):
+        """Run 9's exact defect, reproduced directly: a server started by
+        one subprocess call must still answer from a SECOND, separate
+        subprocess call -- not merely respond while the starting process
+        is still the one being awaited."""
+        import re
+        import subprocess
+
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        port = pef.free_port()
+        api_key = "k4-row11-survives-9c31"
+        _install_fake_runserver_venv_python(workspace, api_key=api_key)
+        (workspace / pef.DOC_NAME).write_text(
+            pef._render(port, api_key), encoding="utf-8"
+        )
+        block = pef.start_and_wait_block(port, api_key)
+
+        first = subprocess.run(
+            ["bash", "-c", block],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=40,
+        )
+        assert first.returncode == 0, first.stderr or first.stdout
+        pid_match = re.search(r"Server PID: (\d+)", first.stdout)
+        assert pid_match, f"no PID printed: {first.stdout!r}"
+        pid = pid_match.group(1)
+
+        try:
+            second = subprocess.run(
+                pef.integration_probe_argv(f"http://127.0.0.1:{port}", api_key),
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            assert second.returncode == 0, (
+                "a SEPARATE subprocess call must still reach the server "
+                f"the first call started: {second.stdout!r} {second.stderr!r}"
+            )
+        finally:
+            subprocess.run(["kill", pid], capture_output=True)

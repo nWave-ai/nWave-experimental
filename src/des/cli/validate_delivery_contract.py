@@ -13,6 +13,12 @@ from des.cli._declared_import_refusal import (
 from des.cli._declared_import_refusal import (
     unresolved_declared_import_how as _unresolved_declared_import_how,
 )
+from des.cli._verification_command_refusal import (
+    first_missing_verification_path as _first_missing_verification_path,
+)
+from des.cli._verification_command_refusal import (
+    missing_verification_path_finding as _missing_verification_path_finding,
+)
 from des.cli.dispatch import _load_delivery_contract, _resolve_oracle, closure_digest
 
 
@@ -73,6 +79,12 @@ def main(argv: list[str] | None = None) -> int:
             f"HOW: {_unresolved_declared_import_how(args.repo_root, contract, reference)}",
             file=sys.stderr,
         )
+        return 2
+
+    missing_verification = _first_missing_verification_path(args.repo_root, contract)
+    if missing_verification is not None:
+        what, why, how = _missing_verification_path_finding(missing_verification)
+        print(f"WHAT: {what} WHY: {why} HOW: {how}", file=sys.stderr)
         return 2
 
     oracle_locator = str(contract["acceptance-tests"]["locator"])

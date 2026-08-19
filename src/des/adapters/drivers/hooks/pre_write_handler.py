@@ -25,6 +25,7 @@ from des.adapters.drivers.hooks.hook_protocol import (
 )
 from des.adapters.drivers.hooks.root_activation_context import (
     build_root_write_mode_select_context,
+    hook_input_has_agent_identity,
     root_mode_handoff_block_reason,
 )
 from des.application.skill_tracking_service import (
@@ -168,9 +169,12 @@ def handle_pre_write() -> int:
                 except Exception:
                     root_context = None
 
-                is_root_invocation = not hook_input.get(
-                    "agent_id"
-                ) and not hook_input.get("agent_type")
+                # Run 9/10 correction: see
+                # `root_activation_context.hook_input_has_agent_identity` --
+                # a bare `not agent_id and not agent_type` check misreads a
+                # real subagent's own Write/Edit as root's whenever the live
+                # envelope carries neither field.
+                is_root_invocation = not hook_input_has_agent_identity(hook_input)
                 if root_context and is_root_invocation:
                     transcript_path = extract_transcript_path(hook_input)
                     root_mode_state = RootModeState.UNSELECTED

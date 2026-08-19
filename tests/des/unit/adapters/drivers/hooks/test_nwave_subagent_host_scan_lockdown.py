@@ -157,3 +157,87 @@ class TestNwaveSubagentHostScanIdentityBoundary:
             ),
         )
         assert pre_tool_use_handler._evaluate_nwave_subagent_host_scan is _boom
+
+
+class TestNwaveSubagentHostScanWithoutALiveAgentTypeField:
+    """Run 9/10 correction: every test above sets `agent_type` DIRECTLY in
+    the payload -- a shape Claude Code's own hooks reference never
+    documents for an ordinary PreToolUse envelope (only for
+    SubagentStart/SubagentStop), and empirically absent from every one of
+    run 9's real nw-user-examiner PreToolUse calls. Under the old
+    `_is_nwave_subagent` (bare `hook_input.get("agent_type")` read), a real
+    subagent's OWN `find /` call -- carrying only `transcript_path`, never
+    `agent_type` -- would have sailed through this lockdown entirely. This
+    class drives the same real shape: only `transcript_path`, pointing into
+    a real `subagents/agent-<id>.jsonl` layout with its co-located
+    `.meta.json` sidecar for identity."""
+
+    @staticmethod
+    def _subagent_transcript(tmp_path):
+        subagents_dir = tmp_path / "subagents"
+        subagents_dir.mkdir()
+        transcript = subagents_dir / "agent-host-scan-probe.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "Bash",
+                                "input": {"command": "find / -iname x"},
+                            }
+                        ]
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (subagents_dir / "agent-host-scan-probe.meta.json").write_text(
+            json.dumps({"agentType": "nw-solution-architect", "spawnDepth": 1}),
+            encoding="utf-8",
+        )
+        return str(transcript)
+
+    def test_host_wide_find_is_blocked_with_no_agent_type_in_envelope(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = self._subagent_transcript(tmp_path)
+        payload = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "find / -iname '*.py'"},
+                "transcript_path": transcript_path,
+                # No "agent_type" key at all -- the real PreToolUse shape.
+            }
+        )
+        monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+        exit_code = pre_tool_use_handler.handle_pre_tool_use()
+        out = capsys.readouterr().out.strip()
+        payload_out = json.loads(out) if out else None
+        assert exit_code == 2
+        assert payload_out["decision"] == "block"
+        assert "traverses the filesystem root" in payload_out["reason"]
+
+    def test_repo_scoped_find_stays_allowed_with_no_agent_type_in_envelope(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = self._subagent_transcript(tmp_path)
+        payload = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "find . -iname '*.py'"},
+                "transcript_path": transcript_path,
+            }
+        )
+        monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+        pre_tool_use_handler.handle_pre_tool_use()
+        out = capsys.readouterr().out.strip()
+        payload_out = json.loads(out) if out else None
+        assert (
+            payload_out is None
+            or payload_out.get("decision") != "block"
+            or "traverses the filesystem root" not in payload_out.get("reason", "")
+        )

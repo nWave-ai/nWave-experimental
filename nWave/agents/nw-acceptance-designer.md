@@ -210,7 +210,14 @@ A missing or unknown route blocks. There is no default and no dual-read path.
    `applicability`, `delivery-route`) plus the durable DESIGN facts
    (`targets`, `paradigm`, `obligations`, `verification-scope`) and
    `acceptance-tests.locator` set to the oracle's exact repo-relative
-   locator. Serialize every field in the exact shape and enum the read
+   locator. Does the read architecture authority's own fragment already
+   state the exact test invocation (the literal dotted path or file this
+   project's own runner resolves) for each `verification-scope` command —
+   or are you constructing the package/module prefix yourself? Copy it
+   verbatim; a guessed prefix (K4 Run 9: `api.tests.*` guessed instead of
+   the authority's own `hc.api.tests.*`) is caught by `des dispatch` and
+   costs a full crafter dispatch to discover the command itself is wrong.
+   Serialize every field in the exact shape and enum the read
    `CONTRACT-SCHEMA` requires — including `schema-version`,
    `repository.worktree`, `targetPlan`, `paradigm` and each
    `verification-scope` command object — and add no property the schema's

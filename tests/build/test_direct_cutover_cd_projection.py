@@ -162,6 +162,32 @@ def test_self_flagged_oracle_gap_is_indeterminate_never_pass(path: Path) -> None
     )
 
 
+@pytest.mark.parametrize("path", (OO, FP), ids=("oo", "fp"))
+def test_baseline_runs_before_any_read_beyond_the_contract(path: Path) -> None:
+    """K4 Run 9: crafter-1 spent 525.8s/62 tool calls before discovering the
+    contract's own verification command cited a wrong test path -- it had
+    read the oracle, targets and source first. BASELINE must now be the
+    first Bash call after VALIDATE, with a fast INDETERMINATE exit when the
+    command itself cannot even run."""
+    text = _text(path)
+    compact = " ".join(text.split())
+
+    assert (
+        "the first Bash call after VALIDATE, before reading any\n   file "
+        "beyond the contract itself".replace("\n   ", " ")
+        in compact
+    )
+    assert (
+        "immediate terminal `INDETERMINATE` citing the contract's own "
+        "`verification-scope` entry, within 3 tool calls total" in compact
+    )
+    assert "K4 Run 9: a wrong test path cost 525.8s/62 calls" in compact
+    # BASELINE now precedes RESOLVE LENSES in step order.
+    baseline_index = text.index("**BASELINE**")
+    lenses_index = text.index("**RESOLVE LENSES**")
+    assert baseline_index < lenses_index
+
+
 def test_examiner_bounds_start_reachability_before_indeterminate() -> None:
     """Run 8: Vera lost 213.6s / 40 tool calls trying to stand up a live
     server within her own budget, the worst return in the run. She must
@@ -170,14 +196,18 @@ def test_examiner_bounds_start_reachability_before_indeterminate() -> None:
     compact = " ".join(_text(EXAMINER).split())
 
     assert (
-        "If the recipe's surface is not reachable/responsive within 8 tool "
-        "calls total spent on START" in compact
+        "If the surface is not reachable/responsive after the documented "
+        "start block plus ≤3 more calls (8 tool calls total spent on "
+        "START as the outer bound)" in compact
     )
     assert (
         "stop and return terminal `INDETERMINATE` naming the exact failing "
-        "step (the last command run and its observed result)" in compact
+        "command and its observed result" in compact
     )
     assert "never spend the remaining budget standing up infrastructure" in compact
+    # Run 9: never fall back to the project's own test suite as a stand-in
+    # for observing the candidate.
+    assert "run the project's own test suite as a stand-in for observing it" in compact
 
 
 def test_deliver_refuses_nonterminal_crafter_completion() -> None:

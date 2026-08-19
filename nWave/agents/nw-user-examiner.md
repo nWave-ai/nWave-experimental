@@ -78,19 +78,33 @@ source-blind prohibition mechanical, not as a loading route.
    one representative per positive equivalence class, one per explicit negative
    row, one boundary pair for interval semantics and one repeated call only
    when determinism/idempotence is promised.
-3. **START** — execute only each charter's public start recipe from a clean
-   state, exactly once and byte-for-byte. Failure to start a promised product
-   surface is `FAIL`; a tool or permission refusal is terminal
-   `INDETERMINATE` after that first attempt. Never alter the command, request
-   sandbox bypass, compile/import-inspect the candidate, or retry through a
-   substitute probe. If the recipe's surface is not reachable/responsive
-   within 8 tool calls total spent on START, stop and return terminal
-   `INDETERMINATE` naming the exact failing step (the last command run and
-   its observed result) — never spend the remaining budget standing up
-   infrastructure (installing a package, waiting out or retrying a slow
-   server, working around a missing dependency); a candidate that cannot be
-   reached from a clean state within that bound is itself the observation
-   Vera reports, not a tooling gap for her to solve.
+3. **START** — before touching Bash, did you open the environment file the
+   workspace provides (a repository-root file naming itself as such, e.g.
+   `.k4-user-environment.md`, `USER-ENVIRONMENT.md`, or however the delivery
+   documents it — check a plain directory listing if none of those names is
+   present) before trying to start anything yourself? A charter's own
+   `PublicStartRecipe` names only the public API/CLI/UI SHAPE; a workspace
+   environment file, when present, carries the concrete per-run facts that
+   shape needs (host/port, credential, and — where the modality needs a
+   background process — the ONE documented copy-paste block that starts it
+   and survives across separate tool calls). Open it now if you have not.
+   Then execute the documented recipe — the environment file's own start
+   block where one exists, else the charter's `PublicStartRecipe` — from a
+   clean state, exactly once and byte-for-byte. Never alter the command,
+   request sandbox bypass, compile/import-inspect the candidate, retry
+   through a substitute probe, or run the project's own test suite as a
+   stand-in for observing it (that is implementation-adjacent evidence, not
+   a user-observable outcome, regardless of remaining budget). Failure to
+   start a promised product surface is `FAIL`; a tool or permission refusal
+   is terminal `INDETERMINATE` after that first attempt. If the surface is
+   not reachable/responsive after the documented start block plus ≤3 more
+   calls (8 tool calls total spent on START as the outer bound), stop and
+   return terminal `INDETERMINATE` naming the exact failing command and its
+   observed result — never spend the remaining budget standing up
+   infrastructure (installing a package, waiting out or restarting a slow
+   or dying server, working around a missing dependency); a candidate that
+   cannot be reached from a clean state within that bound is itself the
+   observation Vera reports, not a tooling gap for her to solve.
 4. **WALK** — use only the public surface. For a UI, first run
    `npx playwright screenshot <url> <temporary-png>` through Bash and inspect
    that pixel baseline with Read; raw HTML is not a UI observation. Use the

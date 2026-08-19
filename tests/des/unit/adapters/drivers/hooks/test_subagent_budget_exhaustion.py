@@ -45,6 +45,18 @@ _RUN8_EXAMINER_FIXTURE = (
     / "run8_examiner_killed_transcript_trimmed.jsonl"
 )
 
+# Verbatim copy of run 9's REAL `subagents/agent-a84319ed68b17f632.meta.json`
+# sidecar (nw-user-examiner, "Source-blind examine of maintenance windows
+# feature") -- confirmed universal across every captured K4 run on this box
+# (this one, and independently a nw-software-crafter dispatch from an
+# unrelated run): the platform writes `{"agentType": "nw-...", ...}` once at
+# spawn time, co-located next to the subagent's own `.jsonl` transcript.
+_META_SIDECAR_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "subagent_meta_sidecar_nw_user_examiner.json"
+)
+
 
 def _transcript_with_assistant_turns(tmp_path: Path, count: int) -> str:
     """`count` synthetic assistant turns, each carrying exactly ONE
@@ -347,3 +359,98 @@ class TestSubagentBudgetExhaustionOnARealKilledTranscript:
         )
         if payload is not None and payload.get("decision") == "block":
             assert "budget" not in payload.get("reason", "").lower()
+
+
+class TestSubagentBudgetExhaustionWithoutALiveAgentTypeField:
+    """Run 9 root cause: Vera made 44 real tool calls (36 Bash, matcher-
+    eligible) with the guard denying NONE of them -- `hook_input.get(
+    "agent_type")` read `None` on every one of her OWN PreToolUse calls
+    (the CLI's own hooks reference documents `agent_id`/`agent_type` as
+    SubagentStart/SubagentStop-specific fields, never as part of the
+    generic PreToolUse envelope). This class drives the SAME real,
+    calibrated run-8/9-shape transcript (`_RUN8_EXAMINER_FIXTURE`) through
+    a hook_input payload that OMITS `agent_type` entirely -- the exact
+    real-world envelope shape -- relying only on `transcript_path` pointing
+    into a real `subagents/agent-<id>.jsonl` layout with its co-located
+    `.meta.json` sidecar (`_META_SIDECAR_FIXTURE`) for identity. Proves the
+    fix, not just the symptom: before it, `_is_nwave_subagent` returned
+    False here and the guard never engaged at any turn count."""
+
+    @staticmethod
+    def _prefix_transcript_in_subagents_dir(tmp_path: Path, line_count: int) -> str:
+        real_lines = _RUN8_EXAMINER_FIXTURE.read_text(encoding="utf-8").splitlines()
+        subagents_dir = tmp_path / "subagents"
+        subagents_dir.mkdir()
+        transcript = subagents_dir / "agent-a84319ed68b17f632.jsonl"
+        transcript.write_text(
+            "\n".join(real_lines[:line_count]) + "\n", encoding="utf-8"
+        )
+        meta_sidecar_text = _META_SIDECAR_FIXTURE.read_text(encoding="utf-8")
+        (subagents_dir / "agent-a84319ed68b17f632.meta.json").write_text(
+            meta_sidecar_text, encoding="utf-8"
+        )
+        return str(transcript)
+
+    def test_deny_fires_at_calibrated_threshold_with_no_agent_type_in_envelope(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = self._prefix_transcript_in_subagents_dir(tmp_path, 117)
+        payload = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "transcript_path": transcript_path,
+                "cwd": str(REPO_ROOT),
+                # No "agent_type" key at all -- the real PreToolUse shape.
+            }
+        )
+        monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+        exit_code = pre_tool_use_handler.handle_pre_tool_use()
+        out = capsys.readouterr().out.strip()
+        payload_out = json.loads(out) if out else None
+        assert exit_code == 2
+        assert payload_out["decision"] == "block"
+        assert "NW-USER-EXAMINER-RESULT" in payload_out["reason"]
+
+    def test_one_turn_earlier_still_allows_with_no_agent_type_in_envelope(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = self._prefix_transcript_in_subagents_dir(tmp_path, 114)
+        payload = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "transcript_path": transcript_path,
+                "cwd": str(REPO_ROOT),
+            }
+        )
+        monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+        pre_tool_use_handler.handle_pre_tool_use()
+        out = capsys.readouterr().out.strip()
+        payload_out = json.loads(out) if out else None
+        if payload_out is not None and payload_out.get("decision") == "block":
+            assert "budget" not in payload_out.get("reason", "").lower()
+
+    def test_flat_transcript_path_outside_a_subagents_dir_never_gates(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        """Root's own transcript never sits inside a `subagents/` directory
+        -- the sidecar fallback must never mistake a flat, non-nested
+        transcript path (root's own shape) for a subagent's."""
+        real_lines = _RUN8_EXAMINER_FIXTURE.read_text(encoding="utf-8").splitlines()
+        transcript = tmp_path / "root_own_transcript.jsonl"
+        transcript.write_text("\n".join(real_lines[:117]) + "\n", encoding="utf-8")
+        payload = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "transcript_path": str(transcript),
+                "cwd": str(REPO_ROOT),
+            }
+        )
+        monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+        pre_tool_use_handler.handle_pre_tool_use()
+        out = capsys.readouterr().out.strip()
+        payload_out = json.loads(out) if out else None
+        if payload_out is not None and payload_out.get("decision") == "block":
+            assert "budget" not in payload_out.get("reason", "").lower()
