@@ -3,7 +3,7 @@
 > Experimental software: breaking changes are expected. Evaluate it on
 > non-critical work and report concrete friction or defects.
 
-**Build:** `8e169fd` from `feature/atdd-pure-staging` (`8e169fdcb67c2bfc13800bb705c5bd7f989cd067`)
+**Build:** `0186fc2` from `feature/atdd-pure-staging` (`0186fc2f3da9ae49a513579c0dc7eb864e1b9a35`)
 
 ## What nWave does
 

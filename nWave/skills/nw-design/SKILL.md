@@ -60,6 +60,40 @@ the risk requires.
    trade-offs in ordinary domain language alongside the rigorous design. The
    projection is a view of the same decision, not a second authority.
 
+## Counterexample discipline
+
+A refuted invariant, a failing property, a model-check violation, or a
+scenario the design cannot classify is first a ROOT-CAUSE question about the
+representation, never a patch site:
+
+1. Ask which type made the violating state representable. Route the
+   diagnosis through `nw-algebraic-design-protocol` (follow the contradiction
+   to the type or observation that causes it) and the cure through
+   `nw-certainty-by-construction` (encode the missing distinction so the
+   state is unrepresentable). Never add a law, guard, or ceremony on top of
+   the unchanged representation as the first move.
+2. A theorem that only holds conditionally is the same signal: its hypothesis
+   names the constraint the representation should enforce by construction.
+3. An added law over an unchanged representation is a symptom patch. It may
+   ship only with an explicit recorded justification of why the representation
+   cannot change, in the amended durable authority.
+
+## Independent statement review
+
+Proof artifacts (mechanized proofs, model-check runs, exhaustive surrogates)
+derived from one reading of the design verify the PROOFS, not the STATEMENTS.
+Two verification lanes translating the same reading agree on the same
+misreading — that is a coherence check, never corroboration. Before a
+formally-verified design decision is ratified, dispatch one adversarial
+statement-level review to a reader who receives ONLY the mandate and the
+binding constraints — never the algebra, the proofs, or their conclusions —
+and tries to break the statements. Findings amend the durable authority
+before the proofs are re-run against the amended statements.
+
+This discipline requires no proof assistant or model checker: property tests
+in the project's own language, exhaustive finite checks, or a model checker
+when one is available all qualify — a prover is never a prerequisite.
+
 ## Handoff
 
 Update the brief/ADRs once. Return stable decision ids plus the minimum facts

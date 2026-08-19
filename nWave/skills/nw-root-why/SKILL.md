@@ -16,6 +16,20 @@ argument-hint: '[problem-description] - Optional: --depth=[3|5|7-whys] --output=
 
 Systematic root cause analysis using Toyota's 5 Whys with multi-causal investigation and evidence-based validation. Investigates multiple cause branches at each level|validates solutions against all identified root causes.
 
+## Design-time counterexamples
+
+RCA applies to design-time evidence at par with runtime failures: a
+model-checker violation, a refuted invariant, a failing property, or a
+theorem that only passes in conditional form. For these, the first RCA
+question is representational — which type or schema made the failing state
+expressible? A conditional theorem's hypothesis names the constraint the
+design should enforce by construction. Route the cure through `nw-design`'s
+Counterexample discipline; a law added over an unchanged representation
+without recorded justification is a symptom patch, not a root-cause fix.
+This applies whether the counterexample came from a proof assistant, a
+model checker, or a property test in the project's own language — no prover
+is a prerequisite for this RCA question.
+
 ## Agent Invocation
 
 @nw-troubleshooter
