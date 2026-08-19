@@ -484,6 +484,36 @@ class TestRouteWalkRealHookCases:
         code, _ = _real_hook_run(monkeypatch, capsys, payload)
         assert code == 0
 
+    def test_compile_contract_is_fed_from_the_real_skill_md_example_and_allowed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        """Run 15 (K4 matrix): `nw-auto/SKILL.md`'s own fenced `des
+        compile-contract` example, once substituted the SAME way
+        `route_walk_heredoc_command` already substitutes the other two
+        producers' examples, must be genuinely ALLOWED by the REAL
+        installed hook -- not a fake, not an isolated function call. An
+        earlier revision fed the RAW, unsubstituted text (reasoning the
+        hook's subcommand allowlist ignores flag values); the hook's
+        OWN injection-marker check treats a literal `<`/`>` placeholder
+        character as a shell-redirection operator regardless, and blocks
+        it -- refuted empirically before this fix landed."""
+        skill_md_text = k4_preflight._NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
+        command = k4_preflight.route_walk_fenced_command(
+            skill_md_text,
+            subcommand="compile-contract",
+            root=str(tmp_path),
+            delivery_id="auto-probeprobeprobe",
+        )
+        assert command is not None
+        transcript = _transcript(tmp_path)
+        payload = {
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "transcript_path": str(transcript),
+        }
+        code, _ = _real_hook_run(monkeypatch, capsys, payload)
+        assert code == 0
+
     def test_an_unrelated_git_subcommand_still_denies(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     ) -> None:

@@ -250,10 +250,7 @@ first producer call, not after an `INDETERMINATE` reports it missing.
    skeleton instead of authoring one from scratch:
 
    ```
-   des compile-contract --repo-root <root> --delivery-id <producer id> \
-     --architecture-authority "ARCHITECTURE-COVERED: path.md#anchor" \
-     --route <RED_TO_GREEN|GREEN_TO_GREEN> --examine <true|false> \
-     --independent-review <true|false>
+   des compile-contract --repo-root <root> --delivery-id <producer id> --architecture-authority "ARCHITECTURE-COVERED: path.md#anchor" --route <RED_TO_GREEN|GREEN_TO_GREEN> --examine <true|false> --independent-review <true|false>
    ```
 
    `--architecture-authority`, `--route`, `--examine` and

@@ -302,3 +302,103 @@ def test_skill_heredoc_examples_match_hook_allowed_commands_exactly() -> None:
         "a fenced nw-auto/SKILL.md example pipes the seed heredoc into "
         f"{sorted(undocumented_in_hook)}, which the hook does not allow"
     )
+
+
+def _root_lane_des_fence_blocks(text: str) -> list[str]:
+    """Every fenced code-block's RAW, UN-JOINED text (preserving physical
+    line breaks) whose first line starts with `des ` -- unlike `des_
+    fenced_lines`, which joins `\\`-continued lines into one logical
+    command before this guard's argparse checks ever see it, this keeps
+    the ORIGINAL line count so a single-physical-line check has something
+    to check."""
+    blocks: list[str] = []
+    in_fence = False
+    current: list[str] = []
+    for raw_line in text.split("\n"):
+        if raw_line.strip().startswith("```"):
+            if in_fence and current and current[0].strip().startswith("des "):
+                blocks.append("\n".join(current))
+            in_fence = not in_fence
+            current = []
+            continue
+        if in_fence:
+            current.append(raw_line.strip())
+    return blocks
+
+
+def test_non_heredoc_root_lane_des_examples_are_a_single_physical_line() -> None:
+    """Run 15 (K4 matrix): nw-auto/SKILL.md documented `des compile-
+    contract` across FOUR physical lines (`\\`-continued) -- root's
+    Auto-Bash hook (`_AUTO_ROOT_BASH_INJECTION_MARKERS`) blocks a literal
+    newline/CR exactly as hard as `&&`/`;`/backticks, so a real root
+    copy-pasting that fenced text VERBATIM into one Bash tool call would
+    have been refused before `des_fenced_lines`'s own line-joining ever
+    got a chance to help -- that joining happens in THIS guard's Python
+    parsing, never in the real Bash tool call a root actually makes.
+    Heredoc-shaped examples are exempt: their multi-line BODY is stdin
+    DATA, not a command continuation, and the hook's own dedicated
+    `_is_value_seed_stdin_heredoc` carve-out recognizes that shape
+    specially, before the generic injection-marker check ever runs."""
+    text = (REPO_ROOT / "nWave" / "skills" / "nw-auto" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    violations: list[str] = []
+    checked = 0
+    for block in _root_lane_des_fence_blocks(text):
+        lines = block.split("\n")
+        if any(
+            line.rstrip().endswith(("<<'NW_SEED'", '<<"NW_SEED"')) for line in lines
+        ):
+            continue
+        checked += 1
+        if len(lines) > 1:
+            violations.append(lines[0])
+    assert checked >= 1, "no non-heredoc root-lane des example found to check"
+    assert not violations, (
+        "the following root-lane des examples in nw-auto/SKILL.md span "
+        f"more than one physical line: {violations!r} -- a real root "
+        "copy-pasting the fenced text verbatim would embed a literal "
+        "newline, which the Auto-root Bash hook's own injection-marker "
+        "check blocks independent of placeholder substitution"
+    )
+
+
+def test_non_heredoc_root_lane_des_examples_pass_the_real_auto_root_hook() -> None:
+    """Run 15 (K4 matrix): a single-physical-line example is NECESSARY
+    but not SUFFICIENT -- `nw-auto/SKILL.md`'s own `des compile-contract`
+    example, even once single-lined, still carries literal `<`/`>`
+    placeholder characters that reach the SAME hook
+    (`_AUTO_ROOT_BASH_INJECTION_MARKERS` treats them as shell-redirection
+    operators, indistinguishable from documentation placeholder syntax --
+    this is the ACTUAL Run 15 root cause, not the newline/backslash
+    continuations alone). This proves the FULLY substituted command a
+    real root would actually run -- placeholders filled the SAME way
+    `_tokenize` already fills them for argparse -- is genuinely ALLOWED
+    by `pre_tool_use_handler._evaluate_auto_root_bash_command`, for every
+    non-heredoc root-lane `des` example in nw-auto/SKILL.md."""
+    from des.adapters.drivers.hooks import pre_tool_use_handler
+
+    heredoc_subcommands = _documented_heredoc_subcommands()
+    text = (REPO_ROOT / "nWave" / "skills" / "nw-auto" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    checked = 0
+    for line in des_fenced_lines(text):
+        try:
+            probe_tokens = shlex.split(line.split("<<", 1)[0])
+        except ValueError:
+            continue
+        if len(probe_tokens) < 2 or probe_tokens[0] != "des":
+            continue
+        if probe_tokens[1] in heredoc_subcommands:
+            continue
+        tokens = _tokenize(line)
+        assert tokens is not None, f"{line!r} does not shlex-tokenize"
+        command = shlex.join(tokens)
+        verdict = pre_tool_use_handler._evaluate_auto_root_bash_command(command)
+        assert verdict is None, (
+            f"nw-auto/SKILL.md's own documented `{line}` is BLOCKED by "
+            f"the real Auto-root Bash hook once substituted: {verdict}"
+        )
+        checked += 1
+    assert checked >= 1, "no non-heredoc root-lane des example found to check"

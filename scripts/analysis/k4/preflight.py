@@ -1129,24 +1129,35 @@ def route_walk_heredoc_command(
     return None
 
 
-def route_walk_fenced_command(skill_md_text: str, *, subcommand: str) -> str | None:
+def route_walk_fenced_command(
+    skill_md_text: str, *, subcommand: str, root: str, delivery_id: str
+) -> str | None:
     """The EXACT fenced `des <subcommand> ...` invocation from
-    `skill_md_text` -- RAW, unsubstituted -- for a non-heredoc example
-    (`des compile-contract`'s own fenced block, `\\`-continued across
-    several lines, `des_fenced_lines` already joins). `None` when no
-    fenced example exists. Unlike `route_walk_heredoc_command`, this never
-    substitutes placeholders: the ONE hook this feeds
-    (`_evaluate_auto_root_bash_command`'s subcommand allowlist) decides on
-    the SUBCOMMAND NAME alone, never on flag values, so the example's own
-    `<root>`/`<producer id>`/anchor placeholder text is exactly as valid a
-    probe as any real value would be."""
+    `skill_md_text` -- for a non-heredoc example (`des compile-contract`'s
+    own fenced block, `\\`-continued across several lines, `des_fenced_
+    lines` already joins into one logical, newline-free line) -- with
+    placeholders resolved via `substitute_heredoc_header`, the SAME
+    substitution `route_walk_heredoc_command` already uses. `None` when no
+    fenced example exists.
+
+    Run 15 (K4 matrix): an EARLIER revision of this function fed the
+    RAW, unsubstituted fenced text straight to the hook, reasoning that
+    `_evaluate_auto_root_bash_command`'s subcommand allowlist decides on
+    the subcommand name alone -- WRONG, empirically refuted: that same
+    function's injection-marker check (`_AUTO_ROOT_BASH_INJECTION_
+    MARKERS`) treats a literal `<`/`>` as a shell-redirection operator
+    indistinguishable from documentation placeholder syntax, and blocks
+    it regardless of the newline/backslash continuations already being
+    joined away. Substituting placeholders BEFORE the hook ever sees the
+    string is the same fix `route_walk_heredoc_command` already applies;
+    this function was simply the one caller that had not caught up."""
     for line in des_fenced_lines(skill_md_text):
         try:
             tokens = shlex.split(line)
         except ValueError:
             continue
         if len(tokens) >= 2 and tokens[0] == "des" and tokens[1] == subcommand:
-            return line
+            return substitute_heredoc_header(line, root=root, delivery_id=delivery_id)
     return None
 
 
@@ -1633,7 +1644,10 @@ def route_walk_steps(
     _write_route_walk_architecture_brief(repo_root_path)
 
     compile_fenced_command = route_walk_fenced_command(
-        skill_md_text, subcommand="compile-contract"
+        skill_md_text,
+        subcommand="compile-contract",
+        root=repo_root,
+        delivery_id=delivery_id,
     )
     steps.append(
         _hook_step(
