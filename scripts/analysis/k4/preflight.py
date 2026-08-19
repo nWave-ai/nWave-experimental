@@ -39,6 +39,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -2032,6 +2033,24 @@ def probe_examiner_start_recipe(workspace: Path, *, port: int) -> list[str]:
     diagnostics rediscovering it independently. This function itself
     still only ever REPORTS problems (never mutates the workspace); the
     severity decision belongs to the caller.
+
+    Run 12: readiness answered 200 INSIDE the call that started the
+    server, then the server died silently the instant that Bash tool
+    call returned -- the tool kills the WHOLE PROCESS GROUP of a call
+    when it ends, not merely its job table. Run 9's two-separate-calls
+    shape above never reproduced this, because a plain `subprocess.run`
+    never tears down the first call's process group the way the real
+    tool does. This canary now launches the block with
+    `start_new_session=True` (making this invocation its own process
+    group, `pgid == proc.pid`, the same shape one Bash tool call has),
+    then -- the instant the block itself returns -- kills that WHOLE
+    group with `os.killpg`, reproducing the tool's own call-boundary
+    teardown before a single byte is probed. A server still sharing that
+    group (no `setsid`) dies right here; a server `setsid` gave its own
+    session survives, because by then its pid is no longer a member of
+    the killed group at all (`os.killpg` raises `ProcessLookupError`,
+    caught and ignored -- an empty/gone group is the SURVIVING case, not
+    a failure).
     """
     api_key = pef._existing_api_key(workspace)
     if api_key is None:
@@ -2045,33 +2064,50 @@ def probe_examiner_start_recipe(workspace: Path, *, port: int) -> list[str]:
     block = pef.start_and_wait_block(port, api_key)
 
     try:
-        started = subprocess.run(
+        proc = subprocess.Popen(
             ["bash", "-c", block],
             cwd=workspace,
             env=env,
             stdin=subprocess.DEVNULL,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=_START_RECIPE_SERVER_TIMEOUT,
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired:
-        return [
-            "the recipe's own start-and-wait block did not return within "
-            f"{_START_RECIPE_SERVER_TIMEOUT}s under the arm's rendered env"
-        ]
     except OSError as exc:
         return [
             "the recipe's own start-and-wait block could not even run "
             f"under the arm's rendered env: {type(exc).__name__}: {exc}"
         ]
 
-    pid_match = re.search(r"Server PID: (\d+)", started.stdout)
+    try:
+        stdout, stderr = proc.communicate(timeout=_START_RECIPE_SERVER_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.communicate()
+        return [
+            "the recipe's own start-and-wait block did not return within "
+            f"{_START_RECIPE_SERVER_TIMEOUT}s under the arm's rendered env"
+        ]
+
+    # Run 12: the exact call-boundary teardown a real Bash tool call
+    # performs when it returns -- BEFORE any probe is issued.
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass  # the group is already gone -- exactly what a `setsid`'d
+        # server surviving into its OWN session looks like; not a defect.
+
+    pid_match = re.search(r"Server PID: (\d+)", stdout)
     problems: list[str] = []
-    if started.returncode != 0 or pid_match is None:
+    if proc.returncode != 0 or pid_match is None:
         problems.append(
             "the recipe's own start-and-wait block did not reach "
             "readiness under the arm's rendered env: "
-            f"{(started.stderr or started.stdout)[-600:]}"
+            f"{(stderr or stdout)[-600:]}"
         )
         return problems
 

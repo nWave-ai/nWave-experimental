@@ -44,6 +44,9 @@ from des.cli._verification_command_refusal import (
 from des.cli._verification_command_refusal import (
     missing_verification_path_finding as _missing_verification_path_finding,
 )
+from des.cli._whole_suite_scope_refusal import (
+    missing_whole_suite_scope_finding as _missing_whole_suite_scope_finding,
+)
 
 
 _EXIT_USAGE_ERROR = 2
@@ -408,6 +411,9 @@ def main(argv: list[str] | None = None) -> int:
     for path in _all_missing_verification_paths(repo_root, contract):
         findings.append(_missing_verification_path_finding(path))
     findings.extend(_all_oracle_structure_findings(repo_root, contract))
+    whole_suite_finding = _missing_whole_suite_scope_finding(repo_root, contract)
+    if whole_suite_finding is not None:
+        findings.append(whole_suite_finding)
 
     oracle_locator = str(contract["acceptance-tests"]["locator"])
     oracle_unsafe_reason = _unsafe_delivery_contract_path_reason(oracle_locator)

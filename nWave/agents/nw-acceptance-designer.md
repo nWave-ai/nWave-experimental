@@ -226,6 +226,17 @@ A missing or unknown route blocks. There is no default and no dual-read path.
    verbatim; a guessed prefix (K4 Run 9: `api.tests.*` guessed instead of
    the authority's own `hc.api.tests.*`) is caught by `des dispatch` and
    costs a full crafter dispatch to discover the command itself is wrong.
+   Does `verification-scope.commands` carry ONLY this oracle's own narrow
+   test, or does it also carry the subject workspace's own declared
+   whole-suite command — the line its own root `CLAUDE.md` already states
+   (e.g. "Run the subject's own tests: `...`") — as one more entry
+   alongside the oracle command(s)? A shared serializer or module with many
+   callers (K4 Run 12: `Check.to_dict()`) makes an oracle-only scope blind
+   to regressions the new oracle never exercises; those surfaced only
+   through 3 reviewer rounds instead of the crafter's own BASELINE/GREEN,
+   which already runs every listed command for free once this one entry is
+   added. `des dispatch` now refuses a whole-suite-declaring workspace
+   whose contract omits it.
    Serialize every field in the exact shape and enum the read
    `CONTRACT-SCHEMA` requires — including `schema-version`,
    `repository.worktree`, `targetPlan`, `paradigm` and each

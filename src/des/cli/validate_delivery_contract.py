@@ -22,6 +22,9 @@ from des.cli._verification_command_refusal import (
 from des.cli._verification_command_refusal import (
     missing_verification_path_finding as _missing_verification_path_finding,
 )
+from des.cli._whole_suite_scope_refusal import (
+    missing_whole_suite_scope_finding as _missing_whole_suite_scope_finding,
+)
 from des.cli.dispatch import _load_delivery_contract, _resolve_oracle, closure_digest
 
 
@@ -93,6 +96,12 @@ def main(argv: list[str] | None = None) -> int:
     structure_findings = _all_oracle_structure_findings(args.repo_root, contract)
     if structure_findings:
         what, why, how = structure_findings[0]
+        print(f"WHAT: {what} WHY: {why} HOW: {how}", file=sys.stderr)
+        return 2
+
+    whole_suite_finding = _missing_whole_suite_scope_finding(args.repo_root, contract)
+    if whole_suite_finding is not None:
+        what, why, how = whole_suite_finding
         print(f"WHAT: {what} WHY: {why} HOW: {how}", file=sys.stderr)
         return 2
 

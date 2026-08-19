@@ -476,11 +476,24 @@ def start_and_wait_block(port: int, api_key: str) -> str:
     against whatever the working DB currently holds; (3) restores the
     working DB from that snapshot, byte-for-byte. Only then does it
     start the server.
+
+    Run 12: readiness answered 200 INSIDE the call that started the
+    server, then the server died silently the instant that Bash tool
+    call returned -- `nohup ... & disown` detaches the process from the
+    shell's JOB TABLE, but a background child launched without `setsid`
+    still shares the calling shell's process GROUP, and the tool kills
+    that whole group when the call ends. `setsid` gives the server its
+    own session/process group before `nohup` even execs it, so it
+    survives the group teardown, not merely the shell's own job
+    control; `< /dev/null` detaches stdin too, so the child never blocks
+    waiting on a pipe the dying call closes.
     """
     base_url = f"http://127.0.0.1:{port}"
     argv, env_overrides = _runserver_argv_and_env(port)
     env_prefix = " ".join(f"{name}={value}" for name, value in env_overrides.items())
-    runserver = f"{env_prefix} nohup {' '.join(argv)} > server.log 2>&1 &"
+    runserver = (
+        f"{env_prefix} setsid nohup {' '.join(argv)} > server.log 2>&1 < /dev/null &"
+    )
     return (
         f"if [ -f {SERVER_PID_FILE_NAME} ] && "
         f'kill -0 "$(cat {SERVER_PID_FILE_NAME})" 2>/dev/null; then\n'

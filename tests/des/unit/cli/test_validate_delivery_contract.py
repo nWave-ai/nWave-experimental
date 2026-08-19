@@ -398,3 +398,30 @@ def test_oracle_locator_with_a_well_formed_test_is_accepted(
     captured = capsys.readouterr()
     assert exit_code == 0, captured.err
     assert json.loads(captured.out)["verdict"] == "VALID"
+
+
+def test_declared_whole_suite_command_missing_from_scope_refuses_loudly(
+    tmp_path: Path, capsys
+) -> None:
+    """K4 Run 12: mirrors `des dispatch`'s own refusal at this second
+    point-of-use call site (crafter BASELINE), same shared module."""
+    contract = tmp_path / "delivery.json"
+    contract.write_bytes(EXAMPLE.read_bytes())
+    seed_referenced_oracle(tmp_path, json.loads(EXAMPLE.read_text(encoding="utf-8")))
+    (tmp_path / "CLAUDE.md").write_text(
+        "- Run the subject's own tests: "
+        "`k4-fixture-venv/bin/python manage.py test hc.api --noinput`\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "--delivery-contract", "delivery.json"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "whole-suite" in captured.err
+    assert "hc.api" in captured.err
+    assert "WHAT:" in captured.err
+    assert "WHY:" in captured.err
+    assert "HOW:" in captured.err

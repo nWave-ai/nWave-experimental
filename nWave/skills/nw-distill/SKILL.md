@@ -71,9 +71,17 @@ proves assembled wiring only when the user consumes that assembled surface;
 other behavior uses the nearest deterministic honest port.
 
 The architecture brief supplies reusable helpers, fixture/executor lifecycle,
-dependency ownership, literal verification command, port/selector identity and
-the preservation map from a cheap law-bearing seam to the real observation.
-Missing facts return to their owner; DISTILL never guesses them.
+dependency ownership, literal verification command(s), port/selector identity
+and the preservation map from a cheap law-bearing seam to the real
+observation. Missing facts return to their owner; DISTILL never guesses them.
+
+`verification-scope.commands` is a set, not a slot: it carries the oracle's
+own command AND, when the subject workspace's own root `CLAUDE.md` already
+states one, the workspace's own whole-suite command — copied verbatim, never
+narrowed to only the new oracle (K4 Run 12: an oracle-only scope left a
+shared serializer's regressions invisible until 3 reviewer rounds surfaced
+them; `des dispatch` now refuses a whole-suite-declaring workspace whose
+contract omits it).
 
 ## Output
 
