@@ -813,3 +813,119 @@ class TestExaminerStartRecipeProvenUnderTheArmEnv:
         assert not (workspace / pef.SERVER_PID_FILE_NAME).exists(), (
             "the server must never start when the restored db failed hash verification"
         )
+
+    def test_supervisor_restarts_the_server_after_its_pid_is_killed_directly(
+        self, workspace
+    ):
+        """Run 14 take 3 (K4 matrix), PROBE-D-E.md: Vera verified 7/10
+        journeys, then her server -- even `setsid`-started from her OWN
+        Bash tool call -- was repeatedly reaped ~30-45s later by
+        something in the agent sandbox, regardless of process-group
+        tricks. GDP-0: the server must not be BORN inside an agent tool
+        call at all -- `pef.start_supervisor` launches it from THIS
+        process instead (a setup subprocess, never an agent Bash call,
+        exactly mirroring `prepare()`'s own real call site). This test
+        reproduces PROBE-D-E.md's exact failure mode directly: kill the
+        server's OWN PID (no Bash-call-boundary trickery needed) and
+        prove the supervisor notices and restarts it on its own, before
+        a SEPARATE authenticated GET succeeds again."""
+        import os
+        import time
+
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        port = pef.free_port()
+        api_key = "k4-row14-supervisor-9c31"
+        _install_fake_runserver_venv_python(workspace, api_key=api_key)
+        _install_pristine_db_snapshot(workspace)
+
+        pef.start_supervisor(workspace, port=port, api_key=api_key)
+        supervisor_pid = int(
+            (workspace / pef.SUPERVISOR_PID_FILE_NAME)
+            .read_text(encoding="utf-8")
+            .strip()
+        )
+
+        def _supervisor_has_active_child() -> bool:
+            return bool(
+                subprocess.run(
+                    ["pgrep", "-P", str(supervisor_pid)],
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+            )
+
+        # Wait for the supervisor's OWN first `_restart()` call to fully
+        # RETURN (no active `bash -c` child) before touching anything --
+        # `_restart()` is synchronous and blocks on the block's own
+        # internal readiness wait; killing the server while that FIRST
+        # call is still in flight races it: the block keeps polling a
+        # now-dead server for its own ~30s bound before the supervisor's
+        # outer loop even gets a turn to notice and retry. Waiting for
+        # genuine settlement removes the race, it does not paper over
+        # it. First wait for the child to APPEAR (confirms `_restart()`
+        # has actually started, not merely that the check ran before it
+        # did), then wait for it to DISAPPEAR (confirms it returned).
+        deadline = time.monotonic() + 40
+        appeared = False
+        while time.monotonic() < deadline:
+            if _supervisor_has_active_child():
+                appeared = True
+                break
+            time.sleep(0.2)
+        assert appeared, (
+            "the supervisor's first `_restart()` call never even started within 40s"
+        )
+
+        deadline = time.monotonic() + 40
+        settled = False
+        while time.monotonic() < deadline:
+            if not _supervisor_has_active_child():
+                settled = True
+                break
+            time.sleep(0.5)
+        assert settled, "the supervisor's own first restart never settled within 40s"
+
+        pid_file = workspace / pef.SERVER_PID_FILE_NAME
+        assert pid_file.exists(), "the supervisor never wrote a server.pid at all"
+        old_pid = int(pid_file.read_text(encoding="utf-8").strip())
+
+        first_probe = subprocess.run(
+            pef.integration_probe_argv(f"http://127.0.0.1:{port}", api_key),
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert first_probe.returncode == 0, (
+            "the supervisor's own first start must already be reachable: "
+            f"{first_probe.stdout!r} {first_probe.stderr!r}"
+        )
+
+        # PROBE-D-E.md's exact failure mode, reproduced directly.
+        os.kill(old_pid, 9)
+
+        reachable_again = False
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline:
+            probe = subprocess.run(
+                pef.integration_probe_argv(f"http://127.0.0.1:{port}", api_key),
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if probe.returncode == 0:
+                reachable_again = True
+                break
+            time.sleep(1)
+
+        assert reachable_again, (
+            "the supervisor must restart the server after its PID is "
+            "killed directly -- the examiner's server must survive the "
+            "agent sandbox reaping it, by construction, not merely by luck"
+        )
+        new_pid = int(pid_file.read_text(encoding="utf-8").strip())
+        assert new_pid != old_pid, (
+            "server.pid must reflect the RESTARTED process, not the killed one"
+        )

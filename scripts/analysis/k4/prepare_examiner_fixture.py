@@ -475,6 +475,26 @@ SERVER_PID_FILE_NAME = "server.pid"
 #: dispatch, must still be able to acquire it).
 DB_LOCK_FILE_NAME = "hc.sqlite.lock"
 
+#: Run 14 take 3 (K4 matrix): PROBE-D-E.md -- the examiner's server, even
+#: `setsid`-started from HER OWN Bash tool call, was repeatedly reaped
+#: ~30-45s later by something in the agent sandbox, regardless of
+#: process-group tricks. GDP-0: the server must never be BORN inside an
+#: agent tool call at all -- `supervisor_script` runs as a long-lived
+#: process the harness itself starts during `prepare()` (a setup
+#: subprocess, never an agent Bash call) and keeps alive; the examiner
+#: only ever health-checks or requests a reset, never starts or stops
+#: anything herself.
+SUPERVISOR_PID_FILE_NAME = "supervisor.pid"
+SUPERVISOR_SCRIPT_NAME = "k4-supervisor.py"
+
+#: Touched by the examiner's documented block when the server is
+#: unreachable; the supervisor polls for this file and, on seeing it,
+#: forces a fresh restore+verify+migrate+restart cycle even if the
+#: current child looks alive -- "unreachable" and "process technically
+#: running" are different facts, and only the supervisor may act on
+#: either.
+RESET_MARKER_FILE_NAME = ".k4-reset"
+
 
 def _runserver_argv_and_env(port: int) -> tuple[list[str], dict[str, str]]:
     """The ONE structured source for the runserver command: its directly
@@ -630,17 +650,179 @@ def start_and_wait_block(port: int, api_key: str) -> str:
     )
 
 
-def _render(port: int, api_key: str) -> str:
-    base = f"http://127.0.0.1:{port}"
+def supervisor_script(port: int, api_key: str) -> str:
+    """The long-lived Python source `prepare()` writes and launches ONCE,
+    from a setup subprocess (never an agent Bash call) -- Run 14 take 3
+    (K4 matrix), PROBE-D-E.md: Vera's server, even `setsid`-started from
+    her OWN Bash tool call, was repeatedly reaped ~30-45s later by
+    something in the agent sandbox. GDP-0: the server must not be BORN
+    inside an agent tool call at all -- this process is the producer
+    that makes that unrepresentable.
+
+    Reuses `start_and_wait_block`'s own bash text VERBATIM as its restart
+    action -- one source: every property that block already proves
+    (stale-server kill, pristine restore, hash verification, migrate,
+    `setsid`, bounded readiness wait, `SERVER_PID_FILE_NAME` write) the
+    supervisor inherits for free, never a second hand-typed reimplementation
+    in Python. The supervisor's OWN new logic is only: poll
+    `SERVER_PID_FILE_NAME` for liveness, watch for `RESET_MARKER_FILE_NAME`
+    (the examiner's documented block touches this -- she never starts or
+    stops anything herself), and forward SIGTERM to the child so the
+    harness's own teardown (killing `SUPERVISOR_PID_FILE_NAME`) takes the
+    server down too, never orphaning it.
+    """
     block = start_and_wait_block(port, api_key)
     return (
+        "#!/usr/bin/env python3\n"
+        '"""K4 examiner keepalive supervisor -- see '
+        "`prepare_examiner_fixture.supervisor_script`'s own docstring for "
+        'the full rationale."""\n'
+        "import os\n"
+        "import signal\n"
+        "import subprocess\n"
+        "import sys\n"
+        "import time\n\n"
+        f"BLOCK = {block!r}\n"
+        f"SERVER_PID_FILE = {SERVER_PID_FILE_NAME!r}\n"
+        f"RESET_MARKER = {RESET_MARKER_FILE_NAME!r}\n"
+        "POLL_SECONDS = 2\n\n\n"
+        "def _server_alive():\n"
+        "    if not os.path.isfile(SERVER_PID_FILE):\n"
+        "        return False\n"
+        "    try:\n"
+        "        pid = int(open(SERVER_PID_FILE).read().strip())\n"
+        "    except (OSError, ValueError):\n"
+        "        return False\n"
+        "    try:\n"
+        "        os.kill(pid, 0)\n"
+        "    except OSError:\n"
+        "        return False\n"
+        "    return True\n\n\n"
+        "def _restart():\n"
+        "    with open('server.log', 'a') as log:\n"
+        "        log.write('supervisor: restarting at %s\\n' % time.time())\n"
+        "    subprocess.run(\n"
+        "        ['bash', '-c', BLOCK],\n"
+        "        stdout=subprocess.DEVNULL,\n"
+        "        stderr=subprocess.DEVNULL,\n"
+        "        stdin=subprocess.DEVNULL,\n"
+        "        timeout=60,\n"
+        "    )\n\n\n"
+        "def _handle_sigterm(signum, frame):\n"
+        "    if os.path.isfile(SERVER_PID_FILE):\n"
+        "        try:\n"
+        "            pid = int(open(SERVER_PID_FILE).read().strip())\n"
+        "            os.kill(pid, signal.SIGTERM)\n"
+        "        except (OSError, ValueError):\n"
+        "            pass\n"
+        "    sys.exit(0)\n\n\n"
+        "signal.signal(signal.SIGTERM, _handle_sigterm)\n"
+        "_restart()\n"
+        "while True:\n"
+        "    time.sleep(POLL_SECONDS)\n"
+        "    reset_requested = os.path.exists(RESET_MARKER)\n"
+        "    if reset_requested:\n"
+        "        try:\n"
+        "            os.remove(RESET_MARKER)\n"
+        "        except OSError:\n"
+        "            pass\n"
+        "    if reset_requested or not _server_alive():\n"
+        "        _restart()\n"
+    )
+
+
+def start_supervisor(workspace: Path, *, port: int, api_key: str) -> None:
+    """Write `supervisor_script`'s source into `workspace` and launch it
+    DETACHED (`start_new_session=True`, the SAME `os.setsid()` primitive
+    `setsid` gives the bash block) from THIS process -- `prepare()`'s own
+    setup subprocess, never an agent Bash tool call. Writes
+    `SUPERVISOR_PID_FILE_NAME` so the harness can tear it down later by
+    PID; idempotent -- if a supervisor from a PRIOR `prepare()` run is
+    still alive (its own PID file says so), it is stopped first so this
+    call is never a silent second supervisor racing the first."""
+    stop_supervisor(workspace)
+    script_path = workspace / SUPERVISOR_SCRIPT_NAME
+    script_path.write_text(supervisor_script(port, api_key), encoding="utf-8")
+    proc = subprocess.Popen(
+        [sys.executable, str(script_path)],
+        cwd=workspace,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    (workspace / SUPERVISOR_PID_FILE_NAME).write_text(str(proc.pid), encoding="utf-8")
+
+
+def stop_supervisor(workspace: Path) -> None:
+    """Tear down a PRIOR supervisor by its own PID file, if one is
+    running -- the supervisor's own SIGTERM handler takes its managed
+    server down with it, so this is the ONE call that fully retires an
+    arm's examiner service, never a bare `kill $(cat server.pid)` that
+    leaves the supervisor itself to immediately restart what was just
+    killed."""
+    pid_file = workspace / SUPERVISOR_PID_FILE_NAME
+    if not pid_file.exists():
+        return
+    try:
+        pid = int(pid_file.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        pid_file.unlink(missing_ok=True)
+        return
+    try:
+        os.kill(pid, 15)
+    except OSError:
+        pass
+    pid_file.unlink(missing_ok=True)
+
+
+def health_or_reset_block(port: int, api_key: str) -> str:
+    """The ONE copy-paste Bash block the examiner runs -- a health check,
+    never a start command. Run 14 take 3 (K4 matrix), PROBE-D-E.md: Vera's
+    server was repeatedly reaped ~30-45s after she started it herself,
+    even `setsid`-started from her own Bash tool call -- something in the
+    agent sandbox kills it regardless of process-group tricks. GDP-0: the
+    server must not be BORN inside an agent tool call at all, so this
+    block never starts, stops, or restarts anything -- a harness-started
+    `supervisor_script` (see its own docstring) owns the server's entire
+    lifecycle from OUTSIDE any agent sandbox. If the FIRST check finds it
+    unreachable, this touches `RESET_MARKER_FILE_NAME` -- the supervisor
+    polls for that file and forces a fresh restore+verify+migrate+restart
+    on seeing it -- then waits, bounded, for reachability; it never
+    diagnoses or repairs anything itself."""
+    base_url = f"http://127.0.0.1:{port}"
+    probe = (
+        f'curl -fsS {base_url}/api/v3/checks/ -H "X-Api-Key: {api_key}" '
+        "> /dev/null 2>&1"
+    )
+    return (
+        f"if ! {probe}; then\n"
+        f"    touch {RESET_MARKER_FILE_NAME}\n"
+        "fi\n"
+        "i=0\n"
+        f"until {probe}; do\n"
+        "    i=$((i+1))\n"
+        '    if [ "$i" -ge 30 ]; then\n'
+        '        echo "server did not become reachable within 30s '
+        'after requesting a reset" >&2\n'
+        "        exit 1\n"
+        "    fi\n"
+        "    sleep 1\n"
+        "done\n"
+        'echo "Server reachable."\n'
+    )
+
+
+def _render(port: int, api_key: str) -> str:
+    base = f"http://127.0.0.1:{port}"
+    block = health_or_reset_block(port, api_key)
+    return (
         "# User environment\n\n"
-        "Run this ONE block to start the server and wait until it is "
-        "ready -- copy/paste it verbatim; it survives across separate "
-        f"tool calls. It restores the data store, then runs "
-        f"`{_migrate_command()}` against it (idempotent -- a no-op when "
-        "already current) before starting the server, so no separate "
-        "migrate step is needed first:\n\n"
+        "The service is ALREADY RUNNING, kept alive by the harness -- "
+        "never start, stop, or restart it yourself; there is nothing to "
+        "start. Run this ONE block first to confirm it is reachable "
+        "(requesting a reset automatically if it is not) before making "
+        "any API call -- copy/paste it verbatim:\n\n"
         "```\n"
         f"{block}"
         "```\n\n"
@@ -837,8 +1019,15 @@ def prepare(workspace: Path, *, port: int) -> Path:
     examiner server (`_stop_our_own_leaked_runserver`) and stopped LOUDLY
     if so -- only a port still occupied by something else afterward is a
     genuine, refusal-worthy collision.
+
+    Run 14 take 3: a PRIOR `prepare()` run's own `supervisor_script` is
+    stopped FIRST, unconditionally -- re-running `prepare()` idempotently
+    must never leave two supervisors racing the same port, and killing
+    only the runserver it watches (leaving the supervisor itself running)
+    would just have it restart what was killed within one poll interval.
     """
     workspace = Path(workspace)
+    stop_supervisor(workspace)
     if _port_is_occupied(port):
         if _stop_our_own_leaked_runserver(port):
             for _ in range(10):
@@ -860,6 +1049,7 @@ def prepare(workspace: Path, *, port: int) -> Path:
     _add_exclude_entries(workspace)
     doc_target = workspace / DOC_NAME
     doc_target.write_text(_render(port, api_key), encoding="utf-8")
+    start_supervisor(workspace, port=port, api_key=api_key)
     return doc_target
 
 

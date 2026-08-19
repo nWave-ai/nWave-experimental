@@ -2111,63 +2111,77 @@ def route_walk(root: Path, venv: Path, auth_profile: Path) -> dict:
     return result
 
 
-# Above the Bash block's OWN internal readiness-wait bound (30 x 1s
-# sleeps, `pef.start_and_wait_block`) -- this timeout must never fire
-# before the block's own bounded loop has a chance to exit(1) and
-# report readiness failure on its own terms.
-_START_RECIPE_SERVER_TIMEOUT = 40.0
+def _authenticated_get_ready(
+    base_url: str, api_key: str, *, env: dict[str, str], workspace: Path
+) -> bool:
+    """One SEPARATE `subprocess.run` authenticated GET, exit 0 iff it
+    succeeded -- the SAME `pef.integration_probe_argv` a real examiner's
+    documented HTTP journey uses, never a hand-typed second probe."""
+    argv = pef.integration_probe_argv(base_url, api_key)
+    try:
+        done = subprocess.run(
+            argv,
+            cwd=workspace,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0
+
+
+def _wait_until_authenticated_get_ready(
+    base_url: str, api_key: str, *, env: dict[str, str], workspace: Path, timeout: float
+) -> bool:
+    """Bounded poll, one SEPARATE `subprocess.run` per attempt (never a
+    single long-lived probe) -- `True` once an authenticated GET
+    succeeds, `False` if `timeout` elapses first."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _authenticated_get_ready(base_url, api_key, env=env, workspace=workspace):
+            return True
+        time.sleep(1)
+    return False
 
 
 def probe_examiner_start_recipe(workspace: Path) -> list[str]:
-    """Prove the examiner's ACTUAL rendered start recipe -- the SAME
+    """Prove the examiner's ACTUAL rendered environment -- the SAME
     `pef.DOC_NAME` file `fixture_setup_step` already wrote into this exact
     workspace -- runs under this harness's actual rendered env
     (`_rendered_arm_env`), deterministically, with NO model call, before a
     single (expensive, long) delivery/examiner turn is spent. One source,
-    three times over: the API key AND the port both come from the rendered
-    doc itself (`pef._existing_api_key` / `pef.existing_port` -- Run 14: no
-    caller-supplied port parameter, since `nwave_setup_steps`/
-    `control_setup_steps` bind a fresh ephemeral one per call and the doc is
-    the one place that recorded which), and the server is started by
-    EXECUTING `pef.start_and_wait_block` verbatim -- the identical Bash
-    text the rendered doc quotes for a real examiner to copy/paste --
-    never a synthetic stand-in server or a second hand-typed command.
+    twice over: the API key AND the port both come from the rendered doc
+    itself (`pef._existing_api_key` / `pef.existing_port`).
 
     Run 9 (K4 matrix): the examiner's server died between separate Bash
-    tool calls and she burned 25 calls restarting it before falling back
-    to the project's own test suite. This canary reproduces that EXACT
-    call-boundary shape: the block runs to completion in ONE
-    `subprocess.run` (its own bounded readiness wait already inside it),
-    then a SEPARATE, later `subprocess.run` probes the server with the
-    documented key -- proving it survives the boundary AND genuinely
-    authenticates, not merely that it started.
+    tool calls and she burned 25 calls restarting it. Run 12: it also died
+    the instant the STARTING Bash tool call itself returned (the tool
+    kills the whole process group of a call when it ends). Both were
+    survivable with enough process-group engineering (`setsid`,
+    `start_new_session=True`, PID files) -- but Run 14 take 3 (PROBE-D-E.md)
+    found a THIRD failure mode neither survives: the server, even
+    `setsid`-started from Vera's own Bash tool call, was repeatedly reaped
+    ~30-45s later by something in the agent sandbox itself, regardless of
+    process-group tricks. GDP-0: no amount of defensive engineering
+    INSIDE an agent tool call closes that gap, because the producer of
+    the failure is the agent sandbox boundary itself -- the server must
+    not be BORN there at all.
 
-    Run 11: the caller (`main`) now treats a non-empty return as a HARD
-    refusal, not a campaign INDETERMINATE -- a documented key that
-    cannot authenticate against the real running server is not a
-    readiness gap Vera could work around; it is the SAME structural
-    defect that cost 3 examiner dispatches + 3 troubleshooter
-    diagnostics rediscovering it independently. This function itself
-    still only ever REPORTS problems (never mutates the workspace); the
-    severity decision belongs to the caller.
-
-    Run 12: readiness answered 200 INSIDE the call that started the
-    server, then the server died silently the instant that Bash tool
-    call returned -- the tool kills the WHOLE PROCESS GROUP of a call
-    when it ends, not merely its job table. Run 9's two-separate-calls
-    shape above never reproduced this, because a plain `subprocess.run`
-    never tears down the first call's process group the way the real
-    tool does. This canary now launches the block with
-    `start_new_session=True` (making this invocation its own process
-    group, `pgid == proc.pid`, the same shape one Bash tool call has),
-    then -- the instant the block itself returns -- kills that WHOLE
-    group with `os.killpg`, reproducing the tool's own call-boundary
-    teardown before a single byte is probed. A server still sharing that
-    group (no `setsid`) dies right here; a server `setsid` gave its own
-    session survives, because by then its pid is no longer a member of
-    the killed group at all (`os.killpg` raises `ProcessLookupError`,
-    caught and ignored -- an empty/gone group is the SURVIVING case, not
-    a failure).
+    This canary now proves the STABLE construction: `pef.start_supervisor`
+    launches the keepalive supervisor from THIS process (a preflight
+    subprocess, never an agent Bash call, exactly mirroring how
+    `prepare()` itself starts it during real setup), waits for it to bring
+    the server up, then -- the exact PROBE-D-E.md failure mode,
+    reproduced directly -- kills the server's OWN PID and proves the
+    supervisor notices and restarts it on its own, from OUTSIDE any agent
+    sandbox, before a SEPARATE authenticated GET succeeds again. This
+    function DOES mutate the workspace now (starts/restarts a real
+    supervisor+server pair) -- superseding Run 11's "never mutates"
+    commitment, which predates the supervisor's existence: proving the
+    self-healing property AT ALL requires actually exercising it.
     """
     api_key = pef._existing_api_key(workspace)
     if api_key is None:
@@ -2184,125 +2198,69 @@ def probe_examiner_start_recipe(workspace: Path) -> list[str]:
         ]
 
     env = _rendered_arm_env(workspace)
-    block = pef.start_and_wait_block(port, api_key)
+    base_url = f"http://127.0.0.1:{port}"
+    problems: list[str] = []
 
     try:
-        proc = subprocess.Popen(
-            ["bash", "-c", block],
-            cwd=workspace,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,
-        )
+        pef.start_supervisor(workspace, port=port, api_key=api_key)
     except OSError as exc:
         return [
-            "the recipe's own start-and-wait block could not even run "
-            f"under the arm's rendered env: {type(exc).__name__}: {exc}"
+            "the keepalive supervisor could not even be started under "
+            f"the arm's rendered env: {type(exc).__name__}: {exc}"
         ]
 
     try:
-        stdout, stderr = proc.communicate(timeout=_START_RECIPE_SERVER_TIMEOUT)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        proc.communicate()
-        return [
-            "the recipe's own start-and-wait block did not return within "
-            f"{_START_RECIPE_SERVER_TIMEOUT}s under the arm's rendered env"
-        ]
-
-    # Run 12: the exact call-boundary teardown a real Bash tool call
-    # performs when it returns -- BEFORE any probe is issued.
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass  # the group is already gone -- exactly what a `setsid`'d
-        # server surviving into its OWN session looks like; not a defect.
-
-    pid_match = re.search(r"Server PID: (\d+)", stdout)
-    problems: list[str] = []
-    if proc.returncode != 0 or pid_match is None:
-        problems.append(
-            "the recipe's own start-and-wait block did not reach "
-            "readiness under the arm's rendered env: "
-            f"{(stderr or stdout)[-600:]}"
-        )
-        return problems
-
-    try:
-        base_url = f"http://127.0.0.1:{port}"
+        if not _wait_until_authenticated_get_ready(
+            base_url, api_key, env=env, workspace=workspace, timeout=40
+        ):
+            problems.append(
+                "the supervisor did not bring the server to a reachable, "
+                "authenticated state within 40s of being started"
+            )
+            return problems
 
         # Negative control, same discipline as row 11's own proof:
         # nothing listens on a dead port under the SAME arm env -- a
         # probe that passes anyway proves nothing about the recipe.
         dead_port = pef.free_port()
-        dead_argv = pef.integration_probe_argv(f"http://127.0.0.1:{dead_port}", api_key)
-        try:
-            dead = subprocess.run(
-                dead_argv,
-                cwd=workspace,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            dead = None
-        if dead is not None and dead.returncode == 0:
+        if _authenticated_get_ready(
+            f"http://127.0.0.1:{dead_port}", api_key, env=env, workspace=workspace
+        ):
             problems.append(
                 "the probe succeeded against a dead port under the "
                 "arm's rendered env -- it does not discriminate"
             )
 
-        # The property under test: a SEPARATE, later subprocess.run call
-        # -- the SAME call-boundary shape as two distinct Bash tool
-        # calls -- must still reach the server the first call started.
-        recipe_argv = pef.integration_probe_argv(base_url, api_key)
+        # Run 14 take 3 (PROBE-D-E.md), reproduced directly: kill the
+        # server's OWN PID -- exactly what the agent sandbox does to a
+        # Vera-started server, no Bash-tool-call boundary needed to
+        # reproduce it -- and prove the supervisor (running OUTSIDE any
+        # agent sandbox) notices and restarts it on its own.
+        pid_file = workspace / pef.SERVER_PID_FILE_NAME
         try:
-            done = subprocess.run(
-                recipe_argv,
-                cwd=workspace,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-        except subprocess.TimeoutExpired:
+            old_pid = int(pid_file.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
             problems.append(
-                "the recipe's own probe timed out against its own "
-                "live server, from a SEPARATE call, under the arm's "
-                "rendered env"
+                f"no {pef.SERVER_PID_FILE_NAME} exists after the "
+                "supervisor's own first start"
             )
-        except OSError as exc:
+            return problems
+        try:
+            os.kill(old_pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+        if not _wait_until_authenticated_get_ready(
+            base_url, api_key, env=env, workspace=workspace, timeout=30
+        ):
             problems.append(
-                "the recipe's own probe could not even start under "
-                f"the arm's rendered env: {type(exc).__name__}: {exc}"
+                "the supervisor did not restart the server within 30s of "
+                f"its PID ({old_pid}) being killed directly -- the "
+                "examiner's server must survive the agent sandbox "
+                "reaping it, by construction, not merely by luck"
             )
-        else:
-            if done.returncode != 0:
-                problems.append(
-                    "the recipe's own probe failed against its own "
-                    "live server, from a SEPARATE call, under the "
-                    f"arm's rendered env: {(done.stderr or done.stdout)[-400:]}"
-                )
     finally:
-        pid = pid_match.group(1)
-        subprocess.run(
-            ["kill", pid],
-            cwd=workspace,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        pef.stop_supervisor(workspace)
     return problems
 
 

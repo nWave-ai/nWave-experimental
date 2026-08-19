@@ -86,10 +86,17 @@ source-blind prohibition mechanical, not as a loading route.
    `PublicStartRecipe` names only the public API/CLI/UI SHAPE; a workspace
    environment file, when present, carries the concrete per-run facts that
    shape needs (host/port, credential, and — where the modality needs a
-   background process — the ONE documented copy-paste block that starts it
-   and survives across separate tool calls). Open it now if you have not.
-   Then execute the documented recipe — the environment file's own start
-   block where one exists, else the charter's `PublicStartRecipe` — from a
+   background process — the ONE documented copy-paste block that brings it
+   to a reachable state and survives across separate tool calls). Some
+   environments keep that process alive OUTSIDE any agent tool call entirely
+   (K4 matrix Run 14 take 3: even a `setsid`-started server was repeatedly
+   reaped by the agent sandbox) — for those, the documented block is a
+   health-check-or-reset, never a start command, and states so explicitly
+   ("the service is ALREADY RUNNING... never start, stop, or restart it").
+   Follow the block's OWN stated contract exactly; never infer "start" from
+   habit when it says something else. Open it now if you have not. Then
+   execute the documented recipe — the environment file's own block where
+   one exists, else the charter's `PublicStartRecipe` — from a
    clean state, exactly once and byte-for-byte. Never alter the command,
    request sandbox bypass, compile/import-inspect the candidate, retry
    through a substitute probe, or run the project's own test suite as a

@@ -295,27 +295,25 @@ def test_rendered_doc_is_a_public_only_user_environment_recipe(tmp_path):
     pef.prepare(workspace, port=port)
     rendered = doc_target.read_text()
 
-    assert f"{pef.VENV_PYTHON} manage.py migrate --noinput" in rendered, (
-        "the doc must show noninteractive migration through the "
-        "fixture-owned clone-local Python environment, before runserver"
+    # Run 14 take 3 (K4 matrix), PROBE-D-E.md: the server is kept alive by
+    # a harness-started supervisor, never by the examiner herself -- her
+    # OWN block is a health-check-or-reset, never a start command.
+    assert "already running" in rendered.lower(), (
+        "the doc must state the service is already running -- the "
+        "examiner must never believe she needs to start it"
     )
-    assert (
-        f"{pef.VENV_PYTHON} manage.py runserver --noreload 127.0.0.1:{port}" in rendered
-    ), (
-        "the doc must carry the exact public run recipe for the declared port, "
-        "through the same clone-local interpreter -- --noreload (Run 11) "
-        "removes the autoreloader's restart window"
+    assert "never start" in rendered.lower(), (
+        "the doc must explicitly tell the examiner never to start, stop, "
+        "or restart the service herself"
     )
-    assert "server.pid" in rendered, (
-        "the block must persist the server PID to a file so a SEPARATE, "
-        "later tool call can re-check liveness without depending on the "
-        "first call's own captured output"
+    assert "curl -fsS" in rendered, (
+        "the block must health-check via curl -- the same authenticated "
+        "GET journey the doc's own HTTP journeys section documents"
     )
-    assert "ALLOWED_HOSTS=localhost,127.0.0.1" in rendered, (
-        "the recipe must declare ALLOWED_HOSTS=localhost,127.0.0.1 -- both the "
-        "configured SITE_ROOT hostname and the bound/request host are public "
-        "runtime preconditions, without which the server refuses startup "
-        "(hc.api.E002) or answers with DisallowedHost"
+    assert pef.RESET_MARKER_FILE_NAME in rendered, (
+        "an unreachable service must be recoverable by requesting a "
+        "reset (touching the marker the supervisor polls for), never by "
+        "the examiner starting a server herself"
     )
     assert f"http://127.0.0.1:{port}" in rendered, (
         "base URL must be localhost, parameterised by port"
@@ -681,8 +679,11 @@ def test_arm_setup_provisions_the_examiner_recipe_before_any_model_call(
     rendered = doc_path.read_text(encoding="utf-8")
     assert f"127.0.0.1:{port}" in rendered
     assert "k4-arm-setup-fixture-key" in rendered
-    assert "manage.py migrate --noinput" in rendered
-    assert "manage.py runserver" in rendered
+    # Run 14 take 3: the server is kept alive by a harness-started
+    # supervisor, never by the examiner -- her own block health-checks
+    # or requests a reset, it never runs migrate/runserver itself.
+    assert "curl -fsS" in rendered
+    assert pef.RESET_MARKER_FILE_NAME in rendered
 
 
 def test_seed_step_executes_seed_code_verbatim_one_source(tmp_path):

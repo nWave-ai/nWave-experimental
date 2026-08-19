@@ -40,3 +40,24 @@ def _clean_k4_wall_clock_env():
     yield
     for name in _K4_WALL_CLOCK_ENV_VARS:
         os.environ.pop(name, None)
+
+
+@pytest.fixture(autouse=True)
+def _stop_any_leaked_k4_supervisor(tmp_path):
+    """Run 14 take 3 (K4 matrix): `pef.prepare()` now starts a keepalive
+    supervisor -- `setsid`'d, detached, outliving the calling process by
+    DESIGN -- so any test calling `prepare()` (or `probe_examiner_start_
+    recipe`, which also starts one) for real leaves one running unless
+    something tears it down. `pytest`'s own `tmp_path` is unique per test,
+    so sweeping it after every test for a `supervisor.pid`
+    (`pef.SUPERVISOR_PID_FILE_NAME`) anywhere under it and calling `pef.
+    stop_supervisor` on each owning directory makes "a test forgot to
+    tear down its own supervisor" unrepresentable -- no test below needs
+    its own explicit cleanup to be correct, the SAME discipline `test_k4_
+    row11_start_recipe.py`'s `workspace` fixture already applies to the
+    plain (non-supervised) server case."""
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    yield
+    for pid_file in tmp_path.rglob(pef.SUPERVISOR_PID_FILE_NAME):
+        pef.stop_supervisor(pid_file.parent)
