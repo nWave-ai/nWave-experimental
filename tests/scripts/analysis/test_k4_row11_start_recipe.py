@@ -1257,3 +1257,217 @@ class TestExaminerStartRecipeProvenUnderTheArmEnv:
             )
         finally:
             pef.stop_supervisor(workspace)
+
+    def test_health_block_reaches_the_server_through_a_namespace_isolated_bridge(
+        self, workspace
+    ):
+        """Run 15 probe report (K4 matrix), $0.22 differential probe:
+        `curl http://127.0.0.1:<port>` inside Claude's OWN sandbox returns
+        exit 7 at the SAME instant the host shell gets 200 -- the
+        sandboxed Bash's network NAMESPACE does not share the host's
+        loopback. Reproduces that exact isolation at ZERO cost (no
+        `claude`, no model): `bwrap --unshare-net` creates a real,
+        separate network namespace; a tiny stdlib HTTP forward-proxy
+        stands in for Claude's own (proprietary, unavailable here)
+        bridge target, wired in via the IDENTICAL socat
+        `UNIX-LISTEN`/`TCP-LISTEN` shape Claude's sandbox uses for its
+        own API egress (verified against the real `claude` binary's
+        strings). Two negative controls prove this genuinely
+        discriminates: (1) raw curl inside the isolated namespace, no
+        bridge -- must fail, always, regardless of the fix (proves the
+        namespace really is isolated); (2) the bridge PRESENT but a
+        PLAIN curl (the pre-fix shape) run WITHOUT the `--proxy`/
+        `--noproxy` flags -- this is the RED case: a bridge sitting
+        right there, unused, because nothing tells curl to route
+        through it. Only the REAL, current `health_or_reset_block`
+        (fixed) passes the THIRD case: the same bridge, `HTTP_PROXY`
+        exported, the actual production bash text -- GREEN only after
+        the fix."""
+        import shutil
+        import sys
+        import time
+
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        bwrap = shutil.which("bwrap")
+        socat = shutil.which("socat")
+        if bwrap is None or socat is None:
+            pytest.skip(f"bwrap/socat not on PATH (bwrap={bwrap}, socat={socat})")
+
+        api_key = "k4-row15-bridge-9c31"
+        port = pef.free_port()
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", port), pef.make_checks_list_handler(api_key)
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        proxy_script = workspace / "mini-forward-proxy.py"
+        proxy_script.write_text(
+            "import socket, sys, threading\n"
+            "from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n"
+            "from urllib.parse import urlsplit\n"
+            "class P(BaseHTTPRequestHandler):\n"
+            "    def do_GET(self):\n"
+            "        u = urlsplit(self.path)\n"
+            "        try:\n"
+            "            with socket.create_connection((u.hostname, u.port or 80), timeout=5) as s:\n"
+            "                lines = [\n"
+            "                    'GET ' + (u.path or '/') + ' HTTP/1.1',\n"
+            "                    'Host: ' + u.hostname,\n"
+            "                    'Connection: close',\n"
+            "                ]\n"
+            "                api_key = self.headers.get('X-Api-Key')\n"
+            "                if api_key:\n"
+            "                    lines.append('X-Api-Key: ' + api_key)\n"
+            "                request = '\\r\\n'.join(lines) + '\\r\\n\\r\\n'\n"
+            "                s.sendall(request.encode())\n"
+            "                resp = b''\n"
+            "                while True:\n"
+            "                    c = s.recv(4096)\n"
+            "                    if not c:\n"
+            "                        break\n"
+            "                    resp += c\n"
+            "            he = resp.find(b'\\r\\n\\r\\n')\n"
+            "            code = int(resp[:resp.find(b'\\r\\n')].decode().split()[1])\n"
+            "            body = resp[he + 4:]\n"
+            "            self.send_response(code)\n"
+            "            self.send_header('Content-Length', str(len(body)))\n"
+            "            self.end_headers()\n"
+            "            self.wfile.write(body)\n"
+            "        except OSError:\n"
+            "            self.send_response(502)\n"
+            "            self.end_headers()\n"
+            "    def log_message(self, *a):\n"
+            "        pass\n"
+            "port = int(sys.argv[1])\n"
+            "srv = ThreadingHTTPServer(('127.0.0.1', port), P)\n"
+            "threading.Thread(target=srv.serve_forever, daemon=True).start()\n"
+            "import time; time.sleep(120)\n",
+            encoding="utf-8",
+        )
+        proxy_port = pef.free_port()
+        proxy_proc = subprocess.Popen(
+            [sys.executable, str(proxy_script), str(proxy_port)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        bridge_sock = workspace / "bridge.sock"
+        outer_bridge = subprocess.Popen(
+            [
+                socat,
+                f"UNIX-LISTEN:{bridge_sock},fork,reuseaddr",
+                f"TCP:localhost:{proxy_port}",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        def _bwrap_run(script: str) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                [
+                    bwrap,
+                    "--unshare-net",
+                    "--ro-bind",
+                    "/usr",
+                    "/usr",
+                    "--ro-bind",
+                    "/bin",
+                    "/bin",
+                    "--ro-bind",
+                    "/lib",
+                    "/lib",
+                    "--ro-bind-try",
+                    "/lib64",
+                    "/lib64",
+                    "--proc",
+                    "/proc",
+                    "--dev",
+                    "/dev",
+                    "--bind",
+                    "/tmp",
+                    "/tmp",
+                    "--",
+                    "bash",
+                    "-c",
+                    script,
+                ],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=45,
+            )
+
+        try:
+            time.sleep(0.3)
+
+            # Negative control 1: raw curl, isolated namespace, no bridge --
+            # must fail regardless of the fix, proving genuine isolation.
+            raw = _bwrap_run(
+                f"curl -fsS http://127.0.0.1:{port}/api/v3/checks/ "
+                f'-H "X-Api-Key: {api_key}" > /dev/null 2>&1'
+            )
+            assert raw.returncode != 0, (
+                "raw curl must fail inside an isolated network namespace -- "
+                "if it doesn't, this test's own isolation setup is broken "
+                "and cannot discriminate anything"
+            )
+
+            inner_port = pef.free_port()
+            bridge_setup = (
+                f"{socat} TCP-LISTEN:{inner_port},fork,reuseaddr "
+                f"UNIX-CONNECT:{bridge_sock} > /dev/null 2>&1 &\n"
+                'trap "kill %1 2>/dev/null" EXIT\n'
+                "sleep 0.3\n"
+                f"export HTTP_PROXY=http://127.0.0.1:{inner_port}\n"
+            )
+
+            # Negative control 2: the bridge IS present and HTTP_PROXY IS
+            # exported, but a PLAIN curl (the pre-fix shape) never tries to
+            # use it -- must still fail.
+            plain_with_bridge = _bwrap_run(
+                bridge_setup + f"curl -fsS http://127.0.0.1:{port}/api/v3/checks/ "
+                f'-H "X-Api-Key: {api_key}" > /dev/null 2>&1'
+            )
+            assert plain_with_bridge.returncode != 0, (
+                "a bridge sitting unused must not accidentally make a "
+                "plain (non-proxy-aware) curl succeed -- if it does, this "
+                "test cannot tell the fix apart from having no fix at all"
+            )
+
+            # The actual fix: the REAL, current health_or_reset_block text,
+            # unmodified, through the SAME bridge.
+            block = pef.health_or_reset_block(port, api_key)
+            fixed = _bwrap_run(bridge_setup + block)
+            assert fixed.returncode == 0, (
+                "health_or_reset_block's real bash text must reach the "
+                f"server through the bridge: {fixed.stdout!r} {fixed.stderr!r}"
+            )
+            assert "Server reachable." in fixed.stdout
+        finally:
+            outer_bridge.terminate()
+            proxy_proc.terminate()
+            outer_bridge.wait(timeout=10)
+            proxy_proc.wait(timeout=10)
+            server.shutdown()
+
+
+def test_sandbox_loopback_bridge_probe_skips_gracefully_when_bwrap_is_absent(
+    tmp_path, monkeypatch
+):
+    """`probe_sandbox_loopback_bridge` is a bonus structural proof, never a
+    hard campaign prerequisite the way `claude`/`socat` already are
+    (`_REQUIRED_SANDBOX_EXECUTABLES`) -- a host without `bwrap` must
+    degrade to skipping this ONE check, never crash or refuse the whole
+    campaign over a missing optional tool."""
+    from scripts.analysis.k4 import preflight
+
+    monkeypatch.setattr(
+        preflight.shutil, "which", lambda name: None if name == "bwrap" else "/bin/true"
+    )
+    assert (
+        preflight.probe_sandbox_loopback_bridge(tmp_path, port=12345, api_key="unused")
+        == []
+    )

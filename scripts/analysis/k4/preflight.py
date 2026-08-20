@@ -2162,6 +2162,169 @@ def _wait_until_authenticated_get_ready(
     return False
 
 
+#: Run 15 probe report (K4 matrix), $0.22 differential probe: `curl
+#: http://127.0.0.1:<port>` inside Claude's OWN sandbox returns exit 7 at
+#: the SAME instant the host shell gets 200 -- the sandboxed Bash's
+#: network NAMESPACE does not share the host's loopback. Every prior
+#: row-11 check in this file (`_authenticated_get_ready` and friends) runs
+#: as a PLAIN, unsandboxed harness subprocess -- it proves the HARNESS can
+#: reach the arm's server, not that the SANDBOXED EXAMINER can, which is
+#: the actual boundary that matters (all 4 examiner INDETERMINATEs the
+#: report traces were this exact gap). `_probe_sandbox_loopback_bridge`
+#: below reproduces the namespace isolation directly via `bwrap
+#: --unshare-net` (zero cost, no `claude`, no model) and proves the
+#: REAL, current `pef.health_or_reset_block` text -- fixed to route
+#: through `$HTTP_PROXY` -- reaches the server through a socat bridge
+#: shaped exactly like the one Claude's own sandbox already provides for
+#: its API egress. `bwrap` is not one of `_REQUIRED_SANDBOX_EXECUTABLES`
+#: (only `claude`/`socat` are hard campaign prerequisites) -- this is a
+#: bonus structural proof, so its own absence degrades to skipping this
+#: ONE check, never to refusing the whole campaign.
+_MINI_FORWARD_PROXY_SOURCE = (
+    "import socket, sys, threading\n"
+    "from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n"
+    "from urllib.parse import urlsplit\n"
+    "class P(BaseHTTPRequestHandler):\n"
+    "    def do_GET(self):\n"
+    "        u = urlsplit(self.path)\n"
+    "        try:\n"
+    "            with socket.create_connection((u.hostname, u.port or 80), timeout=5) as s:\n"
+    "                lines = [\n"
+    "                    'GET ' + (u.path or '/') + ' HTTP/1.1',\n"
+    "                    'Host: ' + u.hostname,\n"
+    "                    'Connection: close',\n"
+    "                ]\n"
+    "                api_key = self.headers.get('X-Api-Key')\n"
+    "                if api_key:\n"
+    "                    lines.append('X-Api-Key: ' + api_key)\n"
+    "                request = '\\r\\n'.join(lines) + '\\r\\n\\r\\n'\n"
+    "                s.sendall(request.encode())\n"
+    "                resp = b''\n"
+    "                while True:\n"
+    "                    c = s.recv(4096)\n"
+    "                    if not c:\n"
+    "                        break\n"
+    "                    resp += c\n"
+    "            he = resp.find(b'\\r\\n\\r\\n')\n"
+    "            code = int(resp[:resp.find(b'\\r\\n')].decode().split()[1])\n"
+    "            body = resp[he + 4:]\n"
+    "            self.send_response(code)\n"
+    "            self.send_header('Content-Length', str(len(body)))\n"
+    "            self.end_headers()\n"
+    "            self.wfile.write(body)\n"
+    "        except OSError:\n"
+    "            self.send_response(502)\n"
+    "            self.end_headers()\n"
+    "    def log_message(self, *a):\n"
+    "        pass\n"
+    "port = int(sys.argv[1])\n"
+    "srv = ThreadingHTTPServer(('127.0.0.1', port), P)\n"
+    "threading.Thread(target=srv.serve_forever, daemon=True).start()\n"
+    "import time; time.sleep(120)\n"
+)
+
+
+def probe_sandbox_loopback_bridge(
+    workspace: Path, *, port: int, api_key: str
+) -> list[str]:
+    """Prove the examiner's REAL, rendered health-check block reaches the
+    arm's server through a namespace-isolated bridge -- the sandboxed
+    examiner's actual boundary, not the harness's own unsandboxed one
+    every other row-11 check proves. See the module-level docstring
+    above `_MINI_FORWARD_PROXY_SOURCE` for the full rationale.
+
+    Skips silently (returns `[]`) when `bwrap` is not resolvable -- this
+    is a bonus structural proof, never a hard campaign prerequisite the
+    way `claude`/`socat` already are."""
+    bwrap = shutil.which("bwrap")
+    socat = shutil.which("socat")
+    if bwrap is None or socat is None:
+        return []
+
+    proxy_script = workspace / ".k4-sandbox-probe-proxy.py"
+    proxy_script.write_text(_MINI_FORWARD_PROXY_SOURCE, encoding="utf-8")
+    proxy_port = pef.free_port()
+    proxy_proc = subprocess.Popen(
+        [sys.executable, str(proxy_script), str(proxy_port)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    bridge_sock = workspace / ".k4-sandbox-probe-bridge.sock"
+    bridge_sock.unlink(missing_ok=True)
+    outer_bridge = subprocess.Popen(
+        [
+            socat,
+            f"UNIX-LISTEN:{bridge_sock},fork,reuseaddr",
+            f"TCP:localhost:{proxy_port}",
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        time.sleep(0.3)
+        inner_port = pef.free_port()
+        bridge_setup = (
+            f"{socat} TCP-LISTEN:{inner_port},fork,reuseaddr "
+            f"UNIX-CONNECT:{bridge_sock} > /dev/null 2>&1 &\n"
+            'trap "kill %1 2>/dev/null" EXIT\n'
+            "sleep 0.3\n"
+            f"export HTTP_PROXY=http://127.0.0.1:{inner_port}\n"
+        )
+        block = pef.health_or_reset_block(port, api_key)
+        result = subprocess.run(
+            [
+                bwrap,
+                "--unshare-net",
+                "--ro-bind",
+                "/usr",
+                "/usr",
+                "--ro-bind",
+                "/bin",
+                "/bin",
+                "--ro-bind",
+                "/lib",
+                "/lib",
+                "--ro-bind-try",
+                "/lib64",
+                "/lib64",
+                "--proc",
+                "/proc",
+                "--dev",
+                "/dev",
+                "--bind",
+                "/tmp",
+                "/tmp",
+                "--",
+                "bash",
+                "-c",
+                bridge_setup + block,
+            ],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+    finally:
+        outer_bridge.terminate()
+        proxy_proc.terminate()
+        outer_bridge.wait(timeout=10)
+        proxy_proc.wait(timeout=10)
+        bridge_sock.unlink(missing_ok=True)
+        proxy_script.unlink(missing_ok=True)
+
+    if result.returncode != 0:
+        return [
+            "the examiner's documented health-check block, run through a "
+            "network-namespace-isolated bridge reproducing Claude's own "
+            "sandbox loopback isolation, did not reach the server -- "
+            f"stdout: {result.stdout.strip()[-300:]!r} "
+            f"stderr: {result.stderr.strip()[-300:]!r}"
+        ]
+    return []
+
+
 def probe_examiner_start_recipe(workspace: Path) -> list[str]:
     """Prove the examiner's ACTUAL rendered environment -- the SAME
     `pef.DOC_NAME` file `fixture_setup_step` already wrote into this exact
@@ -2274,6 +2437,17 @@ def probe_examiner_start_recipe(workspace: Path) -> list[str]:
                 "examiner's server must survive the agent sandbox "
                 "reaping it, by construction, not merely by luck"
             )
+            return problems
+
+        # Run 15 probe report: every check above proves the HARNESS (an
+        # unsandboxed subprocess) can reach the server -- the examiner's
+        # actual boundary is the SANDBOXED Bash tool call, a structurally
+        # different network namespace. Proves the rendered health-check
+        # block reaches through a namespace-isolated bridge too, while
+        # the server is still known-good from the restart proof above.
+        problems.extend(
+            probe_sandbox_loopback_bridge(workspace, port=port, api_key=api_key)
+        )
     finally:
         pef.stop_supervisor(workspace)
     return problems
