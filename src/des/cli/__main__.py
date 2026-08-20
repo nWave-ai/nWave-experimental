@@ -168,6 +168,12 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # placeholder (`des.domain.contract_placeholder_resolver`), which `des
     # dispatch`/`des validate-delivery-contract` both refuse until filled.
     _SubcommandRow("compile-contract", "des.cli.compile_contract", "main"),
+    # Ale's construction-over-file correction (2026-08-20): the constructor
+    # ATD calls, one value per call (--target/--field/stdin), to fill the
+    # skeleton's own semantic placeholders in place. Sole writer of the
+    # contract file after compile-contract; a mechanical field has no
+    # --field choice naming it at all -- untouchable by construction.
+    _SubcommandRow("fill-contract", "des.cli.fill_contract", "main"),
     # fix-shipped-regression-file-backfill: the historical regression-gap
     # backfill producer -- attests a SHIPPED slice's regression file
     # genuinely existed and passed at a real historical commit, recording a

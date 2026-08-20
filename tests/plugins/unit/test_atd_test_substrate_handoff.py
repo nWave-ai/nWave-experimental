@@ -153,7 +153,10 @@ def test_semantic_pbt_non_vacuity_preservation_and_fresh_lifecycle():
 
 def test_both_routes_closed_and_terminal_handoff_contract_ready():
     green_start = ACCEPTANCE_DESIGNER.index("### GREEN_TO_GREEN")
-    green_section = _norm(ACCEPTANCE_DESIGNER[green_start : green_start + 1200])
+    green_end = ACCEPTANCE_DESIGNER.index(
+        "## ", green_start + len("### GREEN_TO_GREEN")
+    )
+    green_section = _norm(ACCEPTANCE_DESIGNER[green_start:green_end])
     assert "Do not search for, create, edit or broaden it" in green_section
     assert (
         "delivery-route: GREEN_TO_GREEN" in green_section

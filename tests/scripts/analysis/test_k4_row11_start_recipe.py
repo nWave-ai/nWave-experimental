@@ -46,6 +46,35 @@ import pytest
 from scripts.analysis.k4 import prepare_examiner_fixture as pef
 
 
+def test_free_port_skips_a_candidate_already_reserved_by_a_racing_caller(
+    monkeypatch, tmp_path
+):
+    """Stable-design report 2026-08-19 phase3 §5 item 6 / `PortAllocationRace.tla`
+    (`NoWastedCollision` VIOLATED, depth 6): two independent `free_port()`
+    callers can each probe-bind-release the SAME OS-assigned candidate port
+    before either one actually starts a server on it -- the close-then-reuse
+    window has no exclusivity primitive. This reproduces the exact collision
+    the TLC trace names: the underlying OS-assigned candidate is rigged to
+    return the SAME port twice in a row (simulating two racing callers), and
+    asserts `free_port()` detects its own prior reservation and retries with
+    a DIFFERENT port rather than handing out a duplicate for a second caller
+    to silently collide on."""
+    monkeypatch.setattr(pef, "_PORT_RESERVATION_DIR", tmp_path / "port-reservations")
+    candidates = iter([54321, 54321, 54322])
+    monkeypatch.setattr(
+        pef, "_bind_and_release_ephemeral_port", lambda: next(candidates)
+    )
+
+    first = pef.free_port()
+    second = pef.free_port()
+
+    assert first == 54321
+    assert second == 54322, (
+        "the second caller must skip the already-reserved 54321 and land on "
+        "the next distinct candidate, not hand out the same port twice"
+    )
+
+
 def test_the_rendered_start_recipe_is_executable_against_a_running_server():
     port = pef.free_port()
     api_key = "k4-fixture-recipe-9c31"
@@ -814,6 +843,60 @@ class TestExaminerStartRecipeProvenUnderTheArmEnv:
             "the server must never start when the restored db failed hash verification"
         )
 
+    def test_start_supervisor_serializes_two_concurrent_prepares_via_a_lock(
+        self, workspace, monkeypatch
+    ):
+        """Stable-design report 2026-08-19 phase3 §5 item 5: `start_
+        supervisor` sequenced stop-then-start with NOTHING serializing
+        the sequence -- a concurrent `prepare()` call on the same
+        workspace could race the check-PID/kill/write-PID window. Reuses
+        the SAME `fcntl.flock` idiom `des commit` and the pristine-DB
+        restore already use (report's own recommendation, no new
+        primitive invented). Never spawns a real supervisor process
+        (`Popen` is faked) -- proves the LOCK ITSELF serializes two
+        concurrent `start_supervisor` calls: the lock is held externally
+        first, a racing call is started on a thread, and must still be
+        BLOCKED after the external holder has had time to act, only
+        proceeding once the external holder releases."""
+        import fcntl
+        import threading
+        import time
+
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        monkeypatch.setattr(
+            pef.subprocess,
+            "Popen",
+            lambda *a, **k: type("FakeProc", (), {"pid": 999})(),
+        )
+
+        lock_path = workspace / pef.SUPERVISOR_LOCK_FILE_NAME
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        order: list[str] = []
+
+        holder_handle = open(lock_path, "w", encoding="utf-8")
+        fcntl.flock(holder_handle.fileno(), fcntl.LOCK_EX)
+        order.append("holder-acquired")
+
+        def _racer() -> None:
+            pef.start_supervisor(workspace, port=12345, api_key="k")
+            order.append("racer-done")
+
+        thread = threading.Thread(target=_racer)
+        thread.start()
+        time.sleep(0.3)
+        assert order == ["holder-acquired"], (
+            "a racing start_supervisor() must still be blocked on the lock "
+            "the external holder has not released yet"
+        )
+
+        fcntl.flock(holder_handle.fileno(), fcntl.LOCK_UN)
+        holder_handle.close()
+        thread.join(timeout=10)
+        assert order == ["holder-acquired", "racer-done"], (
+            "the racer must proceed only after the lock is released"
+        )
+
     def test_supervisor_restarts_the_server_after_its_pid_is_killed_directly(
         self, workspace
     ):
@@ -929,3 +1012,248 @@ class TestExaminerStartRecipeProvenUnderTheArmEnv:
         assert new_pid != old_pid, (
             "server.pid must reflect the RESTARTED process, not the killed one"
         )
+
+    def test_supervisor_restarts_when_server_pid_is_alive_but_not_serving(
+        self, workspace
+    ):
+        """Run 15 probe report (K4 matrix): `_server_alive()` was PID-only
+        (`os.kill(pid, 0)`) -- a PID that is technically alive but NOT the
+        real server (PID reuse, a hung/zombie process, anything not
+        actually answering HTTP) reads as healthy forever under the old
+        check, so the supervisor never restarts it. This reproduces that
+        exact false-alive gap for real: kill the genuine server process,
+        then overwrite `server.pid` with THIS TEST PROCESS's own PID --
+        genuinely alive (`os.kill(decoy_pid, 0)` succeeds) but obviously
+        not serving anything on the port. Only an authenticated HTTP
+        check, not a PID check, can catch this."""
+        import os
+        import time
+
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        port = pef.free_port()
+        api_key = "k4-row15-http-liveness-9c31"
+        _install_fake_runserver_venv_python(workspace, api_key=api_key)
+        _install_pristine_db_snapshot(workspace)
+
+        pef.start_supervisor(workspace, port=port, api_key=api_key)
+        supervisor_pid = int(
+            (workspace / pef.SUPERVISOR_PID_FILE_NAME)
+            .read_text(encoding="utf-8")
+            .strip()
+        )
+
+        def _supervisor_has_active_child() -> bool:
+            return bool(
+                subprocess.run(
+                    ["pgrep", "-P", str(supervisor_pid)],
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+            )
+
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline and not _supervisor_has_active_child():
+            time.sleep(0.2)
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline and _supervisor_has_active_child():
+            time.sleep(0.5)
+
+        pid_file = workspace / pef.SERVER_PID_FILE_NAME
+        old_pid = int(pid_file.read_text(encoding="utf-8").strip())
+        first_probe = subprocess.run(
+            pef.integration_probe_argv(f"http://127.0.0.1:{port}", api_key),
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert first_probe.returncode == 0, "the first start must already be reachable"
+
+        # A genuine THROWAWAY process, never `os.getpid()` -- the
+        # supervisor's own restart logic issues `kill "$(cat
+        # server.pid)"` against whatever PID this file names (both in
+        # its stale-server-kill preamble and in `_handle_sigterm`), so a
+        # decoy naming THIS TEST PROCESS's own PID gets the test process
+        # itself SIGTERM'd the moment a restart fires -- exactly what
+        # happened on the first attempt at this test (silent 143, no
+        # output, no traceback). A disposable `sleep` child is alive,
+        # genuinely killable, and harmless either way.
+        decoy = subprocess.Popen(["sleep", "300"])
+        decoy_pid = decoy.pid
+        assert decoy_pid != old_pid
+        try:
+            os.kill(old_pid, 9)
+            pid_file.write_text(str(decoy_pid), encoding="utf-8")
+
+            reachable_again = False
+            deadline = time.monotonic() + 40
+            while time.monotonic() < deadline:
+                probe = subprocess.run(
+                    pef.integration_probe_argv(f"http://127.0.0.1:{port}", api_key),
+                    cwd=workspace,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if probe.returncode == 0:
+                    reachable_again = True
+                    break
+                time.sleep(1)
+
+            assert reachable_again, (
+                "the supervisor must restart the server even when server.pid "
+                "names a technically-alive (but non-serving) decoy process -- "
+                "an HTTP check, not a PID-only check, is required to catch this"
+            )
+            new_pid = int(pid_file.read_text(encoding="utf-8").strip())
+            assert new_pid not in (old_pid, decoy_pid), (
+                "server.pid must reflect a REAL new server process, not the "
+                "killed original or the still-alive decoy"
+            )
+        finally:
+            decoy.kill()
+            decoy.wait(timeout=10)
+
+    def test_supervisor_logs_a_fatal_exception_to_supervisor_log_before_exiting(
+        self, workspace
+    ):
+        """Run 15 probe report (K4 matrix): the supervisor's own
+        stdout/stderr are DEVNULL'd (`start_supervisor`), so an
+        unhandled exception inside its poll loop dies completely
+        unobserved -- exactly the "died unobserved" gap the probe
+        named. Launches `supervisor_script`'s REAL generated source
+        directly (bypassing `pef.start_supervisor`, which always
+        launches under a normal PATH) under a deliberately broken PATH
+        with no `bash` on it, so `_restart()`'s own
+        `subprocess.run(['bash', ...])` raises a REAL, unhandled
+        FileNotFoundError immediately -- never simulated -- and asserts
+        `SUPERVISOR_LOG_FILE_NAME` records the traceback before the
+        process exits."""
+        import sys
+
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        port = pef.free_port()
+        api_key = "k4-row15-crash-log-9c31"
+        script_path = workspace / pef.SUPERVISOR_SCRIPT_NAME
+        script_path.write_text(pef.supervisor_script(port, api_key), encoding="utf-8")
+
+        broken_env = {"PATH": "/nonexistent-bin-only"}
+        proc = subprocess.Popen(
+            [sys.executable, str(script_path)],
+            cwd=workspace,
+            env=broken_env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        proc.wait(timeout=15)
+
+        log_path = workspace / pef.SUPERVISOR_LOG_FILE_NAME
+        assert log_path.exists(), (
+            "the supervisor must log its own fatal exception to "
+            f"{pef.SUPERVISOR_LOG_FILE_NAME} before exiting, never die silently"
+        )
+        content = log_path.read_text(encoding="utf-8")
+        assert "FATAL" in content
+        assert "FileNotFoundError" in content or "Traceback" in content, (
+            "the log must carry the real exception/traceback, not just a marker"
+        )
+
+    def test_examiner_block_refuses_loud_bounded_when_the_supervisor_itself_is_dead(
+        self, workspace
+    ):
+        """Run 15 probe report (K4 matrix), item 3: previously, only the
+        SERVER dying was ever proven recoverable -- nothing proved what
+        the EXAMINER's own copy-paste block does when the SUPERVISOR
+        itself is gone. Kills the supervisor (SIGKILL, an unobserved
+        death, no graceful SIGTERM) then the server too, so the FIRST
+        health probe genuinely fails and `RESET_MARKER_FILE_NAME` gets
+        touched -- with the supervisor dead, nothing will ever consume
+        it. Runs `health_or_reset_block`'s REAL bash text for real (no
+        surrogate copy) with a bounded outer timeout, and asserts it
+        REFUSES LOUD, naming the supervisor as down and pointing at
+        `SUPERVISOR_LOG_FILE_NAME` -- never hangs, never restarts
+        anything itself."""
+        import os
+        import signal
+        import time
+
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        port = pef.free_port()
+        api_key = "k4-row15-block-refusal-9c31"
+        _install_fake_runserver_venv_python(workspace, api_key=api_key)
+        _install_pristine_db_snapshot(workspace)
+
+        pef.start_supervisor(workspace, port=port, api_key=api_key)
+        supervisor_pid = int(
+            (workspace / pef.SUPERVISOR_PID_FILE_NAME)
+            .read_text(encoding="utf-8")
+            .strip()
+        )
+
+        def _supervisor_has_active_child() -> bool:
+            return bool(
+                subprocess.run(
+                    ["pgrep", "-P", str(supervisor_pid)],
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+            )
+
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline and not _supervisor_has_active_child():
+            time.sleep(0.2)
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline and _supervisor_has_active_child():
+            time.sleep(0.5)
+
+        first_probe = subprocess.run(
+            pef.integration_probe_argv(f"http://127.0.0.1:{port}", api_key),
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert first_probe.returncode == 0, "the first start must already be reachable"
+
+        try:
+            os.kill(supervisor_pid, signal.SIGKILL)
+            server_pid = int(
+                (workspace / pef.SERVER_PID_FILE_NAME)
+                .read_text(encoding="utf-8")
+                .strip()
+            )
+            os.kill(server_pid, signal.SIGKILL)
+
+            block = pef.health_or_reset_block(port, api_key)
+            started = time.monotonic()
+            result = subprocess.run(
+                ["bash", "-c", block],
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                timeout=45,
+            )
+            elapsed = time.monotonic() - started
+
+            assert result.returncode != 0, (
+                "the block must refuse, never silently report success, "
+                "once the supervisor and server are both gone"
+            )
+            assert elapsed < 40, (
+                "the block must terminate BOUNDED, never hang, once "
+                f"nothing is left to consume the reset marker -- took {elapsed:.1f}s"
+            )
+            assert "supervisor" in result.stderr.lower(), (
+                "the refusal must name the supervisor as the likely cause, "
+                f"not a generic timeout message: {result.stderr!r}"
+            )
+            assert pef.SUPERVISOR_LOG_FILE_NAME in result.stderr, (
+                "the refusal must point at the supervisor's own crash log "
+                f"for further evidence: {result.stderr!r}"
+            )
+        finally:
+            pef.stop_supervisor(workspace)

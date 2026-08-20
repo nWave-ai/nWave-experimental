@@ -1,11 +1,16 @@
 """Unit/acceptance tests for `compile_delivery_contract`
 (`des compile-contract`'s pure core, ADR-SSOT-002 Section 4/4b item 1).
 
-The primary acceptance evidence is `test_skeleton_passes_every_existing_dispatch_validator`:
-it feeds the compiled skeleton directly into the SAME `des dispatch`
-validators a real dispatch call runs (declared-import resolution, EXTEND
-citation, verification-command resolution, whole-suite scope) and asserts
-every one reports zero findings -- "passes by construction", not by luck.
+The primary acceptance evidence is
+`test_skeleton_satisfies_the_properties_the_deleted_validators_used_to_check`:
+it checks the compiled skeleton directly against the SAME properties the
+`des dispatch` EXTEND-citation/declared-import/verification-path validators
+used to check before Ale's construction-over-file correction (2026-08-20,
+"the contract has one writer -- `des fill-contract` is the constructor")
+deleted them as Agda-proved vacuous
+(``~/nwave-formal/2026-08-19-gates/report/2026-08-19-gate-analysis.md``) --
+"passes by construction", not by luck, checked directly since no CLI
+validator remains to assert against.
 
 `test_real_k4_run13_brief_compiles_a_correct_skeleton` replays the exact
 scenario the compiler was built for (K4 run-13, maintenance-windows) against
@@ -17,6 +22,7 @@ dependency of this repository).
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -28,11 +34,42 @@ from des.application.compile_contract import (
     Compiled,
     compile_delivery_contract,
 )
-from des.cli._declared_import_refusal import all_missing_declared_imports
-from des.cli._verification_command_refusal import all_missing_verification_paths
 from des.cli._whole_suite_scope_refusal import missing_whole_suite_scope_finding
-from des.cli.dispatch import _extend_targets_missing_citation
 from des.domain.contract_placeholder_resolver import PLACEHOLDER
+from des.domain.declared_import_resolver import (
+    is_name_bound_in_target_file,
+    resolve_declared_import,
+)
+from des.domain.verification_command_resolver import missing_verification_paths
+
+
+#: The SAME file:line-citation shape `_extend_targets_missing_citation`
+#: (deleted from `des dispatch`) used to check -- kept here, test-only, as
+#: a direct regression proof that the compiler's own `overlap` projection
+#: always satisfies it, never as production code to resurrect.
+_FILE_LINE_CITATION_RE = re.compile(r"[\w/.-]+\.\w+:\d+")
+
+
+def _extend_targets_missing_citation(contract: dict) -> list[str]:
+    return [
+        target_path
+        for target_path, target_plan in contract["targets"].items()
+        if target_plan.get("decision") == "EXTEND"
+        and not (
+            _FILE_LINE_CITATION_RE.search(str(target_plan.get("overlap", "")))
+            or _FILE_LINE_CITATION_RE.search(str(target_plan.get("justification", "")))
+        )
+    ]
+
+
+def _all_missing_declared_imports(repo_root: Path, contract: dict) -> list[str]:
+    return [
+        reference
+        for target_path, target_plan in contract["targets"].items()
+        for reference in target_plan.get("declared-imports", [])
+        if not is_name_bound_in_target_file(repo_root, target_path, reference)
+        and not resolve_declared_import(repo_root, reference)
+    ]
 
 
 def _git(repo_root: Path, *args: str) -> None:
@@ -223,20 +260,26 @@ def test_no_obligation_token_blocks_instead_of_guessing(tmp_path: Path) -> None:
     assert "obligation" in result.what
 
 
-def test_skeleton_passes_every_existing_dispatch_validator(tmp_path: Path) -> None:
-    """The compiled skeleton passes BY CONSTRUCTION: every one of the
-    existing `des dispatch` content validators reports zero findings when
-    run directly against it, without ever calling `des dispatch` itself
-    (which additionally requires the oracle file to physically exist --
-    ATD's own later act, out of this compiler's scope)."""
+def test_skeleton_satisfies_the_properties_the_deleted_validators_used_to_check(
+    tmp_path: Path,
+) -> None:
+    """The compiled skeleton passes BY CONSTRUCTION: every property the
+    now-deleted `des dispatch` content validators used to check (EXTEND
+    citation, declared-import resolution, verification-scope path
+    existence) holds directly against it, without ever calling `des
+    dispatch` itself (which additionally requires the oracle file to
+    physically exist -- ATD's own later act, out of this compiler's
+    scope). Whole-suite scope is the one sibling check this correction did
+    NOT delete (a producer-correctness claim, not a type any caller can
+    check -- Agda vacuity report, MERGE verdict) -- still run for real."""
     repo_root = _build_repo(tmp_path)
     result = compile_delivery_contract(_inputs(repo_root))
     assert isinstance(result, Compiled)
     contract = result.contract
 
     assert _extend_targets_missing_citation(contract) == []
-    assert all_missing_declared_imports(repo_root, contract) == []
-    assert all_missing_verification_paths(repo_root, contract) == []
+    assert _all_missing_declared_imports(repo_root, contract) == []
+    assert missing_verification_paths(repo_root, contract) == []
     assert missing_whole_suite_scope_finding(repo_root, contract) is None
 
 
@@ -323,6 +366,6 @@ def test_real_k4_run13_brief_compiles_a_correct_skeleton(tmp_path: Path) -> None
         assert "MaintenanceWindowSpec" not in target["declared-imports"]
 
     assert _extend_targets_missing_citation(contract) == []
-    assert all_missing_declared_imports(scratch, contract) == []
-    assert all_missing_verification_paths(scratch, contract) == []
+    assert _all_missing_declared_imports(scratch, contract) == []
+    assert missing_verification_paths(scratch, contract) == []
     assert missing_whole_suite_scope_finding(scratch, contract) is None

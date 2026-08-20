@@ -94,6 +94,11 @@ This discipline requires no proof assistant or model checker: property tests
 in the project's own language, exhaustive finite checks, or a model checker
 when one is available all qualify — a prover is never a prerequisite.
 
+Structure the adversarial read with the `nw-review` design-review question
+set (S1-S4 structure, T5-T7 time, three-value marking). It finds
+"structural incoherence", never temporal holes; a temporal gap needs the
+model checker.
+
 ## Handoff
 
 Update the brief/ADRs once. Return stable decision ids plus the minimum facts

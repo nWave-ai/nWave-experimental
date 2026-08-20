@@ -29,6 +29,14 @@ Load the four declared skills on demand. Resolve structural facts through
 `des code-fact`; degrade LOUD when it cannot answer. Assume the oracle is
 incomplete and attempt to exhibit a counterexample.
 
+Apply the `nw-review` design-review question set (S1-S4 structure, T5-T7
+time) to the oracle under review; it finds structural incoherence, never
+temporal holes -- a temporal gap needs the model checker (T5). Mark each
+answered question MECHANICAL, INSPECTIVE or JUDGEMENT: a MECHANICAL
+question whose tool was not executed is INCOMPLETE BY CONSTRUCTION, never
+approvable; a JUDGEMENT question returns the QUESTION to the human, never
+a verdict.
+
 Block when any required property lacks an executable witness:
 
 1. **Value and route** — the oracle expresses the contract's promised

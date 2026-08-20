@@ -338,67 +338,6 @@ def test_oracle_locator_matching_contract_path_refuses_before_read(
     assert "same physical path" in err
 
 
-def test_declared_import_absent_from_the_base_tree_refuses_before_handoff(
-    tmp_path: Path,
-) -> None:
-    """Run 4 shift-left: `des dispatch` is the documented early gate called
-    immediately after CONTRACT_READY, before any crafter subagent starts
-    (`nWave/skills/nw-distill/SKILL.md`); it must catch an ATD-invented
-    declared-import here, not only later at the crafter's own BASELINE
-    `des validate-delivery-contract` call."""
-    contract_path = _seed_contract(tmp_path)
-    contract = json.loads(contract_path.read_text(encoding="utf-8"))
-    target_path = next(iter(contract["targets"]))
-    contract["targets"][target_path]["declared-imports"] = ["cronsim.CronSim"]
-    contract_path.write_text(json.dumps(contract), encoding="utf-8")
-
-    exit_code, out, err = _run(
-        "--repo-root",
-        str(tmp_path),
-        "--delivery-contract",
-        contract_path.name,
-    )
-
-    assert exit_code != 0
-    assert out == ""
-    assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
-    assert "cronsim.CronSim" in err
-    assert (
-        f"not present at base revision {contract['repository']['base-revision']}" in err
-    )
-
-
-def test_verification_command_naming_a_wrong_test_path_refuses_before_handoff(
-    tmp_path: Path,
-) -> None:
-    """K4 Run 9: ATD-1 wrote a `manage.py test`-shaped verification command
-    citing a dotted path missing its real package prefix; `des dispatch`
-    accepted it and crafter-1 spent 525.8s/62 tool calls discovering the
-    command itself was wrong. Catch it here, before any crafter starts."""
-    contract_path = _seed_contract(tmp_path)
-    contract = json.loads(contract_path.read_text(encoding="utf-8"))
-    contract["verification-scope"]["commands"].append(
-        {
-            "executable": {"kind": "repository", "path": "manage.py"},
-            "arguments": ["test", "totally.invented.test_module"],
-        }
-    )
-    contract_path.write_text(json.dumps(contract), encoding="utf-8")
-
-    exit_code, out, err = _run(
-        "--repo-root",
-        str(tmp_path),
-        "--delivery-contract",
-        contract_path.name,
-    )
-
-    assert exit_code != 0
-    assert out == ""
-    assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
-    assert "totally.invented.test_module" in err
-    assert "does not resolve to a base-tree test module or file" in err
-
-
 def test_schema_invalid_contract_refuses_before_handoff(tmp_path: Path) -> None:
     contract_path = tmp_path / "delivery-contract.json"
     contract_path.write_text("{}", encoding="utf-8")
@@ -421,23 +360,31 @@ def test_three_distinct_defects_are_all_named_in_one_refusal(tmp_path: Path) -> 
     times in sequence, one defect per REVISE cycle, each costing a full ATD
     REVISE round (~236s + up to 676K cache-read tokens on the third). ONE
     dispatch call, with three distinct real defects present at once --
-    TWO invented declared-imports across TWO different targets, plus a
+    TWO unfilled placeholders across TWO different fields, plus a
     non-regular-file oracle path -- must name all three in its single
-    refusal, not only the first."""
+    refusal, not only the first.
+
+    Ale's construction-over-file correction (2026-08-20, "the contract
+    has one writer -- `des fill-contract` is the constructor"): the
+    ORIGINAL two declared-import defects this test used before are no
+    longer representable through `des dispatch` at all -- `des
+    fill-contract` has no `--field` choice naming `declared-imports` at
+    all, so a fill can never invent one (Agda-proved vacuity,
+    ~/nwave-formal/2026-08-19-gates). The batching PROPERTY under test
+    (every defect named in one pass, GDP-3/5) is unaffected by which
+    checks remain live -- proven here with the placeholder check
+    instead."""
     contract = load_valid_contract()
     _original_target_path, original_target_plan = next(
         iter(contract["targets"].items())
     )
 
-    # Defect A: an invented import absent from the base tree entirely.
-    original_target_plan["declared-imports"] = ["nonexistent_module_xyz.invented"]
+    # Defect A: the top-level outcome was never filled.
+    contract["outcome"] = "<ATD: fill>"
 
-    # Defect B: a SECOND target, its own independently invented import --
-    # proves "across ALL targets", not only the first target checked.
-    second_target_path = "src/des/fake_second_target.py"
-    second_target_plan = json.loads(json.dumps(original_target_plan))
-    second_target_plan["declared-imports"] = ["another_nonexistent_module.Invented"]
-    contract["targets"][second_target_path] = second_target_plan
+    # Defect B: a SECOND, independent unfilled field -- proves "every
+    # finding", not only the first the checker sees.
+    original_target_plan["justification"] = "<ATD: fill>"
 
     seed_referenced_oracle(tmp_path, contract)
     contract_path = tmp_path / "delivery-contract.json"
@@ -460,74 +407,12 @@ def test_three_distinct_defects_are_all_named_in_one_refusal(tmp_path: Path) -> 
     assert exit_code != 0
     assert out == ""
     assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
-    assert "nonexistent_module_xyz.invented" in err, (
-        "defect A (first target's invented import) must be named"
-    )
-    assert "another_nonexistent_module.Invented" in err, (
-        "defect B (second target's invented import) must be named"
+    assert "outcome" in err, "defect A (unfilled top-level outcome) must be named"
+    assert ".justification" in err, (
+        "defect B (unfilled target justification) must be named"
     )
     assert "not a regular file" in err, "defect C (oracle path) must be named"
     assert err.count("HOW:") == 3, (
         f"each of the three defects must carry its own HOW; got {err.count('HOW:')} "
         f"in: {err!r}"
     )
-
-
-def test_extend_target_without_insertion_citation_is_refused(tmp_path: Path) -> None:
-    """GDP-8 second axis on "lossless contract projection": an EXTEND
-    target whose `overlap`/`justification` carries zero file:line-shaped
-    citation must be refused -- DESIGN's architecture authority always
-    names an exact insertion point for an EXTEND target; dropping it on
-    the way into the DeliveryContract leaves the crafter to relocate it
-    itself instead of reading it verbatim."""
-    contract = load_valid_contract()
-    target_path, target_plan = next(iter(contract["targets"].items()))
-    assert target_plan["decision"] == "EXTEND"
-    target_plan["overlap"] = "The existing schema is the sole shape authority."
-    target_plan["justification"] = "Relax syntax at the existing boundary."
-
-    seed_referenced_oracle(tmp_path, contract)
-    contract_path = tmp_path / "delivery-contract.json"
-    contract_path.write_text(json.dumps(contract), encoding="utf-8")
-
-    exit_code, out, err = _run(
-        "--repo-root",
-        str(tmp_path),
-        "--delivery-contract",
-        contract_path.name,
-    )
-
-    assert exit_code != 0
-    assert out == ""
-    assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
-    assert target_path in err, "the uncited EXTEND target must be named"
-    assert "insertion" in err.lower()
-
-
-def test_extend_target_with_citation_in_either_field_is_accepted(
-    tmp_path: Path,
-) -> None:
-    """A citation in `overlap` alone (not just `justification`) must
-    satisfy the check -- the rule is "somewhere in this target's own
-    text", not one specific field."""
-    contract = load_valid_contract()
-    _target_path, target_plan = next(iter(contract["targets"].items()))
-    assert target_plan["decision"] == "EXTEND"
-    target_plan["overlap"] = (
-        "See nWave/schemas/thin-delivery-contract.schema.json:64 for the "
-        "existing shape authority."
-    )
-    target_plan["justification"] = "Relax syntax at the existing boundary."
-
-    seed_referenced_oracle(tmp_path, contract)
-    contract_path = tmp_path / "delivery-contract.json"
-    contract_path.write_text(json.dumps(contract), encoding="utf-8")
-
-    exit_code, _out, err = _run(
-        "--repo-root",
-        str(tmp_path),
-        "--delivery-contract",
-        contract_path.name,
-    )
-
-    assert exit_code == 0, err

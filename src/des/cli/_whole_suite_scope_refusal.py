@@ -1,9 +1,16 @@
 """Shared verification-scope whole-suite-coverage refusal (K4 Run 12).
 
-Mirrors `_verification_command_refusal.py`'s shape: `des dispatch` and
-`des validate-delivery-contract` both call this, one WHAT/WHY/HOW message,
-no drifting second copy across the two point-of-use verification call
-sites (ADR-SSOT-002 Section 4a item 9).
+`des dispatch` and `des validate-delivery-contract` both call this, one
+WHAT/WHY/HOW message, no drifting second copy across the two point-of-use
+verification call sites (ADR-SSOT-002 Section 4a item 9). Unlike the
+sibling declared-imports/verification-path/EXTEND-citation checks Ale's
+construction-over-file correction (2026-08-20, "the contract has one
+writer -- `des fill-contract` is the constructor") deleted as Agda-proved
+vacuous, THIS check stays even though the compiler always appends the
+workspace's declared whole-suite command: it is a claim about the
+COMPILER's own correctness, not a type any caller can check ahead of time
+-- a cheap downstream re-check earns its keep (Agda vacuity report's own
+MERGE verdict, ~/nwave-formal/2026-08-19-gates).
 """
 
 from __future__ import annotations

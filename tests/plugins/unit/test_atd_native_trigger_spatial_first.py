@@ -59,16 +59,20 @@ def test_atd_generated_region_has_zero_runtime_on_trigger_rows_and_no_skill_tool
     assert "Skill" not in tools
 
 
-def test_atd_source_forbids_runtime_skill_and_codefact_and_restricts_to_read_write_edit() -> (
+def test_atd_source_forbids_runtime_skill_and_codefact_and_restricts_bash_to_fill_contract() -> (
     None
 ):
+    """Ale's construction-over-file correction (2026-08-20): ATD now holds
+    `Bash`, but ONLY as the sole route to `des fill-contract` -- an
+    installed PreToolUse hook locks every other Bash shape out (see
+    `test_atd_fill_contract_bash_lockdown.py`). `Skill` remains absent
+    entirely -- no runtime skill invocation, unchanged."""
     front, _, _ = ACCEPTANCE_DESIGNER.partition("\n---\n")
     tools_line = next(line for line in front.splitlines() if line.startswith("tools:"))
     tools = [tool.strip() for tool in tools_line.removeprefix("tools:").split(",")]
     assert "Skill" not in tools, "Skill must be absent from parsed tools"
-    assert "Bash" not in tools, "Bash must be absent from parsed tools"
-    assert set(tools) == {"Read", "Write", "Edit"}, (
-        f"tools must be exactly {{Read, Write, Edit}}, got {set(tools)}"
+    assert set(tools) == {"Read", "Write", "Edit", "Bash"}, (
+        f"tools must be exactly {{Read, Write, Edit, Bash}}, got {set(tools)}"
     )
 
     body = _norm(ACCEPTANCE_DESIGNER)

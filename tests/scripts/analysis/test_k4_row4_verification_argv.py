@@ -22,6 +22,7 @@ import time
 
 import pytest
 
+from scripts.analysis import paired_campaign
 from scripts.analysis.k4 import preflight
 
 
@@ -450,6 +451,55 @@ def test_main_declares_the_wall_clock_ceiling_once_into_arms_json(
     assert before <= budget["start_epoch"] <= after, (
         "the recorded start epoch must be the REAL campaign start time, "
         "not a placeholder or a stale re-derivation"
+    )
+
+
+def test_arms_json_records_the_real_harness_enforced_ceiling_honestly(
+    tmp_path, monkeypatch
+):
+    """Stable-design report 2026-08-19 phase3 §5 item 4 /
+    `AutoRouteStable_HonorSystemBudget.tla` (`NoUnenforcedExternalKill`
+    VIOLATED, depth 8): `_wall_clock_budget_bullet`'s rendered prose is
+    voluntary compliance, read (or not) at the SAME agent's own
+    discretion -- not a construction. The one REAL external cap is
+    `paired_campaign._run_delivery`'s `proc.communicate(timeout=...)`
+    (default `paired_campaign.DELIVERY_TIMEOUT_S`), which SIGTERMs then
+    SIGKILLs the whole process group on expiry regardless of what the
+    agent read. `arms.json` must carry BOTH numbers honestly, distinctly
+    labelled: `budget` (the advisory self-check figure the prompt already
+    recorded) and a NEW `ceiling` field naming the REAL enforcement
+    mechanism and its value -- GDP-8, decide on the property, never the
+    designation; a reader of arms.json must be able to see which one
+    actually kills the process."""
+    root, checkout, task_file = _prepare_main_run(tmp_path, monkeypatch)
+
+    wheel = tmp_path / "fake.whl"
+    wheel.write_bytes(b"not a real wheel")
+
+    code = preflight.main(
+        [
+            "--root",
+            str(root),
+            "--checkout",
+            str(checkout),
+            "--task-file",
+            str(task_file),
+            "--wheel",
+            str(wheel),
+        ]
+    )
+    monkeypatch.delenv("K4_WALL_CLOCK_CEILING_MINUTES", raising=False)
+    monkeypatch.delenv("K4_CAMPAIGN_START_EPOCH", raising=False)
+
+    assert code == 0
+    spec = json.loads((root / "arms.json").read_text(encoding="utf-8"))
+    assert spec["ceiling"] == {
+        "seconds": paired_campaign.DELIVERY_TIMEOUT_S,
+        "enforced_by": "harness-timeout",
+    }, (
+        "arms.json must record the REAL enforcement mechanism (paired_"
+        "campaign's own hard subprocess timeout) as its own distinct "
+        "field, not conflated with the advisory `budget` bullet"
     )
 
 

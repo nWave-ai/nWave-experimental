@@ -28,10 +28,14 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-#: Mirrors ``des.cli.dispatch._FILE_LINE_CITATION_RE`` (a repository-relative
-#: file path followed by ``:<line>``) -- the exact shape DESIGN's own
-#: architecture authority cites for an insertion point, and the exact shape
-#: ``des dispatch``'s own EXTEND-citation validator requires in return.
+#: A repository-relative file path followed by ``:<line>`` -- the exact
+#: shape DESIGN's own architecture authority cites for an insertion point.
+#: `des dispatch`'s own EXTEND-citation validator (deleted, Ale's
+#: construction-over-file correction 2026-08-20, "the contract has one
+#: writer -- `des fill-contract` is the constructor": Agda-proved vacuous
+#: once this exact regex is what GENERATES `overlap`, never just checks it
+#: -- ~/nwave-formal/2026-08-19-gates) required this same shape in return;
+#: this module is now the sole owner of it.
 FILE_LINE_CITATION_RE = re.compile(r"[\w/.-]+\.\w+:\d+")
 
 #: One backtick-quoted bare or dotted identifier -- the shape a brief cites
@@ -132,10 +136,13 @@ def declared_imports_for_target(
     repo_root: Path, target_candidate: str, brief_text: str
 ) -> list[str]:
     """Every backtick-quoted candidate from ``brief_text`` this compiler can
-    prove `des dispatch`'s own declared-import validator
-    (``_declared_import_refusal.all_missing_declared_imports``) will accept
-    for ``target_candidate`` -- the IDENTICAL two-part admission that
-    validator applies, run here in GENERATE mode instead of CHECK mode:
+    prove resolves in the base tree for ``target_candidate`` -- the
+    IDENTICAL two-part admission `des dispatch`'s own declared-import
+    validator used to apply in CHECK mode (deleted, Ale's construction-
+    over-file correction 2026-08-20, "the contract has one writer --
+    `des fill-contract` is the constructor": Agda-proved vacuous once
+    THIS function is what generates `declared-imports`, never just checks
+    it -- ~/nwave-formal/2026-08-19-gates), run here in GENERATE mode:
     either the literal token is a bare name ``target_candidate``'s own file
     binds at module level (``is_name_bound_in_target_file``, K4 Run 6
     admission -- single-segment names only, e.g. ``CronSim``), or the token

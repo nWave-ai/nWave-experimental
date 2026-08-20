@@ -29,23 +29,11 @@ from des.cli._charter_resolution import (
     _Reuse,
     _Skip,
 )
-from des.cli._declared_import_refusal import (
-    all_missing_declared_imports as _all_missing_declared_imports,
-)
-from des.cli._declared_import_refusal import (
-    unresolved_declared_import_how as _unresolved_declared_import_how,
-)
 from des.cli._oracle_red_reason_refusal import (
     oracle_red_reason_check as _oracle_red_reason_check,
 )
 from des.cli._placeholder_refusal import (
     all_unfilled_placeholder_findings as _all_unfilled_placeholder_findings,
-)
-from des.cli._verification_command_refusal import (
-    all_missing_verification_paths as _all_missing_verification_paths,
-)
-from des.cli._verification_command_refusal import (
-    missing_verification_path_finding as _missing_verification_path_finding,
 )
 from des.cli._whole_suite_scope_refusal import (
     missing_whole_suite_scope_finding as _missing_whole_suite_scope_finding,
@@ -86,53 +74,6 @@ def _batched_contract_defects_refusal(findings: list[tuple[str, str, str]]) -> i
         lines.append(f"     HOW: {how}")
     print("\n".join(lines), file=sys.stderr)
     return _EXIT_USAGE_ERROR
-
-
-#: A repository-relative file paired with a line number, e.g.
-#: `hc/api/models.py:1149` -- the shape DESIGN's own architecture authority
-#: cites for an exact insertion point. Extension-agnostic (not `.py`-only):
-#: an EXTEND target's insertion point can equally be a non-Python file (a
-#: schema, a config) -- the K4/healthchecks arm and this repo's own
-#: DeliveryContracts both go through `des dispatch`.
-_FILE_LINE_CITATION_RE = re.compile(r"[\w/.-]+\.\w+:\d+")
-
-
-def _extend_targets_missing_citation(contract: dict) -> list[tuple[str, str, str]]:
-    """Every `decision: EXTEND` target (`$defs/targetPlan`,
-    thin-delivery-contract.schema.json) whose `overlap`/`justification`
-    text carries zero file:line-shaped citation.
-
-    GDP-8 second axis on "lossless contract projection": DESIGN's
-    architecture authority names an exact insertion point for every EXTEND
-    target it declares; a contract target that extends existing code but
-    cites none lost that fact projecting from authority into the contract,
-    leaving the crafter to relocate the insertion point itself instead of
-    reading it verbatim. `CREATE_NEW` targets are exempt -- there is no
-    existing insertion point to cite.
-    """
-    findings: list[tuple[str, str, str]] = []
-    for target_path, target_plan in contract["targets"].items():
-        if target_plan.get("decision") != "EXTEND":
-            continue
-        overlap = str(target_plan.get("overlap", ""))
-        justification = str(target_plan.get("justification", ""))
-        if _FILE_LINE_CITATION_RE.search(overlap) or _FILE_LINE_CITATION_RE.search(
-            justification
-        ):
-            continue
-        findings.append(
-            (
-                f"the contract carries no insertion point for {target_path!r}",
-                "DESIGN's architecture authority cites an exact insertion "
-                "point for an EXTEND target; a DeliveryContract must project "
-                "it losslessly, not drop it on the way from authority to "
-                "contract",
-                f"cite the exact file:line insertion point (e.g. "
-                f"'hc/api/models.py:1149') DESIGN named for {target_path!r} "
-                "in this target's own overlap or justification field",
-            )
-        )
-    return findings
 
 
 def _unsafe_delivery_contract_path_reason(path_str: str) -> str | None:
@@ -393,29 +334,25 @@ def main(argv: list[str] | None = None) -> int:
     contract, locator, contract_bytes = loaded
 
     # Run 5 (K4 matrix): collect EVERY contract-content defect this pass can
-    # find -- every missing declared-import across every target, every
-    # EXTEND target missing a lossless insertion-point citation, plus the
-    # one oracle-path/self-reference problem -- into ONE batched refusal
-    # below, instead of returning on the first and forcing a fresh dispatch
-    # cycle per defect. An OSError during oracle path resolution stays an
-    # immediate return: a filesystem anomaly, not a contract content defect
-    # an ATD REVISE can fix by editing the contract.
+    # find -- the unfilled-placeholder and oracle-path/self-reference
+    # problems -- into ONE batched refusal below, instead of returning on
+    # the first and forcing a fresh dispatch cycle per defect. An OSError
+    # during oracle path resolution stays an immediate return: a
+    # filesystem anomaly, not a contract content defect an ATD REVISE can
+    # fix by re-filling. Ale's construction-over-file correction
+    # (2026-08-20, "the contract has one writer -- `des fill-contract` is
+    # the constructor", Agda vacuity report ~/nwave-formal/
+    # 2026-08-19-gates/report/2026-08-19-gate-analysis.md): the three
+    # checks this list used to run here -- EXTEND-target citation,
+    # declared-imports resolution, verification-scope path existence --
+    # are DELETED, not merely reordered. `des fill-contract` has no
+    # `--field` choice naming a mechanical field at all, so a contract
+    # that reaches this point already has them correct by construction;
+    # re-checking here would be pure duplicated cost for zero additional
+    # evidence (GDP-10).
     findings: list[tuple[str, str, str]] = [
         *_all_unfilled_placeholder_findings(contract),
-        *_extend_targets_missing_citation(contract),
     ]
-    for target_path, reference in _all_missing_declared_imports(repo_root, contract):
-        findings.append(
-            (
-                f"target {target_path!r} declares import {reference!r}, "
-                "which does not resolve to a base-tree module or symbol",
-                "a DeliveryContract citing an invented symbol reintroduces "
-                "ATD-invented substrate (K4 failure-to-design matrix row 12)",
-                _unresolved_declared_import_how(repo_root, contract, reference),
-            )
-        )
-    for path in _all_missing_verification_paths(repo_root, contract):
-        findings.append(_missing_verification_path_finding(path))
     whole_suite_finding = _missing_whole_suite_scope_finding(repo_root, contract)
     if whole_suite_finding is not None:
         findings.append(whole_suite_finding)

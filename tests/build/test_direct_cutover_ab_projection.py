@@ -539,7 +539,11 @@ def test_agent_pins_declared_imports_self_check_without_a_bash_tool() -> None:
     assert (
         "never invokes `des code-fact` or `des validate-delivery-contract`" in compact
     )
-    assert "Bash" not in agent
+    # Ale's construction-over-file correction (2026-08-20): ATD now holds
+    # Bash, but locked down to exactly `des fill-contract` by an installed
+    # PreToolUse hook -- this self-check step itself still never reaches
+    # for it (the "runs no shell" pin above is about THIS specific check).
+    assert "tools: Read, Write, Edit, Bash" in agent
     assert (
         "`des dispatch` independently re-verifies every `declared-imports` "
         "entry against the base tree immediately after `CONTRACT_READY`, "

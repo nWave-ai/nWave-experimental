@@ -507,6 +507,26 @@ def test_project_fragment_states_the_wall_clock_ceiling_when_declared(
         "reached, not merely state the numbers"
     )
 
+    # Stable-design report 2026-08-19 phase3 §5 item 4 /
+    # `AutoRouteStable_HonorSystemBudget.tla` (`NoUnenforcedExternalKill`
+    # VIOLATED, depth 8): the OLD bullet implied it was itself the
+    # enforcement; it is voluntary compliance only. The REAL cap is the
+    # harness's own hard subprocess timeout -- the bullet must now say so
+    # honestly and name that real, harness-enforced figure.
+    from scripts.analysis import paired_campaign
+
+    assert "advisory" in fragment.lower(), (
+        "the bullet must name itself as advisory, not imply it is the "
+        "enforcement mechanism"
+    )
+    assert "harness" in fragment.lower(), (
+        "the bullet must name the harness as the REAL enforcer"
+    )
+    assert str(paired_campaign.DELIVERY_TIMEOUT_S) in fragment, (
+        "the bullet must state the REAL harness-enforced hard-cap seconds, "
+        "not only the self-reported advisory minutes"
+    )
+
 
 def test_project_fragment_omits_the_wall_clock_bullet_when_undeclared(
     tmp_path, monkeypatch

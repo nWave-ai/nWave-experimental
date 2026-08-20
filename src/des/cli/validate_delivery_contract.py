@@ -7,20 +7,8 @@ import json
 import sys
 from pathlib import Path
 
-from des.cli._declared_import_refusal import (
-    first_missing_declared_import as _first_missing_declared_import,
-)
-from des.cli._declared_import_refusal import (
-    unresolved_declared_import_how as _unresolved_declared_import_how,
-)
 from des.cli._placeholder_refusal import (
     first_unfilled_placeholder_finding as _first_unfilled_placeholder_finding,
-)
-from des.cli._verification_command_refusal import (
-    first_missing_verification_path as _first_missing_verification_path,
-)
-from des.cli._verification_command_refusal import (
-    missing_verification_path_finding as _missing_verification_path_finding,
 )
 from des.cli._whole_suite_scope_refusal import (
     missing_whole_suite_scope_finding as _missing_whole_suite_scope_finding,
@@ -80,24 +68,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"WHAT: {what} WHY: {why} HOW: {how}", file=sys.stderr)
         return 2
 
-    missing = _first_missing_declared_import(args.repo_root, contract)
-    if missing is not None:
-        target_path, reference = missing
-        print(
-            f"WHAT: target {target_path!r} declares import {reference!r}, "
-            "which does not resolve to a base-tree module or symbol "
-            "WHY: a DeliveryContract citing an invented symbol reintroduces "
-            "ATD-invented substrate (K4 failure-to-design matrix row 12) "
-            f"HOW: {_unresolved_declared_import_how(args.repo_root, contract, reference)}",
-            file=sys.stderr,
-        )
-        return 2
-
-    missing_verification = _first_missing_verification_path(args.repo_root, contract)
-    if missing_verification is not None:
-        what, why, how = _missing_verification_path_finding(missing_verification)
-        print(f"WHAT: {what} WHY: {why} HOW: {how}", file=sys.stderr)
-        return 2
+    # Ale's construction-over-file correction (2026-08-20, "the contract
+    # has one writer -- `des fill-contract` is the constructor", Agda
+    # vacuity report ~/nwave-formal/2026-08-19-gates/report/2026-08-19-
+    # gate-analysis.md): declared-imports resolution and verification-
+    # scope path existence used to be re-checked HERE too -- DELETED, not
+    # merely reordered. `des fill-contract` has no `--field` choice naming
+    # a mechanical field at all, so a contract reaching this crafter-
+    # BASELINE call already has them correct by construction.
 
     whole_suite_finding = _missing_whole_suite_scope_finding(args.repo_root, contract)
     if whole_suite_finding is not None:

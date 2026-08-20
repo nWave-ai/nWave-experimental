@@ -4,11 +4,16 @@ Run 13 debrief: 4 crafter dispatches, 3 wasted -- each burned 4-9 minutes
 implementing against the oracle before failing on a defect IN THE ORACLE
 ITSELF (an FK field colliding with Django's own system-check hook; two
 fixture gaps). Root's own debrief: "have ATD actually execute the oracle...
-before CONTRACT_READY." ATD holds no `Bash` by design; the deterministic
-place is `des dispatch` -- the one boundary between `CONTRACT_READY` and the
-first crafter dispatch, already the home of every other contract-content
-check (`_declared_import_refusal`, `_verification_command_refusal`,
-`_whole_suite_scope_refusal`).
+before CONTRACT_READY." ATD's own Bash surface is locked to `des
+fill-contract` alone (Ale's construction-over-file correction, 2026-08-20)
+-- it cannot run this probe itself; the deterministic place remains `des
+dispatch` -- the one boundary between `CONTRACT_READY` and the first
+crafter dispatch, already the home of every other contract-content check
+(`_placeholder_refusal`, `_whole_suite_scope_refusal`; the sibling
+`_declared_import_refusal`/`_verification_command_refusal` this probe used
+to sit beside were DELETED, "the contract has one writer -- `des
+fill-contract` is the constructor", Agda-proved vacuous -- ~/nwave-formal/
+2026-08-19-gates).
 
 ONE language-agnostic check (roadmap: "language agnostic is an outcome
 constraint, not authorization to build or retain a universal language-

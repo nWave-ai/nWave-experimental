@@ -20,6 +20,17 @@ high-uncertainty socio-technical/business boundary; or explicit
 
 **Skip for**: stable, simple targets where none of the triggers above fire.
 
+### Stressor derivation (mechanical entry path)
+
+A stressor is the negation of a declared assumption. Derive the stressor
+list by enumerating the model's declared assumptions (fairness, atomic
+steps, closed types) and negating each -- no creativity required. The
+residue is measured by which laws fall after negation, and a tool answers
+that. The only irreducibly human step is deciding which stressors matter
+economically. Finds structural incoherence, never temporal holes -- a
+temporal gap needs the model checker (`nw-review` design-review question
+set, T5), not stressor negation.
+
 ## Three Core Concepts
 
 ### 1. Stressors

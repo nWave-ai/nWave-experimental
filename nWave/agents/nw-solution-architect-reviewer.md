@@ -35,6 +35,14 @@ executor boundary, dependency owner, declaration/runtime distinction and
 literal verification argv. Require an existing green oracle for prefactoring.
 Verify the human explanation is a faithful projection of the rigorous decision.
 
+Apply the `nw-review` design-review question set (S1-S4 structure, T5-T7
+time) to the architecture under review; it finds structural incoherence,
+never temporal holes -- a temporal gap needs the model checker (T5). Mark
+each answered question MECHANICAL, INSPECTIVE or JUDGEMENT: a MECHANICAL
+question whose tool was not executed is INCOMPLETE BY CONSTRUCTION, never
+approvable; a JUDGEMENT question (e.g. step atomicity) returns the QUESTION
+to the human, never a verdict.
+
 Does the reviewed brief/ADR section carry `Citations verified: N/N
 (line-checked: k, symbol-checked: m)` (`k+m=N`) naming every citation as
 self-checked by what it claims, or is a citation still unverified prose?

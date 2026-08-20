@@ -48,11 +48,21 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
+from scripts.analysis import paired_campaign
 from scripts.analysis.k4 import subject as k4_subject
+
+
+try:
+    import fcntl
+
+    _HAS_FCNTL = True
+except ImportError:  # pragma: no cover - Windows has no fcntl
+    _HAS_FCNTL = False
 
 
 #: The doc a blind examiner reads, framed as user-facing, not examiner-labelled.
@@ -250,16 +260,67 @@ def _stop_our_own_leaked_runserver(port: int) -> bool:
     return True
 
 
-def free_port() -> int:
-    """One OS-assigned free port on 127.0.0.1 -- the ONE source
-    `test_k4_row11_start_recipe.py` and `preflight.probe_examiner_start_
-    recipe` both use to stand up their fake server, never a second
-    hand-typed bind-and-release copy."""
+_PORT_RESERVATION_DIR = Path(tempfile.gettempdir()) / "nwave-k4-port-reservations"
+
+
+def _bind_and_release_ephemeral_port() -> int:
+    """One raw OS-assigned free port on 127.0.0.1 -- bind, read, release.
+    Extracted so `free_port`'s reservation loop (below) can retry it, and so
+    a test can rig its return sequence to reproduce a real collision without
+    depending on the OS actually reassigning the same port twice."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
     sock.close()
     return port
+
+
+def free_port() -> int:
+    """One OS-assigned free port on 127.0.0.1 -- the ONE source
+    `test_k4_row11_start_recipe.py` and `preflight.probe_examiner_start_
+    recipe` both use to stand up their fake server, never a second
+    hand-typed bind-and-release copy.
+
+    Stable-design report 2026-08-19 phase3 §5 item 6 / `PortAllocationRace.tla`
+    (`NoWastedCollision` VIOLATED, depth 6, worst-case single-candidate
+    abstraction): a raw bind-read-close-then-reuse has no exclusivity
+    primitive held across the gap between THIS call releasing the socket and
+    whatever eventually starts a real server on it -- two racing callers
+    (different arms, potentially different processes/preflight invocations
+    on the same shared box) can each independently probe the SAME
+    OS-assigned candidate before either binds for real, and only discover
+    the collision after a wasted server-start attempt.
+
+    Fix: an advisory reservation file keyed by port number (the report's own
+    §5 item 6 second option, chosen over holding the probe socket open
+    because the actual server bind can happen much later, in a different
+    process entirely -- an open FD cannot survive that gap). Each candidate
+    is atomically claimed via exclusive file creation (`O_EXCL`, the same
+    primitive `os.open`'s `x` mode uses) in a directory shared machine-wide
+    across every K4 process -- a second caller racing the exact same
+    candidate gets `FileExistsError` and retries with a fresh one, BEFORE
+    ever attempting to use it, converting the TLC-modelled bad state
+    (silent collision, discovered only after a wasted start attempt) into
+    an immediate, bounded retry. Honest residue: reservations are never
+    released or TTL'd -- across a long-lived machine this shrinks the usable
+    ephemeral-port pool over time; acceptable for a bounded dev/CI box
+    (`/tmp` clears on reboot) and explicitly NOT claimed as a permanent
+    allocator."""
+    _PORT_RESERVATION_DIR.mkdir(parents=True, exist_ok=True)
+    for _ in range(50):
+        port = _bind_and_release_ephemeral_port()
+        marker = _PORT_RESERVATION_DIR / str(port)
+        try:
+            fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            continue
+        os.close(fd)
+        return port
+    raise RuntimeError(
+        "free_port: exhausted 50 retries without claiming an unreserved "
+        f"ephemeral port -- {_PORT_RESERVATION_DIR} may be accumulating "
+        "stale reservations"
+    )
 
 
 def _ensure_venv(workspace: Path) -> Path:
@@ -487,6 +548,14 @@ DB_LOCK_FILE_NAME = "hc.sqlite.lock"
 SUPERVISOR_PID_FILE_NAME = "supervisor.pid"
 SUPERVISOR_SCRIPT_NAME = "k4-supervisor.py"
 
+#: Stable-design report 2026-08-19 phase3 §5 item 5: `start_supervisor`'s
+#: own stop-then-write-then-launch sequence had NOTHING serializing it --
+#: a concurrent `prepare()` on the same workspace could race the
+#: check-PID/kill/write-PID window. Same `fcntl.flock` idiom as `des
+#: commit` (`commit.py`) and the pristine-DB restore (`DB_LOCK_FILE_NAME`
+#: above) -- held across the whole stop+launch+PID-write sequence.
+SUPERVISOR_LOCK_FILE_NAME = "supervisor.lock"
+
 #: Touched by the examiner's documented block when the server is
 #: unreachable; the supervisor polls for this file and, on seeing it,
 #: forces a fresh restore+verify+migrate+restart cycle even if the
@@ -494,6 +563,15 @@ SUPERVISOR_SCRIPT_NAME = "k4-supervisor.py"
 #: running" are different facts, and only the supervisor may act on
 #: either.
 RESET_MARKER_FILE_NAME = ".k4-reset"
+
+#: Run 15 probe report (K4 matrix): the supervisor itself died unobserved
+#: -- nothing monitored it, and its stdout/stderr are DEVNULL'd
+#: (`start_supervisor`), so an unhandled exception in its own poll loop
+#: vanished without a trace. The supervisor's top-level try/except now
+#: writes any fatal exception here, with a full traceback, before
+#: exiting -- the ONE place a reader (or `health_or_reset_block`'s own
+#: loud fallback) can find evidence the supervisor died and why.
+SUPERVISOR_LOG_FILE_NAME = "supervisor.log"
 
 
 def _runserver_argv_and_env(port: int) -> tuple[list[str], dict[str, str]]:
@@ -672,6 +750,7 @@ def supervisor_script(port: int, api_key: str) -> str:
     server down too, never orphaning it.
     """
     block = start_and_wait_block(port, api_key)
+    base_url = f"http://127.0.0.1:{port}"
     return (
         "#!/usr/bin/env python3\n"
         '"""K4 examiner keepalive supervisor -- see '
@@ -681,12 +760,24 @@ def supervisor_script(port: int, api_key: str) -> str:
         "import signal\n"
         "import subprocess\n"
         "import sys\n"
-        "import time\n\n"
+        "import time\n"
+        "import traceback\n"
+        "import urllib.error\n"
+        "import urllib.request\n\n"
         f"BLOCK = {block!r}\n"
         f"SERVER_PID_FILE = {SERVER_PID_FILE_NAME!r}\n"
         f"RESET_MARKER = {RESET_MARKER_FILE_NAME!r}\n"
+        f"SUPERVISOR_LOG = {SUPERVISOR_LOG_FILE_NAME!r}\n"
+        f"BASE_URL = {base_url!r}\n"
+        f"API_KEY = {api_key!r}\n"
         "POLL_SECONDS = 2\n\n\n"
         "def _server_alive():\n"
+        "    # PID check is a FAST-PATH short-circuit only -- Run 15 probe\n"
+        "    # report: a PID can be technically alive (reused, hung, a\n"
+        "    # decoy) without the real server actually serving anything,\n"
+        "    # and a PID-only check reads that as healthy forever. The\n"
+        "    # authoritative check is the SAME authenticated GET journey\n"
+        "    # every other examiner probe already uses.\n"
         "    if not os.path.isfile(SERVER_PID_FILE):\n"
         "        return False\n"
         "    try:\n"
@@ -697,7 +788,14 @@ def supervisor_script(port: int, api_key: str) -> str:
         "        os.kill(pid, 0)\n"
         "    except OSError:\n"
         "        return False\n"
-        "    return True\n\n\n"
+        "    req = urllib.request.Request(\n"
+        "        BASE_URL + '/api/v3/checks/', headers={'X-Api-Key': API_KEY}\n"
+        "    )\n"
+        "    try:\n"
+        "        with urllib.request.urlopen(req, timeout=5) as resp:\n"
+        "            return 200 <= resp.status < 300\n"
+        "    except (urllib.error.URLError, OSError, ValueError, TimeoutError):\n"
+        "        return False\n\n\n"
         "def _restart():\n"
         "    with open('server.log', 'a') as log:\n"
         "        log.write('supervisor: restarting at %s\\n' % time.time())\n"
@@ -716,18 +814,33 @@ def supervisor_script(port: int, api_key: str) -> str:
         "        except (OSError, ValueError):\n"
         "            pass\n"
         "    sys.exit(0)\n\n\n"
-        "signal.signal(signal.SIGTERM, _handle_sigterm)\n"
-        "_restart()\n"
-        "while True:\n"
-        "    time.sleep(POLL_SECONDS)\n"
-        "    reset_requested = os.path.exists(RESET_MARKER)\n"
-        "    if reset_requested:\n"
-        "        try:\n"
-        "            os.remove(RESET_MARKER)\n"
-        "        except OSError:\n"
-        "            pass\n"
-        "    if reset_requested or not _server_alive():\n"
-        "        _restart()\n"
+        "def _run():\n"
+        "    signal.signal(signal.SIGTERM, _handle_sigterm)\n"
+        "    _restart()\n"
+        "    while True:\n"
+        "        time.sleep(POLL_SECONDS)\n"
+        "        reset_requested = os.path.exists(RESET_MARKER)\n"
+        "        if reset_requested:\n"
+        "            try:\n"
+        "                os.remove(RESET_MARKER)\n"
+        "            except OSError:\n"
+        "                pass\n"
+        "        if reset_requested or not _server_alive():\n"
+        "            _restart()\n\n\n"
+        "# Run 15 probe report (K4 matrix): the supervisor died unobserved\n"
+        "# -- stdout/stderr are DEVNULL'd (`start_supervisor`), so an\n"
+        "# unhandled exception here vanished with no trace anywhere. This\n"
+        "# is the producer's OWN last line of defence: log the full\n"
+        "# traceback to SUPERVISOR_LOG before exiting, so a reader (or\n"
+        "# `health_or_reset_block`'s own loud fallback) has evidence the\n"
+        "# supervisor died and why, instead of a silent, permanent stop.\n"
+        "try:\n"
+        "    _run()\n"
+        "except BaseException:\n"
+        "    with open(SUPERVISOR_LOG, 'a') as log:\n"
+        "        log.write('supervisor: FATAL at %s\\n' % time.time())\n"
+        "        traceback.print_exc(file=log)\n"
+        "    raise\n"
     )
 
 
@@ -739,19 +852,37 @@ def start_supervisor(workspace: Path, *, port: int, api_key: str) -> None:
     `SUPERVISOR_PID_FILE_NAME` so the harness can tear it down later by
     PID; idempotent -- if a supervisor from a PRIOR `prepare()` run is
     still alive (its own PID file says so), it is stopped first so this
-    call is never a silent second supervisor racing the first."""
-    stop_supervisor(workspace)
-    script_path = workspace / SUPERVISOR_SCRIPT_NAME
-    script_path.write_text(supervisor_script(port, api_key), encoding="utf-8")
-    proc = subprocess.Popen(
-        [sys.executable, str(script_path)],
-        cwd=workspace,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    (workspace / SUPERVISOR_PID_FILE_NAME).write_text(str(proc.pid), encoding="utf-8")
+    call is never a silent second supervisor racing the first.
+
+    Stable-design report 2026-08-19 phase3 §5 item 5: the stop-then-launch
+    sequence below is now held under `SUPERVISOR_LOCK_FILE_NAME`'s
+    exclusive `fcntl.flock` -- the SAME idiom `des commit` and the
+    pristine-DB restore already use -- across the WHOLE sequence (stop +
+    script write + Popen + PID write), so a concurrent `prepare()` call on
+    the same workspace can no longer interleave its own stop/start with
+    this one."""
+    lock_path = workspace / SUPERVISOR_LOCK_FILE_NAME
+    with open(lock_path, "w", encoding="utf-8") as lock_handle:
+        if _HAS_FCNTL:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        try:
+            _stop_supervisor_locked(workspace)
+            script_path = workspace / SUPERVISOR_SCRIPT_NAME
+            script_path.write_text(supervisor_script(port, api_key), encoding="utf-8")
+            proc = subprocess.Popen(
+                [sys.executable, str(script_path)],
+                cwd=workspace,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            (workspace / SUPERVISOR_PID_FILE_NAME).write_text(
+                str(proc.pid), encoding="utf-8"
+            )
+        finally:
+            if _HAS_FCNTL:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
 
 
 def stop_supervisor(workspace: Path) -> None:
@@ -760,7 +891,28 @@ def stop_supervisor(workspace: Path) -> None:
     server down with it, so this is the ONE call that fully retires an
     arm's examiner service, never a bare `kill $(cat server.pid)` that
     leaves the supervisor itself to immediately restart what was just
-    killed."""
+    killed.
+
+    Same `SUPERVISOR_LOCK_FILE_NAME` lock as `start_supervisor` -- a
+    standalone teardown call (e.g. harness cleanup) must not interleave
+    with a concurrent `start_supervisor`'s own stop-then-launch sequence
+    either."""
+    lock_path = workspace / SUPERVISOR_LOCK_FILE_NAME
+    with open(lock_path, "w", encoding="utf-8") as lock_handle:
+        if _HAS_FCNTL:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        try:
+            _stop_supervisor_locked(workspace)
+        finally:
+            if _HAS_FCNTL:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+
+def _stop_supervisor_locked(workspace: Path) -> None:
+    """Core teardown -- caller MUST already hold `SUPERVISOR_LOCK_FILE_NAME`
+    (either `start_supervisor` or `stop_supervisor`, never called
+    directly): kill the supervisor by its recorded PID and remove the PID
+    file."""
     pid_file = workspace / SUPERVISOR_PID_FILE_NAME
     if not pid_file.exists():
         return
@@ -789,7 +941,22 @@ def health_or_reset_block(port: int, api_key: str) -> str:
     unreachable, this touches `RESET_MARKER_FILE_NAME` -- the supervisor
     polls for that file and forces a fresh restore+verify+migrate+restart
     on seeing it -- then waits, bounded, for reachability; it never
-    diagnoses or repairs anything itself."""
+    diagnoses or repairs anything itself.
+
+    Run 15 probe report (K4 matrix): the ONE bounded fallback this block
+    gets on the failure path now DISTINGUISHES two different bad states
+    instead of reporting one generic timeout for both. If
+    `RESET_MARKER_FILE_NAME` is STILL PRESENT after the 30s wait, the
+    supervisor's own poll loop never even consumed it -- the supervisor
+    itself is down (dead, hung, or never started) -- named LOUD here,
+    with `SUPERVISOR_LOG_FILE_NAME` pointed to as where a crash trace
+    would be if it died (see `supervisor_script`'s own top-level
+    try/except). If the marker WAS consumed but the server still never
+    became reachable, the supervisor is alive but the restart itself
+    failed -- a different, `server.log`-diagnosable fact. Either way
+    this block only ever REPORTS and exits nonzero -- it never restarts
+    anything itself, so the examiner's own terminal verdict is
+    INDETERMINATE, citing this line, never a silent hang."""
     base_url = f"http://127.0.0.1:{port}"
     probe = (
         f'curl -fsS {base_url}/api/v3/checks/ -H "X-Api-Key: {api_key}" '
@@ -803,8 +970,18 @@ def health_or_reset_block(port: int, api_key: str) -> str:
         f"until {probe}; do\n"
         "    i=$((i+1))\n"
         '    if [ "$i" -ge 30 ]; then\n'
-        '        echo "server did not become reachable within 30s '
-        'after requesting a reset" >&2\n'
+        f"        if [ -f {RESET_MARKER_FILE_NAME} ]; then\n"
+        '            echo "supervisor appears DOWN: reset marker '
+        f"{RESET_MARKER_FILE_NAME} was never consumed within 30s -- the "
+        "keepalive supervisor itself may have died or hung; check "
+        f"{SUPERVISOR_LOG_FILE_NAME} for a crash trace. Report a terminal "
+        "INDETERMINATE naming this -- never restart or repair anything "
+        'yourself." >&2\n'
+        "        else\n"
+        '            echo "server did not become reachable within 30s '
+        "after requesting a reset (the supervisor consumed the marker, "
+        'but the restart itself did not succeed -- see server.log)" >&2\n'
+        "        fi\n"
         "        exit 1\n"
         "    fi\n"
         "    sleep 1\n"
@@ -924,20 +1101,37 @@ def render_project_fragment(
 
 
 def _wall_clock_budget_bullet() -> str:
-    """Stable-design report 2026-08-19 Sec.1.3: the campaign's ONE
-    declared wall-clock ceiling and start epoch, read back from the SAME
+    """Stable-design report 2026-08-19 Sec.1.3, RELABELLED honestly by
+    phase3 §5 item 4 / `AutoRouteStable_HonorSystemBudget.tla`
+    (`NoUnenforcedExternalKill` VIOLATED, depth 8): this bullet is
+    ADVISORY ONLY -- prose rendered into the agent's own prompt, read (or
+    not) entirely at that same agent's discretion. It is NOT a
+    construction: no lock, no hook, no external timer preempts anything
+    on its account. The REAL enforcement is `paired_campaign._run_
+    delivery`'s own hard subprocess `timeout` (`paired_campaign._
+    DELIVERY_TIMEOUT_S`), which SIGTERMs then SIGKILLs the whole
+    delivery's process group on expiry regardless of whether this bullet
+    was ever read -- see `arms.json`'s own `ceiling` field
+    (`enforced_by: "harness-timeout"`) for the same fact recorded
+    machine-readably. Ceiling/start-epoch read back from the SAME
     `K4_WALL_CLOCK_CEILING_MINUTES`/`K4_CAMPAIGN_START_EPOCH` env vars
-    `preflight.main()` sets once and propagates through `_rendered_arm_
-    env` to every setup subprocess -- one source, never a second
-    hand-typed ceiling. Empty string (no bullet) when either is absent
-    (a non-K4 caller of `prepare_delivery`, or an older harness run) --
-    silence here is the correct degrade, not a refusal."""
+    `preflight.main()` sets once -- one source, never a second hand-typed
+    ceiling. Empty string (no bullet) when either is absent (a non-K4
+    caller of `prepare_delivery`, or an older harness run) -- silence
+    here is the correct degrade, not a refusal."""
     ceiling = os.environ.get("K4_WALL_CLOCK_CEILING_MINUTES")
     start_epoch = os.environ.get("K4_CAMPAIGN_START_EPOCH")
     if not ceiling or not start_epoch:
         return ""
     return (
-        f"- Wall-clock ceiling: {ceiling} minutes, started at epoch "
+        "- Wall-clock: this is an ADVISORY self-check, not the real "
+        "enforcement -- the harness itself enforces a hard cap of "
+        f"{paired_campaign.DELIVERY_TIMEOUT_S}s and will SIGTERM then "
+        "SIGKILL this whole delivery at that point regardless of whether "
+        "this bullet was ever read. Budget your own stages against the "
+        "smaller, self-reported figure below so you finish with margin, "
+        "not merely survive the hard kill.\n"
+        f"- Self-reported ceiling: {ceiling} minutes, started at epoch "
         f"{start_epoch} (compare against `date +%s`). Has now minus that "
         "start already reached the ceiling? If it has, STOP: report a "
         "terminal INDETERMINATE naming the stage you reached -- never "

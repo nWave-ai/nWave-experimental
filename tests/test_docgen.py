@@ -1332,14 +1332,42 @@ class TestRoleSkillLoadingRegistry:
 
     def test_atd_frontmatter_tools_excludes_skill(self, root: Path):
         """ATD compiles and must not invoke runtime Skill -- its tools are
-        the compiler-boundary set: Read, Write, Edit."""
+        the compiler-boundary set Read/Write/Edit, plus (Ale's
+        construction-over-file correction, 2026-08-20, c05215bd7) `Bash`
+        -- but ONLY as the sole route to `des fill-contract`, never a
+        general shell. That allowlist is enforced by the installed
+        PreToolUse hook `_evaluate_atd_fill_contract_bash_command`
+        (`src/des/adapters/drivers/hooks/pre_tool_use_handler.py`, gated
+        on `_ATD_ROLE_NAME == "nw-acceptance-designer"`); pure-function
+        and end-to-end coverage of that lockdown already lives in
+        `tests/des/unit/adapters/drivers/hooks/
+        test_atd_fill_contract_bash_lockdown.py` and the tools-set
+        projection is separately pinned in
+        `tests/plugins/unit/test_atd_native_trigger_spatial_first.py`.
+        The property is re-asserted directly here too -- a non-fill-
+        contract Bash command must still be blocked -- so this file's
+        own pin can never silently drift back to "any Bash is fine"
+        without an assertion in THIS suite catching it."""
         text = (root / "nWave" / "agents" / "nw-acceptance-designer.md").read_text()
         tools_line = next(
             line for line in text.splitlines() if line.startswith("tools:")
         )
         tools = [tool.strip() for tool in tools_line.removeprefix("tools:").split(",")]
         assert "Skill" not in tools
-        assert set(tools) == {"Read", "Write", "Edit"}
+        assert set(tools) == {"Read", "Write", "Edit", "Bash"}
+
+        from des.adapters.drivers.hooks import pre_tool_use_handler
+
+        assert (
+            pre_tool_use_handler._evaluate_atd_fill_contract_bash_command("rm -rf /")
+            is not None
+        ), "a non-fill-contract Bash command must still be blocked for ATD"
+        assert (
+            pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(
+                "des fill-contract --repo-root /repo --delivery-id w --status"
+            )
+            is None
+        ), "the ONE allowlisted shape (des fill-contract) must still be permitted"
 
     @pytest.mark.parametrize("agent_id", _RUNTIME_SKILL_TARGETS)
     def test_generated_region_invokes_skill_natively_never_reads_a_path(

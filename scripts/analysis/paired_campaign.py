@@ -434,7 +434,7 @@ def _run_setup(arm: ArmSpec, *, workspace: Path, pair_dir: Path) -> tuple[bool, 
 #: The asymmetry decides the default: a ceiling set too low invalidates the run,
 #: a ceiling set too high only costs waiting. Recorded in `campaign.json`, so a
 #: reader can see which number the runs were measured under.
-_DELIVERY_TIMEOUT_S = 5400
+DELIVERY_TIMEOUT_S = 5400
 
 
 def _run_pair_setup(arm: ArmSpec, *, pair_dir: Path) -> tuple[bool, float]:
@@ -563,8 +563,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--timeout",
         type=int,
-        default=_DELIVERY_TIMEOUT_S,
-        help="seconds a single delivery may take; see _DELIVERY_TIMEOUT_S",
+        default=DELIVERY_TIMEOUT_S,
+        help="seconds a single delivery may take; see DELIVERY_TIMEOUT_S",
     )
     parser.add_argument("--out", type=Path, default=Path("./campaign"))
     args = parser.parse_args(argv)

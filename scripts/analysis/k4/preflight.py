@@ -51,6 +51,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from des.application.ordinary_request import contract_locator_for
+from scripts.analysis import paired_campaign
 from scripts.analysis.k4 import prepare_examiner_fixture as pef
 from scripts.analysis.k4 import subject as k4_subject
 
@@ -2743,6 +2744,21 @@ def main(argv: list[str] | None = None) -> int:
         "budget": {
             "wall_clock_minutes": args.wall_clock_minutes,
             "start_epoch": campaign_start_epoch,
+        },
+        # Stable-design report 2026-08-19 phase3 §5 item 4 /
+        # `AutoRouteStable_HonorSystemBudget.tla` (`NoUnenforcedExternalKill`
+        # VIOLATED): `budget` above is advisory prose the ROOT reads at its
+        # own discretion, never enforced by construction. The one REAL
+        # external cap is `paired_campaign._run_delivery`'s subprocess
+        # `timeout` (SIGTERM then SIGKILL on the whole process group,
+        # regardless of whether the bullet was ever read) -- named here
+        # from `paired_campaign.DELIVERY_TIMEOUT_S`, the ONE source, so a
+        # reader of arms.json can see which of the two numbers actually
+        # kills the process (GDP-8: decide on the property, not the
+        # designation).
+        "ceiling": {
+            "seconds": paired_campaign.DELIVERY_TIMEOUT_S,
+            "enforced_by": "harness-timeout",
         },
         # Recorded even though `route_walk_result["status"] != "proven"`
         # already returned 1 above -- only a "proven" result ever reaches

@@ -32,10 +32,12 @@ def _norm(text: str) -> str:
     return " ".join(text.split())
 
 
-def test_atd_tool_surface_is_read_write_edit_only() -> None:
+def test_atd_tool_surface_is_read_write_edit_bash_only() -> None:
+    """Ale's construction-over-file correction (2026-08-20) added `Bash`,
+    locked to `des fill-contract` by an installed PreToolUse hook (see
+    `test_atd_fill_contract_bash_lockdown.py`) -- `Skill` is still absent."""
     header = _norm(ACCEPTANCE_DESIGNER[:400])
-    assert "tools: Read, Write, Edit" in header
-    assert "Bash" not in ACCEPTANCE_DESIGNER
+    assert "tools: Read, Write, Edit, Bash" in header
     body = _norm(ACCEPTANCE_DESIGNER)
     assert "This role holds no `Skill` tool" in body
 

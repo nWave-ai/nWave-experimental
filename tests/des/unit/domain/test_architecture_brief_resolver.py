@@ -22,10 +22,8 @@ from des.domain.architecture_brief_resolver import (
 
 
 def test_extracts_one_citation_per_file() -> None:
-    # Mirrors `des.cli.dispatch._FILE_LINE_CITATION_RE`'s own shape exactly
-    # (reused, not reinvented): it captures the FIRST line number of a
-    # `file:line-range` citation, never the trailing `-30` -- the same
-    # substring `des dispatch`'s own EXTEND-citation validator searches for.
+    # `FILE_LINE_CITATION_RE`'s own shape: it captures the FIRST line
+    # number of a `file:line-range` citation, never the trailing `-30`.
     brief = "See `pkg/mod.py:10` and `pkg/mod.py:20-30` and `pkg/other.py:5`."
     citations = extract_target_citations(brief)
     assert citations == {

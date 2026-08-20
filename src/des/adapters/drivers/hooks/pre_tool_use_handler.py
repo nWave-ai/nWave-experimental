@@ -46,6 +46,7 @@ from des.adapters.drivers.hooks.root_activation_context import (
     root_mode_handoff_block_reason,
 )
 from des.application.commit_attribution_service import CommitAttributionService
+from des.application.fill_contract import ALL_FIELDS as _FILL_CONTRACT_FIELDS
 from des.application.ordinary_request import (
     ATD_BODY_LINE_COUNT,
     DELIVERY_ID_HEX_LEN,
@@ -421,6 +422,157 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
             "prepare-ordinary-request/resolve-charters/code-fact. "
             "HOW: dispatch the appropriate nw-* role for any other des "
             "subcommand."
+        )
+    return None
+
+
+# Ale's construction-over-file correction (2026-08-20): ATD's ENTIRE Bash
+# surface is `des fill-contract` -- mirrors the Auto-root Bash lockdown's
+# own shape (shared injection-marker check, shared quoted-heredoc
+# discipline for a value payload) rather than a second, independently
+# hand-rolled mechanism. Two admitted shapes only: (a) a single-line,
+# non-heredoc `--status` query, (b) a `--field`-bearing call whose value
+# arrives ONLY on a quoted `<<'NW_FILL'` heredoc (never a bare argv token
+# -- the same opaque-bytes guarantee the Auto-root VALUE-SEED heredoc gives
+# a quoted body no shell expansion). `--status` must be the LAST token when
+# present -- a deliberate simplification of the intended dispatch shape
+# (`nWave/agents/nw-acceptance-designer.md`), not a general flag-order
+# parser.
+_FILL_VALUE_HEREDOC_DELIMITER = "NW_FILL"
+_FILL_VALUE_HEREDOC_HEADER_SUFFIXES = (
+    f" <<'{_FILL_VALUE_HEREDOC_DELIMITER}'",
+    f' <<"{_FILL_VALUE_HEREDOC_DELIMITER}"',
+)
+# THE one place naming `des fill-contract`'s allowed flag vocabulary --
+# `des fill-contract --help` (`src/des/cli/fill_contract.py` `_parser`) is
+# its own source; `tests/build/test_des_examples_are_executable.py`-style
+# drift coverage, if any fenced example exists, would import this SAME
+# frozenset rather than re-declare it.
+_ATD_FILL_CONTRACT_ALLOWED_FLAGS = frozenset(
+    {"--repo-root", "--delivery-id", "--target", "--field", "--status"}
+)
+
+
+def _atd_bash_block(reason: str) -> dict[str, str]:
+    return {"decision": "block", "reason": reason}
+
+
+def _fill_contract_argv(prefix: str) -> list[str] | None:
+    """`shlex`-tokenized argv of `prefix`, or `None` if it carries a
+    composition marker, fails to tokenize, is not `des fill-contract`,
+    carries a flag outside `_ATD_FILL_CONTRACT_ALLOWED_FLAGS`, or gives
+    `--field` a value outside `des.application.fill_contract.ALL_FIELDS`
+    (imported directly as `_FILL_CONTRACT_FIELDS`, never redeclared -- a
+    mechanical field name is rejected HERE, at the hook, not only later by
+    the CLI's own argparse `choices=`)."""
+    if any(marker in prefix for marker in _AUTO_ROOT_BASH_INJECTION_MARKERS):
+        return None
+    try:
+        argv = shlex.split(prefix)
+    except ValueError:
+        return None
+    if len(argv) < 2 or argv[0] != "des" or argv[1] != "fill-contract":
+        return None
+    flags = argv[2:]
+    i = 0
+    while i < len(flags):
+        token = flags[i]
+        flag_name, _, inline_value = token.partition("=")
+        if flag_name not in _ATD_FILL_CONTRACT_ALLOWED_FLAGS:
+            return None
+        if "=" in token:
+            if flag_name == "--field" and inline_value not in _FILL_CONTRACT_FIELDS:
+                return None
+            i += 1
+            continue
+        if flag_name == "--status":
+            if i != len(flags) - 1:
+                return None
+            i += 1
+            continue
+        # Every OTHER flag here takes a following value token.
+        if i + 1 >= len(flags):
+            return None
+        if flag_name == "--field" and flags[i + 1] not in _FILL_CONTRACT_FIELDS:
+            return None
+        i += 2
+    return argv
+
+
+def _is_fill_value_stdin_heredoc(command: str) -> bool:
+    """True iff `command` is one hook-permitted fill-value heredoc: a
+    bounded `des fill-contract` header carrying `--field`, ending in a
+    quoted `<<'NW_FILL'`/`<<"NW_FILL"` redirect, an opaque body, and a
+    terminator line that is exactly the delimiter with nothing after it."""
+    if "\r" in command or "\n" not in command:
+        return False
+    header, _, rest = command.partition("\n")
+    prefix = None
+    for suffix in _FILL_VALUE_HEREDOC_HEADER_SUFFIXES:
+        if header.endswith(suffix):
+            prefix = header[: -len(suffix)]
+            break
+    if prefix is None:
+        return False
+    argv = _fill_contract_argv(prefix)
+    if argv is None or "--field" not in argv:
+        return False
+    body_lines = rest.split("\n")
+    try:
+        terminator_index = body_lines.index(_FILL_VALUE_HEREDOC_DELIMITER)
+    except ValueError:
+        return False
+    return terminator_index == len(body_lines) - 1
+
+
+def _evaluate_atd_fill_contract_bash_command(
+    command: object,
+) -> dict[str, str] | None:
+    """Pure ATD Bash allowlist decision (see the module comment above this
+    section). Returns `None` (allow) or a `{decision: block, reason: ...}`
+    payload. A missing, empty, whitespace-only, or non-string command
+    fails CLOSED."""
+    if not isinstance(command, str) or not command.strip():
+        return _atd_bash_block(
+            "WHAT: an ATD Bash call carried no usable command. "
+            "WHY: ATD's entire Bash surface is `des fill-contract` -- a "
+            "missing, empty, or whitespace-only command cannot be that "
+            "call. "
+            "HOW: run `des fill-contract --repo-root <root> --delivery-id "
+            "<id> --status`, or a --field call with its value on a quoted "
+            "<<'NW_FILL' heredoc."
+        )
+    if _is_fill_value_stdin_heredoc(command):
+        return None
+    if any(marker in command for marker in _AUTO_ROOT_BASH_INJECTION_MARKERS):
+        return _atd_bash_block(
+            "WHAT: an ATD Bash command carrying a shell-composition "
+            "operator was blocked. "
+            "WHY: ATD's entire Bash surface is one `des fill-contract` "
+            "call, quoted-heredoc value only -- composition operators can "
+            "smuggle a second command past that allowlist. "
+            "HOW: run one `des fill-contract` call per Bash call; drop "
+            "the operator."
+        )
+    argv = _fill_contract_argv(command)
+    if argv is None:
+        return _atd_bash_block(
+            "WHAT: an ATD Bash command is not a well-formed `des "
+            "fill-contract` invocation. "
+            "WHY: ATD's entire Bash surface is `des fill-contract "
+            "--repo-root/--delivery-id/--target/--field/--status`, "
+            "nothing else -- a mechanical field has no --field choice at "
+            "all. "
+            "HOW: run exactly `des fill-contract ...` with only these "
+            "flags."
+        )
+    if "--field" in argv:
+        return _atd_bash_block(
+            "WHAT: an ATD `des fill-contract --field` call did not use "
+            "the quoted <<'NW_FILL' heredoc for its value. "
+            "WHY: the value must arrive as opaque heredoc bytes, never a "
+            "bare argv token. "
+            "HOW: pipe the value via `<<'NW_FILL'` ... `NW_FILL`."
         )
     return None
 
@@ -1374,6 +1526,22 @@ def handle_pre_tool_use() -> int:
                         print(json.dumps(auto_root_bash_block))
                         exit_code = 2
                         return exit_code
+
+            # Ale's construction-over-file correction (2026-08-20): ATD's
+            # entire Bash surface is `des fill-contract` -- mirrors the
+            # Auto-root Bash lockdown immediately above, scoped to ATD's
+            # own dispatched turn instead of root's.
+            if (
+                tool_name == "Bash"
+                and resolve_subagent_agent_type(hook_input) == _ATD_ROLE_NAME
+            ):
+                atd_bash_block = _evaluate_atd_fill_contract_bash_command(
+                    tool_input.get("command")
+                )
+                if atd_bash_block is not None:
+                    print(json.dumps(atd_bash_block))
+                    exit_code = 2
+                    return exit_code
 
             # Run 8 (B): Auto-root Read/Grep/Glob of implementation/test
             # source is denied before the read happens, not caught later at

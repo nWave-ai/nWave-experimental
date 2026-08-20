@@ -140,10 +140,11 @@ def _oracle_dotted_label(oracle_locator: str) -> str:
 
 def _executable_for(repo_root: Path, head: str) -> dict:
     """A ``repository`` executable when ``head`` resolves under
-    ``repo_root`` (a vendored venv interpreter, ``.venv/bin/python``, ...),
-    else a ``toolchain`` executable resolved through the consumer's own
-    ``PATH`` -- mirrors the same repository-vs-toolchain distinction
-    ADR-SSOT-002 Section 4 already draws for ``verification-scope.commands``."""
+    ``repo_root`` (a vendored venv interpreter, ``k4-fixture-venv/bin/
+    python``, ...), else a ``toolchain`` executable resolved through the
+    consumer's own ``PATH`` -- mirrors the same repository-vs-toolchain
+    distinction ADR-SSOT-002 Section 4 already draws for
+    ``verification-scope.commands``."""
     if (repo_root / head).is_file():
         return {"kind": "repository", "path": head}
     return {"kind": "toolchain", "name": head}
@@ -164,13 +165,22 @@ def _verification_commands(repo_root: Path, oracle_locator: str) -> list[dict]:
     whole-suite command when one exists (``workspace_test_command_resolver``)
     -- together they satisfy ``des dispatch``'s whole-suite-scope validator
     by construction. A workspace with no declared whole-suite convention
-    falls back to a direct pytest invocation of the oracle locator, the
-    shape this repo's own checked-in DeliveryContract fixtures already use."""
+    falls back to a direct pytest invocation of the oracle locator, using a
+    bare ``python`` toolchain name (PATH-resolved) -- never a guessed
+    repository-relative ``.venv/bin/python`` path, which a fresh/scratch
+    workspace with no real venv at that exact spot would silently mis-
+    resolve as a broken toolchain name containing a slash (the identical
+    interpreter-resolution class of defect fixed in the shared
+    DeliveryContract test fixture, `docs/delivery-contracts/
+    fix-language-agnostic-contract-paths.json`, 2026-08-19: `uv run`
+    already prepends a real venv's own ``bin/`` to ``PATH`` for every
+    child process, so a bare name resolves correctly with no repo-relative
+    guess needed)."""
     declared = declared_whole_suite_command(repo_root)
     if not declared:
         return [
             {
-                "executable": _executable_for(repo_root, ".venv/bin/python"),
+                "executable": _executable_for(repo_root, "python"),
                 "arguments": ["-m", "pytest", "-q", oracle_locator],
             }
         ]
