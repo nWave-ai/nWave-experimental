@@ -96,7 +96,18 @@ owns only build-time packaging names for this role, never runtime trigger semant
    above, including the first `des validate-delivery-contract` call.
 2. **BASELINE** — the first Bash call after VALIDATE, before reading any
    file beyond the contract itself (no oracle, target or source Read
-   first): execute the contract's literal verification command vectors. A
+   first): execute the contract's literal verification command vectors.
+   When `verification-scope` carries `literal-script-block` instead of
+   `commands` (a verification-authority delegation), first re-read the
+   owning document section the block's `locator` names and confirm its
+   fenced block still matches the contract's `content-digest`
+   (`INDETERMINATE` on mismatch — never execute a drifted order), then
+   execute EXCLUSIVELY the lines of that freshly re-resolved,
+   digest-verified block, faithfully in order, bounded, as the authority
+   wrote them (assignments, pipes and `!` negations are the script's own
+   semantics, never re-split into argv) — the `lines` carried inside the
+   contract are a display-only projection and are NEVER the execution
+   source. A
    `RED_TO_GREEN` route requires the focused intended RED and no unrelated
    harness failure. A `GREEN_TO_GREEN` route requires the declared
    observations green before mutation. A command that cannot even run (a
@@ -153,6 +164,12 @@ inspection.
 change was required, an unchanged closure digest, terminal green verification
 and preserved contract identity.
 Missing, stale or nonterminal evidence is `INDETERMINATE`.
+
+**The terminal result is a message, not final text.** The LAST action of the
+turn is `SendMessage` to the team lead carrying the terminal block above
+verbatim and whole. A turn that ends with the result only in its own text is a
+result never delivered: the root watcher sees an idle lane, not a verdict
+(2026-08-21: two crafter `PASS` results never sent, 133 minutes lost).
 
 ## Constraints
 

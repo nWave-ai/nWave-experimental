@@ -21,6 +21,7 @@ from scripts.install.plugins.base import (
 from scripts.install.plugins.opencode_common import (
     opencode_config_dir,
     parse_frontmatter,
+    remove_manifest_owned_assets,
     render_frontmatter,
     uninstall_with_manifest,
     verify_with_manifest,
@@ -218,6 +219,23 @@ class OpenCodeCommandsPlugin(InstallationPlugin):
 
             target_dir = _opencode_commands_dir()
             target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Clean-then-write: a command retired upstream must not stay
+            # resolvable in the host. Command names carry no nw- prefix, so
+            # ownership rests entirely on the previous manifest -- a foreign
+            # or user-authored command it never listed survives untouched.
+            stale = remove_manifest_owned_assets(
+                target_dir,
+                _MANIFEST_FILENAME,
+                ".md",
+                manifest_key="installed_commands",
+                required_prefix="",
+            )
+            if stale:
+                context.logger.info(
+                    f"  \U0001f5d1\ufe0f Removed {len(stale)} previously installed "
+                    "OpenCode command(s) before rewrite"
+                )
 
             command_files = sorted(commands_source.glob("*.md"))
             if not command_files:

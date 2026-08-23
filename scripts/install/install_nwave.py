@@ -158,6 +158,11 @@ sys.path.insert(0, _project_root_entry)
 # Support both standalone execution and package import
 try:
     from scripts.install.context_detector import detect_target_platforms
+    from scripts.install.install_lock import (
+        EXIT_INSTALL_LOCK_HELD,
+        InstallLockHeld,
+        install_lock,
+    )
     from scripts.install.install_utils import (
         BackupManager,
         Logger,
@@ -200,6 +205,11 @@ except ImportError:
         sys.path.remove(_project_root_entry)
     sys.path.insert(0, _project_root_entry)
     from context_detector import detect_target_platforms
+    from install_lock import (
+        EXIT_INSTALL_LOCK_HELD,
+        InstallLockHeld,
+        install_lock,
+    )
     from install_utils import (
         BackupManager,
         Logger,
@@ -2095,6 +2105,39 @@ def main():
     if args.restore and installer.effective_target_platforms == {"codex"}:
         return 0
 
+    # ONE install at a time, per destination (GDP-0: make the torn state
+    # unrepresentable instead of asking the operator to remember a rule).
+    # Two concurrent installs into the same root leave a half-written runtime,
+    # a roster that briefly vanishes and private agents rewritten by the other
+    # run's asset set -- observed twice on 2026-08-21/22, minutes apart.
+    #
+    # Taken HERE: after the no-write refusal paths above (an unsupported host,
+    # a Codex restore no-op) so a refusal still touches nothing, and BEFORE the
+    # title panel, preflight, backup and install so no effort is spent on a run
+    # that cannot proceed (GDP-1).
+    if args.dry_run:
+        # A dry run writes nothing, so it has nothing to serialize -- and it
+        # must stay usable for inspecting an install that is running RIGHT NOW.
+        return _run_install(args, installer)
+
+    try:
+        with install_lock(
+            target_platforms=",".join(sorted(installer.effective_target_platforms))
+        ):
+            return _run_install(args, installer)
+    except InstallLockHeld as held:
+        print(str(held), file=sys.stderr)
+        return EXIT_INSTALL_LOCK_HELD
+
+
+def _run_install(args: argparse.Namespace, installer: "NWaveInstaller") -> int:
+    """Run the install stages that WRITE, under the caller's install lock.
+
+    Split out of ``main()`` so the lock wraps every write-bearing stage in one
+    ``with`` block: backup, adoption, install, manifest and validation all
+    release the lock on the way out, including on an exception or a Ctrl-C.
+    ``main()`` keeps only argument parsing and the no-write refusal paths.
+    """
     # Show title panel at startup
     show_title_panel(installer.logger, dry_run=args.dry_run)
 

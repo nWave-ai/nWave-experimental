@@ -15,7 +15,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from des.cli.verify_charter_filled import charter_missing_sections
+from des.cli.verify_charter_filled import (
+    CharterTemplateUnavailable,
+    charter_missing_sections,
+)
 
 
 if TYPE_CHECKING:
@@ -116,7 +119,12 @@ def _invalid_member_detail(entry: Path, namespace: Path) -> str | None:
         content = entry.read_text(encoding="utf-8")
     except (OSError, ValueError) as exc:
         return f"{entry} is not a readable in-namespace file ({exc})"
-    missing = charter_missing_sections(content)
+    try:
+        missing = charter_missing_sections(content, template_anchor=entry)
+    except CharterTemplateUnavailable as unavailable:
+        # FILLED is undecidable without the template SSOT: degrade LOUD
+        # (the namespace blocks), never treat the member as filled.
+        return f"{entry} cannot be judged FILLED ({unavailable})"
     return f"{entry} is unfilled ({'; '.join(missing)})" if missing else None
 
 

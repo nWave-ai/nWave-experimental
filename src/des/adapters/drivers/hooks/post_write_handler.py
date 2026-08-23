@@ -39,6 +39,7 @@ from des.adapters.drivers.hooks.hook_protocol import (
 from des.adapters.drivers.hooks.root_activation_context import (
     resolve_subagent_agent_type,
 )
+from des.domain.oracle_locator_resolver import oracle_citation_file_part
 from des.domain.oracle_write_classifier import (
     OracleWriteClassification,
     classify_write,
@@ -69,7 +70,9 @@ def _find_contract_for_oracle(repo_root: Path, relative_path: str) -> dict | Non
     """The one `docs/delivery-contracts/*.json` whose `acceptance-tests.
     locator` equals `relative_path` -- `None` when no contract names this
     exact file as its oracle (an ordinary write this hook has nothing to
-    say about). A malformed/unreadable candidate contract is skipped, never
+    say about). A `::Selector` suffix on a contract's locator is oracle
+    IDENTITY, not a path -- the written FILE is matched on the locator's
+    file part. A malformed/unreadable candidate contract is skipped, never
     raised -- this hook degrades LOUD only for a write it has already
     identified as in-scope, not for every unrelated JSON file on disk."""
     contracts_dir = repo_root / "docs" / "delivery-contracts"
@@ -82,7 +85,8 @@ def _find_contract_for_oracle(repo_root: Path, relative_path: str) -> dict | Non
             continue
         if not isinstance(contract, dict):
             continue
-        if contract.get("acceptance-tests", {}).get("locator") == relative_path:
+        locator = str(contract.get("acceptance-tests", {}).get("locator", ""))
+        if locator and oracle_citation_file_part(locator) == relative_path:
             return contract
     return None
 
@@ -154,6 +158,26 @@ def handle_post_write() -> int:
 
         command = linked_verification_command(contract, relative_path)
         if command is None:
+            literal_block = contract.get("verification-scope", {}).get(
+                "literal-script-block"
+            )
+            if literal_block:
+                # Delegation branch (SF friction 2026-08-21): NO argv
+                # command exists by construction, so the commands-branch
+                # message below (promising a BASE argv probe) would be a
+                # lie here. Name the branch and where its checks live.
+                block_locator = str(literal_block.get("locator", ""))
+                _additional_context(
+                    "ORACLE-WRITE-CLASSIFICATION: "
+                    "delegated-verification-authority\n"
+                    "REASON: this contract's verification-scope delegates "
+                    f"to the literal script block at {block_locator!r}; no "
+                    "argv command exists for this hook to probe. des "
+                    "dispatch re-verifies the block's digest against the "
+                    "owning document, and the crafter's BASELINE executes "
+                    "the script faithfully."
+                )
+                return 0
             _additional_context(
                 "ORACLE-WRITE-CLASSIFICATION: could-not-verify\n"
                 "REASON: the compiled contract names this file as its "

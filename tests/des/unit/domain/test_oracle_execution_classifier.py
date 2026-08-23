@@ -30,6 +30,10 @@ def _contract(justification: str = "", overlap: str = "") -> dict:
     }
 
 
+def _contract_with_target(target_path: str, *, decision: str, **fields: str) -> dict:
+    return {"targets": {target_path: {"decision": decision, **fields}}}
+
+
 def test_declared_symbol_candidates_reads_camel_case_from_justification() -> None:
     contract = _contract(
         justification="The new MaintenanceWindow model, FK to Check, mirrors Channel."
@@ -40,6 +44,59 @@ def test_declared_symbol_candidates_reads_camel_case_from_justification() -> Non
     assert "MaintenanceWindow" in symbols
     assert "Check" in symbols
     assert "Channel" in symbols
+
+
+def test_declared_symbol_candidates_includes_the_dotted_path_of_create_new_targets() -> (
+    None
+):
+    """SF friction report 2026-08-20, item 1: `_DECLARED_SYMBOL_RE` is
+    PascalCase-only -- a `ModuleNotFoundError: No module named
+    'pkg.snake_case_module'` from a CREATE_NEW target is unrecognizable
+    BY CONSTRUCTION (no valid Python module name is ever uppercase-
+    first), so `UNACCEPTABLE_FIXTURE`/`INDETERMINATE` lies about a
+    legitimate RED. A CREATE_NEW target's own repo-relative path,
+    converted to Python's dotted-module form, is ALSO declared evidence
+    -- the contract already states the exact target that does not exist
+    yet; a missing-module error naming that SAME path is the missing-
+    feature reason, not an oracle defect."""
+    contract = _contract_with_target("pkg/snake_case_module.py", decision="CREATE_NEW")
+
+    symbols = declared_symbol_candidates(contract)
+
+    assert "pkg.snake_case_module" in symbols
+
+
+def test_declared_symbol_candidates_omits_the_dotted_path_of_extend_targets() -> None:
+    """An EXTEND target already exists -- a `ModuleNotFoundError` naming
+    it would be a genuine surprise, never an expected missing-feature
+    shape, so only CREATE_NEW targets contribute this evidence."""
+    contract = _contract_with_target("pkg/existing_module.py", decision="EXTEND")
+
+    symbols = declared_symbol_candidates(contract)
+
+    assert "pkg.existing_module" not in symbols
+
+
+def test_module_not_found_error_for_a_create_new_target_is_red_not_a_lying_refusal() -> (
+    None
+):
+    """The exact SF friction scenario end to end: a CREATE_NEW target's
+    module genuinely does not exist yet, `python -m pytest` reports
+    `ModuleNotFoundError`, and the classifier must recognize this as the
+    missing-feature RED reason, never an `UNACCEPTABLE_BUILD` or a
+    silent `INDETERMINATE` that discards the evidence a legitimate RED
+    already carries."""
+    contract = _contract_with_target("pkg/snake_case_module.py", decision="CREATE_NEW")
+    output = "ModuleNotFoundError: No module named 'pkg.snake_case_module'\n"
+
+    assert (
+        classify_probe_output(
+            returncode=1,
+            output=output,
+            declared_symbols=declared_symbol_candidates(contract),
+        )
+        == RED
+    )
 
 
 def test_zero_exit_is_green() -> None:
@@ -105,4 +162,48 @@ def test_nonzero_exit_matching_neither_is_indeterminate() -> None:
     assert (
         classify_probe_output(returncode=1, output=output, declared_symbols=set())
         == INDETERMINATE
+    )
+
+
+def test_declared_symbol_candidates_strips_the_src_prefix_for_create_new_targets() -> (
+    None
+):
+    """Reviewer verdict on 911f21c81 (verified empirically): `pythonpath =
+    ["src", "."]` (see pyproject.toml) means the interpreter's own import
+    root is `src/`, so a genuinely missing `src/des/domain/foo_module.py`
+    module raises `ModuleNotFoundError: No module named
+    'des.domain.foo_module'` -- NEVER `'src.des.domain.foo_module'`. The
+    contract-derived dotted path emitted the `src.`-prefixed form only,
+    so on the dominant real-contract shape (targets under `src/des/...`,
+    see docs/delivery-contracts/) the match never fires and the verdict
+    stays the same lying INDETERMINATE the friction report named -- the
+    bug 911f21c81 claimed to fix. Fix: emit BOTH the full dotted path and
+    the `src/`-stripped one when the target path starts with `src/`."""
+    contract = _contract_with_target(
+        "src/des/domain/foo_module.py", decision="CREATE_NEW"
+    )
+
+    symbols = declared_symbol_candidates(contract)
+
+    assert "des.domain.foo_module" in symbols
+    assert "src.des.domain.foo_module" in symbols
+
+
+def test_module_not_found_error_for_a_src_rooted_create_new_target_is_red() -> None:
+    """End-to-end reviewer scenario: the real pytest output names the
+    `src/`-stripped dotted path (the actual import root), and the
+    classifier must still recognize it as the missing-feature RED
+    reason -- the dominant real-contract shape, not the edge case."""
+    contract = _contract_with_target(
+        "src/des/domain/foo_module.py", decision="CREATE_NEW"
+    )
+    output = "ModuleNotFoundError: No module named 'des.domain.foo_module'\n"
+
+    assert (
+        classify_probe_output(
+            returncode=1,
+            output=output,
+            declared_symbols=declared_symbol_candidates(contract),
+        )
+        == RED
     )

@@ -199,11 +199,7 @@ first producer call, not after an `INDETERMINATE` reports it missing.
    redirect, all as a single Bash invocation:
 
    ```
-   des prepare-ordinary-request \
-     --size <M|L> --repo-root <absolute physical root> \
-     --architecture-authority "ARCHITECTURE-COVERED: path.md#anchor" \
-     --delivery-route <RED_TO_GREEN|GREEN_TO_GREEN> --examine <true|false> \
-     --independent-review <true|false> [numeric budget overrides] <<'NW_SEED'
+   des prepare-ordinary-request --size <M|L> --repo-root <absolute physical root> --architecture-authority "ARCHITECTURE-COVERED: path.md#anchor" --delivery-route <RED_TO_GREEN|GREEN_TO_GREEN> --examine <true|false> --independent-review <true|false> [numeric budget overrides] <<'NW_SEED'
    <exact value-seed text, byte-for-byte, over as many lines as it needs>
    NW_SEED
    ```
@@ -299,11 +295,17 @@ first producer call, not after an `INDETERMINATE` reports it missing.
    receipt in one sentence and stop — never re-dispatch the same role
    blindly on the unproven assumption that a second try will simply finish
    what silence already refused to confirm. Before reporting, check
-   `.nwave/des/subagent-results/<the dispatched agent-id>.txt` -- the
-   SubagentStop hook (stable-design report 2026-08-19 section 1.1) writes a
-   synthesized `<ROLE>-RESULT: verdict INDETERMINATE reason: ...` there the
-   instant that role's own turn ended with no terminal line; if present,
-   quote it verbatim instead of inferring the cause.
+   `.nwave/des/subagent-results/<lane name>.txt` -- the name you dispatched
+   the lane under, which is the key you actually hold. The SubagentStop hook
+   (stable-design report 2026-08-19 section 1.1) writes a synthesized
+   `<ROLE>-RESULT: verdict INDETERMINATE reason: ...` there the instant that
+   role's own turn ended with no terminal line; if present, quote it verbatim
+   instead of inferring the cause. An UNNAMED Agent-tool dispatch has no lane
+   name, so its receipt is keyed by the opaque agent id alone
+   (`<agent-id>.txt`). Receipts are written relative to the CWD of the
+   session that owns the lane, and only when the installed runtime carries
+   this handler -- an absent file is therefore never itself evidence that the
+   lane produced a terminal line.
 
    `CHARTER-RESULT` `INDETERMINATE` citing a missing/vague `PublicStartRecipe`
    or any other value-side authority gap (`CLARIFICATION_NEEDED` — PO's own
@@ -316,11 +318,21 @@ first producer call, not after an `INDETERMINATE` reports it missing.
    from step 1 with the corrected seed (a fresh `des prepare-ordinary-request`
    / `resolve-charters` / AB batch), never reuse the old id, locator or any
    already-authored contract/charter under it. If instead the SAME
-   `DeliveryId`'s contract already exists and only the charter needed a fix
-   (no seed-byte change — e.g. a charter citation error caught downstream),
-   dispatch ATD via `REVISE-CONTRACT` exactly as the crafter-citing-contract
-   row below, never a fresh re-author: the contract's targets/oracle did not
-   change, only the charter did.
+   `DeliveryId`'s charter carries a VALUE-side defect cited by an
+   independent reviewer (no seed-byte change — e.g. a wrong
+   `PublicStartRecipe` faulted after authoring), run
+   `des revise-charter-round --repo-root <root> --delivery-id <id>
+   --citation <the reviewer's exact citation text>` and dispatch
+   `nw-product-owner` with its exact eight-line stdout verbatim (the
+   `DISCOVER: ExistingNeedsRevision` envelope, `CHARTER-CURRENT` carrying
+   the existing text as data so the Write-only PO rewrites it in place
+   without reading it) — never a hand-composed PO prompt (correctly
+   `CHARTER-AUTHOR-DISQUALIFIED`) and never a fresh re-author. If the
+   producer refuses (bound exhausted), report `INDETERMINATE` citing the
+   exhausted charter revision budget and stop. `REVISE-CONTRACT` stays for
+   CONTRACT/ORACLE defects only, exactly as the crafter-citing-contract
+   row below: the contract's targets/oracle did not change, only the
+   charter did.
 
 4. Validate the charter when applicable, then run the one `des dispatch`
    command from “CLI dispatch” above. Forward its two lines verbatim to the
@@ -337,9 +349,20 @@ first producer call, not after an `INDETERMINATE` reports it missing.
    |---|---|
    | `PASS` | the examiner pass below (`examine=true`) or step 5 finalize |
    | `FAIL` | Is this a genuine terminal FAIL, not a timeout/partial narration (those are `INDETERMINATE` — nw-crafter-discipline-delivery-contract)? A real FAIL is terminal: report the FAIL evidence verbatim and stop — never redispatch hoping a second attempt succeeds where the evidence already says it cannot |
-   | `INDETERMINATE` citing the contract/oracle itself (an invented import, a self-referential obligation, a self-flagged coverage/oracle gap, or any other defect the crafter names IN the delivered contract/oracle — nw-crafter-discipline-delivery-contract item 6, "return an oracle defect to DISTILL"; a self-flagged gap is never `PASS` with the gap only noted in `residuals`) | Does the citation name a real defect IN the contract/oracle, not just an inability to satisfy it? If so, run `des revise-contract-round --repo-root <root> --contract-locator <the SAME CONTRACT-LOCATOR already produced> --citation <the crafter's citation text>` (stable-design report 2026-08-19 section 1.2 -- the bounded producer of the three-line revision body, REVISE-CONTRACT/REVISE-ROUND/CITATION; a durable per-DeliveryId counter refuses once the round would exceed its declared bound, terminal WHAT/WHY/HOW, never an unbounded redispatch loop). Send its exact stdout verbatim as `nw-acceptance-designer`'s dispatch body -- never a fresh `des prepare-ordinary-request` run and never a hand-typed revision body. If the producer refuses (bound exhausted), report `DELIVER-RESULT: INDETERMINATE` citing the exhausted revision budget and stop -- never dispatch ATD again for this DeliveryId. Its stdout is exactly `REVISE-CONTRACT: <locator>` then `REVISE-ROUND: <n>/<N>` then `CITATION: <json-string>`, each on its own line. On the returned `DISTILL-RESULT: CONTRACT_READY`, run `des dispatch` again and redispatch the crafter fresh; `des resolve-charters`/PO are NOT rerun — the charter's validity did not change |
+   | `INDETERMINATE` citing the contract/oracle itself (an invented import, a self-referential obligation, a self-flagged coverage/oracle gap, or any other defect the crafter names IN the delivered contract/oracle — nw-crafter-discipline-delivery-contract item 6, "return an oracle defect to DISTILL"; a self-flagged gap is never `PASS` with the gap only noted in `residuals`) | Does the citation name a real defect IN the contract/oracle, not just an inability to satisfy it? If so, run `des revise-contract-round --repo-root <root> --contract-locator <the SAME CONTRACT-LOCATOR already produced> --citation <the crafter's citation text>` (stable-design report 2026-08-19 section 1.2 -- the bounded producer of the four-line revision body, ROOT/REVISE-CONTRACT/REVISE-ROUND/CITATION; a durable per-DeliveryId counter refuses once the round would exceed its declared bound, terminal WHAT/WHY/HOW, never an unbounded redispatch loop). Send its exact stdout verbatim as `nw-acceptance-designer`'s dispatch body -- never a fresh `des prepare-ordinary-request` run and never a hand-typed revision body. If the producer refuses (bound exhausted), report `DELIVER-RESULT: INDETERMINATE` citing the exhausted revision budget and stop -- never dispatch ATD again for this DeliveryId. Its stdout is exactly `ROOT: <absolute physical root>` then `REVISE-CONTRACT: <locator>` then `REVISE-ROUND: <n>/<N>` then `CITATION: <json-string>`, each on its own line -- ROOT is the producer's own `--repo-root`, so a dispatched reviser resolves the repo-relative locator against the SAME root that produced it, never its own cwd. On the returned `DISTILL-RESULT: CONTRACT_READY`, run `des dispatch` again and redispatch the crafter fresh; `des resolve-charters`/PO are NOT rerun — the charter's validity did not change |
    | `INDETERMINATE` citing environment/tooling/sandbox (nw-crafter-discipline-delivery-contract item 9, "terminal INDETERMINATE after the first failed attempt") | Is this actually a harness gap no contract revision can fix? If so it is terminal: report the INDETERMINATE evidence and stop — never redispatch ATD, the crafter, or restart the cycle hoping the environment resolves itself |
    | No terminal `CRAFTER-RESULT` block at all | Same rule as the batch-join above: `INDETERMINATE`, report the missing terminal receipt, stop — never re-dispatch blindly |
+
+   The contract/oracle-citing `INDETERMINATE` row's producer call, root's own
+   command (SF friction report 2026-08-20 item 5: this exact invocation was
+   previously blocked by the Auto-root Bash allowlist despite this row
+   mandating it -- a deadlock resolved only by relaying through a second
+   agent; `revise-contract-round` is now a member of the SAME allowlist
+   every other root-run `des` subcommand on this page is):
+
+   ```
+   des revise-contract-round --repo-root <root> --contract-locator <the SAME CONTRACT-LOCATOR already produced> --citation <the crafter's citation text>
+   ```
 
    A non-`none` `contract-fact-gap` (`first-production-mutation-tool-call` past
    15) never changes the row above — it is friction evidence for ATD's next

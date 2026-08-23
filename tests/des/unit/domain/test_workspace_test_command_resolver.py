@@ -94,3 +94,25 @@ def test_no_declared_command_means_nothing_to_check(tmp_path: Path) -> None:
     contract = _contract(["manage.py", "test", "hc.api.tests.test_x"])
 
     assert contract_covers_whole_suite(tmp_path, contract) is True
+
+
+def test_a_literal_script_block_covers_the_whole_suite_by_delegation(
+    tmp_path: Path,
+) -> None:
+    # SF friction 2026-08-21: a delegation contract carries the authority's
+    # LITERAL script instead of argv commands -- the delegation outranks
+    # the subject's CLAUDE.md whole-suite convention, so the whole-suite
+    # coverage refusal must never fire on it.
+    (tmp_path / "CLAUDE.md").write_text(
+        "- Run the subject's own tests: `go test ./...`\n", encoding="utf-8"
+    )
+    contract = {
+        "verification-scope": {
+            "literal-script-block": {
+                "locator": "docs/adrs/ADR-112.md#d-112.14",
+                "content-digest": "sha256:" + "a" * 64,
+                "lines": ["go test ./... -count=1"],
+            }
+        }
+    }
+    assert contract_covers_whole_suite(tmp_path, contract) is True

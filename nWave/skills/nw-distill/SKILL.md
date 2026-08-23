@@ -115,6 +115,15 @@ dependency ownership, literal verification command(s), port/selector identity
 and the preservation map from a cheap law-bearing seam to the real
 observation. Missing facts return to their owner; DISTILL never guesses them.
 
+`verification-scope` is a sum type of exactly two branches. With a
+`Verification authority locator:` delegation in the brief, the compiler
+carries the cited authority's literal script BY-REFERENCE
+(`literal-script-block`: locator + content digest + verbatim lines) and no
+argv `commands` at all — the delegation outranks every argv source; `des
+dispatch` re-verifies the digest against the owning document and the
+crafter's BASELINE executes EXCLUSIVELY its own fresh, digest-verified
+re-resolution of the authority block — the carried lines are a
+display-only projection, never the execution source. Otherwise
 `verification-scope.commands` is a set, not a slot: it carries the oracle's
 own command AND, when the subject workspace's own root `CLAUDE.md` already
 states one, the workspace's own whole-suite command — copied verbatim, never

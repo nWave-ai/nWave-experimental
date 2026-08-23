@@ -16,10 +16,10 @@ import sys
 from pathlib import Path
 
 from des._internal.delivery_contract_schema import (
-    resolve_delivery_contract_schema_path,
+    SchemaUnreadable,
+    SchemaViolation,
+    delivery_contract_schema_violation,
 )
-from des._internal.json_schema_subset import JsonSchemaSubsetError
-from des._internal.json_schema_subset import validate as _validate_contract_schema
 from des.cli._charter_resolution import (
     _assert_never,
     _Author,
@@ -37,6 +37,9 @@ from des.cli._placeholder_refusal import (
 )
 from des.cli._whole_suite_scope_refusal import (
     missing_whole_suite_scope_finding as _missing_whole_suite_scope_finding,
+)
+from des.domain.oracle_locator_resolver import (
+    oracle_citation_file_part as _oracle_file_part,
 )
 
 
@@ -173,23 +176,23 @@ def _load_delivery_contract(
         )
         return None
 
-    schema_path = resolve_delivery_contract_schema_path()
-    try:
-        schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    # The ONE schema check, shared with des compile-contract's own
+    # PRE-WRITE producer refusal -- never a copy (GDP-0, 2026-08-22).
+    finding = delivery_contract_schema_violation(contract)
+    if isinstance(finding, SchemaUnreadable):
         _handoff_refusal(
-            what=f"the DeliveryContract schema cannot be read at {schema_path} ({exc})",
+            what="the DeliveryContract schema cannot be read at "
+            f"{finding.schema_path} ({finding.error})",
             why="contract validity cannot be established without its schema",
             how="reinstall nWave with its schemas",
         )
         return None
-    try:
-        _validate_contract_schema(schema, contract)
-    except JsonSchemaSubsetError as exc:
+    if isinstance(finding, SchemaViolation):
         _handoff_refusal(
-            what=f"the contract fails the thin-delivery-contract schema ({exc.message})",
+            what="the contract fails the thin-delivery-contract schema "
+            f"({finding.message})",
             why="DELIVER cannot trust a schema-invalid contract",
-            how=f"fix the contract to satisfy nWave/schemas/{schema_path.name}",
+            how=f"fix the contract to satisfy nWave/schemas/{finding.schema_path.name}",
         )
         return None
     return contract, path_str, contract_bytes
@@ -204,7 +207,12 @@ def _oracle_path_finding(repo_root: Path, locator: str) -> tuple[str, str, str] 
     possibly several, while `_resolve_oracle` itself keeps printing and
     returning immediately, unchanged, for `validate_delivery_contract.py`'s
     own single-defect caller.
+
+    A `::Selector` suffix on the locator is oracle IDENTITY, never a path
+    segment (SF blocker 2026-08-21): every disk check here runs on the
+    FILE part alone.
     """
+    locator = _oracle_file_part(locator)
     unsafe_reason = _unsafe_delivery_contract_path_reason(locator)
     if unsafe_reason is not None:
         return (
@@ -258,7 +266,7 @@ def _resolve_oracle(repo_root: Path, locator: str) -> bytes | None:
         _handoff_refusal(what=what, why=why, how=how)
         return None
 
-    candidate = repo_root / locator
+    candidate = repo_root / _oracle_file_part(locator)
     try:
         return candidate.read_bytes()
     except OSError as exc:
@@ -358,12 +366,13 @@ def main(argv: list[str] | None = None) -> int:
         findings.append(whole_suite_finding)
 
     oracle_locator = str(contract["acceptance-tests"]["locator"])
-    oracle_unsafe_reason = _unsafe_delivery_contract_path_reason(oracle_locator)
+    oracle_file = _oracle_file_part(oracle_locator)
+    oracle_unsafe_reason = _unsafe_delivery_contract_path_reason(oracle_file)
     self_reference_finding: tuple[str, str, str] | None = None
     if oracle_unsafe_reason is None:
         try:
             resolved_contract_path = (repo_root / locator).resolve()
-            resolved_oracle_candidate = (repo_root / oracle_locator).resolve()
+            resolved_oracle_candidate = (repo_root / oracle_file).resolve()
         except OSError as exc:
             return _handoff_refusal(
                 what=f"oracle path resolution failed ({exc})",

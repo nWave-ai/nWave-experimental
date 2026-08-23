@@ -68,17 +68,58 @@ UNACCEPTABLE_BUILD = "UNACCEPTABLE_BUILD"
 INDETERMINATE = "INDETERMINATE"
 
 
+def _dotted_module_paths(target_path: str) -> set[str]:
+    """`target_path` (a repo-relative file path) in every dotted-module
+    form a real `ModuleNotFoundError` could plausibly name -- mirrors
+    `compile_contract._oracle_dotted_label`'s base shape (strip a
+    trailing `.py`, `/` -> `.`), duplicated here rather than imported:
+    this domain module must not depend on the application layer
+    (hexagonal boundary).
+
+    Reviewer verdict on 911f21c81 (verified empirically): this repo's
+    own `pyproject.toml` sets `pythonpath = ["src", "."]`, so `src/` is
+    itself an import root -- a genuinely missing `src/des/x.py` module
+    raises `ModuleNotFoundError: No module named 'des.x'`, never
+    `'src.des.x'`. The dominant real-contract shape names targets under
+    `src/des/...` (see docs/delivery-contracts/), so the single
+    `src.`-prefixed form alone missed the actual error text on exactly
+    the common case, leaving the lying INDETERMINATE the friction report
+    named. Fix: return BOTH the full dotted path and the `src/`-stripped
+    one when the target starts with `src/` -- one more row of evidence,
+    never a narrower regex or a language-specific branch."""
+    stem = target_path[:-3] if target_path.endswith(".py") else target_path
+    dotted = stem.replace("/", ".")
+    paths = {dotted}
+    if target_path.startswith("src/"):
+        paths.add(stem[len("src/") :].replace("/", "."))
+    return paths
+
+
 def declared_symbol_candidates(contract: dict) -> set[str]:
     """Every CamelCase-shaped identifier the contract's own targets already
     name as new substrate, read from `justification`/`overlap` -- the
     symbols a nonzero exit is allowed to fail on and still count as the
     missing-feature reason, not an oracle defect. A plain token match,
     language-agnostic: a symbol name is just a substring, whatever
-    language actually printed it."""
+    language actually printed it.
+
+    SF friction report 2026-08-20, item 1: a CREATE_NEW target's own
+    dotted-module path is ALSO declared evidence -- `_DECLARED_SYMBOL_
+    RE` is PascalCase-only, so a `ModuleNotFoundError: No module named
+    'pkg.snake_case_module'` from a target that genuinely does not
+    exist yet was previously unrecognizable BY CONSTRUCTION (no valid
+    Python module name is ever uppercase-first), producing a lying
+    `INDETERMINATE`/`UNACCEPTABLE_BUILD` on a legitimate RED. The
+    contract already states which targets are new; a missing-module
+    error naming that SAME path is the missing-feature reason, one more
+    row of evidence, never a wider regex or a new language-specific
+    branch."""
     found: set[str] = set()
-    for target in contract.get("targets", {}).values():
+    for target_path, target in contract.get("targets", {}).items():
         for field in ("justification", "overlap"):
             found.update(_DECLARED_SYMBOL_RE.findall(str(target.get(field, ""))))
+        if target.get("decision") == "CREATE_NEW":
+            found.update(_dotted_module_paths(target_path))
     return found
 
 

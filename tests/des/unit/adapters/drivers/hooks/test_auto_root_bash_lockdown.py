@@ -210,6 +210,10 @@ class TestAutoRootBashDesAllowlist:
             "des charter-scaffold F-EXAMPLE",
             "des resolve-charters --repo-root /tmp/repo --delivery-id auto-abc123 --examine true",
             "des code-fact query.atoms-in-file --root /tmp/repo/sendalerts.py",
+            "des compile-contract --repo-root /tmp/repo --delivery-id auto-abc123",
+            "des revise-contract-round --repo-root /tmp/repo "
+            "--contract-locator docs/delivery-contracts/auto-abc123.json "
+            "--citation the-cited-defect",
         ],
         ids=[
             "dispatch",
@@ -217,6 +221,8 @@ class TestAutoRootBashDesAllowlist:
             "charter-scaffold",
             "resolve-charters",
             "code-fact",
+            "compile-contract",
+            "revise-contract-round",
         ],
     )
     def test_clean_des_allowlisted_command_is_not_auto_root_blocked(
@@ -382,6 +388,45 @@ class TestAutoRootBashAllowlistCoversSkillMandatedSubcommands:
             f"nw-auto/SKILL.md instructs root to run {sorted(missing)}, but "
             "the Auto-root Bash allowlist does not permit it -- the hook "
             "would deny root's own documented next step."
+        )
+
+    def test_revise_contract_round_is_allowlisted_despite_inline_prose_mention(
+        self,
+    ) -> None:
+        """SF friction report 2026-08-20, item 5: `des revise-contract-
+        round` is named in nw-auto/SKILL.md's routing table as INLINE
+        backtick prose (a table cell), never inside a fenced code block
+        -- `des_subcommands_root_is_told_to_run`'s parser only scans
+        fenced blocks, so the coverage check above is structurally BLIND
+        to this one subcommand and cannot catch its own drift
+        automatically. `_is_well_formed_atd_revision_body` REQUIRES
+        root's dispatch body come verbatim from this producer's stdout;
+        the allowlist forbidding root from ever running it deadlocked
+        the flow (resolved only by a second agent relaying stdout, per
+        the friction report). Hand-anchored here since the general
+        parser cannot cover it -- the SAME class of assertion, one
+        subcommand the automatic guard cannot reach."""
+        allowed = pre_tool_use_handler._AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS
+        assert "revise-contract-round" in allowed, (
+            "the Auto-root Bash allowlist must permit des revise-contract-"
+            "round -- _is_well_formed_atd_revision_body already requires "
+            "the REVISE dispatch body come from its stdout, so root must "
+            "be able to run it"
+        )
+
+    def test_revise_charter_round_is_allowlisted_despite_inline_prose_mention(
+        self,
+    ) -> None:
+        """The charter-side sibling of the assertion above, same class:
+        `is_well_formed_po_revision_envelope` REQUIRES the PO revision
+        dispatch envelope come verbatim from `des revise-charter-round`'s
+        stdout, and the SKILL.md routing mention is inline backtick prose
+        the fence parser cannot reach."""
+        allowed = pre_tool_use_handler._AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS
+        assert "revise-charter-round" in allowed, (
+            "the Auto-root Bash allowlist must permit des revise-charter-"
+            "round -- the PO envelope gate already requires the revision "
+            "envelope come from its stdout, so root must be able to run it"
         )
 
 

@@ -15,7 +15,9 @@ YAML-frontmatter Markdown. The transform pipeline:
   Claude Code source (.md, YAML frontmatter + Markdown body)
     -> parse frontmatter + body
     -> extract scalar fields (name, description, model)
-    -> drop tools block (Codex has no tool-permission equivalent; WARN logged)
+    -> translate tools block into a capability-mapping preamble (the Codex
+       TOML schema has no tools field, so declared capabilities are granted
+       against the native surface and undeclared ones explicitly denied)
     -> render TOML with body as developer_instructions
 
 A manifest (.nwave-agents-manifest.json) tracks which agents nWave installed,
@@ -37,7 +39,10 @@ from scripts.install.plugins.base import (
     PluginResult,
 )
 from scripts.install.plugins.codex_des_plugin import _legacy_direct_des_command
-from scripts.install.plugins.opencode_common import parse_frontmatter
+from scripts.install.plugins.opencode_common import (
+    parse_frontmatter,
+    remove_manifest_owned_assets,
+)
 from scripts.shared.agent_catalog import is_public_agent, load_public_agents
 from scripts.shared.batching_fragment import (
     append_batching_fragment,
@@ -141,23 +146,142 @@ def _omit_unsupported_model(scalar_fields: dict[str, str]) -> None:
         scalar_fields.pop("model", None)
 
 
-def _warn_if_tools_dropped(agent_name: str, frontmatter: dict) -> None:
-    """Log a warning when a tools block is dropped during transform.
+def _log_tools_translated(agent_name: str, frontmatter: dict) -> None:
+    """Log that a tools block is translated into a capability preamble.
 
-    Codex CLI has no per-agent tool-permission block equivalent; permissions
-    are controlled via sandbox_mode and approval_policy at config level.
+    Codex CLI has no per-agent tool-permission block equivalent; the declared
+    tools are translated into a capability-mapping preamble prepended to
+    developer_instructions instead of being silently dropped.
 
     Args:
         agent_name: Agent identifier (for log context)
         frontmatter: Parsed frontmatter dict, potentially containing tools
     """
     if "tools" in frontmatter:
-        _logger.warning(
-            "codex_agents_plugin: dropping 'tools' block for agent '%s' "
-            "(Codex has no per-agent tool-permission equivalent; "
-            "use sandbox_mode/approval_policy in config.toml instead)",
+        _logger.info(
+            "codex_agents_plugin: translating 'tools' block for agent '%s' "
+            "into a capability-mapping preamble (the Codex agent TOML schema "
+            "has no tools field)",
             agent_name,
         )
+
+
+def _parse_declared_tools(frontmatter: dict) -> list[str]:
+    """Normalize the frontmatter tools block to a list of tool names.
+
+    Claude Code agents declare tools either as a comma-separated string
+    ("Read, Write, Bash") or as a YAML list ([Read, Glob, Grep]).
+
+    Args:
+        frontmatter: Parsed YAML frontmatter dict
+
+    Returns:
+        Declared tool names in declaration order; empty when absent/empty.
+    """
+    declared = frontmatter.get("tools")
+    if isinstance(declared, str):
+        items = declared.split(",")
+    elif isinstance(declared, list):
+        items = [str(item) for item in declared]
+    else:
+        return []
+    return [name for name in (item.strip() for item in items) if name]
+
+
+#: Grant lines, emitted only for capability categories with a declared member.
+_CAPABILITY_GRANTS: tuple[tuple[frozenset[str], str], ...] = (
+    (
+        frozenset({"Read"}),
+        "- Read -> read-only file access via your native toolset; shell "
+        "read-only commands such as cat, ls and sed -n ARE the sanctioned "
+        "Read on this platform.",
+    ),
+    (
+        frozenset({"Write", "Edit"}),
+        "- Write/Edit -> create and modify files via your native surface "
+        "(apply_patch or shell).",
+    ),
+    (
+        frozenset({"Bash"}),
+        "- Bash -> command execution via your native shell.",
+    ),
+    (
+        frozenset({"Glob", "Grep"}),
+        "- Glob/Grep -> file and content search via your native toolset "
+        "(read-only find/grep-style commands).",
+    ),
+)
+
+#: Denial lines, emitted for categories with no declared member and no
+#: Bash-implied equivalent (Bash subsumes reading and searching, not writing).
+_CAPABILITY_DENIALS: tuple[tuple[frozenset[str], str], ...] = (
+    (
+        frozenset({"Read", "Bash"}),
+        "- Reading file contents is NOT granted: do not read files by any "
+        "means, including shell reads such as cat or ls. This role is "
+        "source-blind by design; the only exception is an asset the body "
+        "explicitly instructs you to load (for example a skill file under "
+        "~/.agents/skills/).",
+    ),
+    (
+        frozenset({"Write", "Edit"}),
+        "- Creating or modifying files is NOT granted.",
+    ),
+    (
+        frozenset({"Bash"}),
+        "- Command execution is NOT granted: the shell may serve only as the "
+        "vehicle for a capability granted above, never for arbitrary "
+        "commands.",
+    ),
+    (
+        frozenset({"Glob", "Grep", "Bash"}),
+        "- File and content search is NOT granted.",
+    ),
+)
+
+
+def _capability_preamble(frontmatter: dict) -> str:
+    """Derive the Codex capability-mapping preamble from declared tools.
+
+    One template parameterized on the declared tools -- no per-agent maps.
+    Declared capabilities are granted against the native Codex surface;
+    core capabilities with no declared (or Bash-implied) member are denied
+    explicitly, so a source-blind role stays source-blind.
+
+    Args:
+        frontmatter: Parsed YAML frontmatter dict
+
+    Returns:
+        Preamble text, or an empty string when no tools are declared.
+    """
+    declared = _parse_declared_tools(frontmatter)
+    if not declared:
+        return ""
+    declared_set = set(declared)
+
+    grants = [line for members, line in _CAPABILITY_GRANTS if members & declared_set]
+    denials = [
+        line for members, line in _CAPABILITY_DENIALS if not members & declared_set
+    ]
+
+    sections = [
+        "## Codex Capability Mapping (derived from this role's declared tools)",
+        "",
+        "This role body was authored for a platform with semantic tools; the "
+        "Codex agent schema has none. Your native surface (shell, apply_patch) "
+        "is the sanctioned vehicle for EXACTLY the capabilities granted below. "
+        'Literal tool-name prohibitions in the body (for example "never use '
+        'Bash to read") forbid using the shell to CIRCUMVENT a capability '
+        "not granted here; they do not forbid the native surface for a "
+        "granted capability.",
+        "",
+        f"Declared tools: {', '.join(declared)}",
+    ]
+    if grants:
+        sections += ["", "Granted:", *grants]
+    if denials:
+        sections += ["", "Denied (not declared by this role):", *denials]
+    return "\n".join(sections)
 
 
 def _render_toml_agent(scalar_fields: dict[str, str], body: str) -> str:
@@ -258,10 +382,11 @@ def _transform_agent(
 
     Pipeline:
       1. Parse YAML frontmatter + Markdown body
-      2. Warn if tools block is present (will be dropped)
+      2. Log that a declared tools block is translated (not silently dropped)
       3. Extract scalar TOML fields (drop forbidden + non-scalar)
-      4. Append batching_fragment to body when provided (idempotent, exact-once)
-      5. Render TOML with body as developer_instructions
+      4. Prepend the capability-mapping preamble derived from declared tools
+      5. Append batching_fragment to body when provided (idempotent, exact-once)
+      6. Render TOML with body as developer_instructions
 
     Args:
         source_content: Full source agent file content (Claude Code format)
@@ -273,11 +398,14 @@ def _transform_agent(
         Transformed agent TOML content
     """
     frontmatter, body = parse_frontmatter(source_content)
-    _warn_if_tools_dropped(agent_name, frontmatter)
+    _log_tools_translated(agent_name, frontmatter)
     scalar_fields = _extract_scalar_fields(frontmatter)
     _omit_unsupported_model(scalar_fields)
     body = rewrite_host_paths(body, "codex")
     body = _translate_skill_invocations(body)
+    preamble = _capability_preamble(frontmatter)
+    if preamble:
+        body = f"\n{preamble}\n{body}"
     if batching_fragment:
         body = append_batching_fragment(body, batching_fragment)
     return _render_toml_agent(scalar_fields, body)
@@ -387,7 +515,7 @@ class CodexAgentsPlugin(InstallationPlugin):
 
         Transform pipeline per agent:
           1. Parse YAML frontmatter + Markdown body
-          2. Drop tools block (WARN logged; Codex has no equivalent)
+          2. Translate tools block into a capability-mapping preamble
           3. Emit scalar fields (name, description, model) as TOML
           4. Emit Markdown body as developer_instructions multi-line string
           5. Write to ~/.codex/agents/{agent-name}.toml
@@ -416,6 +544,17 @@ class CodexAgentsPlugin(InstallationPlugin):
 
             target_dir = _codex_agents_dir()
             target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Clean-then-write (as the Claude agents plugin does): the target
+            # holds ONLY what this run writes.  Ownership comes from the
+            # previous manifest, never from the nw- prefix alone.
+            stale = remove_manifest_owned_assets(
+                target_dir, _MANIFEST_FILENAME, ".toml"
+            )
+            if stale:
+                context.logger.info(
+                    f"  Removed {len(stale)} previously installed Codex agents"
+                )
 
             public_agents = (
                 set()

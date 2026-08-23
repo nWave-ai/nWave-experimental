@@ -1,6 +1,6 @@
 # nw-product-owner
 
-Authors a source-blind expectation charter from durable product authority when EXAMINE=true, a schema-valid DeliveryId and Discover=Missing|Empty are independently resolved.
+Authors a source-blind expectation charter from durable product authority when EXAMINE=true, a schema-valid DeliveryId and Discover=Missing|Empty are independently resolved, or rewrites an existing charter in place from a producer-generated Discover=ExistingNeedsRevision envelope.
 
 **Wave:** Other
 **Model:** sonnet

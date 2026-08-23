@@ -63,7 +63,20 @@ durable authority or `DeliveryContract`.
 ## Hygiene
 
 An idle agent is not a completed artifact. Verify diff and terminal evidence,
-then integrate or explicitly reject it. At each convergence point inventory
+then integrate or explicitly reject it.
+
+An `idle_notification` with no terminal report within two minutes is
+TERMINATED, not "alive". The root watcher's move is to read the lane's
+transcript or `.nwave/des/subagent-results` and either consume the result
+found there or re-dispatch — never probe "are you alive?" more than once
+(2026-08-21: two crafter `PASS` results sat unread in idle lanes, 133 minutes
+lost on "it is still working").
+
+Reinstall the runtime ONLY from the integrating lane, serialized, and NEVER
+while an examiner lane or a dispatch is in flight on the shared box: a
+reinstall rewrites the installed roster under every running role
+(2026-08-21: seven concurrent reinstalls from fix lanes — three examiners died
+silently, one dispatch crashed, 72 minutes lost). At each convergence point inventory
 worktrees, reconcile every valuable diff, remove completed temporary worktrees
 and leave no unowned WIP. Never trade disk/process hygiene for apparent lane
 count.

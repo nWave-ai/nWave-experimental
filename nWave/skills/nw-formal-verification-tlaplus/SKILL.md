@@ -7,6 +7,8 @@ disable-model-invocation: true
 
 # Formal Verification with TLA+
 
+Toolchain availability (probe once, offer install, degrade to prose algebra) is owned by `nw-solution-architect` — section "Formal toolchain affordance"; this skill assumes that decision is already made.
+
 ## When to Recommend Formal Verification
 
 ### Decision Tree

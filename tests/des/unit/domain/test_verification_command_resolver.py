@@ -156,3 +156,22 @@ def test_non_test_command_is_never_flagged(tmp_path: Path) -> None:
     )
 
     assert missing_verification_paths(tmp_path, contract) == []
+
+
+def test_delegation_contract_has_no_argv_paths_to_check(tmp_path) -> None:
+    # SF friction 2026-08-21: a delegation contract carries
+    # `literal-script-block` and no argv commands at all -- an empty
+    # answer is CORRECT semantics here (nothing argv-shaped exists to
+    # check statically), never a silent traversal: the block's own
+    # fidelity is digest-checked by des dispatch's delegation branch.
+    contract = {
+        "acceptance-tests": {"locator": "go/x_test.go::TestX"},
+        "verification-scope": {
+            "literal-script-block": {
+                "locator": "docs/adr.md#order",
+                "content-digest": "sha256:" + "0" * 64,
+                "lines": ["go test ./... -count=1"],
+            }
+        },
+    }
+    assert missing_verification_paths(tmp_path, contract) == []

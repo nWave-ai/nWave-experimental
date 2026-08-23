@@ -19,6 +19,7 @@ line, mirroring the existing agents/commands pattern) is NOT implemented here.
 
 from __future__ import annotations
 
+import json
 import re
 
 import pytest
@@ -138,9 +139,17 @@ def test_targeted_manifest_labels_each_host_without_claude_only_claims(
     (agents_home / ".agents" / "skills" / "nw-design" / "SKILL.md").write_text(
         "# codex skill\n", encoding="utf-8"
     )
+    (agents_home / ".agents" / "skills" / ".nwave-manifest.json").write_text(
+        json.dumps({"installed_skills": ["nw-design"], "version": "1.0"}),
+        encoding="utf-8",
+    )
     (codex_home / "agents").mkdir(parents=True)
     (codex_home / "agents" / "nw-architect.toml").write_text(
         "# agent\n", encoding="utf-8"
+    )
+    (codex_home / "agents" / ".nwave-agents-manifest.json").write_text(
+        json.dumps({"installed_agents": ["nw-architect"], "version": "1.0"}),
+        encoding="utf-8",
     )
     (codex_home / "hooks.json").write_text("{}\n", encoding="utf-8")
 
@@ -156,6 +165,36 @@ def test_targeted_manifest_labels_each_host_without_claude_only_claims(
     assert "Installation directory:" not in manifest_text
     assert "'/nw-discuss'" not in manifest_text
     assert ("Claude Code agents: 3" in manifest_text) is expects_claude
+
+
+def test_codex_counts_come_from_the_plugin_manifest_not_the_disk(tmp_path, monkeypatch):
+    """A disk count measures the disk -- stale orphans included.
+
+    Defect 2026-08-22: the report said 'Codex agents: 51' after a public
+    install that wrote 35, because 16 private TOMLs from a prior --dev
+    install were still on disk.  The count must be what the plugin WROTE.
+    """
+    claude_dir = tmp_path / ".claude"
+    codex_home = tmp_path / ".codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(tmp_path))
+    _seed_installed_tree(claude_dir, agents_count=1, commands_count=1, skills_count=1)
+    (codex_home / "agents").mkdir(parents=True)
+    for stem in ("nw-public", "nw-private-stale", "nw-other-stale"):
+        (codex_home / "agents" / f"{stem}.toml").write_text("x\n", encoding="utf-8")
+    (codex_home / "agents" / ".nwave-agents-manifest.json").write_text(
+        json.dumps({"installed_agents": ["nw-public"], "version": "1.0"}),
+        encoding="utf-8",
+    )
+
+    ManifestWriter.write_install_manifest(
+        claude_dir, None, tmp_path, target_platforms=frozenset({"codex"})
+    )
+
+    manifest_text = (claude_dir / "nwave-manifest.txt").read_text(encoding="utf-8")
+    assert "Codex agents: 1" in manifest_text, manifest_text
+    assert "Codex agents: 3" not in manifest_text
+    assert "Codex skills: unattested" in manifest_text
 
 
 def test_claude_manifest_accepts_the_all_target_install_context(tmp_path):

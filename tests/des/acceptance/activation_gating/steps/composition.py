@@ -90,6 +90,11 @@ class ActivationGatingComposition:
         return self.project_root / ".nwave" / "local-config.json"
 
     @property
+    def repo_config_path(self) -> Path:
+        """Per-repo tier of the unified config cascade (ADR-CFG-001)."""
+        return self.project_root / ".nwave" / "config.json"
+
+    @property
     def nested_gitignore_path(self) -> Path:
         return self.project_root / ".nwave" / ".gitignore"
 
@@ -119,15 +124,34 @@ class ActivationGatingComposition:
         )
 
     def given_marker(self, marker: MarkerState) -> None:
-        """Write (or omit) the per-project marker ``enabled_for_repo``."""
-        path = self.marker_path
-        path.parent.mkdir(parents=True, exist_ok=True)
+        """Declare the per-project enablement opinion in the CURRENT form.
+
+        Since ``c3bf602ab`` (ADR-CFG-001 slice 2) ``DESConfig.enabled_for_repo``
+        delegates to ``effective_config()``: the enablement decision is read
+        from the unified ``.nwave/config.json`` cascade (global then repo), and
+        the former ``.nwave/local-config.json`` marker walk is gone. So the
+        opinion is written HERE as ``{"enabled": bool}`` in the repo tier.
+
+        ``ABSENT`` means "this repo declares nothing" -- the tier file is
+        removed, and the merge law's own ``ENABLED_DEFAULT`` decides. The
+        legacy marker file is kept in sync only because it is still a REAL
+        production artefact for the gitignore-trackability surface
+        (``!.nwave/local-config.json``) and the ``test -f`` hook probe -- it no
+        longer carries the enablement decision.
+        """
+        config_path = self.repo_config_path
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_marker_path = self.marker_path
         if marker is MarkerState.ABSENT:
-            if path.exists():
-                path.unlink()
+            for path in (config_path, legacy_marker_path):
+                if path.exists():
+                    path.unlink()
             return
         enabled = marker is MarkerState.ENABLED
-        path.write_text(json.dumps({"enabled_for_repo": enabled}), encoding="utf-8")
+        config_path.write_text(json.dumps({"enabled": enabled}), encoding="utf-8")
+        legacy_marker_path.write_text(
+            json.dumps({"enabled_for_repo": enabled}), encoding="utf-8"
+        )
 
     def given_root_gitignore(self, variant: GitignoreVariant) -> None:
         self.root_gitignore_path.write_text(_GITIGNORE_LINES[variant], encoding="utf-8")

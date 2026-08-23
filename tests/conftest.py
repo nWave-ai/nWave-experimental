@@ -2,15 +2,28 @@
 
 from __future__ import annotations
 
+import atexit
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from filelock import FileLock
+
+from tests.support.git_env import (
+    ALLOW_REAL_GITCONFIG_ENV_VAR,
+    diff_global_gitconfig,
+    git_config_isolation_env,
+    real_global_gitconfig_paths,
+    render_isolated_global_gitconfig,
+    restore_global_gitconfig,
+    snapshot_global_gitconfig,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -26,6 +39,97 @@ _PROJECT_ROOT = Path(__file__).parent.parent
 # Set at the ROOT so every test directory shares one collection, not just
 # tests/des/acceptance/.
 os.environ.setdefault("NWAVE_COLLECT_MEMO", "1")
+
+
+# ---------------------------------------------------------------------------
+# Layer 0 — the developer's GLOBAL git config is UNREACHABLE for the whole
+# session (F-SUITE-REACHES-REAL-GLOBAL-GITCONFIG, RCA 2026-08-22).
+#
+# Second occurrence of the class whose first occurrence is recorded in
+# `scripts/hooks/reject_placeholder_git_identity.py` (a leaked
+# `test@example.com` was the real commit identity for five months). Today's
+# occurrence came from an agent probe running `git config --global user.email
+# "test@example.com"` — but the structural hole it exposed is the suite's:
+# every other git surface here is isolated (repo-local `.git` state, hooks dir,
+# `GIT_DIR`-family overrides, the `init.templateDir`) and the GLOBAL one never
+# was. Any `git` subprocess started under pytest resolved `~/.gitconfig` for
+# real, and only 3 of the ~55 git-driving tests redirected it themselves.
+#
+# Representation, not a late check (GDP-0/GDP-1): the redirect is applied at
+# conftest IMPORT time — earlier than any fixture, including the module-scoped
+# installer fixtures that pytest builds before every function-scoped autouse
+# fixture, and earlier than collection-time subprocesses. From the first byte of
+# the session, `git config --global ...` cannot name the developer's file.
+#
+# Caveat, by construction: `subprocess.run(env={...})` REPLACES the environment.
+# A literal env dict that is not built from `os.environ` drops these variables.
+# Build one with `tests.support.git_env.git_env()`; the session guard
+# `_guard_real_global_gitconfig` below is the net for whatever still slips past.
+# ---------------------------------------------------------------------------
+
+if os.environ.get(ALLOW_REAL_GITCONFIG_ENV_VAR) != "1":
+    _ISOLATED_GIT_CONFIG_DIR = Path(tempfile.mkdtemp(prefix="nwave-git-global-"))
+    _ISOLATED_GLOBAL_GITCONFIG = _ISOLATED_GIT_CONFIG_DIR / "gitconfig-global"
+    _ISOLATED_GLOBAL_GITCONFIG.write_text(
+        render_isolated_global_gitconfig(), encoding="utf-8"
+    )
+    os.environ.update(git_config_isolation_env(_ISOLATED_GLOBAL_GITCONFIG))
+
+    def _remove_isolated_git_config_dir() -> None:
+        shutil.rmtree(_ISOLATED_GIT_CONFIG_DIR, ignore_errors=True)
+
+    atexit.register(_remove_isolated_git_config_dir)
+
+
+# Resolved and read at IMPORT time, before any test can patch `HOME` or
+# `XDG_CONFIG_HOME` — the guard below must compare against the REAL file, never
+# against whatever a leaked patched home points at.
+_REAL_GLOBAL_GITCONFIG_PATHS = real_global_gitconfig_paths()
+_REAL_GLOBAL_GITCONFIG_BEFORE = snapshot_global_gitconfig(_REAL_GLOBAL_GITCONFIG_PATHS)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _guard_real_global_gitconfig() -> Iterator[None]:
+    """Detect (and undo) any mutation of the developer's real global git config.
+
+    Detective net for the one hole the redirect above cannot close: a subprocess
+    given an explicit `env=` dict without the isolation keys resolves the global
+    config from `HOME` again. Modelled on `guard_nwave_attribution_hook`
+    (`tests/installer/conftest.py`) and `guard_git_hooks` below, with the
+    stricter verdict of `_git_pollution_guard`: identity contamination is
+    repo-breaking and silently long-lived, so it FAILS the session instead of
+    warning.
+
+    Restores what it holds bytes for (MODIFIED, DELETED) and never deletes a
+    file it did not snapshot (CREATED is reported, not removed — the guard must
+    not destroy state it cannot prove it owns).
+    """
+    yield
+
+    after = snapshot_global_gitconfig(_REAL_GLOBAL_GITCONFIG_PATHS)
+    violations = diff_global_gitconfig(_REAL_GLOBAL_GITCONFIG_BEFORE, after)
+    if not violations:
+        return
+
+    restored = restore_global_gitconfig(_REAL_GLOBAL_GITCONFIG_BEFORE, violations)
+
+    pytest.fail(
+        "GLOBAL-GITCONFIG-GUARD: this test session mutated the developer's real "
+        "global git config.\n"
+        f"  WHAT: {'; '.join(violations)}\n"
+        f"        restored from the pre-session snapshot: {restored or 'nothing'}\n"
+        "  WHY:  the global config carries the commit IDENTITY. A leaked test "
+        "placeholder mis-attributes every later commit and breaks IP/authorship "
+        "proof — it went unnoticed for five months in 2026-06-24.\n"
+        "  HOW:  the writing subprocess bypassed the session redirect, so it was "
+        "given an explicit env= without GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM/"
+        "GIT_CONFIG_NOSYSTEM. Build that env with "
+        "tests.support.git_env.git_env(...) (or keep **os.environ in it); write "
+        "config with `git -C <repo> config <key> <value>` (repo-local) or point "
+        "GIT_CONFIG_GLOBAL at a tmp file first. Never `git config --global` in a "
+        "test or a probe.",
+        pytrace=False,
+    )
 
 
 # ---------------------------------------------------------------------------

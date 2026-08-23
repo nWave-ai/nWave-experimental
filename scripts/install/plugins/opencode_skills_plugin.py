@@ -23,7 +23,10 @@ from scripts.install.plugins.base import (
     InstallContext,
     PluginResult,
 )
-from scripts.install.plugins.opencode_common import opencode_config_dir
+from scripts.install.plugins.opencode_common import (
+    opencode_config_dir,
+    remove_manifest_owned_assets,
+)
 from scripts.shared.agent_catalog import load_public_agents
 from scripts.shared.platform_contracts import OPENCODE_SKILL_FORBIDDEN_FIELDS
 from scripts.shared.skill_distribution import (
@@ -247,6 +250,22 @@ class OpenCodeSkillsPlugin(InstallationPlugin):
 
             target_dir = _opencode_skills_dir()
             target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Clean-then-write: drop what the PREVIOUS manifest says we own,
+            # so a dev install's private skills cannot survive into a public
+            # one. Ownership is the manifest, never the nw- prefix, so a
+            # user-created or foreign skill directory is left untouched.
+            stale = remove_manifest_owned_assets(
+                target_dir,
+                _MANIFEST_FILENAME,
+                None,
+                manifest_key="installed_skills",
+            )
+            if stale:
+                context.logger.info(
+                    f"  \U0001f5d1\ufe0f Removed {len(stale)} previously installed "
+                    "OpenCode skill(s) before rewrite"
+                )
 
             public_agents = (
                 set()

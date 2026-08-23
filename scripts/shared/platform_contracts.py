@@ -105,6 +105,9 @@ CODEX_SKILL_FORBIDDEN_FIELDS: frozenset[str] = frozenset(
 #   maxTurns            -- no per-agent turn limit in Codex TOML schema
 #   disable-model-invocation -- Claude Code-only field
 #   permissionMode       -- Claude Code-only field
+#   effort               -- Claude Code-only field; Codex 0.149.0 rejects the
+#                           whole role file on any unknown field and drops the
+#                           agent from the registry silently
 
 CODEX_AGENT_FORBIDDEN_FIELDS: frozenset[str] = frozenset(
     {
@@ -113,5 +116,6 @@ CODEX_AGENT_FORBIDDEN_FIELDS: frozenset[str] = frozenset(
         "maxTurns",
         "disable-model-invocation",
         "permissionMode",
+        "effort",
     }
 )

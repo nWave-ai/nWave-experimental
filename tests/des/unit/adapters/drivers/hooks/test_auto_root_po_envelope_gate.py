@@ -9,11 +9,16 @@ author a charter the instant its context carries an architecture-authority
 anchor), ~8 minutes lost across the thrash. The hook's own PO gate used to
 REQUIRE that exact anchor as the prompt's first bytes -- directly
 contradicting PO's own role-level refusal of it. `des resolve-charters`
-now prints the exact four-line value-only envelope
+now prints the exact six-line value-only envelope
 (`des.application.ordinary_request.build_po_envelope`) on `AUTHOR`; this
 gate accepts ONLY that shape, with no architecture anchor anywhere in it.
 Drives the real handler end-to-end (stdin -> stdout JSON / exit code), the
 same harness shape as `test_auto_root_atd_body_gate.py`.
+
+SF friction report 2026-08-20, item 7 added `EXAMINE`/`DISCOVER` as two
+more required, directly-readable facts (never inferred) -- a prior
+four-line shape gave PO nothing to read its own Dispatch Boundary
+preconditions FROM.
 """
 
 from __future__ import annotations
@@ -33,6 +38,8 @@ _PO_ENVELOPE_GATE_SIGNATURE = "Auto-root PO dispatch envelope malformed"
 _VALID_DELIVERY_ID = compute_delivery_id("Ship the widget end to end.")
 _VALID_NAMESPACE = f"docs/product/expectations/{_VALID_DELIVERY_ID}"
 _VALID_ROOT = "/abs/repo/root"
+_VALID_EXAMINE = True
+_VALID_DISCOVER = "Missing"
 _VALID_SEED_TEXT = "Ship the widget end to end."
 
 _VALID_ARCH_HEADER = "ARCHITECTURE-COVERED: docs/architecture/adrs/adr-1.md#decision"
@@ -43,10 +50,17 @@ def _po_envelope(
     delivery_id: str = _VALID_DELIVERY_ID,
     namespace: str = _VALID_NAMESPACE,
     root: str = _VALID_ROOT,
+    examine: bool = _VALID_EXAMINE,
+    discover: str = _VALID_DISCOVER,
     value_seed: str = _VALID_SEED_TEXT,
 ) -> str:
     return build_po_envelope(
-        delivery_id=delivery_id, namespace=namespace, root=root, value_seed=value_seed
+        delivery_id=delivery_id,
+        namespace=namespace,
+        root=root,
+        examine=examine,
+        discover=discover,
+        value_seed=value_seed,
     )
 
 
@@ -159,6 +173,32 @@ class TestPoEnvelopeRejectsMalformedOrContaminatedPrompts:
             ("empty_delivery_id", _po_envelope(delivery_id="")),
             ("empty_namespace", _po_envelope(namespace="")),
             ("empty_root", _po_envelope(root="")),
+            (
+                "invalid_examine_value",
+                "\n".join(
+                    [
+                        f"DELIVERY-ID: {_VALID_DELIVERY_ID}",
+                        f"NAMESPACE: {_VALID_NAMESPACE}",
+                        f"ROOT: {_VALID_ROOT}",
+                        "EXAMINE: maybe",
+                        f"DISCOVER: {_VALID_DISCOVER}",
+                        f'VALUE-SEED: "{_VALID_SEED_TEXT}"',
+                    ]
+                ),
+            ),
+            (
+                "invalid_discover_value",
+                "\n".join(
+                    [
+                        f"DELIVERY-ID: {_VALID_DELIVERY_ID}",
+                        f"NAMESPACE: {_VALID_NAMESPACE}",
+                        f"ROOT: {_VALID_ROOT}",
+                        "EXAMINE: true",
+                        "DISCOVER: Valid",
+                        f'VALUE-SEED: "{_VALID_SEED_TEXT}"',
+                    ]
+                ),
+            ),
             ("only_whitespace_prompt", "   "),
             ("empty_prompt", ""),
         ],

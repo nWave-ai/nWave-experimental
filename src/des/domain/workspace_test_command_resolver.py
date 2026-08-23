@@ -92,13 +92,20 @@ def contract_covers_whole_suite(repo_root: Path, contract: dict) -> bool:
     """True when the workspace declares no whole-suite command, or when one
     of `verification-scope.commands` already carries its exact scope token
     (a narrower descendant, e.g. the oracle's own test, does not count)."""
+    scope = contract.get("verification-scope", {})
+    if scope.get("literal-script-block"):
+        # SF friction 2026-08-21: a delegation contract carries the
+        # authority's LITERAL script by reference instead of argv commands
+        # -- the delegation outranks the subject's CLAUDE.md whole-suite
+        # convention, so this coverage check never fires on it.
+        return True
     declared = declared_whole_suite_command(repo_root)
     if declared is None:
         return True
     declared_scope = _last_non_flag_token(declared)
     if declared_scope is None:
         return True
-    for command in contract.get("verification-scope", {}).get("commands", []):
+    for command in scope.get("commands", []):
         if _last_non_flag_token(_command_argv(command)) == declared_scope:
             return True
     return False

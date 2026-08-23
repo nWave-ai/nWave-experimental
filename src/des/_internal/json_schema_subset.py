@@ -260,7 +260,10 @@ def _validate_node(
                 path,
                 "oneOf",
             )
-        return
+        # Draft 2020-12 applies `oneOf` IN ADDITION to sibling keywords
+        # (`type`, `properties`, ...), never instead of them -- fall
+        # through so a schema pairing `oneOf` with siblings (the
+        # `verificationScope` two-forms shape) stays fully enforced.
 
     if "type" in schema:
         _validate_type(schema["type"], instance, path)

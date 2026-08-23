@@ -21,10 +21,10 @@ skeleton, exactly the tokens landing inside the TWO sections
 `verify_charter_filled._analyze_charter` actually inspects
 (`## Preconditions` and `## Expected observations (oracle)`) are the
 detector's real job:
-  - Preconditions: ``<start recipe: how to run the system from a clean
-    state, seed state>``
-  - Oracle (positive line): ``<observable outcome, user language>``
-  - Oracle (negative line): ``<negative: what must NOT happen>``
+  - Preconditions: ``<PublicStartRecipe: CLI argv, or public library
+    import+setup+call, or endpoint+request, or URL+ordered UI actions>``
+  - Oracle (positive line): ``<positive observable outcome in user or operator language>``
+  - Oracle (negative line): ``Negative: <what must not happen>``
 (The template also carries placeholder tokens in the title/ID line and the
 `## Charter` section -- e.g. `EXP-<feature>-<n>`, `<who>`, `<area>`,
 `<surface: browser/CLI/API>` -- but `_analyze_charter` never reads those
@@ -96,7 +96,9 @@ ID: EXP-onboarding-2 . Spec rows: R2 . Persona: developer
 A developer registers an account and immediately sees their profile
 
 ## Preconditions
-<start recipe: how to run the system from a clean state, seed state>
+<PublicStartRecipe: CLI argv, or public library import+setup+call, or
+endpoint+request, or URL+ordered UI actions — exact tree and public surface,
+from a clean state>
 
 ## Charter
 Explore the onboarding flow to verify the profile page renders correctly.
@@ -129,7 +131,7 @@ Register a new developer account named Jordan via the admin console at
 Explore the onboarding flow to verify the profile page renders correctly.
 
 ## Expected observations (oracle)
-- <observable outcome, user language>
+- <positive observable outcome in user or operator language>
 - Negative: the role and name fields are NOT shown to an unauthenticated
   visitor browsing the same URL.
 
@@ -158,7 +160,7 @@ Explore the onboarding flow to verify the profile page renders correctly.
 
 ## Expected observations (oracle)
 - The profile page displays the developer's role next to their name.
-- <negative: what must NOT happen>
+- Negative: <what must not happen>
 
 ## Session log (append-only)
 | date | examiner | verdict | observations |

@@ -1,0 +1,14 @@
+{
+  "nWave/schemas/thin-delivery-contract.schema.json": {
+    "declared-version": "1.2",
+    "sha256": "63f7758feaf38381758cfdc87a65f13357fdfcb1d1821946fe2afbb3c9dc4855"
+  },
+  "nWave/schemas/nwave.test_observation.v1.schema.json": {
+    "declared-version": "nwave.test_observation.v1",
+    "sha256": "24ff5893e124900cc078e5a7681816e120f0f0e52968dc4f195bb284a30fb4b3"
+  },
+  "nWave/schemas/nwave.test_result.v1.schema.json": {
+    "declared-version": "nwave.test_result.v1",
+    "sha256": "bbe251301c4a580548808759b9a957ef4059221e82939bdda587274b3d5d492d"
+  }
+}

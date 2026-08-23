@@ -71,25 +71,28 @@ Explore the booking flow to verify the countdown timer appears and holds.
 """
 
 #: A charter that is present but HOLLOW -- exactly what `charter-scaffold`
-#: produces before a human fills it in. Intent is written out (as a fresh
-#: scaffold would carry it, pre-filled from the Value statement), but the
+#: produces before a human fills it in (byte-faithful to the fenced skeleton
+#: in `nWave/templates/expectation-charter.md`). Intent is written out (as a
+#: fresh scaffold carries it, pre-filled from the Value statement), but the
 #: oracle and start-recipe sections still carry the literal scaffold
-#: placeholder tokens.
+#: placeholder tokens the template actually emits.
 HOLLOW_CHARTER = """# A visitor books two seats and sees a countdown
-ID: EXP-seat-booking-1 . Spec rows: R1 . Persona: visitor
+ID: EXP-seat-booking-1 · Persona: <who>
 
 ## Intent
 A visitor books two seats and sees a live countdown while payment is pending
 
 ## Preconditions
-<start recipe: how to run the system from a clean state, seed state>
+<PublicStartRecipe: CLI argv, or public library import+setup+call, or
+endpoint+request, or URL+ordered UI actions — exact tree and public surface,
+from a clean state>
 
 ## Charter
-Explore <area> via <surface: browser/CLI/API> to verify <intent>.
+Explore <surface> to verify <intent>, without reading source, tests or diffs.
 
 ## Expected observations (oracle)
-- <observable outcome, user language>
-- <negative: what must NOT happen>
+- <positive observable outcome in user or operator language>
+- Negative: <what must not happen>
 
 ## Session log (append-only)
 | date | examiner | verdict | observations |
@@ -257,3 +260,74 @@ def _write_empty(path: Path) -> Path:
 def _mkdir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+@pytest.mark.negative_at
+def test_unresolvable_template_ssot_degrades_indeterminate_never_pass(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Negative AT: the gate DERIVES its placeholder tokens from the
+    expectation-charter template SSOT. When that template cannot be resolved
+    (absent / ambiguous), FILLED is undecidable: the verdict is a LOUD
+    INDETERMINATE -- never a PASS that checked nothing."""
+    from des.cli import verify_charter_filled
+    from des.runtime.packaged_asset import AssetOrigin, AssetResolution
+
+    charter_path = tmp_path / "a-visitor-books-two-seats.md"
+    charter_path.write_text(FILLED_CHARTER, encoding="utf-8")
+    monkeypatch.setattr(
+        verify_charter_filled,
+        "resolve_packaged_asset",
+        lambda relative, **_: AssetResolution(
+            AssetOrigin.ABSENT,
+            None,
+            tmp_path / "installed" / relative,
+            None,
+            f"`{relative}` exists in neither the installed tree nor the checkout",
+        ),
+    )
+
+    exit_code, payload = _invoke(charter_path, capsys)
+
+    assert exit_code != 0
+    assert payload["verdict"] == "INDETERMINATE"
+    assert payload["filled"] is not True
+    assert "template" in payload["detail"]
+    assert "HOW" in payload["detail"]
+
+
+@pytest.mark.negative_at
+def test_token_free_template_degrades_indeterminate_never_pass(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Negative AT: a template whose skeleton yields ZERO placeholder tokens
+    means the template and the gate's parser drifted apart; a residue check
+    against an empty set would pass every raw scaffold. LOUD INDETERMINATE."""
+    from des.cli import verify_charter_filled
+    from des.runtime.packaged_asset import AssetOrigin, AssetResolution
+
+    tokenless_template = tmp_path / "expectation-charter.md"
+    tokenless_template.write_text(
+        "## Template\n\n```markdown\n# no placeholders here\n```\n",
+        encoding="utf-8",
+    )
+    charter_path = tmp_path / "a-visitor-books-two-seats.md"
+    charter_path.write_text(FILLED_CHARTER, encoding="utf-8")
+    monkeypatch.setattr(
+        verify_charter_filled,
+        "resolve_packaged_asset",
+        lambda relative, **_: AssetResolution(
+            AssetOrigin.INSTALLED,
+            tokenless_template,
+            tokenless_template,
+            None,
+            "read from the installed tree",
+        ),
+    )
+
+    exit_code, payload = _invoke(charter_path, capsys)
+
+    assert exit_code != 0
+    assert payload["verdict"] == "INDETERMINATE"
+    assert payload["filled"] is not True
+    assert "ZERO placeholder tokens" in payload["detail"]

@@ -298,6 +298,34 @@ even though the list now runs from GDP-0 through GDP-10 — GDP-0 is separately 
 
 ---
 
+## `gate:reject-all-at-once` — one pass reports EVERY independent problem, not the first (STANDING)
+
+**Reject-all-at-once (Ale, 2026-08-22).** A validator that stops at the FIRST problem offloads
+onto its caller N cycles where one would do: every round is a full dispatch of the upstream
+producer. A gate collects every INDEPENDENT problem in ONE pass and reports them together,
+numbered, each carrying its own WHAT/WHY/HOW; checks that genuinely DEPEND on another stay
+sequential, but the report declares which ones it could not run and why (GDP-6: the third state
+reaches the aggregate). Corollary of GDP-3 (self-explaining rejection — a rejection naming one
+of three defects is telling the truth about a third of the state) and of GDP-5 (cost on the
+SYSTEM — N rounds of producer dispatch is exactly cost pushed onto the operator).
+
+Anchor: `des compile-contract`, three sequential refusals on ADR-AUM-001 (2026-08-22) and four
+on ADR-CFG-001 (2026-08-21) — each round a consult with the architect to fix one defect and
+re-run, only to be told about the next.
+
+**How to satisfy it.** Accumulate `problems` and `unrun` across the pass instead of returning at
+the first; keep the single-problem rendering byte-identical to what it always was, so no reader
+pays for the multi-problem affordance; lead a multi-problem refusal with HOW MANY, then one
+numbered, independently actionable block per problem, then the checks that could not run.
+
+**Falsifier**: one authority carrying N independent defects produces ONE refusal that lists all
+N. If a second run surfaces a defect the first could have seen, this clause is violated.
+
+**The failure this clause prevents**: a "green-by-exhaustion" loop where the producer is
+re-dispatched once per defect and the operator mistakes refusal count for progress.
+
+---
+
 ## `construction:moves-catalogue` — the six ways to make a wrong state unrepresentable, before reaching for a gate (KNOWLEDGE)
 
 GDP-0 says the producer, not a gate, is the default fix. This catalogues the concrete moves —

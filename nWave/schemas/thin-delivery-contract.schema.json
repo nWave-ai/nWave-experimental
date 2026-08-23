@@ -28,6 +28,9 @@
     "paradigm": { "enum": ["functional", "object_oriented"] },
     "delivery-route": { "enum": ["RED_TO_GREEN", "GREEN_TO_GREEN"] },
     "obligations": { "$ref": "#/$defs/obligations" },
+    "cited-skills": { "$ref": "#/$defs/citedSkills" },
+    "dropped-citations": { "$ref": "#/$defs/droppedCitations" },
+    "pbt-adapter": { "$ref": "#/$defs/pbtAdapterResolution" },
     "acceptance-tests": { "$ref": "#/$defs/evidence" },
     "verification-scope": { "$ref": "#/$defs/verificationScope" },
     "applicability": { "$ref": "#/$defs/applicability" },
@@ -55,6 +58,51 @@
       "type": "string",
       "minLength": 1
     },
+    "citedSkills": {
+      "description": "Every nw-* skill name the architecture brief cited by name (Row 13, K4 run 18) -- a mechanical carry of the citation itself, never a claim that the skill's guidance was followed. Absent or empty means the brief cited none.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^nw-[a-z0-9]+(?:-[a-z0-9]+)*$"
+      }
+    },
+    "droppedCitations": {
+      "description": "Every citation the compiler could NOT ground into a target, each with the reason it was dropped (GDP-6, reviewer counterexample 2026-08-20: an orphan bare-name citation silently vanished from the skeleton). A discarded citation stays visible to ATD/human review. Absent means nothing was dropped.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["citation", "reason"],
+        "properties": {
+          "citation": { "$ref": "#/$defs/nonEmptyText" },
+          "reason": { "$ref": "#/$defs/nonEmptyText" }
+        }
+      }
+    },
+    "pbtAdapterResolution": {
+      "description": "Present only when cited-skills names the nw-property-based-testing family or a specific nw-pbt-<lang> variant (Row 13 follow-up, 2026-08-20). The variant is resolved mechanically from this contract's own target file extensions, never from the citation's own claimed language, never a silent Python default. When no installed language-specific adapter applies, this degrades to the generic nw-property-based-testing family skill (family-fallback) rather than refusing -- language specificity is an upgrade when available, never a requirement.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cited", "resolved-variant", "status", "reason"],
+      "properties": {
+        "cited": {
+          "type": "string",
+          "pattern": "^nw-[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "resolved-variant": {
+          "oneOf": [
+            { "type": "string", "pattern": "^nw-[a-z0-9]+(?:-[a-z0-9]+)*$" },
+            { "type": "null" }
+          ]
+        },
+        "status": {
+          "enum": ["resolved", "discrepancy", "family-fallback", "unresolved"]
+        },
+        "reason": { "type": "string" }
+      }
+    },
     "id": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]*$"
@@ -62,6 +110,11 @@
     "repositoryRelativePath": {
       "type": "string",
       "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+$"
+    },
+    "oracleLocator": {
+      "description": "One acceptance-oracle IDENTITY: a repository-relative file path, optionally suffixed with a '::Selector' identifier chain binding a specific test by name (Go's x_test.go::TestName, pytest's test_x.py::TestClass::test_name) -- the exact string the r2g compiler emits verbatim from a cited 'Oracle target locator:'. Consumers resolving the oracle ON DISK use only the file part (des.domain.verification_command_resolver.oracle_file_part); the selector is identity, never a path segment.",
+      "type": "string",
+      "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+(?:::[A-Za-z_][A-Za-z0-9_]*)*$"
     },
     "declaredImportReference": {
       "type": "string",
@@ -184,20 +237,40 @@
       "additionalProperties": false,
       "required": ["locator"],
       "properties": {
-        "locator": { "$ref": "#/$defs/repositoryRelativePath" }
+        "locator": { "$ref": "#/$defs/oracleLocator" }
+      }
+    },
+    "literalScriptBlock": {
+      "description": "One verbatim verification script carried BY-REFERENCE from the owning authority document (SF friction 2026-08-21, verification-authority delegation): 'locator' names '<repo-relative-doc>#<heading-anchor>', 'lines' are the first fenced block after that heading verbatim (an authority SCRIPT -- assignments, command substitution, negations, pipes -- never parsed into argv here), and 'content-digest' is sha256 over the lines joined with '\\n' (UTF-8, no trailing newline) so the consumer verifies fidelity against the owner before faithful execution.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locator", "content-digest", "lines"],
+      "properties": {
+        "locator": { "$ref": "#/$defs/nonEmptyText" },
+        "content-digest": { "$ref": "#/$defs/sha256Digest" },
+        "lines": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        }
       }
     },
     "verificationScope": {
+      "description": "Exactly ONE of two forms: argv-shaped 'commands' (from a 'Verification command:' label or the subject CLAUDE.md whole-suite convention), or one 'literal-script-block' resolved from a 'Verification authority locator:' delegation -- the delegation outranks both argv sources and is never merged with them.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["commands"],
       "properties": {
         "commands": {
           "type": "array",
           "minItems": 1,
           "items": { "$ref": "#/$defs/command" }
-        }
-      }
+        },
+        "literal-script-block": { "$ref": "#/$defs/literalScriptBlock" }
+      },
+      "oneOf": [
+        { "required": ["commands"] },
+        { "required": ["literal-script-block"] }
+      ]
     },
     "applicability": {
       "type": "object",

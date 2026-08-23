@@ -34,6 +34,30 @@ from scripts.analysis.k4 import preflight
 install_nwave = pytest.importorskip("scripts.install.install_nwave")
 
 
+# The ONE file a real install is DECLARED to write under the operator's
+# machine-scoped ~/.nwave, deliberately and by construction. Commit 8f60e04db
+# ("fix(install): the des launcher binds the runtime of the most recent
+# install") makes every non-dry-run install record ~/.nwave/active-runtime:
+# the pointer the des shim on PATH must resolve BEFORE sys.path exists, so it
+# cannot live under CLAUDE_CONFIG_DIR, NWAVE_AGENTS_HOME or any other
+# redirectable root without defeating its own purpose.
+#
+# It is admitted here BY NAME, one entry, not by relaxing the check: any OTHER
+# new file appearing under any operator root still fails. A second undeclared
+# write must be declared here (with the commit that justifies it) or fixed.
+DECLARED_NEW_FILES: dict[str, frozenset[str]] = {
+    "claude": frozenset(),
+    "codex": frozenset(),
+    "nwave": frozenset({"active-runtime"}),
+}
+
+
+def _undeclared_new_paths(name: str, root: Path, before: set[Path]) -> set[Path]:
+    """Return every path under root that is new AND not a declared exception."""
+    declared = {root / relative for relative in DECLARED_NEW_FILES[name]}
+    return set(root.rglob("*")) - before - declared
+
+
 def test_arm_env_pins_agents_home_keeping_codex_backup_off_the_sentinel_home(
     tmp_path, monkeypatch
 ):
@@ -192,13 +216,14 @@ def test_full_real_install_leaves_every_operator_root_untouched(tmp_path, monkey
 
     assert code == 0, "the real install must succeed for this test to say anything"
     for name, path in sentinels.items():
-        after_listing = set(path.parent.rglob("*"))
+        undeclared = _undeclared_new_paths(name, path.parent, before_listing[name])
         assert path.read_bytes() == before_bytes[name], (
             f"the {name} sentinel file must stay byte-identical"
         )
-        assert after_listing == before_listing[name], (
-            f"no NEW file may appear under the operator's real .{name} root: "
-            f"found {after_listing - before_listing[name]}"
+        assert not undeclared, (
+            f"no UNDECLARED new file may appear under the operator's real "
+            f".{name} root (only DECLARED_NEW_FILES[{name!r}] is admitted): "
+            f"found {undeclared}"
         )
     assert (workspace / ".nwave" / "global-config.json").exists(), (
         "install provenance must land inside the isolated workspace instead"
@@ -325,11 +350,12 @@ def test_probe_engagement_setup_step_env_keeps_operator_roots_untouched(
         f"about isolation; got verdict={verdict!r} detail={detail!r}"
     )
     for name, path in sentinels.items():
-        after_listing = set(path.parent.rglob("*"))
+        undeclared = _undeclared_new_paths(name, path.parent, before_listing[name])
         assert path.read_bytes() == before_bytes[name], (
             f"the {name} sentinel file must stay byte-identical"
         )
-        assert after_listing == before_listing[name], (
-            f"no NEW file may appear under the operator's real .{name} root: "
-            f"found {after_listing - before_listing[name]}"
+        assert not undeclared, (
+            f"no UNDECLARED new file may appear under the operator's real "
+            f".{name} root (only DECLARED_NEW_FILES[{name!r}] is admitted): "
+            f"found {undeclared}"
         )

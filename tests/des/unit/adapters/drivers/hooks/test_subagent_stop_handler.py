@@ -284,3 +284,207 @@ class TestMalformedInputFailsOpen:
         monkeypatch.setattr("sys.stdin", io.StringIO(""))
         exit_code = subagent_stop_handler.handle_subagent_stop()
         assert exit_code == 0
+
+
+class TestNamedInProcessTeammatesAreResolvedToTheirRealRole:
+    """A NAMED in-process teammate's `agent_type` is its LANE NAME, not its role.
+
+    Verified on two independent axes against Claude Code 2.1.239:
+
+    1. The installed CLI's own in-process-teammate agent definition sets
+       ``agentType: t.agentName`` and stashes the real role separately as
+       ``customAgentType`` in the teammate metadata; the SubagentStop
+       hookInput then carries ``agent_type: a ?? ""`` sourced from that same
+       ``agentType`` -- i.e. the lane name.
+    2. Empirically, in session
+       ``e203e35d-491c-430b-94cc-2cc7748446f4`` every named lane's sidecar
+       ``agent-<id>.meta.json`` reads ``{"agentType": "<lane-name>",
+       "customAgentType": "nw-troubleshooter", "taskKind":
+       "in_process_teammate"}``, while every UNNAMED Agent-tool dispatch
+       reads ``{"agentType": "nw-troubleshooter-reviewer"}``. Only the
+       unnamed ones ever produced a durable receipt.
+
+    Consequence before this fix: a bare ``agent_type.startswith("nw-")``
+    gate silently no-ops for EVERY named nWave lane -- exactly the silence
+    this handler exists to make unrepresentable.
+
+    The role is recovered from the sidecar metadata file that sits next to
+    the transcript the platform itself hands us in
+    ``agent_transcript_path`` (``<transcript-stem>.meta.json``). Fail-open:
+    an absent/unreadable/roleless sidecar degrades to today's behaviour.
+    """
+
+    @staticmethod
+    def _teammate_transcript(tmp_path: Path, agent_id: str, custom_type: str) -> Path:
+        transcript = tmp_path / f"agent-{agent_id}.jsonl"
+        transcript.write_text("", encoding="utf-8")
+        (tmp_path / f"agent-{agent_id}.meta.json").write_text(
+            json.dumps(
+                {
+                    "agentType": agent_id.lstrip("a").rsplit("-", 1)[0],
+                    "taskKind": "in_process_teammate",
+                    "customAgentType": custom_type,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return transcript
+
+    def test_named_lane_gets_a_receipt_under_its_real_role_marker(
+        self, monkeypatch, capsys, tmp_path: Path
+    ) -> None:
+        agent_id = "aspeedfix-6c5c7f8505b9e7dd"
+        transcript = self._teammate_transcript(tmp_path, agent_id, "nw-troubleshooter")
+        result_dir = tmp_path / ".nwave" / "des" / "subagent-results"
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(subagent_stop_handler, "_SUBAGENT_RESULT_DIR", result_dir)
+
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _real_shaped_payload(
+                agent_type="speedfix",
+                agent_id=agent_id,
+                agent_transcript_path=str(transcript),
+                last_assistant_message="ho finito il lavoro",
+            ),
+        )
+
+        assert exit_code == 0
+        assert payload is not None
+        assert "NW-TROUBLESHOOTER-RESULT" in payload["additionalContext"]
+        assert "INDETERMINATE" in payload["additionalContext"]
+        written = (result_dir / f"{agent_id}.txt").read_text(encoding="utf-8")
+        assert "NW-TROUBLESHOOTER-RESULT" in written
+
+    def test_receipt_is_also_addressable_by_the_lane_name_the_root_knows(
+        self, monkeypatch, capsys, tmp_path: Path
+    ) -> None:
+        """The root dispatches by NAME and never learns the opaque hex suffix.
+
+        `nWave/skills/nw-auto/SKILL.md` tells the root to read
+        ``.nwave/des/subagent-results/<the dispatched agent-id>.txt`` when a
+        role returns no terminal line -- but for a named lane the id is
+        ``a<name>-<16 hex>``, a value the root never sees. A receipt only
+        the writer can address is not a receipt.
+        """
+        agent_id = "arca-trailer-bad32bb962c324bc"
+        transcript = self._teammate_transcript(tmp_path, agent_id, "nw-troubleshooter")
+        result_dir = tmp_path / ".nwave" / "des" / "subagent-results"
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(subagent_stop_handler, "_SUBAGENT_RESULT_DIR", result_dir)
+
+        _run(
+            monkeypatch,
+            capsys,
+            _real_shaped_payload(
+                agent_type="rca-trailer",
+                agent_id=agent_id,
+                agent_transcript_path=str(transcript),
+                last_assistant_message="report inviato",
+            ),
+        )
+
+        by_name = result_dir / "rca-trailer.txt"
+        assert by_name.is_file(), "lane-name-keyed receipt missing"
+        assert by_name.read_text(encoding="utf-8") == (
+            result_dir / f"{agent_id}.txt"
+        ).read_text(encoding="utf-8")
+
+    def test_unnamed_agent_id_never_produces_a_name_keyed_alias(
+        self, monkeypatch, capsys, tmp_path: Path
+    ) -> None:
+        """An UNNAMED dispatch's id is ``a`` + 16 hex with no dash -- there is
+        no lane name to alias, and inventing one would collide."""
+        agent_id = "a09b7cdf582976f8d"
+        result_dir = tmp_path / ".nwave" / "des" / "subagent-results"
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(subagent_stop_handler, "_SUBAGENT_RESULT_DIR", result_dir)
+
+        _run(
+            monkeypatch,
+            capsys,
+            _real_shaped_payload(
+                agent_type="nw-troubleshooter-reviewer",
+                agent_id=agent_id,
+                last_assistant_message="",
+            ),
+        )
+
+        assert (result_dir / f"{agent_id}.txt").is_file()
+        assert sorted(p.name for p in result_dir.iterdir()) == [f"{agent_id}.txt"]
+
+    def test_non_nwave_teammate_stays_untouched(
+        self, monkeypatch, capsys, tmp_path: Path
+    ) -> None:
+        """Resolution widens WHICH nWave roles are seen, never the population.
+
+        A named lane whose real role is not an ``nw-*`` agent must still be a
+        no-op: this hook is installed globally, so a widened gate would start
+        writing files under every unrelated project."""
+        agent_id = "aworker-1111222233334444"
+        transcript = self._teammate_transcript(tmp_path, agent_id, "general-purpose")
+        result_dir = tmp_path / ".nwave" / "des" / "subagent-results"
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(subagent_stop_handler, "_SUBAGENT_RESULT_DIR", result_dir)
+
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _real_shaped_payload(
+                agent_type="worker",
+                agent_id=agent_id,
+                agent_transcript_path=str(transcript),
+                last_assistant_message="done",
+            ),
+        )
+
+        assert exit_code == 0
+        assert payload is None
+        assert not result_dir.exists()
+
+    def test_missing_sidecar_degrades_to_no_op_without_raising(
+        self, monkeypatch, capsys, tmp_path: Path
+    ) -> None:
+        result_dir = tmp_path / ".nwave" / "des" / "subagent-results"
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(subagent_stop_handler, "_SUBAGENT_RESULT_DIR", result_dir)
+
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _real_shaped_payload(
+                agent_type="speedfix",
+                agent_id="aspeedfix-6c5c7f8505b9e7dd",
+                agent_transcript_path=str(tmp_path / "agent-absent.jsonl"),
+                last_assistant_message="x",
+            ),
+        )
+
+        assert exit_code == 0
+        assert payload is None
+        assert not result_dir.exists()
+
+    def test_named_lane_that_did_emit_its_terminal_line_writes_nothing(
+        self, monkeypatch, capsys, tmp_path: Path
+    ) -> None:
+        agent_id = "aspeedfix-6c5c7f8505b9e7dd"
+        transcript = self._teammate_transcript(tmp_path, agent_id, "nw-troubleshooter")
+        result_dir = tmp_path / ".nwave" / "des" / "subagent-results"
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(subagent_stop_handler, "_SUBAGENT_RESULT_DIR", result_dir)
+
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _real_shaped_payload(
+                agent_type="speedfix",
+                agent_id=agent_id,
+                agent_transcript_path=str(transcript),
+                last_assistant_message="NW-TROUBLESHOOTER-RESULT: verdict PASS",
+            ),
+        )
+
+        assert exit_code == 0
+        assert payload is None
+        assert not result_dir.exists()

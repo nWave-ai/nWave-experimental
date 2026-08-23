@@ -367,9 +367,12 @@ def resolve_clean_commit_sha(checkout: Path, *, git: str | None = None) -> str:
 #: still bills credit -- verified, not assumed.
 #: Which profile pays is an OWNER decision, not a default: it decides whose Max
 #: window the campaign spends and therefore who is blocked if it runs dry. Ale
-#: named claude3 (`~/.claude-alt3`) on 2026-08-07. Recorded in `arms.json` so a
-#: reader can see which account the numbers were drawn against.
-_DEFAULT_AUTH_PROFILE = Path.home() / ".claude-alt3"
+#: named claude3 (`~/.claude-alt3`) on 2026-08-07; on 2026-08-20 that org
+#: disabled Claude Code subscription access permanently ("claude3 e' andato e
+#: non tornera'" -- Ale), and Ale named the PRIMARY profile (`~/.claude`) as
+#: the payer going forward. Recorded in `arms.json` so a reader can see which
+#: account the numbers were drawn against.
+_DEFAULT_AUTH_PROFILE = Path.home() / ".claude"
 
 
 def seed_step(auth_profile: Path) -> list[str]:
@@ -1100,6 +1103,87 @@ def substitute_heredoc_header(header: str, *, root: str, delivery_id: str) -> st
     return " ".join(resolved.split())
 
 
+def _raw_root_lane_fence_blocks(skill_md_text: str) -> list[str]:
+    """Every fenced code block's RAW, un-joined text (physical line
+    breaks preserved) whose first line starts with `des ` -- the SAME
+    extraction `tests/build/test_des_examples_are_executable.py`'s own
+    `_root_lane_des_fence_blocks` performs; kept here too because
+    `route_walk_heredoc_command` (a production caller, not just a test)
+    needs the identical raw view, never a second hand-typed copy that
+    could independently drift from the test's own."""
+    blocks: list[str] = []
+    in_fence = False
+    current: list[str] = []
+    for raw_line in skill_md_text.split("\n"):
+        if raw_line.strip().startswith("```"):
+            if in_fence and current and current[0].strip().startswith("des "):
+                blocks.append("\n".join(current))
+            in_fence = not in_fence
+            current = []
+            continue
+        if in_fence:
+            current.append(raw_line.strip())
+    return blocks
+
+
+def _raw_heredoc_header(skill_md_text: str, *, subcommand: str) -> str | None:
+    """The RAW (un-joined) header lines -- physical-line shape exactly as
+    WRITTEN in `skill_md_text`, `\\`-continuations included -- for the
+    fenced `des <subcommand> ... <<'NW_SEED'`/`<<"NW_SEED"` example, up
+    to and including the line ending in that redirect. `None` when no
+    such example exists.
+
+    Run 16 (K4 matrix): the walk fed the hook a header `des_fenced_
+    lines` had already JOINED into one logical, newline-free line --
+    genuinely different from what a root copying the fenced text
+    VERBATIM would send when the source header itself still spans
+    several physical lines (`\\`-continued). This extraction preserves
+    that real shape instead, so `route_walk_heredoc_command` can feed
+    the hook the ACTUAL documented text, not a repaired reconstruction
+    of it."""
+    for block in _raw_root_lane_fence_blocks(skill_md_text):
+        lines = block.split("\n")
+        header_end = next(
+            (i for i, ln in enumerate(lines) if ln.endswith(_HEREDOC_HEADER_SUFFIXES)),
+            None,
+        )
+        if header_end is None:
+            continue
+        header_lines = lines[: header_end + 1]
+        # Identify the subcommand the SAME way `des_fenced_lines` does
+        # (strip each line's own trailing `\` continuation marker, space
+        # -join, tokenize) -- purely to MATCH `subcommand`; the value
+        # this function RETURNS stays the raw, un-joined multi-line form.
+        probe = " ".join(
+            ln[:-1].rstrip() if ln.endswith("\\") else ln for ln in header_lines
+        )
+        try:
+            tokens = shlex.split(probe.split("<<", 1)[0])
+        except ValueError:
+            continue
+        if len(tokens) >= 2 and tokens[0] == "des" and tokens[1] == subcommand:
+            return "\n".join(header_lines)
+    return None
+
+
+def substitute_heredoc_header_preserving_lines(
+    header: str, *, root: str, delivery_id: str
+) -> str:
+    """The SAME placeholder substitution `substitute_heredoc_header`
+    performs, but never collapses `header`'s own physical-line shape
+    (no final whitespace-join) -- used ONLY by the route-walk's raw-text
+    path (`route_walk_heredoc_command`), which must feed the hook the
+    EXACT single- or multi-line shape SKILL.md documents, never a
+    reconstruction flattened onto one line."""
+    resolved = _BRACKETED_OPTIONAL_RE.sub("", header)
+    return _ANGLE_PLACEHOLDER_RE.sub(
+        lambda match: substitute_example_placeholder(
+            match.group(1), root=root, delivery_id=delivery_id
+        ),
+        resolved,
+    )
+
+
 def route_walk_heredoc_command(
     skill_md_text: str, *, subcommand: str, root: str, delivery_id: str, seed: str
 ) -> str | None:
@@ -1116,18 +1200,27 @@ def route_walk_heredoc_command(
     THE fix for that class, not just that one instance: any future
     heredoc-header example change in SKILL.md is picked up automatically,
     never re-hand-typed here.
-    """
-    for line in des_fenced_lines(skill_md_text):
-        if not line.endswith(_HEREDOC_HEADER_SUFFIXES):
-            continue
-        try:
-            tokens = shlex.split(line.split("<<", 1)[0])
-        except ValueError:
-            continue
-        if len(tokens) >= 2 and tokens[0] == "des" and tokens[1] == subcommand:
-            header = substitute_heredoc_header(line, root=root, delivery_id=delivery_id)
-            return f"{header}\n{seed}\nNW_SEED"
-    return None
+
+    Run 16 (K4 matrix): the header now comes from `_raw_heredoc_header`
+    (preserving SKILL.md's own physical-line shape) rather than `des_
+    fenced_lines`'s joined view -- `des_fenced_lines` collapses a `\\`-
+    continued header into one logical, newline-free line BEFORE the hook
+    ever sees it, which silently repairs exactly the shape a root's real,
+    verbatim Bash copy would send broken. `nw-auto/SKILL.md` documented
+    `prepare-ordinary-request`'s header across four physical lines while
+    the walk, fed the joined-and-therefore-single-line reconstruction,
+    stayed green -- the real hook denied the actual multi-line copy
+    (`_is_value_seed_stdin_heredoc` splits on the FIRST newline, landing
+    mid-header, not at the header/body boundary). Feeding the RAW shape
+    here means a documented-but-hook-rejected header now fails the walk
+    exactly as the real Bash call would."""
+    raw_header = _raw_heredoc_header(skill_md_text, subcommand=subcommand)
+    if raw_header is None:
+        return None
+    header = substitute_heredoc_header_preserving_lines(
+        raw_header, root=root, delivery_id=delivery_id
+    )
+    return f"{header}\n{seed}\nNW_SEED"
 
 
 def route_walk_fenced_command(
@@ -2114,16 +2207,117 @@ def route_walk(root: Path, venv: Path, auth_profile: Path) -> dict:
     def cli_run(argv: list[str], stdin: str | None) -> tuple[int, str]:
         return _installed_cli_run(workspace, argv, stdin)
 
-    result = route_walk_steps(
-        repo_root=str(workspace),
-        hook_run=hook_run,
-        cli_run=cli_run,
-        skill_md_text=_NW_AUTO_SKILL_MD.read_text(encoding="utf-8"),
-        transcript_path=transcript_path,
-    )
+    try:
+        result = route_walk_steps(
+            repo_root=str(workspace),
+            hook_run=hook_run,
+            cli_run=cli_run,
+            skill_md_text=_NW_AUTO_SKILL_MD.read_text(encoding="utf-8"),
+            transcript_path=transcript_path,
+        )
+    finally:
+        # Run 18 (K4 matrix, second launch): `probe_examiner_start_recipe`
+        # (deep inside `route_walk_steps`) starts a real keepalive
+        # supervisor restarting its managed server every ~2s.
+        # `pef.stop_supervisor`'s own SIGTERM is fire-and-forget -- no
+        # wait for confirmed exit -- so the `rmtree` below could race a
+        # still-alive supervisor's restart cycle recreating hc.sqlite/
+        # server.log mid-delete (`OSError` 39 "Directory not empty",
+        # crashing AFTER a successful walk). ALWAYS torn down here,
+        # regardless of the walk's own outcome (a blocked walk that
+        # still reached the supervisor step must not orphan it either
+        # -- 8 such orphans from prior runs were found still alive on
+        # the box).
+        _teardown_route_walk_supervisor(workspace)
     if result["status"] == "proven":
-        shutil.rmtree(workspace)
+        _rmtree_after_supervisor_teardown(workspace)
     return result
+
+
+def _teardown_route_walk_supervisor(workspace: Path) -> None:
+    """Kill route_walk's own throwaway keepalive supervisor (if
+    `probe_examiner_start_recipe` started one) by PROCESS GROUP,
+    confirming exit before returning -- mirrors `paired_campaign.
+    _run_delivery`'s own process-group kill shape (SIGTERM, bounded
+    wait, escalate to SIGKILL) rather than inventing a second one.
+    Silent no-op when no supervisor was ever started (most blocked
+    walks never reach that step) or its recorded PID is already dead
+    (a stale `supervisor.pid` from a process that died some other way,
+    e.g. OOM-killed) -- `os.getpgid`/`os.killpg` on a dead PID raises
+    `ProcessLookupError`, caught the same way `pef._stop_supervisor_
+    locked` already handles it.
+
+    Uses a bounded poll on `os.kill(pid, 0)` rather than `Popen.wait`
+    -- this function never held the `Popen` handle (`pef.start_
+    supervisor` launched the process internally, deep inside
+    `route_walk_steps`'s own call chain); the PID recovered from
+    `SUPERVISOR_PID_FILE_NAME` is the only handle available here,
+    exactly the same file `pef.stop_supervisor` itself reads."""
+    pid_file = workspace / pef.SUPERVISOR_PID_FILE_NAME
+    if not pid_file.is_file():
+        return
+    try:
+        pid = int(pid_file.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return
+
+    def _confirmed_dead(bound_seconds: float) -> bool:
+        deadline = time.monotonic() + bound_seconds
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return True
+            time.sleep(0.2)
+        return False
+
+    try:
+        pgid = os.getpgid(pid)
+    except ProcessLookupError:
+        return
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        return
+    if _confirmed_dead(10):
+        return
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, OSError):
+        return
+    _confirmed_dead(10)
+
+
+def _rmtree_after_supervisor_teardown(workspace: Path) -> None:
+    """`shutil.rmtree(workspace)`, bounded-retried -- the supervisor is
+    ALREADY confirmed dead by the caller's own teardown by the time this
+    runs, but a short retry absorbs any OTHER transient writer (e.g. a
+    slow filesystem flush) rather than crashing the whole walk on a
+    directory that will, in fact, become deletable a moment later. A
+    persistent failure past the retry bound is reported LOUD
+    (WHAT/WHY/HOW), never a bare `OSError` traceback."""
+    last_error: OSError | None = None
+    for attempt in range(3):
+        try:
+            shutil.rmtree(workspace)
+            return
+        except OSError as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(1)
+    raise RuntimeError(
+        f"WHAT: shutil.rmtree({workspace}) failed after 3 attempts even "
+        f"though the route-walk supervisor was already confirmed dead: "
+        f"{last_error}. "
+        "WHY: a proven route-walk's throwaway workspace must not be left "
+        "behind -- an undeleted workspace silently accumulates disk usage "
+        "and a future route_walk_workspace reuse would inherit stale "
+        "state. "
+        "HOW: inspect the workspace for another writer this teardown does "
+        "not know about (a leaked process outside the supervisor's own "
+        "process group, or a mounted/locked path), then remove it "
+        f"manually: rm -rf {workspace}"
+    )
 
 
 def _authenticated_get_ready(

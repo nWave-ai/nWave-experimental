@@ -42,16 +42,22 @@ thin-shell split). Pure Python + filesystem only -- no git.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from des.cli._emit_json import emit_json_line as _emit
+from des.cli.charter_scaffold import (
+    _TEMPLATE_RELATIVE_PATH,
+    _extract_template_skeleton,
+)
+from des.runtime.packaged_asset import AssetOrigin, resolve_packaged_asset
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
 
 VERDICT_PASS = "PASS"
@@ -61,20 +67,72 @@ VERDICT_INDETERMINATE = "INDETERMINATE"
 _PRECONDITIONS_HEADING = "## Preconditions"
 _ORACLE_HEADING_PREFIX = "## Expected observations"
 
-#: The exact scaffold placeholder tokens the `charter-scaffold` template
-#: leaves behind inside the two sections this gate inspects (SSOT:
-#: `nWave/templates/expectation-charter.md`, the fenced block under
-#: `## Template`, as read by `charter_scaffold._extract_template_skeleton`
-#: and left untouched by `_fill_intent_section`). Matching ONLY these
-#: literal tokens -- never a blanket `<...>` sweep -- keeps legitimate
-#: angle-bracket prose (e.g. "log in as the `<developer>`") from being
-#: mistaken for surviving scaffold residue (GDP-6 false positive, sister
-#: friction #90).
-_SCAFFOLD_PLACEHOLDER_TOKENS = (
-    "<start recipe: how to run the system from a clean state, seed state>",
-    "<observable outcome, user language>",
-    "<negative: what must NOT happen>",
-)
+#: One `<...>` placeholder span inside the template skeleton. `[^<>]` spans
+#: newlines, so a multi-line token (the Preconditions PublicStartRecipe
+#: placeholder wraps across three physical lines) is captured whole.
+_PLACEHOLDER_TOKEN_RE = re.compile(r"<[^<>]+>")
+
+
+class CharterTemplateUnavailable(Exception):
+    """The scaffold-template SSOT cannot yield placeholder tokens, so the
+    FILLED property is UNDECIDABLE -- callers must degrade LOUD
+    (INDETERMINATE / Block), never silently PASS."""
+
+
+def _resolve_placeholder_tokens(anchor: Path) -> tuple[str, ...]:
+    """The scaffold placeholder tokens, DERIVED from the template SSOT.
+
+    Reads `nWave/templates/expectation-charter.md` through the SAME
+    resolution `charter_scaffold` uses to emit scaffolds (installed tree vs
+    developer checkout, AMBIGUOUS refused), extracts the fenced skeleton with
+    the SAME parser (`charter_scaffold._extract_template_skeleton` -- one
+    parser, no second copy to drift), and returns every literal `<...>` token
+    the skeleton carries. Matching ONLY these template-derived literal tokens
+    -- never a blanket `<...>` sweep over the charter -- keeps legitimate
+    angle-bracket prose (e.g. "log in as the `<developer>`") from being
+    mistaken for surviving scaffold residue (GDP-6 false positive, sister
+    friction #90). Deriving instead of hardcoding makes producer/checker
+    drift unrepresentable (GDP-0): the checker reads the same bytes the
+    producer emits.
+
+    Raises `CharterTemplateUnavailable` (LOUD what/why/how) when the template
+    is absent, ambiguous, unreadable, or token-free -- never guesses.
+    """
+    resolution = resolve_packaged_asset(
+        _TEMPLATE_RELATIVE_PATH.as_posix(), start=anchor
+    )
+    if resolution.origin is AssetOrigin.AMBIGUOUS or not resolution.is_usable:
+        raise CharterTemplateUnavailable(
+            "WHAT: the expectation-charter template SSOT cannot be resolved "
+            f"({resolution.detail}). WHY: this gate derives its scaffold "
+            "placeholder tokens from that template; without it FILLED is "
+            "undecidable and a PASS would check nothing. HOW: reinstall nWave "
+            "or reconcile/restore nWave/templates/expectation-charter.md, "
+            "then rerun."
+        )
+    assert resolution.path is not None
+    try:
+        template_content = resolution.path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise CharterTemplateUnavailable(
+            f"WHAT: the expectation-charter template at {resolution.path} "
+            f"cannot be read ({exc}). WHY: without it the scaffold "
+            "placeholder tokens are unknown and FILLED is undecidable. "
+            "HOW: restore read access to the template and rerun."
+        ) from exc
+    skeleton = _extract_template_skeleton(template_content)
+    tokens = tuple(dict.fromkeys(_PLACEHOLDER_TOKEN_RE.findall(skeleton)))
+    if not tokens:
+        raise CharterTemplateUnavailable(
+            f"WHAT: the expectation-charter template at {resolution.path} "
+            "yields ZERO placeholder tokens. WHY: a token-free skeleton means "
+            "the template and this gate's parser have drifted apart, and a "
+            "residue check against an empty set would pass every raw "
+            "scaffold. HOW: restore the canonical template (fenced skeleton "
+            "under '## Template' carrying literal <...> placeholders) and "
+            "rerun."
+        )
+    return tokens
 
 
 def _section_body(content: str, is_heading: Callable[[str], bool]) -> str | None:
@@ -96,28 +154,31 @@ def _section_body(content: str, is_heading: Callable[[str], bool]) -> str | None
     return "\n".join(body_lines)
 
 
-def _has_placeholder(section_body: str) -> bool:
+def _has_placeholder(section_body: str, tokens: Sequence[str]) -> bool:
     """True when `section_body` still carries a scaffold token verbatim."""
-    return any(token in section_body for token in _SCAFFOLD_PLACEHOLDER_TOKENS)
+    return any(token in section_body for token in tokens)
 
 
-def _has_negative_observation(oracle_body: str) -> bool:
+def _has_negative_observation(oracle_body: str, tokens: Sequence[str]) -> bool:
     """True when the oracle body carries >=1 bullet line starting with
-    `Negative:` (case-insensitive) -- a real negative observation, not a
-    placeholder token. Pure."""
+    `Negative:` (case-insensitive) whose text is NOT still a scaffold
+    placeholder -- a real negative observation, never the template's own
+    `Negative: <...>` residue counted as one. Pure."""
     for line in oracle_body.splitlines():
         stripped = line.strip().lstrip("-").strip()
-        if stripped.lower().startswith("negative:"):
+        if stripped.lower().startswith("negative:") and not _has_placeholder(
+            stripped, tokens
+        ):
             return True
     return False
 
 
-def _section_is_filled(body: str | None) -> bool:
+def _section_is_filled(body: str | None, tokens: Sequence[str]) -> bool:
     """True when a section body exists, is non-blank, and carries no
     residual scaffold placeholder marker. Pure."""
     if body is None or not body.strip():
         return False
-    return not _has_placeholder(body)
+    return not _has_placeholder(body, tokens)
 
 
 def _start_recipe_missing_reason(body: str | None) -> str:
@@ -132,10 +193,12 @@ def _start_recipe_missing_reason(body: str | None) -> str:
     )
 
 
-def _oracle_missing_reason(body: str | None, has_negative: bool) -> str:
+def _oracle_missing_reason(
+    body: str | None, has_negative: bool, tokens: Sequence[str]
+) -> str:
     if not body or not body.strip():
         return "oracle: section is empty or missing -- fill in real observations"
-    if _has_placeholder(body):
+    if _has_placeholder(body, tokens):
         return (
             "oracle: still contains scaffold placeholder markers -- fill "
             "in real observations"
@@ -159,8 +222,9 @@ class _CharterAnalysis:
     detail: str
 
 
-def _analyze_charter(content: str) -> _CharterAnalysis:
-    """Judge a charter's content against the FILLED contract. Pure."""
+def _analyze_charter(content: str, tokens: Sequence[str]) -> _CharterAnalysis:
+    """Judge a charter's content against the FILLED contract, using the
+    template-derived scaffold placeholder `tokens`. Pure."""
     oracle_body = _section_body(
         content, lambda line: line.startswith(_ORACLE_HEADING_PREFIX)
     )
@@ -168,13 +232,17 @@ def _analyze_charter(content: str) -> _CharterAnalysis:
         content, lambda line: line == _PRECONDITIONS_HEADING
     )
 
-    has_negative = oracle_body is not None and _has_negative_observation(oracle_body)
-    oracle_ok = _section_is_filled(oracle_body) and has_negative
-    start_recipe_ok = _section_is_filled(start_recipe_body)
+    has_negative = oracle_body is not None and _has_negative_observation(
+        oracle_body, tokens
+    )
+    oracle_ok = _section_is_filled(oracle_body, tokens) and has_negative
+    start_recipe_ok = _section_is_filled(start_recipe_body, tokens)
 
     missing_sections: list[str] = []
     if not oracle_ok:
-        missing_sections.append(_oracle_missing_reason(oracle_body, has_negative))
+        missing_sections.append(
+            _oracle_missing_reason(oracle_body, has_negative, tokens)
+        )
     if not start_recipe_ok:
         missing_sections.append(_start_recipe_missing_reason(start_recipe_body))
 
@@ -188,16 +256,22 @@ def _analyze_charter(content: str) -> _CharterAnalysis:
     return _CharterAnalysis(filled, missing_sections, has_negative, verdict, detail)
 
 
-def charter_missing_sections(content: str) -> list[str]:
+def charter_missing_sections(content: str, *, template_anchor: Path) -> list[str]:
     """PUBLIC: the still-incomplete judgment sections of a charter's content --
     an EMPTY list means FILLED.
 
     The same judgment ``main`` renders into its JSON verdict, exposed so that
     callers which must decide on the FILLED *property* (rather than on the
     mere presence of a charter file) reuse this ONE implementation instead of
-    re-deriving it. Pure.
+    re-deriving it. ``template_anchor`` names the tree the charter belongs to
+    (its own path works) so the placeholder tokens are derived from the same
+    template resolution the scaffolder used there.
+
+    Raises `CharterTemplateUnavailable` when the template SSOT cannot yield
+    tokens -- callers degrade LOUD, never treat that as FILLED.
     """
-    return _analyze_charter(content).missing_sections
+    tokens = _resolve_placeholder_tokens(template_anchor)
+    return _analyze_charter(content, tokens).missing_sections
 
 
 def _read_charter(charter_path: Path) -> tuple[str | None, str | None]:
@@ -257,7 +331,21 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     assert content is not None  # invariant: read_error is None iff content is set
-    analysis = _analyze_charter(content)
+    try:
+        tokens = _resolve_placeholder_tokens(charter_path.resolve().parent)
+    except CharterTemplateUnavailable as unavailable:
+        _emit(
+            {
+                "charter": str(charter_path),
+                "filled": False,
+                "missing_sections": [],
+                "has_negative_observation": False,
+                "verdict": VERDICT_INDETERMINATE,
+                "detail": str(unavailable),
+            }
+        )
+        return 1
+    analysis = _analyze_charter(content, tokens)
 
     _emit(
         {

@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 from nwave_ai.doctor.checks.attribution import AttributionCheck
+from nwave_ai.doctor.checks.config_ssot import ConfigSsotCheck
 from nwave_ai.doctor.checks.density import DensityCheck
 from nwave_ai.doctor.checks.des_module import DesModuleCheck
 from nwave_ai.doctor.checks.framework_files import FrameworkFilesCheck
@@ -44,6 +45,7 @@ _CHECKS: list[_DiagnosticCheck] = [
     DensityCheck(),
     AttributionCheck(),
     VersionSyncCheck(),
+    ConfigSsotCheck(),
 ]
 
 

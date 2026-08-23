@@ -57,6 +57,22 @@ the fourth call — return `ARCHITECTURE-BLOCKED` immediately with WHAT/WHY/HOW
 instead of continuing to explore toward the budget or a timeout. No fan-out
 or new artifact.
 
+**Edit discipline (mandatory, for every Write/Edit of an authority).**
+Immediately before EVERY insertion or replacement, re-acquire the anchor
+with a fresh `Read` of the exact zone being edited — never reuse text read
+in an earlier pass: wrapping and reformatting make it stale. Compose ONE
+context-robust patch: a short, stable anchor (a heading line or a unique
+single line), never a long wrapped paragraph as the old-string. On an
+edit-context mismatch, the move within the SAME pass is re-read +
+re-anchor + one second attempt with fresh context — never resending the
+same stale context while the call budget burns. And an
+`ARCHITECTURE-BLOCKED` line never prescribes retrying the dispatch — the
+route's single-pass rule forbids the consumer exactly that retry: its HOW
+names what the NEXT consult with a fresh envelope must do, e.g.
+"re-acquire the anchor at <locator> before editing". Anchor 2026-08-21
+(sister SF): six calls burned re-sending one stale wrapped paragraph, then
+a BLOCKED whose HOW prescribed the forbidden retry — zero files changed.
+
 **Citation self-verification (mandatory, before `COVERED`).** Has EVERY
 citation in the brief/ADR content actually been checked by what it claims,
 or is any still resting on inference, memory or a plausible guess? Only the
@@ -100,13 +116,39 @@ call:
   relationship cannot be self-verified deterministically and never counts
   as verified.
 
+**A target-decision table row's Why is a symbol-level claim, never a
+path-existence claim.** Ground every row of a Target/Decision table on a
+fact verified at SYMBOL level — `des code-fact` (atoms/callers/reads) or a
+targeted `Read` of the exact lines — never on an existence check of the
+file alone: the row's claim (e.g. "the registration happens here") is the
+property to prove, and a path that exists proves nothing about what lives
+inside it. Anchor 2026-08-21: a row for `checks/__init__.py` declared
+"registers alongside the existing eleven" while the registration actually
+lives in `runner.py` `_CHECKS`; the downstream ATD caught it one full
+round later.
+
 Do this inside the existing six-call exploration budget — a citation check
-is a fact call, not a new budget; batching same-file `Read`s is the
-legitimate way to fit more citations inside it. If the citation count
+is a fact call, not a new budget, and a `Read` already executed in THIS
+pass already IS the check for every fact it displayed: a read performed to
+repair, or to re-acquire an edit anchor, is fresh, and every citation
+whose line or symbol it covered counts as verified by it. Never spend a
+call re-reading a file only to re-verify content this same pass just read
+— the `N/N` record counts FACTS verified, never calls spent re-verifying
+them. Batching is mandatory, not merely legitimate: verification reads for
+multiple lines or claims on the SAME file are ONE read of the relevant
+zone, never one call per line. And order the pass reads-first: gather the
+repair and verification reads together, batched per file, THEN edit — the
+fresh-anchor read the edit discipline above requires doubles as the
+verification read for its zone, so the budget can never die between
+repairing a file and verifying the content just read. Anchor 2026-08-21
+(sister SF): the durable repair landed on the FIRST context-robust edit,
+yet the consult ended `ARCHITECTURE-BLOCKED` — the remaining budget burned
+re-reading already-read files, and the `N/N` record never got written. If
+the citation count
 cannot be verified within the remaining budget even after batching, return
 `ARCHITECTURE-BLOCKED` naming the exact citation count in WHAT and "batch
-Reads by file" as the HOW to retry within budget — never a partial
-`COVERED`. Record the honest result as `Citations verified: N/N
+Reads by file" as the HOW the next fresh-envelope consult must apply —
+never a partial `COVERED`, never a retry of this dispatch. Record the honest result as `Citations verified: N/N
 (line-checked: k, symbol-checked: m)` in the exact brief/ADR section the
 returned anchor names, where `k+m=N` is the exact count of citations in
 that content. A mismatch (fewer verified than cited, or any citation the
@@ -114,6 +156,21 @@ check contradicts) is never sealed as `COVERED`: return
 `ARCHITECTURE-BLOCKED` naming the specific wrong citation in WHAT, the
 failed check in WHY, and the re-derivation step in HOW — never a citation
 nobody has actually checked.
+
+**The `N` is DERIVED from an enumeration, never asserted.** BEFORE the
+edit, write the claims to be verified as a LIST in the verification zone
+— one line per claim, `fact -> file -> outcome` — enumerated
+mechanically from the content, row by row, never estimated. The `N/N`
+record is written AFTER the verification, and its `N` is the number of
+LINES in that list: a digit recalled from memory is not a count. If the
+list and the number diverge, the LIST wins and the number is corrected
+in the same pass — an arithmetic correction costs zero reads, so it
+never needs budget that has already run out. Never serialize a
+prospective `N/N` ("which I will verify"): the record exists only in the
+past tense, over facts already verified. Anchor 2026-08-21 (sister SF
+falsifier): `16/16` serialized as an estimate over a table whose per-row
+census yielded 14 enumerable claims (4+2+2+1+3+2) — the contradiction
+surfaced post-edit, with no budget left to repair it.
 
 Return exactly one line, nothing else:
 
@@ -146,7 +203,12 @@ For RED_TO_GREEN, before returning the durable brief/ADR authority, read the
 installed thin DeliveryContract schema at
 `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/thin-delivery-contract.schema.json`
 and derive obligations only from its closed enum, emitting only exact enum
-members. For every obligation the same authority must close the exact proof
+members. Label each numbered obligation `N. **TOKEN**` (the number outside
+the bold span, e.g. `1. **REUSE_CANDIDATE**`) — the one canonical shape
+`des compile-contract`'s parser is written against; a brief that labels
+`**N. TOKEN**` instead (Run 17, K4 matrix) still compiles, but drifts from
+the shape every other producer of this same brief format converges on.
+For every obligation the same authority must close the exact proof
 protocol — this is language-agnostic policy, projected concretely for the
 selected language, never a new schema or artifact:
 
@@ -186,6 +248,30 @@ boundary, silently change public observations or leave a declared failure mode
 unhandled. Provide a plain-language projection of the rigorous design for human
 readers without duplicating its authority.
 
+## Formal toolchain affordance
+
+Before modeling invariants or stateful protocols formally, probe tool
+availability once per session with a real executed command — never a declared
+flag (the CodeFactChain conditional-wiring principle,
+`src/des/adapters/driven/codefact/code_fact_chain.py`): `agda --version` for
+Agda; for TLA+, `java -version` plus an executed existence check for
+`tla2tools.jar`, never an assumed path. Present: use the tool to prove or
+model-check the key invariant. Absent: offer installation to the user exactly
+once, one line per platform —
+
+- Agda: `sudo apt-get install -y agda` (Debian/Ubuntu) | `brew install agda`
+  (macOS) | `cabal install Agda` (any)
+- TLA+: `sudo apt-get install -y default-jre` (Debian/Ubuntu) | `brew install
+  openjdk` (macOS), then `curl -LO
+  https://github.com/tlaplus/tlaplus/releases/latest/download/tla2tools.jar`
+
+On decline or continued unavailability, degrade explicitly: prose algebraic
+modeling — equations, observations, textual vacuity check, per
+Skill(nw-algebraic-design-protocol) — recording "formal tools unavailable --
+prose-algebra fallback" in the design. Never block DESIGN on a missing tool;
+absence changes the modeling medium, not the obligation to model. The probe is
+a design-time LLM action, never a new runtime dependency.
+
 ## Skill Loading
 
 | Phase | Load | Trigger |
@@ -214,7 +300,8 @@ its first matching trigger; do not preload unrelated skills.
 bounded Auto consult keeps its own six-call budget above unchanged): reuse
 survey ≤15 (broader than the consult's six calls — a full pass with no
 existing authority explores more, step 1) + brief/ADR write ≤2 (step 4) +
-citation self-verification ≤1 call per cited FILE (batched) plus ≤1 per
+citation self-verification ≤1 call per cited FILE (batched; a file this
+pass already read costs ZERO — that read already verified it) plus ≤1 per
 symbol-only citation, up to 12 cited files/symbols + reviewer handoff ≤1
 (the terminal line, or a `Task` dispatch when independent review is
 required) = 15 + 2 + 12 + 1 = 30 as the arithmetic floor. `maxTurns` below
@@ -225,3 +312,11 @@ floor in practice — for a non-Python project, `des code-fact` falls back
 to the TextSearch floor (`nw-code-analysis-port`), so citation
 verification needs more `Read` calls per file than the batched-Read
 discipline above assumes.
+
+**The terminal line is a message, not final text.** Whether the result is the
+Auto consult's single terminal line, `ARCHITECTURE-BLOCKED`, or the full
+DESIGN route's authority identifiers, the LAST action of the turn is
+`SendMessage` to the team lead carrying it verbatim and whole. A turn that
+ends with the result only in its own text is a result never delivered: the
+root watcher sees an idle lane, not a verdict (2026-08-21: two crafter `PASS`
+results never sent, 133 minutes lost — same failure class for every role).

@@ -113,9 +113,13 @@ def test_missing_namespace_returns_author(tmp_path, capsys, monkeypatch):
             delivery_id=delivery_id,
             namespace=namespace,
             root=str(tmp_path.resolve()),
+            examine=True,
+            discover="Missing",
             value_seed=seed,
         ),
     }
+    assert "EXAMINE: true" in payload["envelope"]
+    assert "DISCOVER: Missing" in payload["envelope"]
 
 
 def test_empty_namespace_returns_author(tmp_path, capsys, monkeypatch):
@@ -138,9 +142,13 @@ def test_empty_namespace_returns_author(tmp_path, capsys, monkeypatch):
             delivery_id=delivery_id,
             namespace=namespace,
             root=str(tmp_path.resolve()),
+            examine=True,
+            discover="Empty",
             value_seed=seed,
         ),
     }
+    assert "EXAMINE: true" in payload["envelope"]
+    assert "DISCOVER: Empty" in payload["envelope"]
 
 
 def test_author_without_stdin_seed_blocks(tmp_path, capsys, monkeypatch):
@@ -183,13 +191,13 @@ def test_deterministic_multi_valid_returns_ordered_repo_relative_reuse(
     exit_code, payload = _run(capsys, _base_argv(tmp_path, "multi-id", "true"))
 
     assert exit_code == 0
-    assert payload == {
-        "status": "REUSE",
-        "charter-paths": [
-            "docs/product/expectations/multi-id/a-charter.md",
-            "docs/product/expectations/multi-id/b-charter.md",
-        ],
-    }
+    assert payload["status"] == "REUSE"
+    assert payload["charter-paths"] == [
+        "docs/product/expectations/multi-id/a-charter.md",
+        "docs/product/expectations/multi-id/b-charter.md",
+    ]
+    # GDP-2 affordance: REUSE names the PO-owned value-side revision route.
+    assert "revise-charter-round" in payload["revision"]
 
 
 def test_namespace_symlink_blocks(tmp_path, capsys):
@@ -427,6 +435,13 @@ class TestPoEnvelopeIsPrintedVerbatimAndAcceptedByTheRealHook:
         assert "ARCHITECTURE-COVERED" not in envelope
         assert f"DELIVERY-ID: {delivery_id}" in envelope
 
+        # SF friction report 2026-08-20, item 7: the envelope must carry
+        # the independently resolved EXAMINE/DISCOVER facts AS DATA -- a
+        # source-blind PO consuming it verbatim must find them directly,
+        # never be left to infer them from the mere fact of dispatch.
+        assert "EXAMINE: true" in envelope
+        assert "DISCOVER: Missing" in envelope
+
         # The real hook gate allows this envelope verbatim.
         assert _evaluate_auto_root_po_envelope(envelope) is None
 
@@ -442,6 +457,8 @@ class TestPoEnvelopeIsPrintedVerbatimAndAcceptedByTheRealHook:
             delivery_id=delivery_id,
             namespace=f"docs/product/expectations/{delivery_id}",
             root=str(tmp_path.resolve()),
+            examine=True,
+            discover="Missing",
             value_seed="Ship it.",
         )
         hand_variant = (
@@ -450,3 +467,36 @@ class TestPoEnvelopeIsPrintedVerbatimAndAcceptedByTheRealHook:
         )
 
         assert _evaluate_auto_root_po_envelope(hand_variant) is not None
+
+
+class TestPoEnvelopeCarriesTheResolvedExamineAndDiscoverFacts:
+    """SF friction report 2026-08-20, item 7 -- executable falsifier: pipe
+    the emitted AUTHOR envelope byte-for-byte to a fresh PO; authoring must
+    start without inference or augmentation. A mechanical proxy for "a
+    fresh PO can start without inference": the six-line shape carries
+    EXAMINE and DISCOVER as directly-readable data, not merely implied by
+    the fact of dispatch."""
+
+    def test_author_envelope_shape_carries_examine_and_discover_as_data(
+        self, tmp_path, capsys, monkeypatch
+    ) -> None:
+        seed = "Ship the widget end to end."
+        delivery_id = compute_delivery_id(seed)
+
+        exit_code, payload = _run(
+            capsys,
+            _base_argv(tmp_path, delivery_id, "true"),
+            monkeypatch=monkeypatch,
+            seed_bytes=seed.encode("utf-8"),
+        )
+
+        assert exit_code == 0
+        envelope = payload["envelope"]
+        lines = envelope.split("\n")
+        assert len(lines) == 6
+        assert lines[3] == "EXAMINE: true"
+        assert lines[4] == "DISCOVER: Missing"
+        # Root cannot hand-augment, PO cannot infer -- both facts must
+        # already be readable, verbatim, in what the producer prints.
+        assert "EXAMINE: true" in envelope
+        assert "DISCOVER: Missing" in envelope

@@ -13,7 +13,6 @@ import argparse
 import ast
 import re
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
 
@@ -39,7 +38,7 @@ if Path(_project_src).is_dir():
     sys.path.insert(0, _project_src)
 
 from des._internal import subset_parser  # noqa: E402
-from des.cli.__main__ import _REGISTRY  # noqa: E402
+from des.application import generated_region_projection  # noqa: E402
 from scripts.shared.agent_catalog import (  # noqa: E402
     build_ownership_map,
     detect_command_skills,
@@ -776,52 +775,21 @@ def check_pages(pages: dict[str, str], output_dir: Path) -> list[str]:
 #   <!-- GENERATED:<region-id> START ... --> body <!-- GENERATED:<region-id> END -->
 #
 # Each region marker names its source; assets carry projections only.
+#
+# The engine itself (regex, marker grammar, source-of-truth table, projection
+# type, and the installable renderers) lives in
+# ``des.application.generated_region_projection`` — NOT here — because the
+# installed tier consumes it too and docgen never ships. See that module's
+# header for the packaging-tier rationale. docgen owns only the BUILD-TIME
+# renderers below, whose inputs (the dev ``src/`` tree, the unshipped
+# role-skill-loading registry) exist in this repo alone.
 # ---------------------------------------------------------------------------
-_GENERATED_REGION_RE = re.compile(
-    r"<!--\s*GENERATED:(?P<region_id>[a-z][a-z0-9-]*)\s+START[^>]*-->\n"
-    r"(?P<body>.*?)"
-    r"<!--\s*GENERATED:(?P=region_id)\s+END\s*-->",
-    re.DOTALL,
-)
+_GENERATED_REGION_RE = generated_region_projection.GENERATED_REGION_RE
+AssetProjection = generated_region_projection.AssetProjection
+_REGION_SOURCE_OF_TRUTH = generated_region_projection.REGION_SOURCE_OF_TRUTH
+_generated_region = generated_region_projection.generated_region
 
-
-@dataclass(frozen=True)
-class AssetProjection:
-    """One asset's re-rendered GENERATED-region state vs what is on disk."""
-
-    path: Path
-    current_text: str
-    projected_text: str
-
-    @property
-    def stale(self) -> bool:
-        return self.current_text != self.projected_text
-
-
-# A region's marker DECLARES where its body comes from; a marker naming a source
-# that did not produce the body is a false fact shipped inside generated prose,
-# so each region names its own source instead of inheriting the flavors default.
-_REGION_SOURCE_OF_TRUTH = {
-    "des-command-catalog": "src/des/cli/__main__.py::_REGISTRY",
-    "role-skill-loading": "role-skill-loading.yaml (build-time registry, not shipped)",
-}
 _ROLE_SKILL_REGISTRY_REL = Path("nWave") / "data" / "role-skill-loading.yaml"
-
-
-def _generated_region(region_id: str, body: str) -> str:
-    """The canonical full region text (markers + body) docgen owns."""
-    source = _REGION_SOURCE_OF_TRUTH.get(region_id)
-    if source is None:
-        raise DocgenError(
-            f"Unknown GENERATED region id '{region_id}' — refusing to serve "
-            "a region with no declared source"
-        )
-    return (
-        f"<!-- GENERATED:{region_id} START — source of truth: "
-        f"{source}; do not hand-edit (docgen renders this region) -->\n"
-        f"{body}\n"
-        f"<!-- GENERATED:{region_id} END -->"
-    )
 
 
 def _module_first_docstring_line(module_path: str) -> str:
@@ -844,7 +812,18 @@ def _module_first_docstring_line(module_path: str) -> str:
 def _command_catalog_body() -> str:
     """Render the ``des-command-catalog`` GENERATED region: one row per
     ``des.cli.__main__._REGISTRY`` entry (declaration order), Description
-    sourced from that module's own first docstring line."""
+    sourced from that module's own first docstring line.
+
+    ``_REGISTRY`` is imported HERE, not at module scope: importing
+    ``des.cli`` pays the runtime freshness probe (``des.cli.__init__``,
+    composition root) as an import-time side effect. This region's renderer
+    is the only consumer in this module, and every other ``_render_region_body``
+    branch (notably ``communication-rules``, reached from ``nwave-ai install``
+    against an arbitrary target project) must stay import-safe from a plain,
+    non-git-checkout cwd — a module-scope import charged that safety to a
+    renderer that never needed the command catalog at all."""
+    from des.cli.__main__ import _REGISTRY
+
     header = "| Verb | Module | Description |"
     sep = "| --- | --- | --- |"
     rows = [
@@ -911,26 +890,26 @@ def _role_skill_loading_body(agent_id: str, root: Path) -> str:
     return "\n".join(lines) if lines else "- (no universal lens applies to this role)"
 
 
+#: The installable renderer, owned by ``des`` because the installed tier needs
+#: it too; aliased here so docgen's dispatcher reads as one flat table.
+_communication_rules_body = generated_region_projection.communication_rules_body
+
+
 def _render_region_body(region_id: str, asset_path: Path, root: Path) -> str:
+    """docgen's BUILD-TIME dispatcher: the two dev-only regions, then delegate
+    to the installable set ``des`` owns (which fails LOUD on an unknown id)."""
     if region_id == "des-command-catalog":
         return _command_catalog_body()
     if region_id == "role-skill-loading":
         return _role_skill_loading_body(asset_path.stem, root)
-    raise DocgenError(
-        f"Unknown GENERATED region id '{region_id}' in {asset_path} — "
-        "refusing to serve a region no renderer owns"
+    return generated_region_projection.render_installable_region_body(
+        region_id, asset_path, root
     )
 
 
 def _project_asset(path: Path, text: str, root: Path) -> AssetProjection:
-    def _replace(match: re.Match[str]) -> str:
-        region_id = match.group("region_id")
-        return _generated_region(region_id, _render_region_body(region_id, path, root))
-
-    return AssetProjection(
-        path=path,
-        current_text=text,
-        projected_text=_GENERATED_REGION_RE.sub(_replace, text),
+    return generated_region_projection.project_asset(
+        path, text, root, render_body=_render_region_body
     )
 
 

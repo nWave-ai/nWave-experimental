@@ -16,16 +16,21 @@ this commit (not) get the credit?":
 
 It never mutates settings.json.
 
-Three-valued verdict (fix-attribution-trailer-never-applied, P7): the check
+Three-valued verdict (ADR-CFG-003 correction 2, CONTESTED_LAW): the check
 observes TWO axes (GDP-8 witness corollary) -- (a) is the hook registered in
 settings.json, (b) does the producing-tool resolver (the SAME resolution
 ``attribute_commit_message`` performs: activation AND ``attribution.enabled``)
-now attribute for this repo. AGREED (both axes agree, live or dark) ->
-passed=True. DISAGREED (axes disagree) -> passed=False,
-``ATTRIBUTION_DISAGREEMENT``, remediation naming the real producing-tool
-command ``nwave-ai attribution on``. COULD_NOT_VERIFY (the resolution itself
-raises) -> passed=False, ``ATTRIBUTION_UNVERIFIABLE`` -- its own third state
-reaching the aggregate rather than being silently folded into AGREED.
+now attribute for this repo. The verdict is the IMPLICATION
+``would_attribute -> hook_present``, NOT equality: ``hook_present`` means
+"nWave installed," not "attribution on," so an installed machine with
+attribution off everywhere (hook_present=True, would_attribute=False) is a
+vacuously-true implication, not a disagreement. AGREED (the implication
+holds) -> passed=True. DISAGREED (would_attribute is True but hook_present is
+False) -> passed=False, ``ATTRIBUTION_DISAGREEMENT``, remediation naming the
+real producing-tool command ``nwave-ai attribution on``. COULD_NOT_VERIFY
+(the resolution itself raises) -> passed=False, ``ATTRIBUTION_UNVERIFIABLE``
+-- its own third state reaching the aggregate rather than being silently
+folded into AGREED.
 """
 
 from __future__ import annotations
@@ -109,7 +114,7 @@ class AttributionCheck:
             )
 
         would_attribute = active and attribution_enabled
-        if hook_present == would_attribute:
+        if not would_attribute or hook_present:
             return CheckResult(
                 passed=True,
                 error_code=None,

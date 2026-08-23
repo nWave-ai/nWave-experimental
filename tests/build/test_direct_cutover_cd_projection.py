@@ -281,9 +281,18 @@ def test_deliver_refuses_nonterminal_crafter_completion() -> None:
 def test_examine_is_source_blind_total_and_ephemeral() -> None:
     text = _text(EXAMINER)
     frontmatter = text.split("---", 2)[1]
+    compact = " ".join(text.split())
 
-    assert "tools: Read, Bash," in frontmatter
-    assert "mcp__playwright__browser_click" in frontmatter
+    # The examiner declares Read + Bash and NO MCP tool. Deliberate, not
+    # erosion: a disconnected MCP server kills the subagent spawn silently
+    # (3 repro 2026-08-21, commit 5fde6a905, techdebt entry
+    # subagent-spawn-dies-silently-when-declared-mcp-tool-server-is-disconnected
+    # records the condition for re-adding the browser tools). Pinned exactly
+    # so re-adding an MCP grant without that degrade-safe mechanism fails here.
+    assert "tools: Read, Bash\n" in frontmatter
+    assert "mcp__" not in frontmatter
+    assert "browser tools are NOT declared here" in compact
+    assert "`INDETERMINATE` browser-only observation, never a silent crash" in compact
     assert "every validated expectation charter" in text
     assert "Every charter, no filtering" in text
     assert "PASS | FAIL | INDETERMINATE" in text

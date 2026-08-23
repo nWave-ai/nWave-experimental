@@ -92,6 +92,10 @@ from des.domain.oracle_execution_classifier import (
 )
 from des.domain.oracle_link_resolver import command_argv as _command_argv
 from des.domain.oracle_link_resolver import is_oracle_linked as _is_oracle_linked
+from des.domain.verification_authority_resolver import (
+    LiteralScriptBlock,
+    resolve_verification_authority,
+)
 from des.runtime.test_execution import run_pytest_reaped
 
 
@@ -113,10 +117,27 @@ def _already_green_finding(command_text: str) -> tuple[str, str, str]:
         "RED_TO_GREEN requires the oracle to fail only for the missing "
         "promised behavior; an oracle that is already green proves nothing "
         "new and gives the crafter no falsifiable target",
+        # SF friction report 2026-08-20, item 4: "switch delivery-route to
+        # GREEN_TO_GREEN" alone is a dead-end on a dirty, uncommitted tree
+        # -- ADR-SSOT-002 Section 4b requires GREEN_TO_GREEN to name an
+        # EXISTING oracle DESIGN already knows about; there is no such
+        # oracle to name until the tree is committed. Trunk-crash
+        # recovery (prior-lane WIP already makes the oracle green, but
+        # nothing is committed yet) lands exactly here. Name the real,
+        # already-allowed recovery instead of a route switch with an
+        # unstated precondition -- no new delivery state, no new
+        # producer flag: `des commit` is the existing single-writer path
+        # every other producer already uses.
         "confirm the oracle actually exercises the new behavior (a Run "
         "10-style splice can silently not run at all) and that "
-        "verification-scope cites it correctly, or switch delivery-route to "
-        "GREEN_TO_GREEN if the behavior genuinely already exists",
+        "verification-scope cites it correctly; if the behavior "
+        "genuinely already exists (e.g. recovered, uncommitted work from "
+        "a prior lane), GREEN_TO_GREEN needs an EXISTING oracle to name "
+        "(ADR-SSOT-002 Section 4b) -- commit the current tree first "
+        "(`des commit`, or the allowed git add/commit path), THEN "
+        "re-author the contract as GREEN_TO_GREEN naming that "
+        "now-committed oracle's locator; switching the route alone, on "
+        "an uncommitted tree, names an oracle that does not exist yet",
     )
 
 
@@ -165,6 +186,112 @@ def _unacceptable_build_finding(command_text: str, reason: str) -> tuple[str, st
     )
 
 
+def _delegation_note(locator: str, line_count: int) -> str:
+    return (
+        f"INFO: verification-scope delegates to the literal script block at "
+        f"{locator!r} ({line_count} lines, digest re-verified against the "
+        "owning document) -- this probe never argv-executes a delegated "
+        "authority SCRIPT (assignments, command substitution, negations and "
+        "pipes need faithful shell execution, not argv splitting); the "
+        "crafter's own BASELINE executes it faithfully and remains the "
+        "RED/GREEN authority for it"
+    )
+
+
+def _delegation_digest_mismatch_finding(
+    locator: str, declared_digest: str, current_digest: str
+) -> tuple[str, str, str]:
+    return (
+        f"the delegated verification authority at {locator!r} no longer "
+        f"matches this contract's literal-script-block (contract carries "
+        f"{declared_digest}, the owning document's block is now "
+        f"{current_digest})",
+        "the contract carries the authority's literal order BY-REFERENCE; "
+        "a drifted owning document means the crafter would faithfully "
+        "execute an order this contract never validated",
+        "re-run des compile-contract against the current authority document "
+        "(or restore the document) so the contract's digest and the owning "
+        "section agree, then rerun des dispatch",
+    )
+
+
+def _delegation_carried_lines_drift_finding(
+    locator: str, carried_count: int, resolved_count: int
+) -> tuple[str, str, str]:
+    return (
+        f"the literal-script-block lines carried by this contract for "
+        f"{locator!r} ({carried_count} lines) do not match the re-resolved "
+        f"authority block ({resolved_count} lines) even though the declared "
+        "content-digest does",
+        "carried lines are a display-only projection, never the execution "
+        "authority -- every executor and verifier binds EXCLUSIVELY to the "
+        "content re-resolved from the owning document; a contract whose "
+        "carried copy diverges was edited after compile (tampering or "
+        "drift), so its projection lies about the order it displays",
+        "re-run des compile-contract against the authority document so the "
+        "carried projection and the owning block agree, then rerun des "
+        "dispatch",
+    )
+
+
+def _delegation_unresolvable_finding(locator: str, reason: str) -> tuple[str, str, str]:
+    return (
+        f"the delegated verification authority {locator!r} cannot be "
+        f"re-resolved at dispatch: {reason}",
+        "a delegation contract carries no argv command at all; with the "
+        "owning document or section unresolvable the crafter has no "
+        "executable verification order",
+        "fix the authority document so the locator resolves to exactly one "
+        "heading with one fenced literal block, re-run des compile-contract, "
+        "then rerun des dispatch",
+    )
+
+
+def _delegated_scope_check(
+    repo_root: Path, block: dict
+) -> tuple[list[tuple[str, str, str]], list[str]]:
+    """The delegation branch of the verification-scope sum type (SF
+    friction 2026-08-21). A `literal-script-block` contract has NO argv
+    command by construction, so the argv loop below would traverse it
+    SILENTLY to zero findings and zero notes -- indistinguishable from a
+    verified pass (GDP-6). This branch is loud either way: it re-resolves
+    the locator against the owning document and verifies content-digest
+    fidelity (a drifted or unresolvable authority is a refusal finding);
+    a faithful match is an informational note naming the branch. The
+    script itself is never argv-executed here -- faithful bounded
+    execution belongs to the crafter's own BASELINE.
+
+    ELIMINATIVE digest binding (SF sister falsifier 2026-08-21): the
+    contract's carried `lines` are a display-only, NON-authoritative
+    projection. Execution and verification bind EXCLUSIVELY to the
+    content RE-RESOLVED from the owning document (digest-checked against
+    the declared `content-digest`); the carried copy is additionally
+    checked for coherence against the resolved block, and a mismatch --
+    correct locator and digest, tampered lines (e.g. swapped for `exit
+    0`) -- is a LOUD drift refusal, never a fallback to the carried
+    copy. Comparing the resolved digest only to the DECLARED digest used
+    to let exactly that tampered contract through."""
+    locator = str(block.get("locator", ""))
+    declared_digest = str(block.get("content-digest", ""))
+    resolution = resolve_verification_authority(repo_root, locator)
+    if not isinstance(resolution, LiteralScriptBlock):
+        return [_delegation_unresolvable_finding(locator, resolution.reason)], []
+    if resolution.content_digest != declared_digest:
+        return [
+            _delegation_digest_mismatch_finding(
+                locator, declared_digest, resolution.content_digest
+            )
+        ], []
+    carried_lines = tuple(str(line) for line in block.get("lines", []))
+    if carried_lines != resolution.lines:
+        return [
+            _delegation_carried_lines_drift_finding(
+                locator, len(carried_lines), len(resolution.lines)
+            )
+        ], []
+    return [], [_delegation_note(locator, len(resolution.lines))]
+
+
 def oracle_red_reason_check(
     repo_root: Path, contract: dict
 ) -> tuple[list[tuple[str, str, str]], list[str]]:
@@ -178,6 +305,14 @@ def oracle_red_reason_check(
     unresolvable interpreter -- `OSError`) is NEVER silent: it surfaces as
     an informational COULD-NOT-RUN note, distinct from both an acceptable
     RED and a green pass (GDP-6)."""
+    scope = contract.get("verification-scope", {})
+    literal_block = scope.get("literal-script-block")
+    if literal_block:
+        # Delegation branch of the sum type -- never the silent zero-pass
+        # the argv loop below would produce (GDP-6); see
+        # `_delegated_scope_check`.
+        return _delegated_scope_check(repo_root, literal_block)
+
     route = contract.get("delivery-route")
     oracle_locator = str(contract.get("acceptance-tests", {}).get("locator", ""))
     declared_symbols = declared_symbol_candidates(contract)
@@ -185,7 +320,7 @@ def oracle_red_reason_check(
 
     findings: list[tuple[str, str, str]] = []
     notes: list[str] = []
-    for command in contract.get("verification-scope", {}).get("commands", []):
+    for command in scope.get("commands", []):
         argv = _command_argv(repo_root, command)
         if not argv or not argv[0]:
             continue

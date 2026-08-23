@@ -17,11 +17,24 @@ is enumerated as a `Scenario:`. Sad paths (AB-2/AB-3/AB-5/AB-11) are named
 example scenarios, never generated.
 """
 
-from pytest_bdd import scenarios
+from pytest_bdd import scenario, scenarios
 
 # Pull the shared Tier-A step vocabulary into this module's namespace so
 # pytest-bdd resolves every Given/When/Then.
 from .steps_attribution import *
+
+
+# This scenario carried a STRICT xfail for F-ACTIVATION-INVERTED-IN-PRODUCTION
+# while the activation read path collapsed onto ENABLED_DEFAULT. P-SSOT-1 slice
+# P5-bis restored the tri-state reader: a non-nWave repo declares nothing in any
+# tier, so the `mode` branch resolves it INACTIVE with ENABLED_DEFAULT
+# UNCHANGED. The red is RESOLVED, not deferred: P6 (the flip) is still owed.
+@scenario(
+    "../milestone-1-trailer-scope.feature",
+    "Non-nWave repo gets no credit under opt-in default",
+)
+def test_non_nwave_repo_gets_no_credit_under_opt_in_default() -> None:
+    """A repo that never opted in gets no attribution credit."""
 
 
 scenarios(

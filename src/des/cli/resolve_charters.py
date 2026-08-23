@@ -28,6 +28,8 @@ from des.cli._charter_resolution import (
     _Author,
     _Block,
     _discover_charter_namespace,
+    _Empty,
+    _Missing,
     _resolve_charter_namespace,
     _Reuse,
 )
@@ -154,6 +156,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if isinstance(resolution, _Author):
         namespace_rel = resolution.namespace.relative_to(repo_root.resolve()).as_posix()
+        # `_resolve_charter_namespace` only ever maps `_Missing`/`_Empty` to
+        # `_Author` -- the same resolved fact this envelope now carries,
+        # never re-derived (SF friction report 2026-08-20, item 7).
+        if isinstance(discovered, _Missing):
+            discover_value = "Missing"
+        elif isinstance(discovered, _Empty):
+            discover_value = "Empty"
+        else:
+            _assert_never(discovered)
         value_seed = read_value_seed_text()
         if value_seed is None:
             return _refuse(
@@ -184,12 +195,18 @@ def main(argv: list[str] | None = None) -> int:
                     delivery_id=args.delivery_id,
                     namespace=namespace_rel,
                     root=str(repo_root.resolve()),
+                    examine=examine,
+                    discover=discover_value,
                     value_seed=value_seed,
                 ),
             }
         )
         return 0
     if isinstance(resolution, _Reuse):
+        # REUSE is existence, never reviewed validity -- the algebra stays
+        # unchanged. The one-line affordance (GDP-2) names the PO-owned
+        # correction route for a reviewer-cited VALUE-side defect on this
+        # same DeliveryId.
         _emit(
             {
                 "status": "REUSE",
@@ -197,6 +214,13 @@ def main(argv: list[str] | None = None) -> int:
                     path.resolve().relative_to(repo_root.resolve()).as_posix()
                     for path in sorted(resolution.charter_paths)
                 ],
+                "revision": (
+                    "existing charters are REUSEd as-is; for a "
+                    "reviewer-cited value-side defect on this DeliveryId "
+                    "run `des revise-charter-round --repo-root <root> "
+                    "--delivery-id <id> --citation <text>` and dispatch "
+                    "nw-product-owner with its stdout verbatim"
+                ),
             }
         )
         return 0

@@ -60,7 +60,29 @@ disable-model-invocation: true
 
 ## Lessons Learned
 - [key takeaways for the organization]
+
+## Machine-consumable section (des compile-contract)
+
+ARCHITECTURE-COVERED: docs/analysis/root-cause-analysis-{problem}.md#machine-consumable-section-des-compile-contract
+
+| Obligation | Transcribed from (fact already established above) |
+|---|---|
+| **TOKEN** | "[verbatim quote]" -- [section of this document] |
 ```
+
+### The terminal section is not optional, and its rules live with the producer
+
+The post-mortem is one SHAPE of RCA document, not a separate class: this template ends
+with the same terminal section every RCA document ends with, so the two shapes cannot
+contradict each other. The binding rules -- the closed seven-token vocabulary, the
+accepted bold label shapes, and the transcription-not-inference discipline with its
+self-audit question -- are stated ONCE, in `nw-troubleshooter`'s §Terminal
+machine-consumable section, which is resident whenever this skill is loaded. Do not
+restate them here; a drifted copy would teach a false contract.
+
+**Does this post-mortem's obligation list quote a fact established in the timeline,
+impact, or root-cause analysis above -- or was it filled in because the template shows a
+row?** A row you cannot quote is template-following, not a declaration: delete it.
 
 ## Incident Timeline Reconstruction
 

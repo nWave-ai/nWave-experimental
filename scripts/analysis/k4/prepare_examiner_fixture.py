@@ -536,6 +536,19 @@ SERVER_PID_FILE_NAME = "server.pid"
 #: dispatch, must still be able to acquire it).
 DB_LOCK_FILE_NAME = "hc.sqlite.lock"
 
+#: K4 camp2/camp3/camp4 diagnosis (2026-08-20): `flock -x 9` with no `-w`
+#: bound waits FOREVER -- isolated repro (subprocess.run's own SIGKILL of
+#: a `bash -c` restart child, mid-restart, leaves an already-forked
+#: grandchild, e.g. `migrate`, holding fd 9's INHERITED lock as an orphan
+#: the direct-child kill never reaches) proved the DB lock can outlive
+#: its supposed holder indefinitely. GDP-6 (no silent-wrong -- degrade
+#: LOUD): bounding the wait turns an eternal, silent hang into a fast,
+#: diagnosable failure naming the fix (`fuser -v` the lock file) even if
+#: some OTHER, not-yet-seen holder shows up later. This is a floor, not a
+#: substitute for `_restart`'s own process-group cleanup below, which
+#: removes the specific orphan this incident found.
+DB_LOCK_WAIT_SECONDS = 45
+
 #: Run 14 take 3 (K4 matrix): PROBE-D-E.md -- the examiner's server, even
 #: `setsid`-started from HER OWN Bash tool call, was repeatedly reaped
 #: ~30-45s later by something in the agent sandbox, regardless of
@@ -687,7 +700,18 @@ def start_and_wait_block(port: int, api_key: str) -> str:
     )
     return (
         f"exec 9>{DB_LOCK_FILE_NAME}\n"
-        "flock -x 9\n"
+        f"if ! flock -x -w {DB_LOCK_WAIT_SECONDS} 9; then\n"
+        '    echo "WHAT: could not acquire the DB lock '
+        f"({DB_LOCK_FILE_NAME}) within {DB_LOCK_WAIT_SECONDS}s.\\n"
+        "WHY:  a prior restart's orphaned descendant (e.g. a migrate\\n"
+        "      it had already forked) may still hold the lock it\\n"
+        "      inherited on fork, even though the restart that spawned\\n"
+        "      it is long gone.\\n"
+        "HOW:  run \\`fuser -v "
+        f"{DB_LOCK_FILE_NAME}\\` in this workspace, identify and kill "
+        'the reported holder, then retry." >&2\n'
+        "    exit 1\n"
+        "fi\n"
         f"if [ -f {SERVER_PID_FILE_NAME} ] && "
         f'kill -0 "$(cat {SERVER_PID_FILE_NAME})" 2>/dev/null; then\n'
         f'    kill "$(cat {SERVER_PID_FILE_NAME})" 2>/dev/null\n'
@@ -728,7 +752,7 @@ def start_and_wait_block(port: int, api_key: str) -> str:
     )
 
 
-def supervisor_script(port: int, api_key: str) -> str:
+def supervisor_script(port: int, api_key: str, *, owner_pid: int | None = None) -> str:
     """The long-lived Python source `prepare()` writes and launches ONCE,
     from a setup subprocess (never an agent Bash call) -- Run 14 take 3
     (K4 matrix), PROBE-D-E.md: Vera's server, even `setsid`-started from
@@ -748,9 +772,27 @@ def supervisor_script(port: int, api_key: str) -> str:
     stops anything herself), and forward SIGTERM to the child so the
     harness's own teardown (killing `SUPERVISOR_PID_FILE_NAME`) takes the
     server down too, never orphaning it.
+
+    K4 camp3 diagnosis (2026-08-20): a supervisor started by one campaign
+    was found still alive and serving ~4 HOURS after that campaign process
+    itself had ended -- `stop_supervisor`'s own `finally` never ran because
+    the owning process died WITHOUT unwinding (SIGKILL from `earlyoom`
+    under multi-camp memory pressure, a hard interrupt, any ungraceful
+    crash all bypass `finally` the same way). `setsid`-detachment, the
+    very thing that lets this supervisor survive its LAUNCHING Bash tool
+    call, also means the kernel reparents it to init the moment its real
+    parent is gone -- nothing with a live PID is left that could ever
+    call `stop_supervisor` again. GDP-0: rather than adding an external
+    reaper that has to go find these after the fact, `owner_pid` (the PID
+    of the process that called `start_supervisor`, i.e. the one process
+    that will run `stop_supervisor` in its own `finally` on the happy
+    path) is captured at render time and the poll loop below checks it
+    directly -- an owner that stops existing, by ANY means, is treated
+    exactly like an explicit SIGTERM. No second, divergent teardown path.
     """
     block = start_and_wait_block(port, api_key)
     base_url = f"http://127.0.0.1:{port}"
+    resolved_owner_pid = owner_pid if owner_pid is not None else os.getpid()
     return (
         "#!/usr/bin/env python3\n"
         '"""K4 examiner keepalive supervisor -- see '
@@ -770,6 +812,7 @@ def supervisor_script(port: int, api_key: str) -> str:
         f"SUPERVISOR_LOG = {SUPERVISOR_LOG_FILE_NAME!r}\n"
         f"BASE_URL = {base_url!r}\n"
         f"API_KEY = {api_key!r}\n"
+        f"OWNER_PID = {resolved_owner_pid!r}\n"
         "POLL_SECONDS = 2\n\n\n"
         "def _server_alive():\n"
         "    # PID check is a FAST-PATH short-circuit only -- Run 15 probe\n"
@@ -799,26 +842,80 @@ def supervisor_script(port: int, api_key: str) -> str:
         "def _restart():\n"
         "    with open('server.log', 'a') as log:\n"
         "        log.write('supervisor: restarting at %s\\n' % time.time())\n"
-        "    subprocess.run(\n"
+        "    # K4 camp2/camp3/camp4 diagnosis (2026-08-20): isolated repro\n"
+        "    # proved `subprocess.run(...).kill()` on interruption (a\n"
+        "    # SIGTERM here unwinds via `_handle_sigterm`'s `sys.exit(0)`,\n"
+        "    # a `BaseException`) reaps only the DIRECT `bash -c` child --\n"
+        "    # a grandchild BLOCK already forked (`migrate`, most likely)\n"
+        "    # keeps running as an ORPHAN, still holding fd 9's INHERITED\n"
+        "    # exclusive flock on `hc.sqlite.lock` (the fd is open before\n"
+        "    # `exec 9>&-` releases it) for as long as that orphan runs --\n"
+        "    # observed as an eternal hang because nothing is left alive\n"
+        "    # to ever release it. `start_new_session=True` puts `bash` in\n"
+        "    # its OWN process group; on ANY interruption this kills that\n"
+        "    # WHOLE group, taking every descendant down atomically, never\n"
+        "    # just the group leader.\n"
+        "    proc = subprocess.Popen(\n"
         "        ['bash', '-c', BLOCK],\n"
         "        stdout=subprocess.DEVNULL,\n"
         "        stderr=subprocess.DEVNULL,\n"
         "        stdin=subprocess.DEVNULL,\n"
-        "        timeout=60,\n"
-        "    )\n\n\n"
-        "def _handle_sigterm(signum, frame):\n"
+        "        start_new_session=True,\n"
+        "    )\n"
+        "    try:\n"
+        "        proc.communicate(timeout=60)\n"
+        "    except BaseException:\n"
+        "        try:\n"
+        "            os.killpg(proc.pid, signal.SIGKILL)\n"
+        "        except ProcessLookupError:\n"
+        "            pass\n"
+        "        proc.wait()\n"
+        "        raise\n\n\n"
+        "def _shutdown():\n"
+        "    # Shared by an explicit SIGTERM (`_handle_sigterm`) and the\n"
+        "    # orphaned-owner branch in `_run`'s poll loop below -- ONE\n"
+        "    # teardown action, never a second copy that could drift.\n"
         "    if os.path.isfile(SERVER_PID_FILE):\n"
         "        try:\n"
         "            pid = int(open(SERVER_PID_FILE).read().strip())\n"
         "            os.kill(pid, signal.SIGTERM)\n"
         "        except (OSError, ValueError):\n"
-        "            pass\n"
+        "            pass\n\n\n"
+        "def _handle_sigterm(signum, frame):\n"
+        "    _shutdown()\n"
         "    sys.exit(0)\n\n\n"
+        "def _owner_alive():\n"
+        "    # K4 camp3 diagnosis (2026-08-20): `os.kill(pid, 0)` is a\n"
+        "    # fast, dependency-free liveness probe -- its one known gap is\n"
+        "    # PID reuse (a false 'still alive' if OWNER_PID was recycled by\n"
+        "    # an unrelated later process). At POLL_SECONDS=2 this is\n"
+        "    # re-checked every cycle, so a stale positive here only delays\n"
+        "    # self-termination by one more poll, never masks it forever --\n"
+        "    # an accepted floor, the same shape `_server_alive`'s own PID\n"
+        "    # fast-path already documents, not a silent-wrong (GDP-6).\n"
+        "    try:\n"
+        "        os.kill(OWNER_PID, 0)\n"
+        "    except OSError:\n"
+        "        return False\n"
+        "    return True\n\n\n"
         "def _run():\n"
         "    signal.signal(signal.SIGTERM, _handle_sigterm)\n"
         "    _restart()\n"
         "    while True:\n"
         "        time.sleep(POLL_SECONDS)\n"
+        "        if not _owner_alive():\n"
+        "            # The one process that would ever call `stop_supervisor`\n"
+        "            # again is gone -- self-terminate the SAME way an\n"
+        "            # explicit SIGTERM already does, so this supervisor (and\n"
+        "            # its managed server) never outlives every process that\n"
+        "            # could still reach it by PID.\n"
+        "            with open(SUPERVISOR_LOG, 'a') as log:\n"
+        "                log.write(\n"
+        "                    'supervisor: owner pid %s gone, self-terminating '\n"
+        "                    'at %s\\n' % (OWNER_PID, time.time())\n"
+        "                )\n"
+        "            _shutdown()\n"
+        "            sys.exit(0)\n"
         "        reset_requested = os.path.exists(RESET_MARKER)\n"
         "        if reset_requested:\n"
         "            try:\n"
@@ -834,8 +931,23 @@ def supervisor_script(port: int, api_key: str) -> str:
         "# traceback to SUPERVISOR_LOG before exiting, so a reader (or\n"
         "# `health_or_reset_block`'s own loud fallback) has evidence the\n"
         "# supervisor died and why, instead of a silent, permanent stop.\n"
+        "#\n"
+        "# K4 camp2/camp3 diagnosis (2026-08-20): `_handle_sigterm` raises\n"
+        "# `SystemExit` (via `sys.exit(0)`) to unwind out of `_run()` on an\n"
+        "# ORDINARY, SELF-INITIATED shutdown -- every `stop_supervisor` call\n"
+        "# and every `start_supervisor` stop-then-launch cycle ends this way.\n"
+        "# `SystemExit` is a `BaseException`, so a bare `except BaseException`\n"
+        "# here could not tell that apart from a genuine crash and logged\n"
+        "# 'FATAL' plus a traceback on EVERY graceful teardown -- noise that\n"
+        "# sent two independent diagnostic lanes chasing a supervisor-restart\n"
+        "# failure for a run that had already self-healed and shut down on\n"
+        "# request. Re-raising `SystemExit` immediately, before the FATAL\n"
+        "# branch, keeps the exit code intact while reserving the log for\n"
+        "# exceptions `_run()` never expected.\n"
         "try:\n"
         "    _run()\n"
+        "except SystemExit:\n"
+        "    raise\n"
         "except BaseException:\n"
         "    with open(SUPERVISOR_LOG, 'a') as log:\n"
         "        log.write('supervisor: FATAL at %s\\n' % time.time())\n"
@@ -928,6 +1040,32 @@ def _stop_supervisor_locked(workspace: Path) -> None:
     pid_file.unlink(missing_ok=True)
 
 
+def _proxied_curl(method: str, url: str, *, extra_args: str = "") -> str:
+    """The ONE curl invocation shape every call this fixture's rendered
+    doc puts in front of the examiner must go through -- GDP-0: a bare,
+    unproxied curl must be structurally unable to reach the rendered
+    document. `health_or_reset_block`'s own docstring documents WHY: the
+    sandboxed Bash's network namespace does not share the host's
+    loopback, so a curl built without `--proxy "$HTTP_PROXY" --noproxy
+    ""` refuses (exit 7) even though the server is alive and reachable
+    from the host.
+
+    Run 18 (K4 matrix): before this helper existed, `health_or_reset_
+    block` carried the wrapper but the separately hand-written "## HTTP
+    journeys" section emitted bare `METHOD url` text -- an examiner
+    reading only that section built her own unwrapped curl and hit the
+    same exit 7, with zero POSTs ever reaching the server (server.log
+    empty for the whole run). Routing BOTH call sites through this one
+    helper makes that class of drift unrepresentable rather than
+    catching it after the fact.
+
+    Safe unconditionally for an unsandboxed reader too: `--proxy ""` is
+    curl's own no-op for "use no proxy" when `$HTTP_PROXY` is unset."""
+    method_part = "" if method == "GET" else f"-X {method} "
+    args_part = f"{extra_args} " if extra_args else ""
+    return f'curl {args_part}--proxy "$HTTP_PROXY" --noproxy "" {method_part}{url}'
+
+
 def health_or_reset_block(port: int, api_key: str) -> str:
     """The ONE copy-paste Bash block the examiner runs -- a health check,
     never a start command. Run 14 take 3 (K4 matrix), PROBE-D-E.md: Vera's
@@ -983,10 +1121,10 @@ def health_or_reset_block(port: int, api_key: str) -> str:
     against a real host loopback returning `200` identically either
     way."""
     base_url = f"http://127.0.0.1:{port}"
+    check_url = f"{base_url}/api/v3/checks/"
     probe = (
-        f'curl -fsS --proxy "$HTTP_PROXY" --noproxy "" '
-        f'{base_url}/api/v3/checks/ -H "X-Api-Key: {api_key}" '
-        "> /dev/null 2>&1"
+        _proxied_curl("GET", check_url, extra_args=f'-fsS -H "X-Api-Key: {api_key}"')
+        + " > /dev/null 2>&1"
     )
     return (
         f"if ! {probe}; then\n"
@@ -1019,6 +1157,10 @@ def health_or_reset_block(port: int, api_key: str) -> str:
 def _render(port: int, api_key: str) -> str:
     base = f"http://127.0.0.1:{port}"
     block = health_or_reset_block(port, api_key)
+    checks_url = f"{base}/api/v3/checks/"
+    checks_item_url = f"{base}/api/v3/checks/<uuid>"
+    auth_arg = f'-H "X-Api-Key: {api_key}"'
+    invalid_arg = f'{auth_arg} -d "not-json"'
     return (
         "# User environment\n\n"
         "The service is ALREADY RUNNING, kept alive by the harness -- "
@@ -1032,11 +1174,16 @@ def _render(port: int, api_key: str) -> str:
         f"Base URL: {base}\n\n"
         f"API key: {api_key} (read/write, preprovisioned for this environment)\n\n"
         "## HTTP journeys\n\n"
-        f"- List: GET {base}/api/v3/checks/\n"
-        f"- Create: POST {base}/api/v3/checks/\n"
-        f"- Update: POST {base}/api/v3/checks/<uuid>\n"
-        f"- Readback: GET {base}/api/v3/checks/<uuid>\n"
-        "- Invalid input: POST a malformed body, expect a 400 response\n"
+        "Every call below must be run through the sandbox proxy bridge, "
+        "exactly like the health-check block above -- a bare, unwrapped "
+        "curl to these URLs will refuse (exit 7) even though the server "
+        "is alive:\n\n"
+        f"- List: {_proxied_curl('GET', checks_url, extra_args=auth_arg)}\n"
+        f"- Create: {_proxied_curl('POST', checks_url, extra_args=auth_arg)}\n"
+        f"- Update: {_proxied_curl('POST', checks_item_url, extra_args=auth_arg)}\n"
+        f"- Readback: {_proxied_curl('GET', checks_item_url, extra_args=auth_arg)}\n"
+        "- Invalid input (expect a 400 response): "
+        f"{_proxied_curl('POST', checks_url, extra_args=invalid_arg)}\n"
     )
 
 

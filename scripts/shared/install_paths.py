@@ -164,11 +164,64 @@ SCRIPTS_SUBDIR = Path("scripts")
 COMMANDS_LEGACY_SUBDIR = Path("commands") / "nw"  # deprecated, cleanup only
 MANIFEST_FILENAME = "nwave-manifest.txt"
 GLOBAL_CONFIG_FILENAME = "global-config.json"
+INSTALL_LOCK_FILENAME = "install.lock"
+
+
+def agents_home() -> Path:
+    """Return the install root every platform target of one invocation shares.
+
+    ``NWAVE_AGENTS_HOME`` when set (the isolation override already honored by
+    ``install_nwave.create_backup``, ``record_install_metadata`` and the K4
+    harness), else the user home. Resolved through ONE helper so the install
+    lock and the install provenance record can never disagree about which
+    install they belong to.
+    """
+    return Path(os.environ.get("NWAVE_AGENTS_HOME") or Path.home())
+
+
+def install_lock_path(home: Path | None = None) -> Path:
+    """Return the exclusive-install lock file for one install destination.
+
+    Scope is the install ROOT (``home``, default :func:`agents_home`), NOT the
+    machine: two installs aimed at genuinely disjoint destinations -- an
+    isolated lane pinning ``NWAVE_AGENTS_HOME``/``HOME`` -- must not serialize
+    each other, while two installs aimed at the same root must. Every platform
+    target of a single invocation (Claude, Codex, OpenCode, Copilot) resolves
+    its write destinations beneath this one root, so one lock per root covers
+    the whole invocation.
+    """
+    return (home or agents_home()) / ".nwave" / INSTALL_LOCK_FILENAME
 
 
 def host_neutral_runtime_dir() -> Path:
     """Return the shared DES runtime root, independent of any host adapter."""
     return Path.home() / ".nwave" / "runtime"
+
+
+def active_runtime_pointer_path() -> Path:
+    """Return the pointer file naming the runtime dir the des shim must use.
+
+    The installer rewrites this file on EVERY install (see
+    DESPlugin._install_des_module), recording the primary runtime python dir
+    it just populated. The installed des/des-commit shims follow it, so the
+    launcher always binds the runtime of the most recent install -- a
+    Codex-only install can no longer leave a stale Claude-scoped launcher
+    answering on PATH ("codex manifest green but launcher claude").
+    """
+    return Path.home() / ".nwave" / "active-runtime"
+
+
+def record_active_runtime(runtime_python_dir: Path) -> Path:
+    """Record ``runtime_python_dir`` as the runtime the des shims resolve.
+
+    Last install wins, deterministically. The shim validates the recorded
+    dir still contains a ``des`` package before trusting it, so a later
+    uninstall leaves a dangling pointer inert rather than fatal.
+    """
+    pointer = active_runtime_pointer_path()
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    pointer.write_text(runtime_python_dir.as_posix() + "\n")
+    return pointer
 
 
 def agents_dir(claude_dir: Path) -> Path:

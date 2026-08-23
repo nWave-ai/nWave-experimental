@@ -23,6 +23,9 @@ from des.application.ordinary_request import compute_delivery_id, contract_locat
 _REPO_ROOT = Path(__file__).resolve().parents[6]
 _NW_AUTO_SKILL_MD = _REPO_ROOT / "nWave" / "skills" / "nw-auto" / "SKILL.md"
 _ATD_AGENT_MD = _REPO_ROOT / "nWave" / "agents" / "nw-acceptance-designer.md"
+_PREPARE_ORDINARY_REQUEST_PY = (
+    _REPO_ROOT / "src" / "des" / "cli" / "prepare_ordinary_request.py"
+)
 
 
 _ATD = "nw-acceptance-designer"
@@ -339,18 +342,22 @@ _VALID_CITATION_LINE = (
 
 def _atd_revision_body(
     *,
+    root_line: str = _VALID_ROOT,
     locator_line: str = _VALID_REVISE_LOCATOR_LINE,
     round_line: str = _VALID_REVISE_ROUND_LINE,
     citation_line: str = _VALID_CITATION_LINE,
 ) -> str:
-    return "\n".join([locator_line, round_line, citation_line])
+    return "\n".join([root_line, locator_line, round_line, citation_line])
 
 
 class TestAtdAcceptsTheContractRevisionBody:
     """Run 4 evidence / ADR-SSOT-002 Section 4c/4d: a crafter INDETERMINATE
     citing the contract/oracle routes back to ATD with this alternate
-    three-line body (stable-design report 2026-08-19 §1.2 added
-    REVISE-ROUND, emitted only by `des revise-contract-round`) on the SAME
+    four-line body (stable-design report 2026-08-19 §1.2 added
+    REVISE-ROUND, emitted only by `des revise-contract-round`; SF friction
+    report 2026-08-20 item 6 added ROOT -- a dispatched reviser had no
+    choice but to resolve REVISE-CONTRACT's repo-relative locator against
+    its OWN cwd, the wrong checkout, twice in one night) on the SAME
     already-produced DeliveryId -- never a fresh fourteen-line envelope
     from a second `prepare-ordinary-request` run."""
 
@@ -482,6 +489,24 @@ class TestAtdAcceptsTheContractRevisionBody:
                 "two_line_body_missing_round_entirely",
                 "\n".join([_VALID_REVISE_LOCATOR_LINE, _VALID_CITATION_LINE]),
             ),
+            (
+                "three_line_body_missing_root_entirely",
+                "\n".join(
+                    [
+                        _VALID_REVISE_LOCATOR_LINE,
+                        _VALID_REVISE_ROUND_LINE,
+                        _VALID_CITATION_LINE,
+                    ]
+                ),
+            ),
+            (
+                "revision_root_relative",
+                _atd_revision_body(root_line="ROOT: relative/root"),
+            ),
+            (
+                "revision_root_missing_prefix",
+                _atd_revision_body(root_line="/abs/repo/root"),
+            ),
         ],
     )
     def test_malformed_revision_body_blocks_with_this_gates_signature(
@@ -538,19 +563,27 @@ class TestScopeExclusionsPassThisSpecificGate:
 
 
 class TestRevisionGrammarDoesNotDriftAcrossAuthoringSurfaces:
-    """The two-line `REVISE-CONTRACT:`/`CITATION:` shape is documented in
-    TWO prose surfaces (root's routing skill, ATD's own agent spec) but
-    enforced by a THIRD (this hook). A prefix changed in only one of the
-    three would desync root's routing prose from what the hook actually
-    admits -- pin the exact hook constants as literal substrings of both
-    documents so that drift fails a test, not a live redispatch loop."""
+    """The four-line `ROOT:`/`REVISE-CONTRACT:`/`REVISE-ROUND:`/
+    `CITATION:` shape is documented in THREE prose surfaces (root's
+    routing skill, ATD's own agent spec, and prepare_ordinary_request.py's
+    own already-produced-contract refusal `how=` -- SF friction report
+    2026-08-20 item 6 follow-up: this third, code-level surface still
+    described the pre-19/8 two-line shape, caught by review on dae54f3a8's
+    integration) but enforced by a FOURTH (this hook). A prefix changed
+    in only one of the three prose surfaces would desync it from what
+    the hook actually admits -- pin the exact hook constants as literal
+    substrings of all three documents so that drift fails a test, not a
+    live redispatch loop or a reviser resolving paths against the wrong
+    checkout."""
 
-    def test_revise_contract_and_citation_prefixes_appear_in_both_documents(
+    def test_revise_contract_and_citation_prefixes_appear_in_all_three_documents(
         self,
     ) -> None:
         skill_text = _NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
         agent_text = _ATD_AGENT_MD.read_text(encoding="utf-8")
+        producer_text = _PREPARE_ORDINARY_REQUEST_PY.read_text(encoding="utf-8")
         for prefix in (
+            pre_tool_use_handler._ATD_ROOT_LINE_PREFIX.rstrip(),
             pre_tool_use_handler._ATD_REVISE_CONTRACT_LINE_PREFIX.rstrip(),
             pre_tool_use_handler._ATD_REVISE_ROUND_LINE_PREFIX.rstrip(),
             pre_tool_use_handler._ATD_CITATION_LINE_PREFIX.rstrip(),
@@ -559,6 +592,14 @@ class TestRevisionGrammarDoesNotDriftAcrossAuthoringSurfaces:
             assert prefix in agent_text, (
                 f"{prefix!r} missing from nw-acceptance-designer.md"
             )
+            assert prefix in producer_text, (
+                f"{prefix!r} missing from prepare_ordinary_request.py's own "
+                "already-produced-contract refusal prose"
+            )
+        assert "two-line body" not in producer_text, (
+            "prepare_ordinary_request.py's refusal prose must not claim the "
+            "pre-19/8 two-line shape -- the real body is four lines"
+        )
 
     def test_skill_names_the_revision_route_never_a_fresh_producer_run(self) -> None:
         skill_text = _NW_AUTO_SKILL_MD.read_text(encoding="utf-8")

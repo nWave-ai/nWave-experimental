@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from des.domain.oracle_locator_resolver import oracle_citation_file_part
 from des.domain.verification_command_resolver import (
     django_test_labels,
     pytest_file_arguments,
@@ -34,13 +35,17 @@ def command_argv(repo_root: Path, command: dict) -> list[str]:
 
 
 def oracle_forms(oracle_locator: str) -> set[str]:
-    """The dotted-module-label and repository-relative-path spellings of
-    one oracle locator -- either may legitimately appear in a verification
-    command's own argv."""
+    """The verbatim, dotted-module-label and repository-relative-path
+    spellings of one oracle locator -- any may legitimately appear in a
+    verification command's own argv. A `::Selector` suffix is oracle
+    IDENTITY, not a path: the file part carries the path spellings and the
+    verbatim locator stays a member so a command citing the full
+    `path::Selector` string still links."""
     if not oracle_locator:
         return set()
-    stem = oracle_locator[:-3] if oracle_locator.endswith(".py") else oracle_locator
-    return {stem.replace("/", "."), oracle_locator}
+    file_part = oracle_citation_file_part(oracle_locator)
+    stem = file_part[:-3] if file_part.endswith(".py") else file_part
+    return {stem.replace("/", "."), file_part, oracle_locator}
 
 
 def is_oracle_linked(command: dict, oracle_locator: str) -> bool:

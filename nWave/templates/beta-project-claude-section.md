@@ -1,20 +1,44 @@
 ## nWave (beta) — How to Work in This Project
 
-### Drive Work Through the Spine — Use the `/nw-*` Commands
+nWave is a spine-driven delivery framework. Wave commands (`/nw-*`) carry the
+gates; skills carry on-demand knowledge; agents execute. This section is an
+INDEX — it tells you which to reach for, not how each one works internally.
 
-Epic and feature work flows through nWave's `/nw-*` wave-based slash commands.
+**Before any tool call — including read-only discovery — state your route.**
+Load skill `nw-mode-select` to pick posture (`direct` / `human` / `auto`) and
+size (`S` / `M` / `L`) with one observable reason, then follow it. A generic
+autonomy grant ("use your judgment") counts as `auto`.
 
-**Before any tool call — including read-only discovery, not just your first mutating call (Write/Edit/Agent) — establish and state your route: posture (`human` / `auto` / `direct`), size (S/M/L) with one observable reason for that size, and the path you are taking.** A self-contained S still invokes `nw-mode-select` once, is classified S, then exits direct — no wave, no re-ask, no `nw-auto`. Everything else — M, L, or undetermined size — invokes `nw-mode-select` first; an explicit mode (a generic autonomy grant counts as `auto`) still gets sized S/M/L. Undetermined shape invokes `nw-new` first, not `/nw-deliver`.
+| User wants... | Load / run |
+|---|---|
+| Validate a problem is real | `/nw-discover` |
+| Compare solution directions | `/nw-diverge` |
+| Clarify jobs, journeys, outcomes | `/nw-discuss` |
+| Architecture, reuse, boundaries | `/nw-design` |
+| Deployment / operational constraints | `/nw-devops` |
+| Executable oracle + DeliveryContract | `/nw-distill` |
+| Ship one validated contract | `/nw-deliver` |
+| Fix one observed defect | `/nw-bugfix` |
+| Review an artifact or diff | `/nw-review` |
+| Reduce a noisy test suite | `/nw-optimize-tests` |
+| Explicit mutation probe | `/nw-mutation-test` |
+| Resume after an interruption | `/nw-new` (reads durable authorities, routes to the earliest missing owner) |
+| Autonomous M/L delivery, no staged review | skill `nw-auto`, after `nw-mode-select` picks `auto` |
+| Anything else — methodology, routing, "what do I do" | skill `nw-buddy` |
 
-Waves, in order: `/nw-discover` `/nw-diverge` `/nw-discuss` `/nw-design` `/nw-devops` `/nw-distill` `/nw-deliver`.
-
-**Mandatory floor**: DISTILL → DELIVER — acceptance tests, test-driven code; upstream waves optional.
-
-**Never hand-roll delivery work** bypassing the spine. For Auto mode on M/L work, load the `nw-auto` skill directly — never `/nw-deliver` first, never in parallel with it; `nw-auto` owns the floor: `nw-acceptance-designer` compiles the immutable DeliveryContract into acceptance tests, one crafter implements, and one independent examiner verifies the real surface — the root must never substitute any of these roles itself. Human mode adds staged review to the same floor. Both routes join evidence and finalize the whole delivery exactly once; neither runs a per-slice closure cycle.
-
-After an interruption, re-enter through `/nw-new` — it reads durable product/design authorities and routes to the earliest missing owner; it does not infer progress from a feature directory.
+**Mandatory floor**: DISTILL → DELIVER (acceptance tests, TDD-first). Upstream
+waves are human-skippable only, never self-skipped. Never hand-roll delivery
+work bypassing the spine.
 
 {{TOOL_BATCHING_FRAGMENT}}
+
+{{QUESTION_FORMAT_FRAGMENT}}
+
+### Communication
+
+<!-- GENERATED:communication-rules START — source of truth: des.adapters.driven.config.des_config.DESConfig.effective_config() (ADR-CFG-001 Slice 2 -- ~/.nwave/config.json + .nwave/config.json); do not hand-edit (docgen renders this region) -->
+- Communication verbosity: **standard**
+<!-- GENERATED:communication-rules END -->
 
 ### Privacy — Non-Negotiable
 

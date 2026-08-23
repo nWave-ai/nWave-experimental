@@ -8,6 +8,7 @@ Cross-platform compatible (Windows, Mac, Linux).
 
 __version__ = "1.1.0"
 
+import json
 import os
 import re
 import shutil
@@ -833,6 +834,23 @@ For help: https://github.com/nWave-ai/nWave
         manifest_path.write_text(content, encoding="utf-8")
 
     @staticmethod
+    def _installed_count(manifest_path: Path, key: str) -> str:
+        """Count what the host plugin WROTE, never what the directory holds.
+
+        A disk count measures the disk (stale orphans included); the plugin
+        manifest is the list this install actually produced.  A missing or
+        malformed manifest is reported loudly, not as zero.
+        """
+        try:
+            document = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return "unattested (no plugin manifest)"
+        names = document.get(key) if isinstance(document, dict) else None
+        if not isinstance(names, list):
+            return "unattested (malformed plugin manifest)"
+        return str(len(names))
+
+    @staticmethod
     def _target_manifest_summary(targets: frozenset[str], claude_dir: Path) -> str:
         """Render target-labelled facts without treating Claude state as universal."""
         lines: list[str] = []
@@ -849,8 +867,16 @@ For help: https://github.com/nWave-ai/nWave
             codex_home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
             lines.extend(
                 (
-                    f"- Codex skills: {PathUtils.count_files(agents_home / '.agents' / 'skills', '*.md')}",
-                    f"- Codex agents: {PathUtils.count_files(codex_home / 'agents', '*.toml')}",
+                    "- Codex skills: "
+                    + ManifestWriter._installed_count(
+                        agents_home / ".agents" / "skills" / ".nwave-manifest.json",
+                        "installed_skills",
+                    ),
+                    "- Codex agents: "
+                    + ManifestWriter._installed_count(
+                        codex_home / "agents" / ".nwave-agents-manifest.json",
+                        "installed_agents",
+                    ),
                     f"- Codex DES hook: {'configured' if (codex_home / 'hooks.json').is_file() else 'missing'}",
                 )
             )

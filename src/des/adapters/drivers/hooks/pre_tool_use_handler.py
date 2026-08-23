@@ -56,6 +56,7 @@ from des.application.ordinary_request import (
     is_lexical_repo_relative_json_locator,
     is_valid_arch_header_line,
     is_well_formed_po_envelope,
+    is_well_formed_po_revision_envelope,
 )
 from des.application.skill_tracking_service import (
     RootModeState,
@@ -90,7 +91,7 @@ _THIN_HEADER_DIGEST_HEX_LEN = 64
 _THIN_HEADER_DIGEST_HEX_ALPHABET = frozenset("0123456789abcdef")
 
 # K4: exact-match roles whose Auto-root Agent dispatch must carry the
-# value-only four-line PO envelope `des resolve-charters` prints on AUTHOR
+# value-only six-line PO envelope `des resolve-charters` prints on AUTHOR
 # (`des.application.ordinary_request.build_po_envelope`) -- never an
 # ARCHITECTURE-COVERED anchor, which disqualifies `nw-product-owner` as
 # charter author by its own role logic the instant its context carries one.
@@ -123,7 +124,10 @@ _ATD_REVISE_CONTRACT_LINE_PREFIX = "REVISE-CONTRACT: "
 # this line between REVISE-CONTRACT and CITATION.
 _ATD_REVISE_ROUND_LINE_PREFIX = "REVISE-ROUND: "
 _ATD_CITATION_LINE_PREFIX = "CITATION: "
-_ATD_REVISION_BODY_LINE_COUNT = 3
+# SF friction report 2026-08-20, item 6: ROOT (line 0, reusing the SAME
+# `_ATD_ROOT_LINE_PREFIX`/`_has_absolute_value` the 12-line ATD body
+# already validates) plus REVISE-CONTRACT/REVISE-ROUND/CITATION.
+_ATD_REVISION_BODY_LINE_COUNT = 4
 _CONTRACT_LOCATOR_DIR_PREFIX = "docs/delivery-contracts/"
 
 # K4 (nw-auto ADR-SSOT-002 Section 4c total constructor): the twelve named
@@ -185,6 +189,26 @@ _AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS = frozenset(
         "resolve-charters",
         "code-fact",
         "compile-contract",
+        # SF friction report 2026-08-20, item 5: `_is_well_formed_atd_
+        # revision_body` REQUIRES the REVISE dispatch body come verbatim
+        # from `des revise-contract-round`'s own stdout, but this SAME
+        # allowlist never named the subcommand -- root's own Bash call to
+        # PRODUCE that body was blocked before it could ever run,
+        # deadlocking the exact flow nw-auto/SKILL.md's routing table
+        # documents. The two gates (body-shape check, subcommand
+        # allowlist) must agree on which producers root may invoke; the
+        # drift guard below (`TestAutoRootBashAllowlistCoversSkillMandat
+        # edSubcommands`) is extended with a hand-anchored assertion for
+        # this exact class, since revise-contract-round is named in
+        # SKILL.md as inline backtick prose (a routing-table cell), never
+        # inside a fenced block the general parser scans.
+        "revise-contract-round",
+        # The charter-side sibling: `is_well_formed_po_revision_envelope`
+        # REQUIRES the PO revision dispatch envelope come verbatim from
+        # `des revise-charter-round`'s own stdout -- same deadlock class as
+        # SF friction report 2026-08-20, item 5, if the producer itself is
+        # not allowlisted.
+        "revise-charter-round",
     }
 )
 
@@ -397,9 +421,8 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
             "WHAT: an Auto-root Bash command is not a `git` or `des` "
             "invocation. "
             "WHY: Auto-root Bash is restricted to git status/diff/"
-            "rev-parse/branch/worktree/add/commit, or des dispatch/"
-            "validate-delivery-contract/charter-scaffold/"
-            "prepare-ordinary-request/resolve-charters/code-fact. "
+            "rev-parse/branch/worktree/add/commit, or des "
+            f"{'/'.join(sorted(_AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS))}. "
             "HOW: dispatch a role for other work, or run the equivalent "
             "git/des subcommand."
         )
@@ -417,9 +440,8 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
     if subcommand not in _AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS:
         return _auto_root_bash_block(
             f"WHAT: an Auto-root `des {subcommand}` call was blocked. "
-            "WHY: Auto-root Bash only allows des dispatch/"
-            "validate-delivery-contract/charter-scaffold/"
-            "prepare-ordinary-request/resolve-charters/code-fact. "
+            "WHY: Auto-root Bash only allows des "
+            f"{'/'.join(sorted(_AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS))}. "
             "HOW: dispatch the appropriate nw-* role for any other des "
             "subcommand."
         )
@@ -434,10 +456,10 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
 # non-heredoc `--status` query, (b) a `--field`-bearing call whose value
 # arrives ONLY on a quoted `<<'NW_FILL'` heredoc (never a bare argv token
 # -- the same opaque-bytes guarantee the Auto-root VALUE-SEED heredoc gives
-# a quoted body no shell expansion). `--status` must be the LAST token when
-# present -- a deliberate simplification of the intended dispatch shape
-# (`nWave/agents/nw-acceptance-designer.md`), not a general flag-order
-# parser.
+# a quoted body no shell expansion). Flags are order-insensitive:
+# `--status` is a value-less flag accepted at any position (K4 camp6
+# denial-RCA C-f1 -- a last-token-only `--status` rule falsely rejected
+# the gate's own prescribed call shape).
 _FILL_VALUE_HEREDOC_DELIMITER = "NW_FILL"
 _FILL_VALUE_HEREDOC_HEADER_SUFFIXES = (
     f" <<'{_FILL_VALUE_HEREDOC_DELIMITER}'",
@@ -486,8 +508,12 @@ def _fill_contract_argv(prefix: str) -> list[str] | None:
             i += 1
             continue
         if flag_name == "--status":
-            if i != len(flags) - 1:
-                return None
+            # Value-less flag, accepted at ANY position. K4 camp6
+            # denial-RCA C-f1: a former last-token-only rule rejected the
+            # prescribed `--status`-first query as "not well-formed" while
+            # the identical invocation with `--status` last passed --
+            # a position-sensitive parser turns the gate's own HOW into a
+            # false rejection.
             i += 1
             continue
         # Every OTHER flag here takes a following value token.
@@ -499,13 +525,26 @@ def _fill_contract_argv(prefix: str) -> list[str] | None:
     return argv
 
 
-def _is_fill_value_stdin_heredoc(command: str) -> bool:
-    """True iff `command` is one hook-permitted fill-value heredoc: a
-    bounded `des fill-contract` header carrying `--field`, ending in a
-    quoted `<<'NW_FILL'`/`<<"NW_FILL"` redirect, an opaque body, and a
-    terminator line that is exactly the delimiter with nothing after it."""
+def _fill_heredoc_header_prefix(command: str) -> str | None:
+    """Header-line prefix (the argv text before the quoted `<<'NW_FILL'`
+    redirect) iff `command` has the exact quoted NW_FILL heredoc TRANSPORT
+    shape: one header line ending in `<<'NW_FILL'`/`<<"NW_FILL"`, an
+    opaque body, and a terminator line that is exactly the delimiter,
+    optionally followed by ONE final newline (`...\\nNW_FILL\\n` and
+    `...\\nNW_FILL` are the same shell construct -- a Bash tool call
+    routinely ends with a trailing newline). `None` on anything else --
+    unquoted delimiter, missing terminator, any non-empty content after it
+    -- which fails closed to the full-command composition scan.
+
+    Shape only, on purpose: header VALIDITY is the caller's judgment.
+    K4 camp6 denial-RCA C-f2: a QUOTED heredoc body is opaque to the
+    shell by definition, so the composition-operator scan must never read
+    it -- scanning the whole command on any header defect rejected body
+    DATA containing `checks/<uuid:code>` as a "shell-composition
+    operator". The opacity carve-out covers ONLY the bytes between the
+    quoted-delimiter header and the terminator line."""
     if "\r" in command or "\n" not in command:
-        return False
+        return None
     header, _, rest = command.partition("\n")
     prefix = None
     for suffix in _FILL_VALUE_HEREDOC_HEADER_SUFFIXES:
@@ -513,16 +552,26 @@ def _is_fill_value_stdin_heredoc(command: str) -> bool:
             prefix = header[: -len(suffix)]
             break
     if prefix is None:
-        return False
-    argv = _fill_contract_argv(prefix)
-    if argv is None or "--field" not in argv:
-        return False
+        return None
     body_lines = rest.split("\n")
     try:
         terminator_index = body_lines.index(_FILL_VALUE_HEREDOC_DELIMITER)
     except ValueError:
+        return None
+    if body_lines[terminator_index + 1 :] not in ([], [""]):
+        return None
+    return prefix
+
+
+def _is_fill_value_stdin_heredoc(command: str) -> bool:
+    """True iff `command` is one hook-permitted fill-value heredoc: the
+    quoted NW_FILL transport shape (`_fill_heredoc_header_prefix`) whose
+    header validates as a `des fill-contract` argv carrying `--field`."""
+    prefix = _fill_heredoc_header_prefix(command)
+    if prefix is None:
         return False
-    return terminator_index == len(body_lines) - 1
+    argv = _fill_contract_argv(prefix)
+    return argv is not None and "--field" in argv
 
 
 def _evaluate_atd_fill_contract_bash_command(
@@ -544,6 +593,26 @@ def _evaluate_atd_fill_contract_bash_command(
         )
     if _is_fill_value_stdin_heredoc(command):
         return None
+    if _fill_heredoc_header_prefix(command) is not None:
+        # Quoted-heredoc TRANSPORT shape whose header does not validate:
+        # the body between the quoted delimiter and the terminator line is
+        # shell-opaque by definition and is NEVER scanned for composition
+        # operators -- the defect is in the header line, and the rejection
+        # must say so (K4 camp6 denial-RCA C-f2: the former whole-command
+        # scan rejected inert body data as a "shell-composition
+        # operator"). The header prefix's own composition check still runs
+        # inside `_fill_contract_argv`, so a smuggled operator BEFORE the
+        # redirect stays blocked.
+        return _atd_bash_block(
+            "WHAT: an ATD `des fill-contract` heredoc call has an invalid "
+            "header line (the quoted NW_FILL body is opaque data and was "
+            "not scanned). "
+            "WHY: the header must be `des fill-contract` with only "
+            "--repo-root/--delivery-id/--target/--field/--status, and a "
+            "--field naming a prose field. "
+            "HOW: fix the header line only; keep the value in the quoted "
+            "<<'NW_FILL' ... NW_FILL body."
+        )
     if any(marker in command for marker in _AUTO_ROOT_BASH_INJECTION_MARKERS):
         return _atd_bash_block(
             "WHAT: an ATD Bash command carrying a shell-composition "
@@ -992,9 +1061,9 @@ def _auto_root_po_envelope_block() -> dict[str, str]:
         "decision": "block",
         "reason": (
             "WHAT: Auto-root PO dispatch envelope malformed -- the Agent "
-            "prompt is not exactly the four-line value-only "
-            "DELIVERY-ID/NAMESPACE/ROOT/VALUE-SEED envelope, or it carries "
-            "an ARCHITECTURE-COVERED anchor. "
+            "prompt is not exactly the six-line value-only "
+            "DELIVERY-ID/NAMESPACE/ROOT/EXAMINE/DISCOVER/VALUE-SEED "
+            "envelope, or it carries an ARCHITECTURE-COVERED anchor. "
             "WHY: `nw-product-owner` disqualifies itself as charter author "
             "the instant its own context carries an architecture-authority "
             "anchor (ADR-SSOT-002 Section 2 authority typing, Section 4c "
@@ -1006,19 +1075,29 @@ def _auto_root_po_envelope_block() -> dict[str, str]:
             "VALUE-SEED bytes on stdin already piped to "
             "`des prepare-ordinary-request`, then paste its printed "
             "`AUTHOR` envelope verbatim as the prompt -- never author, "
-            "reconstruct or augment it by hand."
+            "reconstruct or augment it by hand; OR, to revise an EXISTING "
+            "charter on a reviewer's value-side citation, run "
+            "`des revise-charter-round --repo-root <root> --delivery-id "
+            "<id> --citation <text>` and paste its exact eight-line stdout "
+            "verbatim."
         ),
     }
 
 
 def _evaluate_auto_root_po_envelope(prompt: object) -> dict[str, str] | None:
     """Lexical Auto-root PO envelope gate: shape-only. `None` (allow) iff
-    `prompt` is exactly the four-line value-only envelope
-    `des.application.ordinary_request.build_po_envelope` emits, with no
+    `prompt` is exactly the six-line value-only envelope
+    `des.application.ordinary_request.build_po_envelope` emits, OR exactly
+    the eight-line charter-revision envelope `build_po_revision_envelope`
+    emits (`des revise-charter-round`'s stdout), with no
     ARCHITECTURE-COVERED-shaped line anywhere; else the block payload."""
-    if not isinstance(prompt, str) or not is_well_formed_po_envelope(prompt):
+    if not isinstance(prompt, str):
         return _auto_root_po_envelope_block()
-    return None
+    if is_well_formed_po_envelope(prompt) or is_well_formed_po_revision_envelope(
+        prompt
+    ):
+        return None
+    return _auto_root_po_envelope_block()
 
 
 def _auto_root_atd_body_block() -> dict[str, str]:
@@ -1085,14 +1164,22 @@ def _is_well_formed_revise_round_value(value: str) -> bool:
 
 
 def _is_well_formed_atd_revision_body(prompt: str) -> bool:
-    """True iff `prompt` is exactly the three-line contract-revision shape
-    `des revise-contract-round` emits: `REVISE-CONTRACT: <locator>` then
-    `REVISE-ROUND: <n>/<N>` then `CITATION: <non-empty JSON string>`,
-    nothing else."""
+    """True iff `prompt` is exactly the four-line contract-revision shape
+    `des revise-contract-round` emits: `ROOT: <absolute-path>` then
+    `REVISE-CONTRACT: <locator>` then `REVISE-ROUND: <n>/<N>` then
+    `CITATION: <non-empty JSON string>`, nothing else.
+
+    SF friction report 2026-08-20, item 6: ROOT was previously absent --
+    a dispatched reviser had no choice but to resolve REVISE-CONTRACT's
+    repo-relative locator against its OWN cwd, the wrong checkout. Same
+    `_ATD_ROOT_LINE_PREFIX`/`_has_absolute_value` the 12-line ATD body
+    already validates its own ROOT line with -- one shape, one check."""
     lines = prompt.split("\n")
     if len(lines) != _ATD_REVISION_BODY_LINE_COUNT:
         return False
-    locator_line, round_line, citation_line = lines
+    root_line, locator_line, round_line, citation_line = lines
+    if not _has_absolute_value(root_line, _ATD_ROOT_LINE_PREFIX):
+        return False
     if not locator_line.startswith(_ATD_REVISE_CONTRACT_LINE_PREFIX):
         return False
     locator = locator_line[len(_ATD_REVISE_CONTRACT_LINE_PREFIX) :]
@@ -1578,10 +1665,28 @@ def handle_pre_tool_use() -> int:
                         json.dumps(
                             {
                                 "decision": "block",
+                                # K4 camp6 denial-RCA RC3: this deny sits at
+                                # the exact decision fork where 2/3 campaign
+                                # arms aborted -- it was the ONLY gate message
+                                # with no HOW (four forbidden actions, zero
+                                # permitted routes). p2 inferred "a fresh
+                                # dispatch would be a retry in disguise" --
+                                # false, and falsified by p3, which
+                                # re-dispatched fresh three times and
+                                # delivered. The HOW names the permitted
+                                # route explicitly. (GDP-3/4/9)
                                 "reason": (
-                                    "Auto roles are single-pass: do not "
-                                    "SendMessage, resume, retry, or correct a "
-                                    "role within the same Auto run."
+                                    "WHAT: an Auto-root SendMessage call was "
+                                    "blocked. "
+                                    "WHY: Auto roles are single-pass -- do "
+                                    "not SendMessage, resume, retry, or "
+                                    "correct a role within the same Auto "
+                                    "run; a role's first result is terminal. "
+                                    "HOW: a FRESH Agent dispatch for a new "
+                                    "contract round or a different route "
+                                    "step IS allowed -- from CONTRACT_READY "
+                                    "run `des dispatch`, and on contract "
+                                    "defects run `des revise-contract-round`."
                                 ),
                             }
                         )

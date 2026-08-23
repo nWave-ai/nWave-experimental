@@ -416,3 +416,130 @@ def test_three_distinct_defects_are_all_named_in_one_refusal(tmp_path: Path) -> 
         f"each of the three defects must carry its own HOW; got {err.count('HOW:')} "
         f"in: {err!r}"
     )
+
+
+def test_selector_bearing_oracle_locator_resolves_the_file_part(
+    tmp_path: Path,
+) -> None:
+    # SF blocker 2026-08-21: the r2g fix emits `path::Selector` verbatim
+    # as `acceptance-tests.locator` (oracle IDENTITY). The schema accepts
+    # it and every disk resolution runs on the FILE part alone -- never
+    # "the oracle file does not exist at ...::Selector".
+    contract_path = _seed_contract(tmp_path)
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    file_part = str(contract["acceptance-tests"]["locator"])
+    selector_locator = f"{file_part}::test_it_awaits_the_missing_feature"
+    contract["acceptance-tests"]["locator"] = selector_locator
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    exit_code, out, err = _run(
+        "--repo-root",
+        str(tmp_path),
+        "--delivery-contract",
+        contract_path.name,
+    )
+
+    assert exit_code == 0, err
+    oracle_bytes = (tmp_path / file_part).read_bytes()
+    digest = closure_digest(contract_path.read_bytes(), oracle_bytes)
+    assert out == (
+        "THIN-DELIVERY-CONTRACT: delivery-contract.json\n"
+        f"THIN-DELIVERY-CONTRACT-DIGEST: sha256:{digest}\n"
+    )
+
+
+# --- SF falsifier 2026-08-21 (load-bearing, sister review): a contract
+# compiled from the REAL SF authority shape (a delegation brief whose ADR
+# owns the literal clean-checkout script, and a `path::Selector` Go oracle
+# citation) travels the FULL chain -- compile -> fill -> schema-validate ->
+# dispatch -- and the dispatch/ATD path consumes the delegation LOUDLY:
+# never a silent zero-commands traversal, never "no linked oracle".
+
+
+def _fill_placeholders(value: object) -> object:
+    from des.domain.contract_placeholder_resolver import PLACEHOLDER
+
+    if isinstance(value, dict):
+        return {k: _fill_placeholders(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_fill_placeholders(v) for v in value]
+    if value == PLACEHOLDER:
+        return "filled by ATD for the falsifier chain"
+    return value
+
+
+def _compiled_sf_delegation_contract(tmp_path: Path) -> tuple[Path, Path, str]:
+    """(repo_root, contract_path, authority_relative_path) for the
+    SF-shape delegation fixture, compiled by the REAL compiler."""
+    from des.application.compile_contract import Compiled, compile_delivery_contract
+    from tests.des.unit.application.test_compile_contract import (
+        _ADR_RELATIVE_PATH,
+        _adr_document,
+        _build_go_red_repo,
+        _go_red_brief_with_authority_locator,
+        _go_red_inputs,
+        _write_adr,
+    )
+
+    repo_root = _build_go_red_repo(tmp_path, with_declared_suite=False)
+    _write_adr(repo_root, _adr_document())
+    result = compile_delivery_contract(
+        _go_red_inputs(
+            repo_root,
+            brief_text=_go_red_brief_with_authority_locator(),
+            examine=False,
+        )
+    )
+    assert isinstance(result, Compiled), result
+    contract = _fill_placeholders(result.contract)
+    assert "literal-script-block" in contract["verification-scope"]
+    assert "::" in contract["acceptance-tests"]["locator"]
+    contract_path = repo_root / "delivery-contract.json"
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+    return repo_root, contract_path, _ADR_RELATIVE_PATH
+
+
+def test_sf_delegation_contract_dispatches_loudly_end_to_end(
+    tmp_path: Path,
+) -> None:
+    repo_root, contract_path, _adr = _compiled_sf_delegation_contract(tmp_path)
+
+    exit_code, out, err = _run(
+        "--repo-root",
+        str(repo_root),
+        "--delivery-contract",
+        contract_path.name,
+    )
+
+    assert exit_code == 0, err
+    assert "THIN-DELIVERY-CONTRACT: delivery-contract.json" in out
+    assert "THIN-DELIVERY-CONTRACT-DIGEST: sha256:" in out
+    # The delegation is consumed LOUDLY: the probe names the branch and
+    # the digest re-verification -- never a silent zero-commands pass.
+    assert "literal script block" in err
+    assert "digest re-verified" in err
+
+
+def test_sf_delegation_contract_with_drifted_authority_is_refused(
+    tmp_path: Path,
+) -> None:
+    repo_root, contract_path, adr_relative = _compiled_sf_delegation_contract(tmp_path)
+    adr = repo_root / adr_relative
+    adr.write_text(
+        adr.read_text(encoding="utf-8").replace(
+            "go test ./... -count=1", "go test ./... -count=1 -run Tampered"
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code, out, err = _run(
+        "--repo-root",
+        str(repo_root),
+        "--delivery-contract",
+        contract_path.name,
+    )
+
+    assert exit_code == 2
+    assert not out
+    assert "no longer matches" in err
+    assert "des compile-contract" in err

@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from des.domain.oracle_locator_resolver import oracle_citation_file_part
+
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -76,23 +78,30 @@ def pytest_file_arguments(command: dict) -> list[str]:
 
 
 def _oracle_equivalent_forms(oracle_locator: str) -> set[str]:
-    """The dotted-module-label and repository-relative-path spellings of
-    this contract's own `acceptance-tests.locator` -- a verification
-    command may legitimately cite the SAME oracle file ATD authored, under
-    either spelling, and that file is not a "missing" path merely because
-    it did not exist before this delivery."""
+    """The verbatim, dotted-module-label and repository-relative-path
+    spellings of this contract's own `acceptance-tests.locator` -- a
+    verification command may legitimately cite the SAME oracle ATD
+    authored, under any spelling (including the full `path::Selector`
+    identity), and that file is not a "missing" path merely because it
+    did not exist before this delivery."""
     if not oracle_locator:
         return set()
-    stem = oracle_locator[:-3] if oracle_locator.endswith(".py") else oracle_locator
+    file_part = oracle_citation_file_part(oracle_locator)
+    stem = file_part[:-3] if file_part.endswith(".py") else file_part
     dotted = stem.replace("/", ".")
-    return {dotted, oracle_locator}
+    return {dotted, file_part, oracle_locator}
 
 
 def missing_verification_paths(repo_root: Path, contract: dict) -> list[str]:
     """Every `verification-scope.commands` argument naming a test module or
     file absent from the base tree and not this contract's own oracle --
     empty when every command is either unrecognized (not a `manage.py
-    test`/pytest shape this checker covers) or fully resolvable."""
+    test`/pytest shape this checker covers) or fully resolvable. A
+    delegation contract (`verification-scope.literal-script-block`) carries
+    no argv-shaped command at all, so an empty answer there is CORRECT
+    semantics (nothing argv-shaped exists to check statically), never a
+    silent traversal -- the literal script's own fidelity is digest-checked
+    by `des dispatch` and executed faithfully at the crafter's BASELINE."""
     oracle_locator = str(contract.get("acceptance-tests", {}).get("locator", ""))
     oracle_forms = _oracle_equivalent_forms(oracle_locator)
 

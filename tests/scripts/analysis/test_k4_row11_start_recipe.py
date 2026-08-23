@@ -1161,6 +1161,60 @@ class TestExaminerStartRecipeProvenUnderTheArmEnv:
             "the log must carry the real exception/traceback, not just a marker"
         )
 
+    def test_supervisor_sigterm_shutdown_is_not_logged_as_fatal(self, workspace):
+        """K4 camp2/camp3 diagnosis (2026-08-20): `_handle_sigterm` calls
+        `sys.exit(0)`, raising `SystemExit` -- a `BaseException` -- from
+        inside `_run()`'s poll loop. Before this fix, the top-level
+        `except BaseException` guard (added for the Run 15 "died
+        unobserved" gap, see the test above) could not tell an ORDINARY,
+        SELF-INITIATED shutdown apart from a genuine unhandled crash: it
+        wrote 'supervisor: FATAL' plus a full traceback to SUPERVISOR_LOG
+        for every single `stop_supervisor` call and every `start_
+        supervisor` stop-then-launch cycle -- i.e. on EVERY graceful
+        teardown, not just real failures. That false-FATAL noise (two
+        entries per `probe_examiner_start_recipe` run, one from `nwave_
+        setup_steps`' own second `fixture_setup_step` launch stopping the
+        first supervisor, one from the probe's own `finally: pef.stop_
+        supervisor`) sent two independent K4 diagnostic lanes chasing a
+        "supervisor failed to restart" hypothesis for a run that had, in
+        fact, already self-healed cleanly and then shut down on request.
+
+        A genuine unhandled crash (`test_supervisor_logs_a_fatal_
+        exception_to_supervisor_log_before_exiting`, above) must still be
+        logged FATAL -- this test only proves the SIGTERM path no longer
+        is."""
+        import signal
+        import sys
+        import time
+
+        port = pef.free_port()
+        api_key = "k4-sigterm-not-fatal-9c31"
+        script_path = workspace / pef.SUPERVISOR_SCRIPT_NAME
+        script_path.write_text(pef.supervisor_script(port, api_key), encoding="utf-8")
+
+        proc = subprocess.Popen(
+            [sys.executable, str(script_path)],
+            cwd=workspace,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        # Let `_run()` register its SIGTERM handler and clear its first
+        # (fixture-less, fast-failing) `_restart()` attempt before the
+        # signal arrives -- the handler is registered before `_restart()`
+        # even runs, so this is slack, not a correctness dependency.
+        time.sleep(1)
+        proc.send_signal(signal.SIGTERM)
+        exit_code = proc.wait(timeout=15)
+
+        assert exit_code == 0, "a SIGTERM'd supervisor must still exit 0, not crash"
+        log_path = workspace / pef.SUPERVISOR_LOG_FILE_NAME
+        content = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+        assert "FATAL" not in content, (
+            "a graceful SIGTERM shutdown must never be logged as FATAL -- "
+            f"that noise reads as a real crash to any later diagnosis: {content!r}"
+        )
+
     def test_examiner_block_refuses_loud_bounded_when_the_supervisor_itself_is_dead(
         self, workspace
     ):

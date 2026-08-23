@@ -43,13 +43,23 @@ def test_shebang_is_python3_env() -> None:
         )
 
 
-def test_shim_inserts_profile_aware_claude_dir_into_sys_path() -> None:
-    """Each shim must insert the profile-aware _CLAUDE_DIR/lib/python into sys.path[0]."""
-    expected = 'sys.path.insert(0, str(_CLAUDE_DIR / "lib" / "python"))'
+def test_shim_pins_the_resolved_runtime_at_sys_path_head() -> None:
+    """Each shim must pin its resolved runtime dir at sys.path[0].
+
+    This asserts the structural invariant only -- position 0, and the dir
+    the shim itself resolved. HOW that dir is chosen (NWAVE_RUNTIME env >
+    ~/.nwave/active-runtime pointer > CLAUDE_CONFIG_DIR-aware Claude default
+    > host-neutral fallback) is owned by the execution-based suite in
+    test_des_shim_runtime_resolution.py, which runs each branch for real;
+    duplicating that semantics as a literal here is what made this test pin
+    the superseded `_CLAUDE_DIR / "lib" / "python"` spelling that commit
+    8f60e04db replaced with `_RUNTIME_DIR`.
+    """
+    expected = "sys.path.insert(0, str(_RUNTIME_DIR))"
     for name in SHIM_NAMES:
         content = _read_shim(name)
         assert expected in content, (
-            f"{name}: missing profile-aware sys.path.insert line.\n"
+            f"{name}: missing the resolved-runtime sys.path pin.\n"
             f"Expected: {expected!r}"
         )
 

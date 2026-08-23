@@ -621,9 +621,20 @@ class TestSendMessageSinglePassAutoGate:
 
         assert exit_code == 2
         assert payload["decision"] == "block"
+        # K4 camp6 denial-RCA RC3: this deny sits at the exact fork where
+        # two of three arms died -- it was the ONLY message naming four
+        # forbidden actions and zero permitted ones. The HOW must name the
+        # permitted route (fresh dispatch; `des dispatch` from
+        # CONTRACT_READY; `des revise-contract-round` on contract defects).
         assert payload["reason"] == (
-            "Auto roles are single-pass: do not SendMessage, resume, retry, "
-            "or correct a role within the same Auto run."
+            "WHAT: an Auto-root SendMessage call was blocked. "
+            "WHY: Auto roles are single-pass -- do not SendMessage, resume, "
+            "retry, or correct a role within the same Auto run; a role's "
+            "first result is terminal. "
+            "HOW: a FRESH Agent dispatch for a new contract round or a "
+            "different route step IS allowed -- from CONTRACT_READY run "
+            "`des dispatch`, and on contract defects run "
+            "`des revise-contract-round`."
         )
 
     @pytest.mark.parametrize(

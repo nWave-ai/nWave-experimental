@@ -77,6 +77,7 @@ is worse than one that misses an edge case.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -86,6 +87,46 @@ _NWAVE_AGENT_PREFIX = "nw-"
 #: Durable per-agent synthesized-result directory -- same `.nwave/des/`
 #: root `des_task_signal.py`'s own signal files use.
 _SUBAGENT_RESULT_DIR = Path(".nwave") / "des" / "subagent-results"
+
+
+#: A NAMED in-process teammate's opaque id: ``a`` + the lane name + ``-`` +
+#: a 16-hex suffix (e.g. ``aspeedfix-6c5c7f8505b9e7dd``,
+#: ``arca-trailer-bad32bb962c324bc``). An UNNAMED Agent-tool dispatch is
+#: ``a`` + 16 hex with NO dash, so it deliberately does not match.
+_NAMED_AGENT_ID = re.compile(r"^a(?P<name>.+)-[0-9a-f]{16}$")
+
+
+def _resolve_agent_type(agent_type: str, transcript_path: str | None) -> str:
+    """The role this subagent actually played, not the label it was dispatched under.
+
+    For an UNNAMED Agent-tool dispatch the platform's ``agent_type`` already
+    IS the role (``nw-troubleshooter-reviewer``). For a NAMED in-process
+    teammate it is the LANE NAME (``speedfix``): Claude Code 2.1.239's own
+    in-process-teammate agent definition sets ``agentType: t.agentName`` and
+    stashes the real role separately as ``customAgentType``; the SubagentStop
+    hookInput's ``agent_type`` is sourced from the former. A bare
+    ``startswith("nw-")`` gate therefore silently no-ops for every named
+    nWave lane -- the exact silence this handler exists to make
+    unrepresentable.
+
+    The role is recovered from the sidecar the platform writes beside the
+    transcript it hands us in ``agent_transcript_path``
+    (``<transcript-stem>.meta.json``). Fail-open: an absent, unreadable,
+    non-JSON or roleless sidecar yields ``""`` -- a no-op, never a guess.
+    """
+    if agent_type.startswith(_NWAVE_AGENT_PREFIX):
+        return agent_type
+    if not transcript_path:
+        return ""
+    try:
+        sidecar = Path(transcript_path).with_suffix(".meta.json")
+        meta = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    custom = meta.get("customAgentType") if isinstance(meta, dict) else None
+    if isinstance(custom, str) and custom.startswith(_NWAVE_AGENT_PREFIX):
+        return custom
+    return ""
 
 
 def _terminal_marker(agent_type: str) -> str:
@@ -178,6 +219,15 @@ def _write_durable_result(agent_id: str, synthesized: str) -> None:
         _SUBAGENT_RESULT_DIR.mkdir(parents=True, exist_ok=True)
         result_path = _SUBAGENT_RESULT_DIR / f"{agent_id}.txt"
         result_path.write_text(synthesized, encoding="utf-8")
+        # The root dispatches a lane by NAME and never learns the opaque hex
+        # suffix, so an id-keyed-only receipt is addressable by its writer
+        # alone. Mirror it under the lane name the root actually holds
+        # (`nw-auto`'s own recovery path). Unnamed ids carry no name and are
+        # deliberately not aliased.
+        named = _NAMED_AGENT_ID.match(agent_id)
+        if named:
+            alias = _SUBAGENT_RESULT_DIR / f"{named.group('name')}.txt"
+            alias.write_text(synthesized, encoding="utf-8")
     except OSError:
         pass
 
@@ -232,15 +282,17 @@ def handle_subagent_stop() -> int:
 
     try:
         agent_type = hook_input.get("agent_type") or ""
-        if not isinstance(agent_type, str) or not agent_type.startswith(
-            _NWAVE_AGENT_PREFIX
-        ):
+        if not isinstance(agent_type, str):
             return 0
 
         agent_id = hook_input.get("agent_id")
         transcript_path = hook_input.get("agent_transcript_path")
         transcript_path = transcript_path if isinstance(transcript_path, str) else None
         last_assistant_message = hook_input.get("last_assistant_message") or ""
+
+        agent_type = _resolve_agent_type(agent_type, transcript_path)
+        if not agent_type:
+            return 0
 
         marker = _terminal_marker(agent_type)
 

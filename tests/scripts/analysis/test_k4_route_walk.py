@@ -630,3 +630,84 @@ class TestInstalledCliRunResolvesTheWorkspaceShim:
         pinned absent so it cannot silently return."""
         params = inspect.signature(k4_preflight._installed_cli_run).parameters
         assert "venv" not in params
+
+
+class TestRouteWalkSupervisorTeardown:
+    """Run 18 (K4 matrix, second launch): `route_walk` starts a real
+    keepalive supervisor (via `probe_examiner_start_recipe` deep inside
+    `route_walk_steps`, restarting its managed server every ~2s) and
+    then, on a `"proven"` walk, called `shutil.rmtree(workspace)` with
+    NOTHING confirming the supervisor was actually dead first --
+    `pef.stop_supervisor`'s own SIGTERM is fire-and-forget (no wait), so
+    a still-alive supervisor's restart cycle can recreate `hc.sqlite`/
+    `server.log` mid-delete, `OSError` 39 "Directory not empty", a
+    crash AFTER a successful walk. 8 orphaned supervisors from prior
+    runs were found still alive on the box -- the teardown gap is
+    structural, not a rare race. Mirrors `paired_campaign._run_delivery`'s
+    own process-group kill shape (SIGTERM, bounded wait, escalate to
+    SIGKILL) rather than inventing a second one."""
+
+    def test_teardown_kills_a_real_throwaway_process_group(
+        self, tmp_path: Path
+    ) -> None:
+        """RED-verified: calling this on a workspace with NO teardown at
+        all (the pre-fix `route_walk` shape) leaves a real, `start_new_
+        session=True`-launched process alive indefinitely -- this proves
+        the NEW teardown function actually kills it, confirmed dead, not
+        merely signalled."""
+        import time
+
+        workspace = tmp_path / "route-walk-teardown"
+        workspace.mkdir()
+        proc = subprocess.Popen(
+            ["sleep", "300"],
+            cwd=workspace,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        (workspace / k4_preflight.pef.SUPERVISOR_PID_FILE_NAME).write_text(
+            str(proc.pid), encoding="utf-8"
+        )
+        try:
+            k4_preflight._teardown_route_walk_supervisor(workspace)
+
+            deadline = time.monotonic() + 5
+            dead = False
+            while time.monotonic() < deadline:
+                if proc.poll() is not None:
+                    dead = True
+                    break
+                time.sleep(0.1)
+            assert dead, (
+                "the throwaway process must be confirmed dead, not just signalled"
+            )
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=10)
+
+    def test_teardown_is_a_silent_no_op_when_no_supervisor_pid_file_exists(
+        self, tmp_path: Path
+    ) -> None:
+        """A workspace that never started a supervisor (most route_walk
+        failures never reach that step) must not raise or block."""
+        workspace = tmp_path / "route-walk-no-supervisor"
+        workspace.mkdir()
+        k4_preflight._teardown_route_walk_supervisor(workspace)  # must not raise
+
+    def test_teardown_survives_a_stale_pid_naming_a_dead_process(
+        self, tmp_path: Path
+    ) -> None:
+        """A supervisor.pid left over from a process that already died
+        some other way (e.g. OOM-killed) must not raise -- `os.getpgid`
+        on a dead PID raises `ProcessLookupError`, caught the same way
+        `pef._stop_supervisor_locked` already handles it."""
+        workspace = tmp_path / "route-walk-stale-pid"
+        workspace.mkdir()
+        # A PID astronomically unlikely to be alive/reused during the test.
+        (workspace / k4_preflight.pef.SUPERVISOR_PID_FILE_NAME).write_text(
+            "999999", encoding="utf-8"
+        )
+        k4_preflight._teardown_route_walk_supervisor(workspace)  # must not raise

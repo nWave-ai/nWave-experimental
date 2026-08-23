@@ -19,8 +19,12 @@ physically contain the map:
   `DELIVERY-CHANGES.txt` and `DELIVERY.patch` — NOTHING that names the arm,
   the pair, the session, or the delivery's own workspace tree. `seal` never
   copies the workspace wholesale into the packet; `DELIVERY.patch` is a
-  `git apply`-able unified diff against that workspace's own HEAD, built in a
-  throwaway copy and cleaned up before `seal` returns;
+  `git apply`-able unified diff against the arm's recorded BASELINE — the
+  setup checkout commit read from the campaign's own `campaign.json`, falling
+  back to the workspace's HEAD when no pin is recorded — built in a throwaway
+  copy and cleaned up before `seal` returns. Diffing from the baseline rather
+  than HEAD is what captures a delivery the arm COMMITTED: against HEAD, the
+  tidier arm sealed as empty while a dirty one sealed in full;
 * `REVIEW-THESE.txt` — the opaque ids to score, one per line, shuffled.
 
 `seal` writes the opaque -> session map separately, to `--map`, which MUST be
@@ -63,6 +67,7 @@ import tempfile
 from pathlib import Path
 
 from scripts.analysis.k4 import quality_rubric
+from scripts.analysis.paired_campaign import git_checkout_targets
 
 
 #: Never copied into a review packet. Measured 2026-08-07, before the first seal:
@@ -191,161 +196,131 @@ def _git_status(workspace: Path) -> list[tuple[str, str, str | None]]:
     return entries
 
 
-def _classify_status(code: str) -> str | None:
-    """One of the four manifest buckets, or None if the code can't be represented."""
-    if code == "??":
-        return _STATUS_ADDED
-    if code[0] in ("R", "C"):
+def _classify_diff_status(status: str) -> str | None:
+    """One of the four manifest buckets, or None if the status can't be represented.
+
+    These are `git diff --name-status` letters, not `git status` porcelain XY
+    codes: the two encodings disagree (porcelain has no similarity score, the
+    diff form has no `??`), and after intent-to-add an untracked path surfaces
+    here as `A`. Anything outside A/M/D/R/C (typechange `T`, unmerged `U`, ...)
+    is refused loudly by the caller rather than mislabelled.
+    """
+    letter = status[:1]
+    if letter in ("R", "C"):
         return _STATUS_RENAMED
-    if "D" in code:
-        return _STATUS_DELETED
-    if "A" in code:
+    if letter == "A":
         return _STATUS_ADDED
-    if "M" in code:
+    if letter == "D":
+        return _STATUS_DELETED
+    if letter == "M":
         return _STATUS_MODIFIED
     return None
 
 
-def _gitignore_setup_only(workspace: Path) -> bool:
-    """True if `.gitignore`'s only difference from HEAD is the setup block.
+def _parse_name_status(raw: str) -> list[tuple[str, str, str | None]]:
+    """`(status, path, old_path-if-renamed)` from `git diff --name-status -z`.
 
-    A delivery may legitimately edit `.gitignore` too; only the exact block
-    `nwave-ai project enable` appends is setup noise, so this diffs the
-    stripped working copy against HEAD rather than excluding the path outright.
+    `-z` records a rename as STATUS NUL OLD-path NUL NEW-path NUL -- the
+    OPPOSITE order from `git status --porcelain=v1 -z`, verified against
+    actual `git diff --name-status -z -M` output for a `git mv`, not the
+    manpage's prose description.
     """
-    gitignore = workspace / ".gitignore"
-    if not gitignore.is_file():
-        return False
-    shown = subprocess.run(
-        ["git", "-C", str(workspace), "show", "HEAD:.gitignore"],
-        capture_output=True,
-        text=True,
-        stdin=subprocess.DEVNULL,
-        timeout=30,
-    )
-    head_lines = shown.stdout.splitlines() if shown.returncode == 0 else []
-    current_lines = gitignore.read_text(encoding="utf-8", errors="replace").splitlines()
-    stripped = [ln for ln in current_lines if ln.strip() not in _SETUP_GITIGNORE_BLOCK]
-    return stripped == head_lines
-
-
-def write_delivery_manifest(workspace: Path, target: Path) -> int:
-    """`DELIVERY-CHANGES.txt`: the git evidence of what this delivery changed.
-
-    Built from `git status` against the workspace's own HEAD, after setup-only
-    traces are excluded -- never from the arm label or session, so the file
-    itself cannot leak identity the rest of `seal` withholds.
-    """
-    manifest_path = target / _MANIFEST_NAME
-    if not (workspace / ".git").is_dir():
-        sys.stderr.write(
-            "WHAT: the delivery workspace is missing or is not a git checkout.\n"
-            f"      - {workspace}\n"
-            "WHY:  writing an empty manifest here would look identical to a delivery\n"
-            "      that legitimately changed nothing -- silent-empty and\n"
-            "      silent-unsupported must not be the same output.\n"
-            "HOW:  point the campaign at a real git checkout for this run, then\n"
-            "      re-seal. Nothing was written for this delivery.\n"
-        )
-        return 1
-
-    try:
-        entries = _git_status(workspace)
-    except RuntimeError as exc:
-        sys.stderr.write(
-            "WHAT: could not read the delivery-manifest git evidence for a packet.\n"
-            f"      - {exc}\n"
-            "WHY:  a manifest built without evidence would either be empty (looks\n"
-            "      like nothing changed) or invented, and both are dishonest.\n"
-            "HOW:  make sure the delivery workspace is a readable git checkout, then\n"
-            "      re-seal.\n"
-        )
-        return 1
-
-    lines: list[str] = []
-    unrepresentable: list[tuple[str, str]] = []
-    for code, path, old_path in entries:
-        if _excluded_path(path) or (old_path and _excluded_path(old_path)):
+    tokens = raw.split("\0")
+    entries: list[tuple[str, str, str | None]] = []
+    i = 0
+    while i + 1 < len(tokens):
+        status = tokens[i]
+        i += 1
+        if not status:
             continue
-        if path == ".gitignore" and "M" in code and _gitignore_setup_only(workspace):
-            continue
-        bucket = _classify_status(code)
-        if bucket is None:
-            unrepresentable.append((code, path))
-            continue
-        if bucket == _STATUS_RENAMED:
-            lines.append(f"{_STATUS_RENAMED} {old_path} -> {path}")
+        if status[0] in ("R", "C"):
+            old_path, path = tokens[i], tokens[i + 1]
+            i += 2
         else:
-            lines.append(f"{bucket} {path}")
+            old_path, path = None, tokens[i]
+            i += 1
+        entries.append((status, path, old_path))
+    return entries
 
-    if unrepresentable:
-        sys.stderr.write(
-            "WHAT: a delivery-changed path cannot be represented honestly in its manifest.\n"
-            + "".join(f"      - {code} {path}\n" for code, path in unrepresentable)
-            + "WHY:  an unrecognised git status (typechange, unmerged conflict, ...)\n"
-            "      dropped silently would make DELIVERY-CHANGES.txt claim completeness\n"
-            "      it does not have.\n"
-            "HOW:  resolve the working tree state, or teach `_classify_status` the new\n"
-            "      status honestly, then re-seal. Do not hand out this packet.\n"
+
+def _arm_baselines(campaign: Path) -> dict[str, str]:
+    """Arm name -> pinned checkout commit, from the campaign's own config.
+
+    The baseline is what makes a COMMITTED delivery capturable: a patch built
+    against HEAD sees only the uncommitted remainder, so an arm that committed
+    its delivery -- the better-behaved arm -- sealed as EMPTY while an arm
+    that left everything dirty sealed in full, a systematic asymmetry
+    penalising exactly the right behaviour. Read from `campaign.json`, never
+    hardcoded. Recognition is delegated to
+    `paired_campaign.git_checkout_targets` -- the same matcher the campaign
+    runner validates setups with -- so a bare `git checkout <ref>` pins
+    exactly like the `--detach` form; the last checkout step wins, as it
+    would have in the actual setup sequence. An arm the config LISTS whose
+    setup has no recognisable checkout step raises instead of falling back
+    to HEAD: that silent fallback is the empty-packet bug again for any
+    unmatched setup shape. Only a campaign with no `campaign.json` at all
+    keeps the documented HEAD fallback -- there `seal` has no honest way to
+    know where the subject's own history ends.
+    """
+    config = campaign / "campaign.json"
+    if not config.is_file():
+        return {}
+    try:
+        data = json.loads(config.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"{config}: {exc}") from exc
+
+    arms = data.get("arms")
+    baselines: dict[str, str] = {}
+    for arm, spec in arms.items() if isinstance(arms, dict) else ():
+        setup = spec.get("setup", []) if isinstance(spec, dict) else []
+        steps = tuple(
+            tuple(step)
+            for step in setup
+            if isinstance(step, list) and all(isinstance(t, str) for t in step)
         )
-        return 1
-
-    lines.sort()
-    manifest_path.write_text(
-        ("\n".join(lines) + "\n") if lines else "", encoding="utf-8"
-    )
-    return 0
+        targets = git_checkout_targets(steps)
+        if not targets:
+            raise RuntimeError(
+                f"{config}: arm '{arm}' has no recognisable `git checkout` "
+                "setup step to pin its baseline"
+            )
+        baselines[arm] = targets[-1]
+    return baselines
 
 
 _PATCH_NAME = "DELIVERY.patch"
 
 
-def _patchable_entries(
-    entries: list[tuple[str, str, str | None]],
-) -> tuple[list[str], list[str], list[tuple[str, str]]]:
-    """`(pathspec, untracked-among-it, unrepresentable)`, filtered like the manifest.
+def write_delivery_packet(workspace: Path, target: Path, baseline: str | None) -> int:
+    """`DELIVERY-CHANGES.txt` + `DELIVERY.patch`: every non-setup delivery
+    change from `baseline` (the arm's recorded checkout commit, or this
+    workspace's own HEAD when no pin exists) to the working tree -- one
+    manifest and one `git apply`-able unified diff, the compact substitute
+    for copying the workspace wholesale.
 
-    Excludes the same `_NEVER_SEAL` paths the manifest excludes, and fails the
-    same way on a status code neither honestly represents -- one filter, used
-    twice, so the manifest and the patch can never disagree about what a
-    delivery changed.
-    """
-    paths: list[str] = []
-    untracked: list[str] = []
-    unrepresentable: list[tuple[str, str]] = []
-    for code, path, old_path in entries:
-        if _excluded_path(path) or (old_path and _excluded_path(old_path)):
-            continue
-        bucket = _classify_status(code)
-        if bucket is None:
-            unrepresentable.append((code, path))
-            continue
-        paths.append(path)
-        if old_path:
-            paths.append(old_path)
-        if code == "??":
-            untracked.append(path)
-    return paths, untracked, unrepresentable
+    Diffing from the BASELINE is the load-bearing choice: a diff against HEAD
+    sees only uncommitted work, so an arm that committed its delivery sealed
+    as EMPTY while an arm that left everything dirty sealed in full. Measured
+    on campaign 6, 2026-08-20: pair-3/nwave committed 8 files (+736/-9) and
+    its packet held only runtime residue.
 
-
-def write_delivery_patch(workspace: Path, target: Path) -> int:
-    """`DELIVERY.patch`: every non-setup delivery change against this
-    workspace's own HEAD, as one `git apply`-able unified diff -- the compact
-    substitute for copying the workspace wholesale.
-
-    Built inside a throwaway copy of `workspace`, so the source lane's git
-    index is never touched. `strip_setup_traces` runs there first: a
-    setup-only `.gitignore` edit then stops differing from HEAD and never
-    reaches `git status`, while a legitimate edit mixed into the same file
-    still shows up, minus the setup lines. The copy (including `.git`, needed
-    to diff at all) is removed before this function returns.
+    Both files are built from ONE evidence read (`git diff --name-status`,
+    baseline -> working tree) inside a throwaway copy of `workspace`, so the
+    manifest and the patch can never disagree about what a delivery changed,
+    and the source lane's tree and git index are never touched.
+    `strip_setup_traces` runs there first: a setup-only `.gitignore` edit
+    then stops differing and never reaches the diff, while a legitimate edit
+    mixed into the same file still shows up, minus the setup lines. The copy
+    (including `.git`, needed to diff at all) is removed before this function
+    returns.
     """
     patch_path = target / _PATCH_NAME
     if not (workspace / ".git").is_dir():
         sys.stderr.write(
             "WHAT: the delivery workspace is missing or is not a git checkout.\n"
             f"      - {workspace}\n"
-            "WHY:  writing an empty patch here would look identical to a delivery\n"
+            "WHY:  writing an empty packet here would look identical to a delivery\n"
             "      that legitimately changed nothing -- silent-empty and\n"
             "      silent-unsupported must not be the same output.\n"
             "HOW:  point the campaign at a real git checkout for this run, then\n"
@@ -381,38 +356,55 @@ def write_delivery_patch(workspace: Path, target: Path) -> int:
             return 1
         strip_setup_traces(tmp_ws)
 
+        base = baseline if baseline is not None else "HEAD"
+        if baseline is not None:
+            resolved = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(tmp_ws),
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    f"{baseline}^{{commit}}",
+                ],
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=30,
+            )
+            if resolved.returncode != 0:
+                sys.stderr.write(
+                    "WHAT: the campaign records a baseline commit this workspace does not have.\n"
+                    f"      - {baseline} is not a commit in {workspace}\n"
+                    "WHY:  silently falling back to HEAD would rebuild the very asymmetry\n"
+                    "      the baseline exists to remove: a committed delivery would seal\n"
+                    "      as empty again.\n"
+                    "HOW:  fix the arm's setup record in campaign.json (or re-run the arm\n"
+                    "      so its checkout matches), then re-seal.\n"
+                )
+                return 1
+
         try:
             entries = _git_status(tmp_ws)
         except RuntimeError as exc:
             sys.stderr.write(
-                "WHAT: could not read the delivery-patch git evidence for a packet.\n"
+                "WHAT: could not read the delivery-packet git evidence.\n"
                 f"      - {exc}\n"
-                "WHY:  a patch built without evidence would either be empty (looks\n"
+                "WHY:  a packet built without evidence would either be empty (looks\n"
                 "      like nothing changed) or invented, and both are dishonest.\n"
                 "HOW:  make sure the delivery workspace is a readable git checkout, then\n"
                 "      re-seal.\n"
             )
             return 1
 
-        paths, untracked, unrepresentable = _patchable_entries(entries)
-        if unrepresentable:
-            sys.stderr.write(
-                "WHAT: a delivery-changed path cannot be represented honestly in its patch.\n"
-                + "".join(f"      - {code} {path}\n" for code, path in unrepresentable)
-                + "WHY:  an unrecognised git status (typechange, unmerged conflict, ...)\n"
-                "      dropped silently would make DELIVERY.patch claim completeness it\n"
-                "      does not have.\n"
-                "HOW:  resolve the working tree state, or teach `_classify_status` the new\n"
-                "      status honestly, then re-seal. Do not hand out this packet.\n"
-            )
-            return 1
-
-        if not paths:
-            patch_path.write_text("", encoding="utf-8")
-            return 0
-
+        untracked = [
+            path
+            for code, path, _ in entries
+            if code == "??" and not _excluded_path(path)
+        ]
         if untracked:
-            # `-N` (intent-to-add) is what makes `git diff HEAD` see an
+            # `-N` (intent-to-add) is what makes `git diff` see an
             # untracked path at all -- without it, a path git never indexed
             # is invisible to the diff machinery, staged or not.
             added = subprocess.run(
@@ -424,14 +416,73 @@ def write_delivery_patch(workspace: Path, target: Path) -> int:
             )
             if added.returncode != 0:
                 sys.stderr.write(
-                    "WHAT: could not stage untracked delivery paths to build the patch.\n"
+                    "WHAT: could not stage untracked delivery paths to build the packet.\n"
                     f"      - git add -N: {added.stderr.strip()}\n"
                     "WHY:  without intent-to-add, an untracked delivery file is invisible\n"
-                    "      to `git diff HEAD`, so the patch would silently omit it.\n"
+                    "      to `git diff`, so the packet would silently omit it.\n"
                     "HOW:  make sure the delivery workspace is a readable git checkout, then\n"
                     "      re-seal.\n"
                 )
                 return 1
+
+        listed = subprocess.run(
+            ["git", "-C", str(tmp_ws), "diff", "--name-status", "-z", "-M", base],
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+        )
+        if listed.returncode not in (0, 1):
+            sys.stderr.write(
+                "WHAT: git diff --name-status failed while building a delivery packet.\n"
+                f"      - {listed.stderr.strip()}\n"
+                "WHY:  a packet built on a failed listing would silently omit real\n"
+                "      delivery changes.\n"
+                "HOW:  make sure the delivery workspace is a readable git checkout, then\n"
+                "      re-seal.\n"
+            )
+            return 1
+
+        lines: list[str] = []
+        paths: list[str] = []
+        unrepresentable: list[tuple[str, str]] = []
+        for status, path, old_path in _parse_name_status(listed.stdout):
+            if _excluded_path(path) or (old_path and _excluded_path(old_path)):
+                continue
+            bucket = _classify_diff_status(status)
+            if bucket is None:
+                unrepresentable.append((status, path))
+                continue
+            paths.append(path)
+            if old_path:
+                paths.append(old_path)
+            if bucket == _STATUS_RENAMED:
+                lines.append(f"{_STATUS_RENAMED} {old_path} -> {path}")
+            else:
+                lines.append(f"{bucket} {path}")
+
+        if unrepresentable:
+            sys.stderr.write(
+                "WHAT: a delivery-changed path cannot be represented honestly in its packet.\n"
+                + "".join(
+                    f"      - {status} {path}\n" for status, path in unrepresentable
+                )
+                + "WHY:  an unrecognised git status (typechange, unmerged conflict, ...)\n"
+                "      dropped silently would make the packet claim completeness it\n"
+                "      does not have.\n"
+                "HOW:  resolve the working tree state, or teach `_classify_diff_status`\n"
+                "      the new status honestly, then re-seal. Do not hand out this packet.\n"
+            )
+            return 1
+
+        lines.sort()
+        (target / _MANIFEST_NAME).write_text(
+            ("\n".join(lines) + "\n") if lines else "", encoding="utf-8"
+        )
+
+        if not paths:
+            patch_path.write_text("", encoding="utf-8")
+            return 0
 
         diff = subprocess.run(
             [
@@ -442,7 +493,7 @@ def write_delivery_patch(workspace: Path, target: Path) -> int:
                 "--no-color",
                 "--binary",
                 "-M",
-                "HEAD",
+                base,
                 "--",
                 *paths,
             ],
@@ -475,10 +526,11 @@ _CREDENTIAL_SENTINELS = ("claudeAiOauth", "accessToken", "refreshToken")
 def _diff_header_paths(patch_text: str) -> set[str]:
     """Every path named in a unified diff's own structural headers.
 
-    Independent of `_patchable_entries`' filtering: if that filter ever had a
-    bug, the paths git actually wrote into `diff --git`/`---`/`+++`/rename
-    headers would still be exactly what a reviewer's `git apply` sees, so
-    checking them is a second axis on the same claim, not a repeat of it.
+    Independent of the packet writer's own evidence read (`_parse_name_status`
+    over `git diff --name-status`): if that parsing ever had a bug, the paths
+    git actually wrote into `diff --git`/`---`/`+++`/rename headers would
+    still be exactly what a reviewer's `git apply` sees, so checking them is
+    a second axis on the same claim, not a repeat of it.
     """
     paths: set[str] = set()
     for line in patch_text.splitlines():
@@ -604,6 +656,20 @@ def seal(campaign: Path, out: Path, map_path: Path) -> int:
         )
         return 1
 
+    try:
+        baselines = _arm_baselines(campaign)
+    except RuntimeError as exc:
+        sys.stderr.write(
+            "WHAT: could not derive baseline commits from the campaign's own config.\n"
+            f"      - {exc}\n"
+            "WHY:  without a recorded checkout pin per arm, a committed delivery would\n"
+            "      silently seal as empty (a diff from HEAD sees only uncommitted\n"
+            "      work).\n"
+            "HOW:  make campaign.json valid JSON and give every listed arm a\n"
+            "      `git checkout` setup step (bare or --detach), then re-seal.\n"
+        )
+        return 1
+
     salt = secrets.token_hex(16)
     mapping: dict[str, str] = {}
     deliveries = out / "deliveries"
@@ -616,13 +682,14 @@ def seal(campaign: Path, out: Path, map_path: Path) -> int:
         target.mkdir(exist_ok=True)
         # The arm's workspace, not its result payload: the payload carries
         # session and cost, which is exactly what the reviewer must not see.
-        # Neither call copies the workspace into `target`: the manifest reads
-        # `git status`, the patch builds its own throwaway copy and cleans it
-        # up, so `target` only ever holds the two files a reviewer needs.
+        # The packet writer never copies the workspace into `target`: it
+        # builds its own throwaway copy and cleans it up, so `target` only
+        # ever holds the two files a reviewer needs.
         workspace = payload_path.parent / payload_path.stem
-        if write_delivery_manifest(workspace, target) != 0:
-            return 1
-        if write_delivery_patch(workspace, target) != 0:
+        if (
+            write_delivery_packet(workspace, target, baselines.get(payload_path.stem))
+            != 0
+        ):
             return 1
 
         leaks = _leak_scan(target, session_id=session_id, arm=payload_path.stem)

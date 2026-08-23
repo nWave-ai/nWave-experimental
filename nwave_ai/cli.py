@@ -403,6 +403,36 @@ def _handle_install(args: list[str]) -> int:
 
     _announce_density_upgrade(config_dir, outcome)
 
+    # ADR-CFG-001 Slice 2: sync the managed guidance section into the
+    # installed surface (same directory install just populated with
+    # agents/skills/templates) so the communication-rules GENERATED region
+    # reflects the CURRENT merged config on every install/reinstall, not
+    # just the source tree's own committed snapshot. Fail-open (never turns
+    # a successful install into a nonzero exit) -- mirrors
+    # `_sync_guidance_section_for_host`'s own documented contract.
+    #
+    # Bound to the SELECTED TARGETS, never fired unconditionally.
+    # `PathUtils.get_claude_config_dir()` is platform-blind -- it answers
+    # ~/.claude for every host -- and the injection underneath it creates its
+    # parent (`project_claude_section._atomic_write`). Firing it on a
+    # native-only run (copilot / opencode / codex) therefore materialised
+    # ~/.claude in a consumer home that has no Claude discovery surface and
+    # that the installer itself deliberately never touches: `install_nwave.py`
+    # already gates its own `claude_config_dir.mkdir` on the same membership
+    # test. The authoritative target set is the one resolved AT CONSTRUCTION
+    # by the preflight installer above (same `--platform` override, same
+    # environment, resolved before any write), so this reads the decision the
+    # run actually made rather than re-deriving it from post-install state.
+    from scripts.install.install_utils import PathUtils
+
+    if "claude_code" in ownership_preflight.effective_target_platforms:
+        try:
+            _sync_project_claude_section(
+                "enable", PathUtils.get_claude_config_dir(), assume_yes=non_interactive
+            )
+        except OSError as exc:
+            print(f"  (could not sync guidance sections: {exc})", file=sys.stderr)
+
     return 0
 
 

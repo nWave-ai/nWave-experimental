@@ -335,10 +335,14 @@ def test_non_heredoc_root_lane_des_examples_are_a_single_physical_line() -> None
     have been refused before `des_fenced_lines`'s own line-joining ever
     got a chance to help -- that joining happens in THIS guard's Python
     parsing, never in the real Bash tool call a root actually makes.
-    Heredoc-shaped examples are exempt: their multi-line BODY is stdin
-    DATA, not a command continuation, and the hook's own dedicated
-    `_is_value_seed_stdin_heredoc` carve-out recognizes that shape
-    specially, before the generic injection-marker check ever runs."""
+    Heredoc-shaped examples are exempt from THIS check specifically:
+    their multi-line BODY is stdin DATA, not a command continuation, and
+    the hook's own dedicated `_is_value_seed_stdin_heredoc` carve-out
+    recognizes that shape specially, before the generic injection-marker
+    check ever runs. Their HEADER (everything up to and including the
+    line ending in the heredoc redirect) is a DIFFERENT, NOT-exempt
+    shape -- see `test_heredoc_header_root_lane_des_examples_are_a_
+    single_physical_line` below."""
     text = (REPO_ROOT / "nWave" / "skills" / "nw-auto" / "SKILL.md").read_text(
         encoding="utf-8"
     )
@@ -360,6 +364,55 @@ def test_non_heredoc_root_lane_des_examples_are_a_single_physical_line() -> None
         "copy-pasting the fenced text verbatim would embed a literal "
         "newline, which the Auto-root Bash hook's own injection-marker "
         "check blocks independent of placeholder substitution"
+    )
+
+
+def test_heredoc_header_root_lane_des_examples_are_a_single_physical_line() -> None:
+    """Run 16 (K4 matrix): `nw-auto/SKILL.md` documented `des prepare-
+    ordinary-request`'s HEADER across four `\\`-continued physical lines
+    before its `<<'NW_SEED'` redirect -- unlike a non-heredoc example's
+    WHOLE command, a heredoc example's BODY is legitimately multi-line
+    (stdin data), but the hook's own `_is_value_seed_stdin_heredoc`
+    carve-out (`pre_tool_use_handler.py`) splits the command on the
+    FIRST literal newline to separate header from body; when the HEADER
+    itself still contains an earlier newline, that split lands mid-
+    header, the carve-out never recognizes the shape, and the generic
+    injection-marker check denies the embedded newline exactly as hard
+    as any other multi-line command. The route-walk (`route_walk_
+    heredoc_command`) now feeds the hook this SAME raw, un-joined header
+    shape (`preflight._raw_heredoc_header`) -- this guard exists
+    alongside it, at the documentation-authoring surface, so a future
+    multi-line header regression is caught by a plain assertion,
+    without needing to run the real hook."""
+    text = (REPO_ROOT / "nWave" / "skills" / "nw-auto" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    violations: list[str] = []
+    checked = 0
+    for block in _root_lane_des_fence_blocks(text):
+        lines = block.split("\n")
+        header_end = next(
+            (
+                i
+                for i, line in enumerate(lines)
+                if line.rstrip().endswith(("<<'NW_SEED'", '<<"NW_SEED"'))
+            ),
+            None,
+        )
+        if header_end is None:
+            continue
+        checked += 1
+        if header_end > 0:
+            violations.append(lines[0])
+    assert checked >= 1, "no heredoc-shaped root-lane des example found to check"
+    assert not violations, (
+        "the following root-lane des examples in nw-auto/SKILL.md have a "
+        f"heredoc HEADER spanning more than one physical line: {violations!r} "
+        "-- a real root copy-pasting the fenced text verbatim would embed a "
+        "literal newline BEFORE the heredoc redirect, which the hook's "
+        "`_is_value_seed_stdin_heredoc` carve-out never recognizes (it splits "
+        "on the FIRST newline, landing mid-header), so the generic "
+        "injection-marker check denies it"
     )
 
 

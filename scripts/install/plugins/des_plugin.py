@@ -13,6 +13,7 @@ from typing import Any
 from scripts.shared import hook_definitions as shared_hooks
 from scripts.shared.install_paths import (
     host_neutral_runtime_dir,
+    record_active_runtime,
     resolve_python_path_for_shell,
 )
 from scripts.shared.skill_distribution import (
@@ -739,6 +740,12 @@ class DESPlugin(InstallationPlugin):
                                 "__pycache__", "*.pyc", "*.pyo"
                             ),
                         )
+
+                # Re-point the installed shims at the runtime this install
+                # just populated. Written on every non-dry-run install (last
+                # install wins) so the launcher on PATH can never stay bound
+                # to a runtime a newer install of another host superseded.
+                record_active_runtime(lib_python_dir)
 
             return PluginResult(
                 success=True,

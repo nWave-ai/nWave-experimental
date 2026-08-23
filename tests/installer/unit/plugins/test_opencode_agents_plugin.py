@@ -574,6 +574,52 @@ class TestUninstallRemovesOnlyManifestAgents:
 # ---------------------------------------------------------------------------
 
 
+class TestInstallCleansPreviouslyOwnedAgents:
+    """install: clean-then-write -- the target holds ONLY what this run wrote.
+
+    Same class as the Codex leak (2026-08-22): a narrower public install
+    left the previous --dev install's private agents on disk.
+    """
+
+    def test_stale_manifest_owned_private_agent_is_removed(self, tmp_path, monkeypatch):
+        context, agents_source, target = _make_context(tmp_path)
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_agents_plugin._opencode_agents_dir",
+            lambda: target,
+        )
+        _create_agent(agents_source, "nw-software-crafter", _CSV_TOOLS_AGENT)
+        target.mkdir(parents=True)
+        for stem in ("nw-software-crafter", "nw-private-agent", "my-own-agent"):
+            (target / f"{stem}.md").write_text("stale\n", encoding="utf-8")
+        (target / ".nwave-agents-manifest.json").write_text(
+            json.dumps(
+                {
+                    "installed_agents": ["nw-private-agent", "nw-software-crafter"],
+                    "version": "1.0",
+                }
+            ),
+            encoding="utf-8",
+        )
+        tracked = frozenset(
+            {"nw-software-crafter.md", "nw-private-agent.md", "my-own-agent.md"}
+        )
+
+        before = _agent_filesystem_state(target, track=tracked)
+        result = OpenCodeAgentsPlugin().install(context)
+        after = _agent_filesystem_state(target, track=tracked)
+
+        assert result.success is True, result.errors
+        assert_state_delta(
+            before=before,
+            after=after,
+            universe=set(before),
+            expected={"nw-private-agent.md.exists": set_to(False)},
+        )
+        assert (target / "nw-software-crafter.md").read_text(
+            encoding="utf-8"
+        ) != "stale\n"
+
+
 class TestInstallCreatesManifest:
     """Test that install() creates a manifest tracking installed agent names."""
 

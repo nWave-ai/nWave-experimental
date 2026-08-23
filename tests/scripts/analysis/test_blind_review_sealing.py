@@ -2,12 +2,15 @@
 
 `seal` no longer copies a `delivery/` tree into the packet at all. Each
 `deliveries/<opaque>/` holds exactly `DELIVERY-CHANGES.txt` and
-`DELIVERY.patch` -- a `git apply`-able unified diff against the delivery
-workspace's own HEAD. The whole compact contract stands or falls on one law:
-apply that patch to a clean clone of HEAD and the result must equal, byte
-for byte (content, mode, symlink target), what the delivery workspace
-actually holds -- for every kind of change git can produce, not just text
-edits.
+`DELIVERY.patch` -- a `git apply`-able unified diff against the arm's
+recorded BASELINE (the setup checkout commit from `campaign.json`, bare or
+`--detach` form alike), falling back to the workspace's own HEAD only when
+the campaign recorded no `campaign.json` at all; an arm the config lists
+without a recognisable checkout pin fails loudly instead. The whole compact
+contract stands or falls on one law: apply that patch to a clean clone of
+the baseline and the result must equal, byte for byte (content, mode,
+symlink target), what the delivery workspace actually holds -- for every
+kind of change git can produce, committed or not, not just text edits.
 
 Run: uv run pytest -q tests/scripts/analysis/test_blind_review_sealing.py
 """
@@ -42,9 +45,12 @@ def _init_repo(workspace):
     _git("config", "user.name", "test", cwd=workspace)
 
 
-def _campaign_with_workspace(tmp_path, populate):
+def _campaign_with_workspace(tmp_path, populate, record_baseline=False):
     """One usable pair-1/nwave.json payload plus its workspace, git-committed
-    with a HEAD, then handed to `populate` to make the delivery's own changes."""
+    with a HEAD, then handed to `populate` to make the delivery's own changes.
+
+    With `record_baseline`, writes the `campaign.json` an arm harness records,
+    pinning the checkout commit -- the shape `_arm_baselines` reads."""
     campaign = tmp_path / "campaign"
     pair = campaign / "pair-1"
     pair.mkdir(parents=True)
@@ -54,6 +60,18 @@ def _campaign_with_workspace(tmp_path, populate):
     (workspace / ".gitignore").write_text("*.pyc\n")
     _git("add", "-A", cwd=workspace)
     _git("commit", "-q", "-m", "baseline", cwd=workspace)
+
+    if record_baseline:
+        base_sha = _git_out("rev-parse", "HEAD", cwd=workspace).strip()
+        (campaign / "campaign.json").write_text(
+            json.dumps(
+                {
+                    "arms": {
+                        "nwave": {"setup": [["git", "checkout", "--detach", base_sha]]}
+                    }
+                }
+            )
+        )
 
     populate(workspace)
 
@@ -539,3 +557,143 @@ def test_hypothesis_cache_with_binary_excluded(tmp_path):
 
     # Delivery file should be present
     assert "new.py" in manifest or "new.py" in patch, "delivery file was excluded"
+
+
+def test_committed_delivery_captured_from_recorded_baseline(tmp_path):
+    """A delivery the arm COMMITTED seals in full, plus the uncommitted rest.
+
+    The pre-baseline capture was `git diff HEAD`: an arm that committed its
+    work -- the better-behaved arm -- sealed as EMPTY while a dirty arm
+    sealed in full (campaign 6, pair-3/nwave: 8 files committed, 0 captured).
+    """
+
+    def populate(workspace):
+        (workspace / "manage.py").write_text("# baseline\n# committed edit\n")
+        (workspace / "models.py").write_text("class Check: pass\n")
+        _git("add", "-A", cwd=workspace)
+        _git("commit", "-q", "-m", "delivery", cwd=workspace)
+        (workspace / "notes.py").write_text("# uncommitted delivery file\n")
+
+    campaign, delivery_ws = _campaign_with_workspace(
+        tmp_path, populate, record_baseline=True
+    )
+    opaque_dir = _seal(tmp_path, campaign)
+
+    manifest = (opaque_dir / "DELIVERY-CHANGES.txt").read_text()
+    patch_text = (opaque_dir / "DELIVERY.patch").read_text()
+
+    assert "M manage.py" in manifest, "committed edit missing from manifest"
+    assert "A models.py" in manifest, "committed new file missing from manifest"
+    assert "A notes.py" in manifest, "uncommitted file missing from manifest"
+    assert "# committed edit" in patch_text, "committed edit missing from patch"
+    assert "class Check" in patch_text, "committed file body missing from patch"
+    assert "uncommitted delivery file" in patch_text, "uncommitted part missing"
+
+    # Reconstruction law, against the BASELINE now: apply to a clone of the
+    # recorded checkout commit and the result equals the delivery workspace.
+    base_sha = json.loads((campaign / "campaign.json").read_text())["arms"]["nwave"][
+        "setup"
+    ][0][3]
+    clone = tmp_path / "clone-committed"
+    _git("clone", "-q", str(delivery_ws), str(clone), cwd=tmp_path)
+    _git("checkout", "-q", base_sha, cwd=clone)
+    result = subprocess.run(
+        ["git", "apply", str(opaque_dir / "DELIVERY.patch")],
+        cwd=clone,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"patch apply failed: {result.stderr}"
+    assert _delivered_projection(clone) == _delivered_projection(delivery_ws)
+
+
+def test_committed_delivery_without_recorded_baseline_stays_head_only(tmp_path):
+    """No pin recorded -> capture is exactly the old HEAD-relative one.
+
+    This is the documented fallback, not a leftover: a campaign that never
+    recorded a checkout pin gives `seal` no honest way to know where the
+    subject's own history ends and the delivery's begins.
+    """
+
+    def populate(workspace):
+        (workspace / "models.py").write_text("class Check: pass\n")
+        _git("add", "-A", cwd=workspace)
+        _git("commit", "-q", "-m", "delivery", cwd=workspace)
+        (workspace / "notes.py").write_text("# uncommitted\n")
+
+    campaign, _ = _campaign_with_workspace(tmp_path, populate, record_baseline=False)
+    opaque_dir = _seal(tmp_path, campaign)
+
+    manifest = (opaque_dir / "DELIVERY-CHANGES.txt").read_text()
+    patch_text = (opaque_dir / "DELIVERY.patch").read_text()
+    assert "A notes.py" in manifest, "uncommitted file missing from manifest"
+    assert "models.py" not in manifest, "committed work visible without a pin"
+    assert "models.py" not in patch_text, "committed work visible without a pin"
+
+
+def test_recorded_baseline_missing_from_workspace_fails(tmp_path):
+    """A pinned commit the workspace does not have fails loudly, never
+    silently falls back to HEAD -- that would rebuild the empty-packet bug."""
+
+    def populate(workspace):
+        (workspace / "new.py").write_text("x = 1\n")
+
+    campaign, _ = _campaign_with_workspace(tmp_path, populate, record_baseline=True)
+    config = json.loads((campaign / "campaign.json").read_text())
+    config["arms"]["nwave"]["setup"][0][3] = "0" * 40
+    (campaign / "campaign.json").write_text(json.dumps(config))
+
+    out = tmp_path / "sealed"
+    code = br.seal(campaign, out, tmp_path / "map.json")
+    assert code != 0, "seal should fail on a baseline the workspace lacks"
+    assert not (out / "REVIEW-THESE.txt").exists(), "no handoff-ready bundle on failure"
+
+
+def test_committed_delivery_captured_from_bare_checkout_baseline(tmp_path):
+    """A bare `git checkout <sha>` setup step pins exactly like `--detach`.
+
+    `paired_campaign.git_checkout_targets` accepts both shapes, so a campaign
+    legitimately recorded the bare way must arm the same baseline. A matcher
+    here that recognised only the `--detach` form silently fell back to HEAD
+    for the bare shape -- the empty-packet bug again, without a warning.
+    """
+
+    def populate(workspace):
+        (workspace / "models.py").write_text("class Check: pass\n")
+        _git("add", "-A", cwd=workspace)
+        _git("commit", "-q", "-m", "delivery", cwd=workspace)
+
+    campaign, _ = _campaign_with_workspace(tmp_path, populate, record_baseline=True)
+    config = json.loads((campaign / "campaign.json").read_text())
+    sha = config["arms"]["nwave"]["setup"][0][3]
+    config["arms"]["nwave"]["setup"][0] = ["git", "checkout", sha]
+    (campaign / "campaign.json").write_text(json.dumps(config))
+
+    opaque_dir = _seal(tmp_path, campaign)
+    manifest = (opaque_dir / "DELIVERY-CHANGES.txt").read_text()
+    patch_text = (opaque_dir / "DELIVERY.patch").read_text()
+    assert "A models.py" in manifest, (
+        "committed work invisible: bare checkout pin fell back to HEAD"
+    )
+    assert "class Check" in patch_text, "committed body missing from patch"
+
+
+def test_arm_without_recognisable_checkout_step_fails_loudly(tmp_path):
+    """An arm the config LISTS whose setup carries no recognisable
+    `git checkout` step fails loudly -- a silent HEAD fallback there would
+    rebuild the empty-packet bug for any unmatched setup shape. Only a
+    campaign with no `campaign.json` at all keeps the documented HEAD
+    fallback (see the stays_head_only test above)."""
+
+    def populate(workspace):
+        (workspace / "new.py").write_text("x = 1\n")
+
+    campaign, _ = _campaign_with_workspace(tmp_path, populate, record_baseline=True)
+    config = json.loads((campaign / "campaign.json").read_text())
+    config["arms"]["nwave"]["setup"] = [["pip", "install", "nwave"]]
+    (campaign / "campaign.json").write_text(json.dumps(config))
+
+    out = tmp_path / "sealed"
+    code = br.seal(campaign, out, tmp_path / "map.json")
+    assert code != 0, "an arm the config lists without a checkout pin must fail loudly"
+    assert not (out / "REVIEW-THESE.txt").exists(), "no handoff-ready bundle on failure"

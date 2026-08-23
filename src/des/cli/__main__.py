@@ -106,6 +106,13 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # sequential revisions on one DeliveryId). Writes only its own durable
     # per-DeliveryId round counter under `.nwave/des/revise-rounds/`.
     _SubcommandRow("revise-contract-round", "des.cli.revise_contract_round", "main"),
+    # The charter-side sibling of revise-contract-round: bounded producer
+    # of the eight-line PO charter-revision envelope (DISCOVER:
+    # ExistingNeedsRevision) for a reviewer-cited VALUE-side charter defect
+    # on an existing valid namespace -- resolve-charters' REUSE is existence,
+    # not reviewed validity. Writes only its own durable per-DeliveryId
+    # round counter under `.nwave/des/charter-revision-rounds/`.
+    _SubcommandRow("revise-charter-round", "des.cli.revise_charter_round", "main"),
     # Produces one expectation charter in the DeliveryContract's delivery-id
     # namespace. Idempotent and loud on malformed ids or path ambiguity.
     _SubcommandRow("charter-scaffold", "des.cli.charter_scaffold", "main"),
@@ -174,6 +181,12 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # contract file after compile-contract; a mechanical field has no
     # --field choice naming it at all -- untouchable by construction.
     _SubcommandRow("fill-contract", "des.cli.fill_contract", "main"),
+    # The producer-owned re-derivation path compile-contract's own
+    # overwrite refusal points at (2026-08-21: three DeliveryIds abandoned
+    # for want of it): same flags, the SAME derivation re-run against the
+    # CURRENT authority, then a preserve-fills merge that keeps ATD's
+    # semantic fills wherever the target's path+decision identity holds.
+    _SubcommandRow("recompile-contract", "des.cli.recompile_contract", "main"),
     # fix-shipped-regression-file-backfill: the historical regression-gap
     # backfill producer -- attests a SHIPPED slice's regression file
     # genuinely existed and passed at a real historical commit, recording a

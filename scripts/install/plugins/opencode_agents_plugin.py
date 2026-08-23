@@ -21,6 +21,7 @@ from scripts.install.plugins.base import (
 from scripts.install.plugins.opencode_common import (
     opencode_config_dir,
     parse_frontmatter,
+    remove_manifest_owned_assets,
     render_frontmatter,
     uninstall_with_manifest,
     verify_with_manifest,
@@ -212,6 +213,14 @@ class OpenCodeAgentsPlugin(InstallationPlugin):
 
             target_dir = _opencode_agents_dir()
             target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Clean-then-write: the target holds ONLY what this run writes.
+            # Ownership comes from the previous manifest, never the prefix.
+            stale = remove_manifest_owned_assets(target_dir, _MANIFEST_FILENAME, ".md")
+            if stale:
+                context.logger.info(
+                    f"  Removed {len(stale)} previously installed OpenCode agents"
+                )
 
             public_agents = (
                 set()

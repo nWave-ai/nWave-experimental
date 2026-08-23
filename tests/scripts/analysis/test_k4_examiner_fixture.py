@@ -349,6 +349,39 @@ def test_rendered_doc_is_a_public_only_user_environment_recipe(tmp_path):
         )
 
 
+def test_http_journeys_route_through_the_same_proxy_bridge_as_the_health_block():
+    """K4 run 18: the health-check block already wrapped its curl in the
+    sandbox proxy bridge (`--proxy "$HTTP_PROXY" --noproxy ""`), but the
+    separately-generated "## HTTP journeys" section emitted bare `METHOD
+    url` text -- an examiner reading only that section built her own
+    unwrapped curl, hit the sandbox's namespace-isolated loopback (exit
+    7), and zero POSTs ever reached the server for the whole run
+    (server.log stayed empty for run 18). Every journey line must now
+    carry the identical proxy wrapper the health block uses, so a bare,
+    unproxied URL is structurally unable to survive into the rendered
+    doc."""
+    from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+    rendered = pef._render(9999, "k4-journey-test-key")
+    journeys_section = rendered.split("## HTTP journeys", 1)[1]
+
+    journey_lines = [
+        line for line in journeys_section.splitlines() if line.startswith("- ")
+    ]
+    assert len(journey_lines) == 5, (
+        f"expected exactly 5 rendered HTTP journeys, got {len(journey_lines)}: "
+        f"{journey_lines!r}"
+    )
+    for line in journey_lines:
+        assert '--proxy "$HTTP_PROXY" --noproxy ""' in line, (
+            "every HTTP journey line must route through the sandbox proxy "
+            f"bridge, never a bare unwrapped URL: {line!r}"
+        )
+        assert "curl" in line, (
+            f"every HTTP journey line must be a runnable curl: {line!r}"
+        )
+
+
 def test_fixture_files_are_excluded_clone_locally_yet_stay_readable(tmp_path):
     from scripts.analysis.k4 import prepare_examiner_fixture as pef
 

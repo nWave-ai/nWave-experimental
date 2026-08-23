@@ -447,10 +447,10 @@ def test_product_owner_author_constructor_has_only_value_side_inputs() -> None:
     # PO never rechecks the upstream Discover/Resolve fact or the namespace.
     assert "Confirm the namespace is missing or empty" not in owner
     assert (
-        "this role never\nrechecks the namespace, rereads repository contents "
-        "or otherwise reverifies\nthat fact" in owner
+        "this role never rechecks the namespace, rereads repository contents "
+        "or otherwise reverifies that fact" in compact
     )
-    assert "holding no\nRead/Edit/Glob/Grep tool, cannot do otherwise" in owner
+    assert "holding no Read/Edit/Glob/Grep tool, cannot do otherwise" in compact
 
     # The destination is deterministic and closed, never an open/inferred
     # filename within the namespace.
@@ -810,8 +810,9 @@ def test_auto_skill_routes_po_scope_gap_to_po_never_atd() -> None:
     PublicStartRecipe) to ATD via REVISE-CONTRACT, costing a full wasted
     dispatch when ATD correctly bounced it back EVIDENCE_GAP. Pin both the
     routing rule and the DeliveryId-changes-with-the-seed consequence
-    (ADR-SSOT-002), plus the complementary same-DeliveryId REVISE-CONTRACT
-    rule for a charter-only fix."""
+    (ADR-SSOT-002), plus the complementary same-DeliveryId
+    revise-charter-round rule for a reviewer-cited value-side charter fix
+    (REVISE-CONTRACT stays for contract/oracle defects only)."""
     compact = " ".join(_text(AUTO_SKILL).split())
 
     assert (
@@ -826,12 +827,20 @@ def test_auto_skill_routes_po_scope_gap_to_po_never_atd() -> None:
     assert "so it is a DIFFERENT `DeliveryId`" in compact
     assert "restart from step 1 with the corrected seed" in compact
     assert (
-        "If instead the SAME `DeliveryId`'s contract already exists and "
-        "only the charter needed a fix" in compact
+        "If instead the SAME `DeliveryId`'s charter carries a VALUE-side "
+        "defect cited by an independent reviewer" in compact
     )
     assert (
-        "dispatch ATD via `REVISE-CONTRACT` exactly as the crafter-citing-contract"
+        "run `des revise-charter-round --repo-root <root> --delivery-id "
+        "<id> --citation <the reviewer's exact citation text>`" in compact
+    )
+    assert (
+        "dispatch `nw-product-owner` with its exact eight-line stdout verbatim"
         in compact
+    )
+    assert (
+        "`REVISE-CONTRACT` stays for CONTRACT/ORACLE defects only, exactly "
+        "as the crafter-citing-contract row below" in compact
     )
 
 
@@ -862,8 +871,9 @@ def test_architect_states_budget_arithmetic_and_doubles_it_for_maxturns() -> Non
     assert "maxTurns: 60" in text
     assert "reuse survey ≤15 (broader than the consult's six calls" in compact
     assert (
-        "citation self-verification ≤1 call per cited FILE (batched) plus "
-        "≤1 per symbol-only citation, up to 12 cited files/symbols" in compact
+        "citation self-verification ≤1 call per cited FILE (batched; a file "
+        "this pass already read costs ZERO — that read already verified it) "
+        "plus ≤1 per symbol-only citation, up to 12 cited files/symbols" in compact
     )
     assert "= 15 + 2 + 12 + 1 = 30 as the arithmetic floor" in compact
     assert (

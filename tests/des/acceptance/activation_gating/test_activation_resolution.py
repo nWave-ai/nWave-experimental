@@ -30,6 +30,22 @@ from tests.des.acceptance.activation_gating.steps.domain_types import (
 )
 
 
+# The two ABSENT-marker rows carried a STRICT xfail for
+# F-ACTIVATION-INVERTED-IN-PRODUCTION while the read path collapsed every row
+# onto ENABLED_DEFAULT. P-SSOT-1 slice P5-bis restored the tri-state reader, so
+# they are decided by the `mode` branch and pass with ENABLED_DEFAULT UNCHANGED
+# (measured: 9/9 rows satisfied with the default True AND with False -- the
+# verdicts no longer depend on the default at all). The marks are removed
+# because the reds are RESOLVED, not because the flip landed: P6 is still owed.
+
+
+def _row_param(case: ResolutionCase) -> object:
+    return pytest.param(
+        case,
+        id=f"{case.marker.value}-x-{case.mode.value}->{case.expected.value}",
+    )
+
+
 def _build(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> ActivationGatingComposition:
@@ -41,11 +57,7 @@ def _build(
     return ActivationGatingComposition(project_root=project_root, home_dir=home_dir)
 
 
-@pytest.mark.parametrize(
-    "case",
-    TRUTH_TABLE,
-    ids=[f"{c.marker.value}-x-{c.mode.value}->{c.expected.value}" for c in TRUTH_TABLE],
-)
+@pytest.mark.parametrize("case", [_row_param(c) for c in TRUTH_TABLE])
 def test_activation_truth_table_row(
     case: ResolutionCase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

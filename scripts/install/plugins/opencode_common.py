@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -121,6 +122,78 @@ def read_manifest(target_dir: Path, manifest_filename: str) -> dict | None:
     if not manifest_path.exists():
         return None
     return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def remove_manifest_owned_assets(
+    target_dir: Path,
+    manifest_filename: str,
+    suffix: str | None,
+    *,
+    manifest_key: str = "installed_agents",
+    required_prefix: str = "nw-",
+) -> list[str]:
+    """Delete every asset the previous install manifest records as nWave-owned.
+
+    Clean-then-write: an install must leave the target containing ONLY what
+    this run wrote.  Without this, narrowing the population (dev install ->
+    public install) leaves the no-longer-written assets on disk as orphans --
+    private skills/agents leaking past the public filter, retired commands
+    still resolvable, and a later ownership preflight refusing them as
+    untracked collisions.
+
+    Ownership is decided by the PREVIOUS manifest, never by name: a foreign
+    or user-created asset, even one carrying the ``nw-`` prefix but absent
+    from the manifest, is not touched (name-is-not-ownership, the same rule
+    the Codex preflight enforces).  ``required_prefix`` is a belt-and-braces
+    guard on top of that, not the ownership test -- families whose names
+    legitimately carry no prefix (OpenCode commands are ``deliver``,
+    ``distill``, ...) pass ``required_prefix=""``.
+
+    Args:
+        target_dir: Host directory the plugin writes its family into
+        manifest_filename: Manifest file name in target_dir
+        suffix: Asset file suffix including the dot (".toml" / ".md"), or
+            ``None`` when the family's assets are DIRECTORIES (skills), in
+            which case the whole owned subtree is removed.
+        manifest_key: Manifest key listing the previously written names
+            ("installed_agents" / "installed_skills" / "installed_commands")
+        required_prefix: Extra name guard; "" disables it.
+
+    Returns:
+        Sorted stems that were removed.
+    """
+    manifest_path = target_dir / manifest_filename
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        return []
+    try:
+        document = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return []
+    names = document.get(manifest_key) if isinstance(document, dict) else None
+    if not isinstance(names, list):
+        return []
+    if target_dir.is_symlink() or not target_dir.is_dir():
+        return []
+    removed: list[str] = []
+    for name in names:
+        if not (
+            isinstance(name, str)
+            and name.startswith(required_prefix)
+            and Path(name).name == name
+        ):
+            continue
+        if suffix is None:
+            asset = target_dir / name
+            if asset.parent != target_dir or asset.is_symlink() or not asset.is_dir():
+                continue
+            shutil.rmtree(asset)
+        else:
+            asset = target_dir / f"{name}{suffix}"
+            if asset.is_symlink() or not asset.is_file():
+                continue
+            asset.unlink()
+        removed.append(name)
+    return sorted(removed)
 
 
 def uninstall_with_manifest(

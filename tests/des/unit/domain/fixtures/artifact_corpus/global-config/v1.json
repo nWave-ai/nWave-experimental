@@ -1,0 +1,7 @@
+{
+  "rigor": { "profile": "standard" },
+  "documentation": { "density": "lean", "expansion_prompt": "ask" },
+  "audit_logging_enabled": true,
+  "update_check": { "frequency": "weekly" },
+  "schema-version": 1
+}

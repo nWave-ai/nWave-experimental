@@ -10,9 +10,30 @@ import subprocess
 import sys
 from pathlib import Path
 
-from pytest_bdd import scenarios
+from pytest_bdd import scenario, scenarios
 
 from tests.des.acceptance.activation_gating.steps.steps_activation_gating import *
+
+
+# These two scenarios carried a STRICT xfail for
+# F-ACTIVATION-INVERTED-IN-PRODUCTION while the activation read path ignored
+# both the marker and the mode. P-SSOT-1 slice P5-bis restored the tri-state
+# reader: an unmarked project now resolves INACTIVE via the `mode` branch with
+# ENABLED_DEFAULT UNCHANGED, so the reds are RESOLVED and the marks go. P6 (the
+# flip) is still owed and is NOT what made them pass.
+
+
+@scenario("hook-gate.feature", "An inactive project lets a hook pass without blocking")
+def test_inactive_project_lets_a_hook_pass_without_blocking() -> None:
+    """An unmarked project is inactive: the gate allows and exits 0."""
+
+
+@scenario(
+    "hook-gate.feature",
+    "An agent dispatch cannot silently activate an inactive project",
+)
+def test_an_agent_dispatch_cannot_silently_activate_an_inactive_project() -> None:
+    """No dispatch manufactures activation for an unmarked project."""
 
 
 scenarios("hook-gate.feature")

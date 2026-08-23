@@ -228,10 +228,12 @@ def main(argv: list[str] | None = None) -> int:
             how=(
                 "a crafter INDETERMINATE citing this contract/oracle routes "
                 "back to nw-acceptance-designer for a revision on the SAME "
-                "DeliveryId -- dispatch it with the two-line body "
-                f"`REVISE-CONTRACT: {contract_locator}` then `CITATION: "
-                "<the crafter's cited defect, as a JSON string literal>`, "
-                "never a new prepare-ordinary-request run"
+                "DeliveryId -- run `des revise-contract-round` (never "
+                "hand-type the body) and dispatch its exact four-line "
+                f"stdout verbatim: `ROOT: <root>` then `REVISE-CONTRACT: "
+                f"{contract_locator}` then `REVISE-ROUND: <n>/<N>` then "
+                "`CITATION: <the crafter's cited defect, as a JSON string "
+                "literal>`, never a new prepare-ordinary-request run"
             ),
         )
 

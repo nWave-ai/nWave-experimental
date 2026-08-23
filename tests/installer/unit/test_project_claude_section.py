@@ -128,6 +128,23 @@ def test_section_template_resolves_and_loads(host: str) -> None:
     assert BEGIN_MARKER not in content and END_MARKER not in content
 
 
+# Installed guidance is an INDEX, not a manual (F-USER-QUESTION-FORMAT-STE100,
+# UX v2, Ale 2026-08-20): identity + affordance map only, on-demand skills carry
+# the knowledge. Budget enforced by construction here, not by a runtime hook —
+# a producer that cannot fit this budget must trim content, never raise the cap.
+INDEX_BUDGET_BYTES = 4096
+
+
+@pytest.mark.parametrize("host", HOST_IDS)
+def test_installed_section_stays_within_index_budget(host: str) -> None:
+    composed = load_section_content(host=host).encode("utf-8")
+    assert len(composed) <= INDEX_BUDGET_BYTES, (
+        f"{host} guidance section is {len(composed)} bytes, "
+        f"over the {INDEX_BUDGET_BYTES}-byte INDEX budget — trim content, "
+        "never raise the cap"
+    )
+
+
 def test_codex_projection_forbids_claude_specific_language() -> None:
     """AGENTS.md never carries Claude slash-command/Skill-tool prose."""
     content = load_section_content(host="codex").lower()
@@ -239,3 +256,33 @@ def test_tool_batching_fragment_exact_bytes_once_and_semantics(host: str) -> Non
     # Token cap.
     token_count = len(tiktoken.get_encoding("cl100k_base").encode(fragment_str))
     assert token_count <= 30, f"fragment too large: {token_count} tokens (max 30)"
+
+
+@pytest.mark.parametrize("host", HOST_IDS)
+def test_question_format_fragment_exact_bytes_once_and_semantics(host: str) -> None:
+    """User-facing question shape (F-USER-QUESTION-FORMAT-STE100): context ->
+    recommendation -> options-with-consequences -> one question, ASD-STE100
+    named. Verify verbatim splice once per host and no host-specific language —
+    this fragment is the single upstream point every nWave surface (wave
+    commands, nw-auto, user-facing agents) inherits via the installed guidance
+    file, since no shared-fragment mechanism exists in the command/skill/agent
+    layer itself (only this template splice engine does)."""
+    fragment_bytes = _fragment_source_bytes("question-format-fragment")
+    content_bytes = load_section_content(host=host).encode("utf-8")
+    fragment_str = fragment_bytes.decode("utf-8")
+    lowered = fragment_str.lower()
+
+    assert content_bytes.count(fragment_bytes) == 1, (
+        f"fragment not found once in {host}"
+    )
+
+    assert "context" in lowered
+    assert "recommendation" in lowered
+    assert "option" in lowered
+    assert "consequence" in lowered
+    assert "asd-ste100" in lowered
+
+    # Host-specific language forbidden — this fragment must be host-agnostic.
+    assert "/nw-" not in lowered
+    assert "skill tool" not in lowered
+    assert "slash command" not in lowered

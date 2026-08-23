@@ -19,6 +19,11 @@ import stat
 import sys
 from pathlib import Path
 
+from des._internal.delivery_contract_schema import (
+    SchemaUnreadable,
+    SchemaViolation,
+    delivery_contract_schema_violation,
+)
 from des.application.compile_contract import (
     Blocked,
     CompileContractInputs,
@@ -42,6 +47,152 @@ def _blocked(*, what: str, why: str, how: str) -> int:
     return _EXIT_BLOCKED
 
 
+def _problem_line(problem: Blocked) -> str:
+    """One problem's own complete WHAT/WHY/HOW. A typed refusal leads with
+    its machine-readable class token (e.g.
+    ``unresolved-authority-reference``) so a caller can key on it without
+    parsing prose."""
+    what = f"{problem.kind}: {problem.what}" if problem.kind else problem.what
+    return f"WHAT: {what} WHY: {problem.why} HOW: {problem.how}"
+
+
+def _blocked_from(result: Blocked) -> int:
+    """Render ONE refusal carrying every problem the compile pass found --
+    the single renderer BOTH ``des compile-contract`` and ``des recompile-
+    contract`` call (the same rendering, never a copy).
+
+    Reject-all-at-once (Ale, 2026-08-22): a validator that stops at the
+    first problem charges the caller one full producer round-trip per
+    defect. A single-problem refusal stays byte-for-byte the one line it
+    has always been -- no reader pays for the multi-problem affordance.
+    More than one problem (or any check that could not run) leads with HOW
+    MANY, then one numbered block per problem, each independently
+    actionable, then every check this pass could NOT run and why (GDP-6:
+    the third state reaches the aggregate; silence would read as
+    "checked, fine")."""
+    problems = result.problems
+    if len(problems) == 1 and not result.not_run:
+        print(_problem_line(problems[0]), file=sys.stderr)
+        return _EXIT_BLOCKED
+    total = len(problems)
+    noun = "problem" if total == 1 else "problems"
+    lines = [
+        f"BLOCKED: {total} {noun} found in one pass -- each is "
+        "independent; fix them all, then re-run.",
+        *(
+            f"({index}/{total}) {_problem_line(problem)}"
+            for index, problem in enumerate(problems, start=1)
+        ),
+        *(f"NOT CHECKED: {entry.check} -- {entry.because}" for entry in result.not_run),
+    ]
+    print("\n".join(lines), file=sys.stderr)
+    return _EXIT_BLOCKED
+
+
+#: Where each contract node this compiler emits COMES FROM in the
+#: architecture authority. A schema violation is never a JSON typo -- the
+#: compiler transcribes; so the HOW must name the CELL whose text produced
+#: the invalid value, not merely report that the JSON does not validate
+#: (GDP-3/GDP-4: the repair is made at the producing authority, and the
+#: reader must not have to guess which line of the ADR to correct).
+_AUTHORITY_ORIGIN: dict[str, str] = {
+    "targets": "the target-declaration table (the pipe table whose header "
+    "names both a Target and a Decision column)",
+    "acceptance-tests": "the 'Oracle target locator: `<path>`' citation "
+    "(or the test/spec-shaped file:line citation the oracle was bound from)",
+    "verification-scope": "the 'Verification command: `<argv>`' label lines "
+    "(or the 'Verification authority locator:' delegation)",
+    "obligations": "the 'Delivery obligations' list",
+    "cited-skills": "the brief's own nw-* skill citations",
+    "dropped-citations": "the brief's own nw-* skill citations",
+    "pbt-adapter": "the brief's own nw-* skill citations",
+    "delivery-id": "the --delivery-id argument",
+    "repository": "the observed repository HEAD",
+}
+
+
+def _authority_cell(path: tuple[str | int, ...]) -> str:
+    """The authority cell that produced the contract node at ``path``."""
+    if not path:
+        return "the architecture authority as a whole"
+    head = str(path[0])
+    origin = _AUTHORITY_ORIGIN.get(head)
+    if head != "targets":
+        return origin or f"whatever the authority declares for {head!r}"
+    if len(path) < 2:
+        return f"a Target cell of {origin}"
+    declared = str(path[1])
+    column = {"candidate": "Target", "decision": "Decision"}.get(
+        str(path[2]) if len(path) > 2 else "", ""
+    )
+    if column:
+        return f"the {column} cell of the row declaring {declared!r} in {origin}"
+    return f"the row declaring {declared!r} in {origin}"
+
+
+def refuse_schema_invalid_skeleton(
+    contract: dict,
+    *,
+    architecture_authority: str,
+    producer: str,
+) -> int | None:
+    """Refuse BEFORE the write when the compiled contract does not satisfy
+    the installed thin-delivery-contract schema; ``None`` when it does.
+
+    GDP-0, third occurrence of the class (Ale, 2026-08-22): this compiler
+    used to write its skeleton unvalidated and leave the check to the
+    downstream consumer (``des dispatch`` / ``des validate-delivery-
+    contract``), so a Target cell naming a DIRECTORY where the schema
+    admits only a FILE was transcribed verbatim into a contract no version
+    of the schema has ever accepted -- it reached the trunk, went red in
+    CI, and blocked the slice. The grounding check did not stop it because
+    ``is_file`` is False for EVERY non-file, directories included: it does
+    not discriminate a file from a non-file. The producer now makes the
+    invalid state unrepresentable on disk; the check runs through the SAME
+    seam ``des validate-delivery-contract`` runs downstream (``des.
+    _internal.delivery_contract_schema``), never a rewired copy.
+    """
+    finding = delivery_contract_schema_violation(contract)
+    if finding is None:
+        return None
+    if isinstance(finding, SchemaUnreadable):
+        return _blocked_from(
+            Blocked(
+                kind="contract-schema-unreadable",
+                what="the DeliveryContract schema cannot be read at "
+                f"{finding.schema_path} ({finding.error})",
+                why="a skeleton whose validity could not be established is "
+                "not written: an unchecked contract is exactly the state "
+                "this producer exists to make unrepresentable (GDP-6 -- "
+                "could-not-verify is never a pass)",
+                how=f"reinstall nWave with its schemas, then re-run {producer}",
+            )
+        )
+    assert isinstance(finding, SchemaViolation)
+    prefix = next(
+        (p for p in ARCH_HEADER_PREFIXES if architecture_authority.startswith(p)),
+        "",
+    )
+    reference = architecture_authority[len(prefix) :]
+    return _blocked_from(
+        Blocked(
+            kind="schema-invalid-skeleton",
+            what=f"the compiled skeleton fails the thin-delivery-contract "
+            f"schema at {finding.pointer} ({finding.message})",
+            why="this compiler TRANSCRIBES the authority -- an invalid "
+            "value in the contract is an invalid value in the authority, "
+            "and writing it would hand a contract downstream that no "
+            "version of the schema has ever accepted (GDP-0: the producer "
+            "makes the wrong state unrepresentable; nothing was written)",
+            how=f"correct {_authority_cell(finding.path)} in {reference} so "
+            f"the value satisfies nWave/schemas/{finding.schema_path.name} "
+            f"at {finding.pointer}, then re-run {producer} -- editing the "
+            "JSON by hand is not a fix, the next compile transcribes the "
+            "same cell again",
+        )
+    )
+
+
 class _RefusingArgumentParser(argparse.ArgumentParser):
     """Fail-closed argv parsing: one concise WHAT/WHY/HOW line on stderr,
     nonzero exit -- mirrors ``des prepare-ordinary-request``'s own parser."""
@@ -53,22 +204,17 @@ class _RefusingArgumentParser(argparse.ArgumentParser):
             "token -- a missing or malformed flag cannot be silently "
             "defaulted or guessed. "
             "HOW: pass every required --flag; see "
-            "`des compile-contract --help`.",
+            f"`{self.prog} --help`.",
             file=sys.stderr,
         )
         raise SystemExit(_EXIT_BLOCKED)
 
 
-def _parser() -> argparse.ArgumentParser:
-    parser = _RefusingArgumentParser(
-        prog="des compile-contract",
-        description=(
-            "Compile one DeliveryContract SKELETON from a DESIGN architecture "
-            "brief's own citations; leaves every semantic field as an "
-            "explicit <ATD: fill> placeholder for the acceptance designer "
-            "to author."
-        ),
-    )
+def build_parser(prog: str, description: str) -> argparse.ArgumentParser:
+    """The one shared argv surface for ``des compile-contract`` AND ``des
+    recompile-contract`` -- the recompiler takes the exact same input facts
+    (ADR-SSOT-002 Section 4/4b), so the flag set is defined once here."""
+    parser = _RefusingArgumentParser(prog=prog, description=description)
     parser.add_argument("--repo-root", required=True, type=Path)
     parser.add_argument("--delivery-id", required=True)
     parser.add_argument(
@@ -105,13 +251,30 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    try:
-        args = _parser().parse_args(argv)
-    except SystemExit as exit_signal:
-        code = exit_signal.code
-        return code if isinstance(code, int) else _EXIT_BLOCKED
+def _parser() -> argparse.ArgumentParser:
+    return build_parser(
+        prog="des compile-contract",
+        description=(
+            "Compile one DeliveryContract SKELETON from a DESIGN architecture "
+            "brief's own citations; leaves every semantic field as an "
+            "explicit <ATD: fill> placeholder for the acceptance designer "
+            "to author. verification-scope precedence: (1) a 'Verification "
+            "authority locator: `<repo-relative-doc>#<heading-anchor>`' "
+            "delegation carries the authority's literal script block "
+            "by-reference; (2) 'Verification command: `<argv>`' label "
+            "lines; (3) the subject CLAUDE.md whole-suite convention; "
+            "(4) the Python-only pytest fallback, else a typed refusal. "
+            "An unresolvable declared delegation is a typed "
+            "'unresolved-authority-reference' refusal, never a fallback."
+        ),
+    )
 
+
+def resolve_inputs(args: argparse.Namespace) -> CompileContractInputs | int:
+    """Validate the shared argv facts and read the brief -- the one input
+    resolution both ``des compile-contract`` and ``des recompile-contract``
+    run (the same derivation, never a copy). Returns the ready
+    ``CompileContractInputs``, or the already-printed blocked exit code."""
     repo_root: Path = args.repo_root
     try:
         root_stat = repo_root.lstat()
@@ -178,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
         else table_minutes
     )
 
-    inputs = CompileContractInputs(
+    return CompileContractInputs(
         repo_root=repo_root,
         delivery_id=args.delivery_id,
         brief_text=brief_text,
@@ -193,20 +356,40 @@ def main(argv: list[str] | None = None) -> int:
             else args.independent_review == "true"
         ),
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        args = _parser().parse_args(argv)
+    except SystemExit as exit_signal:
+        code = exit_signal.code
+        return code if isinstance(code, int) else _EXIT_BLOCKED
+
+    inputs = resolve_inputs(args)
+    if isinstance(inputs, int):
+        return inputs
     result = compile_delivery_contract(inputs)
     if isinstance(result, Blocked):
-        return _blocked(what=result.what, why=result.why, how=result.how)
+        return _blocked_from(result)
     assert isinstance(result, Compiled)
+    refusal = refuse_schema_invalid_skeleton(
+        result.contract,
+        architecture_authority=args.architecture_authority,
+        producer="des compile-contract",
+    )
+    if refusal is not None:
+        return refusal
 
-    contract_locator = contract_locator_for(args.delivery_id)
-    destination = repo_root / contract_locator
+    contract_locator = contract_locator_for(inputs.delivery_id)
+    destination = inputs.repo_root / contract_locator
     if destination.exists():
         return _blocked(
             what=f"a contract already exists at {contract_locator}",
             why="one contract is written once; compiling over an existing "
             "skeleton would silently discard ATD's in-progress fills",
-            how="delete the existing file first if truly starting over, or "
-            "edit it directly instead of recompiling",
+            how="run des recompile-contract with the same flags to "
+            "re-derive it in place while preserving ATD's fills, or delete "
+            "the existing file first if truly starting over",
         )
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(

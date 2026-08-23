@@ -32,6 +32,25 @@ _VALID_OUTCOME_HEREDOC = (
     "NW_FILL"
 )
 
+# K4 camp6 denial-RCA C-f2: the EXACT body data from p2's outcome fill --
+# it carries `checks/<uuid:code>` (literal `<` and `>` bytes) inside a
+# QUOTED heredoc body, which is opaque to the shell by definition. A scan
+# that reads the body sees "composition operators" in inert data.
+_P2_EXACT_OUTCOME_HEREDOC = (
+    "des fill-contract --repo-root "
+    "/tmp/nwave-k4-camp6-0253d8dce/campaign/pair-2/nwave "
+    "--delivery-id auto-d6c8911618f6e8d5 --field outcome <<'NW_FILL'\n"
+    "Feature: Maintenance windows for checks. An operator can declare "
+    "recurring maintenance windows on a check. While a check is inside one "
+    "of its maintenance windows, a failure must not deliver a notification "
+    "on any channel, and the outage must still be visible in that check's "
+    "own history. The management API v3 check representation (shared "
+    'v1/v2/v3) gains one field: "maintenance_windows": [{"schedule": '
+    '"0 2 * * SUN", "duration": 3600}], readable via GET and writable via '
+    "POST/PUT on the existing checks/<uuid:code> endpoint.\n"
+    "NW_FILL"
+)
+
 
 class TestPureEvaluator:
     def test_status_query_is_allowed(self) -> None:
@@ -55,6 +74,63 @@ class TestPureEvaluator:
             )
             is None
         )
+
+    def test_status_first_query_is_allowed(self) -> None:
+        """K4 camp6 denial-RCA C-f1 (false rejection): p2's EXACT status
+        query -- `--status` in FIRST position -- was rejected as "not a
+        well-formed invocation", while the same invocation with
+        `--status` last passed 4/4 times in p3. `--status` is a
+        value-less flag: the parser is flag-order-insensitive."""
+        command = (
+            "des fill-contract --status --repo-root "
+            "/tmp/nwave-k4-camp6-0253d8dce/campaign/pair-2/nwave "
+            "--delivery-id auto-d6c8911618f6e8d5"
+        )
+        assert (
+            pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(command)
+            is None
+        )
+
+    def test_status_mid_position_query_is_allowed(self) -> None:
+        command = "des fill-contract --repo-root /repo --status --delivery-id id"
+        assert (
+            pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(command)
+            is None
+        )
+
+    def test_p2_exact_heredoc_body_with_angle_bracket_data_is_allowed(self) -> None:
+        """The quoted body is opaque bytes: `checks/<uuid:code>` in the
+        DATA must never trip the composition-operator scan."""
+        assert (
+            pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(
+                _P2_EXACT_OUTCOME_HEREDOC
+            )
+            is None
+        )
+
+    def test_heredoc_with_a_single_trailing_newline_is_allowed(self) -> None:
+        """`...\\nNW_FILL\\n` and `...\\nNW_FILL` are the same shell
+        construct -- a Bash tool call routinely ends with a final newline.
+        Rejecting it fell through to the whole-command scan, which then
+        blamed the opaque body's data as a composition operator."""
+        assert (
+            pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(
+                _P2_EXACT_OUTCOME_HEREDOC + "\n"
+            )
+            is None
+        )
+
+    def test_invalid_header_never_scans_the_quoted_body_as_shell(self) -> None:
+        """A heredoc whose HEADER is invalid (mechanical field) with p2's
+        angle-bracket data in the body: the rejection must blame the
+        header, never claim a composition operator from the opaque body."""
+        command = _P2_EXACT_OUTCOME_HEREDOC.replace(
+            "--field outcome", "--field declared-imports"
+        )
+        result = pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(command)
+        assert result is not None
+        assert "shell-composition" not in result["reason"]
+        assert "header" in result["reason"]
 
     def test_empty_command_is_blocked(self) -> None:
         result = pre_tool_use_handler._evaluate_atd_fill_contract_bash_command("")

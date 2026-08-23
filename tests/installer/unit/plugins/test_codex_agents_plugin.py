@@ -40,12 +40,12 @@ from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.codex_agents_plugin import (
     CodexAgentsPlugin,
     _extract_scalar_fields,
+    _log_tools_translated,
     _render_toml_agent,
     _toml_multiline_string,
     _toml_string,
     _transform_agent,
     _translate_skill_invocations,
-    _warn_if_tools_dropped,
 )
 
 
@@ -178,6 +178,7 @@ class TestExtractScalarFields:
             "disable-model-invocation": True,
             "permissionMode": "default",
             "skills": ["nw-skill"],
+            "effort": "low",
         }
         result = _extract_scalar_fields(frontmatter)
         assert "tools" not in result
@@ -185,6 +186,7 @@ class TestExtractScalarFields:
         assert "disable-model-invocation" not in result
         assert "permissionMode" not in result
         assert "skills" not in result
+        assert "effort" not in result
 
     def test_drops_non_scalar_values(self):
         # bypass: pure function — lists and dicts are silently dropped
@@ -229,24 +231,24 @@ class TestRenderTomlAgent:
         assert "Do stuff." in result
 
 
-class TestWarnIfToolsDropped:
-    """_warn_if_tools_dropped: emits warning when tools key present."""
+class TestLogToolsTranslated:
+    """_log_tools_translated: logs the translation when tools key present."""
 
-    def test_warns_when_tools_present(self, caplog):
+    def test_logs_translation_when_tools_present(self, caplog):
         # bypass: pure function, single observable (log output)
         with caplog.at_level(
-            logging.WARNING, logger="scripts.install.plugins.codex_agents_plugin"
+            logging.INFO, logger="scripts.install.plugins.codex_agents_plugin"
         ):
-            _warn_if_tools_dropped("nw-foo", {"tools": ["Read", "Bash"]})
-        assert any("tools" in msg for msg in caplog.messages)
+            _log_tools_translated("nw-foo", {"tools": ["Read", "Bash"]})
+        assert any("capability-mapping preamble" in msg for msg in caplog.messages)
         assert any("nw-foo" in msg for msg in caplog.messages)
 
-    def test_no_warning_when_tools_absent(self, caplog):
+    def test_no_log_when_tools_absent(self, caplog):
         # bypass: pure function, single observable
         with caplog.at_level(
-            logging.WARNING, logger="scripts.install.plugins.codex_agents_plugin"
+            logging.INFO, logger="scripts.install.plugins.codex_agents_plugin"
         ):
-            _warn_if_tools_dropped("nw-foo", {"name": "nw-foo", "description": "x"})
+            _log_tools_translated("nw-foo", {"name": "nw-foo", "description": "x"})
         assert not caplog.messages
 
 
@@ -290,6 +292,25 @@ class TestTransformAgent:
         parsed = tomllib.loads(_transform_agent(source, "nw-craft"))
 
         assert parsed["model"] == "gpt-5.2-codex"
+
+    def test_full_transform_drops_effort_field(self):
+        # bypass: pure function — Codex agent TOML schema has no effort
+        # field: 0.149.0 rejects the whole role file as malformed and the
+        # agent silently disappears from the registry (spawn_agent then
+        # fails with unknown agent_type).
+        source = (
+            "---\n"
+            "name: nw-acceptance-designer\n"
+            "description: distill wave\n"
+            "model: sonnet\n"
+            "effort: low\n"
+            "---\n\n"
+            "You design acceptance oracles.\n"
+        )
+
+        parsed = tomllib.loads(_transform_agent(source, "nw-acceptance-designer"))
+
+        assert "effort" not in parsed
 
 
 class TestTranslateSkillInvocations:
@@ -624,6 +645,95 @@ def test_empty_codex_home_is_consistently_treated_as_unset(
     assert codex_skills_plugin._codex_config_dir() == expected
 
 
+class TestInstallCleansPreviouslyOwnedAgents:
+    """install: clean-then-write -- the target holds ONLY what this run wrote.
+
+    Defect 2026-08-22: a --dev install wrote private agents plus a 51-entry
+    manifest; the next public install rewrote the manifest to 35 but left the
+    16 private TOMLs on disk (IP leak past the public filter).
+    """
+
+    def _seed_previous_install(
+        self, codex_agents_dir: Path, owned: list[str], foreign: list[str]
+    ) -> None:
+        codex_agents_dir.mkdir(parents=True)
+        for stem in owned + foreign:
+            (codex_agents_dir / f"{stem}.toml").write_text(
+                f'name = "{stem}"\n', encoding="utf-8"
+            )
+        (codex_agents_dir / ".nwave-agents-manifest.json").write_text(
+            json.dumps({"installed_agents": sorted(owned), "version": "1.0"}),
+            encoding="utf-8",
+        )
+
+    def test_stale_manifest_owned_private_agent_is_removed(self, tmp_path, monkeypatch):
+        """
+        GIVEN: the previous install wrote nw-private-agent.toml and listed it
+               in the manifest, and the current source no longer ships it
+        WHEN: install() runs
+        THEN: nw-private-agent.toml is GONE, the shipped agent is written,
+              and a foreign user agent is untouched.
+        """
+        context, _ = _make_context(tmp_path)
+        codex_agents_dir = tmp_path / "home" / ".codex" / "agents"
+        codex_config_dir = tmp_path / "home" / ".codex"
+        self._seed_previous_install(
+            codex_agents_dir,
+            owned=["nw-test-agent", "nw-private-agent"],
+            foreign=["my-own-agent"],
+        )
+        _patch_codex_dirs(monkeypatch, codex_agents_dir, codex_config_dir)
+
+        def snapshot() -> dict[str, object]:
+            return {
+                "nw-test-agent.exists": (
+                    codex_agents_dir / "nw-test-agent.toml"
+                ).is_file(),
+                "nw-private-agent.exists": (
+                    codex_agents_dir / "nw-private-agent.toml"
+                ).is_file(),
+                "my-own-agent.exists": (
+                    codex_agents_dir / "my-own-agent.toml"
+                ).is_file(),
+            }
+
+        before = snapshot()
+        result = CodexAgentsPlugin().install(context)
+        after = snapshot()
+
+        assert result.success is True, result.errors
+        assert_state_delta(
+            before,
+            after,
+            universe=set(before),
+            expected={"nw-private-agent.exists": set_to(False)},
+        )
+        manifest = json.loads(
+            (codex_agents_dir / ".nwave-agents-manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert manifest["installed_agents"] == ["nw-test-agent"]
+
+    def test_unmanifested_nw_prefixed_file_is_not_ownership(
+        self, tmp_path, monkeypatch
+    ):
+        """A nw-* file absent from the previous manifest is foreign (the
+        preflight's concern), not the plugin's to delete."""
+        context, _ = _make_context(tmp_path)
+        codex_agents_dir = tmp_path / "home" / ".codex" / "agents"
+        codex_config_dir = tmp_path / "home" / ".codex"
+        self._seed_previous_install(
+            codex_agents_dir, owned=["nw-test-agent"], foreign=["nw-user-made"]
+        )
+        _patch_codex_dirs(monkeypatch, codex_agents_dir, codex_config_dir)
+
+        result = CodexAgentsPlugin().install(context)
+
+        assert result.success is True, result.errors
+        assert (codex_agents_dir / "nw-user-made.toml").is_file()
+
+
 class TestUninstallRemovesOnlyNwaveAgents:
     """uninstall: removes only manifest-listed agents, preserves user-created ones."""
 
@@ -686,3 +796,54 @@ class TestUninstallRemovesOnlyNwaveAgents:
                 # custom-user-agent.exists is implicit-unchanged
             },
         )
+
+
+class TestCapabilityPreamble:
+    """Capability-mapping preamble derived mechanically from the tools block.
+
+    Codex's agent TOML schema has no tools field, so a role body written
+    against Claude semantic tools (Read, Write, ...) must carry an explicit
+    translation: granted tools map to the native Codex surface, undeclared
+    tools become explicit denials (source-blind roles stay source-blind).
+    """
+
+    @staticmethod
+    def _instructions(tools_line: str) -> str:
+        source = (
+            "---\n"
+            "name: nw-x\n"
+            "description: d\n"
+            f"{tools_line}"
+            "---\n\n"
+            "# Role\n\n"
+            "Never use Bash to read files.\n"
+        )
+        document = tomllib.loads(_transform_agent(source, "nw-x"))
+        return document["developer_instructions"]
+
+    def test_declared_read_sanctions_native_readonly_shell(self):
+        # bypass: pure function
+        instructions = self._instructions("tools: Read, Write, Edit, Bash\n")
+        assert "ARE the sanctioned Read on this platform" in instructions
+
+    def test_write_only_agent_denies_reading_and_execution(self):
+        # bypass: pure function -- source-blind by design must survive
+        instructions = self._instructions("tools: Write\n")
+        assert "sanctioned Read" not in instructions
+        assert "Reading file contents is NOT granted" in instructions
+        assert "Command execution is NOT granted" in instructions
+
+    def test_list_shaped_tools_block_also_yields_preamble(self):
+        # bypass: pure function -- frontmatter may declare tools as a YAML list
+        instructions = self._instructions("tools: [Read, Glob, Grep]\n")
+        assert "ARE the sanctioned Read on this platform" in instructions
+        assert "Creating or modifying files is NOT granted" in instructions
+        assert "Command execution is NOT granted" in instructions
+
+    def test_agent_without_tools_is_unchanged(self):
+        # bypass: pure function -- absent tools block keeps today's output
+        source = "---\nname: nw-x\ndescription: d\n---\n\n# Role\n\nBody.\n"
+        transformed = _transform_agent(source, "nw-x")
+        assert "Codex Capability Mapping" not in transformed
+        document = tomllib.loads(transformed)
+        assert document["developer_instructions"] == "\n\n# Role\n\nBody.\n"

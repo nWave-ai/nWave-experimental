@@ -183,3 +183,56 @@ def test_malformed_json_allows_silently(monkeypatch, capsys) -> None:
     exit_code = adapter.handle_post_write()
     assert exit_code == 0
     assert capsys.readouterr().out.strip() == ""
+
+
+def test_selector_bearing_locator_still_matches_the_written_file(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
+    # SF blocker 2026-08-21: a contract whose `acceptance-tests.locator`
+    # carries a `::Selector` suffix (oracle identity) still names THIS
+    # written file -- the hook matches on the locator's file part, never
+    # falling silent as though no contract owned the oracle.
+    _seed_contract(tmp_path)
+    contract_file = tmp_path / "docs" / "delivery-contracts" / "widget-color.json"
+    contract = json.loads(contract_file.read_text(encoding="utf-8"))
+    contract["acceptance-tests"]["locator"] = f"{_ORACLE_RELATIVE}::test_color"
+    contract_file.write_text(json.dumps(contract), encoding="utf-8")
+
+    exit_code, payload = _run(monkeypatch, capsys, _stdin(tmp_path))
+
+    assert exit_code == 0
+    assert "RED-right-reason" in _context(payload)
+
+
+def test_delegation_contract_write_names_the_delegation_branch(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
+    # SF friction 2026-08-21: a delegation contract has NO argv command by
+    # construction -- the old "no verification-scope.commands entry cites
+    # it" message (promising a BASE argv probe that will never run) is a
+    # lie for this branch. The hook must name the delegation explicitly.
+    contracts_dir = tmp_path / "docs" / "delivery-contracts"
+    contracts_dir.mkdir(parents=True)
+    contract = {
+        "delivery-route": "RED_TO_GREEN",
+        "targets": {"go/x.go": {"justification": "adds X", "overlap": ""}},
+        "acceptance-tests": {"locator": _ORACLE_RELATIVE},
+        "verification-scope": {
+            "literal-script-block": {
+                "locator": "docs/adrs/adr-verify.md#the-exact-order",
+                "content-digest": "sha256:" + "0" * 64,
+                "lines": ["go test ./... -count=1"],
+            }
+        },
+    }
+    (contracts_dir / "widget-color.json").write_text(
+        json.dumps(contract), encoding="utf-8"
+    )
+
+    exit_code, payload = _run(monkeypatch, capsys, _stdin(tmp_path))
+
+    assert exit_code == 0
+    context = _context(payload)
+    assert "delegated-verification-authority" in context
+    assert "docs/adrs/adr-verify.md#the-exact-order" in context
+    assert "no verification-scope.commands entry cites it" not in context

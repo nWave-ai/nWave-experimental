@@ -40,17 +40,24 @@ def _run(
 
 
 class TestFirstRevisionSucceeds:
-    def test_emits_the_three_line_body_at_round_one(
+    def test_emits_the_four_line_body_at_round_one(
         self, tmp_path: Path, capsys
     ) -> None:
+        """SF friction report 2026-08-20, item 6: the producer already
+        knows --repo-root but never emitted it -- a dispatched reviser
+        had no choice but to resolve REVISE-CONTRACT's repo-relative
+        locator against its OWN cwd, the wrong checkout, twice in one
+        night. ROOT is now the FIRST line: the reader needs it before
+        it can even interpret the repo-relative locator that follows."""
         exit_code = _run(tmp_path)
         assert exit_code == 0
         out = capsys.readouterr().out
         lines = out.split("\n")
-        assert lines[0] == f"REVISE-CONTRACT: {_LOCATOR}"
-        assert lines[1] == f"REVISE-ROUND: 1/{revise_contract_round.REVISE_ROUND_BOUND}"
-        assert lines[2].startswith("CITATION: ")
-        assert len(lines) == 3
+        assert lines[0] == f"ROOT: {tmp_path}"
+        assert lines[1] == f"REVISE-CONTRACT: {_LOCATOR}"
+        assert lines[2] == f"REVISE-ROUND: 1/{revise_contract_round.REVISE_ROUND_BOUND}"
+        assert lines[3].startswith("CITATION: ")
+        assert len(lines) == 4
 
     def test_emitted_body_is_accepted_by_the_real_hook_gate(
         self, tmp_path: Path, capsys
@@ -80,7 +87,7 @@ class TestRoundsAdvanceAndRefuseAtTheBound:
             exit_code = _run(tmp_path)
             assert exit_code == 0
             out = capsys.readouterr().out
-            rounds.append(out.split("\n")[1])
+            rounds.append(out.split("\n")[2])
         assert rounds == [
             f"REVISE-ROUND: {n}/{revise_contract_round.REVISE_ROUND_BOUND}"
             for n in range(1, revise_contract_round.REVISE_ROUND_BOUND + 1)
@@ -138,7 +145,7 @@ class TestRoundsAdvanceAndRefuseAtTheBound:
         out = capsys.readouterr().out
         assert exit_code == 0
         assert (
-            out.split("\n")[1]
+            out.split("\n")[2]
             == f"REVISE-ROUND: 1/{revise_contract_round.REVISE_ROUND_BOUND}"
         )
 

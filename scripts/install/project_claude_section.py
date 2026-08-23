@@ -38,6 +38,10 @@ END_MARKER = "<!-- END nWave-beta-section -->"
 # composed bytes are identical across hosts.
 _FRAGMENTS = (
     ("{{TOOL_BATCHING_FRAGMENT}}", ("nWave", "templates", "tool-batching-fragment.md")),
+    (
+        "{{QUESTION_FORMAT_FRAGMENT}}",
+        ("nWave", "templates", "question-format-fragment.md"),
+    ),
 )
 
 
@@ -80,14 +84,30 @@ def load_section_content(
     """Read the managed-section body for ``host`` (inner content, no markers).
 
     Splices managed fragments into the template's placeholders, ensuring
-    fragment bytes are identical across every host by construction.
+    fragment bytes are identical across every host by construction. Any
+    GENERATED region the template carries (e.g. ``communication-rules``) is
+    then re-rendered for ``project_root`` via the single-asset projection
+    ``des`` owns (``project_asset``, ADR-CFG-001 Slice 2) -- REUSE_CANDIDATE:
+    this is the ONE call site, never a second, independent
+    DESConfig/merge_config read.
+
+    That engine is imported from ``des`` and NOT from ``scripts.docgen``:
+    this module ships in the public wheel while docgen deliberately does not,
+    so the previous ``from scripts.docgen import _project_asset`` made every
+    consumer install die with ``ModuleNotFoundError: No module named
+    'scripts.docgen'``. ``des`` is force-included into every wheel by
+    construction, so that mismatch cannot recur here.
     """
+    from des.application.generated_region_projection import project_asset
+
     root = project_root or Path(__file__).resolve().parents[2]
-    template = resolve_section_template(root, host=host).read_text(encoding="utf-8")
+    template_path = resolve_section_template(root, host=host)
+    template = template_path.read_text(encoding="utf-8")
     content = template
     for placeholder, relpath in _FRAGMENTS:
         fragment = root.joinpath(*relpath).read_text(encoding="utf-8").strip()
         content = content.replace(placeholder, fragment)
+    content = project_asset(template_path, content, root).projected_text
     return content.strip()
 
 

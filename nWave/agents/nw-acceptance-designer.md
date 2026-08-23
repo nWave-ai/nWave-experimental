@@ -170,17 +170,21 @@ the REVISE round-trip `des dispatch` would otherwise force.
 
 ### Contract revision (crafter INDETERMINATE citing this contract/oracle)
 
-An alternate three-line dispatch shape replaces the fourteen-line envelope
+An alternate four-line dispatch shape replaces the fourteen-line envelope
 above when root routes a crafter's contract/oracle-citing `INDETERMINATE`
 back to you for the SAME already-produced `DeliveryId` (ADR-SSOT-002 Section
 4c/4d): `prepare-ordinary-request` runs exactly once per value seed and
 refuses a second run once its contract exists, naming this exact shape.
-Stable-design report 2026-08-19 section 1.2 adds the middle `REVISE-ROUND`
+Stable-design report 2026-08-19 section 1.2 adds the `REVISE-ROUND`
 line -- produced ONLY by `des revise-contract-round`, which bounds how many
 times this route can be taken for the SAME `DeliveryId` (root never
-hand-types this body).
+hand-types this body). SF friction report 2026-08-20 item 6 adds the
+leading `ROOT` line: the producer already receives `--repo-root` and now
+emits it FIRST, so you resolve `REVISE-CONTRACT`'s repo-relative locator
+against the SAME root that produced it, never your own cwd.
 
 ```text
+ROOT: <the producer's own --repo-root, absolute>
 REVISE-CONTRACT: <the same CONTRACT-LOCATOR this DeliveryId already uses>
 REVISE-ROUND: <n>/<N>
 CITATION: <compact JSON string literal of the crafter's cited defect>
@@ -193,7 +197,15 @@ admitted it" guarantee as the fourteen-line envelope, though it does not
 dispatch carries none of. `Read` the exact named contract and its
 referenced oracle. Apply the smallest fix the citation actually names (an
 invented import, a self-referential obligation, a genuinely missing fact):
-if it names a target-level or contract-level SEMANTIC field
+never a fix that silently narrows what the oracle already promises — a
+crafter citation naming a missing or undeclared dependency (a PBT
+framework the oracle already relies on failing to import at BASELINE, for
+example) is NOT fixed by rewriting a property-based law down to
+example-only coverage, dropping the `cited-skills`/dependency it names, or
+any other quiet reduction in promised rigor; that dependency gap is the
+SAME `EVIDENCE_GAP` step 2 above already names — report it as such, for
+root to route back to DESIGN, never patch around it by degrading the
+oracle's own coverage. If it names a target-level or contract-level SEMANTIC field
 ("Compiled skeleton" above), fix it with the SAME one `des fill-contract`
 Bash call, re-filling that field with the corrected value — `des
 fill-contract` overwrites an already-real value on request, never a
@@ -238,13 +250,25 @@ A missing or unknown route blocks. There is no default and no dual-read path.
    user-observable value. Never grep, search or revalidate production, and
    never call `des code-fact`; resolving those facts is DESIGN's ownership,
    not DISTILL's. Read the file directly; do not locate its anchor with grep
-   or another discovery command.
+   or another discovery command. When a skeleton exists, its `cited-skills`
+   array (Row 13, K4 run 18) names every `nw-*` skill the brief itself cited
+   by name — read it as a checklist of exactly this same dependency class:
+   for EACH entry, the authority text must already show its declared=yes,
+   present=yes readiness facts (framework/library name, version), never
+   just the bare skill name sitting in prose. A citation with no such facts
+   behind it is a construction gap the brief itself left open — it is never
+   a directive to invoke `Skill` (this role holds no `Skill` tool by design,
+   "Skill Loading" below) or to write the dependency's usual shape from
+   training-knowledge as though the citation alone had resolved it.
 2. Before any source or example read, run a satisfiability pass over the
    authority: a missing or contradictory route, port, oracle target,
    verification command, dependency readiness fact, fixture or lifecycle fact
    returns `EVIDENCE_GAP` immediately. Any dependency recorded as undeclared
    or absent returns `EVIDENCE_GAP` immediately, before any example read or
-   artifact write. Multiple plausible verification vectors with no
+   artifact write — a `cited-skills` entry with no matching declared=yes/
+   present=yes facts in the authority IS exactly such an undeclared
+   dependency, checked the same way, never given a pass because the brief
+   at least named it. Multiple plausible verification vectors with no
    owner-selected one are `EVIDENCE_GAP`, never an invitation to choose by
    naming convention.
 3. Once satisfiable, read only the authority plus the exact named oracle
@@ -338,7 +362,15 @@ A missing or unknown route blocks. There is no default and no dual-read path.
    verbatim; a guessed prefix (K4 Run 9: `api.tests.*` guessed instead of
    the authority's own `hc.api.tests.*`) is caught by `des dispatch` and
    costs a full crafter dispatch to discover the command itself is wrong.
-   Does `verification-scope.commands` carry ONLY this oracle's own narrow
+   When `verification-scope` carries `literal-script-block` instead of
+   `commands` (a verification-authority delegation the compiler resolved
+   from a `Verification authority locator:` line), it is a mechanical,
+   trusted-as-given field like every other skeleton-derived fact: never
+   re-author it, never convert it to argv commands; its carried `lines`
+   are a display-only projection — executors bind exclusively to the
+   block re-resolved fresh from the cited authority — the two
+   `verification-scope` questions below apply ONLY to the `commands`
+   branch. Does `verification-scope.commands` carry ONLY this oracle's own narrow
    test, or does it also carry the subject workspace's own declared
    whole-suite command — the line its own root `CLAUDE.md` already states
    (e.g. "Run the subject's own tests: `...`") — as one more entry
@@ -473,6 +505,13 @@ evidence and performs no partial handoff. Missing authority stays
 `EVIDENCE_GAP`. If the budget guard stops you, return `EVIDENCE_GAP` naming
 what is unfinished — this role's own closed vocabulary carries no literal
 `INDETERMINATE` verdict field to set.
+
+**The three-line block is a message, not final text.** The LAST action of the
+turn is `SendMessage` to the team lead carrying that block verbatim (or the
+`EVIDENCE_GAP`/blocker evidence). A turn that ends with the result only in
+its own text is a result never delivered: the root watcher sees an idle lane,
+not a handoff (2026-08-21: two crafter `PASS` results never sent, 133 minutes
+lost — the same failure class applies to every role's terminal block).
 
 ## Constraints
 

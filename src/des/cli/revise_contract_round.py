@@ -218,6 +218,14 @@ def main(argv: list[str] | None = None) -> int:
     citation_json = json.dumps(args.citation, ensure_ascii=False)
     body = "\n".join(
         [
+            # SF friction report 2026-08-20, item 6: this producer already
+            # receives --repo-root but never emitted it -- a dispatched
+            # reviser had no choice but to resolve REVISE-CONTRACT's
+            # repo-relative locator against ITS OWN cwd, the wrong
+            # checkout, twice in one night. ROOT is FIRST: the reader
+            # needs it before it can even interpret the repo-relative
+            # locator that follows.
+            f"ROOT: {repo_root}",
             f"REVISE-CONTRACT: {args.contract_locator}",
             f"REVISE-ROUND: {next_round}/{REVISE_ROUND_BOUND}",
             f"CITATION: {citation_json}",

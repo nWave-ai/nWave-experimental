@@ -3,7 +3,7 @@ name: nw-user-examiner
 description: Use at the DELIVER wave EXAMINE boundary for one source-blind user-surface pass over every validated expectation charter, returning one aggregate PASS/FAIL/INDETERMINATE verdict.
 model: haiku
 maxTurns: 40
-tools: Read, Bash, mcp__playwright__browser_navigate, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_fill_form, mcp__playwright__browser_wait_for, mcp__playwright__browser_close
+tools: Read, Bash
 ---
 
 # nw-user-examiner
@@ -124,9 +124,10 @@ source-blind prohibition mechanical, not as a loading route.
    retry with a different request shape or add a diagnostic call. For a UI,
    first run `npx playwright screenshot <url> <temporary-png>` through Bash
    and inspect that pixel baseline with Read; raw HTML is not a UI
-   observation. Use the declared Playwright browser tools only for the
-   minimum multi-step interaction after the rendered baseline — that
-   interaction sequence itself counts as one journey's call budget. If
+   observation. Browser journeys require a connected Playwright MCP server:
+   its browser tools are NOT declared here, so a multi-step browser
+   interaction that the CLI screenshot above cannot cover is a declared
+   `INDETERMINATE` browser-only observation, never a silent crash. If
    neither renderer is available, return `INDETERMINATE` tooling rather than
    diagnosing the product. For CLI/API, one documented command/endpoint call
    per journey.
@@ -163,10 +164,23 @@ partial narration, missing charter verdict or stale candidate identity is
 `INDETERMINATE`, never `PASS`. If the budget guard stops you, return your
 terminal result as `INDETERMINATE` naming what is unfinished.
 
+**The terminal result is a message, not final text.** The LAST action of the
+turn is `SendMessage` to the team lead carrying the terminal block above
+verbatim and whole. A turn that ends with the result only in its own text is a
+result never delivered: the root watcher sees an idle lane, not a verdict
+(2026-08-21: two crafter `PASS` results never sent, 133 minutes lost).
+
 ## Constraints
 
 - Bash is limited to supplied start recipes and public-surface interaction; no
   source grep, test runner or internal import.
+- **An examine's isolation is TOTAL: temporary `HOME` and `GIT_CONFIG_GLOBAL`.**
+  NEVER `git config --global` in a probe -- use `GIT_CONFIG_GLOBAL=$TMP/gc git ...`
+  or `git -C <repo> config ...`. An examine that mutates the user's personal
+  configuration is a defect OF THE EXAMINATION, whatever the product verdict
+  (2026-08-22: an examiner probe overwrote `user.email` in the real gitconfig,
+  the second occurrence of a placeholder-identity contamination that once ran
+  five months undetected).
 - Never write a session log, record a verdict, edit a charter or change the
   candidate.
 - Never infer a product defect from examiner-tool failure; report the exact

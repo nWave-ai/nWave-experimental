@@ -36,6 +36,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.codefact.ast_code_fact_adapter import AstAdapter
+from des.adapters.driven.codefact.graphify_code_fact_adapter import GraphifyAdapter
 from des.adapters.driven.codefact.text_search_code_fact_adapter import TextSearchAdapter
 from des.ports.code_fact_port import (
     Answered,
@@ -58,16 +59,37 @@ class CodeFactChain:
     """The composition that walks the provider chain and tags the answer.
 
     Constructed with the ``root`` of the tree to query. The chain wires
-    ``Ast -> TextSearch`` in descending precision and returns the first
-    provider that *covers* the capability — a pure, stateless fold (D5); no
-    mutable per-instance diagnostic channel, only the per-query
-    ``Resolution.trace``.
+    ``Graphify -> Ast -> TextSearch`` in descending precision and returns
+    the first provider that *covers* the capability — a pure, stateless
+    fold (D5); no mutable per-instance diagnostic channel, only the
+    per-query ``Resolution.trace``.
+
+    ``GraphifyAdapter`` (ADR-LA-001 D4/LA1-L7 — the "future precise
+    provider" the ADR itself anticipated) is a WIRING decision, not a port
+    change: it is only ever a member of ``self._providers`` when a real,
+    parseable ``graphify-out`` pair was found under ``root`` at
+    construction time (``has_data``) — absent ⇒ not in the tuple at all,
+    the OSS normal case, never a phantom tier that always fails.
+
+    This wires the PREFIX of ADR-LA-001's canonical reference chain,
+    ``Tsunami -> Graphify -> Ast -> TextSearch``, that has a real provider
+    today. ``Tsunami``'s slot is declared in the ADR amendment, not wired
+    here — D6-R1's lesson stands (no fabricated ``binding-resolved`` stub);
+    a future real Tsunami integration prepends above ``GraphifyAdapter`` the
+    same way this adapter itself was added: a real ``TransportWitness``, a
+    wiring change, no port/fold change.
     """
 
     def __init__(self, root: Path | str) -> None:
+        self._graphify = GraphifyAdapter(root=root)
         self._ast = AstAdapter(root=root)
         self._floor = TextSearchAdapter(root=root)
-        self._providers = (self._ast, self._floor)
+        providers: list = []
+        if self._graphify.has_data:
+            providers.append(self._graphify)
+        providers.append(self._ast)
+        providers.append(self._floor)
+        self._providers = tuple(providers)
         verify_composition_coverage(self._providers)
 
     def resolve(

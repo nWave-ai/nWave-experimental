@@ -73,3 +73,36 @@ def guard_nwave_attribution_hook():
         "\nNWAVE-HOOK-GUARD: a test mutated ~/.nwave/hooks/ — "
         f"RESTORED {sorted(before)} to {hooks_dir}\n"
     )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolate_install_lock_destination(tmp_path_factory):
+    """Give this pytest worker its OWN install-lock destination.
+
+    ``install_nwave.main()`` takes an exclusive per-destination lock before any
+    write (``scripts/install/install_lock.py``), keyed to ``NWAVE_AGENTS_HOME``
+    / ``HOME``. Around twenty tests in this tree drive ``main()`` in process
+    against monkeypatched config dirs, so under ``-n auto`` two workers can run
+    two of them at the same instant, against the SAME real destination -- and
+    the second is then correctly refused, failing a test that has nothing to do
+    with concurrency. Measured 2026-08-22: an intermittent
+    ``test_installation_verifier`` failure under ``-n 4`` that reproduced on
+    neither file alone.
+
+    The escape hatch used here is the one the refusal message itself
+    prescribes -- an isolated destination, per worker -- NOT a switch that
+    disarms the lock (a gate that can be turned off is not a floor, GDP-7).
+    The lock still binds inside each worker, so a test that genuinely nests two
+    installs still sees the refusal.
+
+    Bonus, and the reason this is scoped to the whole installer tree rather
+    than the ``main()`` call sites alone: ``NWAVE_AGENTS_HOME`` also redirects
+    ``create_backup``, ``record_install_metadata`` and the retention config
+    read away from the developer's real ``~/.nwave`` -- the mutation the
+    session hook guard above exists to repair after the fact.
+    """
+    destination = tmp_path_factory.mktemp("nwave_agents_home")
+    patch = pytest.MonkeyPatch()
+    patch.setenv("NWAVE_AGENTS_HOME", str(destination))
+    yield destination
+    patch.undo()
