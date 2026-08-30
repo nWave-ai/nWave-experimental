@@ -36,6 +36,11 @@ from des.application.ordinary_request import (
     contract_locator_for,
     is_valid_arch_header_line,
 )
+from des.domain.verification_authority_resolver import (
+    AmbiguousAuthorityReference,
+    UnresolvedAuthorityReference,
+    resolve_authority_section,
+)
 
 
 _EXIT_BLOCKED = 2
@@ -320,16 +325,67 @@ def resolve_inputs(args: argparse.Namespace) -> CompileContractInputs | int:
         p for p in ARCH_HEADER_PREFIXES if args.architecture_authority.startswith(p)
     )
     reference = args.architecture_authority[len(prefix) :]
-    brief_relative_path, _separator, _anchor = reference.partition("#")
+    brief_relative_path, _separator, anchor = reference.partition("#")
     brief_path = repo_root / brief_relative_path
     try:
-        brief_text = brief_path.read_text(encoding="utf-8")
+        resolved_root = repo_root.resolve(strict=True)
+        resolved_brief = brief_path.resolve(strict=True)
+    except OSError as exc:
+        return _blocked(
+            what=f"the architecture brief cannot be read or resolved at {brief_path} ({exc})",
+            why="compile-contract reads only an authority physically contained by --repo-root",
+            how="pass a readable repository-contained architecture authority",
+        )
+    if not resolved_brief.is_relative_to(resolved_root):
+        return _blocked(
+            what=f"the architecture brief at {brief_relative_path!r} resolves outside --repo-root",
+            why="a symlink authority would make the cited repository-relative authority false",
+            how="replace it with a real authority file physically contained by --repo-root",
+        )
+    try:
+        whole_document_text = brief_path.read_text(encoding="utf-8")
     except OSError as exc:
         return _blocked(
             what=f"the architecture brief cannot be read at {brief_path} ({exc})",
             why="compile-contract derives every fact from the brief's own citations",
             how="pass an --architecture-authority path readable under --repo-root",
         )
+
+    # The anchor is a CITATION to one section, not decoration: every fact
+    # below is derived from `brief_text` alone, so it must be the CITED
+    # SECTION, never the whole document (F-COMPILE-CONTRACT-IGNORES-
+    # AUTHORITY-ANCHOR, docs/product/backlog.md) -- reuses the SAME
+    # anchor-matching/ambiguity law `resolve_verification_authority` already
+    # applies to a sibling `<doc>#<anchor>` citation shape, never a second
+    # resolver.
+    section = resolve_authority_section(
+        whole_document_text,
+        anchor,
+        locator=args.architecture_authority,
+        doc_part=brief_relative_path,
+    )
+    if isinstance(section, UnresolvedAuthorityReference):
+        return _blocked(
+            what="the --architecture-authority anchor cannot be resolved: "
+            f"{section.reason}",
+            why="compile-contract derives every fact from the CITED SECTION "
+            "alone -- an anchor naming no real heading would otherwise "
+            "silently fall back to reading the whole document",
+            how="point --architecture-authority at a real "
+            "'<path>.md#<heading-anchor>' heading that exists in the "
+            "document, or add that heading to the document",
+        )
+    if isinstance(section, AmbiguousAuthorityReference):
+        listed = ", ".join(repr(candidate) for candidate in section.candidates)
+        return _blocked(
+            what=f"the --architecture-authority anchor is ambiguous: {section.reason}",
+            why="distinct headings can normalize to the same anchor key; "
+            "binding the first match would derive every fact from a "
+            "DIFFERENT section than the one cited",
+            how=f"rename one of the colliding headings ({listed}) so the "
+            "anchor names exactly one section",
+        )
+    brief_text = section.text
 
     table_tokens, table_minutes = BUDGET_TABLE[args.size]
     budget_token_limit = (
@@ -382,20 +438,38 @@ def main(argv: list[str] | None = None) -> int:
 
     contract_locator = contract_locator_for(inputs.delivery_id)
     destination = inputs.repo_root / contract_locator
+    if destination.is_file():
+        return _blocked_from(
+            Blocked(
+                kind="existing-contract",
+                what=f"a contract already exists at {contract_locator}",
+                why="one contract is written once; compiling over an existing "
+                "skeleton would silently discard ATD's in-progress fills",
+                how="run des recompile-contract with the same flags to "
+                "re-derive it in place while preserving ATD's fills, or delete "
+                "the existing file first if truly starting over",
+            )
+        )
     if destination.exists():
-        return _blocked(
-            what=f"a contract already exists at {contract_locator}",
-            why="one contract is written once; compiling over an existing "
-            "skeleton would silently discard ATD's in-progress fills",
-            how="run des recompile-contract with the same flags to "
-            "re-derive it in place while preserving ATD's fills, or delete "
-            "the existing file first if truly starting over",
+        return _blocked_from(
+            Blocked(
+                kind="existing-non-file",
+                what=f"the contract destination {contract_locator} exists but is not a file",
+                why="a directory or other non-file collision cannot be treated as an existing DeliveryContract",
+                how="remove or rename the colliding non-file path, then re-run des compile-contract",
+            )
         )
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(
-        json.dumps(result.contract, indent=2, sort_keys=False) + "\n",
-        encoding="utf-8",
-    )
+    temporary = destination.with_name(f".{destination.name}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(result.contract, indent=2, sort_keys=False) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(destination)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
     print(f"DELIVERY-CONTRACT-SKELETON: {contract_locator}")
     print(f"ORACLE-LOCATOR: {result.contract['acceptance-tests']['locator']}")
     return 0

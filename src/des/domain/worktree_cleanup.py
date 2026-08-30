@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from enum import Enum
 
+from des.domain.worktree_residence import LeaseEvidence
+
 
 class WorktreeCleanupVerdict(str, Enum):
     """Closed 4-value classification of one worktree's cleanup state.
@@ -39,12 +41,15 @@ class WorktreeCleanupVerdict(str, Enum):
     CLEANUP_DUE = "CLEANUP_DUE"
     NOT_YET_MERGEABLE = "NOT_YET_MERGEABLE"
     HAS_UNCOMMITTED_CHANGES = "HAS_UNCOMMITTED_CHANGES"
+    LIVE_WRITER = "LIVE_WRITER"
+    LEASE_UNPROVEN = "LEASE_UNPROVEN"
 
 
 def classify_worktree_cleanup_state(
     worktree_registered: bool,
     is_merged: bool,
-    has_uncommitted_changes: bool = False,
+    has_uncommitted_changes: bool,
+    lease: LeaseEvidence,
 ) -> WorktreeCleanupVerdict:
     """The pure fact: given registration, uncommitted-work, and confirmed-merge
     state, what verdict.
@@ -63,6 +68,10 @@ def classify_worktree_cleanup_state(
     """
     if not worktree_registered:
         return WorktreeCleanupVerdict.CLEAN
+    if lease is LeaseEvidence.HELD:
+        return WorktreeCleanupVerdict.LIVE_WRITER
+    if lease is LeaseEvidence.UNPROVEN:
+        return WorktreeCleanupVerdict.LEASE_UNPROVEN
     if has_uncommitted_changes:
         return WorktreeCleanupVerdict.HAS_UNCOMMITTED_CHANGES
     if is_merged:

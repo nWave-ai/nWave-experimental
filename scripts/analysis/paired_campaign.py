@@ -78,6 +78,17 @@ from functools import partial
 from pathlib import Path
 
 
+# Sibling stdlib-only module, NOT a harness/`des` import: the no-`des` rule in
+# this file's docstring is about the benchmark authors being able to run it,
+# and `campaign_archive` imports nothing they do not already have. It is here
+# because `F-K4-EVIDENCE-WIPED-NO-ARCHIVE-STEP` proved that an archive step
+# living anywhere except inside the run that produces the evidence never runs.
+try:  # imported as `scripts.analysis.paired_campaign`
+    from scripts.analysis import campaign_archive
+except ImportError:  # executed as a script: its own directory is sys.path[0]
+    import campaign_archive  # type: ignore[no-redef]
+
+
 #: A one-line call that must succeed before a campaign is worth starting.
 #: The first version of this probe produced five is_error records with zero
 #: usage and LOOKED like it had run. Measured 2026-08-06: `--bare` returns
@@ -664,6 +675,20 @@ def main(argv: list[str] | None = None) -> int:
         encoding="utf-8",
     )
 
+    # Every exit below this line archives, including the give-up paths: a
+    # campaign that died at pair 2 has already PAID for pair 1, and the /tmp
+    # wipe of 2026-08-22 destroyed exactly that kind of partial evidence.
+    try:
+        return _run_pairs(args, arms, task)
+    finally:
+        archived = campaign_archive.archive_or_explain(args.out)
+        if archived is not None:
+            print(f"archived   : {archived}", flush=True)
+
+
+def _run_pairs(args, arms: list[ArmSpec], task: str) -> int:
+    """The pair loop itself. Extracted so `main` can wrap it in the archive
+    step without the step depending on which way the loop ended."""
     for index in range(1, args.pairs + 1):
         pair_dir = args.out / f"pair-{index}"
         pair_dir.mkdir(exist_ok=True)

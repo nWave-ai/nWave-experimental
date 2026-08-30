@@ -62,6 +62,7 @@ from des.domain.worktree_anti_rot_triage import (
     EvidenceItem,
     TriageState,
 )
+from des.domain.worktree_residence import OwnerLease
 from des.ports.driven_ports.committed_scope_port import Indeterminate
 
 
@@ -134,7 +135,7 @@ _HOW_ABANDONED_CLEAN = (
 
 def classify_sentinel(
     *,
-    declared_owned: bool,
+    lease: OwnerLease,
     declared_how: str,
     anti_rot: WorktreeAntiRotReceipt,
     activity_age_seconds: int | Indeterminate,
@@ -142,7 +143,7 @@ def classify_sentinel(
     """Classify one worktree's scheduling state from its already-collected
     signals.
 
-    `declared_owned` + `declared_how` are the DECIDING axis (defect #2/#3).
+    `lease` + `declared_how` are the DECIDING axis (defect #2/#3).
     `anti_rot` is the EXISTING, reused receipt from `triage_worktree`
     (PID/lock/dirty/unmerged-commits). `activity_age_seconds` is the SECOND
     liveness axis this predicate adds (defect #1) -- seconds since HEAD or
@@ -155,7 +156,7 @@ def classify_sentinel(
     Each step is a single `if`, not a scoring function, so the precedence
     order is legible from the source rather than derived from weights.
     """
-    if declared_owned:
+    if lease is OwnerLease.HELD:
         evidence = (
             EvidenceItem(
                 category="declared-owner",
@@ -168,6 +169,20 @@ def classify_sentinel(
         )
         return SentinelVerdict(
             state=SentinelState.OWNED, evidence=evidence, how=_HOW_OWNED_DECLARED
+        )
+
+    if lease is OwnerLease.INDETERMINATE:
+        return SentinelVerdict(
+            state=SentinelState.UNDECIDABLE,
+            evidence=(
+                EvidenceItem(
+                    category="owner-lease-indeterminate",
+                    what="owner lease could not be established",
+                    why=declared_how,
+                ),
+                *anti_rot.evidence,
+            ),
+            how=_HOW_UNDECIDABLE,
         )
 
     if anti_rot.state is TriageState.LIVE:

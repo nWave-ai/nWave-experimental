@@ -20,6 +20,11 @@ from pathlib import Path
 
 import pytest
 
+from des.adapters.driven.marker_file_owner_lease_adapter import (
+    MarkerFileOwnerLeaseAdapter,
+)
+from des.domain.worktree_residence import LaneIdentity
+
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -70,6 +75,10 @@ def repo_and_worktree(tmp_path: Path) -> tuple[Path, Path]:
     wt = tmp_path / "wt-lane"
     _git(repo, "worktree", "add", "-b", "lane", str(wt), "HEAD")
     _git(repo, "merge", "-q", "--no-edit", "lane")  # lane is fully merged by default
+    identity = LaneIdentity.observe(wt)
+    marker = MarkerFileOwnerLeaseAdapter()
+    marker.write_held(wt, identity)
+    marker.write_released(wt, identity)
     return repo, wt
 
 
@@ -80,6 +89,19 @@ def test_allows_removal_when_nothing_is_live(
     exit_code, stdout = _run_hook(f"git worktree remove {wt}", repo)
     assert exit_code == 0
     assert stdout == ""
+
+
+def test_missing_release_assertion_refuses_even_when_physically_clean(
+    repo_and_worktree: tuple[Path, Path],
+) -> None:
+    repo, wt = repo_and_worktree
+    (wt / ".nwave" / "lane-owner.json").unlink()
+
+    exit_code, stdout = _run_hook(f"git worktree remove {wt}", repo)
+
+    assert exit_code == 2
+    assert "UNPROVEN" in stdout
+    assert "absence or unreadability" in stdout
 
 
 def test_refuses_removal_while_a_process_holds_cwd_inside_the_worktree(

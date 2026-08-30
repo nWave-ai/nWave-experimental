@@ -15,7 +15,7 @@
 
 | Name | Description | Preloaded skills |
 | --- | --- | --- |
-| [nw-acceptance-designer](nw-acceptance-designer.md) | Use for DISTILL wave — compiles architecture and value authority into a minimal executable oracle and one complete DeliveryContract from Seeded facts plus durable DESIGN facts. RED_TO_GREEN authors the oracle; GREEN_TO_GREEN binds an existing one. Never executes, hashes or validates. | 0 |
+| [nw-acceptance-designer](nw-acceptance-designer.md) | Use for DISTILL wave — compiles architecture and value authority into one public executable oracle, its test dependencies, and one complete DeliveryContract. RED_TO_GREEN authors the compiled closure; GREEN_TO_GREEN binds an existing one. Never executes, hashes or validates. | 0 |
 | [nw-acceptance-designer-reviewer](nw-acceptance-designer-reviewer.md) | Independently falsifies the acceptance oracle bound by one DeliveryContract, with emphasis on observable value, cross-layer failure handling, PBT, and real driving-port wiring. | 4 |
 
 ## DELIVER
@@ -31,7 +31,7 @@
 
 | Name | Description | Preloaded skills |
 | --- | --- | --- |
-| [nw-agent-builder](nw-agent-builder.md) | Use when creating new AI agents, validating agent specifications, optimizing command definitions, or ensuring compliance with Claude Code best practices. Creates focused, research-validated agents (200-400 lines) with Skills for domain knowledge. Also optimizes bloated command files into lean declarative definitions. | 19 |
+| [nw-agent-builder](nw-agent-builder.md) | Use when creating new AI agents, validating agent specifications, optimizing requested existing SKILL.md assets, optimizing command definitions, or ensuring compliance with Claude Code best practices. Creates focused, research-validated agents (200-400 lines) with Skills for domain knowledge. | 19 |
 | [nw-agent-builder-reviewer](nw-agent-builder-reviewer.md) | Use for review and critique tasks - Agent design and quality review specialist. Runs on Haiku for cost efficiency. | 5 |
 | [nw-data-engineer](nw-data-engineer.md) | Use for database technology selection, data architecture design, query optimization, schema design, security implementation, and governance guidance. Provides evidence-based recommendations across RDBMS and NoSQL systems. | 4 |
 | [nw-data-engineer-reviewer](nw-data-engineer-reviewer.md) | Use for review and critique tasks - Data architecture and pipeline review specialist. Runs on Haiku for cost efficiency. | 1 |
@@ -48,7 +48,7 @@
 | [nw-researcher](nw-researcher.md) | Use for evidence-driven research with source verification. Gathers knowledge from web and files, cross-references across multiple sources, and produces cited research documents. | 4 |
 | [nw-researcher-reviewer](nw-researcher-reviewer.md) | Use for review and critique tasks - Research quality and evidence review specialist. Runs on Haiku for cost efficiency. | 1 |
 | [nw-skill-reviewer](nw-skill-reviewer.md) | Use to review SKILL.md quality during DISTILL/DELIVER verification when deliverable_type is `plugin` or `skill`. Validates skill structure, scope discipline, frontmatter, and domain-knowledge quality. Thin reviewer — reuses nw-agent-builder skill assets. Runs on Haiku for cost efficiency. | 2 |
-| [nw-solution-architect](nw-solution-architect.md) | Designs application architecture, reuse, ports, boundaries, cross-layer failure laws, and prefactoring decisions in durable architecture authorities. | 8 |
+| [nw-solution-architect](nw-solution-architect.md) | Designs application architecture, reuse, ports, boundaries, cross-layer failure laws, and prefactoring decisions in durable architecture authorities. | 0 |
 | [nw-solution-architect-reviewer](nw-solution-architect-reviewer.md) | Reviews durable architecture decisions for evidence, reuse, boundaries, cross-layer algebra, residual stress behavior, test substrate, and absence of drift. | 1 |
 | [nw-test-optimizer](nw-test-optimizer.md) | Use to minimize test count while preserving coverage. Invoke after a feature lands, when a suite feels slow or noisy, on a scheduled audit, or whenever the maintainer suspects overtesting. Detects byte-identical pairs, parametrize-inflation, language-guarantee tests, AST-shape tests, and migration-collapse opportunities. Never modifies production code. | 3 |
 | [nw-test-optimizer-reviewer](nw-test-optimizer-reviewer.md) | Use to validate test-optimizer outputs - hard-blocks if coverage dropped, production code touched, or anti-patterns went unmarked. Runs on Haiku for cost efficiency. Read-only. | 3 |
@@ -59,9 +59,9 @@
 
 | Name | Wave | Description | Preloaded skills |
 | --- | --- | --- | --- |
-| [nw-acceptance-designer](nw-acceptance-designer.md) | DISTILL | Use for DISTILL wave — compiles architecture and value authority into a minimal executable oracle and one complete DeliveryContract from Seeded facts plus durable DESIGN facts. RED_TO_GREEN authors the oracle; GREEN_TO_GREEN binds an existing one. Never executes, hashes or validates. | 0 |
+| [nw-acceptance-designer](nw-acceptance-designer.md) | DISTILL | Use for DISTILL wave — compiles architecture and value authority into one public executable oracle, its test dependencies, and one complete DeliveryContract. RED_TO_GREEN authors the compiled closure; GREEN_TO_GREEN binds an existing one. Never executes, hashes or validates. | 0 |
 | [nw-acceptance-designer-reviewer](nw-acceptance-designer-reviewer.md) | DISTILL | Independently falsifies the acceptance oracle bound by one DeliveryContract, with emphasis on observable value, cross-layer failure handling, PBT, and real driving-port wiring. | 4 |
-| [nw-agent-builder](nw-agent-builder.md) | Other | Use when creating new AI agents, validating agent specifications, optimizing command definitions, or ensuring compliance with Claude Code best practices. Creates focused, research-validated agents (200-400 lines) with Skills for domain knowledge. Also optimizes bloated command files into lean declarative definitions. | 19 |
+| [nw-agent-builder](nw-agent-builder.md) | Other | Use when creating new AI agents, validating agent specifications, optimizing requested existing SKILL.md assets, optimizing command definitions, or ensuring compliance with Claude Code best practices. Creates focused, research-validated agents (200-400 lines) with Skills for domain knowledge. | 19 |
 | [nw-agent-builder-reviewer](nw-agent-builder-reviewer.md) | Other | Use for review and critique tasks - Agent design and quality review specialist. Runs on Haiku for cost efficiency. | 5 |
 | [nw-data-engineer](nw-data-engineer.md) | Other | Use for database technology selection, data architecture design, query optimization, schema design, security implementation, and governance guidance. Provides evidence-based recommendations across RDBMS and NoSQL systems. | 4 |
 | [nw-data-engineer-reviewer](nw-data-engineer-reviewer.md) | Other | Use for review and critique tasks - Data architecture and pipeline review specialist. Runs on Haiku for cost efficiency. | 1 |
@@ -85,7 +85,7 @@
 | [nw-skill-reviewer](nw-skill-reviewer.md) | Other | Use to review SKILL.md quality during DISTILL/DELIVER verification when deliverable_type is `plugin` or `skill`. Validates skill structure, scope discipline, frontmatter, and domain-knowledge quality. Thin reviewer — reuses nw-agent-builder skill assets. Runs on Haiku for cost efficiency. | 2 |
 | [nw-software-crafter](nw-software-crafter.md) | DELIVER | Use for DELIVER wave object-oriented implementation and behavior-preserving refactoring from one validated DeliveryContract. Implements production code only; ATD owns tests. | 1 |
 | [nw-software-crafter-reviewer](nw-software-crafter-reviewer.md) | DELIVER | Independently reviews an actual delivery diff for correctness, immutable-oracle discipline, reuse, boundaries, architectural drift, and terminal verification evidence. | 4 |
-| [nw-solution-architect](nw-solution-architect.md) | Other | Designs application architecture, reuse, ports, boundaries, cross-layer failure laws, and prefactoring decisions in durable architecture authorities. | 8 |
+| [nw-solution-architect](nw-solution-architect.md) | Other | Designs application architecture, reuse, ports, boundaries, cross-layer failure laws, and prefactoring decisions in durable architecture authorities. | 0 |
 | [nw-solution-architect-reviewer](nw-solution-architect-reviewer.md) | Other | Reviews durable architecture decisions for evidence, reuse, boundaries, cross-layer algebra, residual stress behavior, test substrate, and absence of drift. | 1 |
 | [nw-system-designer](nw-system-designer.md) | DESIGN | Use for DESIGN wave infrastructure-level architecture. Designs distributed systems, scalability strategies, load balancing, caching, database sharding, message queues, back-of-envelope estimation, and trade-off analysis. Complements solution-architect (application-level) with infrastructure-level depth. | 6 |
 | [nw-system-designer-reviewer](nw-system-designer-reviewer.md) | DESIGN | Use to review system design architecture outputs. Validates trade-off analysis, estimation accuracy, pattern applicability, SPOF detection, and scalability claims. Pairs with system-designer. | 3 |

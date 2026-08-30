@@ -120,6 +120,12 @@ class WorktreeAntiRotReceipt:
     """The triage predicate's output. Read-only fact, never an action taken."""
 
     state: TriageState
+    process_matches: tuple[ProcessMatch, ...] | Indeterminate = field(
+        default_factory=lambda: Indeterminate("process liveness was not retained")
+    )
+    locked: bool | Indeterminate = field(
+        default_factory=lambda: Indeterminate("lock status was not retained")
+    )
     evidence: tuple[EvidenceItem, ...] = field(default_factory=tuple)
     actions: tuple[str, ...] = field(default_factory=tuple)
     unavailable_evidence: tuple[str, ...] = _UNAVAILABLE_EVIDENCE
@@ -256,19 +262,31 @@ def triage_worktree(
 
     if live_evidence:
         return WorktreeAntiRotReceipt(
-            state=TriageState.LIVE, evidence=all_evidence, how=_HOW_LIVE
+            state=TriageState.LIVE,
+            process_matches=process_matches,
+            locked=locked,
+            evidence=all_evidence,
+            how=_HOW_LIVE,
         )
     if indeterminate_evidence:
         return WorktreeAntiRotReceipt(
             state=TriageState.INDETERMINATE,
+            process_matches=process_matches,
+            locked=locked,
             evidence=all_evidence,
             how=_HOW_INDETERMINATE,
         )
     if atrisk_evidence:
         return WorktreeAntiRotReceipt(
             state=TriageState.ABANDONED_CANDIDATE,
+            process_matches=process_matches,
+            locked=locked,
             evidence=all_evidence,
             actions=RECOMMENDED_ACTIONS,
             how=_HOW_ABANDONED_CANDIDATE,
         )
-    return WorktreeAntiRotReceipt(state=TriageState.CLEAN)
+    return WorktreeAntiRotReceipt(
+        state=TriageState.CLEAN,
+        process_matches=process_matches,
+        locked=locked,
+    )

@@ -74,7 +74,27 @@ def installed_package_root() -> Path:
     import des
 
     package_dir = Path(next(iter(des.__path__))).resolve()
-    return package_dir.parents[1]
+    adjacent = package_dir.parent
+    enclosing = adjacent.parent
+
+    # ``des`` has three supported physical layouts:
+    #
+    #   checkout:  <root>/src/des          + <root>/nWave
+    #   bundled:   <root>/python/des       + <root>/nWave
+    #   wheel:     <root>/des              + <root>/nWave
+    #
+    # The first two need the enclosing candidate; a wheel needs the adjacent
+    # one.  Select the nearest candidate that actually owns the shipped tree
+    # instead of encoding one source-layout parent depth.
+    for candidate in (adjacent, enclosing):
+        if (candidate / "nWave").is_dir():
+            return candidate
+
+    # Preserve the historical source/bundled diagnostic when neither tier is
+    # complete, while naming the conventional wheel root accurately.
+    if adjacent.name in {"site-packages", "dist-packages"}:
+        return adjacent
+    return enclosing
 
 
 def find_developer_checkout(start: Path | None = None) -> Path | None:

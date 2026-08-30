@@ -193,6 +193,7 @@ try:
     from scripts.install.plugins.utilities_plugin import UtilitiesPlugin
     from scripts.install.preflight_checker import PreflightChecker
     from scripts.shared.agent_catalog import is_public_agent, load_public_agents
+    from scripts.shared.install_paths import agents_home, codex_config_dir, env_or_none
 except ImportError:
     # Safety-net fallback. With the sys.path bootstrap above the package
     # imports in the `try` block resolve in BOTH invocation modes, so this
@@ -240,7 +241,15 @@ except ImportError:
     from plugins.utilities_plugin import UtilitiesPlugin
     from preflight_checker import PreflightChecker
 
+    import scripts.shared.install_paths as _install_paths
     from scripts.shared.agent_catalog import is_public_agent, load_public_agents
+
+    # Keep the bare-script namespace identical to the package branch while
+    # importing the canonical module once; only codex_config_dir is consumed
+    # by this module's implementation.
+    agents_home = _install_paths.agents_home
+    codex_config_dir = _install_paths.codex_config_dir
+    env_or_none = _install_paths.env_or_none
 
 # ANSI color codes for --help output (only consumer)
 _ANSI_BLUE = "\033[0;34m"
@@ -526,16 +535,16 @@ class NWaveInstaller:
         # reads `global-config.json`'s `backups.max_count` regardless of
         # platform, and a sentinel byte-diff test cannot observe a READ the
         # way it observes a write. Computed once, for both branches.
-        agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME") or Path.home())
+        install_root = agents_home()
         if "codex" in self.effective_target_platforms:
-            codex_dir = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
-            self.backup_manager.backup_root = agents_home / ".nwave" / "backups"
+            codex_dir = codex_config_dir()
+            self.backup_manager.backup_root = install_root / ".nwave" / "backups"
             self.backup_manager.backup_dir = (
                 self.backup_manager.backup_root
                 / f"nwave-install-{self.backup_manager.timestamp}"
             )
             self._codex_backup_dir = self.backup_manager.create_codex_backup(
-                skills_dir=agents_home / ".agents" / "skills",
+                skills_dir=install_root / ".agents" / "skills",
                 agents_dir=codex_dir / "agents",
                 codex_dir=codex_dir,
                 dry_run=self.dry_run,
@@ -545,7 +554,7 @@ class NWaveInstaller:
         if self.dry_run:
             return
         self.backup_manager.apply_retention(
-            max_count=None, nwave_config_dir=agents_home / ".nwave"
+            max_count=None, nwave_config_dir=install_root / ".nwave"
         )
 
     def _legacy_codex_dev_candidates(self) -> list[tuple[Path, Path]]:
@@ -558,9 +567,9 @@ class NWaveInstaller:
         """
         if not self._legacy_codex_dev_adoption_enabled:
             return []
-        agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME", Path.home()))
-        skills_dir = agents_home / ".agents" / "skills"
-        codex_dir = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+        install_root = agents_home()
+        skills_dir = install_root / ".agents" / "skills"
+        codex_dir = codex_config_dir()
         agents_dir = codex_dir / "agents"
 
         def manifest_names(path: Path, key: str) -> set[str]:
@@ -681,15 +690,9 @@ class NWaveInstaller:
         if "codex" not in self.effective_target_platforms:
             return True
 
-        agents_home_override = os.environ.get("NWAVE_AGENTS_HOME")
-        agents_home = (
-            Path(agents_home_override) if agents_home_override else Path.home()
-        )
-        skills_dir = agents_home / ".agents" / "skills"
-        codex_home_override = os.environ.get("CODEX_HOME")
-        codex_dir = (
-            Path(codex_home_override) if codex_home_override else Path.home() / ".codex"
-        )
+        install_root = agents_home()
+        skills_dir = install_root / ".agents" / "skills"
+        codex_dir = codex_config_dir()
         agents_dir = codex_dir / "agents"
         # Each entry is (kind, line) rather than a bare string: ``kind`` keys
         # the aggregation + HOW-remedy lookup at the bottom of this method,
@@ -1054,7 +1057,7 @@ class NWaveInstaller:
                         }
                         launcher_python = launcher_values["PYTHON_PATH"]
                         launcher_pythonpath = launcher_values["PYTHONPATH"]
-                        legacy_runtime_dir = agents_home / ".nwave"
+                        legacy_runtime_dir = install_root / ".nwave"
                         runtime_root_is_safe = (
                             not legacy_runtime_dir.is_symlink()
                             and legacy_runtime_dir.is_dir()
@@ -1328,8 +1331,7 @@ class NWaveInstaller:
             # (migrate_legacy_hook, install_prepare_commit_msg_hook,
             # read/write_global_config) land in the operator's real home.
             # Default is unchanged when unset.
-            agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME") or Path.home())
-            registry.register(AttributionPlugin(config_dir=agents_home / ".nwave"))
+            registry.register(AttributionPlugin(config_dir=agents_home() / ".nwave"))
         # OpenCode plugins (registered when opencode detected)
         if target_platforms and "opencode" in target_platforms:
             opencode_skills = OpenCodeSkillsPlugin()
@@ -1768,15 +1770,9 @@ class NWaveInstaller:
         self.logger.info("")
         self.logger.info("  🔎 Validate Codex Installation...")
 
-        agents_home_override = os.environ.get("NWAVE_AGENTS_HOME")
-        agents_home = (
-            Path(agents_home_override) if agents_home_override else Path.home()
-        )
-        skills_dir = agents_home / ".agents" / "skills"
-        codex_home_override = os.environ.get("CODEX_HOME")
-        codex_home = (
-            Path(codex_home_override) if codex_home_override else Path.home() / ".codex"
-        )
+        install_root = agents_home()
+        skills_dir = install_root / ".agents" / "skills"
+        codex_home = codex_config_dir()
         native_artifacts = [
             skills_dir / ".nwave-manifest.json",
             codex_home / "agents" / ".nwave-agents-manifest.json",
@@ -2258,9 +2254,8 @@ def _run_install(args: argparse.Namespace, installer: "NWaveInstaller") -> int:
         # installed. Single-target is the norm; left as-is deliberately.
         installed_version = _detect_installed_version()
         if installed_version is not None:
-            agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME") or Path.home())
             record_install_metadata(
-                agents_home / ".nwave" / "global-config.json",
+                agents_home() / ".nwave" / "global-config.json",
                 installed_version=installed_version,
             )
 

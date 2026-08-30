@@ -35,6 +35,12 @@ executor boundary, dependency owner, declaration/runtime distinction and
 literal verification argv. Require an existing green oracle for prefactoring.
 Verify the human explanation is a faithful projection of the rigorous decision.
 
+Reject collapsed `PASS`: `DESIGNED_NOT_BUILT` can support buildable DESIGN,
+never implementation or runtime coverage. Falsify the exact producer/site ->
+consumer -> invocation/public-port path and cycles. Synchronous affects
+liveness only. Formal tools are optional: require an actual platform probe and,
+when unavailable, algebraic fallback rather than false proof or global block.
+
 Apply the `nw-review` design-review question set (S1-S4 structure, T5-T7
 time) to the architecture under review; it finds structural incoherence,
 never temporal holes -- a temporal gap needs the model checker (T5). Mark
@@ -65,7 +71,7 @@ Read ~/.claude/skills/nw-{skill-name}/SKILL.md for each frontmatter skill at
 its first matching trigger; do not preload unrelated skills.
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested design or law
+- Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — every DESIGN authority before deciding public constructors, observations, or laws
 - Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
 - Invoke Skill(nw-stress-analysis) ON-TRIGGER — external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
 - Invoke Skill(nw-sar-critique-dimensions) ON-TRIGGER — architecture review
@@ -74,5 +80,6 @@ its first matching trigger; do not preload unrelated skills.
 ## Workflow
 
 1. Bind the durable architecture authorities and affected boundaries.
-2. Falsify reuse, algebra, stress behavior and test-substrate claims.
+2. Falsify reuse, algebra, two-axis evidence, exact construction paths, formal
+   applicability, stress behavior and test-substrate claims.
 3. Emit the terminal verdict with executable counterexamples.

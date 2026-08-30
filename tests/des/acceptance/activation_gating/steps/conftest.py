@@ -23,7 +23,9 @@ def composition(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     HOME is redirected so the real ``DESConfig`` / CLI ``_get_config_dir`` read
     the sandbox ``~/.nwave/global-config.json`` rather than the developer's. The
-    project root is a fresh ``tmp_path/project``.
+    project root is a fresh ``tmp_path/project``. ``NWAVE_AGENTS_HOME`` is
+    redirected to the same sandbox HOME so it agrees with ``Path.home()``
+    instead of the root session-scoped fixture's own throwaway directory.
     """
     project_root = tmp_path / "project"
     home_dir = tmp_path / "home"
@@ -31,4 +33,5 @@ def composition(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     home_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("HOME", str(home_dir))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home_dir))
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(home_dir))
     return ActivationGatingComposition(project_root=project_root, home_dir=home_dir)

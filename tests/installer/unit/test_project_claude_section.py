@@ -259,6 +259,25 @@ def test_tool_batching_fragment_exact_bytes_once_and_semantics(host: str) -> Non
 
 
 @pytest.mark.parametrize("host", HOST_IDS)
+def test_delivery_route_fragment_exact_bytes_once_and_semantics(host: str) -> None:
+    """S/M/L is one host-neutral projection, not two maintained route tables."""
+    fragment_bytes = _fragment_source_bytes("delivery-route-fragment")
+    content_bytes = load_section_content(host=host).encode("utf-8")
+    fragment = fragment_bytes.decode("utf-8")
+
+    assert content_bytes.count(fragment_bytes) == 1
+    assert (
+        "no new product behavior, delivery authority, or architecture decision"
+        in fragment
+    )
+    assert "One independently deliverable vertical" in fragment
+    assert "blocked nodes name the missing owner/fact" in fragment
+    assert "technical boundary in either kind of node" in fragment
+    assert "FINALIZE runs exactly once inside each DELIVER" in fragment
+    assert "/nw-" not in fragment and "skill tool" not in fragment.lower()
+
+
+@pytest.mark.parametrize("host", HOST_IDS)
 def test_question_format_fragment_exact_bytes_once_and_semantics(host: str) -> None:
     """User-facing question shape (F-USER-QUESTION-FORMAT-STE100): context ->
     recommendation -> options-with-consequences -> one question, ASD-STE100

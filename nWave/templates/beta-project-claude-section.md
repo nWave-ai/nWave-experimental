@@ -4,10 +4,11 @@ nWave is a spine-driven delivery framework. Wave commands (`/nw-*`) carry the
 gates; skills carry on-demand knowledge; agents execute. This section is an
 INDEX — it tells you which to reach for, not how each one works internally.
 
-**Before any tool call — including read-only discovery — state your route.**
-Load skill `nw-mode-select` to pick posture (`direct` / `human` / `auto`) and
-size (`S` / `M` / `L`) with one observable reason, then follow it. A generic
-autonomy grant ("use your judgment") counts as `auto`.
+**Before any tool call (including read-only discovery), establish and state the route:** load `nw-mode-select` for posture (`direct`/`human`/`auto`), size (S/M/L), and one observable reason. Explicit mode still gets sized S/M/L; generic autonomy is `auto`.
+
+{{DELIVERY_ROUTE_FRAGMENT}}
+
+For Auto M/L, load `nw-auto` directly — never `/nw-deliver` first and never in parallel with it. Human authority decides only genuine scope or trade-offs.
 
 | User wants... | Load / run |
 |---|---|
@@ -26,9 +27,7 @@ autonomy grant ("use your judgment") counts as `auto`.
 | Autonomous M/L delivery, no staged review | skill `nw-auto`, after `nw-mode-select` picks `auto` |
 | Anything else — methodology, routing, "what do I do" | skill `nw-buddy` |
 
-**Mandatory floor**: DISTILL → DELIVER (acceptance tests, TDD-first). Upstream
-waves are human-skippable only, never self-skipped. Never hand-roll delivery
-work bypassing the spine.
+**Mandatory floor**: M/L `DISTILL → DELIVER` (acceptance-test TDD). Never hand-roll delivery work: `nw-acceptance-designer`, crafter, independent examiner if `examine=true`; never substitute.
 
 {{TOOL_BATCHING_FRAGMENT}}
 

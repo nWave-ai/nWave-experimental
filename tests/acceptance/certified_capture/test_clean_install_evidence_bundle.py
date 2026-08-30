@@ -8,7 +8,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -169,14 +168,6 @@ def _build_release_candidate(tmp_path: Path) -> tuple[Path, str]:
         ],
         cwd=producer,
     )
-    module_init = producer / "nwave_ai" / "__init__.py"
-    stamped, replacements = re.subn(
-        r'(?m)^__version__ = ".*"$',
-        f'__version__ = "{candidate_version}"',
-        module_init.read_text(encoding="utf-8"),
-    )
-    assert replacements == 1, f"module version assignments: {replacements}"
-    module_init.write_text(stamped, encoding="utf-8")
     _run([sys.executable, "scripts/build_dist.py"], cwd=producer)
     _run(
         [sys.executable, "scripts/release/stage_public_wheel_des.py", "--cleanup-dist"],

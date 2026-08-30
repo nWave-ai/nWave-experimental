@@ -16,7 +16,7 @@ def _resolve_runtime():
     1. $NWAVE_RUNTIME — explicit operator override. Honored even when
        broken: an explicit override must fail loud, never be silently
        skipped for a guess.
-    2. ~/.nwave/active-runtime — pointer the installer rewrites on every
+    2. $NWAVE_AGENTS_HOME/.nwave/active-runtime (else ~/.nwave) — pointer the installer rewrites on every
        install (scripts/shared/install_paths.py record_active_runtime);
        the most recent install wins, so a Codex/Copilot/OpenCode-only
        install can never leave this launcher bound to a stale
@@ -24,7 +24,7 @@ def _resolve_runtime():
        contains a des package (e.g. after an uninstall).
     3. CLAUDE_CONFIG_DIR (else ~/.claude)/lib/python — the legacy
        Claude-scoped location (mirrors PathUtils' two-branch SSOT).
-    4. ~/.nwave/runtime — the host-neutral location non-Claude hosts
+    4. $NWAVE_AGENTS_HOME/.nwave/runtime (else ~/.nwave/runtime) — the host-neutral location non-Claude hosts
        install to.
 
     On a dual-host box the choice is deterministic and declared:
@@ -33,7 +33,9 @@ def _resolve_runtime():
     explicit = os.environ.get("NWAVE_RUNTIME", "")
     if explicit:
         return Path(explicit), "NWAVE_RUNTIME env"
-    pointer = Path.home() / ".nwave" / "active-runtime"
+    agents_home = os.environ.get("NWAVE_AGENTS_HOME", "")
+    install_root = Path(agents_home) if agents_home else Path.home()
+    pointer = install_root / ".nwave" / "active-runtime"
     try:
         recorded = Path(pointer.read_text().strip())
         if (recorded / "des").is_dir():
@@ -45,7 +47,7 @@ def _resolve_runtime():
     claude_runtime = claude_dir / "lib" / "python"
     if (claude_runtime / "des").is_dir():
         return claude_runtime, "claude default"
-    neutral = Path.home() / ".nwave" / "runtime"
+    neutral = install_root / ".nwave" / "runtime"
     if (neutral / "des").is_dir():
         return neutral, "host-neutral fallback"
     return claude_runtime, "claude default (no runtime found)"

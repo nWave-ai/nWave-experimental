@@ -28,8 +28,13 @@ class Widget:
         return None
 '''
 
+#: Top-level heading doubles as the section `_ARCH_AUTHORITY` cites (`#widget`)
+#: -- these fixtures test OTHER behavior, so making the whole document the
+#: cited section (no sibling section to exclude) keeps them unchanged by the
+#: anchor-scoping fix; the anchor still resolves to a REAL heading, never a
+#: shape-only string the compiler accepted and then discarded.
 _BRIEF = """\
-# Architecture Brief
+# widget
 
 `Widget` (`pkg/widget.py:5`) already exposes `existing_method`
 (`pkg/widget.py:6`).
@@ -87,12 +92,45 @@ def test_writes_a_schema_shaped_skeleton(tmp_path: Path) -> None:
     contract_path = repo_root / "docs" / "delivery-contracts" / "widget-color.json"
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
     assert contract["delivery-id"] == "widget-color"
-    assert contract["schema-version"] == "1.2"
+    assert contract["schema-version"] == "1.3"
     assert contract["delivery-route"] == "RED_TO_GREEN"
     assert set(contract["targets"]) == {"pkg/widget.py"}
     assert contract["acceptance-tests"]["locator"] == "pkg/tests/test_widget_color.py"
     # No ARCHITECTURE_BOUNDARY_CHANGE obligation and no override -> False.
     assert contract["applicability"]["independent-review"] is False
+
+
+def test_canonical_test_dependencies_select_schema_1_4_closure(tmp_path: Path) -> None:
+    repo_root = _build_repo(tmp_path)
+    brief_path = repo_root / "docs" / "product" / "architecture" / "brief.md"
+    brief_path.write_text(
+        _BRIEF
+        + "\nTest dependency locator: `spec/Widget.tla`\n"
+        + "Test dependency locator: `tests/support/widget.json`\n",
+        encoding="utf-8",
+    )
+
+    code, _out, err = _run(
+        "--repo-root",
+        str(repo_root),
+        "--delivery-id",
+        "widget-with-dependencies",
+        "--architecture-authority",
+        _ARCH_AUTHORITY,
+        cwd=repo_root,
+    )
+
+    assert code == 0, err
+    contract = json.loads(
+        (repo_root / "docs/delivery-contracts/widget-with-dependencies.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert contract["schema-version"] == "1.4"
+    assert contract["acceptance-tests"]["supporting-locators"] == [
+        "spec/Widget.tla",
+        "tests/support/widget.json",
+    ]
 
 
 def test_independent_review_flag_overrides_the_obligations_proxy(
@@ -148,8 +186,35 @@ def test_refuses_when_contract_already_exists(tmp_path: Path) -> None:
     assert first[0] == 0
     code, _out, err = _run(*args, cwd=repo_root)
     assert code != 0
+    assert "WHAT: existing-contract: a contract already exists" in err
     assert "already exists" in err
     assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+
+
+def test_existing_non_file_collision_is_not_an_existing_contract(
+    tmp_path: Path,
+) -> None:
+    repo_root = _build_repo(tmp_path)
+    destination = repo_root / "docs" / "delivery-contracts" / "widget-color.json"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.mkdir()
+    args = (
+        "--repo-root",
+        str(repo_root),
+        "--delivery-id",
+        "widget-color",
+        "--architecture-authority",
+        _ARCH_AUTHORITY,
+    )
+    code, _out, err = _run(*args, cwd=repo_root)
+    assert code == 2
+    assert "WHAT: existing-non-file:" in err
+    assert "existing-contract" not in err
+
+    recompile = run_cli_in_process(["recompile-contract", *args], cwd=repo_root)
+    assert recompile[0] == 2
+    assert "no contract exists" in recompile[2]
+    assert "existing-contract" not in recompile[2]
 
 
 def test_refuses_relative_repo_root(tmp_path: Path) -> None:
@@ -226,7 +291,7 @@ def test_refuses_missing_required_flag(tmp_path: Path) -> None:
 _GO_MODULE = "package pkg\n\nfunc Existing() {}\n"
 
 _MULTI_DEFECT_BRIEF = """\
-# Architecture Brief
+# widget
 
 ## Registry gains a route
 
@@ -342,7 +407,7 @@ def test_a_single_problem_refusal_stays_the_one_line_it_has_always_been(
 
 
 _BRIEF_DIRECTORY_TARGET_CELL = """\
-# Architecture Brief
+# widget
 
 `Widget` (`pkg/widget.py:5`) already exposes `existing_method`
 (`pkg/widget.py:6`).
@@ -426,3 +491,85 @@ def test_a_valid_authority_still_compiles_a_schema_valid_skeleton(
     contract_path = repo_root / "docs" / "delivery-contracts" / "widget-color.json"
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
     assert delivery_contract_schema_violation(contract) is None
+
+
+# --- F-COMPILE-CONTRACT-IGNORES-AUTHORITY-ANCHOR (docs/product/backlog.md):
+# `--architecture-authority <path>.md#<anchor>` validated the anchor's SHAPE
+# then discarded it -- every fact was derived from the WHOLE document, never
+# the cited section alone.
+
+_TWO_SECTION_BRIEF = """\
+# Architecture Brief
+
+## sibling-defect -- a DIFFERENT bug, must never leak into widget's contract
+
+`Sibling` (`pkg/sibling.py:1`) is the target of an UNRELATED defect.
+
+Oracle target locator: `pkg/tests/test_sibling_wrong.py`
+
+### Delivery obligations (RED_TO_GREEN)
+
+1. **CONTESTED_LAW** -- law: unrelated to widget, must not leak.
+
+## widget
+
+`Widget` (`pkg/widget.py:5`) already exposes `existing_method`
+(`pkg/widget.py:6`).
+
+Oracle target locator: `pkg/tests/test_widget_color.py`
+
+### Delivery obligations (RED_TO_GREEN)
+
+1. **REUSE_CANDIDATE** -- law: reuse existing_method.
+"""
+
+
+def test_only_the_cited_section_feeds_the_compiled_contract(tmp_path: Path) -> None:
+    """The falsifier: `--architecture-authority` cites ONLY `#widget`. A
+    SIBLING section (`## sibling-defect`) carries its own target citation,
+    oracle locator and obligation -- none of it may land in the compiled
+    skeleton. Before the fix these leaked in because the anchor was
+    accepted-then-ignored and the whole document was read regardless."""
+    repo_root = _build_repo(tmp_path)
+    _write_brief(repo_root, _TWO_SECTION_BRIEF)
+
+    code, _out, err = _run(
+        "--repo-root",
+        str(repo_root),
+        "--delivery-id",
+        "widget-color",
+        "--architecture-authority",
+        _ARCH_AUTHORITY,
+        cwd=repo_root,
+    )
+
+    assert code == 0, err
+    contract_path = repo_root / "docs" / "delivery-contracts" / "widget-color.json"
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    assert set(contract["targets"]) == {"pkg/widget.py"}
+    assert contract["acceptance-tests"]["locator"] == "pkg/tests/test_widget_color.py"
+    assert contract["obligations"] == ["REUSE_CANDIDATE"]
+
+
+def test_refuses_when_the_cited_anchor_names_no_real_heading(tmp_path: Path) -> None:
+    """The other half of the same defect: a lexically well-formed anchor
+    matching NO real heading was previously accepted by the shape-only
+    check and the whole document was read regardless (accepted-then-
+    ignored is worse than refusing). It must now be a typed refusal, never
+    a silent whole-document fallback."""
+    repo_root = _build_repo(tmp_path)
+    code, _out, err = _run(
+        "--repo-root",
+        str(repo_root),
+        "--delivery-id",
+        "widget-color",
+        "--architecture-authority",
+        "ARCHITECTURE-COVERED: docs/product/architecture/brief.md#no-such-heading",
+        cwd=repo_root,
+    )
+    assert code != 0
+    assert "no heading" in err
+    assert "matches the anchor" in err
+    assert not (
+        repo_root / "docs" / "delivery-contracts" / "widget-color.json"
+    ).exists()

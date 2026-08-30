@@ -20,7 +20,7 @@
     "budget"
   ],
   "properties": {
-    "schema-version": { "const": "1.2" },
+    "schema-version": { "const": "1.4" },
     "delivery-id": { "$ref": "#/$defs/id" },
     "repository": { "$ref": "#/$defs/repository" },
     "outcome": { "$ref": "#/$defs/nonEmptyText" },
@@ -108,8 +108,9 @@
       "pattern": "^[a-z0-9][a-z0-9-]*$"
     },
     "repositoryRelativePath": {
+      "description": "One repository-relative file path. Every segment is a plain name, with ONE named exception: '@v' is admitted as a whole DIRECTORY segment, the Go module-proxy convention (<module>/@v/<version>.info|.mod|.zip, <module>/@v/list) -- SF blocker 2026-08-23, where eight proxy-convention artifacts could not be declared as targets at all. Deliberately the strictest relaxation that unblocks that convention: '@' is never a free character inside a segment, '@v' is never the terminal file part, and the leading no-traversal lookahead is unchanged.",
       "type": "string",
-      "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+$"
+      "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))(?:(?:[A-Za-z0-9._-]+|@v)/)*[A-Za-z0-9._-]+$"
     },
     "oracleLocator": {
       "description": "One acceptance-oracle IDENTITY: a repository-relative file path, optionally suffixed with a '::Selector' identifier chain binding a specific test by name (Go's x_test.go::TestName, pytest's test_x.py::TestClass::test_name) -- the exact string the r2g compiler emits verbatim from a cited 'Oracle target locator:'. Consumers resolving the oracle ON DISK use only the file part (des.domain.verification_command_resolver.oracle_file_part); the selector is identity, never a path segment.",
@@ -237,7 +238,14 @@
       "additionalProperties": false,
       "required": ["locator"],
       "properties": {
-        "locator": { "$ref": "#/$defs/oracleLocator" }
+        "locator": { "$ref": "#/$defs/oracleLocator" },
+        "supporting-locators": {
+          "description": "Lexicographically ordered whole-file locators whose identities and bytes join the primary acceptance oracle in delivery-closure/v2. The canonical schema validator enforces the 1.3/absent and 1.4/present version pair plus ordering; JSON Schema establishes non-empty unique repository-relative whole-file shape.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/repositoryRelativePath" }
+        }
       }
     },
     "literalScriptBlock": {

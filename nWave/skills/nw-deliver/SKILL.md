@@ -50,8 +50,12 @@ no alternate carrier or textual bypass, and no second schema implementation.
 3. **Tests remain ATD-owned.** The crafter may read and run the immutable oracle
    but never edit it.
 4. **Implementation-first.** Orientation is bounded. For a production-changing
-   route, no production mutation by tool-call 15 yields `INDETERMINATE`; do not
-   spend the remaining turn budget re-reading the repository.
+   route, the selected crafter's own first-mutation bound is diagnostic, never
+   itself a stop condition: exceeding it to recover one fact the contract
+   already named imprecisely is reported as `contract-fact-gap`, not
+   `INDETERMINATE`. Only authority the contract never named at all stops as
+   `INDETERMINATE`, at any tool-call number. Root never spends turn budget
+   re-reading the repository on the crafter's behalf.
 5. **Terminal evidence only.** A stopped process, timeout, partial narration or
    zero-diff run is not delivery completion.
 6. **Independent observations.** Technical review and EXAMINE remain distinct
@@ -67,42 +71,66 @@ no alternate carrier or textual bypass, and no second schema implementation.
    command vectors and positive wall/token budgets.
 2. **SELECT** — choose `nw-software-crafter` for `object_oriented` or
    `nw-functional-software-crafter` for `functional`. Any other value blocks.
-3. **DISPATCH** — project the validated input as the first bytes of the
-   selected crafter's Agent prompt: exactly the two thin headers
+3. **E2 AT REVIEW** — dispatch the AT reviewer foreground against C before
+   the selected crafter. Project the validated input as the first bytes of the
+   reviewer prompt: exactly the two thin headers
    `THIN-DELIVERY-CONTRACT: <PATH>` and
    `THIN-DELIVERY-CONTRACT-DIGEST: sha256:<digest>`, then one blank line, then
    `REPO-ROOT: <absolute physical root>`. Nothing precedes the pair.
-   `REPO-ROOT` is forwarded context for the crafter's consumer-boundary check,
-   never a third header or carrier. The selected crafter owns production
-   targets and returns one terminal `CRAFTER-RESULT`. Root never fills in a
-   missing implementation.
-4. **VALIDATE CANDIDATE** — require the crafter result's contract/oracle
-   identities to match input, its opaque `candidate` identity to carry the
-   validated base revision, and its separate `execution-root` field to equal
-   the crafter's exclusive worktree root. Never decompose or parse `candidate`
-   to recover the root; the two fields are independent and both required.
-   Require `changed-targets` to be non-empty and contained by contract
-   targets, and every verification command to have a terminal result.
-   Otherwise the candidate is `INDETERMINATE`. This PASS opens the
-   no-mutation causal window through the single terminal commit.
-5. **JOIN REVIEW** — when `applicability.independent-review=true`, require an
-   independent actual-diff verdict on the same contract and candidate identity.
-6. **EXAMINE** — when `applicability.examine=true`, give Vera every validated
-   charter in deterministic order plus its start recipe, the crafter's
-   `execution-root` field and its `candidate` identity, both forwarded
-   verbatim as the two distinct fields the crafter emitted. Send no
-   changed-targets, source, tests or producer claims. Vera performs one
-   source-blind pass and echoes the candidate identity unchanged; it never
-   derives it with Git/source. When false, record only that the axis was not
-   applicable.
-7. **HAND OFF** — join applicable verdicts with `PASS` as identity, `FAIL` as
+   `REPO-ROOT` is forwarded context, never a third header or carrier. Only a
+   bare exact `APPROVE` or `APPROVED` permits craft. `NEEDS_REVISION` routes
+   to ATD; `APPROVED WITH CONDITIONS`, any condition, `INDETERMINATE`, malformed,
+   contradictory or unknown output stops.
+4. **E3 DISPATCH** — only after E2 approval, project the same bound input to
+   the selected crafter. The selected crafter owns production targets and
+   returns one terminal `CRAFTER-RESULT`. Root never fills in a missing
+   implementation.
+5. **VALIDATE RESULT** — require the crafter result's contract/oracle identities to
+   match input, its `execution-root` to equal the integration root,
+   `changed-targets` to be non-empty and contained by contract targets, and
+   every verification command to have a terminal result. A complete
+   `CRAFTER-RESULT PASS` has no `candidate:` field. The first
+   implementation-reviewer/Examiner/finalize consumer performs E4: it validates
+   the result and current Git state, then seals or replays K and injects the
+   existing separate `candidate` K plus `execution-root` fields. This E4
+   readback, never crafter authority, is the only downstream candidate input.
+   Any missing, malformed or mismatched evidence is `INDETERMINATE`. Carry a
+   non-`none` `contract-fact-gap` from the crafter result unchanged into the
+   terminal `DELIVERY-RESULT`; it is friction evidence for ATD's next contract
+   on this delivery-id class, never a join input and never itself cause for
+   `INDETERMINATE`.
+6. **JOIN REVIEW** — when `applicability.independent-review=true`, require an
+   independent actual-diff verdict on E4-injected K. Only bare `APPROVE` or
+   `APPROVED` advances to finalization; `NEEDS_REVISION` with any ATD-owned
+   finding routes to ATD, while an all-crafter finding set routes to the
+   selected crafter. `APPROVED WITH CONDITIONS`, any condition, mixed,
+   malformed or unknown ownership stops as `INDETERMINATE`; correction ranks
+   remain bounded by §4f.
+7. **EXAMINE** — when `applicability.examine=true`, give Vera every validated
+   charter in deterministic order plus its start recipe and E4's root-injected
+   existing `candidate` K plus `execution-root`. Send no changed-targets,
+   source, tests or producer claims. Vera echoes the fields unchanged; it
+   never derives them with Git/source. When false, record only that the axis
+   was not applicable.
+8. **HAND OFF** — join applicable verdicts with `PASS` as identity, `FAIL` as
    absorbing and `INDETERMINATE` preventing `PASS`. A terminal candidate exists
    only when required crafter, review and EXAMINE evidence joins without stale
    identities. Invoke the `nw-finalize` Skill exactly once after the whole
-   delivery, never per internal implementation segment; it validates scope and
-   creates the one terminal commit. Root never commits or calls the finalize
-   CLI as a fallback. Global PASS additionally requires clean-checkout `F` on
-   that exact immutable SHA.
+   delivery, never per internal implementation segment. Consume its one typed
+   final F result — its one exact B-derived `PreservationVector`, including
+   authorized verification argv, already passed in its fresh clean checkout —
+   before reporting `PASS`. Then root releases the existing owner marker with
+   `des worktree-release --repo <root> --worktree <execution-root>` and runs
+   `des verify-worktree-cleanup --repo <root> --target-branch <target-ref>
+   --worktree <execution-root>` without `--check-only`. The target ref is
+   explicit delivery/integration authority. A non-primary execution root
+   closes only when the scoped report contains its matching `CLEANUP_DUE`
+   entry with `removed=true`; the Git-primary root may yield an empty scoped
+   report and remain. Any nonzero, mismatched or other result is
+   `INDETERMINATE`. Never release before F, run unscoped ACT, or substitute raw
+   Git. Root never
+   commits or calls a finalize CLI as a fallback. Installed/CI closure facts
+   remain independently applicable evidence; they never cause a second finalize.
 
 ## Terminal Contract
 
@@ -112,10 +140,11 @@ Return exactly one concise block:
 DELIVERY-RESULT
 verdict: PASS | FAIL | INDETERMINATE
 contract: <locator>@sha256:<closure-digest>
-candidate: git-<algorithm>:<base-revision>
+candidate: git-<algorithm>:<candidate-revision>
 execution-root: <absolute-execution-root>
 oracle: <locator>
 mutation: <first production mutation tool-call, or none>
+contract-fact-gap: <none | one line forwarded unchanged from the crafter result>
 changed-targets: <non-empty repository-relative paths>
 verification: <executed command identities and terminal results>
 review: PASS | FAIL | INDETERMINATE | NOT_APPLICABLE
@@ -123,9 +152,16 @@ examine: PASS | FAIL | INDETERMINATE | NOT_APPLICABLE
 ```
 
 `contract` carries the single contract+oracle closure digest; there is no
-separate oracle digest field. `candidate` and `execution-root` are the two
-distinct fields the selected crafter emitted, forwarded here verbatim as a
-product, never merged, split or re-derived from one another.
+separate oracle digest field. E4 injects the existing `candidate` K and
+`execution-root` from Git readback after crafter PASS. They are never emitted
+by the crafter, merged, split or re-derived; `candidate` is K, never B. Final
+`Commit` remains F and never relabels K.
+
+`PASS` is reported only after the finalize result says `Commit: git-<algorithm>:<F>`
+and `Clean-checkout: true`, and the scoped cleanup satisfies the HAND OFF
+postcondition. Installed host parity and CI, when applicable, are
+separate closure facts joined into this same delivery result; neither repeats
+finalization nor changes F.
 
 `PASS` requires an accepted terminal result from every applicable owner.
 `FAIL` is absorbing. Missing, nonterminal, stale or identity-mismatched evidence

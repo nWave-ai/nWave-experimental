@@ -171,12 +171,23 @@ class PythonAstAdapter:
     def reads_in_function(self, tree: object, fn: FunctionInfo) -> list[ReadInfo]:
         """Return every non-call name reference inside ``fn``'s body.
 
-        A ``Name`` node in ``Load`` context is a read; the same node used as
-        the ``.func`` of an ``ast.Call`` (a bare call callee, ``target()``)
-        is excluded by node identity -- it is a call site, not a read, so
-        ``reads_in_function`` and ``calls_in_function`` never report the same
-        occurrence. ``tree`` is unused -- ``fn.node_ref`` anchors the
-        function subtree.
+        TWO reference shapes are represented, never one:
+
+        * ``bare-name`` -- an ``ast.Name`` in ``Load`` context (``target``).
+        * ``dotted-attribute`` -- an ``ast.Attribute`` in ``Load`` context
+          (``cfg.retry_budget``, ``self.budget``), reported under its
+          ATTRIBUTE name. Until 2026-08-23 only ``ast.Name`` was walked, so
+          every property / ``self.`` / config-attribute access was invisible
+          and the caller's empty result was indistinguishable from a symbol
+          that does not exist -- measured on a symbol read three times.
+          The ``Name`` inside a dotted read (``cfg``) is a real read of the
+          OWNER and is still reported in its own right.
+
+        A node used as the ``.func`` of an ``ast.Call`` -- bare (``target()``)
+        or dotted (``cfg.method()``) -- is excluded by node identity: it is a
+        call site, not a read, so ``reads_in_function`` and
+        ``calls_in_function`` never report the same occurrence. ``tree`` is
+        unused -- ``fn.node_ref`` anchors the function subtree.
         """
         function_node = fn.node_ref
         if not isinstance(function_node, ast.AST):
@@ -186,13 +197,17 @@ class PythonAstAdapter:
             for call in ast.walk(function_node)
             if isinstance(call, ast.Call)
         }
-        return [
-            ReadInfo(name=node.id, lineno=node.lineno)
-            for node in ast.walk(function_node)
-            if isinstance(node, ast.Name)
-            and isinstance(node.ctx, ast.Load)
-            and id(node) not in call_callee_ids
-        ]
+        reads: list[ReadInfo] = []
+        for node in ast.walk(function_node):
+            if not isinstance(node, (ast.Name, ast.Attribute)):
+                continue
+            if not isinstance(node.ctx, ast.Load):
+                continue
+            if id(node) in call_callee_ids:
+                continue
+            name = node.id if isinstance(node, ast.Name) else node.attr
+            reads.append(ReadInfo(name=name, lineno=node.lineno))
+        return reads
 
     def keyword_arg_names(self, call: CallInfo, kw: str) -> list[str]:
         """Return the literal names passed in ``call``'s ``kw`` keyword (slice-03 M8).

@@ -30,6 +30,7 @@ speculative broader one.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
 
 
@@ -48,6 +49,9 @@ REVIEW_WORKFLOW = ROOT / "nWave/skills/nw-review-workflow/SKILL.md"
 ROOT_WHY_SKILL = ROOT / "nWave/skills/nw-root-why/SKILL.md"
 BUGFIX_SKILL = ROOT / "nWave/skills/nw-bugfix/SKILL.md"
 CROSS_CUTTING = ROOT / "nWave/skills/nw-cross-cutting-invariants/SKILL.md"
+EVIDENCE_INSTRUMENTATION = (
+    ROOT / "nWave/skills/nw-cross-cutting-evidence-instrumentation/SKILL.md"
+)
 
 
 def _text(path: Path) -> str:
@@ -226,4 +230,54 @@ def test_corpus_has_no_unallowlisted_safety_hook_steering() -> None:
         "the hit is a genuine LEGIT-LAST-RESORT or PRODUCT-GATE passage, "
         "add it to ALLOWLIST in this test with a one-line reason (HOW), "
         "never silence the scanner globally.\n" + "\n".join(violations)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Clause-citation index (P-SSOT-7): CLAUDE.md may only cite cross-cutting
+# clause ids that resolve to exactly one actual level-2 heading in their owning
+# skills. The index is DERIVED from live headings every run, never a hardcoded
+# id list, so a rename or duplicate is caught in the same run.
+# ---------------------------------------------------------------------------
+
+CLAUDE_MD = ROOT / "CLAUDE.md"
+
+CLAUSE_HEADING_RE = re.compile(
+    r"^## `((?:gate|construction|check|provenance):[\w-]+)`", re.MULTILINE
+)
+CLAUSE_CITATION_RE = re.compile(r"`((?:gate|construction|check|provenance):[\w-]+)`")
+
+
+def _skill_clause_headings(text: str) -> list[str]:
+    return CLAUSE_HEADING_RE.findall(text)
+
+
+def _clause_citations(text: str) -> set[str]:
+    return set(CLAUSE_CITATION_RE.findall(text))
+
+
+def test_clause_citation_resolution_detects_a_renamed_or_missing_heading() -> None:
+    """Negative control: if a skill heading is renamed/removed while a
+    citation still points at the old id, resolution must flag it as
+    unresolved — proving the real-corpus assertion below is not vacuously
+    true (it would also pass on an empty or fully-stale heading set)."""
+    headings = Counter(_skill_clause_headings("## `gate:kept-heading` — title\n"))
+    cited = _clause_citations("see `gate:kept-heading` and `gate:renamed-away`")
+    unresolved = {clause_id for clause_id in cited if headings[clause_id] != 1}
+    assert unresolved == {"gate:renamed-away"}
+
+
+def test_claude_md_cross_cutting_citations_resolve_to_one_skill_heading() -> None:
+    skill_headings = Counter(
+        _skill_clause_headings(_text(CROSS_CUTTING))
+        + _skill_clause_headings(_text(EVIDENCE_INSTRUMENTATION))
+    )
+    cited = _clause_citations(_text(CLAUDE_MD))
+    assert cited, (
+        "expected at least one gate:/construction: clause citation in CLAUDE.md"
+    )
+    unresolved = {clause_id for clause_id in cited if skill_headings[clause_id] != 1}
+    assert not unresolved, (
+        "CLAUDE.md cites clause id(s) without exactly one matching '## `id`' "
+        f"heading in the owning cross-cutting skills: {sorted(unresolved)}"
     )

@@ -121,7 +121,18 @@ class TestContestedLaw:
         effective = merge_config(global_cfg, repo)  # must not raise
 
         assert effective["verbosity"] in ("terse", "standard", "verbose")
-        assert effective["enabled"] is True
+        # DEFAULT[enabled] is False: activation is opt-in (ADR-AG-005,
+        # P-SSOT-1 P6). A tier that declares nothing well-typed has NO
+        # opinion, and no opinion means inactive.
+        assert effective["enabled"] is False
+
+    def test_no_tier_declares_enabled_resolves_inactive_opt_in(self):
+        # ADR-AG-005 / P-SSOT-1 P6: opt-in is the RATIFIED default. When no
+        # tier declares an opinion the merge law must resolve INACTIVE --
+        # nWave does not act in a repository the user never activated.
+        effective = merge_config({}, {})
+
+        assert effective["enabled"] is False
 
     def test_verbosity_outside_enum_is_invalid_boundary(self):
         repo = {"verbosity": "chatty"}
@@ -233,7 +244,8 @@ class TestBroadInputDomain:
         assert global_cfg == global_before
         assert repo_cfg == repo_before
 
-        # enabled: well-typed = bool; DEFAULT True (G1's own stated default).
+        # enabled: well-typed = bool; DEFAULT False -- activation is opt-in
+        # (ADR-AG-005, P-SSOT-1 P6).
         repo_enabled = repo_cfg.get("enabled")
         global_enabled = global_cfg.get("enabled")
         if "enabled" in repo_cfg and isinstance(repo_enabled, bool):
@@ -241,7 +253,7 @@ class TestBroadInputDomain:
         elif "enabled" in global_cfg and isinstance(global_enabled, bool):
             assert effective["enabled"] == global_enabled
         else:
-            assert effective["enabled"] is True
+            assert effective["enabled"] is False
 
         # verbosity: well-typed = member of the closed enum; ADR-CFG-001
         # never states a concrete DEFAULT, so only enum membership is

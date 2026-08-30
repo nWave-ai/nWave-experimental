@@ -77,12 +77,24 @@ class _MutatingService:
 def test_attribution_enabled_true_mutates(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
 ) -> None:
-    """When attribution.enabled=true, emit_commit_attribution_mutation mutates."""
+    """attribution.enabled=true in an ACTIVATED repo ⇒ the branch mutates.
+
+    The activation marker is not decoration: attribution is due only in a repo
+    the user activated (ADR-AG-005 / ADR-CA-007). Without it this case asserted
+    the defect F-ATTRIBUTION-GATING-ASYMMETRY-PRETOOLUSE; see
+    ``test_pretooluse_attribution_activation_gating.py`` for the unactivated
+    counterpart.
+    """
     global_config_dir = tmp_path / ".nwave"
     global_config_dir.mkdir()
     global_config_file = global_config_dir / "global-config.json"
     global_config_file.write_text(
         json.dumps({"attribution": {"enabled": True}}), encoding="utf-8"
+    )
+    repo = tmp_path / "repo"
+    (repo / ".nwave").mkdir(parents=True)
+    (repo / ".nwave" / "local-config.json").write_text(
+        json.dumps({"enabled_for_repo": True}), encoding="utf-8"
     )
 
     monkeypatch.setattr(
@@ -92,7 +104,7 @@ def test_attribution_enabled_true_mutates(
 
     result = pre_tool_use_handler.emit_commit_attribution_mutation(
         {"command": 'git commit -m "x"'},
-        cwd=tmp_path,
+        cwd=repo,
     )
     assert result == 0
     captured = capsys.readouterr()

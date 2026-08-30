@@ -53,6 +53,7 @@ from pathlib import Path
 
 from des.application.worktree_activity_signal import read_activity_age_seconds
 from des.domain.worktree_anti_rot_triage import TriageState, WorktreeAntiRotReceipt
+from des.domain.worktree_residence import OwnerLease
 from des.domain.worktree_sentinel_verdict import SentinelState, classify_sentinel
 from des.ports.driven_ports.committed_scope_port import Indeterminate
 
@@ -188,7 +189,7 @@ def test_stale_worktree_reaches_abandoned_candidate_not_owned_after_self_probe(
 
     anti_rot = WorktreeAntiRotReceipt(state=TriageState.ABANDONED_CANDIDATE)
     verdict = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=anti_rot,
         activity_age_seconds=activity_age,
@@ -241,7 +242,7 @@ def test_activity_axis_is_indeterminate_when_head_alone_is_unreadable(
     )
 
     verdict = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=WorktreeAntiRotReceipt(state=TriageState.ABANDONED_CANDIDATE),
         activity_age_seconds=age,
@@ -280,7 +281,7 @@ def test_genuinely_active_worktree_is_not_reported_abandoned(
 
     anti_rot = WorktreeAntiRotReceipt(state=TriageState.ABANDONED_CANDIDATE)
     verdict = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=anti_rot,
         activity_age_seconds=activity_age,
@@ -345,7 +346,7 @@ def test_activity_axis_never_fabricates_a_reading_when_the_worktree_directory_is
     )
 
     verdict_gone = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=WorktreeAntiRotReceipt(state=TriageState.ABANDONED_CANDIDATE),
         activity_age_seconds=age_gone,
@@ -371,7 +372,7 @@ def test_activity_axis_never_fabricates_a_reading_when_the_worktree_directory_is
 
     assert isinstance(age_both_missing, Indeterminate)
     verdict_both_missing = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=WorktreeAntiRotReceipt(state=TriageState.ABANDONED_CANDIDATE),
         activity_age_seconds=age_both_missing,

@@ -12,7 +12,6 @@ ACTIVE-RED (atdd_pure): the codex_agents plugin does NOT yet rewrite paths
 so the rewrite assertions fail with AssertionError.
 """
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 from scripts.install.plugins.base import InstallContext
@@ -48,20 +47,6 @@ def _make_context(tmp_path):
     agents_source.mkdir(parents=True)
 
     (project_root / "nWave" / "framework-catalog.yaml").write_text("agents: {}\n")
-
-    # CodexAgentsPlugin.install() loads nWave/templates/tool-batching-fragment.md
-    # via context.project_root / "nWave"; seed it from the canonical file.
-    templates_dir = project_root / "nWave" / "templates"
-    templates_dir.mkdir(parents=True)
-    source_fragment = (
-        Path(__file__).resolve().parents[4]
-        / "nWave"
-        / "templates"
-        / "tool-batching-fragment.md"
-    )
-    (templates_dir / "tool-batching-fragment.md").write_text(
-        source_fragment.read_text(encoding="utf-8"), encoding="utf-8"
-    )
 
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir(parents=True)

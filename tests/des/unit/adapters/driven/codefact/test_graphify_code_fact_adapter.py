@@ -6,9 +6,25 @@ present + fresh (the manifest's recorded mtime for the touched file matches
 its current mtime) ⇒ a real ``binding-resolved`` answer, never inflated
 past the manifest's own declared confidence (LA1-L6); present + stale (the
 file was modified since the graph was materialized) ⇒ the witness check
-fails the query with the closed D3 cause ``provider-error``, and the chain
-falls through to the next covering provider (``AstAdapter``, ``approx``) —
-never a stale structural claim served as current fact.
+on a DIRECT ``GraphifyAdapter.resolve()`` call still fails the query with
+the closed D3 cause ``provider-error``, unchanged.
+
+**Reconciled 2026-08-24 (F-GRAPHIFY-STALE-DEGRADES-SILENTLY, Ale: regeneration
+is SYNCHRONOUS)**: through ``CodeFactChain`` -- not a direct adapter call --
+staleness is no longer a fall-through cause. ``CodeFactChain.resolve()`` now
+calls ``GraphifyAdapter.ensure_fresh_or_fail()`` BEFORE the fold; on a stale
+graph it regenerates synchronously (``graphify update``) and the chain
+answers through ``graphify`` again, never falling through to
+``AstAdapter``/``TextSearchAdapter`` for THIS cause. The regression oracle
+for the new synchronous-regeneration behavior lives in
+``test_graphify_stale_graph_should_regenerate_not_degrade.py`` and
+``test_graphify_concurrent_synchronous_regeneration_is_safe.py`` (both
+copied verbatim from the ATD-authored spec, never rewritten to pass) --
+this file keeps its OWN, narrower job: pinning that the fold's generic
+``Failed`` -> fall-through semantics still work for a graphify failure
+UNRELATED to staleness (a query whose root the graph never scanned at
+all), since that class of failure is not something regeneration can fix
+by construction (the file plainly is not there to add).
 """
 
 from __future__ import annotations
@@ -213,31 +229,38 @@ class TestPresentAndStale:
         assert isinstance(outcome, Failed)
         assert outcome.cause == "provider-error"
 
-    def test_chain_falls_through_past_graphify_when_its_data_is_stale(
+    def test_chain_falls_through_past_graphify_when_its_failure_is_not_staleness(
         self, tmp_path: Path
     ) -> None:
-        """The fold's own D5 fall-through: a Failed graphify answer never
-        blocks the chain. It falls through to ``textsearch`` (noisy), not
-        ``ast``: AstAdapter's own pre-existing, unmodified scope-purity
-        check (``_request_is_python_scoped``) declines a subject-free
-        query -- such as ``atoms-in-file`` -- the moment the queried root
-        contains ANY non-``.py`` file, and ``graphify-out/{graph,
-        manifest}.json`` (this adapter's own materialized data, sitting
-        under the same queried root by convention) are exactly such
-        files. The stale graphify failure is still preserved in the
-        trace, never silently dropped."""
-        source = _seed_source(tmp_path)
-        recorded_mtime = source.stat().st_mtime
+        """Reconciled 2026-08-24 (module docstring): staleness itself no
+        longer falls through -- ``ensure_fresh_or_fail`` regenerates it
+        first (see the two sibling oracle files). This test instead pins
+        the fold's own D5 fall-through for a graphify failure regeneration
+        CANNOT fix: a query root the graph never scanned at all (an empty
+        subdirectory with no Python file under it), so
+        ``_relative_files_in_scope`` returns ``None`` and
+        ``GraphifyAdapter._is_stale_for`` correctly reads that as "not a
+        staleness question" (returns ``False``) rather than attempting a
+        pointless regeneration -- the fold then runs normally, graphify
+        fails with ``provider-error`` for lack of coverage, and the chain
+        falls through to ``textsearch`` (noisy), not ``ast``: AstAdapter's
+        own pre-existing, unmodified scope-purity check
+        (``_request_is_python_scoped``) declines a subject-free query --
+        such as ``atoms-in-file`` -- the moment the queried root contains
+        ANY non-``.py`` file, and ``graphify-out/{graph,manifest}.json``
+        (this adapter's own materialized data, sitting under the same
+        queried root by convention) are exactly such files. The graphify
+        failure is still preserved in the trace, never silently dropped."""
+        _seed_source(tmp_path)
         _write_graphify_out(
-            tmp_path, source_relative="subject.py", recorded_mtime=recorded_mtime
+            tmp_path,
+            source_relative="subject.py",
+            recorded_mtime=(tmp_path / "subject.py").stat().st_mtime,
         )
-        time.sleep(0.01)
-        source.write_text(
-            "def target():\n    return 999\n\ndef helper():\n    return 2\n",
-            encoding="utf-8",
-        )
+        empty_subdir = tmp_path / "empty_subdir"
+        empty_subdir.mkdir()
 
-        chain = CodeFactChain(root=tmp_path)
+        chain = CodeFactChain(root=empty_subdir)
         resolution = chain.resolve(
             _descriptor(CAPABILITY_ATOMS_IN_FILE), {"symbol": ""}
         )

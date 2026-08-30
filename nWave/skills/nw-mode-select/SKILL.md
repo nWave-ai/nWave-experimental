@@ -10,7 +10,7 @@ This is a decision skill, not a runtime. It does not sequence, gate, or ledger a
 
 ## Step 1 — Is a mode already explicit?
 
-If the user already said "human", "auto", "direct", "just do it", "walk me through it", or otherwise pinned a mode in this conversation, do NOT re-ask. **A generic authorization to act autonomously counts as `auto`**: phrases like "work autonomously", "make reasonable choices/decisions", or "use your best judgment" pin the mode exactly as explicitly as the literal word "auto" — proceed as auto without asking again. **Direct mode is always available and must stay explicit**: a single small, unambiguous, already-scoped action is named "direct mode" in your reply and proceeds — never silently promoted into human-on-the-loop or auto, never recorded anywhere; it is a conversational choice, not a state.
+If the user already said "human", "auto", "direct", "just do it", "walk me through it", or otherwise pinned a mode in this conversation, do NOT re-ask. **A generic authorization to act autonomously counts as `auto`**: phrases like "work autonomously", "make reasonable choices/decisions", or "use your best judgment" pin the mode exactly as explicitly as the literal word "auto" — proceed as auto without asking again. **Direct mode is legal only for S**: a single small, unambiguous, already-scoped action is named "direct mode" in your reply and proceeds. If an explicit direct request classifies M or L, say that direct cannot bypass the M/L floor, preserve its act-now intent as explicit `auto`, and emit `auto M` or `auto L` — never an illegal `direct M`/`direct L` marker and never a second question.
 
 **An explicit mode still invokes this skill once, every size included**: a mode pinned in conversation removes only the re-ask question in Step 3 — it never removes the one required `nw-mode-select` invocation before dispatch, S included. Never re-ask a pinned mode.
 
@@ -18,11 +18,12 @@ If the user already said "human", "auto", "direct", "just do it", "walk me throu
 
 Ask yourself, from the request text and repo evidence — not from vibes:
 
-- **S (small)**: one file or one narrow behaviour, no cross-cutting design decision, reversible, testable in one pass.
-- **M (medium)**: several files or one feature-shaped unit of work, at least one design decision worth writing down, still reviewable as a single unit.
-- **L (large)**: spans an epic/mission, multiple design decisions, or work whose shape is not yet known and needs discovery/discuss/design before any code.
+- **S (small)**: a bounded edit that preserves product behavior and needs no delivery authority or architecture decision; reversible and testable in one pass.
+- **M (medium)**: one independently deliverable vertical, including any new or changed product behavior, even if it touches one file.
+- **L (large)**: spans an epic/mission, multiple independently deliverable outcomes, or work whose shape is not yet known and needs DISCUSS/decomposition; DESIGN remains gap-triggered, never automatic.
 
-State the classification and the ONE observable reason for it (file count, presence of a design decision, unknown shape) before proceeding.
+State the classification and the ONE observable reason for it (behavior change,
+authority gap, outcome count, or unknown shape) before proceeding.
 
 Then emit exactly one standalone line, once:
 

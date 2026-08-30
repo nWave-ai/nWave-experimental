@@ -49,36 +49,41 @@ def test_finalize_skill_projects_authorized_delivery_paths_union() -> None:
     text = SKILL.read_text(encoding="utf-8")
 
     assert "`AuthorizedDeliveryPaths`" in text
-    union_members = (
-        "Resolve = Author(...)",
-        "RED_TO_GREEN` slice only",
-        "GREEN_TO_GREEN` slice binds an existing",
-        "permanent DESIGN authority path",
-        "`C`'s reported `changed-targets`",
-        "evolution/ADR-link updates",
-        "reuse is read-only",
-    )
-    for member in union_members:
-        assert member in text
+    assert "Finalize authors no paths." in text
+    assert "`Diff(B,K)`" in text
+    assert "never persisted or supplied by a" in text
 
 
 def test_finalize_skill_projects_exact_scope_and_closure_laws() -> None:
     text = SKILL.read_text(encoding="utf-8")
 
     required = (
-        "directly to their permanent owners",
         "complete pending Git path set",
         "including formerly-untracked paths",
         "Stage exactly the verified path set",
         "normal commit hooks exactly once",
         "single whole-delivery commit",
-        "clean",
-        "checkout",
-        "installed Claude/Codex parity",
+        "fresh clean checkout of F",
+        "exact\n   B-derived `PreservationVector`",
+        "contains the authorized verification argv",
+        "Caller-supplied vectors or metadata are non-authoritative.",
+        "canonical deterministic final metadata",
+        "<admitted-predecessor>",
+        "admitted predecessor is B or K",
+        "Clean-checkout: true",
         "`PASS`, `FAIL` or `INDETERMINATE`",
     )
     for law in required:
         assert law in text
+    assert "both\nvectors" not in text
+    assert "contract verification vectors" not in text
+    expected = text[text.index("## Expected result") :]
+    assert "FINALIZE-RESULT" not in expected
+    assert (
+        expected.index("Commit: git-<algorithm>:<F>")
+        < expected.index("Clean-checkout: true")
+        < expected.index("Verdict: PASS | FAIL | INDETERMINATE")
+    )
 
 
 def test_finalize_skill_projects_positive_ownership_and_idempotence_laws() -> None:
@@ -86,10 +91,12 @@ def test_finalize_skill_projects_positive_ownership_and_idempotence_laws() -> No
 
     assert "byte-for-byte unchanged, in `C`'s base revision is preexisting" in text
     assert "never a finalize input, defect classification target" in text
-    assert "Clean-tree idempotence law" in text
-    assert "its parent equals the exact base revision `C`" in text
-    assert "committed path set at" in text
-    assert "foreign delivery's commit" in text
+    assert "## Idempotence law" in text
+    assert "rerun may return `PASS` only for the exact F" in text
+    assert "no second commit or state-changing" in text
+    assert "atomic same-object no-op" in text
+    assert "foreign, stale or mismatched F" in text
+    assert "merely clean tree" in text
 
 
 def test_finalize_task_is_deleted_not_a_sentinel() -> None:

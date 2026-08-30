@@ -66,6 +66,14 @@ If a matched skill is unavailable or cannot be invoked, return
 `INDETERMINATE` before BASELINE. Record the exact invoked names in the terminal
 result. Never load PBT/test-authoring skills: ATD owns the immutable oracle.
 
+`verification-scope.commands` is language-agnostic: each command is an opaque
+executable-plus-argv vector owned by the project. The crafter never recognizes a
+language or toolchain, provisions a tool-specific cache, parses a framework-
+specific receipt, substitutes an interpreter or rewrites argv. The host/harness
+must admit the declared environment before dispatch. If the exact vector cannot
+execute there, return terminal `INDETERMINATE` with the executable, argv and
+observed failure; never retry through another substrate.
+
 1. Read the validated contract, immutable oracle and declared target files.
    Bound orientation: make the first production edit by tool-call 15 when the
    contract's own facts are sufficient. Exceeding 15 is friction evidence,
@@ -108,7 +116,7 @@ result. Never load PBT/test-authoring skills: ATD owns the immutable oracle.
 CRAFTER-RESULT
 verdict: PASS | FAIL | INDETERMINATE
 contract: <locator>@sha256:<digest>
-candidate: git-<algorithm>:<base-revision>+worktree:<absolute-execution-root>
+execution-root: <absolute-execution-root>
 oracle: <locator>
 mutation: <first production mutation tool-call, or none>
 contract-fact-gap: <none | one line, when mutation's tool-call number > 15>
@@ -119,9 +127,10 @@ verification: <literal command identities and terminal results>
 
 `contract` carries the single contract+oracle closure digest; there is no
 separate persisted oracle-digest field or duplicate oracle identity line.
-`candidate` is an opaque causal identity for the exclusive worktree, not a
-content digest. Root forwards it byte-for-byte to the Examiner and finalize;
-neither consumer derives or recomputes it.
+`execution-root` identifies the exclusive integration root this crafter
+mutated. It is a locator, not authority to seal Git state. Do not create a
+commit: only the first root consumer after the complete result performs Git
+readback and sealing.
 
 Timeout, partial narration, zero-diff exploration, identity mismatch or an
 unexecuted command is `INDETERMINATE`. Only terminal evidence can be `PASS`.

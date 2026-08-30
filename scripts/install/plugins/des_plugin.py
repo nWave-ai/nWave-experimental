@@ -27,6 +27,7 @@ from scripts.shared.skill_distribution import (
     unaccounted_names,
     write_family_record,
 )
+from scripts.shared.version import get_version
 
 from .base import InstallationPlugin, InstallContext, PluginResult
 
@@ -605,6 +606,80 @@ class DESPlugin(InstallationPlugin):
                 message=f"DES installation failed: {e}",
             )
 
+    @staticmethod
+    def _stamped_prebuilt_version(framework_source: Path) -> str | None:
+        """Version stamped into the pre-built tree's own `MANIFEST.json`.
+
+        `None` means the fact is ABSENT, never "0.0.0": only the dist/ builder
+        writes this stamp (`scripts/build_dist.py:write_manifest`), so the
+        PyPI/pipx wheel channel legitimately carries a pre-built module with no
+        manifest beside it. Absent is not-comparable, not a mismatch.
+        """
+        manifest = framework_source / "MANIFEST.json"
+        if not manifest.is_file():
+            return None
+        try:
+            stamped = json.loads(manifest.read_text(encoding="utf-8")).get("version")
+        except (OSError, ValueError):
+            return None
+        return stamped if isinstance(stamped, str) and stamped else None
+
+    def _divergent_provenance_refusal(
+        self, context: InstallContext, pre_built: Path
+    ) -> PluginResult | None:
+        """Refuse a pre-built module whose stamp diverges from the version SSOT.
+
+        ADR-PLAT-011: selecting between the two producers of the same DES module
+        was a directory-existence check only, so a stale pre-built tree could
+        silently outrank live source with no signal (GDP-0: the divergent state
+        was representable AND silently selectable). The fix is a provenance
+        check, NOT a preference inversion -- on the release-tarball channel the
+        pre-built tree is the only module source that exists, so inverting to
+        "src/ always wins" would break every real release install.
+
+        Returns `None` when the comparison is not possible -- either fact may be
+        genuinely absent on a legitimate channel (a release tarball unpacks no
+        `pyproject.toml`; a wheel ships no `MANIFEST.json`). Only a stamp that is
+        present AND unequal is a build defect, and that one refuses loud.
+        """
+        if context.framework_source is None:
+            return None
+        stamped = self._stamped_prebuilt_version(context.framework_source)
+        if stamped is None:
+            return None
+        if context.project_root is None:
+            return None
+        pyproject = context.project_root / "pyproject.toml"
+        if not pyproject.is_file():
+            return None
+        ssot = get_version(context.project_root)
+        if stamped == ssot:
+            return None
+
+        manifest = context.framework_source / "MANIFEST.json"
+        return PluginResult(
+            success=False,
+            plugin_name="des",
+            message=(
+                f"DES pre-built module REFUSED -- divergent provenance. "
+                f"WHAT: the pre-built module at {pre_built} is stamped version "
+                f"{stamped} in {manifest}, while the version source of truth "
+                f"{pyproject} (project.version) declares {ssot}. "
+                f"WHY: on the release-tarball channel this pre-built tree is the "
+                f"ONLY module source -- no src/ is unpacked beside it -- so a "
+                f"stamp divergence means the installer would ship code built from "
+                f"a different revision under the wrong version number. That is a "
+                f"build defect, not a recoverable condition, so this refuses "
+                f"instead of silently installing {stamped} or silently falling "
+                f"back to source. "
+                f"HOW: rebuild the distribution from the {ssot} tree with "
+                f"'python scripts/build_dist.py' run from the project root -- it "
+                f"re-stamps MANIFEST.json from pyproject.toml:project.version -- "
+                f"then re-run this install; or point the install at a release "
+                f"tarball whose MANIFEST.json version is {ssot}."
+            ),
+        )
+
     def _install_des_module(self, context: InstallContext) -> PluginResult:
         """Install DES Python module to ~/.claude/lib/python/des/."""
         try:
@@ -619,6 +694,9 @@ class DESPlugin(InstallationPlugin):
                 using_prebuilt = False
 
             if using_prebuilt:
+                refusal = self._divergent_provenance_refusal(context, pre_built)
+                if refusal is not None:
+                    return refusal
                 source_dir = pre_built
             elif context.project_root:
                 source_dir = context.project_root / "src" / "des"
@@ -637,11 +715,6 @@ class DESPlugin(InstallationPlugin):
 
             lib_python_dir.mkdir(parents=True, exist_ok=True)
 
-            # Backup existing if present
-            if context.backup_manager and target_dir.exists():
-                context.logger.info(f"  💾 Backing up DES module: {target_dir}")
-                context.backup_manager.backup_directory(target_dir)
-
             # Copy module
             if context.dry_run:
                 context.logger.info(
@@ -649,6 +722,21 @@ class DESPlugin(InstallationPlugin):
                 )
             else:
                 if target_dir.exists():
+                    # F-INSTALL-REMOVAL-TRANSPARENCY: this is the ONLY window
+                    # in which both the old, still-installed `_REGISTRY`
+                    # (target_dir, about to be destroyed below) and the new
+                    # one (source_dir, about to replace it) are readable --
+                    # sweep_retired_assets cannot see inside a single Python
+                    # file, so the diff has to happen here, once, before the
+                    # rename-aside destroys the only remaining copy of the
+                    # old registry. Never imports either tree (registry_diff
+                    # is a pure static-AST reader): the old tree may belong
+                    # to a different, unknown-compatible Python/des version.
+                    self._log_subcommand_registry_diff(
+                        old_main=target_dir / "cli" / "__main__.py",
+                        new_main=source_dir / "cli" / "__main__.py",
+                        context=context,
+                    )
                     # Rename-aside atomically frees target_dir even while a
                     # racing importer still holds the old tree's inode open
                     # (issue #43) -- copytree below never contends with a
@@ -1402,6 +1490,51 @@ class DESPlugin(InstallationPlugin):
                 "pre-commit install is the sole writer of .git/hooks/pre-push"
             ),
         )
+
+    def _log_subcommand_registry_diff(
+        self, *, old_main: Path, new_main: Path, context: InstallContext
+    ) -> None:
+        """F-INSTALL-REMOVAL-TRANSPARENCY: log per-name removals and a
+        summary line when `des`'s subcommand set changes across this
+        install.
+
+        Deferred import: `des.cli.registry_diff` is part of the payload
+        this method is in the middle of replacing, not a dependency of the
+        installer's own bootstrap. A module-level import would make
+        importing `des_plugin` itself depend on `des` already being
+        importable -- true in this dev checkout, not guaranteed for every
+        install topology this plugin resolves `source_dir`/`target_dir`
+        from. Degrade LOUD (a warning, never a crash) rather than skip
+        silently (GDP-6): observability of a removal must not become a
+        reason the removal itself fails to install.
+        """
+        try:
+            # mypy sees `des` via the editable-install .pth (no py.typed
+            # marker there), not via `src/`, when type-checking this
+            # installer module in isolation -- a known, understood gap
+            # (issue #24 scopes strict mypy to installer modules only),
+            # not a real type-safety hole in either module.
+            from des.cli.__main__ import _RETIRED  # type: ignore[import-untyped]
+            from des.cli.registry_diff import (  # type: ignore[import-untyped]
+                diff_registry_names,
+                format_removal_summary,
+                log_retired_subcommand_removals,
+            )
+        except ImportError as exc:
+            context.logger.warning(
+                f"  ⚠️ Could not load des.cli.registry_diff to report "
+                f"subcommand changes ({exc}); proceeding without the "
+                f"removal summary/per-item log for this install"
+            )
+            return
+
+        diff = diff_registry_names(old_main, new_main)
+        if diff is None:
+            return  # either side unparseable -- fail-open, no fabricated diff
+        log_retired_subcommand_removals(context.logger, diff, retired=_RETIRED)
+        summary = format_removal_summary(diff)
+        if summary is not None:
+            context.logger.info(f"  {summary}")
 
     def _sweep_retired_scripts(
         self, target_dir: Path, record: FamilyRecord, context: InstallContext

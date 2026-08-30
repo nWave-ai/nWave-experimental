@@ -58,4 +58,8 @@ def composition(
     # sandboxing above unless scrubbed here too (same isolation as
     # tests/installer/unit/cli/test_target_flag.py::_scrub_env).
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    # The root session-scoped `_isolate_codex_and_agents_home` fixture sets
+    # NWAVE_AGENTS_HOME to its own throwaway session dir, independent of this
+    # scenario's sandbox HOME. Redirect it here so it agrees with Path.home().
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(home_dir))
     return AttributionCouplingComposition(home_dir=home_dir, project_root=project_root)

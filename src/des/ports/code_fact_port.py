@@ -186,6 +186,18 @@ TRACE_DETAIL_MAX_CHARS = 200
 
 #: The closed D3 cause set (ADR-LA-001 D3) — every ``Failed``/``failed:<cause>``
 #: trace event's cause MUST be one of these; there is no reserve vocabulary.
+#:
+#: ``unrepresented-reference-shape`` is the SIXTH cause, added 2026-08-23 as an
+#: EXPLICIT vocabulary extension (never a silent widening). The five original
+#: causes all say "I did not get to look" (unreadable / unparseable /
+#: wrong-language / errored / timed out); NONE of them could say **"I looked,
+#: but I do not represent the shape of reference you asked about"**. Without it
+#: a provider blind to a reference shape returns an EMPTY result that a consumer
+#: reads as "there are none" — measured 2026-08-23: ``query.never-wired`` on a
+#: symbol really read three times and on a symbol that does not exist at all
+#: returned envelopes identical but for the echoed symbol name.
+D3_CAUSE_UNREPRESENTED_REFERENCE_SHAPE = "unrepresented-reference-shape"
+
 D3_CAUSES: frozenset[str] = frozenset(
     {
         "unreadable-target",
@@ -193,8 +205,85 @@ D3_CAUSES: frozenset[str] = frozenset(
         "out-of-scope-language",
         "provider-error",
         "provider-timeout",
+        D3_CAUSE_UNREPRESENTED_REFERENCE_SHAPE,
     }
 )
+
+# ---------------------------------------------------------------------------
+# Reference-shape coverage (2026-08-23) — "what forms of reference can this
+# provider actually SEE?", declared per capability, per provider.
+#
+# NOT part of the cross-tier byte-locked Published Language (§2/§5a): this is an
+# OSS-internal honesty axis, so it adds no capability id, provider, confidence
+# or reason_code token — the tests/build byte-lock stays untouched.
+# ---------------------------------------------------------------------------
+
+#: A bare identifier reference — ``target``, ``target()``.
+REFERENCE_SHAPE_BARE_NAME = "bare-name"
+
+#: A dotted/attribute reference — ``cfg.retry_budget``, ``self.budget``,
+#: ``owner.method()``. A lexical scanner anchored on ``(?<![\w.])`` and an AST
+#: walk that only visits ``ast.Name`` are BOTH blind to this shape.
+REFERENCE_SHAPE_DOTTED_ATTRIBUTE = "dotted-attribute"
+
+#: The closed reference-shape vocabulary. Two tokens, deliberately (GDP-10):
+#: they are the two shapes a bundled provider demonstrably differs on.
+REFERENCE_SHAPES: frozenset[str] = frozenset(
+    {REFERENCE_SHAPE_BARE_NAME, REFERENCE_SHAPE_DOTTED_ATTRIBUTE}
+)
+
+#: Which capabilities are reference-shape SENSITIVE, and which shapes an answer
+#: must be able to observe before an EMPTY result may be read as an absence.
+#: A capability absent from this mapping (``atoms-in-file``, ``adr-section``,
+#: ``similar-responsibility``) is not about references at all and is never
+#: shape-checked.
+REQUIRED_REFERENCE_SHAPES: dict[str, frozenset[str]] = {
+    CAPABILITY_CALLERS_OF: REFERENCE_SHAPES,
+    CAPABILITY_READS_OF: REFERENCE_SHAPES,
+    CAPABILITY_NEVER_WIRED: REFERENCE_SHAPES,
+}
+
+#: Payload keys that hold this answer's concrete OBSERVATIONS. The single
+#: definition both bundled adapters derive :attr:`Answered.evidence_count`
+#: from — so "did this provider actually observe anything?" is one rule, not
+#: a per-adapter re-invention.
+_EVIDENCE_PAYLOAD_KEYS: frozenset[str] = frozenset(
+    {"sites", "call_sites", "read_sites", "atoms", "files", "candidates", "matches"}
+)
+
+
+def observation_count(payload: object) -> int | None:
+    """How many concrete observations ``payload`` carries, or ``None``.
+
+    ``None`` means "this payload shape declares no observation list" — an
+    undeclared count is never treated as zero (a blindness verdict is only
+    ever reached on an EXPLICIT zero, LA1-L4 honesty: could-not-count is not
+    counted-none).
+    """
+    if not isinstance(payload, dict):
+        return None
+    counts = [
+        len(value)
+        for key, value in payload.items()
+        if key in _EVIDENCE_PAYLOAD_KEYS and isinstance(value, list)
+    ]
+    return sum(counts) if counts else None
+
+
+def unrepresented_shapes(
+    capability_id: str, represents: tuple[str, ...]
+) -> frozenset[str]:
+    """The required reference shapes ``represents`` does NOT cover.
+
+    Empty frozenset ⇒ this provider can see every shape the capability needs,
+    so an empty answer from it IS an absence claim. Non-empty ⇒ an empty
+    answer from it is "I cannot look at that shape", never "there are none".
+    """
+    required = REQUIRED_REFERENCE_SHAPES.get(capability_id)
+    if required is None:
+        return frozenset()
+    return frozenset(required - frozenset(represents))
+
 
 #: The closed ``TraceEntry.scope`` vocabulary (ADR-LA-001 D5, LA1-L9/L11).
 _TRACE_SCOPE_VOCAB: frozenset[str] = frozenset({"complete", "filtered", "unfiltered"})
@@ -204,10 +293,19 @@ _CONFIDENCE_VALUES: frozenset[str] = frozenset(c.value for c in Confidence)
 
 @dataclass(frozen=True)
 class ManifestEntry:
-    """One capability a provider declares it can attempt, at what confidence."""
+    """One capability a provider declares it can attempt, at what confidence.
+
+    ``represents`` is the provider's COVERAGE claim over the closed
+    :data:`REFERENCE_SHAPES` vocabulary for THIS capability: which forms of
+    reference it is able to observe. It defaults to ``()`` — "claims no
+    reference shape" — which is the fail-safe: for a shape-sensitive
+    capability an undeclaring provider is treated as blind, so it can never
+    have its empty result read as an absence.
+    """
 
     capability_id: str
     confidence: str
+    represents: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.capability_id:
@@ -215,6 +313,12 @@ class ManifestEntry:
         if self.confidence not in _CONFIDENCE_VALUES:
             raise ValueError(
                 f"ManifestEntry.confidence must be one of {sorted(_CONFIDENCE_VALUES)}"
+            )
+        unknown = sorted(frozenset(self.represents) - REFERENCE_SHAPES)
+        if unknown:
+            raise ValueError(
+                f"ManifestEntry.represents carries unknown reference shape(s) "
+                f"{unknown}; the closed vocabulary is {sorted(REFERENCE_SHAPES)}"
             )
 
 
@@ -270,12 +374,20 @@ class TraceEntry:
 
 @dataclass(frozen=True)
 class Answered:
-    """A terminal, usable answer — the first one absorbs the fold (LA1-L5)."""
+    """A terminal, usable answer — the first one absorbs the fold (LA1-L5).
+
+    ``evidence_count`` is how many concrete observations back this answer
+    (:func:`observation_count`). ``None`` means the provider declared no
+    count; only an EXPLICIT ``0`` from a shape-blind provider is convertible
+    into a failure by :func:`resolve_through_fold` — an undeclared count is
+    never silently read as "observed nothing".
+    """
 
     provider_id: str
     confidence: str
     payload: object
     trace: tuple[TraceEntry, ...]
+    evidence_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -373,6 +485,40 @@ def _is_well_formed_answered(
     )
 
 
+def _blind_empty_entry(
+    answered_entry: TraceEntry, missing_shapes: frozenset[str]
+) -> TraceEntry:
+    """Convert a shape-blind provider's EMPTY ``answered`` entry into an honest
+    ``failed:unrepresented-reference-shape`` entry.
+
+    Everything the provider genuinely observed (its scope honesty, its fault
+    count, its exemplars) is preserved; only the verdict changes, because the
+    verdict was the lie — a zero it had no instrument to distinguish from an
+    absence."""
+    return TraceEntry(
+        provider_id=answered_entry.provider_id,
+        event=f"failed:{D3_CAUSE_UNREPRESENTED_REFERENCE_SHAPE}",
+        scope=answered_entry.scope,
+        fault_count=answered_entry.fault_count,
+        exemplars=answered_entry.exemplars,
+        detail=(
+            "empty result from a provider that does not represent reference "
+            f"shape(s) {sorted(missing_shapes)}"
+        )[:TRACE_DETAIL_MAX_CHARS],
+    )
+
+
+def _is_blind_empty(
+    outcome: Answered, capability_id: str, represents: tuple[str, ...]
+) -> frozenset[str]:
+    """The shapes this EMPTY answer could not have observed — empty frozenset
+    when the answer is not empty, or when the provider covers every shape the
+    capability needs (in which case the empty result IS a real absence)."""
+    if outcome.evidence_count != 0:
+        return frozenset()
+    return unrepresented_shapes(capability_id, represents)
+
+
 def _is_well_formed_failed(provider_id: str, outcome: Failed) -> bool:
     """LA1-L1/L9/L10: a well-formed ``Failed`` carries a closed-D3 ``cause``
     and exactly one correctly-tagged ``failed:<cause>`` trace entry whose
@@ -439,11 +585,28 @@ def resolve_through_fold(
             if _is_well_formed_answered(
                 provider.provider_id, outcome, manifest_entry.confidence
             ):
+                missing_shapes = _is_blind_empty(
+                    outcome, descriptor.id, manifest_entry.represents
+                )
+                if missing_shapes:
+                    # An empty result from a provider blind to a reference
+                    # shape this capability needs is NOT an answer: it cannot
+                    # discriminate "there are none" from "I cannot see that
+                    # shape". It is recorded as a failure and the fold
+                    # continues to the next provider, which may be able to
+                    # look. If none can, the caller gets Failed --
+                    # "I do not know how to look" -- never a fabricated zero.
+                    trace = (
+                        *trace,
+                        _blind_empty_entry(outcome.trace[0], missing_shapes),
+                    )
+                    continue
                 return Answered(
                     provider_id=outcome.provider_id,
                     confidence=outcome.confidence,
                     payload=outcome.payload,
                     trace=(*trace, outcome.trace[0]),
+                    evidence_count=outcome.evidence_count,
                 )
             # LA1-L1/L9: a malformed Answered can never become a success — it
             # is normalized to a failure and the fold continues (D3 totality).

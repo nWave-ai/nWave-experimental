@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from des.domain.worktree_residence import DurableResidence
+
 
 @dataclass(frozen=True)
 class WorktreeHandle:
@@ -52,7 +54,7 @@ class GitWorktreePort(ABC):
     """Driven port: the worktree-from-tip / merge-into-clean / cleanup lifecycle."""
 
     @abstractmethod
-    def probe(self, repo: Path) -> bool:
+    def probe(self, repo: Path, residence: DurableResidence) -> bool:
         """Earned-Trust startup probe (principle 13): create+remove a throwaway
         worktree in ``repo`` before any real item drains. A probe failure MUST
         refuse the harness's start (``health.startup.refused``), never a silent
@@ -61,10 +63,15 @@ class GitWorktreePort(ABC):
 
     @abstractmethod
     def create_worktree_from_tip(
-        self, repo: Path, branch: str, path: Path
+        self,
+        repo: Path,
+        branch: str,
+        residence: DurableResidence,
+        name: str,
     ) -> WorktreeHandle:
         """Cut a worktree from the CURRENT branch tip (D1) -- never a stale
-        ancestor, never the Agent-tool ``isolation: worktree`` mode."""
+        ancestor, never the Agent-tool ``isolation: worktree`` mode.  The
+        destination is carried only by an admitted ``DurableResidence``."""
         ...
 
     @abstractmethod

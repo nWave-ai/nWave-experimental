@@ -44,10 +44,6 @@ from scripts.install.plugins.opencode_common import (
     remove_manifest_owned_assets,
 )
 from scripts.shared.agent_catalog import is_public_agent, load_public_agents
-from scripts.shared.batching_fragment import (
-    append_batching_fragment,
-    load_batching_fragment,
-)
 from scripts.shared.platform_contracts import CODEX_AGENT_FORBIDDEN_FIELDS
 from scripts.shared.skill_path_rewrite import rewrite_host_paths
 
@@ -375,9 +371,7 @@ def _translate_skill_invocations(body: str) -> str:
     return _SKILL_INVOKE_PATTERN.sub(_replace, body)
 
 
-def _transform_agent(
-    source_content: str, agent_name: str, batching_fragment: str = ""
-) -> str:
+def _transform_agent(source_content: str, agent_name: str) -> str:
     """Full transform pipeline: Claude Code agent MD -> Codex TOML.
 
     Pipeline:
@@ -385,14 +379,11 @@ def _transform_agent(
       2. Log that a declared tools block is translated (not silently dropped)
       3. Extract scalar TOML fields (drop forbidden + non-scalar)
       4. Prepend the capability-mapping preamble derived from declared tools
-      5. Append batching_fragment to body when provided (idempotent, exact-once)
-      6. Render TOML with body as developer_instructions
+      5. Render TOML with body as developer_instructions
 
     Args:
         source_content: Full source agent file content (Claude Code format)
         agent_name: Agent stem name (used for log context only)
-        batching_fragment: Pre-loaded batching guidance text; omitted (default)
-            leaves the body untouched
 
     Returns:
         Transformed agent TOML content
@@ -406,8 +397,6 @@ def _transform_agent(
     preamble = _capability_preamble(frontmatter)
     if preamble:
         body = f"\n{preamble}\n{body}"
-    if batching_fragment:
-        body = append_batching_fragment(body, batching_fragment)
     return _render_toml_agent(scalar_fields, body)
 
 
@@ -571,8 +560,6 @@ class CodexAgentsPlugin(InstallationPlugin):
                     message="No agent files found in source directory",
                 )
 
-            batching_fragment = load_batching_fragment(context.project_root / "nWave")
-
             installed_names: list[str] = []
             installed_files: list[Path] = []
 
@@ -582,7 +569,7 @@ class CodexAgentsPlugin(InstallationPlugin):
 
                 agent_name = source_file.stem
                 content = source_file.read_text(encoding="utf-8")
-                transformed = _transform_agent(content, agent_name, batching_fragment)
+                transformed = _transform_agent(content, agent_name)
 
                 target_file = target_dir / f"{agent_name}.toml"
                 target_file.write_text(transformed, encoding="utf-8")
@@ -601,7 +588,7 @@ class CodexAgentsPlugin(InstallationPlugin):
                 if not source_file.is_file():
                     continue
                 content = source_file.read_text(encoding="utf-8")
-                transformed = _transform_agent(content, legacy_name, batching_fragment)
+                transformed = _transform_agent(content, legacy_name)
                 target_file = target_dir / f"{legacy_name}.toml"
                 target_file.write_text(transformed, encoding="utf-8")
                 installed_names.append(legacy_name)

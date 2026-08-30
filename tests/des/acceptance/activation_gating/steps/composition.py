@@ -56,7 +56,9 @@ _GITIGNORE_LINES: dict[GitignoreVariant, str] = {
     GitignoreVariant.LEADING_SLASH: "/.nwave/\n",
     GitignoreVariant.LEADING_NO_TRAILING: "/.nwave\n",
     GitignoreVariant.NO_NWAVE_LINE: "build/\n*.log\n",
-    GitignoreVariant.ALREADY_FIXED: ".nwave/*\n!.nwave/local-config.json\n",
+    GitignoreVariant.ALREADY_FIXED: (
+        ".nwave/*\n!.nwave/config.json\n!.nwave/local-config.json\n"
+    ),
 }
 
 
@@ -86,7 +88,7 @@ class ActivationGatingComposition:
     # ---- path helpers (port-exposed file locations) ----
 
     @property
-    def marker_path(self) -> Path:
+    def legacy_marker_path(self) -> Path:
         return self.project_root / ".nwave" / "local-config.json"
 
     @property
@@ -134,14 +136,14 @@ class ActivationGatingComposition:
 
         ``ABSENT`` means "this repo declares nothing" -- the tier file is
         removed, and the merge law's own ``ENABLED_DEFAULT`` decides. The
-        legacy marker file is kept in sync only because it is still a REAL
-        production artefact for the gitignore-trackability surface
-        (``!.nwave/local-config.json``) and the ``test -f`` hook probe -- it no
-        longer carries the enablement decision.
+        distinct legacy marker path is seeded only as compatibility setup;
+        the generic project observation below reads ``repo_config_path``'s
+        ``enabled`` member, and P5's public writer never updates this legacy
+        fixture.
         """
         config_path = self.repo_config_path
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        legacy_marker_path = self.marker_path
+        legacy_marker_path = self.legacy_marker_path
         if marker is MarkerState.ABSENT:
             for path in (config_path, legacy_marker_path):
                 if path.exists():
@@ -168,7 +170,7 @@ class ActivationGatingComposition:
     def given_git_repo(self) -> None:
         """Initialize a real git repo in ``project_root`` so ``git check-ignore`` works.
 
-        ``_marker_tracked`` runs the real ``git check-ignore`` probe; without a
+        ``_repo_config_tracked`` runs the real ``git check-ignore`` probe; without a
         repository git exits 128 ("not a repository"), which would make every
         trackability scenario BROKEN instead of RED on unskip. A bare ``git init``
         with a minimal identity (no commits needed) is enough for the probe.
@@ -286,11 +288,11 @@ class ActivationGatingComposition:
         gate outcome, exit codes) — never internal struct fields.
         """
         return {
-            "marker.enabled_for_repo": self._marker_value(),
-            "marker.file_exists": self.marker_path.exists(),
+            "marker.enabled_for_repo": self._repo_config_enabled(),
+            "marker.file_exists": self.repo_config_path.exists(),
             "root_gitignore.text": self._read_or_none(self.root_gitignore_path),
             "nested_gitignore.text": self._read_or_none(self.nested_gitignore_path),
-            "marker.git_tracked": self._marker_tracked(),
+            "marker.git_tracked": self._repo_config_tracked(),
             "resolution": self.last_resolution,
             "gate.outcome": self.last_gate_outcome,
             "global_config.text": self._read_or_none(self.global_config_path),
@@ -306,25 +308,25 @@ class ActivationGatingComposition:
 
     # ---- read helpers ----
 
-    def _marker_value(self) -> bool | None:
-        if not self.marker_path.exists():
+    def _repo_config_enabled(self) -> bool | None:
+        if not self.repo_config_path.exists():
             return None
         try:
-            data = json.loads(self.marker_path.read_text(encoding="utf-8"))
+            data = json.loads(self.repo_config_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return None
-        value = data.get("enabled_for_repo")
+        value = data.get("enabled")
         return value if isinstance(value, bool) else None
 
-    def _marker_tracked(self) -> bool:
-        """Whether ``git check-ignore`` reports the marker as NOT ignored.
+    def _repo_config_tracked(self) -> bool:
+        """Whether ``git check-ignore`` reports canonical config as NOT ignored.
 
         Delegates to the real ``GitTrackProbe`` (a thin ``git check-ignore``
         wrapper) — the behavioural probe ADR-AG-004 (d) requires.
         """
         from des.adapters.driven.git.git_track_probe import is_tracked
 
-        return is_tracked(self.project_root, self.marker_path)
+        return is_tracked(self.project_root, self.repo_config_path)
 
     @staticmethod
     def _read_or_none(path: Path) -> str | None:

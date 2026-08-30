@@ -1,4 +1,4 @@
-"""Step bodies for slice-04 (US-3) — matcher real-tools whitelist (FM-3 closure).
+"""Collected scenarios for the matcher real-tools whitelist.
 
 Driving port: ``CodexDESPlugin.install(context)`` followed by reading the
 installed ``~/.codex/hooks.json`` and extracting the PreToolUse matcher regex.
@@ -8,10 +8,9 @@ the literal-substring assertion, the Task-rejection scenario fails on the
 regex-match assertion, and the whitelist-membership scenario fails on the
 alternation property.
 
-Whitelist source: DDD-6 (refined by DDD-8 spike Q6, see
-``docs/feature/codex-empirical-e2e-support/spike-codex-hooks-schema.md`` lines
-157+ — matcher universe for this slice is the tuple ``("Bash", "apply_patch")``,
-``Edit|Write`` aliases deferred per DESIGN out-of-scope, MCP names deferred).
+Whitelist source: tool names observed on the running Codex host. The prior
+documentation-derived ``Bash``/``apply_patch`` matcher never fired because
+the host announces ``exec_command`` and carries the command in its input.
 """
 
 from __future__ import annotations
@@ -129,12 +128,10 @@ def every_alternation_in_whitelist(state, codex_tool_whitelist) -> None:
             )
 
 
-@then("the whitelist is sourced from the DESIGN docs citation")
-def whitelist_sourced_from_docs(codex_tool_whitelist) -> None:
-    # Conftest fixture docstring cites DDD-6 + DDD-8 spike artifact. Confirm
-    # the fixture holds the exact tuple sourced from the citation.
-    assert codex_tool_whitelist == ("Bash", "apply_patch"), (
-        f"whitelist must be the DDD-6/DDD-8-cited tuple; got {codex_tool_whitelist!r}"
+@then("the whitelist is sourced from an observation of the running host")
+def whitelist_sourced_from_host(codex_tool_whitelist) -> None:
+    assert "exec_command" in codex_tool_whitelist, (
+        f"observed host whitelist must include exec_command; got {codex_tool_whitelist!r}"
     )
 
 

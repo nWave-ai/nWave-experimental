@@ -10,22 +10,36 @@ nWave ships with global hooks that provide TDD enforcement, execution auditing, 
 
 ### The activation gate (resolution policy)
 
-Activation is resolved by a simple two-input policy:
+Activation is resolved in two steps. First nWave looks for an **explicit opinion** about
+`enabled`, in a fixed precedence order; only if no file declares one does the **global
+default mode** decide.
 
-1. **Per-project marker**: `.nwave/local-config.json` containing `{"enabled_for_repo": true}` or `{"enabled_for_repo": false}`
-2. **Global default mode**: `activation.mode` in `~/.nwave/global-config.json` — either `opt-in` (default) or `all`
+**Step 1 — the first tier that declares an opinion wins** (nearer to the repo wins):
 
-The policy is pure and deterministic. Given these two inputs, nWave decides:
+1. `<repo>/.nwave/config.json` → `"enabled": true | false` (unified per-repo config)
+2. `<repo>/.nwave/local-config.json` → `"enabled_for_repo": true | false` (activation
+   marker; resolved by walking up parent directories, nearest wins, stopping at `$HOME`)
+3. `~/.nwave/config.json` → `"enabled": true | false` (unified global config)
 
-| Per-Project Marker | Global Mode | Result |
+A tier that is missing, unreadable, keyless, or wrongly typed declares **no opinion** and
+is skipped — it never crashes the gate and never counts as `false`.
+
+**Step 2 — nobody declared: the global mode decides.** `activation.mode` in
+`~/.nwave/global-config.json` — either `opt-in` (default) or `all`.
+
+The policy is pure and deterministic:
+
+| Nearest declared `enabled` opinion (any of the three tiers) | Global Mode | Result |
 |---|---|---|
-| `enabled_for_repo: true` | any | **ACTIVE** |
-| `enabled_for_repo: false` | any | **INACTIVE** (sticky) |
-| (absent) | `"opt-in"` | **INACTIVE** |
-| (absent) | `"all"` | **ACTIVE** |
-| (absent) | (missing/corrupt) | **INACTIVE** (fail-safe) |
+| `true` (`enabled: true` or `enabled_for_repo: true`) | any | **ACTIVE** |
+| `false` (`enabled: false` or `enabled_for_repo: false`) | any | **INACTIVE** (sticky) |
+| (no tier declares) | `"opt-in"` | **INACTIVE** |
+| (no tier declares) | `"all"` | **ACTIVE** |
+| (no tier declares) | (missing/corrupt) | **INACTIVE** (fail-safe) |
 
-**Key principle**: A marker set to `false` is **sticky** — auto-marking never overwrites a deliberate opt-out.
+**Key principle**: an explicit `false` is **sticky** — it wins over `activation.mode: all`,
+and nothing in nWave ever overwrites it. Nothing writes an activation opinion on your
+behalf either: see *No silent auto-marking* below.
 
 ### Why version-control the marker?
 
@@ -38,13 +52,21 @@ git check-ignore .nwave/local-config.json
 # (no output = NOT ignored; marker is tracked)
 ```
 
-### Silent auto-marking (backward compatibility)
+### No silent auto-marking
 
-An unmarked repo gets adopted automatically (marker written
-`{"enabled_for_repo": true}`) on the first dispatch of an `nw-*` agent in that
-repo.
+**nWave never activates a repository on your behalf.** An unmarked repo stays inactive
+until you run `nwave-ai project enable` — no matter how much prior nWave work, audit
+history, or `.nwave/` content it already contains. Hooks only *read* activation; they
+never write it, and they leave an inactive repository byte-identical.
 
-This ensures repos with existing nWave work are not left inactive unexpectedly. Once you write an explicit marker (`true` or `false`), auto-marking stops — your choice is sticky.
+Earlier previews of this feature adopted an unmarked repo automatically on the first
+`nw-*` dispatch. That behaviour was **retired** — backward compatibility is not a reason
+to manufacture consent. See
+[ADR-AG-003](../product/architecture/ADR-AG-003-silent-auto-marking-trigger-model.md) and
+[ADR-AG-005](../product/architecture/ADR-AG-005-activation-is-opt-in-per-repository.md).
+
+If you upgraded from a version that relied on auto-adoption, run `nwave-ai project enable`
+once in each repository where you want nWave active, and commit the marker.
 
 ### Walk-up resolution
 
@@ -68,7 +90,7 @@ nWave activation for this project: enabled.
 **What this does**:
 - Writes `.nwave/local-config.json` with `{"enabled_for_repo": true}`
 - Fixes both layers of `.gitignore` so the marker stays tracked
-- Sets the marker to sticky (auto-marking will not overwrite it)
+- Records an explicit `true` opinion, which wins over the global `activation.mode`
 
 **Next step**: Commit the marker and `.gitignore` changes to version control:
 
@@ -95,12 +117,12 @@ nWave activation for this project: disabled (sticky opt-out).
 
 **What this does**:
 - Writes `.nwave/local-config.json` with `{"enabled_for_repo": false}`
-- Marks the repo as permanently inactive (auto-marking will never overwrite this)
+- Marks the repo inactive until you explicitly re-enable it; nothing overwrites this
 - Commits the opt-out so teammates also have nWave inactive
 
 **When to use**:
 - You are in a repo where nWave is not (yet) needed.
-- You want to silence hooks for a time and prevent auto-adoption on the first `nw-*` command.
+- You want to silence hooks even when the global `activation.mode` is `all`.
 
 Disable is sticky by design — if you change your mind later, you must run `enable` again to re-activate.
 
@@ -242,13 +264,15 @@ nwave-ai status
 
 ### Q: I set the global mode to `all` but some repos are still inactive. Why?
 
-**A**: Check for an explicit `enabled_for_repo: false` marker:
+**A**: Check every tier that can declare an explicit `false`, in precedence order:
 
 ```bash
-cat .nwave/local-config.json
+cat .nwave/config.json          # "enabled": false  (unified per-repo, highest precedence)
+cat .nwave/local-config.json    # "enabled_for_repo": false  (activation marker)
+cat ~/.nwave/config.json        # "enabled": false  (unified global)
 ```
 
-A marker set to `false` is sticky and overrides the global mode. To re-activate, run:
+Any explicit `false` is sticky and overrides the global mode. To re-activate, run:
 
 ```bash
 nwave-ai project enable
@@ -266,7 +290,7 @@ This overwrites the `false` marker with `true`. Commit the change.
 
 ### Q: Can I manually edit `.nwave/local-config.json`?
 
-**A**: Yes, but don't. Always use `nwave-ai project enable|disable` and let the CLI fix `.gitignore` and apply the sticky guard. Manual edits are unsupported and may leave the repo in an inconsistent state.
+**A**: Yes, but don't. Always use `nwave-ai project enable|disable` and let the CLI write the marker and fix both `.gitignore` layers. Manual edits are unsupported and may leave the repo in an inconsistent state.
 
 ---
 

@@ -16,6 +16,7 @@ import contextlib
 import io
 import json
 import shlex
+import stat
 import time
 import uuid
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -24,6 +25,7 @@ from des.adapters.drivers.hooks import des_task_signal
 from des.adapters.drivers.hooks.bash_command_guards import (
     _split_subcommands,
     evaluate_git_stash_command,
+    evaluate_worktree_add_command,
     evaluate_worktree_remove_command,
     git_stash_guard_target_root,
     worktree_guard_target_root,
@@ -38,19 +40,19 @@ from des.adapters.drivers.hooks.hook_protocol import (
     log_hook_invoked,
     read_and_parse_stdin,
 )
+from des.adapters.drivers.hooks.native_agent_result import completed_agent_results
 from des.adapters.drivers.hooks.root_activation_context import (
     build_root_mode_select_context,
     hook_input_has_agent_identity,
     resolve_subagent_agent_type,
     resolve_subagent_own_transcript_path,
+    root_mode_gate_repo_is_active,
     root_mode_handoff_block_reason,
 )
 from des.application.commit_attribution_service import CommitAttributionService
-from des.application.fill_contract import ALL_FIELDS as _FILL_CONTRACT_FIELDS
+from des.application.delivery_snapshot import construct_closure
 from des.application.ordinary_request import (
     ATD_BODY_LINE_COUNT,
-    DELIVERY_ID_HEX_LEN,
-    DELIVERY_ID_PREFIX,
     compute_delivery_id,
     contract_locator_for,
     is_lexical_repo_relative_json_locator,
@@ -85,6 +87,946 @@ _AUTO_ROOT_CRAFTER_ROLES = frozenset(
     {"nw-software-crafter", "nw-functional-software-crafter"}
 )
 
+
+def evaluate_agent_worktree_isolation(
+    tool_input: dict[str, object],
+) -> dict[str, str] | None:
+    """Refuse harness-selected worktree residence for every Agent dispatch."""
+
+    if tool_input.get("isolation") != "worktree":
+        return None
+    return {
+        "decision": "block",
+        "reason": (
+            "WHAT: Agent isolation='worktree' was blocked. "
+            "WHY: the harness selects that residence before nWave can measure "
+            "durability, so WIP could exist before admission. "
+            "HOW: run `des worktree-admit --repo <root> --lane <name>`, then "
+            "dispatch the role in the admitted execution root without Agent "
+            "worktree isolation."
+        ),
+    }
+
+
+def _result_field(text: str, key: str) -> str | None:
+    prefix = f"{key}: "
+    values = [
+        line.removeprefix(prefix)
+        for line in text.splitlines()
+        if line.startswith(prefix)
+    ]
+    return values[0] if len(values) == 1 else None
+
+
+def _result_path(text: str, key: str) -> str | None:
+    value = _result_field(text, key)
+    if (
+        value is None
+        or not value
+        or Path(value).is_absolute()
+        or ".." in Path(value).parts
+        or "\\" in value
+    ):
+        return None
+    return value
+
+
+def _is_exact_native_design_terminal(text: str) -> bool:
+    """Admit exactly the one-line public DESIGN authority grammar."""
+    return "\n" not in text and "\r" not in text and is_valid_arch_header_line(text)
+
+
+def _is_exact_native_atd_terminal(
+    text: str, *, root: Path, contract_locator: str
+) -> bool:
+    """Bind ATD readiness to the current physical root and contract locator."""
+    return text == (
+        "DISTILL-RESULT: CONTRACT_READY\n"
+        f"REPO-ROOT: {root.resolve()}\n"
+        f"DELIVERY-CONTRACT: {contract_locator}"
+    )
+
+
+def _canonical_dispatch_args(command: object) -> tuple[Path, str] | None:
+    if not isinstance(command, str):
+        return None
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
+    if len(argv) < 5 or argv[0] != "des" or argv[1] != "dispatch":
+        return None
+    try:
+        root = Path(argv[argv.index("--repo-root") + 1])
+        locator = argv[argv.index("--delivery-contract") + 1]
+    except (ValueError, IndexError):
+        return None
+    if not root.is_absolute() or not _result_path(f"path: {locator}", "path"):
+        return None
+    # Keep the caller's lexical absolute root until the public CLI performs
+    # its own no-symlink/non-directory refusal. Resolving here would turn an
+    # invalid public root into a valid physical path before that boundary.
+    return root, locator
+
+
+def _review_prompt_header_for_atd(root: Path) -> str:
+    """Build the existing C authority header from its current admitted bytes."""
+    try:
+        from des.application.delivery_snapshot import _git, recognize_closure
+        from des.cli.dispatch import closure_digest
+
+        head = _git(root, "rev-parse", "HEAD").stdout.strip()
+        closure = recognize_closure(root, head)
+        contracts = []
+        for path in closure.authority_paths:
+            if not path.endswith(".json"):
+                continue
+            try:
+                contract = json.loads((root / path).read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if isinstance(contract, dict) and isinstance(
+                contract.get("delivery-id"), str
+            ):
+                contracts.append((path, contract))
+        if len(contracts) != 1:
+            raise ValueError("current closure has no unique delivery contract")
+        locator, contract = contracts[0]
+        oracle = str(contract["acceptance-tests"]["locator"])
+        support = tuple(
+            (path, (root / path).read_bytes())
+            for path in contract["acceptance-tests"].get("supporting-locators", [])
+        )
+        digest = closure_digest(
+            (root / locator).read_bytes(),
+            (root / oracle.split("::", 1)[0]).read_bytes(),
+            oracle_locator=oracle,
+            supporting_files=support,
+        )
+        if closure.commit != head:
+            raise ValueError("current closure does not equal HEAD")
+    except (
+        KeyError,
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as exc:
+        raise ValueError(
+            "current AT-review closure authority is not recognized"
+        ) from exc
+    return (
+        f"THIN-DELIVERY-CONTRACT: {locator}\n"
+        f"THIN-DELIVERY-CONTRACT-DIGEST: sha256:{digest}\n"
+        f"REPO-ROOT: {root}\n"
+    )
+
+
+def _review_agent_prompt_rewrite(
+    hook_input: dict[str, object],
+    tool_input: dict[str, object],
+    *,
+    is_root_invocation: bool = True,
+) -> int | None:
+    """Prefix canonical reviewer Agents with hook-derived C/K authority.
+
+    This is a private PreToolUse rewrite of the existing Agent invocation, not
+    a persisted receipt or public grammar.  Later result recognition reads the
+    platform's Agent tool_use input and therefore proves the review happened
+    for this exact C or K attempt.
+    """
+    if not is_root_invocation:
+        return None
+    role = tool_input.get("subagent_type")
+    if role != "nw-acceptance-designer-reviewer":
+        return None
+    cwd, transcript, prompt = (
+        hook_input.get("cwd"),
+        hook_input.get("transcript_path"),
+        tool_input.get("prompt"),
+    )
+    if (
+        not isinstance(cwd, str)
+        or not isinstance(transcript, str)
+        or not isinstance(prompt, str)
+    ):
+        print(
+            json.dumps(
+                {
+                    "decision": "block",
+                    "reason": "INDETERMINATE: reviewer host supplied no root/transcript/prompt",
+                }
+            )
+        )
+        return 2
+    try:
+        root = Path(cwd).resolve()
+        header = _review_prompt_header_for_atd(root)
+    except ValueError as exc:
+        print(
+            json.dumps(
+                {
+                    "decision": "block",
+                    "reason": f"INDETERMINATE: reviewer invocation refused ({exc})",
+                }
+            )
+        )
+        return 2
+    body = prompt[len(header) :] if prompt.startswith(header) else prompt
+    updated = {**tool_input, "prompt": header + body}
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": updated,
+                }
+            }
+        )
+    )
+    return 0
+
+
+def _integration_delta(root: Path, parent: str) -> set[str]:
+    from des.application.delivery_snapshot import _changed_paths, _git
+
+    committed = _changed_paths(root, parent, "HEAD")
+    status = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    if status.returncode:
+        raise ValueError("integration root status is unreadable")
+    pending = {
+        field[3:] for field in status.stdout.split("\0") if field and len(field) >= 4
+    }
+    return committed | pending
+
+
+def _dispatch_closure_rewrite(
+    hook_input: dict[str, object],
+    tool_input: dict[str, object],
+    *,
+    is_root_invocation: bool = True,
+) -> int | None:
+    """Construct C once from completed native producer invocations.
+
+    The CLI remains an unchanged reader/emitter.  This hook is the only
+    installed route that can move the isolated ATD root from P to C.
+    """
+    if not is_root_invocation:
+        return None
+    parsed = _canonical_dispatch_args(tool_input.get("command"))
+    if parsed is None:
+        return None
+    try:
+        from des.application.delivery_snapshot import (
+            _git,
+            _no_follow_path,
+            recognize_closure,
+        )
+        from des.cli.dispatch import main as dispatch_main
+
+        repo_root, locator = parsed
+        public_stdout, public_stderr = io.StringIO(), io.StringIO()
+        # Run the semantic validator once.  The hook becomes the one producer
+        # of its public two-line handoff after it has admitted/replayed C.
+        with (
+            contextlib.redirect_stdout(public_stdout),
+            contextlib.redirect_stderr(public_stderr),
+        ):
+            validation = dispatch_main(
+                ["--repo-root", str(repo_root), "--delivery-contract", locator]
+            )
+        validation_handoff = public_stdout.getvalue()
+        if validation:
+            detail = public_stderr.getvalue().strip() or f"exit status {validation}"
+            raise ValueError(f"dispatch semantic validation refused: {detail}")
+
+        contract_file = _no_follow_path(repo_root, locator)
+        if contract_file.is_symlink() or not contract_file.is_file():
+            raise ValueError("integration contract is not a regular file")
+        contract_bytes = contract_file.read_bytes()
+        contract = json.loads(contract_bytes.decode("utf-8"))
+        base = str(contract["repository"]["base-revision"]).split(":", 1)[1]
+        head = _git(repo_root, "rev-parse", "HEAD").stdout.strip()
+        replay = head != base
+        if replay:
+            closure = recognize_closure(repo_root, head)
+            if closure.base != base or locator not in closure.authority_paths:
+                raise ValueError("existing closure is not this contract's replay")
+            status = _git(
+                repo_root, "status", "--porcelain=v1", "-z", "--untracked-files=all"
+            )
+            if status.returncode:
+                raise ValueError("closure replay status is unreadable")
+            if status.stdout:
+                raise ValueError("closure replay root is dirty")
+
+        oracle_locator = str(contract["acceptance-tests"]["locator"])
+        oracle_path = oracle_locator.split("::", 1)[0]
+        support_paths = tuple(
+            str(item)
+            for item in contract["acceptance-tests"].get("supporting-locators", [])
+        )
+        oracle_file = _no_follow_path(repo_root, oracle_path)
+        if oracle_file.is_symlink() or not oracle_file.is_file():
+            raise ValueError("integration oracle bytes are unreadable")
+        oracle_bytes = oracle_file.read_bytes()
+        supporting = []
+        for path in support_paths:
+            item = _no_follow_path(repo_root, path)
+            if item.is_symlink() or not item.is_file():
+                raise ValueError("integration support bytes are unreadable")
+            supporting.append((path, item.read_bytes()))
+        handoff_lines = validation_handoff.splitlines()
+        if handoff_lines[:1] != [f"THIN-DELIVERY-CONTRACT: {locator}"] or (
+            len(handoff_lines) != 2
+            or not handoff_lines[1].startswith("THIN-DELIVERY-CONTRACT-DIGEST: sha256:")
+        ):
+            raise ValueError("dispatch success stdout is not a two-line handoff")
+
+        if not replay:
+            transcript = hook_input.get("transcript_path")
+            if not isinstance(transcript, str) or not transcript:
+                raise ValueError("root supplied no parent transcript")
+            atd = completed_agent_results(
+                transcript, role=_ATD_ROLE_NAME, prompt_prefix=""
+            )
+            if atd is None or not _is_exact_native_atd_terminal(
+                atd.terminal_text, root=repo_root, contract_locator=locator
+            ):
+                raise ValueError("missing completed ATD native attempt")
+            design_result = completed_agent_results(
+                transcript, role=_ARCHITECT_ROLE_NAME, prompt_prefix=""
+            )
+            design_path = None
+            if design_result is not None:
+                if not _is_exact_native_design_terminal(design_result.terminal_text):
+                    raise ValueError("DESIGN terminal has no safe authority locator")
+                design_path = design_result.terminal_text.split("#", 1)[0].removeprefix(
+                    "ARCHITECTURE-COVERED: "
+                )
+            charter_path = None
+            if bool(contract.get("applicability", {}).get("examine")):
+                charter = completed_agent_results(
+                    transcript, role="nw-product-owner", prompt_prefix=""
+                )
+                if charter is None:
+                    raise ValueError("missing applicable PO native attempt")
+                charter_path = _result_path(charter.terminal_text, "path")
+                if charter_path is None:
+                    raise ValueError("PO terminal has no safe charter path")
+            allowed = {locator, oracle_path, *support_paths}
+            if design_path is not None:
+                allowed.add(design_path)
+            if charter_path is not None:
+                allowed.add(charter_path)
+            if _integration_delta(repo_root, base) != allowed:
+                raise ValueError(
+                    "integration pending delta is not the complete allowed authority set"
+                )
+            if set(contract["targets"]) & allowed:
+                raise ValueError("contract targets intersect AuthorityPaths")
+            imports: list[tuple[str, bytes, int]] = []
+            authority_imports = (
+                *((design_path,) if design_path else ()),
+                *((charter_path,) if charter_path else ()),
+            )
+            for path in authority_imports:
+                item = _no_follow_path(repo_root, path)
+                info = item.lstat()
+                if item.is_symlink() or not stat.S_ISREG(info.st_mode):
+                    raise ValueError("integration authority path is not regular")
+                imports.append(
+                    (path, item.read_bytes(), stat.S_IMODE(info.st_mode) | stat.S_IFREG)
+                )
+            closure = construct_closure(
+                repo_root,
+                contract=contract,
+                contract_locator=locator,
+                contract_bytes=contract_bytes,
+                oracle_locator=oracle_locator,
+                oracle_bytes=oracle_bytes,
+                supporting=tuple(supporting),
+                imports=tuple(imports),
+                constructor_root=repo_root,
+            )
+            if closure.commit != _git(repo_root, "rev-parse", "HEAD").stdout.strip():
+                raise ValueError("integration closure readback differs from HEAD")
+        # Hooks may normalize contract/oracle bytes while committing C.  The
+        # public carrier must therefore be derived from admitted C, never from
+        # the pre-commit bytes the unchanged CLI just inspected.
+        sealed_locator, _sealed_contract, _sealed_oracle, sealed_digest = (
+            _closure_authority(repo_root, closure, contract_locator=locator)
+        )
+        if sealed_locator != locator:
+            raise ValueError("admitted closure changed its contract locator")
+        handoff = _thin_contract_header(sealed_locator, sealed_digest)
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "decision": "block",
+                    "reason": f"INDETERMINATE: integration closure construction refused ({exc})",
+                }
+            )
+        )
+        return 2
+    updated = {**tool_input, "command": f"printf %s {json.dumps(handoff)}"}
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": updated,
+                }
+            }
+        )
+    )
+    return 0
+
+
+def _closure_authority(
+    root: Path, closure: object, *, contract_locator: str | None = None
+) -> tuple[str, dict[str, object], str, str]:
+    """Read current authority only when it is exactly the admitted C bytes."""
+    from des.application.delivery_snapshot import (
+        Snapshot,
+        _git_bytes,
+        _no_follow_path,
+        _require_schema_valid,
+    )
+    from des.cli.dispatch import closure_digest
+
+    if not isinstance(closure, Snapshot):
+        raise ValueError("closure snapshot is not admitted")
+
+    def admitted_regular_bytes(path: str, *, noun: str) -> bytes:
+        if path not in closure.authority_paths:
+            raise ValueError(f"closure {noun} path is not admitted: {path}")
+        item = _no_follow_path(root, path)
+        try:
+            mode = item.lstat().st_mode
+        except OSError as exc:
+            raise ValueError(f"closure {noun} is unreadable: {path}") from exc
+        if item.is_symlink() or not stat.S_ISREG(mode):
+            raise ValueError(f"closure {noun} is not a regular file: {path}")
+        try:
+            current = item.read_bytes()
+        except OSError as exc:
+            raise ValueError(f"closure {noun} is unreadable: {path}") from exc
+        admitted = _git_bytes(root, "show", f"{closure.commit}:{path}")
+        if admitted.returncode or admitted.stdout != current:
+            raise ValueError(f"closure {noun} differs from admitted C bytes: {path}")
+        return current
+
+    if contract_locator is not None:
+        raw_contract = admitted_regular_bytes(contract_locator, noun="contract")
+        try:
+            contract = json.loads(raw_contract.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("closure contract authority is unreadable") from exc
+        if not isinstance(contract, dict):
+            raise ValueError("closure contract authority is not an object")
+        _require_schema_valid(contract)
+        locator = contract_locator
+    else:
+        contracts: list[tuple[str, dict[str, object]]] = []
+        for path in closure.authority_paths:
+            if not path.endswith(".json"):
+                continue
+            try:
+                candidate = json.loads(
+                    admitted_regular_bytes(path, noun="contract").decode("utf-8")
+                )
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if isinstance(candidate, dict) and isinstance(
+                candidate.get("delivery-id"), str
+            ):
+                _require_schema_valid(candidate)
+                contracts.append((path, candidate))
+        if len(contracts) != 1:
+            raise ValueError("closure has no unique readable delivery contract")
+        locator, contract = contracts[0]
+
+    try:
+        oracle = contract["acceptance-tests"]["locator"]
+        supporting_locators = contract["acceptance-tests"].get(
+            "supporting-locators", []
+        )
+    except (KeyError, TypeError) as exc:
+        raise ValueError("closure contract authority is unreadable") from exc
+    if (
+        not isinstance(oracle, str)
+        or not isinstance(supporting_locators, list)
+        or any(not isinstance(path, str) for path in supporting_locators)
+    ):
+        raise ValueError("closure contract authority has invalid oracle locators")
+    oracle_path = oracle.split("::", 1)[0]
+    oracle_bytes = admitted_regular_bytes(oracle_path, noun="oracle")
+    supporting = tuple(
+        (path, admitted_regular_bytes(path, noun="support"))
+        for path in supporting_locators
+    )
+    digest = closure_digest(
+        admitted_regular_bytes(locator, noun="contract"),
+        oracle_bytes,
+        oracle_locator=oracle,
+        supporting_files=supporting,
+    )
+    return locator, contract, oracle, digest
+
+
+def _thin_contract_header(locator: str, digest: str) -> str:
+    return (
+        f"THIN-DELIVERY-CONTRACT: {locator}\n"
+        f"THIN-DELIVERY-CONTRACT-DIGEST: sha256:{digest}\n"
+    )
+
+
+def _terminal_fields(text: str, header: str) -> dict[str, str] | None:
+    """Parse one exact structured terminal; prose and duplicate keys refuse."""
+    lines = text.splitlines()
+    if not lines or lines[0] != header:
+        return None
+    result: dict[str, str] = {}
+    for line in lines[1:]:
+        if ": " not in line:
+            return None
+        key, value = line.split(": ", 1)
+        if not key or not value or key in result:
+            return None
+        result[key] = value
+    return result or None
+
+
+def _is_exact_review(
+    text: str, *, header: str, required: dict[str, str], verdicts: frozenset[str]
+) -> bool:
+    """Accept one complete, current review grammar and nothing else."""
+    fields = _terminal_fields(text, header)
+    if fields is None or set(fields) != set(required) | {"verdict"}:
+        return False
+    return fields.get("verdict") in verdicts and all(
+        fields.get(key) == value for key, value in required.items()
+    )
+
+
+def _at_review_approved(
+    text: str,
+    *,
+    contract_locator: str,
+    contract_digest: str,
+    oracle_locator: str,
+) -> bool:
+    """Bind an unconditional AT approval to the current C contract digest and oracle locator."""
+    return _is_exact_review(
+        text,
+        header="AT-REVIEW",
+        required={
+            "contract": f"{contract_locator}@sha256:{contract_digest}",
+            "oracle": oracle_locator,
+            "findings": "none",
+        },
+        verdicts=frozenset({"APPROVE", "APPROVED"}),
+    )
+
+
+def _crafter_agent_rewrite(
+    hook_input: dict[str, object], tool_input: dict[str, object]
+) -> int | None:
+    """E3: admit a crafter only from the current C-bound AT foreground result."""
+    if tool_input.get("subagent_type") not in _AUTO_ROOT_CRAFTER_ROLES:
+        return None
+    cwd, transcript, prompt = (
+        hook_input.get("cwd"),
+        hook_input.get("transcript_path"),
+        tool_input.get("prompt"),
+    )
+    if (
+        not isinstance(cwd, str)
+        or not isinstance(transcript, str)
+        or not isinstance(prompt, str)
+    ):
+        return None
+    try:
+        from des.application.delivery_snapshot import _git, recognize_closure
+
+        root = Path(cwd).resolve()
+        closure = recognize_closure(
+            root, _git(root, "rev-parse", "HEAD").stdout.strip()
+        )
+        locator, _contract, oracle, digest = _closure_authority(root, closure)
+        review_header = _thin_contract_header(locator, digest) + f"REPO-ROOT: {root}\n"
+        result = completed_agent_results(
+            transcript,
+            role="nw-acceptance-designer-reviewer",
+            prompt_prefix=review_header,
+        )
+        if result is None or not _at_review_approved(
+            result.terminal_text,
+            contract_locator=locator,
+            contract_digest=digest,
+            oracle_locator=oracle,
+        ):
+            raise ValueError("missing exact C-bound AT REVIEW APPROVE")
+        header = _thin_contract_header(locator, digest)
+        body = (
+            prompt[len(header) :].lstrip("\n") if prompt.startswith(header) else prompt
+        )
+        updated = {**tool_input, "prompt": f"{header}\nexecution-root: {root}\n{body}"}
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "decision": "block",
+                    "reason": f"INDETERMINATE: crafter admission refused ({exc})",
+                }
+            )
+        )
+        return 2
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": updated,
+                }
+            }
+        )
+    )
+    return 0
+
+
+def _reported_targets(value: object) -> set[str]:
+    if not isinstance(value, str):
+        raise ValueError("crafter did not report target paths")
+    paths = {
+        piece.strip() for piece in value.replace(",", " ").split() if piece.strip()
+    }
+    if not paths or any(
+        path.startswith("/") or ".." in Path(path).parts for path in paths
+    ):
+        raise ValueError("crafter reported unsafe or empty target paths")
+    return paths
+
+
+def _candidate_binding(
+    root: Path, transcript: str, *, cited_candidate: object | None = None
+) -> tuple[object, object, str, str, set[str]]:
+    """E4: prove PASS/current-C delta, then seal or replay exactly one K."""
+    from des.application.delivery_snapshot import (
+        ApprovedClosure,
+        CandidateConstructor,
+        _changed_paths,
+        _DeliveryPaths,
+        _git,
+        closure_for_candidate,
+        recognize_candidate,
+        recognize_closure,
+    )
+
+    status = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    if status.returncode:
+        raise ValueError("candidate root status is unreadable")
+    pending = {item[3:] for item in status.stdout.split("\0") if len(item) >= 4}
+    candidate = cited_candidate
+    if candidate is None:
+        head = _git(root, "rev-parse", "HEAD").stdout.strip()
+        try:
+            candidate = recognize_candidate(root, head)
+            closure = closure_for_candidate(root, head)
+        except ValueError:
+            closure = recognize_closure(root, head)
+    else:
+        if not hasattr(candidate, "commit"):
+            raise ValueError("replayed final has no cited candidate")
+        candidate = recognize_candidate(root, candidate.commit)
+        closure = closure_for_candidate(root, candidate.commit)
+    locator, contract, oracle, digest = _closure_authority(root, closure)
+    header = _thin_contract_header(locator, digest)
+    results = [
+        result
+        for role in _AUTO_ROOT_CRAFTER_ROLES
+        for result in [
+            completed_agent_results(transcript, role=role, prompt_prefix=header)
+        ]
+        if result is not None
+    ]
+    if len(results) != 1:
+        raise ValueError("no unique C-bound completed crafter result")
+    fields = _terminal_fields(results[0].terminal_text, "CRAFTER-RESULT")
+    if fields is None or fields.get("verdict") != "PASS":
+        raise ValueError("crafter terminal is not exact PASS")
+    if fields.get("contract") != f"{locator}@sha256:{digest}" or fields.get(
+        "execution-root"
+    ) != str(root):
+        raise ValueError("crafter result is not bound to current C/root")
+    reported = _reported_targets(fields.get("changed-targets"))
+    oracle_dependencies = {
+        locator,
+        oracle.split("::", 1)[0],
+        *(
+            str(path)
+            for path in contract["acceptance-tests"].get("supporting-locators", [])
+        ),
+    }
+    paths = _DeliveryPaths.build(
+        authority=set(closure.authority_paths) - oracle_dependencies,
+        oracle_dependencies=oracle_dependencies,
+        crafter_writable=set(contract["targets"]),
+    )
+    reported_delta = paths.crafter_expected_delta(reported)
+    if candidate is not None:
+        if pending:
+            raise ValueError("post-seal dirt makes candidate replay indeterminate")
+        if _changed_paths(root, closure.commit, candidate.commit) != reported_delta:
+            raise ValueError("replayed K differs from the completed crafter report")
+        return candidate, closure, locator, digest, set(reported_delta)
+    expected_delta = paths.crafter_expected_delta(pending)
+    if not expected_delta or expected_delta != reported_delta:
+        raise ValueError("crafter PASS does not equal complete pending target delta")
+    if expected_delta & set(closure.authority_paths):
+        raise ValueError("crafter modified closure authority")
+    approved = ApprovedClosure(
+        closure, locator, oracle, digest, contract, closure.authority_paths
+    )
+    candidate = CandidateConstructor().seal(approved, root, set(expected_delta))
+    residue = _git(
+        root, "status", "--porcelain=v1", "-z", "--untracked-files=all"
+    ).stdout
+    if residue:
+        raise ValueError(f"candidate constructor left dirty worktree: {residue!r}")
+    if _changed_paths(root, closure.commit, candidate.commit) != expected_delta:
+        raise ValueError("sealed K differs from completed crafter report")
+    return candidate, closure, locator, digest, set(expected_delta)
+
+
+def _candidate_agent_rewrite(
+    hook_input: dict[str, object], tool_input: dict[str, object]
+) -> int | None:
+    """E4: put an admitted K only into implementation review/examination prompts."""
+    role = tool_input.get("subagent_type")
+    if role not in {"nw-software-crafter-reviewer", "nw-user-examiner"}:
+        return None
+    cwd, transcript, prompt = (
+        hook_input.get("cwd"),
+        hook_input.get("transcript_path"),
+        tool_input.get("prompt"),
+    )
+    if (
+        not isinstance(cwd, str)
+        or not isinstance(transcript, str)
+        or not isinstance(prompt, str)
+    ):
+        return None
+    try:
+        from des.application.delivery_snapshot import _git
+
+        root = Path(cwd).resolve()
+        candidate, _closure, _locator, _digest, _reported = _candidate_binding(
+            root, transcript
+        )
+        algorithm = _git(root, "rev-parse", "--show-object-format").stdout.strip()
+        if algorithm not in {"sha1", "sha256"}:
+            raise ValueError("unsupported git object format")
+        header = (
+            f"candidate: git-{algorithm}:{candidate.commit}\nexecution-root: {root}\n"
+        )
+        body = prompt[len(header) :] if prompt.startswith(header) else prompt
+        updated = {**tool_input, "prompt": header + body}
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "decision": "block",
+                    "reason": f"INDETERMINATE: candidate admission refused ({exc})",
+                }
+            )
+        )
+        return 2
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": updated,
+                }
+            }
+        )
+    )
+    return 0
+
+
+def _replay_candidate_from_review_prompt(root: Path, transcript: str) -> object:
+    """Recover K only from the one real review invocation that bound it."""
+    from des.application.delivery_snapshot import _git, recognize_candidate
+
+    review = completed_agent_results(
+        transcript, role="nw-software-crafter-reviewer", prompt_prefix="candidate: "
+    )
+    if review is None:
+        raise ValueError("replayed final has no unique K-bound implementation review")
+    lines = review.applied_prompt.splitlines()
+    if len(lines) < 2 or lines[1] != f"execution-root: {root}":
+        raise ValueError("replayed final review is not bound to this root")
+    candidate_text = lines[0].removeprefix("candidate: ")
+    try:
+        algorithm, commit = candidate_text.split(":", 1)
+    except ValueError as exc:
+        raise ValueError("replayed final review has no exact candidate") from exc
+    object_format = _git(root, "rev-parse", "--show-object-format")
+    if (
+        object_format.returncode
+        or algorithm != f"git-{object_format.stdout.strip()}"
+        or not commit
+    ):
+        raise ValueError("replayed final review has invalid candidate identity")
+    return recognize_candidate(root, commit)
+
+
+def _finalize_candidate_rewrite(
+    hook_input: dict[str, object], tool_input: dict[str, object]
+) -> int | None:
+    """E7: finalize only a current K with one K-bound implementation APPROVE."""
+    command, cwd, transcript = (
+        tool_input.get("command"),
+        hook_input.get("cwd"),
+        hook_input.get("transcript_path"),
+    )
+    if not isinstance(command, str):
+        return None
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
+    if not argv or argv[0] != "git" or _git_subcommand(argv) != "commit":
+        return None
+    if not isinstance(cwd, str) or not isinstance(transcript, str):
+        return None
+    # E7 is a P5 route interceptor, not a general replacement for Git's
+    # ordinary commit/attribution path.  Establish its admitted lineage
+    # before attempting the fail-closed K join; a repository without C or K
+    # must pass through untouched.
+    try:
+        from des.application.delivery_snapshot import (
+            _FINAL_ID,
+            _git,
+            _metadata,
+            recognize_candidate,
+            recognize_closure,
+        )
+
+        root = Path(cwd).resolve()
+        head = _git(root, "rev-parse", "HEAD")
+        if head.returncode:
+            return None
+        revision = head.stdout.strip()
+        replay_final = False
+        try:
+            recognize_candidate(root, revision)
+        except (RuntimeError, ValueError):
+            try:
+                recognize_closure(root, revision)
+            except (RuntimeError, ValueError):
+                parents, message, *_rest = _metadata(root, revision)
+                if not parents or message != _FINAL_ID[2] + "\n":
+                    return None
+                replay_final = True
+    except OSError:
+        return None
+    try:
+        from des.application.delivery_snapshot import (
+            _changed_paths,
+            _git,
+            finalize_candidate,
+        )
+
+        cited_candidate = (
+            _replay_candidate_from_review_prompt(root, transcript)
+            if replay_final
+            else None
+        )
+        candidate, closure, locator, digest, reported = _candidate_binding(
+            root, transcript, cited_candidate=cited_candidate
+        )
+        algorithm = _git(root, "rev-parse", "--show-object-format").stdout.strip()
+        if algorithm not in {"sha1", "sha256"}:
+            raise ValueError("unsupported git object format")
+        candidate_text = f"git-{algorithm}:{candidate.commit}"
+        header = f"candidate: {candidate_text}\nexecution-root: {root}\n"
+        review = completed_agent_results(
+            transcript, role="nw-software-crafter-reviewer", prompt_prefix=header
+        )
+        if review is None or not _is_exact_review(
+            review.terminal_text,
+            header="IMPLEMENTATION-REVIEW",
+            required={
+                "contract": f"{locator}@sha256:{digest}",
+                "candidate": candidate_text,
+                "oracle-unchanged": "true",
+                "findings": "none",
+            },
+            verdicts=frozenset({"APPROVE", "APPROVED"}),
+        ):
+            raise ValueError("missing exact K-bound IMPLEMENTATION-REVIEW APPROVE")
+        paths = _changed_paths(root, closure.base or "", candidate.commit)
+        if not reported <= paths or not paths <= set(closure.authority_paths) | set(
+            _closure_authority(root, closure)[1]["targets"]
+        ):
+            raise ValueError("K delta is not closure authority plus reported targets")
+        target_ref = _git(root, "symbolic-ref", "-q", "HEAD").stdout.strip()
+        if not target_ref:
+            raise ValueError("finalizer root has no symbolic target ref")
+        _bound_locator, _contract, _oracle, _bound_digest = _closure_authority(
+            root, closure
+        )
+        if _bound_locator != locator or _bound_digest != digest:
+            raise ValueError("finalizer closure authority changed during admission")
+        base = closure.base or ""
+        finalized = finalize_candidate(
+            root,
+            candidate=candidate,
+            base=base,
+            authorized_paths=paths,
+            target_ref=target_ref,
+            contract_locator=locator,
+        )
+        if not finalized.clean_checkout:
+            raise ValueError("final verification did not prove a clean checkout")
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "decision": "block",
+                    "reason": f"INDETERMINATE: final projection refused ({exc})",
+                }
+            )
+        )
+        return 2
+    binding = (
+        f"Commit: git-{algorithm}:{finalized.commit}\n"
+        "Clean-checkout: true\n"
+        "Verdict: PASS\n"
+    )
+    updated = {**tool_input, "command": f"printf %s {json.dumps(binding)}"}
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": updated,
+                }
+            }
+        )
+    )
+    return 0
+
+
 _THIN_HEADER_LOCATOR_PREFIX = "THIN-DELIVERY-CONTRACT: "
 _THIN_HEADER_DIGEST_PREFIX = "THIN-DELIVERY-CONTRACT-DIGEST: sha256:"
 _THIN_HEADER_DIGEST_HEX_LEN = 64
@@ -104,31 +1046,26 @@ _ARCHITECT_ROLE_NAME = "nw-solution-architect"
 _AUTO_ARCH_CONSULT_LINE_PREFIX = "AUTO-ARCHITECTURE-CONSULT: "
 _AUTO_ARCH_ROOT_LINE_PREFIX = "AUTO-ARCHITECTURE-ROOT: "
 _AUTO_ARCH_DELIVERY_ROUTE_LINE_PREFIX = "AUTO-DELIVERY-ROUTE: "
+#: The repair-consult's OPTIONAL fourth field -- carries `des compile-
+#: contract`'s own BLOCKED stdout verbatim into a re-consult of the
+#: architect after it rejects the authored architecture brief (GDP-0, K4
+#: camp7 2026-08-23: a hand-paraphrase of the rejection dropped the Target-
+#: cell detail the architect never saw, three dispatches to converge). Same
+#: quoted-heredoc discipline as `_is_value_seed_stdin_heredoc`'s NW_SEED
+#: carrier -- a DIFFERENT delimiter (never NW_SEED itself), so a rejection
+#: payload can never be mistaken for a value-seed payload.
+_AUTO_ARCH_REJECTION_LINE_PREFIX = "AUTO-ARCHITECTURE-REJECTION: "
+_AUTO_ARCH_REJECTION_HEREDOC_DELIMITER = "NW_REJECTION"
+_AUTO_ARCH_REJECTION_HEREDOC_HEADER = (
+    _AUTO_ARCH_REJECTION_LINE_PREFIX
+    + "<<'"
+    + _AUTO_ARCH_REJECTION_HEREDOC_DELIMITER
+    + "'"
+)
 _ATD_ROOT_LINE_PREFIX = "ROOT: "
 _ATD_VALUE_SEED_LINE_PREFIX = "VALUE-SEED: "
 _ATD_DELIVERY_ROUTE_LINE_PREFIX = "DELIVERY-ROUTE: "
 
-# Run 4 evidence / ADR-SSOT-002 Section 4c/4d: a crafter INDETERMINATE
-# citing the contract/oracle itself routes back to ATD for a revision on
-# the SAME already-produced DeliveryId/locator -- never a fresh
-# `prepare-ordinary-request` run (that producer now refuses a second run
-# for the same seed, naming this exact two-line shape). This is an
-# alternate, equally strict, lexical-only ATD dispatch body -- no value
-# seed to recompute a hash against, so unlike the fourteen-line envelope
-# it does not cross-validate the locator against a DeliveryId; it only
-# proves the locator has the one shape ATD ever legitimately writes to.
-_ATD_REVISE_CONTRACT_LINE_PREFIX = "REVISE-CONTRACT: "
-# Stable-design report 2026-08-19 §1.2: `des revise-contract-round` (the
-# bounded PRODUCER -- the bound itself lives THERE, never re-enforced here;
-# this gate only checks the envelope's own lexical `n/N` shape) inserts
-# this line between REVISE-CONTRACT and CITATION.
-_ATD_REVISE_ROUND_LINE_PREFIX = "REVISE-ROUND: "
-_ATD_CITATION_LINE_PREFIX = "CITATION: "
-# SF friction report 2026-08-20, item 6: ROOT (line 0, reusing the SAME
-# `_ATD_ROOT_LINE_PREFIX`/`_has_absolute_value` the 12-line ATD body
-# already validates) plus REVISE-CONTRACT/REVISE-ROUND/CITATION.
-_ATD_REVISION_BODY_LINE_COUNT = 4
-_CONTRACT_LOCATOR_DIR_PREFIX = "docs/delivery-contracts/"
 
 # K4 (nw-auto ADR-SSOT-002 Section 4c total constructor): the twelve named
 # non-empty facts an Auto-root ATD dispatch body must carry, each on its own
@@ -169,10 +1106,23 @@ _AUTO_ROOT_BASH_INJECTION_MARKERS = (
 )
 
 # The closed set of git subcommands an Auto-root Bash call may run: read-only
-# inspection (status/diff/rev-parse/branch/worktree) plus the two staging/
-# commit verbs Auto's own commit-attribution flow needs.
+# inspection (status/diff/rev-parse/branch/worktree/ls-files) plus the two
+# staging/commit verbs Auto's own commit-attribution flow needs. `ls-files`
+# (design docs/analysis/2026-08-24-design-perimetro-auto-root.md, Candidata
+# B1): same read-only risk profile as `status`, already admitted; its prior
+# absence carried no explaining comment, unlike every other entry here --
+# an unrevisited omission, not a deliberate exclusion.
 _AUTO_ROOT_BASH_ALLOWED_GIT_SUBCOMMANDS = frozenset(
-    {"status", "diff", "rev-parse", "branch", "worktree", "add", "commit"}
+    {
+        "status",
+        "diff",
+        "rev-parse",
+        "branch",
+        "worktree",
+        "add",
+        "commit",
+        "ls-files",
+    }
 )
 
 # The closed set of `des` CLI subcommands an Auto-root Bash call may run
@@ -189,9 +1139,10 @@ _AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS = frozenset(
         "resolve-charters",
         "code-fact",
         "compile-contract",
+        "construct-design-closure",
         # SF friction report 2026-08-20, item 5: `_is_well_formed_atd_
         # revision_body` REQUIRES the REVISE dispatch body come verbatim
-        # from `des revise-contract-round`'s own stdout, but this SAME
+        # from the former mutable-round producer's stdout, but this SAME
         # allowlist never named the subcommand -- root's own Bash call to
         # PRODUCE that body was blocked before it could ever run,
         # deadlocking the exact flow nw-auto/SKILL.md's routing table
@@ -199,10 +1150,9 @@ _AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS = frozenset(
         # allowlist) must agree on which producers root may invoke; the
         # drift guard below (`TestAutoRootBashAllowlistCoversSkillMandat
         # edSubcommands`) is extended with a hand-anchored assertion for
-        # this exact class, since revise-contract-round is named in
+        # this exact historical class, since it was named in
         # SKILL.md as inline backtick prose (a routing-table cell), never
         # inside a fenced block the general parser scans.
-        "revise-contract-round",
         # The charter-side sibling: `is_well_formed_po_revision_envelope`
         # REQUIRES the PO revision dispatch envelope come verbatim from
         # `des revise-charter-round`'s own stdout -- same deadlock class as
@@ -363,12 +1313,36 @@ def _is_value_seed_stdin_heredoc(command: str) -> bool:
     return terminator_index == len(body_lines) - 1
 
 
+def _git_subcommand(argv: list[str]) -> str | None:
+    """The git subcommand token in *argv* (``argv[0]`` already known to be
+    ``"git"``), skipping a leading ``-C <path>`` global-flag pair when
+    present.
+
+    Representation fix, not a scope change (design
+    docs/analysis/2026-08-24-design-perimetro-auto-root.md, Candidata B2):
+    positional ``argv[1]`` is right for ``git status`` but wrong for
+    ``git -C <path> status`` -- there ``argv[1]`` is the literal string
+    ``"-C"``, never a real subcommand, so every ``-C``-prefixed git call
+    (the idiom this repo's own memory prescribes -- ``git -C <canonical>
+    ...``, never ``cd`` first) was blocked regardless of how safe the
+    trailing subcommand was. No new subcommand is admitted here; this only
+    changes WHERE the parser looks for the one the allowlist already
+    checks.
+    """
+    rest = argv[1:]
+    if rest[:1] == ["-C"]:
+        rest = rest[2:]  # drop "-C" and its path argument, if any
+    return rest[0] if rest else None
+
+
 def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
     """Pure Auto-root Bash allowlist decision.
 
     Restricts Auto-root's OWN Bash calls to either a single, literal `git
-    status|diff|rev-parse|branch|worktree|add|commit` invocation, or a
-    single, literal `des dispatch|validate-delivery-contract|
+    status|diff|rev-parse|branch|worktree|ls-files|add|commit` invocation
+    (optionally preceded by a `-C <path>` global flag, resolved by
+    `_git_subcommand`), or a single, literal `des dispatch|
+    validate-delivery-contract|
     charter-scaffold|prepare-ordinary-request|resolve-charters|code-fact|
     compile-contract` invocation
     (the direct-cutover spine has no hook controller between Auto-root and
@@ -426,17 +1400,18 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
             "HOW: dispatch a role for other work, or run the equivalent "
             "git/des subcommand."
         )
-    subcommand = argv[1] if len(argv) > 1 else None
     if argv[0] == "git":
+        subcommand = _git_subcommand(argv)
         if subcommand not in _AUTO_ROOT_BASH_ALLOWED_GIT_SUBCOMMANDS:
             return _auto_root_bash_block(
                 f"WHAT: an Auto-root `git {subcommand}` call was blocked. "
                 "WHY: Auto-root Bash only allows git status/diff/rev-parse/"
-                "branch/worktree/add/commit. "
+                "branch/worktree/ls-files/add/commit. "
                 "HOW: dispatch the appropriate nw-* role for any other git "
                 "subcommand."
             )
         return None
+    subcommand = argv[1] if len(argv) > 1 else None
     if subcommand not in _AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS:
         return _auto_root_bash_block(
             f"WHAT: an Auto-root `des {subcommand}` call was blocked. "
@@ -452,14 +1427,22 @@ def _evaluate_auto_root_bash_command(command: object) -> dict[str, str] | None:
 # surface is `des fill-contract` -- mirrors the Auto-root Bash lockdown's
 # own shape (shared injection-marker check, shared quoted-heredoc
 # discipline for a value payload) rather than a second, independently
-# hand-rolled mechanism. Two admitted shapes only: (a) a single-line,
-# non-heredoc `--status` query, (b) a `--field`-bearing call whose value
-# arrives ONLY on a quoted `<<'NW_FILL'` heredoc (never a bare argv token
-# -- the same opaque-bytes guarantee the Auto-root VALUE-SEED heredoc gives
-# a quoted body no shell expansion). Flags are order-insensitive:
-# `--status` is a value-less flag accepted at any position (K4 camp6
-# denial-RCA C-f1 -- a last-token-only `--status` rule falsely rejected
-# the gate's own prescribed call shape).
+# hand-rolled mechanism. Admitted shapes: (a) a single-line, non-heredoc
+# `--status` query; (b) one `--batch` call whose JSON array value arrives
+# ONLY on a quoted `<<'NW_FILL'` heredoc (never a bare argv token -- the
+# same opaque-bytes guarantee the Auto-root VALUE-SEED heredoc gives a
+# quoted body no shell expansion); (c) one `--batch --batch-file` call
+# with NO heredoc and NO JSON anywhere on the command line at all -- the
+# provider-safe batch-file carrier transport (`des fill_contract`'s own
+# `_acquire_batch_carrier`): a provider-side Bash safety heuristic can
+# reject a heredoc whose body mixes a brace with a quote character (JSON
+# necessarily has both) before nWave ever sees the call, so ATD writes the
+# identical JSON array to the deterministic carrier file instead and this
+# shape's Bash command carries only the deterministic path, never JSON.
+# Flags are order-insensitive: `--status`/`--batch`/`--batch-file` are all
+# value-less flags accepted at any position (K4 camp6 denial-RCA C-f1 -- a
+# last-token-only `--status` rule falsely rejected the gate's own
+# prescribed call shape).
 _FILL_VALUE_HEREDOC_DELIMITER = "NW_FILL"
 _FILL_VALUE_HEREDOC_HEADER_SUFFIXES = (
     f" <<'{_FILL_VALUE_HEREDOC_DELIMITER}'",
@@ -471,8 +1454,11 @@ _FILL_VALUE_HEREDOC_HEADER_SUFFIXES = (
 # drift coverage, if any fenced example exists, would import this SAME
 # frozenset rather than re-declare it.
 _ATD_FILL_CONTRACT_ALLOWED_FLAGS = frozenset(
-    {"--repo-root", "--delivery-id", "--target", "--field", "--status"}
+    {"--repo-root", "--delivery-id", "--status", "--batch", "--batch-file"}
 )
+#: The value-less flags in `_ATD_FILL_CONTRACT_ALLOWED_FLAGS` -- accepted
+#: at any position, never followed by a value token.
+_ATD_FILL_CONTRACT_VALUELESS_FLAGS = frozenset({"--status", "--batch", "--batch-file"})
 
 
 def _atd_bash_block(reason: str) -> dict[str, str]:
@@ -483,10 +1469,7 @@ def _fill_contract_argv(prefix: str) -> list[str] | None:
     """`shlex`-tokenized argv of `prefix`, or `None` if it carries a
     composition marker, fails to tokenize, is not `des fill-contract`,
     carries a flag outside `_ATD_FILL_CONTRACT_ALLOWED_FLAGS`, or gives
-    `--field` a value outside `des.application.fill_contract.ALL_FIELDS`
-    (imported directly as `_FILL_CONTRACT_FIELDS`, never redeclared -- a
-    mechanical field name is rejected HERE, at the hook, not only later by
-    the CLI's own argparse `choices=`)."""
+    (the batch shape is validated by the application constructor)."""
     if any(marker in prefix for marker in _AUTO_ROOT_BASH_INJECTION_MARKERS):
         return None
     try:
@@ -496,18 +1479,20 @@ def _fill_contract_argv(prefix: str) -> list[str] | None:
     if len(argv) < 2 or argv[0] != "des" or argv[1] != "fill-contract":
         return None
     flags = argv[2:]
+    seen: set[str] = set()
     i = 0
     while i < len(flags):
         token = flags[i]
         flag_name, _, inline_value = token.partition("=")
-        if flag_name not in _ATD_FILL_CONTRACT_ALLOWED_FLAGS:
+        if flag_name not in _ATD_FILL_CONTRACT_ALLOWED_FLAGS or flag_name in seen:
             return None
+        seen.add(flag_name)
         if "=" in token:
-            if flag_name == "--field" and inline_value not in _FILL_CONTRACT_FIELDS:
+            if flag_name in _ATD_FILL_CONTRACT_VALUELESS_FLAGS or not inline_value:
                 return None
             i += 1
             continue
-        if flag_name == "--status":
+        if flag_name in _ATD_FILL_CONTRACT_VALUELESS_FLAGS:
             # Value-less flag, accepted at ANY position. K4 camp6
             # denial-RCA C-f1: a former last-token-only rule rejected the
             # prescribed `--status`-first query as "not well-formed" while
@@ -519,9 +1504,14 @@ def _fill_contract_argv(prefix: str) -> list[str] | None:
         # Every OTHER flag here takes a following value token.
         if i + 1 >= len(flags):
             return None
-        if flag_name == "--field" and flags[i + 1] not in _FILL_CONTRACT_FIELDS:
-            return None
         i += 2
+    if not {"--repo-root", "--delivery-id"}.issubset(seen):
+        return None
+    modes = seen & {"--status", "--batch"}
+    if len(modes) != 1:
+        return None
+    if "--batch-file" in seen and "--batch" not in seen:
+        return None
     return argv
 
 
@@ -566,12 +1556,15 @@ def _fill_heredoc_header_prefix(command: str) -> str | None:
 def _is_fill_value_stdin_heredoc(command: str) -> bool:
     """True iff `command` is one hook-permitted fill-value heredoc: the
     quoted NW_FILL transport shape (`_fill_heredoc_header_prefix`) whose
-    header validates as a `des fill-contract` argv carrying `--field`."""
+    header validates as a batch `des fill-contract` argv with NO
+    --batch-file. --batch-file and the heredoc are mutually exclusive JSON
+    transports -- heredoc compatibility is preserved only in the absence
+    of --batch-file."""
     prefix = _fill_heredoc_header_prefix(command)
     if prefix is None:
         return False
     argv = _fill_contract_argv(prefix)
-    return argv is not None and "--field" in argv
+    return argv is not None and "--batch" in argv and "--batch-file" not in argv
 
 
 def _evaluate_atd_fill_contract_bash_command(
@@ -588,12 +1581,29 @@ def _evaluate_atd_fill_contract_bash_command(
             "missing, empty, or whitespace-only command cannot be that "
             "call. "
             "HOW: run `des fill-contract --repo-root <root> --delivery-id "
-            "<id> --status`, or a --field call with its value on a quoted "
+            "<id> --status`, or one --batch call with its JSON on a quoted "
             "<<'NW_FILL' heredoc."
         )
     if _is_fill_value_stdin_heredoc(command):
         return None
-    if _fill_heredoc_header_prefix(command) is not None:
+    heredoc_prefix = _fill_heredoc_header_prefix(command)
+    if heredoc_prefix is not None:
+        heredoc_argv = _fill_contract_argv(heredoc_prefix)
+        if (
+            heredoc_argv is not None
+            and "--batch" in heredoc_argv
+            and "--batch-file" in heredoc_argv
+        ):
+            return _atd_bash_block(
+                "WHAT: an ATD `des fill-contract` call combined "
+                "--batch-file with a quoted <<'NW_FILL' heredoc. "
+                "WHY: --batch-file and the heredoc are mutually exclusive "
+                "JSON transports -- combining them leaves it ambiguous "
+                "which one carries the batch. "
+                "HOW: use exactly one transport -- either --batch "
+                "<<'NW_FILL' with the JSON in the heredoc body, or "
+                "--batch --batch-file with no heredoc at all."
+            )
         # Quoted-heredoc TRANSPORT shape whose header does not validate:
         # the body between the quoted delimiter and the terminator line is
         # shell-opaque by definition and is NEVER scanned for composition
@@ -608,8 +1618,8 @@ def _evaluate_atd_fill_contract_bash_command(
             "header line (the quoted NW_FILL body is opaque data and was "
             "not scanned). "
             "WHY: the header must be `des fill-contract` with only "
-            "--repo-root/--delivery-id/--target/--field/--status, and a "
-            "--field naming a prose field. "
+            "--repo-root/--delivery-id/--status/--batch, "
+            "and exactly one read-only --status or write-capable --batch. "
             "HOW: fix the header line only; keep the value in the quoted "
             "<<'NW_FILL' ... NW_FILL body."
         )
@@ -629,19 +1639,24 @@ def _evaluate_atd_fill_contract_bash_command(
             "WHAT: an ATD Bash command is not a well-formed `des "
             "fill-contract` invocation. "
             "WHY: ATD's entire Bash surface is `des fill-contract "
-            "--repo-root/--delivery-id/--target/--field/--status`, "
-            "nothing else -- a mechanical field has no --field choice at "
-            "all. "
+            "--repo-root/--delivery-id/--status/--batch/--batch-file`, "
+            "nothing else -- the batch is the sole write route. "
             "HOW: run exactly `des fill-contract ...` with only these "
             "flags."
         )
-    if "--field" in argv:
+    if "--batch" in argv and "--batch-file" not in argv:
         return _atd_bash_block(
-            "WHAT: an ATD `des fill-contract --field` call did not use "
-            "the quoted <<'NW_FILL' heredoc for its value. "
-            "WHY: the value must arrive as opaque heredoc bytes, never a "
+            "WHAT: an ATD `des fill-contract --batch` call did not use "
+            "the quoted <<'NW_FILL' heredoc for its JSON value, and did "
+            "not carry --batch-file either. "
+            "WHY: the batch payload must arrive as opaque heredoc bytes "
+            "or through the deterministic --batch-file carrier, never a "
             "bare argv token. "
-            "HOW: pipe the value via `<<'NW_FILL'` ... `NW_FILL`."
+            "HOW: run `des fill-contract ... --batch <<'NW_FILL'`, put "
+            "the JSON payload in the heredoc body, and close it with "
+            "`NW_FILL`; or write the JSON array to the deterministic "
+            "carrier path and run `des fill-contract ... --batch "
+            "--batch-file` with no heredoc."
         )
     return None
 
@@ -735,6 +1750,18 @@ def _subagent_transcript_turn_count(transcript_path: str) -> int | None:
 def _subagent_budget_exhaustion_block(
     role: str, *, max_turns: int, turn_count: int
 ) -> dict[str, str]:
+    """The HOW text names no SPECIFIC marker: `subagent_stop_handler.py`'s
+    own registry-free grammar (`_TERMINAL_HEADER_RE`) is the SSOT for what
+    counts as a terminal result -- ANY `<TOKEN>-RESULT` a role's own spec
+    already uses, never one synthesized from the role NAME. Measured
+    2026-08-23 against every checked-in agent spec (`nWave/agents/*.md`,
+    51 files): 0 declare the role-derived shape this text used to name
+    (`f"{role.upper()}-RESULT"`) -- that branch was unreachable for every
+    real role. Naming it here anyway would tell a subagent, under budget
+    pressure, to emit a marker its OWN spec never established -- the exact
+    class `subagent_stop_handler.py`'s docstring documents as already
+    fixed on the READ side; this was the one remaining producer still
+    emitting the old shape."""
     return {
         "decision": "block",
         "reason": (
@@ -745,10 +1772,13 @@ def _subagent_budget_exhaustion_block(
             "mid-work returns NO terminal result at all -- root cannot "
             "distinguish that from a subagent still working, and the whole "
             "dispatch becomes unusable evidence. "
-            f"HOW: emit your terminal {role.upper()}-RESULT now -- verdict "
+            "HOW: emit your own role's terminal <TOKEN>-RESULT line now -- "
+            "the exact short marker your own role's spec already uses, "
+            f"never a marker synthesized from the role name ({role!r}, "
+            "which no role's own convention actually matches) -- verdict "
             "INDETERMINATE with the exact reason it is unfinished if the "
-            "work genuinely is not done -- instead of spending another tool "
-            "call; this is the last turn with budget to do so."
+            "work genuinely is not done -- instead of spending another "
+            "tool call; this is the last turn with budget to do so."
         ),
     }
 
@@ -1112,86 +2142,11 @@ def _auto_root_atd_body_block() -> dict[str, str]:
             "OUTCOME, ROOT, BASE-REVISION, DELIVERY-ROUTE, EXAMINE, "
             "INDEPENDENT-REVIEW, BUDGET-TOKEN-LIMIT, "
             "BUDGET-WALL-CLOCK-MINUTES, VALUE-SEED, each on its own line in "
-            "that exact order, and nothing else; OR, to revise an "
-            "already-produced contract on a crafter's contract/oracle "
-            "citation, run `des revise-contract-round --repo-root <root> "
-            "--contract-locator <locator> --citation <text>` and send its "
-            "exact three-line stdout (REVISE-CONTRACT, REVISE-ROUND, "
-            "CITATION, each on its own line) verbatim -- never hand-type "
-            "this body, and never redispatch ATD once that producer "
-            "refuses (its bound is exhausted)."
+            "that exact order, and nothing else. Contract/oracle correction "
+            "is a strict closure child from the cited approved closure; no "
+            "mutable revision body is admitted."
         ),
     }
-
-
-def _is_well_formed_contract_locator_for_revision(locator: str) -> bool:
-    """True iff `locator` has the ONE shape `contract_locator_for` ever
-    produces (`docs/delivery-contracts/auto-<16 lowercase hex>.json`) --
-    lexical only, no filesystem I/O, no delivery-id/seed cross-check (a
-    revision dispatch carries no value seed to recompute a hash against)."""
-    if not is_lexical_repo_relative_json_locator(locator):
-        return False
-    if not locator.startswith(_CONTRACT_LOCATOR_DIR_PREFIX):
-        return False
-    stem = locator[len(_CONTRACT_LOCATOR_DIR_PREFIX) : -len(".json")]
-    if not stem.startswith(DELIVERY_ID_PREFIX):
-        return False
-    hex_part = stem[len(DELIVERY_ID_PREFIX) :]
-    return len(hex_part) == DELIVERY_ID_HEX_LEN and set(hex_part) <= _HEX_ALPHABET
-
-
-def _is_well_formed_revise_round_value(value: str) -> bool:
-    """True iff `value` is exactly `<n>/<N>` with both positive base-10
-    integers (no leading zeros beyond a bare `0`, no sign, no whitespace)
-    and `n <= N`. Lexical only -- the BOUND `N` itself is never re-checked
-    against `revise_contract_round.REVISE_ROUND_BOUND` here: enforcing the
-    same bound in both the producer and this gate would be exactly the
-    "three checks on one artefact" pattern GDP-0 names as the alarm to
-    redesign the producer, not the gate. This only refuses a value the
-    producer could never have emitted (malformed shape, or `n > N`)."""
-    parts = value.split("/")
-    if len(parts) != 2:
-        return False
-    n_text, bound_text = parts
-    if not (n_text.isdigit() and bound_text.isdigit()):
-        return False
-    if (n_text != "0" and n_text.startswith("0")) or (
-        bound_text != "0" and bound_text.startswith("0")
-    ):
-        return False
-    n, bound = int(n_text), int(bound_text)
-    return n >= 1 and bound >= 1 and n <= bound
-
-
-def _is_well_formed_atd_revision_body(prompt: str) -> bool:
-    """True iff `prompt` is exactly the four-line contract-revision shape
-    `des revise-contract-round` emits: `ROOT: <absolute-path>` then
-    `REVISE-CONTRACT: <locator>` then `REVISE-ROUND: <n>/<N>` then
-    `CITATION: <non-empty JSON string>`, nothing else.
-
-    SF friction report 2026-08-20, item 6: ROOT was previously absent --
-    a dispatched reviser had no choice but to resolve REVISE-CONTRACT's
-    repo-relative locator against its OWN cwd, the wrong checkout. Same
-    `_ATD_ROOT_LINE_PREFIX`/`_has_absolute_value` the 12-line ATD body
-    already validates its own ROOT line with -- one shape, one check."""
-    lines = prompt.split("\n")
-    if len(lines) != _ATD_REVISION_BODY_LINE_COUNT:
-        return False
-    root_line, locator_line, round_line, citation_line = lines
-    if not _has_absolute_value(root_line, _ATD_ROOT_LINE_PREFIX):
-        return False
-    if not locator_line.startswith(_ATD_REVISE_CONTRACT_LINE_PREFIX):
-        return False
-    locator = locator_line[len(_ATD_REVISE_CONTRACT_LINE_PREFIX) :]
-    if not _is_well_formed_contract_locator_for_revision(locator):
-        return False
-    if not round_line.startswith(_ATD_REVISE_ROUND_LINE_PREFIX):
-        return False
-    round_value = round_line[len(_ATD_REVISE_ROUND_LINE_PREFIX) :]
-    if not _is_well_formed_revise_round_value(round_value):
-        return False
-    citation = _has_json_string_value(citation_line, _ATD_CITATION_LINE_PREFIX)
-    return bool(citation) and bool(citation.strip())
 
 
 def _evaluate_auto_root_atd_body(prompt: object) -> dict[str, str] | None:
@@ -1201,8 +2156,6 @@ def _evaluate_auto_root_atd_body(prompt: object) -> dict[str, str] | None:
     numeric-format validation only, no referenced-file I/O."""
     if not isinstance(prompt, str):
         return _auto_root_atd_body_block()
-    if _is_well_formed_atd_revision_body(prompt):
-        return None
     lines = prompt.split("\n")
     if len(lines) != ATD_BODY_LINE_COUNT:
         return _auto_root_atd_body_block()
@@ -1294,7 +2247,10 @@ def _auto_root_architect_envelope_block() -> dict[str, str]:
             "WHAT: Auto-root architect envelope malformed. "
             "WHY: DESIGN must consume, never infer, the upstream route. "
             "HOW: send exactly AUTO-ARCHITECTURE-CONSULT, "
-            "AUTO-ARCHITECTURE-ROOT, and AUTO-DELIVERY-ROUTE."
+            "AUTO-ARCHITECTURE-ROOT, and AUTO-DELIVERY-ROUTE, optionally "
+            "followed by one AUTO-ARCHITECTURE-REJECTION: <<'NW_REJECTION' "
+            "/ <producer's exact BLOCKED stdout, verbatim> / NW_REJECTION "
+            "carrier for a repair re-consult."
         ),
     }
 
@@ -1363,18 +2319,50 @@ def _has_absolute_schema_path_value(line: str, prefix: str) -> bool:
     return PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
 
 
+def _is_auto_root_architect_rejection_carrier(body_lines: list[str]) -> bool:
+    """True iff `body_lines` (everything AFTER the three fixed header
+    lines) is exactly one well-formed AUTO-ARCHITECTURE-REJECTION heredoc
+    carrier: the quoted header, at least one verbatim body line, then a
+    bare `NW_REJECTION` terminator with nothing after it -- the same
+    discipline `_is_value_seed_stdin_heredoc` already enforces for
+    NW_SEED. Rejects an empty carrier (header immediately followed by the
+    terminator): a repair re-consult with nothing to repair against is not
+    a rejection carrier at all."""
+    if len(body_lines) < 3:
+        return False
+    if body_lines[0] != _AUTO_ARCH_REJECTION_HEREDOC_HEADER:
+        return False
+    if body_lines[-1] != _AUTO_ARCH_REJECTION_HEREDOC_DELIMITER:
+        return False
+    return _AUTO_ARCH_REJECTION_HEREDOC_DELIMITER not in body_lines[1:-1]
+
+
 def _evaluate_auto_root_architect_envelope(prompt: object) -> dict[str, str] | None:
     """Lexical Auto-root architect envelope gate: exactly three non-empty
-    lines -- AUTO-ARCHITECTURE-CONSULT, AUTO-ARCHITECTURE-ROOT,
-    AUTO-DELIVERY-ROUTE -- and nothing else. Shape and route vocabulary
-    only, no referenced-file I/O."""
+    header lines -- AUTO-ARCHITECTURE-CONSULT, AUTO-ARCHITECTURE-ROOT,
+    AUTO-DELIVERY-ROUTE -- optionally followed by ONE repair-consult
+    rejection carrier (`AUTO-ARCHITECTURE-REJECTION: <<'NW_REJECTION'`,
+    one or more verbatim body lines, a bare `NW_REJECTION` terminator,
+    nothing after) -- and nothing else. Shape and route vocabulary only,
+    no referenced-file I/O.
+
+    The carrier exists so a re-consult after `des compile-contract`
+    rejects the architect's own authored target-declaration table can
+    forward that producer's exact BLOCKED stdout, byte-for-byte -- the
+    same verbatim-envelope discipline this file already enforces for the
+    PO/ATD envelopes, never a hand-paraphrase (GDP-0, K4 camp7
+    2026-08-23: a paraphrased re-consult omitted the Target-cell detail
+    entirely, three dispatches to converge on a shape the compiler had
+    already named in full on the first rejection). The base three-line
+    shape is BYTE-IDENTICAL to before -- a fresh, non-repair consult is
+    unaffected."""
     if not isinstance(prompt, str):
         return _auto_root_architect_envelope_block()
     lines = prompt.split("\n")
-    if len(lines) != 3:
+    if len(lines) < 3:
         return _auto_root_architect_envelope_block()
 
-    consult_line, root_line, route_line = lines
+    consult_line, root_line, route_line = lines[0], lines[1], lines[2]
     if not _has_value(consult_line, _AUTO_ARCH_CONSULT_LINE_PREFIX):
         return _auto_root_architect_envelope_block()
     if not _has_absolute_value(root_line, _AUTO_ARCH_ROOT_LINE_PREFIX):
@@ -1382,6 +2370,10 @@ def _evaluate_auto_root_architect_envelope(prompt: object) -> dict[str, str] | N
     if not _has_route(route_line, _AUTO_ARCH_DELIVERY_ROUTE_LINE_PREFIX):
         return _auto_root_architect_envelope_block()
 
+    if len(lines) == 3:
+        return None
+    if not _is_auto_root_architect_rejection_carrier(lines[3:]):
+        return _auto_root_architect_envelope_block()
     return None
 
 
@@ -1422,13 +2414,27 @@ def emit_commit_attribution_mutation(
     # commit is not. On any failure, return None so the caller falls through to
     # the existing validation path and the original command runs unchanged.
     try:
-        from des.adapters.driven.config.des_config import DESConfig
+        from des.application.commit_message_attribution import attribution_is_due
 
-        config = DESConfig(
-            cwd=cwd or Path.cwd(),
+        # ONE condition, shared with the producing-tool path (`des commit` /
+        # `des commit-slice` -> `attribute_commit_message`): ACTIVE repo AND
+        # attribution preference on. Rewriting the user's `git commit` is an
+        # action ON THE USER'S WORK, so ADR-AG-005 (opt-in ratified) governs it
+        # exactly as it governs the producing tools -- this branch previously
+        # read `attribution_enabled` alone and acted in repositories the user
+        # never activated (F-ATTRIBUTION-GATING-ASYMMETRY-PRETOOLUSE). The
+        # router's `activation_gate` resolving activation upstream is a property
+        # of the CONTAINER, not of this seam: it is called directly, and its
+        # `cwd` comes from the hook envelope, which need not name the root the
+        # gate resolved (GDP-8 witness corollary).
+        #
+        # `Path.home()` is computed HERE, per call, not taken from
+        # `DESConfig._DEFAULT_GLOBAL_CONFIG_PATH` -- that class attribute is
+        # bound at import time and would pin a stale home.
+        if not attribution_is_due(
+            cwd or Path.cwd(),
             global_config_path=Path.home() / ".nwave" / "global-config.json",
-        )
-        if not config.attribution_enabled:
+        ):
             return None
 
         plan = _commit_attribution_service.plan_rewrite(command)
@@ -1460,7 +2466,7 @@ _commit_attribution_service = CommitAttributionService()
 def evaluate_bash_safety_guards(
     hook_input: dict[str, object], tool_input: dict[str, object]
 ) -> dict[str, str] | None:
-    """The git-stash + worktree-remove Bash guard decisions (consolidated).
+    """The git-stash + worktree-add/remove Bash guard decisions.
 
     Formerly two standalone PreToolUse/Bash hook registrations
     (`scripts/hooks/git_stash_guard.py`, `scripts/hooks/worktree_removal_guard.py`).
@@ -1480,6 +2486,16 @@ def evaluate_bash_safety_guards(
     if not isinstance(command, str) or not command:
         return None
 
+    repo = Path(str(hook_input.get("cwd") or Path.cwd()))
+    worktree_add_decision = evaluate_worktree_add_command(command, repo)
+    if worktree_add_decision is not None:
+        if not worktree_add_decision.allow:
+            return {
+                "decision": "block",
+                "reason": worktree_add_decision.reason or "",
+            }
+        return None
+
     stash_decision = evaluate_git_stash_command(command)
     if stash_decision is not None:
         if stash_decision.audit_event is not None:
@@ -1495,7 +2511,6 @@ def evaluate_bash_safety_guards(
             return {"decision": "block", "reason": stash_decision.reason or ""}
         return None
 
-    repo = Path(str(hook_input.get("cwd") or Path.cwd()))
     worktree_decision = evaluate_worktree_remove_command(command, repo)
     if worktree_decision is not None:
         if worktree_decision.audit_event is not None:
@@ -1561,9 +2576,24 @@ def handle_pre_tool_use() -> int:
             transcript_path = (
                 extract_transcript_path(hook_input) if is_root_invocation else None
             )
+            # F-ROOT-MODE-GATE-SCOPE-CAPTURE-AND-LATCH defect 1: gates the
+            # mode-select nagging/trap machinery on the SAME repo opt-in
+            # every other consumer already honours -- computed only for a
+            # root invocation (Python `and` short-circuit; a subagent call
+            # never needs it, zero extra I/O for the common case).
+            mode_gate_repo_active = (
+                is_root_invocation and root_mode_gate_repo_is_active(hook_input)
+            )
             root_mode_state = RootModeState.UNSELECTED
             if transcript_path:
-                root_mode_state = resolve_root_mode_state(transcript_path)
+                # defect 3: a later, unambiguous non-auto NW-MODE-SELECTED
+                # marker may supersede an nw-auto engagement, but only before
+                # any delivery artifact exists -- the SAME signal the
+                # existing handoff/first-Bash blocks already read below.
+                root_mode_state = resolve_root_mode_state(
+                    transcript_path,
+                    delivery_artifact_exists=des_task_signal.DES_DELIVER_SESSION_FILE.exists(),
+                )
 
             # Run 8: a dispatched nw-* subagent's own declared maxTurns
             # budget nearly exhausted -- deny every further tool call so its
@@ -1580,10 +2610,15 @@ def handle_pre_tool_use() -> int:
             # nw-auto. The selection marker is ephemeral transcript evidence;
             # no controller, receipt, or file is introduced. Established
             # deliver sessions retain their existing route.
+            # F-ROOT-MODE-GATE-SCOPE-CAPTURE-AND-LATCH defect 1: this is the
+            # exact trap a beta user hit ("Invoke Skill(nw-auto) as the next
+            # tool call" -- AUTO_PENDING's own reason text) -- scoped to a
+            # repo that actually opted in, mirroring `activation_gate`.
             if (
                 is_root_invocation
                 and tool_name in _ROOT_MODE_HANDOFF_TOOL_NAMES
                 and not des_task_signal.DES_DELIVER_SESSION_FILE.exists()
+                and mode_gate_repo_active
             ):
                 handoff_reason = root_mode_handoff_block_reason(root_mode_state)
                 if handoff_reason is not None:
@@ -1686,7 +2721,7 @@ def handle_pre_tool_use() -> int:
                                     "contract round or a different route "
                                     "step IS allowed -- from CONTRACT_READY "
                                     "run `des dispatch`, and on contract "
-                                    "defects run `des revise-contract-round`."
+                                    "defects run a strict closure correction."
                                 ),
                             }
                         )
@@ -1695,6 +2730,26 @@ def handle_pre_tool_use() -> int:
                     return exit_code
 
             if hook_input.get("tool_name") == "Agent":
+                isolation_block = evaluate_agent_worktree_isolation(tool_input)
+                if isolation_block is not None:
+                    print(json.dumps(isolation_block))
+                    exit_code = 2
+                    return exit_code
+                if is_root_invocation:
+                    crafter_exit = _crafter_agent_rewrite(hook_input, tool_input)
+                    if crafter_exit is not None:
+                        exit_code = crafter_exit
+                        return exit_code
+                    candidate_exit = _candidate_agent_rewrite(hook_input, tool_input)
+                    if candidate_exit is not None:
+                        exit_code = candidate_exit
+                        return exit_code
+                reviewer_exit = _review_agent_prompt_rewrite(
+                    hook_input, tool_input, is_root_invocation=is_root_invocation
+                )
+                if reviewer_exit is not None:
+                    exit_code = reviewer_exit
+                    return exit_code
                 if root_mode_state is RootModeState.AUTO_ENGAGED:
                     role = tool_input.get("subagent_type")
                     if not isinstance(role, str) or not role.startswith("nw-"):
@@ -1758,9 +2813,16 @@ def handle_pre_tool_use() -> int:
                 # `apply_gate`) -- see `evaluate_bash_safety_guards`. Do not
                 # re-run it here; that would be a duplicate second evaluation
                 # of the same command on the active path.
+                # F-ROOT-MODE-GATE-SCOPE-CAPTURE-AND-LATCH defect 1: THE
+                # scope-capture trigger a beta user hit -- fired on the FIRST
+                # Bash of ANY task in ANY repo, no nWave-adjacency condition.
+                # `mode_gate_repo_active` scopes it to a repo that actually
+                # declared the SAME opt-in `activation_gate`/attribution
+                # already honour.
                 if (
                     is_root_invocation
                     and not des_task_signal.DES_DELIVER_SESSION_FILE.exists()
+                    and mode_gate_repo_active
                 ):
                     if root_mode_state is RootModeState.UNSELECTED:
                         print(
@@ -1777,6 +2839,17 @@ def handle_pre_tool_use() -> int:
                         exit_code = 2
                         return exit_code
 
+                dispatch_exit = _dispatch_closure_rewrite(
+                    hook_input, tool_input, is_root_invocation=is_root_invocation
+                )
+                if dispatch_exit is not None:
+                    exit_code = dispatch_exit
+                    return exit_code
+                if is_root_invocation:
+                    finalizer_exit = _finalize_candidate_rewrite(hook_input, tool_input)
+                    if finalizer_exit is not None:
+                        exit_code = finalizer_exit
+                        return exit_code
                 mutation_cwd = None
                 if isinstance(hook_input.get("cwd"), str):
                     cwd_str = hook_input.get("cwd")
@@ -1788,7 +2861,6 @@ def handle_pre_tool_use() -> int:
                 if mutation_exit is not None:
                     exit_code = mutation_exit
                     return exit_code
-
             log_hook_invoked(
                 "pre_tool_use",
                 {

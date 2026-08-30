@@ -9,13 +9,12 @@ Use for DESIGN wave (infrastructure design) and DEVOPS wave (deployment executio
 
 ## Commands
 
-- [`/nw-design`](../commands/index.md)
 - [`/nw-devops`](../commands/index.md)
 
 ## Preloaded skills
 
 - [nw-cicd-and-deployment](../skills/nw-cicd-and-deployment.md) — CI/CD pipeline design methodology, deployment strategies, GitHub Actions patterns, and branch/release strategies. Load when designing pipelines or deployment workflows.
-- [nw-cross-cutting-invariants](../skills/nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — paradigm-independent and role-independent rules that bind every architect and crafter (data justification, gate design GDP-1..9, self-explaining surfaces). SHIPPED home of these definitions; cite by clause id, never re-declare.
+- [nw-cross-cutting-invariants](../skills/nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — lean public routing core for global gate/construction doctrine and on-demand knowledge lenses. Cite clause ids; never re-declare.
 - [nw-deliver](../skills/nw-deliver.md) — Use for DELIVER wave orchestration from one validated DeliveryContract to one examined candidate and one whole-delivery finalization.
 - [nw-deployment-strategies](../skills/nw-deployment-strategies.md) — Rollback procedures, risk assessment, pre/post-deployment validation, and contingency planning. Load when orchestrating deployment or preparing rollback plans. For deployment strategy details (canary, blue-green, rolling), see `cicd-and-deployment` skill.
 - [nw-infrastructure-and-observability](../skills/nw-infrastructure-and-observability.md) — Infrastructure as Code patterns (Terraform, Kubernetes), observability design (SLOs, metrics, alerting, dashboards), and pipeline security stages. Load when designing infrastructure, observability, or security scanning.

@@ -70,6 +70,7 @@ honestly back over its own unobserved gaps.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -78,6 +79,8 @@ from des.ports.code_fact_port import (
     CAPABILITY_ATOMS_IN_FILE,
     CAPABILITY_CALLERS_OF,
     CAPABILITY_NEVER_WIRED,
+    REFERENCE_SHAPE_BARE_NAME,
+    REFERENCE_SHAPE_DOTTED_ATTRIBUTE,
     Answered,
     CodeFactResult,
     Confidence,
@@ -85,6 +88,15 @@ from des.ports.code_fact_port import (
     ManifestEntry,
     TraceEntry,
 )
+from des.runtime.spawn import SpawnTimeout, spawn
+
+
+try:
+    import fcntl
+
+    _HAS_FCNTL = True
+except ImportError:  # pragma: no cover - Windows has no fcntl
+    _HAS_FCNTL = False
 
 
 if TYPE_CHECKING:
@@ -100,12 +112,45 @@ _PYTHON_SOURCE_GLOB = "*.py"
 _EXTRACTED = "EXTRACTED"
 _CALLS_RELATION = "calls"
 
+# F-GRAPHIFY-STALE-DEGRADES-SILENTLY (Ale 2026-08-24: regeneration is
+# SYNCHRONOUS). One per-graphify-out lock file, same fcntl.flock(LOCK_EX)
+# idiom as des.cli.commit's commit.lock -- serializes concurrent
+# regeneration attempts against the SAME graph across separate OS
+# processes (des is a fresh process per invocation; a Python-level lock
+# would prove nothing).
+_REGEN_LOCK_FILE_NAME = ".regen.lock"
+_GRAPHIFY_EXECUTABLE_NAME = "graphify"
+_GRAPHIFY_UPDATE_SUBCOMMAND = "update"
+
 # Every capability this optional tier can attempt (deliberately the minimal,
 # unambiguously-supported set — see module docstring). Shared by
 # ``manifest()`` so a future widening never needs a second hand-typed copy.
 _HANDLED_CAPABILITY_IDS = frozenset(
     {CAPABILITY_ATOMS_IN_FILE, CAPABILITY_CALLERS_OF, CAPABILITY_NEVER_WIRED}
 )
+
+# The reference SHAPES this tier represents, per capability (reference-shape
+# coverage axis, 2026-08-23). A ``calls`` edge is resolved by TARGET NODE, not
+# by call syntax, so a dotted call site (``owner.method()``) is observed exactly
+# like a bare one -- BOTH shapes, no lexical anchor to be blind at.
+#
+# DECLARED RESIDUAL: this tier's ``never-wired`` is call-edge-only (it excludes
+# ``reads-of`` on purpose, see the module docstring), while the structural tier
+# now counts read-sites as wiring too. Both shapes are represented, so the
+# blind-empty rule does not fire here -- the gap is a RELATION gap, not a shape
+# gap, and closing it needs a ``uses``/``references`` edge slice this lane did
+# not open. Absent graphify data (the OSS normal case) this tier is not in the
+# provider tuple at all.
+_REPRESENTED_SHAPES: dict[str, tuple[str, ...]] = {
+    CAPABILITY_CALLERS_OF: (
+        REFERENCE_SHAPE_BARE_NAME,
+        REFERENCE_SHAPE_DOTTED_ATTRIBUTE,
+    ),
+    CAPABILITY_NEVER_WIRED: (
+        REFERENCE_SHAPE_BARE_NAME,
+        REFERENCE_SHAPE_DOTTED_ATTRIBUTE,
+    ),
+}
 
 
 def _locate_graphify_out(start: Path) -> Path | None:
@@ -187,7 +232,11 @@ class GraphifyAdapter:
         if not self.has_data:
             return ()
         return tuple(
-            ManifestEntry(capability_id=capability_id, confidence=self.confidence)
+            ManifestEntry(
+                capability_id=capability_id,
+                confidence=self.confidence,
+                represents=_REPRESENTED_SHAPES.get(capability_id, ()),
+            )
             for capability_id in sorted(_HANDLED_CAPABILITY_IDS)
         )
 
@@ -207,6 +256,135 @@ class GraphifyAdapter:
         if descriptor.id in (CAPABILITY_CALLERS_OF, CAPABILITY_NEVER_WIRED):
             return self._call_graph_capability(descriptor.id, request)
         return self._provider_error("capability not realized")
+
+    # -- synchronous regeneration (F-GRAPHIFY-STALE-DEGRADES-SILENTLY) -------
+
+    def ensure_fresh_or_fail(
+        self, descriptor: CapabilityDescriptor, request: Mapping[str, object]
+    ) -> Failed | None:
+        """Called by :class:`CodeFactChain` BEFORE the fold, never by
+        :meth:`resolve` itself.
+
+        ``None`` means "proceed to the normal fold" -- either this request
+        was never stale (the common case, zero side effects, same as
+        before this remedy existed), or it WAS stale and this call
+        regenerated the graph SYNCHRONOUSLY and confirmed freshness
+        (Ale, 2026-08-24: regeneration is synchronous, not deferred).
+        A returned :class:`Failed` means the chain must STOP here and
+        answer ``Failed`` directly -- never fall through to
+        ``AstAdapter``/``TextSearchAdapter``, which is exactly the silent
+        degrade this remedy exists to close. ``resolve_through_fold``'s
+        own per-provider ``Failed`` -> ``continue`` semantics are
+        untouched (still correct for every OTHER failure cause); this
+        method's caller intercepts before the fold ever starts, precisely
+        for this one cause.
+        """
+        if descriptor.id not in _HANDLED_CAPABILITY_IDS:
+            return None  # graphify never claims this capability -- not its call
+        if not self._is_stale_for(descriptor.id, request):
+            return None
+        return self._regenerate_and_recheck(descriptor.id, request)
+
+    def _is_stale_for(self, capability_id: str, request: Mapping[str, object]) -> bool:
+        """Reuses the SAME witness checks :meth:`_atoms_in_file`/
+        :meth:`_call_graph_capability` already perform (GDP-10: one
+        staleness definition, not a second one for the pre-check)."""
+        if capability_id == CAPABILITY_ATOMS_IN_FILE:
+            relative_paths = self._relative_files_in_scope()
+            if relative_paths is None:
+                # Not a staleness question at all (root does not resolve
+                # under this graph's scope) -- the normal resolve() path
+                # reports this exact condition; regenerating cannot fix it.
+                return False
+            return any(not self._is_fresh(r) for r in relative_paths)
+        if capability_id in (CAPABILITY_CALLERS_OF, CAPABILITY_NEVER_WIRED):
+            return self._whole_tree_staleness() is not None
+        return False
+
+    def _regenerate_and_recheck(
+        self, capability_id: str, request: Mapping[str, object]
+    ) -> Failed | None:
+        """The critical section: acquire the per-graph lock, regenerate
+        (unless another process already fixed it while this one waited),
+        reload from disk, and confirm freshness -- all synchronously,
+        under ONE lock hold, so a caller either gets a fresh answer or an
+        honest ``Failed``, never a torn read of a graph mid-rewrite."""
+        assert self._out_dir is not None
+        executable = shutil.which(_GRAPHIFY_EXECUTABLE_NAME)
+        if executable is None:
+            return self._provider_error(
+                f"stale graph and '{_GRAPHIFY_EXECUTABLE_NAME}' is not on "
+                "PATH -- cannot regenerate synchronously"
+            )
+        lock_path = self._out_dir / _REGEN_LOCK_FILE_NAME
+        with open(lock_path, "a", encoding="utf-8") as lock_handle:
+            if _HAS_FCNTL:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            try:
+                # Re-check AFTER acquiring the lock: a concurrent caller
+                # that got here first may have already regenerated while
+                # this process waited -- do not redo that work (the
+                # coalescing property).
+                self._reload_from_disk()
+                if not self._is_stale_for(capability_id, request):
+                    return None
+                failure_detail = self._run_graphify_update(executable)
+                if failure_detail is not None:
+                    return self._provider_error(failure_detail)
+                self._reload_from_disk()
+                if self._is_stale_for(capability_id, request):
+                    return self._provider_error(
+                        "graphify update completed but this request is "
+                        "still stale afterward"
+                    )
+                return None
+            finally:
+                if _HAS_FCNTL:
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+    def _run_graphify_update(self, executable: str) -> str | None:
+        """Runs ``graphify update <scope_root>`` (re-extracts code files,
+        no LLM needed -- verified against the real binary). ``None`` on
+        success; a failure-detail string otherwise. Bounded by
+        ``des.runtime.spawn``'s own generous, operator-overridable default
+        tier (the RUN ceiling) rather than a bespoke timeout -- this
+        repo's own measured order of magnitude (~80s incremental over
+        1,031 files) is well inside it; a from-scratch extraction on a
+        much larger tree still has room."""
+        assert self._out_dir is not None
+        scope_root = self._out_dir.parent
+        try:
+            result = spawn(
+                [executable, _GRAPHIFY_UPDATE_SUBCOMMAND, str(scope_root)],
+                capture_output=True,
+                text=True,
+            )
+        except SpawnTimeout as exc:
+            return str(exc)
+        except OSError as exc:
+            return f"failed to start '{executable} update {scope_root}': {exc}"
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            return (
+                f"'{executable} update {scope_root}' exited "
+                f"{result.returncode}: {detail}"
+            )
+        return None
+
+    def _reload_from_disk(self) -> None:
+        """Re-reads ``graph.json``/``manifest.json`` from disk into
+        ``self._graph``/``self._manifest``. On a read/parse fault the
+        PREVIOUS in-memory data is kept (never cleared to ``None`` here:
+        that would make ``has_data`` flip false mid-query) -- the
+        subsequent staleness re-check then correctly reports "still
+        stale" and the caller degrades LOUD, rather than this method
+        silently discarding a good graph over a transient read glitch."""
+        assert self._out_dir is not None
+        graph = _load_json_object(self._out_dir / _GRAPH_FILE_NAME)
+        manifest = _load_json_object(self._out_dir / _MANIFEST_FILE_NAME)
+        if graph is not None and manifest is not None:
+            self._graph = graph
+            self._manifest = manifest
 
     # -- capability realizations --------------------------------------------
 

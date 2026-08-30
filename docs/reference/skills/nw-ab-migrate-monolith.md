@@ -1,6 +1,6 @@
 # nw-ab-migrate-monolith
 
-PROCEDURE — migrate a legacy monolithic agent (>400L / embedded config / aggressive language) to lean core + skills, RECURSING into oversized referenced skills. Trigger: a bloated legacy agent spec, or a monolithic skill (>250L bundling >1 job). Composes nw-ab-validate-spec.
+PROCEDURE — migrate one legacy monolithic agent to a lean core plus routed skills. Trigger: an existing agent has measured size, embedded-configuration, duplication, aggressive-language, or multi-responsibility debt. Composes agent validation and requested skill optimization.
 
 **Used by:** [nw-agent-builder](../agents/nw-agent-builder.md)
 

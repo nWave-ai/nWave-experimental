@@ -10,7 +10,27 @@ domain algebra, the type-level model, and the error/effect tracks BEFORE DISTILL
 authors ATs; the functional crafter loads the same SSOT for execution. This is
 the WHAT-to-design subset — execution mechanics (naive/discover/freeze testing,
 ORM/persistence mapping, language idioms) stay in `nw-fp-algebra-driven-design`,
-`nw-fp-domain-modeling`, and the language skills.
+`nw-fp-domain-modeling`, and the language skills below.
+
+### FP language skills — resolve by target language, never by default
+
+| Language skill | Languages | PBT sibling (when one exists) |
+|---|---|---|
+| `nw-fp-clojure` | Clojure | — |
+| `nw-fp-erlang-elixir` | Erlang, Elixir | `nw-pbt-erlang-elixir` |
+| `nw-fp-fsharp` | F# | `nw-pbt-dotnet` |
+| `nw-fp-haskell` | Haskell | `nw-pbt-haskell` |
+| `nw-fp-kotlin` | Kotlin | `nw-pbt-jvm` |
+| `nw-fp-rust` | Rust | `nw-pbt-rust` |
+| `nw-fp-scala` | Scala | `nw-pbt-jvm` |
+| `nw-fp-typescript` | TypeScript, JavaScript | `nw-pbt-typescript` |
+
+Same shape as the Polyglot Adapter Matrix `nw-test-design-mandates-layered-mechanics`
+already uses for PBT bindings — one row per target language, resolved from the
+contract's own target evidence, never guessed. A language NOT in this table has
+no dedicated FP-idiom skill: load this catalog and `nw-fp-domain-modeling` alone
+(both are language-agnostic) rather than silently substituting a listed
+language's skill — the wrong language's idioms are worse than none.
 
 ## Algebra-Driven Design
 

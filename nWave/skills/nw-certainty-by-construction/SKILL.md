@@ -5,13 +5,14 @@ description: Turn a stable layer claim (domain, application, adapter, or infrast
 
 # Certainty by Construction
 
-`nw-fp-domain-modeling` shows the encodings — wrappers, smart constructors,
-choice types. This decides **whether a claim belongs in construction at all**,
-how strong the resulting guarantee honestly is, and what obligation remains
-outside it.
+`nw-fp-domain-modeling` shows encodings; this decides whether a claim belongs
+in construction, its honest strength and the obligation left outside.
 
-Knowledge basis: certainty by construction — encoding invariants so the
-invalid state cannot be built.
+Safety is exclusion only. Also establish **valid-state inhabitation**: at least
+one intended value has an acyclic construction path from admitted input. Public
+reachability (that path reaches a public observation) and liveness (eventual
+progress under temporal assumptions) are separate claims; construction alone
+does not establish either.
 
 **Layer-neutral (ADR-SSOT-002 §6a).** A claim is encoded at whichever layer
 it is stable, local and high-value — domain state/transition, application/
@@ -27,13 +28,21 @@ declared `boundary`/`contract-shape`, never a hand-picked "domain-only" scope.
    effects and persistence enter, and **who can bypass the constructor**.
 3. **Choose the strongest proportionate encoding.** A guarantee is only real if
    its constructors and eliminators make the prohibited state hard to express.
-4. **State the residual obligation.** Do not quietly convert an external,
-   temporal or cross-system rule into a local type claim.
+4. **State the residual obligation.** Record stable/local admitted, excluded
+   and unknown states with risk owner; route triggered stressors to
+   `nw-stress-analysis`; triage a removed-hypothesis counterexample before a
+   missing-type claim. Do not convert external, temporal or cross-system rules
+   into local type claims.
 
 Before refining, ask: is the invariant stable, local and high-value; can all
 legitimate construction pass through this boundary; will the representation
 survive the API, serialization and interop edges? If not, keep it **extrinsic** —
 and carry it deliberately rather than pretending it is intrinsic.
+
+For each intended public value, name admitted input, public constructor or
+producer, consumer and public observation. A cycle is valid only with an
+explicit bootstrap outside the cycle; otherwise its safety claim has no
+inhabited valid value.
 
 ## Make propositions carry evidence
 

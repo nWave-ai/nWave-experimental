@@ -10,7 +10,7 @@ argument-hint: '[request]'
 Ask only enough to identify the requested outcome and whether evidence already
 exists. Read durable product and design authorities before proposing work.
 
-Route to the earliest missing owner:
+ADR-SSOT-002 §5 routes S/M/L; route to the earliest missing owner:
 
 - uncertain problem or user need -> `/nw-discover`;
 - several plausible directions -> `/nw-diverge`;

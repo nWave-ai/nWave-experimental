@@ -25,13 +25,17 @@ facts return to their owner; DISTILL never guesses them`).
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
 import shlex
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from pathlib import Path
 
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from des.domain.verification_authority_resolver import (
+    LiteralScriptBlock,
+    resolve_verification_authority,
+)
 
 
 _WHOLE_SUITE_KEYWORDS = (
@@ -43,6 +47,173 @@ _WHOLE_SUITE_KEYWORDS = (
     "entire suite",
 )
 _LABELED_COMMAND = re.compile(r":\s*`([^`]+)`")
+
+
+@dataclass(frozen=True, slots=True)
+class PreservationVector:
+    """Base-owned argv plus the exact source bytes that authorized it."""
+
+    argv: tuple[tuple[str, ...], ...]
+    sources: tuple[tuple[str, str], ...]
+
+
+def _digest(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def _introduced(argv: tuple[str, ...], excluded: set[str]) -> bool:
+    normalized = {path.removeprefix("./") for path in excluded}
+    return any(token.removeprefix("./") in normalized for token in argv)
+
+
+def _command_argv(command: dict) -> list[str]:
+    executable = command.get("executable", {})
+    path = executable.get("path")
+    head = str(executable.get("name") or path or "")
+    # The schema names a repository executable as a repository-relative path;
+    # subprocess does not search the current directory for that form.  Project
+    # it to an explicit relative argv here, once, rather than making every
+    # constructor accidentally depend on the ambient PATH.
+    if (
+        executable.get("kind") == "repository"
+        and isinstance(path, str)
+        and path
+        and not path.startswith("./")
+    ):
+        head = f"./{path}"
+    return [head, *command.get("arguments", [])]
+
+
+def _argv_sources(
+    repo_root: Path, argv: tuple[str, ...]
+) -> tuple[tuple[str, str], ...]:
+    """B-owned repository files explicitly named by an argv.
+
+    Contract JSON may be new C bytes, so it cannot be the preserved source.
+    A command is nevertheless reconstructible when its direct script/test
+    operands resolve to regular B files.  Pure ambient commands (for example
+    ``git diff --check``) have no byte owner and are honestly an EvidenceGap.
+    """
+    sources: list[tuple[str, str]] = []
+    for token in argv:
+        if not token or token.startswith("-") or Path(token).is_absolute():
+            continue
+        relative = Path(token.removeprefix("./"))
+        if not relative.parts or any(part == ".." for part in relative.parts):
+            continue
+        file = repo_root / relative
+        if file.is_file() and not file.is_symlink():
+            sources.append((relative.as_posix(), _digest(file.read_bytes())))
+    if not sources:
+        raise ValueError("EvidenceGap: command has no repository-native base source")
+    return tuple(sources)
+
+
+def _literal_vector(repo_root: Path, literal: object) -> PreservationVector:
+    """Admit only the one non-opaque literal form the ADR permits.
+
+    The normal delegated script is intentionally opaque.  It can become a
+    preservation vector solely when its freshly-resolved one-line authority is
+    a direct, executable, repository-relative script at B.  Both the owning
+    document and the script become source blobs, so a later candidate cannot
+    silently swap either.
+    """
+    if not isinstance(literal, dict):
+        raise ValueError("EvidenceGap: malformed literal preservation authority")
+    locator = literal.get("locator")
+    digest = literal.get("content-digest")
+    carried = literal.get("lines")
+    if (
+        not isinstance(locator, str)
+        or not isinstance(digest, str)
+        or not isinstance(carried, list)
+        or not all(isinstance(line, str) for line in carried)
+    ):
+        raise ValueError("EvidenceGap: malformed literal preservation authority")
+    resolved = resolve_verification_authority(repo_root, locator)
+    if (
+        not isinstance(resolved, LiteralScriptBlock)
+        or resolved.content_digest != digest
+        or tuple(carried) != resolved.lines
+    ):
+        raise ValueError(
+            "EvidenceGap: literal authority does not agree with base bytes"
+        )
+    # A script block remains opaque unless exactly one direct argv invocation
+    # names exactly one in-repository executable.  Shell syntax, interpreters,
+    # pipelines and multiple lines all retain their existing feature-authority
+    # meaning and cannot masquerade as preservation.
+    if len(resolved.lines) != 1:
+        raise ValueError("EvidenceGap: literal preservation script is ambiguous")
+    try:
+        argv = tuple(shlex.split(resolved.lines[0]))
+    except ValueError as exc:
+        raise ValueError(
+            "EvidenceGap: literal preservation script is not argv-shaped"
+        ) from exc
+    if len(argv) != 1 or not argv[0] or Path(argv[0]).is_absolute():
+        raise ValueError(
+            "EvidenceGap: literal preservation script is not a direct repository script"
+        )
+    script_rel = Path(argv[0])
+    if any(part == ".." for part in script_rel.parts):
+        raise ValueError("EvidenceGap: literal preservation script escapes repository")
+    script = repo_root / script_rel
+    document = repo_root / locator.split("#", 1)[0]
+    if not document.is_file() or not script.is_file() or not os.access(script, os.X_OK):
+        raise ValueError(
+            "EvidenceGap: literal preservation script is not executable at B"
+        )
+    return PreservationVector(
+        (argv,),
+        (
+            (locator.split("#", 1)[0], _digest(document.read_bytes())),
+            (script_rel.as_posix(), _digest(script.read_bytes())),
+        ),
+    )
+
+
+def resolve_preservation_vector(
+    repo_root: Path,
+    contract: dict,
+    *,
+    excluded: set[str] = frozenset(),
+    contract_locator: str = "",
+) -> PreservationVector:
+    """Resolve ordered B-owned argv plus their exact B source blobs.
+
+    Green/executable qualification is intentionally performed by the caller in
+    the pristine worktree before any closure commit exists.  This resolver
+    makes the authority and path exclusion deterministic; construction makes
+    the environment claim observable.
+    """
+    claude = repo_root / "CLAUDE.md"
+    commands: list[tuple[str, ...]] = []
+    sources: list[tuple[str, str]] = []
+    literal = contract.get("verification-scope", {}).get("literal-script-block")
+    if literal:
+        return _literal_vector(repo_root, literal)
+    declared = declared_whole_suite_command(repo_root)
+    if declared is not None and claude.is_file():
+        commands.append(tuple(declared))
+        sources.append(("CLAUDE.md", hashlib.sha256(claude.read_bytes()).hexdigest()))
+    else:
+        for command in contract.get("verification-scope", {}).get("commands", []):
+            argv = tuple(_command_argv(command))
+            if not argv or not argv[0] or _introduced(argv, excluded):
+                continue
+            try:
+                command_sources = _argv_sources(repo_root, argv)
+            except ValueError:
+                # This entry is not B-reconstructible.  Other ordered,
+                # qualifying entries remain useful; only an empty resulting
+                # vector is an EvidenceGap.
+                continue
+            commands.append(argv)
+            sources.extend(command_sources)
+    if not commands:
+        raise ValueError("EvidenceGap: no base-owned preservation command")
+    return PreservationVector(tuple(commands), tuple(sources))
 
 
 def declared_whole_suite_command(repo_root: Path) -> list[str] | None:
@@ -73,39 +244,3 @@ def declared_whole_suite_command(repo_root: Path) -> list[str] | None:
         if tokens:
             return tokens
     return None
-
-
-def _last_non_flag_token(tokens: list[str]) -> str | None:
-    for token in reversed(tokens):
-        if not token.startswith("-"):
-            return token
-    return None
-
-
-def _command_argv(command: dict) -> list[str]:
-    executable = command.get("executable", {})
-    head = str(executable.get("name") or executable.get("path") or "")
-    return [head, *command.get("arguments", [])]
-
-
-def contract_covers_whole_suite(repo_root: Path, contract: dict) -> bool:
-    """True when the workspace declares no whole-suite command, or when one
-    of `verification-scope.commands` already carries its exact scope token
-    (a narrower descendant, e.g. the oracle's own test, does not count)."""
-    scope = contract.get("verification-scope", {})
-    if scope.get("literal-script-block"):
-        # SF friction 2026-08-21: a delegation contract carries the
-        # authority's LITERAL script by reference instead of argv commands
-        # -- the delegation outranks the subject's CLAUDE.md whole-suite
-        # convention, so this coverage check never fires on it.
-        return True
-    declared = declared_whole_suite_command(repo_root)
-    if declared is None:
-        return True
-    declared_scope = _last_non_flag_token(declared)
-    if declared_scope is None:
-        return True
-    for command in scope.get("commands", []):
-        if _last_non_flag_token(_command_argv(command)) == declared_scope:
-            return True
-    return False

@@ -625,7 +625,7 @@ class TestSendMessageSinglePassAutoGate:
         # two of three arms died -- it was the ONLY message naming four
         # forbidden actions and zero permitted ones. The HOW must name the
         # permitted route (fresh dispatch; `des dispatch` from
-        # CONTRACT_READY; `des revise-contract-round` on contract defects).
+        # CONTRACT_READY; strict closure correction on contract defects).
         assert payload["reason"] == (
             "WHAT: an Auto-root SendMessage call was blocked. "
             "WHY: Auto roles are single-pass -- do not SendMessage, resume, "
@@ -634,7 +634,7 @@ class TestSendMessageSinglePassAutoGate:
             "HOW: a FRESH Agent dispatch for a new contract round or a "
             "different route step IS allowed -- from CONTRACT_READY run "
             "`des dispatch`, and on contract defects run "
-            "`des revise-contract-round`."
+            "a strict closure correction."
         )
 
     @pytest.mark.parametrize(

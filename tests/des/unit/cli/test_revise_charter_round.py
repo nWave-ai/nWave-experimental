@@ -5,8 +5,7 @@ charter namespace (`verify-charter-filled` PASS -- shape, not semantics)
 with a reviewer-cited VALUE-side recipe defect had no PO-owned correction
 route on the same DeliveryId. Drives the real `main()` against a real
 temporary directory (the durable counter's own home), never a hand-built
-round-state fixture asserted as proof -- same harness shape as
-`test_revise_contract_round.py`.
+round-state fixture asserted as proof.
 """
 
 from __future__ import annotations

@@ -13,11 +13,28 @@ argv fact, never inferred, defaulted or guessed here.
 Writes no file, mutates no repository state, and persists no value seed
 anywhere -- its entire output is the envelope text on stdout. Non-persistent
 and side-effect-free beyond the one `git` observation of the declared
-`--repo-root`, and one read-only existence check of the DELIVERY-ID's own
+`--repo-root`, and one read-only existence+content check of the DELIVERY-ID's own
 `ContractLocator`: a second run for the SAME value seed, once ATD has
-already written that contract, is `Blocked` naming the `nw-acceptance-
-designer` REVISE-CONTRACT/CITATION revision path -- never a silent
+already AUTHORED that contract, is `Blocked` directing root to the last
+admitted closure and a newer native AT review -- never a silent
 re-derivation of a contract that already exists.
+
+Existence alone is not authorship. A contract COMPILED by `des compile-
+contract` but never delivered to ATD is a distinct, third state: the file
+is present, yet every semantic field is still the compiler's literal
+`<ATD: fill>` placeholder, so ATD has demonstrably never been dispatched
+for it. Refusing that state stranded the request (measured 2026-08-22 on
+DeliveryId `auto-0d64ca2e4b7ded7d`, 36 unfilled placeholders): `prepare`
+refused because the file existed, and strict-child correction's
+body carries no ARCHITECTURE-COVERED authority, so a first-time ATD would
+have had to INFER 36 semantic fields instead of transcribing DESIGN facts
+-- it correctly answered EVIDENCE_GAP and wrote nothing. This producer
+therefore decides on the artefact's own observable PROPERTY (unfilled
+placeholders present, via `find_unfilled_placeholders`), never on a flag,
+a name or a designation: unfilled skeleton -> emit the full fourteen-line
+first-delivery envelope; authored contract -> `Blocked` exactly as before.
+The revision envelope stays deliberately thin -- widening it would erase
+the distinction between a revision and a first delivery.
 """
 
 from __future__ import annotations
@@ -41,6 +58,7 @@ from des.domain.base_revision_resolver import git_output as _git_output
 from des.domain.base_revision_resolver import (
     observed_base_revision as _observed_base_revision,
 )
+from des.domain.contract_placeholder_resolver import find_unfilled_placeholders
 
 
 _EXIT_BLOCKED = 2
@@ -102,6 +120,28 @@ def _resolved_repo_root(repo_root: Path) -> Path | None:
     if not repo_root.is_absolute() or not repo_root.is_dir() or repo_root.is_symlink():
         return None
     return repo_root.resolve()
+
+
+def _is_unfilled_atd_skeleton(contract_path: Path) -> bool:
+    """True only when the artefact ITSELF still carries the compiler's
+    literal `<ATD: fill>` placeholders -- the observable property that ATD
+    has never authored this contract, read from the same
+    `find_unfilled_placeholders` resolver `des dispatch` and `des validate-
+    delivery-contract` already gate on (one finder, no second drifting
+    definition of "unfilled").
+
+    Fail-CLOSED on every state that cannot be observed to be an unfilled
+    skeleton -- unreadable path, a directory, non-UTF-8 bytes, malformed
+    JSON, a non-object document: none of those PROVE ATD was never
+    dispatched, so they keep the existing refusal rather than silently
+    opening a redispatch."""
+    try:
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(contract, dict):
+        return False
+    return bool(find_unfilled_placeholders(contract))
 
 
 def _positive_override(value: int | None, field: str) -> int | None | str:
@@ -210,12 +250,14 @@ def main(argv: list[str] | None = None) -> int:
     delivery_id = compute_delivery_id(value_seed)
     contract_locator = contract_locator_for(delivery_id)
 
-    if (resolved_root / contract_locator).exists():
+    contract_path = resolved_root / contract_locator
+    if contract_path.exists() and not _is_unfilled_atd_skeleton(contract_path):
         return _blocked(
             what=(
-                f"a DeliveryContract already exists at {contract_locator} "
-                f"for DeliveryId {delivery_id} -- this exact value seed "
-                "already produced one"
+                f"an AUTHORED DeliveryContract already exists at "
+                f"{contract_locator} for DeliveryId {delivery_id} -- this "
+                "exact value seed already produced one, and it carries no "
+                "unfilled `<ATD: fill>` placeholder"
             ),
             why=(
                 "the value seed deterministically owns exactly one "
@@ -228,12 +270,8 @@ def main(argv: list[str] | None = None) -> int:
             how=(
                 "a crafter INDETERMINATE citing this contract/oracle routes "
                 "back to nw-acceptance-designer for a revision on the SAME "
-                "DeliveryId -- run `des revise-contract-round` (never "
-                "hand-type the body) and dispatch its exact four-line "
-                f"stdout verbatim: `ROOT: <root>` then `REVISE-CONTRACT: "
-                f"{contract_locator}` then `REVISE-ROUND: <n>/<N>` then "
-                "`CITATION: <the crafter's cited defect, as a JSON string "
-                "literal>`, never a new prepare-ordinary-request run"
+                "DeliveryId through a strict closure child from the cited "
+                "approved closure, never a new prepare-ordinary-request run"
             ),
         )
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from des.adapters.driven.git.git_constants import GIT_HEAD, GIT_REV_PARSE
 from des.adapters.driven.git.git_mutate import git_run
@@ -24,6 +25,10 @@ from des.ports.driven_ports.git_worktree_port import (
     MergeResult,
     WorktreeHandle,
 )
+
+
+if TYPE_CHECKING:
+    from des.domain.worktree_residence import DurableResidence
 
 
 @dataclass(frozen=True)
@@ -121,7 +126,6 @@ _PILE_BOOKKEEPING_FILENAMES = frozenset({"techdebt.md", "paidtechdebt.md"})
 _HARNESS_BOOKKEEPING_DIR_PREFIX = ".nwave/"
 
 _PROBE_BRANCH = "refactor-probe-health-check"
-_PROBE_DIR_SUFFIX = "-refactor-probe"
 
 
 class GitWorktreeAdapter(GitWorktreePort):
@@ -149,8 +153,9 @@ class GitWorktreeAdapter(GitWorktreePort):
             return False
         return Path(git_dir).resolve() != Path(common_dir).resolve()
 
-    def probe(self, repo: Path) -> bool:
-        probe_path = repo.parent / f"{repo.name}{_PROBE_DIR_SUFFIX}"
+    def probe(self, repo: Path, residence: DurableResidence) -> bool:
+        probe_path = residence.root
+        probe_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             git_run(
                 repo, "worktree", "add", "-b", _PROBE_BRANCH, str(probe_path), GIT_HEAD
@@ -162,8 +167,15 @@ class GitWorktreeAdapter(GitWorktreePort):
         return True
 
     def create_worktree_from_tip(
-        self, repo: Path, branch: str, path: Path
+        self,
+        repo: Path,
+        branch: str,
+        residence: DurableResidence,
+        name: str,
     ) -> WorktreeHandle:
+        path = residence.root
+        if path.name != name:
+            raise ValueError("worktree name must match the admitted destination")
         head_sha = git_text(repo, GIT_REV_PARSE, GIT_HEAD).strip()
         git_run(repo, "worktree", "add", "-b", branch, str(path), GIT_HEAD)
         return WorktreeHandle(path=path, branch=branch, head_sha=head_sha)
@@ -186,7 +198,7 @@ class GitWorktreeAdapter(GitWorktreePort):
         return MergeResult(merged=True)
 
     def remove_worktree(self, repo: Path, path: Path) -> None:
-        git_run(repo, "worktree", "remove", "--force", str(path))
+        git_run(repo, "worktree", "remove", str(path))
 
     def delete_branch(self, repo: Path, branch: str) -> None:
         git_run(repo, "branch", "-D", branch)
@@ -214,7 +226,11 @@ class GitWorktreeAdapter(GitWorktreePort):
         ``repo``): modified, staged, AND untracked entries all count -- the
         dirty-tree guard errs toward PRESERVING work, so any non-empty status
         blocks the worktree's removal."""
-        return bool(git_text(path, "status", "--porcelain").strip())
+        status = git_text(path, "status", "--porcelain")
+        return any(
+            not _is_harness_bookkeeping_path(candidate)
+            for candidate in _status_paths(status)
+        )
 
     def uncommitted_paths(self, repo: Path) -> tuple[str, ...]:
         """Every repo-relative path ``git status --porcelain`` reports as dirty.

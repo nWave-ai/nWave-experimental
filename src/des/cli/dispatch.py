@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import stat
 import sys
@@ -34,9 +35,6 @@ from des.cli._oracle_red_reason_refusal import (
 )
 from des.cli._placeholder_refusal import (
     all_unfilled_placeholder_findings as _all_unfilled_placeholder_findings,
-)
-from des.cli._whole_suite_scope_refusal import (
-    missing_whole_suite_scope_finding as _missing_whole_suite_scope_finding,
 )
 from des.domain.oracle_locator_resolver import (
     oracle_citation_file_part as _oracle_file_part,
@@ -195,7 +193,64 @@ def _load_delivery_contract(
             how=f"fix the contract to satisfy nWave/schemas/{finding.schema_path.name}",
         )
         return None
+    supporting_locators = contract["acceptance-tests"].get("supporting-locators", [])
+    if supporting_locators != sorted(supporting_locators):
+        _handoff_refusal(
+            what="acceptance-tests.supporting-locators are not lexicographically ordered",
+            why="delivery-closure/v2 binds durable support order and consumers never normalise authority",
+            how="recompile the contract from lexicographically ordered Acceptance support locator declarations",
+        )
+        return None
     return contract, path_str, contract_bytes
+
+
+def _regular_closure_path_finding(
+    repo_root: Path, locator: str, *, role: str
+) -> tuple[str, str, str] | None:
+    """Shared containment/lstat/regular-file laws for closure members."""
+    unsafe_reason = _unsafe_delivery_contract_path_reason(locator)
+    if unsafe_reason is not None:
+        noun = (
+            "acceptance-tests locator"
+            if role == "oracle"
+            else "acceptance support locator"
+        )
+        return (
+            unsafe_reason.replace("--delivery-contract PATH", noun),
+            f"an unsafe {role} locator could escape the repository boundary",
+            f"pass a repository-relative {role} locator without unsafe path syntax",
+        )
+    candidate = repo_root / locator
+    try:
+        resolved_root = repo_root.resolve()
+        resolved_candidate = candidate.resolve()
+    except OSError as exc:
+        return (
+            f"{role} path resolution failed ({exc})",
+            "path safety cannot be established",
+            f"pass an accessible {role} locator below --repo-root",
+        )
+    if not resolved_candidate.is_relative_to(resolved_root):
+        return (
+            f"the {role} path {candidate} escapes --repo-root",
+            "the resolved path does not belong to the declared repository",
+            f"pass a {role} locator below --repo-root",
+        )
+    try:
+        file_stat = candidate.lstat()
+    except OSError:
+        return (
+            f"the {role} file does not exist at {candidate}",
+            f"delivery closure requires a real {role} file",
+            f"pass an existing repository-relative {role} locator",
+        )
+    if not stat.S_ISREG(file_stat.st_mode):
+        return (
+            f"the {role} path {candidate} is not a regular file",
+            f"a symlink, directory or fifo is not a stable {role} identity",
+            f"pass a regular {role} file",
+        )
+    return None
 
 
 def _oracle_path_finding(repo_root: Path, locator: str) -> tuple[str, str, str] | None:
@@ -209,84 +264,196 @@ def _oracle_path_finding(repo_root: Path, locator: str) -> tuple[str, str, str] 
     own single-defect caller.
 
     A `::Selector` suffix on the locator is oracle IDENTITY, never a path
-    segment (SF blocker 2026-08-21): every disk check here runs on the
-    FILE part alone.
+    segment: every disk check here runs on the FILE part alone.
     """
-    locator = _oracle_file_part(locator)
-    unsafe_reason = _unsafe_delivery_contract_path_reason(locator)
-    if unsafe_reason is not None:
-        return (
-            unsafe_reason.replace(
-                "--delivery-contract PATH", "acceptance-tests locator"
-            ),
-            "an unsafe oracle locator could escape the repository boundary",
-            "pass a repository-relative acceptance-tests locator without an "
-            "absolute prefix, traversal, backslash, drive letter or glob token",
-        )
-
-    candidate = repo_root / locator
-    try:
-        resolved_root = repo_root.resolve()
-        resolved_candidate = candidate.resolve()
-    except OSError as exc:
-        return (
-            f"oracle path resolution failed ({exc})",
-            "path safety cannot be established",
-            "pass an accessible acceptance-tests locator below --repo-root",
-        )
-    if not resolved_candidate.is_relative_to(resolved_root):
-        return (
-            f"the oracle path {candidate} escapes --repo-root",
-            "the resolved path does not belong to the declared repository",
-            "pass an acceptance-tests locator below --repo-root",
-        )
-
-    try:
-        file_stat = candidate.lstat()
-    except OSError:
-        return (
-            f"the oracle file does not exist at {candidate}",
-            "DELIVER requires a real acceptance-tests oracle",
-            "pass an existing repository-relative acceptance-tests locator",
-        )
-    if not stat.S_ISREG(file_stat.st_mode):
-        return (
-            f"the oracle path {candidate} is not a regular file",
-            "a symlink, directory or fifo is not a stable oracle identity",
-            "pass a regular acceptance-tests file",
-        )
-    return None
+    return _regular_closure_path_finding(
+        repo_root, _oracle_file_part(locator), role="oracle"
+    )
 
 
-def _resolve_oracle(repo_root: Path, locator: str) -> bytes | None:
-    """Load one safe, regular acceptance-tests oracle or refuse WHAT/WHY/HOW."""
-    finding = _oracle_path_finding(repo_root, locator)
+def _same_file_identity(first: os.stat_result, second: os.stat_result) -> bool:
+    return (
+        first.st_dev,
+        first.st_ino,
+        stat.S_IFMT(first.st_mode),
+    ) == (
+        second.st_dev,
+        second.st_ino,
+        stat.S_IFMT(second.st_mode),
+    )
+
+
+def _same_file_snapshot(first: os.stat_result, second: os.stat_result) -> bool:
+    """True when identity and byte-relevant metadata stayed stable."""
+    return _same_file_identity(first, second) and (
+        first.st_size,
+        first.st_mtime_ns,
+        first.st_ctime_ns,
+    ) == (
+        second.st_size,
+        second.st_mtime_ns,
+        second.st_ctime_ns,
+    )
+
+
+def _read_regular_file_no_follow(
+    repo_root: Path, locator: str, *, role: str
+) -> bytes | None:
+    """Read one byte-stable snapshot from the same no-follow regular FD.
+
+    Metadata brackets replacement and ordinary writes, but timestamps are
+    not a byte oracle on every filesystem.  The last path observation is
+    therefore followed by a second read from the still-open FD.  Equality
+    with the first read is the linearization check, and the final read is the
+    value returned to the digest.  Mutation after that observation belongs to
+    the downstream frozen-digest point-of-use comparison; perpetual path
+    immutability is neither possible nor claimed here.
+    """
+    finding = _regular_closure_path_finding(repo_root, locator, role=role)
     if finding is not None:
         what, why, how = finding
         _handoff_refusal(what=what, why=why, how=how)
         return None
-
-    candidate = repo_root / _oracle_file_part(locator)
+    candidate = repo_root / locator
     try:
-        return candidate.read_bytes()
+        before = candidate.lstat()
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(candidate, flags)
     except OSError as exc:
         _handoff_refusal(
-            what=f"the oracle cannot be read ({exc})",
-            why="DELIVER requires readable oracle bytes",
+            what=f"the {role} cannot be opened without following links ({exc})",
+            why=f"delivery closure requires stable readable {role} bytes",
+            how=f"replace the {role} with a readable regular file and rerun",
+        )
+        return None
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or not _same_file_snapshot(before, opened):
+            _handoff_refusal(
+                what=f"the {role} identity changed while it was opened",
+                why="path validation and byte reading must bind the same regular file",
+                how="stop concurrent replacement of the file and rerun",
+            )
+            return None
+        with os.fdopen(descriptor, "rb", closefd=True) as stream:
+            descriptor = -1
+            first_content = stream.read()
+            after_first_read = os.fstat(stream.fileno())
+            after_path = candidate.lstat()
+            if not _same_file_snapshot(
+                opened, after_first_read
+            ) or not _same_file_snapshot(after_first_read, after_path):
+                _handoff_refusal(
+                    what=f"the {role} identity changed while it was read",
+                    why="closure bytes must belong to the declared stable locator",
+                    how="stop concurrent replacement of the file and rerun",
+                )
+                return None
+
+            stream.seek(0, os.SEEK_SET)
+            before_final_read = os.fstat(stream.fileno())
+            final_content = stream.read()
+            after_final_read = os.fstat(stream.fileno())
+            if not _same_file_snapshot(
+                after_path, before_final_read
+            ) or not _same_file_snapshot(before_final_read, after_final_read):
+                _handoff_refusal(
+                    what=f"the {role} identity changed while it was read",
+                    why="closure bytes must belong to the declared stable locator",
+                    how="stop concurrent replacement of the file and rerun",
+                )
+                return None
+            if first_content != final_content:
+                _handoff_refusal(
+                    what=f"the {role} bytes changed while it was read",
+                    why="delivery closure requires one byte-stable observation",
+                    how=f"stop concurrent mutation of the {role} and rerun",
+                )
+                return None
+            return final_content
+    except OSError as exc:
+        _handoff_refusal(
+            what=f"the {role} cannot be read ({exc})",
+            why=f"delivery closure requires readable {role} bytes",
             how="fix the file permissions and rerun des dispatch",
         )
         return None
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
-def closure_digest(contract_bytes: bytes, oracle_bytes: bytes) -> str:
-    """Compute the shared nwave delivery-closure digest over contract + oracle bytes."""
-    return hashlib.sha256(
-        b"nwave/delivery-closure/v1"
-        + len(contract_bytes).to_bytes(8, "big")
-        + contract_bytes
-        + len(oracle_bytes).to_bytes(8, "big")
-        + oracle_bytes
-    ).hexdigest()
+def _resolve_oracle(repo_root: Path, locator: str) -> bytes | None:
+    """Load one safe, regular acceptance-tests oracle or refuse WHAT/WHY/HOW."""
+    return _read_regular_file_no_follow(
+        repo_root, _oracle_file_part(locator), role="oracle"
+    )
+
+
+def _support_path_finding(repo_root: Path, locator: str) -> tuple[str, str, str] | None:
+    """Pure no-follow regular-file check for one acceptance support."""
+    return _regular_closure_path_finding(repo_root, locator, role="support")
+
+
+def _resolve_supporting_files(
+    repo_root: Path, locators: list[str]
+) -> tuple[tuple[str, bytes], ...] | None:
+    """Read ordered support identities and bytes, refusing on first defect."""
+    resolved: list[tuple[str, bytes]] = []
+    for locator in locators:
+        finding = _support_path_finding(repo_root, locator)
+        if finding is not None:
+            what, why, how = finding
+            _handoff_refusal(what=what, why=why, how=how)
+            return None
+        content = _read_regular_file_no_follow(repo_root, locator, role="support")
+        if content is None:
+            return None
+        resolved.append((locator, content))
+    return tuple(resolved)
+
+
+def _closure_v2_frame(label: bytes, payload: bytes) -> bytes:
+    """Length-frame one typed closure/v2 field without ambiguous joins."""
+    return (
+        len(label).to_bytes(8, "big")
+        + label
+        + len(payload).to_bytes(8, "big")
+        + payload
+    )
+
+
+def closure_digest(
+    contract_bytes: bytes,
+    oracle_bytes: bytes,
+    *,
+    oracle_locator: str | None = None,
+    supporting_files: tuple[tuple[str, bytes], ...] = (),
+) -> str:
+    """Compute legacy closure/v1 or support-aware closure/v2 honestly."""
+    if not supporting_files:
+        # Exact compatibility contract for schema 1.3. Do not label these
+        # bytes as v2: old candidates retain the identical digest.
+        return hashlib.sha256(
+            b"nwave/delivery-closure/v1"
+            + len(contract_bytes).to_bytes(8, "big")
+            + contract_bytes
+            + len(oracle_bytes).to_bytes(8, "big")
+            + oracle_bytes
+        ).hexdigest()
+    if oracle_locator is None:
+        raise ValueError("closure/v2 requires the primary oracle locator identity")
+    framed = [
+        b"nwave/delivery-closure/v2",
+        _closure_v2_frame(b"contract-bytes", contract_bytes),
+        _closure_v2_frame(b"primary-locator", oracle_locator.encode("utf-8")),
+        _closure_v2_frame(b"primary-bytes", oracle_bytes),
+        _closure_v2_frame(b"support-count", len(supporting_files).to_bytes(8, "big")),
+    ]
+    for locator, content in supporting_files:
+        framed.append(_closure_v2_frame(b"support-locator", locator.encode("utf-8")))
+        framed.append(_closure_v2_frame(b"support-bytes", content))
+    return hashlib.sha256(b"".join(framed)).hexdigest()
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -307,6 +474,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--delivery-contract",
         required=True,
         help="DeliveryContract JSON path relative to --repo-root.",
+    )
+    parser.add_argument(
+        "--diagnostics",
+        action="store_true",
+        help="Emit informational validation diagnostics on stderr.",
     )
     return parser
 
@@ -339,7 +511,7 @@ def main(argv: list[str] | None = None) -> int:
     loaded = _load_delivery_contract(repo_root, args.delivery_contract)
     if loaded is None:
         return _EXIT_USAGE_ERROR
-    contract, locator, contract_bytes = loaded
+    contract, locator, _contract_bytes = loaded
 
     # Run 5 (K4 matrix): collect EVERY contract-content defect this pass can
     # find -- the unfilled-placeholder and oracle-path/self-reference
@@ -354,17 +526,13 @@ def main(argv: list[str] | None = None) -> int:
     # checks this list used to run here -- EXTEND-target citation,
     # declared-imports resolution, verification-scope path existence --
     # are DELETED, not merely reordered. `des fill-contract` has no
-    # `--field` choice naming a mechanical field at all, so a contract
+    # batch entry naming a mechanical field at all, so a contract
     # that reaches this point already has them correct by construction;
     # re-checking here would be pure duplicated cost for zero additional
     # evidence (GDP-10).
     findings: list[tuple[str, str, str]] = [
         *_all_unfilled_placeholder_findings(contract),
     ]
-    whole_suite_finding = _missing_whole_suite_scope_finding(repo_root, contract)
-    if whole_suite_finding is not None:
-        findings.append(whole_suite_finding)
-
     oracle_locator = str(contract["acceptance-tests"]["locator"])
     oracle_file = _oracle_file_part(oracle_locator)
     oracle_unsafe_reason = _unsafe_delivery_contract_path_reason(oracle_file)
@@ -397,6 +565,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if findings:
         return _batched_contract_defects_refusal(findings)
+
+    support_locators = list(contract["acceptance-tests"].get("supporting-locators", []))
+    supporting_files = _resolve_supporting_files(repo_root, support_locators)
+    if supporting_files is None:
+        return _EXIT_USAGE_ERROR
 
     # K4 Run 13: only after every cheaper STATIC check already passed --
     # no reason to spend a real bounded subprocess proving an oracle's RED
@@ -436,11 +609,24 @@ def main(argv: list[str] | None = None) -> int:
     if not isinstance(resolution, (_Reuse, _Skip)):
         _assert_never(resolution)
 
-    digest = closure_digest(contract_bytes, oracle_bytes)
-    for note in red_reason_notes:
-        print(note, file=sys.stderr)
+    if args.diagnostics:
+        for note in red_reason_notes:
+            if "INDETERMINATE" not in note:
+                note = f"INDETERMINATE: {note}"
+            print(note, file=sys.stderr)
+    # The CLI is a value-only handoff. Construction belongs to PreToolUse,
+    # where the foreground Agent/result provenance is available.
+    admitted_support = tuple(
+        (path, (repo_root / path).read_bytes()) for path, _ in supporting_files
+    )
+    admitted_digest = closure_digest(
+        (repo_root / locator).read_bytes(),
+        (repo_root / oracle_locator.split("::", 1)[0]).read_bytes(),
+        oracle_locator=oracle_locator,
+        supporting_files=admitted_support,
+    )
     print(f"THIN-DELIVERY-CONTRACT: {locator}")
-    print(f"THIN-DELIVERY-CONTRACT-DIGEST: sha256:{digest}")
+    print(f"THIN-DELIVERY-CONTRACT-DIGEST: sha256:{admitted_digest}")
     return 0
 
 

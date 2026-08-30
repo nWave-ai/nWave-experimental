@@ -244,6 +244,24 @@ class TestInstallWritesHooksJsonAndManifest:
         assert "/usr/bin/python3" not in source
         assert "/home/tester/.claude/lib/python" not in source
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX symlink fixture")
+    def test_launcher_hook_rejects_temp_lexical_symlink_to_durable_python(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A persisted command must not retain its temporary lexical owner."""
+        durable_python = Path(sys.executable).resolve()
+        assert durable_python.is_file(), "fixture requires a real durable target"
+        ephemeral_python = tmp_path / "ephemeral-venv" / "bin" / "python"
+        ephemeral_python.parent.mkdir(parents=True)
+        ephemeral_python.symlink_to(durable_python)
+        assert ephemeral_python.resolve() == durable_python
+        monkeypatch.setattr(codex_des_plugin.sys, "executable", str(ephemeral_python))
+
+        entry = codex_des_plugin._build_launcher_hook_entry(tmp_path / "launcher.py")
+
+        command = entry["hooks"][0]["command"]
+        assert shlex.split(command)[0] == "python3"
+
     @pytest.mark.parametrize(
         ("python_path", "pythonpath"),
         [
@@ -332,8 +350,13 @@ class TestInstallWritesHooksJsonAndManifest:
         assert launcher.is_file()
         doc = json.loads((codex_dir / "hooks.json").read_text(encoding="utf-8"))
         command = doc["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        expected_python = (
+            sys.executable
+            if codex_des_plugin.is_durable_interpreter_path(sys.executable)
+            else "python3"
+        )
         assert shlex.split(command) == [
-            sys.executable,
+            expected_python,
             str(launcher),
             "pre-tool-use",
         ]
@@ -399,8 +422,13 @@ class TestInstallWritesHooksJsonAndManifest:
         def ps_literal(value: str) -> str:
             return "'" + value.replace("'", "''") + "'"
 
+        expected_python = (
+            sys.executable
+            if codex_des_plugin.is_durable_interpreter_path(sys.executable)
+            else "python3"
+        )
         expected = (
-            f"& {ps_literal(sys.executable)} {ps_literal(str(launcher))} "
+            f"& {ps_literal(expected_python)} {ps_literal(str(launcher))} "
             f"{ps_literal('pre-tool-use')}"
         )
         assert decoded == expected

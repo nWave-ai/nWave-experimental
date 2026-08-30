@@ -229,3 +229,48 @@ def test_oracle_locator_selector_forms_agree_across_both_validators(
     value = {"locator": locator}
     assert _subset_accepts(schema, value) is expected
     assert Draft202012Validator(schema).is_valid(value) is expected
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        pytest.param(
+            "vendor/example.com/mod/@v/v1.2.0.info", True, id="go-proxy-version-file"
+        ),
+        pytest.param(
+            "vendor/proxy/cache/download/example.com/mod/@v/list",
+            True,
+            id="go-proxy-list-endpoint",
+        ),
+        pytest.param("src/des/domain/thing.py", True, id="historical-plain-path"),
+        pytest.param(
+            "vendor/example.com/mod/@v/../escape.py",
+            False,
+            id="traversal-through-the-go-segment-stays-refused",
+        ),
+        pytest.param("../escape.py", False, id="traversal-stays-refused"),
+        pytest.param(
+            "vendor/@vendor-scope/pkg.go", False, id="at-is-not-a-free-character"
+        ),
+        pytest.param(
+            "vendor/example.com/pkg@v1.2.0.go", False, id="at-inside-a-segment-refused"
+        ),
+        pytest.param(
+            "vendor/example.com/mod/@v", False, id="go-segment-is-never-the-file-part"
+        ),
+    ],
+)
+def test_go_module_proxy_segment_forms_agree_across_both_validators(
+    path: str, expected: bool
+) -> None:
+    # SF blocker 2026-08-23: an authority declaring artifacts under the Go
+    # module-proxy convention (`<module>/@v/<version>.<ext>`) could not
+    # declare a single target -- `repositoryRelativePath` governs BOTH the
+    # `targets` property names and `targetPlan.candidate`, and its segment
+    # class admitted no '@'. The relaxation is the STRICT one the consumer
+    # asked for: '@v' is admitted as a whole DIRECTORY segment of that one
+    # convention, never '@' as a free character in any segment, and never
+    # as the terminal file part. Traversal refusals stay refusals.
+    schema = {"$defs": SCHEMA["$defs"], "$ref": "#/$defs/repositoryRelativePath"}
+    assert _subset_accepts(schema, path) is expected
+    assert Draft202012Validator(schema).is_valid(path) is expected

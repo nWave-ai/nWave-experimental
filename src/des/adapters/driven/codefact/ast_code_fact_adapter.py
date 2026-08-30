@@ -32,6 +32,8 @@ from des.ports.code_fact_port import (
     CAPABILITY_NEVER_WIRED,
     CAPABILITY_READS_OF,
     CAPABILITY_SIMILAR_RESPONSIBILITY,
+    REFERENCE_SHAPE_BARE_NAME,
+    REFERENCE_SHAPE_DOTTED_ATTRIBUTE,
     TRACE_EXEMPLARS_MAX,
     Answered,
     CodeFactResult,
@@ -39,6 +41,7 @@ from des.ports.code_fact_port import (
     Failed,
     ManifestEntry,
     TraceEntry,
+    observation_count,
 )
 from des.testarch.adapters.python_ast import PythonAstAdapter
 
@@ -74,6 +77,22 @@ _HANDLED_CAPABILITY_IDS = frozenset(
         CAPABILITY_SIMILAR_RESPONSIBILITY,
     }
 )
+
+# The reference SHAPES this structural tier represents, per capability
+# (ADR-LA-001 D2 coverage claim, reference-shape axis added 2026-08-23).
+# ``callers-of`` resolves an ``ast.Attribute`` callee to its dotted name and
+# matches on the trailing segment (``_callee_matches``); ``reads-of`` walks
+# ``ast.Attribute`` Load nodes as well as ``ast.Name`` (the delegated parser's
+# ``reads_in_function``); ``never-wired`` is those two relations read as
+# absence. So all three see BOTH shapes -- a claim each is guarded by an
+# executable falsifier, never by this comment.
+_BOTH_REFERENCE_SHAPES = (REFERENCE_SHAPE_BARE_NAME, REFERENCE_SHAPE_DOTTED_ATTRIBUTE)
+
+_REPRESENTED_SHAPES: dict[str, tuple[str, ...]] = {
+    CAPABILITY_CALLERS_OF: _BOTH_REFERENCE_SHAPES,
+    CAPABILITY_READS_OF: _BOTH_REFERENCE_SHAPES,
+    CAPABILITY_NEVER_WIRED: _BOTH_REFERENCE_SHAPES,
+}
 
 # Matches a lowercase/digit-to-uppercase camelCase boundary, so
 # ``parseFeatureDelta`` tokenizes the same as ``parse_feature_delta``.
@@ -223,7 +242,11 @@ class AstAdapter:
         never scope- or request-qualified (that whole-scope honesty moves
         into :meth:`resolve`, LA1-L4)."""
         return tuple(
-            ManifestEntry(capability_id=capability_id, confidence=self.confidence)
+            ManifestEntry(
+                capability_id=capability_id,
+                confidence=self.confidence,
+                represents=_REPRESENTED_SHAPES.get(capability_id, ()),
+            )
             for capability_id in sorted(_HANDLED_CAPABILITY_IDS)
         )
 
@@ -279,6 +302,7 @@ class AstAdapter:
                     detail="",
                 ),
             ),
+            evidence_count=observation_count(result.payload),
         )
 
     def _request_is_python_scoped(self, request: dict[str, object]) -> bool:
@@ -307,26 +331,31 @@ class AstAdapter:
     # -- capability realizations (structural, via the delegated parser) ----
 
     def _never_wired(self, symbol: str, faults: _FaultObservation) -> CodeFactResult:
-        """Is ``symbol`` a net-new symbol with no production call-site (structural)?
+        """Is ``symbol`` a net-new symbol with NO production reference at all?
 
-        Splits ``Owner.method`` and looks for a structural call-site of the trailing
-        callable name (an ``ast.Call`` whose resolved callee names it) outside its
-        own definition. A match → wired; no match → not wired. ADR-LA-001 D9 slice
-        (c) / D6-R3: ``absent`` vs ``live-non-callable`` is owned by THIS payload's
+        Splits ``Owner.method`` and looks for structural sites of the trailing
+        name in BOTH wiring relations: call-sites (an ``ast.Call`` whose resolved
+        callee names it) AND read-sites (a bare or dotted ``Load`` reference).
+        Either one ⇒ wired; neither ⇒ never wired. Both site lists ship in the
+        payload, so the evidence for the verdict is readable, never asserted.
+
+        Before 2026-08-23 only call-sites were consulted, so a symbol read three
+        times but never CALLED came back ``never_wired: true`` -- byte-identical
+        to a symbol that does not exist. A read IS wiring; a port that cannot say
+        so is answering a question it was not asked. ADR-LA-001 D9 slice (c) /
+        D6-R3: ``absent`` vs ``live-non-callable`` is owned by THIS payload's
         ``never_wired`` bool -- never a duplicated envelope-level field.
         """
         callable_name = self._callable_of(symbol)
         call_sites = self._call_sites(callable_name, faults)
-        if call_sites:
-            return self._answer(
-                payload={
-                    "symbol": symbol,
-                    "never_wired": False,
-                    "call_sites": call_sites,
-                },
-            )
+        read_sites = self._read_sites(callable_name, faults)
         return self._answer(
-            payload={"symbol": symbol, "never_wired": True, "call_sites": []},
+            payload={
+                "symbol": symbol,
+                "never_wired": not (call_sites or read_sites),
+                "call_sites": call_sites,
+                "read_sites": read_sites,
+            },
         )
 
     def _sites_of(

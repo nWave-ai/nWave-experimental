@@ -2,6 +2,48 @@
    Tokens translated from branding/design-systems/web/design-system.md
    (live nwave.ai production values). */
 
+/* ---------- Self-hosted webfonts ----------
+   Face set, weights and unicode-range transcribed from the production
+   stylesheet served by https://nwave.ai (/assets/index-*.css), which
+   self-hosts these exact woff2 files under /fonts/. Do NOT reintroduce a
+   Google Fonts <link>: guarded by
+   tests/build/unit/test_docs_site_fonts_self_hosted.py.
+   Lato and Quattrocento are both SIL Open Font License 1.1 (see
+   static/fonts/OFL.txt) -- redistribution inside this repo is permitted. */
+
+@font-face {
+  font-family: "Lato";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/lato-v24-latin-regular.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Lato";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/lato-v24-latin-700.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Quattrocento";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/quattrocento-v18-latin-700.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   /* Brand accent */
   --accent-primary: #fac30f;

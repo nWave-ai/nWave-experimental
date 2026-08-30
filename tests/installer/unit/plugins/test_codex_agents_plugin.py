@@ -74,12 +74,8 @@ def _make_context(
     agents_dir = framework_source / "agents"
     agents_dir.mkdir(parents=True)
 
-    # Canonical batching-fragment source; install() loads it once per run.
     templates_dir = framework_source / "templates"
     templates_dir.mkdir(parents=True)
-    (templates_dir / "tool-batching-fragment.md").write_text(
-        "BATCH-FRAGMENT\n", encoding="utf-8"
-    )
 
     if agents is None:
         agents = {

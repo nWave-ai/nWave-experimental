@@ -4,27 +4,23 @@ Feature: installer-per-host-skill-path-portability.
 
 Post-refactor, the OpenCode agents plugin replaces its hardcoded
 body.replace("~/.claude/skills/", ...) with the shared helper
-rewrite_host_paths(body, "opencode"), then appends the shared batching
-fragment. The contract:
+rewrite_host_paths(body, "opencode"). The contract:
   - skills paths still rewritten to ~/.config/opencode/skills/
   - the ~/.claude/lib/python exception is preserved (NOT rewritten)
-  - output equals shared host rewrite plus shared batching append.
+  - output equals the shared host rewrite exactly (no per-agent footer;
+    the project-level guidance section is the ONE place that projects
+    the batching fragment -- see test_project_claude_section.py).
 
 ACTIVE-RED (atdd_pure): the shared helper module
 scripts.shared.skill_path_rewrite does NOT exist yet, so importing it raises
 ModuleNotFoundError (an ImportError subclass) at collection -> right-reason RED.
 """
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.opencode_agents_plugin import OpenCodeAgentsPlugin
 from scripts.install.plugins.opencode_common import parse_frontmatter
-from scripts.shared.batching_fragment import (
-    append_batching_fragment,
-    load_batching_fragment,
-)
 
 # Right-reason RED anchor: helper not yet created -> ModuleNotFoundError here.
 from scripts.shared.skill_path_rewrite import rewrite_host_paths
@@ -54,20 +50,6 @@ def _make_context(tmp_path):
     agents_source.mkdir(parents=True)
     (project_root / "nWave" / "framework-catalog.yaml").write_text("agents: {}\n")
 
-    # OpenCodeAgentsPlugin.install() loads nWave/templates/tool-batching-fragment.md
-    # via context.project_root / "nWave"; seed it from the canonical file.
-    templates_dir = project_root / "nWave" / "templates"
-    templates_dir.mkdir(parents=True)
-    source_fragment = (
-        Path(__file__).resolve().parents[4]
-        / "nWave"
-        / "templates"
-        / "tool-batching-fragment.md"
-    )
-    (templates_dir / "tool-batching-fragment.md").write_text(
-        source_fragment.read_text(encoding="utf-8"), encoding="utf-8"
-    )
-
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir(parents=True)
 
@@ -93,7 +75,7 @@ class TestOpenCodeAgentsOnSharedSsotHelper:
         GIVEN: An agent referencing ~/.claude/skills/ AND ~/.claude/lib/python
         WHEN: The OpenCode agents plugin installs it
         THEN: skills path -> ~/.config/opencode/skills/, lib/python preserved,
-              and the installed body equals shared host rewrite plus shared batching append.
+              and the installed body equals the shared host rewrite exactly.
 
         CONTRACT_SHAPE: bounded-change
         Outcome anchor: design.md value (DISCUSS wave skipped — optional)
@@ -118,8 +100,5 @@ class TestOpenCodeAgentsOnSharedSsotHelper:
             "~/.claude/lib/python exception must NOT be rewritten"
         )
         # Behaviour-match with the shared helper (the SSOT contract).
-        fragment = load_batching_fragment(context.project_root / "nWave")
-        expected = append_batching_fragment(
-            rewrite_host_paths(source_body, "opencode"), fragment
-        )
+        expected = rewrite_host_paths(source_body, "opencode")
         assert installed_body == expected

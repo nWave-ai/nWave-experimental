@@ -29,6 +29,7 @@ end-to-end fire of the DES adapter from a Codex-shaped invocation.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +39,7 @@ import pytest
 
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.codex_des_plugin import CodexDESPlugin
+from scripts.shared.install_paths import host_neutral_runtime_dir
 from tests.fixtures.fake_codex import FakeCodexHarness
 
 
@@ -70,7 +72,7 @@ def install_context(tmp_path, codex_home):  # type: ignore[no-untyped-def]
 
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir(parents=True, exist_ok=True)
-    des_dir = claude_dir / "lib" / "python" / "des"
+    des_dir = host_neutral_runtime_dir() / "des"
     des_dir.mkdir(parents=True, exist_ok=True)
     (des_dir / "__init__.py").write_text("", encoding="utf-8")
 
@@ -130,19 +132,19 @@ def _read_audit_entries(audit_dir: Path) -> list[dict]:
 class TestCodexRealBoot:
     """End-to-end proof that an installed Codex hook fires the real DES adapter."""
 
-    def test_bash_invocation_fires_des_hook_invoked_and_completed(
+    def test_exec_command_invocation_fires_des_hook_invoked_and_completed(
         self,
         install_context: InstallContext,
         patched_resolvers,
         codex_home: Path,
         audit_log_dir: Path,
     ) -> None:
-        """A Bash tool event must trigger HOOK_INVOKED + HOOK_COMPLETED entries.
+        """An exec_command event must trigger both hook audit entries.
 
         Steps:
           1. Run the Codex DES installer plugin against a tmp ~/.codex/.
           2. Load the installed hooks.json with the fake-codex harness.
-          3. Fire a synthetic Bash PreToolUse event.
+          3. Fire a synthetic exec_command PreToolUse event.
           4. Read the DES audit-log JSONL and assert both diagnostic events
              are present, with ``handler=pre_tool_use`` and exit_code=0.
         """
@@ -171,16 +173,17 @@ class TestCodexRealBoot:
                 "PATH": "/usr/bin:/bin",
                 "DES_AUDIT_LOG_DIR": str(audit_log_dir),
                 "PYTHONPATH": str(repo_src),
-                "HOME": str(install_context.claude_dir.parent),
+                "NWAVE_AGENTS_HOME": os.environ["NWAVE_AGENTS_HOME"],
+                "CODEX_HOME": str(codex_home),
             },
             session_cwd=str(session_cwd),
         )
 
-        # 3. Fire the Bash event — the installed hook command runs the real
+        # 3. Fire the observed exec_command event — the installed hook runs the real
         #    DES adapter, which writes HOOK_INVOKED + HOOK_COMPLETED audit
         #    entries to DES_AUDIT_LOG_DIR.
         invocations = harness.fire_pre_tool_use(
-            tool_name="Bash", tool_input={"command": "echo hello"}
+            tool_name="exec_command", tool_input={"cmd": "echo hello"}
         )
         assert len(invocations) == 1, (
             f"expected exactly one PreToolUse hook to fire; got {len(invocations)}"

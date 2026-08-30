@@ -101,11 +101,31 @@ class CodeFactChain:
         ``(Ast, TextSearch)`` tuple (D2/D5) — no provider-specific dispatch,
         no ``isinstance`` / ``getattr`` / arity branching on provider
         identity (LA1-L2). A pure fold: no side effects, no mutable state
-        (concurrency-safe by construction). Returns the full ``Resolution``
-        so a caller needing the bounded trace alongside the answer can read
-        both off one fold; :meth:`query` is the thin legacy edge over this
-        same operation.
+        (concurrency-safe by construction) for the FRESH case, unchanged.
+
+        F-GRAPHIFY-STALE-DEGRADES-SILENTLY (Ale, 2026-08-24): when
+        ``GraphifyAdapter`` is present but its data is stale for THIS
+        request, it is given one chance to regenerate SYNCHRONOUSLY
+        before the fold runs at all. A regeneration failure (the tool is
+        absent, the subprocess errors, or the graph is still stale
+        afterward) returns ``Failed`` HERE, short-circuiting the rest of
+        this method entirely -- ``resolve_through_fold`` is never called,
+        so ``AstAdapter``/``TextSearchAdapter`` never get a chance to
+        answer underneath a stale-but-unrepaired graph. This is the one
+        deliberate exception to "the fold has no side effects": the
+        side effect (regeneration) happens strictly BEFORE the fold, and
+        only for the one provider/cause this remedy targets --
+        ``resolve_through_fold``'s own generic ``Failed`` -> ``continue``
+        semantics for every OTHER provider/cause are untouched.
+
+        Returns the full ``Resolution`` so a caller needing the bounded
+        trace alongside the answer can read both off one fold; :meth:`query`
+        is the thin legacy edge over this same operation.
         """
+        if self._graphify.has_data:
+            regen_failure = self._graphify.ensure_fresh_or_fail(descriptor, request)
+            if regen_failure is not None:
+                return regen_failure
         return resolve_through_fold(descriptor, request, self._providers)
 
     def query(

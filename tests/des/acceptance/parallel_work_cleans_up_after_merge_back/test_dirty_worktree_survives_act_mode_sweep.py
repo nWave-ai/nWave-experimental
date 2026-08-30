@@ -33,11 +33,39 @@ from pathlib import Path
 
 import pytest
 
+from des.adapters.driven.marker_file_owner_lease_adapter import (
+    MarkerFileOwnerLeaseAdapter,
+)
 from des.adapters.driven.refactor.git_worktree_adapter import GitWorktreeAdapter
 from des.cli import verify_worktree_cleanup
+from des.domain.worktree_residence import (
+    DurableResidence,
+    LaneIdentity,
+    ResidenceAdmission,
+    ResidenceDurability,
+)
+from des.ports.driven_ports.committed_scope_port import Indeterminate
+from des.ports.driven_ports.residence_durability_port import ResidenceDurabilityPort
 
 
 _TARGET_BRANCH = "trunk"
+
+
+class _TestDurability(ResidenceDurabilityPort):
+    def classify(self, root: Path) -> ResidenceDurability:
+        return ResidenceDurability.DURABLE
+
+    def durable_default(self, repo: Path) -> Path | None:
+        return repo
+
+    def freeze(self, root: Path) -> bool | Indeterminate:
+        return True
+
+
+def _test_residence(path: Path) -> DurableResidence:
+    admitted = ResidenceAdmission(_TestDurability()).admit(path)
+    assert isinstance(admitted, DurableResidence)
+    return admitted
 
 
 def _git(root: Path, *args: str) -> str:
@@ -81,8 +109,15 @@ def _build_dirty_merged_worktree(tmp_path: Path) -> tuple[Path, Path]:
 
     worktree_path = tmp_path / "trunk-repo-dirty"
     GitWorktreeAdapter().create_worktree_from_tip(
-        repo, "dirty-feature-plan", worktree_path
+        repo,
+        "dirty-feature-plan",
+        _test_residence(worktree_path),
+        worktree_path.name,
     )
+    identity = LaneIdentity.observe(worktree_path)
+    marker = MarkerFileOwnerLeaseAdapter()
+    marker.write_held(worktree_path, identity)
+    marker.write_released(worktree_path, identity)
 
     # Real, live edits AFTER the worktree was cut -- never committed.
     (worktree_path / "README.md").write_text(

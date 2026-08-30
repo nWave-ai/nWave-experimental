@@ -16,6 +16,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from scripts.install.plugins.base import InstallContext
+from scripts.shared.install_paths import host_neutral_runtime_dir
 
 
 @pytest.fixture
@@ -44,12 +45,19 @@ def des_audit_log_path(tmp_path):  # type: ignore[no-untyped-def]
 
 @pytest.fixture
 def codex_tool_whitelist():  # type: ignore[no-untyped-def]
-    """Vetted whitelist of Codex tool names sourced from DDD-8 spike artifact.
-
-    DDD-6 (refined by DDD-8 spike): matcher universe = {Bash, apply_patch}.
-    MCP names deferred per spike Q6 + open question 3. Used by step 01-03.
-    """
-    return ("Bash", "apply_patch")
+    """Tool names observed on the running Codex host."""
+    return (
+        "exec_command",
+        "write_stdin",
+        "update_plan",
+        "request_user_input",
+        "view_image",
+        "multi_agent_v1",
+        "get_goal",
+        "create_goal",
+        "update_goal",
+        "web_search",
+    )
 
 
 @pytest.fixture
@@ -76,7 +84,7 @@ def install_context(tmp_path, codex_home):  # type: ignore[no-untyped-def]
 
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir(parents=True, exist_ok=True)
-    des_dir = claude_dir / "lib" / "python" / "des"
+    des_dir = host_neutral_runtime_dir() / "des"
     des_dir.mkdir(parents=True, exist_ok=True)
     (des_dir / "__init__.py").write_text("", encoding="utf-8")
 

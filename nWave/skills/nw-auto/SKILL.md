@@ -50,22 +50,22 @@ des dispatch --repo-root ROOT --delivery-contract PATH
 ```
 
 This is the single execution/hash/validation step between DISTILL and DELIVER.
-Require exit code `0` and stdout that is exactly these two lines and nothing
-else:
+Require exit code `0` and stdout that is exactly these two identity lines and
+nothing else:
 
 ```
 THIN-DELIVERY-CONTRACT: <repository-relative-json-locator>
 THIN-DELIVERY-CONTRACT-DIGEST: sha256:<64-lowercase-hex>
 ```
 
-Root forwards that stdout verbatim as the first bytes of the selected
-crafter's Agent prompt: no prose, no root line, no JSON paste, and no code
-fence precede them. Exactly one blank line follows the two dispatch lines,
-then `REPO-ROOT: <absolute physical root>` as forwarded context — this is
-context for the crafter's own consumer-boundary check, never a third header
-or a new carrier. Root never calls `des dispatch` a second time and never
-calls `des validate-delivery-contract` itself — that consumer-boundary check
-belongs to the selected crafter, not to root.
+Root forwards that stdout verbatim as the first bytes of the E2 AT-review
+prompt: no prose, no root line, no JSON paste and no code fence precede them. Exactly
+one blank line follows the two dispatch lines, then
+`REPO-ROOT: <absolute physical root>` as private forwarded context — never a
+public dispatch line or a new carrier. Only bare `APPROVE` or `APPROVED`
+advances to E3 craft; `APPROVED WITH CONDITIONS`, any condition, malformed or
+`INDETERMINATE` result stops. Root never calls `des dispatch` a second time or
+calls `des validate-delivery-contract` itself.
 
 A nonzero exit, missing, malformed or non-two-line stdout is terminal under
 the single-pass rule: root never hashes, never reconstructs, never repairs,
@@ -74,39 +74,50 @@ agent or substitutes a generic writer.
 
 ## Worktree ownership — before role dispatch
 
-Two cwd-local probes only — never `git -C`/`cd`/compound shell/substitution:
+Two cwd-local observation probes — never `git -C`/`cd`/compound
+shell/substitution:
 
 1. `git rev-parse --show-toplevel` → root
 2. `git rev-parse --abbrev-ref HEAD` → attachment
 
 | Attachment | Action |
 |---|---|
-| `HEAD` | reuse cwd as-is, dirt or clean; zero `git worktree add`, zero relocation; no session heuristic |
-| branch name | sibling = root + `.nwave-auto`; `git worktree list --porcelain`; registered, or `git worktree add --detach <sibling> HEAD` fails occupied → refuse fail-closed (WHAT: path registered/occupied; WHY: ownership/cleanliness unprovable; HOW: reconcile/remove, retry) — never adopt; else run that add |
+| `HEAD` | run `des worktree-admit --repo <root> --lane auto` from cwd. Its sole stdout path is the execution root: the same cwd when measured durable, otherwise a frozen copy → byte-verify → switch rescue. Nonzero is terminal. |
+| branch name | run the identical `des worktree-admit --repo <root> --lane auto`. Its sole stdout path is the new admitted execution root; occupied/registered/unprovable residence refuses fail-closed. |
 
-Never branch, or delete/reset/clean/stash/force/adopt. WIP stays bit-identical.
+Root never authors a destination or invokes raw `git worktree add`; the CLI is
+the only constructor and writes the positive owner assertion. Never
+delete/reset/clean/stash/force/adopt. Rescue leaves the source present and
+byte-verifies WIP before the returned execution root changes.
 
-**Root propagation:** this root is an immutable dispatch input. Every Agent
-dispatch (DISCUSS, DESIGN, PO, ATD, crafter, examiner) must receive that exact
-absolute root and treat it as target repository — never rediscovered via global
-find, nearest-repo, transcript inference, or another clone.
+**Root propagation:** the CLI's stdout execution root becomes this root; this root is an immutable dispatch input. Every Agent dispatch (DISCUSS, DESIGN,
+PO, ATD, crafter, examiner) must
+receive that exact absolute root and treat it as target repository — never rediscovered via global find, nearest-repo, transcript inference, or another
+clone.
 
 ## Architecture readiness — shared M/L prefix
 
-Before PO/ATD dispatch, root resolves (ADR-SSOT-002 §4b): one prefix for M and L, no split.
+Before PO or ATD, close this prefix once for the vertical/node. Root does not
+hand it to a downstream role unresolved.
 
-- **Intent**: Gap? Dispatch DISCUSS once. Gap remains → refuse blocker.
-- **Readiness**: Covered means root already holds a valid architecture
-  authority line with a repo-relative permanent `.md#anchor`; enter the floor.
-  Absence of an architecture SSOT, a root opinion that the change is additive,
-  "no new pattern", or any proof dependency an obligation names with
-  declared=false or present=false is Unresolved, never a root-inferred no-impact shortcut. Dispatch one
-  DESIGN consult immediately. It returns `ARCHITECTURE-COVERED` or
-  `ARCHITECTURE-BLOCKED`; a remaining gap is refused. Root never installs or
-  repairs a dependency itself — that readiness work belongs to the DESIGN
-  consult, never to ATD or the crafter.
+| Size | Route |
+|---|---|
+| M | One independently deliverable vertical. If it is not one, promote to L. |
+| L | DISCUSS maps observable ready/blocked value nodes. Every ready node is one independently deliverable vertical; every blocked node names its missing owner/fact. Apply the M prefix to each ready node. |
 
-For Unresolved, dispatch to `nw-solution-architect`:
+For an intent gap, dispatch DISCUSS exactly once. If it remains, refuse; never
+substitute a root interpretation. Covered readiness is one valid
+`ARCHITECTURE-COVERED: <repo-relative-permanent-path>#<section-anchor>` line.
+Absent architecture SSOT, a missing additive/no-pattern opinion, or a proof dependency
+with `declared=false` or `present=false` is unresolved, never a root-inferred
+no-impact shortcut. Dispatch one DESIGN consult for an unresolved M boundary or
+for a technical boundary in a ready or blocked L node. It returns
+`ARCHITECTURE-COVERED` or `ARCHITECTURE-BLOCKED`; otherwise stop. Root never
+installs or repairs dependencies: DESIGN owns readiness, never PO, ATD, or a
+crafter. Then run `DISTILL -> DELIVER`; FINALIZE runs once inside that DELIVER,
+never as an epic cycle.
+
+For that unresolved technical boundary, dispatch to `nw-solution-architect`:
 
 ```
 AUTO-ARCHITECTURE-CONSULT: <bounded-subject>
@@ -114,7 +125,7 @@ AUTO-ARCHITECTURE-ROOT: <absolute-root>
 AUTO-DELIVERY-ROUTE: <RED_TO_GREEN|GREEN_TO_GREEN>
 ```
 
-These are the entire prompt. The route is already resolved upstream; the
+These are the entire base prompt. The route is resolved upstream; the
 architect consumes it and never infers or defaults it.
 
 Response must be exactly one of:
@@ -125,6 +136,34 @@ ARCHITECTURE-BLOCKED: <what>; WHY: <why>; HOW: <how>
 ```
 
 Missing/malformed header → terminal (single-pass rule). Any incomplete result → report only, stop.
+
+**Repair re-consult — after `des compile-contract` rejects the brief this
+same architect authored** (e.g. a target-declaration-table problem): add
+ONE more field to the same three-line header, carrying the producer's own
+BLOCKED stdout verbatim — the SAME discipline this skill already applies
+to the PO/ATD envelopes below (verbatim, never hand-authored, never
+paraphrased), never affixed here before now:
+
+```
+AUTO-ARCHITECTURE-CONSULT: <bounded-subject>
+AUTO-ARCHITECTURE-ROOT: <absolute-root>
+AUTO-DELIVERY-ROUTE: <RED_TO_GREEN|GREEN_TO_GREEN>
+AUTO-ARCHITECTURE-REJECTION: <<'NW_REJECTION'
+<the producer's exact BLOCKED stdout, byte-for-byte>
+NW_REJECTION
+```
+
+Is the fourth field the exact BLOCKED text `des compile-contract` printed,
+or a hand-written summary meant to save a line? Only the former is
+admitted — the hook enforcing this envelope (`pre_tool_use_handler.py`,
+"Auto-root architect envelope malformed") rejects anything else,
+including a summary with the header quoted but the body paraphrased.
+Never hand-summarize the rejection before forwarding it: paste it whole,
+between the quoted heredoc header and its bare `NW_REJECTION` terminator,
+exactly as the `NW_SEED` carrier below already requires for a VALUE-SEED
+(K4 camp7 2026-08-23: a hand-paraphrase omitted the Target-cell detail
+entirely, three dispatches to converge on a shape the compiler had
+already named in full on the first rejection).
 
 **Root verification discipline.** Is root about to `Read` an implementation
 or test file to fact-check the returned brief/ADR, or to hand-edit
@@ -255,10 +294,28 @@ first producer call, not after an `INDETERMINATE` reports it missing.
    re-derived, re-typed or paraphrased a second time. `--independent-
    review` is mandatory here specifically so this producer's own citation-
    only proxy (an `ARCHITECTURE_BOUNDARY_CHANGE` obligation) never silently
-   disagrees with root's already-resolved Seeded fact. Nonzero is the
+   disagrees with root's already-resolved Seeded fact. A nonzero is the
    terminal `Blocked` WHAT/WHY/HOW (e.g. no discoverable test-directory
    convention) — root never repairs, retries or falls back to dispatching
-   ATD without a compiled skeleton; report the refusal and stop. On
+   ATD without a compiled skeleton; report the refusal and stop. There is
+   exactly one typed continuation for a destination-exists refusal: only
+   when the exact stderr carries `WHAT: existing-contract:` (the compiler's
+   machine-readable `Blocked.kind` rendered by `_blocked_from`), the
+   DeliveryId, physical repository root, base revision, route, examine,
+   paradigm, size, budget-token-limit, budget-wall-clock-minutes and
+   independent-review compile-input facts are unchanged byte-for-byte, and
+   a FRESH architect re-consult has returned a repaired
+   `ARCHITECTURE-COVERED` authority may root invoke `des recompile-contract`
+   once. The original compile flags are copied byte-identically except for
+   `--architecture-authority`, which is replaced only by that fresh repaired
+   authority. An `existing-non-file` collision is a distinct terminal
+   refusal and never enters this continuation. This is a
+   session/router `CompileRejected(existing-contract, identity) ->
+   RecompilePermit(same identity + fresh repaired authority) -> Recompiled`
+   transition, not a generic retry; the CLI does not persist or enforce the
+   permit/counter. A generic rejection, identity mismatch, absent fresh
+   repaired authority, second recompile, or nonzero recompile remains
+   terminal. On
    success, this producer's own printed `DELIVERY-CONTRACT-SKELETON`/
    `ORACLE-LOCATOR` lines are root's own confirmation only — they carry no
    new fact ATD needs, since `CONTRACT-LOCATOR` (already in the unchanged
@@ -292,25 +349,14 @@ first producer call, not after an `INDETERMINATE` reports it missing.
    an interrupted process) indistinguishable from one still working? A
    response carrying NO terminal result line is `INDETERMINATE` for that
    role, never a nonterminal batch to retry: report the missing terminal
-   receipt in one sentence and stop — never re-dispatch the same role
-   blindly on the unproven assumption that a second try will simply finish
-   what silence already refused to confirm. Before reporting, check
-   `.nwave/des/subagent-results/<lane name>.txt` -- the name you dispatched
-   the lane under, which is the key you actually hold. The SubagentStop hook
-   (stable-design report 2026-08-19 section 1.1) writes a synthesized
-   `<ROLE>-RESULT: verdict INDETERMINATE reason: ...` there the instant that
-   role's own turn ended with no terminal line; if present, quote it verbatim
-   instead of inferring the cause. An UNNAMED Agent-tool dispatch has no lane
-   name, so its receipt is keyed by the opaque agent id alone
-   (`<agent-id>.txt`). Receipts are written relative to the CWD of the
-   session that owns the lane, and only when the installed runtime carries
-   this handler -- an absent file is therefore never itself evidence that the
-   lane produced a terminal line.
+   result in one sentence and stop — never re-dispatch the same role blindly
+   on the unproven assumption that a second try will simply finish what
+   silence already refused to confirm.
 
    `CHARTER-RESULT` `INDETERMINATE` citing a missing/vague `PublicStartRecipe`
    or any other value-side authority gap (`CLARIFICATION_NEEDED` — PO's own
    scope) is a PO-scope gap, never a DISTILL/ATD defect: never route it to ATD
-   via `REVISE-CONTRACT` (Run 8's own mistake — ATD correctly bounces it back
+   via a contract/oracle correction (Run 8's own mistake — ATD correctly bounces it back
    `EVIDENCE_GAP`, costing a full wasted dispatch). `DeliveryId` is `auto-`
    plus the first 16 hex characters of the SHA-256 digest over the exact
    VALUE-SEED bytes (ADR-SSOT-002); completing the seed with the missing
@@ -329,39 +375,52 @@ first producer call, not after an `INDETERMINATE` reports it missing.
    without reading it) — never a hand-composed PO prompt (correctly
    `CHARTER-AUTHOR-DISQUALIFIED`) and never a fresh re-author. If the
    producer refuses (bound exhausted), report `INDETERMINATE` citing the
-   exhausted charter revision budget and stop. `REVISE-CONTRACT` stays for
-   CONTRACT/ORACLE defects only, exactly as the crafter-citing-contract
-   row below: the contract's targets/oracle did not change, only the
-   charter did.
+   exhausted charter revision budget and stop. Contract/oracle correction
+   instead starts from the last approved closure and newer native AT review;
+   it never mutates a scalar carrier.
 
 4. Validate the charter when applicable, then run the one `des dispatch`
-   command from “CLI dispatch” above. Forward its two lines verbatim to the
-   paradigm crafter. Require terminal `CRAFTER-RESULT` with matching contract,
-   opaque candidate identity, oracle, changed targets, first-mutation bound and
-   terminal zero-exit results for every declared verification command. A PASS
-   opens the single-writer causal window: until the terminal commit, no actor
-   may mutate production targets, contract, oracle or charters.
+   command from “CLI dispatch” above. Dispatch the AT reviewer foreground
+   against C before the selected paradigm crafter. Only exact bare `APPROVE`
+   or `APPROVED` permits that crafter. `NEEDS_REVISION` routes to ATD;
+   `APPROVED WITH CONDITIONS`, any condition, `INDETERMINATE`, malformed,
+   contradictory or unknown output stops. The reviewer is the only route to
+   the crafter.
 
-   Route by `verdict` — each row is a question the router answers honestly
-   before acting, paired with the imperative for the honest-no case:
+   Require terminal `CRAFTER-RESULT` with matching contract, execution-root,
+   oracle, changed targets, first-mutation bound and terminal zero-exit results
+   for every declared verification command. The result has no `candidate:`
+   field. After PASS, the first implementation-reviewer/Examiner/finalize
+   consumer performs E4: it validates the result and Git state, seals or
+   replays K, then injects the existing candidate K and execution-root fields
+   from Git readback. A PASS opens the single-writer causal window: until the
+   terminal commit, no actor may mutate production targets, contract, oracle or
+   charters.
 
    | `CRAFTER-RESULT` verdict | Root routes to |
    |---|---|
-   | `PASS` | the examiner pass below (`examine=true`) or step 5 finalize |
-   | `FAIL` | Is this a genuine terminal FAIL, not a timeout/partial narration (those are `INDETERMINATE` — nw-crafter-discipline-delivery-contract)? A real FAIL is terminal: report the FAIL evidence verbatim and stop — never redispatch hoping a second attempt succeeds where the evidence already says it cannot |
-   | `INDETERMINATE` citing the contract/oracle itself (an invented import, a self-referential obligation, a self-flagged coverage/oracle gap, or any other defect the crafter names IN the delivered contract/oracle — nw-crafter-discipline-delivery-contract item 6, "return an oracle defect to DISTILL"; a self-flagged gap is never `PASS` with the gap only noted in `residuals`) | Does the citation name a real defect IN the contract/oracle, not just an inability to satisfy it? If so, run `des revise-contract-round --repo-root <root> --contract-locator <the SAME CONTRACT-LOCATOR already produced> --citation <the crafter's citation text>` (stable-design report 2026-08-19 section 1.2 -- the bounded producer of the four-line revision body, ROOT/REVISE-CONTRACT/REVISE-ROUND/CITATION; a durable per-DeliveryId counter refuses once the round would exceed its declared bound, terminal WHAT/WHY/HOW, never an unbounded redispatch loop). Send its exact stdout verbatim as `nw-acceptance-designer`'s dispatch body -- never a fresh `des prepare-ordinary-request` run and never a hand-typed revision body. If the producer refuses (bound exhausted), report `DELIVER-RESULT: INDETERMINATE` citing the exhausted revision budget and stop -- never dispatch ATD again for this DeliveryId. Its stdout is exactly `ROOT: <absolute physical root>` then `REVISE-CONTRACT: <locator>` then `REVISE-ROUND: <n>/<N>` then `CITATION: <json-string>`, each on its own line -- ROOT is the producer's own `--repo-root`, so a dispatched reviser resolves the repo-relative locator against the SAME root that produced it, never its own cwd. On the returned `DISTILL-RESULT: CONTRACT_READY`, run `des dispatch` again and redispatch the crafter fresh; `des resolve-charters`/PO are NOT rerun — the charter's validity did not change |
-   | `INDETERMINATE` citing environment/tooling/sandbox (nw-crafter-discipline-delivery-contract item 9, "terminal INDETERMINATE after the first failed attempt") | Is this actually a harness gap no contract revision can fix? If so it is terminal: report the INDETERMINATE evidence and stop — never redispatch ATD, the crafter, or restart the cycle hoping the environment resolves itself |
-   | No terminal `CRAFTER-RESULT` block at all | Same rule as the batch-join above: `INDETERMINATE`, report the missing terminal receipt, stop — never re-dispatch blindly |
+   | `PASS` | E4 at the first implementation-reviewer/Examiner/finalize consumer |
+   | `FAIL` | Report the terminal FAIL and stop. |
+   | `INDETERMINATE` citing a defect in the contract/oracle | Start one strict closure child from the cited approved closure; never mutate a scalar carrier or reuse the rejected closure. |
+   | `INDETERMINATE` citing environment/tooling/sandbox | Report the exact executable, argv and observed failure, then stop. Environment admission belongs before delivery; Auto never infers a language, provisions a tool-specific substrate or substitutes a command. |
+   | Any other `INDETERMINATE` | Report it and stop. |
+   | No complete terminal block | `INDETERMINATE`; report the missing evidence and stop. |
+
+   For implementation review of E4-injected K, only bare `APPROVE` or
+   `APPROVED` advances to finalize. `NEEDS_REVISION` with any ATD-owned finding
+   routes to ATD; an all-crafter finding set routes to the selected crafter.
+   `APPROVED WITH CONDITIONS`, any condition, mixed ownership, malformed or
+   unknown findings, and `INDETERMINATE` stop.
 
    The contract/oracle-citing `INDETERMINATE` row's producer call, root's own
    command (SF friction report 2026-08-20 item 5: this exact invocation was
    previously blocked by the Auto-root Bash allowlist despite this row
    mandating it -- a deadlock resolved only by relaying through a second
-   agent; `revise-contract-round` is now a member of the SAME allowlist
+   agent; strict-child correction is the only supported replacement
    every other root-run `des` subcommand on this page is):
 
    ```
-   des revise-contract-round --repo-root <root> --contract-locator <the SAME CONTRACT-LOCATOR already produced> --citation <the crafter's citation text>
+   strict closure child from the cited approved closure
    ```
 
    A non-`none` `contract-fact-gap` (`first-production-mutation-tool-call` past
@@ -370,21 +429,23 @@ first producer call, not after an `INDETERMINATE` reports it missing.
    one line alongside the routed outcome and take no other action on it.
 
    Then, only when examine=true, dispatch one source-blind Vera pass with the
-   validated charter sequence, execution root and the candidate identity
-   forwarded byte-for-byte. Never send changed-targets to Vera and never ask
-   Vera to derive identity from Git/source. Require Vera to echo that identity
-   unchanged. Missing, stale, malformed, nonzero or nonterminal evidence
-   stops; root never repairs or repeats Vera's public observation.
+   validated charter sequence and E4-injected K/root fields forwarded
+   byte-for-byte. Never send changed-targets to Vera or ask it to derive either
+   field from Git/source. Missing, stale, malformed, nonzero or nonterminal
+   evidence stops; root never repairs or repeats Vera's public observation.
 
 5. Invoke the `nw-finalize` Skill exactly once with the C/D evidence and
    changed-targets; never dispatch an Agent named `nw-finalize`, call a
    fallback finalization CLI, or commit directly. Finalize performs only its
-   authorized direct durable-owner updates, validates the complete commit
-   scope and creates the one terminal commit. Global PASS follows only
-   after `F` reruns the contract verification vectors on a clean checkout of
-   that exact commit and proves installed/Git/filesystem closure. Report role
-   verdicts and immutable SHA only then. Complete only when the original
-   VALUE-SEED is observed; create no receipt, ledger or progress artifact.
+   verified scope projection and returns its one typed final F result only
+   after its fresh clean checkout runs its one exact B-derived
+   `PreservationVector` (including authorized verification argv) and remains
+   clean. Consume `Commit: git-<algorithm>:<F>`
+   and `Clean-checkout: true` before reporting PASS. Installed/CI closure facts
+   remain separately applicable evidence; neither repeats finalization. Complete
+   only when the original VALUE-SEED is observed; create no receipt, ledger or
+   progress artifact. After finalize returns F, satisfy `nw-deliver`'s HAND OFF
+   cleanup postcondition exactly; do not restate or weaken it here.
 
 ## Examiner input isolation
 
@@ -396,7 +457,9 @@ acceptance-designer, which never reads or authors the charter:
   each already containing its public `PublicStartRecipe` in Preconditions
   (CLI argv, public library import+setup+call, endpoint+request, or
   URL+ordered UI actions — ADR-SSOT-002 §4b); and
-- the candidate identity and execution root required to start that surface.
+- the admitted K candidate identity and execution-root required to start that
+  surface, forwarded byte-for-byte as separate fields (the candidate identity
+  and execution root are never combined).
 
 Never send the examiner code facts, acceptance tests, a test command, source
 paths, implementation claims, or a source-reading fallback. The examiner
@@ -412,7 +475,7 @@ the real public surface and yields `FAIL`/`INDETERMINATE`, never a silent
 ## Route boundaries
 
 - **Single-pass dispatches, reusable roles**: each individual Agent result is terminal —
-  no retry/resume/`SendMessage` correction of that dispatch. Role
+  no retry/resume correction of that dispatch. Role
   identity is not run or feature identity: a canonical role may be freshly
   dispatched again for a distinct DeliveryContract/value input, including a
   later vertical needed to close the original VALUE-SEED. Never disguise an
@@ -420,11 +483,10 @@ the real public surface and yields `FAIL`/`INDETERMINATE`, never a silent
 - **Foreground/sync only**: every dispatch `run_in_background=false`. The
   independent calls inside one spatial batch (the AB batch above) may be
   issued together in the same assistant message and run concurrently; root
-  joins every call in that batch before starting any dependent step. No
-  `Task`/`SendMessage`/`ScheduleWakeup`.
+  joins every call in that batch before starting any dependent step.
 - **No infrastructure**: no `TaskCreate`, hook, schema, CLI verb, sequencer/controller.
 - **Terminal Git outcomes** (isolated worktree, no ledger): only `nw-finalize`
-  creates the single terminal commit. Root never duplicates it. Global PASS
-  additionally requires `F` on a clean checkout of that exact SHA; FAIL
-  preserves WIP and reports the observation; missing `F` is INDETERMINATE.
+  creates and verifies the single terminal F. Root never duplicates it. Its
+  finalize result contains F and `Clean-checkout: true`; missing either is
+  INDETERMINATE. Installed/CI closure stays separate, with no duplicate finalize.
 - **Missing/unavailable roles**: stop, report blocker (no silent substitution).

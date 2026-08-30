@@ -1,6 +1,10 @@
 ## nWave (beta) — How to Work in This Project
 
-nWave is in **active development**. Feature work should follow discovery, design, and acceptance-test-first delivery: write the acceptance tests before the implementation (TDD), then implement to make them pass.
+nWave is in **active development**. Before any work, use `nw-mode-select` to state posture, S/M/L size, and one observable reason; explicit mode does not skip sizing.
+
+{{DELIVERY_ROUTE_FRAGMENT}}
+
+DISCUSS/DESIGN resolve only real gaps. Human authority decides genuine scope/trade-offs.
 
 {{TOOL_BATCHING_FRAGMENT}}
 

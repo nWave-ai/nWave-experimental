@@ -30,11 +30,15 @@
 
 ## nw-ab-migrate-monolith
 
-- [nw-ab-migrate-monolith](nw-ab-migrate-monolith.md) — PROCEDURE — migrate a legacy monolithic agent (>400L / embedded config / aggressive language) to lean core + skills, RECURSING into oversized referenced skills. Trigger: a bloated legacy agent spec, or a monolithic skill (>250L bundling >1 job). Composes nw-ab-validate-spec.
+- [nw-ab-migrate-monolith](nw-ab-migrate-monolith.md) — PROCEDURE — migrate one legacy monolithic agent to a lean core plus routed skills. Trigger: an existing agent has measured size, embedded-configuration, duplication, aggressive-language, or multi-responsibility debt. Composes agent validation and requested skill optimization.
 
 ## nw-ab-optimize-command
 
 - [nw-ab-optimize-command](nw-ab-optimize-command.md) — PROCEDURE — optimize a bloated command file to a lean declarative definition (forge.md pattern). Trigger: a command file over its size target with reducible content.
+
+## nw-ab-optimize-skill
+
+- [nw-ab-optimize-skill](nw-ab-optimize-skill.md) — PROCEDURE — optimize one requested existing skill. Measures multi-trigger, duplication, and resident-context debt before editing; preserves its name as the lean core and behavioral projections.
 
 ## nw-ab-todoify-file
 
@@ -180,9 +184,21 @@
 
 - [nw-crafter-discipline-delivery-contract](nw-crafter-discipline-delivery-contract.md) — Crafter discipline for implementing one immutable DeliveryContract with minimal production change, reuse, boundary integrity, and terminal evidence.
 
+## nw-cross-cutting-context-residency
+
+- [nw-cross-cutting-context-residency](nw-cross-cutting-context-residency.md) — KNOWLEDGE — use when choosing resident, map-only, or on-demand context.
+
+## nw-cross-cutting-evidence-instrumentation
+
+- [nw-cross-cutting-evidence-instrumentation](nw-cross-cutting-evidence-instrumentation.md) — KNOWLEDGE — use when evaluating a claim, check, measurement, or shared-log count.
+
+## nw-cross-cutting-input-data-contracts
+
+- [nw-cross-cutting-input-data-contracts](nw-cross-cutting-input-data-contracts.md) — KNOWLEDGE — use when adding data, declaring inputs, or choosing a join key.
+
 ## nw-cross-cutting-invariants
 
-- [nw-cross-cutting-invariants](nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — paradigm-independent and role-independent rules that bind every architect and crafter (data justification, gate design GDP-1..9, self-explaining surfaces). SHIPPED home of these definitions; cite by clause id, never re-declare.
+- [nw-cross-cutting-invariants](nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — lean public routing core for global gate/construction doctrine and on-demand knowledge lenses. Cite clause ids; never re-declare.
 
 ## nw-data-architecture-patterns
 
@@ -298,7 +314,7 @@
 
 ## nw-finalize
 
-- [nw-finalize](nw-finalize.md) — Finalize one whole delivery by joining terminal evidence, proving exact AuthorizedDeliveryPaths scope, and creating the single commit used for clean-checkout closure.
+- [nw-finalize](nw-finalize.md) — Finalize one whole delivery by joining terminal evidence and returning one verified final commit F.
 
 ## nw-five-whys-methodology
 
@@ -306,7 +322,7 @@
 
 ## nw-forge
 
-- [nw-forge](nw-forge.md) — Creates new specialized agents using the 5-phase workflow (ANALYZE > DESIGN > CREATE > VALIDATE > REFINE). Use when building a new AI agent or validating an existing agent specification.
+- [nw-forge](nw-forge.md) — Backward-compatible router for creating agents, validating existing agents, migrating existing agent monoliths, or optimizing one existing skill.
 
 ## nw-formal-verification-tlaplus
 
@@ -316,9 +332,41 @@
 
 - [nw-fp-algebra-driven-design](nw-fp-algebra-driven-design.md) — Algebra-driven API design with monoids, semigroups, and interpreters via algebraic equations
 
+## nw-fp-clojure
+
+- [nw-fp-clojure](nw-fp-clojure.md) — Clojure language-specific patterns, data-first modeling, REPL-driven development, and spec
+
+## nw-fp-erlang-elixir
+
+- [nw-fp-erlang-elixir](nw-fp-erlang-elixir.md) — Erlang/Elixir language-specific patterns, OTP as the effect model, and runtime-enforced immutability
+
+## nw-fp-fsharp
+
+- [nw-fp-fsharp](nw-fp-fsharp.md) — F# language-specific patterns, Railway-Oriented Programming, and Computation Expressions
+
+## nw-fp-haskell
+
+- [nw-fp-haskell](nw-fp-haskell.md) — Haskell language-specific patterns, GADTs, type classes, and effect systems
+
+## nw-fp-kotlin
+
+- [nw-fp-kotlin](nw-fp-kotlin.md) — Kotlin language-specific patterns with Arrow, Raise DSL, and coroutine-based effects
+
 ## nw-fp-principles
 
 - [nw-fp-principles](nw-fp-principles.md) — Core functional programming thinking patterns and type system foundations, language-agnostic
+
+## nw-fp-rust
+
+- [nw-fp-rust](nw-fp-rust.md) — Rust language-specific patterns, compiler-verified exhaustive ADTs, and Result/Option as railway-oriented programming
+
+## nw-fp-scala
+
+- [nw-fp-scala](nw-fp-scala.md) — Scala 3 language-specific patterns with ZIO, Cats Effect, and opaque types
+
+## nw-fp-typescript
+
+- [nw-fp-typescript](nw-fp-typescript.md) — TypeScript language-specific patterns with fp-ts/Effect, discriminated unions, and railway-oriented error handling
 
 ## nw-hotspot
 
@@ -527,6 +575,18 @@
 ## nw-security-by-design
 
 - [nw-security-by-design](nw-security-by-design.md) — Security design principles, STRIDE threat modeling, OWASP Top 10 architectural mitigations, and secure patterns. Load when designing systems or reviewing architecture for security.
+
+## nw-solution-architect-auto-consult
+
+- [nw-solution-architect-auto-consult](nw-solution-architect-auto-consult.md) — PROCEDURE — close bounded architecture consult in durable authority. Trigger: exact AUTO-ARCHITECTURE-CONSULT envelope.
+
+## nw-solution-architect-formal-verification
+
+- [nw-solution-architect-formal-verification](nw-solution-architect-formal-verification.md) — PROCEDURE — verify one separately selected formal DESIGN obligation and state its runtime refinement boundary.
+
+## nw-solution-architect-full-design
+
+- [nw-solution-architect-full-design](nw-solution-architect-full-design.md) — PROCEDURE — author or amend one durable application DESIGN authority. Trigger: a non-Auto DESIGN mandate.
 
 ## nw-source-verification
 

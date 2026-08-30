@@ -2,7 +2,7 @@
 
 Ale's construction-over-file correction (2026-08-20): ATD passes VALUES to
 this constructor directly -- no intermediate fill FILE, no representable
-wrong shape. Mechanical fields have no `--field` choice naming them at all;
+wrong shape. Mechanical fields have no legacy scalar-write choice naming them at all;
 this module's own `Blocked` branches are the defense-in-depth for a caller
 that somehow bypasses argparse's closed choices, never the primary gate.
 """
@@ -169,7 +169,7 @@ def test_refuses_the_literal_placeholder_as_a_value() -> None:
 
 
 def test_overwrites_an_already_filled_field_for_revision() -> None:
-    """REVISE-CONTRACT: ATD re-fills an already-real field to fix a cited
+    """A batch publication can replace an already-real semantic field to fix a cited
     defect -- never a one-shot ratchet."""
     contract = _contract()
     first = fill_contract_field(

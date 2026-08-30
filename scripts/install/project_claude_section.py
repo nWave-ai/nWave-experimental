@@ -37,6 +37,10 @@ END_MARKER = "<!-- END nWave-beta-section -->"
 # Placeholder names are how templates ask for them; the splice here ensures
 # composed bytes are identical across hosts.
 _FRAGMENTS = (
+    (
+        "{{DELIVERY_ROUTE_FRAGMENT}}",
+        ("nWave", "templates", "delivery-route-fragment.md"),
+    ),
     ("{{TOOL_BATCHING_FRAGMENT}}", ("nWave", "templates", "tool-batching-fragment.md")),
     (
         "{{QUESTION_FORMAT_FRAGMENT}}",

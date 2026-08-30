@@ -21,19 +21,26 @@ is protected by construction through the injected Git port and classifier.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from des.application.worktree_triage_collector import collect_worktree_triage_receipt
 from des.domain.worktree_cleanup import (
     WorktreeCleanupVerdict,
     classify_worktree_cleanup_state,
 )
+from des.domain.worktree_residence import LaneIdentity, lease_from_receipt
 
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
+    from des.domain.worktree_anti_rot_triage import WorktreeAntiRotReceipt
     from des.ports.driven_ports.git_worktree_port import GitWorktreePort, WorktreeHandle
+    from des.ports.driven_ports.owner_lease_probe import OwnerLeaseProbe
+
+
+TriageCollector = Callable[[Path, Path, str | None], "WorktreeAntiRotReceipt"]
 
 
 class MergeCheck(Protocol):
@@ -82,10 +89,17 @@ class WorktreeCleanupService:
     """Application-layer composition root: the cleanup sweep."""
 
     def __init__(
-        self, *, git_worktree: GitWorktreePort, merge_check: MergeCheck
+        self,
+        *,
+        git_worktree: GitWorktreePort,
+        merge_check: MergeCheck,
+        owner_lease: OwnerLeaseProbe,
+        collect_receipt: TriageCollector = collect_worktree_triage_receipt,
     ) -> None:
         self._git_worktree = git_worktree
         self._merge_check = merge_check
+        self._owner_lease = owner_lease
+        self._collect_receipt = collect_receipt
 
     def sweep(
         self,
@@ -116,10 +130,15 @@ class WorktreeCleanupService:
     ) -> WorktreeCleanupEntry:
         is_merged = self._merge_check(repo, handle.head_sha, target_branch)
         has_uncommitted = self._git_worktree.has_uncommitted_changes(repo, handle.path)
+        receipt = self._collect_receipt(repo, handle.path, target_branch)
+        owner = self._owner_lease.observe(
+            handle.path, LaneIdentity.observe(handle.path)
+        )
         verdict = classify_worktree_cleanup_state(
             worktree_registered=True,
             is_merged=is_merged,
             has_uncommitted_changes=has_uncommitted,
+            lease=lease_from_receipt(receipt, owner),
         )
         removed = False
         if verdict is WorktreeCleanupVerdict.CLEANUP_DUE and not check_only:

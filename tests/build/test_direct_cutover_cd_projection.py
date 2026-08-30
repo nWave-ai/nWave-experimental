@@ -16,6 +16,8 @@ DELIVER_TASK = ROOT / "nWave/tasks/nw/deliver.md"
 OO = ROOT / "nWave/agents/nw-software-crafter.md"
 FP = ROOT / "nWave/agents/nw-functional-software-crafter.md"
 EXAMINER = ROOT / "nWave/agents/nw-user-examiner.md"
+IMPLEMENTATION_REVIEWER = ROOT / "nWave/agents/nw-software-crafter-reviewer.md"
+FINALIZE = ROOT / "nWave/skills/nw-finalize/SKILL.md"
 PROJECTIONS = (DELIVER, DELIVER_TASK, OO, FP, EXAMINER)
 
 
@@ -313,60 +315,119 @@ def test_examine_axis_is_independent_of_delivery_route() -> None:
 
 
 @pytest.mark.parametrize("path", (OO, FP), ids=("oo", "fp"))
-def test_crafter_terminal_result_declares_opaque_candidate_and_execution_root(
+def test_crafter_terminal_result_declares_execution_root_without_candidate(
     path: Path,
 ) -> None:
-    """Crafter terminal results declare distinct candidate and execution-root lines.
-
-    candidate remains opaque and never embeds or splits on +worktree:.
-    execution-root carries the absolute execution-root path verbatim.
-    """
+    """Crafters report their execution root; E4 alone constructs K."""
     text = _text(path)
+    terminal = text[text.index("CRAFTER-RESULT") : text.index("## Constraints")]
 
-    # Terminal result structure: candidate and execution-root as distinct fields
-    assert "candidate: git-" in text
-    assert (
-        "execution-root: <absolute-execution-root>" in text or "execution-root:" in text
-    )
-    # Candidate stays opaque, never includes worktree encoding
+    assert "candidate:" not in terminal
+    assert "execution-root: <absolute-execution-root>" in terminal
     assert "+worktree:" not in text
 
 
-def test_deliver_forwards_candidate_and_execution_root_to_examiner() -> None:
-    """nw-deliver requires candidate and execution-root fields from crafter.
-
-    Forwards both verbatim to source-blind Examiner without transformation.
-    Candidate identity and execution root passed separately, never merged.
-    """
+def test_deliver_e4_seals_k_before_downstream_consumers() -> None:
+    """The crafter returns no candidate; E4 seals and injects K/root."""
     deliver = _text(DELIVER)
     compact = " ".join(deliver.split())
 
-    # DELIVER receives and requires both fields from crafter
-    assert "candidate" in deliver.lower()
-    assert "execution-root" in deliver.lower() or "execution root" in deliver.lower()
-    # Forwards unchanged to Examiner, never re-encodes or merges fields
-    assert "forwards" in compact or "pass" in compact or "send" in compact
-    # Never embeds worktree marker in forwarded identity
+    assert "CRAFTER-RESULT PASS` has no `candidate:` field" in deliver
+    assert "seals or replays K" in compact
+    assert "implementation-reviewer/Examiner/finalize consumer" in compact
+    assert "root-injected existing `candidate` K" in compact
     assert "+worktree:" not in deliver
 
 
-def test_examiner_receives_candidate_and_execution_root_separately() -> None:
-    """Examiner receives candidate unchanged and execution-root as separate field.
+def test_deliver_e2_requires_an_unconditional_at_approval_before_craft() -> None:
+    deliver = _text(DELIVER)
+    auto = _text(ROOT / "nWave/skills/nw-auto/SKILL.md")
 
-    Echoes candidate opaquely, receives execution-root via independent channel.
-    Source-blind: no interpretation of candidate format, pure pass-through.
-    """
+    assert deliver.index("**E2 AT REVIEW**") < deliver.index("**E3 DISPATCH**")
+    assert "bare exact `APPROVE` or `APPROVED`" in deliver
+    assert "Only bare `APPROVE` or `APPROVED`" in auto
+    for text in (deliver, auto):
+        assert "`APPROVED WITH CONDITIONS`" in text
+        assert "NEEDS_REVISION" in text
+
+
+def test_k_implementation_review_requires_a_bare_approval() -> None:
+    consumers = (
+        _text(ROOT / "nWave/skills/nw-auto/SKILL.md"),
+        _text(DELIVER),
+        _text(DELIVER_TASK),
+        _text(IMPLEMENTATION_REVIEWER),
+    )
+
+    for consumer in (" ".join(text.split()) for text in consumers):
+        assert "bare `APPROVE` or `APPROVED`" in consumer
+        assert "`APPROVED WITH CONDITIONS`" in consumer
+
+
+def test_implementation_review_producer_declares_both_approval_verdicts() -> None:
+    reviewer = _text(IMPLEMENTATION_REVIEWER)
+
+    assert "verdict: APPROVE | APPROVED | NEEDS_REVISION | INDETERMINATE" in reviewer
+
+
+def test_at_review_producer_declares_both_approval_verdicts() -> None:
+    reviewer = _text(ROOT / "nWave/agents/nw-acceptance-designer-reviewer.md")
+
+    assert "AT-REVIEW" in reviewer
+    assert "verdict: APPROVE | APPROVED | NEEDS_REVISION | INDETERMINATE" in reviewer
+    for field in ("contract:", "oracle:", "findings:"):
+        assert field in reviewer
+    # Oracle is terminal identity (locator only): closure-v2 already binds its
+    # bytes into the contract digest, so a separate raw oracle SHA is redundant.
+    assert "oracle: <locator>" in reviewer
+    assert "oracle: <locator>@sha256:<digest>" not in reviewer
+
+
+def test_examiner_receives_execution_root_only_as_internal_input() -> None:
+    """Examiner gets root internally but emits only the candidate grammar."""
     examiner = _text(EXAMINER)
     compact = " ".join(examiner.split())
     examiner_lower = examiner.lower()
 
-    # Examiner processes both fields as inputs
+    terminal = examiner[
+        examiner.index("EXAMINE-RESULT") : examiner.index("Echo `candidate`")
+    ]
+
+    # Examiner processes both fields as inputs, but root is not public grammar.
     assert "candidate" in examiner_lower
     assert "execution-root" in examiner_lower or "execution root" in examiner_lower
-    # Source-blind: echoes candidate unchanged, never parses or reconstructs it
+    assert "execution-root:" not in terminal
+    # Source-blind: echoes candidate unchanged, never parses or reconstructs it.
     unchanged = "unchanged" in compact
     echo = "echo" in compact
     opaque = "opaque" in compact
     assert "candidate" in examiner_lower and (unchanged or echo or opaque)
     # No internal schema or artifact persistence for these fields
     assert "+worktree:" not in examiner and "persisted" not in examiner_lower
+
+
+def test_k_is_forwarded_without_base_or_root_reinterpretation() -> None:
+    """Every E4 consumer treats root-injected candidate as admitted K."""
+    oo, fp = _text(OO), _text(FP)
+    deliver, examiner = _text(DELIVER), _text(EXAMINER)
+    reviewer, finalize = _text(IMPLEMENTATION_REVIEWER), _text(FINALIZE)
+
+    for crafter in (oo, fp):
+        terminal = crafter[
+            crafter.index("CRAFTER-RESULT") : crafter.index("## Constraints")
+        ]
+        assert "candidate:" not in terminal
+        assert "execution-root: <absolute-execution-root>" in terminal
+        assert "+worktree:" not in crafter
+    assert "seals or replays K" in deliver
+    assert "root-injected existing `candidate` K" in " ".join(deliver.split())
+    assert "candidate is admitted `K`, never base `B`" in examiner
+    assert "root's HEAD to be exactly K" in " ".join(reviewer.split())
+    reviewer_terminal = reviewer[
+        reviewer.index("IMPLEMENTATION-REVIEW") : reviewer.index(
+            "Route only this existing grammar"
+        )
+    ]
+    assert "execution-root" in reviewer
+    assert "execution-root:" not in reviewer_terminal
+    assert "require root HEAD=K" in finalize

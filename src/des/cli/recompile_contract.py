@@ -13,6 +13,7 @@ ATD's already-authored semantic fills wherever the target's identity
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 from des.application.compile_contract import (
     Blocked,
@@ -89,6 +90,25 @@ def main(argv: list[str] | None = None) -> int:
     # decision-changed rows are grounded fresh, exactly as at compile.
     existing_locator = (existing.get("acceptance-tests") or {}).get("locator")
     existing_scope = existing.get("verification-scope")
+    budget = existing.get("budget") if isinstance(existing.get("budget"), dict) else {}
+    applicability = (
+        existing.get("applicability")
+        if isinstance(existing.get("applicability"), dict)
+        else {}
+    )
+    inputs = replace(
+        inputs,
+        delivery_route=existing.get("delivery-route", inputs.delivery_route),
+        paradigm=existing.get("paradigm", inputs.paradigm),
+        budget_token_limit=budget.get("token-limit", inputs.budget_token_limit),
+        budget_wall_clock_minutes=budget.get(
+            "wall-clock-minutes", inputs.budget_wall_clock_minutes
+        ),
+        examine=applicability.get("examine", inputs.examine),
+        independent_review=applicability.get(
+            "independent-review", inputs.independent_review
+        ),
+    )
     result = compile_delivery_contract(
         inputs,
         declared_in_existing_contract={

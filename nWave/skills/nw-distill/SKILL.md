@@ -77,8 +77,15 @@ so a skeleton it writes passes those validators by construction. Every
 field DESIGN/ATD alone can judge (`outcome`, `targets.*.justification`,
 every `targets.*.boundary.*`) is left as the literal `<ATD: fill>`
 placeholder, which both `des dispatch` and `des validate-delivery-contract`
-refuse until replaced with real prose — see `nw-acceptance-designer.md`,
-"Compiled skeleton", for ATD's fill-not-author handling when
+refuse until replaced with real prose. DISTILL hands that skeleton to ATD
+with one closed `des fill-contract --batch` construction: one JSON array
+containing all semantic values, carried by default through the
+deterministic `--batch-file` carrier (`.des/fill-contract-carrier/<id>.json`)
+so the Bash command line itself never carries JSON, or through the quoted
+`<<'NW_FILL'` heredoc fallback where the carrier is impractical — either way
+validated completely before one atomic publication; it never instructs one
+call per field. See
+`nw-acceptance-designer.md`, "Compiled skeleton", for ATD's fill-not-author handling when
 `CONTRACT-LOCATOR` already resolves to one of these files. The oracle
 locator is a CONVENTION this producer decides too (the primary EXTEND
 target's own sibling `tests/` directory, else the repository's top-level

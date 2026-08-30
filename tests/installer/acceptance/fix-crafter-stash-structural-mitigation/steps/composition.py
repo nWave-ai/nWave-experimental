@@ -280,7 +280,7 @@ class GitStashGuardFixture:
         """Assert the block decision's reason text contains the named phrase.
 
         AT-1 verifies the reason text names BOTH the safe alternative
-        (`git worktree add /tmp/probe HEAD`) AND the bypass mechanism
+        (`des worktree-admit --repo <root> --lane <name>`) AND the bypass mechanism
         (`NWAVE_GIT_STASH_ALLOW`) so the operator sees an actionable remedy
         without parsing anything beyond the decision JSON.
         """

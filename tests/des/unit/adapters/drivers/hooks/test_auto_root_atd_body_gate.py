@@ -332,8 +332,8 @@ class TestAtdRejectsMissingInferredReorderedOrInvalidFacts:
 
 
 _VALID_REVISE_LOCATOR_VALUE = contract_locator_for(_VALID_DELIVERY_ID_VALUE)
-_VALID_REVISE_LOCATOR_LINE = f"REVISE-CONTRACT: {_VALID_REVISE_LOCATOR_VALUE}"
-_VALID_REVISE_ROUND_LINE = "REVISE-ROUND: 1/3"
+_VALID_REVISE_LOCATOR_LINE = f"RETIRED-CLOSURE: {_VALID_REVISE_LOCATOR_VALUE}"
+_VALID_REVISE_ROUND_LINE = "RETIRED-COUNT: 1/3"
 _VALID_CITATION_TEXT = "The crafter cited an invented import that does not exist."
 _VALID_CITATION_LINE = (
     f"CITATION: {json.dumps(_VALID_CITATION_TEXT, ensure_ascii=False)}"
@@ -354,9 +354,9 @@ class TestAtdAcceptsTheContractRevisionBody:
     """Run 4 evidence / ADR-SSOT-002 Section 4c/4d: a crafter INDETERMINATE
     citing the contract/oracle routes back to ATD with this alternate
     four-line body (stable-design report 2026-08-19 §1.2 added
-    REVISE-ROUND, emitted only by `des revise-contract-round`; SF friction
+    a retired mutable count; strict Git closure ancestry now replaces it.
     report 2026-08-20 item 6 added ROOT -- a dispatched reviser had no
-    choice but to resolve REVISE-CONTRACT's repo-relative locator against
+    choice but to resolve a mutable locator against
     its OWN cwd, the wrong checkout, twice in one night) on the SAME
     already-produced DeliveryId -- never a fresh fourteen-line envelope
     from a second `prepare-ordinary-request` run."""
@@ -373,8 +373,8 @@ class TestAtdAcceptsTheContractRevisionBody:
                 transcript_path=_transcript(tmp_path, auto=True),
             ),
         )
-        if payload is not None and payload.get("decision") == "block":
-            assert _ATD_BODY_GATE_SIGNATURE not in payload.get("reason", "")
+        assert payload is not None
+        assert payload.get("decision") == "block"
 
     @pytest.mark.parametrize(
         "case_id,prompt",
@@ -396,43 +396,43 @@ class TestAtdAcceptsTheContractRevisionBody:
             (
                 "locator_wrong_directory",
                 _atd_revision_body(
-                    locator_line=f"REVISE-CONTRACT: docs/other/{_VALID_DELIVERY_ID_VALUE}.json"
+                    locator_line=f"RETIRED-CLOSURE: docs/other/{_VALID_DELIVERY_ID_VALUE}.json"
                 ),
             ),
             (
                 "locator_wrong_suffix",
                 _atd_revision_body(
-                    locator_line=f"REVISE-CONTRACT: docs/delivery-contracts/{_VALID_DELIVERY_ID_VALUE}.txt"
+                    locator_line=f"RETIRED-CLOSURE: docs/delivery-contracts/{_VALID_DELIVERY_ID_VALUE}.txt"
                 ),
             ),
             (
                 "locator_absolute",
                 _atd_revision_body(
-                    locator_line=f"REVISE-CONTRACT: /docs/delivery-contracts/{_VALID_DELIVERY_ID_VALUE}.json"
+                    locator_line=f"RETIRED-CLOSURE: /docs/delivery-contracts/{_VALID_DELIVERY_ID_VALUE}.json"
                 ),
             ),
             (
                 "locator_traversal",
                 _atd_revision_body(
-                    locator_line="REVISE-CONTRACT: docs/delivery-contracts/../x.json"
+                    locator_line="RETIRED-CLOSURE: docs/delivery-contracts/../x.json"
                 ),
             ),
             (
                 "locator_missing_auto_prefix",
                 _atd_revision_body(
-                    locator_line="REVISE-CONTRACT: docs/delivery-contracts/0123456789abcdef.json"
+                    locator_line="RETIRED-CLOSURE: docs/delivery-contracts/0123456789abcdef.json"
                 ),
             ),
             (
                 "locator_short_hex",
                 _atd_revision_body(
-                    locator_line="REVISE-CONTRACT: docs/delivery-contracts/auto-0123.json"
+                    locator_line="RETIRED-CLOSURE: docs/delivery-contracts/auto-0123.json"
                 ),
             ),
             (
                 "locator_uppercase_hex",
                 _atd_revision_body(
-                    locator_line="REVISE-CONTRACT: docs/delivery-contracts/auto-"
+                    locator_line="RETIRED-CLOSURE: docs/delivery-contracts/auto-"
                     + "A" * 16
                     + ".json"
                 ),
@@ -463,27 +463,27 @@ class TestAtdAcceptsTheContractRevisionBody:
             ),
             (
                 "round_not_a_fraction",
-                _atd_revision_body(round_line="REVISE-ROUND: one"),
+                _atd_revision_body(round_line="RETIRED-COUNT: one"),
             ),
             (
                 "round_exceeds_its_own_bound",
-                _atd_revision_body(round_line="REVISE-ROUND: 4/3"),
+                _atd_revision_body(round_line="RETIRED-COUNT: 4/3"),
             ),
             (
                 "round_zero",
-                _atd_revision_body(round_line="REVISE-ROUND: 0/3"),
+                _atd_revision_body(round_line="RETIRED-COUNT: 0/3"),
             ),
             (
                 "round_negative",
-                _atd_revision_body(round_line="REVISE-ROUND: -1/3"),
+                _atd_revision_body(round_line="RETIRED-COUNT: -1/3"),
             ),
             (
                 "round_leading_zero",
-                _atd_revision_body(round_line="REVISE-ROUND: 01/3"),
+                _atd_revision_body(round_line="RETIRED-COUNT: 01/3"),
             ),
             (
                 "round_missing_denominator",
-                _atd_revision_body(round_line="REVISE-ROUND: 1/"),
+                _atd_revision_body(round_line="RETIRED-COUNT: 1/"),
             ),
             (
                 "two_line_body_missing_round_entirely",
@@ -563,7 +563,7 @@ class TestScopeExclusionsPassThisSpecificGate:
 
 
 class TestRevisionGrammarDoesNotDriftAcrossAuthoringSurfaces:
-    """The four-line `ROOT:`/`REVISE-CONTRACT:`/`REVISE-ROUND:`/
+    """The retired four-line mutable body is absent; Git closure ancestry
     `CITATION:` shape is documented in THREE prose surfaces (root's
     routing skill, ATD's own agent spec, and prepare_ordinary_request.py's
     own already-produced-contract refusal `how=` -- SF friction report
@@ -576,32 +576,13 @@ class TestRevisionGrammarDoesNotDriftAcrossAuthoringSurfaces:
     live redispatch loop or a reviser resolving paths against the wrong
     checkout."""
 
-    def test_revise_contract_and_citation_prefixes_appear_in_all_three_documents(
+    def test_retired_revision_prefixes_have_no_active_hook_constants(
         self,
     ) -> None:
-        skill_text = _NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
-        agent_text = _ATD_AGENT_MD.read_text(encoding="utf-8")
-        producer_text = _PREPARE_ORDINARY_REQUEST_PY.read_text(encoding="utf-8")
-        for prefix in (
-            pre_tool_use_handler._ATD_ROOT_LINE_PREFIX.rstrip(),
-            pre_tool_use_handler._ATD_REVISE_CONTRACT_LINE_PREFIX.rstrip(),
-            pre_tool_use_handler._ATD_REVISE_ROUND_LINE_PREFIX.rstrip(),
-            pre_tool_use_handler._ATD_CITATION_LINE_PREFIX.rstrip(),
-        ):
-            assert prefix in skill_text, f"{prefix!r} missing from nw-auto/SKILL.md"
-            assert prefix in agent_text, (
-                f"{prefix!r} missing from nw-acceptance-designer.md"
-            )
-            assert prefix in producer_text, (
-                f"{prefix!r} missing from prepare_ordinary_request.py's own "
-                "already-produced-contract refusal prose"
-            )
-        assert "two-line body" not in producer_text, (
-            "prepare_ordinary_request.py's refusal prose must not claim the "
-            "pre-19/8 two-line shape -- the real body is four lines"
-        )
+        assert not hasattr(pre_tool_use_handler, "_ATD_REVISE_CONTRACT_LINE_PREFIX")
+        assert not hasattr(pre_tool_use_handler, "_ATD_REVISE_ROUND_LINE_PREFIX")
 
     def test_skill_names_the_revision_route_never_a_fresh_producer_run(self) -> None:
         skill_text = _NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
         assert "INDETERMINATE" in skill_text
-        assert "never a fresh `des prepare-ordinary-request` run" in skill_text
+        assert "strict closure child" in skill_text

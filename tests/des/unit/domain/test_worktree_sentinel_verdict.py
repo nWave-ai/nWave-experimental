@@ -20,6 +20,7 @@ from des.domain.worktree_anti_rot_triage import (
     WorktreeAntiRotReceipt,
     triage_worktree,
 )
+from des.domain.worktree_residence import OwnerLease
 from des.domain.worktree_sentinel_verdict import (
     RECENT_ACTIVITY_SECONDS,
     SentinelState,
@@ -54,7 +55,7 @@ def test_defect_1_recent_activity_with_no_owner_and_no_process_is_owned_not_aban
     assert anti_rot.state is TriageState.ABANDONED_CANDIDATE
 
     verdict = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=anti_rot,
         activity_age_seconds=300,  # 5 minutes ago -- well under the hour floor
@@ -88,7 +89,7 @@ def test_defect_2_declared_ownership_outranks_zero_live_processes() -> None:
     assert anti_rot.state is TriageState.ABANDONED_CANDIDATE
 
     verdict = classify_sentinel(
-        declared_owned=True,
+        lease=OwnerLease.HELD,
         declared_how="lane-owner marker present",
         anti_rot=anti_rot,
         activity_age_seconds=2 * RECENT_ACTIVITY_SECONDS,  # 2h, well past stale
@@ -104,7 +105,7 @@ def test_declared_owner_beats_live_evidence_too_and_names_the_declaration() -> N
     anti_rot = WorktreeAntiRotReceipt(state=TriageState.CLEAN)
 
     verdict = classify_sentinel(
-        declared_owned=True,
+        lease=OwnerLease.HELD,
         declared_how="--owned 'my-lane' (normalized match: 'mylane')",
         anti_rot=anti_rot,
         activity_age_seconds=Indeterminate("not read -- declared ownership decides"),
@@ -125,7 +126,7 @@ def test_live_process_or_lock_evidence_is_owned_without_a_declaration() -> None:
     )
 
     verdict = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=anti_rot,
         activity_age_seconds=Indeterminate("irrelevant -- LIVE decides first"),
@@ -151,7 +152,7 @@ def test_an_unreadable_activity_signal_is_undecidable_never_guessed_as_abandoned
     )
 
     verdict = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=anti_rot,
         activity_age_seconds=Indeterminate("could not stat HEAD/index"),
@@ -177,7 +178,7 @@ def test_an_indeterminate_anti_rot_receipt_is_also_undecidable() -> None:
     assert anti_rot.state is TriageState.INDETERMINATE
 
     verdict = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=anti_rot,
         activity_age_seconds=10,  # readable and recent -- still not enough
@@ -195,7 +196,7 @@ def test_no_owner_no_activity_no_risk_is_abandoned_candidate_with_remove_only() 
     anti_rot = WorktreeAntiRotReceipt(state=TriageState.CLEAN)
 
     verdict = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=anti_rot,
         activity_age_seconds=2 * RECENT_ACTIVITY_SECONDS,
@@ -219,7 +220,7 @@ def test_no_owner_no_activity_at_risk_work_offers_all_four_actions() -> None:
     )
 
     verdict = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=anti_rot,
         activity_age_seconds=48 * 3600,  # 2 days, past the 36h anti-rot horizon
@@ -235,13 +236,13 @@ def test_activity_boundary_is_inclusive_at_the_recent_threshold() -> None:
     anti_rot = WorktreeAntiRotReceipt(state=TriageState.CLEAN)
 
     at_threshold = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=anti_rot,
         activity_age_seconds=RECENT_ACTIVITY_SECONDS,
     )
     just_under = classify_sentinel(
-        declared_owned=False,
+        lease=OwnerLease.RELEASED,
         declared_how="",
         anti_rot=anti_rot,
         activity_age_seconds=RECENT_ACTIVITY_SECONDS - 1,
@@ -249,3 +250,23 @@ def test_activity_boundary_is_inclusive_at_the_recent_threshold() -> None:
 
     assert at_threshold.state is SentinelState.ABANDONED_CANDIDATE
     assert just_under.state is SentinelState.OWNED
+
+
+def test_indeterminate_owner_lease_precedes_recent_activity() -> None:
+    anti_rot = triage_worktree(
+        target_path="/fake/wt-unknown-owner",
+        process_matches=(),
+        locked=False,
+        dirty=False,
+        unmerged_commits=(),
+    )
+
+    verdict = classify_sentinel(
+        lease=OwnerLease.INDETERMINATE,
+        declared_how="marker could not be read",
+        anti_rot=anti_rot,
+        activity_age_seconds=1,
+    )
+
+    assert verdict.state is SentinelState.UNDECIDABLE
+    assert any(e.category == "owner-lease-indeterminate" for e in verdict.evidence)

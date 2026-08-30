@@ -72,6 +72,20 @@ PUBLIC_SHARED_SKILLS: frozenset[str] = frozenset(
         "nw-pbt-python",
         "nw-pbt-rust",
         "nw-pbt-typescript",
+        # FP language idioms are the SAME load-bearing pattern, one row
+        # below: resolved by target language from the table at
+        # nw-code-design-fp/SKILL.md, not frontmatter-preloaded by
+        # nw-functional-software-crafter despite declaring it as `agent:`
+        # in their own frontmatter (2026-08-24, F-FP-LANGUAGE-SKILLS-
+        # SHIPPED-UNREACHABLE).
+        "nw-fp-clojure",
+        "nw-fp-erlang-elixir",
+        "nw-fp-fsharp",
+        "nw-fp-haskell",
+        "nw-fp-kotlin",
+        "nw-fp-rust",
+        "nw-fp-scala",
+        "nw-fp-typescript",
         "nw-persona-jtbd-analysis",
         "nw-spike-methodology",
         "nw-speculative-dispatch",

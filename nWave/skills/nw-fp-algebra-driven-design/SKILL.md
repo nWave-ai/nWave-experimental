@@ -7,7 +7,8 @@ user-invocable: false
 
 # FP Algebra-Driven Design
 
-Algebraic thinking for API design. Discover the right API before implementing by specifying rules (equations) that operations must satisfy.
+FP structure catalogue for API design; derive candidate API/observations via
+`nw-algebraic-design-protocol`.
 
 **Thin FP projection (ADR-SSOT-002 §6a).** The design METHOD — how to find
 observations, add constructors, and follow a contradiction to its carrier —
@@ -16,7 +17,7 @@ just FP data types. This file's own contribution is narrower: the catalogue
 of recurring FP structures (Section 2) and how they compose. Load the
 protocol skill for the method; load this one for the structure catalogue.
 
-Cross-references: [fp-principles](../nw-fp-principles/SKILL.md) | [fp-domain-modeling](../nw-fp-domain-modeling/SKILL.md) | [fp-usable-design](../nw-fp-usable-design/SKILL.md)
+Refs: [fp-principles](../nw-fp-principles/SKILL.md) | [fp-domain-modeling](../nw-fp-domain-modeling/SKILL.md) | [fp-usable-design](../nw-fp-usable-design/SKILL.md)
 
 ---
 
@@ -24,7 +25,7 @@ Cross-references: [fp-principles](../nw-fp-principles/SKILL.md) | [fp-domain-mod
 
 [STARTER] -> [ADVANCED]
 
-Recurring patterns in software. Recognizing them unlocks known rules and capabilities.
+Recognizing recurring structures unlocks known rules/capabilities.
 
 ### [STARTER] Combinable Values (Semigroup)
 
@@ -44,7 +45,8 @@ Recurring patterns in software. Recognizing them unlocks known rules and capabil
 ### [INTERMEDIATE] Merge-and-Forget Values (Semilattice)
 
 **What**: Combinable Value where merging is also order-independent and idempotent.
-**When**: Conflict resolution | eventually-consistent systems | CRDTs.
+**When**: Local merge; distributed consistency/CRDT topology triggers
+`nw-system-designer`.
 **Example**: Status tracker with `seen < failed < completed` uses `max` as merge.
 
 ### [INTERMEDIATE] Structure-Preserving Transformations (Functor)
@@ -87,7 +89,9 @@ Is your domain about COMBINING things?
 
 ## 3. Integration with Other FP Lenses
 
-**Rules + Property-Based Testing**: Rules ARE property tests. Algebraic constructors become PBT generators. See `nw-property-based-testing` for semantic PBT and test authoring ownership.
+**Rules + Property-Based Testing**: A law compiles to a candidate property after
+generator/domain/observation/falsifier gates; constructors inform, never equal,
+generators. See `nw-property-based-testing` for ownership.
 
 **Rules + Domain Modeling** (see [fp-domain-modeling](../nw-fp-domain-modeling/SKILL.md)): Domain wrappers with smart constructors are algebraic rules. State machine transitions are rules about valid sequences.
 

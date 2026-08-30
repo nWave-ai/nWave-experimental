@@ -10,10 +10,12 @@ from pathlib import Path
 from des.cli._placeholder_refusal import (
     first_unfilled_placeholder_finding as _first_unfilled_placeholder_finding,
 )
-from des.cli._whole_suite_scope_refusal import (
-    missing_whole_suite_scope_finding as _missing_whole_suite_scope_finding,
+from des.cli.dispatch import (
+    _load_delivery_contract,
+    _resolve_oracle,
+    _resolve_supporting_files,
+    closure_digest,
 )
-from des.cli.dispatch import _load_delivery_contract, _resolve_oracle, closure_digest
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -73,22 +75,27 @@ def main(argv: list[str] | None = None) -> int:
     # vacuity report ~/nwave-formal/2026-08-19-gates/report/2026-08-19-
     # gate-analysis.md): declared-imports resolution and verification-
     # scope path existence used to be re-checked HERE too -- DELETED, not
-    # merely reordered. `des fill-contract` has no `--field` choice naming
+    # merely reordered. `des fill-contract` has no batch entry naming
     # a mechanical field at all, so a contract reaching this crafter-
     # BASELINE call already has them correct by construction.
-
-    whole_suite_finding = _missing_whole_suite_scope_finding(args.repo_root, contract)
-    if whole_suite_finding is not None:
-        what, why, how = whole_suite_finding
-        print(f"WHAT: {what} WHY: {why} HOW: {how}", file=sys.stderr)
-        return 2
 
     oracle_locator = str(contract["acceptance-tests"]["locator"])
     oracle_bytes = _resolve_oracle(args.repo_root, oracle_locator)
     if oracle_bytes is None:
         return 2
+    supporting_files = _resolve_supporting_files(
+        args.repo_root,
+        list(contract["acceptance-tests"].get("supporting-locators", [])),
+    )
+    if supporting_files is None:
+        return 2
 
-    digest = closure_digest(contract_bytes, oracle_bytes)
+    digest = closure_digest(
+        contract_bytes,
+        oracle_bytes,
+        oracle_locator=oracle_locator,
+        supporting_files=supporting_files,
+    )
     print(
         json.dumps(
             {

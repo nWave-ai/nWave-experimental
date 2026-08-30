@@ -126,7 +126,10 @@ agents:
     priority: 3
     role: agent_development
     public: true
-    description: Create and validate new specialized agents
+    description: Use when creating new AI agents, validating agent specifications,
+      optimizing requested existing SKILL.md assets, optimizing command definitions,
+      or ensuring compliance with Claude Code best practices. Creates focused, research-validated
+      agents (200-400 lines) with Skills for domain knowledge.
   acceptance-designer-reviewer:
     wave: CROSS_WAVE
     priority: 2

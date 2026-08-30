@@ -68,8 +68,8 @@ def _standard_temp_roots() -> list[Path]:
       ``%SYSTEMROOT%\\Temp`` via ``os.path.expandvars()``) are RESOLVED
       at call time into concrete, fully-qualified paths.
     - The last four (``C:\\Temp``, ``C:\\Tmp``, ``\\Temp``, ``\\Tmp``)
-      are literal templates, unresolved beyond ``Path.resolve()`` in
-      ``is_durable_interpreter_path``.
+      are literal templates. ``is_durable_interpreter_path`` checks both
+      their normalized lexical and their resolved physical forms.
     - Of those four, ``\\Temp`` and ``\\Tmp`` are DRIVE-RELATIVE, not
       absolute: Windows resolves a leading-backslash-no-drive path
       against whichever drive is current for the process, not
@@ -122,19 +122,15 @@ def is_durable_interpreter_path(path: str) -> bool:
     enumeration rather than ``tempfile.gettempdir()`` alone, and why the
     current working directory is excluded from it on purpose.
 
-    Both ``path`` and each candidate root are RESOLVED (``Path.resolve()``
-    -- symlinks followed, ``.``/``..`` collapsed) before comparison. A
-    lexical-only prefix check is not enough: on macOS, ``/tmp`` is itself
-    a symlink to a different real path than the per-process ``$TMPDIR``
-    (which lives under ``/var/folders/...``); an interpreter captured
-    with the literal ``/tmp/...`` shape -- the exact shape of the
-    2026-07-24 incident this predicate exists for -- resolves through
-    that symlink into the real temp root and would escape a
-    string-prefix-only comparison entirely. Do not simplify this back to
-    a plain ``str.startswith`` "to keep it simple": the case that
-    motivates the resolve is invisible on a box where none of the
-    standard roots happen to be symlinks, which is exactly what makes it
-    easy to remove by someone who cannot reproduce it locally.
+    Both ``path`` and each candidate root are compared in TWO forms:
+    normalized lexical (absolute, with ``.``/``..`` collapsed but symlinks
+    retained) and resolved physical (``Path.resolve()``, with symlinks
+    followed). The lexical comparison rejects a temporary launcher path
+    whose interpreter symlink happens to point to a durable binary; the
+    physical comparison rejects a durable-looking alias that resolves into
+    a temporary directory. The latter also covers macOS ``/tmp`` aliases
+    for per-process ``$TMPDIR`` roots. Do not reduce either comparison to
+    a plain ``str.startswith`` check.
     """
     if not path:
         return False
@@ -147,11 +143,19 @@ def is_durable_interpreter_path(path: str) -> bool:
     if PureWindowsPath(path).is_absolute() and os.name != "nt":
         return True
 
-    candidate = Path(path).resolve()
+    # ``Path.resolve`` is wrong here: it would dereference the symlink whose
+    # lexical location this branch must retain. ``abspath`` normalizes ``..``.
+    lexical_candidate = Path(os.path.abspath(path))  # noqa: PTH100
+    physical_candidate = Path(path).resolve()
     for root in _standard_temp_roots():
-        resolved_root = root.resolve()
-        if candidate == resolved_root or resolved_root in candidate.parents:
-            return False
+        lexical_root = Path(os.path.abspath(root))  # noqa: PTH100
+        physical_root = root.resolve()
+        for candidate, candidate_root in (
+            (lexical_candidate, lexical_root),
+            (physical_candidate, physical_root),
+        ):
+            if candidate == candidate_root or candidate_root in candidate.parents:
+                return False
     return True
 
 
@@ -167,6 +171,12 @@ GLOBAL_CONFIG_FILENAME = "global-config.json"
 INSTALL_LOCK_FILENAME = "install.lock"
 
 
+def env_or_none(environment_variable: str) -> str | None:
+    """Return a non-empty environment value, treating empty as absent."""
+    value = os.environ.get(environment_variable)
+    return value or None
+
+
 def agents_home() -> Path:
     """Return the install root every platform target of one invocation shares.
 
@@ -176,7 +186,19 @@ def agents_home() -> Path:
     lock and the install provenance record can never disagree about which
     install they belong to.
     """
-    return Path(os.environ.get("NWAVE_AGENTS_HOME") or Path.home())
+    override = env_or_none("NWAVE_AGENTS_HOME")
+    return Path(override) if override else Path.home()
+
+
+def codex_config_dir() -> Path:
+    """Return the Codex configuration root, honoring non-empty CODEX_HOME."""
+    override = env_or_none("CODEX_HOME")
+    return Path(override) if override else Path.home() / ".codex"
+
+
+def nwave_config_dir() -> Path:
+    """Return the global nWave state root for this install destination."""
+    return agents_home() / ".nwave"
 
 
 def install_lock_path(home: Path | None = None) -> Path:
@@ -195,7 +217,7 @@ def install_lock_path(home: Path | None = None) -> Path:
 
 def host_neutral_runtime_dir() -> Path:
     """Return the shared DES runtime root, independent of any host adapter."""
-    return Path.home() / ".nwave" / "runtime"
+    return nwave_config_dir() / "runtime"
 
 
 def active_runtime_pointer_path() -> Path:
@@ -208,7 +230,7 @@ def active_runtime_pointer_path() -> Path:
     Codex-only install can no longer leave a stale Claude-scoped launcher
     answering on PATH ("codex manifest green but launcher claude").
     """
-    return Path.home() / ".nwave" / "active-runtime"
+    return nwave_config_dir() / "active-runtime"
 
 
 def record_active_runtime(runtime_python_dir: Path) -> Path:

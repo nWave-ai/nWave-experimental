@@ -1,5 +1,7 @@
 # What's New in nWave v3.19
 
+> **Historical note (added 2026-08-23).** This page records v3.19.0 as it shipped in June 2026 and is deliberately NOT rewritten. One behaviour it describes — silent auto-adoption of an unmarked repo on first `/nw-` use, below under *Upgrading from v3.18* — was **retired in August 2026** (`a551cbbed`, ADR-AG-003 / ADR-AG-005): nWave now never activates a repository on your behalf, so run `nwave-ai project enable` once per repo. Everything else on this page still holds. For current behaviour see [Activating nWave in a Project](../activating-nwave-per-project.md).
+
 ## Per-Project Activation (Opt-In Gate)
 
 nWave's DES hooks install **globally** into `~/.claude/settings.json`, so before v3.19 they fired in every repository you opened — including ones that had never used nWave. v3.19 makes them **opt-in per project**: in a repo that has not activated nWave, every gated hook silently exits 0 (allow). You cannot tell nWave is installed.

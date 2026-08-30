@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -23,6 +24,7 @@ def _prefer_current_distribution() -> None:
 # otherwise supply a stale namespace-package ``scripts`` implementation.
 _prefer_current_distribution()
 
+import nwave_ai  # noqa: E402
 from nwave_ai.doctor.context import DoctorContext  # noqa: E402
 from nwave_ai.doctor.formatter import render_human, render_json  # noqa: E402
 from nwave_ai.doctor.runner import run_doctor  # noqa: E402
@@ -35,7 +37,11 @@ from scripts.install.attribution_utils import (  # noqa: E402
     write_attribution_preference,
     write_global_config,
 )
-from scripts.shared.install_paths import GLOBAL_CONFIG_FILENAME  # noqa: E402
+from scripts.shared.install_paths import (  # noqa: E402
+    GLOBAL_CONFIG_FILENAME,
+    nwave_config_dir,
+)
+from scripts.shared.version import VersionResolutionError  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -210,18 +216,10 @@ def _write_density_choice(config_dir: Path, *, choice: str) -> None:
     write_global_config(config_dir, config)
 
 
-def _get_version() -> str:
-    """Get version from package metadata (installed) or __init__.py (dev)."""
-    from importlib.metadata import PackageNotFoundError, version
-
-    try:
-        return version("nwave-ai")
-    except PackageNotFoundError:
-        pass
-
-    from nwave_ai import __version__
-
-    return __version__
+def _refuse_version_resolution(exc: VersionResolutionError) -> int:
+    """Print the WHAT/WHY/HOW refusal for a failed version resolution."""
+    print(str(exc), file=sys.stderr)
+    return 1
 
 
 def _get_project_root() -> Path:
@@ -245,8 +243,8 @@ def _run_script(script_name: str, args: list[str]) -> int:
 
 
 def _get_config_dir() -> Path:
-    """Return the nWave config directory (~/.nwave/)."""
-    return Path.home() / ".nwave"
+    """Return the nWave config directory for this install destination."""
+    return nwave_config_dir()
 
 
 def _extract_target_flag(
@@ -807,9 +805,8 @@ def _handle_plugin(args: list[str]) -> int:
     return 0
 
 
-def _print_usage() -> int:
-    ver = _get_version()
-    print(f"nwave-ai {ver}")
+def _print_usage(version: str) -> int:
+    print(f"nwave-ai {version}")
     print()
     print("Usage: nwave-ai <command> [options]")
     print()
@@ -960,7 +957,8 @@ def _handle_project(args: list[str]) -> int:
 
     action = positional[0]
     project_root = Path.cwd()
-    _write_marker(project_root, enabled=action == "enable")
+    if not _write_marker(project_root, enabled=action == "enable"):
+        return 1
     ProjectGitignoreService().fix_gitignore(project_root=project_root)
     state = "enabled" if action == "enable" else "disabled (sticky opt-out)"
     print(f"nWave activation for this project: {state}.")
@@ -1020,14 +1018,70 @@ def _handle_completion(args: list[str]) -> int:
     return 0
 
 
-def _write_marker(project_root: Path, *, enabled: bool) -> None:
-    """Write the version-controlled activation marker .nwave/local-config.json."""
-    marker = project_root / ".nwave" / "local-config.json"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(
-        json.dumps({"enabled_for_repo": enabled}, indent=2) + "\n",
-        encoding="utf-8",
-    )
+def _observe_project_activation(project_root: Path) -> bool:
+    """Read the canonical project declaration through the activation policy."""
+    from des.adapters.driven.config.des_config import DESConfig
+    from des.domain.activation_policy import resolve_activation
+
+    config = DESConfig(cwd=project_root)
+    return resolve_activation(config.enabled_for_repo, config.activation_mode)
+
+
+def _write_marker(project_root: Path, *, enabled: bool) -> bool:
+    """Atomically publish the canonical project activation declaration."""
+    canonical = project_root / ".nwave" / "config.json"
+    temporary_path: Path | None = None
+    try:
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        if canonical.exists():
+            document = json.loads(canonical.read_text(encoding="utf-8"))
+            if not isinstance(document, dict):
+                raise ValueError("canonical configuration is not an object")
+        else:
+            document = {}
+        document["enabled"] = enabled
+        serialized = json.dumps(document)
+
+        descriptor, temporary_name = tempfile.mkstemp(
+            dir=canonical.parent, prefix=".config.json.", text=True
+        )
+        os.close(descriptor)
+        temporary_path = Path(temporary_name)
+        temporary_path.write_text(serialized, encoding="utf-8")
+        if json.loads(temporary_path.read_text(encoding="utf-8")) != document:
+            raise ValueError("temporary canonical configuration did not validate")
+        temporary_path.replace(canonical)
+    except Exception as exc:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        print(
+            "WHAT: project activation could not publish its canonical configuration. "
+            f"WHY: {exc}. HOW: repair the .nwave directory and retry.",
+            file=sys.stderr,
+        )
+        return False
+
+    try:
+        observed = _observe_project_activation(project_root)
+    except Exception as exc:
+        print(
+            "WHAT: project activation could not verify its canonical configuration. "
+            f"WHY: {exc}. HOW: repair the .nwave configuration and retry.",
+            file=sys.stderr,
+        )
+        return False
+    if observed != enabled:
+        print(
+            "WHAT: project activation state did not match the requested state. "
+            f"WHY: observed {observed!r} after publication. "
+            "HOW: resolve concurrent changes to .nwave/config.json and retry.",
+            file=sys.stderr,
+        )
+        return False
+    return True
 
 
 _ACTIVATION_HANDLERS = {
@@ -1060,10 +1114,18 @@ def main_with_argv(argv: list[str]) -> int:
 def main() -> int:
     """CLI entry point for nwave-ai."""
     if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h", "help"):
-        return _print_usage()
+        try:
+            version = nwave_ai.__version__
+        except VersionResolutionError as exc:
+            return _refuse_version_resolution(exc)
+        return _print_usage(version)
 
     if sys.argv[1] in ("--version", "-V"):
-        print(f"nwave-ai {_get_version()}")
+        try:
+            version = nwave_ai.__version__
+        except VersionResolutionError as exc:
+            return _refuse_version_resolution(exc)
+        print(f"nwave-ai {version}")
         return 0
 
     command = sys.argv[1]
@@ -1085,7 +1147,11 @@ def main() -> int:
     elif command in ("project", "mode", "status", "completion"):
         return main_with_argv(sys.argv[1:])
     elif command == "version":
-        print(f"nwave-ai {_get_version()}")
+        try:
+            version = nwave_ai.__version__
+        except VersionResolutionError as exc:
+            return _refuse_version_resolution(exc)
+        print(f"nwave-ai {version}")
         return 0
     else:
         print(f"Unknown command: {command}", file=sys.stderr)

@@ -18,6 +18,8 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+from scripts.shared.install_paths import agents_home, codex_config_dir
+
 
 class Logger:
     """Unified logger with pretty-print, spinner, table, and panel support.
@@ -863,13 +865,13 @@ For help: https://github.com/nWave-ai/nWave
                 )
             )
         if "codex" in targets:
-            agents_home = Path(os.environ.get("NWAVE_AGENTS_HOME") or Path.home())
-            codex_home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+            install_root = agents_home()
+            codex_home = codex_config_dir()
             lines.extend(
                 (
                     "- Codex skills: "
                     + ManifestWriter._installed_count(
-                        agents_home / ".agents" / "skills" / ".nwave-manifest.json",
+                        install_root / ".agents" / "skills" / ".nwave-manifest.json",
                         "installed_skills",
                     ),
                     "- Codex agents: "

@@ -5,21 +5,18 @@ description: The METHOD for finding a design — name observations and equality 
 
 # Algebraic Design Protocol
 
-`nw-fp-algebra-driven-design` tells you which structures exist — semigroup,
-monoid, functor. This tells you **how to find the design**, and what to do when a
-law you believed turns out to be false. Load both when designing a compositional
-core; load this one alone when something already designed keeps giving wrong
-answers.
+`nw-fp-algebra-driven-design` catalogues structures; this finds a design and
+traces a false law. Load both for a compositional core; load this alone for a
+design that keeps giving wrong answers.
 
-Knowledge basis: algebra-driven design — deriving an API from its laws.
+**nWave sequencing choice.** State observations/equality before an algebra;
+this is project synthesis, not a universal ADD claim.
 
-**Cross-layer authority (ADR-SSOT-002 §6a).** This is the one language-agnostic
-operational procedure for every layer a target's declared boundary touches —
-domain, application/ports, adapter/integration, infrastructure/recovery.
-Layer applicability derives from `targets` and `targets[].boundary`/
-`contract-shape`; nothing here adds a persisted layer field. OO/FP structure
-catalogues (`nw-code-design-oo`/`-fp`, `nw-fp-algebra-driven-design`) are thin
-projections of this method, never a competing one.
+**Cross-layer authority (ADR-SSOT-002 §6a).** One language-agnostic procedure
+for declared target-boundary layers: domain, application/ports, adapter/
+integration, infrastructure/recovery. `targets[].boundary`/`contract-shape`
+sets applicability without a persisted field. OO/FP catalogues are projections,
+never competitors.
 
 ## 1. Observations and equality, before anything else
 
@@ -73,6 +70,11 @@ bounds explicitly. Generated counterexamples are candidate findings until a huma
 reviews them: an impossible minimal case is evidence to audit the generator
 before blaming the implementation.
 
+For every intended public value, trace admitted input through a public
+constructor/producer and consumer to a public observation. The construction
+graph must be acyclic from an admitted input, or name an explicit bootstrap;
+a cycle with no seed proves neither inhabitation nor reachability.
+
 ## 5. Optimise by denotation, and prove the claim observationally
 
 Seek a homomorphic denotation the other observations derive from. State the old
@@ -90,6 +92,12 @@ know it was already refuted.
 
 Escalate rather than paper over an unresolved observation, an incompatible
 carrier, or a nondeterministic boundary whose effect model has not been stated.
+
+## Scope boundary
+
+Candidate algebra/preservation only: `BROAD_INPUT_DOMAIN` needs broad generated
+domain plus independent observation/falsifier; finite exhaustive/no law is
+`NOT_APPLICABLE`. It selects no topology, aggregate, deployment or runtime wiring.
 
 ## Cross-cutting invariants
 

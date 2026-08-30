@@ -10,6 +10,7 @@ surfaces.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from des.cli import dispatch
@@ -29,6 +30,7 @@ FINALIZE_SKILL = ROOT / "nWave/skills/nw-finalize/SKILL.md"
 OO_CRAFTER = ROOT / "nWave/agents/nw-software-crafter.md"
 FP_CRAFTER = ROOT / "nWave/agents/nw-functional-software-crafter.md"
 EXAMINER = ROOT / "nWave/agents/nw-user-examiner.md"
+IMPLEMENTATION_REVIEWER = ROOT / "nWave/agents/nw-software-crafter-reviewer.md"
 
 
 def test_abc_handoff_conserves_the_complete_contract_locator() -> None:
@@ -84,26 +86,59 @@ def test_c_to_f_uses_one_causal_identity_and_one_global_byte_binding() -> None:
     deliver = " ".join(DELIVER_SKILL.read_text(encoding="utf-8").split())
     discipline = " ".join(CRAFTER_DISCIPLINE.read_text(encoding="utf-8").split())
     examiner = " ".join(EXAMINER.read_text(encoding="utf-8").split())
+    reviewer = " ".join(IMPLEMENTATION_REVIEWER.read_text(encoding="utf-8").split())
     finalize = " ".join(FINALIZE_SKILL.read_text(encoding="utf-8").split())
 
-    candidate_shape = (
-        "candidate: git-<algorithm>:<base-revision>+worktree:<absolute-execution-root>"
-    )
-    assert candidate_shape in discipline
+    assert "candidate:" not in discipline
+    assert "execution-root: <absolute-execution-root>" in discipline
+    assert "+worktree:" not in discipline
     assert "forwarded byte-for-byte" in auto
     assert "Never send changed-targets to Vera" in auto
     assert "Send no changed-targets" in deliver
     assert "Never derive, recompute or validate it with Git" in examiner
     assert "candidate: <opaque candidate identity supplied by root>" in examiner
+    examiner_terminal = examiner[
+        examiner.index("EXAMINE-RESULT") : examiner.index("Echo `candidate`")
+    ]
+    assert "execution-root" in examiner
+    assert "execution-root:" not in examiner_terminal
+    assert "Echo `candidate` byte-for-byte" in examiner
+    assert "candidate: git-<algorithm>:<revision>" in reviewer
+    reviewer_terminal = reviewer[
+        reviewer.index("IMPLEMENTATION-REVIEW") : reviewer.index(
+            "Route only this existing grammar"
+        )
+    ]
+    assert "execution-root" in reviewer
+    assert "execution-root:" not in reviewer_terminal
+    assert "root's HEAD to be exactly K" in reviewer
+
+    # E4, not the crafter, seals and injects K. B is ancestry only; neither
+    # E4 field is a root-derived/combined presentation.
+    for projection in (auto, deliver, discipline, reviewer, finalize):
+        assert "+worktree:" not in projection
+    assert "first implementation-reviewer/Examiner/finalize" in auto
+    assert "seals or replays K" in auto
+    assert "seals or replays K" in deliver
+    assert "has no `candidate:` field" in deliver
+    assert "first implementation-reviewer/Examiner/finalize consumer" in deliver
+    assert "root HEAD=K" in finalize
+    assert "Final `Commit` remains F and never relabels K" in deliver
 
     assert (
         "complete pending Git path set, including formerly-untracked paths" in finalize
     )
-    assert "creates the single terminal commit" in auto
+    assert "one typed final F result" in auto
     assert "Root never commits" in deliver
-    assert "clean checkout" in auto
-    assert "clean checkout" in finalize
-    assert "Missing or failed `F` is not PASS" in finalize
+    assert "fresh clean checkout" in auto
+    assert "fresh clean checkout of F" in finalize
+    assert "<admitted-predecessor>" in finalize
+    assert "admitted predecessor is B or K" in finalize
+    assert "Clean-checkout: true" in finalize
+    assert "no second commit or state-changing" in finalize
+    assert "atomic same-object no-op" in finalize
+    assert "candidate K" in auto
+    assert "Commit: git-<algorithm>:<F>" in deliver
 
 
 def test_crafter_stops_at_the_first_unavailable_execution_substrate() -> None:
@@ -155,6 +190,33 @@ def test_c_projection_and_finalize_join_shape_without_temporary_feature_workspac
     contract = json.loads(EXAMPLE.read_text(encoding="utf-8"))
     seed_referenced_oracle(tmp_path, contract)
     contract_path.write_text(json.dumps(contract), encoding="utf-8")
+    (tmp_path / "CLAUDE.md").write_text(
+        "- Run the whole suite: `python3 -c 'pass' test`\n", encoding="utf-8"
+    )
+    for args in (
+        ("init", "-q"),
+        ("config", "user.name", "fixture"),
+        ("config", "user.email", "fixture@example.invalid"),
+        ("add", "."),
+        ("commit", "-qm", "base"),
+    ):
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True)
+    base = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout.strip()
+    contract["repository"]["base-revision"] = f"git-sha1:{base}"
+    contract["verification-scope"] = {
+        "commands": [
+            {
+                "executable": {"kind": "toolchain", "name": "python3"},
+                "arguments": ["-c", "pass", "test"],
+            }
+        ]
+    }
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
 
     assert (
         dispatch.main(
@@ -180,7 +242,7 @@ def test_c_projection_and_finalize_join_shape_without_temporary_feature_workspac
     assert not (tmp_path / "docs/feature").exists()
 
     finalize = FINALIZE_SKILL.read_text(encoding="utf-8")
-    assert "Stage exactly the verified path set" in finalize
+    assert "Compute the complete pending Git path set" in finalize
     assert "single whole-delivery commit" in finalize
     assert "No temporary feature root" in finalize
-    assert "clean" in finalize and "checkout" in finalize
+    assert "fresh clean checkout of F" in finalize

@@ -32,6 +32,21 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Iterable
 
 
+#: The ONE character class every repository-relative path citation in this
+#: module shares -- four hand-copied spellings of it existed before
+#: 2026-08-23 and drifted as a class. ``@`` is admitted because the
+#: contract schema's own ``repositoryRelativePath`` now admits the Go
+#: module-proxy ``@v`` DIRECTORY segment (schema 1.3, SF blocker
+#: 2026-08-23). Extraction is deliberately a SUPERSET of what the schema
+#: admits: it recognises the cited shape VERBATIM so an inadmissible path
+#: is refused LOUD by the schema, never silently rewritten here. Probed on
+#: the unfixed module: ``vendor/example.com/mod/@v/v1.2.0.info:1`` was
+#: captured as ``v/v1.2.0.info:1`` (a different, plausible-looking path),
+#: and a declared ``@v`` target locator vanished from the result entirely
+#: -- both silent-wrong, the failure mode GDP-6 forbids. The schema, never
+#: this regex, is the admissibility authority.
+_PATH_CITATION_CHARS = r"[\w/.@-]"
+
 #: A repository-relative file path followed by ``:<line>`` -- the exact
 #: shape DESIGN's own architecture authority cites for an insertion point.
 #: `des dispatch`'s own EXTEND-citation validator (deleted, Ale's
@@ -40,7 +55,7 @@ if TYPE_CHECKING:
 #: once this exact regex is what GENERATES `overlap`, never just checks it
 #: -- ~/nwave-formal/2026-08-19-gates) required this same shape in return;
 #: this module is now the sole owner of it.
-FILE_LINE_CITATION_RE = re.compile(r"[\w/.-]+\.\w+:\d+")
+FILE_LINE_CITATION_RE = re.compile(_PATH_CITATION_CHARS + r"+\.\w+:\d+")
 
 #: A ``path::Selector`` oracle citation -- the shape a brief binds a
 #: specific test by name in (Go's ``x_test.go::TestName``, pytest's
@@ -48,7 +63,62 @@ FILE_LINE_CITATION_RE = re.compile(r"[\w/.-]+\.\w+:\d+")
 #: express a test selector; only an oracle binding uses ``::``. The
 #: selector chain is preserved verbatim (the start of the OracleIdentity
 #: shape recorded in techdebt), never split into fragments.
-ORACLE_SELECTOR_CITATION_RE = re.compile(r"[\w/.-]+\.\w+(?:::[A-Za-z_]\w*)+")
+ORACLE_SELECTOR_CITATION_RE = re.compile(
+    _PATH_CITATION_CHARS + r"+\.\w+(?:::[A-Za-z_]\w*)+"
+)
+
+#: Durable declaration of one whole-file test dependency. ``Test dependency
+#: locator`` is the canonical product term; ``Acceptance support locator`` is
+#: retained as a read-only compatibility spelling for already-sealed
+#: authorities. The captured value is intentionally broader than the schema
+#: path grammar so the compiler can refuse a selector/traversal/absolute
+#: spelling by name rather than silently dropping it. Lines carrying either
+#: label but not this shape are exposed separately as malformed producer input.
+_ACCEPTANCE_SUPPORT_LOCATOR_RE = re.compile(
+    r"^[ \t]*(?:Test dependency|Acceptance support) locator:[ \t]*"
+    r"`(?P<locator>[^`\n]+)`(?:[ \t]+[^\n]*)?$",
+    re.MULTILINE,
+)
+_ACCEPTANCE_SUPPORT_LABEL_RE = re.compile(
+    r"^[ \t]*(?:Test dependency|Acceptance support) locator:[^\n]*$",
+    re.MULTILINE,
+)
+_REPOSITORY_RELATIVE_WHOLE_FILE_RE = re.compile(
+    r"^(?!.*(?:^|/)\.{1,2}(?:/|$))"
+    r"(?:(?:[A-Za-z0-9._-]+|@v)/)*[A-Za-z0-9._-]+$"
+)
+
+
+def extract_acceptance_support_locators(brief_text: str) -> list[str]:
+    """Return every declared test-dependency locator in durable order.
+
+    The legacy acceptance-support label projects to the same representation.
+    Unlike ordinary citations, duplicates remain visible: the compiler owns
+    the construction rule and must reject duplicate or reordered declarations
+    rather than normalising them into a different authority.
+    """
+    return [
+        match.group("locator")
+        for match in _ACCEPTANCE_SUPPORT_LOCATOR_RE.finditer(brief_text)
+    ]
+
+
+def malformed_acceptance_support_locator_lines(brief_text: str) -> list[str]:
+    """Label-bearing lines which are not the exact backticked declaration."""
+    valid_lines = {
+        match.group(0) for match in _ACCEPTANCE_SUPPORT_LOCATOR_RE.finditer(brief_text)
+    }
+    return [
+        match.group(0)
+        for match in _ACCEPTANCE_SUPPORT_LABEL_RE.finditer(brief_text)
+        if match.group(0) not in valid_lines
+    ]
+
+
+def is_repository_relative_whole_file_locator(locator: str) -> bool:
+    """The schema's repositoryRelativePath grammar, excluding selectors."""
+    return _REPOSITORY_RELATIVE_WHOLE_FILE_RE.fullmatch(locator) is not None
+
 
 #: SF friction report 2026-08-20, item 2b: a brief may cite a documentary or
 #: formal-proof file (``docs/design.md:1``, ``spec/Law.agda:42``) as
@@ -283,7 +353,7 @@ class DeclaredTargetLocator:
 #: token itself.
 _DECLARED_TARGET_LOCATOR_RE = re.compile(
     r"Oracle target locator:[^`\n]*"
-    r"`(?P<citation>[\w/.-]+\.\w+(?:::[A-Za-z_]\w*)+)`"
+    "`(?P<citation>" + _PATH_CITATION_CHARS + r"+\.\w+(?:::[A-Za-z_]\w*)+)`"
     r"(?:\s*\(\s*(?P<decision>CREATE_NEW|EXTEND)\b)?"
 )
 
@@ -618,7 +688,7 @@ def extract_declared_verification_authority_locators(
 #: on the same shape rule every other citation source obeys.
 _DECLARED_ORACLE_LOCATOR_RE = re.compile(
     r"Oracle target locator:[^`\n]*"
-    r"`(?P<citation>[\w/.-]+\.\w+(?:::[A-Za-z_]\w*)*)`"
+    "`(?P<citation>" + _PATH_CITATION_CHARS + r"+\.\w+(?:::[A-Za-z_]\w*)*)`"
 )
 
 
@@ -645,8 +715,9 @@ def extract_oracle_citations(brief_text: str) -> list[str]:
     reproduction): a ``path::Selector`` citation is kept VERBATIM
     (selector preserved); a ``file:line`` citation whose own filename is
     test/spec-shaped (``is_test_shaped_path``) yields its plain path. When
-    the same file is cited both ways, the selector-carrying citation wins
-    -- dropping it would silently discard the finer oracle identity. A
+    the same file is cited both ways, its first durable identity remains
+    primary -- a later technical selector cannot rewrite public oracle
+    ownership. A
     typed ``Oracle target locator: `<path>``` declaration is admitted with
     NO line and NO selector required (``_DECLARED_ORACLE_LOCATOR_RE``):
     RED_TO_GREEN's oracle does not exist yet, so demanding either shape
@@ -684,9 +755,7 @@ def extract_oracle_citations(brief_text: str) -> list[str]:
         if not is_code_target_citation(file_part):
             continue
         if has_selector:
-            # A selector citation is explicitly an oracle binding; it
-            # upgrades any bare file:line citation of the same file.
-            by_file[file_part] = citation
+            by_file.setdefault(file_part, citation)
         elif is_test_shaped_path(file_part):
             by_file.setdefault(file_part, file_part)
     return list(by_file.values())

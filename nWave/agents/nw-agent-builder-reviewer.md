@@ -76,13 +76,14 @@ Read these files NOW:
 | Evaluate All Dimensions | `nw-review-workflow` | Scoring + verdict logic |
 | Evaluate All Dimensions | `nw-ab-validation-checklist` | Shared 19-item SSOT (judge, do not re-state) |
 | Evaluate All Dimensions | `nw-ab-anti-patterns` | Anti-pattern grep |
+| Review builder skill-optimization routing | `nw-ab-optimize-skill` | Only when a target changes or invokes the route; verify selection and wiring/reachability, then require `@nw-skill-reviewer` handoff for the SKILL.md review |
 
 ## Workflow
 
 At the start of execution, create these tasks using TaskCreate and follow them in order:
 
 1. **Load Agent and Context** — Load `~/.claude/skills/nw-abr-critique-dimensions/SKILL.md`. Read the target agent file. Measure file (count lines, identify sections). Gate: agent file successfully read, measured, and skill loaded.
-2. **Evaluate All Dimensions** — Load `~/.claude/skills/nw-review-workflow/SKILL.md` + `~/.claude/skills/nw-ab-validation-checklist/SKILL.md` + `~/.claude/skills/nw-ab-anti-patterns/SKILL.md`. Assess each of the 9 critique dimensions; record pass/fail with specific evidence (line numbers, counts, quotes). Judge against the shared 19-item checklist + anti-patterns (do not re-state them). If the target is a builder migration, ALSO gate the 6 Migration Review Dimensions (incl. sub-skill decompose-and-recompose + trigger-partition). Gate: all dimensions evaluated with evidence.
+2. **Evaluate All Dimensions** — Load `~/.claude/skills/nw-review-workflow/SKILL.md` + `~/.claude/skills/nw-ab-validation-checklist/SKILL.md` + `~/.claude/skills/nw-ab-anti-patterns/SKILL.md`. Assess each of the 9 critique dimensions; record pass/fail with specific evidence (line numbers, counts, quotes). Judge against the shared 19-item checklist + anti-patterns (do not re-state them). If the target is a builder migration, ALSO gate the 6 Migration Review Dimensions (incl. sub-skill decompose-and-recompose + trigger-partition). If the target adds or changes skill-optimization routing, load `nw-ab-optimize-skill`, verify exactly one route is selected, its procedure path is wired and reachable, and the optimized `SKILL.md` is handed to `@nw-skill-reviewer`; do not assess eligibility, preservation, ownership, or metrics here. Gate: all dimensions evaluated with evidence.
 3. **Produce Verdict** — Determine verdict using failure conditions from critique-dimensions skill. Format output as structured YAML. Include prioritized recommendations (high-severity first). Open the final message with `VERDICT: <approved|revisions_needed>` verbatim, followed by the YAML review. Gate: YAML review output is complete and well-formed; final message opens with the verbatim `VERDICT:` line.
 
 ## Critical Rules

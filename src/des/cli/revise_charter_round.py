@@ -9,10 +9,9 @@ dispatch is correctly `CHARTER-AUTHOR-DISQUALIFIED` (no producer-generated
 envelope), `des resolve-charters` correctly returns `REUSE` (existence is
 not reviewed validity, and its algebra stays unchanged -- REUSE remains
 right for the no-citation case), so the same `DeliveryId` has NO PO-owned
-correction route. This module is that producer -- the exact sibling of
-`revise_contract_round.py` (same durable per-`DeliveryId` counter, same
-bound shape, same refusal contract), for the charter instead of the
-contract.
+correction route. This module is that producer, with a charter-owned durable
+per-`DeliveryId` counter and bounded refusal contract independent of delivery
+closure construction.
 
 Source-blindness stays intact BY CONSTRUCTION: the emitted envelope carries
 `CHARTER-CURRENT` -- the existing charter's full text as a JSON string --
@@ -22,10 +21,8 @@ The charter is value-side authority, not source. The envelope NEVER carries
 an architecture-authority anchor (that would disqualify PO on sight), and
 this producer never deletes or mutates the charter -- it only reads it.
 
-The durable, lock-protected per-`DeliveryId` counter mirrors
-`revise_contract_round._reserve_next_round_locked` (itself the same
-single-writer pattern `des commit` uses): `_reserve_next_round_locked` is
-the ONLY route to a new round number and returns `None` (never a round
+The durable, lock-protected per-`DeliveryId` counter is the ONLY route to a
+new round number and returns `None` (never a round
 value) once the reservation would exceed the bound. Writes no file on
 refusal (idempotent: retrying a refused call never corrupts or advances
 the durable counter).
@@ -59,9 +56,8 @@ except ImportError:  # pragma: no cover -- non-POSIX platform
 
 _EXIT_BLOCKED = 2
 
-# Same "one constant in the route" framing as `revise_contract_round.
-# REVISE_ROUND_BOUND`, same value: bounds the PO redispatch loop on one
-# DeliveryId without refusing the common, legitimate single-revision case.
+# Bounds the PO redispatch loop on one DeliveryId without refusing the common,
+# legitimate single-revision case.
 CHARTER_REVISION_ROUND_BOUND = 3
 
 
@@ -72,8 +68,7 @@ def _blocked(*, what: str, why: str, how: str) -> int:
 
 class _RefusingArgumentParser(argparse.ArgumentParser):
     """Fail-closed argv parsing: one concise WHAT/WHY/HOW line on stderr,
-    nonzero exit, nothing on stdout -- same contract as
-    `revise_contract_round.py`'s own `_RefusingArgumentParser`."""
+    nonzero exit and nothing on stdout."""
 
     def error(self, message: str) -> None:
         print(
@@ -248,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
             "anchor -- this envelope must stay value-only",
             how="remove the architecture reference from the charter/citation "
             "text; architecture defects route to DISTILL via "
-            "`des revise-contract-round`, never to the product owner",
+            "strict closure ancestry, never to the product owner",
         )
 
     next_round = _reserve_next_round_locked(
@@ -259,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
             what=f"DeliveryId {delivery_id} has already used all "
             f"{CHARTER_REVISION_ROUND_BOUND} charter revision rounds",
             why="an unbounded PO revision loop on the same DeliveryId is "
-            "the same incident class `revise-contract-round`'s bound "
+            "the same incident class the strict correction bound "
             "already terminates (Run 11, 4 sequential revisions) -- the "
             "bound exists so a repeatedly-faulted charter terminates in "
             "an honest INDETERMINATE instead of compounding cost "

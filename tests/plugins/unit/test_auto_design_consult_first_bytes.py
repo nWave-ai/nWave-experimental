@@ -48,7 +48,9 @@ def _norm(text: str) -> str:
 
 
 class TestAgentAndAutoShareTheExactConsultGrammar:
-    def test_grammars_match_and_agent_declares_entire_prompt_and_one_line_result(self):
+    def test_grammars_match_and_agent_declares_entire_base_prompt_and_one_line_result(
+        self,
+    ):
         agent_section = _architect_consult_section(_architect_body())
         auto_body = _auto_body()
 
@@ -60,7 +62,8 @@ class TestAgentAndAutoShareTheExactConsultGrammar:
         assert BLOCKED_TOKEN in auto_body
 
         normalized = _norm(agent_section)
-        assert "entire prompt is exactly these three lines" in normalized
+        assert "entire base prompt is exactly these three lines" in normalized
+        assert "These are the entire base prompt." in auto_body
         assert "Return exactly one line" in normalized
 
 
@@ -87,7 +90,7 @@ class TestBoundedBranchTargetsPermanentArchitectureOnly:
             "reuse",
             "prefactoring",
             "boundaries/ports",
-            "four-layer failure laws and residual stress",
+            "affected-layer failure laws and triggered residual stress",
             "delivery obligations",
             "reuse the existing oracle",
         ):

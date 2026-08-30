@@ -125,20 +125,33 @@ def test_declared_identity_violations_passes_arms_pinned_to_the_same_revision():
     assert declared_identity_violations([control, nwave]) == []
 
 
-def test_examine_refuses_a_pair_whose_own_base_commit_disagrees_with_the_pin(
-    tmp_path, monkeypatch
-):
-    """`run_acceptance.examine`'s `pinned_subject_rev` parameter (what `main`
-    passes as `subject.SUT_PINNED_REV`) catches a pair measured against a
-    base commit that is internally self-consistent (the self-probe alone
-    would happily prove RED on it) but is NOT the campaign's declared pin --
-    e.g. a stale workspace from before pinning, or a preflight bug."""
+# --- the full-clone regression (camp7, 2026-08-23) --------------------------
+#
+# `c8622cf32` replaced `git clone --depth 1 <SUT> .` with a FULL clone plus
+# `git checkout --detach <SUT_PINNED_REV>`, and added `examine`'s
+# `pinned_subject_rev` cross-check -- but left `_base_commit_sha` deriving the
+# base from `git rev-list --max-parents=0 HEAD`, which is the SHALLOW clone's
+# tip and, in a full clone, the subject's FIRST COMMIT EVER. Measured on
+# camp7's paid workspaces: root `00cdc313`, HEAD `49653c35` (== the pin), no
+# `.git/shallow` file -- so every arm of every campaign was refused for "not
+# matching the pin" before the hidden suite or the row-2 RED probe ever ran.
+
+
+def _full_clone_shaped_workspace(tmp_path, *, delivery_commit: bool = False):
+    """A workspace with the shape `preflight.py` actually produces since
+    `c8622cf32`: real history behind the checked-out commit, HEAD detached at
+    the pin, the delivery sitting in the working tree (or, optionally, in a
+    commit on top of the pin)."""
     import subprocess
 
-    def _git(*args: str, cwd) -> None:
-        subprocess.run(
-            ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
-        )
+    def _git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args],
+            cwd=workspace,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
 
     workspace = tmp_path / "delivery"
     (workspace / "hc" / "api" / "tests").mkdir(parents=True)
@@ -146,12 +159,82 @@ def test_examine_refuses_a_pair_whose_own_base_commit_disagrees_with_the_pin(
     (workspace / "requirements.txt").write_text("# no real deps\n")
     suite = tmp_path / "suite.py"
     suite.write_text("# hidden suite\n")
-    _git("init", "-q", "-b", "master", cwd=workspace)
-    _git("config", "user.email", "k4@example.test", cwd=workspace)
-    _git("config", "user.name", "k4", cwd=workspace)
-    _git("add", "-A", cwd=workspace)
-    _git("commit", "-q", "-m", "seed", cwd=workspace)
 
+    _git("init", "-q", "-b", "master")
+    _git("config", "user.email", "k4@example.test")
+    _git("config", "user.name", "k4")
+    _git("add", "-A")
+    _git("commit", "-q", "-m", "first commit ever")
+    for n in (1, 2):
+        (workspace / "CHANGELOG.md").write_text(f"history {n}\n")
+        _git("add", "-A")
+        _git("commit", "-q", "-m", f"upstream history {n}")
+    pin = _git("rev-parse", "HEAD")
+    _git("checkout", "-q", "--detach", pin)
+    if delivery_commit:
+        (workspace / "hc" / "api" / "feature.py").write_text("# delivered\n")
+        _git("add", "-A")
+        _git("commit", "-q", "-m", "the delivery")
+    return workspace, suite, pin
+
+
+def test_base_commit_is_the_declared_pin_not_the_full_clones_root_commit(tmp_path):
+    """RED->GREEN falsifier: the base commit is READ from the campaign's
+    declared pin, never re-derived from the shape of the clone."""
+    workspace, _suite, pin = _full_clone_shaped_workspace(tmp_path)
+
+    base, why = run_acceptance._base_commit_sha(workspace, pin)
+
+    assert base == pin, f"resolved {base!r} instead of the declared pin {pin!r}: {why}"
+
+
+def test_examine_scores_a_full_clone_workspace_instead_of_refusing_it(
+    tmp_path, monkeypatch
+):
+    """The behavioural falsifier, in miniature: camp7's arm shape (full
+    history, HEAD detached at the pin, delivery in the working tree) must
+    reach the oracle, not be refused before it."""
+    from tests.scripts.analysis.test_k4_row2_oracle_self_probe import (
+        _fake_subject_runner,
+    )
+
+    workspace, suite, pin = _full_clone_shaped_workspace(tmp_path)
+    monkeypatch.setattr(run_acceptance, "_run", _fake_subject_runner(self_probe_exit=1))
+
+    accepted, evidence = run_acceptance.examine(
+        workspace, suite, pinned_subject_rev=pin
+    )
+
+    assert accepted is True, evidence
+    assert "hidden suite exit 0" in evidence
+
+
+def test_examine_scores_a_workspace_whose_delivery_committed_on_top_of_the_pin(
+    tmp_path, monkeypatch
+):
+    """The pin is the base whether the delivery committed or not: reachable
+    from HEAD is the property, equality with HEAD is not."""
+    from tests.scripts.analysis.test_k4_row2_oracle_self_probe import (
+        _fake_subject_runner,
+    )
+
+    workspace, suite, pin = _full_clone_shaped_workspace(tmp_path, delivery_commit=True)
+    monkeypatch.setattr(run_acceptance, "_run", _fake_subject_runner(self_probe_exit=1))
+
+    accepted, evidence = run_acceptance.examine(
+        workspace, suite, pinned_subject_rev=pin
+    )
+
+    assert accepted is True, evidence
+
+
+def test_examine_refuses_a_workspace_whose_history_does_not_carry_the_pin(
+    tmp_path, monkeypatch
+):
+    """The check the pin exists FOR, restated on the repaired semantics: a
+    workspace that never sat on the declared subject revision is refused --
+    a stale workspace from before pinning, or a preflight bug."""
+    workspace, suite, _pin = _full_clone_shaped_workspace(tmp_path)
     monkeypatch.setattr(
         run_acceptance,
         "_run",
@@ -163,5 +246,4 @@ def test_examine_refuses_a_pair_whose_own_base_commit_disagrees_with_the_pin(
     )
 
     assert accepted is False
-    assert "does not match the pinned subject revision" in evidence
     assert "not-the-real-pin" in evidence

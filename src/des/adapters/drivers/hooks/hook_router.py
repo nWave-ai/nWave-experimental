@@ -24,6 +24,28 @@ from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_sto
 _PRE_TOOL_USE_COMMANDS = ("pre-tool-use", "pre-task")
 
 
+def normalize_exec_command_envelope(command: str, stdin_text: str) -> str:
+    """Project Codex's exec_command shape onto the Bash safety authority."""
+    if command not in _PRE_TOOL_USE_COMMANDS:
+        return stdin_text
+    try:
+        hook_input = json.loads(stdin_text)
+    except (json.JSONDecodeError, TypeError):
+        return stdin_text
+    if (
+        not isinstance(hook_input, dict)
+        or hook_input.get("tool_name") != "exec_command"
+    ):
+        return stdin_text
+    tool_input = hook_input.get("tool_input")
+    if not isinstance(tool_input, dict) or not isinstance(tool_input.get("cmd"), str):
+        return stdin_text
+    normalized = dict(hook_input)
+    normalized["tool_name"] = "Bash"
+    normalized["tool_input"] = {**tool_input, "command": tool_input["cmd"]}
+    return json.dumps(normalized)
+
+
 def apply_bash_safety_guards(command: str, stdin_text: str) -> None:
     """Consolidated git-stash / worktree-remove safety decision (ADR-AG-001 repair).
 
@@ -64,7 +86,7 @@ def main() -> None:
             json.dumps(
                 {
                     "status": "error",
-                    "reason": "Missing hook command argument",
+                    "reason": "Missing command argument",
                 }
             )
         )
@@ -88,7 +110,8 @@ def main() -> None:
     # decision must run BEFORE the activation gate, else an inactive project
     # exits 0 inside apply_gate before this safety check ever runs. Evaluated
     # exactly once here; `handle_pre_tool_use` no longer re-runs it.
-    apply_bash_safety_guards(command, buffered_stdin)
+    safety_stdin = normalize_exec_command_envelope(command, buffered_stdin)
+    apply_bash_safety_guards(command, safety_stdin)
 
     reinjected = apply_gate(command, buffered_stdin)
     sys.stdin = io.StringIO(reinjected if reinjected is not None else buffered_stdin)

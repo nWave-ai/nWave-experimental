@@ -24,6 +24,7 @@ subprocesses against sentinel runtimes in an isolated HOME, mirroring the
 subprocess pattern of TestInstalledShimResolvesRuntimeViaClaudeConfigDir.
 """
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -37,6 +38,7 @@ from scripts.shared.install_paths import (
     active_runtime_pointer_path,
     host_neutral_runtime_dir,
 )
+from scripts.shared.version import get_version
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -112,6 +114,28 @@ class TestShimRuntimeResolution:
 
         assert result.returncode == 0, result.stderr
         assert "RUNTIME=EXPLICIT" in result.stdout
+
+    @pytest.mark.parametrize("shim_name", SHIM_NAMES)
+    def test_agents_home_override_selects_the_isolated_pointer(
+        self, tmp_path: Path, shim_name: str
+    ) -> None:
+        operator_home = tmp_path / "operator-home"
+        isolated_home = tmp_path / "verification-home"
+        _seed_runtime(operator_home / ".nwave" / "runtime", "RUNTIME=OPERATOR")
+        isolated = isolated_home / ".nwave" / "runtime"
+        _seed_runtime(isolated, "RUNTIME=ISOLATED")
+        (isolated_home / ".nwave" / "active-runtime").write_text(
+            isolated.as_posix() + "\n"
+        )
+
+        result = _run_shim(
+            shim_name,
+            operator_home,
+            extra_env={"NWAVE_AGENTS_HOME": str(isolated_home)},
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "RUNTIME=ISOLATED" in result.stdout
 
     @pytest.mark.parametrize("shim_name", SHIM_NAMES)
     def test_no_pointer_keeps_claude_default(
@@ -214,3 +238,91 @@ class TestInstallRecordsActiveRuntime:
         assert result.success, result.message
         pointer = active_runtime_pointer_path()
         assert pointer.read_text().strip() == (claude_dir / "lib" / "python").as_posix()
+
+
+class TestPrebuiltProvenanceCheck:
+    """ADR-PLAT-011 -- `_install_des_module` checks the pre-built module's
+    provenance before trusting it over live source.
+
+    The producer selection used to be a directory-existence check only, so a
+    pre-built tree built from a different revision could be installed silently.
+    The fix is a provenance check, NOT a preference inversion: dist-first stays,
+    because on the release-tarball channel the pre-built tree is the only module
+    source that exists at all.
+    """
+
+    @staticmethod
+    def _prebuilt_source(root: Path, stamped_version: str) -> Path:
+        """A minimal dist/-shaped framework_source: MANIFEST.json + module."""
+        des = root / "lib" / "python" / "des"
+        des.mkdir(parents=True)
+        (des / "__init__.py").write_text("MARKER = 'PREBUILT'\n")
+        (root / "MANIFEST.json").write_text(
+            json.dumps({"version": stamped_version, "built_at": "2026-07-26T00:00Z"})
+        )
+        return root
+
+    @staticmethod
+    def _context(home: Path, framework_source: Path | None) -> InstallContext:
+        return InstallContext(
+            claude_dir=home / ".claude",
+            scripts_dir=home / ".claude" / "scripts",
+            templates_dir=home / ".claude" / "templates",
+            logger=MagicMock(),
+            project_root=REPO_ROOT,
+            framework_source=framework_source,
+            target_platforms={"claude_code"},
+        )
+
+    def test_prebuilt_accepted_when_stamp_matches_version_ssot(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Counter-proof: the release channel keeps working unchanged."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        source = self._prebuilt_source(tmp_path / "dist", get_version(REPO_ROOT))
+
+        result = DESPlugin()._install_des_module(self._context(tmp_path, source))
+
+        assert result.success, result.message
+        installed = tmp_path / ".claude" / "lib" / "python" / "des" / "__init__.py"
+        assert "PREBUILT" in installed.read_text()
+
+    def test_prebuilt_refused_loud_when_stamp_diverges_from_version_ssot(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The defect class: a divergent stamp used to install silently."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        ssot = get_version(REPO_ROOT)
+        source = self._prebuilt_source(tmp_path / "dist", "3.9.9-STALE")
+
+        result = DESPlugin()._install_des_module(self._context(tmp_path, source))
+
+        assert not result.success
+        # Names BOTH versions -- the reader must not have to go find either.
+        assert "3.9.9-STALE" in result.message
+        assert ssot in result.message
+        assert "WHAT:" in result.message
+        assert "WHY:" in result.message
+        assert "HOW:" in result.message
+        assert "build_dist.py" in result.message
+        # A refusal installs nothing: no half-written stale module is left.
+        assert not (tmp_path / ".claude" / "lib" / "python" / "des").exists()
+
+    def test_dev_checkout_path_is_unaffected_by_the_provenance_check(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`nWave/` carries no pre-built module, so the gate never fires there
+        and live `src/des` still wins -- the empirical fact ADR-PLAT-011 rests
+        on when it keeps dist-first instead of inverting the preference."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        framework_source = REPO_ROOT / "nWave"
+        assert not (framework_source / "lib" / "python" / "des").exists()
+
+        result = DESPlugin()._install_des_module(
+            self._context(tmp_path, framework_source)
+        )
+
+        assert result.success, result.message
+        installed = tmp_path / ".claude" / "lib" / "python" / "des"
+        assert (installed / "__init__.py").is_file()
+        assert "MARKER = 'PREBUILT'" not in (installed / "__init__.py").read_text()

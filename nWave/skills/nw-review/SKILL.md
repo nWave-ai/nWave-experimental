@@ -46,10 +46,10 @@ temporal holes -- a temporal gap needs the model checker (T5), not this list.
 
 **Time (protocol):**
 
-- **T5** [MECHANICAL] -- for every safety property, exhibit the do-nothing
-  behaviour and verify a liveness property excludes it, via a model checker.
-- **T6** [INSPECTIVE] -- list every fairness assumption used and where the
-  real system guarantees it.
+- **T5** [MECHANICAL] -- declared progress/liveness: show do-nothing;
+  model-check liveness excludes it; safety-only: `NOT_APPLICABLE`.
+- **T6** [INSPECTIVE] -- name every fairness assumption's real guarantor,
+  monitor, and violation consequence.
 - **T7** [JUDGEMENT] -- list every model step and name the real code
   mechanism guaranteeing its atomicity; the answer must be a code
   reference, never prose. If it cannot be named, the review returns the

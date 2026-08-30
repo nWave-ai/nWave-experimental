@@ -11,8 +11,10 @@ heading/prose refactors:
 3. `catalog_only` stays nonempty and every listed skill is installed (SSOT
    parity between the registry and the skills tree).
 4. RED_TO_GREEN orders compiling the smallest spatial portfolio before
-   writing exactly one consolidated executable oracle, and forbids any
-   legacy delivery carrier or progress ledger.
+   writing the compiled acceptance closure: Schema 1.4 carries one or more
+   private support artifacts first, then exactly one public executable oracle
+   (legacy 1.3 omits the field); it forbids any legacy delivery carrier or
+   progress ledger.
 """
 
 from __future__ import annotations
@@ -99,15 +101,95 @@ def test_atd_catalog_only_nonempty_and_all_catalog_skills_installed() -> None:
         assert skill_path.is_file(), f"{skill_name} is catalog_only but not installed"
 
 
-def test_red_to_green_orders_smallest_spatial_portfolio_before_one_consolidated_oracle() -> (
+def test_red_to_green_orders_spatial_portfolio_before_compiled_acceptance_closure() -> (
     None
 ):
     body = _norm(ACCEPTANCE_DESIGNER)
     spatial_marker = "Compile the smallest spatial portfolio"
-    oracle_marker = "Write exactly one consolidated executable oracle"
+    closure_marker = "Write the complete compiled acceptance closure"
     assert spatial_marker in body
-    assert oracle_marker in body
-    assert body.index(spatial_marker) < body.index(oracle_marker), (
-        "spatial-portfolio compilation must precede authoring the single oracle"
+    assert closure_marker in body
+    assert body.index(spatial_marker) < body.index(closure_marker), (
+        "spatial-portfolio compilation must precede authoring the closure"
     )
     assert "No legacy delivery carrier, slice vocabulary or progress ledger" in body
+
+
+def test_red_to_green_supports_are_private_compiled_inputs_written_before_primary() -> (
+    None
+):
+    body = _norm(ACCEPTANCE_DESIGNER)
+
+    support_marker = "Write every listed support artifact first"
+    primary_marker = "Write the primary oracle last"
+    assert "`acceptance-tests.supporting-locators`" in body
+    assert "private, contract-bound source/dependency artifacts" in body
+    assert "never independent public oracles" in body
+    assert "never separately selected by `verification-scope` commands" in body
+    assert "contract order and identity exactly as supplied" in body
+    assert "never choose, add, drop, reorder, search for or broaden" in body
+    assert support_marker in body
+    assert primary_marker in body
+    assert body.index(support_marker) < body.index(primary_marker)
+
+
+def test_supports_cannot_be_promoted_to_public_oracles_or_edited_green() -> None:
+    """Reject appended positive mandates, while allowing explanatory
+    prohibitions such as ``never separately selected`` and ``edits no``."""
+    body = ACCEPTANCE_DESIGNER
+    compact = _norm(body)
+
+    assert re.search(r"exactly one public (?:executable )?oracle", compact, re.I)
+    assert re.search(
+        r"private, contract-bound source/dependency artifacts", compact, re.I
+    )
+
+    clauses = re.split(r"(?<=[.!?;])\s+|\n+", body)
+    for clause in clauses:
+        normalized = " ".join(clause.split()).casefold()
+        positive_modal = re.search(r"\b(?:must|shall|should|required to)\b", normalized)
+        if not positive_modal:
+            continue
+        negative_modal = re.search(
+            r"\b(?:must not|shall not|should not|never|cannot|no|do not)\b",
+            normalized,
+        )
+        if negative_modal:
+            continue
+
+        selects_support_as_public = (
+            "support artifact" in normalized
+            and "public oracle" in normalized
+            and re.search(
+                r"(?:separately select|select separately|separately selected)",
+                normalized,
+            )
+        )
+        edits_green_support = (
+            "green_to_green" in normalized
+            and "support" in normalized
+            and "edit" in normalized
+        )
+        assert not selects_support_as_public, clause
+        assert not edits_green_support, clause
+
+
+def test_atd_readback_and_shape_checks_cover_closure_without_python_leakage() -> None:
+    body = _norm(ACCEPTANCE_DESIGNER)
+
+    assert "Read every artifact this role directly wrote back whole once" in body
+    assert (
+        "Python indentation/collection check applies only to Python artifacts" in body
+    )
+    assert (
+        "never apply Python `def test_` assumptions to Go, Rust, Agda or TLA+" in body
+    )
+
+
+def test_green_to_green_binds_existing_complete_closure_without_artifact_edits() -> (
+    None
+):
+    body = _norm(ACCEPTANCE_DESIGNER)
+
+    assert "names the existing complete acceptance closure" in body
+    assert "Do not search for, create, edit, broaden or reorder any member" in body

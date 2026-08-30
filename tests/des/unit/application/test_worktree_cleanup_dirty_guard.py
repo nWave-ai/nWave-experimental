@@ -20,15 +20,23 @@ from __future__ import annotations
 from pathlib import Path
 
 from des.application.worktree_cleanup_service import WorktreeCleanupService
+from des.domain.worktree_anti_rot_triage import TriageState, WorktreeAntiRotReceipt
 from des.domain.worktree_cleanup import (
     WorktreeCleanupVerdict,
     classify_worktree_cleanup_state,
+)
+from des.domain.worktree_residence import (
+    DurableResidence,
+    LaneIdentity,
+    LeaseEvidence,
+    OwnerLease,
 )
 from des.ports.driven_ports.git_worktree_port import (
     GitWorktreePort,
     MergeResult,
     WorktreeHandle,
 )
+from des.ports.driven_ports.owner_lease_probe import OwnerLeaseProbe
 
 
 # --- pure domain classifier (exhaustive truth table) ------------------------
@@ -36,37 +44,62 @@ from des.ports.driven_ports.git_worktree_port import (
 
 def test_uncommitted_changes_block_cleanup_even_when_merged() -> None:
     verdict = classify_worktree_cleanup_state(
-        worktree_registered=True, is_merged=True, has_uncommitted_changes=True
+        worktree_registered=True,
+        is_merged=True,
+        has_uncommitted_changes=True,
+        lease=LeaseEvidence.FREE,
     )
     assert verdict is WorktreeCleanupVerdict.HAS_UNCOMMITTED_CHANGES
 
 
 def test_merged_and_clean_is_cleanup_due() -> None:
     verdict = classify_worktree_cleanup_state(
-        worktree_registered=True, is_merged=True, has_uncommitted_changes=False
+        worktree_registered=True,
+        is_merged=True,
+        has_uncommitted_changes=False,
+        lease=LeaseEvidence.FREE,
     )
     assert verdict is WorktreeCleanupVerdict.CLEANUP_DUE
 
 
 def test_not_merged_and_clean_is_not_yet_mergeable() -> None:
     verdict = classify_worktree_cleanup_state(
-        worktree_registered=True, is_merged=False, has_uncommitted_changes=False
+        worktree_registered=True,
+        is_merged=False,
+        has_uncommitted_changes=False,
+        lease=LeaseEvidence.FREE,
     )
     assert verdict is WorktreeCleanupVerdict.NOT_YET_MERGEABLE
 
 
 def test_uncommitted_changes_block_cleanup_even_when_not_merged() -> None:
     verdict = classify_worktree_cleanup_state(
-        worktree_registered=True, is_merged=False, has_uncommitted_changes=True
+        worktree_registered=True,
+        is_merged=False,
+        has_uncommitted_changes=True,
+        lease=LeaseEvidence.FREE,
     )
     assert verdict is WorktreeCleanupVerdict.HAS_UNCOMMITTED_CHANGES
 
 
 def test_unregistered_is_clean_regardless() -> None:
     verdict = classify_worktree_cleanup_state(
-        worktree_registered=False, is_merged=True, has_uncommitted_changes=True
+        worktree_registered=False,
+        is_merged=True,
+        has_uncommitted_changes=True,
+        lease=LeaseEvidence.UNPROVEN,
     )
     assert verdict is WorktreeCleanupVerdict.CLEAN
+
+
+def test_live_and_unproven_leases_refuse_cleanup_before_risk_axes() -> None:
+    held = classify_worktree_cleanup_state(True, True, False, LeaseEvidence.HELD)
+    unproven = classify_worktree_cleanup_state(
+        True, True, False, LeaseEvidence.UNPROVEN
+    )
+
+    assert held is WorktreeCleanupVerdict.LIVE_WRITER
+    assert unproven is WorktreeCleanupVerdict.LEASE_UNPROVEN
 
 
 # --- service with pure fake ports (no real git) -----------------------------
@@ -97,11 +130,17 @@ class _FakeGitWorktree(GitWorktreePort):
     def delete_branch(self, repo: Path, branch: str) -> None:
         self.deleted_branches.append(branch)
 
-    def probe(self, repo: Path) -> bool:  # pragma: no cover - unused by sweep
+    def probe(
+        self, repo: Path, residence: DurableResidence
+    ) -> bool:  # pragma: no cover - unused by sweep
         raise NotImplementedError
 
     def create_worktree_from_tip(
-        self, repo: Path, branch: str, path: Path
+        self,
+        repo: Path,
+        branch: str,
+        residence: DurableResidence,
+        name: str,
     ) -> WorktreeHandle:  # pragma: no cover - unused by sweep
         raise NotImplementedError
 
@@ -128,10 +167,32 @@ def _not_merged(_repo: Path, _head: str, _target: str) -> bool:
     return False
 
 
+class _ReleasedOwnerLease(OwnerLeaseProbe):
+    def observe(
+        self, worktree_root: Path, expected_identity: LaneIdentity
+    ) -> OwnerLease:
+        return OwnerLease.RELEASED
+
+
+def _clean_receipt(
+    _repo: Path, _path: Path, _target: str | None
+) -> WorktreeAntiRotReceipt:
+    return WorktreeAntiRotReceipt(
+        state=TriageState.CLEAN,
+        process_matches=(),
+        locked=False,
+    )
+
+
 def test_service_never_removes_a_dirty_merged_worktree() -> None:
     handle = WorktreeHandle(path=_WT, branch="row4-plan", head_sha="a" * 40)
     fake = _FakeGitWorktree(handles=(handle,), dirty_paths={_WT})
-    service = WorktreeCleanupService(git_worktree=fake, merge_check=_merged)
+    service = WorktreeCleanupService(
+        git_worktree=fake,
+        merge_check=_merged,
+        owner_lease=_ReleasedOwnerLease(),
+        collect_receipt=_clean_receipt,
+    )
 
     result = service.sweep(repo=_REPO, target_branch="trunk", check_only=False)
 
@@ -145,7 +206,12 @@ def test_service_never_removes_a_dirty_merged_worktree() -> None:
 def test_service_removes_a_clean_merged_worktree() -> None:
     handle = WorktreeHandle(path=_WT, branch="row4-plan", head_sha="a" * 40)
     fake = _FakeGitWorktree(handles=(handle,), dirty_paths=set())
-    service = WorktreeCleanupService(git_worktree=fake, merge_check=_merged)
+    service = WorktreeCleanupService(
+        git_worktree=fake,
+        merge_check=_merged,
+        owner_lease=_ReleasedOwnerLease(),
+        collect_receipt=_clean_receipt,
+    )
 
     result = service.sweep(repo=_REPO, target_branch="trunk", check_only=False)
 

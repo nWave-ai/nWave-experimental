@@ -5,12 +5,9 @@ description: Current wave authority and handoff map for answering where product,
 
 # Wave Authority Map
 
-```text
-DISCOVER -> DIVERGE? -> DISCUSS -> DESIGN -> DEVOPS -> DISTILL -> DELIVER -> FINALIZE
-                              ^          ^          ^          ^
-                              +----------+----------+----------+
-                         downstream conflict returns to its owner
-```
+ADR-SSOT-002 §5 is the canonical S/M/L route table and §7 resolves
+downstream-correction conflicts; this map owns wave authority and handoffs,
+not route selection.
 
 | Wave | Owns | Passes forward |
 |---|---|---|
@@ -24,9 +21,9 @@ DISCOVER -> DIVERGE? -> DISCUSS -> DESIGN -> DEVOPS -> DISTILL -> DELIVER -> FIN
 | FINALIZE | whole-delivery hygiene and durable back-propagation | clean tree and closure result |
 
 Not every change needs every upstream conversation. A small defect can start at
-RCA and reuse existing product/design authority; a new product outcome may need
-the full path. Skipping an owner is valid only when its facts already exist and
-remain unchanged.
+RCA and reuse existing product/design authority. ADR-SSOT-002 §5 determines
+when an unresolved fact needs DISCUSS or DESIGN; human authority decides real
+scope and trade-offs.
 
 The handoff mechanism is identity plus projection, not copied narrative. A
 downstream discovery updates the durable upstream authority, then DISTILL emits

@@ -5,15 +5,31 @@ Local CI/CD Validation Script
 Runs the same validation checks as GitHub Actions CI/CD pipelines locally.
 This allows catching issues before pushing to remote.
 
+Since 2026-08-23 this is also the ON-DEMAND stand-in for the CI test run:
+`ci.yml` no longer fires on a push to the trunk (GitHub Actions budget), so the
+tiers are run here, deliberately, before a deliberate push.
+
 Usage:
     python scripts/local_ci.py [--verbose] [--fast] [--python-quality]
+    python scripts/local_ci.py --tier unit            # one tier
+    python scripts/local_ci.py --tier all             # every tier, SERIALLY
+    python scripts/local_ci.py --changed              # working tree vs HEAD
+    python scripts/local_ci.py --changed origin/master
 
 Options:
     --verbose    Show detailed output
     --fast       Skip slower checks (build validation)
     --python-quality
                  Run only the shared read-only Ruff lint and format contract
+    --tier TIER  unit|integration|acceptance|e2e|all -- repeatable, serial,
+                 each tier preceded by a MemAvailable gate (shared box)
+    --changed [REF]
+                 Only the tests covering files changed vs REF (default: the
+                 working tree vs HEAD), untracked files included
     --help       Show this help message
+
+Exit codes: 0 green, 1 red, 2 INDETERMINATE (a run the box killed, or one that
+could not be decided -- never reported as a failure).
 """
 
 import argparse
@@ -37,6 +53,60 @@ except ImportError:
 
     class Style:
         RESET_ALL = BRIGHT = ""
+
+
+# --------------------------------------------------------------------------
+# On-demand local test tiers -- the Actions-free replacement for per-push CI
+# --------------------------------------------------------------------------
+# WHY HERE AND NOT IN A NEW SCRIPT (GDP-10, parsimony): this file already IS
+# "run locally what CI would run" (`poe validate`). What it could not do was
+# run the test tiers BY NAME, one at a time, under the shared-box memory
+# discipline. Since 2026-08-23 `ci.yml` no longer fires on a push to the trunk
+# (deliberate-dispatch triggers -- GitHub Actions budget), so that on-demand
+# local run is the primary safety net and is completed here rather than added
+# as a second, competing entry point.
+#
+# The tier -> targets mapping is NOT re-declared here: it delegates to the
+# existing `[tool.poe.tasks]` entries, which remain the single source of truth
+# for what a tier contains. A copy of those paths would drift.
+TIER_POE_TASKS = {
+    "unit": "test-unit",
+    "integration": "test-integration",
+    "acceptance": "test-acceptance",
+    "e2e": "test-e2e",
+}
+# Ordered cheapest-first: a red unit tier stops the run before the expensive
+# tiers are paid for.
+TIER_ORDER = ("unit", "integration", "acceptance", "e2e")
+
+# Shared-box floor. Same figure enforced by scripts/measure_serial_suite.py
+# (`MIN_MEM_AVAILABLE_MIB`), same box, same reason: below it earlyoom starts
+# killing processes, and it has corrupted `.git` here before. MemAvailable --
+# never MemFree, never load.
+MIN_MEM_AVAILABLE_MIB = 2000
+
+# Bound every spawn (execution-perimeter invariant): a hang must not look like
+# a slow run. 90 minutes covers the slowest tier (e2e) on this box.
+TIER_TIMEOUT_SECONDS = 5400
+
+# Distinct process exit codes, because "could not decide" is not "failed".
+EXIT_GREEN = 0
+EXIT_RED = 1
+EXIT_INDETERMINATE = 2
+
+
+def mem_available_mib() -> int | None:
+    """MemAvailable in MiB, or None where /proc/meminfo does not exist."""
+    meminfo = Path("/proc/meminfo")
+    if not meminfo.exists():
+        return None
+    try:
+        for line in meminfo.read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
 
 
 class LocalCIValidator:
@@ -397,6 +467,200 @@ class LocalCIValidator:
         else:
             self.tests_failed += 1
 
+    # ----------------------------------------------------------------
+    # On-demand test tiers (Actions-free local CI)
+    # ----------------------------------------------------------------
+
+    def _memory_gate(self, label: str) -> bool:
+        """Refuse to start `label` when the shared box is too tight.
+
+        Returns True when it is safe to proceed. A box we cannot measure is
+        announced LOUD and allowed through: /proc/meminfo is a Linux fact, and
+        a non-Linux dev box has no earlyoom to protect against.
+        """
+        available = mem_available_mib()
+        if available is None:
+            self.print_warning(
+                f"{label}: MemAvailable unreadable (no /proc/meminfo) -- "
+                "proceeding WITHOUT the shared-box guard."
+            )
+            return True
+        if available < MIN_MEM_AVAILABLE_MIB:
+            self.print_error(f"{label}: REFUSED -- box too tight.")
+            print(
+                f"  WHAT  MemAvailable={available} MiB < {MIN_MEM_AVAILABLE_MIB} MiB."
+            )
+            print("  WHY   Below this floor earlyoom kills processes on this box; it")
+            print("        has corrupted .git mid-operation before. A run started here")
+            print("        produces an INDETERMINATE result, never a trustworthy red.")
+            print("  HOW   Close the other heavy process (another pytest, a browser),")
+            print("        then re-run the same command. Nothing was executed.")
+            return False
+        self.print_info(f"{label}: MemAvailable={available} MiB -- gate open.")
+        return True
+
+    def _run_bounded(self, command: list[str], label: str) -> str:
+        """Run one bounded, serial child. Returns green | red | indeterminate.
+
+        An OOM kill arrives as a NEGATIVE return code (-signal) or as 137 from
+        a shell layer. That is the box speaking, not the test suite: it is
+        reported as INDETERMINATE and never counted as a failure.
+        """
+        self.print_info(f"Running: {' '.join(command)}")
+        try:
+            result = subprocess.run(
+                command,
+                cwd=self.project_root,
+                check=False,
+                stdin=subprocess.DEVNULL,
+                timeout=TIER_TIMEOUT_SECONDS,
+            )
+        except FileNotFoundError:
+            self.print_warning(f"{label} - command not found")
+            return "indeterminate"
+        except subprocess.TimeoutExpired:
+            self.print_warning(
+                f"{label}: INDETERMINATE -- exceeded its {TIER_TIMEOUT_SECONDS}s bound."
+            )
+            return "indeterminate"
+
+        code = result.returncode
+        if code in (0, 5):  # 5 = pytest collected nothing; not a failure
+            self.print_success(label)
+            self.tests_passed += 1
+            return "green"
+        if code < 0 or code == 137:
+            signal_name = f"signal {-code}" if code < 0 else "SIGKILL (137)"
+            self.print_warning(f"{label}: INDETERMINATE -- killed by {signal_name}.")
+            print("  WHAT  The run did not finish; it was terminated by the kernel or")
+            print("        by earlyoom. No verdict about the code was produced.")
+            print("  WHY   An OOM-killed run is INDETERMINATE, never a red. Reporting")
+            print(
+                "        it as a failure would fabricate a defect that was never seen."
+            )
+            print("  HOW   Free memory on the box and re-run the same tier alone.")
+            return "indeterminate"
+        self.print_error(f"{label} (exit {code})")
+        self.tests_failed += 1
+        return "red"
+
+    def run_test_tiers(self, tiers: list[str]) -> str:
+        """Run the named tiers SERIALLY, one at a time, memory-gated.
+
+        Never two tiers at once: the box is shared, and a MemAvailable dip
+        under earlyoom's threshold kills work outside this process.
+        """
+        self.print_header(f"Local test tiers (serial): {', '.join(tiers)}")
+        verdict = "green"
+        for tier in tiers:
+            label = f"Tier {tier}"
+            if not self._memory_gate(label):
+                return "indeterminate"
+            outcome = self._run_bounded(
+                ["uv", "run", "poe", TIER_POE_TASKS[tier]], label
+            )
+            if outcome == "indeterminate":
+                return "indeterminate"
+            if outcome == "red":
+                verdict = "red"
+                break  # cheapest-first: stop paying for the later tiers
+        return verdict
+
+    def _changed_paths(self, ref: str) -> list[str] | None:
+        """Paths differing from `ref`, plus untracked files. None = cannot tell.
+
+        Untracked files are in no diff -- omitting them silently narrows the
+        selection, so they are queried separately. `git` is optional on this
+        project (pure-Python runtime invariant); its absence degrades LOUD.
+        """
+        collected: list[str] = []
+        for args in (
+            ["git", "diff", "--name-only", ref],
+            ["git", "ls-files", "--others", "--exclude-standard"],
+        ):
+            try:
+                proc = subprocess.run(
+                    args,
+                    cwd=self.project_root,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
+                    timeout=60,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                self.print_error("--changed needs `git` on PATH and it did not answer.")
+                print("  WHAT  Cannot compute the changed-file set.")
+                print("  WHY   Reporting 'no changes' here would silently run nothing")
+                print("        and look green. INDETERMINATE instead of silent-wrong.")
+                print("  HOW   Run a whole tier instead: --tier unit (or --tier all).")
+                return None
+            if proc.returncode != 0:
+                self.print_error(f"git refused: {' '.join(args)}")
+                print((proc.stderr or "").strip())
+                return None
+            collected.extend(p for p in proc.stdout.splitlines() if p.strip())
+        return sorted(set(collected))
+
+    def run_changed_tests(self, ref: str) -> str:
+        """Run only the tests covering the files changed since `ref`.
+
+        Selection is NOT re-implemented: it reuses `select()` from
+        scripts/hooks/pytest_touched_files.py, the same mapping the pre-commit
+        touched-file gate uses, so local and commit-time scoping cannot drift.
+        """
+        self.print_header(f"Local tests scoped to files changed vs {ref}")
+        changed = self._changed_paths(ref)
+        if changed is None:
+            return "indeterminate"
+        if not changed:
+            self.print_success(f"No file differs from {ref}; nothing to run.")
+            return "green"
+
+        sys.path.insert(0, str(self.project_root / "scripts" / "hooks"))
+        try:
+            from pytest_touched_files import select
+        except ImportError as exc:
+            self.print_error(f"cannot load the touched-file selector: {exc}")
+            return "indeterminate"
+
+        runnable, deferred, uncovered = select(changed, self.project_root)
+        for entry in uncovered:
+            self.print_warning(f"UNCOVERED (no test maps to it): {entry}")
+        if deferred:
+            self.print_warning(
+                f"Deferred ({len(deferred)} file(s)): Docker/multi-language tiers. "
+                "Run them with --tier e2e when you want them."
+            )
+        if not runnable:
+            self.print_success("No test file is impacted by these changes.")
+            return "green"
+
+        self.print_info(f"{len(runnable)} test file(s) impacted.")
+        if not self._memory_gate("Changed-file run"):
+            return "indeterminate"
+        return self._run_bounded(
+            ["uv", "run", "python", "-m", "pytest", *runnable, "--tb=short", "-q"],
+            f"Changed-file tests ({len(runnable)} file(s))",
+        )
+
+    @staticmethod
+    def print_tier_verdict(verdict: str) -> int:
+        banner = {
+            "green": (Fore.GREEN, "ALL SELECTED TESTS PASSED", EXIT_GREEN),
+            "red": (Fore.RED, "TESTS FAILED", EXIT_RED),
+            "indeterminate": (
+                Fore.YELLOW,
+                "INDETERMINATE -- no verdict was produced (this is NOT a red)",
+                EXIT_INDETERMINATE,
+            ),
+        }[verdict]
+        colour, text, code = banner
+        print(f"\n{colour}{'-' * 50}{Style.RESET_ALL}")
+        print(f"{colour}{text}{Style.RESET_ALL}")
+        print(f"{colour}{'-' * 50}{Style.RESET_ALL}")
+        return code
+
     def print_summary(self) -> None:
         """Print validation summary."""
         self.print_header("CI/CD Validation Results")
@@ -473,10 +737,46 @@ def main():
         action="store_true",
         help="Run only the shared read-only Ruff lint and format contract",
     )
+    parser.add_argument(
+        "--tier",
+        action="append",
+        choices=[*TIER_ORDER, "all"],
+        metavar="TIER",
+        help=(
+            "Run a test tier by name (unit|integration|acceptance|e2e|all). "
+            "Repeatable. Tiers run SERIALLY, one at a time, each preceded by a "
+            "MemAvailable gate. This is the on-demand local stand-in for the CI "
+            "run that no longer fires on every push."
+        ),
+    )
+    parser.add_argument(
+        "--changed",
+        nargs="?",
+        const="HEAD",
+        metavar="REF",
+        help=(
+            "Run only the tests covering files changed vs REF (default HEAD, "
+            "i.e. the working tree), untracked files included."
+        ),
+    )
 
     args = parser.parse_args()
 
     validator = LocalCIValidator(verbose=args.verbose, fast_mode=args.fast)
+
+    if args.changed is not None:
+        sys.exit(
+            validator.print_tier_verdict(validator.run_changed_tests(args.changed))
+        )
+
+    if args.tier:
+        tiers = (
+            list(TIER_ORDER)
+            if "all" in args.tier
+            else [t for t in TIER_ORDER if t in set(args.tier)]
+        )
+        sys.exit(validator.print_tier_verdict(validator.run_test_tiers(tiers)))
+
     if args.python_quality:
         validator.validate_python_quality()
         validator.print_summary()

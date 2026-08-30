@@ -956,7 +956,9 @@ def supervisor_script(port: int, api_key: str, *, owner_pid: int | None = None) 
     )
 
 
-def start_supervisor(workspace: Path, *, port: int, api_key: str) -> None:
+def start_supervisor(
+    workspace: Path, *, port: int, api_key: str, owner_pid: int | None = None
+) -> None:
     """Write `supervisor_script`'s source into `workspace` and launch it
     DETACHED (`start_new_session=True`, the SAME `os.setsid()` primitive
     `setsid` gives the bash block) from THIS process -- `prepare()`'s own
@@ -965,6 +967,26 @@ def start_supervisor(workspace: Path, *, port: int, api_key: str) -> None:
     PID; idempotent -- if a supervisor from a PRIOR `prepare()` run is
     still alive (its own PID file says so), it is stopped first so this
     call is never a silent second supervisor racing the first.
+
+    `owner_pid` forwards verbatim to `supervisor_script` (default `None` ->
+    that function's own `os.getpid()` fallback, i.e. THIS call's own
+    process). Defect `il-supervisore-non-riavvia-...-si-autotermina-da-
+    orfano` (2026-08-24 RCA): when this function runs inside `prepare()`'s
+    OWN short-lived setup-step subprocess (`fixture_setup_step`'s argv,
+    `python3 prepare_examiner_fixture.py <port>`, spawned and reaped by
+    `preflight.py`'s `nwave_setup_steps`/`control_setup_steps` well before
+    the campaign's real work begins), the default `os.getpid()` binds the
+    supervisor's whole life to that ONE-SHOT process -- gone the instant
+    its job is done, so the supervisor self-terminates as an orphan within
+    a couple of poll cycles, by construction, not by any timing defect.
+    `prepare()` now threads the CAMPAIGN's own long-lived PID through this
+    parameter when one is available, so a supervisor born during setup
+    lives exactly as long as the process that will eventually call
+    `stop_supervisor` on it -- the same invariant `probe_examiner_start_
+    recipe`'s own direct, in-process `start_supervisor` call already got
+    for free (measured: `test_owner_alive_check_never_fires_while_the_
+    owner_is_a_live_pid` plus a fresh standalone reproduction both confirm
+    the poll loop never fires while OWNER_PID stays a real, live PID).
 
     Stable-design report 2026-08-19 phase3 §5 item 5: the stop-then-launch
     sequence below is now held under `SUPERVISOR_LOCK_FILE_NAME`'s
@@ -980,7 +1002,10 @@ def start_supervisor(workspace: Path, *, port: int, api_key: str) -> None:
         try:
             _stop_supervisor_locked(workspace)
             script_path = workspace / SUPERVISOR_SCRIPT_NAME
-            script_path.write_text(supervisor_script(port, api_key), encoding="utf-8")
+            script_path.write_text(
+                supervisor_script(port, api_key, owner_pid=owner_pid),
+                encoding="utf-8",
+            )
             proc = subprocess.Popen(
                 [sys.executable, str(script_path)],
                 cwd=workspace,
@@ -1376,7 +1401,7 @@ def _snapshot_pristine_db(workspace: Path) -> None:
     snapshot_path.chmod(0o444)
 
 
-def prepare(workspace: Path, *, port: int) -> Path:
+def prepare(workspace: Path, *, port: int, owner_pid: int | None = None) -> Path:
     """Refuse an occupied port before any mutation; else migrate, seed,
     snapshot the pristine seeded DB, and (re)render the public
     user-environment doc with the seed-produced key, idempotently,
@@ -1392,6 +1417,13 @@ def prepare(workspace: Path, *, port: int) -> Path:
     must never leave two supervisors racing the same port, and killing
     only the runserver it watches (leaving the supervisor itself running)
     would just have it restart what was killed within one poll interval.
+
+    `owner_pid` forwards verbatim to `start_supervisor` -- see that
+    function's own docstring for why a caller that is itself a short-lived
+    setup-step subprocess (`main()` below, invoked via `fixture_setup_
+    step`'s argv) MUST pass the campaign's own long-lived PID here rather
+    than accept the `os.getpid()` default, which would bind the supervisor
+    to this one-shot process's own imminent exit.
     """
     workspace = Path(workspace)
     stop_supervisor(workspace)
@@ -1416,7 +1448,7 @@ def prepare(workspace: Path, *, port: int) -> Path:
     _add_exclude_entries(workspace)
     doc_target = workspace / DOC_NAME
     doc_target.write_text(_render(port, api_key), encoding="utf-8")
-    start_supervisor(workspace, port=port, api_key=api_key)
+    start_supervisor(workspace, port=port, api_key=api_key, owner_pid=owner_pid)
     return doc_target
 
 
@@ -1469,7 +1501,24 @@ def main(argv: list[str] | None = None) -> int:
         prepare_delivery(Path.cwd())
         return 0
     port = int(argv[0])
-    prepare(Path.cwd(), port=port)
+    # Defect `il-supervisore-non-riavvia-...-si-autotermina-da-orfano`
+    # (2026-08-24 RCA): THIS process is `fixture_setup_step`'s own
+    # short-lived setup-step subprocess -- it exits right after `prepare()`
+    # returns, seconds after being born. `prepare()`'s default `owner_pid`
+    # (this process's own `os.getpid()`) would bind the supervisor it
+    # starts to a PID already gone by the time anything else runs, so it
+    # self-terminates as an orphan a couple of poll cycles later, always,
+    # by construction -- not a race, not a timing tune. `preflight.main()`
+    # sets `K4_SUPERVISOR_OWNER_PID` to ITS OWN long-lived PID before
+    # spawning this subprocess (the SAME `os.environ`/`_rendered_arm_env`
+    # channel `K4_WALL_CLOCK_CEILING_MINUTES`/`K4_CAMPAIGN_START_EPOCH`
+    # already use, never a second plumbing mechanism); read back here so
+    # the supervisor is correctly owned from birth. Absent (a bare manual
+    # `python3 prepare_examiner_fixture.py <port>`, or a test) -> `None`,
+    # `start_supervisor`'s own `os.getpid()` fallback applies unchanged.
+    owner_pid_env = os.environ.get("K4_SUPERVISOR_OWNER_PID")
+    owner_pid = int(owner_pid_env) if owner_pid_env else None
+    prepare(Path.cwd(), port=port, owner_pid=owner_pid)
     return 0
 
 

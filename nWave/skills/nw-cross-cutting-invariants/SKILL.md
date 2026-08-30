@@ -1,120 +1,34 @@
 ---
 name: nw-cross-cutting-invariants
-description: Cross-cutting normative invariants — paradigm-independent and role-independent rules that bind every architect and crafter (data justification, gate design GDP-1..9, self-explaining surfaces). SHIPPED home of these definitions; cite by clause id, never re-declare.
+description: Cross-cutting normative invariants — lean public routing core for global gate/construction doctrine and on-demand knowledge lenses. Cite clause ids; never re-declare.
 user-invocable: false
 disable-model-invocation: true
 ---
 
-# Cross-Cutting Invariants
+# Cross-Cutting Invariants — Recomposition Core
 
-Normative rules that hold **regardless of paradigm** (object-oriented or functional) and
-**regardless of role** (architect, crafter, designer). They live here once so that a citation
-elsewhere resolves to one definition instead of drifting copies.
+Normative rules hold regardless of paradigm and role. `nw-cross-cutting-invariants` is their
+SHIPPED public home: cite a clause id; do not re-declare it. This core owns global
+gate/construction doctrine and routes independent KNOWLEDGE lenses; load every applicable lens.
 
-**This skill is the SHIPPED home of these definitions.** Anywhere in the framework that cites a
-clause id below resolves against this file. Do not re-declare a clause in another asset — cite it.
+**Reachability precondition.** A pointer works only when the consumer actually loads its referent.
+Check what the consumer really loads, not what it ought to; otherwise self-contain the bounded rule.
+Cite skills by **NAME**, never vendor filesystem path: a path is a GDP-8 designation that can dangle
+on another host.
 
-**Reachability precondition, and it has bitten before.** Collapsing a rule here and pointing at
-it works ONLY if the consuming context actually LOADS this skill. A pointer from an asset whose
-agent never loads this file is a designation with no reachable referent — the exact GDP-8 disease,
-reintroduced by the remedy. Before replacing any rule with a pointer, check which skills the
-consuming agent really loads, not which it ought to. A consumer that cannot load this skill must
-**self-contain** the rule (bounded, deliberate duplication), never carry a dangling pointer.
+> **Known correct exception — reviewer family.** The 22 `*-reviewer` agents have no common narrow
+> skill; their absence-is-a-claim rule is deliberately inlined. Do not replace it with a dangling
+> pointer.
 
-**Reachability has TWO axes — the second is the host.** *Does the agent load this skill?* is only
-half the question. The other half is *can it resolve the reference on the host it is running on?*
-Cite a skill by **NAME** (`nw-cross-cutting-invariants`), never by a vendor-specific filesystem
-path: an installed asset runs on hosts whose skill directory is not the one the author had
-(`.claude/`, and the Codex / Copilot / OpenCode equivalents). A path-shaped citation resolves for
-the author and dangles everywhere else — a designation that stands for a location instead of the
-artifact, GDP-8 one layer down. Name-shaped citations let each host's own resolution do its job.
-
-> **Known and correct exception — the reviewer family.** The 22 `*-reviewer` agents each load a
-> different, narrow skill set with no common member. The absence-is-a-claim rule
-> (ABSENT-VERIFIED vs NOT-FOUND-IN-MY-SCOPE, coverage as a fraction) is therefore **inlined in
-> each reviewer spec on purpose**. That duplication is the correct treatment under the
-> reachability precondition above — do NOT "fix" it by replacing those copies with a pointer
-> here; doing so silently disarms the rule in all 22.
-
----
-
-## `data:consumer-known-before-produced` — a datum is produced because we already know who needs it (STANDING)
-
-**A datum is justified only by a named consumer.** Before adding a field, an event, a config key,
-an artifact section, or a telemetry record, name **who reads it** and **through which mechanism**.
-No named reader → the datum is unjustified and must not be added. This is not bookkeeping
-hygiene: unread data is what makes a system incoherent, because every future reader must decide
-whether it means something and none can tell.
-
-**Second half, and it is the one that gets forgotten: name the JOIN KEY.** Knowing who reads a
-datum is not enough — it must be indexable against what the reader already holds. Two data both
-faithfully consumed, indexed on keys that do not meet, cannot be related: the information exists
-and is unusable. State the key the consumer will join on, at the moment you declare the field.
-
-Measured instances of the failure, all in this repository:
-
-| Datum | Declared | Consumed |
+| Phase | Load | Trigger |
 |---|---|---|
-| `inline_in_feature_delta` | was 4 wave contracts + 1 schema | **0** reads — REMOVED 2026-07-28 once measured; kept here as the worked example |
-| `adr-refs` (`RefList`) | its own definition | **0** dereferences |
-| `skill_tracking` | full transcript-mining service exists | default **`"disabled"`** |
-| `RedObserved` / `SliceCommitVerified` | both genuinely consumed | **no common key** — duration not computable from either ledger |
+| Gate or construction design | this core | designing a gate, oracle, error surface, restriction, or a construction alternative |
+| Context residency | `nw-cross-cutting-context-residency` | choosing resident versus on-demand context, or repairing compensation prose |
+| Evidence and instrumentation | `nw-cross-cutting-evidence-instrumentation` | asserting from a measurement, demonstrating a check, or repairing a misleading instrument/count |
+| Input and data contracts | `nw-cross-cutting-input-data-contracts` | adding data, declaring inputs, choosing a join key, or diagnosing ambient reads |
 
-The last one is the instructive case: both data are read by someone. They still cannot answer
-"how long did this slice take to go green", because one is keyed by feature+slice+time and the
-other by test-file content hash. A consumer was known; the join was not.
-
-**Corollary — instrumentation that must be switched on is not instrumentation.** A datum whose
-producer defaults to off (see `skill_tracking`) is unjustified in the same way as one with no
-reader: on the machine where it matters, nobody enabled it. Default it on, or do not claim the
-measurement exists.
-
----
-
-## `context:pay-on-demand-not-every-session` — resident context is paid every session (STANDING)
-
-**Whoever needs it loads it; whoever does not need it must not pay for it in every session.**
-Context injected at session start is a per-session tax on every reader, including the readers who
-will never touch that subject. Detail belongs where it is needed, at the moment it is needed — not
-resident.
-
-Three residency classes; classify before you inject anything:
-
-- **MUST-BE-RESIDENT** — if it is absent from context, it does not happen. The load-bearing case is
-  a **trigger**: an instruction to arm, to check, to refuse. Nobody goes looking for what they do not
-  know exists, so a trigger cannot be made reachable-on-demand — its absence is silent. Same for a
-  safety warning whose omission causes harm before anyone would think to consult it.
-- **MAP-ONLY** — the reader must know THAT a thing exists and roughly WHEN to reach for it. Not how
-  it works. A name plus a one-line "reach for this when…" is the whole resident cost.
-- **REFERENCEABLE** — pure detail, needed only by whoever is doing that specific thing.
-
-**Density is a second axis, independent of residency.** Normative content cannot be GENERATED from
-code, but it can be COMPRESSED: doctrine is usually rules — subject · condition · action — written
-as narrative. A table says the same thing in a fraction of the bytes and reads better. Do not confuse
-"not derivable" with "not compressible"; measuring the first tells you nothing about the second.
-
-**The failure this clause prevents**: a projection that ADDS instead of REPLACING. Retiring a
-duplicate is a saving; generating a new view beside a surviving hand-written one is a new divergence
-surface AND a bigger payload.
-
-## `context:resident-doctrine-can-be-compensation-debt` — resident prose that patches bad guidance is debt (STANDING)
-
-When a body of resident context exists to compensate for guidance that **fails to arrive at the point
-of need**, that context is not doctrine — it is **debt**, and it is the SECOND cost of a defect whose
-first cost is already being paid at the gate.
-
-The chain: a gate refuses reactively instead of guiding at the authoring surface (the GDP-2 emission
-corollary) → readers keep getting caught → someone compensates by injecting standing prose into
-every session → now everyone pays, every session, for a message that should have arrived once, in
-place, to the one person who needed it.
-
-**So, before adding anything to a resident payload, ask: is the real gap a MESSAGE that fails to
-guide?** If yes, fix the message; the resident need dissolves rather than being served. And the
-converse is the practical lever: **as guidance moves to the point of need, resident doctrine can thin
-without losing anything** — the two workstreams compose, and the thinning is only safe in that order.
-
-**Do not thin first.** Removing resident prose while the corresponding guidance still arrives too
-late removes the compensation and keeps the defect.
+The lenses are independent KNOWLEDGE: no forced sequence and no artificial precedence. A compound
+task loads multiple lenses; return here only to route the next concern.
 
 ## `gate:self-explaining-what-why-how` — gate and error surfaces state WHAT / WHY / HOW (STANDING)
 
@@ -128,16 +42,15 @@ GDP-4 / GDP-2).
 
 ---
 
-## `gate:design-principles-gdp-1-9` — Gate Design Principles GDP-1..10 (STANDING — canonical definitions)
+## `gate:design-principles-gdp-1-9` — Gate Design Principles GDP-0..10 (STANDING — canonical definitions)
 
 The design contract EVERY gate, oracle, or error surface must satisfy. This skill is the
 SHIPPED home of these definitions: everywhere else in the framework (skills, agents) that
 cites "GDP-N" by number resolves against this list. Audit every gate you design against it;
 a gap is a plan item to correct that gate. The clause id below retains its original
 `gdp-1-9` suffix for citation stability (11+ existing citation sites across agents/skills/ADRs)
-even though the list now runs from GDP-0 through GDP-10 — GDP-0 is separately registered as
-`gate:design-principles-gdp-0-representation-first`, and GDP-10 is separately registered as
-`gate:design-principles-gdp-10-parsimony`, for anyone citing either specifically.
+even though the list now runs from GDP-0 through GDP-10 — GDP-0 and GDP-10 have no heading of
+their own; cite `gate:design-principles-gdp-1-9` for the whole list, GDP-0 and GDP-10 included.
 
 - **GDP-0 — Representation before validation (STANDING, Ale 2026-08-19).** Gates are the LAST
   RESORT, never the default. Before designing a gate, name the PRODUCER that made the wrong
@@ -150,13 +63,19 @@ even though the list now runs from GDP-0 through GDP-10 — GDP-0 is separately 
   4-13): six `des dispatch` validators were added in three days, each a symptom of the
   acceptance designer hand-compiling fields the tree already derived — wall grew from 1886s to
   4553s, and the validators also lied at the language boundary.
+  - **Formal-byte boundary.** If an LLM still authors formal bytes, a template, grammar, reviewer,
+    or validator is not construction: it checks after the wrong state was representable. Prefer one
+    deterministic sole-writer invocation that accepts semantic input and emits the formal bytes. A
+    deterministic constructor or compiler counts only when it replaces that LLM formal-byte
+    authorship; do not add a validator, grammar, compiler-as-gate, hook, test, mandatory artifact,
+    or runtime barrier through this rule.
 - **GDP-1 — Intercept EARLY (timing).** Fire at the earliest point the defect is detectable —
   BEFORE the effort it guards is spent and the value delivered. A gate that fires after
   delivery only COMMENTS, it cannot prevent. Efficacy ladder: **proactive-inline ≫
   reactive-before-completion ≫ advisory-after-completion**.
-- **GDP-2 — Proactive INLINE affordance.** Pair the reactive gate with guidance inline at the
-  authoring surface, so the block is rarely reached — a gate that fires is already too late to
-  teach. Keep the gate, ADD the inline guidance.
+- **GDP-2 — Proactive INLINE affordance.** Only after GDP-0 admits a reactive gate, pair it with
+  guidance inline at the authoring surface, so the block is rarely reached — a gate that fires is
+  already too late to teach. If GDP-0 rejects the gate, remove it; do not wrap guidance around it.
   - **Emission corollary (the audit direction).** Read the pairing BACKWARDS to make it
     checkable: **a rejection you actually observe being emitted IS, by construction, evidence
     that its preventive twin is missing or too weak.** Prevention beats cure; where cure is
@@ -389,239 +308,3 @@ shipped caller queries one target at a time is a claim with no producer for the 
 not only the per-item verdict.
 
 ---
-
-## `claim:falsify-before-asserting` — the cheapest check precedes the conclusion (STANDING)
-
-Before concluding that something cannot work, is missing, or is broken, run the cheapest check
-that would falsify that conclusion, then state only what the check showed. Name a cause only if
-you observed it — never infer one from a shared symptom. Absence in one place is not absence in
-the tree: measure on the scope the claim is actually ABOUT, not the subset you happened to look
-at (the enumerator gap above is the architectural form of this same failure). The asymmetry that
-justifies the discipline: the check costs seconds; an unfalsified conclusion, once acted on,
-costs an order of magnitude more to undo.
-
----
-
-## `check:unfired-is-not-evidence` — a check you have not seen FAIL is not evidence (STANDING)
-
-A passing check has two indistinguishable explanations: the property holds, or the check cannot
-detect its violation. Green discriminates between them only AFTER the check has been observed
-failing on a constructed violation. Before that, green is a fact about the instrument, not about
-the subject.
-
-Binds every instrument, not only tests:
-
-| Instrument | Vacuous when | What earns the trust |
-|---|---|---|
-| negative test | the corruption is applied where the subject is not | corrupt AT the subject's own locus; watch the assertion fire |
-| guard predicate | the pattern accepts the empty case (`^password=` matches an empty value) | feed the empty and near-miss forms; watch both rejected |
-| gate | its arming precondition is absent, so it skips | run it on an artifact that violates the rule; watch the refusal |
-| oracle inside an AT | the step derives the value it was supposed to read from the output | withhold the field; watch the step fail |
-
-The demonstration is an ACT, never an argument: "this would obviously catch it" is the reasoning
-that produced every vacuous check already shipped. Cost asymmetry — constructing the violation
-costs one run; a vacuous check ships as coverage and every later reader reads its green as proof.
-
-**Who demonstrates it, and when: the AUTHOR, immediately, with no dispatch.** Whoever writes the
-check, tool, gate or script runs it against a constructed violation right after writing it and
-watches HOW it fails.
-
-**This clause governs WHO RUNS the demonstration. It says nothing about WHO WRITES the code, and
-conflating the two licenses hand-authoring production code.** The two rules are orthogonal and both
-bind: authorship of production code follows the dispatch discipline, while the fail-demonstration is
-always the author's own act, executed on the spot. So "demonstrate it yourself, no dispatch" is an
-instruction about the demonstration only — a dispatched implementer still runs its own
-demonstration, and an orchestrator who reads that phrase as permission to write the code has taken
-a licence the clause does not grant. Anyone handed the shorter phrasing and noticing the collision
-should say so rather than pick a side silently. That is seconds of work at the authoring surface; routing it to an independent
-examiner buys nothing here and costs a full handoff, because the question — *can this instrument
-fire?* — is decided by execution, and the author is already holding the keyboard. Reserve an
-independent reader for the different question: whether the number MEANS what the report claims.
-
-Corollary: the FIRST version of a measuring instrument is suspect BY CONSTRUCTION — it is the only
-version written before its author has seen the data, and a test written from that same first reading
-inherits the misreading it was built to catch. Green unit tests certify the arithmetic the instrument
-was told to do, never that the figure means what the report says it means. The check worth writing is
-the one that could embarrass you.
-
----
-
-## `instrument:a-reading-that-misled-you-is-a-defect-in-the-instrument` — fix the tool, not the conclusion (STANDING)
-
-When a measurement, receipt or status report leads to a wrong action, the finding is not "I should
-read it more carefully next time". The instrument is defective and the work is to REPAIR IT — vigilance
-does not scale, and the next reader inherits the same trap with less context than you had.
-
-| Step | What it means |
-|---|---|
-| Name the axis that lied | not "it was wrong" — WHICH signal, and what it actually measures versus what you read it as |
-| Repair the instrument | and prefer removing the inference over adding a caveat: a footnote is not a fix |
-| Re-run it on the case that fooled you | the repair is verified by the original counterexample reproducing the correct answer, never by the code looking better |
-| Keep the counterexample | in the instrument, as a comment or a test, so the next change cannot silently restore the trap |
-
-Two failure shapes this rule exists to stop, both observed:
-
-- **Fixing the conclusion instead of the tool.** Correcting the one wrong verdict and leaving the
-  instrument intact guarantees the same wrong verdict, and the second occurrence looks like a fresh
-  mistake rather than a known one.
-- **Fixing the wrong axis.** Diagnose before repairing: an instrument can produce the right complaint
-  from the wrong cause, and a plausible repair then leaves the real defect in place while retiring
-  the symptom that would have exposed it. Establish which signal failed by reproducing it, not by
-  reasoning about which signal COULD have failed — the two diverge, and the second is faster to
-  produce and satisfying to believe.
-
-Corollary — **an instrument you run repeatedly is production code.** A report generated on a schedule
-or before every decision does not get to live as an unversioned scratch script: it needs a home, a
-history, and a test, because a defect in it is a defect in every decision downstream of it.
-
-Corollary — **the guidance corpus is an instrument, and it is usually the one that failed.**
-The rows above read naturally as being about measurements and receipts. They are not limited to
-them: a skill, mandate, agent spec or command prose that let a defect through is a defective
-instrument in exactly the same sense, and the repair is to change that prose — never a resolution
-to remember harder next time.
-
-> **After a defect is fixed, which prompt would have prevented it — and did you change that
-> prompt, or only the code?** Answering "the fix is obvious now, anyone would catch it" is the
-> wrong answer: the next author arrives with less context than you have at this moment, which is
-> the only moment the rule is cheap to write. **If no existing rule would have caught it, add or
-> sharpen one where its consumer already loads it; if one exists and did not fire, the defect is
-> in its phrasing or its placement, and that is what to repair.**
-
-Two constraints keep this from becoming prose inflation, and both come from rules already here:
-
-- **Extend before you mint** (`gate:design-principles-gdp-10-parsimony`). Ask whether a more
-  general existing rule already covers the case. A new numbered principle for something a
-  corollary can carry is the ceremony that clause exists to refuse.
-- **Ship the counterexample with the rule** (row 4 above, applied to prose). A normative sentence
-  without the dated case that generated it erodes at the first rewrite: the next editor sees an
-  assertion with no cost attached and trims it. The anchor is what makes the rule survive.
-
-This is deliberately blame-free and forward-facing. The question is never who wrote the test or the
-component that broke — it is which instruction, had it existed, would have made the class
-unwritable. Empirical anchor, 2026-08-06: three CI-only failures across three suites turned out to
-be one class (a test inheriting ambient host state rather than declaring it), and the durable
-output of that day was not the three fixes but the mandate and the two design clauses that make the
-class visible at authoring time.
-
----
-
-## `contract:declared-inputs-not-ambient-reads` — what does this READ that nobody passed it? (STANDING)
-
-Paradigm-independent, and it applies to a component, a function and a test alike.
-
-> **List everything the behaviour is gated on, then ask which of those it RECEIVES and which it
-> goes and reads.** Answering "it works on my machine and in CI" is the wrong answer — that is
-> two samples of one environment class, and the gate is invisible in both. **If any gate is read
-> rather than received, lift it into the contract** — a parameter, an injected capability, an
-> explicit override — and keep the ambient lookup as a default the caller may state, never as the
-> only source.
-
-The gates worth walking, as one list so it cannot drift between copies: **host or platform
-presence · `$HOME` · a resolved config directory · cwd · `PATH` · environment variables · the
-clock · locale · network reachability**.
-
-Why it is not a style preference:
-
-- A component whose result depends on state absent from its inputs takes a different branch in a
-  different environment and reports honestly about a question nobody asked it.
-- Its tests are the first casualty. They pass on the author's machine, on any machine that
-  resembles it, **and because a sibling test created the state first** — which makes them
-  order-dependent with nothing in the source saying so. A `tmp_path` fixture is not evidence:
-  isolating the filesystem is not isolating the environment.
-- A property test cannot reach the cases ambient state is silently fixing, so the generator looks
-  thorough while the interesting partition is unreachable.
-
-Empirical anchor, 2026-08-06: `NWaveInstaller.effective_target_platforms` resolves the target host
-by ambient detection, lazily at first use. Three separate suites reached a no-host early return on
-CI instead of the behaviour they asserted; each was repaired by declaring the platform, and each
-took several refuted hypotheses to diagnose, because a component that reads ambient state gives no
-signal about WHICH state it read.
-
-Consumers: `nw-code-design-oo` and `nw-code-design-fp` (design-time, per paradigm) and the
-Algebraic Analysis Before the Scenario mandate in `nw-test-design-mandates` (authoring-time).
-They reference this clause; they do not restate the list.
-
----
-
-## `provenance:a-count-without-a-sender-is-not-attributable` — name who wrote the record before it becomes evidence (STANDING)
-
-A count extracted from a SHARED log or ledger is a claim about the SENDER of each record, not only
-about the event it names. Before a count feeds a ranking, a defect row, or a dispatch decision, the
-question is not "how many?" but "who wrote each one, and is that population the one the claim is
-about?" A number is not evidence until that second question has an answer.
-
-MEASURED 2026-08-03: an audit counted 225 `DES_MARKERS_MISSING` block records from a shared PreToolUse
-log and concluded a re-fire pattern existed across four step-ids, ranking a detector as the top fix
-candidate. The count was real; the attribution was not checked. 224 of the 225 records were written by
-the project's OWN acceptance suite — two test files pointed the tool at the real repo instead of an
-isolated one, defeating an isolation fixture, and every test run deposited identical records into the
-SAME shared log a real dispatch would write to. The suite and the product were indistinguishable in
-the log, because the log carries no field that reliably separates them (`run_context`/`subagent_type`
-were checked and do not discriminate). Cost of the unattributed count: a fix was dispatched against a
-defect that did not exist, and a downstream ranking (which mechanism to fix first) was wrong until the
-attribution was checked.
-
-**The check that actually discriminates, when the log has no reliable sender field**: cluster by
-BURST, not by a fixed count threshold. Machine-generated repetition (a test loop, a retry storm) fires
-at machine cadence — sub-second gaps, tight clusters of near-identical size — while independent
-real-world events do not share that rhythm. Measured: 263 records clustered into 102 bursts by a
-<500ms gap boundary; bursts of 5-7 records were, without exception, the SAME reason repeated at a
-median 30ms internal gap, concentrated on a handful of calendar days — the signature of a test loop,
-not of an agent retrying a blocked dispatch. The singletons left over after excluding bursts were the
-population the original claim should have been about.
-
-Corollary — **a shared substrate that a test suite writes into by design, and mitigates only by
-SERIALIZING (never isolating), keeps producing this trap indefinitely.** If ~N test suites are
-documented as deliberately pointing a tool at the real, shared state (not a fixture copy) because
-isolating them was harder than serializing their access, then every count taken from that shared
-state carries an unknown contamination fraction FOREVER, not just once — the fix is not re-deriving
-the attribution each time a number is needed, it is closing the shared-write path itself (see
-`des-acceptance-suite-writes-into-the-production-audit-trail` /
-`observability-substrate-does-not-separate-production-from-test-writes` in this project's
-`defects.md` for the concrete instance).
-
----
-
-## `join-key:shape-conformance-over-uniqueness` — a borrowed identifier is not a key until its shape is declared (STANDING)
-
-A field supplied by an external producer — a platform, a harness, another team's payload — is
-not a join key until EVERY value in the population conforms to a declared id shape. A single
-non-conforming value disqualifies the field, however rare. The tempting weaker test is
-"measure whether it is unique": that test passes on exactly the fields that hurt most, because
-the usual defect is not a field that collides often but a field that is a well-formed
-identifier almost everywhere and carries a hardcoded literal — a lifecycle-event name, a
-placeholder, a fallback string — in a small minority of records. Rarity is not safety here; it
-is the reason the field survived every informal check that came before. A join keyed on such a
-field silently folds unrelated records together, and a reader that takes first-wins or MAX over
-the group discards the rest without reporting anything.
-
-Two properties make shape the right test rather than a proxy for uniqueness. It is
-LOCALLY DECIDABLE: a checker holding one record can decide whether that record's value is
-well-formed, whereas uniqueness is a property of a population the checker usually never sees —
-a rule that cannot be executed at the point it is needed is not a control. And it is
-DISCOVERABLE WITHOUT FOREKNOWLEDGE: conformance finds the offending values in one pass without
-anyone knowing in advance which literal to look for, while a sampling check must draw the rare
-value AND notice it collides.
-
-**A key must be exercised at N≥2, and a one-occurrence suite cannot test one at all.** Ask what the
-candidate is addressed BY: an EVENT key is unique per occurrence; a CONTENT key is unique per
-payload, and the two are indistinguishable until two occurrences carry the same payload. Measured
-instance: a hook's stdout digest was adopted as the parent↔child join, and the hook's stdout is a
-module constant — two firings produced 2 parents and exactly **1** distinct digest, so every child
-joined BOTH parents and the reader emitted a silent cross product. Every scenario that had validated
-that key fired exactly ONCE, which is why the whole suite was green: a single-firing test makes the
-defect structurally unreachable, so it was never a weak test but a test of the wrong thing. The
-remedy is not more assertions, it is a second occurrence — and where a content key must be carried
-anyway (it is often the only value both sides can compute), it carries a mandatory
-`join_key_collision` third state, and the collision must be COUNTED and reported rather than
-resolved by picking one of N.
-
-The shape itself must be written down LITERALLY — the accepted pattern, and which
-near-miss forms are excluded. "Conforms to an id shape" is not a specification: two honest
-implementers will resolve an ambiguous form differently and reach opposite verdicts on the same
-data, which reproduces the original silent-wrong one level up. Where a borrowed field must be
-carried for a best-effort correlation it cannot guarantee, carry it as an ATTRIBUTE and mint
-the structural key yourself: a key you generate is one whose uniqueness you own rather than
-assume. When a value fails the shape check, the record degrades to the third state with a
-reason naming the field — never to a silent drop, and never to a guess at which group it
-belonged to.

@@ -19,6 +19,19 @@ from pathlib import Path
 
 import pytest
 
+from des.adapters.driven.marker_file_owner_lease_adapter import (
+    MarkerFileOwnerLeaseAdapter,
+)
+from des.domain.worktree_residence import LaneIdentity
+
+
+def _write_lease(worktree: Path, *, released: bool) -> None:
+    identity = LaneIdentity.observe(worktree)
+    marker = MarkerFileOwnerLeaseAdapter()
+    marker.write_held(worktree, identity)
+    if released:
+        marker.write_released(worktree, identity)
+
 
 def _git(cwd: Path, *args: str) -> str:
     return subprocess.run(
@@ -58,7 +71,7 @@ def repo_with_three_worktrees(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     repo = tmp_path / "repo"
     _init_trunk(repo)
 
-    # 1. Abandoned candidate: dirty + unmerged, no marker, not declared, and
+    # 1. Abandoned candidate: dirty + unmerged, positively released, and
     #    STALE (backdated -- a just-created worktree is correctly OWNED by
     #    recent activity, so this is what distinguishes a genuine candidate).
     abandoned = tmp_path / "wt-abandoned"
@@ -66,6 +79,7 @@ def repo_with_three_worktrees(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     (abandoned / "wip.txt").write_text("wip", encoding="utf-8")
     _git(abandoned, "add", "-A")
     _git(abandoned, "commit", "-q", "-m", "unmerged lane work")
+    _write_lease(abandoned, released=True)
     _backdate_activity(abandoned, age_seconds=48 * 3600)
 
     # 2. Declared-owned via marker file, otherwise identical to #1 (dirty +
@@ -76,11 +90,7 @@ def repo_with_three_worktrees(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     (marker_owned / "wip.txt").write_text("wip", encoding="utf-8")
     _git(marker_owned, "add", "-A")
     _git(marker_owned, "commit", "-q", "-m", "unmerged lane work")
-    marker_dir = marker_owned / ".nwave"
-    marker_dir.mkdir()
-    (marker_dir / "lane-owner.json").write_text(
-        json.dumps({"owner": "test-orchestrator"}), encoding="utf-8"
-    )
+    _write_lease(marker_owned, released=False)
 
     # 3. Declared-owned via --owned flag (a `wt-`-prefixed token matching a
     #    bare-normalized worktree basename -- the defect #3 shape).
@@ -89,6 +99,7 @@ def repo_with_three_worktrees(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     (flag_owned / "wip.txt").write_text("wip", encoding="utf-8")
     _git(flag_owned, "add", "-A")
     _git(flag_owned, "commit", "-q", "-m", "unmerged lane work")
+    _write_lease(flag_owned, released=True)
 
     return repo, abandoned, marker_owned, flag_owned
 

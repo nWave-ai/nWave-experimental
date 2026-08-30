@@ -1,15 +1,45 @@
 #!/usr/bin/env python3
-"""Validate skill-agent mapping consistency.
+"""Skill-agent mapping: real validation for two checks, a declared CENSUS
+for a third.
 
 Cross-references agent frontmatter skill lists against nWave/skills/
-directories. Detects:
+directories.
+
+VALIDATED (a genuine defect, exit 1):
 - Broken references: agent declares skill that has no matching directory
-- Orphan directories: skill directory exists but no agent references it
 - Naming violations: skill directories without the required nw- prefix
 
+CENSUSED, not validated (exit 0 always, never a verdict):
+- Orphan directories: skill directory exists but no agent's frontmatter
+  `skills:` list references it. An orphan is not, by itself, evidence of
+  a defect: a skill can be load-bearing through a command body, a parent
+  skill's routing table, or another agent's prose body -- channels this
+  scanner cannot see, because it only reads frontmatter. Measured
+  2026-08-24 (`docs/analysis/2026-08-24-decisione-gate-skill-orfane.md`):
+  a 10-skill sample of the unexplained orphans found roughly half
+  genuinely load-bearing through one of those channels, and roughly half
+  a real defect (the `nw-fp-{language}` family, same class as the
+  `nw-tlaplus-verification` gap the census in that document traces end
+  to end). Failing this build on the raw orphan count would have frozen
+  the real defects as accepted debt nobody had ever looked at -- the
+  exact risk that document was written to avoid. This is therefore a
+  DELIBERATE choice, not a forgotten TODO: F-SKILL-MAPPING-GATE-WARNS-
+  NEVER-FAILS (backlog) names the follow-up -- triage the unexplained
+  orphans, then arm a ratchet (the `check_no_new_ghost_verb_citations.py`
+  / `ghost-verb-citation-baseline.json` shape) over the INSPECTED
+  residue. Never re-derive that decision from first principles here;
+  read the document.
+
+`PUBLIC_SHARED_SKILLS` (`scripts/shared/agent_catalog.py`) is the known
+allow-list of orphans already explained by a non-frontmatter load path.
+The census reports the split (explained / unexplained) so the residue
+that still needs a look is visible at a glance, never buried in a raw
+count.
+
 Exit codes:
-    0: All mappings valid (warnings may exist for orphans)
-    1: Broken references or naming violations found
+    0: no broken reference or naming violation (an orphan count, if any,
+       is a census line, never a reason to fail by itself)
+    1: broken reference(s) or naming violation(s) found -- a real defect
 
 Usage:
     python scripts/validation/validate_skill_agent_mapping.py
@@ -29,16 +59,27 @@ from pathlib import Path
 # `scripts.shared` SSOT helper resolves both locally and in CI.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.shared.agent_catalog import PUBLIC_SHARED_SKILLS
 from scripts.shared.frontmatter import parse_frontmatter_file
 
 
 @dataclass
 class ValidationResult:
-    """Result of skill-agent mapping validation."""
+    """Result of skill-agent mapping validation.
+
+    `warnings` keeps its existing formatted-line shape (callers/tests that
+    already read orphan text from it are unaffected). `orphan_directories`
+    and `total_skill_directories` are the plain data `main()`'s census
+    needs to cross-reference against `PUBLIC_SHARED_SKILLS` -- parsing
+    directory names back out of a formatted warning string would be
+    fragile where a clean field is not.
+    """
 
     exit_code: int = 0
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    orphan_directories: list[str] = field(default_factory=list)
+    total_skill_directories: int = 0
 
 
 def _parse_frontmatter(filepath: Path) -> dict | None:
@@ -92,6 +133,7 @@ def validate(project_root: Path) -> ValidationResult:
 
     # Get all skill directories
     skill_dirs = _get_skill_directories(skills_dir)
+    result.total_skill_directories = len(skill_dirs)
 
     # Get all agent skill references
     agent_refs = _get_agent_skill_refs(agents_dir)
@@ -117,9 +159,11 @@ def validate(project_root: Path) -> ValidationResult:
                 )
                 result.exit_code = 1
 
-    # Check 3: Orphan directories -- directory not referenced by any agent
+    # Check 3: Orphan directories -- directory not referenced by any agent.
+    # A census line, never a defect by itself -- see the module docstring.
     for dir_name in sorted(skill_dirs):
         if dir_name not in all_referenced:
+            result.orphan_directories.append(dir_name)
             result.warnings.append(
                 f"Orphan skill: directory '{dir_name}' is not referenced by any agent"
             )
@@ -155,23 +199,36 @@ def main(argv: list[str] | None = None) -> int:
 
     result = validate(project_root)
 
-    # Report errors
+    # Report errors -- a real defect, this branch is a verdict and stays one.
     if result.errors:
         print(f"FAILED: {len(result.errors)} error(s) found:")
         for error in result.errors:
             print(f"  - {error}")
 
-    # Report warnings
+    # Report the orphan list itself, unchanged shape (existing readers of
+    # this text are unaffected).
     if result.warnings:
         print(f"\nWARNING: {len(result.warnings)} orphan skill(s):")
         for warning in result.warnings:
             print(f"  - {warning}")
 
-    if result.exit_code == 0:
-        if result.warnings:
-            print("\nPASSED with warnings")
-        else:
-            print("PASSED: All skill-agent mappings are consistent")
+    # CENSUS line -- deliberately never says PASSED/OK/GREEN. This branch
+    # reports what was MEASURED, not a property that was evaluated and
+    # held: see the module docstring and docs/analysis/2026-08-24-
+    # decisione-gate-skill-orfane.md for why. Only reached when errors is
+    # empty (exit_code == 0 in that case, by construction of `validate`).
+    if not result.errors:
+        explained = sorted(set(result.orphan_directories) & PUBLIC_SHARED_SKILLS)
+        unexplained = sorted(set(result.orphan_directories) - PUBLIC_SHARED_SKILLS)
+        print(
+            f"\nMEASURED: {result.total_skill_directories} skill(s) under "
+            f"nWave/skills/; {len(result.orphan_directories)} without a "
+            "resolvable owner in any agent's frontmatter `skills:` list "
+            f"({len(explained)} explained by PUBLIC_SHARED_SKILLS, "
+            f"{len(unexplained)} unexplained). This is a census, not a "
+            "verdict -- no error means no broken reference or naming "
+            "violation, never that the unexplained count is fine."
+        )
 
     return result.exit_code
 

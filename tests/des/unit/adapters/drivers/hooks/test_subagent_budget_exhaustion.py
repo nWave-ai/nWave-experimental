@@ -26,6 +26,16 @@ from des.adapters.drivers.hooks import pre_tool_use_handler
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 
+# Measured 2026-08-23 against every checked-in agent spec (`nWave/agents/
+# *.md`, 51 files): 0 declare a role-derived `f"{role.upper()}-RESULT"`
+# marker -- that shape is unreachable for every real role, so the HOW text
+# must never name it. A fixture asserting its PRESENCE cannot discriminate
+# a regression back to it -- it must assert its ABSENCE, plus the presence
+# of the registry-free guidance that replaced it.
+_ROLE_DERIVED_MARKER_EXAMINER = "NW-USER-EXAMINER-RESULT"
+_ROLE_DERIVED_MARKER_CRAFTER = "NW-SOFTWARE-CRAFTER-RESULT"
+_OWN_ROLE_TOKEN_GUIDANCE = "emit your own role's terminal <TOKEN>-RESULT line now"
+
 # nw-user-examiner's own checked-in spec declares `maxTurns: 40` -- the
 # real value this guard's threshold (N-2 = 38) is computed against, never
 # a value hand-picked to make these tests pass.
@@ -163,7 +173,8 @@ class TestSubagentBudgetExhaustionDenies:
         assert payload["decision"] == "block"
         reason = payload["reason"]
         assert "WHAT:" in reason and "WHY:" in reason and "HOW:" in reason
-        assert "NW-USER-EXAMINER-RESULT" in reason
+        assert _ROLE_DERIVED_MARKER_EXAMINER not in reason
+        assert _OWN_ROLE_TOKEN_GUIDANCE in reason
         assert "INDETERMINATE" in reason
         assert str(_EXAMINER_MAX_TURNS) in reason
 
@@ -333,7 +344,8 @@ class TestSubagentBudgetExhaustionOnARealKilledTranscript:
         )
         assert exit_code == 2
         assert payload["decision"] == "block"
-        assert "NW-USER-EXAMINER-RESULT" in payload["reason"]
+        assert _ROLE_DERIVED_MARKER_EXAMINER not in payload["reason"]
+        assert _OWN_ROLE_TOKEN_GUIDANCE in payload["reason"]
 
     def test_deny_fires_before_the_real_kill_point(
         self, monkeypatch, capsys, audit_events, tmp_path
@@ -437,7 +449,8 @@ class TestSubagentBudgetExhaustionWithoutALiveAgentTypeField:
         payload_out = json.loads(out) if out else None
         assert exit_code == 2
         assert payload_out["decision"] == "block"
-        assert "NW-USER-EXAMINER-RESULT" in payload_out["reason"]
+        assert _ROLE_DERIVED_MARKER_EXAMINER not in payload_out["reason"]
+        assert _OWN_ROLE_TOKEN_GUIDANCE in payload_out["reason"]
 
     def test_one_turn_earlier_still_allows_with_no_agent_type_in_envelope(
         self, monkeypatch, capsys, audit_events, tmp_path
@@ -549,7 +562,8 @@ class TestSubagentBudgetExhaustionWithTranscriptPathNamingTheParentSession:
         payload_out = json.loads(out) if out else None
         assert exit_code == 2
         assert payload_out["decision"] == "block"
-        assert "NW-SOFTWARE-CRAFTER-RESULT" in payload_out["reason"]
+        assert _ROLE_DERIVED_MARKER_CRAFTER not in payload_out["reason"]
+        assert _OWN_ROLE_TOKEN_GUIDANCE in payload_out["reason"]
         assert str(_CRAFTER_MAX_TURNS) in payload_out["reason"]
 
     def test_one_turn_earlier_still_allows_via_derived_transcript_path(

@@ -213,6 +213,56 @@ def root_mode_handoff_block_reason(state: RootModeState) -> str | None:
     return None
 
 
+def root_mode_gate_repo_is_active(hook_input: dict[str, object]) -> bool:
+    """Is nWave activated for the repo this root invocation is running in?
+
+    F-ROOT-MODE-GATE-SCOPE-CAPTURE-AND-LATCH defect 1, CONFIRMED IN SOURCE
+    2026-08-24: the repo-level opt-in already exists (``<repo>/.nwave/
+    config.json`` -> ``enabled``, ``des.domain.config_merge.declared_enabled``
+    resolving repo-over-global precedence) and other surfaces already honour
+    it -- ``activation_gate.apply_gate`` (the router's own upstream gate) and
+    ``commit_message_attribution.attribution_is_due`` both resolve through the
+    SAME ``DESConfig``/``resolve_activation`` chain this function reuses. The
+    mode-select nagging/trap machinery (the "Invoke nw-mode-select before the
+    first Bash/Write/Edit" blocks in `pre_tool_use_handler.py` AND
+    `pre_write_handler.py`, plus the shared ``root_mode_handoff_block_reason``
+    AUTO_PENDING/INVALID trap both import from here) is the ONE consumer that
+    never consulted it, so it fired on the first Bash/Write/Edit of ANY task
+    in ANY repo -- a prose-drafting session in an unconfigured, mostly-
+    markdown repo was forced through it and latched into ``Skill(nw-auto)``
+    with no unlatch (a beta user's reported lost session, 2026-08-23).
+
+    This does NOT weaken the AUTO_ENGAGED lockdown itself (the source-read,
+    task-tool and role-restriction blocks in `pre_tool_use_handler.py`) --
+    those stay unconditional once ``nw-auto`` was genuinely observed in the
+    transcript, protecting delivery machinery regardless of this repo's own
+    config. Only the machinery that STARTS a mode-select cycle is scoped
+    here.
+
+    GDP-8 witness corollary, same discipline as
+    ``pre_tool_use_handler.emit_commit_attribution_mutation``: this unit
+    resolves its OWN ``cwd`` from the hook envelope, independent of whatever
+    ``hook_router.main()``'s ``activation_gate`` already resolved upstream
+    for THIS SAME request -- it must not rely on an implicit call-order
+    guarantee that a future wiring change could silently break.
+
+    Never raises: any resolution failure (unreadable/corrupt config,
+    permission error, anything) degrades to "not active" -- the SAME
+    fail-open direction ``activation_gate._is_active_or_inactive_on_error``
+    already uses. A missed nag is recoverable; a wrongly-fired one already
+    cost a user a lost session and the investigation time to prove why.
+    """
+    try:
+        from des.adapters.driven.config.des_config import DESConfig
+        from des.domain.activation_policy import resolve_activation
+
+        cwd = Path(str(hook_input.get("cwd") or Path.cwd()))
+        config = DESConfig(cwd=cwd)
+        return resolve_activation(config.enabled_for_repo, config.activation_mode)
+    except Exception:
+        return False
+
+
 def is_nwave_adjacent_dispatch(subagent_type: str | None) -> bool:
     """True iff this dispatch targets an nWave agent (`nw-*` subagent_type).
 

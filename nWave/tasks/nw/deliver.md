@@ -22,17 +22,27 @@ its returned two-line contract+oracle closure digest. A missing, stale,
 ambiguous or unsafe locator returns
 WHAT/WHY/HOW and stops; do not reproduce the schema here.
 
-Dispatch exactly one paradigm crafter for the contract's one value vertical.
-Accept only its terminal `CRAFTER-RESULT`; process exit, timeout, partial
-narration and zero-diff exploration are `INDETERMINATE`. Root never implements
-or repairs the candidate.
+After dispatch seals C, dispatch the AT reviewer foreground before the selected
+paradigm crafter. Only exact `APPROVE` or `APPROVED` permits craft;
+`NEEDS_REVISION` routes to ATD, while `APPROVED WITH CONDITIONS`, any condition,
+`INDETERMINATE` or malformed output stops. Accept only the crafter's terminal `CRAFTER-RESULT`, which has no
+`candidate:` field; process exit, timeout, partial narration and zero-diff
+exploration are `INDETERMINATE`. The first implementation-reviewer, Examiner
+or finalize consumer performs E4, seals or replays K from Git readback, and
+injects the existing candidate/root fields. Root never implements or repairs
+the candidate.
 
 Join independent review and one source-blind EXAMINE pass exactly when their
-independent applicability axes require them. Forward the crafter's opaque
-candidate identity verbatim to EXAMINE; never send changed-targets or ask Vera
-to derive identity from Git/source. Invoke the `nw-finalize` Skill once for the
-whole delivery after all applicable evidence joins. It creates the single
-terminal commit; root never commits or calls the finalize CLI as a fallback.
+independent applicability axes require them. Forward E4's existing candidate
+identity and execution root verbatim to EXAMINE; never send changed-targets or
+ask Vera to derive identity from Git/source. For implementation review of K,
+only bare `APPROVE` or `APPROVED` advances to finalize; ATD-owned findings
+route to ATD, crafter-only findings to the selected crafter, and
+`APPROVED WITH CONDITIONS`, any condition, mixed/malformed/unknown findings or
+`INDETERMINATE` stop.
+Invoke the `nw-finalize` Skill once for the whole delivery after all applicable
+evidence joins. It creates the single terminal commit; root never commits or
+calls the finalize CLI as a fallback.
 Global PASS requires clean-checkout closure on that exact SHA.
 
 ## Completion

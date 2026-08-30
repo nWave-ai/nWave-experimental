@@ -164,12 +164,12 @@ def test_unknown_extension_is_never_test_shaped() -> None:
 # (contest.go) beat the brief's own explicit ::selector citation.
 
 
-def test_cited_oracle_selector_citation_beats_an_earlier_bare_one() -> None:
+def test_cited_oracle_first_public_citation_beats_later_selector() -> None:
     assert (
         resolve_cited_oracle_locator(
             ["pkg/widget_test.go", "pkg/other_test.go::TestOther"]
         )
-        == "pkg/other_test.go::TestOther"
+        == "pkg/widget_test.go"
     )
 
 
@@ -189,17 +189,14 @@ def test_cited_oracle_never_binds_a_non_test_shaped_file() -> None:
     )
 
 
-def test_existing_oracle_selector_citation_beats_an_earlier_bare_one(
+def test_existing_oracle_first_public_citation_beats_later_selector(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "pkg").mkdir()
     (tmp_path / "pkg" / "widget_test.go").write_text("package pkg\n", encoding="utf-8")
     (tmp_path / "pkg" / "other_test.go").write_text("package pkg\n", encoding="utf-8")
     citations = ["pkg/widget_test.go", "pkg/other_test.go::TestOther"]
-    assert (
-        resolve_existing_oracle_locator(tmp_path, citations)
-        == "pkg/other_test.go::TestOther"
-    )
+    assert resolve_existing_oracle_locator(tmp_path, citations) == "pkg/widget_test.go"
 
 
 # -- tiered tests-root convention (second occurrence 2026-08-21: two

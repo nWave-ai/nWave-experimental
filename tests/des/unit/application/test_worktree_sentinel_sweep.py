@@ -31,6 +31,7 @@ from des.domain.worktree_anti_rot_triage import (
     TriageState,
     WorktreeAntiRotReceipt,
 )
+from des.domain.worktree_residence import DurableResidence
 from des.ports.driven_ports.git_worktree_port import (
     GitWorktreePort,
     MergeResult,
@@ -48,11 +49,17 @@ class _FakeGitWorktree(GitWorktreePort):
     def list_worktrees(self, repo: Path) -> tuple[WorktreeHandle, ...]:
         return self._handles
 
-    def probe(self, repo: Path) -> bool:  # pragma: no cover - unused by sweep
+    def probe(
+        self, repo: Path, residence: DurableResidence
+    ) -> bool:  # pragma: no cover - unused by sweep
         raise NotImplementedError
 
     def create_worktree_from_tip(
-        self, repo: Path, branch: str, path: Path
+        self,
+        repo: Path,
+        branch: str,
+        residence: DurableResidence,
+        name: str,
     ) -> WorktreeHandle:  # pragma: no cover - unused by sweep
         raise NotImplementedError
 

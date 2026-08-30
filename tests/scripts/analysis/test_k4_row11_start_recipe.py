@@ -320,6 +320,69 @@ def _kill_leaked_server(workspace) -> None:
             subprocess.run(["kill", pid], capture_output=True)
 
 
+def test_the_sandbox_bridge_survives_a_workspace_too_deep_for_a_unix_socket(tmp_path):
+    """F-K4-ROW11-CANARY-RED-UNDER-XDIST (2026-08-23): this file's own
+    `test_the_mechanism_is_proven_against_the_real_rendered_recipe` was
+    RED under `pytest -n 2 --dist loadfile` and GREEN serially, 5 runs
+    out of 5 either way -- and the difference was neither load,
+    concurrency, nor a too-short timeout. `probe_sandbox_loopback_bridge`
+    put its socat bridge socket INSIDE the caller's `workspace`, whose
+    path length nothing bounds. xdist inserts ONE extra path element
+    (`popen-gw0/`), taking the real socket path from 103 to 113 bytes --
+    past AF_UNIX's 108-byte `sun_path` field -- so BOTH socats refused to
+    bind ("unix socket address 113 characters long, max length is 108")
+    and the bridge simply did not exist. The sandboxed health-check block
+    then could not reach the server, touched the reset marker, and the
+    canary reported "the supervisor consumed the marker, but the restart
+    itself did not succeed": a healthy supervisor blamed for a socket
+    that was never created.
+
+    This test drives the SAME public probe from a workspace deliberately
+    deep enough that the OLD socket path would overflow, and asserts a
+    clean result -- the bridge's own socket path must not be a function
+    of the caller's workspace depth. It fails on the pre-repair code for
+    the exact original reason, in SERIAL, with no xdist needed.
+    """
+    import shutil
+
+    from scripts.analysis.k4 import preflight
+
+    if shutil.which("bwrap") is None or shutil.which("socat") is None:
+        pytest.skip(
+            "bwrap/socat absent -- probe_sandbox_loopback_bridge degrades to "
+            "a silent skip there, so this assertion would be vacuous"
+        )
+
+    deep = tmp_path
+    legacy_socket_name = ".k4-sandbox-probe-bridge.sock"
+    while len(str(deep / "workspace" / legacy_socket_name).encode()) <= 107:
+        deep = deep / "d"
+    ws = deep / "workspace"
+    ws.mkdir(parents=True)
+
+    port = pef.free_port()
+    api_key = "k4-row11-deep-path-9c31"
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", port), pef.make_checks_list_handler(api_key)
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        problems = preflight.probe_sandbox_loopback_bridge(
+            ws, port=port, api_key=api_key
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert problems == [], (
+        "the sandbox loopback bridge must reach a live server from a "
+        "workspace too deep for the legacy in-workspace socket path -- "
+        "the bridge socket's own length must not depend on the caller's "
+        f"workspace depth: {problems}"
+    )
+
+
 @pytest.fixture
 def workspace(tmp_path):
     """Run 14 (K4 matrix): `setsid` (Run 12) makes a server started by

@@ -30,10 +30,7 @@ The CLI returns JSON: `{ provider, confidence, payload, trace }`. Agents consume
 
 The CLI delegates to the best available bundled adapter. You report the answer tagged with which adapter answered.
 
-| Rank | Adapter | Confidence label | When it answers |
-|------|---------|------------------|-----------------|
-| 1 (best) | AST | `approx` | any parseable Python target — structural, deterministic |
-| 2 (floor / LAST resort) | TextSearch (grep/stdlib `re`) | `noisy` | universal floor — lexical only |
+The chain is walked top-down, highest declared precision first, and the FIRST provider that covers the capability answers. This document deliberately does NOT enumerate the tiers or rank them: the authoritative order is the composed provider tuple in `src/des/adapters/driven/codefact/code_fact_chain.py`, and each adapter declares its own confidence as a class attribute on itself. Read those, never a copy here — a rank list in prose is stale the moment a provider is wired or unwired, and a drifted list teaches a false contract. What is stable, and all a consumer needs:
 
 - AST gives `approx` confidence (structural, per-language) on any parseable target.
 - grep / lexical search is the **last resort**, never the default. Reach for it only when AST cannot answer.
@@ -83,8 +80,8 @@ Tag every answer with provider + confidence (`approx` | `noisy`). Defaulting to 
 
 The public CLI wraps:
 - Port: `src/des/ports/code_fact_port.py` — `CodeFactPort.query(descriptor, request) -> CodeFactResult`; `Confidence {approx, noisy}`, `ReasonCode {live-non-callable, absent}`; 5-capability stable core; `resolve_through_fold` is the resolution algebra (`Resolution = Answered | Unsupported | Failed`, each with a bounded `trace`).
-- Resolution chain (the fallback order): `src/des/adapters/driven/codefact/code_fact_chain.py` — `CodeFactChain` is a stateless `Ast -> TextSearch` fold (ADR-LA-001 D6-R1: the retired paid precision seam was a fabricated stub no production caller ever wired — deleted, not shipped in OSS); `src/des/cli/code_fact.py` renders the winning `Answered.payload` + the bounded `Resolution.trace` as JSON.
-- Bundled adapters: `ast_code_fact_adapter.py` (`approx`), `text_search_code_fact_adapter.py` (`noisy` floor).
+- Resolution chain (the fallback order): `src/des/adapters/driven/codefact/code_fact_chain.py` — `CodeFactChain` is a stateless fold over its composed provider tuple, in descending declared precision. The membership of that tuple is a WIRING decision and is not fixed at two tiers: read `CodeFactChain.__init__` for who is composed, and each adapter's own class attributes for the confidence it declares (ADR-LA-001 D6-R1: a precision seam with no real production wiring is a fabricated stub — deleted, not shipped). `src/des/cli/code_fact.py` renders the winning `Answered.payload` + the bounded `Resolution.trace` as JSON.
+- Bundled adapters always present: `ast_code_fact_adapter.py` (`approx`), `text_search_code_fact_adapter.py` (`noisy` floor). Others may be composed above them when their data is present under the queried root — see the chain's constructor.
 
 ## Scope note
 

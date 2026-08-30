@@ -925,6 +925,10 @@ def project_generated_regions(
     projections: list[AssetProjection] = []
     for path in files:
         text = path.read_text(encoding="utf-8")
+        if "<!-- GENERATED:design-closure " in text:
+            raise DocgenError(
+                "design-closure is owned exclusively by des construct-design-closure"
+            )
         if not _GENERATED_REGION_RE.search(text):
             continue
         projections.append(_project_asset(path, text, root))

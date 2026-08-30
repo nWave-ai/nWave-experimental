@@ -13,6 +13,8 @@ everything else degrades to an informational note, never a refusal.
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 
 from tests.common.delivery_contract_fixture import (
@@ -21,8 +23,21 @@ from tests.common.delivery_contract_fixture import (
 from tests.common.in_process_cli import run_cli_in_process
 
 
-def _run(*args: str, cwd: Path) -> tuple[int, str, str]:
-    return run_cli_in_process(["dispatch", *args], cwd=cwd)
+def _run(
+    *args: str, cwd: Path, env: dict[str, str] | None = None
+) -> tuple[int, str, str]:
+    return run_cli_in_process(
+        ["dispatch", *args], cwd=cwd, env=env or _child_python_env()
+    )
+
+
+def _child_python_env() -> dict[str, str]:
+    env = dict(os.environ)
+    python_dir = str(Path(sys.executable).parent)
+    env["PATH"] = os.pathsep.join(
+        part for part in (python_dir, env.get("PATH", "")) if part
+    )
+    return env
 
 
 def _seed_contract_with_synthetic_oracle(
@@ -39,11 +54,11 @@ def _seed_contract_with_synthetic_oracle(
     even though the symlink's target genuinely has pytest installed) --
     reproduced locally only by accident, since a stray user-site pytest
     install happened to mask the failure on this machine. `"kind":
-    "toolchain","name":"python"` sidesteps the symlink entirely: `uv run`
-    already prepends `.venv/bin` to PATH for every child process, so a
-    bare `python` resolves directly to the venv's own real entry point
-    (verified against the exact CI-like `env -i ... uv run pytest` repro),
-    with no indirection to break.
+    "toolchain","name":"python"` sidesteps the symlink entirely: the
+    test-local `_child_python_env` prepends the executing interpreter's
+    directory to PATH for every child process, so a bare `python` resolves
+    directly to the same interpreter as the bound suite, with no shell
+    activation or symlink indirection to break.
 
     `--import-mode=importlib` is likewise explicit, not incidental: this
     isolated `tmp_path` has no `pyproject.toml` of its own, so an
@@ -109,6 +124,7 @@ def test_syntax_error_in_an_imported_helper_is_refused_with_quoted_output(
         "--delivery-contract",
         contract_path.name,
         cwd=tmp_path,
+        env=_child_python_env(),
     )
 
     assert exit_code != 0
@@ -133,6 +149,7 @@ def test_oracle_with_no_symbol_and_no_build_marker_is_informational(
         str(tmp_path),
         "--delivery-contract",
         contract_path.name,
+        "--diagnostics",
         cwd=tmp_path,
     )
 
@@ -153,6 +170,7 @@ def test_already_green_oracle_for_red_to_green_is_refused(tmp_path: Path) -> Non
         "--delivery-contract",
         contract_path.name,
         cwd=tmp_path,
+        env=_child_python_env(),
     )
 
     assert exit_code != 0

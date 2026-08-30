@@ -283,18 +283,6 @@ def _clone_sandbox(source: Path, destination: Path) -> Path:
     return destination
 
 
-def _stamp_module_version(root: Path, version: str) -> None:
-    module_init = root / "nwave_ai" / "__init__.py"
-    original = module_init.read_text(encoding="utf-8")
-    changed, replacements = re.subn(
-        r'(?m)^__version__ = ".*"$',
-        f'__version__ = "{version}"',
-        original,
-    )
-    assert replacements == 1, f"module version assignments: {replacements}"
-    module_init.write_text(changed, encoding="utf-8")
-
-
 def _build_des(root: Path) -> Path:
     built = _run([sys.executable, "scripts/build_dist.py"], cwd=root)
     assert built.returncode == 0, built.stderr or built.stdout
@@ -318,7 +306,6 @@ def _patch_stamp_and_build_des(root: Path, version: str = CANDIDATE_VERSION) -> 
         cwd=root,
     )
     assert patched.returncode == 0, patched.stderr or patched.stdout
-    _stamp_module_version(root, version)
     return _build_des(root)
 
 
@@ -621,21 +608,6 @@ def _github_refs(tokens: tuple[str, ...]) -> tuple[str, ...]:
     )
 
 
-def _sed_replacement(token: str) -> str | None:
-    if len(token) < 4 or not token.startswith("s"):
-        return None
-    parts = token.split(token[1])
-    return parts[2] if len(parts) >= 4 and "__version__" in parts[1] else None
-
-
-def _stamp_version_value(token: str) -> str | None:
-    replacement = _sed_replacement(token)
-    if replacement is None:
-        return None
-    match = re.fullmatch(r"""__version__\s*=\s*(["'])(.*?)\1""", replacement)
-    return match.group(2) if match is not None else None
-
-
 def _normalized_version_value(value: str) -> str:
     return re.sub(r"\s+", "", value)
 
@@ -727,9 +699,6 @@ def _workflow_contract_violations(path: Path) -> list[str]:
             for command in commands
             if _has_script(command, "scripts/release/patch_pyproject.py")
         ),
-        "stamp": tuple(
-            command for command in commands if "nwave_ai/__init__.py" in command.argv
-        ),
         "build_des": tuple(
             command
             for command in commands
@@ -751,7 +720,7 @@ def _workflow_contract_violations(path: Path) -> list[str]:
     if all(len(nodes) == 1 for nodes in categories.values()):
         ordered = [
             commands.index(categories[name][0])
-            for name in ("patch", "stamp", "build_des", "stage", "wheel")
+            for name in ("patch", "build_des", "stage", "wheel")
         ]
         if ordered != sorted(ordered):
             violations.append(f"release command order is not canonical: {ordered}")
@@ -759,7 +728,6 @@ def _workflow_contract_violations(path: Path) -> list[str]:
         if stage.argv.count("--cleanup-dist") != 1:
             violations.append("stage helper must receive --cleanup-dist exactly once")
         patch = categories["patch"][0]
-        stamp = categories["stamp"][0]
         version_flags = [
             index
             for index, token in enumerate(patch.argv)
@@ -770,22 +738,11 @@ def _workflow_contract_violations(path: Path) -> list[str]:
             if len(version_flags) == 1 and version_flags[0] + 1 < len(patch.argv)
             else ()
         )
-        stamp_values = tuple(
-            version
-            for token in stamp.argv
-            if (version := _stamp_version_value(token)) is not None
-        )
         patch_refs = _github_refs(patch_values)
-        values_match = (
-            len(patch_values) == 1
-            and len(stamp_values) == 1
-            and _normalized_version_value(patch_values[0])
-            == _normalized_version_value(stamp_values[0])
-        )
-        if len(patch_refs) != 1 or not values_match:
+        if len(patch_refs) != 1:
             violations.append(
-                f"version dataflow differs: patch={patch_values}, "
-                f"module_stamp={stamp_values}"
+                f"patch version dataflow is not a single GitHub Actions "
+                f"reference: patch={patch_values}"
             )
         build_index = commands.index(categories["build_des"][0])
         wheel_index = commands.index(categories["wheel"][0])
@@ -1095,78 +1052,14 @@ def _fixture_contract_violations(path: Path) -> list[str]:
     if version_name and (len(stores) != 1 or stores[0].lineno >= patch[0].lineno):
         violations.append(f"candidate version {version_name!r} is not single-source")
 
-    subn_assignments = [
-        node
-        for node in ast.walk(function)
-        if isinstance(node, ast.Assign)
-        and isinstance(node.value, ast.Call)
-        and _canonical_call(node.value, aliases).endswith("re.subn")
-        and len(node.value.args) >= 2
-        and _value_flows_from(node.value.args[1], version_name)
-    ]
-    changed_name = replacement_name = ""
-    if len(subn_assignments) == 1:
-        targets = subn_assignments[0].targets
-        if len(targets) == 1 and isinstance(targets[0], (ast.Tuple, ast.List)):
-            names = [item.id for item in targets[0].elts if isinstance(item, ast.Name)]
-            if len(names) == 2:
-                changed_name, replacement_name = names
-    if not changed_name:
-        violations.append("fixture needs one Python re.subn module-version stamp")
-
-    module_paths = {
-        target.id
-        for assignment in ast.walk(function)
-        if isinstance(assignment, (ast.Assign, ast.AnnAssign))
-        and assignment.value is not None
-        and {"nwave_ai", "__init__.py"}.issubset(
-            {
-                value.value
-                for value in ast.walk(assignment.value)
-                if isinstance(value, ast.Constant) and isinstance(value.value, str)
-            }
-        )
-        for target in (
-            assignment.targets
-            if isinstance(assignment, ast.Assign)
-            else [assignment.target]
-        )
-        if isinstance(target, ast.Name)
-    }
-    stamp_writes = [
-        call
-        for call in ast.walk(function)
-        if isinstance(call, ast.Call)
-        and _dotted_name(call.func).endswith(".write_text")
-        and isinstance(call.func, ast.Attribute)
-        and isinstance(call.func.value, ast.Name)
-        and call.func.value.id in module_paths
-        and bool(call.args)
-        and _node_uses_name(call.args[0], changed_name)
-    ]
-    exact_one = [
-        node
-        for node in ast.walk(function)
-        if isinstance(node, ast.Assert)
-        and _node_uses_name(node.test, replacement_name)
-        and any(
-            isinstance(value, ast.Constant) and value.value == 1
-            for value in ast.walk(node.test)
-        )
-    ]
-    if len(stamp_writes) != 1 or len(exact_one) != 1:
-        violations.append("module stamp must write once and assert one replacement")
-
-    stamp_line = stamp_writes[0].lineno if len(stamp_writes) == 1 else -1
     order = [
         patch[0].lineno,
-        stamp_line,
         build[0].lineno,
         stage[0].lineno,
         wheel[0].lineno,
     ]
-    if -1 in order or order != sorted(order):
-        violations.append(f"fixture order is not patch→stamp→DES→stage→wheel: {order}")
+    if order != sorted(order):
+        violations.append(f"fixture order is not patch->DES->stage->wheel: {order}")
 
     forbidden_exact = {
         "os.remove",
@@ -1194,23 +1087,6 @@ def _fixture_contract_violations(path: Path) -> list[str]:
     return violations
 
 
-def _module_version(path: Path) -> str:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    values = [
-        node.value.value
-        for node in tree.body
-        if isinstance(node, ast.Assign)
-        and any(
-            isinstance(target, ast.Name) and target.id == "__version__"
-            for target in node.targets
-        )
-        and isinstance(node.value, ast.Constant)
-        and isinstance(node.value.value, str)
-    ]
-    assert len(values) == 1, f"literal __version__ count: {len(values)}"
-    return values[0]
-
-
 def _project_version(path: Path) -> str:
     try:
         import tomllib
@@ -1225,8 +1101,8 @@ def _assembled_candidate(tmp_path_factory: Any) -> AssembledCandidate:
 
     This intentionally does not delegate to the E2E PyPI-shape fixture: the
     release candidate is the wheel *and* its adjacent offline closure, and the
-    published builder sequence (patch, version stamp, DES build, stage, wheel)
-    is its own driving surface.
+    published builder sequence (patch, DES build, stage, wheel) is its own
+    driving surface.
     """
     cache_name = "_release_staging_ssot_candidate"
     cached = getattr(tmp_path_factory, cache_name, None)
@@ -1256,10 +1132,6 @@ def _assembled_candidate(tmp_path_factory: Any) -> AssembledCandidate:
     wheel = wheels[0]
 
     project_version = _project_version(sandbox / "pyproject.toml")
-    module_version = _module_version(sandbox / "nwave_ai" / "__init__.py")
-    assert project_version == module_version, (
-        f"metadata {project_version!r} != module {module_version!r}"
-    )
     candidate = AssembledCandidate(
         sandbox=sandbox,
         wheel=wheel,
@@ -2342,7 +2214,7 @@ def test_all_target_install_keeps_codex_and_copilot_hooks_on_one_runtime(
             {
                 "cwd": str(consumer),
                 "tool_name": "exec_command",
-                "tool_input": {"command": "printf codex-wheel-witness"},
+                "tool_input": {"cmd": "printf codex-wheel-witness"},
             }
         )
         + "\n",

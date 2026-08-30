@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
@@ -106,13 +107,49 @@ def main(argv: list[str] | None = None) -> int:
     )
     resolution = chain.resolve(descriptor, request)
     if not isinstance(resolution, Answered):
-        # Stable-core invariant; kept honest if the registry drifts.
-        parser.error(f"no provider covers stable capability {args.capability!r}")
+        return _render_not_answered(resolution, args.capability)
 
     output = asdict(resolution.payload)
     output["trace"] = [asdict(entry) for entry in resolution.trace]
     print(json.dumps(output, sort_keys=True))
     return 0
+
+
+def _render_not_answered(resolution: object, capability: str) -> int:
+    """Render a non-``Answered`` resolution LOUDLY on stdout + stderr, exit 1.
+
+    A ``Failed`` is a real, expected outcome now, not a registry-drift
+    accident: ``unrepresented-reference-shape`` means every provider that
+    could look is blind to the reference shape asked about, so NO ONE may
+    answer zero. Printing the machine-readable failure envelope (never the
+    shape of a successful answer) is what stops a consumer from parsing a
+    fabricated empty payload.
+    """
+    cause = getattr(resolution, "cause", "no-covering-provider")
+    trace = [asdict(entry) for entry in getattr(resolution, "trace", ())]
+    print(
+        json.dumps(
+            {"resolution": "failed", "cause": cause, "trace": trace}, sort_keys=True
+        )
+    )
+    how = (
+        "HOW: read the `trace` array printed above -- it names each provider "
+        "that declined and why. `failed:unrepresented-reference-shape` means "
+        "that provider does not represent the reference shape you asked about "
+        "(e.g. the textual floor sees bare names only, never `owner.attr`); "
+        "`failed:out-of-scope-language` means the structural tier refused a "
+        "mixed-language scope -- narrow --root to a Python-only subtree and "
+        "re-run to reach it."
+    )
+    print(
+        f"WHAT: `des code-fact {capability}` produced NO answer (cause: {cause}). "
+        "WHY: every provider that covers this capability either could not look "
+        "or cannot represent the reference shape requested -- an empty result "
+        "would have been indistinguishable from a genuine absence, so none is "
+        f"emitted. {how}",
+        file=sys.stderr,
+    )
+    return 1
 
 
 if __name__ == "__main__":  # pragma: no cover

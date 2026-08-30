@@ -57,7 +57,13 @@ Block when any required property lacks an executable witness:
    relevant stressors demonstrate which observation survives or changes.
 6. **Wiring and reproducibility** — the test reaches dispatched production
    code, has a real failing/passing reason, and runs via the exact interpreter
-   and literal command vector declared by the contract.
+   and literal command vector declared by the contract. `repository.path`
+   resolves relative to the execution root; a `{"kind":"toolchain", ...}`
+   executable resolves through the already-admitted harness PATH -- execute
+   the tagged identity and literal argv without shell substitution. Never
+   propose `uv`, `python3`, or another runner the contract does not name. A
+   correctly tagged command the host/harness refuses to admit is
+   HARNESS/ENVIRONMENT INDETERMINATE, never an oracle or DISTILL defect.
 7. **Test economy** — prefer the smallest portfolio that distinguishes the
    promised behaviors. Duplicate, implementation-coupled or language-guarantee
    tests are findings, not extra confidence.
@@ -78,7 +84,15 @@ its first matching trigger; do not preload unrelated skills.
 
 ## Workflow
 
-1. Bind the contract and immutable oracle identities.
+1. Bind the contract and immutable oracle identities. Verify
+   `THIN-DELIVERY-CONTRACT-DIGEST` by running
+   `des validate-delivery-contract --repo-root <root> --delivery-contract <path>`
+   and comparing ITS returned digest -- never compare the thin digest against
+   a raw `sha256sum` of the contract file or the oracle file; the thin digest
+   is the one contract+primary-oracle+ordered-support closure-v2 digest that
+   only that consumer boundary produces. A mismatch there, not a raw-hash
+   mismatch, is the identity finding. The terminal `oracle` field names the
+   locator only -- its bytes are already covered by the closure-v2 digest.
 2. Run the seven falsification checks above and exhibit every counterexample.
 3. Emit the terminal review record; never repair the reviewed artifact.
 
@@ -88,8 +102,8 @@ defect back to DISTILL.
 
 ```text
 AT-REVIEW
-verdict: APPROVE | NEEDS_REVISION | INDETERMINATE
+verdict: APPROVE | APPROVED | NEEDS_REVISION | INDETERMINATE
 contract: <locator>@sha256:<digest>
-oracle: <locator>@sha256:<digest>
+oracle: <locator>
 findings: <evidence and owner, or none>
 ```

@@ -20,6 +20,7 @@ from des.adapters.drivers.hooks.pre_tool_use_handler import (
     _evaluate_auto_root_atd_body,
 )
 from des.cli import prepare_ordinary_request
+from des.domain.contract_placeholder_resolver import PLACEHOLDER
 
 
 _ARCH_AUTHORITY = "ARCHITECTURE-COVERED: docs/architecture/adrs/adr-1.md#decision"
@@ -356,8 +357,7 @@ class TestExactlyOnceProducerPerDeliveryId:
         assert out == ""
         assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
         assert locator in err
-        assert "REVISE-CONTRACT" in err
-        assert "CITATION" in err
+        assert "strict closure child" in err
 
     def test_a_different_seed_is_unaffected_by_an_unrelated_existing_contract(
         self, tmp_path, monkeypatch, capsys
@@ -423,3 +423,119 @@ class TestInvocationIsHostNeutral:
         )
         assert exit_code == 0
         assert "DELIVERY-ID: " in out
+
+
+class TestACompiledButNeverDeliveredContractIsAFirstDelivery:
+    """The third state, measured in production 2026-08-22 on DeliveryId
+    `auto-0d64ca2e4b7ded7d`: the contract file EXISTS (compiled skeleton,
+    36 `<ATD: fill>` placeholders) but ATD was never dispatched for it.
+    Refusing on mere existence stranded that request -- `revise-contract-
+    round`'s deliberately thin four-line body carries no ARCHITECTURE-
+    COVERED authority, so a first-time ATD would have had to infer 36
+    semantic fields instead of transcribing DESIGN facts. The producer
+    decides on the artefact's own PROPERTY (unfilled placeholders), never
+    on a flag or a name."""
+
+    @staticmethod
+    def _locator_from(body: str) -> str:
+        for line in body.splitlines():
+            if line.startswith("CONTRACT-LOCATOR: "):
+                return line[len("CONTRACT-LOCATOR: ") :]
+        raise AssertionError("no CONTRACT-LOCATOR line")
+
+    def _prepared_locator(self, root, tmp_path, monkeypatch, capsys):
+        exit_code, out, _err = _run(
+            monkeypatch, capsys, seed_bytes=b"Ship it.", argv=_base_argv(root)
+        )
+        assert exit_code == 0
+        locator = self._locator_from(out)
+        contract_path = tmp_path / "repo" / locator
+        contract_path.parent.mkdir(parents=True, exist_ok=True)
+        return locator, contract_path
+
+    @staticmethod
+    def _skeleton() -> dict:
+        return {
+            "schema-version": "1.3",
+            "delivery-id": "auto-x",
+            "outcome": PLACEHOLDER,
+            "targets": {
+                "src/x.py": {
+                    "candidate": "src/x.py",
+                    "decision": "CREATE_NEW",
+                    "justification": PLACEHOLDER,
+                    "contract-shape": "bounded-change",
+                    "boundary": {
+                        "failure-behavior": PLACEHOLDER,
+                        "substrate-lie": PLACEHOLDER,
+                        "substrate-probe": PLACEHOLDER,
+                        "double-blind-spot": PLACEHOLDER,
+                    },
+                }
+            },
+        }
+
+    def test_unfilled_skeleton_gets_the_full_fourteen_line_envelope(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        root = _init_repo(tmp_path)
+        locator, contract_path = self._prepared_locator(
+            root, tmp_path, monkeypatch, capsys
+        )
+        contract_path.write_text(json.dumps(self._skeleton()), encoding="utf-8")
+
+        exit_code, out, err = _run(
+            monkeypatch, capsys, seed_bytes=b"Ship it.", argv=_base_argv(root)
+        )
+
+        assert exit_code == 0
+        assert err == ""
+        lines = out.splitlines()
+        assert len(lines) == 14
+        assert lines[0] == _ARCH_AUTHORITY
+        assert f"CONTRACT-LOCATOR: {locator}" in lines
+        assert _evaluate_auto_root_atd_body(out) is None
+
+    def test_an_authored_contract_still_blocks(
+        self, tmp_path, monkeypatch, capsys
+    ) -> None:
+        """CONTRAPROOF: the redispatch protection is intact -- a contract
+        ATD actually authored must never be re-produced."""
+        root = _init_repo(tmp_path)
+        locator, contract_path = self._prepared_locator(
+            root, tmp_path, monkeypatch, capsys
+        )
+        authored = self._skeleton()
+        authored["outcome"] = "A real, ATD-authored outcome."
+        target = authored["targets"]["src/x.py"]
+        target["justification"] = "real"
+        target["boundary"] = dict.fromkeys(target["boundary"], "real")
+        contract_path.write_text(json.dumps(authored), encoding="utf-8")
+
+        exit_code, out, err = _run(
+            monkeypatch, capsys, seed_bytes=b"Ship it.", argv=_base_argv(root)
+        )
+
+        assert exit_code == 2
+        assert out == ""
+        assert locator in err and "strict closure child" in err
+
+    @pytest.mark.parametrize("content", ["{not json", "[]", '"a string"', "", "{}"])
+    def test_an_unreadable_or_placeholder_free_artifact_fails_closed(
+        self, tmp_path, monkeypatch, capsys, content
+    ) -> None:
+        """No observable unfilled placeholder is no PROOF that ATD was
+        never dispatched -- keep the refusal, never open a redispatch."""
+        root = _init_repo(tmp_path)
+        _locator, contract_path = self._prepared_locator(
+            root, tmp_path, monkeypatch, capsys
+        )
+        contract_path.write_text(content, encoding="utf-8")
+
+        exit_code, out, err = _run(
+            monkeypatch, capsys, seed_bytes=b"Ship it.", argv=_base_argv(root)
+        )
+
+        assert exit_code == 2
+        assert out == ""
+        assert "WHAT:" in err

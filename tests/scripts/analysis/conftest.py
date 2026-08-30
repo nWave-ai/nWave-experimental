@@ -14,7 +14,7 @@ import os
 import pytest
 
 
-# Stable-design report 2026-08-19 Sec.1.3: `preflight.main()` sets these two
+# Stable-design report 2026-08-19 Sec.1.3: `preflight.main()` sets these
 # env vars directly on `os.environ` (the SAME channel every other arm-
 # specific fact travels through to setup subprocesses) -- never through
 # `monkeypatch`, since production code has no fixture to hook. A test that
@@ -23,10 +23,16 @@ import pytest
 # directory in one interpreter, so a leaked ceiling from one test can flip
 # an unrelated, later test's `render_project_fragment` assertions (e.g. its
 # own line-count budget) without either test doing anything wrong on its
-# own.
+# own. `K4_SUPERVISOR_OWNER_PID` (defect `il-supervisore-non-riavvia-...-
+# si-autotermina-da-orfano`, 2026-08-24 fix) joined this SAME channel and
+# carries the SAME leakage risk: a stale PID surviving into a later,
+# unrelated test would make `prepare_examiner_fixture.main()` bind a
+# freshly-started supervisor to a process that has nothing to do with
+# that test's own owner.
 _K4_WALL_CLOCK_ENV_VARS = (
     "K4_WALL_CLOCK_CEILING_MINUTES",
     "K4_CAMPAIGN_START_EPOCH",
+    "K4_SUPERVISOR_OWNER_PID",
 )
 
 

@@ -13,8 +13,14 @@ from tests.des.cli.test_compile_contract_cli import _ARCH_AUTHORITY, _build_repo
 
 _OTHER_MODULE = '"""A second stand-in production module."""\n\n\nVALUE = 1\n'
 
+#: Every brief below uses "# widget" as its top-level heading so
+#: `_ARCH_AUTHORITY`'s `#widget` anchor resolves to a REAL, document-
+#: spanning section (des compile-contract now derives every fact from the
+#: cited section alone, F-COMPILE-CONTRACT-IGNORES-AUTHORITY-ANCHOR) --
+#: these fixtures test recompile's own fill-preservation behavior, not
+#: anchor-scoping, so one heading covering the whole document is correct.
 _BRIEF_WIDGET_AND_OTHER = """\
-# Architecture Brief
+# widget
 
 `Widget` (`pkg/widget.py:5`) and the sibling module are both touched.
 
@@ -28,8 +34,17 @@ _BRIEF_WIDGET_AND_OTHER = """\
 1. **REUSE_CANDIDATE** -- law: reuse existing_method.
 """
 
+_BRIEF_WIDGET_AND_OTHER_WITH_SUPPORT = (
+    _BRIEF_WIDGET_AND_OTHER
+    + """\
+
+Acceptance support locator: `spec/Widget.tla`
+Acceptance support locator: `tests/support/widget.json`
+"""
+)
+
 _BRIEF_WIDGET_AND_BRANDNEW = """\
-# Architecture Brief
+# widget
 
 `Widget` (`pkg/widget.py:5`) plus one genuinely new module.
 
@@ -44,7 +59,7 @@ _BRIEF_WIDGET_AND_BRANDNEW = """\
 """
 
 _BRIEF_WIDGET_AND_NEWMOD_CREATE = """\
-# Architecture Brief
+# widget
 
 `Widget` (`pkg/widget.py:5`) plus one module authored fresh.
 
@@ -182,6 +197,28 @@ def test_recompile_with_unchanged_authority_preserves_every_fill(
     assert "RECOMPILE: kept 11 fills, new 0 targets, dropped 0 targets" in out
 
 
+def test_recompile_preserves_schema_1_4_acceptance_support_closure(
+    tmp_path: Path,
+) -> None:
+    repo_root = _build_repo(tmp_path)
+    (repo_root / "pkg" / "other.py").write_text(_OTHER_MODULE, encoding="utf-8")
+    _write_brief(repo_root, _BRIEF_WIDGET_AND_OTHER_WITH_SUPPORT)
+    code, _out, err = _compile(repo_root)
+    assert code == 0, err
+    _fill_every_semantic_field(repo_root)
+
+    code, _out, err = _recompile(repo_root)
+
+    assert code == 0, err
+    contract = json.loads(_contract_path(repo_root).read_text(encoding="utf-8"))
+    assert contract["schema-version"] == "1.4"
+    assert contract["acceptance-tests"]["supporting-locators"] == [
+        "spec/Widget.tla",
+        "tests/support/widget.json",
+    ]
+    assert contract["outcome"] == "filled outcome"
+
+
 def test_recompile_resets_fills_when_a_declared_decision_changes(
     tmp_path: Path,
 ) -> None:
@@ -211,7 +248,7 @@ def test_recompile_resets_fills_when_a_declared_decision_changes(
 
 
 _BRIEF_WIDGET_ONLY = """\
-# Architecture Brief
+# widget
 
 `Widget` (`pkg/widget.py:5`) alone.
 
@@ -276,7 +313,7 @@ def test_recompile_still_refuses_a_new_create_new_row_over_an_existing_file(
 _GO_MODULE = "package pkg\n\nfunc Value() int { return 1 }\n"
 
 _BRIEF_NONPY_WITH_CITED_ORACLE = """\
-# Architecture Brief
+# widget
 
 `Widget` (`pkg/widget.py:5`) plus a Go helper; the oracle is cited at
 `pkg/tests/test_widget_color.py:1`.
@@ -292,7 +329,7 @@ _BRIEF_NONPY_WITH_CITED_ORACLE = """\
 """
 
 _BRIEF_NONPY_NO_ORACLE = """\
-# Architecture Brief
+# widget
 
 `Widget` (`pkg/widget.py:5`) plus a Go helper.
 
@@ -390,7 +427,7 @@ def test_recompile_reuses_the_verification_scope_bound_to_a_reused_oracle(
 
 
 _BRIEF_WIDGET_AND_DIRECTORY = """\
-# Architecture Brief
+# widget
 
 `Widget` (`pkg/widget.py:5`) plus a whole directory, wrongly declared.
 

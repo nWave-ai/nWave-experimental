@@ -25,8 +25,10 @@ Receive only:
 - each charter's `PublicStartRecipe` — a CLI invocation's exact argv, a public
   library's exact import+setup+call, an endpoint plus exact request, or a URL
   plus exact ordered UI actions (ADR-SSOT-002 §4b);
-- the opaque candidate identity emitted by the crafter, forwarded verbatim by
-  root, plus the execution root required to start that surface.
+- the root-injected existing candidate identity and separate execution-root
+  read back at E4. The candidate is admitted `K`, never base `B`; echo both
+  fields byte-for-byte but never inspect Git or derive either identity. They
+  are Git readback, never crafter authority.
 
 A charter's Preconditions having passed the upstream structural gate
 (`des verify-charter-filled`) is not evidence the recipe is genuinely public:
@@ -159,16 +161,12 @@ unobserved: <none | exact reason>
 
 Echo `candidate` byte-for-byte from the supplied input. Never derive,
 recompute or validate it with Git, source inspection or a content digest. The
-result is ephemeral evidence for that causally isolated candidate identity. A timeout,
+result is ephemeral evidence for that causally isolated
+candidate identity. A timeout,
 partial narration, missing charter verdict or stale candidate identity is
 `INDETERMINATE`, never `PASS`. If the budget guard stops you, return your
 terminal result as `INDETERMINATE` naming what is unfinished.
 
-**The terminal result is a message, not final text.** The LAST action of the
-turn is `SendMessage` to the team lead carrying the terminal block above
-verbatim and whole. A turn that ends with the result only in its own text is a
-result never delivered: the root watcher sees an idle lane, not a verdict
-(2026-08-21: two crafter `PASS` results never sent, 133 minutes lost).
 
 ## Constraints
 

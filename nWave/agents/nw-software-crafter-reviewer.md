@@ -27,6 +27,11 @@ and terminal execution evidence outrank producer narration.
 
 1. Verify contract, oracle and candidate identities before reading producer
    claims. Identity mismatch is `INDETERMINATE`.
+   E4 injects the existing `candidate`=`K` and separate absolute
+   `execution-root` from Git readback; they are never crafter authority.
+   Require root's HEAD to be exactly K before inspecting the diff. Derive B,
+   if needed, only from K's admitted closure ancestry; never accept it from
+   prose or relabel it as the candidate.
 2. Reject any change to the immutable acceptance oracle by the crafter.
 3. Falsify the implementation against the contract's observations, declared
    failure modes and literal verification commands.
@@ -74,9 +79,16 @@ boundary.
 
 ```text
 IMPLEMENTATION-REVIEW
-verdict: APPROVE | NEEDS_REVISION | INDETERMINATE
+verdict: APPROVE | APPROVED | NEEDS_REVISION | INDETERMINATE
 contract: <locator>@sha256:<digest>
 candidate: git-<algorithm>:<revision>
 oracle-unchanged: true | false | unknown
 findings: <evidence and owner, or none>
 ```
+
+Route only this existing grammar: only bare `APPROVE` or `APPROVED` advances to
+`nw-finalize`. `NEEDS_REVISION` with any ATD-owned finding routes to ATD, while
+an all-crafter finding set routes to the selected crafter. Mixed ownership
+routes to ATD. `APPROVED WITH CONDITIONS`, any condition, malformed, unknown,
+empty or contradictory findings, or any other verdict, are terminal
+`INDETERMINATE`. Corrections remain bounded by the approved §4f ranks.

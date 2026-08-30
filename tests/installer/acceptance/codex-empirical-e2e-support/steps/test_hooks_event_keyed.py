@@ -1,4 +1,4 @@
-"""Step bodies for slice-02 (US-1) — event-keyed hooks schema.
+"""Collected scenarios for the event-keyed hooks schema.
 
 Driving port: ``CodexDESPlugin.install(context)`` invoked against tmp-scoped
 ``CODEX_HOME``. Asserts at the driven-FS boundary (the installed

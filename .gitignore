@@ -10,6 +10,14 @@ tsunami/
 CLAUDE.local.md
 .mcp.json
 
+# graphify's generated knowledge-graph cache -- was already treated as
+# generated/ignorable elsewhere (scripts/analysis/k4/preflight.py's
+# _NEVER_COPY), but never declared HERE, so `des code-fact`'s ignore-derived
+# TreeScope (which reads only THIS file) never excluded it: a query symbol
+# appearing as DATA inside a graphify-out graph/cache file was counted as a
+# textual call site.
+graphify-out/
+
 # Generated one-off scratch (branch-cleanup epic #55, 2026-05-19; served purpose;
 # shell-script violates the zero-shell policy — kept local, never committed)
 scripts/release/cherry-pick-clean-from-origin-main.sh
@@ -132,3 +140,5 @@ _site/
 # excluded.
 .tla-swarm-model/*TTrace*
 .tla-swarm-model/states/
+docs/product/architecture/tla/*_TTrace_*
+docs/product/architecture/tla/states/

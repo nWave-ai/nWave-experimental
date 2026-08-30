@@ -136,6 +136,33 @@ def test_valid_contract_emits_only_locator_and_digest(
     assert "feature-delta" not in out.casefold()
 
 
+@pytest.mark.parametrize("route", ["RED_TO_GREEN", "GREEN_TO_GREEN"])
+@pytest.mark.parametrize("diagnostics", [False, True])
+def test_valid_contract_default_combined_transcript_contains_only_payload_lines(
+    tmp_path: Path, route: str, diagnostics: bool
+) -> None:
+    contract_path = _seed_contract(tmp_path, route=route)
+    args = [
+        "--repo-root",
+        str(tmp_path),
+        "--delivery-contract",
+        contract_path.name,
+    ]
+    if diagnostics:
+        args.append("--diagnostics")
+
+    exit_code, out, err = _run(*args)
+    expected = _expected_handoff(contract_path)
+
+    assert exit_code == 0
+    assert out == expected
+    if diagnostics:
+        assert "INDETERMINATE" in err
+    else:
+        assert err == ""
+        assert out + err == expected
+
+
 @pytest.mark.parametrize(
     "legacy_args",
     [
@@ -368,7 +395,7 @@ def test_three_distinct_defects_are_all_named_in_one_refusal(tmp_path: Path) -> 
     has one writer -- `des fill-contract` is the constructor"): the
     ORIGINAL two declared-import defects this test used before are no
     longer representable through `des dispatch` at all -- `des
-    fill-contract` has no `--field` choice naming `declared-imports` at
+    fill-contract` has no legacy scalar-write choice naming `declared-imports` at
     all, so a fill can never invent one (Agda-proved vacuity,
     ~/nwave-formal/2026-08-19-gates). The batching PROPERTY under test
     (every defect named in one pass, GDP-3/5) is unaffected by which
@@ -493,7 +520,10 @@ def _compiled_sf_delegation_contract(tmp_path: Path) -> tuple[Path, Path, str]:
     assert isinstance(result, Compiled), result
     contract = _fill_placeholders(result.contract)
     assert "literal-script-block" in contract["verification-scope"]
-    assert "::" in contract["acceptance-tests"]["locator"]
+    assert (
+        contract["acceptance-tests"]["locator"]
+        == "go-shell/drive/verified_checkpoint_live_test.go"
+    )
     contract_path = repo_root / "delivery-contract.json"
     contract_path.write_text(json.dumps(contract), encoding="utf-8")
     return repo_root, contract_path, _ADR_RELATIVE_PATH
@@ -509,6 +539,7 @@ def test_sf_delegation_contract_dispatches_loudly_end_to_end(
         str(repo_root),
         "--delivery-contract",
         contract_path.name,
+        "--diagnostics",
     )
 
     assert exit_code == 0, err

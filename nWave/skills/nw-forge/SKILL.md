@@ -1,61 +1,41 @@
 ---
 name: nw-forge
-description: "Creates new specialized agents using the 5-phase workflow (ANALYZE > DESIGN > CREATE > VALIDATE > REFINE). Use when building a new AI agent or validating an existing agent specification."
+description: "Backward-compatible router for creating agents, validating existing agents, migrating existing agent monoliths, or optimizing one existing skill."
 user-invocable: true
-argument-hint: '[agent-name] - Optional: --type=[specialist|reviewer|orchestrator] --pattern=[react|reflection|router]'
+argument-hint: '[target] - New agent, existing agent, or existing SKILL.md; optional type/pattern hints'
 ---
 
-# NW-FORGE: Create Agent (V2)
+# NW-FORGE: Agent Builder Router
 
-**Wave**: CROSS_WAVE
-**Agent**: Zeus (nw-agent-builder)
+**Wave**: CROSS_WAVE | **Agent**: Zeus (`nw-agent-builder`)
 
-## SSOT pointer (de-duplicated 2026-06-17)
+## Routes
 
-This skill previously duplicated the `forge.md` command near-verbatim. The single
-source of truth for the create-agent procedure is now:
-- Command surface: `nWave/tasks/nw/forge.md` — PRESERVED, unchanged. `forge` keeps its
-  name (no rename, no replacement command).
-- Procedure: skill `nw-ab-create-agent` (one job, one trigger, deterministic 5-phase
-  sequence: ANALYZE → DESIGN → CREATE → VALIDATE → REFINE; VALIDATE composes
-  `nw-ab-validate-spec`). `forge` routes to this internal procedure.
+| Request condition | Internal procedure | Output |
+|---|---|---|
+| Create a new agent | `nw-ab-create-agent` | New agent and only needed skills |
+| Validate only an existing agent | `nw-ab-validate-spec` | 19-item verdict |
+| Migrate an existing agent monolith | `nw-ab-migrate-monolith` | Lean agent core plus routed skills |
+| Optimize one existing skill | `nw-ab-optimize-skill` | Measured optimization result or `NOT_ELIGIBLE` |
 
-Do not edit the procedure here — edit `nw-ab-create-agent`. This file is retained as
-a pointer for backward compatibility and is flagged for DELETION at the cutover step
-(held for Ale's explicit OK).
+## Routing workflow
 
-## Agent Invocation
+1. **Classify** — Match the request to exactly one route above. Stop: ambiguous request; request the missing target or intent.
+2. **Delegate** — Load and run the selected internal procedure. Preserve public command and agent names. Stop: the target is not eligible for the selected procedure.
+3. **Handoff** — Return that procedure's terminal evidence without re-stating its workflow. Stop: the procedure reports an unresolved preservation or behavior risk.
 
-@nw-agent-builder
+## Contract
 
-Run the `nw-ab-create-agent` procedure to create the {agent-name} agent.
+- `forge` remains the public command. This file owns routing only; procedure details remain in the selected `nw-ab-*` skill.
+- Existing behavioral projections are immutable. Do not create a command, validator, grammar, compiler, hook, or gate for a route.
+- Safety by construction first; hooks last resort with a recorded reason (GDP-0).
+- Use `nw-ab-create-agent` for creation, `nw-ab-validate-spec` for validation, `nw-ab-migrate-monolith` for agent migration, and `nw-ab-optimize-skill` for skill optimization.
+- The validation route uses the 19-item checklist; do not maintain a second count here.
 
-**Configuration:**
-- agent_type: specialist | reviewer | orchestrator
-- design_pattern: react | reflection | router | planning | sequential | parallel | hierarchical
+## Existing surfaces
 
-## Success Criteria
-
-- [ ] Agent definition under 400 lines (`wc -l`)
-- [ ] Official YAML frontmatter format (name, description, tools, maxTurns)
-- [ ] 11-point validation checklist passes
-- [ ] Only divergent behaviors specified (no Claude defaults)
-- [ ] 3-5 canonical examples included
-- [ ] Domain knowledge extracted to Skills if >50 lines
-- [ ] No aggressive language (no CRITICAL/MANDATORY/ABSOLUTE)
-- [ ] Safety by construction first (frontmatter tool surface, typed grammar), not prose; hooks last resort with a recorded reason (GDP-0)
-- [ ] Caveman house style — dry/declarative, tables and compact lists, lean body, deep knowledge in skills
-- [ ] `## Reasoning Mandate` section present (verdict-first, tables, evidence-dense)
-- [ ] A05/A06 literal anchors present (`You MUST load your skill files` or `Your FIRST action before any other work`, AND `~/.claude/skills/nw-`)
-
-## Next Wave
-
-**Handoff To**: Agent installation and deployment
-**Deliverables**: Agent specification file + Skill files (if any)
-
-## Expected Outputs
-
-```
-~/.claude/agents/nw/nw-{agent-name}.md
-~/.claude/skills/nw-{skill-name}/SKILL.md*.md    (if Skills needed)
-```
+- Route by the target and request condition, not a mandatory operation flag.
+- `*forge`, `*validate`, and `*migrate` retain their existing public meanings.
+- Internal procedure names do not create a public command.
+- The selected procedure owns detailed output and verification.
+- A rejected route returns its own compact reason.

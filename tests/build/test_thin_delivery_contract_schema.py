@@ -16,6 +16,11 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator, ValidationError
 
+from des._internal.delivery_contract_schema import (
+    SchemaViolation,
+    delivery_contract_schema_violation,
+)
+
 
 SCHEMA_PATH = Path("nWave/schemas/thin-delivery-contract.schema.json")
 TARGET_PATH = "nWave/schemas/thin-delivery-contract.schema.json"
@@ -65,7 +70,7 @@ def _toolchain_executable_command(name: str, *arguments: str) -> dict[str, Any]:
 
 def _contract(paradigm: str) -> dict[str, Any]:
     return {
-        "schema-version": "1.2",
+        "schema-version": "1.4",
         "delivery-id": "thin-delivery-contract-schema",
         "repository": {
             "worktree": ".",
@@ -78,6 +83,7 @@ def _contract(paradigm: str) -> dict[str, Any]:
         "obligations": ["REUSE_CANDIDATE"],
         "acceptance-tests": {
             "locator": "tests/build/test_thin_delivery_contract_schema.py",
+            "supporting-locators": ["tests/build/fixtures/schema_version_pins.json"],
         },
         "verification-scope": {
             "commands": [
@@ -135,6 +141,46 @@ def test_complete_thin_delivery_contract_validates(paradigm: str) -> None:
     assert _errors(_contract(paradigm)) == []
 
 
+def test_acceptance_support_locators_are_optional_sorted_whole_file_paths() -> None:
+    contract = _contract("object_oriented")
+    contract["acceptance-tests"]["supporting-locators"] = [
+        "spec/Law.tla",
+        "tests/support/widget.json",
+    ]
+
+    assert _errors(contract) == []
+
+
+@pytest.mark.parametrize(
+    "locators",
+    [
+        [],
+        ["spec/Law.tla", "spec/Law.tla"],
+        ["spec/Law.tla::Invariant"],
+        ["../outside.json"],
+    ],
+)
+def test_acceptance_support_locators_reject_invalid_shapes(locators: list[str]) -> None:
+    contract = _contract("object_oriented")
+    contract["acceptance-tests"]["supporting-locators"] = locators
+
+    assert _errors(contract)
+
+
+def test_schema_version_and_support_capability_cannot_be_crossed() -> None:
+    legacy_with_support = _contract("object_oriented")
+    legacy_with_support["schema-version"] = "1.3"
+    current_without_support = _contract("object_oriented")
+    del current_without_support["acceptance-tests"]["supporting-locators"]
+
+    assert isinstance(
+        delivery_contract_schema_violation(legacy_with_support), SchemaViolation
+    )
+    assert isinstance(
+        delivery_contract_schema_violation(current_without_support), SchemaViolation
+    )
+
+
 @pytest.mark.parametrize(
     "contract_path",
     sorted(CHECKED_IN_CONTRACTS.glob("*.json")),
@@ -145,7 +191,7 @@ def test_every_checked_in_delivery_contract_uses_the_current_schema(
 ) -> None:
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
 
-    assert _errors(contract) == [], (
+    assert delivery_contract_schema_violation(contract) is None, (
         "WHAT: a checked-in DeliveryContract no longer validates against the sole "
         "current schema. "
         "WHY: changing canonical authority without migrating its live instances "
@@ -259,6 +305,9 @@ def test_schema_has_no_finalize_property() -> None:
         "src//empty-segment.py",
         r"src\backslash-escape.py",
         "tests/build/test_*.py",
+        "vendor/example.com/mod/@v/../escape.py",
+        "vendor/@vendor-scope/pkg.go",
+        "vendor/example.com/mod/@v",
     ],
 )
 def test_contract_rejects_non_relative_or_pattern_target_keys(
@@ -280,6 +329,9 @@ def test_contract_rejects_non_relative_or_pattern_target_keys(
         "_catalog.yaml",
         ".github/workflows/ci.yml",
         "crates/engine/src/main.rs",
+        "vendor/example.com/mod/@v/v1.2.0.info",
+        "vendor/example.com/mod/@v/v1.2.0.mod",
+        "vendor/proxy/cache/download/example.com/mod/@v/list",
     ],
 )
 def test_contract_accepts_safe_language_agnostic_targets_and_candidates(

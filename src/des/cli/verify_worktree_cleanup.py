@@ -38,6 +38,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.git.git_subprocess import is_merged_contribution
+from des.adapters.driven.marker_file_owner_lease_adapter import (
+    MarkerFileOwnerLeaseAdapter,
+)
 from des.adapters.driven.refactor.git_worktree_adapter import GitWorktreeAdapter
 from des.application.worktree_cleanup_service import WorktreeCleanupService
 from des.cli._emit_json import emit_json_line as _emit
@@ -131,7 +134,9 @@ def main(argv: list[str] | None = None) -> int:
     scope_to = Path(args.worktree) if args.worktree else None
 
     service = WorktreeCleanupService(
-        git_worktree=GitWorktreeAdapter(), merge_check=is_merged_contribution
+        git_worktree=GitWorktreeAdapter(),
+        merge_check=is_merged_contribution,
+        owner_lease=MarkerFileOwnerLeaseAdapter(),
     )
     result = service.sweep(
         repo=repo,

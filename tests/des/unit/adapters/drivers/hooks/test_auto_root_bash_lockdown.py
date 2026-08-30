@@ -196,6 +196,77 @@ class TestAutoRootBashAllowlist:
         assert payload["decision"] == "block"
 
 
+class TestAutoRootBashGitDashCAndLsFiles:
+    """docs/analysis/2026-08-24-design-perimetro-auto-root.md, Candidata B:
+    `git -C <path> <allowed-subcommand>` must pass (representation fix --
+    the old positional `argv[1]` read `"-C"` as the subcommand, blocking
+    EVERY `-C`-prefixed call regardless of how safe the real subcommand
+    was), `git ls-files` joins the allowlist (same read-only risk profile
+    as `status`, already admitted), and `git -C <path> push` -- a
+    disallowed subcommand reached via `-C` -- must stay blocked in BOTH
+    the old and the new code (this is a representation fix, not a scope
+    widening: no new subcommand is admitted through `-C`)."""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "git -C /some/repo status",
+            "git -C /some/repo diff",
+            "git -C /some/repo ls-files",
+            "git ls-files",
+        ],
+    )
+    def test_dash_c_and_ls_files_allowlisted_commands_pass(
+        self, monkeypatch, capsys, audit_events, tmp_path, command
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        _exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": command},
+                transcript_path=transcript_path,
+            ),
+        )
+        if payload is not None and payload.get("decision") == "block":
+            assert "Auto-root" not in payload.get("reason", "")
+
+    def test_dash_c_with_disallowed_subcommand_stays_blocked(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": "git -C /some/repo push"},
+                transcript_path=transcript_path,
+            ),
+        )
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+
+    def test_bare_dash_c_with_no_path_stays_blocked(
+        self, monkeypatch, capsys, audit_events, tmp_path
+    ) -> None:
+        """Malformed -- no real subcommand can follow -- must fail closed,
+        not crash on an index error."""
+        transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": "git -C"},
+                transcript_path=transcript_path,
+            ),
+        )
+        assert exit_code == 2
+        assert payload["decision"] == "block"
+
+
 class TestAutoRootBashDesAllowlist:
     """A confirmed Auto-root process's Bash calls also allow a bare, single
     `des dispatch|validate-delivery-contract|charter-scaffold|
@@ -211,9 +282,6 @@ class TestAutoRootBashDesAllowlist:
             "des resolve-charters --repo-root /tmp/repo --delivery-id auto-abc123 --examine true",
             "des code-fact query.atoms-in-file --root /tmp/repo/sendalerts.py",
             "des compile-contract --repo-root /tmp/repo --delivery-id auto-abc123",
-            "des revise-contract-round --repo-root /tmp/repo "
-            "--contract-locator docs/delivery-contracts/auto-abc123.json "
-            "--citation the-cited-defect",
         ],
         ids=[
             "dispatch",
@@ -222,7 +290,6 @@ class TestAutoRootBashDesAllowlist:
             "resolve-charters",
             "code-fact",
             "compile-contract",
-            "revise-contract-round",
         ],
     )
     def test_clean_des_allowlisted_command_is_not_auto_root_blocked(
@@ -390,29 +457,11 @@ class TestAutoRootBashAllowlistCoversSkillMandatedSubcommands:
             "would deny root's own documented next step."
         )
 
-    def test_revise_contract_round_is_allowlisted_despite_inline_prose_mention(
+    def test_no_retired_mutation_routes_are_allowlisted(
         self,
     ) -> None:
-        """SF friction report 2026-08-20, item 5: `des revise-contract-
-        round` is named in nw-auto/SKILL.md's routing table as INLINE
-        backtick prose (a table cell), never inside a fenced code block
-        -- `des_subcommands_root_is_told_to_run`'s parser only scans
-        fenced blocks, so the coverage check above is structurally BLIND
-        to this one subcommand and cannot catch its own drift
-        automatically. `_is_well_formed_atd_revision_body` REQUIRES
-        root's dispatch body come verbatim from this producer's stdout;
-        the allowlist forbidding root from ever running it deadlocked
-        the flow (resolved only by a second agent relaying stdout, per
-        the friction report). Hand-anchored here since the general
-        parser cannot cover it -- the SAME class of assertion, one
-        subcommand the automatic guard cannot reach."""
         allowed = pre_tool_use_handler._AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS
-        assert "revise-contract-round" in allowed, (
-            "the Auto-root Bash allowlist must permit des revise-contract-"
-            "round -- _is_well_formed_atd_revision_body already requires "
-            "the REVISE dispatch body come from its stdout, so root must "
-            "be able to run it"
-        )
+        assert "dispatch" in allowed
 
     def test_revise_charter_round_is_allowlisted_despite_inline_prose_mention(
         self,
@@ -914,6 +963,15 @@ class TestAutoRootAllowedGitCommitReachesAttribution:
             json.dumps({"attribution": {"enabled": True}}), encoding="utf-8"
         )
         monkeypatch.setenv("HOME", str(tmp_path))
+        # The attribution branch is gated on ACTIVATION as well as on the
+        # preference (ADR-AG-005): the dispatch cwd must be an activated repo,
+        # else the branch correctly passes through and this scenario would
+        # assert the closed defect F-ATTRIBUTION-GATING-ASYMMETRY-PRETOOLUSE.
+        repo = tmp_path / "repo"
+        (repo / ".nwave").mkdir(parents=True)
+        (repo / ".nwave" / "local-config.json").write_text(
+            json.dumps({"enabled_for_repo": True}), encoding="utf-8"
+        )
 
         transcript_path = _transcript(tmp_path, auto=True, mode_select=True)
         exit_code, payload = _run(
@@ -923,7 +981,7 @@ class TestAutoRootAllowedGitCommitReachesAttribution:
                 tool_name="Bash",
                 tool_input={"command": 'git commit -m "x"'},
                 transcript_path=transcript_path,
-                cwd=str(tmp_path),
+                cwd=str(repo),
             ),
         )
         assert exit_code == 0

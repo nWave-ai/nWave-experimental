@@ -18,16 +18,16 @@ Feature: Installed hook command carries the DES adapter argv contract
     And no command string omits the event positional argument
 
   @us-2 @slice-03 @driving_port @real-io
-  Scenario: Hook command exits 0 on a synthetic Codex Bash tool event
+  Scenario: Hook command exits 0 on a synthetic Codex exec_command tool event
     Given the nwave-ai installer has been run with --platform codex
-    When the installed PreToolUse hook command is invoked with a synthetic Codex Bash tool-event stdin payload
+    When the installed PreToolUse hook command is invoked with a synthetic Codex exec_command tool-event stdin payload
     Then the adapter exits with status 0
     And the adapter writes at least one observable artifact
 
   @us-2 @slice-03 @driving_port @real-io
   Scenario: Adapter emits a HOOK_INVOKED audit entry when invoked end-to-end
     Given the nwave-ai installer has been run with --platform codex
-    When the installed PreToolUse hook command is invoked with a synthetic Codex Bash tool-event stdin payload
+    When the installed PreToolUse hook command is invoked with a synthetic Codex exec_command tool-event stdin payload
     Then the audit log contains a HOOK_INVOKED entry with handler "pre_tool_use"
     And the audit log contains a HOOK_COMPLETED entry with handler "pre_tool_use" and exit_code 0
 

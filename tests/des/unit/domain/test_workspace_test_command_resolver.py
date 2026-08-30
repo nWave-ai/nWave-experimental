@@ -10,11 +10,14 @@ unrelated prose that merely contains a keyword with no attached command
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
+import pytest
+
 from des.domain.workspace_test_command_resolver import (
-    contract_covers_whole_suite,
     declared_whole_suite_command,
+    resolve_preservation_vector,
 )
 
 
@@ -60,59 +63,76 @@ def test_extracts_the_labeled_whole_suite_command(tmp_path: Path) -> None:
     ]
 
 
-def test_oracle_only_scope_does_not_cover_the_declared_whole_suite(
+def test_new_contract_commands_bind_repository_script_bytes_at_b(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "CLAUDE.md").write_text(
-        "- Run the subject's own tests: "
-        "`k4-fixture-venv/bin/python manage.py test hc.api --noinput`\n",
-        encoding="utf-8",
+    script = tmp_path / "verify.sh"
+    script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    script.chmod(0o755)
+    contract = _contract([])
+    contract["verification-scope"]["commands"] = [
+        {"executable": {"path": "./verify.sh"}, "arguments": []}
+    ]
+    vector = resolve_preservation_vector(
+        tmp_path, contract, contract_locator="new-delivery.json"
     )
-    contract = _contract(["manage.py", "test", "hc.api.tests.test_maintenance_windows"])
-
-    assert contract_covers_whole_suite(tmp_path, contract) is False
-
-
-def test_added_whole_suite_command_covers_it(tmp_path: Path) -> None:
-    (tmp_path / "CLAUDE.md").write_text(
-        "- Run the subject's own tests: "
-        "`k4-fixture-venv/bin/python manage.py test hc.api --noinput`\n",
-        encoding="utf-8",
-    )
-    contract = _contract(
-        ["manage.py", "test", "hc.api.tests.test_maintenance_windows"],
-        ["manage.py", "test", "hc.api"],
+    assert vector.argv == (("./verify.sh",),)
+    assert vector.sources == (
+        ("verify.sh", hashlib.sha256(script.read_bytes()).hexdigest()),
     )
 
-    assert contract_covers_whole_suite(tmp_path, contract) is True
 
-
-def test_no_declared_command_means_nothing_to_check(tmp_path: Path) -> None:
-    (tmp_path / "CLAUDE.md").write_text(
-        "# a project with no such line\n", encoding="utf-8"
-    )
-    contract = _contract(["manage.py", "test", "hc.api.tests.test_x"])
-
-    assert contract_covers_whole_suite(tmp_path, contract) is True
-
-
-def test_a_literal_script_block_covers_the_whole_suite_by_delegation(
+def test_ambient_command_without_a_base_owned_source_is_an_evidence_gap(
     tmp_path: Path,
 ) -> None:
-    # SF friction 2026-08-21: a delegation contract carries the authority's
-    # LITERAL script instead of argv commands -- the delegation outranks
-    # the subject's CLAUDE.md whole-suite convention, so the whole-suite
-    # coverage refusal must never fire on it.
-    (tmp_path / "CLAUDE.md").write_text(
-        "- Run the subject's own tests: `go test ./...`\n", encoding="utf-8"
+    contract = _contract([])
+    contract["verification-scope"]["commands"] = [
+        {"executable": {"name": "git"}, "arguments": ["diff", "--check"]}
+    ]
+    with pytest.raises(ValueError, match="no base-owned preservation command"):
+        resolve_preservation_vector(tmp_path, contract)
+
+
+def test_unambiguous_literal_direct_script_is_a_preservation_vector(
+    tmp_path: Path,
+) -> None:
+    document = tmp_path / "authority.md"
+    script = tmp_path / "verify.sh"
+    script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    script.chmod(0o755)
+    line = "./verify.sh"
+    document.write_text(f"# Verify\n\n```sh\n{line}\n```\n", encoding="utf-8")
+    contract = {
+        "verification-scope": {
+            "literal-script-block": {
+                "locator": "authority.md#verify",
+                "content-digest": "sha256:" + hashlib.sha256(line.encode()).hexdigest(),
+                "lines": [line],
+            }
+        }
+    }
+    vector = resolve_preservation_vector(tmp_path, contract)
+    assert vector.argv == (("./verify.sh",),)
+    assert vector.sources[1] == (
+        "verify.sh",
+        hashlib.sha256(script.read_bytes()).hexdigest(),
+    )
+
+
+def test_opaque_literal_is_not_treated_as_preservation(tmp_path: Path) -> None:
+    document = tmp_path / "authority.md"
+    document.write_text(
+        "# Verify\n\n```sh\n./verify.sh | tee result\n```\n", encoding="utf-8"
     )
     contract = {
         "verification-scope": {
             "literal-script-block": {
-                "locator": "docs/adrs/ADR-112.md#d-112.14",
-                "content-digest": "sha256:" + "a" * 64,
-                "lines": ["go test ./... -count=1"],
+                "locator": "authority.md#verify",
+                "content-digest": "sha256:"
+                + hashlib.sha256(b"./verify.sh | tee result").hexdigest(),
+                "lines": ["./verify.sh | tee result"],
             }
         }
     }
-    assert contract_covers_whole_suite(tmp_path, contract) is True
+    with pytest.raises(ValueError, match="direct repository script"):
+        resolve_preservation_vector(tmp_path, contract)

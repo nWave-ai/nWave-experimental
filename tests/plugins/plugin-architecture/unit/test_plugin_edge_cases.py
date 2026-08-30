@@ -270,7 +270,7 @@ class TestTemplatesPluginFallbackPath:
 
     @pytest.fixture
     def context_with_nonexistent_templates_dir(
-        self, tmp_path: Path, test_logger: logging.Logger, project_root: Path
+        self, tmp_path: Path, test_logger: logging.Logger
     ):
         """Create context where templates_dir doesn't exist."""
         claude_dir = tmp_path / ".claude"
@@ -394,17 +394,6 @@ class TestAgentsPluginSourceFallback:
             "agents:\n  test-agent:\n    public: true\n"
         )
 
-        # AgentsPlugin.install() loads nWave/templates/tool-batching-fragment.md
-        # via context.project_root / "nWave"; seed it from the canonical file.
-        templates_dir = tmp_path / "nWave" / "templates"
-        templates_dir.mkdir(parents=True, exist_ok=True)
-        source_fragment = (
-            project_root / "nWave" / "templates" / "tool-batching-fragment.md"
-        )
-        (templates_dir / "tool-batching-fragment.md").write_text(
-            source_fragment.read_text(encoding="utf-8"), encoding="utf-8"
-        )
-
         context = InstallContext(
             claude_dir=claude_dir,
             scripts_dir=tmp_path / "scripts",
@@ -412,6 +401,7 @@ class TestAgentsPluginSourceFallback:
             logger=test_logger,
             project_root=tmp_path,
             framework_source=tmp_path / "nWave",
+            dev_mode=True,
         )
 
         plugin = AgentsPlugin()
@@ -420,6 +410,8 @@ class TestAgentsPluginSourceFallback:
         assert result.success
         target = claude_dir / "agents" / "nw"
         assert target.exists()
+        for i in range(10):
+            assert (target / f"nw-agent{i}.md").read_text() == f"# Agent {i}"
 
 
 # =============================================================================

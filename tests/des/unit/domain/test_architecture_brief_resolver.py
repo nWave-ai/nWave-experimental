@@ -14,8 +14,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from des.domain.architecture_brief_resolver import (
+    FILE_LINE_CITATION_RE,
     PBT_FAMILY_SKILL,
     declared_imports_for_target,
+    extract_acceptance_support_locators,
     extract_declared_import_candidates,
     extract_declared_oracle_locator_candidates,
     extract_declared_target_locators,
@@ -24,6 +26,7 @@ from des.domain.architecture_brief_resolver import (
     extract_skill_citations,
     extract_target_citations,
     first_unparsed_obligation_candidate,
+    malformed_acceptance_support_locator_lines,
     resolve_pbt_adapter,
     skill_citations_for_repo,
 )
@@ -563,13 +566,47 @@ def test_extract_oracle_citations_test_shaped_file_line_yields_path_only() -> No
     assert extract_oracle_citations(brief) == ["pkg/widget_test.go"]
 
 
-def test_extract_oracle_citations_selector_upgrades_a_bare_file_line() -> None:
-    # The same file cited both ways: the selector-carrying citation wins --
-    # dropping it would silently discard the finer oracle identity.
+def test_extract_acceptance_support_locators_preserves_declared_order() -> None:
+    brief = (
+        "Test dependency locator: `spec/a.tla`\n"
+        "Test dependency locator: `tests/support/data.json`\n"
+    )
+
+    assert extract_acceptance_support_locators(brief) == [
+        "spec/a.tla",
+        "tests/support/data.json",
+    ]
+
+
+def test_extract_acceptance_support_locators_keeps_legacy_label_compatible() -> None:
+    brief = "Acceptance support locator: `tests/support/data.json`\n"
+
+    assert extract_acceptance_support_locators(brief) == [
+        "tests/support/data.json",
+    ]
+
+
+def test_extract_acceptance_support_locators_exposes_malformed_declaration() -> None:
+    brief = "Test dependency locator: tests/support/data.json\n"
+
+    assert extract_acceptance_support_locators(brief) == []
+    assert malformed_acceptance_support_locator_lines(brief) == [brief.rstrip()]
+
+
+def test_test_dependency_term_in_prose_is_not_a_declaration() -> None:
+    brief = "The canonical term is `Test dependency locator:`.\n"
+
+    assert extract_acceptance_support_locators(brief) == []
+    assert malformed_acceptance_support_locator_lines(brief) == []
+
+
+def test_extract_oracle_citations_keeps_first_durable_identity_for_same_file() -> None:
+    # Primary ownership follows durable authority order. A later technical
+    # selector is not allowed to rewrite the already-bound public oracle.
     brief = (
         "Sketch at `pkg/widget_test.go:12`, bound as `pkg/widget_test.go::TestWidget`."
     )
-    assert extract_oracle_citations(brief) == ["pkg/widget_test.go::TestWidget"]
+    assert extract_oracle_citations(brief) == ["pkg/widget_test.go"]
 
 
 def test_extract_oracle_citations_ignores_documentary_files() -> None:
@@ -747,3 +784,28 @@ def test_non_target_pipe_tables_never_match() -> None:
         "| `merge_config` | `pkg/domain/config_merge.py` | REUSE as-is. |\n"
     )
     assert extract_declared_target_table(text) is None
+
+
+def test_a_go_module_proxy_target_locator_is_extracted_verbatim() -> None:
+    # SF blocker 2026-08-23: the four hand-copied path-citation character
+    # classes in this module admitted no '@', so a brief declaring an
+    # artifact under the Go module-proxy convention
+    # (`<module>/@v/<version>.<ext>`) was silent-wrong twice over -- the
+    # declared target locator VANISHED from the result, and a `file:line`
+    # citation was TRUNCATED to `v/v1.2.0.info:1`, a different path that
+    # could plausibly exist. Extraction is a superset of the contract
+    # schema's own `repositoryRelativePath`; the schema, not this regex,
+    # decides admissibility, so an inadmissible path is refused LOUD.
+    text = (
+        "- **PRESERVATION**: Oracle target locator: "
+        "`vendor/example.com/mod/@v/v1.2.0.mod::TestProxy` (CREATE_NEW)\n"
+        "  Insertion point: `vendor/example.com/mod/@v/v1.2.0.info:1`\n"
+    )
+
+    assert [
+        (locator.path, locator.symbol, locator.decision)
+        for locator in extract_declared_target_locators(text)
+    ] == [("vendor/example.com/mod/@v/v1.2.0.mod", "TestProxy", "CREATE_NEW")]
+    assert FILE_LINE_CITATION_RE.findall(text) == [
+        "vendor/example.com/mod/@v/v1.2.0.info:1"
+    ]

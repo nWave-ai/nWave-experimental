@@ -138,7 +138,6 @@ owns only build-time packaging names for this role, never runtime trigger semant
 CRAFTER-RESULT
 verdict: PASS | FAIL | INDETERMINATE
 contract: <locator>@sha256:<closure-digest>
-candidate: git-<algorithm>:<base-revision>
 execution-root: <absolute-execution-root>
 oracle: <locator>
 skills-invoked: <ordered names | none>
@@ -154,22 +153,12 @@ If the budget guard stops you, return your terminal result as
 
 `contract` carries the single contract+oracle closure digest; there is no
 separate persisted oracle-digest field or duplicate oracle identity line.
-`candidate` is the opaque causal identity of the base revision, not a content
-digest, and never embeds the execution root. `execution-root` is the absolute
-physical worktree root already owned by this crafter, emitted as its own
-field alongside `candidate`. Emit both once; downstream consumers echo each
-verbatim and never derive one from the other, from Git or from source
-inspection.
-`PASS` requires a non-empty production candidate and execution-root when
-change was required, an unchanged closure digest, terminal green verification
-and preserved contract identity.
+`execution-root` is the absolute physical integration root this crafter
+mutated. `PASS` requires that root, an unchanged closure digest, terminal
+green verification and preserved contract identity. Do not create a commit:
+the first root consumer after this complete result performs Git readback and
+sealing.
 Missing, stale or nonterminal evidence is `INDETERMINATE`.
-
-**The terminal result is a message, not final text.** The LAST action of the
-turn is `SendMessage` to the team lead carrying the terminal block above
-verbatim and whole. A turn that ends with the result only in its own text is a
-result never delivered: the root watcher sees an idle lane, not a verdict
-(2026-08-21: two crafter `PASS` results never sent, 133 minutes lost).
 
 ## Constraints
 

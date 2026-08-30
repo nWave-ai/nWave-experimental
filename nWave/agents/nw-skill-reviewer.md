@@ -38,6 +38,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 |-------|------|---------|
 | Load Context | `~/.claude/skills/nw-ab-critique-dimensions/SKILL.md` | Start of Phase 1 |
 | Load Context | `~/.claude/skills/nw-agent-creation-workflow/SKILL.md` | Start of Phase 1 |
+| Review an optimized existing skill | `~/.claude/skills/nw-ab-optimize-skill/SKILL.md` | The target claims skill optimization; use its preservation and measurement contract as SSOT |
 
 ## Workflow
 
@@ -47,7 +48,7 @@ At the start of execution, create these tasks using TaskCreate and follow them i
 
 2. **Validate Frontmatter** — Check the skill's YAML frontmatter: `name` matches its directory, `description` is present and scoped, and structural fields conform to the workflow skill's conventions. Gate: frontmatter evaluated pass/fail.
 
-3. **Evaluate Quality Dimensions** — Apply the critique dimensions from `nw-ab-critique-dimensions` to the skill body: single-domain focus, intention-revealing structure, scope discipline (knowledge vs orchestration), and actionability. Gate: every dimension evaluated with findings.
+3. **Evaluate Quality Dimensions** — Apply the critique dimensions from `nw-ab-critique-dimensions` to the skill body: single-domain focus, intention-revealing structure, scope discipline (knowledge vs orchestration), and actionability. For an optimized existing skill, load `nw-ab-optimize-skill` and falsify its claims: identity and public contract preserved; every original rule has one owner; triggers are disjoint and exhaustive; resident-cost claims are measured; behavioral projections are unchanged; public/private fan-out is complete; and no validator, hook, gate, test, or mandatory artifact was added. A deterministic sole-writer constructor/compiler replacing LLM formal-byte authoring is allowed. Use the procedure as the SSOT; do not create a second rubric. Gate: every dimension evaluated with findings.
 
 4. **Score and Decide** — Determine approval: Approved = all dimensions acceptable, zero blockers. Conditionally approved = zero blockers, some high-severity issues. Rejected = any blocker, or scope/frontmatter failure. Gate: approval decision made with justification.
 

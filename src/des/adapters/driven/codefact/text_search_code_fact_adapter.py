@@ -7,10 +7,19 @@ Python-only mandate. It is language-agnostic and zero-dependency, so it answers
 even for a language with no ``AstAdapter``.
 
 It declares its TRUE (lowest) confidence — ``noisy`` — never inflated, and it
-ALWAYS returns a usable :class:`CodeFactResult` (a non-empty payload): name
-matching can produce false positives/negatives (ADR-LA-001 Consequences, the
-honest tradeoff), but the answer is never silent-green and never a false-fail
-dressed as certainty — the lower-confidence provenance is in the envelope.
+returns a usable :class:`CodeFactResult` (a non-empty payload) for every
+capability it can actually observe: name matching can produce false
+positives/negatives (ADR-LA-001 Consequences, the honest tradeoff), but the
+answer is never silent-green and never a false-fail dressed as certainty — the
+lower-confidence provenance is in the envelope.
+
+ONE case is deliberately NOT answered: an EMPTY result for a reference-shaped
+capability. This tier only represents ``bare-name`` references (its patterns
+are anchored to exclude a dot-preceded occurrence), so its zero cannot discriminate "no such
+reference" from "the reference is dotted and I am blind to it". It declares
+that in its manifest and the fold converts such an empty into
+``failed:unrepresented-reference-shape`` — a floor that says "I do not know
+how to look" beats a floor that says zero.
 
 This is the load-bearing "there is ALWAYS a usable answer" floor of slice-01.
 """
@@ -28,6 +37,7 @@ from des.ports.code_fact_port import (
     CAPABILITY_CALLERS_OF,
     CAPABILITY_NEVER_WIRED,
     CAPABILITY_READS_OF,
+    REFERENCE_SHAPE_BARE_NAME,
     STABLE_CORE_CAPABILITY_IDS,
     TRACE_EXEMPLARS_MAX,
     Answered,
@@ -37,6 +47,7 @@ from des.ports.code_fact_port import (
     Manifest,
     ManifestEntry,
     TraceEntry,
+    observation_count,
 )
 
 
@@ -56,6 +67,21 @@ _ATOM_DEFINITION = re.compile(
 # A source file the floor scans. Kept broad (the floor is language-agnostic);
 # the textual scan tolerates non-source files (they simply contribute no atoms).
 _SOURCE_GLOB = "*.*"
+
+# The reference SHAPES this textual floor represents, per capability
+# (reference-shape coverage axis, 2026-08-23). BARE NAMES ONLY: every
+# reference pattern below is anchored to exclude a dot-preceded occurrence, which EXCLUDES a
+# dotted occurrence by construction -- ``cfg.retry_budget`` and
+# ``owner.method(`` are invisible to this tier. Declaring the blindness is
+# what stops an empty floor result from being read as "there are none":
+# the fold converts such an empty into ``failed:unrepresented-reference-shape``
+# instead. A capability absent from this map claims no shape (``()``) and is
+# not reference-shaped anyway (atoms / adr-section).
+_REPRESENTED_SHAPES: dict[str, tuple[str, ...]] = {
+    CAPABILITY_CALLERS_OF: (REFERENCE_SHAPE_BARE_NAME,),
+    CAPABILITY_READS_OF: (REFERENCE_SHAPE_BARE_NAME,),
+    CAPABILITY_NEVER_WIRED: (REFERENCE_SHAPE_BARE_NAME,),
+}
 
 
 class _FaultObservation:
@@ -209,7 +235,11 @@ class TextSearchAdapter:
         so this claim needs no request to be honest.
         """
         return tuple(
-            ManifestEntry(capability_id=capability_id, confidence=self.confidence)
+            ManifestEntry(
+                capability_id=capability_id,
+                confidence=self.confidence,
+                represents=_REPRESENTED_SHAPES.get(capability_id, ()),
+            )
             for capability_id in sorted(STABLE_CORE_CAPABILITY_IDS)
         )
 
@@ -243,6 +273,7 @@ class TextSearchAdapter:
                     detail="",
                 ),
             ),
+            evidence_count=observation_count(result.payload),
         )
 
     # -- capability realizations (textual, stdlib only) --------------------
@@ -309,8 +340,10 @@ class TextSearchAdapter:
     def _call_sites(self, callable_name: str, faults: _FaultObservation) -> list[str]:
         """Every textual ``<callable_name>(`` call SITE, one entry per occurrence.
 
-        A declaration line is NOT a call-site; a ``.flush(`` or bare ``flush(``
-        usage is. The declaration observation is `_ATOM_DEFINITION` itself (the
+        A declaration line is NOT a call-site; a bare ``flush(`` usage is. A
+        DOTTED ``obj.flush(`` is NOT matched -- the pattern lookbehind
+        excludes a dot-preceded occurrence, which is exactly the blindness ``_REPRESENTED_SHAPES``
+        declares above (this docstring claimed the opposite until 2026-08-23). The declaration observation is `_ATOM_DEFINITION` itself (the
         single SSOT for "what counts as a declaration") — its captured symbol
         is compared to ``callable_name`` and only a matching declaration span is
         stripped before the call pattern scans, so every declaration form the

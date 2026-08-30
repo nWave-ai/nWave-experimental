@@ -18,7 +18,8 @@ dispatches:
     A mutating subcommand (bare `git stash`, or `push`/`pop`/`apply`/`drop`/
     `clear`/`save`/`branch`/`create`/`store`) is refused: print
     `{"decision": "block", "reason": "..."}` to stdout + exit 2. The reason
-    names the safe alternative (`git worktree add /tmp/probe HEAD`) AND the
+    names the safe alternative (`des worktree-admit --repo <root> --lane
+    <name>`) AND the
     bypass mechanism (`NWAVE_GIT_STASH_ALLOW`) so the operator sees an
     actionable remedy.
 

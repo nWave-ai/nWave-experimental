@@ -16,7 +16,10 @@ when contention increases end-to-end wall time.
 ## Fan out only independent work
 
 Freeze the shared interface first, then assign disjoint file ownership in
-isolated worktrees. Good parallel work includes independent RCA hypotheses,
+worktrees created only by `des worktree-admit --repo <root> --lane <name>`;
+its sole stdout path is the lane execution root. Never use Agent
+`isolation: "worktree"` or raw `git worktree add`: both choose residence before
+nWave can admit it. Good parallel work includes independent RCA hypotheses,
 architecture reviews, oracle reviews, documentation projections and separate
 delivery segments whose dependencies are explicit. Never parallelize two
 writers over the same authority or an implementation before its oracle exists.
@@ -66,11 +69,10 @@ An idle agent is not a completed artifact. Verify diff and terminal evidence,
 then integrate or explicitly reject it.
 
 An `idle_notification` with no terminal report within two minutes is
-TERMINATED, not "alive". The root watcher's move is to read the lane's
-transcript or `.nwave/des/subagent-results` and either consume the result
-found there or re-dispatch — never probe "are you alive?" more than once
-(2026-08-21: two crafter `PASS` results sat unread in idle lanes, 133 minutes
-lost on "it is still working").
+TERMINATED, not "alive". The root watcher's move is to read the lane's own
+transcript and either consume the result found there or re-dispatch — never
+probe "are you alive?" more than once (2026-08-21: two crafter `PASS` results
+sat unread in idle lanes, 133 minutes lost on "it is still working").
 
 Reinstall the runtime ONLY from the integrating lane, serialized, and NEVER
 while an examiner lane or a dispatch is in flight on the shared box: a
@@ -78,5 +80,8 @@ reinstall rewrites the installed roster under every running role
 (2026-08-21: seven concurrent reinstalls from fix lanes — three examiners died
 silently, one dispatch crashed, 72 minutes lost). At each convergence point inventory
 worktrees, reconcile every valuable diff, remove completed temporary worktrees
-and leave no unowned WIP. Never trade disk/process hygiene for apparent lane
-count.
+and leave no unowned WIP. The lifecycle owner releases only through
+`des worktree-release` after terminal integration; absence or deletion of its
+marker is never release. A finalized lane counts complete only after satisfying
+`nw-deliver`'s HAND OFF cleanup postcondition; do not duplicate its command or
+verdict rules here. Never trade disk/process hygiene for apparent lane count.

@@ -134,11 +134,21 @@ def mode_select_observed_before_mutation(transcript_path: str) -> bool:
 
 def _read_root_mode_observations(
     transcript_path: str,
-) -> tuple[bool, bool, list[str]] | None:
-    """Read mode-select, nw-auto, and exact markers in one transcript pass."""
+) -> tuple[bool, bool, list[str], list[str]] | None:
+    """Read mode-select, nw-auto, and exact markers in one transcript pass.
+
+    The 4th element, ``selections_since_last_auto``, is the SAME marker
+    detection restricted to markers observed AFTER the LAST ``Skill(nw-auto)``
+    tool call seen so far (reset empty every time a new ``nw-auto`` call is
+    seen) -- the one extra signal :func:`resolve_root_mode_state` needs to let
+    a later, unambiguous correction supersede an ``nw-auto`` engagement
+    (F-ROOT-MODE-GATE-SCOPE-CAPTURE-AND-LATCH defect 3), computed in this
+    SAME single pass rather than a second transcript read.
+    """
     observed_skill = False
     observed_auto = False
     selections: list[str] = []
+    selections_since_last_auto: list[str] = []
     try:
         with open(transcript_path, encoding="utf-8") as transcript:
             for raw_line in transcript:
@@ -154,6 +164,7 @@ def _read_root_mode_observations(
                         observed_skill = True
                     elif skill == "nw-auto":
                         observed_auto = True
+                        selections_since_last_auto = []
                 if entry.get("type") != "assistant":
                     continue
                 message = entry.get("message", {})
@@ -174,12 +185,14 @@ def _read_root_mode_observations(
                             continue
                         selection = marker.removeprefix(MODE_SELECTION_PREFIX)
                         if selection not in VALID_MODE_SELECTIONS:
-                            return observed_skill, observed_auto, []
+                            return observed_skill, observed_auto, [], []
                         selections.append(selection)
+                        if observed_auto:
+                            selections_since_last_auto.append(selection)
     except (OSError, UnicodeDecodeError):
         return None
 
-    return observed_skill, observed_auto, selections
+    return observed_skill, observed_auto, selections, selections_since_last_auto
 
 
 def resolved_mode_selection_before_action(transcript_path: str) -> str | None:
@@ -193,7 +206,7 @@ def resolved_mode_selection_before_action(transcript_path: str) -> str | None:
     observations = _read_root_mode_observations(transcript_path)
     if observations is None:
         return None
-    observed_skill, _, selections = observations
+    observed_skill, _, selections, _ = observations
     if not observed_skill:
         return None
 
@@ -201,17 +214,38 @@ def resolved_mode_selection_before_action(transcript_path: str) -> str | None:
     return distinct.pop() if len(distinct) == 1 else None
 
 
-def resolve_root_mode_state(transcript_path: str) -> RootModeState:
+def resolve_root_mode_state(
+    transcript_path: str, *, delivery_artifact_exists: bool = False
+) -> RootModeState:
     """Resolve the root's route state without persistent workflow state.
 
     An observed ``nw-auto`` remains authoritative for the existing lockdown,
-    including older transcripts that predate the marker. Otherwise a real
-    mode-select call must be followed by one unambiguous exact marker.
+    including older transcripts that predate the marker -- UNLESS a later,
+    unambiguous non-auto ``NW-MODE-SELECTED`` marker follows the last
+    ``nw-auto`` engagement AND no delivery artifact exists yet
+    (F-ROOT-MODE-GATE-SCOPE-CAPTURE-AND-LATCH defect 3: today's
+    ``observed_auto``-first short-circuit made a corrective ``human <size>``
+    unreachable code, even across ``--resume``). Once a delivery artifact
+    exists the engagement goes irreversible again -- switching mode mid-
+    delivery is unsafe, not a correction, so ``delivery_artifact_exists``
+    reproduces today's behaviour exactly (its default).
+
+    Otherwise a real mode-select call must be followed by one unambiguous
+    exact marker.
     """
     observations = _read_root_mode_observations(transcript_path)
     if observations is None:
         return RootModeState.UNSELECTED
-    observed_skill, observed_auto, selections = observations
+    observed_skill, observed_auto, selections, selections_since_last_auto = observations
+    if observed_auto and not delivery_artifact_exists and selections_since_last_auto:
+        distinct_after = set(selections_since_last_auto)
+        if len(distinct_after) > 1:
+            return RootModeState.INVALID
+        corrected = distinct_after.pop()
+        if corrected not in {"auto M", "auto L"}:
+            return RootModeState.SELECTED
+        # A same-class auto re-selection after the engagement is not a
+        # correction -- fall through to the unchanged AUTO_ENGAGED result.
     if observed_auto:
         return RootModeState.AUTO_ENGAGED
     if not observed_skill:

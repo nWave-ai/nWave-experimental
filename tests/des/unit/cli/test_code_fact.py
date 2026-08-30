@@ -212,7 +212,7 @@ def test_unrecognized_arguments_carries_a_how_line_with_a_working_example(
 
 
 @pytest.mark.parametrize(
-    ("file_name", "file_source", "expected_provider"),
+    ("file_name", "file_source", "expected_provider", "callers_answers_absence"),
     [
         pytest.param(
             "subject.py",
@@ -222,6 +222,7 @@ def test_unrecognized_arguments_carries_a_how_line_with_a_working_example(
             "    observed = target\n"
             "    return observed\n",
             "ast",
+            True,
             id="python_ast_scope",
         ),
         pytest.param(
@@ -232,6 +233,7 @@ def test_unrecognized_arguments_carries_a_how_line_with_a_working_example(
             "  return observed;\n"
             "}\n",
             "textsearch",
+            False,
             id="non_python_textsearch_floor",
         ),
     ],
@@ -240,9 +242,29 @@ def test_reads_of_reports_a_non_call_reference_while_callers_of_stays_absent(
     file_name: str,
     file_source: str,
     expected_provider: str,
+    callers_answers_absence: bool,
     tmp_path: Path,
     capsys: pytest.CaptureFixture,
 ) -> None:
+    """reads-of and callers-of stay disjoint -- but only a tier that can SEE
+    every reference shape is allowed to report the callers-of absence.
+
+    The structural tier represents bare AND dotted references, so its empty
+    ``callers-of`` IS an absence claim. The textual floor represents bare names
+    only (its patterns exclude a dot-preceded occurrence), so from 2026-08-23 its
+    empty result is NOT accepted as an absence: it degrades LOUD with
+    ``unrepresented-reference-shape`` and a non-zero exit. Before that date this
+    same case returned a confident empty payload a consumer read as "nobody calls
+    target" -- indistinguishable from "the call is ``obj.target()`` and I cannot
+    see it".
+
+    Deliberately NOT asserted: that the AGGREGATE ``cause`` equals
+    ``unrepresented-reference-shape``. ``Failed.cause`` is the cause of the FIRST
+    failure, i.e. of the highest-declared-confidence tier
+    (``_deterministic_cause``, LA1-L10, ``src/des/ports/code_fact_port.py``). On a
+    polyglot root the structural tier declines first with
+    ``out-of-scope-language``, so the floor's blindness is observable only in the
+    ``trace`` -- which is exactly what the entries below assert."""
     (tmp_path / file_name).write_text(file_source, encoding="utf-8")
 
     reads_exit_code, reads_result = _invoke(
@@ -253,11 +275,22 @@ def test_reads_of_reports_a_non_call_reference_while_callers_of_stays_absent(
     )
 
     assert reads_exit_code == 0
-    assert callers_exit_code == 0
     assert reads_result["provider"] == expected_provider
-    assert callers_result["provider"] == expected_provider
     assert reads_result["payload"]["sites"]
-    assert not callers_result["payload"]["sites"]
+
+    if callers_answers_absence:
+        assert callers_exit_code == 0
+        assert callers_result["provider"] == expected_provider
+        assert not callers_result["payload"]["sites"]
+        return
+    assert callers_exit_code == 1
+    blind_entries = [
+        entry
+        for entry in callers_result["trace"]
+        if entry["event"] == "failed:unrepresented-reference-shape"
+    ]
+    assert [entry["provider_id"] for entry in blind_entries] == [expected_provider]
+    assert "dotted-attribute" in blind_entries[0]["detail"]
 
 
 def test_recursive_call_is_reported_by_callers_of_not_hidden_by_the_definition(

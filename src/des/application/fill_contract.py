@@ -6,11 +6,10 @@ separate intermediate JSON file is itself a representable WRONG state --
 unparsable JSON, a stray/mechanical key, a malformed nesting -- exactly the
 class of defect certainty-by-construction exists to make unrepresentable,
 not merely re-validate after the fact. Construction is the only route: ATD
-never authors any contract-shaped artifact at all. It passes ONE value to
-this constructor per call (`--target`, `--field` from a CLOSED set, the
-value on stdin); the CLI is the sole writer of the contract file, and a
+never authors any contract-shaped artifact at all. It passes semantic values
+to this constructor as one closed batch; the CLI is the sole writer of the contract file, and a
 mechanical field (`declared-imports`, `decision`, `candidate`,
-`verification-scope`, `obligations`, ...) has no `--field` choice naming
+`verification-scope`, `obligations`, ...) has no batch entry naming
 it at all -- untouchable by construction, not merely rejected at runtime.
 
 This module is a pure function: no I/O, no argv parsing. `des.cli.
@@ -32,7 +31,7 @@ CONTRACT_LEVEL_FIELDS = frozenset({"outcome"})
 
 #: Every target-level semantic field -- `--target` is required and must
 #: name a target this contract already declares. Dotted `boundary.*` names
-#: are the literal `--field` choice, split on first `.` at fill time.
+#: are the literal batch field names, split on first `.` at fill time.
 TARGET_LEVEL_FIELDS = frozenset(
     {
         "justification",
@@ -46,7 +45,7 @@ TARGET_LEVEL_FIELDS = frozenset(
 #: THE closed field vocabulary this constructor can ever fill -- exactly
 #: the semantic fields `des compile-contract` could not derive
 #: (`des.domain.contract_placeholder_resolver`'s own tracked set). Every
-#: OTHER contract field is mechanical and has no `--field` choice naming
+#: OTHER contract field is mechanical and has no batch entry naming
 #: it -- `des.cli.fill_contract`'s own argparse `choices=` is this exact
 #: frozenset, sorted, so an attempt to fill one is an argparse error at
 #: authoring time, never a runtime refusal this module has to detect.
@@ -80,6 +79,75 @@ class Blocked:
     what: str
     why: str
     how: str
+
+
+@dataclass(frozen=True, slots=True)
+class BatchBlocked:
+    """Every independently detectable refusal in one batch."""
+
+    problems: tuple[Blocked, ...]
+
+
+def fill_contract_batch(contract: dict, entries: list[object]) -> Filled | BatchBlocked:
+    """Validate every batch entry before publishing one composed contract."""
+    problems: list[Blocked] = []
+    validated: list[FillContractInputs] = []
+    for index, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict):
+            problems.append(
+                Blocked(
+                    what=f"batch entry {index} is not a JSON object",
+                    why="each entry must name exactly one semantic field and value",
+                    how="pass an object with field, value, and optional target keys",
+                )
+            )
+            continue
+        unknown = sorted(set(entry) - {"field", "value", "target"})
+        field = entry.get("field")
+        value = entry.get("value")
+        target = entry.get("target")
+        target_was_supplied = "target" in entry
+        if (
+            unknown
+            or not isinstance(field, str)
+            or not isinstance(value, str)
+            or (target_was_supplied and not isinstance(target, str))
+        ):
+            problems.append(
+                Blocked(
+                    what=f"batch entry {index} has a malformed shape",
+                    why=(
+                        "field and value must be strings, target must be a string "
+                        "when present, and no other keys are accepted"
+                    ),
+                    how="pass only field, value, and optional target keys",
+                )
+            )
+            continue
+        inputs = FillContractInputs(
+            contract=contract, field=field, value=value, target=target
+        )
+        result = fill_contract_field(inputs)
+        if isinstance(result, Blocked):
+            problems.append(result)
+        else:
+            validated.append(inputs)
+    if problems:
+        return BatchBlocked(problems=tuple(problems))
+
+    composed = copy.deepcopy(contract)
+    for inputs in validated:
+        result = fill_contract_field(
+            FillContractInputs(
+                contract=composed,
+                field=inputs.field,
+                value=inputs.value,
+                target=inputs.target,
+            )
+        )
+        assert isinstance(result, Filled)
+        composed = result.contract
+    return Filled(contract=composed)
 
 
 def fill_contract_field(inputs: FillContractInputs) -> Filled | Blocked:
@@ -122,7 +190,7 @@ def fill_contract_field(inputs: FillContractInputs) -> Filled | Blocked:
         return Blocked(
             what=f"{field!r} is not a field this constructor can fill",
             why="only the compiler's own closed semantic-field vocabulary "
-            "is addressable -- every mechanical field has no --field "
+            "is addressable -- every mechanical field has no batch "
             "choice naming it at all",
             how=f"pass one of {sorted(ALL_FIELDS)}",
         )

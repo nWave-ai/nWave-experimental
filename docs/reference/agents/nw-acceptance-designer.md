@@ -1,6 +1,6 @@
 # nw-acceptance-designer
 
-Use for DISTILL wave — compiles architecture and value authority into a minimal executable oracle and one complete DeliveryContract from Seeded facts plus durable DESIGN facts. RED_TO_GREEN authors the oracle; GREEN_TO_GREEN binds an existing one. Never executes, hashes or validates.
+Use for DISTILL wave — compiles architecture and value authority into one public executable oracle, its test dependencies, and one complete DeliveryContract. RED_TO_GREEN authors the compiled closure; GREEN_TO_GREEN binds an existing one. Never executes, hashes or validates.
 
 **Wave:** DISTILL
 **Model:** sonnet

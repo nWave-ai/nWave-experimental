@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import des
 from des.cli import charter_scaffold
 
 
@@ -49,6 +50,33 @@ def test_scaffold_creates_one_direct_member_and_is_idempotent(
     assert f"ID: {DELIVERY_ID}" in content
     assert f"## Intent\n{VALUE}" in content
     assert "<PublicStartRecipe:" in content
+
+
+def test_installed_wheel_template_scaffolds_into_non_nwave_target(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site_packages = tmp_path / "venv/lib/python3.12/site-packages"
+    package_dir = site_packages / "des"
+    module_path = package_dir / "cli/charter_scaffold.py"
+    module_path.parent.mkdir(parents=True)
+    template = site_packages / "nWave/templates/expectation-charter.md"
+    template.parent.mkdir(parents=True)
+    template.write_text(
+        "# <intent>\nID: <delivery-id> · Persona: <who>\n\n"
+        "## Intent\n<intent>\n\n## Preconditions\n<recipe>\n\n"
+        "## Expected observations (oracle)\n- <observation>\n",
+        encoding="utf-8",
+    )
+    target_repo = tmp_path / "target-repo"
+    target_repo.mkdir()
+    monkeypatch.setattr(des, "__path__", [str(package_dir)])
+    monkeypatch.setattr(charter_scaffold, "__file__", str(module_path))
+
+    code, payload = _invoke(target_repo, capsys)
+
+    assert code == 0, payload
+    assert len(payload["created"]) == 1
+    assert (target_repo / payload["created"][0]).is_file()
 
 
 @pytest.mark.parametrize(

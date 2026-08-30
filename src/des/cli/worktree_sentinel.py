@@ -45,6 +45,9 @@ import argparse
 import sys
 from pathlib import Path
 
+from des.adapters.driven.marker_file_owner_lease_adapter import (
+    MarkerFileOwnerLeaseAdapter,
+)
 from des.adapters.driven.refactor.git_worktree_adapter import GitWorktreeAdapter
 from des.application.capacity_snapshot import read_capacity_snapshot
 from des.application.worktree_activity_signal import (
@@ -60,11 +63,9 @@ from des.application.worktree_triage_collector import (
 from des.cli._emit_json import emit_json_line as _emit
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.human_surface import Verdict, print_human_summary
+from des.domain.worktree_residence import LaneIdentity
 from des.domain.worktree_sentinel_verdict import SentinelState, classify_sentinel
 from des.ports.driven_ports.committed_scope_port import Indeterminate
-
-
-_MARKER_RELATIVE_PATH = Path(".nwave") / "lane-owner.json"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -122,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
     owned_tokens = _owned_tokens(args.owned)
     target_branch = args.target_branch or resolve_target_branch(repo)
     worktree_port = GitWorktreeAdapter()
+    owner_probe = MarkerFileOwnerLeaseAdapter()
 
     try:
         # Read activity age for EVERY worktree BEFORE any triage probe runs
@@ -157,15 +159,15 @@ def main(argv: list[str] | None = None) -> int:
     rows: list[dict[str, object]] = []
     for entry in report.entries:
         path = entry.handle.path
-        marker_present = (path / _MARKER_RELATIVE_PATH).is_file()
-        declared_owned, declared_how = resolve_declared_ownership(
-            path=path, owned_tokens=owned_tokens, marker_present=marker_present
+        observed_lease = owner_probe.observe(path, LaneIdentity.observe(path))
+        lease, declared_how = resolve_declared_ownership(
+            path=path, owned_tokens=owned_tokens, lease=observed_lease
         )
         activity_age = activity_by_path.get(
             path, Indeterminate(f"{path} was not in the pre-sweep activity pass")
         )
         verdict = classify_sentinel(
-            declared_owned=declared_owned,
+            lease=lease,
             declared_how=declared_how,
             anti_rot=entry.receipt,
             activity_age_seconds=activity_age,

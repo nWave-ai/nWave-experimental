@@ -26,6 +26,7 @@ from des.adapters.drivers.hooks.hook_protocol import (
 from des.adapters.drivers.hooks.root_activation_context import (
     build_root_write_mode_select_context,
     hook_input_has_agent_identity,
+    root_mode_gate_repo_is_active,
     root_mode_handoff_block_reason,
 )
 from des.application.skill_tracking_service import (
@@ -175,12 +176,31 @@ def handle_pre_write() -> int:
                 # real subagent's own Write/Edit as root's whenever the live
                 # envelope carries neither field.
                 is_root_invocation = not hook_input_has_agent_identity(hook_input)
+                # F-ROOT-MODE-GATE-SCOPE-CAPTURE-AND-LATCH defect 1: the SAME
+                # scope-capture class as `pre_tool_use_handler.py`'s Bash
+                # trap, for Write/Edit -- `is_nwave_adjacent_write` (feeding
+                # `root_context` above) filters by PATH SHAPE only, never by
+                # repo activation, so this fired on the first mutation of
+                # ANY task in ANY repo. Scoped to the SAME opt-in
+                # `activation_gate`/attribution already honour.
+                mode_gate_repo_active = (
+                    is_root_invocation and root_mode_gate_repo_is_active(hook_input)
+                )
                 if root_context and is_root_invocation:
                     transcript_path = extract_transcript_path(hook_input)
                     root_mode_state = RootModeState.UNSELECTED
                     if transcript_path:
-                        root_mode_state = resolve_root_mode_state(transcript_path)
-                    if root_mode_state is RootModeState.UNSELECTED:
+                        # defect 3: a later, unambiguous non-auto marker may
+                        # supersede an nw-auto engagement before delivery
+                        # starts -- `session_active` (already resolved above)
+                        # is the SAME delivery-artifact signal.
+                        root_mode_state = resolve_root_mode_state(
+                            transcript_path, delivery_artifact_exists=session_active
+                        )
+                    if (
+                        mode_gate_repo_active
+                        and root_mode_state is RootModeState.UNSELECTED
+                    ):
                         _log_pre_write_decision(
                             hook_id=hook_id,
                             event_type="HOOK_PRE_WRITE_BLOCKED",
@@ -195,19 +215,22 @@ def handle_pre_write() -> int:
                         exit_code = 2
                         return exit_code
 
-                    handoff_reason = root_mode_handoff_block_reason(root_mode_state)
-                    if handoff_reason is not None:
-                        _log_pre_write_decision(
-                            hook_id=hook_id,
-                            event_type="HOOK_PRE_WRITE_BLOCKED",
-                            file_path=file_path,
-                            reason=root_mode_state.value,
-                        )
-                        print(
-                            json.dumps({"decision": "block", "reason": handoff_reason})
-                        )
-                        exit_code = 2
-                        return exit_code
+                    if mode_gate_repo_active:
+                        handoff_reason = root_mode_handoff_block_reason(root_mode_state)
+                        if handoff_reason is not None:
+                            _log_pre_write_decision(
+                                hook_id=hook_id,
+                                event_type="HOOK_PRE_WRITE_BLOCKED",
+                                file_path=file_path,
+                                reason=root_mode_state.value,
+                            )
+                            print(
+                                json.dumps(
+                                    {"decision": "block", "reason": handoff_reason}
+                                )
+                            )
+                            exit_code = 2
+                            return exit_code
 
                     if root_mode_state is RootModeState.AUTO_ENGAGED:
                         _log_pre_write_decision(

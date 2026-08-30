@@ -15,7 +15,7 @@ on-disk ``config.json`` tiers.
 
 VERBOSITY_VALUES = ("terse", "standard", "verbose")
 
-ENABLED_DEFAULT = True
+ENABLED_DEFAULT = False
 VERBOSITY_DEFAULT = "standard"
 ATTRIBUTION_DEFAULT = False
 

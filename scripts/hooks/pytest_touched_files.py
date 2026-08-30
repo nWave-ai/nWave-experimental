@@ -39,6 +39,49 @@ single leaf module -- i.e. the whole suite, ~30 min, useless as a commit gate.
 One hop is the honest, bounded answer; the transitive gap is real and named in
 "KNOWN GAPS" below rather than papered over.
 
+THE THIRD STATE: expected-red (added 2026-08-23, defect D-GATE-NO-EXPECTED-RED)
+-------------------------------------------------------------------------------
+A two-state gate -- pass or fail -- cannot express this project's normal DISTILL
+flow. On the ``atdd_pure`` spine a ``RED_TO_GREEN`` contract's acceptance oracle
+is authored BEFORE the code it verifies, so at the moment it is committed the
+module under test does not exist and pytest cannot even COLLECT the file. The
+gate scored that as a failure and would therefore have rejected EVERY DISTILL
+commit that carries an oracle ahead of its implementation. That is not an edge
+case; it is the mainline (measured 2026-08-23 on ``auto-0d64ca2e4b7ded7d``:
+``ModuleNotFoundError: No module named 'des.cli.update'``, gate exit 1).
+
+The fix is a THIRD state, and it is recognised by a **declared property**, never
+by a convention. THE RULE DOES NOT LIVE HERE: it lives ONCE in
+``src/des/domain/declared_red_oracles.py``, because the very same commit was
+then rejected by a SECOND consumer (``pytest-fast-gate``, which collects the
+whole tree) and the population is three gates, not one. This file OBSERVES the
+property by running ``pytest --collect-only``; ``tests/conftest.py`` observes it
+at ``pytest_make_collect_report`` and so covers every pytest-driven consumer.
+Neither owns a second copy of the rule. In THIS repo the conftest translation
+fires first, so this hook's own probe sees an already-translated SKIP rather
+than the raw ``ModuleNotFoundError``, keeps the file in the normal run, and the
+run is green because the oracle is skipped there too -- belt and braces over one
+rule, never two rules. The probe still earns its keep for a test root that has
+no nWave conftest (a polyglot or vendored subject). "Skip any test that fails to import" would be a sieve, strictly
+worse than the defect. The declaration lives in the delivery contract, which is
+the artefact that already knows the answer, and all THREE conjuncts must hold:
+
+1. the test file is the ``acceptance-tests.locator`` of a contract under
+   ``docs/delivery-contracts/`` whose ``delivery-route`` is ``RED_TO_GREEN``;
+2. that contract is still OPEN -- at least one declared ``target`` is absent
+   from disk. Every target present means the work landed, the oracle owes green,
+   and no exemption exists for it;
+3. the observed non-collection is a ``ModuleNotFoundError`` naming ONLY modules
+   that ARE those absent declared targets. The reason is checked, not assumed.
+
+Conjunct 3 is what keeps the discrimination honest, and it is observed, not
+inferred: the gate actually runs ``pytest --collect-only`` on the candidate and
+reads the error. An oracle that COLLECTS is never exempt -- it runs, and if it
+is red it blocks (a declared oracle red for an UNDECLARED reason is a defect
+like any other). A ``SyntaxError``, or a missing module that is not a declared
+absent target, is likewise not exempt. Failing that check the file is simply
+kept in the normal run, so every unknown resolves to the blocking behaviour.
+
 EXCLUSIONS (declared, with the reason -- GDP-6, no silent narrowing)
 -------------------------------------------------------------------
 ``**/e2e/**``, ``polyglot-pilot`` and ``tests/build/acceptance/`` are dropped
@@ -68,15 +111,49 @@ KNOWN GAPS (named, not hidden)
 * Dynamic imports built from runtime-assembled strings are invisible to a
   textual reference scan.
 * The dropped tiers above are covered at pre-push/CI only.
+* expected-red matches the reported missing module EXACTLY. If a whole absent
+  package makes pytest report the ANCESTOR (``des.cli`` rather than
+  ``des.cli.update``), the oracle is NOT exempted and the commit blocks. That is
+  the fail-closed direction, and prefix matching is deliberately not implemented
+  until a real commit needs it (GDP-10: no incident, no mechanism).
+* expected-red covers ``ModuleNotFoundError`` only. An oracle whose declared
+  target EXISTS but does not yet export the symbol the oracle imports raises
+  ``ImportError: cannot import name`` and still blocks. Widening to that case
+  would mask a real regression that deletes a symbol from an EXTEND target, so
+  it stays closed until a commit demonstrates the need.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+# ONE definition of the expected-red discrimination, shared with
+# `tests/conftest.py` (see the module docstring of the import below: the
+# second occurrence of this defect is what moved the rule out of this file).
+# `src` is put on the path explicitly rather than assumed: this hook runs as
+# bare `python3 scripts/hooks/pytest_touched_files.py`, with no `uv run` and no
+# installed package, and the shared module is deliberately stdlib-only so that
+# stays true.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
+
+from des.domain.declared_red_oracles import (
+    declared_red_oracles,
+    module_names,
+)
+from des.domain.declared_red_oracles import (
+    expected_red_reason as _declared_reason,
+)
 
 
 RED = "\033[0;31m"
@@ -119,28 +196,120 @@ MAX_TEST_FILES_PER_COMMIT = 200
 # Files whose content is prose only: no test derives from them, and saying so is
 # a decision, not an oversight.
 _PROSE_ONLY_PREFIXES = ("docs/", "defects.md", "techdebt.md", "done.md", "README.md")
+_CLOSURE_INDEX = re.compile(r"nwave-delivery-[^.]+\.index\Z")
+_CLOSURE_CONTRACT_PREFIX = "docs/delivery-contracts/"
 
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent
 
 
-def module_names(rel_path: str) -> set[str]:
-    """Dotted module spellings a test could import this file as.
+def _touched_relative_paths(touched: list[str]) -> set[str]:
+    """Normalize the one Git spelling used by hook argv and contracts."""
+    return {
+        path.replace("\\", "/").removeprefix("./")
+        for path in touched
+        if path and not path.startswith("-")
+    }
 
-    ``__init__.py`` yields nothing: its package name (``des``) is so coarse it
-    matches every test file, which is how a first attempt at this selector
-    silently degenerated into a full-suite run.
+
+def _is_contract_path(path: str) -> bool:
+    return path.startswith(_CLOSURE_CONTRACT_PREFIX) and path.endswith(".json")
+
+
+def _repository_file_path(root: Path, declaration: str) -> str | None:
+    """Return one in-root Git path, dropping an optional pytest selector."""
+    file_path = declaration.split("::", 1)[0].replace("\\", "/").removeprefix("./")
+    candidate = Path(file_path)
+    if not file_path or candidate.is_absolute() or ".." in candidate.parts:
+        return None
+    try:
+        resolved_root = root.resolve(strict=True)
+        resolved_file = (root / candidate).resolve(strict=True)
+    except OSError:
+        return None
+    if not resolved_file.is_relative_to(resolved_root) or not resolved_file.is_file():
+        return None
+    return candidate.as_posix()
+
+
+def _closure_authority_expected_red(
+    touched: list[str], root: Path
+) -> list[tuple[str, str]]:
+    """Return ``(Git path, declared locator)`` pairs exempt in this C index.
+
+    C publishes a deliberately RED oracle while all EXTEND targets already
+    exist, a state that the ordinary missing-target expected-red law must not
+    classify.  This narrower exception is available only to the constructor's
+    private index and one touched, readable RED_TO_GREEN contract.  No normal
+    ``.git/index`` commit can enter this branch.
     """
-    if not rel_path.endswith(".py"):
-        return set()
-    parts = rel_path[:-3].split("/")
-    if parts[-1] == "__init__":
-        return set()
-    names = {".".join(parts)}
-    if parts[0] == "src":
-        names.add(".".join(parts[1:]))
-    return {n for n in names if n.count(".") >= 1}
+    index = os.environ.get("GIT_INDEX_FILE", "")
+    if not index or _CLOSURE_INDEX.fullmatch(Path(index).name) is None:
+        return []
+    touched_paths = _touched_relative_paths(touched)
+    contract_paths = sorted(path for path in touched_paths if _is_contract_path(path))
+    if len(contract_paths) != 1:
+        return []
+    contract_path = root / contract_paths[0]
+    try:
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if (
+        not isinstance(contract, dict)
+        or contract.get("delivery-route") != "RED_TO_GREEN"
+    ):
+        return []
+    targets = contract.get("targets")
+    if not isinstance(targets, dict) or not targets:
+        return []
+    for target_path, target in targets.items():
+        if (
+            not isinstance(target_path, str)
+            or "::" in target_path
+            or not isinstance(target, dict)
+            or target.get("decision") != "EXTEND"
+            or _repository_file_path(root, target_path) is None
+        ):
+            return []
+    acceptance = contract.get("acceptance-tests")
+    if not isinstance(acceptance, dict):
+        return []
+    locator = acceptance.get("locator")
+    has_supporting = "supporting-locators" in acceptance
+    supporting = acceptance.get("supporting-locators", [])
+    if (
+        not isinstance(locator, str)
+        or not locator
+        or (has_supporting and contract.get("schema-version") != "1.4")
+        or (not has_supporting and contract.get("schema-version") != "1.3")
+        or not isinstance(supporting, list)
+        or (
+            has_supporting
+            and (
+                not supporting
+                or not all(
+                    isinstance(path, str) and path and "::" not in path
+                    for path in supporting
+                )
+            )
+        )
+    ):
+        return []
+    declared = [locator, *supporting]
+    normalized = [_repository_file_path(root, path) for path in declared]
+    if any(path is None for path in normalized) or len(set(normalized)) != len(
+        normalized
+    ):
+        return []
+    # Exact membership is intentional: a contract cannot make an unrelated
+    # selected test disappear merely by naming it in authority bytes.
+    return [
+        (path, declaration)
+        for declaration, path in zip(declared, normalized, strict=True)
+        if path in touched_paths
+    ]
 
 
 def references(text: str, module: str) -> bool:
@@ -200,6 +369,80 @@ def _test_files(root: Path) -> dict[str, str]:
 
 def _is_deferred(rel_path: str) -> bool:
     return any(marker in rel_path for marker in _DEFERRED_TO_PREPUSH)
+
+
+def expected_red_reason(
+    rel_path: str,
+    declared: dict[str, tuple[str, set[str]]],
+    collect: Callable[[str], tuple[int, str]],
+) -> str | None:
+    """The declared reason this file is red, or ``None`` -- meaning RUN IT.
+
+    This is the OBSERVING half; the RULE is `des.domain.declared_red_oracles`,
+    shared verbatim with `tests/conftest.py`. Collectibility is measured, never
+    inferred (GDP-8, decide on the PROPERTY): an oracle that COLLECTS must run,
+    and if it is red it blocks -- a declared oracle red for an UNDECLARED
+    reason is a defect like any other.
+    """
+    if rel_path not in declared:
+        return None
+    returncode, output = collect(rel_path)
+    if returncode == 0:
+        return None  # it COLLECTS: it must run, and a red result stands as red
+    return _declared_reason(rel_path, output, declared)
+
+
+def partition_expected_red(
+    runnable: list[str], root: Path, collect: Callable[[str], tuple[int, str]]
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """Split into (files that must RUN, files whose RED the contract declared)."""
+    declared = declared_red_oracles(root)
+    if not declared:
+        return runnable, []
+    keep: list[str] = []
+    expected_red: list[tuple[str, str]] = []
+    for rel_path in runnable:
+        reason = expected_red_reason(rel_path, declared, collect)
+        if reason is None:
+            keep.append(rel_path)
+        else:
+            expected_red.append((rel_path, reason))
+    return keep, expected_red
+
+
+def _collect_only(root: Path, env: dict[str, str]) -> Callable[[str], tuple[int, str]]:
+    """Observe collectibility for real. GDP-8: decide on the PROPERTY."""
+
+    def run(rel_path: str) -> tuple[int, str]:
+        try:
+            proc = subprocess.run(
+                [
+                    "uv",
+                    "run",
+                    "python3",
+                    "-m",
+                    "pytest",
+                    rel_path,
+                    "--collect-only",
+                    "-q",
+                    "-p",
+                    "no:cacheprovider",
+                ],
+                check=False,
+                cwd=root,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            # Could not observe -> no declared reason -> the file RUNS. The
+            # third state is never granted on an unmeasured property.
+            return 1, ""
+        return proc.returncode, proc.stdout + proc.stderr
+
+    return run
 
 
 def select(touched: list[str], root: Path) -> tuple[list[str], list[str], list[str]]:
@@ -298,6 +541,16 @@ def main(argv: list[str]) -> int:
         return 0
 
     runnable, deferred, uncovered = select(touched, root)
+    closure_expected_red = _closure_authority_expected_red(touched, root)
+    if closure_expected_red:
+        expected = {path for path, _declaration in closure_expected_red}
+        runnable = [path for path in runnable if path not in expected]
+        for path, declaration in closure_expected_red:
+            print(
+                f"{YELLOW}EXPECTED-RED CLOSURE AUTHORITY: {declaration} "
+                f"(Git path: {path}){NC}",
+                file=sys.stderr,
+            )
 
     for entry in uncovered:
         print(f"{YELLOW}UNCOVERED at commit time: {entry}{NC}", file=sys.stderr)
@@ -337,6 +590,24 @@ def main(argv: list[str]) -> int:
     _clear_git_environment()
     env = os.environ.copy()
     env["PYTHONPATH"] = str(root) + os.pathsep + env.get("PYTHONPATH", "")
+
+    runnable, expected_red = partition_expected_red(
+        runnable, root, _collect_only(root, env)
+    )
+    for rel_path, reason in expected_red:
+        print(
+            f"{YELLOW}EXPECTED-RED, not a failure: {rel_path}{NC}",
+            file=sys.stderr,
+        )
+        print(f"{YELLOW}  {reason}{NC}", file=sys.stderr)
+
+    if not runnable:
+        print(
+            f"{GREEN}Touched-file test gate: green "
+            f"({len(expected_red)} declared expected-red oracle(s), nothing left "
+            f"to run).{NC}"
+        )
+        return 0
 
     # stdin=DEVNULL + an explicit bound: the execution-perimeter spawn invariant
     # (tests/build/test_no_unbounded_unstdin_spawn.py) bans a spawn that inherits

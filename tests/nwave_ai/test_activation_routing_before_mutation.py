@@ -95,7 +95,7 @@ def test_claude_md_section_ties_routing_to_any_tool_call() -> None:
     idx = content.index("any tool call")
     nearby = content[max(0, idx - 60) : idx + 250]
     assert "including read-only discovery" in nearby
-    assert "establish and state your route" in nearby
+    assert "establish and state the route" in nearby
     assert "size (S/M/L)" in nearby
 
 
@@ -104,29 +104,25 @@ def test_claude_md_section_routes_every_size_through_mode_select_before_dispatch
 ):
     """Independent-review correction: S no longer skips nw-mode-select -- it
     invokes the skill once, same as M/L/undetermined, and only exits direct
-    afterward (no wave, no re-ask, no nw-auto). Ordering: the S clause's own
-    invocation is stated before the 'Everything else' M/L clause, and the
-    stale 'without invoking' carve-out is gone from the section entirely."""
+    afterward (no wave, no re-ask, no nw-auto). The shared route projection
+    must not recreate an S exemption or a second host-specific table."""
     content = load_section_content()
     assert "without invoking" not in content
-    s_idx = content.index("self-contained S")
-    everything_else_idx = content.index("Everything else")
-    assert s_idx < everything_else_idx
-    s_clause = content[s_idx:everything_else_idx]
-    assert "nw-mode-select" in s_clause
-    assert "exits direct" in s_clause
-    assert "no `nw-auto`" in s_clause
+    selector_idx = content.index("nw-mode-select")
+    s_idx = content.index("| S | Direct bounded edit")
+    assert selector_idx < s_idx
+    s_clause = content[s_idx : content.index("| M |", s_idx)]
+    assert "no new product behavior" in s_clause
+    assert "promote to M" in s_clause
 
 
 def test_claude_md_section_routes_m_l_and_undetermined_through_mode_select() -> None:
-    """M, L, and undetermined-size work still invoke nw-mode-select (only S is
-    exempt) -- this is routing guidance only, it does not weaken M/L quality
-    semantics."""
+    """M, L, and undetermined work retain one selector before dispatch."""
     content = load_section_content()
-    idx = content.index("Everything else")
-    nearby = content[idx : idx + 200]
-    assert "M, L, or undetermined size" in nearby
-    assert "nw-mode-select" in nearby
+    idx = content.index("nw-mode-select")
+    nearby = content[idx : idx + 250]
+    assert "size (S/M/L)" in nearby
+    assert "Explicit mode still gets sized" in nearby
 
 
 def test_claude_md_section_explicit_mode_still_requires_sizing() -> None:
@@ -179,10 +175,10 @@ def test_claude_md_section_finalizes_the_whole_delivery_exactly_once() -> None:
     join evidence and finalize the whole delivery exactly once, with no
     per-slice closure cycle."""
     content = load_section_content()
-    idx = content.index("Both routes join evidence")
-    nearby = content[idx : idx + 200]
-    assert "finalize the whole delivery exactly once" in nearby
-    assert "neither runs a per-slice closure cycle" in nearby
+    idx = content.index("FINALIZE runs exactly once")
+    nearby = content[idx : idx + 130]
+    assert "FINALIZE runs exactly once inside each DELIVER" in nearby
+    assert "no epic-level finalize" in nearby
 
 
 # --- nw-mode-select has NO unattended/headless fallback: silence never
@@ -307,10 +303,42 @@ def test_mode_select_auto_m_l_enters_nw_auto_directly_not_deliver() -> None:
     assert "do not route Auto through `nw-deliver`, `nw-distill`" in nearby
 
 
+def test_explicit_direct_new_behavior_promotes_to_auto_m_not_illegal_direct_m() -> None:
+    """A request such as "directly add new CLI behavior" is M: direct is not
+    a legal M marker, but its act-now authorization deterministically becomes
+    Auto rather than creating a second mode question."""
+    text = _mode_select_text()
+    assert "new or changed product behavior" in text
+    assert "explicit direct request classifies M or L" in text
+    assert "preserve its act-now intent as explicit `auto`" in text
+    assert "emit `auto M` or `auto L`" in text
+    assert "Valid combinations are `direct S`, `human S|M|L`, and `auto M|L`" in text
+
+
 def test_claude_md_section_auto_m_l_uses_nw_auto_not_deliver() -> None:
     content = load_section_content()
-    assert "For Auto mode on M/L work, load the `nw-auto` skill directly" in content
-    idx = content.index("load the `nw-auto` skill directly")
+    assert "For Auto M/L, load `nw-auto` directly" in content
+    idx = content.index("load `nw-auto` directly")
     nearby = content[idx : idx + 150]
     assert "never `/nw-deliver` first" in nearby
     assert "never in parallel with it" in nearby
+
+
+def test_installed_guidance_projects_the_canonical_size_routes() -> None:
+    """Both host projections point at the ADR-owned table, not a human-only
+    skip rule or an unconditional DESIGN pipeline."""
+    claude = load_section_content()
+    codex = load_section_content(host="codex")
+
+    for content in (claude, codex):
+        assert (
+            "no new product behavior, delivery authority, or architecture decision"
+            in content
+        )
+        assert "DISTILL -> DELIVER" in content
+        assert "independently deliverable vertical" in content
+        assert "DISCUSS maps a value DAG" in content
+        assert "exactly once inside each DELIVER" in content
+
+    assert "human-skippable" not in claude
+    assert "human-skippable" not in codex

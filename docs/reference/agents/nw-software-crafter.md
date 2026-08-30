@@ -9,7 +9,6 @@ Use for DELIVER wave object-oriented implementation and behavior-preserving refa
 
 ## Commands
 
-- [`/nw-design`](../commands/index.md)
 - [`/nw-mikado`](../commands/index.md)
 - [`/nw-refactor`](../commands/index.md)
 - [`/nw-spike`](../commands/index.md)

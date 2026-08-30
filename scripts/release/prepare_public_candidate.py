@@ -107,21 +107,13 @@ def _require_closure(artifact: Path) -> tuple[Path, Path]:
 
 
 def _require_candidate_pinned_in_lock(artifact: Path, digest: str, lock: Path) -> None:
-    """The lock must name THIS wheel by file URI, exactly once, with its hash.
-
-    Why a file URI and not ``name==version``: under ``--require-hashes`` pip
-    would accept a name/version requirement satisfied by any wheel carrying that
-    name and version, so the lock would authorise a *class* of artifacts rather
-    than the one immutable candidate the manifest verified. One file URI closes
-    that gap. Why exactly once: two entries let pip choose, and a candidate the
-    reviewer never inspected could win.
-    """
-    requirement = artifact.as_uri()
-    matching = [
-        line.strip()
-        for line in lock.read_text(encoding="utf-8").splitlines()
-        if requirement in line
-    ]
+    """The lock must resolve exactly once to THIS wheel with its exact hash."""
+    requirement = (Path("..") / artifact.name).as_posix()
+    matching = []
+    for raw_line in lock.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line and line.split(maxsplit=1)[0] == requirement:
+            matching.append(line)
     if len(matching) != 1:
         raise CandidatePreparationError(
             f"WHAT: {LOCK_FILENAME} names the candidate {len(matching)} times, "
@@ -131,7 +123,7 @@ def _require_candidate_pinned_in_lock(artifact: Path, digest: str, lock: Path) -
             "one lets pip pick, so the installed bytes need not be the verified "
             "ones. "
             f"HOW: the offline-wheelhouse hook must emit one line "
-            f"`{requirement} --hash=sha256:{digest}` for the candidate itself, "
+            f"`../{artifact.name} --hash=sha256:{digest}` for the candidate itself, "
             "alongside the dependency entries. The candidate is a SIBLING of the "
             "wheelhouse, so a glob over the wheelhouse alone will not find it."
         )
@@ -141,7 +133,7 @@ def _require_candidate_pinned_in_lock(artifact: Path, digest: str, lock: Path) -
             "WHY: an unhashed or mismatched entry under --require-hashes either "
             "fails the install or authorises bytes other than the ones this "
             "manifest verified. "
-            f"HOW: emit `{requirement} --hash=sha256:{digest}`. "
+            f"HOW: emit `../{artifact.name} --hash=sha256:{digest}`. "
             f"observed entry: {matching[0]}"
         )
 

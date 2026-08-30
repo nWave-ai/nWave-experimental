@@ -385,7 +385,6 @@ def codex_container():
 # and failed on it).  Both consumer tests now share this local-built wheel.
 # ---------------------------------------------------------------------------
 
-import re
 import shutil
 import subprocess
 import sys
@@ -465,16 +464,6 @@ def _build_pypi_shape_wheel(sandbox: Path) -> Path:
         cwd=sandbox,
     )
     assert code == 0, f"patch_pyproject.py failed (exit {code}):\n{out}"
-
-    module_init = sandbox / "nwave_ai" / "__init__.py"
-    original = module_init.read_text(encoding="utf-8")
-    stamped, replacements = re.subn(
-        r'(?m)^__version__ = ".*"$',
-        f'__version__ = "{candidate_version}"',
-        original,
-    )
-    assert replacements == 1, f"module version assignments: {replacements}"
-    module_init.write_text(stamped, encoding="utf-8")
 
     code, out = _wheel_build_run(
         [sys.executable, "scripts/build_dist.py"],

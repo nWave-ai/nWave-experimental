@@ -98,13 +98,40 @@ def delivery_contract_schema_violation(
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return SchemaUnreadable(schema_path=schema_path, error=str(exc))
+    legacy_v13 = isinstance(contract, dict) and contract.get("schema-version") == "1.3"
+    if legacy_v13:
+        acceptance = contract.get("acceptance-tests")
+        if isinstance(acceptance, dict) and "supporting-locators" in acceptance:
+            return SchemaViolation(
+                schema_path=schema_path,
+                message="schema-version '1.3' cannot carry supporting-locators",
+                path=("acceptance-tests", "supporting-locators"),
+                validator="schema-version",
+            )
+        # Explicit compatibility adapter: schema 1.3 is the exact current
+        # shape minus acceptance support. Validate a copy against 1.4 while
+        # retaining the original bytes/version for closure/v1 identity.
+        validation_candidate = {**contract, "schema-version": "1.4"}
+    else:
+        validation_candidate = contract
     try:
-        validate(schema, contract)
+        validate(schema, validation_candidate)
     except JsonSchemaSubsetError as exc:
         return SchemaViolation(
             schema_path=schema_path,
             message=exc.message,
             path=tuple(exc.path),
             validator=exc.validator,
+        )
+    assert isinstance(validation_candidate, dict)
+    acceptance = validation_candidate.get("acceptance-tests")
+    assert isinstance(acceptance, dict)
+    has_support = "supporting-locators" in acceptance
+    if not legacy_v13 and not has_support:
+        return SchemaViolation(
+            schema_path=schema_path,
+            message="schema-version '1.4' requires supporting-locators",
+            path=("acceptance-tests",),
+            validator="schema-version",
         )
     return None

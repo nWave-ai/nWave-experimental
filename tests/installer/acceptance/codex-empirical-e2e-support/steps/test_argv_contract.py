@@ -1,4 +1,4 @@
-"""Step bodies for slice-03 (US-2) — DES hook adapter argv contract.
+"""Collected scenarios for the DES hook adapter argv contract.
 
 Driving port: ``CodexDESPlugin.install(context)`` followed by direct subprocess
 invocation of the produced command string against a tmp ``DES_AUDIT_LOG_DIR``.
@@ -13,6 +13,7 @@ Adapter contract source: hook_router.py (verified at DDD-4).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -49,7 +50,7 @@ def _nwave_command_strings(parsed: dict) -> list[str]:
 
 
 def _synthetic_codex_pretool_stdin(cwd: str) -> str:
-    """Synthetic Codex PreToolUse envelope (matches spike Q4 required fields).
+    """Synthetic Codex PreToolUse exec_command envelope.
 
     ``cwd`` must resolve ACTIVE under the hook_router activation gate
     (ADR-AG-001) for ``handle_pre_tool_use`` to actually dispatch and write its
@@ -62,8 +63,8 @@ def _synthetic_codex_pretool_stdin(cwd: str) -> str:
             "model": "gpt-5",
             "permission_mode": "default",
             "session_id": "test-session",
-            "tool_input": {"command": "echo hello"},
-            "tool_name": "Bash",
+            "tool_input": {"cmd": "echo hello"},
+            "tool_name": "exec_command",
             "tool_use_id": "test-tool-use-id",
             "transcript_path": None,
             "turn_id": "test-turn",
@@ -114,7 +115,8 @@ def _invoke_adapter(
         "PATH": "/usr/bin:/bin",
         "DES_AUDIT_LOG_DIR": str(audit_dir),
         "PYTHONPATH": str(Path(__file__).resolve().parents[5] / "src"),
-        "HOME": str(audit_dir.parent),
+        "NWAVE_AGENTS_HOME": os.environ["NWAVE_AGENTS_HOME"],
+        "CODEX_HOME": os.environ["CODEX_HOME"],
     }
     cmd = [
         sys.executable,
@@ -174,7 +176,7 @@ def installer_run_codex(install_context, patched_resolvers, hooks_path, state) -
 
 
 @when(
-    "the installed PreToolUse hook command is invoked with a synthetic Codex Bash tool-event stdin payload"
+    "the installed PreToolUse hook command is invoked with a synthetic Codex exec_command tool-event stdin payload"
 )
 def invoke_hook_command_synthetic_stdin(state, tmp_path, activated_project_dir) -> None:
     audit_dir = tmp_path / "audit-logs"
@@ -198,7 +200,8 @@ def invoke_adapter_without_argv(state, tmp_path) -> None:
         "PATH": "/usr/bin:/bin",
         "DES_AUDIT_LOG_DIR": str(audit_dir),
         "PYTHONPATH": str(Path(__file__).resolve().parents[5] / "src"),
-        "HOME": str(audit_dir.parent),
+        "NWAVE_AGENTS_HOME": os.environ["NWAVE_AGENTS_HOME"],
+        "CODEX_HOME": os.environ["CODEX_HOME"],
     }
     state["proc"] = subprocess.run(
         [sys.executable, "-m", "des.adapters.drivers.hooks.claude_code_hook_adapter"],

@@ -30,7 +30,7 @@ path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave"
-version = "4.0.0+atddpure.738223961"
+version = "4.0.0+atddpure.0343ee830"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -481,6 +481,10 @@ typecheck        = "mypy src/des/"
 # Validation (alphabetical)
 validate         = "python scripts/local_ci.py"
 validate-fast    = "python scripts/local_ci.py --fast"
+# On-demand local stand-in for the CI test run that no longer fires on every
+# push (2026-08-23, GitHub Actions budget). Tiers run SERIALLY, memory-gated.
+validate-tiers   = "python scripts/local_ci.py --tier all"
+validate-changed = "python scripts/local_ci.py --changed"
 validate-yaml    = "python scripts/validation/validate_yaml_files.py"
 # Build, docs & hooks (alphabetical)
 build            = "python scripts/build_dist.py"

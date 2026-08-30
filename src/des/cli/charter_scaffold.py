@@ -113,11 +113,8 @@ def _degrade(delivery_id: str, verdict: str, detail: str) -> int:
 
 
 def _template(repo_root: Path, delivery_id: str) -> tuple[str | None, int | None]:
-    installed = Path(__file__).resolve().parents[3] / _TEMPLATE_RELATIVE_PATH
     checkout = repo_root / _TEMPLATE_RELATIVE_PATH
-    resolution = resolve_packaged_asset(
-        str(_TEMPLATE_RELATIVE_PATH), start=repo_root, installed=installed
-    )
+    resolution = resolve_packaged_asset(str(_TEMPLATE_RELATIVE_PATH), start=repo_root)
     if resolution.origin is AssetOrigin.AMBIGUOUS:
         return None, _degrade(
             delivery_id,
@@ -136,7 +133,7 @@ def _template(repo_root: Path, delivery_id: str) -> tuple[str | None, int | None
         except OSError as error:
             detail = f"template cannot be read ({error})"
     else:
-        detail = f"template absent at {installed} and {checkout}"
+        detail = f"template absent at {resolution.installed} and {checkout}"
     return None, _degrade(
         delivery_id,
         VERDICT_MISSING_CHARTER_TEMPLATE,

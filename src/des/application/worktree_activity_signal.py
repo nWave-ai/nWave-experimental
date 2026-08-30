@@ -61,6 +61,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from des.domain.worktree_residence import OwnerLease
 from des.ports.driven_ports.committed_scope_port import Indeterminate
 
 
@@ -115,8 +116,8 @@ def resolve_declared_ownership(
     *,
     path: Path,
     owned_tokens: frozenset[str],
-    marker_present: bool,
-) -> tuple[bool, str]:
+    lease: OwnerLease,
+) -> tuple[OwnerLease, str]:
     """Decide whether `path` is a declared-owned worktree, and name how.
 
     Tries the marker first (the non-stale source), then the qualified name
@@ -126,25 +127,29 @@ def resolve_declared_ownership(
     `(False, "")` when none apply -- absence is never an error here, only
     the CALLER (the Sentinel verdict) decides what absence means.
     """
-    if marker_present:
+    if lease is OwnerLease.INDETERMINATE:
         return (
-            True,
-            f"lane-owner marker present at {path / '.nwave' / 'lane-owner.json'}",
+            OwnerLease.INDETERMINATE,
+            f"lane-owner assertion at {path / '.nwave' / 'lane-owner.json'} "
+            "is missing, unreadable, malformed, stale, or identity-mismatched",
         )
+
+    if lease is OwnerLease.HELD:
+        return OwnerLease.HELD, "identity-matching lane-owner marker says HELD"
 
     qualified = qualified_name(path)
     if qualified in owned_tokens:
-        return True, f"--owned {qualified!r} (qualified match)"
+        return OwnerLease.HELD, f"--owned {qualified!r} (qualified match)"
 
     normalized_path_name = normalize_lane_name(path.name)
     for token in owned_tokens:
         if normalize_lane_name(token) == normalized_path_name:
             return (
-                True,
+                OwnerLease.HELD,
                 f"--owned {token!r} (normalized match: {normalized_path_name!r})",
             )
 
-    return False, ""
+    return OwnerLease.RELEASED, "identity-matching lane-owner marker says RELEASED"
 
 
 def _mtime_age_seconds(p: Path, *, now: float) -> int | None:

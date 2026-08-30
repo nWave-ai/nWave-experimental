@@ -207,30 +207,23 @@ def resolve_existing_oracle_locator(
     (RED_TO_GREEN). Picks the first citation, in the brief's own
     first-appearance order, whose own filename already reads as a test/spec
     file (``is_test_shaped_path``) AND whose FILE PART genuinely exists as
-    a file in the base tree; a ``path::Selector`` citation binds verbatim,
-    selector preserved. ``None`` when the brief cites no such file -- the
+    a file in the base tree. A ``path::Selector`` citation binds verbatim
+    only when it is itself first; a later selector cannot displace earlier
+    public oracle ownership. ``None`` when the brief cites no such file -- the
     caller BLOCKS rather than projecting a guessed, possibly
     wrong-language, possibly nonexistent path (SF friction report
     2026-08-20, item 2a: a Python-shaped ``test_<slug>.py`` locator was
     projected for a GREEN_TO_GREEN Go delivery even though a real,
     already-committed ``widget_test.go`` oracle sat right next to the
     target)."""
-    first_bare: str | None = None
     for citation in citations:
         file_part = oracle_citation_file_part(citation)
         if not is_test_shaped_path(file_part):
             continue
         if not (repo_root / file_part).is_file():
             continue
-        if "::" in citation:
-            # A ``::Selector`` citation is the brief's own EXPLICIT oracle
-            # binding -- absolute precedence over any bare test-shaped
-            # file:line citation, whichever came first (review BLOCK
-            # 2026-08-20).
-            return citation
-        if first_bare is None:
-            first_bare = citation
-    return first_bare
+        return citation
+    return None
 
 
 def resolve_cited_oracle_locator(oracle_citations: Iterable[str]) -> str | None:
@@ -238,25 +231,19 @@ def resolve_cited_oracle_locator(oracle_citations: Iterable[str]) -> str | None:
     2026-08-20, sister reproduction): a brief that explicitly cites a
     test/spec oracle -- with or without a ``::Selector`` -- has ALREADY
     made the locator judgment call this module otherwise projects by
-    convention. Precedence (review BLOCK 2026-08-20): a ``::Selector``
-    citation wins ABSOLUTELY over any bare one; among bare citations, the
-    first test-shaped one (the brief's own first-appearance order,
-    ``extract_oracle_citations``) wins; a citation whose file part is not
+    convention. Precedence: the first test-shaped citation in the brief's
+    own durable order (``extract_oracle_citations``) wins; a citation whose file part is not
     test-shaped is NEVER the oracle. Existence is deliberately NOT
     required here: RED_TO_GREEN's
     oracle may not exist yet -- ATD authors it at exactly this cited path.
     ``None`` when nothing was cited; only then may the caller fall back to
     the Python-only ``tests/test_<slug>.py`` convention (Python subjects)
     or refuse (non-Python subjects, never a wrong-language guess)."""
-    first_bare: str | None = None
     for citation in oracle_citations:
         if not is_test_shaped_path(oracle_citation_file_part(citation)):
             # Never a non-test-shaped oracle, selector or not (review
             # BLOCK 2026-08-20: a mis-admitted production file must lose
             # here even if extraction let it through).
             continue
-        if "::" in citation:
-            return citation
-        if first_bare is None:
-            first_bare = citation
-    return first_bare
+        return citation
+    return None

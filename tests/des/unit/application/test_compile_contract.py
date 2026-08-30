@@ -36,7 +36,6 @@ from des.application.compile_contract import (
     compile_delivery_contract,
     target_atoms_resolver,
 )
-from des.cli._whole_suite_scope_refusal import missing_whole_suite_scope_finding
 from des.domain.architecture_brief_resolver import (
     PBT_FAMILY_SKILL,
     declared_imports_for_target,
@@ -378,6 +377,62 @@ def test_oracle_locator_falls_back_to_repository_root_tests_dir(
     )
 
 
+def test_compiles_sorted_acceptance_support_locators_without_promoting_targets(
+    tmp_path: Path,
+) -> None:
+    repo_root = _build_repo(tmp_path)
+    brief = _SYNTHETIC_BRIEF + (
+        "\nTest dependency locator: `spec/Widget.tla`\n"
+        "Test dependency locator: `tests/support/widget.json`\n"
+    )
+
+    result = compile_delivery_contract(_inputs(repo_root, brief_text=brief))
+
+    assert isinstance(result, Compiled)
+    assert result.contract["schema-version"] == "1.4"
+    assert result.contract["acceptance-tests"]["supporting-locators"] == [
+        "spec/Widget.tla",
+        "tests/support/widget.json",
+    ]
+    assert set(result.contract["targets"]) == {"pkg/widget.py"}
+
+
+@pytest.mark.parametrize(
+    ("declarations", "expected"),
+    [
+        (
+            "Test dependency locator: tests/support/widget.json\n",
+            "malformed",
+        ),
+        (
+            "Test dependency locator: `spec/Widget.tla`\n"
+            "Test dependency locator: `spec/Widget.tla`\n",
+            "duplicate",
+        ),
+        (
+            "Test dependency locator: `tests/support/widget.json`\n"
+            "Test dependency locator: `spec/Widget.tla`\n",
+            "lexicographically ordered",
+        ),
+        (
+            "Test dependency locator: `spec/Widget.tla::Invariant`\n",
+            "whole-file",
+        ),
+    ],
+)
+def test_compile_refuses_invalid_acceptance_support_declarations(
+    tmp_path: Path, declarations: str, expected: str
+) -> None:
+    repo_root = _build_repo(tmp_path)
+
+    result = compile_delivery_contract(
+        _inputs(repo_root, brief_text=_SYNTHETIC_BRIEF + "\n" + declarations)
+    )
+
+    assert isinstance(result, Blocked)
+    assert expected in result.what
+
+
 def test_no_discoverable_test_dir_blocks_instead_of_guessing(
     tmp_path: Path,
 ) -> None:
@@ -538,7 +593,6 @@ def test_skeleton_satisfies_the_properties_the_deleted_validators_used_to_check(
     assert _extend_targets_missing_citation(contract) == []
     assert _all_missing_declared_imports(repo_root, contract) == []
     assert missing_verification_paths(repo_root, contract) == []
-    assert missing_whole_suite_scope_finding(repo_root, contract) is None
 
 
 _K4_ROOT = Path("/tmp/nwave-k4-8c4ecb83b/k4-root")
@@ -626,7 +680,6 @@ def test_real_k4_run13_brief_compiles_a_correct_skeleton(tmp_path: Path) -> None
     assert _extend_targets_missing_citation(contract) == []
     assert _all_missing_declared_imports(scratch, contract) == []
     assert missing_verification_paths(scratch, contract) == []
-    assert missing_whole_suite_scope_finding(scratch, contract) is None
 
 
 # -- RED_TO_GREEN oracle binding on a non-Python subject -- SF friction
@@ -735,15 +788,15 @@ def test_red_to_green_test_shaped_citation_is_never_a_target(
     assert _GO_RED_ORACLE_FILE not in result.contract["targets"]
 
 
-def test_red_to_green_binds_the_explicitly_cited_oracle_selector(
+def test_red_to_green_keeps_the_first_public_oracle_identity(
     tmp_path: Path,
 ) -> None:
-    # (b) the brief's explicit `path::TestName` oracle citation IS the
-    # locator, selector preserved -- never a synthesized Python path.
+    # (b) the first test-shaped citation is public oracle ownership. A
+    # later technical selector cannot replace it.
     repo_root = _build_go_red_repo(tmp_path)
     result = compile_delivery_contract(_go_red_inputs(repo_root))
     assert isinstance(result, Compiled)
-    assert result.contract["acceptance-tests"]["locator"] == _GO_RED_ORACLE_CITATION
+    assert result.contract["acceptance-tests"]["locator"] == _GO_RED_ORACLE_FILE
 
 
 def test_red_to_green_verification_commands_are_language_native(

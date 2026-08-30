@@ -42,6 +42,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -437,7 +438,6 @@ def _git_identity_steps(arm_name: str) -> list[list[str]]:
 
 def nwave_setup_steps(venv: Path, auth_profile: Path) -> list[list[str]]:
     """The nWave arm's declared setup. `--yes` is load-bearing, see module doc."""
-    cli = str(venv / "bin" / "nwave-ai")
     return [
         # Clone FIRST. `git clone <url> .` refuses a non-empty directory, and the
         # seed creates `.claude-k4/` in exactly that directory - so seeding first
@@ -481,8 +481,12 @@ def nwave_setup_steps(venv: Path, auth_profile: Path) -> list[list[str]]:
         # throwaway directory still rewrote their real Codex configuration and
         # left a backup in their real `~/.nwave/backups`. The arm runs `claude -p`,
         # so every other platform is out of scope for the measurement as well.
-        [cli, "install", "--platform", "claude-code"],
-        [cli, "project", "enable", "--yes"],
+        # THE treatment, and the only reason this list differs from
+        # `control_setup_steps` beyond the identity label and the fixture port.
+        # Named once in `treatment_steps` so `refuse_undeclared_arm_footprint`
+        # checks the SAME two steps this arm actually runs, never a second
+        # hand-typed copy that could drift out from under the check.
+        *treatment_steps(venv),
     ]
 
 
@@ -512,6 +516,163 @@ def control_setup_steps(auth_profile: Path) -> list[list[str]]:
         pef.fixture_setup_step(pef.free_port()),
         seed_step(auth_profile),
     ]
+
+
+# --- the footprint diff, computed instead of maintained by discipline --------
+
+#: What each DECLARED per-arm variable is replaced by before the two setups are
+#: compared. A mask is not an exemption: `_masked_arm_step` still checks that the
+#: value it masks matches the template declared for THAT arm, so an operator's
+#: real name in `user.name` is a finding, not a masked-away difference.
+_ARM_MASK = "<per-arm>"
+
+
+def treatment_steps(venv: Path) -> list[list[str]]:
+    """THE treatment: install nWave, then enable it on the project.
+
+    These two steps are the independent variable the whole campaign measures.
+    Every other step in either arm's setup is scaffolding both arms share by
+    construction. Named here as one list rather than typed twice, so
+    `nwave_setup_steps` and the footprint check below cannot drift apart.
+    """
+    cli = str(venv / "bin" / "nwave-ai")
+    return [
+        [cli, "install", "--platform", "claude-code"],
+        [cli, "project", "enable", "--yes"],
+    ]
+
+
+def _masked_arm_step(step: list[str], arm: str) -> tuple[list[str], list[str]]:
+    """(step with the declared per-arm values masked, problems found masking it).
+
+    Only two values in a setup step are allowed to differ per arm, and each is
+    checked against the template that declares it before it is masked:
+
+    * the repo-local git identity (`_git_identity_steps`) -- and the check that
+      the value is `K4 {arm} arm` is load-bearing, not decorative: run 10 of the
+      K4 matrix had a crafter retry `git -c user.name=<the OPERATOR's real name>`,
+      which is an authorship leak. A blanket mask would have hidden exactly that.
+    * the examiner fixture's ephemeral port (`pef.fixture_setup_step`), which is
+      OS-assigned per arm on purpose (run 14: a fixed port collided forever).
+    """
+    problems: list[str] = []
+    if step[:3] == ["git", "config", "user.name"]:
+        expected = f"K4 {arm} arm"
+        if step[3:] != [expected]:
+            problems.append(
+                f"git identity name is {step[3:]!r}, not the declared "
+                f"[{expected!r}] -- a per-arm identity is declared, an "
+                "arbitrary one is not"
+            )
+        return [*step[:3], _ARM_MASK], problems
+    if step[:3] == ["git", "config", "user.email"]:
+        expected = f"k4-{arm}@nwave.invalid"
+        if step[3:] != [expected]:
+            problems.append(
+                f"git identity email is {step[3:]!r}, not the declared [{expected!r}]"
+            )
+        return [*step[:3], _ARM_MASK], problems
+    # `pef.delivery_setup_step()` shares this exact prefix and differs only in
+    # its trailing token (`--delivery-only`), so the DIGIT is what discriminates
+    # the two, not the prefix. A fixture step whose trailing token is not a port
+    # therefore falls through to the byte-equality comparison below unmasked --
+    # which is the safe direction: it is compared, never excused.
+    fixture_shape = pef.fixture_setup_step(0)
+    if (
+        len(step) == len(fixture_shape)
+        and step[:-1] == fixture_shape[:-1]
+        and step[-1].isdigit()
+    ):
+        return [*step[:-1], _ARM_MASK], problems
+    return list(step), problems
+
+
+def arm_footprint_problems(
+    control: list[list[str]], nwave: list[list[str]], *, venv: Path
+) -> list[str]:
+    """Every way the two arms differ that is NOT one of the three declared points.
+
+    The campaign's entire claim is single-variable: whatever the nWave arm does
+    differently, it does because nWave is installed. Until this function existed
+    that claim was held by DISCIPLINE -- the comment above `control_setup_steps`
+    says the arms "must differ only in what their setup installs", and nothing
+    computed it or failed when it stopped being true. A fourth difference could
+    be added in either list and every gate in this repo would stay green while
+    the measurement silently stopped being a measurement of nWave.
+
+    The declared set has exactly three members: the git identity label, the
+    examiner fixture port, and the two treatment steps. The rule is mechanical
+    and total -- mask the first two, remove the third from the nWave arm, and
+    what remains must be BYTE-EQUAL to the control arm, step for step, in order.
+    Anything else is returned as a problem, in both directions: a missing
+    treatment step is as much a footprint breach as an extra one, because a
+    campaign whose treatment arm never installs nWave measures nothing and still
+    reports a ratio.
+    """
+    problems: list[str] = []
+    masked: dict[str, list[list[str]]] = {}
+    for arm, steps in (("control", control), ("nwave", nwave)):
+        rendered: list[list[str]] = []
+        for index, step in enumerate(steps):
+            step_masked, why = _masked_arm_step(list(step), arm)
+            problems.extend(f"{arm} setup step {index}: {reason}" for reason in why)
+            rendered.append(step_masked)
+        masked[arm] = rendered
+
+    treatment = treatment_steps(venv)
+    for step in treatment:
+        if step not in masked["nwave"]:
+            problems.append(
+                f"the nWave arm does not carry the declared treatment step {step} "
+                "-- with no treatment installed the campaign compares two controls "
+                "and still computes a ratio"
+            )
+        if step in masked["control"]:
+            problems.append(
+                f"the control arm carries the treatment step {step} -- the control "
+                "is the arm nWave is absent from; this makes the campaign "
+                "single-armed"
+            )
+
+    residue = [step for step in masked["nwave"] if step not in treatment]
+    if residue != masked["control"]:
+        problems.append(
+            f"outside the declared three points the arms are not the same "
+            f"footprint: the nWave arm has {len(residue)} non-treatment step(s), "
+            f"the control arm {len(masked['control'])}"
+        )
+        for index in range(max(len(residue), len(masked["control"]))):
+            left = residue[index] if index < len(residue) else None
+            right = masked["control"][index] if index < len(masked["control"]) else None
+            if left != right:
+                problems.append(f"  step {index}: nwave {left!r} vs control {right!r}")
+    return problems
+
+
+def refuse_undeclared_arm_footprint(
+    control: list[list[str]], nwave: list[list[str]], *, venv: Path
+) -> int:
+    """0 when the arms differ only where declared; 1 and a LOUD refusal otherwise."""
+    problems = arm_footprint_problems(control, nwave, venv=venv)
+    if not problems:
+        return 0
+    sys.stderr.write(
+        "WHAT: the two campaign arms differ somewhere they were never declared to.\n"
+        + "".join(f"      - {problem}\n" for problem in problems)
+        + "WHY:  this campaign's only claim is single-variable -- whatever the nWave\n"
+        "      arm does differently, it does because nWave is installed. An\n"
+        "      undeclared fourth difference does not make the campaign fail; it\n"
+        "      makes it succeed while measuring something nobody named, and every\n"
+        "      ratio it computes afterwards is attributed to the wrong cause.\n"
+        "HOW:  the declared set is three points and lives in ONE place --\n"
+        "      `_git_identity_steps` (the identity label), `pef.fixture_setup_step`\n"
+        "      (the ephemeral port) and `treatment_steps` (install + project\n"
+        "      enable). Either put the new step in BOTH `nwave_setup_steps` and\n"
+        "      `control_setup_steps`, or, if it genuinely belongs to the treatment,\n"
+        "      add it to `treatment_steps` -- which is a decision about what this\n"
+        "      campaign measures, so state it there in prose too.\n"
+    )
+    return 1
 
 
 def _arm_env() -> dict[str, str]:
@@ -1508,6 +1669,60 @@ def _fill_route_walk_contract_placeholders(contract: dict) -> None:
             boundary[key] = "probe-only placeholder"
 
 
+#: The two judgment sections `des verify-charter-filled` decides FILLED on
+#: (oracle + start recipe), and the probe bodies the walk substitutes for the
+#: template's `<...>` skeleton. The oracle body carries one positive line AND
+#: one `Negative:` line because the gate requires both.
+_ROUTE_WALK_CHARTER_SECTION_FILL = {
+    "## Preconditions": (
+        "PublicStartRecipe (CLI): from a clean state, in this workspace, run\n"
+        "`des --help` and read its stdout. Probe-only recipe -- route_walk "
+        "never delivers this charter and no human ever examines it."
+    ),
+    "## Expected observations (oracle)": (
+        "- `des --help` prints its usage banner on stdout and exits 0.\n"
+        "- Negative: the command must not exit nonzero or print a traceback."
+    ),
+}
+
+#: What every remaining single-line `<...>` template token outside those two
+#: sections (`Persona: <who>`, `<surface>`, `<intent>`) becomes.
+_ROUTE_WALK_CHARTER_INLINE_FILL = "route-walk probe placeholder"
+_CHARTER_PLACEHOLDER_RE = re.compile(r"<[^<>]+>")
+
+
+def _fill_route_walk_charter_placeholders(
+    repo_root_path: Path, delivery_id: str
+) -> None:
+    """Replace every `<...>` placeholder `des charter-scaffold` wrote into the
+    delivery's expectation charters with minimal-but-valid content, in place --
+    the charter-side twin of `_fill_route_walk_contract_placeholders`, standing
+    in for the PO's fill pass.
+
+    Since `3ecf1019e` (`verify-charter-filled` derives its placeholder tokens
+    from the template SSOT) a RAW scaffold is unfilled BY CONSTRUCTION, so
+    `des dispatch` rightly refuses the namespace. The gate is correct; the
+    harness was dispatching a charter it had never filled. Every direct `.md`
+    member is filled, because that is exactly the namespace `des dispatch`
+    validates (it never filters an invalid member away)."""
+    charter_dir = repo_root_path / "docs" / "product" / "expectations" / delivery_id
+    for charter_path in sorted(charter_dir.glob("*.md")):
+        filled: list[str] = []
+        in_replaced_section = False
+        for line in charter_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("## "):
+                body = _ROUTE_WALK_CHARTER_SECTION_FILL.get(line.strip())
+                in_replaced_section = body is not None
+                filled.append(line)
+                if body is not None:
+                    filled.extend([body, ""])
+            elif not in_replaced_section:
+                filled.append(
+                    _CHARTER_PLACEHOLDER_RE.sub(_ROUTE_WALK_CHARTER_INLINE_FILL, line)
+                )
+        charter_path.write_text("\n".join(filled) + "\n", encoding="utf-8")
+
+
 def _hook_step(
     name: str,
     mandate: str,
@@ -1728,6 +1943,12 @@ def route_walk_steps(
         ],
     )
     steps.append(charter_step)
+
+    # The scaffold's RAW output is unfilled by construction, and `des
+    # dispatch` validates the whole charter namespace -- so the walk fills it
+    # here, exactly as it fills the compiled contract below, instead of
+    # dispatching a skeleton the gate is right to refuse.
+    _fill_route_walk_charter_placeholders(repo_root_path, delivery_id)
 
     # Run 14 take 2 (K4 matrix): the walk now follows the COMPILED route
     # (compile -> fill -> dispatch), not a hand-built minimal skeleton.
@@ -2418,6 +2639,41 @@ _MINI_FORWARD_PROXY_SOURCE = (
 )
 
 
+#: `sun_path` in `struct sockaddr_un` is a fixed 108-BYTE field (`man 7
+#: unix`), NUL included -- 107 usable bytes, a hard kernel limit no caller
+#: can raise. `socat` refuses outright past it ("unix socket address N
+#: characters long, max length is 108"). This is the ONE number
+#: `_bridge_socket_path` below is bounded against; it is not a tuning knob.
+_UNIX_SOCKET_PATH_LIMIT = 107
+
+
+def _bridge_socket_path() -> Path:
+    """A bridge-socket path whose LENGTH does not depend on the caller's
+    workspace path.
+
+    F-K4-ROW11-CANARY-RED-UNDER-XDIST (2026-08-23): the socket used to be
+    `workspace / ".k4-sandbox-probe-bridge.sock"`. `workspace` is
+    caller-supplied and unbounded, so its depth silently decided whether
+    the bridge could exist at all. Under pytest-xdist the ONE extra
+    `popen-gw0/` path element pushed the real path from 103 to 113 bytes
+    -- past `_UNIX_SOCKET_PATH_LIMIT` -- and BOTH socats (outer and inner)
+    refused to bind. The bridge was then simply absent, so the sandboxed
+    health-check block could never reach the server, touched the reset
+    marker, and reported "the supervisor consumed the marker, but the
+    restart itself did not succeed": a LYING rejection blaming a perfectly
+    healthy supervisor for a socket that was never created. Serial runs,
+    10 bytes shorter, passed -- the defect was never load, concurrency or
+    a too-short timeout.
+
+    GDP-0 (make the wrong state unrepresentable): the socket now lives in
+    its OWN short private directory, so no workspace depth can push it
+    past the limit. Only a pathological `TMPDIR` could, and that is
+    reported LOUD by the caller rather than degrading into a dead bridge
+    again.
+    """
+    return Path(tempfile.mkdtemp(prefix="k4b-")) / "b.sock"
+
+
 def probe_sandbox_loopback_bridge(
     workspace: Path, *, port: int, api_key: str
 ) -> list[str]:
@@ -2444,8 +2700,22 @@ def probe_sandbox_loopback_bridge(
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    bridge_sock = workspace / ".k4-sandbox-probe-bridge.sock"
-    bridge_sock.unlink(missing_ok=True)
+    bridge_sock = _bridge_socket_path()
+    bridge_dir = bridge_sock.parent
+    if len(str(bridge_sock).encode()) > _UNIX_SOCKET_PATH_LIMIT:
+        # GDP-6, degrade LOUD: the only way to land here is a TMPDIR long
+        # enough to overflow `sun_path` on its own. Never fall through to
+        # a socat that cannot bind -- that is exactly the silent, lying
+        # "supervisor is down" this repair exists to remove.
+        shutil.rmtree(bridge_dir, ignore_errors=True)
+        return [
+            f"the sandbox bridge socket path {str(bridge_sock)!r} is "
+            f"{len(str(bridge_sock).encode())} bytes, past the "
+            f"{_UNIX_SOCKET_PATH_LIMIT}-byte AF_UNIX sun_path limit -- "
+            "point TMPDIR at a shorter directory and re-run; the bridge "
+            "cannot be built here and this probe refuses to report a "
+            "healthy server as unreachable"
+        ]
     outer_bridge = subprocess.Popen(
         [
             socat,
@@ -2490,11 +2760,37 @@ def probe_sandbox_loopback_bridge(
                 "--bind",
                 "/tmp",
                 "/tmp",
+                # The block's reset marker (`.k4-reset`) is written by
+                # the sandboxed block and consumed by the supervisor, both
+                # IN `workspace` -- so the sandbox must SEE it, and
+                # `cwd=workspace` below must be where the block's relative
+                # `touch` lands. Binding only `/tmp` silently worked while
+                # every campaign root sat under `/tmp`; the moment the root
+                # moves off `/tmp` (the durable-evidence correction), that
+                # `touch .k4-reset` lands in the sandbox's own ephemeral
+                # root where no supervisor can ever consume it, and this
+                # probe reports a healthy supervisor as DOWN -- a lying
+                # rejection, not a red. Binding it is also FAITHFUL: the
+                # real examiner sandbox has its project workspace mounted.
+                # Harmless when the workspace is already under `/tmp`
+                # (bwrap applies binds in order, so this one simply lands
+                # on top).
+                "--bind",
+                str(workspace),
+                str(workspace),
+                # The bridge socket lives OUTSIDE `workspace` now (see
+                # `_bridge_socket_path`), so its own short directory must
+                # be visible to the inner socat by the SAME path the outer
+                # socat listens on.
+                "--bind",
+                str(bridge_dir),
+                str(bridge_dir),
                 "--",
                 "bash",
                 "-c",
                 bridge_setup + block,
             ],
+            cwd=workspace,
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
@@ -2506,6 +2802,7 @@ def probe_sandbox_loopback_bridge(
         outer_bridge.wait(timeout=10)
         proxy_proc.wait(timeout=10)
         bridge_sock.unlink(missing_ok=True)
+        shutil.rmtree(bridge_dir, ignore_errors=True)
         proxy_script.unlink(missing_ok=True)
 
     if result.returncode != 0:
@@ -2831,6 +3128,19 @@ def main(argv: list[str] | None = None) -> int:
     campaign_start_epoch = int(time.time())
     os.environ["K4_WALL_CLOCK_CEILING_MINUTES"] = str(args.wall_clock_minutes)
     os.environ["K4_CAMPAIGN_START_EPOCH"] = str(campaign_start_epoch)
+    # Defect `il-supervisore-non-riavvia-...-si-autotermina-da-orfano`
+    # (2026-08-24 RCA): `pef.fixture_setup_step`'s argv runs `prepare()` in
+    # a SHORT-LIVED setup-step subprocess (part of `nwave_setup_steps`/
+    # `control_setup_steps`), which starts a keepalive supervisor and then
+    # exits within a second or two -- its own job done. Left to
+    # `start_supervisor`'s `os.getpid()` default, that supervisor's
+    # OWNER_PID is bound to this ALREADY-DYING subprocess, not to THIS
+    # (long-lived, campaign-length) process, so it self-terminates as an
+    # orphan a couple of poll cycles later, by construction. Propagated
+    # through the SAME env channel as the two lines above -- one source,
+    # never a second plumbing mechanism -- and read back by `prepare_
+    # examiner_fixture.main()`.
+    os.environ["K4_SUPERVISOR_OWNER_PID"] = str(os.getpid())
 
     missing = missing_sandbox_prerequisites()
     if missing:
@@ -2868,6 +3178,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"wheel       : {wheel}")
         print(f"wheel sha256: {_sha256(wheel)}")
     print(f"arm runtime : {venv}")
+
+    # Built ONCE, here, and carried to `arms.json` unchanged at the bottom of
+    # this function. The check below therefore decides on the very object the
+    # campaign will run, not on a second call that could differ -- and it runs
+    # HERE, before `probe_engagement` spends minutes standing an arm up, because
+    # a campaign whose arms differ in an undeclared way is not worth probing.
+    control_steps = control_setup_steps(args.auth_profile)
+    nwave_steps = nwave_setup_steps(venv, args.auth_profile)
+    if refuse_undeclared_arm_footprint(control_steps, nwave_steps, venv=venv):
+        return 1
+    print(
+        "arm diff    : proven -- identity label, fixture port, "
+        f"{len(treatment_steps(venv))} treatment step(s), nothing else"
+    )
 
     verdict, detail = probe_engagement(args.root, venv, args.auth_profile, args.model)
     if verdict == "broke":
@@ -3163,13 +3487,13 @@ def main(argv: list[str] | None = None) -> int:
             # of EITHER arm's record can see it without knowing that
             # asymmetry, and neither arm's record silently omits it.
             "control": {
-                "setup": control_setup_steps(args.auth_profile),
+                "setup": control_steps,
                 "argv": delivery,
                 "env": arm_env,
                 "verification": verification_status,
             },
             "nwave": {
-                "setup": nwave_setup_steps(venv, args.auth_profile),
+                "setup": nwave_steps,
                 "argv": delivery,
                 "env": arm_env,
                 "verification": verification_status,

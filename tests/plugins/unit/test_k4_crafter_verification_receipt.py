@@ -15,7 +15,7 @@ CRAFTERS = (
 RESULT_FIELDS = (
     "verdict",
     "contract",
-    "candidate",
+    "execution-root",
     "oracle",
     "first-production-mutation-tool-call",
     "changed-targets",
@@ -66,7 +66,7 @@ def test_both_crafters_emit_the_same_terminal_result(crafter: Path) -> None:
     assert "CRAFTER-RESULT" in result
     for field in RESULT_FIELDS:
         assert f"{field}:" in result
-    assert "terminal green verification" in result
+    assert "terminal green verification" in " ".join(result.split())
     assert "Missing, stale or nonterminal evidence is `INDETERMINATE`" in result
 
 
@@ -77,11 +77,16 @@ def test_auto_validates_result_identity_scope_and_commands_before_examiner() -> 
     assert "terminal `CRAFTER-RESULT`" in join
     for obligation in (
         "matching contract",
-        "opaque candidate identity",
+        "execution-root",
         "oracle, changed targets, first-mutation bound",
         "terminal zero-exit results for every declared verification command",
     ):
         assert obligation in join
+    assert "no `candidate:` field" in join
+    assert "performs E4" in join
+    assert "AT reviewer foreground" in join
+    assert "bare `APPROVE` or `APPROVED`" in join
+    assert "`APPROVED WITH CONDITIONS`" in join
     assert join.index("Require terminal `CRAFTER-RESULT`") < join.index(
         "dispatch one source-blind Vera pass"
     )
@@ -95,7 +100,7 @@ def test_bad_result_is_non_pass_and_has_no_substitute_or_repair() -> None:
     )
     boundaries = " ".join(_route_boundaries().split())
     assert "each individual Agent result is terminal" in boundaries
-    assert "no retry/resume/`SendMessage` correction" in boundaries
+    assert "no retry/resume correction" in boundaries
     assert "stop, report blocker (no silent substitution)" in boundaries
 
 
@@ -104,5 +109,7 @@ def test_retired_mini_receipt_does_not_survive_the_join() -> None:
     for retired in ("outcome: PASS|FAIL", "`argv`", "`scope`", "`exit_code`"):
         assert retired not in join
     body = _text(AUTO)
-    finalize_section = body[_step_index(_FINALIZE_STEP, body) :]
+    finalize_section = " ".join(body[_step_index(_FINALIZE_STEP, body) :].split())
     assert "create no receipt, ledger or progress artifact" in finalize_section
+    assert "one typed final F result" in finalize_section
+    assert "Clean-checkout: true" in finalize_section

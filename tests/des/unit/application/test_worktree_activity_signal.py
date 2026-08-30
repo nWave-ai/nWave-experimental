@@ -23,6 +23,7 @@ from des.application.worktree_activity_signal import (
     read_activity_age_seconds,
     resolve_declared_ownership,
 )
+from des.domain.worktree_residence import OwnerLease
 from des.ports.driven_ports.committed_scope_port import Indeterminate
 
 
@@ -77,10 +78,12 @@ def test_declared_ownership_resolves_via_normalized_bare_name(tmp_path: Path) ->
     path.mkdir(parents=True)
 
     owned, how = resolve_declared_ownership(
-        path=path, owned_tokens=frozenset({"wt-charterarm"}), marker_present=False
+        path=path,
+        owned_tokens=frozenset({"wt-charterarm"}),
+        lease=OwnerLease.RELEASED,
     )
 
-    assert owned is True
+    assert owned is OwnerLease.HELD
     assert "charterarm" in how
 
 
@@ -100,28 +103,30 @@ def test_declared_ownership_resolves_via_qualified_name_for_a_collision(
     owned_intended, _ = resolve_declared_ownership(
         path=projects_wt,
         owned_tokens=frozenset({"wt/sentinel-tool"}),
-        marker_present=False,
+        lease=OwnerLease.RELEASED,
     )
     owned_other, _ = resolve_declared_ownership(
         path=projects_bare,
         owned_tokens=frozenset({"wt/sentinel-tool"}),
-        marker_present=False,
+        lease=OwnerLease.RELEASED,
     )
 
-    assert owned_intended is True
-    assert owned_other is False
+    assert owned_intended is OwnerLease.HELD
+    assert owned_other is OwnerLease.RELEASED
 
 
-def test_declared_ownership_absent_is_false_not_an_error(tmp_path: Path) -> None:
+def test_released_marker_without_owned_token_remains_released(tmp_path: Path) -> None:
     path = tmp_path / "wt" / "unrelated-lane"
     path.mkdir(parents=True)
 
     owned, how = resolve_declared_ownership(
-        path=path, owned_tokens=frozenset({"some-other-lane"}), marker_present=False
+        path=path,
+        owned_tokens=frozenset({"some-other-lane"}),
+        lease=OwnerLease.RELEASED,
     )
 
-    assert owned is False
-    assert how == ""
+    assert owned is OwnerLease.RELEASED
+    assert "RELEASED" in how
 
 
 def test_declared_ownership_marker_file_outranks_and_needs_no_owned_flag(
@@ -131,11 +136,25 @@ def test_declared_ownership_marker_file_outranks_and_needs_no_owned_flag(
     path.mkdir(parents=True)
 
     owned, how = resolve_declared_ownership(
-        path=path, owned_tokens=frozenset(), marker_present=True
+        path=path, owned_tokens=frozenset(), lease=OwnerLease.HELD
     )
 
-    assert owned is True
+    assert owned is OwnerLease.HELD
     assert "marker" in how
+
+
+def test_unknown_marker_cannot_be_repaired_by_owned_token(tmp_path: Path) -> None:
+    path = tmp_path / "wt" / "unknown-lane"
+    path.mkdir(parents=True)
+
+    owned, how = resolve_declared_ownership(
+        path=path,
+        owned_tokens=frozenset({"unknown-lane"}),
+        lease=OwnerLease.INDETERMINATE,
+    )
+
+    assert owned is OwnerLease.INDETERMINATE
+    assert "missing" in how
 
 
 def test_qualified_name_disambiguates_two_same_basename_parents(tmp_path: Path) -> None:

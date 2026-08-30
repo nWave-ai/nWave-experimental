@@ -27,15 +27,30 @@ exercised without an external toolchain dependency.
 from __future__ import annotations
 
 import json
+import os
 import stat
+import sys
 from pathlib import Path
 
 from tests.common.delivery_contract_fixture import load_valid_contract
 from tests.common.in_process_cli import run_cli_in_process
 
 
-def _run(*args: str, cwd: Path) -> tuple[int, str, str]:
-    return run_cli_in_process(["dispatch", *args], cwd=cwd)
+def _run(
+    *args: str, cwd: Path, env: dict[str, str] | None = None
+) -> tuple[int, str, str]:
+    return run_cli_in_process(
+        ["dispatch", *args], cwd=cwd, env=env or _child_python_env()
+    )
+
+
+def _child_python_env() -> dict[str, str]:
+    env = dict(os.environ)
+    python_dir = str(Path(sys.executable).parent)
+    env["PATH"] = os.pathsep.join(
+        part for part in (python_dir, env.get("PATH", "")) if part
+    )
+    return env
 
 
 def _seed_fake_go(root: Path, script: str) -> None:
@@ -98,6 +113,7 @@ def test_valid_go_oracle_is_never_refused_as_does_not_compile(tmp_path: Path) ->
         "--delivery-contract",
         contract_path.name,
         cwd=tmp_path,
+        env=_child_python_env(),
     )
 
     assert "does-not-compile" not in err
@@ -121,6 +137,7 @@ def test_go_oracle_failing_for_the_right_reason_is_valid(tmp_path: Path) -> None
         "--delivery-contract",
         contract_path.name,
         cwd=tmp_path,
+        env=_child_python_env(),
     )
 
     assert exit_code == 0, err
@@ -172,6 +189,7 @@ def test_go_oracle_broken_with_no_symbol_and_no_build_marker_is_informational(
         str(tmp_path),
         "--delivery-contract",
         contract_path.name,
+        "--diagnostics",
         cwd=tmp_path,
     )
 

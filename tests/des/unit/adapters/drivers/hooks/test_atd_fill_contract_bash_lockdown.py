@@ -21,14 +21,22 @@ _VALID_STATUS = (
 )
 _VALID_FIELD_HEREDOC = (
     "des fill-contract --repo-root /repo --delivery-id widget-color "
-    "--target pkg/widget.py --field justification <<'NW_FILL'\n"
-    "Widget gains a ColorValidator helper.\n"
-    "NW_FILL"
+    "--batch <<'NW_FILL'\n[]\nNW_FILL"
 )
-_VALID_OUTCOME_HEREDOC = (
+# The provider-safe batch-file carrier transport: no heredoc, no JSON
+# anywhere on the command line -- ATD wrote the identical array to the
+# deterministic carrier file first.
+_VALID_BATCH_FILE_COMMAND = (
     "des fill-contract --repo-root /repo --delivery-id widget-color "
-    "--field outcome <<'NW_FILL'\n"
-    "Widget gains a validated color attribute.\n"
+    "--batch --batch-file"
+)
+_VALID_OUTCOME_HEREDOC = _VALID_FIELD_HEREDOC
+_VALID_BATCH_HEREDOC = (
+    "des fill-contract --repo-root /repo --delivery-id widget-color "
+    "--batch <<'NW_FILL'\n"
+    '[{"field":"outcome","value":"Widget gains a validated color attribute."},'
+    '{"field":"justification","target":"pkg/widget.py",'
+    '"value":"Reuse the existing validator."}]\n'
     "NW_FILL"
 )
 
@@ -39,7 +47,7 @@ _VALID_OUTCOME_HEREDOC = (
 _P2_EXACT_OUTCOME_HEREDOC = (
     "des fill-contract --repo-root "
     "/tmp/nwave-k4-camp6-0253d8dce/campaign/pair-2/nwave "
-    "--delivery-id auto-d6c8911618f6e8d5 --field outcome <<'NW_FILL'\n"
+    "--delivery-id auto-d6c8911618f6e8d5 --batch <<'NW_FILL'\n"
     "Feature: Maintenance windows for checks. An operator can declare "
     "recurring maintenance windows on a check. While a check is inside one "
     "of its maintenance windows, a failure must not deliver a notification "
@@ -71,6 +79,14 @@ class TestPureEvaluator:
         assert (
             pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(
                 _VALID_OUTCOME_HEREDOC
+            )
+            is None
+        )
+
+    def test_batch_heredoc_call_is_allowed(self) -> None:
+        assert (
+            pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(
+                _VALID_BATCH_HEREDOC
             )
             is None
         )
@@ -125,7 +141,7 @@ class TestPureEvaluator:
         angle-bracket data in the body: the rejection must blame the
         header, never claim a composition operator from the opaque body."""
         command = _P2_EXACT_OUTCOME_HEREDOC.replace(
-            "--field outcome", "--field declared-imports"
+            "--batch", "--retired-field declared-imports"
         )
         result = pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(command)
         assert result is not None
@@ -153,7 +169,13 @@ class TestPureEvaluator:
         assert result is not None
 
     def test_field_call_without_a_heredoc_is_blocked(self) -> None:
-        command = "des fill-contract --repo-root /repo --delivery-id id --field outcome"
+        command = "des fill-contract --repo-root /repo --delivery-id id --retired-field outcome"
+        result = pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(command)
+        assert result is not None
+        assert "well-formed" in result["reason"].lower()
+
+    def test_batch_call_without_a_heredoc_is_blocked(self) -> None:
+        command = "des fill-contract --repo-root /repo --delivery-id id --batch"
         result = pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(command)
         assert result is not None
         assert "heredoc" in result["reason"].lower()
@@ -161,7 +183,7 @@ class TestPureEvaluator:
     def test_a_bare_argv_value_instead_of_a_heredoc_is_blocked(self) -> None:
         command = (
             "des fill-contract --repo-root /repo --delivery-id id "
-            '--field outcome "some value"'
+            '--retired-field outcome "some value"'
         )
         result = pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(command)
         assert result is not None
@@ -169,7 +191,7 @@ class TestPureEvaluator:
     def test_mechanical_field_name_is_blocked(self) -> None:
         command = (
             "des fill-contract --repo-root /repo --delivery-id id "
-            "--target pkg/widget.py --field declared-imports <<'NW_FILL'\n"
+            "--target pkg/widget.py --retired-field declared-imports <<'NW_FILL'\n"
             "cronsim.CronSim\n"
             "NW_FILL"
         )
@@ -191,7 +213,7 @@ class TestPureEvaluator:
     def test_unquoted_heredoc_delimiter_is_blocked(self) -> None:
         command = (
             "des fill-contract --repo-root /repo --delivery-id id "
-            "--target pkg/widget.py --field justification <<NW_FILL\n"
+            "--target pkg/widget.py --retired-field justification <<NW_FILL\n"
             "real value\n"
             "NW_FILL"
         )
@@ -201,7 +223,7 @@ class TestPureEvaluator:
     def test_missing_terminator_is_blocked(self) -> None:
         command = (
             "des fill-contract --repo-root /repo --delivery-id id "
-            "--target pkg/widget.py --field justification <<'NW_FILL'\n"
+            "--target pkg/widget.py --retired-field justification <<'NW_FILL'\n"
             "real value\n"
         )
         result = pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(command)
@@ -210,7 +232,7 @@ class TestPureEvaluator:
     def test_trailing_content_after_terminator_is_blocked(self) -> None:
         command = (
             "des fill-contract --repo-root /repo --delivery-id id "
-            "--target pkg/widget.py --field justification <<'NW_FILL'\n"
+            "--target pkg/widget.py --retired-field justification <<'NW_FILL'\n"
             "real value\n"
             "NW_FILL\n"
             "echo pwned"
@@ -223,6 +245,65 @@ class TestPureEvaluator:
             "des fill-contract --repo-root /repo --delivery-id id --status extra"
         )
         assert result is not None
+
+
+class TestBatchFileCarrierTransport:
+    """Ale's provider-safe carrier correction: a Bash command may carry
+    --batch-file instead of a heredoc, but must then carry NO JSON at all."""
+
+    def test_batch_file_call_with_no_heredoc_is_allowed(self) -> None:
+        assert (
+            pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(
+                _VALID_BATCH_FILE_COMMAND
+            )
+            is None
+        )
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "des fill-contract --batch-file --repo-root /repo --delivery-id id --batch",
+            "des fill-contract --repo-root /repo --batch --delivery-id id --batch-file",
+            "des fill-contract --batch --batch-file --repo-root /repo --delivery-id id",
+        ],
+        ids=["batch-file-first", "batch-file-last", "batch-file-middle"],
+    )
+    def test_batch_file_flag_is_order_insensitive(self, command: str) -> None:
+        """K4 camp6 denial-RCA C-f1's own lesson applied to the new flag:
+        position must never matter for a value-less flag."""
+        assert (
+            pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(command)
+            is None
+        )
+
+    def test_batch_file_without_batch_is_blocked(self) -> None:
+        command = (
+            "des fill-contract --repo-root /repo --delivery-id id --status --batch-file"
+        )
+        result = pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(command)
+        assert result is not None
+
+    def test_batch_file_call_still_carrying_json_on_argv_is_blocked(self) -> None:
+        """--batch-file replaces the heredoc/stdin transport -- it is never
+        an excuse to also put the JSON literally on the command line."""
+        command = (
+            "des fill-contract --repo-root /repo --delivery-id id --batch "
+            '--batch-file [{"field":"outcome","value":"x"}]'
+        )
+        result = pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(command)
+        assert result is not None
+
+    def test_batch_file_heredoc_combination_is_rejected(self) -> None:
+        """--batch-file and the NW_FILL heredoc are mutually exclusive JSON
+        transports: heredoc compatibility is preserved only in the ABSENCE
+        of --batch-file. Combining both is a refusal, not a tolerated hybrid."""
+        command = (
+            "des fill-contract --repo-root /repo --delivery-id widget-color "
+            "--batch --batch-file <<'NW_FILL'\n[]\nNW_FILL"
+        )
+        result = pre_tool_use_handler._evaluate_atd_fill_contract_bash_command(command)
+        assert result is not None
+        assert result["decision"] == "block"
 
 
 def _stdin(*, tool_name: str, tool_input: dict, agent_type: str | None) -> str:
@@ -241,6 +322,36 @@ def _run(monkeypatch, capsys, stdin: str) -> tuple[int, dict | None]:
 
 
 class TestEndToEnd:
+    def test_atd_batch_call_passes_through_the_real_handler(
+        self, monkeypatch, capsys
+    ) -> None:
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": _VALID_BATCH_HEREDOC},
+                agent_type="nw-acceptance-designer",
+            ),
+        )
+        assert exit_code == 0
+        assert payload is None or payload.get("decision") != "block"
+
+    def test_atd_batch_file_call_passes_through_the_real_handler(
+        self, monkeypatch, capsys
+    ) -> None:
+        exit_code, payload = _run(
+            monkeypatch,
+            capsys,
+            _stdin(
+                tool_name="Bash",
+                tool_input={"command": _VALID_BATCH_FILE_COMMAND},
+                agent_type="nw-acceptance-designer",
+            ),
+        )
+        assert exit_code == 0
+        assert payload is None or payload.get("decision") != "block"
+
     def test_atd_status_call_passes_through_the_real_handler(
         self, monkeypatch, capsys
     ) -> None:

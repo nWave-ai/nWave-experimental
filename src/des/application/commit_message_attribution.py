@@ -29,6 +29,46 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+def attribution_is_due(repo: Path, *, global_config_path: Path | None = None) -> bool:
+    """Is the nWave attribution trailer due for *repo*? The ONE decision.
+
+    "Due" = the repo is nWave-ACTIVE (ADR-AG-002 ``resolve_activation`` over the
+    tri-state per-repo declaration + the global activation mode) AND the
+    attribution preference is enabled (ADR-CA-007). The trailer is an action on
+    the USER's commit, so ADR-AG-005 (opt-in ratified) applies: nWave does not
+    act in a repository the user has not activated.
+
+    Extracted so the PreToolUse mutation branch
+    (``pre_tool_use_handler.emit_commit_attribution_mutation``) and the
+    producing-tool path (:func:`attribute_commit_message`) share ONE condition
+    instead of writing it twice -- the asymmetry
+    ``F-ATTRIBUTION-GATING-ASYMMETRY-PRETOOLUSE`` closed here was precisely two
+    call sites deciding the same thing under different conditions.
+
+    Never raises: any failure in the whole resolution (unreadable/corrupt
+    config, permission error, anything) degrades to "not due". A missed trailer
+    is recoverable; a refused or blocked commit is not.
+
+    Args:
+        repo: the repository whose activation declaration (walk-up resolved) and
+            attribution preference are read.
+        global_config_path: optional override for ``~/.nwave/global-config.json``.
+            Production callers either omit it (``DESConfig``'s own default) or,
+            where ``$HOME`` must be resolved at CALL time rather than at class-
+            definition time, pass the computed path explicitly.
+    """
+    try:
+        config = (
+            DESConfig(cwd=repo, global_config_path=global_config_path)
+            if global_config_path is not None
+            else DESConfig(cwd=repo)
+        )
+        active = resolve_activation(config.enabled_for_repo, config.activation_mode)
+        return bool(active and config.attribution_enabled)
+    except Exception:
+        return False
+
+
 def attribute_commit_message(
     repo: Path, message: str, *, global_config_path: Path | None = None
 ) -> str:
@@ -45,14 +85,5 @@ def attribute_commit_message(
             (test hermeticity only -- production callers omit it and get the
             real per-machine global config via ``DESConfig``'s own default).
     """
-    try:
-        config = (
-            DESConfig(cwd=repo, global_config_path=global_config_path)
-            if global_config_path is not None
-            else DESConfig(cwd=repo)
-        )
-        active = resolve_activation(config.enabled_for_repo, config.activation_mode)
-        enabled = bool(active and config.attribution_enabled)
-    except Exception:
-        enabled = False
+    enabled = attribution_is_due(repo, global_config_path=global_config_path)
     return apply_attribution_trailer(message, enabled=enabled)

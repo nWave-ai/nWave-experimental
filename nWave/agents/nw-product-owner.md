@@ -95,7 +95,7 @@ semantics.
   never reaches this role.
 - A citation naming architecture, design, contract or test facts is NOT
   value-side: return `CHARTER-AUTHOR-DISQUALIFIED` — that defect routes
-  to DISTILL via `des revise-contract-round`, never to this role.
+  to DISTILL through a strict closure child, never to this role.
 - The `## Terminal Result` shape is unchanged; `path` is the same
   repository-relative deterministic path.
 

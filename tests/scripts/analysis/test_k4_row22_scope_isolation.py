@@ -23,12 +23,14 @@ present, is observed rather than assumed.
 from __future__ import annotations
 
 import json
+import runpy
 import sys
 from pathlib import Path
 
 import pytest
 
 from scripts.analysis.k4 import preflight
+from scripts.shared.install_paths import agents_home, codex_config_dir, env_or_none
 
 
 install_nwave = pytest.importorskip("scripts.install.install_nwave")
@@ -56,6 +58,82 @@ def _undeclared_new_paths(name: str, root: Path, before: set[Path]) -> set[Path]
     """Return every path under root that is new AND not a declared exception."""
     declared = {root / relative for relative in DECLARED_NEW_FILES[name]}
     return set(root.rglob("*")) - before - declared
+
+
+def test_empty_codex_home_create_backup_uses_native_home(tmp_path, monkeypatch):
+    """An empty CODEX_HOME is absent, not the current working directory."""
+    sentinel_home = tmp_path / "sentinel-native-home"
+    native_agents = sentinel_home / ".codex" / "agents"
+    native_agents.mkdir(parents=True)
+    (native_agents / "native-agent.toml").write_text(
+        "native codex agent\n", encoding="utf-8"
+    )
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    # The unfixed call site resolves CODEX_HOME="" to Path(".") and would
+    # therefore read this decoy instead of the native ~/.codex/agents tree.
+    cwd_agents = workspace / "agents"
+    cwd_agents.mkdir()
+    (cwd_agents / "cwd-agent.toml").write_text("cwd codex agent\n", encoding="utf-8")
+
+    monkeypatch.setattr(Path, "home", lambda: sentinel_home)
+    monkeypatch.setenv("CODEX_HOME", "")
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(workspace))
+    monkeypatch.chdir(workspace)
+
+    assert env_or_none("CODEX_HOME") is None, (
+        "WHAT: env_or_none preserved an empty CODEX_HOME value. WHY: empty "
+        "environment values are absent. HOW: normalize empty to None."
+    )
+    assert codex_config_dir() == sentinel_home / ".codex", (
+        "WHAT: codex_config_dir did not resolve the native home for an empty "
+        "CODEX_HOME. WHY: the canonical resolver must never produce Path('.'). "
+        "HOW: derive the Codex root from env_or_none and Path.home()."
+    )
+    assert agents_home() == workspace, (
+        "WHAT: agents_home did not preserve the non-empty install-root override. "
+        "WHY: the existing install-root resolver is the shared seam. HOW: use "
+        "the exact non-empty NWAVE_AGENTS_HOME Path."
+    )
+
+    package_bindings = {
+        name: getattr(install_nwave, name, None)
+        for name in ("env_or_none", "codex_config_dir", "agents_home")
+    }
+    assert package_bindings == {
+        "env_or_none": env_or_none,
+        "codex_config_dir": codex_config_dir,
+        "agents_home": agents_home,
+    }, "package import branch must bind all canonical location APIs"
+
+    bare_bindings = runpy.run_path(
+        install_nwave.__file__, run_name="__nwave_bare_import_probe__"
+    )
+    assert {
+        name: bare_bindings.get(name)
+        for name in ("env_or_none", "codex_config_dir", "agents_home")
+    } == package_bindings, "bare-script import branch must bind the same APIs"
+
+    installer = install_nwave.NWaveInstaller(
+        dry_run=False, platform_override={"codex"}, dev_mode=True
+    )
+    installer.create_backup()
+
+    backup_files = {
+        path.read_text(encoding="utf-8")
+        for path in (workspace / ".nwave" / "backups").rglob("*.toml")
+    }
+    assert "native codex agent\n" in backup_files, (
+        "WHAT: empty CODEX_HOME did not resolve to the native ~/.codex/agents. "
+        "WHY: the Codex backup must use the canonical location resolver. "
+        "HOW: treat an empty override as absent before constructing the Path."
+    )
+    assert "cwd codex agent\n" not in backup_files, (
+        "WHAT: Codex backup read an agent from the current directory. "
+        "WHY: empty CODEX_HOME must never become Path('.'). "
+        "HOW: resolve CODEX_HOME through the shared native-home helper."
+    )
 
 
 def test_arm_env_pins_agents_home_keeping_codex_backup_off_the_sentinel_home(

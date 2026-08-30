@@ -89,6 +89,112 @@ def _anchor_key(text: str) -> str:
     return _NON_SLUG_RUN_RE.sub("", text.lower())
 
 
+def _resolve_heading_section(
+    lines: list[str], anchor: str, *, locator: str, doc_part: str
+) -> tuple[int, int] | UnresolvedAuthorityReference | AmbiguousAuthorityReference:
+    """The ``[heading_index, section_end)`` line range one normalized
+    ``anchor`` names in ``lines`` -- the heading matching it through the
+    next heading at the same-or-shallower level (or end of document) -- or
+    a typed unresolved/ambiguous reference.
+
+    The ONE place a heading anchor resolves to a section boundary, shared
+    by :func:`resolve_verification_authority` (which then searches within
+    the range for a fenced literal-script block) and
+    :func:`resolve_authority_section` (which returns the range's own prose
+    verbatim) -- never a second, drifted copy of the anchor-matching and
+    collision law per caller."""
+    target_key = _anchor_key(anchor)
+    matches: list[tuple[int, int, str]] = []
+    for index, line in enumerate(lines):
+        heading = _HEADING_RE.match(line)
+        if heading and _anchor_key(heading.group("text")) == target_key:
+            matches.append((index, len(heading.group("hashes")), heading.group("text")))
+    if not matches:
+        return UnresolvedAuthorityReference(
+            locator, f"no heading in {doc_part!r} matches the anchor {anchor!r}"
+        )
+    if len(matches) > 1:
+        # Anchor identity is a normalized key, so DISTINCT headings can
+        # collide (``D-112.14 -- A-B`` vs ``D-11214 AB``). Binding the
+        # first match would silently execute a different authority's
+        # order than the brief meant -- refuse, naming every candidate.
+        candidates = tuple(text for _, _, text in matches)
+        listed = ", ".join(f"{text!r} (line {index + 1})" for index, _, text in matches)
+        return AmbiguousAuthorityReference(
+            locator,
+            candidates,
+            f"the anchor {anchor!r} matches {len(matches)} headings in "
+            f"{doc_part!r}: {listed} -- they normalize to the same anchor "
+            "key, so the reference does not name exactly one section",
+        )
+    heading_index, heading_level, _ = matches[0]
+
+    section_end = len(lines)
+    for index in range(heading_index + 1, len(lines)):
+        heading = _HEADING_RE.match(lines[index])
+        if heading and len(heading.group("hashes")) <= heading_level:
+            section_end = index
+            break
+    return heading_index, section_end
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedAuthoritySection:
+    """One architecture-authority citation's own cited SECTION -- the
+    heading matching its anchor through the next same-or-shallower heading
+    (exclusive), joined back into verbatim prose.
+
+    Unlike :class:`LiteralScriptBlock` this carries no fenced-block
+    requirement: a ``des compile-contract --architecture-authority
+    <path>.md#<anchor>`` citation names an ordinary prose section (target
+    citations, obligation labels, tables), never a literal script."""
+
+    locator: str
+    text: str
+    start: int
+    end: int
+    insertion_end: int
+
+
+def resolve_authority_section(
+    document_text: str, anchor: str, *, locator: str, doc_part: str
+) -> (
+    ResolvedAuthoritySection
+    | UnresolvedAuthorityReference
+    | AmbiguousAuthorityReference
+):
+    """The prose SECTION ``<doc>#<anchor>`` names within an already-read
+    ``document_text``: the heading matching ``anchor`` through the next
+    heading at the same-or-shallower level (or end of document), verbatim.
+
+    Shares the anchor-matching/ambiguity law with
+    :func:`resolve_verification_authority` (:func:`_resolve_heading_section`)
+    -- the same ``<doc>#<anchor>`` citation shape, resolved to a line range
+    exactly once. Does no I/O itself: the caller (``des compile-contract``)
+    already validated and read the document under its own ``--repo-root``
+    rules; this is pure text resolution over what it read."""
+    lines = document_text.splitlines(keepends=True)
+    bounds = _resolve_heading_section(lines, anchor, locator=locator, doc_part=doc_part)
+    if isinstance(bounds, (UnresolvedAuthorityReference, AmbiguousAuthorityReference)):
+        return bounds
+    heading_index, section_end = bounds
+    insertion_end = section_end
+    for index in range(heading_index + 1, section_end):
+        if _HEADING_RE.match(lines[index]):
+            insertion_end = index
+            break
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+    return ResolvedAuthoritySection(
+        locator=locator,
+        text="".join(lines[heading_index:section_end]),
+        start=offsets[heading_index],
+        end=offsets[section_end],
+        insertion_end=offsets[insertion_end],
+    )
+
+
 def resolve_verification_authority(
     repo_root: Path, locator: str
 ) -> LiteralScriptBlock | UnresolvedAuthorityReference | AmbiguousAuthorityReference:
@@ -141,38 +247,10 @@ def resolve_verification_authority(
         )
 
     lines = text.splitlines()
-    target_key = _anchor_key(anchor)
-    matches: list[tuple[int, int, str]] = []
-    for index, line in enumerate(lines):
-        heading = _HEADING_RE.match(line)
-        if heading and _anchor_key(heading.group("text")) == target_key:
-            matches.append((index, len(heading.group("hashes")), heading.group("text")))
-    if not matches:
-        return UnresolvedAuthorityReference(
-            locator, f"no heading in {doc_part!r} matches the anchor {anchor!r}"
-        )
-    if len(matches) > 1:
-        # Anchor identity is a normalized key, so DISTINCT headings can
-        # collide (``D-112.14 -- A-B`` vs ``D-11214 AB``). Binding the
-        # first match would silently execute a different authority's
-        # order than the brief meant -- refuse, naming every candidate.
-        candidates = tuple(text for _, _, text in matches)
-        listed = ", ".join(f"{text!r} (line {index + 1})" for index, _, text in matches)
-        return AmbiguousAuthorityReference(
-            locator,
-            candidates,
-            f"the anchor {anchor!r} matches {len(matches)} headings in "
-            f"{doc_part!r}: {listed} -- they normalize to the same anchor "
-            "key, so the reference does not name exactly one section",
-        )
-    heading_index, heading_level, _ = matches[0]
-
-    section_end = len(lines)
-    for index in range(heading_index + 1, len(lines)):
-        heading = _HEADING_RE.match(lines[index])
-        if heading and len(heading.group("hashes")) <= heading_level:
-            section_end = index
-            break
+    bounds = _resolve_heading_section(lines, anchor, locator=locator, doc_part=doc_part)
+    if isinstance(bounds, (UnresolvedAuthorityReference, AmbiguousAuthorityReference)):
+        return bounds
+    heading_index, section_end = bounds
 
     fence_open: int | None = None
     block: list[str] | None = None

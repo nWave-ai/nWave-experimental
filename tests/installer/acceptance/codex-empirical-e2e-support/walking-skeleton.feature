@@ -9,14 +9,11 @@ Feature: Codex+DES end-to-end empirical proof
   I want my Codex session to actually trigger DES enforcement when I run a tool
   So that I can trust the "Codex platform support" claim is empirically true
 
-  Background:
-    Given the Codex hooks schema spike artifact exists at docs/feature/codex-empirical-e2e-support/spike-codex-hooks-schema.md
-
   @walking_skeleton @driving_port @real-io @us-4 @slice-01
-  Scenario: Developer installs nWave for Codex and a Bash invocation fires DES
+  Scenario: Developer installs nWave for Codex and an exec_command invocation fires DES
     Given a clean Codex environment with no prior nWave hooks
     And the nwave-ai installer has been run with --platform codex
-    When a Codex session invokes the Bash tool with command "echo hello"
+    When a Codex session invokes exec_command with command "echo hello"
     Then the DES PreToolUse hook is fired by Codex
     And the audit log contains a HOOK_INVOKED entry with handler "pre_tool_use"
     And the audit log contains a HOOK_COMPLETED entry with handler "pre_tool_use" and exit_code 0
@@ -27,7 +24,7 @@ Feature: Codex+DES end-to-end empirical proof
     Given a clean Codex environment with no prior nWave hooks
     And the real Codex binary is not available in the test environment
     And the nwave-ai installer has been run with --platform codex
-    When the fake-codex harness loads the installed hooks file and invokes the Bash tool
+    When the fake-codex harness loads the installed hooks file and invokes exec_command
     Then the harness reads the hooks file in the event-keyed schema
     And the harness invokes the DES adapter with the documented stdin envelope
     And the audit log contains a HOOK_COMPLETED entry with handler "pre_tool_use" and exit_code 0

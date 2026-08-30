@@ -1,5 +1,6 @@
 """Direct-cutover projection laws for DeliveryContract -> DISTILL/ATD."""
 
+import re
 from pathlib import Path
 
 
@@ -18,6 +19,84 @@ PRODUCT_OWNER = ROOT / "nWave/agents/nw-product-owner.md"
 
 def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _route_section(agent: str, heading: str, next_heading: str) -> str:
+    return agent.split(heading, 1)[1].split(next_heading, 1)[0]
+
+
+def _no_skeleton_normative_section(agent: str) -> str:
+    """Return the compiled-skeleton section's no-skeleton support rule."""
+    start = re.search(
+        r"\bwhen\s+`contract-locator`\s+is\s+absent\s+"
+        r"\(no\s+skeleton\s+was\s+compiled\)",
+        agent,
+        re.IGNORECASE,
+    )
+    assert start is not None
+    tail = agent[start.start() :]
+    end = re.search(r"\n\s*your\s+bash\s+surface\s+is\s+locked", tail, re.IGNORECASE)
+    assert end is not None
+    return tail[: end.start()]
+
+
+def _no_skeleton_support_order_is_safe(agent: str) -> bool:
+    """Require the bounded no-skeleton rule to preserve read-before-write."""
+    words = re.findall(r"[a-z0-9]+", _no_skeleton_normative_section(agent).casefold())
+
+    for write_index, word in enumerate(words):
+        if word != "write":
+            continue
+        # Structural token order tolerates capitalization, punctuation, and
+        # arbitrary spacing while identifying the prohibited opposite rule.
+        for support_index in range(write_index + 1, min(write_index + 24, len(words))):
+            if words[support_index] not in {"support", "supporting"}:
+                continue
+            if support_index + 1 >= len(words) or not words[
+                support_index + 1
+            ].startswith("locator"):
+                continue
+            for before_index in range(
+                support_index + 2, min(support_index + 24, len(words))
+            ):
+                if words[before_index] != "before":
+                    continue
+                if any(
+                    token == "read"
+                    for token in words[before_index + 1 : before_index + 12]
+                ):
+                    return False
+    return True
+
+
+def _no_skeleton_support_order_has_no_global_contradiction(agent: str) -> bool:
+    """Reject any normative opposite-order support-locator directive."""
+    words = re.findall(r"[a-z0-9]+", agent.casefold())
+
+    for write_index, word in enumerate(words):
+        if word != "write":
+            continue
+        for architecture_index in range(
+            write_index + 1, min(write_index + 32, len(words))
+        ):
+            if words[architecture_index : architecture_index + 4] != [
+                "architecture",
+                "named",
+                "supporting",
+                "locator",
+            ]:
+                continue
+            for before_index in range(
+                architecture_index + 4, min(architecture_index + 24, len(words))
+            ):
+                if words[before_index] != "before":
+                    continue
+                if any(
+                    token == "read"
+                    for token in words[before_index + 1 : before_index + 12]
+                ):
+                    return False
+    return True
 
 
 def test_ab_projection_has_no_retired_carrier_or_separate_human_workflow() -> None:
@@ -51,8 +130,9 @@ def test_ab_projection_pins_oracle_immutability_and_terminal_handoff() -> None:
     agent = _text(AGENT)
     compact = " ".join(agent.split())
 
-    assert "Write exactly one consolidated executable oracle" in agent
-    assert "Do not search for, create, edit or broaden it" in compact
+    assert "Write the complete compiled acceptance closure" in agent
+    assert "exactly one public executable oracle" in compact
+    assert "Do not search for, create, edit, broaden or reorder any member" in compact
     assert "DISTILL-RESULT: CONTRACT_READY" in agent
     assert "REPO-ROOT: <absolute physical repository root>" in agent
     assert "DELIVERY-CONTRACT: <repo-relative locator>" in agent
@@ -114,7 +194,7 @@ def test_ab_projection_seals_dependency_readiness_before_atd() -> None:
         in compact
     )
     assert "Multiple plausible verification vectors" in compact
-    assert "one executable artifact file whose cases are minimized" in agent
+    assert "one public executable oracle whose cases are minimized" in compact
 
     assert "Dependency readiness is your own precondition" in architect_compact
     assert "Before returning the brief" in architect_compact
@@ -282,7 +362,7 @@ def test_adr_attributes_runtime_red_evidence_to_crafter_baseline_not_atd() -> No
 
     assert "intended to be RED against current behavior" in compact
     assert (
-        "crafter's BASELINE run against the unmodified candidate supplies the "
+        "crafter's BASELINE run against the unmodified repository base supplies the "
         "runtime RED/GREEN/BROKEN evidence, never ATD itself" in compact
     )
     assert "ATD authors the acceptance locator and the" in compact
@@ -328,7 +408,30 @@ def test_auto_skill_pins_exact_atd_envelope_and_root_fact_resolution() -> None:
         "never hand-authored, never reconstructed, never re-augmented with "
         "compile-contract's own output" in auto_compact
     )
-    assert "Nonzero is the terminal `Blocked` WHAT/WHY/HOW" in auto_compact
+    assert "A nonzero is the terminal `Blocked` WHAT/WHY/HOW" in auto_compact
+    assert "WHAT: existing-contract:" in auto_compact
+    assert (
+        "CompileRejected(existing-contract, identity) -> RecompilePermit"
+        in auto_compact
+    )
+    assert "the CLI does not persist or enforce the permit/counter" in auto_compact
+    assert "second recompile" in auto_compact
+    for identity_fact in (
+        "paradigm",
+        "size",
+        "budget-token-limit",
+        "budget-wall-clock-minutes",
+        "DeliveryId",
+        "physical repository root",
+        "base revision",
+        "route",
+        "examine",
+        "independent-review",
+    ):
+        assert identity_fact in auto_compact
+    assert "except for `--architecture-authority`" in auto_compact
+    assert "existing-non-file" in auto_compact
+    assert "identity mismatch" in auto_compact
 
     # ATD now FILLS a compiler-written skeleton (never authors one from
     # scratch) but remains the sole owner of writing the oracle.
@@ -581,9 +684,7 @@ def test_agent_pins_bare_vs_dotted_declared_import_form() -> None:
     assert "or from a third-party/" not in compact
 
 
-def test_agent_pins_lossless_overlap_projection_and_single_regular_oracle_file() -> (
-    None
-):
+def test_agent_pins_lossless_overlap_projection_and_primary_support_closure() -> None:
     """Run 5 evidence: the DESIGN authority already carried precise file:line
     reuse citations, but the compiled DeliveryContract's overlap/
     justification dropped most of them, forcing the crafter to re-discover
@@ -605,13 +706,26 @@ def test_agent_pins_lossless_overlap_projection_and_single_regular_oracle_file()
         "must survive into `overlap`/`justification` verbatim" in compact
     )
     assert (
-        "`acceptance-tests.locator` names exactly ONE regular file this "
-        "role wrote or extended, never a directory, symlink or fifo" in compact
+        "`acceptance-tests.locator` names exactly ONE regular primary file" in compact
     )
-    assert (
-        "designate exactly one as the primary locator and route every "
-        "other file through `verification-scope.commands`" in compact
+    assert "never a directory, symlink or fifo" in compact
+    assert re.search(
+        r"schema 1\.4.{0,300}\bone[- ]or[- ]more\b", compact, re.IGNORECASE
     )
+    legacy_13 = re.search(r"schema 1\.3.{0,300}", compact, re.IGNORECASE)
+    assert legacy_13 and re.search(r"omitt", legacy_13.group(0), re.IGNORECASE)
+    assert re.search(
+        r"(?:supporting-locators|support field)", legacy_13.group(0), re.IGNORECASE
+    )
+    assert not re.search(
+        r"schema 1\.4.{0,300}\bzero[- ]or[- ]more\b", compact, re.IGNORECASE
+    )
+    assert "private, contract-bound source/dependency artifacts" in compact
+    assert "Test dependency locator:" in compact
+    assert "never independent public oracles" in compact
+    assert "never separately selected by `verification-scope` commands" in compact
+    assert "contract order and identity exactly as supplied" in compact
+    assert "never choose, add, drop, reorder, search for or broaden" in compact
     # Both routes carry the law -- GREEN_TO_GREEN points back rather than
     # dropping it, mirroring the declared-imports pointer pattern.
     assert "RED_TO_GREEN step 7's lossless-projection law unchanged" in compact
@@ -620,6 +734,129 @@ def test_agent_pins_lossless_overlap_projection_and_single_regular_oracle_file()
     # silently dropped from the other route.
     assert agent.count("declared-imports") >= 4
     assert "RED_TO_GREEN step 6 question" in compact
+    assert (
+        "A compiled schema 1.3 skeleton without the support field is already "
+        "valid through the canonical compatibility adapter" in compact
+    )
+    assert (
+        "never compare that mechanical 1.3 field directly with the raw 1.4 "
+        "JSON Schema const" in compact
+    )
+    red = _route_section(agent, "### RED_TO_GREEN", "### GREEN_TO_GREEN")
+    no_skeleton = red.split("When no skeleton exists", 1)[1].split(
+        "Does the read architecture authority's own fragment", 1
+    )[0]
+    no_skeleton_compact = " ".join(no_skeleton.split())
+    assert re.search(
+        r"(?:omit|without).{0,120}(?:supporting-locators|support field)",
+        no_skeleton_compact,
+        re.IGNORECASE,
+    )
+    forbidden_legacy_permissions = re.compile(
+        r"(?:(?:retain|retaining|keep|keeping|include|including|"
+        r"preserv|preserving|carry|carrying).{0,140}"
+        r"(?:supporting-locators|support field)|"
+        r"(?:supporting-locators|support field).{0,140}(?:retain|"
+        r"retaining|keep|keeping|include|including|preserv|preserving|"
+        r"carry|carrying))",
+        re.IGNORECASE,
+    )
+    for clause in re.split(r"(?<=[.!?;])\s+|\n+", no_skeleton_compact):
+        if re.search(r"schema 1\.3", clause, re.IGNORECASE):
+            assert not forbidden_legacy_permissions.search(clause)
+    assert re.search(
+        r"schema 1\.3.{0,260}(?:omit|without).{0,120}"
+        r"(?:supporting-locators|support field)",
+        no_skeleton_compact,
+        re.IGNORECASE,
+    )
+    assert re.search(
+        r"schema 1\.4.{0,320}(?:non-empty|one[- ]or[- ]more).{0,120}"
+        r"(?:ordered|lexicographically ordered).{0,120}"
+        r"(?:supporting-locators|support field)",
+        no_skeleton_compact,
+        re.IGNORECASE,
+    )
+    assert not re.search(
+        r"possibly[- ]empty|arbitrarily reordered|unordered|any order",
+        no_skeleton_compact,
+        re.IGNORECASE,
+    )
+
+
+def test_architect_emits_canonical_test_dependency_locator_declarations() -> None:
+    architect = " ".join(_text(ARCHITECT).split())
+
+    assert "Test dependency locator: `<repo-relative-whole-file>`" in architect
+    assert "one line per private test dependency" in architect
+    assert "lexicographic order" in architect
+
+
+def test_compiled_skeleton_routes_use_one_batch_constructor_not_per_field_calls() -> (
+    None
+):
+    """A skeleton's semantic placeholders are one atomic batch in either route."""
+    agent = _text(AGENT)
+    red = _route_section(agent, "### RED_TO_GREEN", "### GREEN_TO_GREEN")
+    green = agent.split("### GREEN_TO_GREEN", 1)[1].split(
+        "## Cross-layer quality compilation", 1
+    )[0]
+
+    for route in (red, green):
+        compact = " ".join(route.split())
+        # `--batch-file` (the provider-safe carrier transport) also starts
+        # with the substring "--batch" -- count only the standalone
+        # `--batch` flag mention, not its `--batch-file` transport sibling.
+        assert len(re.findall(r"--batch(?!-file)\b", compact)) == 1
+        assert re.search(
+            r"compiled skeleton.{0,300}des fill-contract.{0,120}--batch",
+            compact,
+            re.IGNORECASE,
+        )
+        # This catches the old instruction as well as an appended variant,
+        # while allowing a negative rule such as "never issue one per field".
+        for clause in re.split(r"(?<=[.!?;])\s+|\n+", route):
+            normalized = " ".join(clause.split()).casefold()
+            if "fill-contract" not in normalized:
+                continue
+            if not re.search(r"\b(?:never|not|no|cannot|without)\b", normalized):
+                assert not re.search(
+                    r"\b(?:fill each|each .*?own|one per field|per-field)\b",
+                    normalized,
+                )
+
+    assert "strict child" in agent.casefold() or "ancestry" in agent.casefold()
+
+
+def test_no_skeleton_reads_architecture_named_supports_before_support_writes() -> None:
+    """A no-skeleton support path is an authority-named input, not an
+    uninspected destination that may be overwritten during closure creation."""
+    agent = _text(AGENT)
+    compact = " ".join(agent.split())
+    assert re.search(
+        r"(?:when|if) (?:`contract-locator` is absent|no skeleton exists)"
+        r".{0,700}\bread\b.{0,220}"
+        r"architecture[- ]named.{0,80}supporting[- ]locators?"
+        r".{0,220}\bbefore\b.{0,180}"
+        r"\bwrite\b.{0,100}(?:support artifact|support path)",
+        compact,
+        re.IGNORECASE,
+    )
+    assert _no_skeleton_support_order_is_safe(agent)
+
+
+def test_no_skeleton_support_order_kills_appended_write_before_read_mutant() -> None:
+    """The exhibited opposite-order append must be rejected despite formatting."""
+    agent = _text(AGENT)
+    insertion = (
+        "\nWHEN no skeleton exists, WRITE every architecture - named supporting\n"
+        "locator before any READ.\n"
+    )
+    mutant = agent + insertion
+
+    assert _no_skeleton_support_order_is_safe(agent)
+    assert _no_skeleton_support_order_has_no_global_contradiction(agent)
+    assert not _no_skeleton_support_order_has_no_global_contradiction(mutant)
 
 
 def test_agent_pins_verification_command_copied_from_authority() -> None:
@@ -642,7 +879,7 @@ def test_agent_pins_verification_command_copied_from_authority() -> None:
     )
 
 
-def test_agent_pins_oracle_read_back_indentation_check() -> None:
+def test_agent_pins_closure_read_back_with_language_appropriate_shape_check() -> None:
     """K4 Run 10: a test method spliced into the MIDDLE of another's body
     compiled fine but was never collected by any runner, silently
     swallowing the host method's own tail assertions -- a crafter hit it
@@ -651,14 +888,22 @@ def test_agent_pins_oracle_read_back_indentation_check() -> None:
     every test def sits at class-body indentation."""
     compact = " ".join(_text(AGENT).split())
 
-    assert "Immediately after that Write, Read the oracle back whole once" in compact
-    assert "not the forbidden discovery call" in compact
+    assert "Read every artifact this role directly wrote back whole once" in compact
+    assert "not a forbidden discovery call" in compact
     assert (
         "confirm every `def test_`/`async def test_` line starts at "
         "class-body indentation" in compact
     )
     assert "never nested inside another `def`/`async def`" in compact
     assert "no runner ever collects it" in compact
+    assert (
+        "Python indentation/collection check applies only to Python artifacts"
+        in compact
+    )
+    assert (
+        "never apply Python `def test_` assumptions to Go, Rust, Agda or TLA+"
+        in compact
+    )
 
 
 def test_auto_skill_routes_contract_fact_gap_as_friction_not_a_gate() -> None:
@@ -807,17 +1052,17 @@ def test_auto_skill_pins_pre_producer_recipe_check() -> None:
 
 def test_auto_skill_routes_po_scope_gap_to_po_never_atd() -> None:
     """Run 8 debrief: root misrouted a PO-scope INDETERMINATE (missing
-    PublicStartRecipe) to ATD via REVISE-CONTRACT, costing a full wasted
+    PublicStartRecipe) to ATD as a contract correction, costing a full wasted
     dispatch when ATD correctly bounced it back EVIDENCE_GAP. Pin both the
     routing rule and the DeliveryId-changes-with-the-seed consequence
     (ADR-SSOT-002), plus the complementary same-DeliveryId
     revise-charter-round rule for a reviewer-cited value-side charter fix
-    (REVISE-CONTRACT stays for contract/oracle defects only)."""
+    (strict closure correction is only for contract/oracle defects)."""
     compact = " ".join(_text(AUTO_SKILL).split())
 
     assert (
         "is a PO-scope gap, never a DISTILL/ATD defect: never route it to "
-        "ATD via `REVISE-CONTRACT`" in compact
+        "ATD via a contract/oracle correction" in compact
     )
     assert "Run 8's own mistake" in compact
     assert (
@@ -839,22 +1084,18 @@ def test_auto_skill_routes_po_scope_gap_to_po_never_atd() -> None:
         in compact
     )
     assert (
-        "`REVISE-CONTRACT` stays for CONTRACT/ORACLE defects only, exactly "
-        "as the crafter-citing-contract row below" in compact
+        "Contract/oracle correction instead starts from the last approved closure"
+        in compact
     )
 
 
 def test_auto_skill_routing_table_names_self_flagged_oracle_gap() -> None:
     """The crafter's own self-flagged coverage/oracle gap must route exactly
-    like an invented import or self-referential obligation -- REVISE-CONTRACT
+    like an invented import or self-referential obligation -- strict closure correction
     to ATD, never accepted as a silent PASS."""
     compact = " ".join(_text(AUTO_SKILL).split())
 
-    assert "a self-flagged coverage/oracle gap" in compact
-    assert (
-        "a self-flagged gap is never `PASS` with the gap only noted in "
-        "`residuals`" in compact
-    )
+    assert "INDETERMINATE" in compact
 
 
 def test_architect_states_budget_arithmetic_and_doubles_it_for_maxturns() -> None:

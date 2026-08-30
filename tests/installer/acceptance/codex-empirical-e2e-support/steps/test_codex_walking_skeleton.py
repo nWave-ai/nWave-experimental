@@ -1,4 +1,4 @@
-"""Step bodies for slice-01 walking skeleton (US-4 / FM-4 closure).
+"""Collected Codex hook walking-skeleton scenarios.
 
 Driving port: ``CodexDESPlugin.install(context)`` followed by ``FakeCodexHarness.
 fire_pre_tool_use(...)``.  Audit-log assertions read the JSONL files written by
@@ -18,6 +18,7 @@ was wrong and is superseded by DDD-5.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,12 +57,13 @@ def _build_real_harness_env(audit_dir: Path, home_dir: Path) -> dict:
         "PATH": "/usr/bin:/bin",
         "DES_AUDIT_LOG_DIR": str(audit_dir),
         "PYTHONPATH": str(repo_src),
-        "HOME": str(home_dir),
+        "NWAVE_AGENTS_HOME": os.environ["NWAVE_AGENTS_HOME"],
+        "CODEX_HOME": str(home_dir / ".codex"),
     }
 
 
 def _rebind_command_to_repo_python(command: str) -> str:
-    """Rewrite the patched-resolver command into one that actually runs.
+    """Rebind the installed event token to the repository adapter.
 
     ``patched_resolvers`` sets the python path to ``/usr/bin/python3`` and the
     PYTHONPATH to ``/home/tester/.claude/lib/python`` — neither exists on the
@@ -69,15 +71,15 @@ def _rebind_command_to_repo_python(command: str) -> str:
     relies on) but substitute the real interpreter + repo src/ so the adapter
     actually fires.
     """
-    marker = "claude_code_hook_adapter"
-    idx = command.find(marker)
-    assert idx != -1, f"command must reference adapter; got {command!r}"
-    trailing = command[idx + len(marker) :].strip()
+    assert "claude_code_hook_adapter" in command, (
+        f"command must reference adapter; got {command!r}"
+    )
+    event_token = command.strip().split()[-1]
     repo_src = Path(__file__).resolve().parents[5] / "src"
     return (
         f"PYTHONPATH={repo_src} {sys.executable} -m "
         f"des.adapters.drivers.hooks.claude_code_hook_adapter "
-        f"{trailing}"
+        f"{event_token}"
     )
 
 
@@ -89,25 +91,6 @@ def _rewrite_hooks_file_with_real_command(hooks_path: Path) -> None:
             if "claude_code_hook_adapter" in handler.get("command", ""):
                 handler["command"] = _rebind_command_to_repo_python(handler["command"])
     hooks_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
-
-
-# --- Given (background) ----------------------------------------------------
-
-
-@given(
-    "the Codex hooks schema spike artifact exists at docs/feature/codex-empirical-e2e-support/spike-codex-hooks-schema.md"
-)
-def spike_artifact_exists() -> None:
-    spike = (
-        Path(__file__).resolve().parents[5]
-        / "docs"
-        / "feature"
-        / "codex-empirical-e2e-support"
-        / "spike-codex-hooks-schema.md"
-    )
-    assert spike.is_file(), (
-        f"SPIKE artifact must exist at {spike} (DDD-8 canonical source)"
-    )
 
 
 # --- Given (scenario) ------------------------------------------------------
@@ -175,25 +158,31 @@ def hooks_file_in_legacy_schema(hooks_path: Path, state, tmp_path) -> None:
 # --- When ------------------------------------------------------------------
 
 
-@when(parsers.parse('a Codex session invokes the Bash tool with command "{cmd}"'))
-def codex_invokes_bash(cmd: str, state, codex_home: Path) -> None:
+@when(parsers.parse('a Codex session invokes exec_command with command "{cmd}"'))
+def codex_invokes_exec_command(
+    cmd: str, state, codex_home: Path, activated_project_dir: Path
+) -> None:
     harness = FakeCodexHarness(
         state["hooks_path"],
         env=_build_real_harness_env(state["audit_dir"], codex_home.parent),
+        session_cwd=str(activated_project_dir),
     )
     state["invocations"] = harness.fire_pre_tool_use(
-        tool_name="Bash", tool_input={"command": cmd}
+        tool_name="exec_command", tool_input={"cmd": cmd}
     )
 
 
-@when("the fake-codex harness loads the installed hooks file and invokes the Bash tool")
-def fake_harness_invokes_bash(state, codex_home: Path) -> None:
+@when("the fake-codex harness loads the installed hooks file and invokes exec_command")
+def fake_harness_invokes_exec_command(
+    state, codex_home: Path, activated_project_dir: Path
+) -> None:
     harness = FakeCodexHarness(
         state["hooks_path"],
         env=_build_real_harness_env(state["audit_dir"], codex_home.parent),
+        session_cwd=str(activated_project_dir),
     )
     state["invocations"] = harness.fire_pre_tool_use(
-        tool_name="Bash", tool_input={"command": "echo hello"}
+        tool_name="exec_command", tool_input={"cmd": "echo hello"}
     )
 
 
@@ -215,10 +204,11 @@ def des_hook_fired(state) -> None:
     invocations = state.get("invocations", [])
     assert len(invocations) >= 1, (
         f"at least one PreToolUse hook must fire; got {len(invocations)} "
-        f"(matcher mismatch — slice-03 narrow matcher must include Bash)"
+        f"(matcher mismatch — matcher must include exec_command)"
     )
     assert invocations[0].exit_code == 0, (
         f"hook must exit 0 (allow); got {invocations[0].exit_code}\n"
+        f"stdout: {invocations[0].stdout!r}\n"
         f"stderr: {invocations[0].stderr!r}"
     )
 
