@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
+import os  # noqa: F401 - the os module is this command's filesystem seam
 import re
 import stat
 import sys
@@ -20,6 +20,12 @@ from des._internal.delivery_contract_schema import (
     SchemaUnreadable,
     SchemaViolation,
     delivery_contract_schema_violation,
+)
+from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
+from des.application.ordinary_request import (
+    DELIVERY_ID_PREFIX,
+    compute_delivery_id,
+    contract_locator_for,
 )
 from des.cli._charter_resolution import (
     _assert_never,
@@ -38,6 +44,11 @@ from des.cli._placeholder_refusal import (
 )
 from des.domain.oracle_locator_resolver import (
     oracle_citation_file_part as _oracle_file_part,
+)
+from des.ports.driven_ports.filesystem_port import (
+    FileSystemPort,
+    RegularFileSnapshot,
+    SnapshotRefusal,
 )
 
 
@@ -148,15 +159,13 @@ def _load_delivery_contract(
         )
         return None
 
-    try:
-        contract_bytes = candidate.read_bytes()
-    except OSError as exc:
-        _handoff_refusal(
-            what=f"the contract cannot be read ({exc})",
-            why="DELIVER requires readable contract bytes",
-            how="fix the file permissions and rerun des dispatch",
-        )
+    # The contract is a closure member like any other: it is acquired through
+    # the validated no-follow capability, never through an ordinary reread.
+    acquired = RealFileSystem().acquire_regular_snapshot(candidate, role="contract")
+    if isinstance(acquired, SnapshotRefusal):
+        _handoff_refusal(what=acquired.what, why=acquired.why, how=acquired.how)
         return None
+    contract_bytes = acquired.content
     try:
         contract = json.loads(contract_bytes.decode("utf-8"))
     except UnicodeDecodeError as exc:
@@ -202,6 +211,47 @@ def _load_delivery_contract(
         )
         return None
     return contract, path_str, contract_bytes
+
+
+def _auto_contract_boundary_findings(
+    contract: dict, locator: str
+) -> list[tuple[str, str, str]]:
+    """The two untrusted-file boundary checks for an `auto-` DeliveryId:
+    an `auto-` id is a self-asserted claim about the VALUE-SEED that
+    produced it, so DELIVER must not trust a contract moved off its own
+    canonical locator, nor one whose `outcome` no longer hashes to its own
+    `delivery-id`. A nominal (non-auto) contract carries neither claim and
+    is untouched by this check."""
+    delivery_id = str(contract.get("delivery-id", ""))
+    if not delivery_id.startswith(DELIVERY_ID_PREFIX):
+        return []
+    findings: list[tuple[str, str, str]] = []
+    canonical_locator = contract_locator_for(delivery_id)
+    if locator != canonical_locator:
+        findings.append(
+            (
+                f"the auto delivery-id {delivery_id!r} contract was dispatched "
+                f"from {locator!r}, not its canonical locator {canonical_locator!r}",
+                "an auto delivery-id owns exactly one deterministic authoring "
+                "locator -- a contract found elsewhere could be a copy or a "
+                "stale duplicate never re-validated against that locator",
+                f"dispatch the contract at its canonical locator {canonical_locator!r}",
+            )
+        )
+    outcome = contract.get("outcome")
+    if isinstance(outcome, str) and compute_delivery_id(outcome) != delivery_id:
+        findings.append(
+            (
+                f"the contract's outcome does not hash to its own auto "
+                f"delivery-id {delivery_id!r}",
+                "an auto delivery-id is a deterministic function of its own "
+                "VALUE-SEED outcome -- a mismatch means the outcome was "
+                "altered after compilation",
+                "recompile the contract from the original VALUE-SEED with "
+                "des compile-contract, never hand-edit outcome",
+            )
+        )
+    return findings
 
 
 def _regular_closure_path_finding(
@@ -271,116 +321,41 @@ def _oracle_path_finding(repo_root: Path, locator: str) -> tuple[str, str, str] 
     )
 
 
-def _same_file_identity(first: os.stat_result, second: os.stat_result) -> bool:
-    return (
-        first.st_dev,
-        first.st_ino,
-        stat.S_IFMT(first.st_mode),
-    ) == (
-        second.st_dev,
-        second.st_ino,
-        stat.S_IFMT(second.st_mode),
-    )
+def _acquire_closure_member(
+    repo_root: Path, locator: str, *, role: str, filesystem: FileSystemPort
+) -> RegularFileSnapshot | None:
+    """Acquire one validated closure member snapshot, or refuse WHAT/WHY/HOW.
 
-
-def _same_file_snapshot(first: os.stat_result, second: os.stat_result) -> bool:
-    """True when identity and byte-relevant metadata stayed stable."""
-    return _same_file_identity(first, second) and (
-        first.st_size,
-        first.st_mtime_ns,
-        first.st_ctime_ns,
-    ) == (
-        second.st_size,
-        second.st_mtime_ns,
-        second.st_ctime_ns,
-    )
-
-
-def _read_regular_file_no_follow(
-    repo_root: Path, locator: str, *, role: str
-) -> bytes | None:
-    """Read one byte-stable snapshot from the same no-follow regular FD.
-
-    Metadata brackets replacement and ordinary writes, but timestamps are
-    not a byte oracle on every filesystem.  The last path observation is
-    therefore followed by a second read from the still-open FD.  Equality
-    with the first read is the linearization check, and the final read is the
-    value returned to the digest.  Mutation after that observation belongs to
-    the downstream frozen-digest point-of-use comparison; perpetual path
-    immutability is neither possible nor claimed here.
+    The same-descriptor algorithm itself lives on the real filesystem
+    adapter: this CLI holds no second copy of it, so a CLI reader and an
+    adapter reader can no longer agree on the same unsafe sequence.
     """
     finding = _regular_closure_path_finding(repo_root, locator, role=role)
     if finding is not None:
         what, why, how = finding
         _handoff_refusal(what=what, why=why, how=how)
         return None
-    candidate = repo_root / locator
-    try:
-        before = candidate.lstat()
-        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(candidate, flags)
-    except OSError as exc:
-        _handoff_refusal(
-            what=f"the {role} cannot be opened without following links ({exc})",
-            why=f"delivery closure requires stable readable {role} bytes",
-            how=f"replace the {role} with a readable regular file and rerun",
-        )
+    outcome = filesystem.acquire_regular_snapshot(repo_root / locator, role=role)
+    if isinstance(outcome, SnapshotRefusal):
+        _handoff_refusal(what=outcome.what, why=outcome.why, how=outcome.how)
         return None
-    try:
-        opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode) or not _same_file_snapshot(before, opened):
-            _handoff_refusal(
-                what=f"the {role} identity changed while it was opened",
-                why="path validation and byte reading must bind the same regular file",
-                how="stop concurrent replacement of the file and rerun",
-            )
-            return None
-        with os.fdopen(descriptor, "rb", closefd=True) as stream:
-            descriptor = -1
-            first_content = stream.read()
-            after_first_read = os.fstat(stream.fileno())
-            after_path = candidate.lstat()
-            if not _same_file_snapshot(
-                opened, after_first_read
-            ) or not _same_file_snapshot(after_first_read, after_path):
-                _handoff_refusal(
-                    what=f"the {role} identity changed while it was read",
-                    why="closure bytes must belong to the declared stable locator",
-                    how="stop concurrent replacement of the file and rerun",
-                )
-                return None
+    return outcome
 
-            stream.seek(0, os.SEEK_SET)
-            before_final_read = os.fstat(stream.fileno())
-            final_content = stream.read()
-            after_final_read = os.fstat(stream.fileno())
-            if not _same_file_snapshot(
-                after_path, before_final_read
-            ) or not _same_file_snapshot(before_final_read, after_final_read):
-                _handoff_refusal(
-                    what=f"the {role} identity changed while it was read",
-                    why="closure bytes must belong to the declared stable locator",
-                    how="stop concurrent replacement of the file and rerun",
-                )
-                return None
-            if first_content != final_content:
-                _handoff_refusal(
-                    what=f"the {role} bytes changed while it was read",
-                    why="delivery closure requires one byte-stable observation",
-                    how=f"stop concurrent mutation of the {role} and rerun",
-                )
-                return None
-            return final_content
-    except OSError as exc:
-        _handoff_refusal(
-            what=f"the {role} cannot be read ({exc})",
-            why=f"delivery closure requires readable {role} bytes",
-            how="fix the file permissions and rerun des dispatch",
-        )
+
+def _read_regular_file_no_follow(
+    repo_root: Path,
+    locator: str,
+    *,
+    role: str,
+    filesystem: FileSystemPort | None = None,
+) -> bytes | None:
+    """Return the acquired bytes of one closure member, or refuse."""
+    snapshot = _acquire_closure_member(
+        repo_root, locator, role=role, filesystem=filesystem or RealFileSystem()
+    )
+    if snapshot is None:
         return None
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
+    return snapshot.content
 
 
 def _resolve_oracle(repo_root: Path, locator: str) -> bytes | None:
@@ -511,7 +486,7 @@ def main(argv: list[str] | None = None) -> int:
     loaded = _load_delivery_contract(repo_root, args.delivery_contract)
     if loaded is None:
         return _EXIT_USAGE_ERROR
-    contract, locator, _contract_bytes = loaded
+    contract, locator, contract_bytes = loaded
 
     # Run 5 (K4 matrix): collect EVERY contract-content defect this pass can
     # find -- the unfilled-placeholder and oracle-path/self-reference
@@ -532,6 +507,7 @@ def main(argv: list[str] | None = None) -> int:
     # evidence (GDP-10).
     findings: list[tuple[str, str, str]] = [
         *_all_unfilled_placeholder_findings(contract),
+        *_auto_contract_boundary_findings(contract, locator),
     ]
     oracle_locator = str(contract["acceptance-tests"]["locator"])
     oracle_file = _oracle_file_part(oracle_locator)
@@ -616,14 +592,14 @@ def main(argv: list[str] | None = None) -> int:
             print(note, file=sys.stderr)
     # The CLI is a value-only handoff. Construction belongs to PreToolUse,
     # where the foreground Agent/result provenance is available.
-    admitted_support = tuple(
-        (path, (repo_root / path).read_bytes()) for path, _ in supporting_files
-    )
+    # The published identity is the identity of the bytes this run VALIDATED.
+    # Rereading a locator here would digest a different observation of a
+    # possibly different file, silently unbinding validation from publication.
     admitted_digest = closure_digest(
-        (repo_root / locator).read_bytes(),
-        (repo_root / oracle_locator.split("::", 1)[0]).read_bytes(),
+        contract_bytes,
+        oracle_bytes,
         oracle_locator=oracle_locator,
-        supporting_files=admitted_support,
+        supporting_files=supporting_files,
     )
     print(f"THIN-DELIVERY-CONTRACT: {locator}")
     print(f"THIN-DELIVERY-CONTRACT-DIGEST: sha256:{admitted_digest}")

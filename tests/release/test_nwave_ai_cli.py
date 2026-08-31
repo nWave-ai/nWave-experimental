@@ -12,12 +12,16 @@ BDD scenario mapping:
   - Run script: subprocess dispatch with missing-script guard
   - Main dispatch: routes commands to correct handlers
   - Usage: prints formatted help text
+  - Unresolved build identity retirement (P2-V2a): every live producer either
+    constructs a real identity or refuses with the typed identity error; lazy
+    consumers resolve only at use and preserve loud WHAT/WHY/HOW failure
   - Release literal-stamp retirement: every release workflow and its private
     test dependencies retire the obsolete module-literal stamp/parse/count
     machinery, retaining only the pyproject-patch producer and the installed
     observations
 """
 
+import ast
 import os
 import shutil
 import subprocess
@@ -160,8 +164,12 @@ def _run_get_version(checkout: Path) -> subprocess.CompletedProcess:
     code = (
         "import sys; from pathlib import Path; "
         "sys.path.insert(0, sys.argv[1]); "
-        "from scripts.shared.version import get_version; "
-        "print(get_version(Path(sys.argv[1])))"
+        "from scripts.shared.version import get_version, VersionResolutionError; "
+        "\ntry:\n"
+        "    print(get_version(Path(sys.argv[1])))\n"
+        "except VersionResolutionError as exc:\n"
+        "    print(str(exc), file=sys.stderr)\n"
+        "    sys.exit(3)\n"
     )
     return subprocess.run(
         [sys.executable, "-S", "-c", code, str(checkout)],
@@ -309,23 +317,28 @@ class TestVersionDerivation:
         with pytest.raises(TypeError):
             ProductVersion(version="4.0.1")
 
-    @pytest.mark.parametrize(
-        ("pyproject", "expected"),
-        [
-            ({"name": "nwave", "version": "4.0.1"}, "4.0.1"),
-            ({"version": "4.0.1"}, "0.0.0"),
-        ],
-    )
-    def test_legacy_get_version_delegates_to_strict_source_parser(
-        self, tmp_path, pyproject, expected
-    ):
-        checkout = _build_checkout(tmp_path, pyproject=pyproject)
+    def test_legacy_get_version_delegates_valid_source_identity(self, tmp_path):
+        checkout = _build_checkout(
+            tmp_path, pyproject={"name": "nwave", "version": "4.0.1"}
+        )
 
         result = _run_get_version(checkout)
 
         assert result.returncode == 0
-        assert result.stdout.strip() == expected
+        assert result.stdout.strip() == "4.0.1"
         assert result.stderr == ""
+
+    def test_legacy_get_version_refuses_unresolved_identity_loudly(self, tmp_path):
+        checkout = _build_checkout(tmp_path, pyproject={"version": "4.0.1"})
+
+        result = _run_get_version(checkout)
+
+        assert result.returncode == 3
+        assert result.stdout == ""
+        assert "WHAT:" in result.stderr
+        assert "WHY:" in result.stderr
+        assert "HOW:" in result.stderr
+        assert "0.0.0" not in result.stdout
 
     @pytest.mark.parametrize("argv", [[], ["--help"]])
     def test_help_refuses_when_product_identity_is_unavailable(self, tmp_path, argv):
@@ -378,6 +391,97 @@ class TestVersionDerivation:
         assert "UNKNOWN-ATTRIBUTE" in result.stdout
         assert result.returncode == 3
         assert "RAISED:scripts.shared.version.VersionResolutionError" in result.stdout
+
+
+class TestBuildIdentityConstruction:
+    """Finite P2-V2a construction law over the six DESIGN-owned producers.
+
+    This is deliberately bounded to the closed target set.  It is not a
+    repository-wide source-shape gate: the property is that a version producer
+    cannot return either compatibility sentinel through any of the four
+    authority-censused escape shapes.
+    """
+
+    PRODUCERS = (
+        "scripts/shared/version.py",
+        "scripts/build_dist.py",
+        "scripts/install/install_nwave.py",
+        "scripts/framework/create_github_tarballs.py",
+        "scripts/install/plugins/des_plugin.py",
+        "scripts/install/plugins/opencode_des_plugin.py",
+    )
+    SENTINELS = {"0.0.0", "dev"}
+
+    @classmethod
+    def _sentinel_escapes(cls, source: str) -> list[tuple[int, str]]:
+        tree = ast.parse(source)
+        escapes: list[tuple[int, str]] = []
+        for function in (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and "version" in node.name.lower()
+        ):
+            for node in ast.walk(function):
+                if isinstance(node, ast.Return) and (
+                    node.value is None
+                    or (
+                        isinstance(node.value, ast.Constant)
+                        and node.value.value in cls.SENTINELS
+                    )
+                ):
+                    escapes.append((node.lineno, "return"))
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "get"
+                    and len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant)
+                    and node.args[1].value in cls.SENTINELS
+                ):
+                    escapes.append((node.lineno, "dict.get-default"))
+                if isinstance(node, ast.IfExp):
+                    for branch in (node.body, node.orelse):
+                        if (
+                            isinstance(branch, ast.Constant)
+                            and branch.value in cls.SENTINELS
+                        ):
+                            escapes.append((node.lineno, "conditional"))
+        return escapes
+
+    @pytest.mark.parametrize("producer", PRODUCERS)
+    def test_unresolved_identity_is_not_a_producer_result(self, producer):
+        source = (REPO_ROOT / producer).read_text(encoding="utf-8")
+
+        assert self._sentinel_escapes(source) == [], producer
+        assert "VersionResolutionError" in source, producer
+
+    def test_valid_source_and_installed_seeds_still_reach_the_public_cli(
+        self, tmp_path
+    ):
+        source_checkout = _build_checkout(
+            tmp_path / "source", pyproject={"name": "nwave", "version": "4.0.1"}
+        )
+        installed_checkout = _build_checkout(
+            tmp_path / "installed",
+            pyproject={"name": "nwave", "version": "4.0.0"},
+        )
+        _write_dist_info(
+            installed_checkout,
+            dist_name="nwave-ai",
+            version="4.0.1+candidate",
+            owned_package="nwave_ai",
+        )
+
+        source_result = _run_cli(source_checkout, ["version"])
+        installed_result = _run_cli(installed_checkout, ["version"])
+
+        assert source_result.returncode == 0
+        assert source_result.stdout.strip() == "nwave-ai 4.0.1"
+        assert source_result.stderr == ""
+        assert installed_result.returncode == 0
+        assert installed_result.stdout.strip() == "nwave-ai 4.0.1+candidate"
+        assert installed_result.stderr == ""
 
 
 class TestReleaseLiteralStampRetirement:

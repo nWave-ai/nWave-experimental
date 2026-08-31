@@ -124,7 +124,9 @@ _FIXED_SKILL_MD = """
    des compile-contract --repo-root <root> --delivery-id <producer id> \\
      --architecture-authority "ARCHITECTURE-COVERED: path.md#anchor" \\
      --route <RED_TO_GREEN|GREEN_TO_GREEN> --examine <true|false> \\
-     --independent-review <true|false>
+     --independent-review <true|false> <<'NW_SEED'
+   <exact value-seed text>
+   NW_SEED
    ```
 
 4. Validate the charter, then run the one `des dispatch` command.
@@ -498,11 +500,12 @@ class TestRouteWalkRealHookCases:
         character as a shell-redirection operator regardless, and blocks
         it -- refuted empirically before this fix landed."""
         skill_md_text = k4_preflight._NW_AUTO_SKILL_MD.read_text(encoding="utf-8")
-        command = k4_preflight.route_walk_fenced_command(
+        command = k4_preflight.route_walk_heredoc_command(
             skill_md_text,
             subcommand="compile-contract",
             root=str(tmp_path),
             delivery_id="auto-probeprobeprobe",
+            seed="probe seed",
         )
         assert command is not None
         transcript = _transcript(tmp_path)

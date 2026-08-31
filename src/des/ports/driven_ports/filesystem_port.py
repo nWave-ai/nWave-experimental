@@ -1,11 +1,69 @@
 import json
 import os
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
+
+
+class SnapshotRefusalReason(Enum):
+    """Closed set of reasons one regular-file snapshot cannot be acquired."""
+
+    NO_FOLLOW_UNAVAILABLE = "no-follow-unavailable"
+    UNOPENABLE = "unopenable"
+    IDENTITY_CHANGED = "identity-changed"
+    BYTES_CHANGED = "bytes-changed"
+    UNREADABLE = "unreadable"
+    UNSUPPORTED = "unsupported"
+
+
+@dataclass(frozen=True)
+class RegularFileSnapshot:
+    """Opaque success value: bytes read from one validated no-follow open.
+
+    The bytes are held by the snapshot precisely so no consumer reopens the
+    path to obtain them again.  A reopen is a different observation of a
+    different file, whatever the locator still says.
+    """
+
+    path: Path
+    content: bytes
+    mode: int
+
+
+@dataclass(frozen=True)
+class SnapshotRefusal:
+    """Opaque failure value carrying its own WHAT / WHY / HOW.
+
+    A refusal never carries success bytes, so no caller can mistake a refused
+    acquisition for a degraded read.
+    """
+
+    reason: SnapshotRefusalReason
+    what: str
+    why: str
+    how: str
 
 
 class FileSystemPort(ABC):
     """Port for file system operations."""
+
+    def acquire_regular_snapshot(
+        self, path: Path, *, role: str
+    ) -> RegularFileSnapshot | SnapshotRefusal:
+        """Acquire one byte-stable snapshot of a regular file, or refuse.
+
+        The default implementation deliberately REFUSES rather than reading:
+        acquisition requires a validated no-follow open capability that only
+        the real filesystem adapter owns.  A permissive default would let an
+        adapter copy share the very defect this operation exists to exclude.
+        """
+        return SnapshotRefusal(
+            reason=SnapshotRefusalReason.UNSUPPORTED,
+            what=f"this filesystem cannot acquire a {role} snapshot",
+            why="only the real filesystem adapter owns no-follow acquisition",
+            how="inject des.adapters.driven.filesystem.RealFileSystem",
+        )
 
     @abstractmethod
     def read_json(self, path: Path) -> dict:

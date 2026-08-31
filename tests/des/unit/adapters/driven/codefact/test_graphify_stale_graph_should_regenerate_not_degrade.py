@@ -60,6 +60,9 @@ the remedy.
 from __future__ import annotations
 
 import json
+import os
+import stat
+import sys
 import time
 from pathlib import Path
 
@@ -71,6 +74,41 @@ from des.ports.code_fact_port import (
     Answered,
     CapabilityDescriptor,
 )
+
+
+_FAKE_GRAPHIFY_DIR = Path(__file__).resolve().parent / "fixtures"
+
+
+@pytest.fixture(autouse=True)
+def _deterministic_graphify_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CI has no real ``graphify`` install (CLAUDE.md Portability rule keeps
+    it optional); ``fixtures/graphify`` (POSIX) / ``fixtures/graphify.py``
+    (Windows) is a repo-local, bounded stand-in implementing exactly the one
+    subcommand the adapter shells out to (``update <root>``), so the
+    synchronous-regeneration property this file falsifies is exercised
+    deterministically in every environment instead of only on a box that
+    happens to have the real binary installed. The
+    ``test_graphify_absent_on_stale_graph_never_silently_answers`` test
+    below still fully overrides ``PATH`` itself, which wins regardless.
+
+    On POSIX ``shutil.which``/``execve`` resolve the extensionless,
+    ``chmod +x``'d ``graphify`` shebang script directly. Windows has no
+    kernel-level shebang mechanism and ``shutil.which`` there only matches
+    ``PATHEXT`` extensions, so ``.PY`` is prepended to it -- that makes
+    ``shutil.which("graphify")`` resolve ``graphify.py`` instead, exactly
+    the pure-Python cross-platform pair ``GraphifyAdapter``'s own spawn
+    construction (``executable.lower().endswith(".py")``) exists to launch
+    via ``sys.executable``. No shell/batch/PowerShell shim -- forbidden by
+    this repo's Portability rule."""
+    if sys.platform == "win32":
+        pathext = os.environ.get("PATHEXT", "")
+        monkeypatch.setenv("PATHEXT", f".PY;{pathext}")
+    else:
+        fake = _FAKE_GRAPHIFY_DIR / "graphify"
+        fake.chmod(fake.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    monkeypatch.setenv(
+        "PATH", f"{_FAKE_GRAPHIFY_DIR}{os.pathsep}{os.environ.get('PATH', '')}"
+    )
 
 
 def _descriptor() -> CapabilityDescriptor:
@@ -233,6 +271,49 @@ class TestStaleGraphMustRegenerateNotDegrade:
             f"declare scope=='complete': {resolution.trace!r} -- a "
             "synchronous regen that only partially rebuilt the graph "
             "before answering is not the decided behavior either."
+        )
+
+
+class TestPyExecutableIsLaunchedViaSysExecutable:
+    """Cross-platform spawn-construction check (``graphify_code_fact_
+    adapter.py:_run_graphify_update``: ``executable.lower().endswith(
+    ".py")`` prepends ``sys.executable``). This suite's own POSIX/Windows
+    fixture split above exercises the real shape end to end but only takes
+    the ``.py`` branch on an actual Windows box; this test forces that
+    resolution shape directly so the construction is asserted on whatever
+    platform the suite actually runs on."""
+
+    def test_a_resolved_py_executable_is_prepended_with_sys_executable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import subprocess
+
+        from des.adapters.driven.codefact import graphify_code_fact_adapter as module
+
+        root = _make_stale_fixture(tmp_path)
+        fake_py = _FAKE_GRAPHIFY_DIR / "graphify.py"
+        captured: dict[str, list[str]] = {}
+
+        def _capture_spawn(argv, **kwargs):
+            captured["argv"] = list(argv)
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(module.shutil, "which", lambda name: str(fake_py))
+        monkeypatch.setattr(module, "spawn", _capture_spawn)
+
+        chain = CodeFactChain(root=root)
+        chain.resolve(_descriptor(), {"symbol": ""})
+
+        assert captured.get("argv") == [
+            sys.executable,
+            str(fake_py),
+            "update",
+            str(root),
+        ], (
+            "a resolved '.py' graphify executable must be launched as "
+            "[sys.executable, executable, 'update', root], got "
+            f"{captured.get('argv')!r} instead -- otherwise the OS loader "
+            "cannot run a bare '.py' file directly on either platform."
         )
 
 

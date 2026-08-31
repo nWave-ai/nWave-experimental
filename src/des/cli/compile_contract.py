@@ -33,8 +33,15 @@ from des.application.compile_contract import (
 from des.application.ordinary_request import (
     ARCH_HEADER_PREFIXES,
     BUDGET_TABLE,
+    DELIVERY_ID_PREFIX,
+    compute_delivery_id,
     contract_locator_for,
     is_valid_arch_header_line,
+    read_value_seed_text,
+)
+from des.domain.architecture_brief_resolver import (
+    canonical_paradigm,
+    extract_declared_paradigms,
 )
 from des.domain.verification_authority_resolver import (
     AmbiguousAuthorityReference,
@@ -237,8 +244,11 @@ def build_parser(prog: str, description: str) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--paradigm",
-        default="object_oriented",
+        default=None,
         choices=("functional", "object_oriented"),
+        help="Optional compatibility assertion. Normally the compiler derives "
+        "DESIGN's 'Paradigm:' declaration "
+        "from --architecture-authority; a conflict is refused.",
     )
     parser.add_argument("--examine", default="true", choices=("true", "false"))
     parser.add_argument(
@@ -387,6 +397,57 @@ def resolve_inputs(args: argparse.Namespace) -> CompileContractInputs | int:
         )
     brief_text = section.text
 
+    declared_paradigms = extract_declared_paradigms(brief_text)
+    normalized = [canonical_paradigm(value) for value in declared_paradigms]
+    recognized = [value for value in normalized if value is not None]
+    distinct = list(dict.fromkeys(recognized))
+    if len(distinct) > 1:
+        return _blocked(
+            what=f"the architecture authority declares conflicting paradigms {distinct}",
+            why="paradigm is one DESIGN-owned decision; selecting either value "
+            "would silently contradict the other",
+            how="retain one exact 'Paradigm: functional' or 'Paradigm: "
+            "object_oriented' declaration in the cited section",
+        )
+    if declared_paradigms and None in normalized:
+        malformed = declared_paradigms[normalized.index(None)]
+        return _blocked(
+            what=f"the architecture authority declares unsupported paradigm {malformed!r}",
+            why="the DeliveryContract schema admits only functional or "
+            "object_oriented; this spelling does not identify either "
+            "unambiguously",
+            how="declare functional/FP or object-oriented/OO/OOP on the "
+            "Paradigm: line in the cited section",
+        )
+    if len(declared_paradigms) > 1:
+        return _blocked(
+            what="the architecture authority declares the paradigm more than once",
+            why="paradigm is one DESIGN-owned decision; equivalent aliases are "
+            "still duplicate authorities that may drift independently",
+            how="retain exactly one 'Paradigm: functional' or 'Paradigm: "
+            "object_oriented' declaration in the cited section",
+        )
+    authority_paradigm = distinct[0] if distinct else None
+    if authority_paradigm is None:
+        return _blocked(
+            what="the architecture authority does not declare a paradigm",
+            why="paradigm belongs to DESIGN and cannot be silently defaulted "
+            "or supplied by root",
+            how="add a 'Paradigm:' line selecting functional/FP or "
+            "object-oriented/OO/OOP to the cited section, then re-run "
+            "compile-contract",
+        )
+    if (
+        authority_paradigm is not None
+        and args.paradigm is not None
+        and authority_paradigm != args.paradigm
+    ):
+        return _blocked(
+            what=f"--paradigm {args.paradigm!r} contradicts the architecture "
+            f"authority's {authority_paradigm!r} decision",
+            why="an argv compatibility assertion cannot override DESIGN authority",
+            how="drop --paradigm or pass the authority's exact value",
+        )
     table_tokens, table_minutes = BUDGET_TABLE[args.size]
     budget_token_limit = (
         args.budget_token_limit if args.budget_token_limit is not None else table_tokens
@@ -397,12 +458,39 @@ def resolve_inputs(args: argparse.Namespace) -> CompileContractInputs | int:
         else table_minutes
     )
 
+    value_seed: str | None = None
+    if args.delivery_id.startswith(DELIVERY_ID_PREFIX):
+        value_seed = read_value_seed_text()
+        if value_seed is None:
+            return _blocked(
+                what=f"--delivery-id {args.delivery_id!r} requires the exact "
+                "immutable VALUE-SEED piped on stdin, but stdin was empty or "
+                "not valid UTF-8",
+                why="an auto delivery-id's outcome IS the piped VALUE-SEED -- "
+                "compile-contract must read the same raw bytes the id was "
+                "computed from, never an argv or environment carrier",
+                how="pipe the exact VALUE-SEED text as raw UTF-8 stdin to "
+                "des compile-contract",
+            )
+        if compute_delivery_id(value_seed) != args.delivery_id:
+            return _blocked(
+                what=f"the piped VALUE-SEED does not hash to --delivery-id "
+                f"{args.delivery_id!r} ({compute_delivery_id(value_seed)!r} "
+                "computed instead)",
+                why="an auto delivery-id is a deterministic function of its "
+                "own VALUE-SEED -- a mismatch means the wrong seed, or the "
+                "wrong id, was passed",
+                how="pass the exact VALUE-SEED that produced this "
+                "delivery-id, or recompute the delivery-id from the seed "
+                "actually being piped",
+            )
+
     return CompileContractInputs(
         repo_root=repo_root,
         delivery_id=args.delivery_id,
         brief_text=brief_text,
         delivery_route=args.delivery_route,
-        paradigm=args.paradigm,
+        paradigm=authority_paradigm,
         examine=args.examine == "true",
         budget_token_limit=budget_token_limit,
         budget_wall_clock_minutes=budget_wall_clock_minutes,
@@ -411,7 +499,22 @@ def resolve_inputs(args: argparse.Namespace) -> CompileContractInputs | int:
             if args.independent_review is None
             else args.independent_review == "true"
         ),
+        value_seed=value_seed,
     )
+
+
+def _atomic_write_contract(destination: Path, contract: dict) -> None:
+    """Publish one complete contract or leave the prior bytes untouched."""
+    temporary = destination.with_name(f".{destination.name}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(contract, indent=2, sort_keys=False) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(destination)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -460,16 +563,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_name(f".{destination.name}.tmp")
-    try:
-        temporary.write_text(
-            json.dumps(result.contract, indent=2, sort_keys=False) + "\n",
-            encoding="utf-8",
-        )
-        temporary.replace(destination)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
+    _atomic_write_contract(destination, result.contract)
     print(f"DELIVERY-CONTRACT-SKELETON: {contract_locator}")
     print(f"ORACLE-LOCATOR: {result.contract['acceptance-tests']['locator']}")
     return 0

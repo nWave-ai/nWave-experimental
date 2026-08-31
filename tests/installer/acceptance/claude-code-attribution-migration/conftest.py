@@ -49,10 +49,26 @@ def sandbox_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     ``~/.claude`` and ``~/.nwave`` are NOT created eagerly — Given steps build
     exactly the world each scenario needs (absence is a valid world).
+
+    ``NWAVE_AGENTS_HOME`` is redirected here too, not just ``HOME``: the
+    repo-wide session-scoped ``_isolate_codex_and_agents_home`` fixture
+    (``tests/conftest.py``) pins it to one throwaway dir shared by the whole
+    test session so installer tests cannot pollute the real developer home.
+    ``scripts.shared.install_paths.agents_home()`` -- what the real CLI
+    dispatch (``nwave_ai.cli.main``) resolves its config dir through --
+    prefers ``NWAVE_AGENTS_HOME`` over ``HOME``, so leaving it unset here made
+    a CLI-driven scenario write into that session-wide dir while this
+    fixture's own ``composition.observe()`` kept reading the per-test sandbox
+    -- two different directories, never able to observe each other's writes.
+    Install/uninstall-driven scenarios never hit this: ``AttributionPlugin``
+    is constructed with an explicit ``config_dir=self.nwave_dir`` (see
+    ``AttributionComposition.run_install``/``run_uninstall`` in
+    ``steps/steps_attribution.py``), bypassing ``agents_home()`` entirely.
     """
     home_dir = tmp_path / "dev-home"
     home_dir.mkdir()
     monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(home_dir))
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     return home_dir
 

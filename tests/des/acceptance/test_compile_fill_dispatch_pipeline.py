@@ -52,6 +52,8 @@ class Widget:
 _BRIEF = """\
 # widget
 
+Paradigm: object_oriented
+
 `Widget` (`pkg/widget.py:5`) already exposes `existing_method`
 (`pkg/widget.py:6`).
 
@@ -256,6 +258,8 @@ def test_native_go_primary_and_distinct_support_compile_fill_dispatch(
     (repo_root / "docs" / "product" / "architecture" / "brief.md").write_text(
         """\
 # widget
+
+Paradigm: object_oriented
 
 `pkg/widget.go:3` exposes `Existing` as the extension seam.
 The acceptance oracle is `pkg/widget_test.go::TestWidgetColor`.

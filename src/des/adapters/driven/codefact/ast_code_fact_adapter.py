@@ -326,7 +326,22 @@ class AstAdapter:
         subject = self._symbol_of(request)
         if not subject:
             return False
-        return not any(subject in self._read(path) for path in non_python_files)
+        # Structural realization intentionally queries the trailing callable
+        # for ``Owner.method``. Scope admission must therefore observe BOTH
+        # the public subject and that realized name; checking only the former
+        # can make a non-Python ``x.method()`` disappear behind an empty Python
+        # answer.
+        observed = {subject, self._callable_of(subject)} - {""}
+        identifiers = tuple(
+            re.compile(rf"(?<!\w){re.escape(candidate)}(?!\w)")
+            for candidate in observed
+        )
+        return not any(
+            identifier.search(content)
+            for path in non_python_files
+            for content in (self._read(path),)
+            for identifier in identifiers
+        )
 
     # -- capability realizations (structural, via the delegated parser) ----
 

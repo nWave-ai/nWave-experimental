@@ -31,6 +31,7 @@ from des.application.fill_contract import (
     CONTRACT_LEVEL_FIELDS,
     TARGET_LEVEL_FIELDS,
 )
+from des.application.ordinary_request import DELIVERY_ID_PREFIX
 from des.domain.contract_placeholder_resolver import PLACEHOLDER
 
 
@@ -107,7 +108,15 @@ def merge_preserve_fills(existing: dict, recompiled: dict) -> MergeSummary:
         merged_targets[path] = plan
 
     merged = {**recompiled, "targets": merged_targets}
-    for field in sorted(CONTRACT_LEVEL_FIELDS):
+    # An auto contract's `outcome` is the piped VALUE-SEED des
+    # compile-contract/recompile-contract already wrote afresh -- never an
+    # ATD-authored fill, so it must never be pulled back from the EXISTING
+    # (possibly stale-seed) contract the way a real ATD fill is.
+    is_auto = str(recompiled.get("delivery-id", "")).startswith(DELIVERY_ID_PREFIX)
+    preserved_contract_fields = CONTRACT_LEVEL_FIELDS - (
+        {"outcome"} if is_auto else set()
+    )
+    for field in sorted(preserved_contract_fields):
         filled = existing.get(field)
         if isinstance(filled, str) and filled != PLACEHOLDER:
             merged[field] = filled

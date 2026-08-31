@@ -285,8 +285,16 @@ first producer call, not after an `INDETERMINATE` reports it missing.
    skeleton instead of authoring one from scratch:
 
    ```
-   des compile-contract --repo-root <root> --delivery-id <producer id> --architecture-authority "ARCHITECTURE-COVERED: path.md#anchor" --route <RED_TO_GREEN|GREEN_TO_GREEN> --examine <true|false> --independent-review <true|false>
+   des compile-contract --repo-root <root> --delivery-id <producer id> --architecture-authority "ARCHITECTURE-COVERED: path.md#anchor" --route <RED_TO_GREEN|GREEN_TO_GREEN> --examine <true|false> --independent-review <true|false> <<'NW_SEED'
+   <the SAME VALUE-SEED bytes already piped to prepare-ordinary-request, byte-for-byte>
+   NW_SEED
    ```
+
+   `NW_SEED` is the exact VALUE-SEED used to derive the `auto-` DeliveryId;
+   mismatch is terminal. The compiler writes it as `outcome`, so ATD does not.
+
+   Paradigm is not a root-authored flag: the compiler consumes DESIGN's
+   `Paradigm:` declaration; no OO default exists.
 
    `--architecture-authority`, `--route`, `--examine` and
    `--independent-review` are the SAME already-resolved Seeded values this
@@ -298,29 +306,50 @@ first producer call, not after an `INDETERMINATE` reports it missing.
    terminal `Blocked` WHAT/WHY/HOW (e.g. no discoverable test-directory
    convention) — root never repairs, retries or falls back to dispatching
    ATD without a compiled skeleton; report the refusal and stop. There is
-   exactly one typed continuation for a destination-exists refusal: only
-   when the exact stderr carries `WHAT: existing-contract:` (the compiler's
-   machine-readable `Blocked.kind` rendered by `_blocked_from`), the
+   typed recompile continuation for a producer-owned mechanical correction.
+   It starts either when the exact stderr carries `WHAT: existing-contract:`
+   (the compiler's machine-readable `Blocked.kind` rendered by
+   `_blocked_from`) or when a native AT review/ATD correction result cites a
+   mechanical field owned by DESIGN/compiler input. The
    DeliveryId, physical repository root, base revision, route, examine,
-   paradigm, size, budget-token-limit, budget-wall-clock-minutes and
+   size, budget-token-limit, budget-wall-clock-minutes and
    independent-review compile-input facts are unchanged byte-for-byte, and
    a FRESH architect re-consult has returned a repaired
-   `ARCHITECTURE-COVERED` authority may root invoke `des recompile-contract`
-   once. The original compile flags are copied byte-identically except for
+   `ARCHITECTURE-COVERED` authority. Root may then run the exact compile
+   invocation once for THAT repaired authority with `recompile-contract`,
+   including the same `NW_SEED`:
+
+   ```
+   des recompile-contract --repo-root <root> --delivery-id <producer id> --architecture-authority "ARCHITECTURE-COVERED: path.md#anchor" --route <RED_TO_GREEN|GREEN_TO_GREEN> --examine <true|false> --independent-review <true|false> <<'NW_SEED'
+   <the SAME VALUE-SEED bytes, byte-for-byte>
+   NW_SEED
+   ```
+
+   The original flags are copied byte-identically except for
    `--architecture-authority`, which is replaced only by that fresh repaired
-   authority. An `existing-non-file` collision is a distinct terminal
+   authority. Recompile derives the seed-owned outcome afresh rather than
+   restoring the stale contract value. An `existing-non-file` collision is terminal
    refusal and never enters this continuation. This is a
    session/router `CompileRejected(existing-contract, identity) ->
    RecompilePermit(same identity + fresh repaired authority) -> Recompiled`
    transition, not a generic retry; the CLI does not persist or enforce the
-   permit/counter. A generic rejection, identity mismatch, absent fresh
-   repaired authority, second recompile, or nonzero recompile remains
+   permit/counter. A prior successful recompile never consumes a later,
+   independently cited mechanical repair: each distinct fresh authority
+   advances the same identity through
+   `MechanicalFinding(Cn) -> ArchitectRepaired(An+1) -> Recompiled(Cn+1) ->
+   ATReview(Cn+1)`. Repeating the same authority bytes/finding without a
+   causal correction is non-progress and stops; a generic rejection, identity
+   mismatch, absent fresh repaired authority, or nonzero recompile remains
    terminal. On
    success, this producer's own printed `DELIVERY-CONTRACT-SKELETON`/
    `ORACLE-LOCATOR` lines are root's own confirmation only — they carry no
    new fact ATD needs, since `CONTRACT-LOCATOR` (already in the unchanged
    fourteen-line envelope below) now resolves to a real file ATD reads
    first, and that file already states its own oracle locator.
+
+   If an existing contract's paradigm differs from that decision, the same
+   recompile for this distinct causal correction fixes it while preserving
+   ATD fills, original base identity and the oracle.
 
    Then emit one **AB batch in the same assistant
    message**, foreground (`run_in_background=false`):

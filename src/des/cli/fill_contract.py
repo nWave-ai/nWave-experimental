@@ -75,19 +75,6 @@ def _blocked_batch(problems: tuple[Blocked, ...]) -> int:
     )
 
 
-def _atomic_write_contract(destination: Path, contract: dict) -> None:
-    temporary = destination.with_name(f".{destination.name}.tmp")
-    try:
-        temporary.write_text(
-            json.dumps(contract, indent=2, sort_keys=False) + "\n",
-            encoding="utf-8",
-        )
-        temporary.replace(destination)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
-
-
 #: The one deterministic ephemeral batch-file carrier directory, derived
 #: from --delivery-id alone. A provider-side Bash safety heuristic can
 #: reject a heredoc whose body mixes a brace with a quote character (JSON
@@ -534,7 +521,7 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(batch_result, BatchBlocked):
             return _blocked_batch(batch_result.problems)
         assert isinstance(batch_result, Filled)
-        _atomic_write_contract(destination, batch_result.contract)
+        compile_contract_cli._atomic_write_contract(destination, batch_result.contract)
         print(f"DELIVERY-CONTRACT-FILLED: BATCH ({len(payload)} entries)")
         _report_status(batch_result.contract)
         return 0

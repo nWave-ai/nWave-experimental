@@ -49,7 +49,7 @@ def test_push_pr_matrix_avoids_full_worktree_suite_but_scheduled_sweep_keeps_it(
     scheduled, push_pr, plan_run = _plan_matrices()
 
     assert 'github.event_name }}" == "schedule"' in plan_run
-    assert 'github.event_name }}" == "workflow_dispatch"' in plan_run
+    assert 'inputs.full_matrix }}" == "true"' in plan_run
     assert scheduled == {
         "os": ["ubuntu-latest"],
         "python-version": ["3.10", "3.11", "3.12", "3.13", "3.14"],
@@ -64,6 +64,19 @@ def test_push_pr_matrix_avoids_full_worktree_suite_but_scheduled_sweep_keeps_it(
     }
     assert 5 * 2 * 4 == 40
     assert 1 * 1 * 4 == 4
+
+
+def test_manual_ci_defaults_to_the_economical_matrix_and_keeps_full_opt_in() -> None:
+    trigger = _workflow()[True]
+    dispatch = trigger["workflow_dispatch"]
+    full_matrix = dispatch["inputs"]["full_matrix"]
+
+    assert full_matrix == {
+        "description": "Run Python 3.10-3.14 in both Git topologies (40 shards)",
+        "required": False,
+        "type": "boolean",
+        "default": False,
+    }
 
 
 def test_worktree_topology_job_runs_exact_audited_contract_without_heavy_artifacts() -> (

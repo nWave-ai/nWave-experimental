@@ -169,42 +169,44 @@ def _canonical_dispatch_args(command: object) -> tuple[Path, str] | None:
     return root, locator
 
 
+def _delivery_closure_line(root: Path, commit: str) -> str:
+    """Name the exact closure commit C the reviewer prompt is bound to."""
+    from des.application.delivery_snapshot import _git
+
+    algorithm = _git(root, "rev-parse", "--show-object-format").stdout.strip()
+    if algorithm not in {"sha1", "sha256"}:
+        raise ValueError("unsupported git object format")
+    return f"DELIVERY-CLOSURE: git-{algorithm}:{commit}\n"
+
+
 def _review_prompt_header_for_atd(root: Path) -> str:
     """Build the existing C authority header from its current admitted bytes."""
     try:
-        from des.application.delivery_snapshot import _git, recognize_closure
+        from des.application.delivery_snapshot import (
+            _git,
+            recognize_closure,
+            resolve_closure_authority,
+        )
         from des.cli.dispatch import closure_digest
 
         head = _git(root, "rev-parse", "HEAD").stdout.strip()
         closure = recognize_closure(root, head)
-        contracts = []
-        for path in closure.authority_paths:
-            if not path.endswith(".json"):
-                continue
-            try:
-                contract = json.loads((root / path).read_text(encoding="utf-8"))
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                continue
-            if isinstance(contract, dict) and isinstance(
-                contract.get("delivery-id"), str
-            ):
-                contracts.append((path, contract))
-        if len(contracts) != 1:
-            raise ValueError("current closure has no unique delivery contract")
-        locator, contract = contracts[0]
-        oracle = str(contract["acceptance-tests"]["locator"])
-        support = tuple(
-            (path, (root / path).read_bytes())
-            for path in contract["acceptance-tests"].get("supporting-locators", [])
-        )
+        # Publish the identity C admitted.  This boundary deliberately does NOT
+        # require the working tree to still match: a post-admission edit must
+        # not be able to rename C in the reviewer's prompt.  Admitting new work
+        # on that tree is a different boundary, and it does require the match.
+        authority = resolve_closure_authority(root, closure)
+        locator = authority.contract_locator
+        oracle = authority.oracle_locator
         digest = closure_digest(
-            (root / locator).read_bytes(),
-            (root / oracle.split("::", 1)[0]).read_bytes(),
+            authority.contract_bytes,
+            authority.oracle_bytes,
             oracle_locator=oracle,
-            supporting_files=support,
+            supporting_files=authority.supporting,
         )
         if closure.commit != head:
             raise ValueError("current closure does not equal HEAD")
+        closure_line = _delivery_closure_line(root, closure.commit)
     except (
         KeyError,
         OSError,
@@ -219,6 +221,7 @@ def _review_prompt_header_for_atd(root: Path) -> str:
         f"THIN-DELIVERY-CONTRACT: {locator}\n"
         f"THIN-DELIVERY-CONTRACT-DIGEST: sha256:{digest}\n"
         f"REPO-ROOT: {root}\n"
+        f"{closure_line}"
     )
 
 
@@ -319,13 +322,42 @@ def _dispatch_closure_rewrite(
         return None
     try:
         from des.application.delivery_snapshot import (
+            _acquire_regular_snapshot,
             _git,
-            _no_follow_path,
+            _regular_file_bytes,
             recognize_closure,
         )
         from des.cli.dispatch import main as dispatch_main
+        from des.cli.verify_charter_filled import charter_missing_sections
+        from des.ports.driven_ports.filesystem_port import SnapshotRefusal
 
         repo_root, locator = parsed
+        # Acquire every authority member through one no-follow snapshot each,
+        # BEFORE the semantic validator below runs.  The validator is the one
+        # producer allowed to run arbitrary code against this root; consuming
+        # these bytes only after it returns would admit whatever the path
+        # names next -- a legitimate concurrent replacement included -- never
+        # the bytes actually validated.  Nothing past this point reopens a
+        # locator: closure construction below consumes exactly these bytes.
+        contract_bytes = _regular_file_bytes(
+            repo_root, locator, noun="integration contract"
+        )
+        contract = json.loads(contract_bytes.decode("utf-8"))
+        base = str(contract["repository"]["base-revision"]).split(":", 1)[1]
+        oracle_locator = str(contract["acceptance-tests"]["locator"])
+        oracle_path = oracle_locator.split("::", 1)[0]
+        support_paths = tuple(
+            str(item)
+            for item in contract["acceptance-tests"].get("supporting-locators", [])
+        )
+        oracle_bytes = _regular_file_bytes(
+            repo_root, oracle_path, noun="integration oracle"
+        )
+        supporting = [
+            (path, _regular_file_bytes(repo_root, path, noun="integration support"))
+            for path in support_paths
+        ]
+
         public_stdout, public_stderr = io.StringIO(), io.StringIO()
         # Run the semantic validator once.  The hook becomes the one producer
         # of its public two-line handoff after it has admitted/replayed C.
@@ -341,12 +373,6 @@ def _dispatch_closure_rewrite(
             detail = public_stderr.getvalue().strip() or f"exit status {validation}"
             raise ValueError(f"dispatch semantic validation refused: {detail}")
 
-        contract_file = _no_follow_path(repo_root, locator)
-        if contract_file.is_symlink() or not contract_file.is_file():
-            raise ValueError("integration contract is not a regular file")
-        contract_bytes = contract_file.read_bytes()
-        contract = json.loads(contract_bytes.decode("utf-8"))
-        base = str(contract["repository"]["base-revision"]).split(":", 1)[1]
         head = _git(repo_root, "rev-parse", "HEAD").stdout.strip()
         replay = head != base
         if replay:
@@ -361,28 +387,28 @@ def _dispatch_closure_rewrite(
             if status.stdout:
                 raise ValueError("closure replay root is dirty")
 
-        oracle_locator = str(contract["acceptance-tests"]["locator"])
-        oracle_path = oracle_locator.split("::", 1)[0]
-        support_paths = tuple(
-            str(item)
-            for item in contract["acceptance-tests"].get("supporting-locators", [])
-        )
-        oracle_file = _no_follow_path(repo_root, oracle_path)
-        if oracle_file.is_symlink() or not oracle_file.is_file():
-            raise ValueError("integration oracle bytes are unreadable")
-        oracle_bytes = oracle_file.read_bytes()
-        supporting = []
-        for path in support_paths:
-            item = _no_follow_path(repo_root, path)
-            if item.is_symlink() or not item.is_file():
-                raise ValueError("integration support bytes are unreadable")
-            supporting.append((path, item.read_bytes()))
         handoff_lines = validation_handoff.splitlines()
         if handoff_lines[:1] != [f"THIN-DELIVERY-CONTRACT: {locator}"] or (
             len(handoff_lines) != 2
             or not handoff_lines[1].startswith("THIN-DELIVERY-CONTRACT-DIGEST: sha256:")
         ):
             raise ValueError("dispatch success stdout is not a two-line handoff")
+
+        from des.cli.dispatch import closure_digest as _closure_digest
+
+        acquired_digest = _closure_digest(
+            contract_bytes,
+            oracle_bytes,
+            oracle_locator=oracle_locator,
+            supporting_files=tuple(supporting),
+        )
+        published_digest = handoff_lines[1].removeprefix(
+            "THIN-DELIVERY-CONTRACT-DIGEST: sha256:"
+        )
+        if published_digest != acquired_digest:
+            raise ValueError(
+                "dispatch success handoff digest-divergence from acquired bytes"
+            )
 
         if not replay:
             transcript = hook_input.get("transcript_path")
@@ -405,22 +431,51 @@ def _dispatch_closure_rewrite(
                 design_path = design_result.terminal_text.split("#", 1)[0].removeprefix(
                     "ARCHITECTURE-COVERED: "
                 )
-            charter_path = None
+            delta = _integration_delta(repo_root, base)
+            charter_paths: tuple[str, ...] = ()
+            pending_charter_path = None
             if bool(contract.get("applicability", {}).get("examine")):
-                charter = completed_agent_results(
-                    transcript, role="nw-product-owner", prompt_prefix=""
+                from des.cli._charter_resolution import (
+                    _discover_charter_namespace,
+                    _resolve_charter_namespace,
+                    _Reuse,
                 )
-                if charter is None:
-                    raise ValueError("missing applicable PO native attempt")
-                charter_path = _result_path(charter.terminal_text, "path")
-                if charter_path is None:
-                    raise ValueError("PO terminal has no safe charter path")
+
+                discovered = _discover_charter_namespace(
+                    repo_root, str(contract["delivery-id"])
+                )
+                resolution = _resolve_charter_namespace(
+                    examine=True, discovered=discovered
+                )
+                if not isinstance(resolution, _Reuse):
+                    raise ValueError("charter namespace is not an admitted REUSE")
+                charter_paths = tuple(
+                    path.resolve().relative_to(repo_root.resolve()).as_posix()
+                    for path in resolution.charter_paths
+                )
+                pending = [path for path in charter_paths if path in delta]
+                if pending:
+                    if len(pending) != 1:
+                        raise ValueError(
+                            "pending charter delta is not exactly one member"
+                        )
+                    pending_charter_path = pending[0]
+                    charter = completed_agent_results(
+                        transcript, role="nw-product-owner", prompt_prefix=""
+                    )
+                    if charter is None:
+                        raise ValueError("missing applicable PO native attempt")
+                    named = _result_path(charter.terminal_text, "path")
+                    if named is None or named != pending_charter_path:
+                        raise ValueError(
+                            "PO terminal does not name the exact pending charter path"
+                        )
             allowed = {locator, oracle_path, *support_paths}
             if design_path is not None:
                 allowed.add(design_path)
-            if charter_path is not None:
-                allowed.add(charter_path)
-            if _integration_delta(repo_root, base) != allowed:
+            if pending_charter_path is not None:
+                allowed.add(pending_charter_path)
+            if delta != allowed:
                 raise ValueError(
                     "integration pending delta is not the complete allowed authority set"
                 )
@@ -429,15 +484,37 @@ def _dispatch_closure_rewrite(
             imports: list[tuple[str, bytes, int]] = []
             authority_imports = (
                 *((design_path,) if design_path else ()),
-                *((charter_path,) if charter_path else ()),
+                *charter_paths,
             )
             for path in authority_imports:
-                item = _no_follow_path(repo_root, path)
-                info = item.lstat()
-                if item.is_symlink() or not stat.S_ISREG(info.st_mode):
-                    raise ValueError("integration authority path is not regular")
+                acquired = _acquire_regular_snapshot(
+                    repo_root, path, noun="integration authority"
+                )
+                if isinstance(acquired, SnapshotRefusal):
+                    raise ValueError(
+                        f"integration authority path is not regular: {path}: "
+                        f"{acquired.what}; {acquired.why}; {acquired.how}"
+                    )
+                if path in charter_paths:
+                    try:
+                        text = acquired.content.decode("utf-8")
+                    except UnicodeDecodeError as exc:
+                        raise ValueError(
+                            f"charter member is not readable UTF-8: {path}"
+                        ) from exc
+                    missing = charter_missing_sections(
+                        text, template_anchor=repo_root / path
+                    )
+                    if missing:
+                        raise ValueError(
+                            f"charter member is not filled: {path}: {'; '.join(missing)}"
+                        )
                 imports.append(
-                    (path, item.read_bytes(), stat.S_IMODE(info.st_mode) | stat.S_IFREG)
+                    (
+                        path,
+                        acquired.content,
+                        stat.S_IMODE(acquired.mode) | stat.S_IFREG,
+                    )
                 )
             closure = construct_closure(
                 repo_root,
@@ -487,95 +564,46 @@ def _dispatch_closure_rewrite(
 
 
 def _closure_authority(
-    root: Path, closure: object, *, contract_locator: str | None = None
+    root: Path,
+    closure: object,
+    *,
+    contract_locator: str | None = None,
+    require_working_match: bool = True,
 ) -> tuple[str, dict[str, object], str, str]:
-    """Read current authority only when it is exactly the admitted C bytes."""
+    """Publish the identity the admitted closure carries, never a reread.
+
+    Byte acquisition belongs to the application aggregate; this edge only
+    translates its refusal and digests the bytes the aggregate already holds.
+    """
     from des.application.delivery_snapshot import (
+        ClosureAuthoritySnapshot,
         Snapshot,
-        _git_bytes,
-        _no_follow_path,
-        _require_schema_valid,
+        resolve_closure_authority,
     )
     from des.cli.dispatch import closure_digest
 
     if not isinstance(closure, Snapshot):
         raise ValueError("closure snapshot is not admitted")
 
-    def admitted_regular_bytes(path: str, *, noun: str) -> bytes:
-        if path not in closure.authority_paths:
-            raise ValueError(f"closure {noun} path is not admitted: {path}")
-        item = _no_follow_path(root, path)
-        try:
-            mode = item.lstat().st_mode
-        except OSError as exc:
-            raise ValueError(f"closure {noun} is unreadable: {path}") from exc
-        if item.is_symlink() or not stat.S_ISREG(mode):
-            raise ValueError(f"closure {noun} is not a regular file: {path}")
-        try:
-            current = item.read_bytes()
-        except OSError as exc:
-            raise ValueError(f"closure {noun} is unreadable: {path}") from exc
-        admitted = _git_bytes(root, "show", f"{closure.commit}:{path}")
-        if admitted.returncode or admitted.stdout != current:
-            raise ValueError(f"closure {noun} differs from admitted C bytes: {path}")
-        return current
-
-    if contract_locator is not None:
-        raw_contract = admitted_regular_bytes(contract_locator, noun="contract")
-        try:
-            contract = json.loads(raw_contract.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ValueError("closure contract authority is unreadable") from exc
-        if not isinstance(contract, dict):
-            raise ValueError("closure contract authority is not an object")
-        _require_schema_valid(contract)
-        locator = contract_locator
-    else:
-        contracts: list[tuple[str, dict[str, object]]] = []
-        for path in closure.authority_paths:
-            if not path.endswith(".json"):
-                continue
-            try:
-                candidate = json.loads(
-                    admitted_regular_bytes(path, noun="contract").decode("utf-8")
-                )
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                continue
-            if isinstance(candidate, dict) and isinstance(
-                candidate.get("delivery-id"), str
-            ):
-                _require_schema_valid(candidate)
-                contracts.append((path, candidate))
-        if len(contracts) != 1:
-            raise ValueError("closure has no unique readable delivery contract")
-        locator, contract = contracts[0]
-
-    try:
-        oracle = contract["acceptance-tests"]["locator"]
-        supporting_locators = contract["acceptance-tests"].get(
-            "supporting-locators", []
-        )
-    except (KeyError, TypeError) as exc:
-        raise ValueError("closure contract authority is unreadable") from exc
-    if (
-        not isinstance(oracle, str)
-        or not isinstance(supporting_locators, list)
-        or any(not isinstance(path, str) for path in supporting_locators)
-    ):
-        raise ValueError("closure contract authority has invalid oracle locators")
-    oracle_path = oracle.split("::", 1)[0]
-    oracle_bytes = admitted_regular_bytes(oracle_path, noun="oracle")
-    supporting = tuple(
-        (path, admitted_regular_bytes(path, noun="support"))
-        for path in supporting_locators
+    authority: ClosureAuthoritySnapshot = resolve_closure_authority(
+        root, closure, contract_locator=contract_locator
     )
+    if require_working_match:
+        # Admitting NEW work on this tree requires the tree to still carry the
+        # admitted bytes.  Merely PUBLISHING the admitted identity does not.
+        authority.require_working_match()
     digest = closure_digest(
-        admitted_regular_bytes(locator, noun="contract"),
-        oracle_bytes,
-        oracle_locator=oracle,
-        supporting_files=supporting,
+        authority.contract_bytes,
+        authority.oracle_bytes,
+        oracle_locator=authority.oracle_locator,
+        supporting_files=authority.supporting,
     )
-    return locator, contract, oracle, digest
+    return (
+        authority.contract_locator,
+        authority.contract,
+        authority.oracle_locator,
+        digest,
+    )
 
 
 def _thin_contract_header(locator: str, digest: str) -> str:
@@ -658,7 +686,11 @@ def _crafter_agent_rewrite(
             root, _git(root, "rev-parse", "HEAD").stdout.strip()
         )
         locator, _contract, oracle, digest = _closure_authority(root, closure)
-        review_header = _thin_contract_header(locator, digest) + f"REPO-ROOT: {root}\n"
+        review_header = (
+            _thin_contract_header(locator, digest)
+            + f"REPO-ROOT: {root}\n"
+            + _delivery_closure_line(root, closure.commit)
+        )
         result = completed_agent_results(
             transcript,
             role="nw-acceptance-designer-reviewer",
@@ -1139,7 +1171,7 @@ _AUTO_ROOT_BASH_ALLOWED_DES_SUBCOMMANDS = frozenset(
         "resolve-charters",
         "code-fact",
         "compile-contract",
-        "construct-design-closure",
+        "recompile-contract",
         # SF friction report 2026-08-20, item 5: `_is_well_formed_atd_
         # revision_body` REQUIRES the REVISE dispatch body come verbatim
         # from the former mutable-round producer's stdout, but this SAME
@@ -1224,6 +1256,20 @@ _VALUE_SEED_HEREDOC_HEADER_SUFFIXES = (
 # own source. `tests/build/test_des_examples_are_executable.py` imports
 # this SAME dict to assert nw-auto/SKILL.md's fenced heredoc examples
 # name exactly this set, in both directions -- one drift class, one fix.
+_COMPILE_CONTRACT_VALUE_SEED_FLAGS = frozenset(
+    {
+        "--repo-root",
+        "--delivery-id",
+        "--architecture-authority",
+        "--route",
+        "--paradigm",
+        "--examine",
+        "--independent-review",
+        "--size",
+        "--budget-token-limit",
+        "--budget-wall-clock-minutes",
+    }
+)
 _VALUE_SEED_HEREDOC_ALLOWED_COMMANDS: dict[str, frozenset[str]] = {
     "prepare-ordinary-request": frozenset(
         {
@@ -1244,6 +1290,9 @@ _VALUE_SEED_HEREDOC_ALLOWED_COMMANDS: dict[str, frozenset[str]] = {
             "--examine",
         }
     ),
+    # These two commands intentionally share one parser and one flag vocabulary.
+    "compile-contract": _COMPILE_CONTRACT_VALUE_SEED_FLAGS,
+    "recompile-contract": _COMPILE_CONTRACT_VALUE_SEED_FLAGS,
 }
 
 

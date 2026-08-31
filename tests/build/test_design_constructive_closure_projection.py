@@ -140,6 +140,34 @@ def test_full_design_preserves_installed_schema_and_compiler_label_grammar() -> 
     assert "exact closed obligation enum" in full
 
 
+def test_every_architecture_writer_reaches_the_shared_paradigm_construction() -> None:
+    core = _compact(ROOT / "nWave/skills/nw-cross-cutting-invariants/SKILL.md")
+    assert "construction:design-paradigm-projection" in core
+    assert "Never default an unspecified project to object-oriented" in core
+
+    for name in (
+        "nw-solution-architect.md",
+        "nw-ddd-architect.md",
+        "nw-system-designer.md",
+        "nw-platform-architect.md",
+    ):
+        writer = ROOT / "nWave/agents" / name
+        assert "nw-cross-cutting-invariants" in writer.read_text(encoding="utf-8")
+
+    troubleshooter = ROOT / "nWave/agents/nw-troubleshooter.md"
+    post_mortem = ROOT / "nWave/skills/nw-post-mortem-framework/SKILL.md"
+    for direct_writer in (troubleshooter, post_mortem):
+        assert "Paradigm:" in direct_writer.read_text(encoding="utf-8")
+
+    assert "Paradigm: functional | object-oriented" not in troubleshooter.read_text(
+        encoding="utf-8"
+    )
+
+    ddd = (ROOT / "nWave/agents/nw-ddd-architect.md").read_text(encoding="utf-8")
+    assert "or unspecified" not in ddd
+    assert "never default it" in ddd
+
+
 def test_auto_budget_cannot_disarm_triggered_design_lenses() -> None:
     """Auto's six repository-fact calls exclude required lens/formal work."""
     body = _compact(ARCHITECT)

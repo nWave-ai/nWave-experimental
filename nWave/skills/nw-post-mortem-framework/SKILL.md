@@ -65,6 +65,8 @@ disable-model-invocation: true
 
 ARCHITECTURE-COVERED: docs/analysis/root-cause-analysis-{problem}.md#machine-consumable-section-des-compile-contract
 
+Paradigm: [functional or object-oriented, established above]
+
 | Obligation | Transcribed from (fact already established above) |
 |---|---|
 | **TOKEN** | "[verbatim quote]" -- [section of this document] |

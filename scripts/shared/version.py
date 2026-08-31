@@ -33,10 +33,28 @@ class VersionResolutionError(Exception):
     """Typed refusal for ambiguous, missing, or malformed product identity.
 
     Carries WHAT/WHY/HOW so every consumer (CLI, tests) presents the same
-    triad without re-deriving it.
+    triad without re-deriving it. A caller that already owns one composed
+    WHAT/WHY/HOW message (for example a test double standing in for a real
+    producer failure) may pass it as the sole positional argument instead of
+    the three separate fields; the triad markers are still required in that
+    message, so no construction path can weaken the WHAT/WHY/HOW contract.
     """
 
-    def __init__(self, what: str, why: str, how: str) -> None:
+    def __init__(
+        self, what: str, why: str | None = None, how: str | None = None
+    ) -> None:
+        if why is None and how is None:
+            message = what
+            if not all(marker in message for marker in ("WHAT:", "WHY:", "HOW:")):
+                raise TypeError(
+                    "VersionResolutionError single-argument form requires a "
+                    "pre-formatted message containing WHAT:, WHY:, and HOW:"
+                )
+            self.what = what
+            self.why = why
+            self.how = how
+            super().__init__(message)
+            return
         self.what = what
         self.why = why
         self.how = how
@@ -88,7 +106,7 @@ def _owning_distributions(
     distributions_by_name: dict[str, _importlib_metadata.Distribution] = {}
     for dist in _importlib_metadata.distributions():
         try:
-            name = dist.metadata["Name"]
+            name = dist.metadata.get("Name")
         except (KeyError, TypeError):
             continue
         if isinstance(name, str) and name:
@@ -219,10 +237,9 @@ def get_version(project_root: Path) -> str:
     """Read version from ``pyproject.toml`` in *project_root*.
 
     Tries ``tomllib`` (Python 3.11+), then ``tomli``, then regex.
-    Returns ``"0.0.0"`` if the file is missing or unparseable.
+    Raises ``VersionResolutionError`` (WHAT/WHY/HOW) for a missing or
+    unparseable source identity -- this legacy compatibility port never
+    substitutes the ``"0.0.0"`` sentinel.
     """
     pyproject_path = project_root / "pyproject.toml"
-    try:
-        return _read_source_version(pyproject_path).version
-    except VersionResolutionError:
-        return "0.0.0"
+    return _read_source_version(pyproject_path).version

@@ -110,26 +110,31 @@ def stage_healthy_install(base: Path) -> Path:
 
 
 def test_doctor_reports_healthy_install(tmp_path: Path) -> None:
-    """Healthy staged install: runner returns 10 results, all passed=True.
+    """Healthy staged install: runner returns 11 results, all passed=True.
 
     Given a complete fake ~/.claude with shims, settings.json, DES module,
     and framework directories,
     When doctor runs,
-    Then all 10 checks pass and there are no failures.
+    Then all 11 checks pass and there are no failures.
 
     Step 02-02 added DensityCheck (D6 + D12), bumping the count from 7 to 8.
     The claude-code-attribution-migration feature added AttributionCheck (R7),
     a read-only diagnostic that always passes, bumping the count from 8 to 9.
     The install-version-drift feature added VersionSyncCheck, bumping the count
-    from 9 to 10. A fresh tmp_path home has no `~/.nwave/global-config.json`, so
-    both density and version-sync resolve to their undeterminable-pass branch.
+    from 9 to 10. The config-SSOT feature added ConfigSsotCheck, bumping the
+    count from 10 to 11. A fresh tmp_path home has no `~/.nwave/global-config.json`
+    or `~/.nwave/config.json`, so density, version-sync and config_ssot all
+    resolve to their undeterminable/fresh-install pass branch. ``project_root``
+    is pinned to the same isolated ``tmp_path`` (not the default ``Path.cwd()``)
+    so ConfigSsotCheck's per-repo tier never leaks this checkout's own
+    committed ``.nwave/local-config.json`` into the fixture.
     """
     stage_healthy_install(tmp_path)
-    context = DoctorContext(home_dir=tmp_path)
+    context = DoctorContext(home_dir=tmp_path, project_root=tmp_path)
 
     results = run_doctor(context)
 
-    assert len(results) == 10, f"Expected 10 results, got {len(results)}"
+    assert len(results) == 11, f"Expected 11 results, got {len(results)}"
     failed = [r for r in results if not r.passed]
     assert not failed, "Expected all checks to pass, but these failed: " + ", ".join(
         f"{r.check_name}: {r.message}" for r in failed
@@ -150,15 +155,26 @@ def test_drift_on_otherwise_healthy_install_is_flagged(
 
     stage_healthy_install(tmp_path)
     # Record install provenance (what `nwave-ai install` wrote), then simulate a
-    # later `pipx upgrade` advancing the live package ahead of it.
+    # later `pipx upgrade` advancing the live package ahead of it. Provenance
+    # (`install.installed_version`) still lives in the legacy global-config.json
+    # by design (version_sync's own contract, unrelated to the config-SSOT
+    # cascade) -- but leaving ONLY that legacy file present would make this
+    # otherwise-healthy install look un-migrated to ConfigSsotCheck too. A
+    # migrated install also carries the unified config.json, so it is staged
+    # here alongside the legacy file to isolate the drift to version_sync only.
     global_config = tmp_path / ".nwave" / "global-config.json"
     global_config.parent.mkdir(parents=True, exist_ok=True)
     global_config.write_text(
         json.dumps({"install": {"installed_version": "1.1.0"}}), encoding="utf-8"
     )
+    # Presence alone flips ConfigSsotCheck's migrated/legacy verdict (its
+    # content is never inspected for that verdict) -- an empty object avoids
+    # perturbing the effective enabled/verbosity/attribution defaults this
+    # scenario does not otherwise exercise.
+    (tmp_path / ".nwave" / "config.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(version_sync, "_detect_running_version", lambda: "1.2.0")
 
-    results = run_doctor(DoctorContext(home_dir=tmp_path))
+    results = run_doctor(DoctorContext(home_dir=tmp_path, project_root=tmp_path))
 
     failed = {r.check_name for r in results if not r.passed}
     assert failed == {"version_sync"}, (

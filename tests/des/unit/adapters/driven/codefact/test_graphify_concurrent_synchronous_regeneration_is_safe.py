@@ -45,11 +45,39 @@ distinction is called out at each assertion site below, not glossed over.
 from __future__ import annotations
 
 import json
+import os
+import stat
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
+
+import pytest
+
+
+_FAKE_GRAPHIFY_DIR = Path(__file__).resolve().parent / "fixtures"
+
+
+@pytest.fixture(autouse=True)
+def _deterministic_graphify_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same repo-local, bounded stand-in as the sibling stale-graph oracle
+    (see that file's fixture docstring for the POSIX/Windows resolution
+    split): makes the ``graphify`` executable this file's subprocess
+    workers shell out to available deterministically in every environment,
+    without a real graphify install as a CI dependency. ``monkeypatch.
+    setenv`` mutates ``os.environ`` in place, so the worker subprocesses
+    below (spawned with no explicit ``env=``, hence inheriting it) see the
+    same ``PATH``/``PATHEXT``."""
+    if sys.platform == "win32":
+        pathext = os.environ.get("PATHEXT", "")
+        monkeypatch.setenv("PATHEXT", f".PY;{pathext}")
+    else:
+        fake = _FAKE_GRAPHIFY_DIR / "graphify"
+        fake.chmod(fake.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    monkeypatch.setenv(
+        "PATH", f"{_FAKE_GRAPHIFY_DIR}{os.pathsep}{os.environ.get('PATH', '')}"
+    )
 
 
 _CONCURRENT_CALLERS = 5

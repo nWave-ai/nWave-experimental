@@ -33,10 +33,13 @@ from pathlib import Path
 
 # Ensure project root is on sys.path so build_dist imports work.
 _project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
+_project_root_entry = str(_project_root)
+if _project_root_entry in sys.path:
+    sys.path.remove(_project_root_entry)
+sys.path.insert(0, _project_root_entry)
 
-from scripts.build_dist import DistBuilder, _get_version  # noqa: E402
+from scripts.build_dist import DistBuilder  # noqa: E402
+from scripts.shared.version import resolve_product_version  # noqa: E402
 
 
 _INSTALL_SCRIPT_CONTENT = """\
@@ -190,7 +193,7 @@ def build_offline_bundle(
     project_root = project_root or _project_root
     python_exe = _validate_python(python or sys.executable)
 
-    version = _get_version(project_root)
+    version = resolve_product_version(project_root).version
 
     with tempfile.TemporaryDirectory(prefix="nwave-offline-bundle-") as _tmp:
         staging = Path(_tmp)

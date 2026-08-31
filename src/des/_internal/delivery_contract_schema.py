@@ -11,6 +11,7 @@ from des._internal.json_schema_subset import JsonSchemaSubsetError, validate
 
 
 _SCHEMA_NAME = "thin-delivery-contract.schema.json"
+LEGACY_SCHEMA_VERSION = "1.3"
 
 
 def resolve_delivery_contract_schema_path() -> Path:
@@ -43,6 +44,33 @@ def resolve_delivery_contract_schema_path() -> Path:
         here.parents[2] / "nWave" / "nWave" / "schemas" / _SCHEMA_NAME,
     )
     return next((path for path in candidates if path.is_file()), candidates[0])
+
+
+def delivery_contract_obligation_tokens() -> frozenset[str]:
+    """Read the closed obligation vocabulary from the shipped schema."""
+    schema_path = resolve_delivery_contract_schema_path()
+    try:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        return frozenset(schema["$defs"]["obligations"]["items"]["enum"])
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise RuntimeError(
+            f"DeliveryContract obligation vocabulary is unreadable at {schema_path}: {exc}"
+        ) from exc
+
+
+def delivery_contract_schema_version(schema_path: Path | None = None) -> str:
+    """Read the current contract version from its owning schema."""
+    path = schema_path or resolve_delivery_contract_schema_path()
+    try:
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        version = schema["properties"]["schema-version"]["const"]
+        if not isinstance(version, str) or not version:
+            raise TypeError("schema-version const is not a nonempty string")
+        return version
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise RuntimeError(
+            f"DeliveryContract schema version is unreadable at {path}: {exc}"
+        ) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,20 +126,32 @@ def delivery_contract_schema_violation(
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return SchemaUnreadable(schema_path=schema_path, error=str(exc))
-    legacy_v13 = isinstance(contract, dict) and contract.get("schema-version") == "1.3"
+    try:
+        current_version = schema["properties"]["schema-version"]["const"]
+    except (KeyError, TypeError) as exc:
+        return SchemaUnreadable(schema_path=schema_path, error=str(exc))
+    if not isinstance(current_version, str) or not current_version:
+        return SchemaUnreadable(
+            schema_path=schema_path,
+            error="schema-version const is not a nonempty string",
+        )
+    legacy_v13 = (
+        isinstance(contract, dict)
+        and contract.get("schema-version") == LEGACY_SCHEMA_VERSION
+    )
     if legacy_v13:
         acceptance = contract.get("acceptance-tests")
         if isinstance(acceptance, dict) and "supporting-locators" in acceptance:
             return SchemaViolation(
                 schema_path=schema_path,
-                message="schema-version '1.3' cannot carry supporting-locators",
+                message=f"schema-version {LEGACY_SCHEMA_VERSION!r} cannot carry supporting-locators",
                 path=("acceptance-tests", "supporting-locators"),
                 validator="schema-version",
             )
-        # Explicit compatibility adapter: schema 1.3 is the exact current
-        # shape minus acceptance support. Validate a copy against 1.4 while
-        # retaining the original bytes/version for closure/v1 identity.
-        validation_candidate = {**contract, "schema-version": "1.4"}
+        # Explicit compatibility adapter: the legacy shape is the exact current
+        # shape minus acceptance support. Validate a copy against the current
+        # schema while retaining the original bytes/version for closure/v1 identity.
+        validation_candidate = {**contract, "schema-version": current_version}
     else:
         validation_candidate = contract
     try:
@@ -130,7 +170,7 @@ def delivery_contract_schema_violation(
     if not legacy_v13 and not has_support:
         return SchemaViolation(
             schema_path=schema_path,
-            message="schema-version '1.4' requires supporting-locators",
+            message=f"schema-version {current_version!r} requires supporting-locators",
             path=("acceptance-tests",),
             validator="schema-version",
         )

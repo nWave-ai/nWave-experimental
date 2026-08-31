@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
+import stat
 import subprocess
 from pathlib import Path
 
@@ -19,6 +21,7 @@ from des.adapters.drivers.hooks.pre_tool_use_handler import (
     _finalize_candidate_rewrite,
     _review_agent_prompt_rewrite,
     _review_prompt_header_for_atd,
+    handle_pre_tool_use,
 )
 from des.application.delivery_snapshot import recognize_closure
 from des.cli import dispatch as dispatch_cli
@@ -86,7 +89,42 @@ def _at_review_terminal(*, contract_digest: str, verdict: str) -> str:
     )
 
 
-def _seed(tmp_path: Path, *, design_at_base: bool = False) -> tuple[Path, Path, str]:
+_CHARTER_BODY_TEMPLATE = """\
+# Observable delivery
+ID: EXP-delivery-{index} · Spec rows: n/a · Persona: a developer
+
+## Intent
+Observe the delivered behavior through its public surface.
+
+## Preconditions
+The installed product is available.
+
+## Charter
+Exercise the user-visible outcome without reading source.
+
+## Expected observations (oracle)
+- The promised outcome is observable.
+- Negative: a failed outcome never reports PASS.
+
+## Session log (append-only)
+| date | examiner | verdict | observations |
+|------|----------|---------|--------------|
+"""
+
+
+def _write_charter_member(root: Path, delivery_id: str, name: str, index: int) -> Path:
+    path = root / "docs" / "product" / "expectations" / delivery_id / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_CHARTER_BODY_TEMPLATE.format(index=index), encoding="utf-8")
+    return path
+
+
+def _seed(
+    tmp_path: Path,
+    *,
+    design_at_base: bool = False,
+    charter_members_at_base: int = 0,
+) -> tuple[Path, Path, str]:
     root = tmp_path / "repo"
     root.mkdir()
     _git(root, "init", "-q")
@@ -99,11 +137,13 @@ def _seed(tmp_path: Path, *, design_at_base: bool = False) -> tuple[Path, Path, 
     if design_at_base:
         (root / "docs").mkdir()
         (root / "docs" / "brief.md").write_text("# Brief\n")
+    for index in range(charter_members_at_base):
+        _write_charter_member(root, "delivery", f"charter-{index}.md", index)
     _git(root, "add", ".")
     _git(root, "commit", "-qm", "base")
     base = _git(root, "rev-parse", "HEAD")
     if not design_at_base:
-        (root / "docs").mkdir()
+        (root / "docs").mkdir(exist_ok=True)
         (root / "docs" / "brief.md").write_text("# Brief\n")
     (root / "oracle.py").write_text("assert True\n")
     contract = {
@@ -233,6 +273,30 @@ def test_dispatch_allows_atd_only_when_architecture_authority_is_already_b(
 
     assert _git(root, "rev-parse", "HEAD^") == base
     assert _git(root, "diff", "--name-only", base, "HEAD") == "delivery.json\noracle.py"
+
+
+def test_dispatch_admits_an_already_valid_charter_namespace_with_no_po_attempt(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """REUSE route (ADR-SSOT-002 Section 4b): examine=true with a namespace
+    already valid at base -- two filled charter members, no PO transcript
+    attempt at all -- must admit closure construction and carry both
+    members in `closure.authority_paths`, never demand a fresh PO attempt
+    for a namespace that already satisfies Discover/Resolve."""
+    transcript, root, base = _seed(tmp_path, charter_members_at_base=2)
+    contract_path = root / "delivery.json"
+    contract = json.loads(contract_path.read_text())
+    contract["applicability"]["examine"] = True
+    contract_path.write_text(json.dumps(contract))
+
+    _construct_c(transcript, root, capsys)
+
+    closure = recognize_closure(root, _git(root, "rev-parse", "HEAD"))
+    expected_charter_paths = {
+        f"docs/product/expectations/delivery/charter-{index}.md" for index in range(2)
+    }
+    assert expected_charter_paths <= set(closure.authority_paths)
+    assert _git(root, "rev-parse", "HEAD^") == base
 
 
 def test_dispatch_refuses_pending_design_without_bound_design_result(
@@ -370,6 +434,164 @@ def test_closure_authority_refuses_symlinked_oracle_or_support(
 
     with pytest.raises(ValueError, match="regular"):
         _closure_authority(root, closure)
+
+
+def test_atd_review_dispatch_publishes_admitted_closure_bytes_not_a_working_reread(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The published ATD handoff names the admitted closure, never a reread.
+
+    C is admitted by a real construction, then the working contract is dirtied
+    without any new commit.  The identity the real PreToolUse entry publishes
+    into the reviewer prompt must still be the one the admitted bytes carry: a
+    digest that moves with the mutable worktree would let a post-admission edit
+    rename C while the admitted-authority reader on the same tree refuses those
+    very bytes.  Driven through the public stdin/stdout hook entry, so the
+    published value is the one a real reviewer dispatch would receive.
+    """
+    transcript, root, _base = _seed(tmp_path)
+    _construct_c(transcript, root, capsys)
+    admitted_digest = closure_digest(
+        (root / "delivery.json").read_bytes(), (root / "oracle.py").read_bytes()
+    )
+
+    contract = json.loads((root / "delivery.json").read_text())
+    contract["outcome"] = "dirtied after admission"
+    (root / "delivery.json").write_text(json.dumps(contract))
+    working_digest = closure_digest(
+        (root / "delivery.json").read_bytes(), (root / "oracle.py").read_bytes()
+    )
+    assert working_digest != admitted_digest
+
+    stdin = json.dumps(
+        {
+            "tool_name": "Agent",
+            "cwd": str(root),
+            "transcript_path": str(transcript),
+            "tool_input": {
+                "subagent_type": "nw-acceptance-designer-reviewer",
+                "prompt": "review",
+            },
+        }
+    )
+    monkeypatch.setattr("sys.stdin", io.StringIO(stdin))
+    exit_code = handle_pre_tool_use()
+    published = capsys.readouterr().out
+
+    assert exit_code == 0, published
+    payload = json.loads(published)
+    prompt = payload["hookSpecificOutput"]["updatedInput"]["prompt"]
+    assert f"THIN-DELIVERY-CONTRACT-DIGEST: sha256:{admitted_digest}" in prompt
+    assert working_digest not in prompt
+
+
+def test_dispatch_never_admits_authority_bytes_replaced_after_validation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C carries the authority bytes the validator admitted, never a reread.
+
+    The hook validates the contract, oracle and support members and then needs
+    their bytes.  If it reaches back to the locator for those bytes, the file
+    the validator accepted and the file C records are two different
+    observations, and an ordinary regular-file replacement in between -- itself
+    perfectly legitimate -- is admitted unvalidated.  Driven through the real
+    PreToolUse stdin/stdout entry, with the oracle deterministically replaced
+    once the validator has returned.  Either the boundary fails closed, or C
+    carries the acquired original bytes; foreign bytes are admitted in neither
+    case.  A single-acquisition hook consumes the bytes it already holds and
+    satisfies this without any path probe at all.
+    """
+    transcript, root, base = _seed(tmp_path)
+    validated_oracle = (root / "oracle.py").read_bytes()
+    foreign_oracle = b"assert True  # replaced after validation\n"
+    assert foreign_oracle != validated_oracle
+    original_main = dispatch_cli.main
+
+    def validate_then_replace_the_oracle(argv: list[str]) -> int:
+        exit_code = original_main(argv)
+        replacement = root / "foreign-oracle.py"
+        replacement.write_bytes(foreign_oracle)
+        replacement.replace(root / "oracle.py")
+        return exit_code
+
+    monkeypatch.setattr(dispatch_cli, "main", validate_then_replace_the_oracle)
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(
+            json.dumps(
+                {
+                    "tool_name": "Bash",
+                    "cwd": str(root),
+                    "transcript_path": str(transcript),
+                    "tool_input": {
+                        "command": (
+                            f"des dispatch --repo-root {root} "
+                            "--delivery-contract delivery.json"
+                        )
+                    },
+                }
+            )
+        ),
+    )
+    exit_code = handle_pre_tool_use()
+    published = capsys.readouterr().out
+    monkeypatch.undo()
+
+    head = _git(root, "rev-parse", "HEAD")
+    admitted = (
+        None
+        if head == base
+        else subprocess.run(
+            ["git", "-C", str(root), "show", f"{head}:oracle.py"],
+            check=True,
+            capture_output=True,
+        ).stdout
+    )
+    assert admitted != foreign_oracle, published
+    if exit_code == 0:
+        assert admitted == validated_oracle, published
+    else:
+        assert admitted in (None, validated_oracle), published
+
+
+def test_dispatch_refuses_authority_replaced_before_independent_validation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hook must refuse, not seal A, when it validated B.
+
+    The hook pre-acquires the oracle's authority bytes A *before* invoking the
+    semantic validator.  If a controlled replacement swaps the oracle for
+    distinct-but-otherwise-valid bytes B in the gap between that acquisition
+    and the validator call, `dispatch_main` independently validates B, yet the
+    hook still holds A.  Sealing A under a validation performed against B
+    admits a member the validator never saw; the hook must refuse with a
+    clear digest-divergence reason instead.
+    """
+    transcript, root, base = _seed(tmp_path)
+    acquired_oracle = (root / "oracle.py").read_bytes()
+    validated_oracle = b"assert True  # validated in place of acquired bytes\n"
+    assert validated_oracle != acquired_oracle
+    original_main = dispatch_cli.main
+
+    def replace_before_independent_validation(argv: list[str]) -> int:
+        replacement = root / "foreign-oracle.py"
+        replacement.write_bytes(validated_oracle)
+        replacement.replace(root / "oracle.py")
+        return original_main(argv)
+
+    monkeypatch.setattr(dispatch_cli, "main", replace_before_independent_validation)
+
+    outcome = _dispatch_closure_rewrite(
+        {"transcript_path": str(transcript)},
+        {
+            "command": f"des dispatch --repo-root {root} --delivery-contract delivery.json"
+        },
+    )
+    published = capsys.readouterr().out
+
+    assert outcome == 2, published
+    assert "digest-divergence" in published, published
+    assert _git(root, "rev-parse", "HEAD") == base
 
 
 def test_dispatch_refuses_stale_wrong_foreground_result(tmp_path: Path, capsys) -> None:
@@ -665,6 +887,65 @@ def test_crafter_admission_blocks_when_oracle_bytes_drift_after_review(
     assert "INDETERMINATE" in capsys.readouterr().out
 
 
+def test_crafter_admission_blocks_when_charter_bytes_drift_after_review(
+    tmp_path: Path, capsys
+) -> None:
+    """A charter member admitted into C's authority is also part of the
+    closure's integrity: mutating its bytes after AT review must diverge from
+    the admitted C commit and block crafter admission, the same as an
+    oracle-bytes drift, and the refusal must name the charter divergence, not
+    a bare generic INDETERMINATE."""
+    transcript, root, _base = _seed(tmp_path)
+    contract_path = root / "delivery.json"
+    contract = json.loads(contract_path.read_text())
+    contract["applicability"]["examine"] = True
+    contract_path.write_text(json.dumps(contract))
+    charter_path = _write_charter_member(root, "delivery", "charter.md", 0)
+    charter_relpath = "docs/product/expectations/delivery/charter.md"
+
+    records = [json.loads(line) for line in transcript.read_text().splitlines()]
+    records.extend(
+        _pair(
+            tool="po",
+            role="nw-product-owner",
+            prompt="author",
+            terminal="\n".join(
+                ("CHARTER-RESULT", "verdict: PASS", f"path: {charter_relpath}")
+            ),
+        )
+    )
+    transcript.write_text("\n".join(json.dumps(record) for record in records) + "\n")
+
+    _construct_c(transcript, root, capsys)
+    header = _review_prompt_header_for_atd(root)
+    digest = header.splitlines()[1].removeprefix(
+        "THIN-DELIVERY-CONTRACT-DIGEST: sha256:"
+    )
+    records = [json.loads(line) for line in transcript.read_text().splitlines()]
+    terminal = _at_review_terminal(contract_digest=digest, verdict="APPROVED")
+    records.extend(
+        _pair(
+            tool="review",
+            role="nw-acceptance-designer-reviewer",
+            prompt=header + "review",
+            terminal=terminal,
+        )
+    )
+    transcript.write_text("\n".join(json.dumps(record) for record in records) + "\n")
+
+    charter_path.write_text(
+        _CHARTER_BODY_TEMPLATE.format(index=0) + "tampered after review\n"
+    )
+
+    outcome = _crafter_agent_rewrite(
+        {"cwd": str(root), "transcript_path": str(transcript)},
+        {"subagent_type": "nw-software-crafter", "prompt": "craft"},
+    )
+    payload = capsys.readouterr().out
+    assert outcome == 2
+    assert "charter" in payload and charter_relpath in payload
+
+
 @pytest.mark.parametrize("mutation", ["none", "outside-target", "authority-drift"])
 def test_candidate_admission_requires_complete_target_only_crafter_delta(
     tmp_path: Path, capsys, mutation: str
@@ -933,3 +1214,98 @@ def test_finalizer_accepts_only_exact_unconditional_implementation_approval(
             == 2
         )
         assert "INDETERMINATE" in capsys.readouterr().out
+
+
+def test_at_review_cannot_be_replayed_across_closure_commits_with_same_contract_digest(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An AT review names the current C's contract/oracle/support digest, but
+    that digest deliberately ignores charter authority bytes -- so a review
+    approving closure commit C1 must not silently authorize a DIFFERENT
+    closure commit C2 whose charter bytes changed while contract/oracle/
+    support stayed byte-identical.  Today `_crafter_agent_rewrite` admits
+    C2 from a review that only ever saw C1: the review-prompt header carries
+    no closure-commit identity, only the digest the two closures share."""
+    transcript, root, _base = _seed(tmp_path)
+    contract_path = root / "delivery.json"
+    contract = json.loads(contract_path.read_text())
+    contract["applicability"]["examine"] = True
+    contract_path.write_text(json.dumps(contract))
+    _write_charter_member(root, "delivery", "charter.md", 0)
+    charter_relpath = "docs/product/expectations/delivery/charter.md"
+
+    records = [json.loads(line) for line in transcript.read_text().splitlines()]
+    records.extend(
+        _pair(
+            tool="po",
+            role="nw-product-owner",
+            prompt="author",
+            terminal="\n".join(
+                ("CHARTER-RESULT", "verdict: PASS", f"path: {charter_relpath}")
+            ),
+        )
+    )
+    transcript.write_text("\n".join(json.dumps(record) for record in records) + "\n")
+
+    _construct_c(transcript, root, capsys)
+    review_header_c1 = _review_prompt_header_for_atd(root)
+
+    from des.application.delivery_snapshot import (
+        _git,
+        construct_closure_correction,
+        recognize_closure,
+    )
+
+    c1_commit = _git(root, "rev-parse", "HEAD").stdout.strip()
+    c1 = recognize_closure(root, c1_commit)
+    branch = _git(root, "symbolic-ref", "--short", "HEAD").stdout.strip()
+
+    contract_bytes = (root / "delivery.json").read_bytes()
+    oracle_bytes = (root / "oracle.py").read_bytes()
+    changed_charter_bytes = (
+        _CHARTER_BODY_TEMPLATE.format(index=0) + "PO revision after C1.\n"
+    ).encode("utf-8")
+    charter_mode = stat.S_IFREG | 0o644
+
+    c2 = construct_closure_correction(
+        root,
+        cited=c1,
+        contract=json.loads(contract_bytes.decode("utf-8")),
+        contract_locator="delivery.json",
+        contract_bytes=contract_bytes,
+        oracle_locator="oracle.py",
+        oracle_bytes=oracle_bytes,
+        supporting=(),
+        imports=((charter_relpath, changed_charter_bytes, charter_mode),),
+    )
+    assert c2.commit != c1.commit
+
+    _git(root, "update-ref", f"refs/heads/{branch}", c2.commit)
+    _git(root, "reset", "--hard", c2.commit)
+
+    review_header_c2 = _review_prompt_header_for_atd(root)
+    assert review_header_c2.splitlines()[:2] == review_header_c1.splitlines()[:2]
+
+    digest = review_header_c1.splitlines()[1].removeprefix(
+        "THIN-DELIVERY-CONTRACT-DIGEST: sha256:"
+    )
+    terminal = _at_review_terminal(contract_digest=digest, verdict="APPROVED")
+    records = [json.loads(line) for line in transcript.read_text().splitlines()]
+    records.extend(
+        _pair(
+            tool="review",
+            role="nw-acceptance-designer-reviewer",
+            prompt=review_header_c1 + "review",
+            terminal=terminal,
+        )
+    )
+    transcript.write_text("\n".join(json.dumps(record) for record in records) + "\n")
+
+    outcome = _crafter_agent_rewrite(
+        {"cwd": str(root), "transcript_path": str(transcript)},
+        {"subagent_type": "nw-software-crafter", "prompt": "craft"},
+    )
+    payload = capsys.readouterr().out
+    # A review that only saw C1 cannot authorize C2, even when their public
+    # contract/oracle/support digest is identical.
+    assert outcome == 2, payload

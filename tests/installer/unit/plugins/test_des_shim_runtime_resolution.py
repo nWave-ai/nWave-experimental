@@ -28,7 +28,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -38,7 +38,7 @@ from scripts.shared.install_paths import (
     active_runtime_pointer_path,
     host_neutral_runtime_dir,
 )
-from scripts.shared.version import get_version
+from scripts.shared.version import VersionResolutionError, get_version
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -306,6 +306,30 @@ class TestPrebuiltProvenanceCheck:
         assert "HOW:" in result.message
         assert "build_dist.py" in result.message
         # A refusal installs nothing: no half-written stale module is left.
+        assert not (tmp_path / ".claude" / "lib" / "python" / "des").exists()
+
+    def test_prebuilt_refuses_before_write_when_identity_is_unresolved(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        source = self._prebuilt_source(tmp_path / "dist", "4.0.1")
+        unresolved = VersionResolutionError(
+            "WHAT: product identity could not be resolved\n"
+            "WHY: no valid source identity exists\n"
+            "HOW: restore the owning project metadata"
+        )
+
+        with patch(
+            "scripts.install.plugins.des_plugin.get_version",
+            side_effect=unresolved,
+        ):
+            result = DESPlugin()._install_des_module(self._context(tmp_path, source))
+
+        assert not result.success
+        assert "WHAT:" in result.message
+        assert "WHY:" in result.message
+        assert "HOW:" in result.message
+        assert "identity" in result.message.lower()
         assert not (tmp_path / ".claude" / "lib" / "python" / "des").exists()
 
     def test_dev_checkout_path_is_unaffected_by_the_provenance_check(

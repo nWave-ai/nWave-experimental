@@ -1,6 +1,8 @@
 """Tests for scripts/shared/version.py -- shared version reader."""
 
-from scripts.shared.version import get_version
+import pytest
+
+from scripts.shared.version import VersionResolutionError, get_version
 
 
 class TestGetVersion:
@@ -12,16 +14,28 @@ class TestGetVersion:
         )
         assert get_version(tmp_path) == "1.2.3"
 
-    def test_missing_pyproject_returns_zero(self, tmp_path):
-        assert get_version(tmp_path) == "0.0.0"
+    def test_missing_pyproject_refuses_unresolved_identity(self, tmp_path):
+        with pytest.raises(VersionResolutionError) as captured:
+            get_version(tmp_path)
+        assert "WHAT:" in str(captured.value)
+        assert "WHY:" in str(captured.value)
+        assert "HOW:" in str(captured.value)
 
-    def test_pyproject_without_version_returns_zero(self, tmp_path):
+    def test_pyproject_without_version_refuses_unresolved_identity(self, tmp_path):
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\n')
-        assert get_version(tmp_path) == "0.0.0"
+        with pytest.raises(VersionResolutionError) as captured:
+            get_version(tmp_path)
+        assert "WHAT:" in str(captured.value)
+        assert "WHY:" in str(captured.value)
+        assert "HOW:" in str(captured.value)
 
-    def test_pyproject_with_malformed_toml_returns_zero(self, tmp_path):
+    def test_pyproject_with_malformed_toml_refuses_unresolved_identity(self, tmp_path):
         (tmp_path / "pyproject.toml").write_text("this is not valid toml [[[\n")
-        assert get_version(tmp_path) == "0.0.0"
+        with pytest.raises(VersionResolutionError) as captured:
+            get_version(tmp_path)
+        assert "WHAT:" in str(captured.value)
+        assert "WHY:" in str(captured.value)
+        assert "HOW:" in str(captured.value)
 
     def test_reads_real_project_version(self):
         """Integration: reads the actual nWave-dev pyproject.toml."""

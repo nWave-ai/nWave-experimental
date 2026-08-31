@@ -133,18 +133,16 @@ def _discover_shims(source_dir: Path) -> frozenset[str]:
 # is the single SSOT tolerance wrapper used at both racing loci
 # (`_install_des_module`'s module replace, `_clear_bytecode_cache`'s cache
 # clear) — a genuine non-race `OSError` (permission denied, etc.) still
-# propagates; only `ENOTEMPTY` / `ENOENT` are treated as a settle-and-retry
-# race.
+# propagates; `ENOTEMPTY` and transient `ENOMEM` are retried, while `ENOENT`
+# is already-success. Persistent `ENOMEM` still propagates.
 def _robust_rmtree(path: Path) -> None:
-    """Remove ``path`` recursively, tolerating a concurrent-writer race.
+    """Remove ``path`` recursively, tolerating transient removal failures.
 
-    Retries ``shutil.rmtree`` a few times on ``ENOTEMPTY`` (a racing writer
-    settles between attempts) and treats ``ENOENT`` (already gone) as
-    success. If the race outlives the retries, falls back to a best-effort
-    removal — a leftover racing ``__pycache__`` is harmless: it is either
-    overwritten by the fresh copy or recompiled from source on next import.
-    Any other ``OSError`` (permission denied, etc.) propagates immediately.
+    A persistent ``ENOMEM`` may be real exhaustion and propagates after the
+    retry budget. Persistent ``ENOTEMPTY`` retains the existing best-effort
+    cleanup. Any other ``OSError`` propagates immediately.
     """
+    last_error: OSError | None = None
     for _ in range(3):
         try:
             shutil.rmtree(path)
@@ -152,8 +150,11 @@ def _robust_rmtree(path: Path) -> None:
         except OSError as exc:
             if exc.errno == errno.ENOENT:
                 return
-            if exc.errno != errno.ENOTEMPTY:
+            if exc.errno not in (errno.ENOTEMPTY, errno.ENOMEM):
                 raise
+            last_error = exc
+    if last_error is not None and last_error.errno == errno.ENOMEM:
+        raise last_error
     shutil.rmtree(path, ignore_errors=True)
 
 
@@ -1768,14 +1769,14 @@ class DESPlugin(InstallationPlugin):
         primitive (package metadata when pip/pipx-installed, pyproject.toml in a
         dev checkout). The stamp lets the runtime hooks (and the SessionStart
         skew detector) compare the installed hook surface against the running
-        checkout (ADR-030 D6 / M13).
+        checkout (ADR-030 D6 / M13). An unresolved identity raises
+        `VersionResolutionError` (WHAT/WHY/HOW) instead of stamping the
+        `"0.0.0"` sentinel -- the caller's outer refusal path surfaces it
+        before any settings write.
         """
-        try:
-            from scripts.install.install_nwave import _get_version
+        from scripts.install.install_nwave import _get_version
 
-            return _get_version()
-        except Exception:
-            return "0.0.0"
+        return _get_version()
 
     @classmethod
     def _is_retired_lifecycle_hook_entry(

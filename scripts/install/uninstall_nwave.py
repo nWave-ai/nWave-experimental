@@ -17,6 +17,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Prepend this checkout's own root ahead of anything already on sys.path so
+# a direct `python3 scripts/install/uninstall_nwave.py` run below imports ITS
+# OWN sibling `scripts.install.install_nwave`, never a same-named `scripts`
+# package this interpreter's site-packages happens to also provide (e.g. a
+# dev venv with `nwave-ai` installed). Without this, the dotted import below
+# succeeds against the WRONG copy -- no ImportError, so the bare-name
+# fallback never fires -- and that copy's own __file__-relative
+# `_project_root` then resolves beside site-packages instead of the
+# checkout, breaking `print_logo`'s strict version resolution. Harmless when
+# genuinely installed: three parents up from an installed __file__ is
+# site-packages itself, already on sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 try:
     from scripts.install.attribution_utils import (
         NWAVE_MANAGED_COMMIT,

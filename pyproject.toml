@@ -30,7 +30,7 @@ path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave"
-version = "4.0.0+atddpure.0343ee830"
+version = "4.0.0+atddpure.e903fe9"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -265,6 +265,7 @@ filterwarnings = [
     "ignore::pytest.PytestUnknownMarkWarning",
 ]
 norecursedirs = [
+    ".hypothesis",
     ".venv",
     ".venv-mutation",
     "mutants",

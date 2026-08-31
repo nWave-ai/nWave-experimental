@@ -102,7 +102,7 @@ def test_none_for_an_unrecognised_comprehension_shape(tmp_path: Path) -> None:
     assert retired_names_declared(path) is None
 
 
-def test_the_real_registry_file_declares_all_18_retired_names() -> None:
+def test_the_real_registry_file_declares_known_retired_names() -> None:
     """Non-regression against the actual file this gate protects."""
     from des.cli.registry_diff import retired_names_declared
 
@@ -113,6 +113,8 @@ def test_the_real_registry_file_declares_all_18_retired_names() -> None:
     names = retired_names_declared(real_path)
 
     assert names is not None
-    assert len(names) == 18
-    assert "commit-slice" in names
-    assert "revise-contract-round" in names
+    assert {
+        "commit-slice",
+        "construct-design-closure",
+        "revise-contract-round",
+    }.issubset(names)

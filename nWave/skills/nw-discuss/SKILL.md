@@ -49,6 +49,13 @@ into a feature workspace, wave log, delta, status document or second schema.
   `DeliveryContract` for one delivery. That contract is executable and
   short-lived; it is not the durable product SSOT.
 - Human cadence changes interaction, not the authority graph.
+- One auto VALUE-SEED handed to prepare-ordinary-request is one
+  independently observable atomic promise/slice. If the requested scope
+  contains multiple promises that can be delivered or observed
+  independently, split them here into separate stable outcomes before
+  DISTILL. Do not split positive and negative observations of the same
+  promise. Do not produce a plan, ledger, carrier or implementation
+  prescription; only the split outcomes.
 
 ## Terminal Result
 

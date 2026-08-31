@@ -233,6 +233,24 @@ def test_support_swapped_to_symlink_between_check_and_open_refuses(
     assert "HOW:" in captured.err
 
 
+class _NonDiscriminatingStat:
+    """One stat observation from a filesystem whose tick cannot discriminate.
+
+    The reviewer reproduced same-size writes whose mtime was restored and
+    whose ctime did not advance within the observable filesystem tick.  This
+    projects that environment at the OS boundary the consumer really observes:
+    identity, mode and every byte-relevant metadata field stay equal across
+    the mutation, so only the bytes themselves can discriminate it.
+    """
+
+    def __init__(self, observed, ctime_ns: int) -> None:
+        self._observed = observed
+        self.st_ctime_ns = ctime_ns
+
+    def __getattr__(self, name: str):
+        return getattr(self._observed, name)
+
+
 @pytest.mark.parametrize("consumer", [main, dispatch_cli.main])
 @pytest.mark.parametrize("mutation_hook", ["after_fd_read", "before_final_lstat"])
 def test_support_same_inode_same_metadata_byte_mutation_refuses(
@@ -246,9 +264,18 @@ def test_support_same_inode_same_metadata_byte_mutation_refuses(
     victim = support_paths[0]
     victim_identity = victim.lstat()
     original_fdopen = dispatch_cli.os.fdopen
+    original_fstat = dispatch_cli.os.fstat
     original_lstat = Path.lstat
     mutated = False
     victim_read = False
+
+    def without_tick_discrimination(observed):
+        if (observed.st_dev, observed.st_ino) == (
+            victim_identity.st_dev,
+            victim_identity.st_ino,
+        ):
+            return _NonDiscriminatingStat(observed, victim_identity.st_ctime_ns)
+        return observed
 
     def mutate_same_size() -> None:
         nonlocal mutated
@@ -302,18 +329,14 @@ def test_support_same_inode_same_metadata_byte_mutation_refuses(
             and not mutated
         ):
             mutate_same_size()
-        return original_lstat(path)
+        return without_tick_discrimination(original_lstat(path))
+
+    def stat_without_tick_discrimination(descriptor):
+        return without_tick_discrimination(original_fstat(descriptor))
 
     monkeypatch.setattr(dispatch_cli.os, "fdopen", mutate_victim_after_read)
+    monkeypatch.setattr(dispatch_cli.os, "fstat", stat_without_tick_discrimination)
     monkeypatch.setattr(Path, "lstat", mutate_before_final_lstat)
-    # The reviewer reproduced same-size writes whose mtime was restored and
-    # whose ctime did not advance within the observable filesystem tick.
-    # Project that environment explicitly: only bytes can discriminate it.
-    monkeypatch.setattr(
-        dispatch_cli,
-        "_same_file_snapshot",
-        dispatch_cli._same_file_identity,
-    )
 
     exit_code = consumer(
         ["--repo-root", str(tmp_path), "--delivery-contract", contract_path.name]
@@ -329,49 +352,106 @@ def test_support_same_inode_same_metadata_byte_mutation_refuses(
     assert "HOW:" in captured.err
 
 
-def test_no_follow_reader_returns_the_final_validated_fd_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_dispatch_digest_uses_validated_snapshot_after_regular_replacement(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    support = tmp_path / "support.bin"
-    support.write_bytes(b"stable support bytes")
+    """The published digest binds the bytes dispatch validated, not a reread.
+
+    A legitimate writer -- a formatter or hook -- replaces one already
+    acquired support file while `des dispatch` is still loading later closure
+    members.  That replacement is admissible: the support snapshot was
+    already validated and read from its own no-follow descriptor.  The
+    closure identity therefore must remain the identity of the acquired
+    bytes.  Observed only through public argv and stdout.
+    """
+    contract_path, support_paths = _seed_supporting_contract(tmp_path)
+    contract_dict = json.loads(contract_path.read_text(encoding="utf-8"))
+    oracle_locator = str(contract_dict["acceptance-tests"]["locator"])
+    oracle_path = tmp_path / oracle_locator.split("::", 1)[0]
+    victim = support_paths[1]
+    acquired_digest = "sha256:" + dispatch_cli.closure_digest(
+        contract_path.read_bytes(),
+        oracle_path.read_bytes(),
+        oracle_locator=oracle_locator,
+        supporting_files=tuple(
+            (locator, (tmp_path / locator).read_bytes())
+            for locator in contract_dict["acceptance-tests"]["supporting-locators"]
+        ),
+    )
+    oracle_identity = oracle_path.lstat()
     original_fdopen = dispatch_cli.os.fdopen
-    reads: list[bytes] = []
+    replaced = False
 
-    class DistinctReadStream:
-        def __init__(self, stream) -> None:
-            self._stream = stream
+    def replace_victim_once_a_later_member_opens(descriptor, *args, **kwargs):
+        # Every support snapshot is complete before the oracle is opened, so
+        # this is the admissible post-acquisition window, not a mutation of a
+        # file dispatch is still reading.
+        nonlocal replaced
+        opened = dispatch_cli.os.fstat(descriptor)
+        if not replaced and (opened.st_dev, opened.st_ino) == (
+            oracle_identity.st_dev,
+            oracle_identity.st_ino,
+        ):
+            victim.write_bytes(b"replaced by a legitimate writer\n")
+            replaced = True
+        return original_fdopen(descriptor, *args, **kwargs)
 
-        def __enter__(self):
-            self._stream.__enter__()
-            return self
-
-        def __exit__(self, *args):
-            return self._stream.__exit__(*args)
-
-        def read(self) -> bytes:
-            content = bytes(bytearray(self._stream.read()))
-            reads.append(content)
-            return content
-
-        def fileno(self) -> int:
-            return self._stream.fileno()
-
-        def seek(self, *args):
-            return self._stream.seek(*args)
-
-    def distinct_reads(descriptor, *args, **kwargs):
-        return DistinctReadStream(original_fdopen(descriptor, *args, **kwargs))
-
-    monkeypatch.setattr(dispatch_cli.os, "fdopen", distinct_reads)
-
-    resolved = dispatch_cli._read_regular_file_no_follow(
-        tmp_path, support.name, role="support"
+    monkeypatch.setattr(
+        dispatch_cli.os, "fdopen", replace_victim_once_a_later_member_opens
     )
 
-    assert len(reads) == 2
-    assert reads[0] == reads[1]
-    assert reads[0] is not reads[1]
-    assert resolved is reads[1]
+    exit_code = dispatch_cli.main(
+        ["--repo-root", str(tmp_path), "--delivery-contract", contract_path.name]
+    )
+
+    captured = capsys.readouterr()
+    published = next(
+        line.removeprefix("THIN-DELIVERY-CONTRACT-DIGEST: ")
+        for line in captured.out.splitlines()
+        if line.startswith("THIN-DELIVERY-CONTRACT-DIGEST: ")
+    )
+    assert replaced
+    assert exit_code == 0
+    assert published == acquired_digest
+
+
+def test_absent_no_follow_capability_refuses_before_any_ordinary_open(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without a no-follow open capability, closure acquisition refuses.
+
+    No-follow is a capability, not a flag that silently degrades to `0`: an
+    ordinary open cannot bind the validated path to the opened file, so no
+    closure member may be opened at all.
+    """
+    contract_path, support_paths = _seed_supporting_contract(tmp_path)
+    contract_dict = json.loads(contract_path.read_text(encoding="utf-8"))
+    members = {
+        contract_path,
+        tmp_path / str(contract_dict["acceptance-tests"]["locator"]).split("::", 1)[0],
+        *support_paths,
+    }
+    opened: list[Path] = []
+    ordinary_open = dispatch_cli.os.open
+
+    def record_open(path, flags, *args):
+        opened.append(Path(path))
+        return ordinary_open(path, flags, *args)
+
+    monkeypatch.delattr(dispatch_cli.os, "O_NOFOLLOW", raising=False)
+    monkeypatch.setattr(dispatch_cli.os, "open", record_open)
+
+    exit_code = dispatch_cli.main(
+        ["--repo-root", str(tmp_path), "--delivery-contract", contract_path.name]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "WHAT:" in captured.err
+    assert "WHY:" in captured.err
+    assert "HOW:" in captured.err
+    assert not members.intersection(opened)
 
 
 @pytest.mark.parametrize("consumer", [main, dispatch_cli.main])

@@ -43,11 +43,10 @@ lifecycle isolation, one oracle target, at most two exact examples,
 verification argv, and intended RED. DISTILL is a compiler
 over that sealed authority — it first reads the schema locator for
 serialization grammar only, then reads the authority and the at most two
-named examples, then writes the oracle and one complete DeliveryContract,
-assembled from the
-already-resolved Seeded facts (`delivery-id`, `outcome`, `repository`,
-`budget`, `applicability`, `delivery-route`) and the durable DESIGN facts
-(`targets`, `paradigm`, `obligations`, `verification-scope`). DISTILL holds
+named examples, writes the oracle, and fills the root-compiled
+DeliveryContract through its deterministic constructor. An absent skeleton
+is terminal `BLOCKED`; DISTILL never serializes a replacement manually.
+DISTILL holds
 no `Bash` tool: it never executes the verification command, hashes the
 oracle, calls `des validate-delivery-contract` or classifies a result as RED,
 GREEN or BROKEN. That execution/hash/validation runs once at the root
@@ -61,7 +60,7 @@ algebra/certainty/PBT/residuality properties of the proof protocol. DISTILL's
 own remaining scope is minimal tests and one complete DeliveryContract — no
 extra bureaucracy.
 
-### `des compile-contract` — an optional mechanical skeleton producer
+### `des compile-contract` — the required mechanical skeleton producer
 
 `des compile-contract --repo-root <root> --delivery-id <id>
 --architecture-authority <brief-path>#<anchor> [--route ...]` is a
@@ -94,10 +93,8 @@ oracle at that exact given path. No discoverable test-directory convention
 is a construction refusal (WHAT/WHY/HOW) at the producer, never a guessed
 directory.
 
-The six existing `des dispatch` content validators remain in place as
-backstops regardless of whether a skeleton was compiled — this producer
-narrows how often they fire, it does not replace them (GDP-10: a candidate
-for removal only after real runs show zero firings, not on introduction).
+Downstream content validation remains a backstop for the compiled artifact;
+there is no manual-author route requiring a second whole-suite omission gate.
 
 An installed PostToolUse hook (`des.adapters.drivers.hooks.
 post_write_handler`, `des.domain.oracle_write_classifier`) observes ATD's
@@ -131,13 +128,13 @@ dispatch` re-verifies the digest against the owning document and the
 crafter's BASELINE executes EXCLUSIVELY its own fresh, digest-verified
 re-resolution of the authority block — the carried lines are a
 display-only projection, never the execution source. Otherwise
-`verification-scope.commands` is a set, not a slot: it carries the oracle's
+`verification-scope.commands` is a set, not a slot: the compiler carries the oracle's
 own command AND, when the subject workspace's own root `CLAUDE.md` already
 states one, the workspace's own whole-suite command — copied verbatim, never
 narrowed to only the new oracle (K4 Run 12: an oracle-only scope left a
 shared serializer's regressions invisible until 3 reviewer rounds surfaced
-them; `des dispatch` now refuses a whole-suite-declaring workspace whose
-contract omits it).
+them. Because the skeleton is mandatory, a whole-suite declaration is included
+by construction rather than recovered through a later omission gate).
 
 ## Output
 

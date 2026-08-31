@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -350,12 +351,28 @@ class GraphifyAdapter:
         tier (the RUN ceiling) rather than a bespoke timeout -- this
         repo's own measured order of magnitude (~80s incremental over
         1,031 files) is well inside it; a from-scratch extraction on a
-        much larger tree still has room."""
+        much larger tree still has room.
+
+        ``shutil.which`` can legitimately resolve a Python CLI (a console
+        script with no native launcher, or this repo's own test stand-in
+        under Windows ``PATHEXT``) whose file itself is not directly
+        executable by the OS loader on every platform -- a ``.py`` file has
+        no POSIX exec bit convention and no Windows PE header. When the
+        resolved executable carries that suffix, the interpreter that
+        resolved it (``sys.executable``) is prepended so the SAME resolved
+        path launches correctly everywhere; a real console-script ``.exe``
+        or a POSIX shebang binary is launched exactly as before, unchanged.
+        """
         assert self._out_dir is not None
         scope_root = self._out_dir.parent
+        argv = (
+            [sys.executable, executable, _GRAPHIFY_UPDATE_SUBCOMMAND, str(scope_root)]
+            if executable.lower().endswith(".py")
+            else [executable, _GRAPHIFY_UPDATE_SUBCOMMAND, str(scope_root)]
+        )
         try:
             result = spawn(
-                [executable, _GRAPHIFY_UPDATE_SUBCOMMAND, str(scope_root)],
+                argv,
                 capture_output=True,
                 text=True,
             )

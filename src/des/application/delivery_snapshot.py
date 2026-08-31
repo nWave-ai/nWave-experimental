@@ -22,6 +22,11 @@ from des.domain.workspace_test_command_resolver import (
     PreservationVector,
     resolve_preservation_vector,
 )
+from des.ports.driven_ports.filesystem_port import (
+    FileSystemPort,
+    RegularFileSnapshot,
+    SnapshotRefusal,
+)
 from des.runtime.spawn import git_timeout_seconds, spawn
 from des.runtime.test_execution import run_timeout_seconds
 
@@ -431,21 +436,13 @@ def _validate_preservation_sources(root: Path, vector: PreservationVector) -> No
     for path, expected_digest in vector.sources:
         if not _safe_path(path):
             raise ValueError("preservation source escapes repository")
-        source = _no_follow_path(root, path)
-        try:
-            mode = source.lstat().st_mode
-        except OSError as exc:
+        acquired = _acquire_regular_snapshot(root, path, noun="preservation source")
+        if isinstance(acquired, SnapshotRefusal):
             raise ValueError(
-                f"preservation source is unreadable in final: {path}"
-            ) from exc
-        if not stat.S_ISREG(mode) or source.is_symlink():
-            raise ValueError(f"preservation source is not regular in final: {path}")
-        try:
-            content = source.read_bytes()
-        except OSError as exc:
-            raise ValueError(
-                f"preservation source is unreadable in final: {path}"
-            ) from exc
+                f"preservation source is not regular in final: {path}: "
+                f"{acquired.what}; {acquired.why}; {acquired.how}"
+            )
+        content = acquired.content
         if hashlib.sha256(content).hexdigest() != expected_digest:
             raise ValueError(f"preservation source digest differs in final: {path}")
 
@@ -521,6 +518,7 @@ def _commit_snapshot(
     allowed: set[str],
     message: str,
     constructor_root: Path | None = None,
+    preserve_worktree: bool = False,
 ) -> Snapshot:
     root = constructor_root or _worktree(repo, parent)
     created_root = constructor_root is None
@@ -625,6 +623,22 @@ def _commit_snapshot(
         _assert_clean_constructor_state(root, commit=normalized, env=env)
         if normalized != commit:
             raise ValueError("post-hook normalization was not idempotent")
+        # The commit carries the ACQUIRED bytes; the worktree is not the
+        # constructor's to rewrite.  Where the two disagree the path was
+        # replaced after acquisition -- a legitimate concurrent write this
+        # constructor must leave standing rather than silently overwrite with
+        # the bytes it had already bound.  Where they agree (the ordinary case,
+        # including hook normalization) this is a no-op.
+        # Only a candidate seal qualifies: its overlay was ACQUIRED from this
+        # very worktree, so the worktree is the source of those bytes and never
+        # their destination.  A closure overlay is imported from outside and
+        # must still be published into the tree.
+        if preserve_worktree:
+            for path, entry in original_worktree.items():
+                acquired = overlay.get(path)
+                content = acquired[0] if isinstance(acquired, tuple) else acquired
+                if entry is not None and content is not None and entry[0] != content:
+                    _restore_working_entry(root, path, entry)
         # The ordinary worktree index is not the exclusive constructor index.
         # Refresh it only after the full private-index readback, otherwise the
         # following unchanged CLI would see synthetic dirt in its own root.
@@ -755,32 +769,73 @@ def _no_follow_path(root: Path, locator: str) -> Path:
     return root / locator
 
 
-def _regular_file_bytes(root: Path, locator: str, *, noun: str) -> bytes:
-    """Read one non-symlink regular file beneath the constructor root."""
-    item = _no_follow_path(root, locator)
-    try:
-        mode = item.lstat().st_mode
-        if item.is_symlink() or not stat.S_ISREG(mode):
-            raise ValueError(f"{noun} is not a regular file")
-        return item.read_bytes()
-    except FileNotFoundError as exc:
-        raise ValueError(f"{noun} is missing") from exc
-    except OSError as exc:
-        raise ValueError(f"{noun} is unreadable") from exc
+def _default_filesystem() -> FileSystemPort:
+    """Resolve the one adapter that owns validated no-follow acquisition.
+
+    The import is local so the application module keeps no import-time
+    dependency on the adapter; callers that already hold a port inject it.
+    """
+    from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
+
+    return RealFileSystem()
+
+
+def _acquire_regular_snapshot(
+    root: Path,
+    locator: str,
+    *,
+    noun: str,
+    filesystem: FileSystemPort | None = None,
+) -> RegularFileSnapshot | SnapshotRefusal:
+    """Acquire one member through the port, never through a path reread."""
+    port = filesystem or _default_filesystem()
+    return port.acquire_regular_snapshot(_no_follow_path(root, locator), role=noun)
+
+
+def _refused(refusal: SnapshotRefusal, *, noun: str, locator: str) -> ValueError:
+    """Translate an opaque port refusal into this module's failure language."""
+    return ValueError(
+        f"{noun} is not an acquirable regular file: {locator}: "
+        f"{refusal.what}; {refusal.why}; {refusal.how}"
+    )
+
+
+def _regular_file_bytes(
+    root: Path,
+    locator: str,
+    *,
+    noun: str,
+    filesystem: FileSystemPort | None = None,
+) -> bytes:
+    """Return bytes held by one validated no-follow acquisition of ``locator``.
+
+    The bytes come from the snapshot the port bound to the file it actually
+    opened.  Nothing here reopens the locator: a path that is checked and then
+    read again is a different observation of a possibly different file.
+    """
+    acquired = _acquire_regular_snapshot(
+        root, locator, noun=noun, filesystem=filesystem
+    )
+    if isinstance(acquired, SnapshotRefusal):
+        raise _refused(acquired, noun=noun, locator=locator)
+    return acquired.content
 
 
 def _working_entry(root: Path, locator: str) -> tuple[bytes, int] | None:
-    """Capture one regular worktree entry for a transactional constructor."""
-    item = _no_follow_path(root, locator)
-    try:
-        mode = item.lstat().st_mode
-    except FileNotFoundError:
+    """Capture one regular worktree entry for a transactional constructor.
+
+    Acquired through the same single no-follow snapshot boundary as every
+    other constructor member.  A path validated and only then reread can be
+    handed a different file -- even one outside the repository root --
+    between the two observations; the snapshot binds identity and bytes to
+    one open instead.
+    """
+    acquired = _acquire_regular_snapshot(root, locator, noun="constructor member")
+    if isinstance(acquired, RegularFileSnapshot):
+        return acquired.content, stat.S_IMODE(acquired.mode)
+    if _is_absent(root, locator):
         return None
-    except OSError as exc:
-        raise ValueError(f"constructor member is unreadable: {locator}") from exc
-    if item.is_symlink() or not stat.S_ISREG(mode):
-        raise ValueError(f"constructor member is not a regular file: {locator}")
-    return item.read_bytes(), stat.S_IMODE(mode)
+    raise _refused(acquired, noun="constructor member", locator=locator)
 
 
 def _write_regular_no_follow(
@@ -865,6 +920,159 @@ def construct_closure(
         frozenset(overlay),
         parent,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ClosureAuthoritySnapshot:
+    """The admitted authority of one closure, held as bytes, not as locators.
+
+    Every member is carried here precisely so no later consumer reopens a
+    locator to obtain it again.  The bytes are the EXTERNAL Git comparand --
+    what C admitted -- so a post-admission working-tree edit can neither
+    rename the closure nor leak into a published identity.
+    """
+
+    contract_locator: str
+    contract: dict
+    oracle_locator: str
+    contract_bytes: bytes
+    oracle_bytes: bytes
+    supporting: tuple[tuple[str, bytes], ...]
+    # Evidence, not a verdict: the admitted members whose acquired working
+    # bytes no longer equal what C admitted.  Publishing an admitted identity
+    # tolerates divergence; admitting new work on that tree must not.
+    diverged_paths: tuple[str, ...] = ()
+
+    def require_working_match(self) -> None:
+        """Refuse when the working tree no longer carries the admitted bytes."""
+        if self.diverged_paths:
+            raise ValueError(
+                "closure authority differs from admitted C bytes: "
+                f"{sorted(self.diverged_paths)}"
+            )
+
+
+def _admitted_member_bytes(
+    root: Path,
+    closure: Snapshot,
+    path: str,
+    *,
+    noun: str,
+    filesystem: FileSystemPort | None = None,
+) -> tuple[bytes, bool]:
+    """Return the bytes C admitted for ``path``, and whether working diverged.
+
+    Two distinct observations, deliberately kept apart: the port acquires the
+    working member once, to prove it is still a regular non-symlink file and
+    to hold its bytes, and the admitted Git blob supplies the authoritative
+    bytes.  The locator is never checked and then reopened for its bytes.
+    """
+    if path not in closure.authority_paths:
+        raise ValueError(f"closure {noun} path is not admitted: {path}")
+    acquired = _acquire_regular_snapshot(
+        root, path, noun=f"closure {noun}", filesystem=filesystem
+    )
+    if isinstance(acquired, SnapshotRefusal):
+        raise _refused(acquired, noun=f"closure {noun}", locator=path)
+    admitted = _git_bytes(root, "show", f"{closure.commit}:{path}")
+    if admitted.returncode:
+        raise ValueError(f"closure {noun} is not readable from admitted C: {path}")
+    return admitted.stdout, admitted.stdout != acquired.content
+
+
+def resolve_closure_authority(
+    root: Path,
+    closure: Snapshot,
+    *,
+    contract_locator: str | None = None,
+    filesystem: FileSystemPort | None = None,
+) -> ClosureAuthoritySnapshot:
+    """Build one closure-authority aggregate from admitted, acquired members.
+
+    Any member refusal constructs no aggregate at all: a partially resolved
+    authority is exactly the state a later consumer must not be able to hold.
+    """
+
+    diverged: set[str] = set()
+
+    def admitted(path: str, *, noun: str) -> bytes:
+        content, differs = _admitted_member_bytes(
+            root, closure, path, noun=noun, filesystem=filesystem
+        )
+        if differs:
+            diverged.add(path)
+        return content
+
+    if contract_locator is not None:
+        locator = contract_locator
+        contract = _admitted_contract(admitted(locator, noun="contract"))
+    else:
+        locator, contract = _unique_admitted_contract(closure, admitted)
+    oracle, supporting_locators = _oracle_locators(contract)
+    oracle_path = oracle.split("::", 1)[0]
+    supporting = tuple(
+        (path, admitted(path, noun="support")) for path in supporting_locators
+    )
+    accounted = {locator, oracle_path, *(path for path, _ in supporting)}
+    for path in sorted(closure.authority_paths):
+        if path not in accounted:
+            admitted(path, noun="import")
+    return ClosureAuthoritySnapshot(
+        contract_locator=locator,
+        contract=contract,
+        oracle_locator=oracle,
+        contract_bytes=admitted(locator, noun="contract"),
+        oracle_bytes=admitted(oracle_path, noun="oracle"),
+        supporting=supporting,
+        diverged_paths=tuple(sorted(diverged)),
+    )
+
+
+def _admitted_contract(raw: bytes) -> dict:
+    try:
+        contract = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("closure contract authority is unreadable") from exc
+    if not isinstance(contract, dict):
+        raise ValueError("closure contract authority is not an object")
+    _require_schema_valid(contract)
+    return contract
+
+
+def _unique_admitted_contract(closure: Snapshot, admitted) -> tuple[str, dict]:
+    contracts: list[tuple[str, dict]] = []
+    for path in closure.authority_paths:
+        if not path.endswith(".json"):
+            continue
+        try:
+            candidate = json.loads(admitted(path, noun="contract").decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if isinstance(candidate, dict) and isinstance(
+            candidate.get("delivery-id"), str
+        ):
+            _require_schema_valid(candidate)
+            contracts.append((path, candidate))
+    if len(contracts) != 1:
+        raise ValueError("closure has no unique readable delivery contract")
+    return contracts[0]
+
+
+def _oracle_locators(contract: dict) -> tuple[str, list[str]]:
+    try:
+        oracle = contract["acceptance-tests"]["locator"]
+        supporting_locators = contract["acceptance-tests"].get(
+            "supporting-locators", []
+        )
+    except (KeyError, TypeError) as exc:
+        raise ValueError("closure contract authority is unreadable") from exc
+    if (
+        not isinstance(oracle, str)
+        or not isinstance(supporting_locators, list)
+        or any(not isinstance(path, str) for path in supporting_locators)
+    ):
+        raise ValueError("closure contract authority has invalid oracle locators")
+    return oracle, supporting_locators
 
 
 def _admitted_lineage(
@@ -954,6 +1162,65 @@ def construct_closure_correction(
     )
 
 
+def _unique_contract_at_commit(root: Path, commit: str, candidates: set[str]) -> dict:
+    """Identify the one admitted delivery contract from Git bytes at ``commit``."""
+    contracts: list[dict] = []
+    for path in candidates:
+        if not path.endswith(".json"):
+            continue
+        raw = _git_bytes(root, "show", f"{commit}:{path}")
+        if raw.returncode:
+            continue
+        try:
+            candidate = json.loads(raw.stdout.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if isinstance(candidate, dict) and isinstance(
+            candidate.get("delivery-id"), str
+        ):
+            _require_schema_valid(candidate)
+            contracts.append(candidate)
+    if len(contracts) != 1:
+        raise ValueError("closure has no unique readable delivery contract")
+    return contracts[0]
+
+
+def _reconstructed_charter_paths(
+    root: Path, commit: str, delivery_id: str
+) -> frozenset[str]:
+    """Reconstruct the exact charter namespace membership from admitted Git bytes.
+
+    Charter members reused unchanged from base never appear in any closure
+    commit's changed-paths delta, so identity/path membership is derived here
+    from the committed tree at the closure commit rather than from the delta.
+    """
+    namespace = f"docs/product/expectations/{delivery_id}/"
+    if not _safe_path(namespace.rstrip("/")):
+        raise ValueError("closure charter namespace escapes repository")
+    listed = _git(root, "ls-tree", "-z", commit, "--", namespace)
+    if listed.returncode:
+        raise RuntimeError(listed.stderr.strip())
+    members: set[str] = set()
+    for line in listed.stdout.split("\0"):
+        if not line:
+            continue
+        meta, _sep, path = line.partition("\t")
+        mode, kind, _sha = meta.split(" ", 2)
+        if (
+            kind != "blob"
+            or not mode.startswith("100")
+            or not path.startswith(namespace)
+            or "/" in path[len(namespace) :]
+            or not path.endswith(".md")
+            or not _safe_path(path)
+        ):
+            raise ValueError(f"closure charter member is not admitted: {path}")
+        members.add(path)
+    if not members:
+        raise ValueError("closure charter namespace has no admitted members")
+    return frozenset(members)
+
+
 def recognize_closure(root: Path, commit: str) -> Snapshot:
     """Reconstruct only an admitted closure lineage; messages alone never do."""
     lineage, base = _admitted_lineage(
@@ -965,6 +1232,11 @@ def recognize_closure(root: Path, commit: str) -> Snapshot:
     for _, _, paths in reversed(lineage):
         authority.update(paths)
     current, parent, _ = lineage[0]
+    contract = _unique_contract_at_commit(root, current, authority)
+    if bool(contract.get("applicability", {}).get("examine")):
+        authority |= _reconstructed_charter_paths(
+            root, current, str(contract["delivery-id"])
+        )
     return Snapshot(current, root, parent, None, frozenset(authority), base)
 
 
@@ -1076,19 +1348,45 @@ def _final_preservation(
 
 
 def _target_overlay(
-    root: Path, targets: set[str], *, noun: str
+    root: Path,
+    targets: set[str],
+    *,
+    noun: str,
+    filesystem: FileSystemPort | None = None,
 ) -> dict[str, bytes | None]:
+    """Acquire each present target once; an absent target is a deletion.
+
+    Acquisition comes FIRST, so a present target's bytes are the ones the port
+    bound.  Absence is classified only after a refusal, and that branch carries
+    no bytes at all -- so no target is ever checked and then reopened.
+    """
     if any(not _safe_path(path) for path in targets):
         raise ValueError(f"{noun} target escapes repository")
     overlay: dict[str, bytes | None] = {}
     for path in targets:
-        item = _no_follow_path(root, path)
-        overlay[path] = (
-            _regular_file_bytes(root, path, noun=f"{noun} target")
-            if item.exists() or item.is_symlink()
-            else None
+        acquired = _acquire_regular_snapshot(
+            root, path, noun=f"{noun} target", filesystem=filesystem
         )
+        if isinstance(acquired, RegularFileSnapshot):
+            overlay[path] = acquired.content
+            continue
+        if _is_absent(root, path):
+            overlay[path] = None
+            continue
+        raise _refused(acquired, noun=f"{noun} target", locator=path)
     return overlay
+
+
+def _is_absent(root: Path, locator: str) -> bool:
+    """Classify a refused acquisition as a deletion rather than a defect."""
+    item = _no_follow_path(root, locator)
+    try:
+        item.lstat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return False
 
 
 def finalize_candidate(
@@ -1204,6 +1502,9 @@ def finalize_candidate(
 class CandidateConstructor:
     """Unregistered constructor invoked only by the platform hook."""
 
+    def __init__(self, filesystem: FileSystemPort | None = None) -> None:
+        self._filesystem = filesystem or _default_filesystem()
+
     def seal(
         self, approved: ApprovedClosure, writable_root: Path, targets: set[str]
     ) -> Snapshot:
@@ -1215,7 +1516,9 @@ class CandidateConstructor:
         authority_paths = approved.authority_paths or approved.closure.authority_paths
         if targets & authority_paths:
             raise ValueError("contract production targets intersect AuthorityPaths")
-        overlay = _target_overlay(writable_root, targets, noun="candidate")
+        overlay = _target_overlay(
+            writable_root, targets, noun="candidate", filesystem=self._filesystem
+        )
         # Reconstruct from the original base, not mutable closure/candidate
         # bytes.  The closure's exact delta is also the authoritative set of
         # newly introduced paths excluded at closure construction.
@@ -1233,6 +1536,7 @@ class CandidateConstructor:
             allowed=targets,
             message=_CANDIDATE_MESSAGE,
             constructor_root=writable_root,
+            preserve_worktree=True,
         )
         # All closure lineage authority is immutable through candidate
         # construction, including bytes, mode and deletions.  This makes the
@@ -1285,7 +1589,12 @@ class CandidateConstructor:
         authority_paths = approved.authority_paths or approved.closure.authority_paths
         if targets & authority_paths:
             raise ValueError("candidate correction targets intersect AuthorityPaths")
-        overlay = _target_overlay(writable_root, targets, noun="candidate correction")
+        overlay = _target_overlay(
+            writable_root,
+            targets,
+            noun="candidate correction",
+            filesystem=self._filesystem,
+        )
         if all(
             (content is None and _entry(writable_root, cited.commit, path) is None)
             or (
@@ -1312,6 +1621,7 @@ class CandidateConstructor:
             allowed=targets,
             message=_CANDIDATE_MESSAGE,
             constructor_root=writable_root,
+            preserve_worktree=True,
         )
         for path in authority_paths:
             if _entry(snapshot.root, snapshot.commit, path) != _entry(

@@ -69,6 +69,7 @@ def _make_context(
     project_root = tmp_path / "project"
     framework_source = tmp_path / "framework"
     framework_source.mkdir(parents=True)
+    (framework_source / "VERSION").write_text("4.0.1\n", encoding="utf-8")
 
     # Create TS template if requested
     if template_exists:
@@ -251,6 +252,49 @@ def _user_plugins_state(
 # ---------------------------------------------------------------------------
 # Tests: install()
 # ---------------------------------------------------------------------------
+
+
+class TestIdentityRefusalIsAtomic:
+    """Missing build identity refuses before any OpenCode state is written."""
+
+    @staticmethod
+    def _assert_refusal(
+        context: InstallContext,
+        opencode_dir: Path,
+        plugins_dir: Path,
+        monkeypatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "scripts.install.plugins.opencode_des_plugin._opencode_config_dir",
+            lambda: opencode_dir,
+        )
+        existing = opencode_dir / "opencode.json"
+        existing.write_text('{"theme": "kept"}\n', encoding="utf-8")
+
+        result = OpenCodeDESPlugin().install(context)
+
+        detail = "\n".join((result.message, *result.errors))
+        assert result.success is False
+        assert "WHAT:" in detail
+        assert "WHY:" in detail
+        assert "HOW:" in detail
+        assert existing.read_text(encoding="utf-8") == '{"theme": "kept"}\n'
+        assert not plugins_dir.exists()
+        assert not (plugins_dir / "nwave-des.ts").exists()
+        assert not (opencode_dir / ".nwave-des-manifest.json").exists()
+        assert {path.name for path in opencode_dir.iterdir()} == {"opencode.json"}
+
+    def test_missing_version_refuses_before_any_write(self, tmp_path, monkeypatch):
+        context, opencode_dir, plugins_dir = _make_context(tmp_path)
+        (context.framework_source / "VERSION").unlink()
+
+        self._assert_refusal(context, opencode_dir, plugins_dir, monkeypatch)
+
+    def test_empty_version_refuses_before_any_write(self, tmp_path, monkeypatch):
+        context, opencode_dir, plugins_dir = _make_context(tmp_path)
+        (context.framework_source / "VERSION").write_text("", encoding="utf-8")
+
+        self._assert_refusal(context, opencode_dir, plugins_dir, monkeypatch)
 
 
 class TestFreshInstallCreatesShimAndManifest:

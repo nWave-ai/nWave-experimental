@@ -20,16 +20,22 @@ from des.application.compile_contract import (
     Compiled,
     compile_delivery_contract,
 )
+from des.application.delivery_snapshot import (
+    recognize_closure,
+    resolve_closure_authority,
+)
 from des.application.ordinary_request import contract_locator_for
 from des.application.recompile_contract import merge_preserve_fills
 from des.cli.compile_contract import (
     _EXIT_BLOCKED,
+    _atomic_write_contract,
     _blocked,
     _blocked_from,
     build_parser,
     refuse_schema_invalid_skeleton,
     resolve_inputs,
 )
+from des.domain.base_revision_resolver import git_output
 
 
 def _parser():
@@ -83,6 +89,48 @@ def main(argv: list[str] | None = None) -> int:
             "delete it and start over with des compile-contract",
         )
 
+    # A post-AT mechanical repair runs at admitted closure Cn, not original
+    # base B. Reconstruct Cn from Git (messages alone do not admit it), bind
+    # the same-open closure authority, and carry B from that immutable
+    # schema-valid contract. No caller flag can select or forge B.
+    admitted_base_revision: str | None = None
+    head = git_output(inputs.repo_root, "rev-parse", "HEAD")
+    if head is not None:
+        try:
+            closure = recognize_closure(inputs.repo_root, head)
+        except ValueError:
+            closure = None
+        if closure is not None:
+            try:
+                authority = resolve_closure_authority(
+                    inputs.repo_root,
+                    closure,
+                    contract_locator=contract_locator,
+                )
+                authority.require_working_match()
+            except ValueError as exc:
+                return _blocked(
+                    what=f"the reviewed closure cannot bind this correction ({exc})",
+                    why="a post-review recompile may advance only the exact "
+                    "admitted contract/oracle/support bytes of Cn",
+                    how="restore the admitted closure bytes, then apply only "
+                    "the architect-owned mechanical authority correction",
+                )
+            existing = authority.contract
+            if existing.get("delivery-id") != inputs.delivery_id:
+                return _blocked(
+                    what="the reviewed closure belongs to a different delivery-id",
+                    why="a mechanical correction cannot rewrite delivery identity",
+                    how="invoke recompile-contract for the delivery-id admitted by Cn",
+                )
+            admitted_base_revision = str(existing["repository"]["base-revision"])
+            if admitted_base_revision.split(":", 1)[-1] != closure.base:
+                return _blocked(
+                    what="the reviewed closure base differs from its contract base",
+                    why="the correction must preserve original B while becoming a child of Cn",
+                    how="restore the admitted closure; do not supply or rewrite a base revision",
+                )
+
     # The existing contract is the record that a declared target was
     # grounded at the original compile -- possibly since authored as this
     # delivery's own in-flight product, which must not poison the
@@ -99,7 +147,6 @@ def main(argv: list[str] | None = None) -> int:
     inputs = replace(
         inputs,
         delivery_route=existing.get("delivery-route", inputs.delivery_route),
-        paradigm=existing.get("paradigm", inputs.paradigm),
         budget_token_limit=budget.get("token-limit", inputs.budget_token_limit),
         budget_wall_clock_minutes=budget.get(
             "wall-clock-minutes", inputs.budget_wall_clock_minutes
@@ -122,6 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         existing_verification_scope=(
             existing_scope if isinstance(existing_scope, dict) else None
         ),
+        admitted_base_revision=admitted_base_revision,
     )
     if isinstance(result, Blocked):
         # The ONE renderer, shared with des compile-contract -- never a
@@ -141,10 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     if refusal is not None:
         return refusal
-    destination.write_text(
-        json.dumps(summary.contract, indent=2, sort_keys=False) + "\n",
-        encoding="utf-8",
-    )
+    _atomic_write_contract(destination, summary.contract)
     print(f"DELIVERY-CONTRACT-SKELETON: {contract_locator}")
     print(f"ORACLE-LOCATOR: {summary.contract['acceptance-tests']['locator']}")
     if result.oracle_reused:

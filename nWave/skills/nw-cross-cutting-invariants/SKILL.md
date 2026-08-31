@@ -30,6 +30,16 @@ on another host.
 The lenses are independent KNOWLEDGE: no forced sequence and no artificial precedence. A compound
 task loads multiple lenses; return here only to route the next concern.
 
+## `construction:design-paradigm-projection` — DESIGN owns the crafter paradigm
+
+Before handing any durable DESIGN authority to DISTILL, its writer records the
+resolved functional or object-oriented decision once on a `Paradigm:` line in
+the cited section. A specialized domain, system or platform writer preserves
+the established application paradigm; when it is absent or contested, return
+the decision to `nw-design`/solution architecture. Never default an unspecified
+project to object-oriented. `des compile-contract` consumes this projection
+directly; root and ATD neither retype nor infer it.
+
 ## `gate:self-explaining-what-why-how` — gate and error surfaces state WHAT / WHY / HOW (STANDING)
 
 Every gate, contract check, or error surface you design MUST, on rejection, state **WHAT**

@@ -25,80 +25,6 @@ def _route_section(agent: str, heading: str, next_heading: str) -> str:
     return agent.split(heading, 1)[1].split(next_heading, 1)[0]
 
 
-def _no_skeleton_normative_section(agent: str) -> str:
-    """Return the compiled-skeleton section's no-skeleton support rule."""
-    start = re.search(
-        r"\bwhen\s+`contract-locator`\s+is\s+absent\s+"
-        r"\(no\s+skeleton\s+was\s+compiled\)",
-        agent,
-        re.IGNORECASE,
-    )
-    assert start is not None
-    tail = agent[start.start() :]
-    end = re.search(r"\n\s*your\s+bash\s+surface\s+is\s+locked", tail, re.IGNORECASE)
-    assert end is not None
-    return tail[: end.start()]
-
-
-def _no_skeleton_support_order_is_safe(agent: str) -> bool:
-    """Require the bounded no-skeleton rule to preserve read-before-write."""
-    words = re.findall(r"[a-z0-9]+", _no_skeleton_normative_section(agent).casefold())
-
-    for write_index, word in enumerate(words):
-        if word != "write":
-            continue
-        # Structural token order tolerates capitalization, punctuation, and
-        # arbitrary spacing while identifying the prohibited opposite rule.
-        for support_index in range(write_index + 1, min(write_index + 24, len(words))):
-            if words[support_index] not in {"support", "supporting"}:
-                continue
-            if support_index + 1 >= len(words) or not words[
-                support_index + 1
-            ].startswith("locator"):
-                continue
-            for before_index in range(
-                support_index + 2, min(support_index + 24, len(words))
-            ):
-                if words[before_index] != "before":
-                    continue
-                if any(
-                    token == "read"
-                    for token in words[before_index + 1 : before_index + 12]
-                ):
-                    return False
-    return True
-
-
-def _no_skeleton_support_order_has_no_global_contradiction(agent: str) -> bool:
-    """Reject any normative opposite-order support-locator directive."""
-    words = re.findall(r"[a-z0-9]+", agent.casefold())
-
-    for write_index, word in enumerate(words):
-        if word != "write":
-            continue
-        for architecture_index in range(
-            write_index + 1, min(write_index + 32, len(words))
-        ):
-            if words[architecture_index : architecture_index + 4] != [
-                "architecture",
-                "named",
-                "supporting",
-                "locator",
-            ]:
-                continue
-            for before_index in range(
-                architecture_index + 4, min(architecture_index + 24, len(words))
-            ):
-                if words[before_index] != "before":
-                    continue
-                if any(
-                    token == "read"
-                    for token in words[before_index + 1 : before_index + 12]
-                ):
-                    return False
-    return True
-
-
 def test_ab_projection_has_no_retired_carrier_or_separate_human_workflow() -> None:
     projected = "\n".join(_text(path) for path in (AGENT, SKILL, TASK)).casefold()
 
@@ -415,7 +341,9 @@ def test_auto_skill_pins_exact_atd_envelope_and_root_fact_resolution() -> None:
         in auto_compact
     )
     assert "the CLI does not persist or enforce the permit/counter" in auto_compact
-    assert "second recompile" in auto_compact
+    assert "A prior successful recompile never consumes a later" in auto_compact
+    assert "each distinct fresh authority advances the same identity" in auto_compact
+    assert "Repeating the same authority bytes/finding" in auto_compact
     for identity_fact in (
         "paradigm",
         "size",
@@ -710,15 +638,15 @@ def test_agent_pins_lossless_overlap_projection_and_primary_support_closure() ->
     )
     assert "never a directory, symlink or fifo" in compact
     assert re.search(
-        r"schema 1\.4.{0,300}\bone[- ]or[- ]more\b", compact, re.IGNORECASE
+        r"current schema.{0,300}\bone[- ]or[- ]more\b", compact, re.IGNORECASE
     )
-    legacy_13 = re.search(r"schema 1\.3.{0,300}", compact, re.IGNORECASE)
-    assert legacy_13 and re.search(r"omitt", legacy_13.group(0), re.IGNORECASE)
+    legacy = re.search(r"legacy schema.{0,300}", compact, re.IGNORECASE)
+    assert legacy and re.search(r"omitt", legacy.group(0), re.IGNORECASE)
     assert re.search(
-        r"(?:supporting-locators|support field)", legacy_13.group(0), re.IGNORECASE
+        r"(?:supporting-locators|support field)", legacy.group(0), re.IGNORECASE
     )
     assert not re.search(
-        r"schema 1\.4.{0,300}\bzero[- ]or[- ]more\b", compact, re.IGNORECASE
+        r"current schema.{0,300}\bzero[- ]or[- ]more\b", compact, re.IGNORECASE
     )
     assert "private, contract-bound source/dependency artifacts" in compact
     assert "Test dependency locator:" in compact
@@ -735,53 +663,15 @@ def test_agent_pins_lossless_overlap_projection_and_primary_support_closure() ->
     assert agent.count("declared-imports") >= 4
     assert "RED_TO_GREEN step 6 question" in compact
     assert (
-        "A compiled schema 1.3 skeleton without the support field is already "
+        "A compiled legacy-schema skeleton without the support field is already "
         "valid through the canonical compatibility adapter" in compact
     )
     assert (
-        "never compare that mechanical 1.3 field directly with the raw 1.4 "
+        "never compare that mechanical legacy field directly with the current "
         "JSON Schema const" in compact
     )
-    red = _route_section(agent, "### RED_TO_GREEN", "### GREEN_TO_GREEN")
-    no_skeleton = red.split("When no skeleton exists", 1)[1].split(
-        "Does the read architecture authority's own fragment", 1
-    )[0]
-    no_skeleton_compact = " ".join(no_skeleton.split())
-    assert re.search(
-        r"(?:omit|without).{0,120}(?:supporting-locators|support field)",
-        no_skeleton_compact,
-        re.IGNORECASE,
-    )
-    forbidden_legacy_permissions = re.compile(
-        r"(?:(?:retain|retaining|keep|keeping|include|including|"
-        r"preserv|preserving|carry|carrying).{0,140}"
-        r"(?:supporting-locators|support field)|"
-        r"(?:supporting-locators|support field).{0,140}(?:retain|"
-        r"retaining|keep|keeping|include|including|preserv|preserving|"
-        r"carry|carrying))",
-        re.IGNORECASE,
-    )
-    for clause in re.split(r"(?<=[.!?;])\s+|\n+", no_skeleton_compact):
-        if re.search(r"schema 1\.3", clause, re.IGNORECASE):
-            assert not forbidden_legacy_permissions.search(clause)
-    assert re.search(
-        r"schema 1\.3.{0,260}(?:omit|without).{0,120}"
-        r"(?:supporting-locators|support field)",
-        no_skeleton_compact,
-        re.IGNORECASE,
-    )
-    assert re.search(
-        r"schema 1\.4.{0,320}(?:non-empty|one[- ]or[- ]more).{0,120}"
-        r"(?:ordered|lexicographically ordered).{0,120}"
-        r"(?:supporting-locators|support field)",
-        no_skeleton_compact,
-        re.IGNORECASE,
-    )
-    assert not re.search(
-        r"possibly[- ]empty|arbitrarily reordered|unordered|any order",
-        no_skeleton_compact,
-        re.IGNORECASE,
-    )
+    assert "There is no manual contract-authoring fallback" in compact
+    assert "serialize a contract manually" in compact
 
 
 def test_architect_emits_canonical_test_dependency_locator_declarations() -> None:
@@ -828,55 +718,25 @@ def test_compiled_skeleton_routes_use_one_batch_constructor_not_per_field_calls(
     assert "strict child" in agent.casefold() or "ancestry" in agent.casefold()
 
 
-def test_no_skeleton_reads_architecture_named_supports_before_support_writes() -> None:
-    """A no-skeleton support path is an authority-named input, not an
-    uninspected destination that may be overwritten during closure creation."""
+def test_absent_skeleton_is_terminal_not_a_manual_authoring_route() -> None:
     agent = _text(AGENT)
     compact = " ".join(agent.split())
-    assert re.search(
-        r"(?:when|if) (?:`contract-locator` is absent|no skeleton exists)"
-        r".{0,700}\bread\b.{0,220}"
-        r"architecture[- ]named.{0,80}supporting[- ]locators?"
-        r".{0,220}\bbefore\b.{0,180}"
-        r"\bwrite\b.{0,100}(?:support artifact|support path)",
-        compact,
-        re.IGNORECASE,
-    )
-    assert _no_skeleton_support_order_is_safe(agent)
+    assert "It MUST resolve to the root-compiled skeleton" in compact
+    assert "terminal `DISTILL-RESULT: BLOCKED`" in compact
+    assert "write no oracle, support or contract bytes" in compact
+    assert "There is no manual contract-authoring fallback" in compact
+    assert "When no skeleton exists" not in agent
 
 
-def test_no_skeleton_support_order_kills_appended_write_before_read_mutant() -> None:
-    """The exhibited opposite-order append must be rejected despite formatting."""
-    agent = _text(AGENT)
-    insertion = (
-        "\nWHEN no skeleton exists, WRITE every architecture - named supporting\n"
-        "locator before any READ.\n"
-    )
-    mutant = agent + insertion
-
-    assert _no_skeleton_support_order_is_safe(agent)
-    assert _no_skeleton_support_order_has_no_global_contradiction(agent)
-    assert not _no_skeleton_support_order_has_no_global_contradiction(mutant)
-
-
-def test_agent_pins_verification_command_copied_from_authority() -> None:
-    """K4 Run 9: ATD-1 constructed a `manage.py test` dotted path itself
-    (`api.tests.*`) instead of copying the architecture authority's own
-    fragment (`hc.api.tests.*`), a wrong-package-prefix defect `des
-    dispatch` now catches, but only after ATD guessed it in the first
-    place. One interrogative line: copy the command, never construct it."""
+def test_agent_never_reauthors_compiler_owned_verification_command() -> None:
+    """K4 Run 9's wrong package prefix is now impossible at the ATD surface:
+    the mandatory compiler owns verification-scope construction."""
     compact = " ".join(_text(AGENT).split())
 
-    assert (
-        "Does the read architecture authority's own fragment already "
-        "state the exact test invocation" in compact
-    )
-    assert "or are you constructing the package/module prefix yourself?" in compact
-    assert "Copy it verbatim" in compact
-    assert (
-        "K4 Run 9: `api.tests.*` guessed instead of the authority's own "
-        "`hc.api.tests.*`" in compact
-    )
+    assert "`verification-scope.commands`" in compact
+    assert "trusted as given" in compact
+    assert "re-deriving one from scratch" in compact
+    assert "There is no manual contract-authoring fallback" in compact
 
 
 def test_agent_pins_closure_read_back_with_language_appropriate_shape_check() -> None:

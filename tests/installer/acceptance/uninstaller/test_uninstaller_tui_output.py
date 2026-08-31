@@ -10,8 +10,7 @@ installed config dir. All tests assert against the same captured stdout.
 
 import pytest
 
-from scripts.install.install_nwave import __version__ as install_version
-from scripts.install.uninstall_nwave import __version__ as uninstall_version
+from scripts.install import install_nwave, uninstall_nwave
 
 
 # Pin to the installer_walking_skeleton xdist group — both this file
@@ -48,13 +47,13 @@ class TestWalkingSkeleton:
     # Step 1: Logo + uninstaller banner
     def test_step_01_logo_with_version(self, output: str):
         """ASCII art logo is printed with the installer version number."""
-        assert f"v{install_version}" in output
+        assert f"v{install_nwave.__version__}" in output
         assert "nWave" in output or "\u2588" in output
 
     def test_step_01_uninstaller_banner(self, output: str):
         """Uninstaller banner shows its own version."""
         assert "Uninstaller" in output
-        assert uninstall_version in output
+        assert uninstall_nwave.__version__ in output
 
     # Step 2: Check installation
     def test_step_02_check_installation(self, output: str):

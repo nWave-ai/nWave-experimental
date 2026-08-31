@@ -29,6 +29,13 @@ from datetime import datetime
 from pathlib import Path
 
 
+_project_root = str(Path(__file__).resolve().parent.parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from scripts.shared.version import VersionResolutionError  # noqa: E402
+
+
 __version__ = "1.0.0"
 
 
@@ -55,19 +62,32 @@ class GitHubTarballCreator:
         catalog_file = self.project_root / "nWave" / "framework-catalog.yaml"
 
         if not catalog_file.exists():
-            return "dev"
+            raise VersionResolutionError(
+                what="no injected version and no framework-catalog.yaml",
+                why=f"{catalog_file} does not exist",
+                how="pass --version explicitly or restore nWave/framework-catalog.yaml",
+            )
 
         try:
             import re
 
             content = catalog_file.read_text(encoding="utf-8")
             match = re.search(r'^version:\s*["\']?([0-9.]+)', content, re.MULTILINE)
-            if match:
-                return match.group(1)
-        except Exception:
-            pass
+        except OSError as exc:
+            raise VersionResolutionError(
+                what="framework-catalog.yaml could not be read",
+                why=str(exc),
+                how=f"make {catalog_file} readable",
+            ) from exc
 
-        return "dev"
+        if not match:
+            raise VersionResolutionError(
+                what="no version entry found in framework-catalog.yaml",
+                why=f"no line matching 'version: <x.y.z>' in {catalog_file}",
+                how="pass --version explicitly or add a version entry to framework-catalog.yaml",
+            )
+
+        return match.group(1)
 
     def _log(self, message: str, level: str = "INFO"):
         """Print log message."""

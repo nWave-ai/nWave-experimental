@@ -9,7 +9,7 @@ fill-contract` alone (Ale's construction-over-file correction, 2026-08-20)
 -- it cannot run this probe itself; the deterministic place remains `des
 dispatch` -- the one boundary between `CONTRACT_READY` and the first
 crafter dispatch, already the home of every other contract-content check
-(`_placeholder_refusal`, `_whole_suite_scope_refusal`; the sibling
+(`_placeholder_refusal`; the sibling
 `_declared_import_refusal`/`_verification_command_refusal` this probe used
 to sit beside were DELETED, "the contract has one writer -- `des
 fill-contract` is the constructor", Agda-proved vacuous -- ~/nwave-formal/

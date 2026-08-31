@@ -130,6 +130,8 @@ After phase-two review, update the brief/ADRs once. Return stable decision ids
 plus the minimum facts DISTILL needs to compile route, paradigm, targets,
 boundaries, obligations, oracle choice, applicability and command vectors. Do
 not author the `DeliveryContract` here and do not copy full rationale into it.
+Apply `construction:design-paradigm-projection` from the shared cross-cutting
+core; root never retypes or defaults that decision.
 
 ```text
 DESIGN-RESULT

@@ -18,6 +18,7 @@ from jsonschema import Draft202012Validator, ValidationError
 
 from des._internal.delivery_contract_schema import (
     SchemaViolation,
+    delivery_contract_schema_version,
     delivery_contract_schema_violation,
 )
 
@@ -35,6 +36,15 @@ ALL_OBLIGATION_KINDS = (
     "REUSE_CANDIDATE",
     "ARCHITECTURE_BOUNDARY_CHANGE",
 )
+
+
+def test_current_version_is_derived_from_the_schema(tmp_path: Path) -> None:
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    schema["properties"]["schema-version"]["const"] = "future-version"
+    alternate = tmp_path / SCHEMA_PATH.name
+    alternate.write_text(json.dumps(schema), encoding="utf-8")
+
+    assert delivery_contract_schema_version(alternate) == "future-version"
 
 
 def _target_plan() -> dict[str, Any]:

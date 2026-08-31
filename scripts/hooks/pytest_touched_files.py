@@ -147,6 +147,10 @@ if TYPE_CHECKING:
 # stays true.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
+from des._internal.delivery_contract_schema import (
+    LEGACY_SCHEMA_VERSION,
+    delivery_contract_schema_version,
+)
 from des.domain.declared_red_oracles import (
     declared_red_oracles,
     module_names,
@@ -154,6 +158,7 @@ from des.domain.declared_red_oracles import (
 from des.domain.declared_red_oracles import (
     expected_red_reason as _declared_reason,
 )
+from des.domain.repo_path_resolver import resolve_repo_root
 
 
 RED = "\033[0;31m"
@@ -201,7 +206,7 @@ _CLOSURE_CONTRACT_PREFIX = "docs/delivery-contracts/"
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parent.parent.parent
+    return resolve_repo_root(None)
 
 
 def _touched_relative_paths(touched: list[str]) -> set[str]:
@@ -279,11 +284,18 @@ def _closure_authority_expected_red(
     locator = acceptance.get("locator")
     has_supporting = "supporting-locators" in acceptance
     supporting = acceptance.get("supporting-locators", [])
+    try:
+        current_schema_version = delivery_contract_schema_version()
+    except RuntimeError:
+        return []
     if (
         not isinstance(locator, str)
         or not locator
-        or (has_supporting and contract.get("schema-version") != "1.4")
-        or (not has_supporting and contract.get("schema-version") != "1.3")
+        or (has_supporting and contract.get("schema-version") != current_schema_version)
+        or (
+            not has_supporting
+            and contract.get("schema-version") != LEGACY_SCHEMA_VERSION
+        )
         or not isinstance(supporting, list)
         or (
             has_supporting

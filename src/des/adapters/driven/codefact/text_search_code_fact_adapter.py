@@ -13,13 +13,9 @@ positives/negatives (ADR-LA-001 Consequences, the honest tradeoff), but the
 answer is never silent-green and never a false-fail dressed as certainty — the
 lower-confidence provenance is in the envelope.
 
-ONE case is deliberately NOT answered: an EMPTY result for a reference-shaped
-capability. This tier only represents ``bare-name`` references (its patterns
-are anchored to exclude a dot-preceded occurrence), so its zero cannot discriminate "no such
-reference" from "the reference is dotted and I am blind to it". It declares
-that in its manifest and the fold converts such an empty into
-``failed:unrepresented-reference-shape`` — a floor that says "I do not know
-how to look" beats a floor that says zero.
+Reference scans represent both bare and dotted occurrences. They remain noisy
+name matching, but an empty result no longer hides ``obj.method`` behind a
+bare-name-only pattern.
 
 This is the load-bearing "there is ALWAYS a usable answer" floor of slice-01.
 """
@@ -38,6 +34,7 @@ from des.ports.code_fact_port import (
     CAPABILITY_NEVER_WIRED,
     CAPABILITY_READS_OF,
     REFERENCE_SHAPE_BARE_NAME,
+    REFERENCE_SHAPE_DOTTED_ATTRIBUTE,
     STABLE_CORE_CAPABILITY_IDS,
     TRACE_EXEMPLARS_MAX,
     Answered,
@@ -68,19 +65,16 @@ _ATOM_DEFINITION = re.compile(
 # the textual scan tolerates non-source files (they simply contribute no atoms).
 _SOURCE_GLOB = "*.*"
 
-# The reference SHAPES this textual floor represents, per capability
-# (reference-shape coverage axis, 2026-08-23). BARE NAMES ONLY: every
-# reference pattern below is anchored to exclude a dot-preceded occurrence, which EXCLUDES a
-# dotted occurrence by construction -- ``cfg.retry_budget`` and
-# ``owner.method(`` are invisible to this tier. Declaring the blindness is
-# what stops an empty floor result from being read as "there are none":
-# the fold converts such an empty into ``failed:unrepresented-reference-shape``
-# instead. A capability absent from this map claims no shape (``()``) and is
-# not reference-shaped anyway (atoms / adr-section).
+# The textual floor observes both bare and dotted occurrences by trailing
+# identifier. It remains noisy because it cannot resolve the owner binding.
+_REFERENCE_SHAPES = (
+    REFERENCE_SHAPE_BARE_NAME,
+    REFERENCE_SHAPE_DOTTED_ATTRIBUTE,
+)
 _REPRESENTED_SHAPES: dict[str, tuple[str, ...]] = {
-    CAPABILITY_CALLERS_OF: (REFERENCE_SHAPE_BARE_NAME,),
-    CAPABILITY_READS_OF: (REFERENCE_SHAPE_BARE_NAME,),
-    CAPABILITY_NEVER_WIRED: (REFERENCE_SHAPE_BARE_NAME,),
+    CAPABILITY_CALLERS_OF: _REFERENCE_SHAPES,
+    CAPABILITY_READS_OF: _REFERENCE_SHAPES,
+    CAPABILITY_NEVER_WIRED: _REFERENCE_SHAPES,
 }
 
 
@@ -340,10 +334,9 @@ class TextSearchAdapter:
     def _call_sites(self, callable_name: str, faults: _FaultObservation) -> list[str]:
         """Every textual ``<callable_name>(`` call SITE, one entry per occurrence.
 
-        A declaration line is NOT a call-site; a bare ``flush(`` usage is. A
-        DOTTED ``obj.flush(`` is NOT matched -- the pattern lookbehind
-        excludes a dot-preceded occurrence, which is exactly the blindness ``_REPRESENTED_SHAPES``
-        declares above (this docstring claimed the opposite until 2026-08-23). The declaration observation is `_ATOM_DEFINITION` itself (the
+        A declaration line is NOT a call-site; bare ``flush(`` and dotted
+        ``obj.flush(`` usages are both matched by trailing identifier. The
+        declaration observation is `_ATOM_DEFINITION` itself (the
         single SSOT for "what counts as a declaration") — its captured symbol
         is compared to ``callable_name`` and only a matching declaration span is
         stripped before the call pattern scans, so every declaration form the
@@ -358,7 +351,7 @@ class TextSearchAdapter:
         """
         if not callable_name:
             return []
-        call_pattern = re.compile(rf"(?<![\w.]){re.escape(callable_name)}\s*\(")
+        call_pattern = re.compile(rf"(?<!\w){re.escape(callable_name)}\s*\(")
         hits: list[str] = []
         for source_file in self._iter_files():
             text = self._read(source_file, faults)
@@ -384,7 +377,7 @@ class TextSearchAdapter:
         """
         if not callable_name:
             return []
-        read_pattern = re.compile(rf"(?<![\w.]){re.escape(callable_name)}\b(?!\s*\()")
+        read_pattern = re.compile(rf"(?<!\w){re.escape(callable_name)}\b(?!\s*\()")
         hits: list[str] = []
         for source_file in self._iter_files():
             text = self._read(source_file, faults)

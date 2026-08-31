@@ -57,7 +57,6 @@ GENERATED_REGION_RE = re.compile(
 #: that did not produce the body is a false fact shipped inside generated prose,
 #: so each region names its own source instead of inheriting a default.
 REGION_SOURCE_OF_TRUTH: dict[str, str] = {
-    "design-closure": "des.cli.construct_design_closure::main",
     "des-command-catalog": "src/des/cli/__main__.py::_REGISTRY",
     "role-skill-loading": "role-skill-loading.yaml (build-time registry, not shipped)",
     "communication-rules": (

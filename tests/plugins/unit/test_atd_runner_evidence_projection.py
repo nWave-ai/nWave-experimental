@@ -45,17 +45,22 @@ def test_atd_tool_surface_is_read_write_edit_bash_only() -> None:
 def test_atd_serializes_exact_schema_shapes_and_never_embeds_forbidden_dependency_metadata() -> (
     None
 ):
+    """Ale's construction-over-file correction (2026-08-20) retired ATD's own
+    hand-serialization of the contract: `des compile-contract` derives the
+    schema-shaped skeleton and `des fill-contract` is the sole writer of the
+    contract file, so the schema-as-grammar-only law and the "never embeds
+    forbidden metadata" property now live in that mechanical fill surface
+    rather than in prose ATD itself executes field-by-field."""
     body = _norm(ACCEPTANCE_DESIGNER)
     assert (
-        "Serialize every field in the exact shape and enum the read "
-        "`CONTRACT-SCHEMA` requires" in body
+        "The schema owns serialization grammar only — field shapes, enums and "
+        "`additionalProperties` — never semantic facts" in body
     )
-    assert "`schema-version`, `repository.worktree`, `targetPlan`, `paradigm`" in body
-    assert "each `verification-scope` command object" in body
-    assert "add no property the schema's `additionalProperties` forbids" in body
+    assert "never invents or widens a semantic fact to satisfy the schema" in body
+    assert "`des fill-contract` is the sole writer of the contract file" in body
     assert (
-        "dependency metadata is never embedded unless the schema names that "
-        "property" in body
+        "a mechanical field has no batch entry naming it at all, so an "
+        "attempt to fill one cannot even be constructed" in body
     )
 
 

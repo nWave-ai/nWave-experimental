@@ -71,18 +71,25 @@ refuses LOUD when the section is absent -- so without it the downstream regressi
 is authored from scratch and the facts you established are not carried
 (`src/des/application/compile_contract.py:986-1007`).
 
-The section carries exactly two required elements:
+The section carries exactly three required elements:
 
 1. **One `ARCHITECTURE-COVERED` line** -- repo-relative path plus anchor, naming THIS
    document and THIS section:
    `ARCHITECTURE-COVERED: docs/analysis/root-cause-analysis-{problem}.md#machine-consumable-section-des-compile-contract`
    That line is the verbatim value the caller passes to
    `des compile-contract --architecture-authority`.
-2. **At least one obligation token in bold**, drawn from this CLOSED vocabulary of seven --
-   no eighth token exists, and authority to invent one is not granted here or anywhere:
-   `CONTESTED_LAW` · `REPRESENTATION_CHANGE` · `INVALID_STATE` · `PRESERVATION` ·
-   `BROAD_INPUT_DOMAIN` · `REUSE_CANDIDATE` · `ARCHITECTURE_BOUNDARY_CHANGE`
-   (`src/des/domain/architecture_brief_resolver.py:112-123`). Accepted label shapes:
+2. **One `Paradigm:` line** -- transcribe the existing functional or
+   object-oriented decision already established with evidence above. If the
+   repair requires a new paradigm decision, this RCA is not architecture
+   authority: return that gap to DESIGN instead of guessing.
+3. **At least one obligation token in bold**, copied exactly from
+   `$defs.obligations.items.enum` in the first existing schema at
+   `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/thin-delivery-contract.schema.json`,
+   `${NWAVE_AGENTS_HOME:-$HOME}/.nwave/nWave/schemas/thin-delivery-contract.schema.json`,
+   then `nWave/schemas/thin-delivery-contract.schema.json` in a bare checkout.
+   If none exists, report the evidence gap. The schema, not this agent, owns
+   the closed vocabulary; never invent or normalize a token.
+   Accepted label shapes:
    `**TOKEN**`, `N. **TOKEN**`, `**N. TOKEN**`; a trailing `:` inside the bold span is
    tolerated.
 
@@ -105,6 +112,8 @@ Shape:
 ## Machine-consumable section (des compile-contract)
 
 ARCHITECTURE-COVERED: docs/analysis/root-cause-analysis-{problem}.md#machine-consumable-section-des-compile-contract
+
+Paradigm: {functional-or-object-oriented-established-above}
 
 | Obligation | Transcribed from (fact already established above) |
 |---|---|

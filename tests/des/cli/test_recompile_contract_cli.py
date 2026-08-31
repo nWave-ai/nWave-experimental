@@ -5,10 +5,24 @@ CURRENT architecture authority while preserving ATD's semantic fills."""
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
+import pytest
 from tests.common.in_process_cli import run_cli_in_process
-from tests.des.cli.test_compile_contract_cli import _ARCH_AUTHORITY, _build_repo
+from tests.des.cli.test_compile_contract_cli import (
+    _ARCH_AUTHORITY,
+    _BinaryStdin,
+    _build_repo,
+    _git,
+)
+
+from des.application.delivery_snapshot import (
+    construct_closure,
+    construct_closure_correction,
+    recognize_closure,
+)
+from des.application.ordinary_request import compute_delivery_id
 
 
 _OTHER_MODULE = '"""A second stand-in production module."""\n\n\nVALUE = 1\n'
@@ -21,6 +35,8 @@ _OTHER_MODULE = '"""A second stand-in production module."""\n\n\nVALUE = 1\n'
 #: anchor-scoping, so one heading covering the whole document is correct.
 _BRIEF_WIDGET_AND_OTHER = """\
 # widget
+
+Paradigm: object_oriented
 
 `Widget` (`pkg/widget.py:5`) and the sibling module are both touched.
 
@@ -46,6 +62,8 @@ Acceptance support locator: `tests/support/widget.json`
 _BRIEF_WIDGET_AND_BRANDNEW = """\
 # widget
 
+Paradigm: object_oriented
+
 `Widget` (`pkg/widget.py:5`) plus one genuinely new module.
 
 | Target | Decision |
@@ -60,6 +78,8 @@ _BRIEF_WIDGET_AND_BRANDNEW = """\
 
 _BRIEF_WIDGET_AND_NEWMOD_CREATE = """\
 # widget
+
+Paradigm: object_oriented
 
 `Widget` (`pkg/widget.py:5`) plus one module authored fresh.
 
@@ -115,6 +135,41 @@ def _recompile(repo_root: Path) -> tuple[int, str, str]:
 
 def _contract_path(repo_root: Path) -> Path:
     return repo_root / "docs" / "delivery-contracts" / "widget-color.json"
+
+
+def test_auto_recompile_conserves_the_exact_value_seed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo_root = _build_repo(tmp_path)
+    value_seed = "Widget gains a validated color attribute."
+    delivery_id = compute_delivery_id(value_seed)
+    flags = [
+        "--repo-root",
+        str(repo_root),
+        "--delivery-id",
+        delivery_id,
+        "--architecture-authority",
+        _ARCH_AUTHORITY,
+    ]
+    monkeypatch.setattr(sys, "stdin", _BinaryStdin(value_seed.encode("utf-8")))
+    code, _out, err = run_cli_in_process(["compile-contract", *flags], cwd=repo_root)
+    assert code == 0, err
+
+    path = repo_root / "docs" / "delivery-contracts" / f"{delivery_id}.json"
+    contract = json.loads(path.read_text(encoding="utf-8"))
+    contract["outcome"] = "stale prior outcome"
+    path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "stdin", _BinaryStdin(b""))
+    code, _out, err = run_cli_in_process(["recompile-contract", *flags], cwd=repo_root)
+    assert code == 2
+    assert "requires the exact immutable VALUE-SEED" in err
+
+    monkeypatch.setattr(sys, "stdin", _BinaryStdin(value_seed.encode("utf-8")))
+    code, _out, err = run_cli_in_process(["recompile-contract", *flags], cwd=repo_root)
+    assert code == 0, err
+    recompiled = json.loads(path.read_text(encoding="utf-8"))
+    assert recompiled["outcome"] == value_seed
 
 
 def _fill_every_semantic_field(repo_root: Path) -> None:
@@ -197,6 +252,143 @@ def test_recompile_with_unchanged_authority_preserves_every_fill(
     assert "RECOMPILE: kept 11 fills, new 0 targets, dropped 0 targets" in out
 
 
+def test_recompile_corrects_paradigm_from_current_architecture_authority(
+    tmp_path: Path,
+) -> None:
+    repo_root = _build_repo(tmp_path)
+    brief_path = repo_root / "docs" / "product" / "architecture" / "brief.md"
+    code, _out, err = _compile(repo_root)
+    assert code == 0, err
+
+    brief_path.write_text(
+        brief_path.read_text(encoding="utf-8").replace(
+            "Paradigm: object_oriented", "Paradigm: functional"
+        ),
+        encoding="utf-8",
+    )
+    code, _out, err = _recompile(repo_root)
+
+    assert code == 0, err
+    contract = json.loads(_contract_path(repo_root).read_text(encoding="utf-8"))
+    assert contract["paradigm"] == "functional"
+
+
+def test_review_bound_recompile_preserves_original_base_and_advances_closure(
+    tmp_path: Path,
+) -> None:
+    """A mechanical correction after AT reviewed C is a child of C, while
+    the DeliveryContract still names the original delivery base B."""
+    repo_root = _build_repo(tmp_path)
+    (repo_root / "CLAUDE.md").write_text(
+        "- Run the subject's own tests: `sh -c true test`\n", encoding="utf-8"
+    )
+    _git(repo_root, "add", "CLAUDE.md")
+    _git(repo_root, "commit", "-q", "-m", "declare preservation")
+    code, _out, err = run_cli_in_process(
+        [
+            "compile-contract",
+            "--repo-root",
+            str(repo_root),
+            *_STD_FLAGS,
+            "--examine",
+            "false",
+        ],
+        cwd=repo_root,
+    )
+    assert code == 0, err
+
+    contract_path = _contract_path(repo_root)
+    contract_bytes = contract_path.read_bytes()
+    contract = json.loads(contract_bytes)
+    original_base = contract["repository"]["base-revision"]
+    oracle_locator = contract["acceptance-tests"]["locator"]
+    oracle_path = repo_root / oracle_locator.split("::", 1)[0]
+    oracle_path.parent.mkdir(parents=True, exist_ok=True)
+    oracle_path.write_text(
+        "def test_widget_color():\n    assert True\n", encoding="utf-8"
+    )
+    closure = construct_closure(
+        repo_root,
+        contract=contract,
+        contract_locator=str(contract_path.relative_to(repo_root)),
+        contract_bytes=contract_bytes,
+        oracle_locator=oracle_locator,
+        oracle_bytes=oracle_path.read_bytes(),
+        supporting=(),
+    )
+    assert (
+        recognize_closure(closure.root, closure.commit).base
+        == original_base.split(":", 1)[1]
+    )
+
+    brief_path = closure.root / "docs/product/architecture/brief.md"
+    brief_path.write_text(
+        brief_path.read_text(encoding="utf-8").replace(
+            "Paradigm: object_oriented", "Paradigm: functional"
+        ),
+        encoding="utf-8",
+    )
+    code, _out, err = run_cli_in_process(
+        [
+            "recompile-contract",
+            "--repo-root",
+            str(closure.root),
+            *_STD_FLAGS,
+            "--examine",
+            "false",
+        ],
+        cwd=closure.root,
+    )
+    assert code == 0, err
+
+    corrected_path = _contract_path(closure.root)
+    corrected_bytes = corrected_path.read_bytes()
+    corrected = json.loads(corrected_bytes)
+    assert corrected["repository"]["base-revision"] == original_base
+    assert corrected["paradigm"] == "functional"
+
+    corrected_closure = construct_closure_correction(
+        closure.root,
+        cited=closure,
+        contract=corrected,
+        contract_locator=str(corrected_path.relative_to(closure.root)),
+        contract_bytes=corrected_bytes,
+        oracle_locator=oracle_locator,
+        oracle_bytes=(closure.root / oracle_locator.split("::", 1)[0]).read_bytes(),
+        supporting=(),
+    )
+    assert corrected_closure.parent == closure.commit
+    assert corrected_closure.base == original_base.split(":", 1)[1]
+
+
+def test_recompile_publish_failure_leaves_existing_contract_byte_identical(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = _build_repo(tmp_path)
+    code, _out, err = _compile(repo_root)
+    assert code == 0, err
+    contract_path = _contract_path(repo_root)
+    before = contract_path.read_bytes()
+    _write_brief(
+        repo_root,
+        _BRIEF_WIDGET_ONLY.replace("Paradigm: object_oriented", "Paradigm: functional"),
+    )
+
+    original_replace = Path.replace
+
+    def fail_publish(path: Path, target: Path) -> Path:
+        if path.name == f".{contract_path.name}.tmp":
+            raise OSError("injected publish failure")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_publish)
+    with pytest.raises(OSError, match="injected publish failure"):
+        _recompile(repo_root)
+
+    assert contract_path.read_bytes() == before
+    assert not contract_path.with_name(f".{contract_path.name}.tmp").exists()
+
+
 def test_recompile_preserves_schema_1_4_acceptance_support_closure(
     tmp_path: Path,
 ) -> None:
@@ -249,6 +441,8 @@ def test_recompile_resets_fills_when_a_declared_decision_changes(
 
 _BRIEF_WIDGET_ONLY = """\
 # widget
+
+Paradigm: object_oriented
 
 `Widget` (`pkg/widget.py:5`) alone.
 
@@ -315,6 +509,8 @@ _GO_MODULE = "package pkg\n\nfunc Value() int { return 1 }\n"
 _BRIEF_NONPY_WITH_CITED_ORACLE = """\
 # widget
 
+Paradigm: object_oriented
+
 `Widget` (`pkg/widget.py:5`) plus a Go helper; the oracle is cited at
 `pkg/tests/test_widget_color.py:1`.
 
@@ -330,6 +526,8 @@ _BRIEF_NONPY_WITH_CITED_ORACLE = """\
 
 _BRIEF_NONPY_NO_ORACLE = """\
 # widget
+
+Paradigm: object_oriented
 
 `Widget` (`pkg/widget.py:5`) plus a Go helper.
 
@@ -428,6 +626,8 @@ def test_recompile_reuses_the_verification_scope_bound_to_a_reused_oracle(
 
 _BRIEF_WIDGET_AND_DIRECTORY = """\
 # widget
+
+Paradigm: object_oriented
 
 `Widget` (`pkg/widget.py:5`) plus a whole directory, wrongly declared.
 

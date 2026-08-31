@@ -194,6 +194,7 @@ try:
     from scripts.install.preflight_checker import PreflightChecker
     from scripts.shared.agent_catalog import is_public_agent, load_public_agents
     from scripts.shared.install_paths import agents_home, codex_config_dir, env_or_none
+    from scripts.shared.version import resolve_product_version
 except ImportError:
     # Safety-net fallback. With the sys.path bootstrap above the package
     # imports in the `try` block resolve in BOTH invocation modes, so this
@@ -243,6 +244,7 @@ except ImportError:
 
     import scripts.shared.install_paths as _install_paths
     from scripts.shared.agent_catalog import is_public_agent, load_public_agents
+    from scripts.shared.version import resolve_product_version
 
     # Keep the bare-script namespace identical to the package branch while
     # importing the canonical module once; only codex_config_dir is consumed
@@ -257,36 +259,26 @@ _ANSI_NC = "\033[0m"  # No Color
 
 
 def _get_version() -> str:
-    """Read version from package metadata (installed) or pyproject.toml (dev)."""
-    # 1. Try importlib.metadata first (works when installed via pip/pipx)
-    from importlib.metadata import PackageNotFoundError, version
+    """Resolve the live product version through the strict producer.
 
-    try:
-        return version("nwave-ai")
-    except PackageNotFoundError:
-        pass
-
-    # 2. Fallback: read pyproject.toml (dev checkout layout)
-    pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
-    if not pyproject_path.exists():
-        return "0.0.0"
-    try:
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli as tomllib  # type: ignore[no-redef]
-        with open(pyproject_path, "rb") as f:
-            data = tomllib.load(f)
-        return data.get("project", {}).get("version", "0.0.0")
-    except ModuleNotFoundError:
-        import re
-
-        content = pyproject_path.read_text()
-        m = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
-        return m.group(1) if m else "0.0.0"
+    Delegates to :func:`resolve_product_version` -- installed metadata wins
+    over the adjacent dev-checkout ``pyproject.toml``; ambiguous, missing, or
+    malformed identity raises ``VersionResolutionError`` (WHAT/WHY/HOW)
+    instead of a ``"0.0.0"`` sentinel. Called only at the point of use, never
+    at import time.
+    """
+    return resolve_product_version(_project_root).version
 
 
-__version__ = _get_version()
+def __getattr__(name: str) -> str:
+    """Lazy external access to ``__version__``: no identity lookup at import.
+
+    Only resolves (and may raise ``VersionResolutionError``) when a consumer
+    actually asks for the module's ``__version__`` attribute.
+    """
+    if name == "__version__":
+        return _get_version()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _detect_installed_version() -> str | None:
@@ -1874,7 +1866,7 @@ def print_logo(logger: Logger | None = None) -> None:
     out("")
     for line in _LOGO_ART[:-1]:
         out(wrap(line))
-    out(f"{wrap(_LOGO_ART[-1])}  \U0001f30a \U0001f30a \U0001f30a  v{__version__}")
+    out(f"{wrap(_LOGO_ART[-1])}  \U0001f30a \U0001f30a \U0001f30a  v{_get_version()}")
     out("")
     for tagline in _TAGLINES:
         out(tagline)
@@ -1898,7 +1890,7 @@ def show_installation_summary(
     """Display installation summary panel at end of successful install."""
     codex_only = target_platforms == {"codex"}
     logger.info("")
-    logger.info(f"  🎉 nWave v{__version__} installed and healthy!")
+    logger.info(f"  🎉 nWave v{_get_version()} installed and healthy!")
     if target_dir is not None and (
         target_platforms is None or target_platforms == {"claude_code"}
     ):
@@ -1963,7 +1955,7 @@ def show_help():
     print()
     for line in _LOGO_ART[:-1]:
         print(f"{B}{line}{N}")
-    print(f"{B}{_LOGO_ART[-1]}{N}  \U0001f30a \U0001f30a \U0001f30a  v{__version__}")
+    print(f"{B}{_LOGO_ART[-1]}{N}  \U0001f30a \U0001f30a \U0001f30a  v{_get_version()}")
     print()
     for tagline in _TAGLINES:
         print(tagline)

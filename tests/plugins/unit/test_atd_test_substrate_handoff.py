@@ -152,17 +152,28 @@ def test_semantic_pbt_non_vacuity_preservation_and_fresh_lifecycle():
 
 
 def test_both_routes_closed_and_terminal_handoff_contract_ready():
+    """Ale's construction-over-file correction (2026-08-20): GREEN_TO_GREEN no
+    longer hand-writes a complete DeliveryContract, and no longer restates the
+    schema's own `delivery-route` field value in prose -- like RED_TO_GREEN, it
+    fills the root-compiled skeleton via the same one `des fill-contract` call,
+    terminally `BLOCKED` when that skeleton is absent."""
     green_start = ACCEPTANCE_DESIGNER.index("### GREEN_TO_GREEN")
     green_end = ACCEPTANCE_DESIGNER.index(
         "## ", green_start + len("### GREEN_TO_GREEN")
     )
     green_section = _norm(ACCEPTANCE_DESIGNER[green_start:green_end])
-    assert "Do not search for, create, edit or broaden it" in green_section
     assert (
-        "delivery-route: GREEN_TO_GREEN" in green_section
-        or "delivery-route" in green_section
+        "Do not search for, create, edit, broaden or reorder any member"
+        in green_section
     )
-    assert "write one complete schema-valid DeliveryContract" in green_section
+    assert (
+        "issue exactly one `des fill-contract --repo-root <root> "
+        "--delivery-id <id> --batch --batch-file` call" in green_section
+    )
+    assert (
+        "An absent skeleton is terminal `BLOCKED`, never permission to "
+        "serialize a contract manually" in green_section
+    )
     assert "without any test edit" in green_section.lower()
     assert "never executes the stored scope" in green_section
     assert (
@@ -178,8 +189,11 @@ def test_both_routes_closed_and_terminal_handoff_contract_ready():
     red_start = ACCEPTANCE_DESIGNER.index("### RED_TO_GREEN")
     red_end = ACCEPTANCE_DESIGNER.index("### GREEN_TO_GREEN", red_start)
     red_section = _norm(ACCEPTANCE_DESIGNER[red_start:red_end])
-    assert "write one complete schema-valid DeliveryContract" in red_section
-    assert "exact given `CONTRACT-LOCATOR`" in red_section
+    assert (
+        "issue exactly one `des fill-contract --repo-root <root> "
+        "--delivery-id <id> --batch --batch-file` call" in red_section
+    )
+    assert "one exact public oracle target locator" in red_section
     assert (
         "`des dispatch` alone validates, resolves and hashes the contract "
         "after this role" in red_section

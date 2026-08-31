@@ -106,6 +106,38 @@ def _value_at(contract: dict, entry: dict) -> str:
     return target["boundary"][entry["field"].split(".", 1)[1]]
 
 
+# --- Construction, not prose: an AUTO contract's `outcome` is compiled from
+# the piped VALUE-SEED (`des compile-contract`), never ATD-authored -- the
+# fill-contract grammar must not admit an `outcome` batch entry once the
+# contract is auto (its own `delivery-id` carries the `auto-` prefix
+# `compute_delivery_id` produces).
+
+
+def test_an_auto_contracts_outcome_is_not_in_the_fill_grammar(tmp_path: Path) -> None:
+    contract = json.loads(json.dumps(_CONTRACT))
+    contract["delivery-id"] = "auto-0d64ca2e4b7ded7d"
+    contract["outcome"] = "Widget gains a validated color attribute."
+    contracts_dir = tmp_path / "docs" / "delivery-contracts"
+    contracts_dir.mkdir(parents=True, exist_ok=True)
+    contract_path = contracts_dir / "auto-0d64ca2e4b7ded7d.json"
+    contract_path.write_text(json.dumps(contract))
+    before = contract_path.read_bytes()
+
+    code, _out, err = _run(
+        "--repo-root",
+        str(tmp_path),
+        "--delivery-id",
+        "auto-0d64ca2e4b7ded7d",
+        "--batch",
+        cwd=tmp_path,
+        stdin=json.dumps([{"field": "outcome", "value": "ATD-authored outcome."}]),
+    )
+
+    assert code != 0
+    assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+    assert contract_path.read_bytes() == before
+
+
 def test_field_flag_is_retired_for_target_write(tmp_path: Path) -> None:
     contract_path = _seed(tmp_path)
     code, _out, _err = _run(

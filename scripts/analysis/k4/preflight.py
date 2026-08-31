@@ -1247,23 +1247,6 @@ def substitute_example_placeholder(name: str, *, root: str, delivery_id: str) ->
     return name
 
 
-def substitute_heredoc_header(header: str, *, root: str, delivery_id: str) -> str:
-    """`header` (one `des_fenced_lines` entry ending in the seed-heredoc
-    redirect) with every `<...>`/bracketed-optional placeholder resolved
-    to a concrete value. Never touches the heredoc redirect suffix itself
-    or an already-literal token -- a quoted `"ARCHITECTURE-COVERED:
-    path.md#anchor"` example is already a valid architecture-authority
-    line and needs no substitution."""
-    resolved = _BRACKETED_OPTIONAL_RE.sub("", header)
-    resolved = _ANGLE_PLACEHOLDER_RE.sub(
-        lambda match: substitute_example_placeholder(
-            match.group(1), root=root, delivery_id=delivery_id
-        ),
-        resolved,
-    )
-    return " ".join(resolved.split())
-
-
 def _raw_root_lane_fence_blocks(skill_md_text: str) -> list[str]:
     """Every fenced code block's RAW, un-joined text (physical line
     breaks preserved) whose first line starts with `des ` -- the SAME
@@ -1382,38 +1365,6 @@ def route_walk_heredoc_command(
         raw_header, root=root, delivery_id=delivery_id
     )
     return f"{header}\n{seed}\nNW_SEED"
-
-
-def route_walk_fenced_command(
-    skill_md_text: str, *, subcommand: str, root: str, delivery_id: str
-) -> str | None:
-    """The EXACT fenced `des <subcommand> ...` invocation from
-    `skill_md_text` -- for a non-heredoc example (`des compile-contract`'s
-    own fenced block, `\\`-continued across several lines, `des_fenced_
-    lines` already joins into one logical, newline-free line) -- with
-    placeholders resolved via `substitute_heredoc_header`, the SAME
-    substitution `route_walk_heredoc_command` already uses. `None` when no
-    fenced example exists.
-
-    Run 15 (K4 matrix): an EARLIER revision of this function fed the
-    RAW, unsubstituted fenced text straight to the hook, reasoning that
-    `_evaluate_auto_root_bash_command`'s subcommand allowlist decides on
-    the subcommand name alone -- WRONG, empirically refuted: that same
-    function's injection-marker check (`_AUTO_ROOT_BASH_INJECTION_
-    MARKERS`) treats a literal `<`/`>` as a shell-redirection operator
-    indistinguishable from documentation placeholder syntax, and blocks
-    it regardless of the newline/backslash continuations already being
-    joined away. Substituting placeholders BEFORE the hook ever sees the
-    string is the same fix `route_walk_heredoc_command` already applies;
-    this function was simply the one caller that had not caught up."""
-    for line in des_fenced_lines(skill_md_text):
-        try:
-            tokens = shlex.split(line)
-        except ValueError:
-            continue
-        if len(tokens) >= 2 and tokens[0] == "des" and tokens[1] == subcommand:
-            return substitute_heredoc_header(line, root=root, delivery_id=delivery_id)
-    return None
 
 
 def _route_walk_workspace(root: Path) -> Path:
@@ -1638,6 +1589,7 @@ def _write_route_walk_architecture_brief(repo_root_path: Path) -> None:
     brief_path.parent.mkdir(parents=True, exist_ok=True)
     brief_path.write_text(
         "# route-walk-probe\n\n"
+        "Paradigm: object_oriented\n\n"
         "Route-walk probe brief -- exercises `des compile-contract`'s real "
         "citation/obligation parsing end to end, never delivered.\n\n"
         f"Extends `{_ROUTE_WALK_CITATION_TARGET}`.\n\n"
@@ -1958,11 +1910,12 @@ def route_walk_steps(
     # genuine DESIGN brief would.
     _write_route_walk_architecture_brief(repo_root_path)
 
-    compile_fenced_command = route_walk_fenced_command(
+    compile_heredoc_command = route_walk_heredoc_command(
         skill_md_text,
         subcommand="compile-contract",
         root=repo_root,
         delivery_id=delivery_id,
+        seed=_ROUTE_WALK_SEED,
     )
     steps.append(
         _hook_step(
@@ -1975,8 +1928,8 @@ def route_walk_steps(
             payload={
                 "tool_name": "Bash",
                 "tool_input": {
-                    "command": compile_fenced_command
-                    or "# no fenced compile-contract example found"
+                    "command": compile_heredoc_command
+                    or "# no fenced compile-contract heredoc example found"
                 },
                 "transcript_path": transcript_path,
             },
@@ -2004,6 +1957,7 @@ def route_walk_steps(
             "--independent-review",
             "false",
         ],
+        stdin=_ROUTE_WALK_SEED,
     )
     steps.append(compile_step)
 

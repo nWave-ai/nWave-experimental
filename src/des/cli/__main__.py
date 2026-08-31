@@ -52,12 +52,17 @@ _RETIRED_REVISE_CONTRACT_ROUND_REASON = (
     "strict Git closure correction has been verified."
 )
 
-# 18 names independently measured 2026-08-24 (by execution, not by reading
+_RETIRED_DESIGN_CLOSURE_REASON = (
+    "retired after its only live carrier produced a terminal DeliveryContract; "
+    "compile-contract already consumes the architecture authority directly."
+)
+
+# The original names were independently measured 2026-08-24 (by execution,
+# not by reading
 # prose) as producing argparse's generic "invalid choice" today despite
 # being documented as live in ~/.claude/data/orchestrator-affordance/
-# des-command-catalog.md. No per-name retirement reason is verified (the RCA
-# traced the shared consolidation event, not 17 individual commits), so all
-# 17 share one honest reason and none claims a replacement -- a specific
+# des-command-catalog.md. Where no per-name retirement reason is verified,
+# the names share one honest reason and none claims a replacement -- a specific
 # but unverified "-> replaced by X" would be exactly the lying rejection
 # this repo treats as worse than a bare traceback.
 _RETIRED: dict[str, RetiredSubcommand] = {
@@ -65,6 +70,8 @@ _RETIRED: dict[str, RetiredSubcommand] = {
         reason=(
             _RETIRED_REVISE_CONTRACT_ROUND_REASON
             if name == "revise-contract-round"
+            else _RETIRED_DESIGN_CLOSURE_REASON
+            if name == "construct-design-closure"
             else _RETIRED_2026_08_18_CONSOLIDATION_REASON
         )
     )
@@ -74,6 +81,7 @@ _RETIRED: dict[str, RetiredSubcommand] = {
         "check-contract-shape",
         "commit-slice",
         "consolidation-signal-tick",
+        "construct-design-closure",
         "examine-fixture",
         "feature-delta-doctor",
         "flavor-scaffold",
@@ -257,9 +265,6 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # placeholder (`des.domain.contract_placeholder_resolver`), which `des
     # dispatch`/`des validate-delivery-contract` both refuse until filled.
     _SubcommandRow("compile-contract", "des.cli.compile_contract", "main"),
-    _SubcommandRow(
-        "construct-design-closure", "des.cli.construct_design_closure", "main"
-    ),
     # Ale's construction-over-file correction (2026-08-20): the constructor
     # ATD calls once with one atomic batch to fill the skeleton's semantic
     # placeholders. Sole writer of the contract file after compile-contract.

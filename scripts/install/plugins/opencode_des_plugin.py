@@ -23,6 +23,7 @@ from scripts.shared.install_paths import (
     resolve_des_lib_path_for_spawn,
     resolve_python_command_for_spawn,
 )
+from scripts.shared.version import VersionResolutionError
 
 
 _SHIM_FILENAME = "nwave-des.ts"
@@ -71,18 +72,35 @@ def _shim_sha256_drift(shim_path: Path, manifest_path: Path) -> str | None:
 
 
 def _get_framework_version(context: InstallContext) -> str:
-    """Read the framework version from VERSION file or fallback.
+    """Read the framework version from the framework source's VERSION file.
 
     Args:
         context: InstallContext with framework_source
 
     Returns:
         Version string (e.g. '1.7.0')
+
+    Raises:
+        VersionResolutionError: the VERSION file is absent or empty -- this
+            producer never substitutes the ``"0.0.0"`` sentinel. The caller
+            (``install()``) surfaces this loudly before the shim manifest is
+            written, so no manifest carries an invented identity.
     """
     version_file = context.framework_source / "VERSION"
-    if version_file.exists():
-        return version_file.read_text(encoding="utf-8").strip()
-    return "0.0.0"
+    if not version_file.exists():
+        raise VersionResolutionError(
+            what="no OpenCode framework version is available",
+            why=f"{version_file} does not exist",
+            how="ship a VERSION file at the root of the framework source",
+        )
+    version = version_file.read_text(encoding="utf-8").strip()
+    if not version:
+        raise VersionResolutionError(
+            what="the OpenCode framework VERSION file is empty",
+            why=f"{version_file} contains no version text",
+            how=f"write the real product version into {version_file}",
+        )
+    return version
 
 
 class OpenCodeDESPlugin(InstallationPlugin):
@@ -190,6 +208,9 @@ class OpenCodeDESPlugin(InstallationPlugin):
                 "{{PYTHONPATH}}", resolve_des_lib_path_for_spawn()
             )
 
+            # Resolve identity before any directory creation or file write
+            version = _get_framework_version(context)
+
             # Write shim file
             plugins_dir = opencode_dir / "plugins"
             plugins_dir.mkdir(parents=True, exist_ok=True)
@@ -200,7 +221,6 @@ class OpenCodeDESPlugin(InstallationPlugin):
 
             # Write manifest
             content_hash = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
-            version = _get_framework_version(context)
             manifest = {
                 "shim_file": str(shim_path),
                 "version": version,

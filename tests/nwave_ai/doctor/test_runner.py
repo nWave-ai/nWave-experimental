@@ -73,22 +73,25 @@ def _stage_healthy_claude(base: Path) -> Path:
     return claude_dir
 
 
-def test_runner_executes_all_10_checks(tmp_path: Path) -> None:
-    """run_doctor() returns exactly 10 results — one per check.
+def test_runner_executes_all_11_checks(tmp_path: Path) -> None:
+    """run_doctor() returns exactly 11 results — one per check.
 
     Step 02-02 added DensityCheck (D6 + D12), bumping the total from 7 to 8.
     The claude-code-attribution-migration feature added AttributionCheck (R7),
     bumping the total from 8 to 9. The install-version-drift feature added
-    VersionSyncCheck, bumping the total from 9 to 10.
+    VersionSyncCheck, bumping the total from 9 to 10. The config-SSOT feature
+    added ConfigSsotCheck, bumping the total from 10 to 11. ``project_root``
+    is pinned to the same isolated ``tmp_path`` so ConfigSsotCheck's per-repo
+    tier never leaks this checkout's own committed ``.nwave/local-config.json``.
     """
     from nwave_ai.doctor.context import DoctorContext
 
     _stage_healthy_claude(tmp_path)
-    context = DoctorContext(home_dir=tmp_path)
+    context = DoctorContext(home_dir=tmp_path, project_root=tmp_path)
 
     results = run_doctor(context)
 
-    assert len(results) == 10
+    assert len(results) == 11
 
 
 def test_runner_preserves_check_order(tmp_path: Path) -> None:

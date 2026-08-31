@@ -51,8 +51,14 @@ def test_acceptance_designer_compiles_the_architect_selected_language_adapter():
     )
 
     body = _body("nw-acceptance-designer.md")
-    architect = _body("nw-solution-architect.md")
-    assert "exact language PBT adapter/framework" in architect
+    # The lean-core migration moved the "DESIGN selects, DISTILL only compiles"
+    # law out of nw-solution-architect.md's own prose (it carries zero PBT
+    # mentions now) into nw-distill/SKILL.md, the single current owner of the
+    # compiled-vs-authored split between the two roles.
+    distill_skill = (SKILLS / "nw-distill" / "SKILL.md").read_text(encoding="utf-8")
+    assert "the concrete language PBT adapter/framework" in " ".join(
+        distill_skill.split()
+    )
     assert "PBT/language adapter selection as sealed compiler input" in " ".join(
         body.split()
     )

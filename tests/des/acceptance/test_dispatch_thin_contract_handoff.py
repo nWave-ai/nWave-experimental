@@ -16,6 +16,10 @@ from textwrap import dedent
 
 import pytest
 
+from des.application.ordinary_request import (
+    compute_delivery_id,
+    contract_locator_for,
+)
 from des.cli.dispatch import closure_digest
 from tests.common.delivery_contract_fixture import (
     load_valid_contract,
@@ -134,6 +138,98 @@ def test_valid_contract_emits_only_locator_and_digest(
     # (thin-contract handoff shape), proven by `out`/exit_code alone.
     assert route not in out
     assert "feature-delta" not in out.casefold()
+
+
+# --- Untrusted auto contract boundary: an `auto-` DeliveryId is a
+# self-asserted claim about the VALUE-SEED that produced it -- `des
+# dispatch` must not DELIVER an auto contract whose `outcome` no longer
+# hashes to its own `delivery-id`, nor one moved to a locator other than
+# the one deterministic canonical locator that id owns
+# (`contract_locator_for`). A nominal (non-auto) contract carries neither
+# claim and must not be rejected for lacking either.
+
+
+def _seed_auto_contract(root: Path, value_seed: str) -> tuple[Path, str]:
+    delivery_id = compute_delivery_id(value_seed)
+    contract = load_valid_contract()
+    contract["delivery-id"] = delivery_id
+    contract["outcome"] = value_seed
+    contract["applicability"]["examine"] = False
+    contract["verification-scope"]["commands"] = [
+        command
+        for command in contract["verification-scope"]["commands"]
+        if command["executable"].get("name") != "git"
+    ]
+    seed_referenced_oracle(root, contract)
+    locator = contract_locator_for(delivery_id)
+    path = root / locator
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(contract), encoding="utf-8")
+    return path, delivery_id
+
+
+def test_auto_contract_outcome_id_mismatch_is_refused(tmp_path: Path) -> None:
+    contract_path, delivery_id = _seed_auto_contract(
+        tmp_path, "Widget gains a validated color attribute."
+    )
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    contract["outcome"] = "A different, unseeded outcome."
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    exit_code, _out, err = _run(
+        "--repo-root",
+        str(tmp_path),
+        "--delivery-contract",
+        contract_locator_for(delivery_id),
+    )
+
+    assert exit_code != 0
+    assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+    assert delivery_id in err
+    assert "outcome" in err.lower()
+
+
+def test_auto_contract_at_a_noncanonical_locator_is_refused(tmp_path: Path) -> None:
+    value_seed = "Widget gains a validated color attribute."
+    delivery_id = compute_delivery_id(value_seed)
+    contract = load_valid_contract()
+    contract["delivery-id"] = delivery_id
+    contract["outcome"] = value_seed
+    contract["applicability"]["examine"] = False
+    contract["verification-scope"]["commands"] = [
+        command
+        for command in contract["verification-scope"]["commands"]
+        if command["executable"].get("name") != "git"
+    ]
+    seed_referenced_oracle(tmp_path, contract)
+    noncanonical_path = tmp_path / "delivery-contract.json"
+    noncanonical_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    exit_code, _out, err = _run(
+        "--repo-root",
+        str(tmp_path),
+        "--delivery-contract",
+        "delivery-contract.json",
+    )
+
+    assert exit_code != 0
+    assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+    assert delivery_id in err
+
+
+def test_nominal_non_auto_contract_is_not_rejected_for_lacking_a_seed_derived_identity(
+    tmp_path: Path,
+) -> None:
+    contract_path = _seed_contract(tmp_path, examine=False)
+
+    exit_code, _out, err = _run(
+        "--repo-root",
+        str(tmp_path),
+        "--delivery-contract",
+        contract_path.name,
+    )
+
+    assert exit_code == 0, err
 
 
 @pytest.mark.parametrize("route", ["RED_TO_GREEN", "GREEN_TO_GREEN"])

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from des._internal.delivery_contract_schema import delivery_contract_obligation_tokens
 from des.domain.declared_import_resolver import (
     is_name_bound_in_target_file,
     resolve_declared_import,
@@ -174,23 +175,6 @@ _BACKTICK_SYMBOL_RE = re.compile(
 #: cannot ground stays exactly that: prose, never a workaround guess.
 _SKILL_CITATION_RE = re.compile(r"`(nw-[a-z0-9]+(?:-[a-z0-9]+)*)`")
 
-#: ``thin-delivery-contract.schema.json`` ``$defs/obligations`` closed
-#: vocabulary. Duplicated here as a literal frozenset (not imported from the
-#: schema JSON, which is data, not Python) because this module only needs a
-#: name FILTER -- authority to invent a new obligation kind is not granted
-#: here or anywhere else in this compiler.
-SCHEMA_OBLIGATION_TOKENS = frozenset(
-    {
-        "CONTESTED_LAW",
-        "REPRESENTATION_CHANGE",
-        "INVALID_STATE",
-        "PRESERVATION",
-        "BROAD_INPUT_DOMAIN",
-        "REUSE_CANDIDATE",
-        "ARCHITECTURE_BOUNDARY_CHANGE",
-    }
-)
-
 #: Run 17 (K4 matrix, $3.13/791s): `des compile-contract` refused a real
 #: DESIGN brief because its obligation labels were `**N. TOKEN**` (the
 #: numbering INSIDE the bold span) while this regex only ever recognized
@@ -205,6 +189,37 @@ SCHEMA_OBLIGATION_TOKENS = frozenset(
 _OBLIGATION_TOKEN_RE = re.compile(r"\*\*\s*(?:\d+\.\s*)?([A-Z][A-Z_]*)\s*:?\s*\*\*")
 
 _BACKTICK_SPAN_RE = re.compile(r"`([^`]*)`", re.DOTALL)
+
+_PARADIGM_LABEL_RE = re.compile(
+    r"^[ \t]*(?:[-*+][ \t]+)?Paradigm:[ \t]*(?P<value>[^\n]*?)[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+_FUNCTIONAL_PARADIGM_RE = re.compile(
+    r"^(?:functional|fp)(?:[ \t]*\([^\n]*\))?$", re.IGNORECASE
+)
+_OBJECT_ORIENTED_PARADIGM_RE = re.compile(
+    r"^(?:object[-_ ]oriented|oo|oop)(?:[ \t]*\([^\n]*\))?$", re.IGNORECASE
+)
+
+
+def extract_declared_paradigms(brief_text: str) -> list[str]:
+    """Return DESIGN's literal ``Paradigm:`` values in document order.
+
+    Keeping every value visible lets the compiler refuse missing, malformed
+    or contradictory declarations instead of silently selecting an OO
+    default.
+    """
+    return [match.group("value") for match in _PARADIGM_LABEL_RE.finditer(brief_text)]
+
+
+def canonical_paradigm(value: str) -> str | None:
+    """Normalize unambiguous human spellings to the schema vocabulary."""
+    if _FUNCTIONAL_PARADIGM_RE.fullmatch(value):
+        return "functional"
+    if _OBJECT_ORIENTED_PARADIGM_RE.fullmatch(value):
+        return "object_oriented"
+    return None
 
 
 def _join_wrapped_backticks(text: str) -> str:
@@ -710,25 +725,40 @@ def extract_declared_oracle_locator_candidates(brief_text: str) -> list[str]:
 
 
 def extract_oracle_citations(brief_text: str) -> list[str]:
-    """Every citation naming the acceptance oracle, deduplicated per file
-    in first-appearance order (SF friction report 2026-08-20, sister
-    reproduction): a ``path::Selector`` citation is kept VERBATIM
-    (selector preserved); a ``file:line`` citation whose own filename is
-    test/spec-shaped (``is_test_shaped_path``) yields its plain path. When
-    the same file is cited both ways, its first durable identity remains
-    primary -- a later technical selector cannot rewrite public oracle
-    ownership. A
-    typed ``Oracle target locator: `<path>``` declaration is admitted with
-    NO line and NO selector required (``_DECLARED_ORACLE_LOCATOR_RE``):
-    RED_TO_GREEN's oracle does not exist yet, so demanding either shape
-    made the one explicit declaration DESIGN can make unrepresentable.
-    Documentary/formal-proof files (``is_code_target_citation`` false) and
-    production files are never oracle candidates. Shape only: existence is
-    the resolvers' own concern (required for GREEN_TO_GREEN's
-    already-committed oracle, deliberately NOT for RED_TO_GREEN's
-    to-be-authored one)."""
+    """Every citation naming the acceptance oracle, deduplicated per file.
+
+    A typed ``Oracle target locator: `<path>``` declaration is DESIGN's
+    explicit judgment call, so every such declaration is listed FIRST, in
+    its own first-appearance order -- regardless of where it sits in the
+    brief relative to other citations (reproduction: a brief listing its
+    ``Test dependency locator:`` lines before an ``Oracle target locator:``
+    declaration let the earlier dependency citation's mere textual position
+    outrank the explicit declaration). After the declared locators, every
+    remaining selector/``file:line`` citation follows in its existing,
+    position-ordered, first-durable-identity behaviour (SF friction report
+    2026-08-20, sister reproduction): a ``path::Selector`` citation is kept
+    VERBATIM (selector preserved); a ``file:line`` citation whose own
+    filename is test/spec-shaped (``is_test_shaped_path``) yields its plain
+    path. When the same file is cited both ways, its first durable identity
+    remains primary -- a later technical selector cannot rewrite public
+    oracle ownership. A declared locator's own line and selector are
+    optional (``_DECLARED_ORACLE_LOCATOR_RE``): RED_TO_GREEN's oracle does
+    not exist yet, so demanding either shape made the one explicit
+    declaration DESIGN can make unrepresentable. Documentary/formal-proof
+    files (``is_code_target_citation`` false) and production files are
+    never oracle candidates. Shape only: existence is the resolvers' own
+    concern (required for GREEN_TO_GREEN's already-committed oracle,
+    deliberately NOT for RED_TO_GREEN's to-be-authored one)."""
     brief_text = _join_wrapped_backticks(brief_text)
-    matches = sorted(
+    declared_matches = sorted(
+        (
+            match.start("citation"),
+            "::" in match.group("citation"),
+            match.group("citation"),
+        )
+        for match in _DECLARED_ORACLE_LOCATOR_RE.finditer(brief_text)
+    )
+    other_matches = sorted(
         [
             (match.start(), True, match.group(0))
             for match in ORACLE_SELECTOR_CITATION_RE.finditer(brief_text)
@@ -737,17 +767,9 @@ def extract_oracle_citations(brief_text: str) -> list[str]:
             (match.start(), False, match.group(0))
             for match in FILE_LINE_CITATION_RE.finditer(brief_text)
         ]
-        + [
-            (
-                match.start("citation"),
-                "::" in match.group("citation"),
-                match.group("citation"),
-            )
-            for match in _DECLARED_ORACLE_LOCATOR_RE.finditer(brief_text)
-        ]
     )
     by_file: dict[str, str] = {}
-    for _, has_selector, citation in matches:
+    for _, has_selector, citation in declared_matches + other_matches:
         if has_selector:
             file_part = citation.partition("::")[0]
         else:
@@ -767,10 +789,11 @@ def extract_obligations(brief_text: str) -> list[str]:
     A brief that never labels an obligation this way yields an empty list --
     ATD authors ``obligations`` from scratch rather than this compiler ever
     guessing one."""
+    allowed = delivery_contract_obligation_tokens()
     found: list[str] = []
     for match in _OBLIGATION_TOKEN_RE.finditer(brief_text):
         token = match.group(1)
-        if token in SCHEMA_OBLIGATION_TOKENS and token not in found:
+        if token in allowed and token not in found:
             found.append(token)
     return found
 
@@ -956,9 +979,8 @@ PBT_FAMILY_SKILL = "nw-property-based-testing"
 #: repository ships for it). Literal duplication (not parsed from the skill
 #: file, which is prose), of the EXACT table `nw-test-design-mandates-
 #: layered-mechanics/SKILL.md` documents under "Adapter family | Languages
-#: | PBT binding | Test/step idiom" -- same duplication discipline
-#: ``SCHEMA_OBLIGATION_TOKENS`` above already applies: this module needs a
-#: name+extension FILTER, never authority to invent a ninth family. A
+#: | PBT binding | Test/step idiom". This module needs a name+extension
+#: FILTER, never authority to invent a ninth family. A
 #: language with no adapter (that table lists exactly eight), or one not
 #: actually installed in THIS repository, degrades to ``PBT_FAMILY_SKILL``
 #: (``"family-fallback"``), never an invented ninth family and never a

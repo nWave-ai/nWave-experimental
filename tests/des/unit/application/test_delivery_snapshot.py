@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import subprocess
 import sys
 from dataclasses import replace
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from des.adapters.driven.filesystem.real_filesystem import RealFileSystem
 from des.application import delivery_snapshot
 from des.application.delivery_snapshot import (
     ApprovedClosure,
@@ -25,6 +27,10 @@ from des.application.delivery_snapshot import (
     recognize_closure,
 )
 from des.domain.workspace_test_command_resolver import PreservationVector
+from des.ports.driven_ports.filesystem_port import (
+    RegularFileSnapshot,
+    SnapshotRefusal,
+)
 
 
 _GITHUB_IDENTITY = ("octocat", "123456+octocat@users.noreply.github.com")
@@ -380,6 +386,129 @@ def test_constructor_commits_use_gate_run_timeout_but_git_probes_do_not(
         for argv, _timeout in git_calls
     )
     assert probes and all(timeout == git_timeout for timeout in probes)
+
+
+def test_constructor_admits_the_acquired_member_bytes_not_a_post_check_swap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each regular member is acquired once, through the filesystem port.
+
+    The port acquires the member's bytes from one validated no-follow open;
+    afterwards the path is atomically replaced by another ordinary regular
+    file -- the window a check-then-reopen sequence leaves open, and one no
+    later check can see, because the replacement is itself perfectly
+    legitimate.  Here that acquisition is a port double holding the bytes it
+    bound, while the path already names the replacement: the constructed
+    snapshot must carry the acquired bytes, never a reread of the locator.
+    The external Git comparand (the closure this candidate descends from) must
+    be preserved either way.
+    """
+    repo, contract, locator, contents, oracle, oracle_bytes = _repo(tmp_path)
+    closure = construct_closure(
+        repo,
+        contract=contract,
+        contract_locator=locator,
+        contract_bytes=contents,
+        oracle_locator=oracle,
+        oracle_bytes=oracle_bytes,
+        supporting=(),
+        constructor_root=repo,
+    )
+    target = repo / "src/a.py"
+    target.write_text("after\n")
+    acquired = target.read_bytes()
+    replacement = repo / "foreign.py"
+    replacement.write_text("foreign\n")
+    replacement.replace(target)
+
+    class _AcquiredBeforeTheSwapFilesystem(RealFileSystem):
+        def acquire_regular_snapshot(
+            self, path: Path, *, role: str
+        ) -> RegularFileSnapshot | SnapshotRefusal:
+            try:
+                member = str(Path(path).relative_to(repo))
+            except ValueError:
+                member = ""
+            if member == "src/a.py":
+                return RegularFileSnapshot(
+                    path=Path(path),
+                    content=acquired,
+                    mode=stat.S_IFREG | 0o644,
+                )
+            return super().acquire_regular_snapshot(path, role=role)
+
+    candidate = CandidateConstructor(
+        filesystem=_AcquiredBeforeTheSwapFilesystem()
+    ).seal(
+        ApprovedClosure(closure, locator, oracle, "d" * 64, contract),
+        repo,
+        {"src/a.py"},
+    )
+
+    assert target.read_text() == "foreign\n"
+    assert _git(repo, "show", f"{candidate.commit}:src/a.py") == "after"
+    assert candidate.parent == closure.commit
+
+
+def test_constructor_never_captures_worktree_bytes_from_outside_the_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The transactional worktree capture binds the file it validated.
+
+    ``preserve_worktree`` restoration republishes whatever the capture bound,
+    so the capture is a byte-acquisition boundary like any other.  A capture
+    that validates a path and only then reads it again can be handed a
+    different file between the two observations: here the target becomes a
+    link to a file OUTSIDE the constructor root, exactly the substrate lie the
+    real filesystem port refuses on the same path by binding one no-follow
+    open.  The seal must complete on the acquired regular bytes, and no byte
+    from outside the root may reach the commit or the worktree.
+
+    The swap is driven from a substrate seam a check-then-reread capture uses
+    and a single-acquisition capture does not; a correct implementation never
+    triggers it and this witness is then satisfied by ordinary behavior.
+    """
+    repo, contract, locator, contents, oracle, oracle_bytes = _repo(tmp_path)
+    closure = construct_closure(
+        repo,
+        contract=contract,
+        contract_locator=locator,
+        contract_bytes=contents,
+        oracle_locator=oracle,
+        oracle_bytes=oracle_bytes,
+        supporting=(),
+        constructor_root=repo,
+    )
+    target = repo / "src/a.py"
+    target.write_text("after\n")
+    outside = tmp_path.parent / f"outside-{tmp_path.name}.txt"
+    outside_bytes = b"outside-the-constructor-root\n"
+    outside.write_bytes(outside_bytes)
+    real_is_symlink = Path.is_symlink
+    swapped = False
+
+    def swap_after_the_validating_observation(self: Path) -> bool:
+        nonlocal swapped
+        verdict = real_is_symlink(self)
+        if not swapped and self == target:
+            swapped = True
+            target.unlink()
+            target.symlink_to(outside)
+        return verdict
+
+    monkeypatch.setattr(Path, "is_symlink", swap_after_the_validating_observation)
+
+    candidate = CandidateConstructor().seal(
+        ApprovedClosure(closure, locator, oracle, "d" * 64, contract),
+        repo,
+        {"src/a.py"},
+    )
+
+    monkeypatch.undo()
+    assert _git(repo, "show", f"{candidate.commit}:src/a.py") == "after"
+    assert candidate.parent == closure.commit
+    assert outside.read_bytes() == outside_bytes
+    assert target.read_bytes() != outside_bytes
 
 
 def test_snapshot_determinism_excludes_effective_git_identity(tmp_path: Path) -> None:

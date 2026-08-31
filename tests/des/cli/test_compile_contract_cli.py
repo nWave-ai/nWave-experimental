@@ -3,15 +3,26 @@
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
+import sys
 from pathlib import Path
 
+import pytest
 from tests.common.in_process_cli import run_cli_in_process
 
 from des._internal.delivery_contract_schema import (
     delivery_contract_schema_violation,
 )
+from des.application.ordinary_request import compute_delivery_id
+
+
+class _BinaryStdin:
+    """A genuine byte stream on `.buffer`, matching `sys.stdin`'s shape."""
+
+    def __init__(self, seed_bytes: bytes) -> None:
+        self.buffer = io.BytesIO(seed_bytes)
 
 
 def _run(*args: str, cwd: Path) -> tuple[int, str, str]:
@@ -35,6 +46,8 @@ class Widget:
 #: shape-only string the compiler accepted and then discarded.
 _BRIEF = """\
 # widget
+
+Paradigm: object_oriented
 
 `Widget` (`pkg/widget.py:5`) already exposes `existing_method`
 (`pkg/widget.py:6`).
@@ -98,6 +111,110 @@ def test_writes_a_schema_shaped_skeleton(tmp_path: Path) -> None:
     assert contract["acceptance-tests"]["locator"] == "pkg/tests/test_widget_color.py"
     # No ARCHITECTURE_BOUNDARY_CHANGE obligation and no override -> False.
     assert contract["applicability"]["independent-review"] is False
+
+
+def test_derives_functional_paradigm_from_architecture_authority(
+    tmp_path: Path,
+) -> None:
+    repo_root = _build_repo(tmp_path)
+    brief_path = repo_root / "docs" / "product" / "architecture" / "brief.md"
+    brief_path.write_text(
+        _BRIEF.replace("Paradigm: object_oriented", "Paradigm: functional"),
+        encoding="utf-8",
+    )
+
+    code, _out, err = _run(
+        "--repo-root",
+        str(repo_root),
+        "--delivery-id",
+        "functional-widget",
+        "--architecture-authority",
+        _ARCH_AUTHORITY,
+        cwd=repo_root,
+    )
+
+    assert code == 0, err
+    contract = json.loads(
+        (repo_root / "docs/delivery-contracts/functional-widget.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert contract["paradigm"] == "functional"
+
+
+def test_refuses_root_paradigm_when_architecture_does_not_own_it(
+    tmp_path: Path,
+) -> None:
+    repo_root = _build_repo(tmp_path)
+    brief_path = repo_root / "docs" / "product" / "architecture" / "brief.md"
+    brief_path.write_text(
+        _BRIEF.replace("Paradigm: object_oriented\n\n", ""), encoding="utf-8"
+    )
+
+    code, _out, err = _run(
+        "--repo-root",
+        str(repo_root),
+        "--delivery-id",
+        "root-guessed-widget",
+        "--architecture-authority",
+        _ARCH_AUTHORITY,
+        "--paradigm",
+        "object_oriented",
+        cwd=repo_root,
+    )
+
+    assert code == 2
+    assert "does not declare a paradigm" in err
+    assert "cannot be silently defaulted or supplied by root" in err
+
+
+@pytest.mark.parametrize(
+    ("declaration", "root_assertion", "expected"),
+    [
+        (
+            "Paradigm: functional\nParadigm: OO",
+            None,
+            "conflicting paradigms",
+        ),
+        (
+            "Paradigm: functional\nParadigm: FP",
+            None,
+            "declares the paradigm more than once",
+        ),
+        ("Paradigm: procedural", None, "unsupported paradigm 'procedural'"),
+        (
+            "Paradigm: functional",
+            "object_oriented",
+            "contradicts the architecture authority",
+        ),
+    ],
+)
+def test_refuses_ambiguous_paradigm_projection(
+    tmp_path: Path,
+    declaration: str,
+    root_assertion: str | None,
+    expected: str,
+) -> None:
+    repo_root = _build_repo(tmp_path)
+    brief_path = repo_root / "docs" / "product" / "architecture" / "brief.md"
+    brief_path.write_text(
+        _BRIEF.replace("Paradigm: object_oriented", declaration), encoding="utf-8"
+    )
+    args = [
+        "--repo-root",
+        str(repo_root),
+        "--delivery-id",
+        "ambiguous-widget",
+        "--architecture-authority",
+        _ARCH_AUTHORITY,
+    ]
+    if root_assertion is not None:
+        args.extend(("--paradigm", root_assertion))
+
+    code, _out, err = _run(*args, cwd=repo_root)
+
+    assert code == 2
+    assert expected in err
 
 
 def test_canonical_test_dependencies_select_schema_1_4_closure(tmp_path: Path) -> None:
@@ -293,6 +410,8 @@ _GO_MODULE = "package pkg\n\nfunc Existing() {}\n"
 _MULTI_DEFECT_BRIEF = """\
 # widget
 
+Paradigm: object_oriented
+
 ## Registry gains a route
 
 | Target | Decision | Why |
@@ -409,6 +528,8 @@ def test_a_single_problem_refusal_stays_the_one_line_it_has_always_been(
 _BRIEF_DIRECTORY_TARGET_CELL = """\
 # widget
 
+Paradigm: object_oriented
+
 `Widget` (`pkg/widget.py:5`) already exposes `existing_method`
 (`pkg/widget.py:6`).
 
@@ -493,6 +614,35 @@ def test_a_valid_authority_still_compiles_a_schema_valid_skeleton(
     assert delivery_contract_schema_violation(contract) is None
 
 
+def test_an_unreadable_installed_schema_is_a_structured_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = _build_repo(tmp_path)
+    config_root = tmp_path / "claude"
+    schema = (
+        config_root / "lib" / "nWave" / "schemas" / "thin-delivery-contract.schema.json"
+    )
+    schema.parent.mkdir(parents=True)
+    schema.write_text("not-json", encoding="utf-8")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config_root))
+
+    code, out, err = _run(
+        "--repo-root",
+        str(repo_root),
+        "--delivery-id",
+        "widget-color",
+        "--architecture-authority",
+        _ARCH_AUTHORITY,
+        cwd=repo_root,
+    )
+
+    assert code == 2, out
+    assert "contract-schema-unreadable" in err
+    assert "WHAT:" in err and "WHY:" in err and "HOW:" in err
+    assert "Traceback" not in err
+    assert not (repo_root / "docs" / "delivery-contracts").exists()
+
+
 # --- F-COMPILE-CONTRACT-IGNORES-AUTHORITY-ANCHOR (docs/product/backlog.md):
 # `--architecture-authority <path>.md#<anchor>` validated the anchor's SHAPE
 # then discarded it -- every fact was derived from the WHOLE document, never
@@ -512,6 +662,8 @@ Oracle target locator: `pkg/tests/test_sibling_wrong.py`
 1. **CONTESTED_LAW** -- law: unrelated to widget, must not leak.
 
 ## widget
+
+Paradigm: object_oriented
 
 `Widget` (`pkg/widget.py:5`) already exposes `existing_method`
 (`pkg/widget.py:6`).
@@ -549,6 +701,40 @@ def test_only_the_cited_section_feeds_the_compiled_contract(tmp_path: Path) -> N
     assert set(contract["targets"]) == {"pkg/widget.py"}
     assert contract["acceptance-tests"]["locator"] == "pkg/tests/test_widget_color.py"
     assert contract["obligations"] == ["REUSE_CANDIDATE"]
+
+
+# --- Construction, not prose (auto delivery outcome = the piped VALUE-SEED,
+# never `<ATD: fill>`): compile-contract is a producer in the SAME raw-stdin
+# VALUE-SEED family as `des prepare-ordinary-request`/`des resolve-charters`
+# (`read_value_seed_text`) -- for an auto DeliveryId (`compute_delivery_id`),
+# the exact piped seed bytes must land in `contract["outcome"]` verbatim,
+# never the `<ATD: fill>` placeholder ATD would otherwise have to author.
+
+
+def test_an_auto_delivery_writes_outcome_as_the_exact_piped_value_seed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo_root = _build_repo(tmp_path)
+    value_seed = "Widget gains a validated color attribute."
+    auto_delivery_id = compute_delivery_id(value_seed)
+    monkeypatch.setattr(sys, "stdin", _BinaryStdin(value_seed.encode("utf-8")))
+
+    code, _out, err = _run(
+        "--repo-root",
+        str(repo_root),
+        "--delivery-id",
+        auto_delivery_id,
+        "--architecture-authority",
+        _ARCH_AUTHORITY,
+        cwd=repo_root,
+    )
+
+    assert code == 0, err
+    contract_path = (
+        repo_root / "docs" / "delivery-contracts" / f"{auto_delivery_id}.json"
+    )
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    assert contract["outcome"] == value_seed
 
 
 def test_refuses_when_the_cited_anchor_names_no_real_heading(tmp_path: Path) -> None:

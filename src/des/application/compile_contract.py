@@ -44,11 +44,10 @@ ADR-SSOT-002 Section 4's field-ownership table assigns to a SEMANTIC/
 value-side authority this compiler is never given access to: ``outcome``
 (value-side identity), each target's ``justification`` prose and its
 ``boundary.*`` sub-fields (DESIGN's own judgment, not a fact the brief's
-citations alone determine). Two fields the schema type-constrains to a
-closed enum (``paradigm``, ``contract-shape``) CANNOT represent an unfilled
-placeholder at all without a schema change (out of this compiler's scope) --
-they take an explicit, overridable default instead, documented at their own
-call site below, never silently guessed as though derived.
+citations alone determine). ``paradigm`` is transcribed from DESIGN's
+canonical declaration by the CLI. ``contract-shape`` is the one remaining
+schema-closed enum that cannot represent an unfilled placeholder; it takes
+the conservative default documented at its own call site below.
 
 The acceptance-oracle locator (``acceptance-tests.locator``) is a
 CONVENTION this compiler decides, not an external input: root cannot obtain
@@ -63,10 +62,13 @@ refusal (``Blocked``), never an invented directory.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from des._internal.delivery_contract_schema import (
+    LEGACY_SCHEMA_VERSION,
+    delivery_contract_schema_version,
+)
 from des.adapters.driven.codefact.code_fact_chain import CodeFactChain
 from des.domain.architecture_brief_resolver import (
     DroppedCitation,
@@ -120,9 +122,6 @@ if TYPE_CHECKING:
     from des.ports.code_fact_port import Resolution
 
 
-LEGACY_SCHEMA_VERSION = "1.3"
-ACCEPTANCE_SUPPORT_SCHEMA_VERSION = "1.4"
-
 #: DESIGN owns ``targetPlan.contract-shape`` semantically, but the schema
 #: constrains it to a closed enum -- an unfilled placeholder cannot validate
 #: there the way ``justification``/``boundary.*`` (free ``nonEmptyText``)
@@ -155,6 +154,14 @@ class CompileContractInputs:
     #: default, for standalone/manual invocations with no better source)
     #: falls back to that proxy.
     independent_review: bool | None = None
+    #: The exact immutable VALUE-SEED piped on stdin for an `auto-`
+    #: `delivery_id` (`des.application.ordinary_request.
+    #: read_value_seed_text`). When present, it lands verbatim in
+    #: `contract["outcome"]` instead of the `<ATD: fill>` placeholder --
+    #: an auto contract's outcome is compiled, never ATD-authored. `None`
+    #: (the default, for a manual/non-auto compile) preserves the existing
+    #: placeholder behavior.
+    value_seed: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -520,8 +527,8 @@ def _verification_commands(
 
     Precedence 2 (fallback) -- one command scoped to the oracle, plus the
     workspace's own declared whole-suite command when one exists
-    (``workspace_test_command_resolver``) -- together they satisfy
-    ``des dispatch``'s whole-suite-scope validator by construction.
+    (``workspace_test_command_resolver``) -- together they construct the
+    preservation scope without relying on a later omission gate.
     Precedence 3 -- a workspace with no declared whole-suite convention
     and a PYTHON oracle falls back to a direct pytest invocation of the
     oracle locator, using a bare ``python`` toolchain name (PATH-resolved)
@@ -603,309 +610,13 @@ def _unadmitted_oracle_reason(candidate: str) -> str:
     return "unrecognized citation shape"  # pragma: no cover -- admitted above
 
 
-def _typed_design_closure(text: str) -> dict | Blocked | None:
-    """Decode the sole architecture-owned carrier when the cited section has it."""
-    from des.application.architecture_projection import (
-        PARADIGMS,
-        DesignClosureV1,
-        design_closure_marker_count,
-        design_projection_digest,
-        is_canonical_repository_path,
-        is_nonempty_design_closure_payload,
-        sole_design_closure_region,
-    )
-
-    marker_count = design_closure_marker_count(text)
-    if marker_count == 0:
-        return None
-    region = sole_design_closure_region(text)
-    if marker_count != 2 or region is None:
-        return Blocked(
-            "the design-closure carrier is absent, one-sided, duplicate or cross-heading",
-            "a cited section containing a design-closure marker has exactly one canonical carrier",
-            "reconstruct the canonical design-closure through des construct-design-closure",
-        )
-    prefix = "<!-- GENERATED:design-closure START -->\n```json\n"
-    suffix = "\n```\n<!-- GENERATED:design-closure END -->\n"
-    if not region.text.startswith(prefix) or not region.text.endswith(suffix):
-        return Blocked(
-            "the design-closure carrier is malformed or multiline",
-            "compile accepts exactly one canonical DesignClosureV1 carrier",
-            "reconstruct the canonical design-closure through des construct-design-closure",
-        )
-    try:
-        envelope = json.loads(region.text[len(prefix) : -len(suffix)])
-    except json.JSONDecodeError as exc:
-        return Blocked(
-            "the DesignClosureV1 JSON cannot be decoded",
-            str(exc),
-            "reconstruct the canonical design closure",
-        )
-    if not isinstance(envelope, dict):
-        return Blocked(
-            "the DesignClosureV1 envelope is not a mapping",
-            "compile accepts one closed typed carrier",
-            "reconstruct the closure through des construct-design-closure",
-        )
-    if (
-        set(envelope) != {"format", "design-projection-digest", "payload"}
-        or envelope.get("format") != "DesignClosureV1"
-    ):
-        return Blocked(
-            "the architecture closure is not DesignClosureV1",
-            "compile accepts one closed typed carrier",
-            "reconstruct the closure through des construct-design-closure",
-        )
-    payload = envelope.get("payload")
-    if not is_nonempty_design_closure_payload(payload):
-        return Blocked(
-            "the DesignClosureV1 payload is not a mapping",
-            "the carrier's payload must hold named semantic members",
-            "reconstruct the closure through des construct-design-closure",
-        )
-    if envelope.get("design-projection-digest") != design_projection_digest(payload):
-        return Blocked(
-            "the architecture closure digest is invalid",
-            "the compiler must not consume stale or noncanonical architecture input",
-            "reconstruct the closure through des construct-design-closure",
-        )
-    if region.text != DesignClosureV1(payload).render().decode("utf-8"):
-        return Blocked(
-            "the design-closure carrier is noncanonical",
-            "the compiler consumes the single canonical DesignClosureV1 byte carrier",
-            "reconstruct the canonical design-closure through des construct-design-closure",
-        )
-    problems: list[Blocked] = []
-
-    def malformed(what: str) -> None:
-        problems.append(
-            Blocked(
-                what=what,
-                why="the digest binds bytes, but compilation also requires the complete closed DesignClosureV1 semantic shape",
-                how="reconstruct the closure through des construct-design-closure",
-                kind="malformed-design-closure",
-            )
-        )
-
-    expected_payload_keys = {
-        "authority",
-        "obligations",
-        "oracle",
-        "paradigm",
-        "skills",
-        "targets",
-        "test_dependencies",
-        "verification",
-    }
-    if set(payload) != expected_payload_keys:
-        malformed("the DesignClosureV1 payload has missing or unknown members")
-    if not isinstance(payload.get("authority"), str) or not payload.get("authority"):
-        malformed("the DesignClosureV1 authority is missing or malformed")
-    if payload.get("paradigm") not in PARADIGMS:
-        malformed("the DesignClosureV1 paradigm is not a closed variant")
-    for name in ("obligations", "skills", "test_dependencies"):
-        if not isinstance(payload.get(name), list) or not all(
-            isinstance(value, str) and value for value in payload.get(name, [])
-        ):
-            malformed(f"the DesignClosureV1 {name} collection is malformed")
-    oracle = payload.get("oracle")
-    if (
-        not isinstance(oracle, dict)
-        or oracle.get("kind") not in {"new", "existing"}
-        or not isinstance(oracle.get("locator"), str)
-        or not oracle.get("locator")
-    ):
-        malformed("the DesignClosureV1 oracle is missing or has an unknown variant")
-    verification = payload.get("verification")
-    if not isinstance(verification, dict) or verification.get("kind") not in {
-        "commands",
-        "delegated",
-    }:
-        malformed(
-            "the DesignClosureV1 verification is missing or has an unknown variant"
-        )
-    elif verification["kind"] == "commands":
-        if set(verification) == {"kind", "argvs"}:
-            argvs = verification["argvs"]
-        elif set(verification) == {"kind", "argv"}:
-            # Read pre-P5 DesignClosureV1 carriers without making old
-            # authority bytes un-compilable.  New construction emits argvs.
-            argvs = [verification["argv"]]
-        else:
-            argvs = None
-        if not isinstance(argvs, list) or not argvs:
-            malformed("the command verification argvs are malformed")
-        elif not all(
-            isinstance(argv, list)
-            and argv
-            and all(isinstance(value, str) and value for value in argv)
-            and is_canonical_repository_path(argv[0])
-            for argv in argvs
-        ):
-            malformed(
-                "each command verification argv needs a nonempty repository-relative executable"
-            )
-    else:
-        block = verification.get("literal-script-block")
-        if (
-            not isinstance(block, dict)
-            or set(block) != {"locator", "content-digest", "lines"}
-            or not isinstance(block.get("locator"), str)
-            or not isinstance(block.get("content-digest"), str)
-            or not isinstance(block.get("lines"), list)
-            or not block["lines"]
-            or not all(isinstance(line, str) for line in block["lines"])
-        ):
-            malformed("the delegated verification block is malformed")
-    targets = payload.get("targets")
-    if not isinstance(targets, dict) or not targets:
-        malformed("the DesignClosureV1 target map is missing or empty")
-    elif isinstance(targets, dict):
-        for path, target in targets.items():
-            if not isinstance(path, str) or not path or not isinstance(target, dict):
-                malformed("a DesignClosureV1 target entry is malformed")
-                continue
-            if not is_canonical_repository_path(path):
-                malformed(
-                    f"target {path!r} is not a canonical repository-relative path"
-                )
-            if (
-                not isinstance(target.get("purpose"), str)
-                or not target.get("purpose")
-                or target.get("shape")
-                not in {"pure-function", "bounded-change", "unbounded-preservation"}
-            ):
-                malformed(f"target {path!r} has malformed purpose or closed shape")
-            if not isinstance(target.get("declared_imports"), list) or not all(
-                isinstance(value, str) for value in target.get("declared_imports", [])
-            ):
-                malformed(f"target {path!r} has malformed declared imports")
-            boundary = target.get("boundary")
-            if (
-                not isinstance(boundary, dict)
-                or set(boundary)
-                != {
-                    "failure-behavior",
-                    "substrate-lie",
-                    "substrate-probe",
-                    "double-blind-spot",
-                }
-                or not all(
-                    isinstance(value, str) and value for value in boundary.values()
-                )
-            ):
-                malformed(f"target {path!r} has malformed boundary")
-            decision = target.get("decision")
-            if (
-                not isinstance(decision, dict)
-                or decision.get("variant") not in {"EXTEND", "CREATE_NEW"}
-                or not isinstance(decision.get("evidence"), list)
-                or not decision["evidence"]
-            ):
-                malformed(f"target {path!r} has missing or unknown decision variant")
-            elif decision["variant"] == "EXTEND" and not all(
-                isinstance(value, str) and value for value in decision["evidence"]
-            ):
-                malformed(f"target {path!r} has malformed EXTEND evidence")
-            elif decision["variant"] == "CREATE_NEW" and not all(
-                isinstance(value, list)
-                and len(value) == 3
-                and all(isinstance(member, str) and member for member in value)
-                for value in decision["evidence"]
-            ):
-                malformed(f"target {path!r} has malformed CREATE_NEW evidence")
-    if problems:
-        return _one_refusal(problems, [])
-    return payload
-
-
-def _compile_typed_closure(
-    inputs: CompileContractInputs, payload: dict, base_revision: str
-) -> dict:
-    targets = payload["targets"]
-    compiled_targets = {}
-    for path, target in targets.items():
-        decision = target["decision"]
-        variant = decision.get("variant")
-        evidence = decision.get("evidence", [])
-        overlap = "; ".join(
-            sorted(
-                f"{item[0]}::{item[1]} — {item[2]}"
-                if isinstance(item, list)
-                else f"{path}::{item}"
-                for item in evidence
-            )
-        )
-        compiled_targets[path] = {
-            "candidate": path,
-            "overlap": overlap,
-            "decision": variant,
-            "justification": target["purpose"],
-            "declared-imports": target["declared_imports"],
-            "contract-shape": target["shape"],
-            "boundary": target["boundary"],
-        }
-    verification = payload["verification"]
-    if verification["kind"] == "commands":
-        argvs = (
-            verification["argvs"] if "argvs" in verification else [verification["argv"]]
-        )
-        verification_scope = {
-            "commands": [
-                {
-                    "executable": {
-                        "kind": "repository",
-                        "path": argv[0],
-                    },
-                    "arguments": argv[1:],
-                }
-                for argv in argvs
-            ]
-        }
-    else:
-        verification_scope = {
-            "literal-script-block": verification["literal-script-block"]
-        }
-    return {
-        "schema-version": "1.4",
-        "delivery-id": inputs.delivery_id,
-        "repository": {"worktree": ".", "base-revision": base_revision},
-        "outcome": "<ATD: fill>",
-        "targets": compiled_targets,
-        "paradigm": payload["paradigm"],
-        "delivery-route": inputs.delivery_route,
-        "obligations": payload["obligations"],
-        "acceptance-tests": {
-            "locator": payload["oracle"]["locator"],
-            "supporting-locators": payload["test_dependencies"],
-        },
-        "verification-scope": verification_scope,
-        "cited-skills": payload["skills"],
-        "pbt-adapter": {
-            "cited": "nw-property-based-testing",
-            "resolved-variant": "nw-pbt-python",
-            "status": "resolved",
-            "reason": "target extension '.py' maps to 'nw-pbt-python'",
-        },
-        "applicability": {
-            "independent-review": inputs.independent_review
-            if inputs.independent_review is not None
-            else True,
-            "examine": inputs.examine,
-        },
-        "budget": {
-            "token-limit": inputs.budget_token_limit,
-            "wall-clock-minutes": inputs.budget_wall_clock_minutes,
-        },
-    }
-
-
 def compile_delivery_contract(
     inputs: CompileContractInputs,
     *,
     declared_in_existing_contract: Mapping[str, str] | None = None,
     existing_oracle_locator: str | None = None,
     existing_verification_scope: dict | None = None,
+    admitted_base_revision: str | None = None,
 ) -> Compiled | Blocked:
     """Derive a schema-shaped DeliveryContract skeleton from ``inputs``.
 
@@ -928,21 +639,13 @@ def compile_delivery_contract(
     derivation cannot produce one, its verification-scope) is reused
     instead of refused. compile-contract never passes these, so its
     refusal is unchanged.
-    """
-    closure = _typed_design_closure(inputs.brief_text)
-    if isinstance(closure, Blocked):
-        return closure
-    if closure is not None:
-        base_revision = observed_base_revision(inputs.repo_root)
-        if base_revision is None:
-            return Blocked(
-                what=f"HEAD could not be observed at {inputs.repo_root}",
-                why="repository.base-revision must be observed",
-                how="run from a repository with one checked-out commit",
-            )
-        return Compiled(_compile_typed_closure(inputs, closure, base_revision))
 
-    base_revision = observed_base_revision(inputs.repo_root)
+    ``admitted_base_revision`` is supplied only when recompile-contract has
+    reconstructed a reviewed closure at HEAD. That closure owns original B;
+    observing HEAD here would rewrite B to C and destroy delivery identity.
+    Initial compilation/recompilation leaves it ``None``.
+    """
+    base_revision = admitted_base_revision or observed_base_revision(inputs.repo_root)
     if base_revision is None:
         return Blocked(
             what=f"HEAD could not be observed at {inputs.repo_root}",
@@ -1298,8 +1001,21 @@ def compile_delivery_contract(
     # Brief-only, therefore always decidable -- it depends on no target
     # and no oracle, so a failed target set never hides a missing
     # obligation behind an earlier refusal.
-    obligations = extract_obligations(inputs.brief_text)
-    if not obligations:
+    schema_unreadable = False
+    try:
+        obligations = extract_obligations(inputs.brief_text)
+    except RuntimeError as exc:
+        obligations = []
+        schema_unreadable = True
+        problems.append(
+            Blocked(
+                kind="contract-schema-unreadable",
+                what=str(exc),
+                why="the compiler cannot derive the closed obligation vocabulary",
+                how="reinstall nWave with its schemas, then re-run compile-contract",
+            )
+        )
+    if not obligations and not schema_unreadable:
         offending_line = first_unparsed_obligation_candidate(inputs.brief_text)
         problems.append(
             Blocked(
@@ -1429,13 +1145,13 @@ def compile_delivery_contract(
 
     contract = {
         "schema-version": (
-            ACCEPTANCE_SUPPORT_SCHEMA_VERSION
+            delivery_contract_schema_version()
             if support_locators
             else LEGACY_SCHEMA_VERSION
         ),
         "delivery-id": inputs.delivery_id,
         "repository": {"worktree": ".", "base-revision": base_revision},
-        "outcome": PLACEHOLDER,
+        "outcome": inputs.value_seed if inputs.value_seed is not None else PLACEHOLDER,
         "targets": targets,
         "paradigm": inputs.paradigm,
         "delivery-route": inputs.delivery_route,

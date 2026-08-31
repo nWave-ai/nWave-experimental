@@ -32,7 +32,7 @@ from pathlib import Path
 import pytest
 
 from scripts.install.plugins.base import InstallContext
-from scripts.install.plugins.des_plugin import DESPlugin
+from scripts.install.plugins.des_plugin import DESPlugin, _robust_rmtree
 
 
 # -----------------------------------------------------------------------------
@@ -246,3 +246,71 @@ class TestClearBytecodeCacheSurvivesRacingPycache:
 
         assert not cache_a.exists()
         assert not cache_b.exists()
+
+
+class TestRobustRmtreeSurvivesTransientEnomem:
+    def test_robust_rmtree_retries_once_on_enomem_then_succeeds(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        target = tmp_path / "aside"
+        target.mkdir()
+        (target / "marker.txt").write_text("stale")
+
+        real_rmtree = shutil.rmtree
+        calls: list[Path] = []
+
+        def fake_rmtree(path, *args, **kwargs):
+            candidate = Path(path)
+            calls.append(candidate)
+            if len(calls) == 1:
+                raise OSError(errno.ENOMEM, "Cannot allocate memory", str(candidate))
+            return real_rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(
+            "scripts.install.plugins.des_plugin.shutil.rmtree", fake_rmtree
+        )
+
+        _robust_rmtree(target)  # must not raise
+
+        assert len(calls) == 2, "first ENOMEM must be retried, not swallowed silently"
+        assert not target.exists(), "the retried rmtree must actually remove the tree"
+
+    def test_robust_rmtree_propagates_persistent_enomem(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        target = tmp_path / "aside"
+        target.mkdir()
+        calls = 0
+
+        def fake_rmtree(path, *args, **kwargs):
+            nonlocal calls
+            calls += 1
+            raise OSError(errno.ENOMEM, "Cannot allocate memory", str(path))
+
+        monkeypatch.setattr(
+            "scripts.install.plugins.des_plugin.shutil.rmtree", fake_rmtree
+        )
+
+        with pytest.raises(OSError) as exc_info:
+            _robust_rmtree(target)
+
+        assert calls == 3
+        assert exc_info.value.errno == errno.ENOMEM
+
+    def test_robust_rmtree_propagates_non_retryable_errno(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        target = tmp_path / "protected"
+        target.mkdir()
+
+        def fake_rmtree(path, *args, **kwargs):
+            raise OSError(errno.EACCES, "Permission denied", str(path))
+
+        monkeypatch.setattr(
+            "scripts.install.plugins.des_plugin.shutil.rmtree", fake_rmtree
+        )
+
+        with pytest.raises(OSError) as exc_info:
+            _robust_rmtree(target)
+
+        assert exc_info.value.errno == errno.EACCES

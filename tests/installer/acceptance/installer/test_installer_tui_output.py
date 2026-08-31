@@ -11,7 +11,7 @@ covering every visible step of the installation journey.
 
 import pytest
 
-from scripts.install.install_nwave import __version__
+from scripts.install import install_nwave
 
 
 # Pin all tests in this file to one xdist worker — module-scoped fixture
@@ -45,7 +45,7 @@ class TestWalkingSkeleton:
     # Step 1: Logo
     def test_step_01_logo_with_version(self, output: str):
         """ASCII art logo is printed with the current version number."""
-        assert f"v{__version__}" in output
+        assert f"v{install_nwave.__version__}" in output
         assert "nWave" in output or "\u2588" in output  # block chars from logo art
 
     # Step 2: Pre-flight checks
@@ -109,7 +109,7 @@ class TestWalkingSkeleton:
         """Success celebration with version number."""
         assert "\U0001f389" in output  # 🎉
         assert "installed and healthy" in output
-        assert __version__ in output
+        assert install_nwave.__version__ in output
 
     # Step 11: Quick start
     def test_step_11_quick_start_commands(self, output: str):

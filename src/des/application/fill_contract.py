@@ -23,6 +23,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass
 
+from des.application.ordinary_request import DELIVERY_ID_PREFIX
 from des.domain.contract_placeholder_resolver import PLACEHOLDER
 
 
@@ -168,6 +169,18 @@ def fill_contract_field(inputs: FillContractInputs) -> Filled | Blocked:
                 why=f"{field!r} lives at the contract's own top level, never "
                 "inside a target",
                 how="omit --target for this field",
+            )
+        if field == "outcome" and str(
+            inputs.contract.get("delivery-id", "")
+        ).startswith(DELIVERY_ID_PREFIX):
+            return Blocked(
+                what=f"'outcome' was given for auto delivery-id "
+                f"{inputs.contract.get('delivery-id')!r}",
+                why="an auto contract's outcome is the piped VALUE-SEED "
+                "des compile-contract already wrote -- ATD does not author it",
+                how="omit the 'outcome' entry from the batch; des "
+                "compile-contract/recompile-contract own this field for "
+                "an auto delivery-id",
             )
     elif field in TARGET_LEVEL_FIELDS:
         if inputs.target is None:

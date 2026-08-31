@@ -1,13 +1,8 @@
-"""Projection tests for the whole-suite verification-scope lever (K4 Run 12).
+"""Projection tests for construction-owned whole-suite scope (K4 Run 12).
 
-Run 12 debrief's single biggest wall-clock lever: `verification-scope.
-commands` only ever named the new oracle's own narrow test, never the
-subject's own declared whole-suite command; regressions outside the narrow
-scope surfaced only through 3 reviewer rounds. This wires the requirement
-into `nw-acceptance-designer` (authoring) and `nw-distill` (the compiling
-skill's own routing text) -- the CLI-level refusal/detection is covered
-separately by `tests/des/unit/domain/test_workspace_test_command_resolver.py`
-and `tests/des/acceptance/test_dispatch_whole_suite_scope.py`.
+The compiler includes the declared whole-suite command in the mandatory
+skeleton. ATD cannot author a narrower contract and no later omission gate is
+needed.
 """
 
 from __future__ import annotations
@@ -24,25 +19,13 @@ def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_acceptance_designer_asks_for_the_whole_suite_command_alongside_the_oracle() -> (
-    None
-):
+def test_acceptance_designer_cannot_author_a_narrow_manual_contract() -> None:
     compact = " ".join(_text(ACCEPTANCE_DESIGNER).split())
 
-    assert (
-        "does it also carry the subject workspace's own declared\n"
-        "   whole-suite command".replace("\n   ", " ")
-        in compact
-    )
-    assert "Run the subject's own tests" in compact
-    assert "K4 Run 12" in compact
-    assert "`Check.to_dict()`" in compact
-    assert (
-        "`des dispatch` now refuses a\n   whole-suite-declaring workspace".replace(
-            "\n   ", " "
-        )
-        in compact
-    )
+    assert "It MUST resolve to the root-compiled skeleton" in compact
+    assert "There is no manual contract-authoring fallback" in compact
+    assert "write no oracle, support or contract bytes" in compact
+    assert "verification-scope.commands" in compact
 
 
 def test_distill_skill_treats_verification_scope_commands_as_a_set() -> None:
@@ -53,6 +36,9 @@ def test_distill_skill_treats_verification_scope_commands_as_a_set() -> None:
     assert "the workspace's own whole-suite command" in compact
     assert "copied verbatim, never" in compact
     assert "K4 Run 12" in compact
+    assert "required mechanical skeleton producer" in compact
+    assert "included by construction" in compact
+    assert "later omission gate" in compact
     # Placed right after the architecture-brief-supplies paragraph, before Output.
     brief_index = text.index("The architecture brief supplies")
     set_index = text.index("`verification-scope.commands` is a set")

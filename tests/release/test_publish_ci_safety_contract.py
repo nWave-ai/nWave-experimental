@@ -41,7 +41,7 @@ def _step(workflow: dict[str, object], name: str) -> dict[str, object]:
 def test_experimental_dispatch_and_permissions_are_narrow() -> None:
     workflow = _workflow(EXPERIMENTAL)
     trigger = workflow[True]  # PyYAML resolves the YAML 1.1 key `on` as True.
-    assert trigger["push"]["branches"] == [SOURCE_BRANCH]
+    assert "push" not in trigger
     assert trigger["workflow_dispatch"] is None
     assert workflow["permissions"] == {"contents": "read", "actions": "read"}
 

@@ -16,10 +16,12 @@ from pathlib import Path
 from des.domain.architecture_brief_resolver import (
     FILE_LINE_CITATION_RE,
     PBT_FAMILY_SKILL,
+    canonical_paradigm,
     declared_imports_for_target,
     extract_acceptance_support_locators,
     extract_declared_import_candidates,
     extract_declared_oracle_locator_candidates,
+    extract_declared_paradigms,
     extract_declared_target_locators,
     extract_obligations,
     extract_oracle_citations,
@@ -30,6 +32,16 @@ from des.domain.architecture_brief_resolver import (
     resolve_pbt_adapter,
     skill_citations_for_repo,
 )
+
+
+def test_paradigm_projection_tolerates_unambiguous_human_spellings() -> None:
+    brief = "Paradigm: FP\n+ Paradigm: OO (Python, ports and adapters)\n"
+    declared = extract_declared_paradigms(brief)
+    assert declared == ["FP", "OO (Python, ports and adapters)"]
+    assert [canonical_paradigm(value) for value in declared] == [
+        "functional",
+        "object_oriented",
+    ]
 
 
 def _atoms_by_target(mapping: dict[str, frozenset[str]]):
@@ -632,6 +644,26 @@ def test_extract_oracle_citations_admits_a_bare_declared_oracle_locator() -> Non
         "(CREATE_NEW -- lands in this repo's real des CLI test tier).\n"
     )
     assert extract_oracle_citations(brief) == ["tests/des/unit/cli/test_update.py"]
+
+
+def test_a_declared_oracle_locator_outranks_an_earlier_test_dependency_citation() -> (
+    None
+):
+    # Reproduction: a brief lists its Test dependency locator lines (each of
+    # which cites a real, existing test file at `path:line` -- itself a
+    # test-shaped citation extract_oracle_citations already admits) BEFORE
+    # its explicit Oracle target locator declaration. Textual position
+    # alone made the earlier dependency citation win; DESIGN's typed
+    # declaration is the judgment call and must outrank it regardless of
+    # where either sits in the brief.
+    brief = (
+        "Test dependency locator: `tests/release/existing_dep_test.py:5`\n"
+        "Oracle target locator: `tests/release/test_nwave_ai_cli.py` (CREATE_NEW).\n"
+    )
+    assert extract_oracle_citations(brief) == [
+        "tests/release/test_nwave_ai_cli.py",
+        "tests/release/existing_dep_test.py",
+    ]
 
 
 def test_a_declared_oracle_locator_naming_a_production_file_is_never_an_oracle() -> (

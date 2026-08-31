@@ -28,10 +28,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-# Ensure project root is in sys.path when invoked as standalone script
+# Ensure this checkout wins over an older installed ``scripts`` namespace.
 _project_root = str(Path(__file__).resolve().parent.parent)
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
+if _project_root in sys.path:
+    sys.path.remove(_project_root)
+sys.path.insert(0, _project_root)
 
 from scripts.install.plugins.des_plugin import _canonical_tree_hash  # noqa: E402
 from scripts.shared.agent_catalog import (  # noqa: E402
@@ -45,6 +46,7 @@ from scripts.shared.skill_distribution import (  # noqa: E402
     enumerate_skills,
     filter_public_skills,
 )
+from scripts.shared.version import resolve_product_version  # noqa: E402
 
 
 # Static directories that must exist after build.
@@ -72,33 +74,22 @@ UTILITY_SCRIPTS = [
 ]
 
 
-def _get_version(project_root: Path) -> str:
-    """Read version from pyproject.toml (single source of truth)."""
-    pyproject_path = project_root / "pyproject.toml"
-    if not pyproject_path.exists():
-        return "0.0.0"
-    try:
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli as tomllib  # type: ignore[no-redef]
-        with open(pyproject_path, "rb") as f:
-            data = tomllib.load(f)
-        return data.get("project", {}).get("version", "0.0.0")
-    except ModuleNotFoundError:
-        content = pyproject_path.read_text()
-        m = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
-        return m.group(1) if m else "0.0.0"
-
-
 class DistBuilder:
     """Assembles dist/ from source directories."""
 
     def __init__(self, project_root: Path | None = None):
+        """Assemble dist/ from source directories.
+
+        Raises:
+            VersionResolutionError: ``resolve_product_version`` cannot
+                resolve exactly one real product identity -- construction
+                refuses loudly (WHAT/WHY/HOW) before any dist artifact is
+                written, instead of stamping a ``"0.0.0"``/``"dev"`` sentinel.
+        """
         self.project_root = project_root or Path(__file__).parent.parent
         self.dist_dir = self.project_root / "dist"
         self.nwave_dir = self.project_root / "nWave"
-        self.version = _get_version(self.project_root)
+        self.version = resolve_product_version(self.project_root).version
         self.public_agents: set[str] = set()  # loaded in run() after source validation
 
     def _log(self, message: str, level: str = "INFO"):

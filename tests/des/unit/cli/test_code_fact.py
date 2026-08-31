@@ -105,6 +105,44 @@ def test_python_ast_never_masks_a_non_python_subject(
     assert result["payload"]["sites"]
 
 
+def test_non_python_substring_does_not_hide_a_python_identifier(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """A config word containing ``a`` is not a non-Python reference to ``a``."""
+    (tmp_path / "subject.py").write_text("def a():\n    return 1\n", encoding="utf-8")
+    config_dir = tmp_path / ".nwave"
+    config_dir.mkdir()
+    (config_dir / "des-config.json").write_text(
+        '{"blast_radius": {}}', encoding="utf-8"
+    )
+
+    exit_code, result = _invoke(
+        ["query.callers-of", "a", "--root", str(tmp_path)], capsys
+    )
+
+    assert exit_code == 0
+    assert result["provider"] == "ast"
+    assert result["payload"]["sites"] == []
+
+
+def test_dotted_subject_degrades_when_non_python_uses_realized_callable(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    (tmp_path / "subject.py").write_text(
+        "class Owner:\n    def method(self):\n        return 1\n", encoding="utf-8"
+    )
+    (tmp_path / "caller.ts").write_text("x.method();\n", encoding="utf-8")
+
+    exit_code, result = _invoke(
+        ["query.callers-of", "Owner.method", "--root", str(tmp_path)], capsys
+    )
+
+    assert exit_code == 0
+    assert result["provider"] == "textsearch"
+    assert result["confidence"] == "noisy"
+    assert result["payload"]["sites"]
+
+
 @pytest.mark.parametrize("root_kind", ["mixed_tree", "single_typescript_file"])
 def test_text_floor_reports_non_python_atoms_instead_of_a_false_empty_result(
     root_kind: str, tmp_path: Path, capsys: pytest.CaptureFixture
@@ -233,7 +271,7 @@ def test_unrecognized_arguments_carries_a_how_line_with_a_working_example(
             "  return observed;\n"
             "}\n",
             "textsearch",
-            False,
+            True,
             id="non_python_textsearch_floor",
         ),
     ],
@@ -246,25 +284,9 @@ def test_reads_of_reports_a_non_call_reference_while_callers_of_stays_absent(
     tmp_path: Path,
     capsys: pytest.CaptureFixture,
 ) -> None:
-    """reads-of and callers-of stay disjoint -- but only a tier that can SEE
-    every reference shape is allowed to report the callers-of absence.
-
-    The structural tier represents bare AND dotted references, so its empty
-    ``callers-of`` IS an absence claim. The textual floor represents bare names
-    only (its patterns exclude a dot-preceded occurrence), so from 2026-08-23 its
-    empty result is NOT accepted as an absence: it degrades LOUD with
-    ``unrepresented-reference-shape`` and a non-zero exit. Before that date this
-    same case returned a confident empty payload a consumer read as "nobody calls
-    target" -- indistinguishable from "the call is ``obj.target()`` and I cannot
-    see it".
-
-    Deliberately NOT asserted: that the AGGREGATE ``cause`` equals
-    ``unrepresented-reference-shape``. ``Failed.cause`` is the cause of the FIRST
-    failure, i.e. of the highest-declared-confidence tier
-    (``_deterministic_cause``, LA1-L10, ``src/des/ports/code_fact_port.py``). On a
-    polyglot root the structural tier declines first with
-    ``out-of-scope-language``, so the floor's blindness is observable only in the
-    ``trace`` -- which is exactly what the entries below assert."""
+    """reads-of and callers-of stay disjoint. Both tiers represent bare and
+    dotted trailing identifiers, so their empty callers result is an honest
+    structural/noisy absence rather than hidden dotted-reference blindness."""
     (tmp_path / file_name).write_text(file_source, encoding="utf-8")
 
     reads_exit_code, reads_result = _invoke(
@@ -278,19 +300,10 @@ def test_reads_of_reports_a_non_call_reference_while_callers_of_stays_absent(
     assert reads_result["provider"] == expected_provider
     assert reads_result["payload"]["sites"]
 
-    if callers_answers_absence:
-        assert callers_exit_code == 0
-        assert callers_result["provider"] == expected_provider
-        assert not callers_result["payload"]["sites"]
-        return
-    assert callers_exit_code == 1
-    blind_entries = [
-        entry
-        for entry in callers_result["trace"]
-        if entry["event"] == "failed:unrepresented-reference-shape"
-    ]
-    assert [entry["provider_id"] for entry in blind_entries] == [expected_provider]
-    assert "dotted-attribute" in blind_entries[0]["detail"]
+    assert callers_answers_absence
+    assert callers_exit_code == 0
+    assert callers_result["provider"] == expected_provider
+    assert not callers_result["payload"]["sites"]
 
 
 def test_recursive_call_is_reported_by_callers_of_not_hidden_by_the_definition(

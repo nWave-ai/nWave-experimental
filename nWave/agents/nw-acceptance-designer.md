@@ -100,8 +100,11 @@ derive it nor read/write expectation charters.
 ### Compiled skeleton (`des compile-contract` + `des fill-contract`) — Ale's
 ### construction-over-file correction (2026-08-20)
 
-Before your first `Read` of `CONTRACT-LOCATOR`'s target path, `Read` it —
-never assume it is absent. When root ran `des compile-contract` first (the
+Before your first `Read` of `CONTRACT-LOCATOR`'s target path, `Read` it.
+It MUST resolve to the root-compiled skeleton. If it is absent, return a
+terminal `DISTILL-RESULT: BLOCKED` naming `des compile-contract`; write no
+oracle, support or contract bytes. There is no manual contract-authoring
+fallback. The root producer runs `des compile-contract` first (the
 mechanical DERIVE-mode counterpart of `des dispatch`'s own CHECK-mode
 validators: target candidate/decision/declared-imports, `verification-scope`
 commands and `obligations`, all built the identical way those validators
@@ -113,9 +116,13 @@ derived correctly (`targets.*.candidate`, `.decision`, `.overlap`,
 trusted as given, exactly like every other producer-owned envelope fact
 above — re-deriving one from scratch risks a second, drifting answer, never
 a safer one. Every field the skeleton could not derive is the literal string
-`<ATD: fill>` (`targets.*.justification`, every `targets.*.boundary.*`,
-top-level `outcome`) — collect EVERY remaining semantic value into one JSON
-array. `Write` that array, byte-identical, to the deterministic carrier path
+`<ATD: fill>` (`targets.*.justification`, every `targets.*.boundary.*`, and
+top-level `outcome` for a non-`auto-` `DeliveryId`) — collect EVERY
+remaining semantic value into one JSON array. For an `auto-` `DeliveryId`,
+`outcome` already carries the compiler-written VALUE-SEED, never
+`<ATD: fill>` — omit it from the array entirely; `des fill-contract`
+refuses an `outcome` entry there, since this role never authors an auto
+contract's outcome. `Write` that array, byte-identical, to the deterministic carrier path
 `.des/fill-contract-carrier/<id>.json` (repo-relative, `<id>` is your
 `DeliveryId`), then run exactly one `Bash` call with no JSON and no heredoc
 on its command line at all:
@@ -168,8 +175,8 @@ full) — but WHERE it lives is mechanical: `acceptance-tests.locator` is a
 convention `des compile-contract` decides (the primary EXTEND target's own
 sibling test directory, or the repository's top-level one), not your choice.
 You `Write` the public executable oracle at that exact given path; it remains
-the ONE public oracle identity. In schema 1.3, the support field is omitted
-entirely; schema 1.4 requires one or more ordered
+the ONE public oracle identity. In the legacy schema, the support field is
+omitted entirely; the current schema requires one or more ordered
 `acceptance-tests.supporting-locators`.
 `acceptance-tests.supporting-locators` is the ordered list of file locators
 for immutable test dependencies. They are private,
@@ -183,23 +190,12 @@ dependency with the canonical line ``Test dependency locator:
 `<repo-relative-whole-file>` ``; `des compile-contract` also reads the legacy
 `Acceptance support locator:` spelling without giving it a second meaning.
 
-A compiled schema 1.3 skeleton without the support field is already valid
-through the canonical compatibility adapter. When a skeleton exists, trust
+A compiled legacy-schema skeleton without the support field is already valid
+through the canonical compatibility adapter. Trust the required skeleton's
 that compiler-owned mechanical version/support pair and fill only semantic
-fields: never compare that mechanical 1.3 field directly with the raw 1.4
+fields: never compare that mechanical legacy field directly with the current
 JSON Schema const. `des fill-contract` and later `des dispatch` consume the
 compatibility adapter at the real boundary.
-
-When
-`CONTRACT-LOCATOR` is absent (no skeleton was compiled), every step below is
-unchanged: author every field from scratch exactly as documented, including
-choosing the primary oracle's own locator. Read every architecture-named
-supporting locator before any Write of a support artifact or support path;
-support locators may be carried only when the sealed architecture explicitly
-names their exact identities, never invented or discovered. `Write` the
-complete contract
-directly as RED_TO_GREEN step 7/GREEN_TO_GREEN step 3 below describe — the
-fill-contract-only narrowing above applies ONLY when a skeleton exists.
 
 Your Bash surface is locked to exactly `des fill-contract` (a `--status`
 query, a compiled-skeleton `--batch --batch-file` call carrying no JSON and
@@ -208,7 +204,7 @@ quoted `<<'NW_FILL'` heredoc; individual revision calls are retired and
 transport) — an installed PreToolUse hook refuses
 anything else outright, WHAT/WHY/HOW, before it ever runs.
 
-When a skeleton exists, your `Write` on the primary oracle file itself is also
+With the required skeleton, your `Write` on the primary oracle file itself is also
 observed by an installed PostToolUse hook: it runs the linked
 `verification-scope` command (bounded 60s) and relays one classification
 (`RED-right-reason`, `RED-wrong-reason`, `GREEN-for-RED_TO_GREEN`, ...) back
@@ -275,8 +271,8 @@ revision-result grammar.
 ### Route algebra
 
 ```text
-RED_TO_GREEN   = Author minimal acceptance closure -> write one complete DeliveryContract -> ContractReady
-GREEN_TO_GREEN = Bind existing acceptance closure  -> write one complete DeliveryContract -> ContractReady
+RED_TO_GREEN   = Author minimal acceptance closure -> fill compiled DeliveryContract -> ContractReady
+GREEN_TO_GREEN = Bind existing acceptance closure  -> fill compiled DeliveryContract -> ContractReady
 ```
 
 A missing or unknown route blocks. There is no default and no dual-read path.
@@ -295,7 +291,7 @@ A missing or unknown route blocks. There is no default and no dual-read path.
    user-observable value. Never grep, search or revalidate production, and
    never call `des code-fact`; resolving those facts is DESIGN's ownership,
    not DISTILL's. Read the file directly; do not locate its anchor with grep
-   or another discovery command. When a skeleton exists, its `cited-skills`
+   or another discovery command. The required skeleton's `cited-skills`
    array (Row 13, K4 run 18) names every `nw-*` skill the brief itself cited
    by name — read it as a checklist of exactly this same dependency class:
    for EACH entry, the authority text must already show its declared=yes,
@@ -397,8 +393,8 @@ A missing or unknown route blocks. There is no default and no dual-read path.
    entry against the base tree immediately after `CONTRACT_READY`, before any crafter is dispatched,
    and refuses WHAT/WHY/HOW on the first unresolved one; the read-authority
    self-check above is cheaper than that refusal, never a substitute for it.
-7. After the complete acceptance-closure Write: when a skeleton exists
-   ("Compiled skeleton" above), collect every remaining semantic field and
+7. After the complete acceptance-closure Write, collect every remaining
+   semantic field in the required compiled skeleton and
    issue exactly one `des fill-contract --repo-root <root> --delivery-id <id>
    --batch --batch-file` call (the carrier-file default) or the quoted
    `<<'NW_FILL'` heredoc fallback, using the JSON-array rules
@@ -407,50 +403,9 @@ A missing or unknown route blocks. There is no default and no dual-read path.
    prose judgment the skeleton's own mechanical fields already satisfy;
    apply it while composing that one batch value, never as a Write/Edit on
    the skeleton or the contract itself.
-   When no skeleton exists, write one complete schema-valid
-   DeliveryContract to the exact given `CONTRACT-LOCATOR`, in one Write
-   call, using the
-   Seeded facts verbatim (`delivery-id`, `outcome`, `repository`, `budget`,
-   `applicability`, `delivery-route`) plus the durable DESIGN facts
-   (`targets`, `paradigm`, `obligations`, `verification-scope`) and
-   `acceptance-tests.locator` set to the primary oracle's exact repo-relative
-   locator and `acceptance-tests.supporting-locators` preserving every exact
-   private support identity the sealed authority supplied. For schema 1.3,
-   omit the `acceptance-tests.supporting-locators` key; for schema 1.4,
-   preserve the non-empty ordered private `acceptance-tests.supporting-locators`
-   list. Does the read
-   architecture authority's own fragment already
-   state the exact test invocation (the literal dotted path or file this
-   project's own runner resolves) for each `verification-scope` command —
-   or are you constructing the package/module prefix yourself? Copy it
-   verbatim; a guessed prefix (K4 Run 9: `api.tests.*` guessed instead of
-   the authority's own `hc.api.tests.*`) is caught by `des dispatch` and
-   costs a full crafter dispatch to discover the command itself is wrong.
-   When `verification-scope` carries `literal-script-block` instead of
-   `commands` (a verification-authority delegation the compiler resolved
-   from a `Verification authority locator:` line), it is a mechanical,
-   trusted-as-given field like every other skeleton-derived fact: never
-   re-author it, never convert it to argv commands; its carried `lines`
-   are a display-only projection — executors bind exclusively to the
-   block re-resolved fresh from the cited authority — the two
-   `verification-scope` questions below apply ONLY to the `commands`
-   branch. Does `verification-scope.commands` carry ONLY this oracle's own narrow
-   test, or does it also carry the subject workspace's own declared
-   whole-suite command — the line its own root `CLAUDE.md` already states
-   (e.g. "Run the subject's own tests: `...`") — as one more entry
-   alongside the oracle command(s)? A shared serializer or module with many
-   callers (K4 Run 12: `Check.to_dict()`) makes an oracle-only scope blind
-   to regressions the new oracle never exercises; those surfaced only
-   through 3 reviewer rounds instead of the crafter's own BASELINE/GREEN,
-   which already runs every listed command for free once this one entry is
-   added. `des dispatch` now refuses a whole-suite-declaring workspace
-   whose contract omits it.
-   Serialize every field in the exact shape and enum the read
-   `CONTRACT-SCHEMA` requires — including `schema-version`,
-   `repository.worktree`, `targetPlan`, `paradigm` and each
-   `verification-scope` command object — and add no property the schema's
-   `additionalProperties` forbids; dependency metadata is never embedded
-   unless the schema names that property. Each target's `overlap`/
+   Absence of that skeleton is the terminal precondition failure described
+   above, never permission to serialize a contract manually. Each target's
+   `overlap`/
    `justification` is a LOSSLESS projection of the cited architecture
    authority's own reuse-decision facts for that target — the same
    value-conservation law the charter's own PO authorship already applies
@@ -489,22 +444,14 @@ A missing or unknown route blocks. There is no default and no dual-read path.
 2. `declared-imports` obeys the RED_TO_GREEN step 6 question unchanged here;
    `overlap`/`justification` obey RED_TO_GREEN step 7's lossless-projection
    law unchanged too.
-3. Without any test edit: when a skeleton exists ("Compiled skeleton"
-   above), collect every remaining semantic field and issue exactly one `des
+3. Without any test edit, collect every remaining semantic field in the
+   required compiled skeleton and issue exactly one `des
    fill-contract --repo-root <root> --delivery-id <id> --batch --batch-file`
    call (the carrier-file default) or the quoted `<<'NW_FILL'` heredoc
    fallback, using the JSON-array rules above. Apply the SAME
    lossless-projection law step 2 describes while composing that one batch
-   value. When no skeleton exists, write one complete schema-valid
-   DeliveryContract to the exact
-   given `CONTRACT-LOCATOR`, in one Write call, using the
-   Seeded facts verbatim (`delivery-id`, `outcome`, `repository`, `budget`,
-   `applicability`, `delivery-route: GREEN_TO_GREEN`) plus the durable
-   DESIGN facts (`targets`, `paradigm`, `obligations`, `verification-scope`)
-   and `acceptance-tests.locator` plus any
-   `acceptance-tests.supporting-locators` bound to the existing closure's
-   exact identities, serialized in the exact shapes/enums the read
-   `CONTRACT-SCHEMA` requires. This role never executes the stored scope, hashes the closure or
+   value. An absent skeleton is terminal `BLOCKED`, never permission to
+   serialize a contract manually. This role never executes the stored scope, hashes the closure or
    calls `des validate-delivery-contract`; `des dispatch` alone validates,
    resolves and hashes the contract, and the crafter's own BASELINE step
    alone classifies RED, GREEN or BROKEN.

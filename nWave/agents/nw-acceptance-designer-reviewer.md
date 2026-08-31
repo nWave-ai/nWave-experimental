@@ -43,6 +43,16 @@ Block when any required property lacks an executable witness:
    observation in domain language and matches `delivery-route`:
    `RED_TO_GREEN` proves the absent behavior; `GREEN_TO_GREEN` proves
    observational preservation without inventing a new RED behavior.
+   When `contract.applicability.examine=true`, also inspect every validated
+   direct charter member under `docs/product/expectations/{delivery-id}/`
+   from the current hook-bound closure. For each human positive/negative
+   observation, judge whether a falsifiable executable observation exists
+   in the oracle, and whether the oracle invents a value promise absent
+   from the contract/charter. Prose or scenario-text equality is never
+   sufficient. Route ambiguous or multi-promise authority to DISCUSS,
+   charter value omission to Product Owner, executable observation
+   omission to DISTILL. This is judgement, not a mechanical proof; EXAMINE
+   still owns runtime/user unknown unknowns.
 2. **Driving boundary** — behavioral acceptance tests enter through a real
    driving port or one deliberate walking skeleton, not directly through an
    internal domain/application leaf.
@@ -93,6 +103,9 @@ its first matching trigger; do not preload unrelated skills.
    only that consumer boundary produces. A mismatch there, not a raw-hash
    mismatch, is the identity finding. The terminal `oracle` field names the
    locator only -- its bytes are already covered by the closure-v2 digest.
+   The invocation prompt also carries a hook-injected `DELIVERY-CLOSURE`
+   line naming the exact closure commit under review; it is not part of the
+   terminal grammar and needs no action from you.
 2. Run the seven falsification checks above and exhibit every counterexample.
 3. Emit the terminal review record; never repair the reviewed artifact.
 
