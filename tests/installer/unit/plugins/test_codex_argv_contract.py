@@ -4,17 +4,6 @@ Single-behavior unit test that pins the contract: ``_build_hook_entry`` MUST
 produce a command string whose final argv token is ``pre-tool-use`` so the
 shared DES hook adapter dispatches to the pre_tool_use handler instead of
 exiting 1 on a missing-argument error.
-
-WHY-NEW-FILE: tests/installer/unit/plugins/test_codex_argv_contract.py
-  CLOSEST-EXISTING: tests/installer/unit/plugins/test_codex_des_plugin.py
-  EXTENSION-COST: existing file is 18kB / 5 classes scoped to install /
-    verify / uninstall / payload-compat. Adding an argv-contract class there
-    blurs the file's responsibility split and makes the contract harder to
-    locate in regression triage.
-  PARALLEL-RATIONALE: the argv contract is a discrete, FM-tracked invariant
-    that DDD-4 locks against ``src/des/adapters/drivers/hooks/hook_router.py``.
-    Co-locating its test in a 1-class file makes the FM-2 regression net
-    trivially greppable and keeps the contract surface explicit.
 """
 
 from __future__ import annotations
@@ -30,7 +19,6 @@ _VALID_EVENT_TOKENS: tuple[str, ...] = (
     "pre-task",
     "pre-write",
     "pre-edit",
-    "subagent-start",
 )
 
 

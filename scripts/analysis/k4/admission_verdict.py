@@ -23,7 +23,7 @@ seen to change the SIGN of camp6's verdict:
 
 (a) A pair whose nWave arm produced no delivery yields no ratio at all. Summed
     together with the delivering pair -- which is what the hand computation does
-    -- camp6's wall reads `1.2400x`, inside the `2.0x` bound, a PASS. Restricted
+    -- camp6's wall reads `1.2400x`, inside the `1.5x` bound, a PASS. Restricted
     to the pairs where both arms actually delivered it reads `2.8100x`, a breach.
     `Delivery` therefore separates NOT-DELIVERED from DELIVERED-BADLY, and the
     two are never summed: a rejected delivery did the work and its cost counts,
@@ -53,21 +53,21 @@ from scripts.analysis.k4 import quality_rubric
 
 # --- the bounds, which were nowhere in code before this line ----------------
 
-#: Ale, 2026-08-20 (`991609f79`): "monetary cost and processed tokens each at
-#: <=1.5x and wall-clock at <=2.0x the comparable vibe control. No ratio
-#: compensates for another." The last sentence is why the campaign verdict below
-#: is conjunctive and never a weighted score.
+#: ADR-SSOT-002 §1: monetary cost, processed tokens, and wall-clock are each
+#: <=1.5x the comparable vibe control. No ratio compensates for another. The
+#: 2026-08-20 commit (`991609f79`) is historical lineage only. The rule is
+#: conjunctive and never a weighted score.
 COST_BOUND = 1.5
 TOKEN_BOUND = 1.5
-WALL_BOUND = 2.0
+WALL_BOUND = 1.5
 BOUNDS = {"cost": COST_BOUND, "tokens": TOKEN_BOUND, "wall": WALL_BOUND}
 
-#: Priority order from the same decision: quality TOP, the two 1.5x resource
-#: axes MID, speed LOW. It orders REMEDIATION EFFORT, not arithmetic -- a
-#: conjunctive rule cannot be weighted, and weighting it would be the
+#: Priority order: quality TOP, then the three equally bounded 1.5x resource
+#: axes (cost, tokens, wall-clock). It orders REMEDIATION EFFORT, not arithmetic
+#: -- a conjunctive rule cannot be weighted, and weighting it would be the
 #: compensation the decision forbids. Position inside this tuple is therefore
-#: cosmetic; MEMBERSHIP is not, because `decide` iterates THIS tuple and an
-#: axis missing from it is computed and never read.
+#: cosmetic; MEMBERSHIP is not, because `decide` iterates THIS tuple and an axis
+#: missing from it is computed and never read.
 #:
 #: `cost` was absent here until 2026-08-23 while `COST_BOUND` had defined it
 #: since the bounds landed -- a bound with no reader. Measured on
@@ -112,18 +112,25 @@ class Delivery(str, Enum):
     UNSCORED = "UNSCORED"
 
 
-DELIVERED = frozenset({Delivery.DELIVERED_REJECTED, Delivery.DELIVERED_ACCEPTED})
-
 #: The two states in which an arm's delivery outcome was never ESTABLISHED at
 #: all: the run produced no usable payload, or nothing scored the payload it
 #: produced. `NO_DELIVERY` is deliberately not here -- an arm that ran and
 #: delivered nothing WAS evaluated, and its gate failure is a finding.
 UNEVALUATED = frozenset({Delivery.NOT_RUN, Delivery.UNSCORED})
 
-RUBRIC_MAX = 2 * len(quality_rubric.CRITERIA_KEYS)
-
 _NWAVE_ALIASES = frozenset({"nwave", "treatment", "b"})
 _CONTROL_ALIASES = frozenset({"control", "vibe", "a"})
+
+# K4's Maintenance Windows subject has every Section 1a item required or
+# applicable. The sealed rubric has no persisted applicability projection, so
+# this is deliberately local to this subject rather than pretending it is a
+# general rule for every future campaign.
+_K4_MAINTENANCE_REQUIRED_ITEMS = frozenset(quality_rubric.SECTION_1A_ITEMS)
+_K4_MAINTENANCE_REQUIRED_CRITERIA = frozenset(
+    key
+    for key, criterion in quality_rubric.CRITERIA_BY_KEY.items()
+    if _K4_MAINTENANCE_REQUIRED_ITEMS.intersection(criterion.section_1a)
+)
 
 
 class ArmResolutionError(RuntimeError):
@@ -144,7 +151,7 @@ class ArmRun:
     token_scope: str | None
     wall_s: float | None
     wall_source: str | None
-    rubric_total: int | None
+    rubric_scores: tuple[tuple[str, int, str], ...] | None
     blocking: tuple[str, ...]
 
 
@@ -155,8 +162,11 @@ class PairRecord:
     control: ArmRun
 
     @property
-    def both_delivered(self) -> bool:
-        return self.nwave.delivery in DELIVERED and self.control.delivery in DELIVERED
+    def both_accepted(self) -> bool:
+        return (
+            self.nwave.delivery is Delivery.DELIVERED_ACCEPTED
+            and self.control.delivery is Delivery.DELIVERED_ACCEPTED
+        )
 
 
 @dataclass(frozen=True)
@@ -180,14 +190,16 @@ class RatioAxis:
 
 
 @dataclass(frozen=True)
-class QualityPair:
+class QualityCriterionPair:
     pair: int
-    nwave_total: int | None
-    control_total: int | None
+    criterion: str
+    dimension: str
+    nwave_score: int | None
+    control_score: int | None
     delta: int | None
-    nwave_blocking: int
-    control_blocking: int
-    pair_delivered: bool
+    status: Status
+    nwave_evidence: str | None
+    control_evidence: str | None
 
 
 @dataclass(frozen=True)
@@ -197,8 +209,7 @@ class QualityAxis:
     form: str
     gate: Status
     gate_detail: tuple[tuple[int, str], ...]
-    ordering_delivered_only: tuple[QualityPair, ...]
-    ordering_all_scored: tuple[QualityPair, ...]
+    criteria: tuple[QualityCriterionPair, ...]
     ordering: Status
     blocking: Status
     reported: tuple[tuple[int, str, str], ...]
@@ -348,8 +359,25 @@ def _read_arm(
     verdict = verdicts.get(outcome.session_id)
     delivery, why = _resolve_delivery(True, verdict)
     scored = rubric.get(outcome.session_id)
-    total = scored.get("total") if isinstance(scored, dict) else None
     blocking = tuple(scored.get("blocking_quality_findings", ())) if scored else ()
+    criteria = scored.get("criteria") if isinstance(scored, dict) else None
+    scores: tuple[tuple[str, int, str], ...] | None = None
+    if isinstance(criteria, dict) and set(criteria) == quality_rubric.CRITERIA_KEYS:
+        rows: list[tuple[str, int, str]] = []
+        for key in sorted(quality_rubric.CRITERIA_KEYS, key=int):
+            entry = criteria[key]
+            if (
+                not isinstance(entry, dict)
+                or type(entry.get("score")) is not int
+                or not 0 <= entry["score"] <= 2
+            ):
+                break
+            evidence = entry.get("evidence")
+            if not isinstance(evidence, str) or not evidence.strip():
+                break
+            rows.append((key, entry["score"], evidence))
+        else:
+            scores = tuple(rows)
 
     return ArmRun(
         index,
@@ -363,7 +391,7 @@ def _read_arm(
         outcome.token_scope,
         wall_s,
         source,
-        total if isinstance(total, int) else None,
+        scores,
         blocking,
     )
 
@@ -402,10 +430,10 @@ def ratio_axis(axis: str, pairs: tuple[PairRecord, ...]) -> RatioAxis:
     notes: list[str] = []
 
     for pair in pairs:
-        if not pair.both_delivered:
+        if not pair.both_accepted:
             why = (
                 f"nWave {pair.nwave.delivery.value} / control "
-                f"{pair.control.delivery.value} -- NOT DELIVERED is not a "
+                f"{pair.control.delivery.value} -- both outcomes must be accepted; "
                 "favourable ratio, it is a division by an absence"
             )
             per_pair.append(PairRatio(pair.index, None, why, None))
@@ -476,60 +504,86 @@ def ratio_axis(axis: str, pairs: tuple[PairRecord, ...]) -> RatioAxis:
 
 
 def quality_axis(pairs: tuple[PairRecord, ...]) -> QualityAxis:
-    """Quality has THREE forms and none of them is a threshold ratio.
-
-    1. GATE, machine-decidable: the nWave arm must have DELIVERED and been
-       ACCEPTED. Binary, owned by `run_acceptance.py`'s `examine()`, carried
-       here by reference exactly as `paired_quality_join` carries it.
-    2. ORDERING, machine-computable but NOT a ratio: the mission text is
-       "non-inferior enterprise quality", and the tree already scores it that
-       way ("Rubric control 9/24, nWave 18/24, non-inferior"). The rubric total
-       is a sum of 17 judgments each 0..2 -- an interval-less count with no
-       meaningful zero, so a QUOTIENT of two totals denotes nothing. The
-       comparable quantity is the SIGN of the difference.
-    3. REPORTED JUDGMENT, which code must not decide: the reviewer's
-       `blocking_quality_findings` strings. They are reproduced verbatim and
-       never scored; the only mechanical reading taken from them is again an
-       ORDERING (does nWave carry more blockers than the control).
-    """
+    """Conjoin paired criterion observations; rubric totals are never read."""
     gate_detail: list[tuple[int, str]] = []
-    delivered_rows: list[QualityPair] = []
-    all_rows: list[QualityPair] = []
+    criteria_rows: list[QualityCriterionPair] = []
     reported: list[tuple[int, str, str]] = []
+    comparison_states: list[Status] = []
+    blocking_basis: list[PairRecord] = []
 
     for pair in pairs:
         if pair.nwave.delivery is not Delivery.DELIVERED_ACCEPTED:
             gate_detail.append((pair.index, pair.nwave.delivery.value))
-        n, c = pair.nwave.rubric_total, pair.control.rubric_total
-        row = QualityPair(
-            pair.index,
-            n,
-            c,
-            (n - c) if (n is not None and c is not None) else None,
-            len(pair.nwave.blocking),
-            len(pair.control.blocking),
-            pair.both_delivered,
-        )
-        if n is not None and c is not None:
-            all_rows.append(row)
-            if pair.both_delivered:
-                delivered_rows.append(row)
+        if pair.control.delivery is not Delivery.DELIVERED_ACCEPTED:
+            gate_detail.append((pair.index, f"control {pair.control.delivery.value}"))
+        if pair.nwave.rubric_scores is None or pair.control.rubric_scores is None:
+            for key in sorted(quality_rubric.CRITERIA_KEYS, key=int):
+                criterion = quality_rubric.CRITERIA_BY_KEY[key]
+                criteria_rows.append(
+                    QualityCriterionPair(
+                        pair.index,
+                        key,
+                        criterion.dimension,
+                        None,
+                        None,
+                        None,
+                        Status.INDETERMINATE,
+                        None,
+                        None,
+                    )
+                )
+                comparison_states.append(Status.INDETERMINATE)
+        else:
+            n_scores = {
+                key: (score, evidence)
+                for key, score, evidence in pair.nwave.rubric_scores
+            }
+            c_scores = {
+                key: (score, evidence)
+                for key, score, evidence in pair.control.rubric_scores
+            }
+            for key in sorted(quality_rubric.CRITERIA_KEYS, key=int):
+                criterion = quality_rubric.CRITERIA_BY_KEY[key]
+                n_score, n_evidence = n_scores[key]
+                c_score, c_evidence = c_scores[key]
+                if n_score < c_score or (
+                    key in _K4_MAINTENANCE_REQUIRED_CRITERIA and n_score == 0
+                ):
+                    state = Status.BREACH
+                else:
+                    state = Status.WITHIN
+                criteria_rows.append(
+                    QualityCriterionPair(
+                        pair.index,
+                        key,
+                        criterion.dimension,
+                        n_score,
+                        c_score,
+                        n_score - c_score,
+                        state,
+                        n_evidence,
+                        c_evidence,
+                    )
+                )
+                comparison_states.append(state)
+        blocking_basis.append(pair)
         for text in pair.nwave.blocking:
             reported.append((pair.index, "nwave", text))
         for text in pair.control.blocking:
             reported.append((pair.index, "control", text))
 
     gate = Status.BREACH if gate_detail else Status.WITHIN
-    basis = delivered_rows or all_rows
-    if not basis:
+    if not comparison_states:
         ordering = Status.INDETERMINATE
-    elif all(row.delta is not None and row.delta >= 0 for row in basis):
-        ordering = Status.WITHIN
-    else:
+    elif Status.BREACH in comparison_states:
         ordering = Status.BREACH
+    elif Status.INDETERMINATE in comparison_states:
+        ordering = Status.INDETERMINATE
+    else:
+        ordering = Status.WITHIN
     blocking = (
         Status.BREACH
-        if any(row.nwave_blocking > row.control_blocking for row in basis)
+        if any(pair.nwave.blocking for pair in blocking_basis)
         else Status.WITHIN
     )
     status = (
@@ -542,12 +596,11 @@ def quality_axis(pairs: tuple[PairRecord, ...]) -> QualityAxis:
         )
     )
     return QualityAxis(
-        "GATE (accepted) + ORDERING (non-inferior delta) + REPORTED JUDGMENT "
-        "(blocking findings, quoted never scored) -- never a ratio, no threshold",
+        "GATE (accepted) + per-criterion paired non-inferiority + REPORTED "
+        "JUDGMENT (blocking findings, quoted never scored) -- never a total",
         gate,
         tuple(gate_detail),
-        tuple(delivered_rows),
-        tuple(all_rows),
+        tuple(criteria_rows),
         ordering,
         blocking,
         tuple(reported),
@@ -584,7 +637,7 @@ def decide(pairs: tuple[PairRecord, ...]) -> Admission:
     so there is nothing to weight and the priority order only sorts the reasons."""
     axes = {axis: ratio_axis(axis, pairs) for axis in BOUNDS}
     quality = quality_axis(pairs)
-    valid = sum(1 for p in pairs if p.both_delivered)
+    valid = sum(1 for p in pairs if p.both_accepted)
     unevaluated = valid == 0 and _nothing_was_ever_evaluated(pairs)
 
     breaches: list[str] = []
@@ -673,19 +726,18 @@ def render(result: Admission) -> str:
     lines.append(f"quality gate         : {result.quality.gate.value}")
     for index, state in result.quality.gate_detail:
         lines.append(f"    pair {index}: nWave arm {state}")
-    lines.append(f"quality ordering     : {result.quality.ordering.value}")
-    for row in result.quality.ordering_all_scored:
-        mark = "" if row.pair_delivered else "   (pair NOT delivered)"
+    lines.append(f"quality criteria     : {result.quality.ordering.value}")
+    for row in result.quality.criteria:
+        delta = "n/a" if row.delta is None else f"{row.delta:+d}"
         lines.append(
-            f"    pair {row.pair}: nWave {row.nwave_total}/{RUBRIC_MAX} vs control "
-            f"{row.control_total}/{RUBRIC_MAX}, delta {row.delta:+d}{mark}"
+            f"    pair {row.pair} criterion {row.criterion} ({row.dimension}): "
+            f"nWave {row.nwave_score} vs control {row.control_score}, "
+            f"delta {delta}, {row.status.value}; evidence: "
+            f"nWave={row.nwave_evidence!r}, control={row.control_evidence!r}"
         )
-    basis = [row.pair for row in result.quality.ordering_delivered_only] or [
-        row.pair for row in result.quality.ordering_all_scored
-    ]
     lines.append(
         f"quality blocking     : {result.quality.blocking.value}"
-        f"   (compared on pair(s) {basis}; every finding below is QUOTED, "
+        "   (every finding below is QUOTED, "
         "never scored)"
     )
     for index, arm, text in result.quality.reported:
@@ -700,6 +752,74 @@ def render(result: Admission) -> str:
 _EXIT = {Verdict.ADMIT: 0, Verdict.NOT_ADMITTED: 1, Verdict.INDETERMINATE: 2}
 
 
+#: The one word that identifies the treatment among an arm's setup steps. The
+#: install console script is `nwave-ai` whatever venv it was installed into, so
+#: the check below reads the NAME and never an absolute path a campaign root
+#: renders differently on every machine.
+_TREATMENT_INSTALLER = "nwave-ai"
+
+
+def _arms_are_a_pair(campaign: Path, nwave_arm: str | None, control_arm: str | None):
+    """(the arms are a valid pair, why not) read from a finished campaign.
+
+    WHAT CHANGED AND WHY. This gate used to require the treatment's timed argv
+    to be an exact `des dispatch` vector. ADR-SSOT-002 Section 4b retires that
+    command as an orchestrator: what ships is an LLM that invokes the steps one
+    at a time, so a harness pinned to the composer would admit only campaigns
+    measuring a thing nobody runs.
+
+    The property that actually makes a K4 verdict meaningful is SYMMETRY, and it
+    is checked here directly rather than inferred from a vector:
+
+    1. both arms declare the SAME timed invocation, so the pair differs in the
+       treatment and not in how the two were launched. Anything else makes the
+       comparison uninterpretable no matter what the numbers say;
+    2. the treatment arm declares the nWave install among its setup steps, and
+       the control arm does not. Without this the campaign is vanilla against
+       vanilla, reported as nWave against vanilla -- the exact silent-wrong
+       `probe_engagement` refuses before a campaign starts, checked again here
+       against what the campaign actually recorded.
+
+    Both are read off `campaign.json`, which is what the run wrote, never what a
+    preflight intended. Nothing here imports the preflight, so this gate still
+    reads a finished campaign directory on its own.
+    """
+    try:
+        document = json.loads((campaign / "campaign.json").read_text(encoding="utf-8"))
+        arms = document["arms"]
+        treatment = arms[nwave_arm or "nwave"]
+        control = arms[control_arm or "control"]
+        treatment_argv = list(treatment["argv"])
+        control_argv = list(control["argv"])
+        treatment_setup = [list(step) for step in treatment.get("setup", ())]
+        control_setup = [list(step) for step in control.get("setup", ())]
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        return False, f"campaign.json does not declare two readable arms ({exc})"
+
+    if treatment_argv != control_argv:
+        return False, (
+            "the two arms declare DIFFERENT timed invocations, so the pair "
+            f"measures the launcher and not the treatment: treatment "
+            f"{treatment_argv}, control {control_argv}"
+        )
+
+    def installs_nwave(setup):
+        return any(Path(step[0]).name == _TREATMENT_INSTALLER for step in setup if step)
+
+    if not installs_nwave(treatment_setup):
+        return False, (
+            f"the treatment arm's setup never runs `{_TREATMENT_INSTALLER}`, so "
+            "nWave was never installed and this campaign is vanilla against "
+            "vanilla"
+        )
+    if installs_nwave(control_setup):
+        return False, (
+            f"the CONTROL arm's setup runs `{_TREATMENT_INSTALLER}`, so both "
+            "arms carry the treatment and the comparison has no control"
+        )
+    return True, ""
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--campaign", required=True, type=Path)
@@ -712,6 +832,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+
+    paired, why_not = _arms_are_a_pair(args.campaign, args.nwave_arm, args.control_arm)
+    if not paired:
+        message = why_not
+        if args.json:
+            print(
+                json.dumps(
+                    {"verdict": Verdict.INDETERMINATE.value, "reasons": [message]}
+                )
+            )
+        else:
+            print(f"VERDICT: {Verdict.INDETERMINATE.value}\n    {message}")
+        return 2
 
     verdicts = _load_json(args.verdicts)
     rubric = _load_json(args.rubric) if args.rubric else {}
@@ -754,6 +887,21 @@ def _as_dict(result: Admission) -> dict:
         "pairs": len(result.pairs),
         "valid_pairs": result.valid_pairs,
         "reasons": list(result.reasons),
+        # Each arm's delivery outcome, as DATA. It was already stated inside
+        # every excluded pair's prose reason, so a reader who needed it had to
+        # decode a sentence -- and a consumer that decodes a sentence breaks
+        # when the sentence is reworded. Named here once, from the same `pairs`
+        # the axes were computed from, so a caller can decide on the outcome
+        # (`UNEVALUATED` means the chain produced no evidence; anything else
+        # means it produced a finding) instead of on wording.
+        "deliveries": [
+            {
+                "pair": pair.index,
+                "nwave": pair.nwave.delivery.value,
+                "control": pair.control.delivery.value,
+            }
+            for pair in result.pairs
+        ],
         "axes": {
             name: {
                 "bound": axis.bound,
@@ -774,16 +922,19 @@ def _as_dict(result: Admission) -> dict:
             "ordering": result.quality.ordering.value,
             "blocking": result.quality.blocking.value,
             "status": result.quality.status.value,
-            "per_pair": [
+            "per_criterion": [
                 {
                     "pair": r.pair,
-                    "nwave_total": r.nwave_total,
-                    "control_total": r.control_total,
+                    "criterion": r.criterion,
+                    "dimension": r.dimension,
+                    "nwave_score": r.nwave_score,
+                    "control_score": r.control_score,
                     "delta": r.delta,
-                    "rubric_max": RUBRIC_MAX,
-                    "pair_delivered": r.pair_delivered,
+                    "status": r.status.value,
+                    "nwave_evidence": r.nwave_evidence,
+                    "control_evidence": r.control_evidence,
                 }
-                for r in result.quality.ordering_all_scored
+                for r in result.quality.criteria
             ],
             "reported_findings": [
                 {"pair": i, "arm": a, "finding": t}

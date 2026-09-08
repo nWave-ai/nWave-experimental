@@ -100,6 +100,26 @@ def _write_completed_campaign(campaign_root: Path, *, pairs: int = 1) -> None:
             (workspace / "pack").write_bytes(b"0" * 4096)
 
 
+def test_archive_keeps_only_transcripts_from_isolated_profiles(tmp_path):
+    campaign = tmp_path / "campaign"
+    profile = campaign / "pair-1" / "nwave" / ".claude-k4"
+    transcript = profile / "projects" / "project" / "session.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text('{"timestamp":"2026-01-01T00:00:00Z"}\n')
+    for name in (".credentials.json", ".claude.json", "settings.json"):
+        (profile / name).write_text("secret")
+
+    archived = campaign_archive.archive_campaign(
+        campaign, archive_root=tmp_path / "durable", campaign_id="secrets"
+    )
+
+    assert (archived / transcript.relative_to(campaign)).is_file()
+    assert not any(
+        (archived / profile.relative_to(campaign) / name).exists()
+        for name in (".credentials.json", ".claude.json", "settings.json")
+    )
+
+
 def _verdicts_for(campaign_root: Path, pairs: int = 1) -> Path:
     verdicts = {
         f"session-{arm}-{index}": {"accepted": True, "evidence": "hidden 6/6"}
@@ -265,19 +285,14 @@ def test_the_campaign_run_archives_without_anyone_remembering_to(
     spec = {
         "task": "add recurring maintenance windows",
         "arms": {
-            "control": {"argv": ["echo", "{task}"]},
-            "nwave": {"argv": ["echo", "{task}"]},
+            "control": {"argv": ["echo"]},
+            "nwave": {"argv": ["echo"]},
         },
     }
     spec_path = tmp_path / "arms.json"
     spec_path.write_text(json.dumps(spec), encoding="utf-8")
 
     monkeypatch.setattr(paired_campaign, "_auth_is_live", lambda: (True, ""))
-    monkeypatch.setattr(
-        paired_campaign,
-        "_arm_headroom_is_sufficient",
-        lambda arm, workspace: (True, ""),
-    )
     monkeypatch.setattr(paired_campaign, "_attested_trunk", lambda: "deadbeef")
 
     def _fake_setup(arm, pair_dir):

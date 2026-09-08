@@ -37,7 +37,7 @@ Does the agent specify only what diverges from Claude defaults?
 
 Which producer could make the unsafe action unrepresentable — did the spec construct it away, or reach for a check?
 
-**Check**: Tools restricted via frontmatter `tools` field | maxTurns set | permissionMode set for risky actions | typed terminal grammar / producer-emitted envelope preferred over prose checks | any hook present only as last resort with a recorded reason | No embedded enterprise safety frameworks
+**Check**: Tools restricted via frontmatter `tools` field | maxTurns set | permissionMode set for risky actions | provider-enforced structured outcome used only for ephemeral semantic IPC | terminal prose never parsed as control input | durable handovers/documents produced by existing CLI/software from authority and observable effects | any hook present only as last resort with a recorded reason | No embedded enterprise safety frameworks
 
 **Severity**: High -- prose safety is ineffective and token-wasteful.
 
@@ -59,7 +59,7 @@ Does the agent ensure skills are actually loaded during execution?
 
 **Check**: Skill Loading Strategy table present for agents with 3+ skills | Every frontmatter skill has matching `Load:` directive in workflow | Skills path documented (`~/.claude/skills/nw-{skill-name}/SKILL.md`) | Phase-gated loading (not "load everything at start")
 
-**Severity**: High — orphan skills (declared but never loaded ON-TRIGGER) mean sub-agents either waste context on unused eager preload or operate without domain knowledge. The `skills:` frontmatter field eagerly preloads full skill content into context; omit it and load ON-TRIGGER via Skill invocation instead.
+**Severity**: High — orphan skills (declared but never loaded ON-TRIGGER) mean sub-agents either waste context on unused eager preload or operate without domain knowledge. The `skills:` frontmatter field eagerly preloads full skill content into context; omit it and load ON-TRIGGER instead. A directive that invokes a skill carrying `disable-model-invocation: true` is worse than an orphan: the role reaches the trigger, the Skill tool refuses, and the run stalls with no fallback. Reject any `Invoke Skill(x)` whose target carries that flag — it must instruct a Read of the skill path.
 
 **Gold standard**: `nw-product-owner.md` — Skill Loading Strategy table mapping phases to skills with triggers + explicit `Load:` directives in each workflow phase.
 
@@ -80,29 +80,14 @@ Is the agent definition compressed without losing semantic content?
 
 **Severity**: High if agent addresses secondary concern while larger problem exists.
 
-## Review Output Format
+## Review Result Boundary
 
-```yaml
-review:
-  agent: "{agent-name}"
-  dimensions:
-    template_compliance: {pass|fail}
-    size_and_focus: {pass|fail}
-    divergence_quality: {pass|fail}
-    safety_implementation: {pass|fail}
-    language_and_tone: {pass|fail}
-    examples_quality: {pass|fail}
-    skill_loading: {pass|fail|n/a}
-    token_efficiency: {pass|fail}
-    priority_validation: {pass|fail}
-  issues:
-    - dimension: "{dimension}"
-      severity: "{high|medium|low}"
-      finding: "{description}"
-      recommendation: "{fix}"
-  verdict: "{approved|revisions_needed}"
-```
+Evaluate every dimension and cite concrete findings in diagnostic prose. In a
+managed invocation, the caller may request a provider-enforced ephemeral
+semantic outcome; it must not ask the model to print YAML, JSON, headings or a
+verdict grammar. Findings remain semantic review evidence. Any durable review
+projection is materialized by existing CLI/software, never by the reviewer.
 
 ## Failure Conditions
 
-Review blocked (verdict: revisions_needed) if: any high-severity dimension fails | 3+ medium-severity fail | Agent exceeds 400 lines without Skills extraction | Zero examples provided | Agent with 3+ skills missing Skill Loading Strategy table
+Review is not acceptable if: any high-severity dimension fails | 3+ medium-severity fail | Agent exceeds 400 lines without Skills extraction | Zero examples provided | Agent with 3+ skills missing Skill Loading Strategy table

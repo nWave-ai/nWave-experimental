@@ -1,7 +1,7 @@
 """SubagentStop hook handler: cleanup wiring, receipt synthesis retired.
 
 Drives the real handler end-to-end (stdin -> exit code / cleanup calls),
-the same harness shape as `test_subagent_start_handler.py`. Payload shape
+the same harness shape as the other hook handler suites. Payload shape
 is the REAL one recovered from the installed `claude` CLI binary's own
 hookInput-construction code (SubagentStop branch, `strings` extraction) --
 see `subagent_stop_handler.py`'s own module docstring for the full

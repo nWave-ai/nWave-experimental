@@ -44,7 +44,7 @@ def new_flat_source(tmp_path: Path) -> Path:
     """Source tree with nw-*/SKILL.md layout (NEW_FLAT)."""
     source = tmp_path / "source" / "skills"
     source.mkdir(parents=True)
-    for name in ("nw-tdd-methodology", "nw-hexagonal-testing", "nw-quality-framework"):
+    for name in ("nw-tdd-methodology", "nw-hexagonal-testing", "nw-code-design-oo"):
         d = source / name
         d.mkdir()
         (d / "SKILL.md").write_text(f"# {name}\nContent.\n", encoding="utf-8")
@@ -104,7 +104,7 @@ class TestInstallFromNewFlatLayout:
         for name in (
             "nw-tdd-methodology",
             "nw-hexagonal-testing",
-            "nw-quality-framework",
+            "nw-code-design-oo",
         ):
             installed = claude_dir / "skills" / name / "SKILL.md"
             assert installed.exists(), f"{name}/SKILL.md not installed"

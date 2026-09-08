@@ -30,7 +30,9 @@ One eval = **prompt -> run -> checks -> score**.
 - **checks** — a small set of targeted assertions (not one monolithic check).
 - **score** — a comparable number you can track across runs to catch regressions.
 
-Replaces "vibes" with measurable signals: *did it invoke the right skill? run the expected tools? respect the conventions? produce the typed verdict?*
+Replaces "vibes" with measurable signals: *did it invoke the right skill, run
+the expected tools, respect the conventions and produce the required observable
+effect?* Never grade a terminal-text grammar as a behavioral outcome.
 
 ## Definition of Done — before you write the eval
 
@@ -38,7 +40,7 @@ Write the success criteria FIRST, before implementing the agent/skill or its eva
 
 | Category | Question | Graded by |
 |---|---|---|
-| OUTCOME | Did the task get completed? (artifact exists, verdict emitted) | deterministic |
+| OUTCOME | Did the task get completed through its public effect or provider-enforced semantic outcome? | deterministic |
 | PROCESS | Was the right skill loaded + the expected tool/step sequence run? | deterministic |
 | STYLE | Does the output respect nWave conventions (sections, format)? | model-graded |
 | EFFICIENCY | No useless commands / no token blowup? | deterministic |
@@ -47,13 +49,13 @@ If you cannot state DoD before writing the skill, the skill's job is not yet def
 
 ## Workflow
 
-Create these as TaskCreate items at the start; run in order.
+Run these steps in order:
 
 1. **Define success first** — write the DoD (4 categories above) as concrete checks. Gate: every check is falsifiable.
 2. **Manual trigger probe** — dispatch the agent once by hand to surface hidden assumptions. Gate: you have seen one real trace.
 3. **Build the dataset** — 10-20 prompts in a CSV (see Dataset). Include explicit-invocation, implicit-from-description, contextual, and NEGATIVE-CONTROLS (`should_trigger=false`). Gate: >=2 negative controls present.
-4. **Deterministic grading** — parse the captured trace (JSONL) -> assert on tools run, files created, step sequence. Gate: grader runs with zero human judgement.
-5. **Qualitative grading** — model-graded rubric (JSON-Schema output) for STYLE/quality. Gate: rubric emits typed JSON, not prose.
+4. **Deterministic grading** — parse the provider-owned trace (JSONL) -> assert on tools run, files created, step sequence and public effects. Never parse model terminal prose. Gate: grader runs with zero human judgement.
+5. **Qualitative grading** — use provider-enforced structured output for the ephemeral STYLE/quality result. Keep narrative feedback diagnostic and unparsed; never ask the grader to print a JSON/YAML grammar. Gate: the adapter validates the provider result.
 6. **Grow coverage from failures** — every real failure/manual fix becomes one new eval row. Gate: regression net only grows from observed gaps, never speculatively.
 
 ## Capturing the trace (nWave mechanism)
@@ -66,7 +68,7 @@ nWave does NOT use `codex exec` — agents are dispatched via the Claude Code **
   - expected tools run? -> tool_use `name` values (e.g. a `Bash` call running `des code-fact` present, `Grep` alone absent).
   - files created? -> `Write`/`Edit` tool_use inputs + the artifact on disk.
   - sequence? -> ordered list of tool_use names.
-- **Final message** — the agent's last assistant message is the eval's textual artifact (feeds the model-graded rubric).
+- **Final message** — the agent's last assistant message is diagnostic input for qualitative review only; no deterministic grader parses its headings, fields, JSON or verdict strings.
 - **Artifacts** — any file the agent wrote (ADR, review, design doc) is graded by existence + structure.
 
 Capture pattern: dispatch via `Agent`, then read the transcript path + the on-disk artifacts. For a one-off eval you can dispatch and inspect the returned final message + written files directly; for a tracked net, persist the transcript alongside the dataset row.
@@ -79,7 +81,7 @@ Parse the trace, assert mechanically. nWave-specific, high-value signals:
 |---|---|---|
 | Right skill loaded | `Read` of the expected `SKILL.md` appears | skill that is catalogued but never loaded = inferior output |
 | Code analysis via CLI, not grep | a `des code-fact query.<capability>` Bash call with JSON parse present, `Grep`-only absent | the standing CLI-first preference (degrade-LOUD if AST unavailable). Eval must inspect the JSON envelope: provider + confidence labels in the agent's answer, not raw tool names. |
-| Typed verdict emitted | final message / artifact contains the agent's typed verdict shape (e.g. APPROVED/REJECTED/INDETERMINATE) | reviewer agents must not return prose-only |
+| Semantic outcome observed | provider-enforced ephemeral outcome plus the required public effect are present; final prose is not parsed | separates semantic judgement from control-plane serialization |
 | Gate respected | no bypass marker; expected gate/step trailer present | off-spine dispatch guard |
 | Artifact structure | required sections present (grep the written file) | OUTCOME completeness |
 | Efficiency | tool_use count within a ceiling; no redundant re-reads | token economy |
@@ -89,7 +91,11 @@ Bind to the code-fact CLI where useful: e.g. assert the agent invoked `des code-
 
 ## Qualitative grader (model-graded rubric)
 
-For STYLE / design-quality / review-quality (not mechanically checkable). The grader is a model call that MUST return typed JSON, not prose:
+For STYLE / design-quality / review-quality (not mechanically checkable), bind
+the provider's structured-output facility to the existing rubric schema. The
+model supplies semantic judgements; the provider validates the ephemeral
+result and the adapter maps it to host types. Do not place a JSON template in
+the prompt or parse terminal prose. Narrative notes remain diagnostic.
 
 ```json
 {
@@ -102,7 +108,13 @@ For STYLE / design-quality / review-quality (not mechanically checkable). The gr
 }
 ```
 
-Rules: small rubric (3-7 checks), each check single-purpose, `notes` cites evidence. JSON-Schema-validate the output so a malformed rubric run fails closed rather than passing on vibes.
+Rules: small rubric (3-7 checks), each check single-purpose, `notes` cites evidence. Provider-validate the structured result so an invalid grading turn fails closed rather than passing on vibes.
+
+When the behavior under eval produces a DES handover, the eval crosses the real
+boundary: competency -> existing CLI/software producer -> one whole-Request
+handover containing the ordered value graph -> downstream consumer -> one
+fan-in. Perfect fake `*-RESULT` strings, per-value contracts, and per-slice
+review/finalization are not delivery evidence.
 
 ## Dataset
 

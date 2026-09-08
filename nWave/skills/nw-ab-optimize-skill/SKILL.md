@@ -15,7 +15,7 @@ user-invocable: false
 
 ## Deterministic workflow
 
-At execution start create these as TaskCreate items and run in order.
+Run these steps in order:
 
 1. **Map ownership** — Assign every original rule exactly one owner: original lean core, existing reused skill, or one extracted skill. Reuse first. Stop: duplicate or unowned rule.
 2. **Partition triggers** — State a concrete trigger for every extracted procedure or knowledge skill. The triggers together cover the original trigger-space, without overlap. Keep one-job/one-trigger skills intact. Stop: trigger gap or overlap.

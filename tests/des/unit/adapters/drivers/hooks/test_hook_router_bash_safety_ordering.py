@@ -74,36 +74,11 @@ def test_inactive_cwd_git_stash_push_blocks(
     assert "git stash is forbidden" in payload["reason"]
 
 
-def test_inactive_cwd_git_worktree_remove_blocks(
-    monkeypatch, capsys, inactive_project, tmp_path
-):
-    from des.domain.worktree_anti_rot_triage import TriageState, WorktreeAntiRotReceipt
-
-    dirty_receipt = WorktreeAntiRotReceipt(
-        state=TriageState.LIVE,
-        evidence=[],
-        actions=["DEFER"],
-        how="wait for the live owner to finish",
-        unavailable_evidence=[],
-    )
-    stdin_text = _envelope(str(tmp_path), "git worktree remove /tmp/example")
-    with patch(
-        "des.application.worktree_triage_collector.collect_worktree_triage_receipt",
-        return_value=dirty_receipt,
-    ):
-        exit_code = _run_router(monkeypatch, "pre-tool-use", stdin_text)
-    assert exit_code == 2
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["decision"] == "block"
-    assert "WORKTREE REMOVAL REFUSED" in payload["reason"]
-
-
 def test_active_cwd_neutral_bash_evaluates_safety_guard_exactly_once(
     monkeypatch, capsys, active_project, tmp_path
 ):
     """Active-project routing/safety behaviour is unchanged: an allowed,
-    reachable command (safety-neutral, agent_id set to sidestep the unrelated
-    mode-select gate) is still evaluated by the safety guard exactly once --
+    reachable command (safety-neutral) is still evaluated by the guard once --
     proving the retired in-handler call is truly gone, not merely that the
     router's own call short-circuited before a duplicate could run."""
     stdin_text = json.dumps(

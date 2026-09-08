@@ -15,10 +15,6 @@ from pathlib import Path
 import pytest
 from filelock import FileLock
 
-from des.domain.declared_red_oracles import (
-    declared_red_oracles,
-    expected_red_reason,
-)
 from tests.support.git_env import (
     ALLOW_REAL_GITCONFIG_ENV_VAR,
     diff_global_gitconfig,
@@ -2624,66 +2620,3 @@ def _flush_test_durations(config) -> None:
                 fh.write(json.dumps(record, separators=(",", ":")) + "\n")
     except OSError:
         pass  # profiling must never fail a run
-
-
-# ---------------------------------------------------------------------------
-# EXPECTED-RED — a collection error the delivery contract DECLARED is not a
-# failure (defect D-EXPECTED-RED-PER-GATE-PATCH, 2026-08-23).
-#
-# On the `atdd_pure` spine a RED_TO_GREEN contract's acceptance oracle is
-# authored BEFORE the code it verifies, so at commit time the module under test
-# does not exist and pytest cannot COLLECT the oracle. Measured 2026-08-23 on
-# `auto-0d64ca2e4b7ded7d`: `ModuleNotFoundError: No module named 'des.cli.update'`
-# rejected the commit at `pytest-touched-files`, and — after that gate alone was
-# repaired — again at `pytest-fast-gate`, which collects the whole tree. The
-# population of consumers is three (fast-gate, quick-tiers, CI), so the repair
-# belongs at the ONE place they all pass through: this conftest, at the hook
-# that BUILDS the collect report, before any consumer counts it as an error.
-#
-# The RULE is not written here. It lives once in
-# `src/des/domain/declared_red_oracles.py`, shared verbatim with
-# `scripts/hooks/pytest_touched_files.py`; two copies of the discrimination
-# would be exactly the defect being closed. All three conjuncts must hold —
-# declared locator of an OPEN RED_TO_GREEN contract, and a ModuleNotFoundError
-# naming ONLY declared targets absent from disk. Anything else stays an ERROR.
-# ---------------------------------------------------------------------------
-
-_DECLARED_RED_ORACLES: dict[str, tuple[str, set[str]]] | None = None
-
-
-def _declared_red_oracles() -> dict[str, tuple[str, set[str]]]:
-    """Read the contracts once per session (or per xdist worker)."""
-    global _DECLARED_RED_ORACLES
-    if _DECLARED_RED_ORACLES is None:
-        _DECLARED_RED_ORACLES = declared_red_oracles(_PROJECT_ROOT)
-    return _DECLARED_RED_ORACLES
-
-
-@pytest.hookimpl(wrapper=True)
-def pytest_make_collect_report(collector):
-    """Translate a contract-DECLARED collection error into a skip.
-
-    Every state this cannot settle is left untouched, so an unrecognised
-    collection error keeps failing the run (GDP-6: degrade into the blocking
-    path, never out of it).
-    """
-    report = yield
-    if getattr(report, "outcome", None) != "failed":
-        return report
-    path = getattr(collector, "path", None)
-    if path is None:
-        return report
-    try:
-        rel_path = Path(path).resolve().relative_to(_PROJECT_ROOT).as_posix()
-    except ValueError:
-        return report  # outside this repo: no contract can declare it
-    declared = _declared_red_oracles()
-    if rel_path not in declared:
-        return report
-    reason = expected_red_reason(rel_path, str(report.longrepr), declared)
-    if reason is None:
-        return report
-    report.outcome = "skipped"
-    report.longrepr = (str(path), None, f"Skipped: EXPECTED-RED — {reason}")
-    report.result = []
-    return report

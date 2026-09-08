@@ -7,7 +7,10 @@ no duplicate --- blocks, and names matching filenames.
 
 from pathlib import Path
 
+import pytest
 import yaml
+
+from des.domain.agent_capability import split_declared_tools
 
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -187,3 +190,55 @@ class TestAgentFrontmatterAcceptance:
                     f"{agent_name}: frontmatter name='{fm_name}', expected='{agent_name}'"
                 )
         assert not mismatches, "Name mismatches:\n" + "\n".join(mismatches)
+
+    @pytest.mark.parametrize(
+        ("agent", "expected"),
+        [
+            # The architect is deliberately equipped beyond read-only: `Bash`
+            # to measure a design empirically and `Edit` to author the
+            # architecture it owns (`fix(agents): equip architect for empirical
+            # design work`). That is its least-privilege set, not a relaxation —
+            # every other managed role stays exactly as narrow as before.
+            ("nw-solution-architect", ["Bash", "Edit", "Glob", "Grep", "Read"]),
+            ("nw-product-owner", ["Read"]),
+            ("nw-acceptance-designer-reviewer", []),
+            ("nw-user-examiner", []),
+        ],
+    )
+    def test_managed_roles_declare_least_privilege_tools(self, agent, expected):
+        """Each managed role declares exactly its least-privilege tool set.
+
+        An explicitly empty `tools:` key is a declared empty capability, which
+        is enforced blindness; an omitted key would inherit every tool.
+        """
+        fm = _parse_frontmatter(AGENTS_DIR / f"{agent}.md")
+        assert fm is not None
+        assert "tools" in fm, f"{agent} must declare an explicit tools key"
+        raw_tools = fm["tools"]
+        if raw_tools is None:
+            tools = []
+        elif isinstance(raw_tools, str):
+            tools = list(split_declared_tools(raw_tools))
+        else:
+            tools = [str(t).strip() for t in raw_tools]
+
+        assert sorted(tools) == expected, f"{agent} tools={tools}"
+
+    def test_acceptance_reviewer_excludes_production_state(self):
+        spec = (AGENTS_DIR / "nw-acceptance-designer-reviewer.md").read_text(
+            encoding="utf-8"
+        )
+
+        assert "collection failure alone must never cause rejection" in spec
+        assert "public, independent and complete" in spec
+
+    def test_acceptance_designer_handles_missing_support_or_finding(self):
+        spec = (AGENTS_DIR / "nw-acceptance-designer.md").read_text(encoding="utf-8")
+
+        assert "GREEN_TO_GREEN reuses complete oracle/supports read-only" in spec
+        assert "declared missing supports, author only them" in spec
+        assert (
+            "independent pre-approval finding, produce one distinct corrected oracle/supports for a single re-review"
+            in spec
+        )
+        assert "They become immutable only after reviewer approval" in spec

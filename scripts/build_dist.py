@@ -39,6 +39,7 @@ from scripts.shared.agent_catalog import (  # noqa: E402
     build_ownership_map,
     detect_command_skills,
     is_public_agent,
+    load_private_skills,
     load_public_agents,
 )
 from scripts.shared.skill_distribution import (  # noqa: E402
@@ -195,10 +196,11 @@ class DistBuilder:
         agents_dir = self.nwave_dir / "agents"
         ownership_map = build_ownership_map(agents_dir) if agents_dir.exists() else {}
         command_skills = detect_command_skills(src)
+        private_skills = load_private_skills(self.nwave_dir, strict=False)
 
         entries = enumerate_skills(src)
         public_entries = filter_public_skills(
-            entries, self.public_agents, ownership_map, command_skills
+            entries, self.public_agents, ownership_map, command_skills, private_skills
         )
         count = copy_skills_to_target(public_entries, dst)
 

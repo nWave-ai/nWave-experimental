@@ -236,15 +236,6 @@ class DESPlugin(InstallationPlugin):
     # Independent DES hook scripts installed to ~/.claude/scripts/.
     DES_HOOKS = [
         "git_stash_guard.py",
-        # fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29):
-        # the PreToolUse/Bash hook (wired via hook_definitions.
-        # _BASH_WORKTREE_REMOVAL_GUARD) that refuses `git worktree remove`
-        # while a live process's cwd is inside the target, the target
-        # carries an explicit `git worktree lock`, or the target's branch
-        # carries unmerged commits -- replacing "did you check `git
-        # status`?" (a confirmation prompt that collects confident-but-wrong
-        # yeses) with a decision on the PROPERTY (GDP-8).
-        "worktree_removal_guard.py",
     ]
 
     # Exact files shipped by the retired spine-ledger protocol. Keep this small
@@ -723,21 +714,6 @@ class DESPlugin(InstallationPlugin):
                 )
             else:
                 if target_dir.exists():
-                    # F-INSTALL-REMOVAL-TRANSPARENCY: this is the ONLY window
-                    # in which both the old, still-installed `_REGISTRY`
-                    # (target_dir, about to be destroyed below) and the new
-                    # one (source_dir, about to replace it) are readable --
-                    # sweep_retired_assets cannot see inside a single Python
-                    # file, so the diff has to happen here, once, before the
-                    # rename-aside destroys the only remaining copy of the
-                    # old registry. Never imports either tree (registry_diff
-                    # is a pure static-AST reader): the old tree may belong
-                    # to a different, unknown-compatible Python/des version.
-                    self._log_subcommand_registry_diff(
-                        old_main=target_dir / "cli" / "__main__.py",
-                        new_main=source_dir / "cli" / "__main__.py",
-                        context=context,
-                    )
                     # Rename-aside atomically frees target_dir even while a
                     # racing importer still holds the old tree's inode open
                     # (issue #43) -- copytree below never contends with a
@@ -1491,51 +1467,6 @@ class DESPlugin(InstallationPlugin):
                 "pre-commit install is the sole writer of .git/hooks/pre-push"
             ),
         )
-
-    def _log_subcommand_registry_diff(
-        self, *, old_main: Path, new_main: Path, context: InstallContext
-    ) -> None:
-        """F-INSTALL-REMOVAL-TRANSPARENCY: log per-name removals and a
-        summary line when `des`'s subcommand set changes across this
-        install.
-
-        Deferred import: `des.cli.registry_diff` is part of the payload
-        this method is in the middle of replacing, not a dependency of the
-        installer's own bootstrap. A module-level import would make
-        importing `des_plugin` itself depend on `des` already being
-        importable -- true in this dev checkout, not guaranteed for every
-        install topology this plugin resolves `source_dir`/`target_dir`
-        from. Degrade LOUD (a warning, never a crash) rather than skip
-        silently (GDP-6): observability of a removal must not become a
-        reason the removal itself fails to install.
-        """
-        try:
-            # mypy sees `des` via the editable-install .pth (no py.typed
-            # marker there), not via `src/`, when type-checking this
-            # installer module in isolation -- a known, understood gap
-            # (issue #24 scopes strict mypy to installer modules only),
-            # not a real type-safety hole in either module.
-            from des.cli.__main__ import _RETIRED  # type: ignore[import-untyped]
-            from des.cli.registry_diff import (  # type: ignore[import-untyped]
-                diff_registry_names,
-                format_removal_summary,
-                log_retired_subcommand_removals,
-            )
-        except ImportError as exc:
-            context.logger.warning(
-                f"  ⚠️ Could not load des.cli.registry_diff to report "
-                f"subcommand changes ({exc}); proceeding without the "
-                f"removal summary/per-item log for this install"
-            )
-            return
-
-        diff = diff_registry_names(old_main, new_main)
-        if diff is None:
-            return  # either side unparseable -- fail-open, no fabricated diff
-        log_retired_subcommand_removals(context.logger, diff, retired=_RETIRED)
-        summary = format_removal_summary(diff)
-        if summary is not None:
-            context.logger.info(f"  {summary}")
 
     def _sweep_retired_scripts(
         self, target_dir: Path, record: FamilyRecord, context: InstallContext
@@ -2646,13 +2577,16 @@ class DESPlugin(InstallationPlugin):
                 legacy_user_prompt_command = self._generate_hook_command(
                     context, "user-prompt-submit"
                 )
-                for event in self.HOOK_EVENTS:
-                    if event in config["hooks"]:
-                        config["hooks"][event] = (
-                            shared_hooks.strip_des_hooks_from_entries(
-                                config["hooks"][event]
-                            )
-                        )
+                # Scan all events so retired DES entries are removed too.
+                # Retired lifecycle events keep their exact matcher below.
+                for event, entries in config["hooks"].items():
+                    if event in self._RETIRED_LIFECYCLE_EVENTS or not isinstance(
+                        entries, list
+                    ):
+                        continue
+                    config["hooks"][event] = shared_hooks.strip_des_hooks_from_entries(
+                        entries
+                    )
                 for event in self._RETIRED_LIFECYCLE_EVENTS:
                     if event in config["hooks"]:
                         config["hooks"][event] = [

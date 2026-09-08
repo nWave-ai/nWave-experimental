@@ -16,6 +16,13 @@ Two defects live here, and the second is worth more than the first.
 These assertions run against documents produced by `admission_verdict`
 itself wherever the shape is the thing under test, so a change to the
 emitted document fails HERE rather than silently re-opening defect 1.
+
+SCOPE NOTE (2026-09-06). `uncomputed_axes` is no longer what decides the
+verdict stage: with an inert delivery both arms are rejected, so no axis
+can carry a number and a criterion demanding one would be a claim about
+the fixture. The stage now decides on `unevaluated_arms` -- did every arm
+produce an outcome at all -- and still REPORTS what this function finds.
+Both defects above remain live and are still pinned here.
 """
 
 from __future__ import annotations
@@ -130,3 +137,94 @@ class TestAgainstTheRealEmittedDocument:
         uncomputed = probe.uncomputed_axes(probe.axes_of(computed))
 
         assert [u.split("(")[0] for u in uncomputed] == ["cost", "tokens", "wall"]
+
+
+class TestUnevaluatedArms:
+    """What the verdict stage decides on: did every arm produce an outcome?
+
+    The two shapes below were both MEASURED on this box on 2026-09-06, an hour
+    apart, which is why this discriminator is not hypothetical. With the nWave
+    arm timing a `des` command it could not run, the report read
+    `nwave=NOT_RUN`. With both arms running the same agent invocation it read
+    `nwave=DELIVERED_REJECTED / control=DELIVERED_REJECTED` -- the chain having
+    produced a finding, which is the probe working.
+    """
+
+    @staticmethod
+    def _report(**arms):
+        return {"verdict": "NOT_ADMITTED", "deliveries": [{"pair": 1, **arms}]}
+
+    def test_both_arms_rejected_is_the_chain_working(self):
+        report = self._report(nwave="DELIVERED_REJECTED", control="DELIVERED_REJECTED")
+
+        assert probe.unevaluated_arms(report) == []
+
+    def test_an_arm_that_never_ran_is_named(self):
+        report = self._report(nwave="NOT_RUN", control="DELIVERED_REJECTED")
+
+        named = probe.unevaluated_arms(report)
+
+        assert named == ["pair-1/nwave=NOT_RUN"]
+
+    def test_an_unscored_arm_is_named_too(self):
+        """`UNSCORED` is the other half of `admission_verdict.UNEVALUATED`."""
+        report = self._report(nwave="DELIVERED_ACCEPTED", control="UNSCORED")
+
+        assert probe.unevaluated_arms(report) == ["pair-1/control=UNSCORED"]
+
+    def test_a_delivered_nothing_arm_is_a_finding_not_a_chain_defect(self):
+        """`NO_DELIVERY` is deliberately outside `UNEVALUATED`: the arm ran."""
+        report = self._report(nwave="NO_DELIVERY", control="DELIVERED_REJECTED")
+
+        assert probe.unevaluated_arms(report) == []
+
+    def test_an_absent_deliveries_block_is_not_a_pass(self):
+        """An absent measurement is not a passing one."""
+        assert probe.unevaluated_arms({"verdict": "ADMIT"}) == ["deliveries(absent)"]
+        assert probe.unevaluated_arms({"deliveries": []}) == ["deliveries(absent)"]
+
+    def test_the_vocabulary_comes_from_the_verdict_module_not_from_here(self):
+        """Guards the guard: a renamed outcome must break here, not go silent."""
+        assert {item.value for item in av.UNEVALUATED} == {"NOT_RUN", "UNSCORED"}
+
+    def test_the_real_emitter_carries_the_block_this_reads(self):
+        result = av.Admission(
+            verdict=av.Verdict.INDETERMINATE,
+            pairs=(),
+            axes={name: av.ratio_axis(name, ()) for name in av.BOUNDS},
+            quality=av.quality_axis(()),
+            valid_pairs=0,
+            reasons=(),
+        )
+
+        computed = json.loads(json.dumps(av._as_dict(result)))
+
+        assert "deliveries" in computed
+
+
+class TestTheProbeStatesWhatItDoesNotCover:
+    """An all-PASS run must not read as "everything was measured".
+
+    The probe exists so nobody spends a paid campaign on a false reading, and
+    the shape that would produce one is a green chain that is silent about the
+    three things it cannot reach. Each is named, printed beside the greens and
+    carried in the machine record.
+    """
+
+    def test_the_ratio_axes_are_declared_uncovered(self):
+        assert any("ratio axes" in line for line in probe.NOT_COVERED)
+        assert any("INDETERMINATE" in line for line in probe.NOT_COVERED)
+
+    def test_the_step_loop_is_declared_uncovered_and_points_at_its_own_proof(self):
+        named = [line for line in probe.NOT_COVERED if "step loop" in line]
+
+        assert named
+        assert "test_k4_inert_replay_drives_the_real_runner" in named[0]
+
+    def test_the_judgment_layer_is_declared_uncovered(self):
+        assert any("judgment layer" in line for line in probe.NOT_COVERED)
+
+    def test_none_of_the_statements_is_empty(self):
+        """Guards the guard: a blank entry would print a reassuring nothing."""
+        assert probe.NOT_COVERED
+        assert all(line.strip() for line in probe.NOT_COVERED)

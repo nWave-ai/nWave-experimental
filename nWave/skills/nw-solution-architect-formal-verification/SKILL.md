@@ -1,7 +1,7 @@
 ---
 name: nw-solution-architect-formal-verification
 description: "PROCEDURE — verify one separately selected formal DESIGN obligation and state its runtime refinement boundary."
-disable-model-invocation: true
+user-invocable: false
 ---
 
 # Formal DESIGN Verification

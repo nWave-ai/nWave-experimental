@@ -88,8 +88,8 @@ printf '{"version":"2.15.0","attribution":{"enabled":true},"hooks":{"global_path
 # Old skill layout (flat nw/ directory)
 mkdir -p /root/.claude/skills/nw/software-crafter
 echo '# Old TDD methodology v2.15.0' > /root/.claude/skills/nw/software-crafter/tdd-methodology.md
-mkdir -p /root/.claude/skills/nw/quality-framework
-echo '# Old quality framework v2.15.0' > /root/.claude/skills/nw/quality-framework/SKILL.md
+mkdir -p /root/.claude/skills/nw/code-design-oo
+echo '# Old quality framework v2.15.0' > /root/.claude/skills/nw/code-design-oo/SKILL.md
 
 # Old agent layout
 mkdir -p /root/.claude/agents/nw

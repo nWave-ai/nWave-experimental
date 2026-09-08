@@ -1,6 +1,6 @@
 # nw-buddy-command-catalog
 
-Current nWave command map for routing users without teaching retired workflow ceremony.
+Current public nWave delivery commands.
 
 **Used by:** [nw-nwave-buddy](../agents/nw-nwave-buddy.md)
 

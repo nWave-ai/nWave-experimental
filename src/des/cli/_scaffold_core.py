@@ -2,15 +2,14 @@
 2026-07-29 -- Ale-ratified unification: "queste sono tutte violazioni di
 SSOT ... va unificato in modo da estendere e gestirlo UN SOLO POSTO").
 
-Three ``des`` subcommands are all "the producing tool for an artifact another
-gate consumes" (GDP-4/5): ``charter-scaffold``, ``examine-fixture``,
-``flavor-scaffold``. Each was written separately and copy-pasted the same two
+Two ``des`` subcommands are all "the producing tool for an artifact another
+gate consumes" (GDP-4/5): ``examine-fixture`` and ``flavor-scaffold``. Each
+was written separately and copy-pasted the same two
 decisions (a fourth, ``feature-end-preconditions-scaffold``, has since been
 deleted):
 
-1. **What to do when the target already exists** -- ``charter-scaffold``
-   skips silently (idempotent no-op, ``accepted`` verdict);
-   ``flavor-scaffold`` refuses unless ``--force``;
+1. **What to do when the target already exists** -- ``flavor-scaffold``
+   refuses unless ``--force``;
    ``examine-fixture`` unconditionally destroys and rebuilds (its target is a
    disposable fixture repo, not a document a human fills in). These are not
    four different bugs -- they are ONE decision (skip / refuse / rebuild)
@@ -19,10 +18,7 @@ deleted):
    hand-rolling the branch.
 
 2. **How a verdict token becomes a JSON stdout line + an exit code.**
-   ``charter_scaffold._degrade`` printed a payload dict containing a
-   ``verdict`` key and returned ``0`` when it equalled ``VERDICT_ACCEPTED``,
-   ``1`` otherwise -- a decision each scaffold re-derived byte-identically. ``emit_scaffold_verdict`` is now the one
-   place that mapping lives.
+   ``emit_scaffold_verdict`` is the one place that mapping lives.
 
 WHAT THIS DOES **NOT** UNIFY. ``flavor-scaffold``'s success/refuse output is
 plain YAML text + distinct numeric exit codes (1/2/3) piped straight into a
@@ -102,9 +98,7 @@ def emit_scaffold_verdict(
     when `payload["verdict"] == accepted`, `1` otherwise.
 
     The ONE place a `des.cli` scaffold generator maps its verdict token to an
-    exit code -- `charter_scaffold._degrade` and
-    each scaffold's private `_emit` independently re-derived this
-    exact mapping before this module existed (D49, mikado 2026-07-29).
+    exit code.
     """
     print(json.dumps(payload))
     return 0 if payload.get("verdict") == accepted else 1

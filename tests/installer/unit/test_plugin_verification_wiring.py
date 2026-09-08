@@ -80,11 +80,11 @@ class TestValidateInstallationPluginVerification:
         THEN: It accepts the native discovery surfaces without requiring
               Claude-only command skill names in the Codex catalogue
         """
-        installer = self._build_installer_with_mocks(tmp_path)
         agents_home = tmp_path / "agents-home"
         codex_home = tmp_path / "codex-home"
         monkeypatch.setenv("NWAVE_AGENTS_HOME", str(agents_home))
         monkeypatch.setenv("CODEX_HOME", str(codex_home))
+        installer = self._build_installer_with_mocks(tmp_path)
 
         skills_dir = agents_home / ".agents" / "skills"
         skills_dir.mkdir(parents=True)

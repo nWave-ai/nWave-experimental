@@ -1,6 +1,6 @@
 ## nWave (beta) — How to Work in This Project
 
-nWave is in **active development**. Before any work, use `nw-mode-select` to state posture, S/M/L size, and one observable reason; explicit mode does not skip sizing.
+nWave is in **active development**.
 
 {{DELIVERY_ROUTE_FRAGMENT}}
 

@@ -510,7 +510,7 @@ class TestInstallCreatesManifest:
         )
 
         _create_skill(skills_source, "software-crafter", "tdd-methodology")
-        _create_skill(skills_source, "software-crafter", "quality-framework")
+        _create_skill(skills_source, "software-crafter", "code-design-oo")
         _create_skill(skills_source, "acceptance-designer", "bdd-methodology")
 
         before = _skill_filesystem_state(target)
@@ -526,7 +526,7 @@ class TestInstallCreatesManifest:
             universe=universe,
             expected={
                 "tdd-methodology.exists": set_to(True),
-                "quality-framework.exists": set_to(True),
+                "code-design-oo.exists": set_to(True),
                 "bdd-methodology.exists": set_to(True),
                 "manifest.exists": set_to(True),
             },
@@ -534,7 +534,7 @@ class TestInstallCreatesManifest:
 
         manifest = json.loads((target / ".nwave-manifest.json").read_text())
         assert sorted(manifest["installed_skills"]) == sorted(
-            ["tdd-methodology", "quality-framework", "bdd-methodology"]
+            ["tdd-methodology", "code-design-oo", "bdd-methodology"]
         )
 
     def test_install_manifest_includes_prefixed_names_for_duplicates(
@@ -663,22 +663,22 @@ class TestInstallStripsForbiddenFields:
 
         content = (
             "---\n"
-            "name: quality-framework\n"
+            "name: code-design-oo\n"
             "description: Quality gates\n"
             "disable-model-invocation: true\n"
             "---\n"
             "\n"
             "# Quality Framework\n"
         )
-        _create_skill(skills_source, "software-crafter", "quality-framework", content)
+        _create_skill(skills_source, "software-crafter", "code-design-oo", content)
 
         plugin = OpenCodeSkillsPlugin()
         result = plugin.install(context)
 
         assert result.success is True
-        installed_content = (target / "quality-framework" / "SKILL.md").read_text()
+        installed_content = (target / "code-design-oo" / "SKILL.md").read_text()
         assert "disable-model-invocation" not in installed_content
-        assert "name: quality-framework" in installed_content
+        assert "name: code-design-oo" in installed_content
 
     def test_install_strips_both_forbidden_fields(self, tmp_path, monkeypatch):
         """

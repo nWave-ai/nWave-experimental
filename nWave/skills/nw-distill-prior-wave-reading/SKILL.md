@@ -1,6 +1,6 @@
 ---
 name: nw-distill-prior-wave-reading
-description: "Reads and reconciles the durable product, architecture, platform, and delivery authorities before DISTILL compiles an executable oracle and DeliveryContract."
+description: "Reads and reconciles durable product, architecture, and platform authorities before DISTILL compiles an executable oracle."
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -16,18 +16,15 @@ Run before authoring or binding an acceptance oracle.
    residual stress decisions and test substrate.
 3. Read platform/environment authorities only when the delivery has an
    operational obligation.
-4. If an existing `DeliveryContract` is being completed, validate its schema
-   and ownership state. Do not trust incomplete facts outside the field's
-   owning stage.
-5. Reconcile contradictions by stable identity. A contradiction blocks and is
+4. Reconcile contradictions by their durable owner. A contradiction blocks and is
    returned to the durable authority that owns the fact; do not write an
    upstream-issues file or copy the dispute into a second document.
-6. Missing design required for an executable oracle blocks with WHAT/WHY/HOW.
+5. Missing design required for an executable oracle blocks with WHAT/WHY/HOW.
    A genuinely unaffected optional lens is `NOT_APPLICABLE`, not a fabricated
    section.
-7. Record the reconciliation only in the terminal DISTILL result and the
-   resulting immutable contract. No wave log, delta or progress ledger.
+6. Record semantic decisions only in their durable authority. No wave log,
+   handover, delta or progress ledger.
 
-The output is the minimum verified input map needed by `nw-distill`: product
-identities, design decision ids, route, oracle choice, targets, boundaries,
-obligations, applicability, command vectors and budgets.
+The output is the minimum verified semantic input needed by `nw-distill`:
+product intent, durable design decisions, oracle choice, boundaries,
+obligations and applicability. Software derives execution details.

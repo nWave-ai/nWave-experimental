@@ -1085,11 +1085,8 @@ class TestCodexHookPayloadCompatibility:
         Patches:
         - sys.stdin: supplies the JSON payload
         - hook_protocol._audit_writer_factory: returns NullAuditLogWriter
-        - des_task_signal.DES_DELIVER_SESSION_FILE: an active-session marker,
-          bypassing the root activation-routing-before-mutation gate (added
-          after this test was written) — orthogonal to the payload-shape
-          parsing this test targets. Same technique the K3-A gate's own test
-          suite uses (test_k3a_additional_context_channel.py).
+        - root-mode activation: disabled so this test isolates provider payload
+          shape rather than testing an activated repository's policy.
 
         Returns:
             (exit_code, stdout_text)
@@ -1098,14 +1095,11 @@ class TestCodexHookPayloadCompatibility:
         from unittest.mock import patch
 
         from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter
-        from des.adapters.drivers.hooks import des_task_signal, hook_protocol
+        from des.adapters.drivers.hooks import hook_protocol
         from des.adapters.drivers.hooks.pre_tool_use_handler import handle_pre_tool_use
 
         stdin_data = json.dumps(payload)
         captured_stdout = io.StringIO()
-
-        session_file = tmp_path / "deliver-session.json"
-        session_file.write_text("{}", encoding="utf-8")
 
         with (
             patch("sys.stdin", io.StringIO(stdin_data)),
@@ -1115,7 +1109,6 @@ class TestCodexHookPayloadCompatibility:
                 "_audit_writer_factory",
                 return_value=NullAuditLogWriter(),
             ),
-            patch.object(des_task_signal, "DES_DELIVER_SESSION_FILE", session_file),
         ):
             try:
                 exit_code = handle_pre_tool_use()

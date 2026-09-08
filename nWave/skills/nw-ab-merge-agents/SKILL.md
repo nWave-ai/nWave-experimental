@@ -10,7 +10,7 @@ user-invocable: false
 
 ## Deterministic step-sequence (run every time, in order)
 
-At execution start create these as TaskCreate items and run in order:
+Run these steps in order:
 
 1. **INVENTORY** — Read both agent definitions and all skills. List capabilities, principles, skills, commands from both. Identify overlaps + B's unique contributions. Gate: inventory table produced.
 2. **MERGE DEFINITION** — Rewrite A to absorb B's unique capabilities. Consolidate principles (no duplicates), merge workflows, update examples. Add B's skill references to A's frontmatter. Stay under 400 lines. Gate: merged A written, under 400 lines.

@@ -1,6 +1,6 @@
 # nw-buddy-project-reading
 
-Evidence-first project reading protocol based on durable authorities, DeliveryContracts, Git, tests, and installed surfaces.
+Evidence-first project reading protocol based on durable authorities, Git, tests, and installed surfaces.
 
 **Used by:** [nw-nwave-buddy](../agents/nw-nwave-buddy.md)
 

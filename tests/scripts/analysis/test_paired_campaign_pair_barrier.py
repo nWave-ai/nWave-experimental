@@ -52,6 +52,35 @@ _OK_DELIVERY_SRC = (
 )
 
 
+def test_both_arms_observe_the_identical_complete_stdin_request_and_eof(
+    tmp_path, monkeypatch
+):
+    observed = (
+        "import json, sys\n"
+        "request = sys.stdin.read()\n"
+        "print(json.dumps({'is_error': False, 'session_id': 'stdin-' + request, "
+        "'request': request}))\n"
+    )
+    control = ArmSpec("control", (sys.executable, "-c", observed))
+    nwave = ArmSpec("nwave", (sys.executable, "-c", observed))
+    _write_arms(tmp_path, control, nwave)
+    arms_path = tmp_path / "arms.json"
+    spec = json.loads(arms_path.read_text(encoding="utf-8"))
+    spec["task"] = "finite request\\n"
+    arms_path.write_text(json.dumps(spec), encoding="utf-8")
+    monkeypatch.setattr(
+        "scripts.analysis.paired_campaign._attested_trunk", lambda: "deadbeef"
+    )
+
+    assert (
+        main(["--arms", str(arms_path), "--pairs", "1", "--out", str(tmp_path / "out")])
+        == 0
+    )
+    for arm in ("control", "nwave"):
+        payload = json.loads((tmp_path / "out" / "pair-1" / f"{arm}.json").read_text())
+        assert payload["request"] == "finite request\\n"
+
+
 def _write_arms(tmp_path, arm_a: ArmSpec, arm_b: ArmSpec, artifact=None) -> None:
     def _dump(arm: ArmSpec) -> dict:
         return {"setup": [list(s) for s in arm.setup], "argv": list(arm.argv)}

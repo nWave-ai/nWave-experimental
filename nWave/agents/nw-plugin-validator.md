@@ -5,7 +5,7 @@ model: haiku
 tools: Read, Glob, Grep
 skills:
   - nw-agent-creation-workflow
-maxTurns: 20
+maxTurns: 40
 ---
 
 # nw-plugin-validator
@@ -43,7 +43,7 @@ plugin structure and registration wiring are validated.
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Load Context + Locate Plugin Manifest** — Load `~/.claude/skills/nw-agent-creation-workflow/SKILL.md` for the Claude Code authoring conventions. Find the plugin manifest (e.g. `plugin.json` / `.claude-plugin/plugin.json` / the project's declared manifest path). Read it. Gate: skill loaded, manifest located and parsed, or BLOCK with "no plugin manifest found".
 

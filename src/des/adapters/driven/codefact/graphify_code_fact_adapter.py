@@ -106,7 +106,11 @@ if TYPE_CHECKING:
     from des.ports.code_fact_port import CapabilityDescriptor, Manifest
 
 
-_GRAPHIFY_OUT_DIR_NAME = "graphify-out"
+#: PUBLIC, and public for one measured reason: the ephemeral candidate
+#: worktree the delivery runner verifies in must carry this directory, and
+#: a second hand-typed copy of the name there would drift the day this one
+#: changes.  One name, one owner -- the tier that reads it.
+GRAPH_INDEX_DIR_NAME = "graphify-out"
 _GRAPH_FILE_NAME = "graph.json"
 _MANIFEST_FILE_NAME = "manifest.json"
 _PYTHON_SOURCE_GLOB = "*.py"
@@ -168,7 +172,7 @@ def _locate_graphify_out(start: Path) -> Path | None:
         if resolved in seen:
             return None
         seen.add(resolved)
-        candidate = current / _GRAPHIFY_OUT_DIR_NAME
+        candidate = current / GRAPH_INDEX_DIR_NAME
         if (candidate / _GRAPH_FILE_NAME).is_file() and (
             candidate / _MANIFEST_FILE_NAME
         ).is_file():
@@ -202,6 +206,11 @@ class GraphifyAdapter:
         self._out_dir = _locate_graphify_out(self._root)
         self._graph: dict | None = None
         self._manifest: dict | None = None
+        # Which of the two ABSENT sub-causes applies, recorded ONCE here so
+        # a caller can name the exact closed detail without re-walking or
+        # re-parsing anything a second time. ``None`` once real data is
+        # found (``has_data`` is ``True``).
+        self._absence_cause: str | None = None
         if self._out_dir is not None:
             graph = _load_json_object(self._out_dir / _GRAPH_FILE_NAME)
             manifest = _load_json_object(self._out_dir / _MANIFEST_FILE_NAME)
@@ -213,6 +222,9 @@ class GraphifyAdapter:
                 # graphify-out directory is treated identically to
                 # ABSENT — never a partially-trusted graph.
                 self._out_dir = None
+                self._absence_cause = "index present-but-unreadable"
+        else:
+            self._absence_cause = "index directory absent"
 
     @property
     def has_data(self) -> bool:
@@ -257,6 +269,57 @@ class GraphifyAdapter:
         if descriptor.id in (CAPABILITY_CALLERS_OF, CAPABILITY_NEVER_WIRED):
             return self._call_graph_capability(descriptor.id, request)
         return self._provider_error("capability not realized")
+
+    # -- non-answer trace entries (bounded, read directly by the chain) -----
+
+    def non_answer_trace_entry(
+        self, descriptor: CapabilityDescriptor
+    ) -> TraceEntry | None:
+        """When ``has_data`` is ``False`` and ``descriptor`` names one of
+        this tier's own capabilities, one bounded ``TraceEntry`` naming the
+        exact closed absent/unreadable cause recorded in ``__init__`` --
+        reusing the SAME closed D3 cause (``provider-error``) and
+        ``TraceEntry`` shape :meth:`_provider_error` already produces.
+        Never contributed through :meth:`manifest`/:meth:`resolve`; read
+        directly by :class:`CodeFactChain`."""
+        if self.has_data or descriptor.id not in _HANDLED_CAPABILITY_IDS:
+            return None
+        assert self._absence_cause is not None
+        return TraceEntry(
+            provider_id=self.provider_id,
+            event="failed:provider-error",
+            scope="complete",
+            fault_count=0,
+            exemplars=(),
+            detail=self._absence_cause,
+        )
+
+    def executable_missing_trace_entry(
+        self, descriptor: CapabilityDescriptor, request: Mapping[str, object]
+    ) -> TraceEntry | None:
+        """Performed BEFORE any lock/subprocess attempt: when this request
+        is stale for this capability AND ``graphify`` is not on PATH right
+        now, the SAME kind of bounded ``TraceEntry`` naming the closed
+        executable-missing phrase -- never a :class:`Failed`. Every OTHER
+        regeneration-failure outcome stays inside
+        :meth:`_regenerate_and_recheck`, untouched."""
+        if descriptor.id not in _HANDLED_CAPABILITY_IDS:
+            return None
+        if not self._is_stale_for(descriptor.id, request):
+            return None
+        if shutil.which(_GRAPHIFY_EXECUTABLE_NAME) is not None:
+            return None
+        return TraceEntry(
+            provider_id=self.provider_id,
+            event="failed:provider-error",
+            scope="complete",
+            fault_count=0,
+            exemplars=(),
+            detail=(
+                "index present-but-stale with "
+                f"'{_GRAPHIFY_EXECUTABLE_NAME}' executable not on PATH"
+            ),
+        )
 
     # -- synchronous regeneration (F-GRAPHIFY-STALE-DEGRADES-SILENTLY) -------
 
@@ -477,7 +540,10 @@ class GraphifyAdapter:
         }
         scope_root = self._out_dir.parent
         sites: list[str] = []
-        for edge in self._graph.get("edges", []):
+        edges = self._graph.get("links")
+        if edges is None:
+            edges = self._graph.get("edges", [])
+        for edge in edges:
             if not isinstance(edge, dict):
                 continue
             if edge.get("relation") != _CALLS_RELATION:
@@ -527,7 +593,13 @@ class GraphifyAdapter:
     @staticmethod
     def _callee_matches(callee: str, callable_name: str) -> bool:
         """True iff a resolved callee name names ``callable_name`` (bare or
-        dotted) -- identical convention to ``AstAdapter._callee_matches``."""
+        dotted) -- identical convention to ``AstAdapter._callee_matches``.
+        Real graphify emits callable labels with a trailing ``()``
+        call-suffix (``"target()"``); exactly one such suffix is stripped
+        before comparison so a bare/dotted request matches the real
+        label."""
+        if callee.endswith("()"):
+            callee = callee[:-2]
         return callee == callable_name or callee.endswith(f".{callable_name}")
 
     @staticmethod

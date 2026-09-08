@@ -29,6 +29,6 @@ narrative.
 6. Update the existing platform brief/ADR/environment authority once and return
    stable ids plus the executable obligations DISTILL must project.
 
-DEVOPS does not author a `DeliveryContract`, feature workspace, rollout ledger
-or CI status copy. A downstream operational contradiction returns to the
-platform authority and causes a new contract projection.
+DEVOPS does not author a handover, feature workspace, rollout ledger or CI
+status copy. A downstream operational contradiction returns to the platform
+authority; software re-derives any needed execution facts.

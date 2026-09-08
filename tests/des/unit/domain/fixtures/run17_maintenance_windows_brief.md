@@ -80,8 +80,8 @@ above). No manifest delta, no install.
 
 ### Obligations (RED_TO_GREEN)
 
-Derived from the closed enum in the thin DeliveryContract schema
-(`obligations` in `thin-delivery-contract.schema.json`). `BROAD_INPUT_DOMAIN`
+Derived from the closed architecture obligation vocabulary.
+`BROAD_INPUT_DOMAIN`
 is deliberately not claimed: no PBT framework (e.g. Hypothesis) is declared
 in this repository's `requirements.txt`/`requirements-dev.txt` (checked,
 absent), so time/schedule-boundary behavior is proven through named

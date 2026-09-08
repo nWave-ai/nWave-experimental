@@ -17,18 +17,6 @@ Behaviour:
 The script is the single contract Python-side callers depend on. Both manual
 human runs and the pytest wrapper at
 ``tests/polyglot-pilot/test_kotlin_smoke.py`` go through it.
-
-Extension Justification (per nw-quality-framework SKILL):
-
-  WHY-NEW-FILE: scripts/polyglot/smoke_kotlin_pilot.py
-    CLOSEST-EXISTING: scripts/polyglot/smoke_typescript_pilot.py
-    EXTENSION-COST: would require a generic toolchain-dispatch refactor
-      (npx vs gradle, npm-install vs gradle deps, env-vars, exit codes) — out
-      of scope for Epic 3.
-    PARALLEL-RATIONALE: per-language smoke is the established polyglot pattern
-      (TS shipped Epic 2B, C# pending); each script is ~100 LOC and
-      toolchain-specific; convergence to a shared dispatcher becomes worthwhile
-      once ≥3 sibling scripts exist.
 """
 
 from __future__ import annotations

@@ -51,7 +51,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Accept Input** — Read documentation file or accept inline content. Identify file context (location, related docs, project conventions). Gate: content is non-empty and accessible.
 2. **Classify** — Load `~/.claude/skills/nw-divio-framework/SKILL.md`. Apply decision tree. List positive/negative signals. Assign confidence (high/medium/low). Gate: classification has explicit confidence and signal evidence.

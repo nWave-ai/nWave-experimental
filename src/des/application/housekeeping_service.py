@@ -161,7 +161,7 @@ class HousekeepingService:
     ) -> None:
         """Remove stale signal files left by crashed sessions.
 
-        Scans .nwave/des/ for des-task-active* files and deliver-session.json.
+        Scans .nwave/des/ for des-task-active* files.
         Files older than signal_staleness_hours are deleted. Recent files are
         preserved to protect concurrent active sessions.
         """
@@ -174,9 +174,6 @@ class HousekeepingService:
         cutoff_ts = now_ts - threshold_seconds
 
         candidates: list[Path] = list(des_dir.glob("des-task-active*"))
-        deliver_session = des_dir / "deliver-session.json"
-        if deliver_session.exists():
-            candidates.append(deliver_session)
 
         for signal_file in candidates:
             try:

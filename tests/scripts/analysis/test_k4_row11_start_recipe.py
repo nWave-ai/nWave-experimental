@@ -411,6 +411,76 @@ class TestExaminerStartRecipeProvenUnderTheArmEnv:
     expensive turn is spent. One source: the same doc, the same port, the
     same key `nw-user-examiner` would later read."""
 
+    def test_reaping_waits_for_the_ready_restart_block_to_settle(
+        self, workspace, monkeypatch
+    ):
+        """A delayed first restart must finish before the probe kills its server."""
+        import os
+        import signal
+
+        from scripts.analysis.k4 import preflight
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        port = pef.free_port()
+        api_key = "k4-row11-settlement-9c31"
+        _install_fake_runserver_venv_python(workspace, api_key=api_key)
+        (workspace / pef.DOC_NAME).write_text(
+            pef._render(port, api_key), encoding="utf-8"
+        )
+        _install_pristine_db_snapshot(workspace)
+        original_block = pef.start_and_wait_block
+        monkeypatch.setattr(
+            pef,
+            "start_and_wait_block",
+            lambda *args: original_block(*args) + "\nsleep 1\n",
+        )
+        real_kill = os.kill
+        observed: list[bool] = []
+
+        def guarded_kill(pid: int, sig: int) -> None:
+            if sig == signal.SIGKILL:
+                supervisor = int(
+                    (workspace / pef.SUPERVISOR_PID_FILE_NAME)
+                    .read_text(encoding="utf-8")
+                    .strip()
+                )
+                active = (
+                    subprocess.run(
+                        ["pgrep", "-P", str(supervisor)],
+                        capture_output=True,
+                        text=True,
+                    ).returncode
+                    == 0
+                )
+                observed.append(active)
+                assert not active, (
+                    "server reaped while its ready restart block remained active"
+                )
+            real_kill(pid, sig)
+
+        monkeypatch.setattr(preflight.os, "kill", guarded_kill)
+
+        assert preflight.probe_examiner_start_recipe(workspace) == []
+        assert observed == [False]
+
+    def test_pre_child_absence_is_not_mistaken_for_restart_settlement(
+        self, workspace, monkeypatch
+    ):
+        from scripts.analysis.k4 import preflight
+        from scripts.analysis.k4 import prepare_examiner_fixture as pef
+
+        (workspace / pef.SUPERVISOR_PID_FILE_NAME).write_text("123\n", encoding="utf-8")
+        monkeypatch.setattr(preflight.os, "kill", lambda *_args: None)
+        monkeypatch.setattr(
+            preflight.subprocess,
+            "run",
+            lambda *_args, **_kwargs: subprocess.CompletedProcess([], 1, "", ""),
+        )
+
+        finding = preflight._supervisor_child_phase(workspace, active=True, timeout=0)
+
+        assert finding is not None and "never appeared" in finding
+
     def test_the_mechanism_is_proven_against_the_real_rendered_recipe(self, workspace):
         from scripts.analysis.k4 import preflight
         from scripts.analysis.k4 import prepare_examiner_fixture as pef

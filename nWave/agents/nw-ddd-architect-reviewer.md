@@ -2,7 +2,7 @@
 name: nw-ddd-architect-reviewer
 description: Use for reviewing DDD domain models. Validates bounded context boundaries, aggregate design, context mapping, ES/CQRS recommendations, and ubiquitous language consistency.
 model: sonnet
-maxTurns: 25
+maxTurns: 40
 tools: Read, Glob, Grep, Task, Bash, Skill
 skills:
   - nw-code-analysis-port
@@ -47,14 +47,14 @@ Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md`
 - Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested design or law
 - Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
 - Invoke Skill(nw-stress-analysis) ON-TRIGGER — external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
-- Invoke Skill(nw-ddd-strategic) ON-TRIGGER — review start
-- Invoke Skill(nw-ddd-architect) ON-TRIGGER — review start
-- Invoke Skill(nw-ddd-tactical) ON-TRIGGER — aggregate review
+- Read `~/.claude/skills/nw-ddd-strategic/SKILL.md` ON-TRIGGER — review start
+- Read `~/.claude/skills/nw-ddd-architect/SKILL.md` ON-TRIGGER — review start
+- Read `~/.claude/skills/nw-ddd-tactical/SKILL.md` ON-TRIGGER — aggregate review
 <!-- GENERATED:role-skill-loading END -->
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Load Skills** — Read `~/.claude/skills/nw-ddd-strategic/SKILL.md` NOW, then read `~/.claude/skills/nw-ddd-architect/SKILL.md` NOW (design-time mandates incl. fixture-fanout), then read `~/.claude/skills/nw-ddd-tactical/SKILL.md` NOW. Gate: all three skill files loaded before any review work begins.
 2. **Read Artifacts** — Read all provided domain model artifacts (architecture brief, ADRs, context maps). Resolve any structural code facts through `nw-code-analysis-port`; Glob/Grep may locate prose artifacts only. Gate: all artifacts read.

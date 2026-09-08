@@ -4,22 +4,6 @@ CREATE_NEW (RCA ``docs/feature/fix-inherited-stdin-deadlocks-spawns/rca.md`` §7
 "Where the locus must sit", §9.2, §10 "New: src/des/runtime/spawn.py — the
 locus").
 
-WHY-NEW-FILE: src/des/runtime/spawn.py
-  CLOSEST-EXISTING: src/des/runtime/interpreter.py (``des_spawn``)
-  EXTENSION-COST: ``des_spawn`` selects by CALLEE IDENTITY — "argv[0] is
-    ``python_for(capability)``, env carries the des root" (``interpreter.py``
-    :348-367). The hazard fixed here is not about the callee: the site that
-    actually deadlocked (``shell_agent_invocation_adapter.py:44``) shells a
-    THIRD-PARTY CLI and has no business going through an interpreter-resolution
-    helper, so it could never be one of ``des_spawn``'s 17 call sites. Extending
-    ``des_spawn`` would enforce the stdio/bounding property for 28% of the 60
-    spawn sites — which is exactly how the deadlock shipped (RCA ROOT CAUSE A).
-  PARALLEL-RATIONALE: the two boundaries have INCOMPATIBLE selection criteria and
-    different lifecycles — ``des_spawn`` is a des-module composer that must keep
-    resolving interpreters and PYTHONPATH, this is the process boundary one level
-    LOWER that every spawn (des module, git, uv, a vendor CLI, a language runner)
-    passes through. ``des_spawn`` now DELEGATES here rather than duplicating.
-
 THE DEFECT THIS CLOSES. ``des refactor --pile`` deadlocked: four nested processes
 all sleeping on pipes. NO spawn site in ``src/des/**`` passed ``stdin=`` (0 of
 60); POSIX inherits fd 0 transitively, so the deepest grandchild read the
@@ -66,10 +50,12 @@ behaviour-preserving move.
 from __future__ import annotations
 
 import contextlib
+import errno
 import os
 import signal
 import subprocess
 import threading
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 
@@ -129,6 +115,40 @@ def reap_active_process_groups() -> None:
         pgids = list(_active_process_groups)
     for pgid in pgids:
         _reap_process_group(pgid)
+
+
+class SpawnRefusal(str, Enum):
+    """Which world an ``OSError`` raised at ``execve`` came from.
+
+    The DISCRIMINATION only, never the wording.  Two seams need to tell an
+    absent executable from an over-long argument vector from every other kernel
+    refusal, and they need it for opposite repairs (GDP-3, GDP-6) -- but they
+    address different readers, so the WHAT/WHY/HOW stays with each caller while
+    the errno knowledge lives here once.  The git seam learnt this list the hard
+    way: it caught three named subclasses, claimed totality, and an independent
+    review falsified the claim with ``OSError [Errno 7] Argument list too
+    long``.  A second copy of that knowledge would be a second place to be
+    incomplete in.
+    """
+
+    ExecutableAbsent = "ExecutableAbsent"
+    ArgumentListTooLong = "ArgumentListTooLong"
+    KernelRefused = "KernelRefused"
+
+
+def classify_spawn_refusal(refused: OSError) -> SpawnRefusal:
+    """The world a refused spawn came from -- total over ``OSError``.
+
+    ``KernelRefused`` is the deliberate catch-all: a world nobody enumerated
+    must still be NAMED rather than mistaken for an absent tool, because the two
+    ask for opposite repairs.  Callers report the errno verbatim there instead
+    of guessing.
+    """
+    if refused.errno == errno.E2BIG:
+        return SpawnRefusal.ArgumentListTooLong
+    if isinstance(refused, FileNotFoundError | NotADirectoryError | PermissionError):
+        return SpawnRefusal.ExecutableAbsent
+    return SpawnRefusal.KernelRefused
 
 
 AGENT_TIMEOUT_ENV = "NWAVE_REFACTOR_AGENT_TIMEOUT"
@@ -420,8 +440,10 @@ def _describe(cmd: Any) -> str:
 __all__ = [
     "AGENT_TIMEOUT_ENV",
     "GIT_TIMEOUT_ENV",
+    "SpawnRefusal",
     "SpawnTimeout",
     "agent_timeout_seconds",
+    "classify_spawn_refusal",
     "default_timeout_seconds",
     "git_timeout_seconds",
     "reap_active_process_groups",

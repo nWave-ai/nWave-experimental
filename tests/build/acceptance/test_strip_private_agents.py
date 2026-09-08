@@ -362,16 +362,16 @@ class TestSkillDifferentNameStrippedByOwnership:
             CATALOG_PUBLIC_PRIVATE,
             agents={
                 "alpha": ["nw-alpha-skill"],
-                "secret-builder": ["nw-quality-framework"],
+                "secret-builder": ["nw-code-design-oo"],
             },
-            skills=["alpha-skill", "quality-framework"],
+            skills=["alpha-skill", "code-design-oo"],
         )
 
         strip(target)
 
         skills_dir = target / "nWave" / "skills"
         assert (skills_dir / "nw-alpha-skill").exists()
-        assert not (skills_dir / "nw-quality-framework").exists()
+        assert not (skills_dir / "nw-code-design-oo").exists()
 
 
 # ---------------------------------------------------------------------------

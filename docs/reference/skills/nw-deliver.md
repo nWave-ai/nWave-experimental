@@ -1,6 +1,6 @@
 # nw-deliver
 
-Use for DELIVER wave orchestration from one validated DeliveryContract to one examined candidate and one whole-delivery finalization.
+Routes one strict Request into the DES steps that deliver it.
 
 **Used by:** [nw-platform-architect](../agents/nw-platform-architect.md)
 

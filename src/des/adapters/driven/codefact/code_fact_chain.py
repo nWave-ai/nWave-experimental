@@ -33,6 +33,7 @@ hallucinated claim.
 
 from __future__ import annotations
 
+import dataclasses
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.codefact.ast_code_fact_adapter import AstAdapter
@@ -122,11 +123,34 @@ class CodeFactChain:
         trace alongside the answer can read both off one fold; :meth:`query`
         is the thin legacy edge over this same operation.
         """
-        if self._graphify.has_data:
-            regen_failure = self._graphify.ensure_fresh_or_fail(descriptor, request)
-            if regen_failure is not None:
-                return regen_failure
+        if not self._graphify.has_data:
+            trace_entry = self._graphify.non_answer_trace_entry(descriptor)
+            if trace_entry is not None:
+                return self._fold_with_prepended_trace(descriptor, request, trace_entry)
+            return resolve_through_fold(descriptor, request, self._providers)
+        trace_entry = self._graphify.executable_missing_trace_entry(descriptor, request)
+        if trace_entry is not None:
+            return self._fold_with_prepended_trace(descriptor, request, trace_entry)
+        regen_failure = self._graphify.ensure_fresh_or_fail(descriptor, request)
+        if regen_failure is not None:
+            return regen_failure
         return resolve_through_fold(descriptor, request, self._providers)
+
+    def _fold_with_prepended_trace(
+        self,
+        descriptor: CapabilityDescriptor,
+        request: dict[str, object],
+        entry,
+    ) -> Resolution:
+        """Fold over ``(self._ast, self._floor)`` only -- graphify is never
+        asked to :meth:`resolve` a second time for the same request -- and
+        return the fold's ``Resolution`` reconstructed with ``entry``
+        PREPENDED to its trace tuple. ``Answered``/``Unsupported``/``Failed``
+        are frozen dataclasses, so this is a new instance carrying the SAME
+        provider_id/confidence/payload/cause/evidence_count the fold
+        produced, only the trace tuple gains the one leading entry."""
+        resolution = resolve_through_fold(descriptor, request, (self._ast, self._floor))
+        return dataclasses.replace(resolution, trace=(entry, *resolution.trace))
 
     def query(
         self, descriptor: CapabilityDescriptor, request: dict[str, object]

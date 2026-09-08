@@ -10,7 +10,7 @@ event types, agents, skills, and functional DES hooks.  Exercises the
 (known Claude Code bug #24529).
 
 15 assertions grouped by concern:
-  1. hooks.json structure (6): exists, envelope, 5 event types, 4 matchers,
+  1. hooks.json structure (6): exists, envelope, declared event types, 4 matchers,
      nested format, adapter references
   2. Agent files (3): directory exists, > 10 agents, nw-software-crafter.md
   3. Skill files (3): directory exists, > 30 skills, all have SKILL.md

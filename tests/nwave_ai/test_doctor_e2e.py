@@ -93,7 +93,6 @@ def stage_healthy_install(base: Path) -> Path:
             "PreToolUse": [{"hooks": [{"command": hook_command}]}],
             "PostToolUse": [{"hooks": [{"command": hook_command}]}],
             "SubagentStop": [{"hooks": [{"command": hook_command}]}],
-            "SubagentStart": [{"hooks": [{"command": hook_command}]}],
         },
         "env": {
             "PATH": f"{bin_dir}:/usr/bin:/bin",

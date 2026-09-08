@@ -149,7 +149,6 @@ _HOOK_EVENT_SLOTS: frozenset[str] = frozenset(
         "hooks.PostToolUse",
         "hooks.SubagentStop",
         "hooks.SessionStart",
-        "hooks.SubagentStart",
     ]
 )
 
@@ -191,9 +190,6 @@ def _hooks_settings_state(settings_file: Path) -> dict[str, object]:
         ),
         "hooks.SessionStart": json.dumps(
             hooks_block.get("SessionStart", []), sort_keys=True
-        ),
-        "hooks.SubagentStart": json.dumps(
-            hooks_block.get("SubagentStart", []), sort_keys=True
         ),
         "env.SLASH_COMMAND_TOOL_CHAR_BUDGET": env_block.get(
             "SLASH_COMMAND_TOOL_CHAR_BUDGET", ""
@@ -247,7 +243,6 @@ class TestNoHardcodedPaths:
                 "hooks.PostToolUse": set_to(after["hooks.PostToolUse"]),
                 "hooks.SubagentStop": set_to(after["hooks.SubagentStop"]),
                 "hooks.SessionStart": set_to(after["hooks.SessionStart"]),
-                "hooks.SubagentStart": set_to(after["hooks.SubagentStart"]),
                 "env.SLASH_COMMAND_TOOL_CHAR_BUDGET": set_to(
                     after["env.SLASH_COMMAND_TOOL_CHAR_BUDGET"]
                 ),
@@ -286,7 +281,6 @@ class TestNoHardcodedPaths:
                 "hooks.PostToolUse": set_to(after["hooks.PostToolUse"]),
                 "hooks.SubagentStop": set_to(after["hooks.SubagentStop"]),
                 "hooks.SessionStart": set_to(after["hooks.SessionStart"]),
-                "hooks.SubagentStart": set_to(after["hooks.SubagentStart"]),
                 "env.SLASH_COMMAND_TOOL_CHAR_BUDGET": set_to(
                     after["env.SLASH_COMMAND_TOOL_CHAR_BUDGET"]
                 ),
@@ -328,7 +322,6 @@ class TestNoHardcodedPaths:
                 "hooks.PostToolUse": set_to(after["hooks.PostToolUse"]),
                 "hooks.SubagentStop": set_to(after["hooks.SubagentStop"]),
                 "hooks.SessionStart": set_to(after["hooks.SessionStart"]),
-                "hooks.SubagentStart": set_to(after["hooks.SubagentStart"]),
                 "env.SLASH_COMMAND_TOOL_CHAR_BUDGET": set_to(
                     after["env.SLASH_COMMAND_TOOL_CHAR_BUDGET"]
                 ),
@@ -372,7 +365,6 @@ class TestNoHardcodedPaths:
                 "hooks.PostToolUse": set_to(after["hooks.PostToolUse"]),
                 "hooks.SubagentStop": set_to(after["hooks.SubagentStop"]),
                 "hooks.SessionStart": set_to(after["hooks.SessionStart"]),
-                "hooks.SubagentStart": set_to(after["hooks.SubagentStart"]),
                 "env.SLASH_COMMAND_TOOL_CHAR_BUDGET": set_to(
                     after["env.SLASH_COMMAND_TOOL_CHAR_BUDGET"]
                 ),
@@ -431,7 +423,6 @@ class TestWriteEditGuardsInstalled:
                 "hooks.PostToolUse": set_to(after["hooks.PostToolUse"]),
                 "hooks.SubagentStop": set_to(after["hooks.SubagentStop"]),
                 "hooks.SessionStart": set_to(after["hooks.SessionStart"]),
-                "hooks.SubagentStart": set_to(after["hooks.SubagentStart"]),
                 "env.SLASH_COMMAND_TOOL_CHAR_BUDGET": set_to(
                     after["env.SLASH_COMMAND_TOOL_CHAR_BUDGET"]
                 ),
@@ -457,7 +448,6 @@ class TestWriteEditGuardsInstalled:
                 "hooks.PostToolUse": set_to(after["hooks.PostToolUse"]),
                 "hooks.SubagentStop": set_to(after["hooks.SubagentStop"]),
                 "hooks.SessionStart": set_to(after["hooks.SessionStart"]),
-                "hooks.SubagentStart": set_to(after["hooks.SubagentStart"]),
                 "env.SLASH_COMMAND_TOOL_CHAR_BUDGET": set_to(
                     after["env.SLASH_COMMAND_TOOL_CHAR_BUDGET"]
                 ),
@@ -483,7 +473,6 @@ class TestWriteEditGuardsInstalled:
                 "hooks.PostToolUse": set_to(after["hooks.PostToolUse"]),
                 "hooks.SubagentStop": set_to(after["hooks.SubagentStop"]),
                 "hooks.SessionStart": set_to(after["hooks.SessionStart"]),
-                "hooks.SubagentStart": set_to(after["hooks.SubagentStart"]),
                 "env.SLASH_COMMAND_TOOL_CHAR_BUDGET": set_to(
                     after["env.SLASH_COMMAND_TOOL_CHAR_BUDGET"]
                 ),
@@ -517,7 +506,6 @@ class TestWriteEditGuardsInstalled:
                 "hooks.PostToolUse": set_to(after["hooks.PostToolUse"]),
                 "hooks.SubagentStop": set_to(after["hooks.SubagentStop"]),
                 "hooks.SessionStart": set_to(after["hooks.SessionStart"]),
-                "hooks.SubagentStart": set_to(after["hooks.SubagentStart"]),
                 "env.SLASH_COMMAND_TOOL_CHAR_BUDGET": set_to(
                     after["env.SLASH_COMMAND_TOOL_CHAR_BUDGET"]
                 ),

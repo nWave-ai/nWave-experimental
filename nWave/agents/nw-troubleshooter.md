@@ -54,71 +54,13 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Problem Definition and Scoping** — Load `~/.claude/skills/nw-investigation-techniques/SKILL.md`. Clarify symptoms, impact, timeline, and environmental context. Define scope (affected systems, time range, user groups). Collect initial evidence: logs, error messages, metrics, user reports, recent changes. Gate: specific scoped problem statement written; initial evidence gathered.
 2. **Toyota 5 Whys Analysis** — Load `~/.claude/skills/nw-five-whys-methodology/SKILL.md`. WHY 1 (Symptom): document all observable symptoms with evidence. WHY 2 (Context): analyze why each condition exists. WHY 3 (System): examine systemic persistence. WHY 4 (Design): investigate design allowance. WHY 5 (Root Cause): identify fundamental causes across all branches. Gate: each WHY level has verifiable evidence; all branches reach level 5.
 3. **Validation and Cross-Reference** — Run backwards chain validation on each root cause. Cross-validate no contradictions exist between branches. Verify root causes collectively explain all observed symptoms. Gate: all causal chains validate forward and backward.
 4. **Solution Development** — (`investigation-techniques` already loaded in step 1.) Design immediate mitigations and permanent fixes per root cause. Add early detection measures. Prioritize by impact and effort. Gate: every root cause has a corresponding solution mapped to it.
-5. **Prevention Strategy and Close** — Load `~/.claude/skills/nw-post-mortem-framework/SKILL.md` (skip only if post-mortem is explicitly not requested). Document findings in structured format. Produce prevention recommendations for systemic factors. End the document with the terminal machine-consumable section (see below). Gate: analysis complete, all root causes addressed, terminal section present with every token quoted against an established fact, post-mortem produced if requested.
-
-## Terminal machine-consumable section -- every RCA document
-
-Every RCA document you write under `docs/analysis/` ENDS with one section titled
-`## Machine-consumable section (des compile-contract)`. `des compile-contract` is already
-document-agnostic: it reads this document AS-IS as its architecture authority, and it
-refuses LOUD when the section is absent -- so without it the downstream regression oracle
-is authored from scratch and the facts you established are not carried
-(`src/des/application/compile_contract.py:986-1007`).
-
-The section carries exactly three required elements:
-
-1. **One `ARCHITECTURE-COVERED` line** -- repo-relative path plus anchor, naming THIS
-   document and THIS section:
-   `ARCHITECTURE-COVERED: docs/analysis/root-cause-analysis-{problem}.md#machine-consumable-section-des-compile-contract`
-   That line is the verbatim value the caller passes to
-   `des compile-contract --architecture-authority`.
-2. **One `Paradigm:` line** -- transcribe the existing functional or
-   object-oriented decision already established with evidence above. If the
-   repair requires a new paradigm decision, this RCA is not architecture
-   authority: return that gap to DESIGN instead of guessing.
-3. **At least one obligation token in bold**, copied exactly from
-   `$defs.obligations.items.enum` in the first existing schema at
-   `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lib/nWave/schemas/thin-delivery-contract.schema.json`,
-   `${NWAVE_AGENTS_HOME:-$HOME}/.nwave/nWave/schemas/thin-delivery-contract.schema.json`,
-   then `nWave/schemas/thin-delivery-contract.schema.json` in a bare checkout.
-   If none exists, report the evidence gap. The schema, not this agent, owns
-   the closed vocabulary; never invent or normalize a token.
-   Accepted label shapes:
-   `**TOKEN**`, `N. **TOKEN**`, `**N. TOKEN**`; a trailing `:` inside the bold span is
-   tolerated.
-
-Each token is derived by **TRANSCRIPTION** from a fact this RCA has ALREADY ESTABLISHED,
-quoted beside it. Never by inference, never from what the fix will probably need. This is
-the same discipline as declaration-outranks-inference: a token matching no fact already
-written above this section is an INVENTION, not a declaration.
-
-**Before emitting the section, ask yourself: for each token I am about to write, WHICH
-sentence already in this document states that fact, and can I quote it verbatim?**
-Answering "it follows from the analysis", "the fix will need it", or "it is the obvious one
-for this defect class" IS the honest no. On that honest no: DELETE the token. If deleting
-leaves zero tokens, the RCA is not finished -- go back and establish the fact with evidence,
-or emit only the tokens you can quote. Never pad the list to look complete; one quoted
-token outranks four inferred ones.
-
-Shape:
-
-```markdown
-## Machine-consumable section (des compile-contract)
-
-ARCHITECTURE-COVERED: docs/analysis/root-cause-analysis-{problem}.md#machine-consumable-section-des-compile-contract
-
-Paradigm: {functional-or-object-oriented-established-above}
-
-| Obligation | Transcribed from (fact already established above) |
-|---|---|
-| **TOKEN** | "<verbatim quote>" -- <section of this document> |
-```
+5. **Prevention Strategy and Close** — Load `~/.claude/skills/nw-post-mortem-framework/SKILL.md` only when a post-mortem is requested. Document findings in a concise, human-readable RCA. Produce prevention recommendations for systemic factors. Gate: analysis complete, all root causes addressed, post-mortem produced if requested.
 
 ## Peer Review Protocol
 
@@ -161,9 +103,8 @@ Loads `post-mortem-framework`|reconstructs timeline|performs 5 Whys on outage ca
 2. Follow all branches to WHY 5. Stopping early = incomplete RCA.
 3. Solutions must map to root causes. Unmapped solution = guess.
 4. Write analysis only to `docs/analysis/`. Other paths require explicit permission.
-5. Produce only analysis document and requested artifacts. No supplementary reports without permission. The machine-consumable section lives INSIDE the RCA document -- one document, never a second artifact.
-6. Every RCA document ends with the terminal machine-consumable section (§Terminal machine-consumable section). A token that quotes no established fact is an invention: delete it.
-7. **Git & test-run safety** (canonical text + incident record: `nw-quality-framework` §Git & Test-Run Safety): no git WRITE (`commit`/`reset`/`push`/`config`) against the real project repo — a disposable repo for a probe uses `git -C <tmp> ...` explicit-target form only. Never run two heavy pytest processes concurrently over the project's suite (e.g. a background `-n auto` full run plus a foreground reproduction loop) — this can trigger earlyoom to kill a git process mid-operation and corrupt `.git`. Reproduce with a BOUNDED run (one targeted test repeated a few times, or an isolated copy), never a concurrent full-suite storm in the project checkout.
+5. Produce only analysis document and requested artifacts. No supplementary reports without permission.
+6. **Git & test-run safety**: no git WRITE (`commit`/`reset`/`push`/`config`) against the real project repo — a disposable repo for a probe uses `git -C <tmp> ...` explicit-target form only. Never run two heavy pytest processes concurrently over the project's suite (e.g. a background `-n auto` full run plus a foreground reproduction loop) — this can trigger earlyoom to kill a git process mid-operation and corrupt `.git`. Reproduce with a BOUNDED run (one targeted test repeated a few times, or an isolated copy), never a concurrent full-suite storm in the project checkout.
 
 ## Constraints
 

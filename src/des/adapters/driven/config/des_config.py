@@ -17,7 +17,9 @@ from typing import Any, cast
 from des.domain.artifact_versioning import ArtifactVersioningKernel
 from des.domain.blast_radius import BlastRadiusConfigRejected, BlastRadiusThresholds
 from des.domain.config_merge import declared_enabled, merge_config
+from des.domain.nwave_locations import NWaveLocations
 from des.domain.nwave_root import resolve_nwave_root
+from des.domain.result import Failure
 
 
 # Closed set of declarable deliverable types (ADR-PST-002). A declared value
@@ -93,7 +95,46 @@ class DESConfig:
     Rigor cascade: project rigor -> global rigor -> standard defaults.
     """
 
-    _DEFAULT_GLOBAL_CONFIG_PATH = Path.home() / ".nwave" / "global-config.json"
+    # Explicit test-only override seam (`monkeypatch.setattr(DESConfig,
+    # "_DEFAULT_GLOBAL_CONFIG_PATH", ...)`). ``None`` means "no override" --
+    # the ordinary path is resolved dynamically below, never frozen at
+    # import/class-definition time. A test that sets this to a concrete
+    # ``Path`` wins over the dynamic ``NWaveLocations`` resolution entirely,
+    # preserving the pre-existing explicit class-level override behaviour.
+    _DEFAULT_GLOBAL_CONFIG_PATH: Path | None = None
+
+    @staticmethod
+    def _default_global_config_path() -> Path:
+        """Resolve the NWAVE_AGENTS_HOME-aware global-config default.
+
+        An explicit ``DESConfig._DEFAULT_GLOBAL_CONFIG_PATH`` override (set by
+        a test via ``monkeypatch.setattr``) wins unconditionally. Otherwise
+        the ordinary default is computed HERE, at construction time, through
+        the same ``NWaveLocations.resolve`` agents-home channel ``nwave-ai
+        mode`` writes through -- never a class-level ``Path.home()`` constant
+        frozen once at module import. That freeze is exactly what let
+        ``nwave-ai status`` keep reading the operator's real home after
+        ``nwave-ai mode`` had already written a ``NWAVE_AGENTS_HOME``-
+        isolated destination.
+
+        Total, never raises: refusing a relative override before a write
+        is ``NWaveInstaller``'s construction-time obligation, not this
+        read-only loader's -- an invalid channel here degrades to the
+        native home default instead of failing a read.
+        """
+        if DESConfig._DEFAULT_GLOBAL_CONFIG_PATH is not None:
+            return DESConfig._DEFAULT_GLOBAL_CONFIG_PATH
+        result = NWaveLocations.resolve(
+            home=Path.home(),
+            repo_root=Path.cwd(),
+            agents_home_override=os.environ.get("NWAVE_AGENTS_HOME"),
+            claude_config_override=os.environ.get("CLAUDE_CONFIG_DIR"),
+            codex_config_override=os.environ.get("CODEX_HOME"),
+        )
+        agents_home = (
+            Path.home() if isinstance(result, Failure) else result.unwrap().agents_home
+        )
+        return agents_home / ".nwave" / "global-config.json"
 
     def __init__(
         self,
@@ -133,7 +174,7 @@ class DESConfig:
         self._global_config_path = (
             global_config_path
             if global_config_path is not None
-            else self._DEFAULT_GLOBAL_CONFIG_PATH
+            else self._default_global_config_path()
         )
         self._global_config_data = self._load_versioned_global_config(
             self._global_config_path

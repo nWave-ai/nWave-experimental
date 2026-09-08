@@ -400,7 +400,11 @@ def copy_skills(
     Post-restructuring: source is nWave/skills/nw-*/SKILL.md (flat).
     Uses shared skill_distribution module for the enumerate -> filter -> copy pipeline.
     """
-    from scripts.shared.agent_catalog import build_ownership_map, detect_command_skills
+    from scripts.shared.agent_catalog import (
+        build_ownership_map,
+        detect_command_skills,
+        load_private_skills,
+    )
     from scripts.shared.skill_distribution import (
         copy_skills_to_target,
         enumerate_skills,
@@ -420,7 +424,11 @@ def copy_skills(
     entries = enumerate_skills(source_dir)
     command_skills = detect_command_skills(source_dir)
     filtered = filter_public_skills(
-        entries, agents, ownership_map, command_skills=command_skills
+        entries,
+        agents,
+        ownership_map,
+        command_skills=command_skills,
+        private_skills=load_private_skills(config.nwave_dir, strict=False),
     )
     skipped = len(entries) - len(filtered)
     count = copy_skills_to_target(filtered, dest_dir)

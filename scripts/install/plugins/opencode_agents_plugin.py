@@ -13,6 +13,7 @@ user-created ones.
 import json
 from pathlib import Path
 
+from des.domain.agent_capability import provider_tool_name, split_declared_tools
 from scripts.install.plugins.base import (
     InstallationPlugin,
     InstallContext,
@@ -75,18 +76,36 @@ def _parse_tools(tools_value: str | list) -> dict[str, str]:
     "deny", "ask"), not booleans. The legacy boolean format is ignored in
     markdown frontmatter.
 
+    A declared entry may be a permission SPECIFIER carrying its own scope
+    (``Bash(des code-fact:*)``). OpenCode's mapping has no place to put a
+    scope, so a scoped grant becomes "ask" rather than "allow": the scope is
+    part of the grant, and projecting it as "allow" would hand the role the
+    whole tool it was deliberately not given. "ask" is the platform's own
+    third state, so the loss of precision surfaces at use time instead of
+    disappearing.
+
     Args:
         tools_value: Tools specification as CSV string or list
 
     Returns:
-        Dict mapping lowercase tool names to "allow"
+        Dict mapping lowercase tool names to "allow" or "ask"
     """
     if isinstance(tools_value, list):
-        tool_names = [str(tool).strip() for tool in tools_value]
+        entries = [str(tool).strip() for tool in tools_value if str(tool).strip()]
     else:
-        tool_names = [tool.strip() for tool in str(tools_value).split(",")]
+        entries = list(split_declared_tools(str(tools_value)))
 
-    return {name.lower(): "allow" for name in tool_names if name}
+    permissions: dict[str, str] = {}
+    for entry in entries:
+        name = provider_tool_name(entry).lower()
+        if not name:
+            continue
+        scoped = entry != provider_tool_name(entry)
+        # An unscoped grant on the same tool wins: it is the wider declaration.
+        if scoped and permissions.get(name) == "allow":
+            continue
+        permissions[name] = "ask" if scoped else "allow"
+    return permissions
 
 
 def _transform_frontmatter(frontmatter: dict) -> dict:

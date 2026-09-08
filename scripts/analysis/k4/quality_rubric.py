@@ -295,10 +295,11 @@ CRITERIA: tuple[Criterion, ...] = (
         "Does the delivery exercise real ports at an integration layer "
         "and cover the smallest critical end-to-end path, distinct from "
         "its unit- or acceptance-level tests?",
-        (11,),
+        (11, 14),
         notes=(
             "Item 11 also has a mutation-testing clause, not judged here -- "
-            "see DELEGATED_1A[11]."
+            "see DELEGATED_1A[11]. Item 14 is covered by this criterion's "
+            "smallest critical E2E/walking-skeleton observation."
         ),
     ),
 )
@@ -306,7 +307,7 @@ CRITERIA: tuple[Criterion, ...] = (
 CRITERIA_BY_KEY: dict[str, Criterion] = {c.key: c for c in CRITERIA}
 CRITERIA_KEYS: frozenset[str] = frozenset(CRITERIA_BY_KEY)
 
-#: The 13 items of ADR-SSOT-002 Section 1a, by number, short label only --
+#: The 14 items of ADR-SSOT-002 Section 1a, by number, short label only --
 #: read the ADR for the full clause and its cross-references. Developer
 #: metadata: never rendered to a reviewer.
 SECTION_1A_ITEMS: dict[int, str] = {
@@ -329,6 +330,7 @@ SECTION_1A_ITEMS: dict[int, str] = {
         "Defect escape/rework, refactorability and maintainability no "
         "worse than baseline"
     ),
+    14: "Walking skeleton for the feature's critical end-to-end path",
 }
 
 #: Section 1a items this rubric does not (fully) verdict from a sealed,

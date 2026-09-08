@@ -2,10 +2,7 @@
 reaches its handler.
 
 Closes a real gap found while adding `subagent-stop` (stable-design report
-2026-08-19 §1.1): the new route-branch's own handler import was silently
-stripped by this environment's post-edit formatter (an "unused import" at
-the moment the import was added, before the consuming branch existed) and
-NOTHING in the existing test suite exercised `hook_router.main()` with
+2026-08-19 §1.1): NOTHING in the existing test suite exercised `hook_router.main()` with
 `sys.argv[1] == "subagent-stop"` end-to-end -- only `ruff check`'s static
 `F821` caught the resulting `NameError`. These tests drive `main()` itself
 (not the handler module directly) so a future re-break of this exact wiring
@@ -41,16 +38,6 @@ def active_project():
 
 
 class TestEveryKnownCommandReachesItsHandler:
-    def test_subagent_start_dispatches_to_its_handler(
-        self, monkeypatch, capsys
-    ) -> None:
-        exit_code = _run_router(
-            monkeypatch,
-            "subagent-start",
-            json.dumps({"agent_type": "some-non-nw-agent"}),
-        )
-        assert exit_code == 0
-
     def test_subagent_stop_dispatches_to_its_handler(self, monkeypatch, capsys) -> None:
         exit_code = _run_router(
             monkeypatch,

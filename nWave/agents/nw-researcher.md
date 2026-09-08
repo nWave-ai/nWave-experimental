@@ -69,7 +69,7 @@ Read these files NOW:
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Clarify Scope and Create Output Skeleton** — Load `~/.claude/skills/nw-research-methodology/SKILL.md`. Determine topic focus, depth, source preferences, and intended use. In subagent mode, return `{CLARIFICATION_NEEDED: true, questions: [...]}` if ambiguous. Create the output file immediately with document skeleton (title, sections, placeholders from research-methodology template). Gate: topic clear, output file exists with skeleton structure. (turns 1-5)
 

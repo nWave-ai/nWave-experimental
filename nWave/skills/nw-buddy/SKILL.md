@@ -10,7 +10,7 @@ argument-hint: '[question]'
 Load only the matching narrow knowledge skill:
 
 - `nw-buddy-command-catalog` for command choice;
-- `nw-buddy-wave-knowledge` for authority and handoff questions;
+- `nw-auto` for delivery authority, Request size and interaction level;
 - `nw-buddy-project-reading` for current project state; and
 - `nw-buddy-ssot-knowledge` for authority conflicts.
 

@@ -1,19 +1,5 @@
 """Clause witness port (driven) -- behavioral witness-check seam (slice-03).
 
-WHY-NEW-FILE: src/des/ports/clause_witness_port.py
-  CLOSEST-EXISTING: src/des/ports/driven_ports/audit_log_writer.py
-  EXTENSION-COST: audit_log_writer models an append-only event sink; this port
-    models a behavioral differential (run a claimed AT against an unperturbed
-    and a perturbed isolated copy, discriminate the failure reason). The two
-    share nothing beyond being driven Protocols -- folding a witness method into
-    the audit writer would couple two unrelated driven concerns.
-  PARALLEL-RATIONALE: architecture.md sec.4 "Port contract" adjudicated this as
-    a CREATE_NEW driven port (`ClauseWitnessPort.witness` + `.probe`) with its
-    own value-shape (`WitnessReport`); it has an incompatible signature
-    (clause + at_refs -> WitnessReport) and a distinct lifecycle (the gate
-    injects it; the adapter holds a sandbox-root capability the audit writer
-    never has).
-
 The port is the language-agnostic seam (ADR-001 / architecture.md sec.4):
 only the AST-perturbation + test-run steps are language-bound, and they sit
 behind this Protocol. The Python realization is ``PerturbationWitnessAdapter``;

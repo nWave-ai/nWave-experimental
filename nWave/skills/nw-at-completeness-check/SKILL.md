@@ -7,8 +7,8 @@ disable-model-invocation: true
 
 # Acceptance completeness: obligation-to-observation closure
 
-Review one candidate oracle against the schema-valid `DeliveryContract` and
-the permanent architecture authority it names. Completeness is a total
+Review one candidate oracle against runner-derived facts from durable authority.
+Completeness is a total
 relation, not a score:
 
 ```text
@@ -21,7 +21,7 @@ checklist, scenario count, percentage, test pyramid or framework convention.
 
 ## Required closure
 
-For every applicable contract obligation, verify that the oracle observes:
+For every applicable obligation, verify that the oracle observes:
 
 - the promised outcome and every materially distinguishable result;
 - declared state, composition and preservation laws, using PBT for broad

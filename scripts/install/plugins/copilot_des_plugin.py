@@ -133,7 +133,18 @@ class CopilotDESPlugin(InstallationPlugin):
         copilot_binary = _shutil.which("copilot") is not None
         copilot_env = bool(os.environ.get("COPILOT_CLI", ""))
 
-        if not copilot_dir.exists() and not copilot_binary and not copilot_env:
+        # An explicit ``--platform copilot`` has already declared the host as
+        # an install target.  It must be able to bootstrap a fresh
+        # ``COPILOT_HOME`` rather than requiring a prior Copilot launch to
+        # create that directory.  Preserve detection-based skipping only for
+        # installations that did not explicitly target Copilot.
+        copilot_requested = "copilot" in context.target_platforms
+        if (
+            not copilot_requested
+            and not copilot_dir.exists()
+            and not copilot_binary
+            and not copilot_env
+        ):
             return PluginResult(
                 success=True,
                 plugin_name=self.name,

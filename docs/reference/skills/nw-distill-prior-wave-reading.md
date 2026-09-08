@@ -1,6 +1,6 @@
 # nw-distill-prior-wave-reading
 
-Reads and reconciles the durable product, architecture, platform, and delivery authorities before DISTILL compiles an executable oracle and DeliveryContract.
+Reads and reconciles durable product, architecture, and platform authorities before DISTILL compiles an executable oracle.
 
 **Used by:** [nw-acceptance-designer](../agents/nw-acceptance-designer.md)
 

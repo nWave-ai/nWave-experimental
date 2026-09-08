@@ -38,7 +38,7 @@ class TestJsonlSkillTrackerAppendsEvents:
         tracker = JsonlSkillTracker(log_path=log_file)
 
         tracker.log_skill_load(_make_event(skill_name="tdd-methodology"))
-        tracker.log_skill_load(_make_event(skill_name="quality-framework"))
+        tracker.log_skill_load(_make_event(skill_name="code-design-oo"))
 
         lines = log_file.read_text(encoding="utf-8").strip().split("\n")
         assert len(lines) == 2
@@ -49,7 +49,7 @@ class TestJsonlSkillTrackerAppendsEvents:
         assert first["estimated_tokens"] == 250
 
         second = json.loads(lines[1])
-        assert second["skill_name"] == "quality-framework"
+        assert second["skill_name"] == "code-design-oo"
 
 
 class TestJsonlSkillTrackerCreatesDirectory:

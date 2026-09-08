@@ -405,15 +405,13 @@ def test_probe_engagement_setup_step_env_keeps_operator_roots_untouched(
     monkeypatch.setattr(
         preflight, "nwave_setup_steps", lambda venv, auth_profile: [real_setup_step]
     )
-    monkeypatch.setattr(preflight, "probe_installed_dispatch_help", lambda *a, **k: [])
-    monkeypatch.setattr(preflight, "probe_delivery_permissions", lambda *a, **k: [])
+    monkeypatch.setattr(preflight, "probe_installed_step_surface", lambda *a, **k: [])
 
     root = tmp_path / "root"
     verdict, detail = preflight.probe_engagement(
         root,
         tmp_path / "unused-venv",
         tmp_path / "unused-auth-profile",
-        "claude-sonnet-5",
     )
 
     # "absent" is expected and fine here: the stubbed single-step setup runs

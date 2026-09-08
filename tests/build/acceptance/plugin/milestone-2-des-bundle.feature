@@ -2,7 +2,8 @@
 # Based on: architecture-design.md - Roadmap Step 01-02
 # Acceptance Criteria:
 #   - DES module importable from plugin scripts/des/
-#   - hooks.json registers PreToolUse and SubagentStart.
+#   - hooks.json registers PreToolUse and SubagentStop.
+#     SubagentStart carried the deleted skill-loading reminder and is absent.
 #     SessionStart and UserPromptSubmit were the session-ceremony anchors; both
 #     and completion-notification hooks were deleted with that ceremony.
 #   - DES enforcement returns allow/block decisions with error messages on phase violations

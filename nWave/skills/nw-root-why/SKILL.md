@@ -41,19 +41,16 @@ Execute \*investigate-root-cause for {problem-statement}.
 - multi_causal: true
 - evidence_required: true
 
-## Workflow-mode context (ADR-028)
-
-
 ## Usage: DELIVER Wave Retrospective (Phase 3.5)
 
 When invoked as part of `/nw-deliver` Phase 3.5, execute in order:
 
-2. **Analyze What Worked Well** — Identify practices that succeeded and document why — preserve these. Gate: at least one practice documented with rationale.
-3. **Analyze What Improved** — Identify what worked better than before and why — record as reinforcements. Gate: delta from prior execution captured.
-4. **Analyze What Worked Badly** — Apply 5 Whys; the root cause names the producer/type that admitted the failing state (GDP-0) — a fix that adds a check instead is a symptom patch unless that producer cannot change, with the reason recorded. Gate: each failure has a representational root cause and fix.
-5. **Analyze What Regressed** — Apply 5 Whys to anything worse than before; produce prevention action. Gate: each regression has a root cause and prevention action.
-6. **Tag Meta-Improvements** — Mark any items requiring nWave framework changes as **meta-improvements**. Gate: all framework-level issues flagged.
-7. **Append Retrospective** — Write retrospective section to evolution document. If clean execution (no skips, no failures, no tooling issues), generate brief summary only. Gate: evolution document updated.
+1. **Analyze What Worked Well** — Identify practices that succeeded and document why — preserve these. Gate: at least one practice documented with rationale.
+2. **Analyze What Improved** — Identify what worked better than before and why — record as reinforcements. Gate: delta from prior execution captured.
+3. **Analyze What Worked Badly** — Apply 5 Whys; the root cause names the producer/type that admitted the failing state (GDP-0) — a fix that adds a check instead is a symptom patch unless that producer cannot change, with the reason recorded. Gate: each failure has a representational root cause and fix.
+4. **Analyze What Regressed** — Apply 5 Whys to anything worse than before; produce prevention action. Gate: each regression has a root cause and prevention action.
+5. **Tag Meta-Improvements** — Mark any items requiring nWave framework changes as **meta-improvements**. Gate: all framework-level issues flagged.
+6. **Append Retrospective** — Write retrospective section to evolution document. If clean execution (no skips, no failures, no tooling issues), generate brief summary only. Gate: evolution document updated.
 
 ## Success Criteria
 

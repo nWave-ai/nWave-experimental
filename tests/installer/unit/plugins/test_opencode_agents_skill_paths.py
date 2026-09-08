@@ -29,7 +29,7 @@ _AGENT_WITH_SKILL_PATHS = (
     "\n"
     "Read these files NOW:\n"
     "- `~/.claude/skills/nw-tdd-methodology/SKILL.md`\n"
-    "- `~/.claude/skills/nw-quality-framework/SKILL.md`\n"
+    "- `~/.claude/skills/nw-code-design-oo/SKILL.md`\n"
     "\n"
     "### On-Demand\n"
     "\n"

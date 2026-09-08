@@ -274,6 +274,65 @@ class TestTransformAgent:
         # tools block must NOT appear in TOML output
         assert "tools" not in parsed
 
+    def test_a_dropped_claude_model_is_named_in_the_toml(self):
+        """The loss is visible in the artifact, not only in a log line.
+
+        A role that declares `model: sonnet` reaches Codex with no model at
+        all, so Codex answers on its own configured default. Ale's decision of
+        2026-09-06 to run the reviewing roles on sonnet therefore does not
+        reach Codex. The host mapping belongs to the unified config SSOT work
+        (F-CONFIG-SSOT-UNIFIED), so this states the gap where an operator will
+        see it instead of inventing a mapping here.
+        """
+        # bypass: pure function
+        source = (
+            "---\n"
+            "name: nw-user-examiner\n"
+            "description: judges\n"
+            "model: sonnet\n"
+            "---\n\n"
+            "You judge.\n"
+        )
+
+        rendered = _transform_agent(source, "nw-user-examiner")
+
+        assert "model" not in tomllib.loads(rendered)
+        assert (
+            "# model sonnet not projected for codex: "
+            "host mapping pending F-CONFIG-SSOT-UNIFIED" in rendered
+        )
+
+    def test_a_dropped_claude_model_is_reported_to_the_installer(self, caplog):
+        # bypass: pure function
+        source = (
+            "---\nname: nw-user-examiner\ndescription: judges\n"
+            "model: sonnet\n---\n\nYou judge.\n"
+        )
+
+        with caplog.at_level(
+            logging.WARNING, logger="scripts.install.plugins.codex_agents_plugin"
+        ):
+            _transform_agent(source, "nw-user-examiner")
+
+        assert any("not projected for codex" in msg for msg in caplog.messages)
+        assert any("nw-user-examiner" in msg for msg in caplog.messages)
+
+    def test_an_explicit_codex_model_reports_no_loss(self, caplog):
+        """The mutation pair: nothing was dropped, so nothing is announced."""
+        # bypass: pure function
+        source = (
+            "---\nname: nw-craft\ndescription: crafts\n"
+            "model: gpt-5.2-codex\n---\n\nYou craft.\n"
+        )
+
+        with caplog.at_level(
+            logging.WARNING, logger="scripts.install.plugins.codex_agents_plugin"
+        ):
+            rendered = _transform_agent(source, "nw-craft")
+
+        assert "not projected for codex" not in rendered
+        assert not [m for m in caplog.messages if "not projected" in m]
+
     def test_full_transform_preserves_explicit_codex_model(self):
         # bypass: pure function — mutation pair for Claude-model omission
         source = (
@@ -835,6 +894,18 @@ class TestCapabilityPreamble:
         assert "ARE the sanctioned Read on this platform" in instructions
         assert "Creating or modifying files is NOT granted" in instructions
         assert "Command execution is NOT granted" in instructions
+
+    def test_scoped_shell_specifier_grants_only_what_it_names(self):
+        # bypass: pure function -- a Bash(...) specifier is not bare Bash
+        instructions = self._instructions("tools: Read, Bash(des code-fact:*)\n")
+        assert "run EXACTLY these commands via your native shell" in instructions
+        assert "Bash(des code-fact:*)" in instructions
+        # The scope IS the grant: the specifier must neither widen the role to
+        # the whole shell nor lift a denial it never named.
+        assert "command execution via your native shell." not in instructions
+        assert "Command execution is NOT granted" not in instructions
+        assert "File and content search is NOT granted" in instructions
+        assert "Creating or modifying files is NOT granted" in instructions
 
     def test_agent_without_tools_is_unchanged(self):
         # bypass: pure function -- absent tools block keeps today's output

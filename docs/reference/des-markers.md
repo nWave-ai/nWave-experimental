@@ -6,6 +6,12 @@ markers that carry execution context. Hooks (`pre_tool_use`,
 `des.domain.des_marker_parser.DesMarkerParser` to validate, route, and
 audit each Task invocation.
 
+**Status (2026-09-06).** Every producer named on this page is `des dispatch`,
+the composed run. ADR-DES-003 section 11 retires that command as an
+orchestrator: the steps an orchestrating LLM invokes one at a time replace it.
+The markers, the parser and the hooks that read them are unchanged. Which step
+emits each marker is owed, and is recorded here when the composer is removed.
+
 ## Syntax
 
 ```
@@ -91,13 +97,17 @@ execution-log was chosen.
 <!-- DES-PROJECT-ROOT : /home/alex/worktrees/fix-des-worktree -->
 ```
 
-**Producer** (since 2026-07-28): `des dispatch --repo-root <path>` emits this
-marker, resolving `<path>` to an absolute path with `Path.resolve()` — the same
-`resolve()` the hook-side validator applies, so generator and consumer agree by
-construction rather than by coincidence. Before that fix the CLI echoed a relative
-`--repo-root` verbatim and the refusal (`declared-project-root-not-absolute`)
-only fired downstream, at dispatch time, after the whole prompt had been
-assembled.
+**Producer**: NONE in the current runtime. From 2026-07-28 until the retirement
+of `des dispatch`, the producer was `des dispatch --repo-root <path>`, which
+resolved `<path>` to an absolute path with `Path.resolve()` — the same
+`resolve()` the hook-side validator applies, so generator and consumer agreed by
+construction rather than by coincidence. That command no longer exists and no
+surviving step emits this marker; a replacement producer is not named here
+because none has been authored.
+
+The CONSUMER is unretired: `project_root_validator.py` still reads and refuses
+declared values, so a marker written by hand or by any future producer is still
+honored under the rules above.
 
 ### `DES-SWARM-ISOLATED-DISPATCH` *(added 2026-07-28)*
 
@@ -110,14 +120,14 @@ legitimately-ready slice.
 **Value**: free text naming which worktree this is, and which predecessor
 `SliceCommitVerified` record lands at integration.
 
-**Producer**: `des dispatch --swarm-isolated --swarm-justification '<text>'`.
-Both flags are required together; either one alone is refused at exit 2 at the
-authoring surface. A bare `--swarm-isolated` would emit a marker the hook cannot
-read, and the order check would then block naming the PREDECESSOR's missing
-ledger record instead of the malformed declaration — a rejection pointing at the
-wrong thing. A lone `--swarm-justification` would be silently dropped.
-
-**Consumer**: `carpaccio_intercept.py`, parsed by `des_marker_parser.py`.
+**Status**: RETIRED — historical marker, with no live producer and no live
+consumer. Its producer was `des dispatch --swarm-isolated
+--swarm-justification '<text>'` (both flags required together, either one alone
+refused at exit 2 at the authoring surface), and its consumer was
+`carpaccio_intercept.py` via `des_marker_parser.py`. Neither module is present
+in the current runtime, so this section is kept as a record of what the
+declaration meant, not as a surface anything can use today. No replacement
+exists; do not treat any current step as emitting it.
 
 The isolation is a DECLARED fact, never inferred: the CLI does not sniff whether
 `.git` is a file or a directory, nor inspect the shape of the cwd. A gate decides

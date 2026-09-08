@@ -322,7 +322,6 @@ agent-activation:
 # ANTI-PATTERNS (NEVER INCLUDE IN COMMANDS OR AGENT PROMPTS):
 # ❌ "Agent should invoke /nw-review" → SILENT FAILURE (agent can't invoke)
 # ❌ "Use /nw-execute to process the step" → AGENT CANNOT EXECUTE THIS
-# ❌ "After completion, run /nw-finalize" → SILENT FAILURE (agent can't invoke)
 # ❌ "See nWave/tasks/nw/baseline.md for workflow" → AGENT NEEDS CONTENT, NOT PATH
 # ❌ Any reference to agents calling skills or commands → AGENT CANNOT ACCESS
 # ❌ Assuming agents have access to anything beyond Read, Write, Edit, Bash, Grep

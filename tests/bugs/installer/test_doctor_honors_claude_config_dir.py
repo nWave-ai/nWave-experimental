@@ -116,6 +116,10 @@ class TestDoctorCliHonorsTargetFlag:
         (target / "settings.json").write_text(
             json.dumps({"env": {"PATH": f"{target / 'bin'}"}}), encoding="utf-8"
         )
+        # The command publishes its selected profile through this process
+        # environment variable.  Register the baseline before invoking it so
+        # pytest restores the test boundary after the assertion.
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", "")
 
         with patch("sys.argv", ["nwave-ai", "doctor", "--target", str(target)]):
             cli.main()
@@ -149,6 +153,12 @@ class TestDoctorCliHonorsTargetFlag:
         as install/uninstall/attribution) -- verify the flag round-trips
         through os.environ exactly like the sibling subcommands' contract."""
         target = tmp_path / "target-profile"
+
+        # ``cli.main`` deliberately writes this process-global setting for the
+        # invoked command.  Register its pre-command state with monkeypatch so
+        # teardown restores the hermetic default instead of contaminating
+        # later install tests with this test's target profile.
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", "")
 
         with patch("sys.argv", ["nwave-ai", "doctor", "--target", str(target)]):
             cli.main()

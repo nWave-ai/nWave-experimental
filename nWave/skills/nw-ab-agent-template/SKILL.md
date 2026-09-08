@@ -14,7 +14,7 @@ name: {kebab-case-id}
 description: Use for {domain}. {When to delegate — one sentence.}
 model: inherit
 tools: [{only tools this agent needs}]
-maxTurns: 30
+maxTurns: 40
 skills:
   - nw-{domain-knowledge-skill}
 ---
@@ -53,7 +53,7 @@ You MUST load your skill files before beginning any work. Skills encode your met
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **{Phase Name}** — Load `~/.claude/skills/nw-{skill-name}/SKILL.md`. {What to do}. Gate: {completion condition}.
 2. **{Phase Name}** — {What to do}. Gate: {completion condition}.

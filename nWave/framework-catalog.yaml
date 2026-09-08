@@ -256,6 +256,7 @@ agents:
     description: "Reviews test-optimizer outputs \u2014 hard-blocks on production\
       \ drift, coverage drop without justification, unmapped removal, missing approval\
       \ gate (Trim Review)"
+skills: {}
 commands:
   discover:
     description: Conducts evidence-based product discovery through customer interviews
@@ -327,10 +328,9 @@ commands:
     - architecture_document
     - architecture_diagrams
   distill:
-    description: Compiles permanent architecture and value authority into one minimal
-      executable oracle and one validated DeliveryContract for a RED_TO_GREEN or GREEN_TO_GREEN
-      route.
-    argument_hint: '[delivery-id]'
+    description: Compiles permanent architecture and value authority into an executable
+      public oracle for automatic delivery.
+    argument_hint: '[requested outcome]'
     agents:
     - acceptance-designer
     wave: DISTILL
@@ -338,10 +338,10 @@ commands:
     - acceptance_tests
     - test_scenarios
   deliver:
-    description: Delivers one validated DeliveryContract through the selected paradigm
-      crafter, independent review, source-blind EXAMINE when applicable, and one terminal
-      finalization.
-    argument_hint: --repo-root <ROOT> --delivery-contract <repository-relative-json>
+    description: Routes one strict Request into the DES steps - decomposition, design
+      facts, public oracle, craft, independent whole-diff review with source-blind
+      examination, and integration.
+    argument_hint: '[request]'
     agents:
     - platform-architect
     wave: DELIVER
@@ -384,9 +384,8 @@ commands:
     - hotspot_ranking
     - churn_annotated_report
   bugfix:
-    description: Resolves one observed defect through the canonical DeliveryContract
-      flow.
-    argument_hint: --repo-root <ROOT> --delivery-contract <repository-relative-json>
+    description: Routes one observed defect Request into the DES steps.
+    argument_hint: '[observed defect]'
     agents:
     - troubleshooter
     - software-crafter
@@ -428,7 +427,8 @@ commands:
     - review_report
     agents: []
   new:
-    description: Routes a new request to the earliest authority that lacks evidence.
+    description: Reads where an open request stands, then routes to the earliest authority
+      that lacks evidence.
     argument_hint: '[request]'
     agents: []
     wave: CROSS_WAVE

@@ -17,7 +17,7 @@ name: nw-db-migrator
 description: Use for database migration planning. Designs migration strategies with rollback safety.
 model: inherit
 tools: Read, Glob, Grep, Bash
-maxTurns: 30
+maxTurns: 40
 skills:
   - nw-migration-patterns
 ---

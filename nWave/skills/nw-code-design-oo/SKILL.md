@@ -8,9 +8,9 @@ description: OO code-design SSOT — the WHAT-to-design anti-smell catalog (Obje
 Design-time anti-smell catalog for object-oriented work. The architect loads this
 to design smell-free domain types and module boundaries BEFORE DISTILL authors
 ATs; the crafter loads the same SSOT for the execution mechanics that enforce it.
-This file is the WHAT-to-design subset — execution mechanics (batch-then-verify,
-commit gates, build/test protocol, RPP dispatch) stay in `nw-quality-framework`
-and `nw-refactor`.
+This file is the WHAT-to-design subset. `nw-tdd-methodology` owns RED→GREEN
+verification; `nw-refactor` owns behavior-preserving refactoring. Repository
+runner and hooks own build, test, and commit execution.
 
 ## Object Calisthenics
 

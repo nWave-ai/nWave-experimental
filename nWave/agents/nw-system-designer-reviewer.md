@@ -2,7 +2,7 @@
 name: nw-system-designer-reviewer
 description: Use to review system design architecture outputs. Validates trade-off analysis, estimation accuracy, pattern applicability, SPOF detection, and scalability claims. Pairs with system-designer.
 model: sonnet
-maxTurns: 25
+maxTurns: 40
 tools: Read, Glob, Grep, Task, Bash, Skill
 skills:
   - nw-sd-framework

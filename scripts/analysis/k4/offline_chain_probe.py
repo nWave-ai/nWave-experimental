@@ -12,8 +12,8 @@ found all three. This is that pass, and it is meant to be rerun before every
 paid campaign.
 
 Every `claude` invocation in the chain -- the liveness ping, the per-arm
-headroom probe, the Edit/Write permission canary, and the timed delivery itself
--- resolves to `inert_claude.py` through a PATH shim this probe stages and then
+headroom probe, and the timed delivery itself -- resolves to `inert_claude.py`
+through a PATH shim this probe stages and then
 VERIFIES by resolution, never by assumption. Zero provider calls, verified by a
 ledger every shim invocation appends to.
 
@@ -56,21 +56,28 @@ Named here because these are exactly the things it does NOT prove:
    scores come from a hash of the sealed packet (`_score`), so the quality axis
    exercises the join, the shape validation and the ordering arithmetic -- and
    says nothing whatever about delivery quality.
-2. **The permission canary is obeyed, not enforced** (`inert_claude`
-   simplification 2). The sandbox's real Edit/Write/deny policy is unexercised.
-3. **The SUT is cloned from a LOCAL MIRROR of the real remote**, not from the
+2. **The SUT is cloned from a LOCAL MIRROR of the real remote**, not from the
    remote itself. Objects, history and the pinned revision are the real ones --
    what is not exercised is the network clone and its failure modes.
-4. **The delivery diff is fixed and does not implement the feature**, so the
+3. **The delivery diff is fixed and does not implement the feature**, so the
    hidden acceptance oracle is expected to REJECT both arms. That exercises
    `Delivery.DELIVERED_REJECTED`; it does not exercise
    `DELIVERED_ACCEPTED`, and the quality GATE therefore reads BREACH for a
    reason that is a property of this probe, not of any arm.
-5. **Both arms are the same inert runner.** A real campaign's arms differ in
+4. **Both arms are the same inert runner.** A real campaign's arms differ in
    what nWave does to the delivery; here they differ only in the fixed
    multipliers `inert_claude._ARM_FACTORS` applies, so the ratios are designed,
    not measured. What is proved is that the chain COMPUTES a ratio from
    artifacts it produced and compares it against the bound.
+5. **Both arms reach the same inert delivery.** The arms differ in a setup step
+   (`preflight.TREATMENT_INSTALL_STEP`), not in what they invoke, so offline the
+   inert runner answers both the same way. What that proves is the CHAIN over
+   two comparable payloads; it does not exercise the DES step loop, because the
+   inert agent invokes no `des` command. The step loop is proved separately and
+   at zero spend by
+   `tests/scripts/analysis/test_k4_inert_replay_drives_the_real_runner.py`,
+   which walks `des state` -> `po` -> `design` -> `oracle` -> `craft` ->
+   `verify` by following each step's own `NEXT` line against recorded envelopes.
 """
 
 from __future__ import annotations
@@ -92,7 +99,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.analysis.k4 import inert_claude, quality_rubric  # noqa: E402
+from scripts.analysis.k4 import (  # noqa: E402
+    admission_verdict,
+    inert_claude,
+    quality_rubric,
+)
 from scripts.analysis.k4 import preflight as k4_preflight  # noqa: E402
 from scripts.analysis.k4 import subject as k4_subject  # noqa: E402
 
@@ -145,6 +156,26 @@ class StageResult:
     seconds: float
     detail: str = ""
     artifacts: dict[str, str] = field(default_factory=dict)
+
+
+#: What an all-PASS run of this probe does NOT establish, printed beside the
+#: greens every time and carried in the report. A chain that is green on what it
+#: can reach, and silent about what it cannot, is read as a chain that measured
+#: everything -- and this probe exists precisely so nobody spends a paid
+#: campaign on a false reading.
+NOT_COVERED = (
+    "the ratio axes. The inert delivery does not implement the feature, so the "
+    "hidden oracle rejects BOTH arms, the pair is correctly excluded, and cost "
+    "/ tokens / wall stay INDETERMINATE. A green here is the chain computing, "
+    "never a measured ratio.",
+    "the DES step loop. Offline the inert agent invokes no `des` command, so "
+    "the nWave arm exercises the harness and not the steps. The step loop is "
+    "proved separately at zero spend by "
+    "tests/scripts/analysis/test_k4_inert_replay_drives_the_real_runner.py.",
+    "the judgment layer. Rubric scores come from a hash of the sealed packet, "
+    "so the quality axis exercises the join and the arithmetic and says nothing "
+    "about delivery quality.",
+)
 
 
 def _log(message: str) -> None:
@@ -206,12 +237,6 @@ def stage_shims(root: Path) -> StageResult:
     resolved = shutil.which("claude")
     if resolved is None or Path(resolved).resolve() != shim.resolve():
         problems.append(f"PATH resolves `claude` to {resolved}, not the shim {shim}")
-    if k4_preflight._PERMISSION_CANARY_RESULT != inert_claude.PERMISSION_CANARY_RESULT:
-        problems.append(
-            "the canary sentinel drifted: preflight says "
-            f"{k4_preflight._PERMISSION_CANARY_RESULT!r}, the shim answers "
-            f"{inert_claude.PERMISSION_CANARY_RESULT!r}"
-        )
     missing = k4_preflight.missing_sandbox_prerequisites()
     if missing:
         problems.append(f"still missing on PATH after staging: {missing}")
@@ -728,14 +753,55 @@ def uncomputed_axes(axes: dict[str, dict]) -> list[str]:
     return uncomputed
 
 
+def unevaluated_arms(computed: dict) -> list[str]:
+    """Arms whose delivery outcome was never ESTABLISHED, named `pair-N/arm`.
+
+    THE PROPERTY THIS STAGE ACTUALLY DECIDES ON, and the reason it is not "does
+    every axis carry a number". MEASURED 2026-09-06: with both arms running, the
+    inert delivery is rejected on both sides -- the diff is fixed and does not
+    implement the feature, exactly as this module's own limit 3 says -- so
+    `admission_verdict` correctly excludes the pair and every axis is
+    INDETERMINATE. A criterion demanding a number could therefore NEVER pass
+    while the delivery stays inert, which makes it a criterion about the fixture
+    rather than about the chain.
+
+    What separates a working chain from a broken one is in the report as data:
+    an arm reading `NOT_RUN` or `UNSCORED` (`admission_verdict.UNEVALUATED`) is
+    an arm that produced no evidence, which is a chain defect; `DELIVERED_
+    REJECTED` on both arms is the chain having produced a finding. Both shapes
+    were observed on this box within one hour, so the discriminator is not
+    hypothetical.
+
+    A report carrying no `deliveries` block at all is treated as unevaluated
+    rather than as clean: an absent measurement is not a passing one.
+    """
+    rows = computed.get("deliveries")
+    if not isinstance(rows, list) or not rows:
+        return ["deliveries(absent)"]
+    unevaluated = {item.value for item in admission_verdict.UNEVALUATED}
+    named: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            named.append("deliveries(malformed)")
+            continue
+        for arm in ("nwave", "control"):
+            if row.get(arm) in unevaluated:
+                named.append(f"pair-{row.get('pair')}/{arm}={row.get(arm)}")
+    return named
+
+
 def stage_verdict(root: Path) -> StageResult:
     """The admission verdict, COMPUTED on this chain's own artifacts.
 
     A nonzero exit is NOT a stage failure here: `admission_verdict` exits 1 on
     a BREACH and 2 on INDETERMINATE, and this probe's designed wall factor
     breaches deliberately. The stage's own question is narrower and is the one
-    the mandate asks: was a verdict COMPUTED from produced artifacts, with
-    every axis carrying a number?
+    the mandate asks: did the chain PRODUCE the evidence a verdict is computed
+    from, on every arm of every pair?
+
+    Nothing here reads or moves a bound. `admission_verdict` owns the
+    thresholds and the exclusion rule; this stage only asks whether it was
+    given something to decide on.
     """
     started = time.monotonic()
     out = root / "admission.json"
@@ -777,16 +843,32 @@ def stage_verdict(root: Path) -> StageResult:
         )
     out.write_text(json.dumps(computed, indent=1) + "\n", encoding="utf-8")
     axes = axes_of(computed)
-    missing = uncomputed_axes(axes)
+    unevaluated = unevaluated_arms(computed)
     detail = f"verdict={computed.get('verdict')} exit={done.returncode} " + " ".join(
         f"{name}={axes[name].get('ratio')}({axes[name].get('status')})"
         for name in sorted(axes)
     )
-    if missing:
-        detail += f" -- UNCOMPUTED AXES {missing}"
+    deliveries = computed.get("deliveries")
+    if isinstance(deliveries, list):
+        detail += " deliveries=" + " ".join(
+            f"p{row.get('pair')}:nwave={row.get('nwave')},control={row.get('control')}"
+            for row in deliveries
+            if isinstance(row, dict)
+        )
+    # Still REPORTED, no longer the pass criterion: which axes carry no number
+    # is what a reader wants to see, and `uncomputed_axes` keeps intercepting
+    # the presence-only false green its own tests pin. What it cannot do is
+    # decide this stage, because an inert delivery can never be accepted.
+    uncomputed = uncomputed_axes(axes)
+    if uncomputed:
+        detail += f" -- axes without a number {uncomputed}"
+    if unevaluated:
+        detail += f" -- ARMS WITH NO ESTABLISHED OUTCOME {unevaluated}"
+    if not axes:
+        detail += " -- NO AXES IN THE REPORT"
     return StageResult(
         "verdict",
-        "FAIL" if missing or not computed.get("verdict") else "PASS",
+        "FAIL" if unevaluated or not axes or not computed.get("verdict") else "PASS",
         time.monotonic() - started,
         detail,
         {"admission": str(out)},
@@ -938,6 +1020,9 @@ def main(argv: list[str] | None = None) -> int:
         "keep_going": args.keep_going,
         "stages": [asdict(r) for r in results],
         "failed_stages": [r.name for r in results if r.status == "FAIL"],
+        # Carried in the machine record too, not only printed: a consumer that
+        # reads `failed_stages == []` and stops has read half the result.
+        "not_covered": list(NOT_COVERED),
         "spend": spend_report(root),
     }
     (root / "offline-chain-probe.json").write_text(
@@ -949,6 +1034,8 @@ def main(argv: list[str] | None = None) -> int:
             f"{result.status:5s} {result.name:11s} {result.seconds:7.0f}s {result.detail[:160]}"
         )
     _log(f"spend: {json.dumps(report['spend']['by_kind'])} inert invocations, USD 0.00")
+    for line in NOT_COVERED:
+        _log(f"NOT COVERED: {line}")
     _log(f"report: {root / 'offline-chain-probe.json'}")
     return 0 if all(r.status == "PASS" for r in results) else 1
 

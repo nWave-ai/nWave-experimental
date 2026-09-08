@@ -1,6 +1,6 @@
 ---
 name: nw-design
-description: "Establishes durable architecture, reuse, boundaries, cross-layer algebra, residual stress behavior, paradigm, and prefactoring decisions for later DeliveryContract compilation."
+description: "Establishes durable architecture, reuse, boundaries, cross-layer algebra, residual stress behavior, paradigm, and prefactoring decisions for deterministic minimal handover construction."
 user-invocable: true
 argument-hint: '[bounded design question] --paradigm=[auto|oop|fp] [--residuality]'
 ---
@@ -13,8 +13,17 @@ argument-hint: '[bounded design question] --paradigm=[auto|oop|fp] [--residualit
 ## Authority
 
 DESIGN updates durable architecture brief/ADRs, never a per-delivery narrative,
-plan or duplicate contract; DISTILL projects its executable subset into one
-immutable `DeliveryContract`.
+plan or duplicate contract. Product value is decomposed once into an ordered
+graph; no downstream competence reslices it. DISTILL asks the existing
+CLI/software producer to derive one minimum executable whole-Request handover
+from Git and the existing durable product/design/oracle authorities. Every
+independently observable and shippable value slice represented in that graph
+gets one oracle, independent acceptance-test review, whole-slice implementation
+review, source-blind EXAMINE when applicable, and mechanical
+integration/finalization. Internal technical shards, packages, layers and steps
+get no mini-cycle. Request-wide
+review or EXAMINE requires a named cross-slice observation not covered by slice
+evidence.
 
 Route application/component to `nw-solution-architect`, domain boundaries to
 `nw-ddd-architect`, scale/distribution to `nw-system-designer`, deployment to
@@ -50,13 +59,59 @@ Code-level structure stays downstream unless a public contract needs a boundary.
    not automatically a missing type. A new residue amends architecture, never
    refactoring.
 8. **Test substrate** — name real driving port, helper/import, fixture,
-   executor/lifecycle, dependency owner, declared/runtime state and literal argv.
+   executor/lifecycle, dependency owner, resolved version and manifest/lock,
+   declared/runtime state and literal argv.  If a required dependency is absent,
+   include its architecture-grounded target delta; hand off only when it is both
+   declared and present in the verification runtime.
+   Keep one oracle and at most two examples per obligation; select a property
+   test only for a broad or generated input domain, otherwise `NOT_APPLICABLE`.
    Gate: DISTILL cannot invent ambient interpreter or boundary.
 9. **Human projection** — state observations/equality, examples/counterexamples,
    alternatives/provenance, laws, consequences/trade-offs, failure handling and
    guarantee ceiling/exclusions in ordinary language. Ask only where an answer
    changes equality, carrier, law or irreducible trade-off; otherwise proceed.
    It projects the same model, never a second authority or changed metaphor.
+   **Explain before you formalize (owner rule, Ale 2026-09-06):** every section
+   a human will read opens with one or two sentences in ordinary language that
+   say what it means and why it matters, BEFORE any table, law or symbol; a
+   technical term that cannot be avoided is glossed in half a line at its first
+   use; a word replaces a symbol wherever a word suffices. This is a rule of the
+   projection, not a style of one document: the HTML rendering
+   (`nw-doc-as-artifact`) adds no content, so readability must already be in the
+   markdown, or the people who decide cannot take part. Gate: a section that
+   opens with a table, a formula or an undefined term fails the projection.
+
+## Result and handover boundary
+
+DESIGN owns semantic decisions by editing or reusing the existing durable brief
+or ADR that owns them. It never authors a handover or per-delivery document. In
+a managed invocation, provider-enforced structured output contains only
+`accepted | rejected | indeterminate` and one opaque `diagnostic` string. It
+contains no design, locator, target, authority, argv, rationale or other
+semantic payload. The control plane branches only on the enum, forwards
+`diagnostic` intact, parses no terminal prose, and ignores the duplicate
+envelope `result`.
+
+Before invocation, software snapshots the already allowed authority scope. An
+accepted DESIGN turn may change only the existing durable authority document it
+owns; a correction may change only the document named by the already bound
+authority locator and must produce distinct bytes. A non-accepting turn changes
+nothing. Software observes that exact owned delta, then rereads paradigm,
+targets, obligations, oracle and
+native verification commands through the existing durable-authority resolvers.
+Zero delta is accepted only when the authority locator was already resolved
+before invocation and the existing authority is complete. Missing or ambiguous
+ownership is `indeterminate`; conflicting authority is `rejected`.
+
+DISTILL asks the existing CLI/software producer to derive route, Git base,
+authority locator and handover bytes from Git and the durable product/design/
+oracle authorities.
+The Request's ordered value graph is decomposed once; the
+producer emits one minimal whole-Request handover with one fan-in. Every
+independently observable, shippable value slice receives its value-level oracle,
+acceptance-test review, whole-slice implementation review, source-blind EXAMINE
+when applicable, and integration/finalization. Internal technical shards receive
+no separate contract, review, EXAMINE or finalization.
 
 ## Constructive closure and refinement
 
@@ -98,15 +153,17 @@ representation, never a patch site:
    ship only with an explicit recorded justification of why the representation
    cannot change, in the amended durable authority.
 
-## Independent statement review
+## Independent statement review — retired
 
-Proof/model/exhaustive artifacts verify the PROOFS, not the STATEMENTS;
-two lanes may agree on the same misreading — that is a coherence check, never
-corroboration. Required DESIGN review is one two-phase conversation: before solution, reviewer gets ONLY
-mandate/binding constraints, never authority/algebra/proofs/conclusions, and
-returns precommitted counterexamples/questions; after authoring, it evaluates the
-authority against that challenge and normal criteria. Challenge stays ephemeral,
-never an artifact/schema/gate/lane. Findings amend authority before proof re-run.
+Proof/model/exhaustive artifacts verify the PROOFS, not the STATEMENTS; two
+lanes may agree on the same misreading — that is a coherence check, never
+corroboration. This limitation remains a DESIGN self-falsification duty, not an
+independent delivery review. Before returning `accepted`, DESIGN attacks its own
+observations, constructive public-oracle chain, reuse/prefactoring choices,
+boundary/failure algebra, residual guarantees and test substrate with concrete
+counterexamples. The delivery flow's independent quality points are the
+acceptance-oracle review, one whole-diff implementation review, and conditional
+source-blind EXAMINE.
 
 For each unknown load-bearing system fact, run at most one bounded empirical
 probe (three per authority), recording fact and result. Model only a separately
@@ -121,25 +178,24 @@ tool is available, execute it; otherwise use explicit algebraic fallback and
 mark only that proof `INDETERMINATE`. Offer installation only on a known,
 bounded, user-consented path. Tool absence never blocks DESIGN or becomes proof.
 
-Use applicable `nw-review` questions only (S1-S4 structure; selected T5-T7
-time; three values); `nw-review` owns universal routing. They find "structural incoherence", never temporal holes; a temporal gap needs the model checker.
+Use applicable `nw-review` questions as DESIGN self-checks only (S1-S4
+structure; selected T5-T7 time; three values); do not dispatch an independent
+DESIGN review. They find "structural incoherence", never temporal holes; a
+temporal gap needs the model checker.
 
 ## Handoff
 
-After phase-two review, update the brief/ADRs once. Return stable decision ids
-plus the minimum facts DISTILL needs to compile route, paradigm, targets,
-boundaries, obligations, oracle choice, applicability and command vectors. Do
-not author the `DeliveryContract` here and do not copy full rationale into it.
+After self-falsification and any runner-mediated initial ATD-to-DESIGN
+correction, update or reuse the one existing durable brief or ADR that owns the
+decision, then return the outcome ONCE. A correction changes only the already
+bound authority document and the runner re-derives its facts before ATD resumes.
+The authority records paradigm, targets, obligations, oracle locator and
+supports, native command vectors and
+the public contract; the result carries none of them. Software owns the
+handover and deterministically projects only the facts downstream consumers
+need. Never write the handover, create a design document or copy rationale into
+the diagnostic.
 Apply `construction:design-paradigm-projection` from the shared cross-cutting
 core; root never retypes or defaults that decision.
-
-```text
-DESIGN-RESULT
-verdict: PASS | NEEDS_INPUT | CONFLICT
-authorities: <changed brief/ADR paths>
-decisions: <stable ids>
-route: RED_TO_GREEN | GREEN_TO_GREEN
-oracle: <existing locator for GREEN_TO_GREEN, otherwise ATD_REQUIRED>
-boundaries: <named ports and dependency directions>
-obligations: <cross-layer laws and residual stress properties>
-```
+Use the opaque diagnostic only to summarize a refusal or remaining uncertainty
+for the human, without a machine-readable terminal grammar.

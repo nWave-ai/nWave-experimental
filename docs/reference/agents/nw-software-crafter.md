@@ -1,11 +1,11 @@
 # nw-software-crafter
 
-Use for DELIVER wave object-oriented implementation and behavior-preserving refactoring from one validated DeliveryContract. Implements production code only; ATD owns tests.
+Implements the OO change for one ready ordered batch.
 
-**Wave:** DELIVER
-**Model:** sonnet
-**Max turns:** 45
-**Tools:** Read, Write, Edit, Bash, Glob, Grep, Skill
+**Wave:** Other
+**Model:** claude-opus-5
+**Max turns:** 40
+**Tools:** Read, Edit
 
 ## Commands
 
@@ -15,4 +15,4 @@ Use for DELIVER wave object-oriented implementation and behavior-preserving refa
 
 ## Preloaded skills
 
-- [nw-crafter-discipline-delivery-contract](../skills/nw-crafter-discipline-delivery-contract.md) — Crafter discipline for implementing one immutable DeliveryContract with minimal production change, reuse, boundary integrity, and terminal evidence.
+- [nw-tdd-methodology](../skills/nw-tdd-methodology.md) — Deep knowledge for Outside-In TDD - double-loop architecture, ATDD integration, port-to-port testing, walking skeletons, and test doubles policy

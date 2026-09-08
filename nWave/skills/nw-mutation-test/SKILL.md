@@ -1,8 +1,8 @@
 ---
 name: nw-mutation-test
-description: "Run an explicit mutation probe over the validated delivery delta, or support the project-level nightly-delta policy. Disabled by default."
+description: "Run an explicit mutation probe over a named production delta, or support the project-level nightly-delta policy. Disabled by default."
 user-invocable: true
-argument-hint: '[--delivery-contract <path> | --nightly-delta] [--threshold 80]'
+argument-hint: '[--delta <base>...<head> | --nightly-delta] [--threshold 80]'
 ---
 
 # Mutation Test
@@ -16,14 +16,13 @@ gate, workflow state or substitute for semantic acceptance tests.
 
 ## Input authority
 
-- Explicit probe: validate the named DeliveryContract, then intersect its
-  production targets with the terminal candidate diff.
+- Explicit probe: use the named production diff.
 - Nightly delta: use production files changed since the last successful
   mutation run.
 - Never infer targets from `docs/feature/`, feature-delta, a progress ledger,
   filenames alone or the implementation agent's claims.
 
-If the intersection is empty, report `not-applicable` and stop. If a target is
+If the diff is empty, report `not-applicable` and stop. If a target is
 missing, outside the repository or not production code, fail loudly before
 starting a mutation tool.
 

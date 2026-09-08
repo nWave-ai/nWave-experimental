@@ -1,0 +1,56 @@
+{
+  "run_id": "20260905T062139Z-38400",
+  "role_id": "nw-product-owner",
+  "schema_the_provider_enforced": {
+    "type": "object",
+    "properties": {
+      "outcome": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "rejected",
+          "indeterminate"
+        ]
+      },
+      "diagnostic": {
+        "type": "string"
+      },
+      "values": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "observation": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "observation"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "outcome",
+      "diagnostic",
+      "values"
+    ],
+    "additionalProperties": false
+  },
+  "structured_output": {
+    "outcome": "rejected",
+    "diagnostic": "Request carries three independently shippable observable outcomes rather than one; ordered as walking skeleton (correct edge/label reading against an existing index), then index materialization for fresh checkouts, then loud missing-tool degradation. Each is observable through the des code-fact driving port alone.",
+    "values": [
+      {
+        "observation": "In a checkout that already has graphify-out/graph.json, `des code-fact query.callers-of resolve_declared_capability --root .` answers provider: graphify, confidence: binding-resolved and lists the file:line call site of every EXTRACTED calls edge targeting the symbol, excluding imports edges; a genuinely uncalled in-root symbol answers an empty site set at binding-resolved with fault_count 0 and scope complete."
+      },
+      {
+        "observation": "In a checkout with no graphify-out/ directory and the graphify executable on PATH, the same query materializes or refreshes the graphify index for the given root and then answers provider: graphify, confidence: binding-resolved with the real call sites, never answering provider: textsearch."
+      },
+      {
+        "observation": "With the graphify executable absent from PATH, the query degrades LOUD: it answers provider-error naming graphify as the missing tool and never silently answers from textsearch."
+      }
+    ]
+  }
+}

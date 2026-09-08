@@ -10,7 +10,7 @@ user-invocable: false
 
 ## Deterministic workflow
 
-At execution start create these as TaskCreate items and run in order.
+Run these steps in order:
 
 1. **Baseline** — Measure the agent's lines, words, bytes, responsibilities, monolith debt, and existing behavioral projections. Stop: baseline is red, the target is not an agent, or a textual pin cannot be preserved.
 2. **Extract configuration** — Move semantic configuration into frontmatter while preserving `name`, `model`, `tools`, `maxTurns`, `skills`, and public behavior. Stop: a field cannot be represented without behavior change.

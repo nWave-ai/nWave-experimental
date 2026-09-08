@@ -28,25 +28,44 @@ Stdlib only -- Python is the one runtime dependency, and deliberately no `des`
 import: this module was offered to the benchmark authors, who do not have it
 installed. Every spawn therefore states `stdin=` and `timeout=` as literal
 kwargs, which is the alternative the spawn-perimeter gate allows where importing
-`des.runtime.spawn` is not available. DEVNULL is not decoration: POSIX inherits
-fd 0 transitively, so a child that inherits it can block forever on a descriptor
-that delivers data and never reaches EOF -- the confirmed root cause of the
-`des refactor --pile` deadlock, four nested processes asleep on pipes.
+`des.runtime.spawn` is not available. The finite Request is supplied once on
+stdin via `communicate(input=...)`, which also closes EOF.
 
     paired_campaign.py --arms arms.json --pairs 3 --out ./campaign
 
 `arms.json`:
     {"task": "<the identical prompt both arms receive>",
      "arms": {"control": {"setup": [["git","clone","--depth","1","<sut>","."]],
-                          "argv":  ["claude","-p","{task}","--model","claude-sonnet-5",
-                                    "--output-format","json",
-                                    "--dangerously-skip-permissions"]},
+                          "argv":  ["claude","-p","--model","claude-opus-5",
+                                    "--output-format","json"]},
               "nwave":   {"setup": [["git","clone","--depth","1","<sut>","."],
-                                    ["nwave-ai","install"],
-                                    ["nwave-ai","project","enable"]],
-                          "argv":  ["claude","-p","{task}", ...]}}}
+                                    ["nwave-ai","install"]],
+                          "argv":  ["claude","-p","--model","claude-opus-5",
+                                    "--output-format","json"]}}}
+
+The two `argv` lists above are byte-identical on purpose. An example that
+differed anywhere would teach the opposite of what this module requires.
 
 A bare list is still accepted as an arm with no setup.
+
+## Both arms declare the SAME argv, and that is the design
+
+The two arms above run the identical agent invocation. Their only declared
+difference is a SETUP step: one of them installs nWave. That is what a pair is
+for -- everything the comparison does not intend to vary is held equal, and the
+one intended difference is named.
+
+It also keeps this module's measurement honest for free. One timed invocation
+per arm means one session id, one cost total and one token total per arm, read
+out of the same agent envelope on both sides. A harness where one arm was a
+sequence of commands would have to sum an aggregate the other arm reports
+directly, and the two numbers would no longer be the same measurement.
+
+ADR-SSOT-002 Section 4b is why this is the right shape and not merely a
+convenient one: what nWave ships is an LLM that invokes the DES steps one at a
+time, reading each terminal. So the treatment IS an agent run, and measuring it
+means running an agent. `k4/preflight.py:TREATMENT_INSTALL_STEP` names the one
+step that makes an arm the treatment.
 
 ## Two views from ONE execution, and what actually differs between them
 
@@ -57,8 +76,8 @@ setup is strictly sequential and therefore decomposable. Running two campaigns
 to obtain them would spend twice for one number.
 
 **The two views differ in wall-clock and in essentially nothing else**, and
-saying so is not a caveat but the finding: `nwave-ai install` and `project
-enable` are deterministic Python, so an arm's setup contributes zero model
+saying so is not a caveat but the finding: the direct-DES install is deterministic
+Python, so an arm's setup contributes zero model
 tokens. A cold/warm split that implied two different cost figures would be
 inventing a distinction the mechanism does not have.
 """
@@ -125,12 +144,10 @@ class ArmSpec:
     only one to have. Isolation is a parity requirement before it is a safety one.
     """
 
-    def rendered(self, task: str, workspace: Path) -> list[str]:
-        """`{task}` and `{workspace}` are the ONLY substitutions, using the
-        SAME `workspace` `rendered_env` renders for this call's env dict.
+    def rendered(self, workspace: Path) -> list[str]:
+        """Render only the workspace; stdin is the one shared task carrier.
 
-        A single-token substitution here (`{task}` alone) let a `--settings`
-        JSON argv token carrying `{workspace}` (a K4 sandbox's `env.PATH`,
+        A `--settings` JSON argv token carrying `{workspace}` (a K4 sandbox's `env.PATH`,
         declared once and shared by argv and env) reach the spawned process
         UNRENDERED, while `rendered_env` correctly substituted the same
         placeholder in the env dict -- the two views of one declared value
@@ -138,10 +155,7 @@ class ArmSpec:
         the one `workspace` the caller already resolved, keeps argv and env
         joined on the same value by construction.
         """
-        return [
-            tok.replace("{task}", task).replace("{workspace}", str(workspace))
-            for tok in self.argv
-        ]
+        return [tok.replace("{workspace}", str(workspace)) for tok in self.argv]
 
     def rendered_env(self, workspace: Path) -> dict[str, str]:
         """`{workspace}` is the only substitution, so an arm can name a
@@ -173,17 +187,6 @@ def parse_arm(name: str, declared: object) -> ArmSpec:
     )
 
 
-#: Flags that must carry the SAME value in both arms. An arm may differ in what
-#: it IS; it may not quietly differ in what it is measured under. Lane A leaves
-#: the model pin open, so this is the check that stops an unpinned campaign
-#: rather than a comment asking someone to remember.
-_MUST_MATCH = ("--model", "--output-format")
-
-
-def _flag_values(argv: tuple[str, ...], flag: str) -> list[str]:
-    return [argv[i + 1] for i, t in enumerate(argv) if t == flag and i + 1 < len(argv)]
-
-
 def git_checkout_targets(setup: tuple[tuple[str, ...], ...]) -> list[str]:
     """The commit/ref each declared `git checkout` step in this arm's setup
     targets, in order -- the last token, which is where the target lands
@@ -204,23 +207,10 @@ def git_checkout_targets(setup: tuple[tuple[str, ...], ...]) -> list[str]:
 def declared_identity_violations(arms: list[ArmSpec]) -> list[str]:
     """Everything the operator declared that would make the arms incomparable.
 
-    The docstring used to claim `{task}` substitution made both arms "provably"
-    receive the same task. The lane-D audit refuted it: that is true of the
-    MECHANISM and says nothing about what was DECLARED. An arm whose argv never
-    mentions `{task}` runs a different task entirely, and nothing compared the
-    models. These are checks now, not prose.
+    Both arms receive the finite Request over stdin; argv is not a second task
+    carrier and provider-specific raw flags are not a semantic comparison law.
     """
     problems: list[str] = []
-    for arm in arms:
-        if not any("{task}" in token for token in arm.argv):
-            problems.append(
-                f"arm '{arm.name}' never substitutes {{task}}: it would run a "
-                "different task from the other arm"
-            )
-    for flag in _MUST_MATCH:
-        seen = {arm.name: _flag_values(arm.argv, flag) for arm in arms}
-        if len({tuple(v) for v in seen.values()}) > 1:
-            problems.append(f"{flag} differs across arms: {seen}")
     # Reproducibility (K4 matrix rows 2/4): a `git checkout` an arm's setup
     # declares names the exact subject state it measures. Two arms
     # comparable in every other declared way but checked out to two
@@ -319,78 +309,6 @@ def _auth_is_live() -> tuple[bool, str]:
         return False, f"unparseable probe output: {done.stdout[:120]!r}"
     if payload.get("is_error"):
         return False, str(payload.get("result"))[:160]
-    return True, "ok"
-
-
-#: One line, cheap. `_AUTH_PROBE` above is a HARD-CODED `claude` invocation
-#: that cannot see per-arm env, so it can only prove auth is live once,
-#: globally. Row 21 (K4 matrix) needs a probe PER ARM, through that arm's
-#: own declared env -- the confound this exists to catch is both arms
-#: drawing on ONE shared credit/quota pool, which a single global probe
-#: cannot distinguish from two disjoint healthy accounts.
-_HEADROOM_PROBE_TASK = "Reply with exactly: OK"
-
-#: Markers that name QUOTA/CREDIT exhaustion specifically. A transient
-#: network blip or an unrelated `is_error` must never read as "this arm is
-#: out of headroom" -- conflating them would refuse a campaign for the
-#: wrong reason, and the refusal message would lie about WHY.
-_HEADROOM_EXHAUSTION_MARKERS = (
-    "Credit balance is too low",
-    "rate_limit",
-    "rate limit",
-    "quota",
-)
-
-
-def _headroom_names_exhaustion(result: str) -> bool:
-    lowered = result.lower()
-    return any(marker.lower() in lowered for marker in _HEADROOM_EXHAUSTION_MARKERS)
-
-
-def _arm_headroom_is_sufficient(arm: ArmSpec, workspace: Path) -> tuple[bool, str]:
-    """One-line probe through THIS arm's own env, checked for a known
-    exhaustion marker before any pair is timed.
-
-    Refuses to CLASSIFY an unrecognized `is_error` as exhaustion: a probe
-    that cannot reach the provider at all (network, malformed spec) is a
-    different failure than a provider that reached back and said "no
-    headroom" -- the caller decides what a plain probe failure means;
-    this function answers only the exhaustion question.
-    """
-    environment = {**os.environ, **arm.rendered_env(workspace)}
-    probe_argv = arm.rendered(_HEADROOM_PROBE_TASK, workspace)
-    try:
-        done = subprocess.run(
-            probe_argv,
-            capture_output=True,
-            text=True,
-            timeout=180,
-            cwd=workspace,
-            env=environment,
-            stdin=subprocess.DEVNULL,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return (
-            True,
-            f"probe could not run, not classified as exhaustion: "
-            f"{type(exc).__name__}: {exc}",
-        )
-    try:
-        payload = json.loads(done.stdout)
-    except json.JSONDecodeError:
-        return (
-            True,
-            f"unparseable probe output, not classified as exhaustion: {done.stdout[:160]!r}",
-        )
-    if not isinstance(payload, dict):
-        return (
-            True,
-            "probe output is not a JSON object, not classified as exhaustion: "
-            f"{done.stdout[:160]!r}",
-        )
-    result = str(payload.get("result", ""))
-    if payload.get("is_error") and _headroom_names_exhaustion(result):
-        return False, result[:200]
     return True, "ok"
 
 
@@ -516,15 +434,16 @@ def _run_delivery(arm: ArmSpec, *, task: str, pair_dir: Path, timeout: int) -> b
     environment = {**os.environ, **arm.rendered_env(workspace)}
     started = time.monotonic()
     stdout, stderr = "", ""
-    returncode = -1
+    returncode: int | None = None
     proc: subprocess.Popen | None = None
     pgid: int | None = None
+    failure_class: str | None = None
     try:
         proc = subprocess.Popen(
-            arm.rendered(task, workspace),
+            arm.rendered(workspace),
             cwd=workspace,
             env=environment,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -532,15 +451,17 @@ def _run_delivery(arm: ArmSpec, *, task: str, pair_dir: Path, timeout: int) -> b
         )
         pgid = os.getpgid(proc.pid)
         try:
-            stdout, stderr = proc.communicate(timeout=timeout)
+            stdout, stderr = proc.communicate(input=task, timeout=timeout)
             returncode = proc.returncode
         except subprocess.TimeoutExpired:
             stdout, stderr = "", f"TIMEOUT after {timeout}s"
+            failure_class = "timeout"
             raise
     except subprocess.TimeoutExpired:
         pass
     except OSError as exc:
         stdout, stderr = "", f"{type(exc).__name__}: {exc}"
+        failure_class = type(exc).__name__
     finally:
         if pgid is not None:
             try:
@@ -557,13 +478,32 @@ def _run_delivery(arm: ArmSpec, *, task: str, pair_dir: Path, timeout: int) -> b
                     pass
             except OSError:
                 pass
+        if proc is not None and proc.returncode is not None:
+            returncode = proc.returncode
     # Absolute paths, resolved before any chdir: the shell version wrote every
     # artifact INSIDE the workspace it had cd'd into, because `dirname $0` was
     # relative and the redirect ran after the cd.
+    duration_ms = round((time.monotonic() - started) * 1000)
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict):
+        payload["duration_ms"] = duration_ms
+        stdout = json.dumps(payload, separators=(",", ":"))
+    elif failure_class is not None:
+        payload = {
+            "is_error": True,
+            "duration_ms": duration_ms,
+            "terminal_reason": failure_class,
+        }
+        if returncode is not None:
+            payload["returncode"] = returncode
+        stdout = json.dumps(payload, separators=(",", ":"))
     (pair_dir / f"{arm.name}.json").write_text(stdout, encoding="utf-8")
     (pair_dir / f"{arm.name}.err").write_text(stderr, encoding="utf-8")
     valid = _delivery_is_valid(stdout, returncode)
-    print(f"  {arm.name}: {time.monotonic() - started:.0f}s", flush=True)
+    print(f"  {arm.name}: {duration_ms / 1000:.0f}s", flush=True)
     return valid
 
 
@@ -611,8 +551,8 @@ def main(argv: list[str] | None = None) -> int:
             + "WHY:  a paired campaign isolates provider conditions, not declaration\n"
             "      mistakes. A difference nobody declared is indistinguishable, in\n"
             "      the result, from the effect being measured.\n"
-            "HOW:  make both arms substitute {task}, and pin the shared flags to the\n"
-            "      same values in the spec file.\n"
+            "HOW:  correct the declared checkout and isolation facts. The Request is\n"
+            "      supplied identically to both arms on stdin.\n"
         )
         return 2
 
@@ -633,27 +573,6 @@ def main(argv: list[str] | None = None) -> int:
     # rather than run degraded -- checked per arm, through that arm's own
     # declared env, BEFORE campaign.json is written or any pair begins.
     args.out.mkdir(parents=True, exist_ok=True)
-    exhausted: list[tuple[str, str]] = []
-    for arm in arms:
-        probe_workspace = args.out / f".headroom-probe-{arm.name}"
-        probe_workspace.mkdir(parents=True, exist_ok=True)
-        sufficient, detail = _arm_headroom_is_sufficient(arm, probe_workspace)
-        if not sufficient:
-            exhausted.append((arm.name, detail))
-    if exhausted:
-        sys.stderr.write(
-            "WHAT: at least one arm's quota/credit headroom probe reports "
-            "exhaustion.\n"
-            + "".join(f"      - arm '{name}': {detail}\n" for name, detail in exhausted)
-            + "WHY:  both arms may share one credit/quota pool; running a pair now\n"
-            "      would hit exhaustion mid-pair in a CORRELATED way, invalidating\n"
-            "      the pair rather than measuring anything -- and the timer already\n"
-            "      started is not recoverable.\n"
-            "HOW:  restore headroom on the exhausted arm's account, or use disjoint\n"
-            "      or serialized credit sources per arm, then rerun. This refusal is\n"
-            "      deliberate: the campaign never runs degraded.\n"
-        )
-        return 78
     campaign_record = {
         "task": task,
         "arms": {

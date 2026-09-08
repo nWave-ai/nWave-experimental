@@ -85,42 +85,6 @@ _EXCLUDED_SNAPSHOT_NAMES = frozenset(
 )
 
 
-#: `server.log` has no constant in `prepare_examiner_fixture`: the keepalive
-#: supervisor writes it from inside two GENERATED strings (a shell command line
-#: and a python source string), so the literal is the only handle there is.
-#: Named here rather than inlined below so that drift has one visible site.
-_SERVER_LOG_FILE_NAME = "server.log"
-
-#: Everything the ARM'S OWN SETUP writes into the workspace root: the fixture
-#: doc, the subject DB and its lock, the keepalive server/supervisor footprint,
-#: the reset marker, the dev-delta requirements file. None of it is delivery.
-#:
-#: Why this set has to exist, measured 2026-08-23 on `preflight-20260823-rex`:
-#: a raw `git diff` against the pinned subject revision does NOT discriminate a
-#: delivery from its absence. The control arm's setup alone leaves 8 untracked
-#: paths behind, and the nWave arm's setup runs `nwave-ai project enable`,
-#: which appends `blind_review._SETUP_GITIGNORE_BLOCK` to the subject's own
-#: `.gitignore` -- in the treatment arm ONLY. So an arm that delivered nothing
-#: would still read as delivering, and it would read that way asymmetrically,
-#: in favour of the arm under test. The rule applied is `blind_review`'s own,
-#: unchanged: strip what SETUP wrote, keep what DELIVERY wrote.
-_SETUP_FOOTPRINT_PATHS = frozenset(
-    {
-        pef.DOC_NAME,
-        pef.DB_FILE_NAME,
-        pef.DB_PRISTINE_SNAPSHOT_NAME,
-        pef.DB_LOCK_FILE_NAME,
-        pef.SERVER_PID_FILE_NAME,
-        pef.SUPERVISOR_PID_FILE_NAME,
-        pef.SUPERVISOR_SCRIPT_NAME,
-        pef.SUPERVISOR_LOCK_FILE_NAME,
-        pef.SUPERVISOR_LOG_FILE_NAME,
-        pef.RESET_MARKER_FILE_NAME,
-        _SERVER_LOG_FILE_NAME,
-        _DEV_DELTA_REQUIREMENTS_NAME,
-    }
-)
-
 _GITIGNORE_NAME = ".gitignore"
 
 
@@ -497,7 +461,7 @@ def _is_setup_residue(rel_path: str) -> bool:
     to agree on what "the delivery changed" means, or a run can be sealed for
     review as a delivery and recorded here as none.
     """
-    if rel_path in _SETUP_FOOTPRINT_PATHS:
+    if rel_path == _DEV_DELTA_REQUIREMENTS_NAME:
         return True
     if blind_review._excluded_path(rel_path):
         return True

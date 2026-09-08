@@ -25,10 +25,8 @@ CENSUSED, not validated (exit 0 always, never a verdict):
   exact risk that document was written to avoid. This is therefore a
   DELIBERATE choice, not a forgotten TODO: F-SKILL-MAPPING-GATE-WARNS-
   NEVER-FAILS (backlog) names the follow-up -- triage the unexplained
-  orphans, then arm a ratchet (the `check_no_new_ghost_verb_citations.py`
-  / `ghost-verb-citation-baseline.json` shape) over the INSPECTED
-  residue. Never re-derive that decision from first principles here;
-  read the document.
+  orphans and fix or delete what the triage finds. Never re-derive that
+  decision from first principles here; read the document.
 
 `PUBLIC_SHARED_SKILLS` (`scripts/shared/agent_catalog.py`) is the known
 allow-list of orphans already explained by a non-frontmatter load path.

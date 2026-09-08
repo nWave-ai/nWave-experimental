@@ -2,7 +2,7 @@
 name: nw-diverger-reviewer
 description: Use as peer reviewer for nw-diverger outputs — validates JTBD rigor, research evidence quality, option structural diversity, taste application correctness, and recommendation coherence. Runs on Haiku for cost efficiency.
 model: haiku
-maxTurns: 25
+maxTurns: 40
 tools: Read, Glob, Grep, Task
 skills:
   - nw-diverger-review-criteria
@@ -46,7 +46,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Read and Classify** — Load `~/.claude/skills/nw-diverger-review-criteria/SKILL.md`. Read all 5 artifact files in `docs/feature/{id}/diverge/`. Identify which phases are covered. Gate: skill loaded, all artifacts read, phases mapped.
 

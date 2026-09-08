@@ -10,7 +10,7 @@ user-invocable: false
 
 ## Deterministic step-sequence (run every time, in order)
 
-At execution start create these as TaskCreate items and run in order:
+Run these steps in order:
 
 1. **CLASSIFY** — Load `~/.claude/skills/nw-command-design-patterns/SKILL.md`. Classify dispatcher | orchestrator. Gate: classification chosen.
 2. **MEASURE + FLAG** — Load `~/.claude/skills/nw-command-optimization-workflow/SKILL.md`. `wc -l`; flag reducible content (the duplication triangle: command-to-command, command-to-agent, command-to-self). Gate: before-count + reducible-list recorded.

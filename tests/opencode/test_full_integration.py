@@ -270,21 +270,11 @@ class TestEditGuard:
         )
 
 
-class TestWriteGuardCwdIsolation:
-    """Regression gate: adapter must respect the subprocess cwd, not the test
-    runner's cwd. A deliver-session marker inside tmp_path must be visible to
-    the adapter; a marker only in the parent repo must NOT affect tests."""
+class TestNoResidualWorkflowStateGatesAWrite:
+    """A deliver-session marker is inert: nothing in the write path reads
+    workflow state to decide allow/block."""
 
-    def test_write_guard_respects_hermetic_cwd(self, tmp_path):
-        """Adapter blocks a normal-file write when a deliver-session marker
-        exists inside the hermetic tmp_path cwd.
-
-        This regression test proves that the cwd= kwarg is threaded through
-        _run_adapter → subprocess.run, so the adapter's CWD-relative path
-        lookup (.nwave/des/deliver-session.json) resolves inside tmp_path
-        rather than the parent repo root.
-        """
-        # Simulate an active deliver session inside the hermetic workspace
+    def test_ordinary_write_allowed_despite_a_deliver_session_marker(self, tmp_path):
         nwave_des = tmp_path / ".nwave" / "des"
         nwave_des.mkdir(parents=True)
         (nwave_des / "deliver-session.json").write_text(
@@ -292,24 +282,19 @@ class TestWriteGuardCwdIsolation:
         )
         _activate_project(tmp_path)
 
-        cc_json = {
-            "tool_name": "Write",
-            "tool_input": {
-                "file_path": str(tmp_path / "src" / "some_module.py"),
-                "content": "# normal file",
-            },
-        }
-
-        # cwd=tmp_path: the adapter sees the hermetic marker → must block (exit 2)
         result = _run_adapter(
             "pre-write",
-            cc_json,
+            {
+                "tool_name": "Write",
+                "tool_input": {
+                    "file_path": str(tmp_path / "src" / "some_module.py"),
+                    "content": "# normal file",
+                },
+            },
             env_extra={"DES_PROJECT_DIR": str(tmp_path)},
             cwd=tmp_path,
         )
 
-        assert result.returncode == 2, (
-            "Adapter must block writes when a deliver-session marker exists "
-            "inside the hermetic cwd. "
-            f"Got exit {result.returncode}.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        assert result.returncode == 0, (
+            f"exit {result.returncode}.\nstdout: {result.stdout}"
         )

@@ -8,7 +8,7 @@ Properties tested:
   1. Plugin name preserved in metadata generation
   2. DES import rewriting is idempotent
   3. Import rewriting preserves non-DES content
-  4. Hook entries always produce exactly 5 events with correct names
+  4. Hook entries produce exactly the declared event types
   5. Validation is deterministic (same input -> same output)
 """
 
@@ -76,7 +76,7 @@ def test_property_rewrite_preserves_non_des_imports(content: str):
 
 
 # ---------------------------------------------------------------------------
-# Property 4: Hook entries always produce 5 events with correct names
+# Property 4: Hook entries produce the declared event types
 # ---------------------------------------------------------------------------
 
 

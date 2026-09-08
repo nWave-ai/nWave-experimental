@@ -175,7 +175,7 @@ class TestDESHookIdempotence:
         ), "DES-owned entry under a retired event must be removed."
 
     @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")
-    def test_upgrade_removes_retired_spine_ledger_hooks_when_current_hooks_match(
+    def test_upgrade_removes_retired_hooks_when_current_hooks_match(
         self, _mock_python, plugin: DESPlugin, install_context: InstallContext
     ):
         """Upgrade removes exact DES legacy payloads without claiming user hooks."""
@@ -211,6 +211,22 @@ class TestDESHookIdempotence:
                 ],
             }
         )
+        user_start_command = "python3 -m operator_tools.subagent_start --audit"
+        settings["hooks"]["SubagentStart"] = [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": (
+                            "PYTHONPATH=/old/lib python3 -m "
+                            "des.adapters.drivers.hooks."
+                            "claude_code_hook_adapter subagent-start"
+                        ),
+                    },
+                    {"type": "command", "command": user_start_command},
+                ]
+            }
+        ]
         settings_file.write_text(json.dumps(settings, indent=2))
 
         result = plugin._install_des_hooks(install_context)
@@ -223,6 +239,9 @@ class TestDESHookIdempotence:
         ]
         assert lyra_entry["hooks"][0]["command"] in commands
         assert plugin._RETIRED_HOOK_COMMANDS[0] not in commands
+        assert reconciled["hooks"]["SubagentStart"] == [
+            {"hooks": [{"type": "command", "command": user_start_command}]}
+        ]
 
     @patch.object(DESPlugin, "_resolve_python_path", return_value="python3")
     def test_upgrade_removes_retired_no_verify_hook_and_preserves_user_hook(

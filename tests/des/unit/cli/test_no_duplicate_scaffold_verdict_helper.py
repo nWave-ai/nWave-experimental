@@ -14,9 +14,7 @@ AST shape: exactly `print(json.dumps(<param>))` followed by
 the function is NAMED -- see `test_the_guard_can_fail`, which plants a
 differently-named fifth copy and watches it go red.
 
-WHAT THIS DOES **NOT** FLAG. `charter_scaffold._degrade` /
-`_emit_single_scaffold_result` / `_run_slice_plan`'s tail, and
-each scaffold's private `_emit`, now all call
+WHAT THIS DOES **NOT** FLAG. Each scaffold's private `_emit` calls
 `emit_scaffold_verdict` directly (a single `return emit_scaffold_verdict(
 {...})` statement) -- they do NOT re-derive the print+ternary shape, so the
 guard does not (and should not) flag them; see
@@ -156,23 +154,6 @@ def test_no_des_cli_module_reimplements_the_scaffold_verdict_shape():
         "X else 1 shape already shared as "
         "des.cli._scaffold_core.emit_scaffold_verdict -- import it instead "
         f"of reimplementing it: {offenders}"
-    )
-
-
-def test_the_guard_spares_the_migrated_scaffold_callers():
-    """Locks in that `charter_scaffold` -- which DELEGATES to
-    `emit_scaffold_verdict` rather than reimplementing it -- is never flagged. A regression here would mean the guard started
-    matching a `return emit_scaffold_verdict(...)` call as if it were the
-    reimplemented shape (over-firing), or silently stopped scanning these
-    modules at all (under-firing)."""
-    offenders = set(_reimplementations_in(SRC_DES_CLI))
-    spared = {
-        "src/des/cli/charter_scaffold.py:_degrade",
-        "src/des/cli/charter_scaffold.py:_emit_single_scaffold_result",
-        "src/des/cli/charter_scaffold.py:_run_slice_plan",
-    }
-    assert offenders & spared == set(), (
-        f"the guard flagged migrated (non-reimplementing) caller(s): {offenders & spared}"
     )
 
 

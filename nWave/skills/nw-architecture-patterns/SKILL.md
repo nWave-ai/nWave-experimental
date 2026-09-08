@@ -137,10 +137,10 @@ Document per selection: name/version, license, GitHub URL/stats, maintenance ass
 ## Delivery boundary projection
 
 Keep component boundaries, unbounded input/state domains, typed failures and
-port invariants in the durable architecture brief. For one delivery, project
-only the applicable facts into the existing `DeliveryContract.targets`
-boundary, contract shape and closed obligations. This preserves the design
-facts without a second per-feature manifest or validation gate.
+port invariants in the durable architecture brief. For one delivery, resident
+software derives only the applicable facts into its whole-Request handover.
+This preserves the design facts without a second per-feature manifest or
+validation gate.
 
 ## Contract Testing for External Integrations
 

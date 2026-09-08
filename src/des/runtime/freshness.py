@@ -160,9 +160,8 @@ def _refuse(verdict: FreshnessVerdict) -> None:
 
 
 # Advisory-throttle finding (measured 2026-07-28): the hook adapter fires this
-# gate as an IMPORT-TIME side effect on every single hook subprocess (PreToolUse,
-# SubagentStart — one fresh process per
-# Claude Code tool call). In an actively-edited multi-lane repo, `src/des`
+# gate as an IMPORT-TIME side effect on every matching hook subprocess
+# (PreToolUse, PostToolUse, SubagentStop). In an actively-edited multi-lane repo, `src/des`
 # diverges from the shared install within minutes of a reinstall and STAYS
 # diverged until the next manual reinstall — nothing auto-clears it. The result:
 # ``HEALTH_GATE_INSTALL_FRESHNESS_STALE`` fired 14,378 times over 8 days in this

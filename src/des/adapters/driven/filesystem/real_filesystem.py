@@ -108,7 +108,7 @@ class RealFileSystem(FileSystemPort):
                     "opened file, so no closure member may be opened at all"
                 ),
                 how=(
-                    "run des dispatch on a platform whose os module exposes O_NOFOLLOW"
+                    "run this DES step on a platform whose os module exposes O_NOFOLLOW"
                 ),
             )
         try:
@@ -136,7 +136,7 @@ class RealFileSystem(FileSystemPort):
                 reason=SnapshotRefusalReason.UNREADABLE,
                 what=f"the {role} cannot be read ({exc})",
                 why=f"delivery closure requires readable {role} bytes",
-                how="fix the file permissions and rerun des dispatch",
+                how="fix the file permissions and rerun the same DES step",
             )
         finally:
             if descriptor >= 0:

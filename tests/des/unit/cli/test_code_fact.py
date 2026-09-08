@@ -331,6 +331,62 @@ def test_recursive_call_is_reported_by_callers_of_not_hidden_by_the_definition(
     assert never_wired_result["payload"]["never_wired"] is False
 
 
+def test_textsearch_sites_are_reported_as_file_line_not_character_offset(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A mixed tree containing a non-Python file forces the textsearch
+    provider for the whole query.  Every reported site must be a 1-based
+    ``file:line`` locator -- never a raw character offset -- for both the
+    Python and the non-Python match."""
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "m.py").write_text(
+        "def target():\n"
+        "    return 1\n"
+        "\n"
+        "def caller():\n"
+        "    x = 1\n"
+        "    return target()\n",
+        encoding="utf-8",
+    )
+    (pkg / "x.ts").write_text("const value = target();\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    exit_code, result = _invoke(["query.callers-of", "target", "--root", "."], capsys)
+
+    assert exit_code == 0
+    assert result["provider"] == "textsearch"
+    assert result["confidence"] == "noisy"
+    assert result["payload"]["sites"] == [
+        "pkg/m.py:6",
+        "pkg/x.ts:1",
+    ]
+
+
+def test_textsearch_site_on_final_unterminated_line_still_reports_correct_line(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The newline-counting locator must not depend on a trailing terminator:
+    a sole match on a file's last line, where that file has no trailing
+    newline, still reports the correct 1-based line number."""
+    (tmp_path / "subject.ts").write_text(
+        "function unrelated() { return 1; }\nfunction caller() { return target(); }",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    exit_code, result = _invoke(["query.callers-of", "target", "--root", "."], capsys)
+
+    assert exit_code == 0
+    assert result["provider"] == "textsearch"
+    assert result["confidence"] == "noisy"
+    assert result["payload"]["sites"] == ["subject.ts:2"]
+
+
 def test_dispatcher_reaches_code_fact_without_a_parallel_entrypoint(
     tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:

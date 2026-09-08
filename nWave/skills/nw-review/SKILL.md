@@ -8,7 +8,7 @@ argument-hint: '[owner] [repository-relative artifact or diff identity]'
 # NW-REVIEW
 
 Select the reviewer that owns the artifact class. Give it the actual
-repository-relative artifact or candidate identity, not copied prose.
+repository-relative artifact or actual diff, not copied prose.
 
 Reviews are read-only and adversarial. Every finding cites a file/line,
 terminal command or exhibited counterexample. `APPROVE` requires the artifact
@@ -20,8 +20,27 @@ the acceptance-designer reviewer, implementation diffs with the crafter
 reviewer, charters with the PO reviewer, and platform artifacts with the
 platform reviewer. A reviewer may veto but never silently repair the artifact.
 
-Return the verdict, reviewed identity, findings and the single upstream owner
-for each required correction.
+Return the verdict, reviewed artifact or diff, findings and the single upstream
+owner for each required correction.
+
+## Convergence
+
+A review converges only against a CLOSED criterion set. Four rules, all binding.
+
+- **Declared before, not chosen during.** The dispatcher states the closed set of
+  criteria in the dispatch, and the reviewer judges those and nothing else. Where an
+  executable reference model exists, the set is "the surface agrees with the model"
+  plus the named suites; anything outside it is not review material. A criterion the
+  reviewer invents mid-review is out of scope, however true it is.
+- **Blocking is a narrow class.** A finding blocks only when it breaks the product or
+  would let a falsehood be integrated. Everything else is a note, corrected inside the
+  same slice, and never triggers a re-review.
+- **Measured stopping rule.** When a round finds defects only INSIDE the previous
+  round's repair, the cycle stops and the work integrates. Each round declares its
+  gain: how many blocking findings, and where each one originated.
+- **A repair adds no new prose.** Repair is production, so new sentences are new
+  unverified surface. If a fact is worth stating, it is a test; see
+  `authoring:a-measurable-fact-is-a-test-not-prose` in `nw-cross-cutting-invariants`.
 
 ## Design-review question set
 

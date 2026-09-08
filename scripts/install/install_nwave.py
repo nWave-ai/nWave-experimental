@@ -157,6 +157,8 @@ sys.path.insert(0, _project_root_entry)
 
 # Support both standalone execution and package import
 try:
+    from des.domain.nwave_locations import NWaveLocations
+    from des.domain.result import Failure
     from scripts.install.context_detector import detect_target_platforms
     from scripts.install.install_lock import (
         EXIT_INSTALL_LOCK_HELD,
@@ -445,6 +447,27 @@ class NWaveInstaller:
         else:
             self.framework_source = source_dir  # fall through for error reporting
 
+        # ONE construction site for every write/read destination this
+        # invocation shares (NWaveLocations.resolve): refuses a relative
+        # NWAVE_AGENTS_HOME / CLAUDE_CONFIG_DIR / CODEX_HOME before any
+        # attribute below is derived from it, and before any public method
+        # can run -- closing the double-blind-spot where the five ad hoc
+        # agents_home()/codex_config_dir() call sites this replaces could
+        # each independently re-read a changed environment mid-install.
+        locations_result = NWaveLocations.resolve(
+            home=Path.home(),
+            repo_root=self.project_root,
+            agents_home_override=env_or_none("NWAVE_AGENTS_HOME"),
+            claude_config_override=env_or_none("CLAUDE_CONFIG_DIR"),
+            codex_config_override=env_or_none("CODEX_HOME"),
+        )
+        if isinstance(locations_result, Failure):
+            raise ValueError(
+                "nWave installer refuses a relative install-root override "
+                f"before any write: {locations_result.error}"
+            )
+        self._locations: NWaveLocations = locations_result.unwrap()
+
         # Persistent logging starts only after Codex ownership preflight.  A
         # refusal must leave every user-controlled byte untouched, including
         # an unrelated pre-existing Claude log.
@@ -527,9 +550,9 @@ class NWaveInstaller:
         # reads `global-config.json`'s `backups.max_count` regardless of
         # platform, and a sentinel byte-diff test cannot observe a READ the
         # way it observes a write. Computed once, for both branches.
-        install_root = agents_home()
+        install_root = self._locations.agents_home
         if "codex" in self.effective_target_platforms:
-            codex_dir = codex_config_dir()
+            codex_dir = self._locations.codex_config_dir
             self.backup_manager.backup_root = install_root / ".nwave" / "backups"
             self.backup_manager.backup_dir = (
                 self.backup_manager.backup_root
@@ -559,9 +582,9 @@ class NWaveInstaller:
         """
         if not self._legacy_codex_dev_adoption_enabled:
             return []
-        install_root = agents_home()
+        install_root = self._locations.agents_home
         skills_dir = install_root / ".agents" / "skills"
-        codex_dir = codex_config_dir()
+        codex_dir = self._locations.codex_config_dir
         agents_dir = codex_dir / "agents"
 
         def manifest_names(path: Path, key: str) -> set[str]:
@@ -682,9 +705,9 @@ class NWaveInstaller:
         if "codex" not in self.effective_target_platforms:
             return True
 
-        install_root = agents_home()
+        install_root = self._locations.agents_home
         skills_dir = install_root / ".agents" / "skills"
-        codex_dir = codex_config_dir()
+        codex_dir = self._locations.codex_config_dir
         agents_dir = codex_dir / "agents"
         # Each entry is (kind, line) rather than a bare string: ``kind`` keys
         # the aggregation + HOW-remedy lookup at the bottom of this method,
@@ -1323,7 +1346,9 @@ class NWaveInstaller:
             # (migrate_legacy_hook, install_prepare_commit_msg_hook,
             # read/write_global_config) land in the operator's real home.
             # Default is unchanged when unset.
-            registry.register(AttributionPlugin(config_dir=agents_home() / ".nwave"))
+            registry.register(
+                AttributionPlugin(config_dir=self._locations.agents_home / ".nwave")
+            )
         # OpenCode plugins (registered when opencode detected)
         if target_platforms and "opencode" in target_platforms:
             opencode_skills = OpenCodeSkillsPlugin()
@@ -1762,9 +1787,9 @@ class NWaveInstaller:
         self.logger.info("")
         self.logger.info("  🔎 Validate Codex Installation...")
 
-        install_root = agents_home()
+        install_root = self._locations.agents_home
         skills_dir = install_root / ".agents" / "skills"
-        codex_home = codex_config_dir()
+        codex_home = self._locations.codex_config_dir
         native_artifacts = [
             skills_dir / ".nwave-manifest.json",
             codex_home / "agents" / ".nwave-agents-manifest.json",

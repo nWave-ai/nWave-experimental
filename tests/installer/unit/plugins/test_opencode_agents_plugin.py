@@ -286,6 +286,39 @@ class TestParseToolsArrayToObject:
         assert result == {"read": "allow", "glob": "allow", "grep": "allow"}
 
 
+class TestParseToolsScopedGrant:
+    """A scoped grant has no OpenCode form, so it degrades to "ask"."""
+
+    def test_scoped_grant_becomes_ask_not_allow(self):
+        """
+        GIVEN: A declared entry carrying its own scope
+        WHEN: _parse_tools() is called
+        THEN: The tool maps to "ask", never the wider "allow"
+        """
+        result = _parse_tools("Read, Bash(des code-fact:*)")
+
+        assert result == {"read": "allow", "bash": "ask"}
+
+    def test_a_comma_inside_a_scope_does_not_create_a_second_tool(self):
+        """
+        GIVEN: A scope whose own text contains a comma
+        WHEN: _parse_tools() is called
+        THEN: One tool is mapped, not two broken halves
+        """
+        result = _parse_tools("Bash(des code-fact:*, des dispatch:*)")
+
+        assert result == {"bash": "ask"}
+
+    def test_an_unscoped_grant_on_the_same_tool_wins(self):
+        """
+        GIVEN: Both a bare and a scoped grant on one tool
+        WHEN: _parse_tools() is called
+        THEN: The wider declaration decides, in either order
+        """
+        assert _parse_tools("Bash, Bash(des code-fact:*)") == {"bash": "allow"}
+        assert _parse_tools("Bash(des code-fact:*), Bash") == {"bash": "allow"}
+
+
 # ---------------------------------------------------------------------------
 # Tests: _transform_frontmatter() — kept as-is (pure function, single concern)
 # ---------------------------------------------------------------------------

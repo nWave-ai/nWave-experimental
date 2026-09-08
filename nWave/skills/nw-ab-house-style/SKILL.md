@@ -1,6 +1,6 @@
 ---
 name: nw-ab-house-style
-description: "KNOWLEDGE — caveman-native authoring house style + by-construction guarantees (Reasoning Mandate injection, A05/A06 anchors, measured-gain compression). Reference for create/migrate; no sequence."
+description: "KNOWLEDGE — caveman-native authoring house style + by-construction guarantees (Reasoning Mandate injection, measured-gain compression). Reference for create/migrate; no sequence."
 user-invocable: false
 ---
 
@@ -16,7 +16,6 @@ Author caveman-curated: dry, declarative, tables and compact one-line bold-lead 
 
 1. **House style** — every created/modified asset is caveman-curated (above).
 2. **Reasoning-mandate injection** — every created/modified agent gets the `## Reasoning Mandate` block inserted verbatim. Depth from rigor, never padding.
-3. **A05/A06 literal-anchor guarantee** — `scripts/validation/validate_framework_templates.py` A05/A06 are LITERAL substring checks. Every authored agent MUST contain verbatim one of `You MUST load your skill files` OR `Your FIRST action before any other work` (A05) AND the path token `~/.claude/skills/nw-` (A06). Verify both before declaring done — absence blocks the commit.
 4. **Opportunistic retro-compression (measured-gain ≥20% or skip)** — on MODIFY: measure prose share first. Projected reduction ≥20% → compress with hard invariants (pre-existing blocks/tables byte-identical, `### Example N:` + NORMATIVE preserved, content-pin tests green). Below 20% → SKIP and report the measurement. Hash-pinned skills (md5 baseline in `tests/build/unit/test_skill_restructuring.py`): never silently edit; REPORT the required hash bump, do not bump it yourself.
 
 ## Reasoning Mandate block (inject verbatim)

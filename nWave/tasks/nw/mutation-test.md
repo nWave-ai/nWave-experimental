@@ -1,6 +1,6 @@
 ---
-description: Runs a standalone mutation probe, disabled by default, over validated delivery targets or the explicit nightly production delta.
-argument-hint: '[--delivery-contract <path> | --nightly-delta] [--threshold 80]'
+description: Runs a standalone mutation probe, disabled by default, over a named production delta or the explicit nightly production delta.
+argument-hint: '[--delta <base>...<head> | --nightly-delta] [--threshold 80]'
 ---
 
 # NW-MUTATION-TEST

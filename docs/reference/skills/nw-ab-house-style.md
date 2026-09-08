@@ -1,6 +1,6 @@
 # nw-ab-house-style
 
-KNOWLEDGE — caveman-native authoring house style + by-construction guarantees (Reasoning Mandate injection, A05/A06 anchors, measured-gain compression). Reference for create/migrate; no sequence.
+KNOWLEDGE — caveman-native authoring house style + by-construction guarantees (Reasoning Mandate injection, measured-gain compression). Reference for create/migrate; no sequence.
 
 **Used by:** [nw-agent-builder](../agents/nw-agent-builder.md)
 

@@ -32,8 +32,8 @@ def test_every_section_1a_item_is_covered_or_delegated():
     )
 
 
-def test_section_1a_items_are_the_thirteen_ratified_items():
-    assert set(qr.SECTION_1A_ITEMS) == set(range(1, 14))
+def test_section_1a_items_are_the_fourteen_ratified_items():
+    assert set(qr.SECTION_1A_ITEMS) == set(range(1, 15))
 
 
 def test_every_criterion_key_is_contiguous_from_one():

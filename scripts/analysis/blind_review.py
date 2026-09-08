@@ -66,6 +66,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from scripts.analysis.k4 import prepare_examiner_fixture as pef
 from scripts.analysis.k4 import quality_rubric
 from scripts.analysis.paired_campaign import git_checkout_targets
 
@@ -100,6 +101,27 @@ _NEVER_SEAL = (
     ".git",
     "AGENTS.md",
     "test_k4_acceptance.py",
+)
+
+
+#: Root-only runtime residue created by the K4 examiner fixture.  These names
+#: describe the fixture's own database, supervisor, and public environment --
+#: never a delivery.  They deliberately are not `_NEVER_SEAL`: a delivery may
+#: legitimately contain a same-named file below its own directory.
+_FIXTURE_RESIDUE_ROOT_NAMES = frozenset(
+    {
+        pef.DOC_NAME,
+        pef.DB_FILE_NAME,
+        pef.DB_PRISTINE_SNAPSHOT_NAME,
+        pef.DB_LOCK_FILE_NAME,
+        pef.SERVER_PID_FILE_NAME,
+        pef.SUPERVISOR_PID_FILE_NAME,
+        pef.SUPERVISOR_SCRIPT_NAME,
+        pef.SUPERVISOR_LOCK_FILE_NAME,
+        pef.SUPERVISOR_LOG_FILE_NAME,
+        pef.RESET_MARKER_FILE_NAME,
+        pef.SERVER_LOG_FILE_NAME,
+    }
 )
 
 
@@ -139,16 +161,17 @@ _STATUS_RENAMED = "R"
 
 
 def _excluded_path(rel_path: str) -> bool:
-    """True if any component of `rel_path` matches a `_NEVER_SEAL` pattern.
+    """True if ``rel_path`` is bulk-excluded or a root fixture residue.
 
     Mirrors `shutil.ignore_patterns`, which matches basenames per directory
     level during the walk -- so a manifest entry never names a path that
     `seal`'s own copytree would have refused to copy.
     """
+    parts = Path(rel_path).parts
+    if len(parts) == 1 and parts[0] in _FIXTURE_RESIDUE_ROOT_NAMES:
+        return True
     return any(
-        fnmatch.fnmatch(part, pattern)
-        for part in Path(rel_path).parts
-        for pattern in _NEVER_SEAL
+        fnmatch.fnmatch(part, pattern) for part in parts for pattern in _NEVER_SEAL
     )
 
 

@@ -13,6 +13,7 @@ except through the provider-neutral port.
 
 from pathlib import Path
 
+from des.domain.agent_capability import provider_tool_name, split_declared_tools
 from scripts.shared.agent_catalog import is_public_agent, load_public_agents
 from scripts.shared.frontmatter import parse_frontmatter_file
 
@@ -21,6 +22,30 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 AGENTS_DIR = REPO_ROOT / "nWave" / "agents"
 
 FORBIDDEN_LITERALS = ("graphify", "tsunami")
+
+
+def _granted_tool_names(metadata: dict) -> set[str]:
+    """The bare provider tool names a spec's ``tools:`` field grants.
+
+    A declared entry may be a permission SPECIFIER carrying its own scope, so
+    the field is read with the parser the runtime uses rather than split on
+    commas here. ``Bash(des code-fact:*)`` grants ``Bash`` scoped to the port;
+    bare ``Bash`` grants the whole shell, which writes. A check demanding the
+    bare word would reject the scoped grant and accept only the wider one,
+    exactly backwards.
+    """
+    return {
+        provider_tool_name(entry)
+        for entry in split_declared_tools(metadata.get("tools") or "")
+    }
+
+
+def test_a_scoped_bash_grant_satisfies_the_port_user_requirement():
+    """The port requirement is Bash the TOOL, not the bare word ``Bash``."""
+    assert "Bash" in _granted_tool_names({"tools": "Read, Bash(des code-fact:*)"})
+    assert "Bash" in _granted_tool_names({"tools": "Bash"})
+    assert "Bash" not in _granted_tool_names({"tools": "Read, Glob, Grep"})
+    assert "Bash" not in _granted_tool_names({"tools": ""})
 
 
 def test_public_agents_provider_neutrality():
@@ -67,8 +92,7 @@ def test_code_analysis_port_users_have_bash():
             continue
 
         port_users.append(agent_file.name)
-        tools = [t.strip() for t in (metadata.get("tools") or "").split(",")]
-        assert "Bash" in tools, (
+        assert "Bash" in _granted_tool_names(metadata), (
             f"{agent_file.name} uses nw-code-analysis-port but lacks Bash"
         )
 
@@ -76,9 +100,7 @@ def test_code_analysis_port_users_have_bash():
 
     reviewer_file = AGENTS_DIR / "nw-security-analyst-reviewer.md"
     reviewer_metadata, _ = parse_frontmatter_file(reviewer_file)
-    reviewer_tools = [
-        t.strip() for t in (reviewer_metadata.get("tools") or "").split(",")
-    ]
+    reviewer_tools = _granted_tool_names(reviewer_metadata)
 
     assert "Bash" in reviewer_tools
     assert "Write" not in reviewer_tools

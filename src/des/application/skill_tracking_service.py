@@ -12,7 +12,6 @@ Fail-open: never raises exceptions that could block agent execution.
 from __future__ import annotations
 
 import json
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from des.domain.skill_load_event import SkillLoadEvent
@@ -21,29 +20,6 @@ from des.domain.skill_load_event import SkillLoadEvent
 if TYPE_CHECKING:
     from des.ports.driven_ports.skill_tracking_port import SkillTrackingPort
     from des.ports.driven_ports.time_provider_port import TimeProvider
-
-
-MODE_SELECTION_PREFIX = "NW-MODE-SELECTED: "
-VALID_MODE_SELECTIONS = frozenset(
-    {
-        "direct S",
-        "human S",
-        "human M",
-        "human L",
-        "auto M",
-        "auto L",
-    }
-)
-
-
-class RootModeState(StrEnum):
-    """Total root-route state projected from one transcript read."""
-
-    UNSELECTED = "unselected"
-    INVALID = "invalid"
-    SELECTED = "selected"
-    AUTO_PENDING = "auto_pending"
-    AUTO_ENGAGED = "auto_engaged"
 
 
 def extract_tool_calls(entry: dict) -> list[dict]:
@@ -100,163 +76,6 @@ def read_transcript_tool_calls(transcript_path: str) -> list[dict]:
                 continue
             tool_calls.extend(extract_tool_calls(entry))
     return tool_calls
-
-
-def skill_observed_before_action(transcript_path: str, skill_name: str) -> bool:
-    """True iff the transcript contains an actual `Skill(skill_name)` call.
-
-    Only a real `Skill` tool_use whose input selects `skill_name` counts —
-    prose mentioning the skill, a `Read` of an unrelated file, and other
-    `Skill` names are all false. Fails closed (False) when the transcript is
-    missing, unreadable, or not valid UTF-8/JSONL text, since callers use
-    this to decide whether a mutation or a role transition may proceed.
-    """
-    try:
-        tool_calls = read_transcript_tool_calls(transcript_path)
-    except (OSError, UnicodeDecodeError):
-        return False
-    return any(
-        tc.get("name") == "Skill" and tc.get("input", {}).get("skill") == skill_name
-        for tc in tool_calls
-    )
-
-
-def mode_select_observed_before_mutation(transcript_path: str) -> bool:
-    """True iff the transcript contains an actual `Skill(nw-mode-select)` call.
-
-    Delegates to the shared `skill_observed_before_action` predicate --
-    same authority rules, same fail-closed behavior on a missing/unreadable
-    transcript, since the caller uses this to decide whether a mutation may
-    proceed.
-    """
-    return skill_observed_before_action(transcript_path, "nw-mode-select")
-
-
-def _read_root_mode_observations(
-    transcript_path: str,
-) -> tuple[bool, bool, list[str], list[str]] | None:
-    """Read mode-select, nw-auto, and exact markers in one transcript pass.
-
-    The 4th element, ``selections_since_last_auto``, is the SAME marker
-    detection restricted to markers observed AFTER the LAST ``Skill(nw-auto)``
-    tool call seen so far (reset empty every time a new ``nw-auto`` call is
-    seen) -- the one extra signal :func:`resolve_root_mode_state` needs to let
-    a later, unambiguous correction supersede an ``nw-auto`` engagement
-    (F-ROOT-MODE-GATE-SCOPE-CAPTURE-AND-LATCH defect 3), computed in this
-    SAME single pass rather than a second transcript read.
-    """
-    observed_skill = False
-    observed_auto = False
-    selections: list[str] = []
-    selections_since_last_auto: list[str] = []
-    try:
-        with open(transcript_path, encoding="utf-8") as transcript:
-            for raw_line in transcript:
-                try:
-                    entry = json.loads(raw_line)
-                except json.JSONDecodeError:
-                    continue
-                for tool_call in extract_tool_calls(entry):
-                    if tool_call.get("name") != "Skill":
-                        continue
-                    skill = tool_call.get("input", {}).get("skill")
-                    if skill == "nw-mode-select":
-                        observed_skill = True
-                    elif skill == "nw-auto":
-                        observed_auto = True
-                        selections_since_last_auto = []
-                if entry.get("type") != "assistant":
-                    continue
-                message = entry.get("message", {})
-                content = message.get("content") if isinstance(message, dict) else None
-                if not isinstance(content, list):
-                    continue
-                for block in content:
-                    if not isinstance(block, dict):
-                        continue
-                    if not observed_skill or block.get("type") != "text":
-                        continue
-                    text = block.get("text")
-                    if not isinstance(text, str):
-                        continue
-                    for line in text.splitlines():
-                        marker = line.strip()
-                        if not marker.startswith(MODE_SELECTION_PREFIX):
-                            continue
-                        selection = marker.removeprefix(MODE_SELECTION_PREFIX)
-                        if selection not in VALID_MODE_SELECTIONS:
-                            return observed_skill, observed_auto, [], []
-                        selections.append(selection)
-                        if observed_auto:
-                            selections_since_last_auto.append(selection)
-    except (OSError, UnicodeDecodeError):
-        return None
-
-    return observed_skill, observed_auto, selections, selections_since_last_auto
-
-
-def resolved_mode_selection_before_action(transcript_path: str) -> str | None:
-    """Return the one exact mode-selection marker after ``nw-mode-select``.
-
-    The marker is accepted only from assistant text *after* a real
-    ``Skill(nw-mode-select)`` tool call. User prose therefore cannot spoof the
-    decision. Missing, malformed, or conflicting markers fail closed as
-    ``None`` so root-action guards can refuse an ambiguous handoff.
-    """
-    observations = _read_root_mode_observations(transcript_path)
-    if observations is None:
-        return None
-    observed_skill, _, selections, _ = observations
-    if not observed_skill:
-        return None
-
-    distinct = set(selections)
-    return distinct.pop() if len(distinct) == 1 else None
-
-
-def resolve_root_mode_state(
-    transcript_path: str, *, delivery_artifact_exists: bool = False
-) -> RootModeState:
-    """Resolve the root's route state without persistent workflow state.
-
-    An observed ``nw-auto`` remains authoritative for the existing lockdown,
-    including older transcripts that predate the marker -- UNLESS a later,
-    unambiguous non-auto ``NW-MODE-SELECTED`` marker follows the last
-    ``nw-auto`` engagement AND no delivery artifact exists yet
-    (F-ROOT-MODE-GATE-SCOPE-CAPTURE-AND-LATCH defect 3: today's
-    ``observed_auto``-first short-circuit made a corrective ``human <size>``
-    unreachable code, even across ``--resume``). Once a delivery artifact
-    exists the engagement goes irreversible again -- switching mode mid-
-    delivery is unsafe, not a correction, so ``delivery_artifact_exists``
-    reproduces today's behaviour exactly (its default).
-
-    Otherwise a real mode-select call must be followed by one unambiguous
-    exact marker.
-    """
-    observations = _read_root_mode_observations(transcript_path)
-    if observations is None:
-        return RootModeState.UNSELECTED
-    observed_skill, observed_auto, selections, selections_since_last_auto = observations
-    if observed_auto and not delivery_artifact_exists and selections_since_last_auto:
-        distinct_after = set(selections_since_last_auto)
-        if len(distinct_after) > 1:
-            return RootModeState.INVALID
-        corrected = distinct_after.pop()
-        if corrected not in {"auto M", "auto L"}:
-            return RootModeState.SELECTED
-        # A same-class auto re-selection after the engagement is not a
-        # correction -- fall through to the unchanged AUTO_ENGAGED result.
-    if observed_auto:
-        return RootModeState.AUTO_ENGAGED
-    if not observed_skill:
-        return RootModeState.UNSELECTED
-    distinct = set(selections)
-    if len(distinct) != 1:
-        return RootModeState.INVALID
-    selection = distinct.pop()
-    if selection in {"auto M", "auto L"}:
-        return RootModeState.AUTO_PENDING
-    return RootModeState.SELECTED
 
 
 class SkillTrackingService:

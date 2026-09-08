@@ -89,14 +89,9 @@ class TestOpenCodeShimProtocolParity:
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
-        response = json.loads(result.stdout)
-        hook_specific_output = response.get("hookSpecificOutput", {})
-        assert hook_specific_output.get("permissionDecision") == "allow", (
-            f"Expected permissionDecision 'allow', got: {response}"
-        )
-        additional_context = hook_specific_output.get("additionalContext", "")
-        assert "nw-mode-select" in additional_context, (
-            f"additionalContext should name nw-mode-select, got: {additional_context!r}"
+        assert result.stdout.strip() == "", (
+            "an ordinary nWave dispatch must be allowed silently, with no "
+            f"reminder or route ceremony: {result.stdout!r}"
         )
 
         assert not (tmp_path / ".des" / "execution-log.json").exists(), (

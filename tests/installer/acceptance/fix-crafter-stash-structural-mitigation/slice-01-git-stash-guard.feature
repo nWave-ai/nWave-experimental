@@ -1,8 +1,8 @@
 @feature-fix-crafter-stash-structural-mitigation
-Feature: git-stash guard PreToolUse hook on Bash — block mutating git stash, name admitted worktree creation
+Feature: git-stash guard PreToolUse hook on Bash — block mutating git stash, name Git worktree isolation
 
   As a nWave operator working inside a Claude Code session where a sub-agent has been dispatched
-  I want the git-stash guard to refuse a Bash `git stash` (push/pop/apply/drop/clear/save) invocation and point me at the admitted `des worktree-admit --repo <root> --lane <name>` alternative
+  I want the git-stash guard to refuse a Bash `git stash` (push/pop/apply/drop/clear/save) invocation and point me at ordinary Git worktree isolation
   And I want an explicit kill-switch so a deliberate, audited bypass is possible when I genuinely need it
   And I want read-only stash inspection (`git stash list`, `git stash show`), `git worktree`, and every other git command to pass through untouched
   So that the STANDING "no git stash, use worktree" rule becomes mechanically binding (an 11th violation is impossible without the explicit audited bypass) rather than a text rule that has failed ten times.
@@ -19,7 +19,7 @@ Feature: git-stash guard PreToolUse hook on Bash — block mutating git stash, n
     When the Claude Code session prepares to run the Bash command "git stash push -m work-in-progress"
     And the git-stash guard receives the Bash invocation event
     Then the hook returns a block decision to Claude Code
-    And the hook's decision reason names the safe alternative "des worktree-admit --repo <root> --lane <name>"
+    And the hook's decision reason names the safe alternative "ordinary Git worktree"
     And the hook's decision reason names the bypass mechanism "NWAVE_GIT_STASH_ALLOW"
     And the Bash invocation is refused before the git stash subprocess is spawned
 

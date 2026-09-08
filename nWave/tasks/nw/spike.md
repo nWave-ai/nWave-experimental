@@ -66,9 +66,6 @@ Execute spike for "{feature-description}".
 2. Delete the spike code from `/tmp/`
 3. Report the binary verdict: WORKS or DOESN'T WORK
 
-## Progress Tracking
-
-The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes.
 
 ## Success Criteria
 

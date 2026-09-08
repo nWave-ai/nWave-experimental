@@ -52,7 +52,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Problem Validation** — Load `~/.claude/skills/nw-interviewing-techniques/SKILL.md`, `~/.claude/skills/nw-opportunity-mapping/SKILL.md`, `~/.claude/skills/nw-discovery-workflow/SKILL.md`. Conduct Mom Test interviews. Map JTBD. Track assumptions with risk scoring. Gate: 5+ interviews completed, >60% confirm pain, problem documented in customer words.
 2. **Opportunity Mapping** — Load `~/.claude/skills/nw-opportunity-mapping/SKILL.md`. Build OST from interview insights. Score opportunities using Opportunity Algorithm. Prioritize top 2-3 underserved needs. Gate: OST complete, top opportunities score >8, team aligned.

@@ -27,101 +27,6 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class RetiredSubcommand:
-    """One retired `des` subcommand: why it is gone, and what to use instead
-    when a replacement is actually known (F-INSTALL-REMOVAL-TRANSPARENCY).
-
-    Declarative data, not logic (Ale, per-mandate constraint): to register a
-    future retirement, add one entry to `_RETIRED` below -- nothing else
-    needs to change.
-    """
-
-    reason: str
-    replacement: str | None = None
-
-
-_RETIRED_2026_08_18_CONSOLIDATION_REASON = (
-    "retired during the CLI's consolidation to a single entry point; it "
-    "remains documented only in the stale affordance catalog, which is 28 "
-    "days older than the current CLI "
-    "(docs/analysis/2026-08-24-parita-proiezioni-verbi-des.md)."
-)
-
-_RETIRED_REVISE_CONTRACT_ROUND_REASON = (
-    "retired single-field revision route; no replacement is named until a "
-    "strict Git closure correction has been verified."
-)
-
-_RETIRED_DESIGN_CLOSURE_REASON = (
-    "retired after its only live carrier produced a terminal DeliveryContract; "
-    "compile-contract already consumes the architecture authority directly."
-)
-
-# The original names were independently measured 2026-08-24 (by execution,
-# not by reading
-# prose) as producing argparse's generic "invalid choice" today despite
-# being documented as live in ~/.claude/data/orchestrator-affordance/
-# des-command-catalog.md. Where no per-name retirement reason is verified,
-# the names share one honest reason and none claims a replacement -- a specific
-# but unverified "-> replaced by X" would be exactly the lying rejection
-# this repo treats as worse than a bare traceback.
-_RETIRED: dict[str, RetiredSubcommand] = {
-    name: RetiredSubcommand(
-        reason=(
-            _RETIRED_REVISE_CONTRACT_ROUND_REASON
-            if name == "revise-contract-round"
-            else _RETIRED_DESIGN_CLOSURE_REASON
-            if name == "construct-design-closure"
-            else _RETIRED_2026_08_18_CONSOLIDATION_REASON
-        )
-    )
-    for name in (
-        "bugfix-pipeline-tick",
-        "carpaccio-slice-gate",
-        "check-contract-shape",
-        "commit-slice",
-        "consolidation-signal-tick",
-        "construct-design-closure",
-        "examine-fixture",
-        "feature-delta-doctor",
-        "flavor-scaffold",
-        "next",
-        "record-at-review-verdict",
-        "record-examine-verdict",
-        "refactor",
-        "revise-contract-round",
-        "validate-feature-delta",
-        "verify-catalog-coherence",
-        "verify-readiness-pre-dispatch",
-        "verify-slice-commit",
-        "work-exhausted-tick",
-    )
-}
-
-
-def _reject_retired_subcommand(name: str) -> None:
-    """Print the WHAT/WHY/HOW explanation for a retired subcommand and exit.
-
-    Exit code 3 is deliberate and distinct from argparse's own code 2 for
-    "invalid choice" (GDP-8: decide on the PROPERTY, not the designation --
-    a caller can tell "known-retired, explained" apart from "never
-    existed, generic argparse error" programmatically).
-    """
-    entry = _RETIRED[name]
-    how = "HOW: run `des --help` to see current subcommands"
-    how += (
-        f", or use `{entry.replacement}` instead."
-        if entry.replacement is not None
-        else "."
-    )
-    print(f"des {name}: retired.", file=sys.stderr)
-    print(f"WHAT: '{name}' is no longer a des subcommand.", file=sys.stderr)
-    print(f"WHY: {entry.reason}", file=sys.stderr)
-    print(how, file=sys.stderr)
-    raise SystemExit(3)
-
-
-@dataclass(frozen=True)
 class _SubcommandRow:
     """One public CLI command. This tuple is the single command registry."""
 
@@ -178,46 +83,59 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # retired: acceptance obligations and independent observations carry the
     # quality evidence without a second mutable closure protocol.
     _SubcommandRow("verify-test-runner", "des.cli.run_tests", "main"),
-    # Thin DeliveryContract handoff: validates one explicit locator and emits
-    # only its immutable identity headers.
-    _SubcommandRow("dispatch", "des.cli.dispatch", "main"),
-    # ADR-SSOT-002 Section 4b: the read-only point-of-use projection of the
-    # Discover/Resolve charter-namespace algebra over a raw --delivery-id
-    # argv fact -- lets a producer route SKIP/AUTHOR/REUSE/BLOCK before
-    # dispatch, without duplicating filesystem inference.
-    _SubcommandRow("resolve-charters", "des.cli.resolve_charters", "main"),
-    # ADR-SSOT-002 Section 4d: the point-of-use `PrepareOrdinaryRequest`
-    # producer -- computes `SeededAuthority` for an ordinary Auto M/L request
-    # and emits the exact fourteen-line Auto-root ATD dispatch body. Writes
-    # no file; the dispatched acceptance designer still authors the one
-    # DeliveryContract via `des dispatch`.
-    _SubcommandRow(
-        "prepare-ordinary-request", "des.cli.prepare_ordinary_request", "main"
-    ),
-    # The charter-side bounded producer remains separate from the retired
-    # of the eight-line PO charter-revision envelope (DISCOVER:
-    # ExistingNeedsRevision) for a reviewer-cited VALUE-side charter defect
-    # on an existing valid namespace -- resolve-charters' REUSE is existence,
-    # not reviewed validity. Writes only its own durable per-DeliveryId
-    # round counter under `.nwave/des/charter-revision-rounds/`.
-    _SubcommandRow("revise-charter-round", "des.cli.revise_charter_round", "main"),
-    # Produces one expectation charter in the DeliveryContract's delivery-id
-    # namespace. Idempotent and loud on malformed ids or path ambiguity.
-    _SubcommandRow("charter-scaffold", "des.cli.charter_scaffold", "main"),
+    # ADR-SSOT-002 Section 4b: the READ-ONLY projection of the owned state --
+    # the exact Request, its ordered values, what each already carries, and the
+    # canonical next step as DATA. It is the step an orchestrator invokes after
+    # every terminal, and the base every other step is read against.
+    _SubcommandRow("state", "des.cli.state", "main"),
+    # The HUMAN layer of the same owned state (adr-ssot-document-model, "Feature
+    # Brief -- The Human Layer"), rendered through the ONE nWave renderer. A
+    # projection function and never a fourth store (ADR-BOARD-001): it writes
+    # the page and nothing the delivery owns.
+    _SubcommandRow("project", "des.cli.project", "main"),
+    # ADR-SSOT-002 Section 4b: one Product Owner turn invoked ALONE. It records
+    # the accepted decomposition as owned state and returns; it never converts
+    # the role's local outcome into a verdict about the whole Request, which is
+    # the defect measured at 06:21:39 in run 20260905T062139Z-38400.
+    # F-DEVOPS-CONSTRAINTS-INTO-DISTILL: the OPTIONAL step upstream of `po`. It
+    # writes operational CONSTRAINTS into a section of a tracked authority file
+    # and proves the authority resolver can read them back, so the Product Owner
+    # can decompose them into observable values. No NEXT line names it: a
+    # project that deploys nothing is never handed this turn to refuse.
+    _SubcommandRow("devops", "des.cli.devops", "main"),
+    _SubcommandRow("po", "des.cli.po", "main"),
+    # ADR-SSOT-002 Section 4b: one architect turn for ONE value, invoked alone
+    # and repeatable. A second call with `--finding -` carries the current typed
+    # facts beside the finding and replaces them -- the correction the
+    # orchestrator decides on, never an edge the software takes.
+    _SubcommandRow("design", "des.cli.design", "main"),
+    # ADR-SSOT-002 Section 4b: one value's oracle authored (or corrected),
+    # MEASURED red, and independently judged -- one step, because between those
+    # three the orchestrator has no move to make. A refusal carries the owner
+    # the judge named as DATA and names both forms that could answer it.
+    _SubcommandRow("oracle", "des.cli.oracle", "main"),
+    # ADR-SSOT-002 Section 4b: one crafter turn for one value's batch. A refusing
+    # turn's `blocked_by` word comes back as DATA on BLOCKED-BY -- the composed
+    # run spends a window on the role it names, a lone step never does.
+    _SubcommandRow("craft", "des.cli.craft", "main"),
+    # ADR-SSOT-002 Section 4b: the whole-Request candidate built from its base,
+    # verified natively with the evidence captured ONCE, reviewed whole, and
+    # judged source-blind. Nothing here moves a ref.
+    _SubcommandRow("verify", "des.cli.verify", "main"),
+    # ADR-SSOT-002 Section 4b: the one compare-and-swap, the owned-index
+    # reconciliation, and the closure of the graph. It buys no turn.
+    _SubcommandRow("integrate", "des.cli.integrate", "main"),
+    # ADR-SSOT-002 Section 4b: the first two invocable steps of the lane cycle
+    # an orchestrator runs around the delivery steps -- opening a lane worktree
+    # and integrating it back by fast-forward, then closing it. Both were hand-typed
+    # Git before, and this repository's own standing instruction named two `des`
+    # subcommands for them that the CLI does not carry.
+    _SubcommandRow("lane", "des.cli.lane", "main"),
     # blast-radius-measured-tier slice-01 (GDP-1/5): the PRODUCING tool for the
     # measured S/M/L change-tier -- real files/lines measures over --paths,
     # boundary/consumer honestly not-yet-wired in slice-01 (explicit reasons
     # entry, never fabricated zeros).
     _SubcommandRow("blast-radius", "des.cli.blast_radius", "main"),
-    # charter-scaffold slice-02 (the ENFORCEMENT half): the backstop gate that
-    # verifies a scaffolded charter is genuinely FILLED (oracle with >=1
-    # negative observation, real start recipe, no residual placeholders)
-    # before an operator trusts it or lets it arm a downstream EXAMINE.
-    _SubcommandRow(
-        "verify-charter-filled",
-        "des.cli.verify_charter_filled",
-        "main",
-    ),
     # codefact-similar-responsibility slice-01 (WS-9b, the reuse-first keystone):
     # the observable CLI over the ADDITIVE query.similar-responsibility CodeFactPort
     # capability -- shows the ranked EXISTING module-level symbols whose structural
@@ -232,49 +150,6 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     ),
     # Public vendor-neutral code-analysis projection.
     _SubcommandRow("code-fact", "des.cli.code_fact", "main"),
-    _SubcommandRow(
-        "validate-delivery-contract",
-        "des.cli.validate_delivery_contract",
-        "main",
-    ),
-    # parallel-work-cleans-up-after-merge-back slice-01 (D-2/D-3,
-    # ADR-SWARM-002): the mechanical worktree-cleanup gate. ACT-by-default,
-    # ties `git worktree remove` to a CONFIRMED merge-back (state-based via
-    # `is_ancestor`); `--check-only` is the DONE-check backstop.
-    _SubcommandRow(
-        "verify-worktree-cleanup", "des.cli.verify_worktree_cleanup", "main"
-    ),
-    _SubcommandRow("worktree-admit", "des.cli.worktree_admit", "main"),
-    _SubcommandRow("worktree-release", "des.cli.worktree_release", "main"),
-    # sentinel-tool (nw-throughput SKILL.md "Throughput Sentinel"): the
-    # versioned worktree-triage receipt, promoted from an unversioned
-    # scratchpad script that produced three wrong readings in one afternoon
-    # (each costing real work -- absence-from-silence liveness, no
-    # declared-ownership axis, a name-normalization bug that made the fix
-    # for the second defect unable to fire). Advisory only (GDP-6): never
-    # removes, merges, dispatches, or authorizes -- reuses the existing
-    # `sweep_worktrees`/`triage_worktree` production predicate for the
-    # PID/lock/dirty/unmerged evidence and adds the two missing axes
-    # (declared ownership, recent HEAD/index activity) on top.
-    _SubcommandRow("sentinel", "des.cli.worktree_sentinel", "main"),
-    # ADR-SSOT-002 Section 4/4b item 1: the point-of-use skeleton COMPILER --
-    # mechanically derives targets/verification-scope/obligations from one
-    # architecture brief's own citations, the same resolvers `des dispatch`'s
-    # validators already use in CHECK mode, run here in GENERATE mode.
-    # Semantic fields ATD alone can author land as the literal `<ATD: fill>`
-    # placeholder (`des.domain.contract_placeholder_resolver`), which `des
-    # dispatch`/`des validate-delivery-contract` both refuse until filled.
-    _SubcommandRow("compile-contract", "des.cli.compile_contract", "main"),
-    # Ale's construction-over-file correction (2026-08-20): the constructor
-    # ATD calls once with one atomic batch to fill the skeleton's semantic
-    # placeholders. Sole writer of the contract file after compile-contract.
-    _SubcommandRow("fill-contract", "des.cli.fill_contract", "main"),
-    # The producer-owned re-derivation path compile-contract's own
-    # overwrite refusal points at (2026-08-21: three DeliveryIds abandoned
-    # for want of it): same flags, the SAME derivation re-run against the
-    # CURRENT authority, then a preserve-fills merge that keeps ATD's
-    # semantic fills wherever the target's path+decision identity holds.
-    _SubcommandRow("recompile-contract", "des.cli.recompile_contract", "main"),
     # fix-shipped-regression-file-backfill: the historical regression-gap
     # backfill producer -- attests a SHIPPED slice's regression file
     # genuinely existed and passed at a real historical commit, recording a
@@ -292,6 +167,18 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # (InFlight/Completed/Indeterminate) and planned action
     # (Upcast/PreserveHistory/Indeterminate), writing nothing.
     _SubcommandRow("update", "des.cli.update", "main"),
+)
+
+
+#: The steps of one Request. Each may buy a role turn against a code tree the
+#: operator selected implicitly, so each declares WHICH tree before it works --
+#: the property the retired composed run carried and Section 11 sorts to the
+#: model (see `des.cli._runtime_identity`). The read-only projections and the
+#: analysis commands are excluded deliberately: they buy no turn, and hashing
+#: the package on every `des code-fact` would charge ~60 ms to a query that
+#: decides nothing.
+_DECLARES_ITS_RUNTIME = frozenset(
+    {"devops", "po", "design", "oracle", "craft", "verify", "integrate"}
 )
 
 
@@ -361,12 +248,16 @@ def main(argv: list[str] | None = None) -> int:
     unconsumed per DDD-5) builds the cheap, import-free parser.
     """
     raw_argv = sys.argv[1:] if argv is None else argv
-    if raw_argv and raw_argv[0] in _RETIRED:
-        _reject_retired_subcommand(raw_argv[0])
     wants_top_level_help = bool(raw_argv) and raw_argv[0] in ("-h", "--help")
     parser = _build_parser(with_descriptions=wants_top_level_help)
     parsed, remaining = parser.parse_known_args(raw_argv)
     row = next(r for r in _REGISTRY if r.name == parsed.subcommand)
+    if row.name in _DECLARES_ITS_RUNTIME:
+        # BEFORE the delegation, so a step killed before it reads its Request
+        # still says which tree it was.
+        from des.cli._runtime_identity import declare
+
+        declare()
     module = importlib.import_module(row.module_path)
     subcommand_main = getattr(module, row.function_name)
     exit_code: int = subcommand_main(remaining)

@@ -18,7 +18,7 @@ DEVOPS handoff.
 
 1. **Locate the gap** — Read only the product/design authority and evidence
    needed to name the unresolved boundary. Gate: authority already settles it
-   → return to the active M/L route; do not create a skip record.
+   → return to the Request in flight; do not create a skip record.
 2. **Select the owner** — System/infrastructure → `@nw-system-designer`;
    domain/bounded-context → `@nw-ddd-architect`; application/reuse/component
    boundary → `@nw-solution-architect`. Gate: one owner matches the observed
@@ -34,11 +34,15 @@ DEVOPS handoff.
 
 <!-- DES-WAVE: design -->
 
-5. **Write the smallest durable decision** — Update `docs/product/architecture/brief.md`
-   or the affected ADR with the boundary, decision, constraints, and the
-   exact downstream facts DISTILL needs. Produce diagrams, ADRs, specialist
-   handoffs, or readiness facts only when this boundary needs them. Gate:
-   downstream receives a cited durable authority, not a new side artifact.
+5. **Return the smallest decision as one typed design** — In a managed
+   invocation the architect is read-only: it returns paradigm, ordered targets
+   with `EXTEND`/`CREATE_NEW`, obligations, oracle locator and supports, native
+   verification argv vectors and the public contract, and SOFTWARE renders the
+   canonical section of `docs/product/architecture/brief.md`. In a human-driven
+   consultation, write the smallest durable decision into that brief or the
+   affected ADR. Produce diagrams, ADRs, specialist handoffs, or readiness
+   facts only when this boundary needs them. Gate: downstream receives typed
+   facts or a cited durable authority, never a new side artifact.
 6. **Correct at the owner** — If the result contradicts a prior fact, correct
    that product/design SSOT under ADR-SSOT-002 §7. Gate: no delta ledger or
    copied correction narrative.
@@ -50,5 +54,5 @@ DEVOPS handoff.
   product choice was returned for human decision.
 - [ ] The durable architecture authority contains only the decision and
   downstream facts the boundary requires.
-- [ ] The M/L delivery route resumes; DESIGN has not created implementation
+- [ ] The Request in flight resumes; DESIGN has not created implementation
   plans, mandatory diagrams, or a DEVOPS handoff.

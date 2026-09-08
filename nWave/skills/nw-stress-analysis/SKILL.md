@@ -114,9 +114,8 @@ map is stated; partial preservation is controlled degradation; a changed
 user observation is a product/design change owned by its SSOT; absent
 preservation is replacement, not refactoring. Correctness of the accepted
 contract and criticality across stressors are complementary outcomes, never
-alternatives. Rows project into the existing `DeliveryContract`
-`targets`/`boundary`/`obligations` and derived tests — no new field, no
-persisted matrix. On the trigger, load `nw-algebraic-design-protocol`
+alternatives. Keep rows in their durable design authority and derive tests from
+them — no new field or persisted matrix. On the trigger, load `nw-algebraic-design-protocol`
 alongside this skill.
 
 ## Differentiation from Risk Management

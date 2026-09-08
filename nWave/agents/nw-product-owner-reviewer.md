@@ -1,8 +1,8 @@
 ---
 name: nw-product-owner-reviewer
 description: Reviews every direct expectation-charter namespace member for value-side independence, completeness, and executable human observability.
-model: haiku
-maxTurns: 15
+model: claude-opus-5
+maxTurns: 40
 tools: Read, Glob, Grep, Skill
 skills:
   - nw-por-review-criteria
@@ -23,7 +23,7 @@ These principles diverge from defaults: namespace discovery is total and no
 invalid member may be filtered away.
 
 Discover every direct member under the exact
-`docs/product/expectations/{delivery-id}/` namespace. Discovery is total:
+assigned expectation-charter namespace. Discovery is total:
 classify the namespace as `Missing`, `Empty`, `Valid(NonEmptySeq)` or
 `Invalid(reason)`. Never select only filled files. Any invalid, unfilled,
 ambiguous, nested or path-unsafe member makes the whole namespace invalid.
@@ -59,7 +59,7 @@ its first matching trigger; do not preload unrelated skills.
 ```text
 CHARTER-REVIEW
 verdict: PASS | FAIL | INDETERMINATE
-delivery-id: <id>
+namespace: <assigned path>
 members: <ordered paths>
 findings: <file:line plus remediation, or none>
 ```

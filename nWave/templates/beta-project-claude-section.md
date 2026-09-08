@@ -4,11 +4,9 @@ nWave is a spine-driven delivery framework. Wave commands (`/nw-*`) carry the
 gates; skills carry on-demand knowledge; agents execute. This section is an
 INDEX — it tells you which to reach for, not how each one works internally.
 
-**Before any tool call (including read-only discovery), establish and state the route:** load `nw-mode-select` for posture (`direct`/`human`/`auto`), size (S/M/L), and one observable reason. Explicit mode still gets sized S/M/L; generic autonomy is `auto`.
-
 {{DELIVERY_ROUTE_FRAGMENT}}
 
-For Auto M/L, load `nw-auto` directly — never `/nw-deliver` first and never in parallel with it. Human authority decides only genuine scope or trade-offs.
+Human authority decides only genuine scope or trade-offs.
 
 | User wants... | Load / run |
 |---|---|
@@ -17,17 +15,17 @@ For Auto M/L, load `nw-auto` directly — never `/nw-deliver` first and never in
 | Clarify jobs, journeys, outcomes | `/nw-discuss` |
 | Architecture, reuse, boundaries | `/nw-design` |
 | Deployment / operational constraints | `/nw-devops` |
-| Executable oracle + DeliveryContract | `/nw-distill` |
-| Ship one validated contract | `/nw-deliver` |
+| Executable public oracle | `/nw-distill` |
+| Dispatch one Request | `/nw-deliver` |
 | Fix one observed defect | `/nw-bugfix` |
 | Review an artifact or diff | `/nw-review` |
 | Reduce a noisy test suite | `/nw-optimize-tests` |
 | Explicit mutation probe | `/nw-mutation-test` |
 | Resume after an interruption | `/nw-new` (reads durable authorities, routes to the earliest missing owner) |
-| Autonomous M/L delivery, no staged review | skill `nw-auto`, after `nw-mode-select` picks `auto` |
+| Decide how big a Request is, and when to ask the human | skill `nw-auto` |
 | Anything else — methodology, routing, "what do I do" | skill `nw-buddy` |
 
-**Mandatory floor**: M/L `DISTILL → DELIVER` (acceptance-test TDD). Never hand-roll delivery work: `nw-acceptance-designer`, crafter, independent examiner if `examine=true`; never substitute.
+**Mandatory floor**: every Request goes to the runner. The Product Owner decomposes it into ordered values, the runner prepares and crafts the values that consume identical design facts as one group against one shared executable oracle, and one independent reviewer reads the whole candidate diff. Never hand-roll that work, and never substitute a role.
 
 {{TOOL_BATCHING_FRAGMENT}}
 

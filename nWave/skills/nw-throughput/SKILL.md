@@ -1,6 +1,6 @@
 ---
 name: nw-throughput
-description: Evidence-led orchestration for maximizing delivery throughput with causal fan-out, associative boundary composition, one heavy local box, and concise terminal evidence.
+description: Evidence-led orchestration for maximizing delivery throughput with independent fan-out, one heavy local box, and concise whole-value evidence.
 user-invocable: true
 ---
 
@@ -13,75 +13,12 @@ number of available agents. Keep cloud reasoning busy while allowing at most
 one heavy local build/test/install workload. Measure load and stop adding lanes
 when contention increases end-to-end wall time.
 
-## Fan out only independent work
+## Strategy
 
-Freeze the shared interface first, then assign disjoint file ownership in
-worktrees created only by `des worktree-admit --repo <root> --lane <name>`;
-its sole stdout path is the lane execution root. Never use Agent
-`isolation: "worktree"` or raw `git worktree add`: both choose residence before
-nWave can admit it. Good parallel work includes independent RCA hypotheses,
-architecture reviews, oracle reviews, documentation projections and separate
-delivery segments whose dependencies are explicit. Never parallelize two
-writers over the same authority or an implementation before its oracle exists.
-
-## Compose boundaries as a segment tree
-
-For ordered boundaries `A -> B -> C -> D`, validate disjoint pairs in parallel:
-
-```text
-(A+B) || (C+D)
-        ->
-   (A+B+C+D)
-```
-
-Each pair returns a compact certificate containing input/output identities,
-preserved obligations, terminal observations and verdict. Compose certificates
-associatively only when identities join. `PASS` is identity, `FAIL` is
-absorbing and `INDETERMINATE` prevents global PASS. Pairwise PASS never implies
-global PASS without the composition check.
-
-## Delivery scheduling
-
-1. Find the nearest measurable constraint and its shortest falsifier.
-2. Run several independent candidate probes when they answer the same question
-   without sharing mutable files or the heavy box.
-3. Stop losing candidates early; integrate only the best falsified survivor.
-4. Serialize exact command execution, release-shaped installation and other
-   heavy box work.
-5. Run one whole-delivery source-blind EXAMINE and one finalize after the
-   composed candidate, not once per internal segment.
-6. Record wall, processed tokens and cost from terminal telemetry. Setup,
-   waiting and retries are friction evidence but do not replace end-to-end
-   delivery time.
-
-## Long-session loops
-
-Loops are opt-in and off by default. Explain WHAT they monitor, WHY the long
-session benefits and HOW to stop them before asking consent. Arm only after
-explicit acceptance and verify the scheduler actually registered them. Use
-event-driven or sparse checks; never inject a large recurring prompt. A loop
-suggests the next falsifier and consolidates evidence but cannot override the
-durable authority or `DeliveryContract`.
-
-## Hygiene
-
-An idle agent is not a completed artifact. Verify diff and terminal evidence,
-then integrate or explicitly reject it.
-
-An `idle_notification` with no terminal report within two minutes is
-TERMINATED, not "alive". The root watcher's move is to read the lane's own
-transcript and either consume the result found there or re-dispatch — never
-probe "are you alive?" more than once (2026-08-21: two crafter `PASS` results
-sat unread in idle lanes, 133 minutes lost on "it is still working").
-
-Reinstall the runtime ONLY from the integrating lane, serialized, and NEVER
-while an examiner lane or a dispatch is in flight on the shared box: a
-reinstall rewrites the installed roster under every running role
-(2026-08-21: seven concurrent reinstalls from fix lanes — three examiners died
-silently, one dispatch crashed, 72 minutes lost). At each convergence point inventory
-worktrees, reconcile every valuable diff, remove completed temporary worktrees
-and leave no unowned WIP. The lifecycle owner releases only through
-`des worktree-release` after terminal integration; absence or deletion of its
-marker is never release. A finalized lane counts complete only after satisfying
-`nw-deliver`'s HAND OFF cleanup postcondition; do not duplicate its command or
-verdict rules here. Never trade disk/process hygiene for apparent lane count.
+1. Select the nearest measurable constraint and shortest falsifier.
+2. Fan out only independent work with disjoint ownership in detached worktrees.
+3. Keep one heavy local build/test/install box; serialize its use.
+4. Fan in on the whole delivered value. Review, examine, integration,
+   observation and cleanup are runner-owned; do not repeat or stage them.
+5. Measure wall time, cost, tokens, retries, tool calls, and human
+   intervention against the outcome.

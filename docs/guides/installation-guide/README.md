@@ -294,7 +294,7 @@ Both methods install the same components to your `~/.claude/` directory:
 ├── skills/nw-*/               # 197 agent skill files (flat layout)
 ├── scripts/                   # DES utilities
 ├── lib/python/des/            # DES runtime imported by hooks
-└── settings.json              # nWave-managed hooks (PreToolUse, SubagentStart, SubagentStop, PostToolUse)
+└── settings.json              # nWave-managed hooks (PreToolUse, SubagentStop, PostToolUse)
 ```
 
 All agents and commands become available globally across all Claude Code projects.

@@ -1,8 +1,4 @@
 {
-  "nWave/schemas/thin-delivery-contract.schema.json": {
-    "declared-version": "1.4",
-    "sha256": "194ca3db87f22e9142baf8525f9f58d95c27e7c01289e3327d141fe9a32eb1a4"
-  },
   "nWave/schemas/nwave.test_observation.v1.schema.json": {
     "declared-version": "nwave.test_observation.v1",
     "sha256": "24ff5893e124900cc078e5a7681816e120f0f0e52968dc4f195bb284a30fb4b3"

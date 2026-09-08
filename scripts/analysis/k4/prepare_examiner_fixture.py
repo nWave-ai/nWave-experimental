@@ -53,8 +53,15 @@ import time
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
-from scripts.analysis import paired_campaign
-from scripts.analysis.k4 import subject as k4_subject
+
+# This file is deliberately invoked by absolute path from the subject checkout.
+# In that mode Python puts this directory, not the repository root, on sys.path.
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+if str(_REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPOSITORY_ROOT))
+
+from scripts.analysis import paired_campaign  # noqa: E402
+from scripts.analysis.k4 import subject as k4_subject  # noqa: E402
 
 
 try:
@@ -528,6 +535,10 @@ def _seed(venv_python: Path, workspace: Path, existing_api_key: str | None) -> s
 #: own printed text.
 SERVER_PID_FILE_NAME = "server.pid"
 
+#: The runserver and its keepalive supervisor append their diagnostic output
+#: here.  It is fixture runtime residue, never a delivery path.
+SERVER_LOG_FILE_NAME = "server.log"
+
 #: Stable-design report 2026-08-19 Sec.1.4: the SAME single-writer
 #: discipline `des commit` already uses (`fcntl.flock` on a lock file) --
 #: `flock` here, the bash-native equivalent -- held for the restore +
@@ -696,7 +707,8 @@ def start_and_wait_block(port: int, api_key: str) -> str:
     argv, env_overrides = _runserver_argv_and_env(port)
     env_prefix = " ".join(f"{name}={value}" for name, value in env_overrides.items())
     runserver = (
-        f"{env_prefix} setsid nohup {' '.join(argv)} > server.log 2>&1 < /dev/null &"
+        f"{env_prefix} setsid nohup {' '.join(argv)} > {SERVER_LOG_FILE_NAME} "
+        "2>&1 < /dev/null &"
     )
     return (
         f"exec 9>{DB_LOCK_FILE_NAME}\n"
@@ -840,7 +852,7 @@ def supervisor_script(port: int, api_key: str, *, owner_pid: int | None = None) 
         "    except (urllib.error.URLError, OSError, ValueError, TimeoutError):\n"
         "        return False\n\n\n"
         "def _restart():\n"
-        "    with open('server.log', 'a') as log:\n"
+        f"    with open({SERVER_LOG_FILE_NAME!r}, 'a') as log:\n"
         "        log.write('supervisor: restarting at %s\\n' % time.time())\n"
         "    # K4 camp2/camp3/camp4 diagnosis (2026-08-20): isolated repro\n"
         "    # proved `subprocess.run(...).kill()` on interruption (a\n"
@@ -1358,7 +1370,12 @@ def _add_exclude_entries(workspace: Path) -> None:
     lines = existing.splitlines()
     to_add = [
         entry
-        for entry in (DOC_NAME, f"{_VENV_DIR_NAME}/", DB_PRISTINE_SNAPSHOT_NAME)
+        for entry in (
+            DOC_NAME,
+            f"{_VENV_DIR_NAME}/",
+            DB_PRISTINE_SNAPSHOT_NAME,
+            ".claude-k4/",
+        )
         if entry not in lines
     ]
     if not to_add:

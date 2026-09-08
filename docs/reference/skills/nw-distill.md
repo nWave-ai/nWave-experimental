@@ -1,6 +1,6 @@
 # nw-distill
 
-Compile value and architecture authority into a minimal executable oracle and one DeliveryContract. Human and Auto share the same route algebra and quality floor.
+Produce an executable public oracle from durable authority.
 
 **Used by:** [nw-acceptance-designer](../agents/nw-acceptance-designer.md)
 

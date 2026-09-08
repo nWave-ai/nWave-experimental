@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
+from des.domain.nwave_locations import NWaveLocations
 from scripts.install.plugins.base import InstallContext, PluginResult
 from scripts.install.plugins.registry import PluginRegistry
 
@@ -44,6 +45,14 @@ def configured_installer(tmp_path):
         installer.logger.progress_spinner.return_value.__exit__ = Mock()
         installer.backup_manager = Mock()
         installer._attested_legacy_codex_skill_names = frozenset()
+        # NWaveLocations is the one location invariant __init__ resolves
+        # once (see des.domain.nwave_locations); this fixture stubs
+        # __init__ away, so it has to supply the same invariant here.
+        installer._locations = NWaveLocations(
+            agents_home=tmp_path / "agents_home",
+            claude_config_dir=installer.claude_config_dir,
+            codex_config_dir=tmp_path / "codex",
+        )
 
         # Create minimal source structure
         installer.framework_source.mkdir(parents=True, exist_ok=True)

@@ -81,7 +81,7 @@ Every agent that carries `skills:` in frontmatter needs two things, kept aligned
    description: Use for {domain}. {When to delegate.}
    model: inherit
    tools: [{minimum tools needed}]
-   maxTurns: 30
+   maxTurns: 40
    skills:
      - nw-{skill-name}
    ---

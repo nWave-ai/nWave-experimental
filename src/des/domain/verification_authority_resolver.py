@@ -195,6 +195,64 @@ def resolve_authority_section(
     )
 
 
+def changed_authority_locator(
+    old_text: str, new_text: str, document: str
+) -> str | UnresolvedAuthorityReference | AmbiguousAuthorityReference:
+    """Return the one existing section whose bytes changed, without a second parser."""
+    old_lines, new_lines = (
+        old_text.splitlines(keepends=True),
+        new_text.splitlines(keepends=True),
+    )
+    old_headings = [
+        match.group("text") for line in old_lines if (match := _HEADING_RE.match(line))
+    ]
+    new_headings = [
+        match.group("text") for line in new_lines if (match := _HEADING_RE.match(line))
+    ]
+    locator = f"{document}#<changed-section>"
+    removed = [heading for heading in old_headings if heading not in new_headings]
+    added = [heading for heading in new_headings if heading not in old_headings]
+    if removed or len(added) > 1:
+        return UnresolvedAuthorityReference(
+            locator, "authority headings were renamed, removed, or added ambiguously"
+        )
+    changed: list[str] = []
+    for heading in old_headings:
+        candidate = f"{document}#{heading}"
+        old = resolve_authority_section(
+            old_text, heading, locator=candidate, doc_part=document
+        )
+        new = resolve_authority_section(
+            new_text, heading, locator=candidate, doc_part=document
+        )
+        if isinstance(old, (UnresolvedAuthorityReference, AmbiguousAuthorityReference)):
+            return old
+        if isinstance(new, (UnresolvedAuthorityReference, AmbiguousAuthorityReference)):
+            return new
+        # A parent section includes its nested sections in ``text``.  Its direct
+        # declaration ends at ``insertion_end``; comparing that range makes a
+        # child edit identify the child alone rather than every ancestor.
+        old_direct = old_text[old.start : old.insertion_end]
+        new_direct = new_text[new.start : new.insertion_end]
+        if old_direct != new_direct:
+            changed.append(candidate)
+    if added:
+        candidate = f"{document}#{added[0]}"
+        section = resolve_authority_section(
+            new_text, added[0], locator=candidate, doc_part=document
+        )
+        if isinstance(
+            section, (UnresolvedAuthorityReference, AmbiguousAuthorityReference)
+        ):
+            return section
+        changed.append(candidate)
+    if len(changed) != 1:
+        return UnresolvedAuthorityReference(
+            locator, "expected exactly one changed existing authority section"
+        )
+    return changed[0]
+
+
 def resolve_verification_authority(
     repo_root: Path, locator: str
 ) -> LiteralScriptBlock | UnresolvedAuthorityReference | AmbiguousAuthorityReference:

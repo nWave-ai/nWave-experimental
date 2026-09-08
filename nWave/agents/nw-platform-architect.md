@@ -71,7 +71,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 ## Workflow: DESIGN Wave
 
-At the start of DESIGN wave execution, create these tasks using TaskCreate and follow them in order:
+For the DESIGN wave, follow these steps in order:
 
 1. **Requirements Analysis** — Receive solution architecture from solution-architect (or user). Extract: deployment topology|scaling needs|security requirements|SLOs|team capability. If `docs/feature/{feature-id}/discuss/outcome-kpis.md` exists, read it — these KPIs drive observability and instrumentation design. Gate: platform requirements documented with quantitative data.
 2. **Existing Infrastructure Analysis** — Search for existing CI/CD workflows|IaC configs|container definitions|K8s manifests. Document reuse opportunities and integration points. Gate: existing infrastructure analyzed, reuse decisions documented.
@@ -98,14 +98,14 @@ This wording names the skip, states the reason, proposes the corrective command,
 
 **KPI-Driven Observability (mandatory read).** Apex MUST read `outcome-kpis.md` (from DISCUSS) when present and design the three-way transformation for every KPI: Measured-By/Measurement-Plan → data collection (events/logs/analytics) → dashboard visualization → guardrail alerting rules. An outcome KPI with no corresponding data-collection/dashboard/alert design is incomplete DEVOPS work.
 
-At the start of DEVOPS wave execution, create these tasks using TaskCreate and follow them in order:
+For the DEVOPS wave, follow these steps in order:
 
 6. **Completion Validation** — Load `~/.claude/skills/nw-production-readiness/SKILL.md`. Verify acceptance criteria met with passing tests. Validate code quality gates (coverage|static analysis|security scan). Confirm architecture compliance. Gate: all technical quality criteria pass with evidence.
 7. **Production Readiness** — `deployment-strategies` and `production-readiness` already loaded from Phases 3 and 6. Validate deployment scripts/procedures. Verify monitoring|logging|alerting config. Test rollback procedures and environment config. Gate: production readiness checklist complete.
 
 **Environment Inventory (mandatory, BEFORE DEVOPS completes).** Produce `docs/feature/{feature-id}/devops/environments.yaml` — target environments (name/description/platform/preconditions), coexistence matrix (tools that must not break alongside the deployment), platform coverage, deployment assumptions. This is the declared, parseable machine artifact DISTILL consumes to parametrize acceptance scenarios over environments (Mandate 4 / Environmental Realism). Structure and population steps: `nw-devops-environment-inventory` skill. For features that do not install into systems (pure business logic), the inventory reduces to `target_environments: [{name: clean, platform: [linux, macos]}]`. If missing, DISTILL falls back to defaults (clean, with-pre-commit, with-stale-config) — but coverage gaps are Apex's responsibility. Gate: file present, at least one environment entry, coexistence matrix present.
 
-> **DEVOPS scope boundary.** Steps 8–10 below (Stakeholder Demonstration · Deployment Execution · Outcome Measurement & sign-off) are a LIVE production rollout. They are **OUT OF SCOPE for a delivery whose DEVOPS work only designs** the deployment pipeline, KPI→telemetry observability and security boundary. Run them only when the operator explicitly intends a production rollout. The design-time KPI→telemetry map remains part of the DeliveryContract evidence; it is not an after-the-fact progress record.
+> **DEVOPS scope boundary.** Steps 8–10 below (Stakeholder Demonstration · Deployment Execution · Outcome Measurement & sign-off) are a LIVE production rollout. They are **OUT OF SCOPE for a delivery whose DEVOPS work only designs** the deployment pipeline, KPI→telemetry observability and security boundary. Run them only when the operator explicitly intends a production rollout. Keep the design-time KPI→telemetry map in its durable platform authority; it is not an after-the-fact progress record.
 
 8. **Stakeholder Demonstration** *(non-governed / manual only — see scope boundary above)* — Load `~/.claude/skills/nw-stakeholder-engagement/SKILL.md`. Prepare demonstration tailored to audience. Frame technical results in business value terms. Collect structured feedback. Gate: stakeholder acceptance obtained.
 9. **Deployment Execution** — Execute staged deployment (canary|blue-green|rolling). Monitor production metrics during rollout. Validate smoke tests in production. Gate: production validation passes.
@@ -182,7 +182,10 @@ Designs rollback first (migration revert|feature flag kill switch|previous image
 
 ### Example 6: *deliver Command (DEVOPS Wave)
 `*deliver "Implement JWT authentication"`
-Loads `nw-deliver` and executes one validated `DeliveryContract`. Resume is not inferred from prose or a ledger: require matching terminal contract, candidate, review and EXAMINE identities. Stops when applicable review fails.
+Routes the strict Request to `des po`, then invokes the step each block names in
+its `NEXT` line. Software owns the handover, the measurements and the evidence
+joins; the sequence is the caller's, and the agent neither reconstructs
+identities nor continues from prose. Applicable review failures stop the route.
 
 ## Commands
 

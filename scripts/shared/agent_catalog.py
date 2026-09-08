@@ -90,7 +90,6 @@ PUBLIC_SHARED_SKILLS: frozenset[str] = frozenset(
         "nw-spike-methodology",
         "nw-speculative-dispatch",
         "nw-tdd-cross-language",
-        "nw-wizard-shared-rules",
         # Decomposed command-design-patterns modules (2026-06-17): the public
         # core nw-command-design-patterns (load-bearing for the public
         # agent-builder via *optimize-command) composes these via its loading
@@ -219,6 +218,40 @@ def load_private_agents(nwave_dir: Path) -> set[str]:
         name
         for name, info in catalog.get("agents", {}).items()
         if info.get("public") is False
+    }
+
+
+def load_private_skills(nwave_dir: Path, *, strict: bool = True) -> set[str]:
+    """Read framework-catalog.yaml and return skills declared ``public: false``.
+
+    Skill visibility is DERIVED by default (a skill is public when at least
+    one owning agent is public -- see :func:`is_public_skill`). The optional
+    top-level ``skills:`` catalog section is the one place that can OVERRIDE
+    that derivation for a single skill, so that knowledge held to be a
+    competitive advantage stays out of the public repository and the PyPI
+    wheel even while a public agent owns it.
+
+    Keys are skill DIRECTORY names as they appear in ``nWave/skills/``
+    (``nw-`` prefixed). Only ``public: false`` is an override; ``public:
+    true`` and an absent entry both mean "derive as usual".
+
+    With ``strict=False`` a missing or unparseable catalog yields an empty
+    set. That is not a silent pass: every release caller loads the same
+    catalog strictly through :func:`load_public_agents` first and aborts
+    with ``unverifiable catalog`` before any visibility decision is made.
+    """
+    catalog = _load_catalog(nwave_dir, strict=strict)
+    if catalog is None:
+        return set()
+
+    skills_section = catalog.get("skills")
+    if not isinstance(skills_section, dict):
+        return set()
+
+    return {
+        name
+        for name, info in skills_section.items()
+        if isinstance(info, dict) and info.get("public") is False
     }
 
 
@@ -473,11 +506,19 @@ def detect_command_skills(skills_dir: Path) -> set[str]:
     return command_skills
 
 
+def _skill_key(skill_dir_name: str) -> str:
+    """Normalize a skill name to its ``nw-``-prefixed directory-name key."""
+    return (
+        skill_dir_name if skill_dir_name.startswith("nw-") else f"nw-{skill_dir_name}"
+    )
+
+
 def is_public_skill(
     skill_dir_name: str,
     public_agents: set[str],
     ownership_map: dict[str, set[str]] | None = None,
     command_skills: set[str] | None = None,
+    private_skills: set[str] | None = None,
 ) -> bool:
     """Check whether a skill directory belongs to a public agent.
 
@@ -490,6 +531,12 @@ def is_public_skill(
     agent(s) for the skill. A skill is public if at least one of its
     owning agents is public.
 
+    When *private_skills* is provided (from :func:`load_private_skills`),
+    every skill it names is private no matter who owns it and no matter
+    which public override would otherwise apply. Callers deciding real
+    distribution MUST pass it; ``tests/build/unit/test_is_public_skill_
+    call_sites_pass_private_skills.py`` pins that they do.
+
     When *command_skills* is provided, skills in this set are always
     treated as public (they are user-facing commands, not agent-only).
 
@@ -501,6 +548,13 @@ def is_public_skill(
     """
     if not public_agents:
         return True
+
+    # The catalog's private declaration is the FIRST thing consulted: it wins
+    # over every public path below -- the shared-skill allow-list, command
+    # skill status, and any public owning agent. Fail-closed by ordering.
+    if private_skills and _skill_key(skill_dir_name) in private_skills:
+        return False
+
     if skill_dir_name in ("common", "nw-canary"):
         return True
     if skill_dir_name in PUBLIC_SHARED_SKILLS:
@@ -510,10 +564,7 @@ def is_public_skill(
 
     if ownership_map is not None:
         # Normalize to nw-prefixed key (matching ownership map convention)
-        if skill_dir_name.startswith("nw-"):
-            lookup_key = skill_dir_name
-        else:
-            lookup_key = f"nw-{skill_dir_name}"
+        lookup_key = _skill_key(skill_dir_name)
         if lookup_key in ownership_map:
             owning_agents = ownership_map[lookup_key]
             return any(agent in public_agents for agent in owning_agents)

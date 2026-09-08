@@ -6,7 +6,7 @@ tools: Read, Glob, Grep
 skills:
   - nw-ab-critique-dimensions
   - nw-agent-creation-workflow
-maxTurns: 20
+maxTurns: 40
 ---
 
 # nw-skill-reviewer
@@ -42,7 +42,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Load Context** — Load `~/.claude/skills/nw-ab-critique-dimensions/SKILL.md` and `~/.claude/skills/nw-agent-creation-workflow/SKILL.md`. Read the `SKILL.md` file(s) under review. Gate: both skills loaded, all target skill files read.
 

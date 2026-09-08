@@ -166,10 +166,10 @@ class TestCleanPass:
         _make_agent(
             tmp_path,
             "nw-test-crafter",
-            ["nw-tdd-methodology", "nw-quality-framework"],
+            ["nw-tdd-methodology", "nw-code-design-oo"],
         )
         _make_skill_dir(tmp_path, "nw-tdd-methodology")
-        _make_skill_dir(tmp_path, "nw-quality-framework")
+        _make_skill_dir(tmp_path, "nw-code-design-oo")
 
         result = validate(tmp_path)
 

@@ -293,7 +293,7 @@ class TestOpenCodeSkillsRegression:
         _create_agent_file(
             agents_dir,
             "nw-crafter",
-            ["nw-tdd-methodology", "nw-quality-framework"],
+            ["nw-tdd-methodology", "nw-code-design-oo"],
         )
 
         # Use project layout (nWave/skills/) instead of dist layout
@@ -302,7 +302,7 @@ class TestOpenCodeSkillsRegression:
 
         # OLD_HIERARCHICAL: {agent}/*.md files (no nw- prefix dirs)
         _create_hierarchical_skill(skills_dir, "crafter", "tdd-methodology")
-        _create_hierarchical_skill(skills_dir, "crafter", "quality-framework")
+        _create_hierarchical_skill(skills_dir, "crafter", "code-design-oo")
 
         context = _make_context(
             tmp_path,

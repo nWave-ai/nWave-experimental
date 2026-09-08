@@ -17,7 +17,7 @@ Verdict-first, tables over prose, evidence-dense, zero narrative. Depth comes fr
 
 ## Deterministic step-sequence (run every time, in order)
 
-At execution start create these as TaskCreate items and run in order:
+Run these steps in order:
 
 1. **INVENTORY MODULES** — list every production module imported in step definitions that does not yet exist. Gate: module list complete.
 2. **SCAFFOLD EACH MODULE** — per module create the file at the correct path; add scaffold marker `__SCAFFOLD__ = True` (or language equivalent); define class/function with the correct parameter signature; method bodies raise an assertion error with the scaffold-marker message. Gate: every imported module scaffolded.

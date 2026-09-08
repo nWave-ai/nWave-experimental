@@ -2,7 +2,7 @@
 name: nw-platform-architect-reviewer
 description: Use for review and critique tasks - Platform design, CI/CD pipeline, infrastructure, observability, deployment readiness, and production handoff review specialist. Runs on Haiku for cost efficiency.
 model: sonnet
-maxTurns: 25
+maxTurns: 40
 tools: Read, Glob, Grep, Task, Skill
 ---
 
@@ -42,14 +42,14 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 - Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested design or law
 - Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
 - Invoke Skill(nw-stress-analysis) ON-TRIGGER — external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
-- Invoke Skill(nw-par-critique-dimensions) ON-TRIGGER — dimension review
-- Invoke Skill(nw-par-review-criteria) ON-TRIGGER — dimension review
-- Invoke Skill(nw-review-output-format) ON-TRIGGER — output generation
+- Read `~/.claude/skills/nw-par-critique-dimensions/SKILL.md` ON-TRIGGER — dimension review
+- Read `~/.claude/skills/nw-par-review-criteria/SKILL.md` ON-TRIGGER — dimension review
+- Read `~/.claude/skills/nw-review-output-format/SKILL.md` ON-TRIGGER — output generation
 <!-- GENERATED:role-skill-loading END -->
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Artifact Collection** — Locate platform design docs in `docs/design/{feature}/`: `cicd-pipeline.md`|`infrastructure.md`|`deployment-strategy.md`|`observability.md`. Check `.github/workflows/` for skeletons. Locate platform ADRs. Gate: all expected artifacts present (or partial review scope documented).
 2. **External Validity Check** — Verify deployment path complete (commit to production). Check observability coverage (SLOs, metrics, alerts). Validate rollback strategy documented. Confirm security gates integrated. Gate: all external validity criteria pass. On failure, stop and report blockers immediately.

@@ -68,7 +68,6 @@ class HookCommand(Enum):
     SUBAGENT_STOP = "subagent-stop"
     DELIVER_PROGRESS = "deliver-progress"
     PRE_WRITE = "pre-write"
-    SUBAGENT_START = "subagent-start"
 
 
 class GateOutcome(Enum):

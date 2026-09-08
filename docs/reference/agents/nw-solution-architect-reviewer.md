@@ -4,7 +4,7 @@ Reviews durable architecture decisions for evidence, reuse, boundaries, cross-la
 
 **Wave:** Other
 **Model:** sonnet
-**Max turns:** 20
+**Max turns:** 40
 **Tools:** Read, Glob, Grep, Task, Bash, Skill
 
 ## Preloaded skills

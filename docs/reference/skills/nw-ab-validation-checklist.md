@@ -1,6 +1,6 @@
 # nw-ab-validation-checklist
 
-KNOWLEDGE (data) — the 19-item agent-spec validation checklist. The item definitions the validate-spec / todoify procedures RUN against. No sequence of its own.
+KNOWLEDGE (data) — the 19-item agent-spec validation checklist. The item definitions the validate-spec procedure RUNS against. No sequence of its own.
 
 **Used by:** [nw-agent-builder](../agents/nw-agent-builder.md), [nw-agent-builder-reviewer](../agents/nw-agent-builder-reviewer.md)
 

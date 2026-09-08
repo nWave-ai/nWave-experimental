@@ -12,9 +12,18 @@ REAL executable named ``graphify`` on ``PATH`` to exercise the adapter's
 ``shutil.which`` + ``subprocess`` regeneration path end to end; installing
 the actual npm/pip tool as a CI dependency would make Graphify a runtime
 requirement it is not. This module implements exactly the one subcommand
-the adapter shells out to (``graphify update <root>``) and only the shape
-those tests assert on (function-def nodes for ``atoms-in-file``), so the
-test environment is deterministic without adding a heavyweight dependency.
+the adapter shells out to (``graphify update <root>``), so the test
+environment is deterministic without adding a heavyweight dependency.
+
+Because CI installs no real graphify, this module is the ONLY producer of
+a materialized index in this repo -- so it emits the axes a consumer
+actually discriminates on, not just nodes: function-def nodes (for
+``atoms-in-file``) AND ``calls``/``imports`` edges carrying the real
+graph's already-recorded field set (``source``, ``target``, ``relation``,
+``confidence``, ``source_file``, ``source_location``) at ``EXTRACTED``
+confidence (for ``callers-of``/``never-wired``). No new edge vocabulary
+is invented here; a consumer's relation/confidence filtering is therefore
+observable against data that really carries more than one relation.
 
 Named ``graphify.py`` (rather than a private ``_graphify_logic.py``) so
 ``shutil.which("graphify")`` can resolve it DIRECTLY on Windows once the
@@ -39,13 +48,20 @@ import sys
 from pathlib import Path
 
 
-def _function_nodes(path: Path, relative: str) -> list[dict[str, object]]:
+def _parse(path: Path) -> ast.Module | None:
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        return ast.parse(path.read_text(encoding="utf-8"))
     except (OSError, SyntaxError, UnicodeDecodeError):
-        return []
+        return None
+
+
+def _node_prefix(relative: str) -> str:
     stem = relative[:-3] if relative.endswith(".py") else relative
-    node_prefix = stem.replace("/", "_")
+    return stem.replace("/", "_")
+
+
+def _function_nodes(tree: ast.Module, relative: str) -> list[dict[str, object]]:
+    node_prefix = _node_prefix(relative)
     return [
         {
             "id": f"{node_prefix}_{node.name}",
@@ -59,6 +75,75 @@ def _function_nodes(path: Path, relative: str) -> list[dict[str, object]]:
     ]
 
 
+def _called_name(func: ast.expr) -> str:
+    """The trailing callable name of a call site's ``func`` expression --
+    ``target()`` and ``owner.target()`` both name ``target`` (the real
+    graph resolves a ``calls`` edge by TARGET NODE, not by call syntax)."""
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
+
+
+def _imported_names(node: ast.stmt) -> list[str]:
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        return [
+            alias.asname or alias.name.rsplit(".", maxsplit=1)[-1]
+            for alias in node.names
+        ]
+    return []
+
+
+def _edges(
+    tree: ast.Module, relative: str, ids_by_label: dict[str, str]
+) -> list[dict[str, object]]:
+    """Second-pass edge extraction against the SCOPE-WIDE def index.
+
+    A call site's target is frequently defined in ANOTHER file, so the
+    label index must be complete before any edge can be resolved -- hence
+    two passes over the same parsed trees, not a widened single pass.
+
+    Both ``calls`` and ``imports`` edges are emitted, at the real graph's
+    recorded ``EXTRACTED`` confidence and field set: a consumer that
+    discriminates on the ``relation`` axis (``GraphifyAdapter`` counts
+    ``calls`` edges ONLY) is then discriminating against data that really
+    carries both relations, not against a shape fitted to it.
+    """
+    source_id = _node_prefix(relative)
+    edges: list[dict[str, object]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            label = _called_name(node.func)
+            target = ids_by_label.get(label)
+            if target is not None:
+                edges.append(
+                    {
+                        "source": source_id,
+                        "target": target,
+                        "relation": "calls",
+                        "confidence": "EXTRACTED",
+                        "source_file": relative,
+                        "source_location": f"L{node.lineno}",
+                    }
+                )
+            continue
+        for label in _imported_names(node):
+            target = ids_by_label.get(label)
+            if target is not None:
+                edges.append(
+                    {
+                        "source": source_id,
+                        "target": target,
+                        "relation": "imports",
+                        "confidence": "EXTRACTED",
+                        "source_file": relative,
+                        "source_location": f"L{node.lineno}",
+                    }
+                )
+    return edges
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 3 or argv[1] != "update":
         print("usage: graphify update <root>", file=sys.stderr)
@@ -69,21 +154,34 @@ def main(argv: list[str]) -> int:
 
     nodes: list[dict[str, object]] = []
     manifest: dict[str, dict[str, object]] = {}
+    parsed: list[tuple[str, ast.Module]] = []
     for path in sorted(root.rglob("*.py")):
         if "graphify-out" in path.relative_to(root).parts:
             continue
         relative = path.relative_to(root).as_posix()
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        nodes.extend(_function_nodes(path, relative))
+        tree = _parse(path)
+        if tree is not None:
+            parsed.append((relative, tree))
+            nodes.extend(_function_nodes(tree, relative))
         manifest[relative] = {
             "ast_hash": digest,
             "mtime": path.stat().st_mtime,
             "semantic_hash": digest,
         }
 
+    ids_by_label = {
+        str(node["label"]): str(node["id"])
+        for node in nodes
+        if node.get("label") and node.get("id")
+    }
+    edges: list[dict[str, object]] = []
+    for relative, tree in parsed:
+        edges.extend(_edges(tree, relative, ids_by_label))
+
     graph = {
         "nodes": nodes,
-        "edges": [],
+        "edges": edges,
         "hyperedges": [],
         "input_tokens": 0,
         "output_tokens": 0,

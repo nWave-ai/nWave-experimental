@@ -126,6 +126,7 @@ def filter_public_skills(
     public_agents: set[str],
     ownership_map: dict[str, set[str]],
     command_skills: set[str] | None = None,
+    private_skills: set[str] | None = None,
 ) -> list[SkillEntry]:
     """Filter entries to only public skills using ownership_map.
 
@@ -134,7 +135,7 @@ def filter_public_skills(
     When public_agents is empty, returns all entries (backward compatibility).
     """
     kept, _ = filter_public_skills_with_reasons(
-        entries, public_agents, ownership_map, command_skills
+        entries, public_agents, ownership_map, command_skills, private_skills
     )
     return kept
 
@@ -144,6 +145,7 @@ def filter_public_skills_with_reasons(
     public_agents: set[str],
     ownership_map: dict[str, set[str]],
     command_skills: set[str] | None = None,
+    private_skills: set[str] | None = None,
 ) -> tuple[list[SkillEntry], list[tuple[str, str]]]:
     """Filter entries + return parallel list of (excluded_name, reason).
 
@@ -166,7 +168,13 @@ def filter_public_skills_with_reasons(
     kept: list[SkillEntry] = []
     excluded: list[tuple[str, str]] = []
     for entry in entries:
-        if is_public_skill(entry.name, public_agents, ownership_map, command_skills):
+        if is_public_skill(
+            entry.name,
+            public_agents,
+            ownership_map,
+            command_skills,
+            private_skills,
+        ):
             kept.append(entry)
             continue
         excluded.append((entry.name, _exclusion_reason(entry.name, ownership_map)))

@@ -42,6 +42,14 @@ Two deliberate safety properties:
    deployment's copy of the spec, which would answer a question about a file
    the caller never named.
 
+The same frontmatter also carries the role's ``model:``, exposed as
+``declared_model``. It is read HERE, from the same resolved file, because a
+model answered from one copy of a spec and a capability answered from another
+would describe two different roles under one name -- and the provider honours
+the model on the argv, not the one a distant copy declares. A caller that finds
+``None`` must degrade LOUD: supplying a default would put the model back in a
+second place, which is exactly what this field removes.
+
 An OMITTED ``tools:`` key is NOT an empty capability -- in Claude Code the
 omission INHERITS every tool, i.e. maximally permissive. It resolves to
 ``INSTRUCTED``, never ``ENFORCED``.
@@ -96,7 +104,68 @@ _INSTALLED_AGENT_SPEC_PARTS: tuple[str, ...] = ("agents", "nw")
 
 _FRONTMATTER_DELIMITER = "---"
 _TOOLS_KEY = "tools:"
-_MAX_TURNS_KEY = "maxTurns:"
+_MODEL_KEY = "model:"
+
+
+class UnbalancedToolSpecifier(ValueError):
+    """A declared ``tools:`` field whose specifier parentheses do not close.
+
+    Raised rather than guessed at: a half-read specifier registers no tool with
+    the provider, so a role would silently lose a capability its spec granted.
+    Callers that resolve a capability turn this into ``UNKNOWN`` -- never into
+    the permissive ``INSTRUCTED``.
+    """
+
+    def __init__(self, raw: str) -> None:
+        super().__init__(
+            "WHAT: the tools field has unbalanced specifier parentheses: "
+            f"{raw!r}. "
+            "WHY: a declared entry may carry its own scope "
+            "(Bash(des code-fact:*)), and a half-read scope registers no tool "
+            "at all, so the role would lose the capability in silence. "
+            "HOW: close every '(' with a ')' on the tools line of the spec."
+        )
+
+
+def split_declared_tools(raw: str) -> tuple[str, ...]:
+    """The declared ``tools:`` field split into entries, scopes kept whole.
+
+    A declared entry may be a permission SPECIFIER whose scope contains commas
+    (``Bash(des code-fact:*, des dispatch:*)``), so the split honours
+    parenthesis depth instead of every comma. Unbalanced parentheses raise
+    ``UnbalancedToolSpecifier``.
+    """
+    entries: list[str] = []
+    current: list[str] = []
+    depth = 0
+    for char in raw:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                raise UnbalancedToolSpecifier(raw)
+        if char == "," and depth == 0:
+            entries.append("".join(current))
+            current = []
+            continue
+        current.append(char)
+    if depth != 0:
+        raise UnbalancedToolSpecifier(raw)
+    entries.append("".join(current))
+    return tuple(entry.strip() for entry in entries if entry.strip())
+
+
+def provider_tool_name(declared: str) -> str:
+    """The bare provider tool name inside one declared capability entry.
+
+    ``Bash(des code-fact:*)`` names the tool ``Bash``; a bare name is its own
+    answer. The two are not interchangeable at the provider boundary: measured
+    against Claude Code 2.1.261 under ``--restricted`` (2026-09-05), a specifier
+    passed where a tool NAME is expected registers no tool at all, while the
+    bare name passed where the SCOPE is expected grants the whole tool.
+    """
+    return declared.partition("(")[0].strip()
 
 
 def tool_reaches_source(tool: str) -> bool:
@@ -117,36 +186,56 @@ class DeclaredCapability:
     ``declared_tools`` is ``None`` for BOTH "spec unreadable" and "no ``tools:``
     key" -- ``register`` is what distinguishes them (``UNKNOWN`` vs
     ``INSTRUCTED``), so the two are never conflated by a reader.
+
+    ``declared_model`` is the frontmatter ``model:`` value, or ``None`` when the
+    spec declares none. It is read HERE, from the same frontmatter and the same
+    resolved file the tools come from, so a role's model and a role's capability
+    can never be answered from two different copies of its spec. A caller that
+    needs a model and finds ``None`` must degrade LOUD; supplying a default
+    would put the model back in a second place, which is the defect this field
+    exists to remove.
     """
 
     register: ClaimRegister
     spec_path: Path | None
     declared_tools: tuple[str, ...] | None
+    declared_model: str | None = None
 
     @classmethod
     def unknown(cls, spec_path: Path | None) -> DeclaredCapability:
         """The capability could not be determined -- degrade LOUD."""
         return cls(
-            register=ClaimRegister.UNKNOWN, spec_path=spec_path, declared_tools=None
+            register=ClaimRegister.UNKNOWN,
+            spec_path=spec_path,
+            declared_tools=None,
+            declared_model=None,
         )
 
     @classmethod
-    def inherits_every_tool(cls, spec_path: Path) -> DeclaredCapability:
+    def inherits_every_tool(
+        cls, spec_path: Path, model: str | None = None
+    ) -> DeclaredCapability:
         """A spec with NO ``tools:`` key: maximally permissive, never blind."""
         return cls(
             register=ClaimRegister.INSTRUCTED,
             spec_path=spec_path,
             declared_tools=None,
+            declared_model=model,
         )
 
     @classmethod
     def from_declared_tools(
-        cls, spec_path: Path, tools: tuple[str, ...]
+        cls, spec_path: Path, tools: tuple[str, ...], model: str | None = None
     ) -> DeclaredCapability:
         """Derive the register from the tools the spec actually declares."""
         reaches = any(tool_reaches_source(tool) for tool in tools)
         register = ClaimRegister.INSTRUCTED if reaches else ClaimRegister.ENFORCED
-        return cls(register=register, spec_path=spec_path, declared_tools=tools)
+        return cls(
+            register=register,
+            spec_path=spec_path,
+            declared_tools=tools,
+            declared_model=model,
+        )
 
     @property
     def source_reaching_tools(self) -> tuple[str, ...]:
@@ -220,8 +309,16 @@ def _declared_tools(frontmatter: tuple[str, ...]) -> tuple[str, ...] | None:
     for line in frontmatter:
         if not line.startswith(_TOOLS_KEY):
             continue
-        raw = line[len(_TOOLS_KEY) :]
-        return tuple(tool.strip() for tool in raw.split(",") if tool.strip())
+        return split_declared_tools(line[len(_TOOLS_KEY) :])
+    return None
+
+
+def _declared_model(frontmatter: tuple[str, ...]) -> str | None:
+    """The ``model:`` value, or ``None`` when the key is absent or empty."""
+    for line in frontmatter:
+        if not line.startswith(_MODEL_KEY):
+            continue
+        return line[len(_MODEL_KEY) :].strip() or None
     return None
 
 
@@ -234,10 +331,16 @@ def _capability_from_spec(spec_path: Path) -> DeclaredCapability:
     frontmatter = _frontmatter_lines(text)
     if frontmatter is None:
         return DeclaredCapability.unknown(spec_path)
-    tools = _declared_tools(frontmatter)
+    try:
+        tools = _declared_tools(frontmatter)
+    except UnbalancedToolSpecifier:
+        # A field nobody could read establishes no capability. UNKNOWN, never
+        # the permissive INSTRUCTED that an OMITTED key licenses.
+        return DeclaredCapability.unknown(spec_path)
+    model = _declared_model(frontmatter)
     if tools is None:
-        return DeclaredCapability.inherits_every_tool(spec_path)
-    return DeclaredCapability.from_declared_tools(spec_path, tools)
+        return DeclaredCapability.inherits_every_tool(spec_path, model)
+    return DeclaredCapability.from_declared_tools(spec_path, tools, model)
 
 
 def resolve_declared_capability(
@@ -256,48 +359,3 @@ def resolve_declared_capability(
         if candidate.is_file():
             return _capability_from_spec(candidate)
     return DeclaredCapability.unknown(None)
-
-
-def _declared_max_turns(frontmatter: tuple[str, ...]) -> int | None:
-    """The ``maxTurns:`` value as a positive int, or ``None`` when the key
-    is absent or its value does not parse as one -- never a guessed
-    default budget for a role whose spec omits the key entirely."""
-    for line in frontmatter:
-        if not line.startswith(_MAX_TURNS_KEY):
-            continue
-        raw = line[len(_MAX_TURNS_KEY) :].strip()
-        try:
-            value = int(raw)
-        except ValueError:
-            return None
-        return value if value > 0 else None
-    return None
-
-
-def resolve_declared_max_turns(
-    agent: str, *, repo_root: Path, claude_dir: Path | None = None
-) -> int | None:
-    """Resolve ``agent``'s declared ``maxTurns`` from its published spec, or
-    ``None`` when no candidate spec exists, the existing one will not parse,
-    or it declares no ``maxTurns`` at all.
-
-    Same candidate order and fail-closed-on-first-existing-candidate
-    discipline as ``resolve_declared_capability`` -- deliberately NOT a
-    silent 0/unlimited default: a caller gating a hard turn budget on this
-    value must be able to tell "no budget declared" (``None``, gate never
-    applies) from "budget is zero" (never produced; ``_declared_max_turns``
-    rejects a non-positive value the same way).
-    """
-    for candidate in candidate_spec_paths(
-        agent, repo_root=repo_root, claude_dir=claude_dir
-    ):
-        if candidate.is_file():
-            try:
-                text = candidate.read_text(encoding="utf-8")
-            except OSError:
-                return None
-            frontmatter = _frontmatter_lines(text)
-            if frontmatter is None:
-                return None
-            return _declared_max_turns(frontmatter)
-    return None

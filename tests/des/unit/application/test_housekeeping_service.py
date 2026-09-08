@@ -185,23 +185,6 @@ class TestCleanSignalFiles:
 
         assert (des_dir / "des-task-active-proj--step-1").exists()
 
-    def test_stale_deliver_session_json_is_removed(self, tmp_path: Path) -> None:
-        """Given deliver-session.json older than threshold, it is removed."""
-        from des.application.housekeeping_service import (
-            HousekeepingConfig,
-            HousekeepingService,
-        )
-
-        nwave_dir = tmp_path / ".nwave"
-        des_dir = nwave_dir / "des"
-        now = _NOW
-        self._make_signal_file(des_dir, "deliver-session.json", 26, now)
-
-        config = HousekeepingConfig(nwave_dir=nwave_dir)
-        HousekeepingService.run_housekeeping(config, FixedTimeProvider(now))
-
-        assert not (des_dir / "deliver-session.json").exists()
-
     def test_missing_des_dir_does_not_raise(self, tmp_path: Path) -> None:
         """Given .nwave/des/ does not exist, housekeeping completes without error."""
         from des.application.housekeeping_service import (

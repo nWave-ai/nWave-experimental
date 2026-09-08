@@ -2,7 +2,7 @@
 name: nw-data-engineer-reviewer
 description: Use for review and critique tasks - Data architecture and pipeline review specialist. Runs on Haiku for cost efficiency.
 model: haiku
-maxTurns: 20
+maxTurns: 40
 tools: Read, Glob, Grep, Task
 skills:
   - nw-der-review-criteria
@@ -46,7 +46,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Receive Artifact** — Read artifact to review (schema, architecture doc, recommendation, query optimization plan). Gate: artifact is readable and within data engineering domain.
 2. **Apply Review Dimensions** — Load `~/.claude/skills/nw-der-review-criteria/SKILL.md` NOW before proceeding. Evaluate against each dimension. Record findings with severity (blocker|major|minor|suggestion). Gate: all applicable dimensions evaluated.

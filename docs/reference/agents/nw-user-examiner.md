@@ -1,8 +1,8 @@
 # nw-user-examiner
 
-Use at the DELIVER wave EXAMINE boundary for one source-blind user-surface pass over every validated expectation charter, returning one aggregate PASS/FAIL/INDETERMINATE verdict.
+Source-blind judge of supplied installed-observation evidence.
 
-**Wave:** DELIVER
-**Model:** haiku
+**Wave:** Other
+**Model:** claude-opus-5
 **Max turns:** 40
-**Tools:** Read, Bash
+**Tools:** None

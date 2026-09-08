@@ -1,6 +1,6 @@
 ---
 name: nw-cross-cutting-invariants
-description: Cross-cutting normative invariants — lean public routing core for global gate/construction doctrine and on-demand knowledge lenses. Cite clause ids; never re-declare.
+description: Cross-cutting normative invariants — routing core for the software/model boundary doctrine, gate/construction principles and on-demand knowledge lenses. Cite clause ids; never re-declare.
 user-invocable: false
 disable-model-invocation: true
 ---
@@ -49,6 +49,131 @@ rejection is a bare `FAILED` / exit-code forces the operator to investigate — 
 DESIGN defect, not an implementation detail. Design the self-explaining surface IN, and put
 the affordance inline at the authoring point, not only in the reactive rejection (GDP-3 /
 GDP-4 / GDP-2).
+
+---
+
+## `boundary:software-measures-model-decides` — the control plane measures, constructs and enacts; it never decides on the model's behalf (STANDING, Ale 2026-09-04 — FOUNDATIONAL)
+
+Upstream of every gate principle below: it decides whether a piece of logic belongs in
+the software at all, before GDP-0 asks how to build it.
+
+**A PRIMITIVE observation can be incomplete, but it cannot be wrong. Anything DERIVED
+from one can be wrong.** The columns below recur; they are not exhaustive.
+
+- **Software owns PRIMITIVE MEASUREMENT.** Workspace bytes before and after a turn, a
+  hash, an exit status and captured output, file existence, Git state, the tree identity
+  of the running projection. These never lie; at worst they are incomplete, and
+  incompleteness degrades LOUD as `INDETERMINATE`, never filled in. The DERIVATION is where
+  the lie enters: that an oracle FILE EXISTS is primitive, that the oracle is therefore
+  GREEN is derived and wrong, and a route taken on the first decides on a DESIGNATION.
+  GDP-8 is that defect's home, not this clause.
+- **A DERIVED measurement declares its PROVENANCE and degrades `INDETERMINATE`.** A call
+  graph, an index query, an attribution, a computed scope: each is a claim about a
+  COMPUTATION, so it names its producer and returns the third state when that producer
+  did not resolve — never a confident answer wearing a primitive one's clothes. Anchor
+  (2026-09-04): `des code-fact query.callers-of` answered an EMPTY site list at
+  `confidence: binding-resolved` for a symbol with four real callers — `defects.md`, row
+  `code-fact-port-answers-false-with-highest-confidence`.
+- **Software owns CONSTRUCTION.** The handover emitted correct-by-construction because
+  the CLI call REQUIRES its parameters; the bound stated to the model instead of tested
+  after the paid turn. The CLI augments the model where it is weak — consistent formal
+  bytes — never constrains it where it is strong.
+- **Software owns ENACTMENT.** Code acting on shared state can hit the wrong target
+  without being a judgement (`_integrate`, `_remove_candidate_worktree`), and so can a
+  safety admissibility rule (`_repo_local_markdown`). None has a model to be delegated
+  to: they stay in the software, and their failures are ordinary bugs.
+- **The model owns SEMANTIC DECISION.** Whether a decomposition is meaningful, whether a
+  value is independently shippable, whether a candidate implements the observation. A
+  software proxy is right in the common case and wrong where the world is shaped unlike
+  the fixture.
+- **The test that separates them:** *does an authority give a criterion DECIDABLE over
+  facts the software ALREADY HOLDS, with no semantic judgement left?* If yes, the decision
+  stays in the software even when the term SOUNDS semantic — `ProductCorrectionNoProgress`
+  implements ADR-SSOT-002's decidable definition of progress, «Progress is the distinct
+  graph, non-increasing suffix cardinality and consumption of this position's sole live-run
+  correction edge». COUNTEREXAMPLE, and the half that decidability alone does not catch:
+  `_comparable` decided overlap over DECLARED targets — the model's claim about what it
+  would touch. That criterion is decidable, but it decides over a DESIGNATION, and a claim
+  about the future is derived from nothing at all, so the verdict was a surrogate.
+  ADR-SSOT-002 PRESCRIBES replacing it with the overlap MEASURED from the bytes each turn
+  actually wrote, taken as the Git diff between consecutive turn commits — a measurement
+  that does not exist yet and is owed, not one already in place. Ask therefore not only
+  whether the criterion is decidable, but WHAT it decides over. If the authority offers
+  only a surrogate, make the AUTHORITY decidable; do not exile the decision. A THIRD exit
+  is legitimate and that ADR's 2026-09-04 amendment takes it twice: DISSOLVE the decision,
+  when the boundary that required it no longer exists. Only then — never to avoid deciding
+  a question that still stands. The boundary must never be a function of the ADR's PROSE,
+  or rewriting one sentence migrates a decision while no code changes.
+- **Scope of the exclusion.** "It can be wrong and is no semantic judgement, so keep it
+  out of the control plane" binds only what the software DERIVES FROM THE OUTPUT OF A PAID
+  TURN — only there is there a semantic owner to hand the observation to.
+- **A rejection for FORM bills the model for the software's own omission (corollary).**
+  The model owns meaning, so a refusal is legitimate only where the model got the MEANING
+  wrong. Everything else about rejections is already stated: cite GDP-0, GDP-2's emission
+  corollary, GDP-3 and GDP-5 instead of restating them, and a removal still owes GDP-10's
+  adversarial challenge.
+- **Consequence for design.** What measures, constructs and enacts stays in the CLI, the
+  only source of truth about what happened. A SEMANTIC judgement moves to the role INSIDE
+  the competence that owns it. SEQUENCE AND RESUME MOVE to the orchestrating model:
+  ADR-SSOT-002 §4b, «LLM-orchestrated dynamic flow: the DES is a tool» (owner decision
+  2026-09-05, extended 2026-09-06), gives that model which step runs next, whether a turn is
+  repeated, whether the work is split, whether to go upstream to a durable authority, when to
+  stop, when to resume and when to ask the human. The software keeps MEASUREMENT,
+  CONSTRUCTION, ENACTMENT and the owned handover, and it keeps the SHAPE of a step: each step
+  is invocable singly, returns one closed outcome carrying the role's diagnostic verbatim, and
+  reports `NEXT` — the canonical successor with its exact invocation form — beside a
+  `HOW-TO-INVOKE` recall. Both lines are DATA the caller may ignore, never instructions the
+  software acts on; `des dispatch` is retired as an orchestrator and no executor composes the
+  steps. Obligation 5, `ARCHITECTURE_BOUNDARY_CHANGE`, «make CLI/hook thin drivers of one
+  resident owner», still stands in its thin-driver half: §4b re-reads the sentence «The
+  resident software owner is the existing `DeliveryContinuationRunner` application boundary,
+  modified in place; the CLI and hook are thin drivers» as «PRESERVED in its thin-driver half,
+  amended in its owner half» — exactly one resident boundary still owns measurement,
+  construction, enactment and the handover, the drivers stay thin, and that boundary is no
+  longer the owner of the delivery's continuation.
+  COMPETENCE SELECTION inside one value — design, oracle, implementation — DOES move: the
+  «Three-boundary delivery: one owner per value» amendment of 2026-09-04 supersedes «It
+  selects a competence only while its facts are unresolved» in part, and gives those choices
+  to the owner of that value.
+  *Superseded (2026-09-06) by §4b, quoted rather than deleted so a reader can tell drift from
+  disagreement:* «SEQUENCE does not move: ADR-SSOT-002 §4a keeps the ordering of the three
+  residual boundaries — Product Owner, one owner per value, one reviewer over the whole
+  candidate diff — in the resident runner», and «An orchestrating model reading a lean prose
+  sequence remains a possibility this project has not exercised: that amendment moves
+  competences to the value owner, never the sequence to an orchestrator.» Both were right on
+  the evidence they had — on 2026-09-04 nothing had measured a terminal where the runner holds
+  a closed outcome and no meaning — and §4b's eleven real-provider runs are that measurement:
+  in six of the seven derivable terminals the next move was the orchestrator's and the runner
+  took it.
+  **Falsifier for this consequence.** One invocable step invokes a second step or a second
+  role before returning to its caller; a software executor composes steps into a sequence; or
+  a step's `NEXT` is presented as an instruction the caller must follow rather than as the
+  canonical order it may ignore. §12, «A step names the canonical next step as data and
+  executes none»: naming the successor is required, acting on that name is forbidden.
+- **Anchor (2026-09-04, first real deliveries through `des dispatch`).** Five blocks were
+  found by RUNNING deliveries, none by inspection or by the suite; two were asserted as
+  EXPECTED behaviour by green tests, and across those runs the primitive measurement layer
+  never lied once. They are THREE classes, and only one is this boundary. **Infidelity to
+  a decidable ADR criterion** — empty suffix conflated with unchanged; overlap judged over
+  every member pair where the ADR says incomparable roots plus a separate ordered overlap;
+  and the route derived from whether the oracle FILE EXISTS, with the candidate built from
+  the current working-tree bytes for the declared paths, which skipped craft twice. That
+  third one was first recorded as "a crafter answering `accepted` and writing nothing"; a
+  probe on 2026-09-04 REFUTED that reading — the crafter was never invoked at all — and the
+  diagnosis stated here is the corrected one.
+  **A correct measurement not surfaced, or not degraded LOUD** — ONE empty owner set,
+  correctly refused in a message that omitted a fact the runner already held (GDP-3's
+  omission corollary), behind a comparison consumed half-way whose fix explicitly DECLINED
+  to refuse at the turn. That is one block seen from two angles, not two. **One boundary
+  instance** — scope attribution, where the runner inferred the WRITER from bytes, no
+  authority makes that inference decidable, remedied by a three-state observation carrying
+  `INDETERMINATE`.
+- **Anchor (2026-09-05/06, why sequence moved).** Run 24 returned `Success` and integrated
+  `108133478` with `src/` untouched: only a test stand-in and the new oracle changed, the real
+  command the Request named still answered wrongly, and every role was coherent with a design
+  incoherent with the world. On 2026-09-06 Ale retired `des dispatch` as an orchestrator —
+  «sono d'accordo sul ritirarlo come orchestratore» — keeping only the step's reminder of what
+  comes next.
 
 ---
 
@@ -255,41 +380,29 @@ re-dispatched once per defect and the operator mistakes refusal count for progre
 
 ---
 
-## `construction:moves-catalogue` — the six ways to make a wrong state unrepresentable, before reaching for a gate (KNOWLEDGE)
+## `authoring:a-measurable-fact-is-a-test-not-prose` — a measurable fact belongs in a test, never in a sentence (STANDING, Ale 2026-09-06)
 
-GDP-0 says the producer, not a gate, is the default fix. This catalogues the concrete moves —
-each with one verified repo example, so "construct it away" is not left abstract. Before
-proposing a gate/guard/hook/validator, check whether one of these already applies.
+Prose has no verifier. Code has its tests; docstrings, comments, ADR sections, test names
+and reports have only a reviewer, and declarative prose is produced continuously — so a
+reviewer will always find more of it. This is a SURFACE problem, not an attention problem,
+and cataloguing instances accumulates them instead of reducing them.
 
-- **Compile the derivable fields.** If a value can be computed from what the system already
-  knows, generate it — never let an author hand-type it. *Example*: `des dispatch` validates one
-  `DeliveryContract` and emits the DELIVER handoff mechanically (`src/des/cli/dispatch.py`);
-  CLAUDE.md: "Pass the `des dispatch` envelope VERBATIM — specifics belong in `--intent`, never
-  in hand-edited envelope prose."
-- **Give the author the check at authoring time.** Move the validation to the moment of writing,
-  not a later gate. *Example*: `des charter-scaffold` copies the valid template shape into place
-  and fails closed with `missing-charter-template` / `invalid-delivery-id` at scaffold time — the
-  author never gets the chance to originate a malformed charter (`src/des/cli/charter_scaffold.py`).
-- **Type the invalid value away.** Replace a string/bool status with a closed variant an
-  exhaustiveness check enforces. *Example*: the `_Author | _Reuse | _Block | _Skip` charter-
-  resolution outcome in `des.cli._charter_resolution` (shared by `resolve-charters` and
-  `dispatch`) — an unhandled branch is a type error via `_assert_never`, never a silent
-  fallthrough.
-- **One writer for shared state.** Concurrent writers make "who last wrote this" unrepresentable
-  as a single fact; give the state exactly one writer instead of a lock/check. *Example*: this
-  project's own rule — "Trunk (`feature/atdd-pure-staging`) has exactly ONE writer: the
-  orchestrator" (CLAUDE.md, Swarm & the shared box).
-- **Pristine environments.** Let accumulated state contaminate the run and every green becomes
-  unfalsifiable; run from a clean substrate instead of checking for contamination after the
-  fact. *Example*: `des verify-fresh-clone` replays `DeliveryContract` verification on a clean
-  checkout, so worktree-accumulated state cannot masquerade as passing evidence.
-- **Producer-emitted envelope.** A human-assembled envelope can drift from what the system
-  actually resolved; have the resolving tool print the envelope instead of describing it in
-  prose. *Example*: `des resolve-charters` prints "one JSON line describing the closed
-  EXAMINE/charter precondition" — read-only, machine-emitted, never hand-typed
-  (`src/des/cli/resolve_charters.py`).
+A measurable fact is written as a test that fails when it stops being true. If it does not
+deserve a test, it does not deserve the sentence: delete it.
 
-A gate is admitted only when none of these six apply and the reason is recorded (GDP-0).
+**Forbidden** in docstrings, comments and reports: example numbers, counts, shas, elapsed
+times, "this module reads X", "this test covers Y", "N of M". Each lives in a test, in
+pasted executed output, or nowhere. **Permitted**: the REASON for a choice over another,
+a dated incident, and an explicit statement of what is NOT covered — declaring a gap is
+the opposite of claiming too much.
+
+**In a report**: every assertion carries the command and its output, or is marked `not
+measured`. There is no middle. "I repaired X" without a red-to-green is `not measured`.
+
+**Falsifier**: a sentence stating a measurable fact with no test that fails when the fact
+stops holding. **Consequence for review**: such a sentence is a falsehood only when
+somebody will decide from it; otherwise the correction is deleting it, inside the same
+slice, with no new round (`nw-review`, Convergence).
 
 ---
 

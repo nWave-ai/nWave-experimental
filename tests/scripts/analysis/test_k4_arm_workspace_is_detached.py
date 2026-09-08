@@ -1,18 +1,21 @@
 """K4 arm workspaces must land delivery in the SAME directory acceptance and
 blind review later inspect.
 
-Observed defect: `git clone <sut> .` leaves HEAD attached to the SUT's
-default branch. `nw-auto`'s own worktree-ownership rule
-(`nWave/skills/nw-auto/SKILL.md`) treats an attached, non-isolated checkout as
-one it must abandon in favour of a NEW detached worktree it creates
-elsewhere -- so the real delivery lands outside `pair-dir/{control,nwave}`,
-and `run_acceptance.py` / blind review, which only ever inspect
-`pair-dir/{arm}`, see the unchanged clone instead.
+Observed defect: `git clone <sut> .` leaves HEAD attached to the SUT's default
+branch, which is a shared, non-isolated checkout. Delivery tooling that refuses
+to work in one relocates to an isolated worktree it creates elsewhere, so the
+real delivery lands outside `pair-dir/{control,nwave}`, and `run_acceptance.py`
+/ blind review, which only ever inspect `pair-dir/{arm}`, see the unchanged
+clone instead.
+
+This text used to attribute a worktree-ownership rule to
+`nWave/skills/nw-auto/SKILL.md`. That skill carries no such rule and never did;
+the attribution was removed on 2026-09-04 rather than the rule reintroduced. The
+property under test never depended on it: both arms must leave HEAD detached at
+the pinned revision, by identical steps.
 
 RED on base: the declared git steps of both arms' setup leave HEAD attached.
-GREEN once setup detaches HEAD in place, which is the OTHER branch of Auto's
-own rule ("if the current checkout is already an isolated detached worktree,
-keep using it") -- Auto then reuses this directory instead of relocating.
+GREEN once setup detaches HEAD in place, so delivery has no reason to relocate.
 
 This test executes the real git steps against a local throwaway SUT (no
 network); the auth-seeding and `nwave-ai install` steps are out of scope for
@@ -66,8 +69,7 @@ def _make_local_sut(tmp_path):
 
 def _is_detached(workspace) -> bool:
     """`git symbolic-ref` resolves HEAD to a branch and fails exactly when it
-    cannot -- i.e. exactly when HEAD is detached. Same property Auto's own
-    worktree-ownership rule keys on."""
+    cannot -- i.e. exactly when HEAD is detached."""
     done = subprocess.run(
         ["git", "symbolic-ref", "-q", "HEAD"],
         cwd=workspace,
@@ -110,11 +112,10 @@ def test_arm_workspace_is_detached_after_setup(tmp_path, monkeypatch, steps_fact
     _run_git_steps(steps, workspace)
 
     assert _is_detached(workspace), (
-        "HEAD is still attached to a branch after setup: nw-auto's "
-        "worktree-ownership rule treats this as a shared/non-isolated "
-        "checkout and creates ANOTHER detached worktree elsewhere for "
-        "delivery, so acceptance and blind review -- which only ever "
-        "inspect this workspace -- would see the unchanged clone"
+        "HEAD is still attached to a branch after setup: this is a "
+        "shared/non-isolated checkout, so delivery may land in ANOTHER "
+        "worktree elsewhere, and acceptance and blind review -- which only "
+        "ever inspect this workspace -- would see the unchanged clone"
     )
 
 

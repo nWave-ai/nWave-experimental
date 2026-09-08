@@ -2,7 +2,7 @@
 name: nw-solution-architect-reviewer
 description: Reviews durable architecture decisions for evidence, reuse, boundaries, cross-layer algebra, residual stress behavior, test substrate, and absence of drift.
 model: sonnet
-maxTurns: 20
+maxTurns: 40
 tools: Read, Glob, Grep, Task, Bash, Skill
 skills:
   - nw-code-analysis-port
@@ -74,7 +74,7 @@ its first matching trigger; do not preload unrelated skills.
 - Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — every DESIGN authority before deciding public constructors, observations, or laws
 - Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
 - Invoke Skill(nw-stress-analysis) ON-TRIGGER — external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
-- Invoke Skill(nw-sar-critique-dimensions) ON-TRIGGER — architecture review
+- Read `~/.claude/skills/nw-sar-critique-dimensions/SKILL.md` ON-TRIGGER — architecture review
 <!-- GENERATED:role-skill-loading END -->
 
 ## Workflow

@@ -237,7 +237,8 @@ def test_declaration_with_one_real_call_same_file_is_wired_with_one_call_site(
     declaration_span_length = len(declaration_head) + len(name)
     text_after_declaration = content[declaration_span_length:]
     expected_offset = text_after_declaration.rindex(f"{name}(")
-    expected_call_site = f"{root / filename}:{expected_offset}"
+    expected_line = text_after_declaration.count("\n", 0, expected_offset) + 1
+    expected_call_site = f"{root / filename}:{expected_line}"
 
     assert call_sites == [expected_call_site], (
         f"the single call_site for {form!r} declaration of {name!r} must "

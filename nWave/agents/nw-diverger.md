@@ -50,7 +50,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **JTBD Analysis** — Load `~/.claude/skills/nw-jtbd-analysis/SKILL.md`. Extract job from raw request. Navigate abstraction layers. Produce job statements (functional + emotional + social). Generate ODI outcome statements. Identify under-served outcomes. Gate: job at strategic or physical level, no feature references in job statement, minimum 3 ODI outcome statements.
 2. **Competitive Research** — Invoke `nw-researcher` via Task tool for evidence-grounded research. Map how existing products serve the validated job. Identify 3+ solutions including non-obvious alternatives. Document what each does well and where it fails the job. Note key assumptions each competitor makes about user behavior. Gate: 3+ real products named, at least one non-obvious alternative (different category, same job), no generic market claims.

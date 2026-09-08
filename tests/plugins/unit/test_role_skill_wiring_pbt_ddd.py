@@ -39,31 +39,13 @@ def _frontmatter(agent: str) -> dict:
     return metadata
 
 
-def test_acceptance_designer_compiles_the_architect_selected_language_adapter():
-    metadata = _frontmatter("nw-acceptance-designer.md")
-    assert not set(PBT_SKILLS) & set(metadata.get("skills") or ())
-
+def test_pbt_skills_remain_publicly_owned():
     public_agents = load_public_agents(NWAVE)
     ownership = build_ownership_map(AGENTS)
     assert all(
         is_public_skill(skill, public_agents, ownership_map=ownership)
         for skill in PBT_SKILLS
     )
-
-    body = _body("nw-acceptance-designer.md")
-    # The lean-core migration moved the "DESIGN selects, DISTILL only compiles"
-    # law out of nw-solution-architect.md's own prose (it carries zero PBT
-    # mentions now) into nw-distill/SKILL.md, the single current owner of the
-    # compiled-vs-authored split between the two roles.
-    distill_skill = (SKILLS / "nw-distill" / "SKILL.md").read_text(encoding="utf-8")
-    assert "the concrete language PBT adapter/framework" in " ".join(
-        distill_skill.split()
-    )
-    assert "PBT/language adapter selection as sealed compiler input" in " ".join(
-        body.split()
-    )
-    assert "holds no `Skill` tool" in body
-    assert "Skill" not in metadata.get("tools", "")
 
 
 def test_completeness_closes_cross_language_environment_without_python_fallback():
@@ -88,73 +70,39 @@ def test_completeness_closes_cross_language_environment_without_python_fallback(
         assert layer in body
 
 
-def test_auto_resolves_charter_axis_independently_and_uses_single_cli_shape():
-    body = (SKILLS / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
-    route = body[body.index("## Root inputs and spatial AB batch") :]
-    normalized_route = " ".join(route.split())
-    for state in ("SKIP", "REUSE", "AUTHOR", "BLOCK"):
-        assert f"`{state}`" in route
-    assert "charter-scaffold" not in route
-    assert (
-        "des resolve-charters --repo-root <root> --delivery-id <producer id> "
-        "--examine <true|false>" in normalized_route
-    )
-    # fa7d9730a: compile-contract now runs between resolve-charters and
-    # ATD's dispatch; the property protected here (ATD receives only the
-    # CLI-printed producer envelope verbatim, never root-authored) is
-    # unchanged -- only the exact pinned wording moved.
-    assert (
-        "ATD always receives the original fourteen-line producer stdout "
-        "verbatim, unchanged by this step" in normalized_route
-    )
-    assert (
-        "For `examine=true, Author`, PO concurrently receives only the "
-        "producer-emitted DeliveryId, namespace, root and VALUE-SEED"
-        in normalized_route
-    )
-    assert "For Reuse/Skip, omit PO." in normalized_route
-
-
 def test_auto_hot_path_never_calls_charter_scaffold():
     body = (SKILLS / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
     assert "charter-scaffold" not in body
 
 
-def test_role_ownership_keeps_charter_and_executable_oracle_independent():
-    owner = _body("nw-product-owner.md")
-    designer = _body("nw-acceptance-designer.md")
-    examiner = _body("nw-user-examiner.md")
-
-    assert "value-side facts" in owner
-    assert "Do not read a design contract" in owner
-    assert "Do not create a feature workspace, plan, ledger" in " ".join(owner.split())
-    assert "never implement production code or author the expectation" in designer
-    assert "CONTRACT-LOCATOR:" in designer
-    assert "CONTRACT-SCHEMA:" in designer
-    assert "DELIVERY-CONTRACT-SHA256" not in designer
-    assert "Source blind" in examiner
-    assert "Every charter, no filtering" in examiner
-    assert "One pass" in examiner
-    assert "Create or edit nothing" in examiner
+def test_source_blind_examiner_does_not_cross_into_implementation():
+    examiner = _body("nw-user-examiner.md").lower().replace("‐", "-")
+    assert "source-blind" in examiner
+    assert "do not execute commands" in examiner
+    assert "inspect source" in examiner
+    assert "derive evidence" in examiner
 
 
-def test_green_route_binds_existing_oracle_and_red_route_closes_whole_value():
-    designer = _body("nw-acceptance-designer.md")
-    auto = (SKILLS / "nw-auto" / "SKILL.md").read_text(encoding="utf-8")
-    normalized_auto = " ".join(auto.lower().split())
-    for token in (
-        "RED_TO_GREEN",
-        "GREEN_TO_GREEN",
-        "BROAD_INPUT_DOMAIN",
-        "EVIDENCE_GAP",
+def test_authors_receive_ordered_batches_only_after_runner_binding():
+    for agent in (
+        "nw-acceptance-designer.md",
+        "nw-software-crafter.md",
+        "nw-functional-software-crafter.md",
     ):
-        assert token in designer
-    for token in (
-        "observe every value-seed clause at its real port",
-        "internal proxies and later-slice promises are `evidence_gap`",
-        "complete only when the original value-seed is observed",
-    ):
-        assert token in normalized_auto
+        body = _body(agent).lower()
+        assert "ordered batch" in body
+        assert "value slice" not in body
+
+
+def test_whole_request_reviewer_and_examiner_projections_exclude_slice_flow():
+    """The only review and optional examination cover one whole candidate."""
+    reviewer = _body("nw-software-crafter-reviewer.md").lower()
+    examiner = _body("nw-user-examiner.md").lower()
+
+    assert "whole-request candidate" in reviewer
+    assert "whole-request candidate" in examiner
+    assert "value-slice" not in reviewer
+    assert "value slice" not in examiner
 
 
 def test_crafters_neither_declare_nor_emit_language_pbt_authoring_skills():

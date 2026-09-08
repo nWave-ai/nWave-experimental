@@ -10,6 +10,8 @@ Bug: `nwave-ai uninstall --force` reports success but leaves behind:
        - des-hook:pre-bash (PreToolUse > Bash matcher)
        - des.adapters.drivers.hooks.claude_code_hook_adapter session-start
        - des.adapters.drivers.hooks.claude_code_hook_adapter subagent-start
+     (the SubagentStart registration itself is now retired; uninstall must
+     still remove the command an older install wrote there)
 
 Test isolates a fresh install + uninstall in tmp_path_factory and asserts
 the residuals are gone. Pinned to the same xdist group as the walking
@@ -32,6 +34,10 @@ from scripts.install.preflight_checker import CheckResult, PreflightChecker
 
 
 pytestmark = pytest.mark.xdist_group("installer_walking_skeleton")
+
+# User-owned SubagentStart hooks the uninstaller never wrote and must not touch.
+_USER_SUBAGENT_START_COMMAND = "python3 -m operator_tools.subagent_start --audit"
+_USER_SUBAGENT_START_SIBLING_COMMAND = "/opt/operator/notify.sh subagent-start"
 
 
 def _apply_patches(
@@ -174,6 +180,38 @@ def post_uninstall_state(tmp_path_factory) -> dict:
                 ]
             },
         ]
+        # An operator upgrading from a build that still registered the retired
+        # SubagentStart skill-loading reminder: settings.json carries this
+        # installer's own modern (`-m ... adapter subagent-start`) and legacy
+        # (flat script-path) commands, plus unrelated user hooks -- one
+        # standalone entry, one nested as a sibling of the DES command under
+        # the same entry. Uninstall must remove both DES commands and leave
+        # the user's two hooks byte-for-byte.
+        hooks["SubagentStart"] = [
+            {"hooks": [{"type": "command", "command": _USER_SUBAGENT_START_COMMAND}]},
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": (
+                            "PYTHONPATH=/anywhere/lib/python python3 -m "
+                            "des.adapters.drivers.hooks."
+                            "claude_code_hook_adapter subagent-start"
+                        ),
+                    },
+                    {
+                        "type": "command",
+                        "command": _USER_SUBAGENT_START_SIBLING_COMMAND,
+                    },
+                ]
+            },
+            {
+                "command": (
+                    "python3 src/des/adapters/drivers/hooks/"
+                    "claude_code_hook_adapter.py subagent-start"
+                )
+            },
+        ]
         settings_path.write_text(json.dumps(settings), encoding="utf-8")
 
         # Uninstall
@@ -265,6 +303,27 @@ class TestUninstallResiduals:
             "python3 -m lyra.session_start",
             "# des-hook:orchestrator-affordance-refresh-standalone\n"
             "python3 /opt/operator/session_start.py --keep",
+        ]
+
+    def test_uninstall_removes_retired_subagent_start_hook_keeping_user_siblings(
+        self, post_uninstall_state
+    ):
+        """Old DES SubagentStart commands go; the operator's own hooks stay."""
+        entries = post_uninstall_state["settings_post"]["hooks"]["SubagentStart"]
+        commands = [
+            hook["command"] for entry in entries for hook in entry.get("hooks", [])
+        ]
+        commands.extend(entry["command"] for entry in entries if "command" in entry)
+
+        assert commands == [
+            _USER_SUBAGENT_START_COMMAND,
+            _USER_SUBAGENT_START_SIBLING_COMMAND,
+        ]
+        assert entries[0] == {
+            "hooks": [{"type": "command", "command": _USER_SUBAGENT_START_COMMAND}]
+        }
+        assert entries[1]["hooks"] == [
+            {"type": "command", "command": _USER_SUBAGENT_START_SIBLING_COMMAND}
         ]
 
     def test_uninstall_exit_code_zero(self, post_uninstall_state):

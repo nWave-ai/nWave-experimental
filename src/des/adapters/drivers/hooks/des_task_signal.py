@@ -28,7 +28,6 @@ from des.domain.nwave_dir_gitignore import ensure_nwave_gitignore
 # -----------------------------------------------------------------------
 DES_SESSION_DIR = Path(".nwave") / "des"
 DES_TASK_ACTIVE_FILE = DES_SESSION_DIR / "des-task-active"
-DES_DELIVER_SESSION_FILE = DES_SESSION_DIR / "deliver-session.json"
 
 
 # -----------------------------------------------------------------------

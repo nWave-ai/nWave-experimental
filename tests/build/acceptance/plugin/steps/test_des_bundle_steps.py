@@ -175,8 +175,8 @@ def hooks_register_pre_tool_use(build_result: dict[str, Any]):
 
 @then("the hook configuration registers a handler for subagent lifecycle")
 def hooks_register_subagent_stop(build_result: dict[str, Any]):
-    """Verify SubagentStart hook is registered."""
-    assert "SubagentStart" in _get_registered_events(build_result)
+    """Verify the SubagentStop lifecycle-outcome hook is registered."""
+    assert "SubagentStop" in _get_registered_events(build_result)
 
 
 # hooks_use_plugin_root is defined in conftest.py (shared with walking-skeleton)
@@ -297,3 +297,4 @@ def hooks_have_every_event(build_result: dict[str, Any]):
     )
     assert "SessionStart" not in registered_events
     assert "UserPromptSubmit" not in registered_events
+    assert "SubagentStart" not in registered_events

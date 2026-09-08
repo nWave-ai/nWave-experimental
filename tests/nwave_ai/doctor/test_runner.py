@@ -50,7 +50,7 @@ def _stage_healthy_claude(base: Path) -> Path:
         dir_path.mkdir()
         (dir_path / "placeholder.md").write_text("# placeholder\n")
 
-    # Create settings.json with all 5 hooks and env.PATH
+    # Create settings.json with every active hook type and env.PATH
     python_path = sys.executable
     hook_command = (
         f"PYTHONPATH=$HOME/.claude/lib/python {python_path} "
@@ -61,8 +61,6 @@ def _stage_healthy_claude(base: Path) -> Path:
             "PreToolUse": [{"hooks": [{"command": hook_command}]}],
             "PostToolUse": [{"hooks": [{"command": hook_command}]}],
             "SubagentStop": [{"hooks": [{"command": hook_command}]}],
-            "SessionStart": [{"hooks": [{"command": hook_command}]}],
-            "SubagentStart": [{"hooks": [{"command": hook_command}]}],
         },
         "env": {
             "PATH": f"{bin_dir}:/usr/bin:/bin",

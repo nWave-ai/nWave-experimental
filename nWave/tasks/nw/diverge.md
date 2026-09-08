@@ -73,9 +73,6 @@ Flux loads `taste-evaluation` skill. Applies DVF filter, scores surviving option
 **Peer Review:**
 After Phase 4 gates pass, Flux invokes `nw-diverger-reviewer` (Prism) to validate all 5 dimensions. Max 2 revision iterations before handoff.
 
-## Progress Tracking
-
-The invoked agent MUST create a task list from its workflow phases at the start of execution using TaskCreate. Each phase becomes a task with the gate condition as completion criterion. Mark tasks in_progress when starting each phase and completed when the gate passes. This gives the user real-time visibility into progress.
 
 ## Success Criteria
 

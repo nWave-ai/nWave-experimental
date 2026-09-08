@@ -42,6 +42,7 @@ from scripts.shared.agent_catalog import (  # noqa: E402
     detect_command_skills,
     is_public_agent,
     is_public_skill,
+    load_private_skills,
     load_public_agents,
     normalize_agent_name,
 )
@@ -225,8 +226,8 @@ def strip(target_dir: Path) -> dict[str, list[str]]:
 
     Raises ``CatalogNotFoundError`` if the catalog file is missing.
 
-    Returns a dict with ``agents``, ``skills``, ``docs``, and ``catalog``
-    keys listing removed paths (relative to *target_dir*).
+    Returns a dict with ``agents``, ``skills``, ``docs``, ``references``
+    and ``catalog`` keys listing removed paths (relative to *target_dir*).
     """
     nwave_dir = target_dir / "nWave"
 
@@ -237,6 +238,7 @@ def strip(target_dir: Path) -> dict[str, list[str]]:
         "agents": [],
         "skills": [],
         "docs": [],
+        "references": [],
         "catalog": [],
     }
 
@@ -249,6 +251,7 @@ def strip(target_dir: Path) -> dict[str, list[str]]:
     _validate_frontmatter_or_raise(agents_dir)
     ownership_map = build_ownership_map(agents_dir)
     command_skills = detect_command_skills(skills_dir)
+    private_skills = load_private_skills(nwave_dir)
 
     # 2. Strip agent files: remove anything NOT in public allow-list
     non_public_agents: set[str] = set()
@@ -261,6 +264,7 @@ def strip(target_dir: Path) -> dict[str, list[str]]:
                 non_public_agents.add(name)
 
     # 3. Strip skill directories using ownership map
+    removed_skill_names: set[str] = set()
     if skills_dir.exists():
         for skill_dir in sorted(skills_dir.iterdir()):
             if not skill_dir.is_dir():
@@ -272,9 +276,17 @@ def strip(target_dir: Path) -> dict[str, list[str]]:
                 public_agents,
                 ownership_map=ownership_map,
                 command_skills=command_skills,
+                private_skills=private_skills,
             ):
                 shutil.rmtree(skill_dir)
                 removed["skills"].append(str(skill_dir.relative_to(target_dir)))
+                removed_skill_names.add(skill_dir.name)
+
+    # 3b. Scrub references to the skills just removed out of the surviving
+    #     public agents, so the package carries no dangling instruction.
+    removed["references"] = _scrub_removed_skill_references(
+        agents_dir, target_dir, removed_skill_names, public_agents
+    )
 
     # 4. Strip reference documentation
     removed["docs"] = _strip_reference_docs(target_dir, non_public_agents)
@@ -292,6 +304,7 @@ def strip(target_dir: Path) -> dict[str, list[str]]:
         len(removed["agents"])
         + len(removed["skills"])
         + len(removed["docs"])
+        + len(removed["references"])
         + catalog_count
     )
     print(f"Stripped {total} private items:")
@@ -300,6 +313,66 @@ def strip(target_dir: Path) -> dict[str, list[str]]:
             print(f"  [{category}] {p}")
 
     return removed
+
+
+def _scrub_removed_skill_references(
+    agents_dir: Path,
+    target_dir: Path,
+    removed_skills: set[str],
+    public_agents: set[str],
+) -> list[str]:
+    """Drop ``skills:`` frontmatter entries naming a skill the strip removed.
+
+    WHY: a surviving public agent whose frontmatter still names a removed
+    skill ships a dangling instruction. The public user installs an agent
+    that points at a directory the package does not contain, and nothing
+    fails loudly -- the reference is inert at load time, so the defect
+    surfaces only as missing behaviour.
+
+    The edit is line-scoped on purpose: a YAML round-trip would reformat
+    every surviving public agent file, turning a two-line correction into
+    an unreviewable diff. Only the matching list-item lines are dropped;
+    the rest of the file, frontmatter included, is left byte-identical.
+
+    Returns one report string per scrubbed reference.
+    """
+    if not removed_skills or not agents_dir.exists():
+        return []
+
+    scrubbed: list[str] = []
+    for agent_file in sorted(agents_dir.glob("nw-*.md")):
+        if not is_public_agent(agent_file.name, public_agents):
+            continue
+        text = agent_file.read_text(encoding="utf-8")
+        if not text.startswith("---"):
+            continue
+        end = text.find("\n---", 3)
+        if end == -1:
+            continue
+
+        head, tail = text[:end], text[end:]
+        kept_lines: list[str] = []
+        in_skills = False
+        dropped: list[str] = []
+        for line in head.split("\n"):
+            stripped = line.strip()
+            if not line.startswith((" ", "\t")) and stripped.endswith(":"):
+                in_skills = stripped == "skills:"
+            elif in_skills and stripped.startswith("- "):
+                name = stripped[2:].strip().strip("\"'")
+                key = name if name.startswith("nw-") else f"nw-{name}"
+                if key in removed_skills:
+                    dropped.append(key)
+                    continue
+            kept_lines.append(line)
+
+        if not dropped:
+            continue
+        agent_file.write_text("\n".join(kept_lines) + tail, encoding="utf-8")
+        rel = agent_file.relative_to(target_dir)
+        scrubbed.extend(f"{rel} no longer references {name}" for name in dropped)
+
+    return scrubbed
 
 
 def verify_after_strip(target_dir: Path) -> list[str]:

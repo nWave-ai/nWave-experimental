@@ -5,15 +5,6 @@ gate CLI emits BOTH a single-line JSON event (machine-readable contract,
 unchanged byte-content) AND a short colored human-readable summary line on
 stderr (operator-facing surface). This module is the SSOT for both surfaces.
 
-WHY-NEW-FILE: src/des/cli/human_surface.py
-  CLOSEST-EXISTING: src/des/cli/run_contract_gate.py
-  EXTENSION-COST: every gate CLI under src/des/cli/ would re-implement the
-    same Verdict enum + ANSI escapes + TTY detection — DDD-1 SSOT violation.
-  PARALLEL-RATIONALE: shared cross-CLI helper has a different lifecycle from
-    any one gate (slice-02/03/04 extend the surface to 8 more CLIs by
-    importing this module; inlining into run_contract_gate would force every
-    sibling CLI to import from a peer gate, not a shared helper).
-
 Hook-only architecturally — standalone module, NO sequencer / NO engine
 coupling (Ale 2026-05-24 nwave-dev topology). stdlib only.
 """

@@ -9,7 +9,7 @@ bug where one path had stale matchers or missing hooks.
 
 Test Budget: 4 distinct behaviors x 2 = 8 max unit tests.
 Behaviors:
-  1. Both paths produce hooks for all 5 event types
+  1. Both paths produce hooks for all declared event types
   2. Both paths produce identical PreToolUse matchers.
   3. The (event, matcher, action) triples are identical between plugin and installer
   4. Write/Edit hooks use guard commands in both paths
@@ -78,10 +78,10 @@ class TestHookParityPluginVsInstaller:
             _stub_command, guard_command_fn=_stub_guard_command
         )
 
-    def test_both_paths_cover_all_five_event_types(
+    def test_both_paths_cover_all_declared_event_types(
         self, plugin_config: dict, installer_config: dict
     ):
-        """Both distribution paths produce hooks for all 5 event types."""
+        """Both distribution paths produce every currently declared event type."""
         assert set(plugin_config.keys()) == HOOK_EVENT_TYPES
         assert set(installer_config.keys()) == HOOK_EVENT_TYPES
 
@@ -109,7 +109,7 @@ class TestHookParityPluginVsInstaller:
     def test_write_and_edit_hooks_have_guard_commands_in_both_paths(
         self, plugin_config: dict, installer_config: dict
     ):
-        """Write and Edit hooks contain fast-path guard (deliver-session.json check)."""
+        """Write and Edit hooks retain the activation fast-path in both paths."""
         for config, path_name in [
             (plugin_config, "plugin"),
             (installer_config, "installer"),
@@ -119,9 +119,8 @@ class TestHookParityPluginVsInstaller:
                     e for e in config["PreToolUse"] if e.get("matcher") == matcher
                 )
                 command = entry["hooks"][0]["command"]
-                assert "deliver-session.json" in command, (
-                    f"{path_name} path: {matcher} hook missing guard command "
-                    f"(no deliver-session.json check)"
+                assert ".nwave/local-config.json" in command, (
+                    f"{path_name} path: {matcher} hook missing activation guard"
                 )
 
     def test_no_task_matcher_in_either_path(

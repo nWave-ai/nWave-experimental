@@ -241,7 +241,7 @@ def test_generated_launcher_delivers_the_payload_to_its_child(tmp_path: Path) ->
     )
 
 
-_DENIAL_REASON = "Invoke nw-mode-select before the first Bash/Write/Edit."
+_DENIAL_REASON = "execution-log.json belongs to a retired workflow."
 _DENIAL_CONFLICTING_REASON = "stdout-json-reason-that-must-not-win"
 _DENIAL_CHILD_STDERR = "adapter wrote this directly to stderr"
 

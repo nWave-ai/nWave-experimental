@@ -1,13 +1,13 @@
 """K4 matrix row 4 continuation -- subject test dependency provisioning.
 
 Real installed run 4, crafter #2 (subagent `aa7125e162c8f37b2`): BASELINE ran
-the contract's literal verification command,
+the subject's real test command,
 `k4-fixture-venv/bin/python manage.py test hc.api.tests.test_sendalerts
 hc.api.tests.test_update_check`, and hit `ModuleNotFoundError: No module
 named 'time_machine'` importing the SUBJECT's own pre-existing
 `hc/api/tests/test_sendalerts.py:6`. `time-machine==3.2.0` is a REAL subject
 dependency -- declared in the subject's own `requirements-dev.txt` at the
-pinned revision, not something the contract invented (that would be a
+pinned revision, not something a campaign invented (that would be a
 different defect: an oracle depending on something the subject never
 declares). The crafter tried `pip install time-machine==3.2.0` and hit a
 sandboxed-network `ProxyError`/403: BASELINE cannot repair a missing test

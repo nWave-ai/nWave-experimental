@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from des._internal.delivery_contract_schema import delivery_contract_obligation_tokens
 from des.domain.declared_import_resolver import (
     is_name_bound_in_target_file,
     resolve_declared_import,
@@ -47,6 +46,23 @@ if TYPE_CHECKING:
 #: -- both silent-wrong, the failure mode GDP-6 forbids. The schema, never
 #: this regex, is the admissibility authority.
 _PATH_CITATION_CHARS = r"[\w/.@-]"
+
+#: The one obligation vocabulary.  Typed provider IPC and the Markdown
+#: compiler admit exactly the same tokens, so a design cannot project an
+#: obligation this repository has no meaning for.
+OBLIGATION_TOKENS = frozenset(
+    {
+        "CONTESTED_LAW",
+        "REPRESENTATION_CHANGE",
+        "INVALID_STATE",
+        "PRESERVATION",
+        "BROAD_INPUT_DOMAIN",
+        "REUSE_CANDIDATE",
+        "ARCHITECTURE_BOUNDARY_CHANGE",
+    }
+)
+
+_OBLIGATION_TOKENS = OBLIGATION_TOKENS
 
 #: A repository-relative file path followed by ``:<line>`` -- the exact
 #: shape DESIGN's own architecture authority cites for an insertion point.
@@ -84,10 +100,44 @@ _ACCEPTANCE_SUPPORT_LABEL_RE = re.compile(
     r"^[ \t]*(?:Test dependency|Acceptance support) locator:[^\n]*$",
     re.MULTILINE,
 )
-_REPOSITORY_RELATIVE_WHOLE_FILE_RE = re.compile(
-    r"^(?!.*(?:^|/)\.{1,2}(?:/|$))"
-    r"(?:(?:[A-Za-z0-9._-]+|@v)/)*[A-Za-z0-9._-]+$"
+#: The repository-relative whole-file grammar, spelled ONCE, as a STRING.
+#: The provider's structured-output schema (``--json-schema``, ``_ROLE_SCHEMAS``
+#: in the Claude task adapter) must carry this identical grammar as an
+#: ECMA-262 ``pattern``, so the constraint binds the model at the
+#: StructuredOutput tool boundary instead of being discovered by a post-hoc
+#: guard after a paid turn (GDP-1).  MEASURED 2026-09-05 against the installed
+#: provider: a StructuredOutput call whose value violates ``pattern`` is
+#: refused with ``is_error: true`` and the exact clause that failed, and the
+#: model retries.  A SEPARATE probe -- a schema whose only constraint is
+#: ``maxItems: 2``, asked for five items -- refuted this tree's earlier claim
+#: that numeric constraints are advisory: ``must NOT have more than 2 items
+#: (got 5)``.  Both probes are one command each and were reproduced
+#: independently in review.
+#: Two spellings of this grammar would be two contracts, so the schema IMPORTS
+#: this constant and never restates it; only ECMA-262-portable syntax is
+#: admissible here for that reason.
+_WHOLE_FILE_LOCATOR_BODY = (
+    r"(?!.*(?:^|/)\.{1,2}(?:/|$))(?:(?:[A-Za-z0-9._-]+|@v)/)*[A-Za-z0-9._-]+"
 )
+REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN = rf"^{_WHOLE_FILE_LOCATOR_BODY}$"
+
+#: The same grammar with the OPTIONAL ``::Selector`` tail a DESIGN oracle
+#: locator alone is allowed to carry.  It is STRICTER than validating only
+#: ``oracle.partition("::")[0]``, which is what ``valid_design_facts`` used to
+#: do: the tail excludes CR and LF for the reason
+#: :func:`is_canonical_oracle_locator` already states -- a locator is
+#: interpolated into a Markdown heading, so no newline may ride along inside it
+#: -- and the dot-segment lookahead spans the whole string, so ``..`` cannot
+#: hide in the selector either.  The guard was ALIGNED to this pattern rather
+#: than the pattern loosened to the guard, because the three shapes that
+#: separated them (``::x/../y``, ``::sel\n``, ``::sel\r``) are exactly the ones
+#: the canonical-locator rule already calls unsafe.  One grammar, one
+#: definition: :func:`is_design_oracle_locator` and the provider schema now
+#: decide identically, which the tests assert over a shared corpus.
+DESIGN_ORACLE_LOCATOR_PATTERN = rf"^{_WHOLE_FILE_LOCATOR_BODY}(?:::[^\r\n]*)?$"
+
+_REPOSITORY_RELATIVE_WHOLE_FILE_RE = re.compile(REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN)
+_DESIGN_ORACLE_LOCATOR_RE = re.compile(DESIGN_ORACLE_LOCATOR_PATTERN)
 
 
 def extract_acceptance_support_locators(brief_text: str) -> list[str]:
@@ -119,6 +169,29 @@ def malformed_acceptance_support_locator_lines(brief_text: str) -> list[str]:
 def is_repository_relative_whole_file_locator(locator: str) -> bool:
     """The schema's repositoryRelativePath grammar, excluding selectors."""
     return _REPOSITORY_RELATIVE_WHOLE_FILE_RE.fullmatch(locator) is not None
+
+
+def is_design_oracle_locator(locator: str) -> bool:
+    """A DESIGN oracle locator, WHOLE: a whole-file locator with an optional
+    ``::Selector`` tail.  The one predicate behind
+    :data:`DESIGN_ORACLE_LOCATOR_PATTERN`, so the post-hoc guard and the
+    provider schema cannot drift apart."""
+    return _DESIGN_ORACLE_LOCATOR_RE.fullmatch(locator) is not None
+
+
+def is_canonical_oracle_locator(locator: str) -> bool:
+    """The two shapes an oracle locator is ever allowed to have, WHOLE.
+
+    Either a safe whole-file locator or a full ``path::Selector`` citation --
+    matched over the ENTIRE string, so no newline, carriage return, backtick
+    or trailing text can ride along inside a locator that is then interpolated
+    into a Markdown heading.
+    """
+    if is_repository_relative_whole_file_locator(locator):
+        return True
+    if ORACLE_SELECTOR_CITATION_RE.fullmatch(locator) is None:
+        return False
+    return is_repository_relative_whole_file_locator(locator.split("::", 1)[0])
 
 
 #: SF friction report 2026-08-20, item 2b: a brief may cite a documentary or
@@ -789,11 +862,10 @@ def extract_obligations(brief_text: str) -> list[str]:
     A brief that never labels an obligation this way yields an empty list --
     ATD authors ``obligations`` from scratch rather than this compiler ever
     guessing one."""
-    allowed = delivery_contract_obligation_tokens()
     found: list[str] = []
     for match in _OBLIGATION_TOKEN_RE.finditer(brief_text):
         token = match.group(1)
-        if token in allowed and token not in found:
+        if token in _OBLIGATION_TOKENS and token not in found:
             found.append(token)
     return found
 

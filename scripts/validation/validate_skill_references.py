@@ -39,6 +39,7 @@ from scripts.shared.agent_catalog import (  # noqa: E402
     detect_command_skills,
     is_public_agent,
     is_public_skill,
+    load_private_skills,
     load_public_agents,
 )
 
@@ -120,6 +121,7 @@ def check_references(nwave_dir: Path) -> list[str]:
     public_agents = load_public_agents(nwave_dir, strict=True)
     ownership_map = build_ownership_map(agents_dir)
     command_skills = detect_command_skills(skills_dir)
+    private_skills = load_private_skills(nwave_dir)
 
     def survives_strip(skill_name: str) -> bool:
         return is_public_skill(
@@ -127,6 +129,7 @@ def check_references(nwave_dir: Path) -> list[str]:
             public_agents,
             ownership_map=ownership_map,
             command_skills=command_skills,
+            private_skills=private_skills,
         )
 
     existing_skills: set[str] = set()

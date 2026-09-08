@@ -207,11 +207,11 @@ class TestBuildOwnershipMapUnit:
         self._create_agent_file(
             agents_dir,
             "nw-software-crafter",
-            ["nw-tdd-methodology", "nw-quality-framework"],
+            ["nw-tdd-methodology", "nw-code-design-oo"],
         )
         result = build_ownership_map(agents_dir)
         assert "nw-tdd-methodology" in result
-        assert "nw-quality-framework" in result
+        assert "nw-code-design-oo" in result
         assert "software-crafter" in result["nw-tdd-methodology"]
 
     def test_shared_skill_maps_to_multiple_agents(self, tmp_path):
@@ -483,12 +483,6 @@ class TestBuildOwnershipMap:
         result = build_ownership_map(self.AGENTS_DIR)
         for skill_name, agents in result.items():
             assert len(agents) > 0, f"Skill {skill_name} has no owning agents"
-
-    def test_known_public_skill_maps_to_correct_agent(self):
-        result = build_ownership_map(self.AGENTS_DIR)
-        # nw-crafter-discipline-delivery-contract is owned by software-crafter
-        assert "nw-crafter-discipline-delivery-contract" in result
-        assert "software-crafter" in result["nw-crafter-discipline-delivery-contract"]
 
     def test_detects_multi_agent_ownership(self):
         result = build_ownership_map(self.AGENTS_DIR)

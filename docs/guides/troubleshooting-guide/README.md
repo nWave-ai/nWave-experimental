@@ -101,7 +101,7 @@ Valid values: `uv`, `pipx`, `pip`. The override is honored only when the named t
 
 - `~/.claude/skills/nw-*` directories (~197 dirs)
 - `~/.claude/lib/python/des/` runtime
-- 3 specific hook entries in `~/.claude/settings.json`: one with the `des-hook:pre-bash` prefix (matcher: `Bash`), and two `claude_code_hook_adapter` entries under `SessionStart` and `SubagentStart` events. (DES installs hooks across 5 event types total — `PreToolUse`, `SubagentStop`, `PostToolUse`, `SessionStart`, `SubagentStart` — but only the first three were correctly removed pre-fix.)
+- 3 specific hook entries in `~/.claude/settings.json`: one with the `des-hook:pre-bash` prefix (matcher: `Bash`), and two `claude_code_hook_adapter` entries under `SessionStart` and `SubagentStart` events. (That historical v3.13 configuration registered 5 event types — `PreToolUse`, `SubagentStop`, `PostToolUse`, `SessionStart`, `SubagentStart` — but only the first three were correctly removed pre-fix.)
 
 **Cause**: install/uninstall path drift — the installer wrote to `skills/nw-<name>/` (flat), the uninstaller searched the obsolete `skills/nw/` (nested); `lib/python/des/` was never targeted; and the hook removal iterated only 3 of the 5 registered event types (missing `SessionStart` and `SubagentStart`) plus its hook-detection pattern matched only `claude_code_hook_adapter`, not the shell-prefix `des-hook:` form used by the inline `Bash` matcher.
 

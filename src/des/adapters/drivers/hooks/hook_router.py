@@ -11,13 +11,11 @@ import json
 import sys
 
 from des.adapters.drivers.hooks.activation_gate import apply_gate
-from des.adapters.drivers.hooks.post_write_handler import handle_post_write
 from des.adapters.drivers.hooks.pre_tool_use_handler import (
     evaluate_bash_safety_guards,
     handle_pre_tool_use,
 )
 from des.adapters.drivers.hooks.pre_write_handler import handle_pre_write
-from des.adapters.drivers.hooks.subagent_start_handler import handle_subagent_start
 from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
 
 
@@ -47,10 +45,10 @@ def normalize_exec_command_envelope(command: str, stdin_text: str) -> str:
 
 
 def apply_bash_safety_guards(command: str, stdin_text: str) -> None:
-    """Consolidated git-stash / worktree-remove safety decision (ADR-AG-001 repair).
+    """Git-stash safety decision (ADR-AG-001 repair).
 
     Runs BEFORE `activation_gate.apply_gate`: an inactive project must not be
-    able to exit 0 past a live `git stash` or `git worktree remove` mutation.
+    able to exit 0 past a live `git stash` mutation.
     Evaluated exactly once per PreToolUse/pre-task dispatch, regardless of
     activation state, via the single decision authority in
     `bash_command_guards.py` (through `pre_tool_use_handler.evaluate_bash_safety_guards`).
@@ -106,7 +104,7 @@ def main() -> None:
     except (OSError, ValueError):
         buffered_stdin = ""
 
-    # ADR-AG-001 ordering repair: the git-stash/worktree-remove safety
+    # ADR-AG-001 ordering repair: the git-stash safety
     # decision must run BEFORE the activation gate, else an inactive project
     # exits 0 inside apply_gate before this safety check ever runs. Evaluated
     # exactly once here; `handle_pre_tool_use` no longer re-runs it.
@@ -128,10 +126,6 @@ def main() -> None:
         exit_code = handle_pre_tool_use()
     elif command in ("pre-write", "pre-edit"):
         exit_code = handle_pre_write()
-    elif command in ("post-write", "post-edit"):
-        exit_code = handle_post_write()
-    elif command == "subagent-start":
-        exit_code = handle_subagent_start()
     elif command == "subagent-stop":
         exit_code = handle_subagent_stop()
     else:

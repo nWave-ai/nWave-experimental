@@ -114,7 +114,6 @@ LOAD_BEARING_PUBLIC_SKILLS: tuple[SkillName, ...] = tuple(
         "nw-spike-methodology",
         "nw-speculative-dispatch",
         "nw-tdd-cross-language",
-        "nw-wizard-shared-rules",
     )
 )
 

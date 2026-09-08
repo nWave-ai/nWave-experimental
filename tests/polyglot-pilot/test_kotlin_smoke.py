@@ -11,17 +11,6 @@ Behaviour:
 The smoke script itself fails-open on missing toolchain (exit 0 with
 WARNING). The test here additionally SKIPs so the test report is honest about
 the fact that no actual Kotlin suite ran.
-
-Extension Justification (per nw-quality-framework SKILL):
-
-  WHY-NEW-FILE: tests/polyglot-pilot/test_kotlin_smoke.py
-    CLOSEST-EXISTING: tests/polyglot-pilot/test_typescript_smoke.py
-    EXTENSION-COST: a single parametrized test (npx vs gradle) would couple
-      Node and JVM toolchain probing, the skip messages would lose language
-      attribution, and the smoke script paths would have to be parameterised.
-    PARALLEL-RATIONALE: per-language smoke wrapper mirrors per-language smoke
-      script (sibling pattern); each wrapper is ~30 LOC and toolchain-specific;
-      consolidation becomes useful once ≥3 sibling wrappers exist.
 """
 
 from __future__ import annotations

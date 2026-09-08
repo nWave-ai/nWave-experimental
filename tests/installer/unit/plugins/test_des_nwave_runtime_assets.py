@@ -2,8 +2,8 @@
 
 F-DES-INSTALL-SHIPS-NWAVE-RUNTIME-ASSETS — the installed des package resolves
 config siblings of lib/python at runtime (Path(__file__).parents[N] / "nWave" /
-...): installed readers consume nWave/data/, nWave/templates/,
-nWave/schemas/ and nWave/framework-catalog.yaml. These tests pin that exact
+...): installed readers consume nWave/data/, nWave/templates/ and
+nWave/framework-catalog.yaml. These tests pin that exact
 live asset set without preserving retired workflow registries.
 """
 
@@ -20,8 +20,6 @@ def _context_with_nwave(base: Path) -> tuple[InstallContext, Path]:
     nwave = project_root / "nWave"
     (nwave / "data").mkdir(parents=True)
     (nwave / "data" / "doctor.json").write_text("{}\n")
-    (nwave / "schemas").mkdir(parents=True)
-    (nwave / "schemas" / "thin-delivery-contract.schema.json").write_text("{}\n")
     (nwave / "templates").mkdir(parents=True)
     (nwave / "templates" / "AGENT_TEMPLATE.md").write_text("# template\n")
     (nwave / "framework-catalog.yaml").write_text("agents: []\n")
@@ -40,7 +38,7 @@ def _context_with_nwave(base: Path) -> tuple[InstallContext, Path]:
 
 
 def test_runtime_assets_shipped_to_lib_nwave(tmp_path: Path) -> None:
-    """The live data, template, schema dirs + catalog land under lib/nWave/."""
+    """The live data, template dirs + catalog land under lib/nWave/."""
     context, claude_dir = _context_with_nwave(tmp_path)
 
     DESPlugin()._install_nwave_runtime_assets(context=context, using_prebuilt=False)
@@ -48,7 +46,6 @@ def test_runtime_assets_shipped_to_lib_nwave(tmp_path: Path) -> None:
     lib_nwave = claude_dir / "lib" / "nWave"
     assert (lib_nwave / "data" / "doctor.json").is_file()
     assert (lib_nwave / "templates" / "AGENT_TEMPLATE.md").is_file()
-    assert (lib_nwave / "schemas" / "thin-delivery-contract.schema.json").is_file()
     assert (lib_nwave / "framework-catalog.yaml").is_file()
     assert not (lib_nwave / "flavors").exists()
     assert not (lib_nwave / "hooks").exists()

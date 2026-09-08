@@ -1,0 +1,12 @@
+9528f44c5c75d0ec06b16106f5044b6ff9192519
+
+The nwave-dev commit the recorded candidate's patches apply to, verbatim.
+
+The two patches in this directory are a real candidate diff, so they carry the
+base they were produced against. Pinning it here lets the replay integration
+test check out that exact tree instead of whatever HEAD happens to be, which is
+what keeps the test measuring the REPLAY rather than the drift of four unrelated
+source files. When the commit becomes unreachable -- a rebase orphans a sha
+without changing a byte of the four paths these diffs touch -- repoint this file
+at the commit that carries the same tree, and re-record the case only when the
+diffs genuinely stop applying.

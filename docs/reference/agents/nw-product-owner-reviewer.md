@@ -3,8 +3,8 @@
 Reviews every direct expectation-charter namespace member for value-side independence, completeness, and executable human observability.
 
 **Wave:** Other
-**Model:** haiku
-**Max turns:** 15
+**Model:** claude-opus-5
+**Max turns:** 40
 **Tools:** Read, Glob, Grep, Skill
 
 ## Preloaded skills

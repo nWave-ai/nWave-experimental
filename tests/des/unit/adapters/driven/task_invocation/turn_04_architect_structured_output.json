@@ -1,0 +1,67 @@
+{
+  "outcome": "accepted",
+  "diagnostic": "Single observable slice, one public driving port (`des code-fact` CLI `main`), one falsifiable chain. Evidence read: graphify-out/graph.json emits callable node labels as `run_tlc()` (L51), `.manifest()` (L54970), `_schema_for()` (L60418), `resolve_declared_capability()` (L71801), while GraphifyAdapter._callee_matches (graphify_code_fact_adapter.py:527-531) compares those raw labels against the bare symbol name, so `_call_sites` (L463-502) never matches any real callable node and callers-of answers an empty `sites` list at binding-resolved. An EXTRACTED `calls` edge targeting `src_des_domain_agent_capability_resolve_declared_capability` exists (graph.json L801646-801657, source_file tests/.../test_claude_code_task_adapter.py, source_location L302), and a competing `imports` EXTRACTED edge on the same target (L770589-770600) is what the relation filter must keep excluding. The defect stayed invisible because tests/des/unit/adapters/driven/codefact/test_graphify_code_fact_adapter.py:299-314 fabricates labels `\"target\"`/`\"caller\"` in a grammar graphify never emits. Empty-set honesty is unaffected: GraphifyAdapter._answer leaves evidence_count=None so _is_blind_empty (code_fact_port.py:511-519) never fires, and the trace entry is fault_count=0/scope=complete, satisfying ADR-LA-001 LA1-L11 (ADR L211-216).",
+  "design_facts": {
+    "targets": [
+      {
+        "path": "tests/bugs/des/test_graphify_callers_of_matches_real_label_shapes.py",
+        "decision": "CREATE_NEW"
+      },
+      {
+        "path": "src/des/adapters/driven/codefact/graphify_code_fact_adapter.py",
+        "decision": "EXTEND"
+      },
+      {
+        "path": "tests/des/unit/adapters/driven/codefact/test_graphify_code_fact_adapter.py",
+        "decision": "EXTEND"
+      }
+    ],
+    "paradigm": "object_oriented",
+    "decisions": [
+      "SSOT for callee identity is graphify's real callable label grammar as materialized in graphify-out/graph.json: a module-level callable is labelled `name()` and a method is labelled `.name()` (empty parens, no signature); a class is labelled bare (`GraphifyAdapter`). This grammar, not the current unit fixture, is the authority every match decision is derived from.",
+      "Root defect is localized to callee-label interpretation inside GraphifyAdapter._call_sites: the resolved target node label is fed to _callee_matches verbatim, so `resolve_declared_capability()` never equals `resolve_declared_capability` and never ends with `.resolve_declared_capability`, making every real EXTRACTED calls edge invisible.",
+      "Repair by normalizing the resolved target label before matching — strip exactly one trailing `()` — and let the already-existing trailing-dotted rule in _callee_matches absorb graphify's leading-dot method form (`.manifest` matches `manifest`). Do not touch _callee_matches' bare/dotted convention itself; it stays byte-aligned with AstAdapter._callee_matches.",
+      "Normalization is deliberately narrow: only an exact trailing `()` suffix is removed, never arbitrary parenthesized text, so prose/document nodes whose labels contain `(...)` (e.g. 'Returns: (is_valid, error_message)', 'xunit (2.9.3)') can never be promoted into call sites.",
+      "Preserve the existing edge admission filters unchanged — relation == `calls` AND confidence == `EXTRACTED` only. `imports`, `references`, `uses`, `contains`, `rationale_for` and `indirect_call` edges, and INFERRED `calls`, stay excluded, so import/read bindings never appear in a site set even though they target the same node id.",
+      "Site rendering stays as-is: `{scope_root/source_file}:{line}` with the `L` prefix stripped from source_location, so each returned site names the source file and source line the current graph actually records for that edge.",
+      "Preserve LA1-L11 verified-zero behaviour: a genuinely uncalled in-root symbol must still return Answered(provider graphify, binding-resolved) with an empty sites list, evidence_count left undeclared and one fault_count=0 / scope=complete trace entry — the empty answer must not be converted into Failed by the fold's blind-empty rule.",
+      "Do not touch the port, the fold, the chain wiring or the CLI: the whole repair is inside the graphify provider's edge-to-site derivation, exactly the D4/LA1-L7 'wiring/provider change, not a port change' boundary.",
+      "Correct the unit fixture's node labels in test_graphify_code_fact_adapter.py to graphify's real grammar (callable `target()`/`caller()` and a method-shaped `.method()` case) so the unit tier can never again be green against a label shape graphify does not emit; the existing INFERRED/indirect_call exclusion and whole-tree-staleness tests keep their current assertions under the corrected labels.",
+      "Freshness/regeneration semantics are untouched: the oracle fixture records the exact live mtime so ensure_fresh_or_fail short-circuits to the normal fold with zero side effects and no graphify binary on PATH is required."
+    ],
+    "oracle": "tests/bugs/des/test_graphify_callers_of_matches_real_label_shapes.py",
+    "acceptance_supports": [
+      "USER OBSERVATION: an operator running `des code-fact query.callers-of <symbol> --root .` against a freshly-materialized graphify index gets exit 0 and a graphify / binding-resolved answer whose sites name the real file:line of every EXTRACTED calls edge the graph records for that symbol, instead of a silent empty list.",
+      "STIMULUS (real public driving port): call `des.cli.code_fact.main([\"query.callers-of\", \"target\", \"--root\", str(tmp_path)])` in process, over a tmp tree containing subject.py plus a graphify-out/{graph.json,manifest.json} pair written in graphify's REAL grammar — target node label `target()` (and a second case with a method label `.helper()`), one EXTRACTED `calls` edge (source_file subject.py, source_location L6) and one EXTRACTED `imports` edge on the SAME target node; manifest mtime set to subject.py's exact live st_mtime so nothing is stale.",
+      "EXPECTED OBSERVATION (independently derived from the fixture, not from adapter code): exit code 0; parsed stdout has provider == \"graphify\", confidence == \"binding-resolved\", payload[\"symbol\"] == \"target\", and payload[\"sites\"] == [f\"{tmp_path/'subject.py'}:6\"] — exactly one site, taken from the calls edge's own source_file/source_location, with the imports edge absent from the set.",
+      "EXPECTED OBSERVATION (empty-set boundary, same stimulus shape): for a symbol with no calls edge at all, exit code 0, provider graphify, confidence binding-resolved, payload[\"sites\"] == [], and the trace entry that answered has fault_count == 0 and scope == \"complete\" — the LA1-L11 verified zero, never a Failed and never a fall-through to the ast/textsearch tiers.",
+      "FALSIFIER: against the current tree this test is RED — with label `target()` the fold answers graphify/binding-resolved with payload[\"sites\"] == [] (an empty set indistinguishable from the genuinely-uncalled case), because _call_sites compares the raw label `target()` to `target`. It goes GREEN only when the trailing-`()` normalization lands, and it turns RED again if the relation/confidence filters are widened (the imports edge would leak in as a second site) or if the empty-set case ever stops answering binding-resolved.",
+      "REGRESSION SUPPORT: the corrected unit fixture in test_graphify_code_fact_adapter.py fails under the pre-fix adapter for the same reason, proving the fixture drift (bare `\"target\"` label) was the concealment mechanism, not an incidental detail."
+    ],
+    "verification": [
+      [
+        "uv",
+        "run",
+        "pytest",
+        "tests/bugs/des/test_graphify_callers_of_matches_real_label_shapes.py",
+        "-q"
+      ],
+      [
+        "uv",
+        "run",
+        "pytest",
+        "tests/des/unit/adapters/driven/codefact/test_graphify_code_fact_adapter.py",
+        "tests/des/unit/adapters/driven/codefact/test_graphify_stale_graph_should_regenerate_not_degrade.py",
+        "-q"
+      ],
+      [
+        "uv",
+        "run",
+        "pytest",
+        "tests/des/unit/cli/test_code_fact.py",
+        "tests/des/acceptance/coherence_codefact",
+        "-q"
+      ]
+    ]
+  }
+}

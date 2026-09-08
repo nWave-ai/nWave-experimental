@@ -121,7 +121,7 @@ class TestSimulatePluginAcceptance:
 
 
 class TestSimulatePluginHooksValidation:
-    """Unit: hooks.json must have exactly 5 event types."""
+    """Unit: hooks.json must contain every currently declared event type."""
 
     def test_missing_event_type_returns_fail(self, monkeypatch):
         """hooks.json missing one active event type should FAIL."""

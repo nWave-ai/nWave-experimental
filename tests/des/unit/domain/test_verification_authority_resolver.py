@@ -27,6 +27,30 @@ from des.domain.verification_authority_resolver import (
 )
 
 
+def test_changed_authority_locator_selects_the_nested_changed_section() -> None:
+    from des.domain.verification_authority_resolver import changed_authority_locator
+
+    old = "# Brief\nintro\n## Feature\nold\n"
+    new = "# Brief\nintro\n## Feature\nnew\n"
+
+    assert changed_authority_locator(old, new, "docs/brief.md") == (
+        "docs/brief.md#Feature"
+    )
+
+
+def test_changed_authority_locator_permits_one_new_section_in_existing_document() -> (
+    None
+):
+    from des.domain.verification_authority_resolver import changed_authority_locator
+
+    assert (
+        changed_authority_locator(
+            "# Brief\n", "# Brief\n## Feature\nnew\n", "docs/brief.md"
+        )
+        == "docs/brief.md#Feature"
+    )
+
+
 ADR_RELATIVE_PATH = "docs/adrs/ADR-112-formal-drive-verification-substrate.md"
 ADR_HEADING = "D-112.14 — Test substrate and literal verification order"
 #: The hand-written anchor spelling (dot kept, single hyphen at the dash).

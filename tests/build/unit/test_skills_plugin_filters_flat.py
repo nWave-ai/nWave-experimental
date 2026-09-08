@@ -34,7 +34,7 @@ def flat_source_with_private(tmp_path: Path) -> Path:
     """Source with 3 public skills and 1 private skill in flat layout."""
     source = tmp_path / "source" / "skills"
     source.mkdir(parents=True)
-    for name in ("nw-tdd-methodology", "nw-hexagonal-testing", "nw-quality-framework"):
+    for name in ("nw-tdd-methodology", "nw-hexagonal-testing", "nw-code-design-oo"):
         d = source / name
         d.mkdir()
         (d / "SKILL.md").write_text(f"# {name}\nContent.\n", encoding="utf-8")
@@ -63,7 +63,7 @@ class TestFlatLayoutFiltersPrivateSkills:
         ownership_map = {
             "nw-tdd-methodology": {"software-crafter"},
             "nw-hexagonal-testing": {"software-crafter"},
-            "nw-quality-framework": {"software-crafter"},
+            "nw-code-design-oo": {"software-crafter"},
             "nw-private-internal": {"private-agent"},
         }
 
@@ -100,7 +100,7 @@ class TestFlatLayoutFiltersPrivateSkills:
         # Public skills MUST be installed
         assert (skills_target / "nw-tdd-methodology" / "SKILL.md").exists()
         assert (skills_target / "nw-hexagonal-testing" / "SKILL.md").exists()
-        assert (skills_target / "nw-quality-framework" / "SKILL.md").exists()
+        assert (skills_target / "nw-code-design-oo" / "SKILL.md").exists()
 
         # Private skill MUST NOT be installed (latent bug fix)
         assert not (skills_target / "nw-private-internal").exists(), (

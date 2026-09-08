@@ -145,6 +145,18 @@ def test_installed_section_stays_within_index_budget(host: str) -> None:
     )
 
 
+@pytest.mark.parametrize("host", HOST_IDS)
+def test_installed_section_demands_no_mode_ceremony(host: str) -> None:
+    """The mode-selection protocol is retired: generated guidance must not
+    order the project's LLM through a mode skill or a transcript marker
+    before it may act."""
+    content = load_section_content(host=host)
+    for retired in ("nw-mode-select", "NW-MODE-SELECTED"):
+        assert retired not in content, (
+            f"{host} guidance still demands retired mode ceremony: {retired}"
+        )
+
+
 def test_codex_projection_forbids_claude_specific_language() -> None:
     """AGENTS.md never carries Claude slash-command/Skill-tool prose."""
     content = load_section_content(host="codex").lower()
@@ -259,22 +271,57 @@ def test_tool_batching_fragment_exact_bytes_once_and_semantics(host: str) -> Non
 
 
 @pytest.mark.parametrize("host", HOST_IDS)
-def test_delivery_route_fragment_exact_bytes_once_and_semantics(host: str) -> None:
-    """S/M/L is one host-neutral projection, not two maintained route tables."""
+def test_delivery_route_fragment_is_spliced_once_and_host_neutral(host: str) -> None:
+    """One host-neutral projection, spliced verbatim, never two maintained
+    route tables."""
     fragment_bytes = _fragment_source_bytes("delivery-route-fragment")
     content_bytes = load_section_content(host=host).encode("utf-8")
-    fragment = fragment_bytes.decode("utf-8")
+    lowered = fragment_bytes.decode("utf-8").lower()
 
-    assert content_bytes.count(fragment_bytes) == 1
-    assert (
-        "no new product behavior, delivery authority, or architecture decision"
-        in fragment
+    assert content_bytes.count(fragment_bytes) == 1, (
+        f"delivery-route fragment not spliced exactly once into {host}"
     )
-    assert "One independently deliverable vertical" in fragment
-    assert "blocked nodes name the missing owner/fact" in fragment
-    assert "technical boundary in either kind of node" in fragment
-    assert "FINALIZE runs exactly once inside each DELIVER" in fragment
-    assert "/nw-" not in fragment and "skill tool" not in fragment.lower()
+    assert "/nw-" not in lowered
+    assert "skill tool" not in lowered
+
+
+@pytest.mark.parametrize("host", HOST_IDS)
+def test_delivery_route_fragment_states_the_runner_owned_guarantees(host: str) -> None:
+    """The reader must learn WHO owns the work and WHAT happens to a delivered
+    value: the runner slices and routes, review is independent, EXAMINE is
+    conditional, FINALIZE happens once. Matched on the load-bearing terms, not
+    on exact sentences, so the wording stays free to improve."""
+    content = load_section_content(host=host)
+    lowered = content.lower()
+
+    assert "runner" in lowered
+    for guarantee in ("slice", "rout", "independent review", "examine", "finalize"):
+        assert guarantee in lowered, f"{host} guidance never states: {guarantee}"
+    assert "once" in lowered, "FINALIZE's exactly-once guarantee is unstated"
+    assert "applicable" in lowered or "where" in lowered, (
+        "EXAMINE must read as conditional, not unconditional"
+    )
+
+
+@pytest.mark.parametrize("host", HOST_IDS)
+def test_delivery_route_fragment_demands_no_llm_classification(host: str) -> None:
+    """The retired protocol must not survive as prose: the reader is never
+    asked to size, classify, or hand-sequence the work.
+
+    ``M/L`` is listed because this guard did NOT discriminate without it.
+    Measured 2026-09-04: the template carried ``**Mandatory floor**: M/L
+    `DISTILL -> DELIVER``` while this test was green, because the size
+    vocabulary the retired protocol actually shipped is ``M/L`` and only the
+    longer ``S/M/L`` was forbidden. ``S/M/L`` stays first so it is still the
+    token reported when it is the one present.
+    """
+    content = load_section_content(host=host)
+
+    for retired in ("nw-mode-select", "NW-MODE-SELECTED", "S/M/L", "M/L"):
+        assert retired not in content, f"{host} guidance still carries {retired}"
+    # A manual route table is a markdown table whose header names the sizing
+    # axis the runner now owns.
+    assert "| Size |" not in content, f"{host} guidance still carries a route table"
 
 
 @pytest.mark.parametrize("host", HOST_IDS)

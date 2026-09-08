@@ -4,7 +4,7 @@ Use for database technology selection, data architecture design, query optimizat
 
 **Wave:** Other
 **Model:** inherit
-**Max turns:** 30
+**Max turns:** 40
 **Tools:** Read, Write, Edit, Glob, Grep, Bash
 
 ## Preloaded skills

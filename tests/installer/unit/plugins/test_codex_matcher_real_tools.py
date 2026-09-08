@@ -27,17 +27,6 @@ Budget: 1 behavior (matcher whitelist) x 2 = 2 unit tests. Coverage shape:
    empty string).
 The "matches the tool the host emits" direction is folded into the acceptance
 suite (matcher-real-tools.feature) to keep the unit budget honest.
-
-WHY-NEW-FILE: tests/installer/unit/plugins/test_codex_matcher_real_tools.py
-  CLOSEST-EXISTING: tests/installer/unit/plugins/test_codex_argv_contract.py
-  EXTENSION-COST: existing file is the FM-2 argv contract, scoped to a single
-    invariant on the command-string tail. Adding a matcher-whitelist class
-    there mixes orthogonal FMs (argv vs matcher) and makes regression triage
-    harder to locate by FM ID.
-  PARALLEL-RATIONALE: the matcher whitelist is a discrete, FM-tracked
-    invariant DDD-6 locks against the Codex hooks documentation. Co-locating
-    its test in a 1-class file makes the FM-3 regression net trivially
-    greppable and keeps the contract surface explicit.
 """
 
 from __future__ import annotations

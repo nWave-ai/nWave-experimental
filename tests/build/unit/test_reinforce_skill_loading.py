@@ -85,7 +85,7 @@ skills:
   - nw-property-based-testing
   - nw-mikado-method
   - nw-production-safety
-  - nw-quality-framework
+  - nw-code-design-oo
   - nw-hexagonal-testing
   - nw-test-refactoring-catalog
   - nw-collaboration-and-handoffs
@@ -111,7 +111,7 @@ Load on-demand by phase, not all at once:
 
 | Phase | Load | Trigger |
 |-------|------|---------|
-| 0 PREPARE | `tdd-methodology`, `quality-framework` | Always -- core methodology |
+| 0 PREPARE | `tdd-methodology`, `code-design-oo` | Always -- core methodology |
 | 1-2 RED | `hexagonal-testing` | Always -- port/adapter boundary decisions |
 | 2 RED_UNIT | `property-based-testing` | AC tagged `@property` or domain invariants |
 | 3 GREEN | `production-safety` | Implementation choices |
@@ -126,7 +126,7 @@ Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md`
 ## 5-Phase TDD Workflow
 
 ### Phase 0: PREPARE
-Load: `tdd-methodology`, `quality-framework` -- read them NOW before proceeding.
+Load: `tdd-methodology`, `code-design-oo` -- read them NOW before proceeding.
 
 ### Phase 1: RED (Acceptance)
 Load: `hexagonal-testing` -- read it NOW before proceeding.
@@ -274,7 +274,7 @@ class TestBuildCrafterSection:
             "nw-property-based-testing",
             "nw-mikado-method",
             "nw-production-safety",
-            "nw-quality-framework",
+            "nw-code-design-oo",
             "nw-hexagonal-testing",
             "nw-test-refactoring-catalog",
             "nw-collaboration-and-handoffs",
@@ -288,7 +288,7 @@ class TestBuildCrafterSection:
     def test_prepare_phase_skills(self, section: ReinforcedSection):
         assert set(section.phases[0].skills) == {
             "nw-tdd-methodology",
-            "nw-quality-framework",
+            "nw-code-design-oo",
         }
 
     def test_red_phase_skill(self, section: ReinforcedSection):
@@ -623,7 +623,7 @@ class TestProcessAgent:
             "nw-property-based-testing",
             "nw-mikado-method",
             "nw-production-safety",
-            "nw-quality-framework",
+            "nw-code-design-oo",
             "nw-hexagonal-testing",
             "nw-test-refactoring-catalog",
             "nw-collaboration-and-handoffs",
@@ -646,7 +646,7 @@ class TestProcessAgent:
             "nw-property-based-testing",
             "nw-mikado-method",
             "nw-production-safety",
-            "nw-quality-framework",
+            "nw-code-design-oo",
             "nw-hexagonal-testing",
             "nw-test-refactoring-catalog",
             "nw-collaboration-and-handoffs",
@@ -723,7 +723,7 @@ class TestUpdateLoadDirectives:
 
     FRONTMATTER = [
         "nw-tdd-methodology",
-        "nw-quality-framework",
+        "nw-code-design-oo",
         "nw-hexagonal-testing",
         "nw-property-based-testing",
         "nw-production-safety",
@@ -737,12 +737,12 @@ class TestUpdateLoadDirectives:
         assert "Load: `~/.claude/skills/nw-tdd-methodology/SKILL.md`" in result
 
     def test_multiple_skills_both_expanded(self):
-        content = "Load: `tdd-methodology`, `quality-framework`\n"
+        content = "Load: `tdd-methodology`, `code-design-oo`\n"
         result = update_load_directives(
             content, self.FRONTMATTER, apply_redundancy=True
         )
         assert "~/.claude/skills/nw-tdd-methodology/SKILL.md`" in result
-        assert "~/.claude/skills/nw-quality-framework/SKILL.md`" in result
+        assert "~/.claude/skills/nw-code-design-oo/SKILL.md`" in result
 
     def test_suffix_preserved_after_expansion(self):
         content = "Load: `tdd-methodology` -- read them NOW before proceeding.\n"

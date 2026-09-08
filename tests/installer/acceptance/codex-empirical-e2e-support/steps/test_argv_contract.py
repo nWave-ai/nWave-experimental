@@ -249,7 +249,6 @@ def no_command_omits_argv(state) -> None:
         "pre-write",
         "pre-edit",
         "session-start",
-        "subagent-start",
         "deliver-progress",
     }
     for cmd in state["commands"]:

@@ -33,6 +33,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from des.domain.agent_capability import split_declared_tools
 from scripts.install.plugins.base import (
     InstallationPlugin,
     InstallContext,
@@ -132,14 +133,38 @@ def _extract_scalar_fields(frontmatter: dict) -> dict[str, str]:
     }
 
 
-def _omit_unsupported_model(scalar_fields: dict[str, str]) -> None:
-    """Drop Claude-only model selectors that have no declared Codex mapping."""
+#: What an operator is told when a role's declared model cannot cross to Codex.
+#: The mapping from a Claude selector to a Codex model belongs to the unified
+#: config SSOT work, not here, so this states the gap rather than guessing at a
+#: correspondence: the repository declares exactly one Codex model anywhere
+#: (the host `~/.codex/config.toml`), and no tier vocabulary to map onto.
+UNPROJECTED_MODEL_NOTICE = (
+    "model {model} not projected for codex: host mapping pending F-CONFIG-SSOT-UNIFIED"
+)
+
+
+def _omit_unsupported_model(scalar_fields: dict[str, str]) -> str | None:
+    """Drop a Claude-only model selector, and RETURN what was dropped.
+
+    Returning it is the whole point. Dropping silently made the loss invisible
+    twice over: the projected role carries no model, so Codex answers on its
+    own configured default, and nothing in the artifact or the install output
+    says a declared model was discarded. Measured 2026-09-06: every reviewing
+    role declares `sonnet` per Ale's decision of that day, and not one of those
+    declarations reaches Codex.
+
+    Returns:
+        The dropped selector, or ``None`` when the field was absent or already
+        a Codex model that projects unchanged.
+    """
     model = scalar_fields.get("model", "")
     normalized = model.casefold()
     if normalized in {"inherit", "haiku", "sonnet", "opus"} or normalized.startswith(
         "claude-"
     ):
         scalar_fields.pop("model", None)
+        return model
+    return None
 
 
 def _log_tools_translated(agent_name: str, frontmatter: dict) -> None:
@@ -176,8 +201,8 @@ def _parse_declared_tools(frontmatter: dict) -> list[str]:
     """
     declared = frontmatter.get("tools")
     if isinstance(declared, str):
-        items = declared.split(",")
-    elif isinstance(declared, list):
+        return list(split_declared_tools(declared))
+    if isinstance(declared, list):
         items = [str(item) for item in declared]
     else:
         return []
@@ -254,10 +279,26 @@ def _capability_preamble(frontmatter: dict) -> str:
     if not declared:
         return ""
     declared_set = set(declared)
+    # A declared entry may be a permission SPECIFIER ("Bash(graphify
+    # explain:*)") rather than a bare tool name.  It grants exactly what it
+    # names and implies nothing else, so it is matched verbatim -- the Read and
+    # search denials below stay as strict as they were -- and carries its own
+    # grant line instead of widening the role to the whole shell.
+    scoped_shell = [name for name in declared if name.startswith("Bash(")]
 
     grants = [line for members, line in _CAPABILITY_GRANTS if members & declared_set]
+    if scoped_shell and "Bash" not in declared_set:
+        grants.append(
+            "- "
+            + ", ".join(scoped_shell)
+            + " -> run EXACTLY these commands via your native shell, and no "
+            "others; the scope in each grant is part of the grant."
+        )
     denials = [
-        line for members, line in _CAPABILITY_DENIALS if not members & declared_set
+        line
+        for members, line in _CAPABILITY_DENIALS
+        if not members & declared_set
+        and not (members == frozenset({"Bash"}) and scoped_shell)
     ]
 
     sections = [
@@ -280,7 +321,9 @@ def _capability_preamble(frontmatter: dict) -> str:
     return "\n".join(sections)
 
 
-def _render_toml_agent(scalar_fields: dict[str, str], body: str) -> str:
+def _render_toml_agent(
+    scalar_fields: dict[str, str], body: str, unprojected_model: str | None = None
+) -> str:
     """Render a Codex agent TOML file from scalar fields and the agent body.
 
     The Codex agent TOML schema requires:
@@ -295,11 +338,17 @@ def _render_toml_agent(scalar_fields: dict[str, str], body: str) -> str:
     Args:
         scalar_fields: TOML-compatible scalar fields (name, description, model…)
         body: Agent body text (Markdown section after the YAML frontmatter)
+        unprojected_model: A declared model that could not cross to Codex. It
+            is emitted as a leading TOML comment so the loss is legible in the
+            artifact an operator opens, not only in install output that scrolls
+            past.
 
     Returns:
         Complete TOML file content as a string
     """
     lines: list[str] = []
+    if unprojected_model:
+        lines.append(f"# {UNPROJECTED_MODEL_NOTICE.format(model=unprojected_model)}")
 
     # Emit canonical fields first in a stable order
     for key in ("name", "description", "model"):
@@ -391,13 +440,19 @@ def _transform_agent(source_content: str, agent_name: str) -> str:
     frontmatter, body = parse_frontmatter(source_content)
     _log_tools_translated(agent_name, frontmatter)
     scalar_fields = _extract_scalar_fields(frontmatter)
-    _omit_unsupported_model(scalar_fields)
+    unprojected_model = _omit_unsupported_model(scalar_fields)
+    if unprojected_model:
+        _logger.warning(
+            "codex_agents_plugin: agent '%s': %s",
+            agent_name,
+            UNPROJECTED_MODEL_NOTICE.format(model=unprojected_model),
+        )
     body = rewrite_host_paths(body, "codex")
     body = _translate_skill_invocations(body)
     preamble = _capability_preamble(frontmatter)
     if preamble:
         body = f"\n{preamble}\n{body}"
-    return _render_toml_agent(scalar_fields, body)
+    return _render_toml_agent(scalar_fields, body, unprojected_model)
 
 
 # ---------------------------------------------------------------------------

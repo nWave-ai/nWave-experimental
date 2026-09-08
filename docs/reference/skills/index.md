@@ -22,7 +22,7 @@
 
 ## nw-ab-house-style
 
-- [nw-ab-house-style](nw-ab-house-style.md) — KNOWLEDGE — caveman-native authoring house style + by-construction guarantees (Reasoning Mandate injection, A05/A06 anchors, measured-gain compression). Reference for create/migrate; no sequence.
+- [nw-ab-house-style](nw-ab-house-style.md) — KNOWLEDGE — caveman-native authoring house style + by-construction guarantees (Reasoning Mandate injection, measured-gain compression). Reference for create/migrate; no sequence.
 
 ## nw-ab-merge-agents
 
@@ -40,17 +40,13 @@
 
 - [nw-ab-optimize-skill](nw-ab-optimize-skill.md) — PROCEDURE — optimize one requested existing skill. Measures multi-trigger, duplication, and resident-context debt before editing; preserves its name as the lean core and behavioral projections.
 
-## nw-ab-todoify-file
-
-- [nw-ab-todoify-file](nw-ab-todoify-file.md) — PROCEDURE — convert an agent/skill/command file's prose workflow + prose success-criteria to numbered task lists. Trigger: a file with prose workflow or prose success-criteria sections.
-
 ## nw-ab-validate-spec
 
 - [nw-ab-validate-spec](nw-ab-validate-spec.md) — PROCEDURE — validate an EXISTING agent spec against the 19-item checklist. Trigger: checking a spec for compliance (also the shared composition target create/migrate/merge invoke). One job: run the checklist, report pass/fail.
 
 ## nw-ab-validation-checklist
 
-- [nw-ab-validation-checklist](nw-ab-validation-checklist.md) — KNOWLEDGE (data) — the 19-item agent-spec validation checklist. The item definitions the validate-spec / todoify procedures RUN against. No sequence of its own.
+- [nw-ab-validation-checklist](nw-ab-validation-checklist.md) — KNOWLEDGE (data) — the 19-item agent-spec validation checklist. The item definitions the validate-spec procedure RUNS against. No sequence of its own.
 
 ## nw-abr-critique-dimensions
 
@@ -59,10 +55,6 @@
 ## nw-ad-critique-dimensions
 
 - [nw-ad-critique-dimensions](nw-ad-critique-dimensions.md) — Review dimensions for acceptance test quality - happy path bias, GWT compliance, business language purity, coverage completeness, walking skeleton user-centricity, priority validation, observable behavior assertions, traceability coverage, and walking skeleton boundary proof
-
-## nw-adversarial-refutation
-
-- [nw-adversarial-refutation](nw-adversarial-refutation.md) — The adversarial-refutation review stance — assume the artifact is WRONG and try to PROVE it, default-to-refuted, diverse lenses, and an exhibited executable counterexample. The shared SSOT every DELIVER review (per-slice C_REVIEWER_AUDIT + per-feature F_FINAL_REVIEW) applies so the expensive final swarm is needed less.
 
 ## nw-agent-creation-workflow
 
@@ -98,7 +90,7 @@
 
 ## nw-auto
 
-- [nw-auto](nw-auto.md) — Thin prompt-level router for explicitly authorized Auto M/L work: reuse the acceptance-designer, paradigm crafter, independent examiner, and Git evidence without creating another controller.
+- [nw-auto](nw-auto.md) — Decides Request size and human-interaction level, then walks the DES steps that deliver it.
 
 ## nw-bdd-methodology
 
@@ -114,23 +106,19 @@
 
 ## nw-buddy-command-catalog
 
-- [nw-buddy-command-catalog](nw-buddy-command-catalog.md) — Current nWave command map for routing users without teaching retired workflow ceremony.
+- [nw-buddy-command-catalog](nw-buddy-command-catalog.md) — Current public nWave delivery commands.
 
 ## nw-buddy-project-reading
 
-- [nw-buddy-project-reading](nw-buddy-project-reading.md) — Evidence-first project reading protocol based on durable authorities, DeliveryContracts, Git, tests, and installed surfaces.
+- [nw-buddy-project-reading](nw-buddy-project-reading.md) — Evidence-first project reading protocol based on durable authorities, Git, tests, and installed surfaces.
 
 ## nw-buddy-ssot-knowledge
 
 - [nw-buddy-ssot-knowledge](nw-buddy-ssot-knowledge.md) — Single Source of Truth detection — where truth lives in an nWave repo and how to avoid contradicting it.
 
-## nw-buddy-wave-knowledge
-
-- [nw-buddy-wave-knowledge](nw-buddy-wave-knowledge.md) — Current wave authority and handoff map for answering where product, design, delivery, and feedback facts belong.
-
 ## nw-bugfix
 
-- [nw-bugfix](nw-bugfix.md) — Resolve one observed defect through evidence-led RCA, an ATD-owned regression oracle, direct delivery, source-blind EXAMINE when applicable, and one finalization.
+- [nw-bugfix](nw-bugfix.md) — Routes an observed defect request into the DES steps that deliver the fix.
 
 ## nw-canary
 
@@ -180,10 +168,6 @@
 
 - [nw-command-optimization-workflow](nw-command-optimization-workflow.md) — Step-by-step workflow for converting bloated command files to lean declarative definitions
 
-## nw-crafter-discipline-delivery-contract
-
-- [nw-crafter-discipline-delivery-contract](nw-crafter-discipline-delivery-contract.md) — Crafter discipline for implementing one immutable DeliveryContract with minimal production change, reuse, boundary integrity, and terminal evidence.
-
 ## nw-cross-cutting-context-residency
 
 - [nw-cross-cutting-context-residency](nw-cross-cutting-context-residency.md) — KNOWLEDGE — use when choosing resident, map-only, or on-demand context.
@@ -198,7 +182,7 @@
 
 ## nw-cross-cutting-invariants
 
-- [nw-cross-cutting-invariants](nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — lean public routing core for global gate/construction doctrine and on-demand knowledge lenses. Cite clause ids; never re-declare.
+- [nw-cross-cutting-invariants](nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — routing core for the software/model boundary doctrine, gate/construction principles and on-demand knowledge lenses. Cite clause ids; never re-declare.
 
 ## nw-data-architecture-patterns
 
@@ -230,7 +214,7 @@
 
 ## nw-deliver
 
-- [nw-deliver](nw-deliver.md) — Use for DELIVER wave orchestration from one validated DeliveryContract to one examined candidate and one whole-delivery finalization.
+- [nw-deliver](nw-deliver.md) — Routes one strict Request into the DES steps that deliver it.
 
 ## nw-deployment-strategies
 
@@ -242,7 +226,7 @@
 
 ## nw-design
 
-- [nw-design](nw-design.md) — Establishes durable architecture, reuse, boundaries, cross-layer algebra, residual stress behavior, paradigm, and prefactoring decisions for later DeliveryContract compilation.
+- [nw-design](nw-design.md) — Establishes durable architecture, reuse, boundaries, cross-layer algebra, residual stress behavior, paradigm, and prefactoring decisions for deterministic minimal handover construction.
 
 ## nw-design-patterns
 
@@ -266,11 +250,11 @@
 
 ## nw-discuss
 
-- [nw-discuss](nw-discuss.md) — Clarifies jobs, journeys, outcomes, and human-visible value in the durable product SSOT without creating a delivery workspace or executable contract.
+- [nw-discuss](nw-discuss.md) — Routes a product question or outcome into the DES steps.
 
 ## nw-distill
 
-- [nw-distill](nw-distill.md) — Compile value and architecture authority into a minimal executable oracle and one DeliveryContract. Human and Auto share the same route algebra and quality floor.
+- [nw-distill](nw-distill.md) — Produce an executable public oracle from durable authority.
 
 ## nw-distill-port-treatment-policy
 
@@ -278,7 +262,7 @@
 
 ## nw-distill-prior-wave-reading
 
-- [nw-distill-prior-wave-reading](nw-distill-prior-wave-reading.md) — Reads and reconciles the durable product, architecture, platform, and delivery authorities before DISTILL compiles an executable oracle and DeliveryContract.
+- [nw-distill-prior-wave-reading](nw-distill-prior-wave-reading.md) — Reads and reconciles durable product, architecture, and platform authorities before DISTILL compiles an executable oracle.
 
 ## nw-distill-red-scaffolding
 
@@ -310,11 +294,7 @@
 
 ## nw-expectation-charter
 
-- [nw-expectation-charter](nw-expectation-charter.md) — Authors or reviews one value-side, source-blind expectation charter for a delivery whose validated contract requires EXAMINE.
-
-## nw-finalize
-
-- [nw-finalize](nw-finalize.md) — Finalize one whole delivery by joining terminal evidence and returning one verified final commit F.
+- [nw-expectation-charter](nw-expectation-charter.md) — Authors or reviews one value-side, source-blind expectation charter when EXAMINE applies.
 
 ## nw-five-whys-methodology
 
@@ -408,17 +388,9 @@
 
 - [nw-mikado](nw-mikado.md) — [EXPERIMENTAL] Complex refactoring roadmaps with visual tracking
 
-## nw-mode-select
-
-- [nw-mode-select](nw-mode-select.md) — Choose human-on-the-loop vs auto mode for a piece of work, classify it S/M/L, and pick the matching path before starting. Load at the START of any nWave-adjacent task, before dispatch, when the mode/size has not already been declared by the user in this conversation.
-
 ## nw-mutation-test
 
-- [nw-mutation-test](nw-mutation-test.md) — Run an explicit mutation probe over the validated delivery delta, or support the project-level nightly-delta policy. Disabled by default.
-
-## nw-new
-
-- [nw-new](nw-new.md) — Routes a new request to the earliest authority that lacks evidence, without creating a feature workspace.
+- [nw-mutation-test](nw-mutation-test.md) — Run an explicit mutation probe over a named production delta, or support the project-level nightly-delta policy. Disabled by default.
 
 ## nw-operational-safety
 
@@ -430,7 +402,7 @@
 
 ## nw-optimize-tests
 
-- [nw-optimize-tests](nw-optimize-tests.md) — Minimizes test count while preserving coverage. Detects byte-identical pairs, parametrize-inflation, language-guarantee tests, AST-shape tests, stale migration nets. Approval gate before any change.
+- [nw-optimize-tests](nw-optimize-tests.md) — Consolidates a test scope to the fewest tests that preserve coverage and behavior, deleting duplication, parametrize inflation, language-guarantee tests, AST-shape tests, and stale migration nets. An independent read-only reviewer with veto always validates the result.
 
 ## nw-par-critique-dimensions
 
@@ -576,17 +548,9 @@
 
 - [nw-security-by-design](nw-security-by-design.md) — Security design principles, STRIDE threat modeling, OWASP Top 10 architectural mitigations, and secure patterns. Load when designing systems or reviewing architecture for security.
 
-## nw-solution-architect-auto-consult
-
-- [nw-solution-architect-auto-consult](nw-solution-architect-auto-consult.md) — PROCEDURE — close bounded architecture consult in durable authority. Trigger: exact AUTO-ARCHITECTURE-CONSULT envelope.
-
 ## nw-solution-architect-formal-verification
 
 - [nw-solution-architect-formal-verification](nw-solution-architect-formal-verification.md) — PROCEDURE — verify one separately selected formal DESIGN obligation and state its runtime refinement boundary.
-
-## nw-solution-architect-full-design
-
-- [nw-solution-architect-full-design](nw-solution-architect-full-design.md) — PROCEDURE — author or amend one durable application DESIGN authority. Trigger: a non-Auto DESIGN mandate.
 
 ## nw-source-verification
 
@@ -632,10 +596,6 @@
 
 - [nw-tdd-methodology-walking-skeleton](nw-tdd-methodology-walking-skeleton.md) — Building and validating a walking skeleton - the WS protocol, per-slice JIT E2E management, Mandate 5 adapter port-class real-I/O treatment (resource table), and Mandate 6 adapter-integration real-I/O requirement
 
-## nw-tdd-review-enforcement
-
-- [nw-tdd-review-enforcement](nw-tdd-review-enforcement.md) — Contract-bound review rules for immutable-oracle integrity, driving-port behavior, test economy, architecture boundaries, and terminal delivery evidence.
-
 ## nw-test-design-mandates
 
 - [nw-test-design-mandates](nw-test-design-mandates.md) — Design mandates for acceptance tests - hexagonal boundary, business language abstraction, user journey completeness, pure function extraction, 3 Pillars (domain language / chained narrative / production composition), and the layered ATD discipline (Universe-bound assertion, layer-dependent PBT mode, two-tier acceptance, example-based sad paths). Lean recomposing core - routes to three narrow mandate modules.
@@ -674,12 +634,4 @@
 
 ## nw-throughput
 
-- [nw-throughput](nw-throughput.md) — Evidence-led orchestration for maximizing delivery throughput with causal fan-out, associative boundary composition, one heavy local box, and concise terminal evidence.
-
-## nw-tr-review-criteria
-
-- [nw-tr-review-criteria](nw-tr-review-criteria.md) — Review dimensions and scoring for root cause analysis quality assessment
-
-## nw-wizard-shared-rules
-
-- [nw-wizard-shared-rules](nw-wizard-shared-rules.md) — Shared routing rules for discovering the earliest missing nWave authority without persistent wizard state.
+- [nw-throughput](nw-throughput.md) — Evidence-led orchestration for maximizing delivery throughput with independent fan-out, one heavy local box, and concise whole-value evidence.

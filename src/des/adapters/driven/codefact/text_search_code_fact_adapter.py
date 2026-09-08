@@ -357,7 +357,7 @@ class TextSearchAdapter:
             text = self._read(source_file, faults)
             without_defs = _strip_own_declaration(text, callable_name)
             hits.extend(
-                f"{source_file}:{match.start()}"
+                f"{source_file}:{without_defs.count(chr(10), 0, match.start()) + 1}"
                 for match in call_pattern.finditer(without_defs)
             )
         return hits
@@ -383,7 +383,7 @@ class TextSearchAdapter:
             text = self._read(source_file, faults)
             without_defs = _strip_own_declaration(text, callable_name)
             hits.extend(
-                f"{source_file}:{match.start()}"
+                f"{source_file}:{without_defs.count(chr(10), 0, match.start()) + 1}"
                 for match in read_pattern.finditer(without_defs)
             )
         return hits

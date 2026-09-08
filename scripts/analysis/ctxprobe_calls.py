@@ -7,7 +7,6 @@ one making 20 do not have the same cure.
 """
 
 import json
-import os
 import sys
 from collections import Counter, OrderedDict
 from pathlib import Path
@@ -16,10 +15,9 @@ from pathlib import Path
 root = sys.argv[1]
 per_agent = []
 
-for f in sorted([p.name for p in Path(root).iterdir()]):
-    if not f.endswith(".jsonl"):
-        continue
-    p = os.path.join(root, f)
+for transcript in sorted(Path(root).rglob("*.jsonl")):
+    f = str(transcript.relative_to(root))
+    p = str(transcript)
     order = OrderedDict()
     tool_by_id = {}
     tool_calls = Counter()

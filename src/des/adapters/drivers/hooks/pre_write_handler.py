@@ -1,10 +1,4 @@
-"""PreWrite/PreEdit handler — guards source file writes during deliver sessions.
-
-The shell fast-path tests for deliver-session.json BEFORE invoking Python.
-This handler only runs during active deliver sessions.
-
-Extracted from claude_code_hook_adapter.py as part of P4 decomposition.
-"""
+"""PreWrite/PreEdit handler — refuses writes to the retired execution log."""
 
 import contextlib
 import io
@@ -17,23 +11,11 @@ from des.adapters.drivers.hooks import des_task_signal, hook_protocol
 from des.adapters.drivers.hooks.hook_protocol import (
     EXIT_CODE_TO_DECISION,
     STDERR_CAPTURE_MAX_CHARS,
-    extract_transcript_path,
     log_hook_completed,
     log_hook_error,
     log_hook_invoked,
     read_and_parse_stdin,
 )
-from des.adapters.drivers.hooks.root_activation_context import (
-    build_root_write_mode_select_context,
-    hook_input_has_agent_identity,
-    root_mode_gate_repo_is_active,
-    root_mode_handoff_block_reason,
-)
-from des.application.skill_tracking_service import (
-    RootModeState,
-    resolve_root_mode_state,
-)
-from des.domain.session_guard_policy import SessionGuardPolicy
 from des.ports.driven_ports.audit_log_writer import AuditEvent
 
 
@@ -62,15 +44,7 @@ def _log_pre_write_decision(
 
 
 def handle_pre_write() -> int:
-    """Handle PreToolUse for Write/Edit: guard source writes during deliver.
-
-    Shell fast-path: the hook command tests for deliver-session.json BEFORE
-    invoking Python. This handler only runs during active deliver sessions.
-
-    Returns:
-        0 if write is allowed
-        2 if write is blocked (source file during deliver without DES task)
-    """
+    """Handle PreToolUse for Write/Edit."""
     hook_id = str(uuid.uuid4())
     start_ns = time.perf_counter_ns()
     exit_code = 0
@@ -112,153 +86,22 @@ def handle_pre_write() -> int:
                 print(json.dumps({"decision": "block", "reason": block_reason}))
                 return 2
 
-            # Check session and signal state
-            session_active = des_task_signal.DES_DELIVER_SESSION_FILE.exists()
-            des_task_active = des_task_signal.DES_TASK_ACTIVE_FILE.exists()
-
-            # Diagnostic: confirm hook was invoked with full context
             log_hook_invoked(
                 "pre_write",
                 {
                     "file_path": file_path,
-                    "session_active": session_active,
-                    "des_task_active": des_task_active,
+                    "des_task_active": des_task_signal.DES_TASK_ACTIVE_FILE.exists(),
                 },
                 hook_id=hook_id,
             )
-
-            policy = SessionGuardPolicy()
-            guard_result = policy.check(
+            _log_pre_write_decision(
+                hook_id=hook_id,
+                event_type="HOOK_PRE_WRITE_ALLOWED",
                 file_path=file_path,
-                session_active=session_active,
-                des_task_active=des_task_active,
+                reason="ordinary_write",
             )
-
-            if guard_result.blocked:
-                _log_pre_write_decision(
-                    hook_id=hook_id,
-                    event_type="HOOK_PRE_WRITE_BLOCKED",
-                    file_path=file_path,
-                    reason=guard_result.reason or "Source write blocked during deliver",
-                )
-                response = {
-                    "decision": "block",
-                    "reason": guard_result.reason
-                    or "Source write blocked during deliver",
-                }
-                print(json.dumps(response))
-                exit_code = 2
-                return exit_code
-            else:
-                # Determine allow reason for diagnostics
-                allow_reason = "no_session" if not session_active else "policy_allowed"
-
-                # K3-A root activation: root modifying a file directly (Write/
-                # Edit) never dispatches a sub-agent, so it never reaches the
-                # PreToolUse/Agent reminder either. `root_context` non-None
-                # identifies an activated nWave project root (nWave-adjacent
-                # path, no active deliver session) -- the only case where the
-                # mode-select gate below applies. Once mode selection is
-                # observed the write proceeds silently; the reminder must not
-                # be injected again on every mutation.
-                root_context = None
-                try:
-                    root_context = build_root_write_mode_select_context(
-                        file_path=file_path,
-                        session_active=session_active,
-                    )
-                except Exception:
-                    root_context = None
-
-                # Run 9/10 correction: see
-                # `root_activation_context.hook_input_has_agent_identity` --
-                # a bare `not agent_id and not agent_type` check misreads a
-                # real subagent's own Write/Edit as root's whenever the live
-                # envelope carries neither field.
-                is_root_invocation = not hook_input_has_agent_identity(hook_input)
-                # F-ROOT-MODE-GATE-SCOPE-CAPTURE-AND-LATCH defect 1: the SAME
-                # scope-capture class as `pre_tool_use_handler.py`'s Bash
-                # trap, for Write/Edit -- `is_nwave_adjacent_write` (feeding
-                # `root_context` above) filters by PATH SHAPE only, never by
-                # repo activation, so this fired on the first mutation of
-                # ANY task in ANY repo. Scoped to the SAME opt-in
-                # `activation_gate`/attribution already honour.
-                mode_gate_repo_active = (
-                    is_root_invocation and root_mode_gate_repo_is_active(hook_input)
-                )
-                if root_context and is_root_invocation:
-                    transcript_path = extract_transcript_path(hook_input)
-                    root_mode_state = RootModeState.UNSELECTED
-                    if transcript_path:
-                        # defect 3: a later, unambiguous non-auto marker may
-                        # supersede an nw-auto engagement before delivery
-                        # starts -- `session_active` (already resolved above)
-                        # is the SAME delivery-artifact signal.
-                        root_mode_state = resolve_root_mode_state(
-                            transcript_path, delivery_artifact_exists=session_active
-                        )
-                    if (
-                        mode_gate_repo_active
-                        and root_mode_state is RootModeState.UNSELECTED
-                    ):
-                        _log_pre_write_decision(
-                            hook_id=hook_id,
-                            event_type="HOOK_PRE_WRITE_BLOCKED",
-                            file_path=file_path,
-                            reason="mode_select_not_observed",
-                        )
-                        response = {
-                            "decision": "block",
-                            "reason": "Invoke nw-mode-select before the first mutation.",
-                        }
-                        print(json.dumps(response))
-                        exit_code = 2
-                        return exit_code
-
-                    if mode_gate_repo_active:
-                        handoff_reason = root_mode_handoff_block_reason(root_mode_state)
-                        if handoff_reason is not None:
-                            _log_pre_write_decision(
-                                hook_id=hook_id,
-                                event_type="HOOK_PRE_WRITE_BLOCKED",
-                                file_path=file_path,
-                                reason=root_mode_state.value,
-                            )
-                            print(
-                                json.dumps(
-                                    {"decision": "block", "reason": handoff_reason}
-                                )
-                            )
-                            exit_code = 2
-                            return exit_code
-
-                    if root_mode_state is RootModeState.AUTO_ENGAGED:
-                        _log_pre_write_decision(
-                            hook_id=hook_id,
-                            event_type="HOOK_PRE_WRITE_BLOCKED",
-                            file_path=file_path,
-                            reason="auto_root_direct_write",
-                        )
-                        response = {
-                            "decision": "block",
-                            "reason": (
-                                "Auto root cannot author or repair role-owned "
-                                "artifacts or production directly -- dispatch "
-                                "the owning role instead."
-                            ),
-                        }
-                        print(json.dumps(response))
-                        exit_code = 2
-                        return exit_code
-
-                _log_pre_write_decision(
-                    hook_id=hook_id,
-                    event_type="HOOK_PRE_WRITE_ALLOWED",
-                    file_path=file_path,
-                    reason=allow_reason,
-                )
-                exit_code = 0
-                return exit_code
+            exit_code = 0
+            return exit_code
 
     except Exception as e:
         # Fail-open for Write/Edit (unlike Task which is fail-closed)

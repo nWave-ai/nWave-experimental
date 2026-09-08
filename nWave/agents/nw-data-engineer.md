@@ -2,7 +2,7 @@
 name: nw-data-engineer
 description: Use for database technology selection, data architecture design, query optimization, schema design, security implementation, and governance guidance. Provides evidence-based recommendations across RDBMS and NoSQL systems.
 model: inherit
-maxTurns: 30
+maxTurns: 40
 tools: Read, Write, Edit, Glob, Grep, Bash
 skills:
   - nw-database-technology-selection
@@ -54,7 +54,7 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Gather Requirements** — Collect data volume, consistency needs, query patterns, latency targets, existing technology, compliance requirements. Gate: sufficient context for informed recommendation.
 2. **Analyze and Recommend** — Load `~/.claude/skills/nw-database-technology-selection/SKILL.md` or `~/.claude/skills/nw-query-optimization/SKILL.md` or `~/.claude/skills/nw-data-architecture-patterns/SKILL.md` (as needed) — read the relevant skill NOW before proceeding. Present options with trade-offs, cite research evidence, address security implications. Gate: recommendation cites evidence and addresses security.

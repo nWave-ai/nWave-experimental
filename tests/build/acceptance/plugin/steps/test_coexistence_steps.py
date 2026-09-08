@@ -117,8 +117,6 @@ def _create_plugin_structure(plugin_dir: Path) -> None:
         ("PreToolUse", "Task", "pre-task"),
         ("PostToolUse", "Task", "post-tool-use"),
         ("SubagentStop", None, "subagent-stop"),
-        ("SessionStart", "startup", "session-start"),
-        ("SubagentStart", None, "subagent-start"),
     ]:
         command = (
             "PYTHONPATH=${CLAUDE_PLUGIN_ROOT}/scripts python3"
@@ -195,14 +193,6 @@ def _create_installer_settings(
             "SubagentStop": (
                 f"PYTHONPATH={installer_dir}/lib/python python3"
                 " -m des.adapters.drivers.hooks.claude_code_hook_adapter subagent-stop"
-            ),
-            "SessionStart": (
-                f"PYTHONPATH={installer_dir}/lib/python python3"
-                " -m des.adapters.drivers.hooks.claude_code_hook_adapter session-start"
-            ),
-            "SubagentStart": (
-                f"PYTHONPATH={installer_dir}/lib/python python3"
-                " -m des.adapters.drivers.hooks.claude_code_hook_adapter subagent-start"
             ),
         }
     }

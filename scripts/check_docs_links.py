@@ -768,6 +768,7 @@ def _build_privacy_predicate(
             detect_command_skills,
             is_public_agent,
             is_public_skill,
+            load_private_skills,
             load_public_agents,
         )
     except Exception:
@@ -779,6 +780,7 @@ def _build_privacy_predicate(
         return None
     ownership = build_ownership_map(nwave / "agents")
     command_skills = detect_command_skills(nwave / "skills")
+    private_skills = load_private_skills(nwave, strict=False)
 
     def is_private(target: Path) -> bool:
         parts = target.parts
@@ -786,7 +788,11 @@ def _build_privacy_predicate(
             i = parts.index("skills")
             if i + 1 < len(parts):
                 return not is_public_skill(
-                    parts[i + 1], public_agents, ownership, command_skills
+                    parts[i + 1],
+                    public_agents,
+                    ownership,
+                    command_skills,
+                    private_skills,
                 )
         if "agents" in parts:
             return not is_public_agent(target.name, public_agents)

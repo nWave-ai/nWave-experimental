@@ -32,7 +32,7 @@ def flat_source(tmp_path: Path) -> Path:
     """Source directory with NEW_FLAT layout: nw-*/SKILL.md."""
     source = tmp_path / "skills"
     source.mkdir()
-    for name in ("nw-tdd-methodology", "nw-hexagonal-testing", "nw-quality-framework"):
+    for name in ("nw-tdd-methodology", "nw-hexagonal-testing", "nw-code-design-oo"):
         d = source / name
         d.mkdir()
         (d / "SKILL.md").write_text(f"# {name}\nContent.\n", encoding="utf-8")
@@ -76,7 +76,7 @@ class TestSkillDistributionPipeline:
         ownership_map = {
             "nw-tdd-methodology": {"software-crafter"},
             "nw-hexagonal-testing": {"software-crafter"},
-            "nw-quality-framework": {"software-crafter"},
+            "nw-code-design-oo": {"software-crafter"},
             "nw-private-skill": {"private-agent"},
         }
 
@@ -89,7 +89,7 @@ class TestSkillDistributionPipeline:
         assert count == 3
         assert (target / "nw-tdd-methodology" / "SKILL.md").exists()
         assert (target / "nw-hexagonal-testing" / "SKILL.md").exists()
-        assert (target / "nw-quality-framework" / "SKILL.md").exists()
+        assert (target / "nw-code-design-oo" / "SKILL.md").exists()
         assert not (target / "nw-private-skill").exists()
 
 
@@ -162,7 +162,7 @@ class TestEnumerateSkills:
         assert names == {
             "nw-tdd-methodology",
             "nw-hexagonal-testing",
-            "nw-quality-framework",
+            "nw-code-design-oo",
         }
         # Each entry's path should be the nw-* directory
         for entry in entries:
@@ -209,7 +209,7 @@ class TestFilterPublicSkills:
         ownership_map = {
             "nw-tdd-methodology": {"software-crafter"},
             "nw-hexagonal-testing": {"software-crafter"},
-            "nw-quality-framework": {"software-crafter"},
+            "nw-code-design-oo": {"software-crafter"},
             "nw-secret-internal": {"private-agent"},
         }
 

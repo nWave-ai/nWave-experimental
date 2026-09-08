@@ -1,26 +1,14 @@
 ---
 name: nw-buddy-command-catalog
-description: Current nWave command map for routing users without teaching retired workflow ceremony.
+description: Current public nWave delivery commands.
 user-invocable: false
 disable-model-invocation: true
 ---
-
 # Command Catalog
+| Need | Command |
+|---|---|
+| Start any delivery request | `printf '%s' "$REQUEST" \| des po --repo-root ROOT` |
+| Continue, or resume after an interruption | `des state --repo-root ROOT`, then the step its `NEXT` line names |
+| Read the state as a person | `des project --repo-root ROOT` |
 
-| Need | Command | Owner |
-|---|---|---|
-| Validate a problem | `/nw-discover` | product discoverer |
-| Compare solution directions | `/nw-diverge` | diverger |
-| Clarify jobs, journeys and outcomes | `/nw-discuss` | product owner |
-| Establish architecture, reuse and boundaries | `/nw-design` | architect selected by scope |
-| Establish deployment and operational constraints | `/nw-devops` | platform architect |
-| Compile the executable oracle and `DeliveryContract` | `/nw-distill` | acceptance designer |
-| Deliver one validated contract | `/nw-deliver --repo-root ROOT --delivery-contract PATH` | selected crafter plus independent observers |
-| Diagnose and correct one defect | `/nw-bugfix --repo-root ROOT --delivery-contract PATH` | troubleshooter, ATD and crafter |
-| Review an artifact or diff | `/nw-review` | matching reviewer |
-| Reduce a noisy test portfolio | `/nw-optimize-tests` | test optimizer |
-| Run an explicit mutation probe | `/nw-mutation-test` | project test tooling |
-
-`PATH` is supplied by the producing DISTILL result and resolves only relative
-to `ROOT`. No command requires a feature workspace, workflow mode, slice token
-or progress ledger.
+Every step returns `Success`, `Refusal`, `Retry`, or `Indeterminate`, and names its canonical successor as data in `NEXT`. No command composes the steps into a sequence.

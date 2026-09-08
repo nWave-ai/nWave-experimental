@@ -95,7 +95,7 @@ The user wants architecture options. You analyze autonomously:
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Mode Selection** — Determine interaction mode from `/nw-design` Decision 1 parameter (`interaction_mode`). If not provided, ask: "How do you want to work? (1) Guide me — I ask questions, we decide together, or (2) Propose — I analyze your requirements and present options with trade-offs." Gate: mode confirmed.
 2. **Multi-Architect Context** — Read `docs/product/architecture/brief.md` if it exists. Note decisions from other architects (`## Domain Model` from ddd-architect, `## Application Architecture` from solution-architect) and build on them. Gate: existing decisions noted or file absent confirmed.

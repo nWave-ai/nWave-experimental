@@ -52,8 +52,29 @@ import re
 import socket
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+
+
+def test_fixture_script_bootstraps_imports_when_invoked_by_path_from_external_cwd(
+    tmp_path,
+):
+    script = (
+        Path(__file__).resolve().parents[3]
+        / "scripts/analysis/k4/prepare_examiner_fixture.py"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert "ModuleNotFoundError: No module named 'scripts'" not in completed.stderr
+    assert "IndexError" in completed.stderr
 
 
 def _git(*args: str, cwd) -> None:
@@ -394,7 +415,9 @@ def test_fixture_files_are_excluded_clone_locally_yet_stay_readable(tmp_path):
 
     exclude_file = workspace / ".git" / "info" / "exclude"
     assert exclude_file.exists()
-    assert pef.DOC_NAME in exclude_file.read_text()
+    excluded = exclude_file.read_text()
+    assert pef.DOC_NAME in excluded
+    assert ".claude-k4/" in excluded
 
     gitignore = workspace / ".gitignore"
     assert not gitignore.exists(), (
@@ -411,6 +434,20 @@ def test_fixture_files_are_excluded_clone_locally_yet_stay_readable(tmp_path):
     )
     assert pef.DOC_NAME not in status.stdout, (
         "fixture doc must be invisible to git status"
+    )
+
+    profile = workspace / ".claude-k4"
+    profile.mkdir()
+    (profile / "transcript.jsonl").write_text("{}\n")
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert ".claude-k4" not in status.stdout, (
+        "provider-owned profile state must not look like a product mutation"
     )
 
     assert doc_target.exists()

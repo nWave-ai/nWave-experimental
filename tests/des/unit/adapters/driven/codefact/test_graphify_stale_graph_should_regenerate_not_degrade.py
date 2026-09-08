@@ -55,6 +55,17 @@ file's single-process fixtures) and asserts a different, narrower claim.
 Zero touches to ``src/des/adapters/driven/codefact/`` or any other
 production path. This oracle is expected to stay RED until a crafter wires
 the remedy.
+
+**2026-09-06 realignment**: ``TestRegenerationImpossibleDegradesLoud``
+below no longer asserts a hard ``Failed`` for the executable-absent
+sub-cause -- a later value (see
+``tests/des/unit/cli/test_code_fact_graphify_non_answer_trace.py``) closed
+that sub-cause differently: a bounded, honest ``graphify`` trace entry
+naming the exact cause, with the fold still falling through to a real
+answer from a lower tier, rather than a hard stop. The other two
+sub-causes this same later value also names (index directory absent,
+index present-but-unreadable) never reach a stale-graph regeneration
+attempt at all, so they are out of this file's scope entirely.
 """
 
 from __future__ import annotations
@@ -321,38 +332,65 @@ class TestRegenerationImpossibleDegradesLoud:
     def test_graphify_absent_on_stale_graph_never_silently_answers(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The third state -- with synchronous regeneration decided, this
-        is MORE important than before, not less: a long, blocking wait
-        that ends in a wrong answer is the worse of both worlds. Simulated
-        by making the ``graphify`` executable itself unreachable -- a
-        real, controlled precondition, not a mocked internal call whose
-        name this role does not get to invent -- the port must degrade
-        LOUD (``Failed``/an explicit indeterminate outcome), never
-        silently ``Answered`` through a degraded provider dressed as
-        current fact.
-
-        RED today, unconditionally, regardless of whether a real
-        ``graphify`` binary happens to be on this box's PATH: today's code
-        never attempts regeneration at all, so it always answers
-        ``Answered`` (degraded), never ``Failed`` for this reason -- the
-        exact silent-``never_wired`` risk this test names explicitly.
+        """The third state, REALIGNED (this value, superseding the prior
+        "must be Failed" claim this docstring itself used to defend):
+        an unreachable regeneration must still surface a bounded, honest
+        ``graphify`` trace entry naming the exact closed cause ("index
+        present-but-stale with 'graphify' executable not on PATH") -- but
+        the query itself is NOT hard-stopped over it. The fold falls
+        through to whichever of ``AstAdapter``/``TextSearchAdapter`` alone
+        would have answered this same request, and THAT answer -- with
+        graphify's one non-answering entry prepended to its trace -- is
+        what the port returns. Never a silent absence of any graphify
+        trace entry, and never a phantom ``graphify``-attributed answer;
+        but also never a hard ``Failed`` for this one sub-cause, since a
+        real, honest, degraded-tier answer is strictly more useful to a
+        caller than none at all, exactly as before this remedy existed --
+        the difference this value adds is CALLING OUT the exact reason a
+        precise answer WASN'T reached instead of the silence the module
+        docstring above still, more broadly, argues against.
         """
         monkeypatch.setenv("PATH", str(tmp_path / "empty-path-no-graphify"))
         (tmp_path / "empty-path-no-graphify").mkdir()
         root = _make_stale_fixture(tmp_path)
 
+        expected = CodeFactChain(root=root)._ast.resolve(_descriptor(), {"symbol": ""})
+        if not isinstance(expected, Answered):
+            expected = None  # AstAdapter itself declining is not this test's concern
+
         chain = CodeFactChain(root=root)
         resolution = chain.resolve(_descriptor(), {"symbol": ""})
 
-        assert not isinstance(resolution, Answered), (
+        assert isinstance(resolution, Answered), (
             f"graphify is unreachable (PATH has no graphify) and the graph "
-            f"is stale, yet the port still answered: {resolution!r}. WHY: "
-            "an unreachable regeneration must degrade LOUD -- Failed or an "
-            "explicit indeterminate outcome -- never a silent Answered "
-            "built on a provider that could not honestly cover the query. "
-            "HOW: the port's regeneration attempt must itself follow "
-            "CLAUDE.md's Portability rule (\"degrades LOUD (INDETERMINATE, "
-            'never silent-pass) when the tool is absent"), the same '
-            "discipline every other optional-tool adapter in this repo "
-            "already follows."
+            f"is stale, yet the port did not answer at all: {resolution!r}. "
+            "WHY: an unreachable regeneration must still let the fold fall "
+            "through to whichever lower tier alone would have answered -- "
+            "never a hard stop for THIS sub-cause."
         )
+        graphify_entries = [e for e in resolution.trace if e.provider_id == "graphify"]
+        assert len(graphify_entries) == 1, (
+            f"expected exactly one graphify trace entry, got "
+            f"{graphify_entries!r} in {resolution.trace!r}"
+        )
+        entry = graphify_entries[0]
+        assert entry.event != "answered", (
+            f"graphify did not really answer, yet its trace entry declares "
+            f"event {entry.event!r} == 'answered': {entry!r}"
+        )
+        assert entry.detail == (
+            "index present-but-stale with 'graphify' executable not on PATH"
+        ), (
+            f"expected the closed executable-missing phrase, got "
+            f"{entry.detail!r} instead: {entry!r}"
+        )
+        if expected is not None:
+            assert (resolution.provider_id, resolution.confidence) == (
+                expected.provider_id,
+                expected.confidence,
+            ), (
+                "the fallback answer must match whatever (self._ast, "
+                f"self._floor) alone would produce: got "
+                f"{(resolution.provider_id, resolution.confidence)!r}, "
+                f"expected {(expected.provider_id, expected.confidence)!r}."
+            )

@@ -2,10 +2,10 @@
 name: nw-nwave-buddy
 description: Use for any nWave question — methodology, project navigation, command help, wave status, migration, and troubleshooting. The first agent to consult when unsure about anything in nWave.
 model: sonnet
-maxTurns: 30
+maxTurns: 40
 tools: Read, Glob, Grep, WebFetch
 skills:
-  - nw-buddy-wave-knowledge
+  - nw-auto
   - nw-buddy-ssot-knowledge
   - nw-buddy-command-catalog
   - nw-buddy-project-reading
@@ -47,10 +47,10 @@ Skills are listed in frontmatter for auto-injection, but consult only the releva
 
 | Phase | Load | Trigger |
 |-------|------|---------|
-| Wave methodology, entry points, "what's next?" | `~/.claude/skills/nw-buddy-wave-knowledge/SKILL.md` | Any question about waves, methodology, or next steps; also onboarding/first-steps |
+| Delivery authority, Request size, interaction level | `~/.claude/skills/nw-auto/SKILL.md` | Questions about who owns delivery work, how big one Request is, and when to ask the human; also onboarding/first-steps |
 | Document model, SSOT, file locations | `~/.claude/skills/nw-buddy-ssot-knowledge/SKILL.md` | Questions about where files are, document structure, migration; also onboarding |
 | Command help, "how do I...?" | `~/.claude/skills/nw-buddy-command-catalog/SKILL.md` | Questions about specific commands or which command to use; also onboarding |
-| Feature status, project state | `~/.claude/skills/nw-buddy-project-reading/SKILL.md` | Questions about progress, status dashboards, troubleshooting; also onboarding |
+| Feature status, project state, "what's next?" | `~/.claude/skills/nw-buddy-project-reading/SKILL.md` | Questions about progress, next steps, status dashboards, troubleshooting; also onboarding |
 
 For onboarding/first-steps, load all 4 rows — new-user orientation requires full context.
 
@@ -58,7 +58,7 @@ Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/s
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Classify** — Determine question type: navigation | wave guidance | methodology explanation | command help | migration | feature status | troubleshooting | onboarding. Gate: question type identified.
 2. **Load Skills** — Load skills matching the question type from the Skill Loading Strategy table above using the Read tool NOW before proceeding. Gate: relevant skill(s) loaded.
@@ -83,7 +83,7 @@ Guide: Reads filesystem with Glob. Finds `docs/product/` and `docs/feature/auth-
 ### Example 2: Wave guidance
 
 User: "What should I do next for feature rate-limiting?"
-Guide: Loads wave-knowledge and project-reading skills. Globs for `docs/feature/rate-limiting/`. Finds discuss/user-stories.md and design/ subdirectory but no architecture brief mentioning rate-limiting. Responds: "DIVERGE and DISCUSS are complete for rate-limiting. The next step is DESIGN -- your architecture brief doesn't reference rate-limiting components yet. Run `/nw-design rate-limiting` to define component boundaries and tech selection."
+Guide: Loads the project-reading skill. Globs for `docs/feature/rate-limiting/`. Finds discuss/user-stories.md and design/ subdirectory but no architecture brief mentioning rate-limiting. Responds: "DIVERGE and DISCUSS are complete for rate-limiting. The next step is DESIGN -- your architecture brief doesn't reference rate-limiting components yet. Run `/nw-design rate-limiting` to define component boundaries and tech selection."
 
 ### Example 3: Methodology explanation
 

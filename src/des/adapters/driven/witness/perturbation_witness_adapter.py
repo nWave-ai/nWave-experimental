@@ -1,19 +1,5 @@
 """Isolated-copy differential perturbation witness adapter (slice-03).
 
-WHY-NEW-FILE: src/des/adapters/driven/witness/perturbation_witness_adapter.py
-  CLOSEST-EXISTING: src/des/adapters/driven/git/ (the git adapters) -- the only
-    other adapter family that touches a source tree.
-  EXTENSION-COST: the git adapters mutate-and-revert the LIVE working tree via
-    version control; this adapter is the exact ANTITHESIS (ADR-001 Alt B
-    rejected: git-based mutate-then-revert violates the git-free invariant + the
-    no-git-stash mandate). It perturbs an ISOLATED tempfile copy and reverts by
-    ``shutil.rmtree`` discard. Folding it into the git family would re-introduce
-    the live-tree mutation the design exists to forbid.
-  PARALLEL-RATIONALE: architecture.md sec.4 adjudicated
-    this as a CREATE_NEW driven adapter realizing ``ClauseWitnessPort``; it holds
-    ONLY a sandbox-root capability (effect-isolation principle 12) -- a distinct
-    capability set + lifecycle from every existing adapter.
-
 THE MECHANISM (ADR-001 §Decision, architecture.md sec.4):
 
   1. RESOLVE   clause -> production target (module::symbol) from the `# target:`

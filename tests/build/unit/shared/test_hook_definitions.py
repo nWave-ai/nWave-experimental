@@ -7,7 +7,7 @@ for both distribution paths (plugin and installer).
 Test Budget: 8 distinct behaviors x 2 = 16 max unit tests.
 Behaviors:
   1. Hook events define the fixed independent registrations.
-  2. Hook event types cover all 6 distinct event types
+  2. Hook event types cover every distinct event type
   3. generate_hook_config produces correct structure for standard hooks
   4. generate_hook_config uses guard_command_fn for guard hooks
   5. generate_hook_config uses shell_command verbatim for Bash hooks
@@ -33,7 +33,7 @@ class TestHookEventDefinitions:
 
     def test_defines_independent_hook_registrations(self):
         """The shared definition contains only the current independent hooks."""
-        assert len(HOOK_EVENTS) == 10
+        assert len(HOOK_EVENTS) == 7
 
         # Verify exact event/matcher/action triples
         events_matchers = [(h.event, h.matcher, h.action) for h in HOOK_EVENTS]
@@ -74,7 +74,10 @@ class TestHookEventDefinitions:
         assert bash_entries == [("PreToolUse", "Bash", "pre-tool-use")]
         assert ("SubagentStop", None, "deliver-progress") not in events_matchers
         assert ("SessionStart", "startup", "session-start") not in events_matchers
-        assert ("SubagentStart", None, "subagent-start") in events_matchers
+        # The SubagentStart skill-loading reminder is deleted: it cost ~2.9s
+        # per agent start on EVERY subagent and asked managed dispatch for a
+        # Skill action its exact tool allowlist does not carry.
+        assert not any(event == "SubagentStart" for event, _, _ in events_matchers)
         # Stable-design report 2026-08-19 §1.1: reinstated so a killed/silent
         # subagent's own turn always produces a terminal result instead of
         # relying solely on the PreToolUse budget guard's heuristic re-
@@ -82,13 +85,6 @@ class TestHookEventDefinitions:
         assert ("SubagentStop", None, "subagent-stop") in events_matchers
         assert ("UserPromptSubmit", None, "user-prompt-submit") not in events_matchers
         assert not any(event == "SessionStart" for event, _, _ in events_matchers)
-        # ADR-SSOT-002 Section 4/4b item 1: the oracle-write classifier --
-        # advisory only, never a guard (no shell fast-path; the handler's
-        # own ATD-role check is the cheap early exit).
-        assert ("PostToolUse", "Write", "post-write") in events_matchers
-        assert ("PostToolUse", "Edit", "post-edit") in events_matchers
-        post_tool_use_entries = [h for h in HOOK_EVENTS if h.event == "PostToolUse"]
-        assert all(not h.is_guard for h in post_tool_use_entries)
 
     def test_hook_event_types_excludes_retired_session_and_prompt_hooks(self):
         """Only active hook events are registered by the installer."""
@@ -96,8 +92,6 @@ class TestHookEventDefinitions:
             frozenset(
                 {
                     "PreToolUse",
-                    "SubagentStart",
-                    "PostToolUse",
                     "SubagentStop",
                 }
             )
@@ -129,8 +123,8 @@ class TestGenerateHookConfig:
     def _simple_command(action: str) -> str:
         return f"python3 -m des.hook {action}"
 
-    def test_produces_entries_for_all_five_event_types(self):
-        """Config has entries for all 5 event types."""
+    def test_produces_entries_for_all_event_types(self):
+        """Config has entries for every declared event type."""
         config = generate_hook_config(self._simple_command)
         assert set(config.keys()) == HOOK_EVENT_TYPES
 
@@ -228,7 +222,7 @@ class TestGenerateHookConfig:
     def test_entries_without_matcher_omit_matcher_key(self):
         """Subagent lifecycle entries have no matcher key."""
         config = generate_hook_config(self._simple_command)
-        for event in ("SubagentStart",):
+        for event in ("SubagentStop",):
             for entry in config[event]:
                 assert "matcher" not in entry
 
@@ -236,10 +230,11 @@ class TestGenerateHookConfig:
 class TestBuildGuardCommand:
     """Verify the shell fast-path guard command generation."""
 
-    def test_guard_command_contains_fast_path_check(self):
-        """Guard command checks for deliver-session.json before spawning Python."""
+    def test_guard_command_contains_activation_fast_path_check(self):
+        """Guard command checks for local activation before spawning Python."""
         cmd = build_guard_command("python3 -m des.hook pre-write")
-        assert "deliver-session.json" in cmd
+        assert "deliver-session.json" not in cmd
+        assert ".nwave/local-config.json" in cmd
         assert "exit 0" in cmd
 
     def test_guard_command_checks_execution_log(self):

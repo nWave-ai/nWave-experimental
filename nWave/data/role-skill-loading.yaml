@@ -31,8 +31,7 @@ roles:
       - nw-cross-cutting-evidence-instrumentation
       - nw-cross-cutting-input-data-contracts
     phase:
-      nw-solution-architect-auto-consult: exact valid AUTO-ARCHITECTURE-CONSULT envelope
-      nw-solution-architect-full-design: non-Auto-shaped DESIGN mandate
+      nw-design: every DESIGN mandate
       nw-solution-architect-formal-verification: separately selected formal proof obligation for local totality/inhabitation/canonicalization/preservation or state-machine safety/refinement/reachability/liveness/concurrency/recovery
       nw-architecture-patterns: selecting an application architecture pattern
       nw-architectural-styles-tradeoffs: comparing application architecture styles

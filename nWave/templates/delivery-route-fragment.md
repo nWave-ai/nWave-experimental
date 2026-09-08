@@ -1,5 +1,7 @@
-| Size | Canonical route |
-|---|---|
-| S | Direct bounded edit: no new product behavior, delivery authority, or architecture decision. Otherwise promote to M. |
-| M | One independently deliverable vertical: `DISTILL -> DELIVER`; DISCUSS only unresolved intent and DESIGN only an unresolved technical boundary. If it is not one vertical, promote to L. |
-| L | DISCUSS maps a value DAG of observable ready/blocked nodes: ready nodes take the M floor; blocked nodes name the missing owner/fact. DESIGN resolves a technical boundary in either kind of node. FINALIZE runs exactly once inside each DELIVER; each is independent, with no epic-level finalize. |
+Pass the exact Request to the resident runner and let it work. The runner
+derives the minimal facts it needs, slices value when the Request carries more
+than one, and routes genuine missing authority to the existing owner. It runs
+independent review, and source-blind EXAMINE where applicable, then FINALIZE
+exactly once for each delivered value. Inside one Request, do not classify,
+size, or sequence the work yourself. How big one Request is, and when to ask
+the human, stay your decisions.

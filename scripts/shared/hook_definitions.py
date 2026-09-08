@@ -70,53 +70,10 @@ class HookEvent:
 # tombstoned in `des_plugin.py:_RETIRED_HOOK_COMMANDS` so upgrade removes
 # the stale nested registration.
 
-# Pure-shell wrapper around the worktree-removal guard
-# (fix-worktree-removal-liveness-guard, Ale-authorised 2026-07-29). This is
-# the removal-time CONSUMER of the Sentinel's own read-only "worktree
-# anti-rot triage" predicate (`nWave/skills/nw-throughput/SKILL.md`
-# "Throughput Sentinel"; `des.domain.worktree_anti_rot_triage.
-# triage_worktree`) -- the Sentinel never removes a worktree itself, so this
-# is the separate component that acts on its receipt. Mirrors
-# `_BASH_GIT_STASH_GUARD`'s shape exactly: the shell fast-path greps the
-# command for `git worktree remove` (cheap pre-filter; the Python hook does
-# the precise tokenized detection -- a raw grep would false-negative a
-# `git worktree remove` buried after `&&`/`;` and false-positive on the
-# phrase inside a quoted commit message, which is why the Python layer
-# re-checks with `shlex`) and only then invokes the Python entry point.
-#
-# Matcher coexistence: this entry joins the existing PreToolUse/Bash roster
-# alongside the independent execution-log and git-stash guards.
-# Claude Code permits multiple registrations per (event,
-# matcher) tuple; execution is registration-ordered; ANY hook returning
-# `{decision: block}` blocks the tool invocation. This guard greps for
-# `git worktree remove` only -- orthogonal to every other Bash entry's grep,
-# so its block decision wins by construction on a match.
-#
-# Uses module-import form (no `$HOME`) so it is valid in BOTH
-# installer-path AND plugin-bundle distribution modes; `des_plugin.py:
-# DES_HOOKS` ships `worktree_removal_guard.py` to the operator's
-# `~/.claude/scripts/` tree so the module resolves at runtime.
-# fix-execution-log-bash-guard-consolidation follow-on (Ale-authorised
-# 2026-08-09): the standalone worktree-removal guard registration below is
-# retired for the same reason as the git-stash guard above -- the
-# pre-activation universal `hook_router` call now evaluates
-# `bash_command_guards.evaluate_worktree_remove_command` inline. The exact
-# retired command string is tombstoned in
-# `des_plugin.py:_RETIRED_HOOK_COMMANDS`.
-
 # Canonical hook event definitions -- the ONLY place these are defined.
 # Order matters: PreToolUse/Agent must come before Write/Edit guards. The
 # Each registration is independently useful; avoid introducing a protocol chain
 # that makes a normal coding action depend on historical workflow bookkeeping.
-#
-# fix-worktree-removal-liveness-guard (Ale-authorised 2026-07-29): 1 new entry
-# joins -- PreToolUse/Bash for the worktree-removal liveness guard (3rd Bash
-# entry; greps `git worktree remove`, orthogonal to every other Bash entry's
-# grep). Blocks a `git worktree remove` while a live process's cwd is inside
-# the target, the target carries an explicit `git worktree lock`, or the
-# target's branch carries unmerged commits -- closing the incident where a
-# clean `git status` was mistaken for "safe to remove" while a lane's pytest
-# run was still live inside the worktree.
 #
 # The standalone execution-log Bash guard (_BASH_EXECUTION_LOG_GUARD) was
 # removed (Ale-authorised): the nested/duplicate registration it produced
@@ -138,23 +95,10 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
     ),
     HookEvent(event="PreToolUse", matcher="Write", action="pre-write", is_guard=True),
     HookEvent(event="PreToolUse", matcher="Edit", action="pre-edit", is_guard=True),
-    # Universal root mode-selection gate. Unlike the specialised Bash guards
-    # above, this uses the distribution's portable DES module command so the
-    # existing pre_tool_use handler is reached on every installed Bash event.
+    # Universal Bash registration: reaches the pre_tool_use handler on every
+    # installed Bash event (commit attribution, the nWave subagent host-scan
+    # limit) through the distribution's portable DES module command.
     HookEvent(event="PreToolUse", matcher="Bash", action="pre-tool-use"),
-    HookEvent(event="SubagentStart", matcher=None, action="subagent-start"),
-    # ADR-SSOT-002 Section 4/4b item 1: classifies an ATD-authored oracle
-    # AT THE WRITE against the compiled DeliveryContract's own verification
-    # command (des.domain.oracle_write_classifier), so a K4 Run 13-class
-    # oracle defect (SyntaxError, system-check violation, a fixture gap)
-    # reaches ATD in the SAME turn instead of costing a full REVISE
-    # round-trip after `des dispatch`'s own BASE probe catches it later.
-    # Advisory only -- always exits 0, relays a classification via
-    # additionalContext, never blocks (a PostToolUse hook cannot undo an
-    # already-completed Write/Edit). No shell fast-path guard: the handler's
-    # own role check (ATD only) is the cheap early exit.
-    HookEvent(event="PostToolUse", matcher="Write", action="post-write"),
-    HookEvent(event="PostToolUse", matcher="Edit", action="post-edit"),
     # Stable-design report 2026-08-19 §1.1: terminal-by-construction subagent
     # results. Reinstated (was `_RETIRED_HOOK_ACTIONS` since fix-execution-
     # log-bash-guard-consolidation) so a killed/silent subagent's own turn
@@ -214,9 +158,7 @@ def build_guard_command(python_cmd: str) -> str:
     The guard:
     1. Buffers stdin (hook input JSON)
     2. If the target is execution-log.json, always invokes Python (unconditional)
-    3. If a deliver-session.json is active, invokes Python for full DES
-       enforcement
-    4. Otherwise (no active session), invokes Python when a
+    3. Invokes Python when a
        `.nwave/local-config.json` candidate exists in the project -- a cheap,
        content-blind shell-level pre-filter (file EXISTENCE only, never the
        marker's `enabled_for_repo` value or any other JSON). The shell never
@@ -230,7 +172,7 @@ def build_guard_command(python_cmd: str) -> str:
        (no sub-agent dispatch, no deliver session) against ANY top-level
        target path, without spawning Python in a project that has never
        carried an activation marker at all.
-    5. Otherwise, exits 0 (fast path, unchanged for irrelevant/out-of-tree
+    4. Otherwise, exits 0 (fast path, unchanged for irrelevant/out-of-tree
        writes)
 
     Args:
@@ -243,8 +185,6 @@ def build_guard_command(python_cmd: str) -> str:
     return (  # noqa: UP032 — .format() required for shell template with literal braces
         "INPUT=$(cat); "
         "printf '%s' \"$INPUT\" | grep -q 'execution-log\\.json' && "
-        "{{ printf '%s' \"$INPUT\" | {python_cmd}; exit $?; }}; "
-        "test -f .nwave/des/deliver-session.json && "
         "{{ printf '%s' \"$INPUT\" | {python_cmd}; exit $?; }}; "
         "test -f .nwave/local-config.json && "
         "{{ printf '%s' \"$INPUT\" | {python_cmd}; exit $?; }}; "
@@ -264,7 +204,8 @@ _LEGACY_SCRIPT_INVOCATION_RE = re.compile(
     r"^python3?\s+src/des/adapters/drivers/hooks/claude_code_hook_adapter\.py\s+(\S+)"
 )
 
-_RETIRED_HOOK_ACTIONS: frozenset[str] = frozenset({"post-tool-use"})
+_RETIRED_HOOK_ACTIONS: frozenset[str] = frozenset({"post-tool-use", "subagent-start"})
+# Retired actions remain recognizable so upgrade/uninstall removes old entries.
 # "subagent-stop" reinstated 2026-08-19 (stable-design report §1.1) -- see
 # HOOK_EVENTS above. Kept OUT of this frozenset (it is a live action again,
 # already present in `HOOK_EVENTS`); `_KNOWN_HOOK_ACTIONS` below still

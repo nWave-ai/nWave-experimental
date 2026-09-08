@@ -110,7 +110,7 @@ def test_pytest_style_path_is_checked_the_same_way(tmp_path: Path) -> None:
 def test_python_dash_m_pytest_shape_is_recognized(tmp_path: Path) -> None:
     """This repo's own checked-in contracts run pytest as `<python> -m
     pytest ...`, never a standalone `pytest` executable."""
-    _seed_test_module(tmp_path, "tests/build/test_thin_delivery_contract_schema.py")
+    _seed_test_module(tmp_path, "tests/build/test_dispatch.py")
     contract = _contract(
         [
             {
@@ -119,7 +119,7 @@ def test_python_dash_m_pytest_shape_is_recognized(tmp_path: Path) -> None:
                     "-m",
                     "pytest",
                     "-q",
-                    "tests/build/test_thin_delivery_contract_schema.py",
+                    "tests/build/test_dispatch.py",
                     "tests/build/test_missing_module.py",
                 ],
             }

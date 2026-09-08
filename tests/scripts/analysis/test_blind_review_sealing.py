@@ -24,6 +24,23 @@ from pathlib import Path
 import pytest
 
 from scripts.analysis import blind_review as br
+from scripts.analysis.k4 import prepare_examiner_fixture as pef
+from scripts.analysis.k4 import run_acceptance as ra
+
+
+_FIXTURE_RESIDUES = (
+    pef.DOC_NAME,
+    pef.DB_FILE_NAME,
+    pef.DB_PRISTINE_SNAPSHOT_NAME,
+    pef.DB_LOCK_FILE_NAME,
+    pef.SERVER_PID_FILE_NAME,
+    pef.SERVER_LOG_FILE_NAME,
+    pef.SUPERVISOR_PID_FILE_NAME,
+    pef.SUPERVISOR_SCRIPT_NAME,
+    pef.SUPERVISOR_LOCK_FILE_NAME,
+    pef.SUPERVISOR_LOG_FILE_NAME,
+    pef.RESET_MARKER_FILE_NAME,
+)
 
 
 def _git(*args, cwd):
@@ -526,6 +543,57 @@ def test_excluded_paths_never_leak(tmp_path):
 
     # Delivery's own file should be present
     assert "new.py" in manifest or "new.py" in patch, "delivery's own file was excluded"
+
+
+def test_fixture_residue_projection_is_root_exact_and_shared_with_acceptance(tmp_path):
+    """Fixture debris is neither a packet nor a delivery; nested names remain."""
+    campaign, workspace = _campaign_with_workspace(
+        tmp_path, lambda ws: (ws / "search.db").write_text("baseline docs\n")
+    )
+    _git("add", "search.db", cwd=workspace)
+    _git("commit", "-q", "-m", "tracked docs baseline", cwd=workspace)
+    base_sha = _git_out("rev-parse", "HEAD", cwd=workspace).strip()
+    for name in _FIXTURE_RESIDUES:
+        (workspace / name).write_text("fixture residue\n")
+    nested = workspace / "delivery" / pef.DB_FILE_NAME
+    nested.parent.mkdir()
+    nested.write_text("legitimate nested delivery file\n")
+    (workspace / "actual_delivery.py").write_text("delivered = True\n")
+    (workspace / "search.db").write_text("delivered docs\n")
+
+    delivered, _ = ra.delivery_present(workspace, base_sha)
+    assert delivered is True
+
+    opaque_dir = _seal(tmp_path, campaign)
+    manifest = (opaque_dir / "DELIVERY-CHANGES.txt").read_text()
+    patch = (opaque_dir / "DELIVERY.patch").read_text()
+    for name in _FIXTURE_RESIDUES:
+        assert f"A {name}\n" not in manifest
+        assert f"a/{name}" not in patch
+        assert f"b/{name}" not in patch
+    assert "actual_delivery.py" in manifest
+    assert f"delivery/{pef.DB_FILE_NAME}" in manifest
+    assert "M search.db" in manifest
+    assert "a/search.db" in patch
+    assert "b/search.db" in patch
+
+
+def test_fixture_residues_alone_are_not_a_delivery(tmp_path):
+    """The shared projection must not turn setup debris into a delivery."""
+
+    def populate(workspace):
+        for name in _FIXTURE_RESIDUES:
+            (workspace / name).write_text("fixture residue\n")
+
+    campaign, workspace = _campaign_with_workspace(tmp_path, populate)
+    base_sha = _git_out("rev-parse", "HEAD", cwd=workspace).strip()
+
+    delivered, _ = ra.delivery_present(workspace, base_sha)
+    assert delivered is False
+
+    opaque_dir = _seal(tmp_path, campaign)
+    assert (opaque_dir / "DELIVERY-CHANGES.txt").read_text() == ""
+    assert (opaque_dir / "DELIVERY.patch").read_text() == ""
 
 
 def test_hypothesis_cache_with_binary_excluded(tmp_path):

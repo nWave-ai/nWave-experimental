@@ -19,6 +19,7 @@ from scripts.shared.agent_catalog import (  # noqa: E402
     detect_command_skills,
     is_public_agent,
     is_public_skill,
+    load_private_skills,
     load_public_agents,
 )
 
@@ -46,6 +47,7 @@ def verify_tree(plugin_dir: Path, catalog_dir: Path) -> list[str]:
     else:
         ownership_map = build_ownership_map(catalog_dir / "agents")
         command_skills = detect_command_skills(skills_dir)
+        private_skills = load_private_skills(catalog_dir)
         for skill_dir in sorted(skills_dir.iterdir()):
             if (
                 skill_dir.is_dir()
@@ -55,6 +57,7 @@ def verify_tree(plugin_dir: Path, catalog_dir: Path) -> list[str]:
                     public_agents,
                     ownership_map=ownership_map,
                     command_skills=command_skills,
+                    private_skills=private_skills,
                 )
             ):
                 violations.append(f"private skill: skills/{skill_dir.name}")

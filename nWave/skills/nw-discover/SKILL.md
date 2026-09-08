@@ -25,5 +25,5 @@ founder belief to fact by repetition.
    jobs, journey evidence or KPI baseline. Preserve provenance and stable ids.
 
 Return changed authority paths, evidence citations, confidence and the next
-unresolved question. Do not create a feature directory, delivery contract,
+unresolved question. Do not create a feature directory, manual handover,
 wave report, plan or progress artifact.

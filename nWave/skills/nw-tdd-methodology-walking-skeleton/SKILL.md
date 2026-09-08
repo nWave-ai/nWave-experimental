@@ -24,9 +24,9 @@ Integration tests for adapters (real filesystem, real subprocess) are naturally 
 
 ## E2E Test Management
 
-**DeliveryContract path**: DISTILL compiles the minimal executable oracle for the current delivery. Do not author speculative future scenarios and do not use `@skip` as a plan. Implement the smallest causally complete RED scope to GREEN, then extend only when the next observable requires it.
+**Oracle path**: DISTILL compiles the executable oracle for the current value slice. Do not author speculative future scenarios and do not use `@skip` as a plan. Implement the smallest causally complete RED scope to GREEN, then extend only when the next observable requires it.
 
-**Test-pyramid default (Ale-ratified 2026-07-18): at most ONE `@walking_skeleton` subprocess-E2E per DeliveryContract — never per slice, never per command.** It proves installed wiring once; every other scenario drives in-process/in-memory through the driving port. The evidence is the union of that skeleton, the Examiner exercising charter observables through the real surface, and final whole-delivery verification. An additional subprocess E2E requires an observable integration boundary the first skeleton cannot exercise.
+**Test-pyramid default: at most ONE `@walking_skeleton` subprocess-E2E per independently shippable value slice.** It proves installed wiring once; every other scenario drives in-process/in-memory through the driving port. The evidence is the union of that skeleton, the Examiner exercising charter observables through the real surface, and final whole-slice verification. An additional subprocess E2E requires an observable integration boundary the first skeleton cannot exercise.
 
 
 ## Mandate 5: Walking Skeleton Real-I/O Treatment
@@ -100,4 +100,4 @@ The fail-for-right-reason gate is mandatory in both modes. Crafters MUST verify 
 
 ### Practical implication for DELIVER crafters
 
-When the DeliveryContract declares an adapter-integration obligation, the crafter's GREEN target is that boundary property, not unrelated product behavior. A crafter who changes the product workflow to satisfy an adapter oracle crosses the declared boundary; return the mismatch to its owning design or DISTILL authority.
+When durable design authority declares an adapter-integration obligation, the crafter's GREEN target is that boundary property, not unrelated product behavior. A crafter who changes the product workflow to satisfy an adapter oracle crosses the declared boundary; return the mismatch to its owning design or DISTILL authority.

@@ -29,7 +29,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import zipfile
@@ -324,69 +323,6 @@ def test_installed_find_similar_responsibility_resolves_through_the_fold_without
     assert not forbidden.search(out), (
         f"find-similar-responsibility output leaked a dependency/executable/MCP "
         f"instruction: {out}"
-    )
-
-
-@pytest.mark.e2e
-def test_installed_dispatch_accepts_valid_delivery_contract_without_pythonpath(
-    host_install, _venv_with_wheel: Path, tmp_path: Path
-) -> None:
-    """The installed ``des dispatch`` console script accepts a schema-valid,
-    repository-root-relative DeliveryContract, under both isolated Claude and
-    Codex ``$HOME``s, with no ``PYTHONPATH`` -- the installed-shape gap this
-    suite left uncovered: the SAME wheel's ``nWave/nWave/schemas/`` PyPI
-    layout previously resolved to a nonexistent
-    ``lib/python3.12/nWave/schemas/`` path (checkout/Claude-runtime-shaped
-    locator applied to a PyPI/pipx site-packages install), so a schema-valid
-    explicit contract exited 2 instead of dispatching.
-
-    The real, checked-in fixture has ``applicability.examine=true``, so a
-    genuine dispatch also requires its real, checked-in expectation charter
-    namespace (``docs/product/expectations/retarget-des-dispatch-contract/``)
-    to exist under ``--repo-root``; this test supplies both the real Contract
-    and its real required charter, copied verbatim into the isolated repo,
-    rather than weakening ``examine`` or synthesizing a charter.
-    """
-    host, home, _ = host_install
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    contract_rel = "delivery-contract.json"
-    shutil.copyfile(_DELIVERY_CONTRACT_FIXTURE, repo_root / contract_rel)
-    shutil.copytree(_EXPECTATION_CHARTER_FIXTURE, repo_root / _EXPECTATION_CHARTER_REL)
-
-    des_script = _venv_with_wheel / "bin" / "des"
-    env = {"HOME": str(home), "PATH": str(_venv_with_wheel / "bin")}
-    proc = subprocess.run(
-        [
-            str(des_script),
-            "dispatch",
-            "--repo-root",
-            str(repo_root),
-            "--delivery-contract",
-            contract_rel,
-        ],
-        capture_output=True,
-        cwd=str(repo_root),
-        env=env,
-        timeout=60,
-        check=False,
-    )
-    out = proc.stdout.decode("utf-8", errors="replace")
-    err = proc.stderr.decode("utf-8", errors="replace")
-    assert proc.returncode == 0, (
-        f"{host}: installed des dispatch rejected a schema-valid, installed "
-        f"thin-delivery-contract schema lookup:\nSTDOUT:\n{out}\nSTDERR:\n{err}"
-    )
-    digest = hashlib.sha256((repo_root / contract_rel).read_bytes()).hexdigest()
-    expected_out = (
-        f"THIN-DELIVERY-CONTRACT: {contract_rel}\n"
-        f"THIN-DELIVERY-CONTRACT-DIGEST: sha256:{digest}\n"
-    )
-    assert out == expected_out, (
-        f"{host}: installed des dispatch must emit exactly the thin-contract "
-        f"locator + digest headers -- route, outcome, delivery-id and charter "
-        f"paths stay in their canonical authorities, never copied into prompt "
-        f"output:\n{out}"
     )
 
 

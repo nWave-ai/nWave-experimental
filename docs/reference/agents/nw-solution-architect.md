@@ -1,11 +1,11 @@
 # nw-solution-architect
 
-Designs application architecture, reuse, ports, boundaries, cross-layer failure laws, and prefactoring decisions in durable architecture authorities.
+Returns typed design facts consumed by one DES run.
 
 **Wave:** Other
-**Model:** sonnet
-**Max turns:** 60
-**Tools:** Read, Write, Edit, Glob, Grep, Bash, Task, Skill
+**Model:** claude-opus-5
+**Max turns:** 40
+**Tools:** Read, Glob, Grep, Bash, Edit
 
 ## Commands
 

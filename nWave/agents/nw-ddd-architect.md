@@ -80,7 +80,7 @@ Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/s
 
 ## Workflow
 
-At the start of execution, create these tasks using TaskCreate and follow them in order:
+Follow these steps in order:
 
 1. **Multi-Architect Context** — Read `docs/product/architecture/brief.md` if it exists. Note any `## System Architecture` (system-designer) or `## Application Architecture` (solution-architect) sections. Domain boundaries must respect, not contradict, infrastructure constraints already decided. Gate: existing architecture context noted or file confirmed absent.
 

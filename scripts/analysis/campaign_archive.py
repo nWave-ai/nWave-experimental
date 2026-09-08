@@ -90,6 +90,20 @@ MANIFEST_NAME = "MANIFEST.json"
 SKIPPED_DIR_PREFIXES = (".headroom-probe-",)
 
 
+def _is_transcript(relative: Path) -> bool:
+    """Only transcript JSONL survives from an isolated Claude profile."""
+    parts = relative.parts
+    try:
+        profile = parts.index(".claude-k4")
+    except ValueError:
+        return False
+    return (
+        relative.suffix == ".jsonl"
+        and len(parts) > profile + 2
+        and parts[profile + 1] == "projects"
+    )
+
+
 class EphemeralArchiveRootError(RuntimeError):
     """The resolved archive root would not survive the thing it protects
     against. Loud by construction -- this is the original defect."""
@@ -195,6 +209,9 @@ def _classify(campaign_root: Path) -> tuple[list[Path], list[tuple[Path, str]]]:
                         "the delivered code is recoverable from its own commit",
                     )
                 )
+            continue
+        if ".claude-k4" in relative.parts and not _is_transcript(relative):
+            skip.append((relative, "isolated-profile secret or runtime residue"))
             continue
         if entry.suffix not in EVIDENCE_SUFFIXES:
             skip.append(

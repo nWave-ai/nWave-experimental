@@ -76,7 +76,7 @@ def _make_probe(root):
     return probe
 
 
-def _absent_engagement_with_probe_dir(root, venv, auth_profile, model):
+def _absent_engagement_with_probe_dir(root, venv, auth_profile):
     """`("absent", [])` -- same DESIGNATION `probe_engagement` returns
     when setup completed but nWave never landed -- but this stub, unlike
     a bare lambda, also creates the probe workspace directory: the REAL
@@ -114,9 +114,6 @@ def test_pass_removes_exact_probe_and_leaves_sibling_untouched(tmp_path):
         pytest.param(
             "absent", ["no CLAUDE.md in the workspace"], id="absent-with-detail"
         ),
-        pytest.param(
-            "unsafe", ["Write escaped into provider config"], id="unsafe-runner"
-        ),
     ],
 )
 def test_failure_verdicts_preserve_the_probe(tmp_path, verdict, detail):
@@ -142,9 +139,6 @@ def test_main_removes_probe_and_still_writes_arms_json_on_pass(tmp_path, monkeyp
     )
     monkeypatch.setattr(
         preflight, "probe_engagement", _absent_engagement_with_probe_dir
-    )
-    monkeypatch.setattr(
-        preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
     )
     # `probe_examiner_start_recipe` (row 11) now hard-refuses `main()`
     # (Run 11) unless the arm workspace carries a REAL authenticating
@@ -208,9 +202,6 @@ def test_wheel_flag_reaches_exact_wheel_branch_without_build_arm_runtime(
     monkeypatch.setattr(
         preflight, "probe_engagement", _absent_engagement_with_probe_dir
     )
-    monkeypatch.setattr(
-        preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
-    )
     # `probe_examiner_start_recipe` (row 11) now hard-refuses `main()`
     # (Run 11) unless the arm workspace carries a REAL authenticating
     # recipe -- orthogonal to what this file's own tests exercise (wheel
@@ -265,9 +256,6 @@ def test_checkout_branch_unchanged_when_wheel_flag_absent(tmp_path, monkeypatch)
     monkeypatch.setattr(preflight, "build_arm_runtime_from_wheel", _refuse_wheel_build)
     monkeypatch.setattr(
         preflight, "probe_engagement", _absent_engagement_with_probe_dir
-    )
-    monkeypatch.setattr(
-        preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
     )
     # `probe_examiner_start_recipe` (row 11) now hard-refuses `main()`
     # (Run 11) unless the arm workspace carries a REAL authenticating
@@ -369,9 +357,6 @@ def test_wheel_identity_path_and_digest_are_emitted(tmp_path, monkeypatch, capsy
     )
     monkeypatch.setattr(
         preflight, "probe_engagement", _absent_engagement_with_probe_dir
-    )
-    monkeypatch.setattr(
-        preflight, "route_walk", lambda *a, **k: {"status": "proven", "steps": []}
     )
     # `probe_examiner_start_recipe` (row 11) now hard-refuses `main()`
     # (Run 11) unless the arm workspace carries a REAL authenticating

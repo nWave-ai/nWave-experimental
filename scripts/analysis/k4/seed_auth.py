@@ -35,9 +35,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import stat
 import sys
 from pathlib import Path
+
+
+# The campaign executes this file by absolute path from each subject checkout.
+# Python then exposes this directory rather than the repository root.
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+if str(_REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPOSITORY_ROOT))
+
+from scripts.analysis.k4 import subject as k4_subject  # noqa: E402
 
 
 _CREDENTIALS = ".credentials.json"
@@ -61,6 +71,48 @@ _IDENTITY_KEYS = (
     "hasCompletedOnboarding",
     "lastOnboardingVersion",
 )
+
+
+def _sandbox_settings() -> dict[str, object]:
+    """The shared fail-closed Claude policy for both isolated arms.
+
+    The setup process runs under the rendered arm environment, so this records
+    that exact PATH for Claude's later sandbox bridge.  The treatment installer
+    deliberately merges this document and prepends its installed DES shim.
+    """
+    return {
+        "env": {"PATH": os.environ.get("PATH", "")},
+        "permissions": {
+            "allow": ["Read", "Edit", "Write", "Bash", "Agent"],
+            "deny": [
+                "Read(/.claude-k4/.credentials.json)",
+                "Read(/.claude-k4/.claude.json)",
+                "Edit(./.claude-k4/**)",
+                "Write(./.claude-k4/**)",
+                "WebFetch",
+                "WebSearch",
+            ],
+        },
+        "sandbox": {
+            "enabled": True,
+            "failIfUnavailable": True,
+            "allowUnsandboxedCommands": False,
+            "filesystem": {
+                "denyRead": [
+                    "~/",
+                    "/mnt/c/Users",
+                    "/root",
+                    "./.claude-k4/.credentials.json",
+                    "./.claude-k4/.claude.json",
+                ],
+                "allowRead": ["."],
+                "denyWrite": ["./.claude-k4"],
+            },
+            "network": {
+                "allowedDomains": list(k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS)
+            },
+        },
+    }
 
 
 def seed(
@@ -130,6 +182,9 @@ def seed(
         json.dumps(identity, indent=2) + "\n", encoding="utf-8"
     )
     (config_dir / _CONFIG).chmod(stat.S_IRUSR | stat.S_IWUSR)
+    (config_dir / "settings.json").write_text(
+        json.dumps(_sandbox_settings(), indent=2) + "\n", encoding="utf-8"
+    )
 
     plan = document[_KEEP].get("subscriptionType", "<unstated>")
     tier = document[_KEEP].get("rateLimitTier", "<unstated>")

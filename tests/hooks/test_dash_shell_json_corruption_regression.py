@@ -36,7 +36,7 @@ fixture error): every corruption-dependent test in this module was run
 against HEAD before authoring and observed failing on the assertion that
 encodes the correct behaviour (byte-identity / reminder presence / guard
 decision), never on a setup exception. `test_git_stash_guard_...` and
-`test_worktree_removal_guard_...` each flip GREEN once the shared
+the retired worktree-removal guard tests each flipped GREEN once the shared
 `echo "$INPUT"` idiom is replaced with `printf '%s' "$INPUT"` (the remedy the
 evidence report verified in isolation, Section 4.1).
 """
@@ -171,30 +171,6 @@ def _run_installed_write_guard(
         text=True,
         env=env,
         timeout=30,
-    )
-
-
-_ROOT_REMINDER_MARKER = "nw-mode-select available"
-
-
-def _python_hook_was_invoked(root: Path) -> bool:
-    """True iff `.nwave/des/logs/*.log` under `root` carries a HOOK_INVOKED
-    event -- the positive witness that the Python handler actually ran.
-
-    Distinguishes "looked and confirmed absent" from "never looked" (the
-    SILENCE/ABSENCE closure obligation, `nw-test-design-mandates`): a
-    reminder's ABSENCE from stdout is produced by two structurally
-    different mechanisms in this codebase -- the shell-level fast-path grep
-    filtering the write out before Python ever runs, or Python running and
-    `is_nwave_adjacent_write` correctly excluding it. Both look identical
-    from stdout alone.
-    """
-    log_dir = root / ".nwave" / "des" / "logs"
-    if not log_dir.is_dir():
-        return False
-    return any(
-        '"HOOK_INVOKED"' in log_file.read_text(encoding="utf-8")
-        for log_file in log_dir.glob("*.log")
     )
 
 
@@ -556,24 +532,23 @@ class TestGuardCandidateExistenceGate:
 
 
 # ---------------------------------------------------------------------------
-# Case 2 + Case 4 -- the K3-A root-activation reminder on the pre-write path.
+# The pre-write path's one remaining refusal, end-to-end through /bin/sh.
 # ---------------------------------------------------------------------------
 
 
-class TestRootActivationReminderThroughPosixSh:
-    """The pre-write path's K3-A reminder must survive the real /bin/sh guard."""
+class TestPreWriteDecisionsThroughPosixSh:
+    """What the installed POSIX-sh guard must and must not refuse."""
 
     @_skip_unless_dash_reproducible
-    def test_root_activation_reminder_reaches_stdout_for_nwave_adjacent_write(
+    def test_execution_log_write_blocks_through_the_real_shell_guard(
         self, tmp_path: Path
     ) -> None:
-        """Case 2 -- an nWave-adjacent Write/Edit (escaped-newline old_string,
-        as every real Edit carries) must reach the root mode-selection gate.
-        Corrupted JSON would make `handle_pre_write` fail open before that
-        gate; the exact block response therefore witnesses byte preservation
-        through the installed POSIX-sh guard."""
+        """The retirement guard is the pre-write path's only block. An
+        escaped-newline Edit payload (the shape every real Edit carries)
+        reaching it with the exact refusal witnesses byte preservation through
+        the installed guard: corrupted JSON would fail open first."""
         _activate_project(tmp_path)
-        target = tmp_path / "src" / "widget.py"
+        target = tmp_path / ".des" / "execution-log.json"
         payload = json.dumps(
             {
                 "tool_name": "Edit",
@@ -587,203 +562,35 @@ class TestRootActivationReminderThroughPosixSh:
 
         result = _run_installed_write_guard(payload, tmp_path)
 
-        assert result.returncode == 2
-        assert json.loads(result.stdout) == {
-            "decision": "block",
-            "reason": "Invoke nw-mode-select before the first mutation.",
-        }, (
-            "the root mode-selection gate never reached stdout for an "
-            f"nWave-adjacent write -- exit={result.returncode} "
-            f"stdout={result.stdout!r} stderr={result.stderr[-2000:]!r}"
+        assert result.returncode == 2, (
+            f"exit={result.returncode} stdout={result.stdout!r} "
+            f"stderr={result.stderr[-2000:]!r}"
         )
+        assert "retired workflow" in json.loads(result.stdout)["reason"]
 
     @_skip_unless_sh_exists
     @pytest.mark.parametrize(
-        "relative_path,expect_python_invoked",
-        (
-            (".nwave/telemetry/probe.jsonl", True),
-            ("tests/.nwave/fixture.json", True),
-        ),
-        ids=("dot-nwave-root", "tests-dot-nwave"),
+        "relative_path",
+        ("src/widget.py", "hc/generated_plan.py", ".nwave/telemetry/probe.jsonl"),
+        ids=("source", "arbitrary-top-level", "bookkeeping"),
     )
-    def test_no_root_activation_reminder_for_nwave_bookkeeping_paths(
-        self, tmp_path: Path, relative_path: str, expect_python_invoked: bool
+    def test_ordinary_root_write_is_allowed_in_an_active_project(
+        self, tmp_path: Path, relative_path: str
     ) -> None:
-        """Case 4 -- sibling-branch pin (Critical Rules: pin the correct
-        behaviour of neighbouring branches). The root-write-boundary slice
-        must NOT start emitting the root-activation reminder for `.nwave/**`
-        / `tests/.nwave/**` bookkeeping writes -- `is_nwave_adjacent_write`'s
-        own exclusion must keep them silent. It guards against the fix
-        accidentally widening the reminder's scope while it repairs the
-        JSON-survival path.
-
-        Team-lead review (2026-08-07, amended for the root-write-boundary
-        slice): the absence assertion alone cannot tell WHICH of two
-        structurally different mechanisms produced the silence. The shell
-        guard's own fast-path pre-filter is now a content-blind
-        `.nwave/local-config.json` EXISTENCE check, not a `file_path` regex
-        -- once a project carries that candidate marker (`_activate_project`
-        below), EVERY Write/Edit reaches Python regardless of target path,
-        including both `.nwave/**` cases here. It is exclusively
-        `is_nwave_adjacent_write`'s `.nwave`-segment exclusion (inside
-        Python) that keeps both silent now. Asserting the mechanism per
-        branch (`_python_hook_was_invoked` -- a HOOK_INVOKED audit-event
-        witness) makes a future change that collapses this onto a
-        shell-level path filter again -- or otherwise swaps which layer
-        excludes which path -- visible, instead of silently absorbed into
-        "still passes"."""
+        """No mode ceremony gates a root Write/Edit any more: an activated
+        project allows every ordinary target, silently."""
         _activate_project(tmp_path)
-        target = tmp_path / relative_path
-        payload = json.dumps(
-            {
-                "tool_name": "Edit",
-                "tool_input": {
-                    "file_path": str(target),
-                    "old_string": "old",
-                    "new_string": "new",
-                },
-            }
-        )
-
-        result = _run_installed_write_guard(payload, tmp_path)
-
-        assert _ROOT_REMINDER_MARKER not in result.stdout, (
-            f"reminder leaked for bookkeeping path {relative_path!r}: "
-            f"stdout={result.stdout!r}"
-        )
-        actual_invoked = _python_hook_was_invoked(tmp_path)
-        assert actual_invoked == expect_python_invoked, (
-            f"silence for {relative_path!r} came from the WRONG mechanism -- "
-            f"expected python_invoked={expect_python_invoked} (shell "
-            "fast-path filter vs Python's own is_nwave_adjacent_write "
-            f"exclusion), observed {actual_invoked}. A mechanism swap "
-            "changes nothing about the reminder's absence but IS a real "
-            "regression this discriminator exists to catch."
-        )
-
-    @_skip_unless_sh_exists
-    def test_arbitrary_top_level_write_blocks_after_authentic_mode_select_and_nw_auto(
-        self, tmp_path: Path
-    ) -> None:
-        """Falsifier B, end-to-end through the real installed `/bin/sh`
-        guard: an active project's root Write/Edit under an ARBITRARY
-        top-level directory (`hc/...`, no fixed-allowlist membership) still
-        reaches Python (the shell's only filter is the candidate-marker
-        existence check), and once the transcript carries an authentic
-        `Skill(nw-mode-select)` followed by an authentic `Skill(nw-auto)`
-        (both nested under a real assistant `message.content` entry, the
-        actual Claude Code transcript shape), the write BLOCKS with the
-        existing auto-root reason -- unchanged by this slice."""
-        _activate_project(tmp_path)
-        transcript = tmp_path / "transcript.jsonl"
-        transcript.write_text(
-            "\n".join(
-                json.dumps(entry)
-                for entry in [
-                    {
-                        "type": "assistant",
-                        "message": {
-                            "content": [
-                                {
-                                    "type": "tool_use",
-                                    "name": "Skill",
-                                    "input": {"skill": "nw-mode-select"},
-                                }
-                            ]
-                        },
-                    },
-                    {
-                        "type": "assistant",
-                        "message": {
-                            "content": [
-                                {
-                                    "type": "tool_use",
-                                    "name": "Skill",
-                                    "input": {"skill": "nw-auto"},
-                                }
-                            ]
-                        },
-                    },
-                ]
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        target = tmp_path / "hc" / "generated_plan.py"
         payload = json.dumps(
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": str(target)},
-                "transcript_path": str(transcript),
+                "tool_input": {"file_path": str(tmp_path / relative_path)},
             }
         )
 
         result = _run_installed_write_guard(payload, tmp_path)
 
-        assert result.returncode == 2
-        assert json.loads(result.stdout) == {
-            "decision": "block",
-            "reason": (
-                "Auto root cannot author or repair role-owned artifacts or "
-                "production directly -- dispatch the owning role instead."
-            ),
-        }, (
-            "the auto-root gate never blocked an arbitrary top-level "
-            f"(hc/...) write -- exit={result.returncode} "
-            f"stdout={result.stdout!r} stderr={result.stderr[-2000:]!r}"
+        assert result.returncode == 0, (
+            f"exit={result.returncode} stdout={result.stdout!r} "
+            f"stderr={result.stderr[-2000:]!r}"
         )
-
-    @_skip_unless_sh_exists
-    @pytest.mark.parametrize(
-        "agent_identity",
-        [{"agent_id": "agent-123"}, {"agent_type": "general-purpose"}],
-        ids=["agent_id", "agent_type"],
-    )
-    def test_subagent_write_stays_allowed_through_real_shell_guard(
-        self, tmp_path: Path, agent_identity: dict[str, str]
-    ) -> None:
-        """Falsifier C, end-to-end: the SAME handler envelope, only carrying
-        `agent_id` OR `agent_type`, remains allowed through the real
-        installed `/bin/sh` guard -- a legitimate subagent write is never
-        subject to the root-only mode-select/auto-root gates."""
-        _activate_project(tmp_path)
-        target = tmp_path / "hc" / "generated_plan.py"
-        payload_dict = {
-            "tool_name": "Write",
-            "tool_input": {"file_path": str(target)},
-        }
-        payload_dict.update(agent_identity)
-        payload = json.dumps(payload_dict)
-
-        result = _run_installed_write_guard(payload, tmp_path)
-
-        assert result.returncode == 0
-        assert result.stdout.strip() == "" or (
-            json.loads(result.stdout).get("decision") != "block"
-        )
-
-    @_skip_unless_sh_exists
-    def test_enabled_for_repo_false_stays_silent_through_real_shell_guard(
-        self, tmp_path: Path
-    ) -> None:
-        """Falsifier D, end-to-end: `enabled_for_repo=false` in the marker
-        resolves inactive through `activation_gate.apply_gate` -- the write
-        is silently allowed even though the shell DID invoke Python (the
-        marker exists), and even for an nWave-adjacent target."""
-        nwave_dir = tmp_path / ".nwave"
-        nwave_dir.mkdir(parents=True, exist_ok=True)
-        (nwave_dir / "local-config.json").write_text(
-            json.dumps({"enabled_for_repo": False}), encoding="utf-8"
-        )
-        target = tmp_path / "src" / "widget.py"
-        payload = json.dumps(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(target)},
-            }
-        )
-
-        result = _run_installed_write_guard(payload, tmp_path)
-
-        assert result.returncode == 0
         assert result.stdout.strip() == ""

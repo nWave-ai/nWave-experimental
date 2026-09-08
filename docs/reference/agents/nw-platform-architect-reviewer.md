@@ -4,5 +4,5 @@ Use for review and critique tasks - Platform design, CI/CD pipeline, infrastruct
 
 **Wave:** DESIGN
 **Model:** sonnet
-**Max turns:** 25
+**Max turns:** 40
 **Tools:** Read, Glob, Grep, Task, Skill

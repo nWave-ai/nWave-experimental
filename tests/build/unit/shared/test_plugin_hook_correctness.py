@@ -36,8 +36,8 @@ class TestPluginHookCorrectness:
         """Generate plugin hook config using default plugin paths."""
         return generate_hook_config()
 
-    def test_all_five_event_types_present(self, hook_config: dict):
-        """Plugin hooks cover all 5 event types."""
+    def test_all_declared_event_types_present(self, hook_config: dict):
+        """Plugin hooks cover every currently declared event type."""
         assert set(hook_config.keys()) == HOOK_EVENT_TYPES
 
     def test_pretooluse_has_agent_write_edit_bash_matchers(self, hook_config: dict):
@@ -48,15 +48,16 @@ class TestPluginHookCorrectness:
         assert matchers == _EXPECTED_PRETOOLUSE_MATCHERS
 
     @pytest.mark.parametrize("matcher", ["Write", "Edit"])
-    def test_guard_hooks_contain_session_check(self, hook_config: dict, matcher: str):
-        """Write and Edit hooks contain deliver-session.json fast-path guard."""
+    def test_guard_hooks_contain_activation_check(
+        self, hook_config: dict, matcher: str
+    ):
+        """Write and Edit hooks contain the activation fast-path guard."""
         entry = next(
             e for e in hook_config["PreToolUse"] if e.get("matcher") == matcher
         )
         command = entry["hooks"][0]["command"]
-        assert "deliver-session.json" in command, (
-            f"{matcher} hook missing guard command"
-        )
+        assert "deliver-session.json" not in command
+        assert ".nwave/local-config.json" in command
 
     def test_no_task_matcher_anywhere(self, hook_config: dict):
         """No hook uses legacy 'Task' matcher."""

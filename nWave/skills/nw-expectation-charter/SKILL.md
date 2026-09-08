@@ -1,6 +1,6 @@
 ---
 name: nw-expectation-charter
-description: "Authors or reviews one value-side, source-blind expectation charter for a delivery whose validated contract requires EXAMINE."
+description: "Authors or reviews one value-side, source-blind expectation charter when EXAMINE applies."
 user-invocable: false
 ---
 
@@ -19,9 +19,9 @@ decontaminate a context.
 
 ## Applicability and discovery
 
-Run only when validated `applicability.examine=true`. Discover every direct
-entry under `docs/product/expectations/{delivery-id}/` and classify the whole
-namespace:
+Run only when the resident route determines that EXAMINE applies. Discover
+every direct entry under the assigned expectation-charter namespace and classify
+the whole namespace:
 
 - `Missing` or `Empty` -> a fresh PO may author;
 - `Valid(NonEmptySeq<ValidatedCharter>)` -> reuse every member in deterministic
@@ -53,7 +53,7 @@ canonical section headings, in order:
   observations.
 
 No synonym, paraphrase or reordering of these five headings is acceptable;
-`des dispatch` matches them verbatim. Do not include internal names, expected
+the software matches them verbatim. Do not include internal names, expected
 implementation, test names, diffs or a precomputed verdict. A CLI, API or
 infrastructure capability may be the user surface when that is what a real
 operator observes.

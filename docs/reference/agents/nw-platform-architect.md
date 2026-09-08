@@ -14,8 +14,8 @@ Use for DESIGN wave (infrastructure design) and DEVOPS wave (deployment executio
 ## Preloaded skills
 
 - [nw-cicd-and-deployment](../skills/nw-cicd-and-deployment.md) — CI/CD pipeline design methodology, deployment strategies, GitHub Actions patterns, and branch/release strategies. Load when designing pipelines or deployment workflows.
-- [nw-cross-cutting-invariants](../skills/nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — lean public routing core for global gate/construction doctrine and on-demand knowledge lenses. Cite clause ids; never re-declare.
-- [nw-deliver](../skills/nw-deliver.md) — Use for DELIVER wave orchestration from one validated DeliveryContract to one examined candidate and one whole-delivery finalization.
+- [nw-cross-cutting-invariants](../skills/nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — routing core for the software/model boundary doctrine, gate/construction principles and on-demand knowledge lenses. Cite clause ids; never re-declare.
+- [nw-deliver](../skills/nw-deliver.md) — Routes one strict Request into the DES steps that deliver it.
 - [nw-deployment-strategies](../skills/nw-deployment-strategies.md) — Rollback procedures, risk assessment, pre/post-deployment validation, and contingency planning. Load when orchestrating deployment or preparing rollback plans. For deployment strategy details (canary, blue-green, rolling), see `cicd-and-deployment` skill.
 - [nw-infrastructure-and-observability](../skills/nw-infrastructure-and-observability.md) — Infrastructure as Code patterns (Terraform, Kubernetes), observability design (SLOs, metrics, alerting, dashboards), and pipeline security stages. Load when designing infrastructure, observability, or security scanning.
 - [nw-platform-engineering-foundations](../skills/nw-platform-engineering-foundations.md) — Foundational platform engineering knowledge from key references -- Continuous Delivery, SRE, Accelerate, Team Topologies, Chaos Engineering, and Secure Delivery. Load when contextual grounding in platform engineering theory is needed.

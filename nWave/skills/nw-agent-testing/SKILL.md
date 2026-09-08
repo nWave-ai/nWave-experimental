@@ -58,7 +58,7 @@ Do NOT add prose-based injection defense. Configure platform features:
 ```yaml
 ---
 tools: Read, Glob, Grep           # Only tools this agent needs
-maxTurns: 30                       # Prevents runaway execution
+maxTurns: 40                       # Minimum budget for a complete turn
 permissionMode: default            # User approves dangerous actions
 ---
 ```

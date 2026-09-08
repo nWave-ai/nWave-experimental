@@ -39,11 +39,13 @@ if Path(_project_src).is_dir():
 
 from des._internal import subset_parser  # noqa: E402
 from des.application import generated_region_projection  # noqa: E402
+from des.domain.agent_capability import split_declared_tools  # noqa: E402
 from scripts.shared.agent_catalog import (  # noqa: E402
     build_ownership_map,
     detect_command_skills,
     is_public_agent,
     is_public_skill,
+    load_private_skills,
     load_public_agents,
 )
 
@@ -163,6 +165,7 @@ def scan(root: Path, *, public_only: bool = False) -> dict[str, list[Path]]:
     if public_agents:
         ownership = build_ownership_map(nwave / "agents")
         command_skills = detect_command_skills(skills_dir)
+        private_skills = load_private_skills(nwave)
         skill_dirs = [
             d
             for d in skill_dirs
@@ -171,6 +174,7 @@ def scan(root: Path, *, public_only: bool = False) -> dict[str, list[Path]]:
                 public_agents,
                 ownership_map=ownership,
                 command_skills=command_skills,
+                private_skills=private_skills,
             )
         ]
     skills = sorted(md for d in skill_dirs for md in d.rglob("*.md"))
@@ -193,8 +197,10 @@ def extract_agent(path: Path) -> Agent:
     fm = parse_front_matter(path)
     require_fields(fm, ["name", "description"], path)
     tools_raw = fm.get("tools", "")
+    if tools_raw is None:
+        tools_raw = ""
     tools = (
-        [t.strip() for t in tools_raw.split(",")]
+        list(split_declared_tools(tools_raw))
         if isinstance(tools_raw, str)
         else tools_raw
     )
@@ -462,10 +468,11 @@ def released_skill_dirs(root: Path | None) -> set[str] | None:
         return None  # catalog absent — caller treats all as released
     ownership = build_ownership_map(nwave / "agents")
     command_skills = detect_command_skills(nwave / "skills")
+    private_skills = load_private_skills(nwave, strict=False)
     dirs: set[str] = set()
     for d in (nwave / "skills").iterdir() if (nwave / "skills").is_dir() else []:
         if d.is_dir() and is_public_skill(
-            d.name, public_agents, ownership, command_skills
+            d.name, public_agents, ownership, command_skills, private_skills
         ):
             dirs.add(d.name)
     return dirs
@@ -613,7 +620,7 @@ def render_agent_detail(
         f"**Wave:** {wave}",
         f"**Model:** {agent['model']}",
         f"**Max turns:** {agent['max_turns']}",
-        f"**Tools:** {', '.join(agent['tools'])}",
+        f"**Tools:** {', '.join(agent['tools']) or 'None'}",
         "",
     ]
     if commands:
@@ -834,34 +841,77 @@ def _command_catalog_body() -> str:
     return "\n".join([header, sep, *rows])
 
 
-def _role_skill_on_demand_lines(entry: dict) -> list[str]:
+#: Installed location of a skill body, the path a role READS when the skill
+#: is not invocable. Agent specs ship to ``~/.claude/agents/`` and address
+#: their siblings through the installed tree, never through a repo path.
+_INSTALLED_SKILL_PATH = "~/.claude/skills/{skill}/SKILL.md"
+
+
+def _skill_is_invocable(skill: str, root: Path) -> bool:
+    """True when the Skill tool can actually reach *skill*.
+
+    A skill carrying ``disable-model-invocation: true`` is unreachable through
+    the Skill tool by construction: a role instructed to invoke it stalls with
+    nothing to fall back on. docgen therefore asks the TARGET, never the
+    registry, which verb to render (GDP-8: decide on the property, not the
+    designation)."""
+    skill_file = root / "nWave" / "skills" / skill / "SKILL.md"
+    if not skill_file.is_file():
+        raise DocgenError(
+            f"role-skill-loading registry names {skill!r}, but "
+            f"{skill_file} does not exist — a rendered directive would point "
+            "a role at a skill that ships nowhere; correct the registry entry "
+            "in nWave/data/role-skill-loading.yaml or add the skill"
+        )
+    flag = parse_front_matter(skill_file).get("disable-model-invocation")
+    return str(flag).strip().lower() != "true"
+
+
+def _role_skill_directive(skill: str, trigger: str, root: Path) -> str:
+    """One loading directive whose VERB matches the target's reachability."""
+    if _skill_is_invocable(skill, root):
+        return f"- Invoke Skill({skill}) ON-TRIGGER — {trigger}"
+    path = _INSTALLED_SKILL_PATH.format(skill=skill)
+    return f"- Read `{path}` ON-TRIGGER — {trigger}"
+
+
+def _role_skill_on_demand_lines(entry: dict, root: Path) -> list[str]:
     return [
-        f"- Invoke Skill({skill}) ON-TRIGGER — {trigger}"
+        _role_skill_directive(skill, trigger, root)
         for skill, trigger in entry.get("on_demand", {}).items()
     ]
 
 
-def _role_skill_entry_lines(entry: dict) -> list[str]:
+def _role_skill_entry_lines(entry: dict, root: Path) -> list[str]:
     return [
-        f"- Invoke Skill({skill}) ON-TRIGGER — {trigger}"
+        _role_skill_directive(skill, trigger, root)
         for skill, trigger in entry.get("phase", {}).items()
     ]
 
 
-def _role_skill_trigger_lines(entry: dict) -> list[str]:
-    return _role_skill_entry_lines(entry) + _role_skill_on_demand_lines(entry)
+def _role_skill_trigger_lines(entry: dict, root: Path) -> list[str]:
+    return _role_skill_entry_lines(entry, root) + _role_skill_on_demand_lines(
+        entry, root
+    )
 
 
 def _role_skill_loading_body(agent_id: str, root: Path) -> str:
-    """Render one role's universal-lens directives as native Skill-invocation
-    instructions -- all registry rows load ON-TRIGGER (never eagerly preloaded):
+    """Render one role's universal-lens directives -- all registry rows load
+    ON-TRIGGER (never eagerly preloaded):
     both phase and on_demand rows fire exactly when their declared trigger
     condition holds, never unconditionally. Build-time only, no runtime registry
     read: docgen is the authoritative renderer/semantic parser for agent Skill
     directives, while scripts.shared.agent_catalog separately reads ownership
     fields for build-time distribution retention and is not a runtime registry
     read. A reviewer with exactly one reviewed role mirrors that role's on_demand
-    lenses (lens-only, never its authoring `phase` rows)."""
+    lenses (lens-only, never its authoring `phase` rows).
+
+    Each directive's VERB is decided per target, not per registry section: an
+    invocable skill renders ``Invoke Skill(...)``, a skill carrying
+    ``disable-model-invocation: true`` renders a Read of its installed path.
+    Rendering an invocation of an unreachable skill stalls the role with no
+    fallback, so the wrong directive is made unrepresentable here rather than
+    caught downstream."""
     registry_path = root / _ROLE_SKILL_REGISTRY_REL
     roles = subset_parser.load_file(registry_path).get("roles", {})
     entry = roles.get(agent_id)
@@ -871,22 +921,25 @@ def _role_skill_loading_body(agent_id: str, root: Path) -> str:
     reviewed = entry.get("reviewer_of")
     if reviewed:
         if len(reviewed) == 1:
-            lines += _role_skill_on_demand_lines(roles[reviewed[0]])
+            lines += _role_skill_on_demand_lines(roles[reviewed[0]], root)
         else:
             lines.append(
                 "- ON-TRIGGER — mirror the reviewed role's on-demand lenses, lens-only"
             )
-    lines += _role_skill_trigger_lines(entry)
+    lines += _role_skill_trigger_lines(entry, root)
     for kind, target in entry.get("paradigm", {}).items():
-        lines.append(f"- Invoke Skill({target}) ON-TRIGGER — paradigm confirmed {kind}")
+        lines.append(_role_skill_directive(target, f"paradigm confirmed {kind}", root))
     by_target: dict[str, list[str]] = {}
     for lang, target in entry.get("language_pbt", {}).items():
         by_target.setdefault(target, []).append(lang)
     for target, langs in sorted(by_target.items()):
         joined = "`/`".join(sorted(langs))
-        lines.append(
-            f"- Invoke ONE Skill({target}) ON-TRIGGER — a `{joined}` property needs it"
-        )
+        trigger = f"a `{joined}` property needs it"
+        if _skill_is_invocable(target, root):
+            lines.append(f"- Invoke ONE Skill({target}) ON-TRIGGER — {trigger}")
+        else:
+            path = _INSTALLED_SKILL_PATH.format(skill=target)
+            lines.append(f"- Read ONE `{path}` ON-TRIGGER — {trigger}")
     return "\n".join(lines) if lines else "- (no universal lens applies to this role)"
 
 

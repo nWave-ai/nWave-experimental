@@ -4,7 +4,7 @@ Two of them are the point of the whole module, and both are stated as a
 DIVERGENCE from the verdict as it is computed by hand today:
 
 * `test_camp6_wall_diverges_from_the_hand_aggregate` -- on camp6's own recorded
-  numbers the hand aggregate for wall is `1.24x`, comfortably inside the `2.0x`
+  numbers the hand aggregate for wall is `1.24x`, comfortably inside the `1.5x`
   bound, and the correct answer is `2.81x`, a breach. The two disagree in SIGN,
   not in the fourth decimal, and the reason is entirely trap (a): two of the
   three pairs saw the nWave arm deliver nothing, so their favourable ratios
@@ -264,12 +264,11 @@ def test_not_delivered_and_delivered_badly_are_never_averaged_together(tmp_path)
     assert pairs[1].nwave.delivery is av.Delivery.DELIVERED_REJECTED
 
     axis = av.ratio_axis("cost", pairs)
-    # The rejected delivery DID the work, so its cost counts; the absent one
-    # cannot be counted at all. Averaging them would report 2.5x for a system
-    # that actually spent 4.0x whenever it produced anything.
-    assert list(axis.counted) == [2]
-    assert axis.ratio == pytest.approx(4.0)
-    assert "NOT DELIVERED" in axis.excluded[0][1].upper()
+    # A rejected outcome is not a successful comparable delivery. Neither it
+    # nor the absent one can be used to manufacture a resource ratio.
+    assert list(axis.counted) == []
+    assert axis.status is av.Status.INDETERMINATE
+    assert "accepted" in axis.excluded[0][1]
 
 
 def test_a_missing_delivered_field_is_unscored_never_assumed_delivered(tmp_path):
@@ -301,7 +300,7 @@ def _one_valid_pair_rows() -> list[dict]:
         "wall_s": 15.0,
         "delivered": True,
         "accepted": True,
-        "rubric": (24, 0),
+        "rubric": (34, 0),
     }
     clean_control = {
         "cost": 1.0,
@@ -309,7 +308,7 @@ def _one_valid_pair_rows() -> list[dict]:
         "wall_s": 10.0,
         "delivered": True,
         "accepted": True,
-        "rubric": (22, 0),
+        "rubric": (34, 0),
     }
     dead_control = {"ran": False}
     return [
@@ -328,10 +327,222 @@ def test_one_valid_pair_is_indeterminate_never_admit(tmp_path):
         axis = result.axes[name]
         assert axis.ratio is not None and axis.ratio <= axis.bound
         assert axis.status is av.Status.INDETERMINATE, name
-    assert result.quality.gate is av.Status.WITHIN
-    assert result.quality.ordering is av.Status.WITHIN
-    assert result.verdict is av.Verdict.INDETERMINATE
-    assert any("sample" in reason.lower() for reason in result.reasons)
+    assert result.quality.gate is av.Status.BREACH
+    assert result.quality.ordering is av.Status.INDETERMINATE
+    assert result.verdict is av.Verdict.NOT_ADMITTED
+    assert any("quality" in reason.lower() for reason in result.reasons)
+
+
+def test_minimum_valid_pairs_rejects_wall_drift_above_one_point_five(tmp_path):
+    """A 1.6x wall is a finding even with otherwise equal, valid arms."""
+    nwave = {
+        "cost": 1.0,
+        "tokens": 10,
+        "wall_s": 16.0,
+        "delivered": True,
+        "accepted": True,
+        "rubric": (34, 0),
+    }
+    control = {
+        "cost": 1.0,
+        "tokens": 10,
+        "wall_s": 10.0,
+        "delivered": True,
+        "accepted": True,
+        "rubric": (34, 0),
+    }
+    rows = [
+        {"nwave": dict(nwave), "control": dict(control)}
+        for _ in range(av.MIN_VALID_PAIRS)
+    ]
+
+    result = av.decide(av.read_campaign(*build_campaign(tmp_path, rows)))
+
+    assert result.valid_pairs == av.MIN_VALID_PAIRS
+    assert result.axes["cost"].status is av.Status.WITHIN
+    assert result.axes["tokens"].status is av.Status.WITHIN
+    assert result.axes["wall"].ratio == pytest.approx(1.6)
+    assert result.axes["wall"].status is av.Status.BREACH
+    assert result.verdict is av.Verdict.NOT_ADMITTED
+
+
+def test_wall_bound_is_inclusive_at_one_point_five(tmp_path):
+    rows = [
+        {
+            "nwave": {
+                "cost": 1.0,
+                "tokens": 10,
+                "wall_s": 15.0,
+                "delivered": True,
+                "accepted": True,
+                "rubric": (34, 0),
+            },
+            "control": {
+                "cost": 1.0,
+                "tokens": 10,
+                "wall_s": 10.0,
+                "delivered": True,
+                "accepted": True,
+                "rubric": (34, 0),
+            },
+        }
+        for _ in range(av.MIN_VALID_PAIRS)
+    ]
+
+    result = av.decide(av.read_campaign(*build_campaign(tmp_path, rows)))
+
+    assert result.axes["wall"].ratio == pytest.approx(1.5)
+    assert result.axes["wall"].status is av.Status.WITHIN
+    assert result.verdict is av.Verdict.ADMIT
+
+
+def test_a_higher_total_cannot_hide_a_zero_triggered_pbt_criterion(tmp_path):
+    rows = [
+        {
+            "nwave": {
+                "cost": 1.0,
+                "tokens": 10,
+                "wall_s": 10.0,
+                "delivered": True,
+                "accepted": True,
+                "rubric": (34, 0),
+            },
+            "control": {
+                "cost": 1.0,
+                "tokens": 10,
+                "wall_s": 10.0,
+                "delivered": True,
+                "accepted": True,
+                "rubric": (17, 0),
+            },
+        }
+        for _ in range(av.MIN_VALID_PAIRS)
+    ]
+    campaign, verdicts, rubric = build_campaign(tmp_path, rows)
+    for session, record in rubric.items():
+        if session.endswith("-nwave"):
+            record["criteria"]["12"]["score"] = 0
+            record["total"] = 32
+        else:
+            for criterion in record["criteria"].values():
+                criterion["score"] = 1
+            record["total"] = len(quality_rubric.CRITERIA_KEYS)
+
+    result = av.decide(av.read_campaign(campaign, verdicts, rubric))
+
+    assert result.verdict is av.Verdict.NOT_ADMITTED
+    pbt = [row for row in result.quality.criteria if row.criterion == "12"]
+    assert all(row.nwave_score == 0 and row.control_score == 1 for row in pbt)
+    assert all(row.status is av.Status.BREACH for row in pbt)
+
+
+def test_equal_zero_on_an_always_required_item_never_admits(tmp_path):
+    rows = [
+        {
+            arm: {
+                "cost": 1.0,
+                "tokens": 10,
+                "wall_s": 10.0,
+                "delivered": True,
+                "accepted": True,
+                "rubric": (34, 0),
+            }
+            for arm in ("nwave", "control")
+        }
+        for _ in range(av.MIN_VALID_PAIRS)
+    ]
+    campaign, verdicts, rubric = build_campaign(tmp_path, rows)
+    for record in rubric.values():
+        record["criteria"]["4"]["score"] = 0
+        record["total"] = 32
+
+    result = av.decide(av.read_campaign(campaign, verdicts, rubric))
+
+    assert result.verdict is av.Verdict.NOT_ADMITTED
+    always_required = [row for row in result.quality.criteria if row.criterion == "4"]
+    assert all(row.nwave_score == row.control_score == 0 for row in always_required)
+    assert all(row.status is av.Status.BREACH for row in always_required)
+
+
+def test_nwave_blocking_finding_vetoes_even_when_control_has_one_too(tmp_path):
+    rows = [
+        {
+            arm: {
+                "cost": 1.0,
+                "tokens": 10,
+                "wall_s": 10.0,
+                "delivered": True,
+                "accepted": True,
+                "rubric": (34, 1),
+            }
+            for arm in ("nwave", "control")
+        }
+        for _ in range(av.MIN_VALID_PAIRS)
+    ]
+
+    result = av.decide(av.read_campaign(*build_campaign(tmp_path, rows)))
+
+    assert result.quality.blocking is av.Status.BREACH
+    assert result.verdict is av.Verdict.NOT_ADMITTED
+
+
+@pytest.mark.parametrize("score,evidence", [(True, "fixture"), (3, "fixture"), (1, "")])
+def test_malformed_criterion_facts_are_indeterminate_when_read_directly(
+    tmp_path, score, evidence
+):
+    rows = [
+        {
+            arm: {
+                "cost": 1.0,
+                "tokens": 10,
+                "wall_s": 10.0,
+                "delivered": True,
+                "accepted": True,
+                "rubric": (34, 0),
+            }
+            for arm in ("nwave", "control")
+        }
+    ]
+    campaign, verdicts, rubric = build_campaign(tmp_path, rows)
+    rubric["sess-1-nwave"]["criteria"]["1"] = {
+        "score": score,
+        "evidence": evidence,
+    }
+
+    (pair,) = av.read_campaign(campaign, verdicts, rubric)
+
+    assert pair.nwave.rubric_scores is None
+    assert av.quality_axis((pair,)).ordering is av.Status.INDETERMINATE
+
+
+def test_control_rejected_outcome_vetoes_otherwise_perfect_pairs(tmp_path):
+    rows = [
+        {
+            "nwave": {
+                "cost": 1.0,
+                "tokens": 10,
+                "wall_s": 10.0,
+                "delivered": True,
+                "accepted": True,
+                "rubric": (34, 0),
+            },
+            "control": {
+                "cost": 1.0,
+                "tokens": 10,
+                "wall_s": 10.0,
+                "delivered": True,
+                "accepted": False,
+                "rubric": (34, 0),
+            },
+        }
+        for _ in range(av.MIN_VALID_PAIRS)
+    ]
+
+    result = av.decide(av.read_campaign(*build_campaign(tmp_path, rows)))
+
+    assert result.valid_pairs == 0
+    assert result.quality.gate is av.Status.BREACH
+    assert result.verdict is av.Verdict.NOT_ADMITTED
 
 
 def test_indeterminate_reaches_the_exit_code(tmp_path):
@@ -457,28 +668,22 @@ def test_quality_is_an_ordering_a_gate_and_a_quotation(camp6):
     assert quality.gate is av.Status.BREACH
     assert dict(quality.gate_detail) == {1: "NO_DELIVERY", 2: "NO_DELIVERY"}
 
-    # ORDERING: signed deltas, never a quotient of two rubric totals.
-    deltas = {row.pair: row.delta for row in quality.ordering_all_scored}
-    assert deltas == {1: -15, 2: -17, 3: -2}
+    # ORDERING: every criterion is compared independently, never summed.
+    assert len(quality.criteria) == 3 * len(quality_rubric.CRITERIA_KEYS)
+    assert any(row.status is av.Status.BREACH for row in quality.criteria)
     assert quality.ordering is av.Status.BREACH
-
-    # The delivered-only view is kept SEPARATE from the all-scored view, so the
-    # two pairs whose deficit is the outcome failure restated are never silently
-    # averaged into the one pair that actually delivered.
-    assert [row.pair for row in quality.ordering_delivered_only] == [3]
 
     # REPORTED JUDGMENT: the reviewer's blocking findings are carried verbatim.
     assert len([r for r in quality.reported if r[1] == "nwave"]) == 10
     assert all(isinstance(text, str) for _, _, text in quality.reported)
 
 
-def test_quality_ordering_on_the_delivered_pair_alone_is_still_inferior(camp6):
-    """p3 is "near-parity": -2 with equal blocking counts. Near-parity is not
-    non-inferiority, and the ordering says so without inventing a tolerance."""
+def test_quality_ordering_keeps_criterion_evidence(camp6):
     quality = av.quality_axis(camp6)
-    (p3,) = quality.ordering_delivered_only
-    assert (p3.nwave_total, p3.control_total, p3.delta) == (21, 23, -2)
-    assert p3.nwave_blocking == p3.control_blocking == 1
+    row = next(
+        row for row in quality.criteria if row.pair == 3 and row.criterion == "12"
+    )
+    assert row.nwave_evidence == row.control_evidence == "fixture"
 
 
 # --- the two ways a report can be well-formed and wrong ----------------------
