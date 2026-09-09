@@ -34,19 +34,23 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture(autouse=True)
-def _scrub_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure CLAUDE_CONFIG_DIR is not leaked into the test from the host env."""
+def _scrub_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Isolate both host configuration and the caller project for every case."""
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.chdir(tmp_path)
 
 
 def _captured_run_script_args() -> dict:
     """Patch _run_script and capture the call args + the env at call time."""
     captured: dict = {"args": None, "claude_config_dir": None}
 
-    def fake_run_script(script_name: str, args: list[str]) -> int:
+    def fake_run_script(
+        script_name: str, args: list[str], *, user_project_root: Path | None = None
+    ) -> int:
         captured["args"] = list(args)
         captured["script"] = script_name
         captured["claude_config_dir"] = os.environ.get("CLAUDE_CONFIG_DIR")
+        captured["user_project_root"] = user_project_root
         return 0
 
     return captured, fake_run_script

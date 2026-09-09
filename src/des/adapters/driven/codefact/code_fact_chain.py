@@ -81,8 +81,12 @@ class CodeFactChain:
     wiring change, no port/fold change.
     """
 
-    def __init__(self, root: Path | str) -> None:
-        self._graphify = GraphifyAdapter(root=root)
+    def __init__(
+        self, root: Path | str, graphify: GraphifyAdapter | None = None
+    ) -> None:
+        self._graphify = (
+            GraphifyAdapter(root=root) if graphify is None else graphify.scoped(root)
+        )
         self._ast = AstAdapter(root=root)
         self._floor = TextSearchAdapter(root=root)
         providers: list = []

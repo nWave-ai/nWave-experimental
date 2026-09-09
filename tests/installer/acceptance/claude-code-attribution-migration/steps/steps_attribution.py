@@ -83,7 +83,7 @@ class AttributionComposition:
         self.claude_dir = home / ".claude"
         self.settings_path = self.claude_dir / "settings.json"
         self.nwave_dir = home / ".nwave"
-        self.global_config_path = self.nwave_dir / "global-config.json"
+        self.global_config_path = self.nwave_dir / "config.json"
         self.hooks_dir = self.nwave_dir / "hooks"
 
     # -- Given-world builders (preconditions only; never the expected output) --
@@ -516,7 +516,8 @@ def then_legacy_dismantled(composition: AttributionComposition) -> None:
 def then_enabled_preference_recorded_instead(
     composition: AttributionComposition,
 ) -> None:
-    # ADR-CA-007: the enabled preference is recorded in global-config.json +
+    # ADR-CA-007: the enabled preference is recorded in the selected global
+    # config.json +
     # no settings.json attribution block (the dual credit is handled by the
     # universal handler at commit time, not by an independent hook).
     obs = composition.observe()

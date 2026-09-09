@@ -44,8 +44,8 @@ INDETERMINATE = "indeterminate"
 #: too, but not through a session this measure can observe.
 NOT_APPLICABLE = "not-applicable"
 
-#: The two spellings of a test runner `_candidate_runtime` arms a shim for, and
-#: therefore the two this measure can claim anything about.
+#: Recognized pytest invocations that arm the existing session probe.
+#: Recognizing `uv run pytest` does not provide or install the `uv` executable.
 #:
 #: STATED LIMIT.  A `python -c` body that calls `pytest.main()` is not read as
 #: pytest here, and no measure short of parsing the program could tell it from
@@ -82,6 +82,12 @@ def invokes_pytest(argv: tuple[str, ...]) -> bool:
     if not argv:
         return False
     if PurePosixPath(argv[0]).name == _PYTEST:
+        return True
+    if (
+        PurePosixPath(argv[0]).name == "uv"
+        and len(argv) >= 3
+        and argv[1:3] == ("run", _PYTEST)
+    ):
         return True
     return any(first == "-m" and second == _PYTEST for first, second in pairwise(argv))
 

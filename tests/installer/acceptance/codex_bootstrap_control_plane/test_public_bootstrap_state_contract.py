@@ -50,6 +50,11 @@ def _tree_state(root: Path) -> dict[str, tuple[str, str]]:
 
 
 def _run(home: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    # The public CLI deliberately treats its working directory as the user's
+    # project.  Keep that project inside this test's sandbox: using REPO here
+    # would make an install migrate the checkout's tracked legacy marker.
+    project = home.parent / f"{home.name}-project"
+    project.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env.update(
         {
@@ -64,7 +69,7 @@ def _run(home: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
     return subprocess.run(
         [sys.executable, "-c", PUBLIC_CLI, *args],
-        cwd=REPO,
+        cwd=project,
         env=env,
         text=True,
         capture_output=True,
@@ -134,7 +139,7 @@ def test_explicit_codex_install_never_uses_legacy_claude_runtime_migration(
     claude_config.write_bytes(b'{"user_setting": "keep"}\n')
     legacy_des_before = legacy_des.read_bytes()
     claude_config_before = claude_config.read_bytes()
-    config = home / ".nwave" / "global-config.json"
+    config = home / ".nwave" / "config.json"
     config.parent.mkdir()
     config.write_text(json.dumps({"custom": {"allowed-outside-claude": True}}) + "\n")
     opencode_asset = home / ".opencode" / "user-config.json"
@@ -660,9 +665,11 @@ def test_all_platform_reinstall_preserves_foreign_user_assets_and_config(
     foreign = home / ".codex" / "foreign-user-setting.json"
     foreign.parent.mkdir(parents=True)
     foreign.write_text('{"owner":"user"}\n')
-    config_path = home / ".nwave" / "global-config.json"
+    config_path = home / ".nwave" / "config.json"
     config_path.parent.mkdir()
-    config_path.write_text(json.dumps({"custom": {"keep": "user setting"}}) + "\n")
+    config_path.write_text(
+        json.dumps({"schema-version": 1, "custom": {"keep": "user setting"}}) + "\n"
+    )
 
     first = _install(home, "all")
     assert first.returncode == 0, first.stdout + first.stderr
@@ -771,7 +778,7 @@ def test_normal_claude_manifest_reinstall_is_not_misclassified_as_legacy_runtime
 ) -> None:
     """A normal install manifest supports re-install; it is not migration input."""
     home = tmp_path / "home"
-    config_path = home / ".nwave" / "global-config.json"
+    config_path = home / ".nwave" / "config.json"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(json.dumps({"custom": {"keep": "config value"}}) + "\n")
 
@@ -1030,7 +1037,7 @@ def test_public_codex_install_upgrades_legacy_owned_surfaces_without_adopting_us
     user_skill = home / ".agents" / "skills" / "my-local-skill" / "SKILL.md"
     user_skill.parent.mkdir(parents=True)
     user_skill.write_text("# Personal skill\nKeep this byte-for-byte.\n")
-    global_config = home / ".nwave" / "global-config.json"
+    global_config = home / ".nwave" / "config.json"
     global_config.parent.mkdir()
     global_config.write_text(
         json.dumps(

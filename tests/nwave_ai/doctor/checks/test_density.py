@@ -34,10 +34,10 @@ def context(tmp_path: Path) -> DoctorContext:
 
 
 def _write_global_config(home: Path, payload: dict) -> Path:
-    """Write `~/.nwave/global-config.json` under the test home."""
+    """Write `~/.nwave/config.json` under the test home."""
     nwave_dir = home / ".nwave"
     nwave_dir.mkdir(parents=True, exist_ok=True)
-    config_path = nwave_dir / "global-config.json"
+    config_path = nwave_dir / "config.json"
     config_path.write_text(json.dumps(payload), encoding="utf-8")
     return config_path
 

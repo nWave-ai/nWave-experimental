@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from des.domain.nwave_locations import NWaveLocations
 from scripts.install.plugins.agents_plugin import AgentsPlugin
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.commands_plugin import CommandsPlugin
@@ -80,12 +81,23 @@ def _make_context(
     claude_dir: Path, project_root: Path, logger: logging.Logger
 ) -> InstallContext:
     """Create an InstallContext pointing at the given claude_dir."""
+    # Keep the framework checkout as ``project_root`` for installer imports,
+    # while isolating DES bootstrap writes from that checkout.
+    user_project_root = claude_dir.parent / "project"
+    user_project_root.mkdir(exist_ok=True)
+    locations = NWaveLocations(
+        agents_home=claude_dir.parent,
+        claude_config_dir=claude_dir,
+        codex_config_dir=claude_dir.parent / ".codex",
+    )
     return InstallContext(
         claude_dir=claude_dir,
         scripts_dir=project_root / "scripts" / "install",
         templates_dir=project_root / "nWave" / "templates",
         logger=logger,
         project_root=project_root,
+        user_project_root=user_project_root,
+        locations=locations,
         framework_source=project_root / "nWave",
         dry_run=False,
     )
@@ -174,12 +186,21 @@ def clean_test_directory(tmp_path: Path) -> Path:
 @pytest.fixture
 def install_context(clean_test_directory, project_root, test_logger):
     """Create InstallContext for testing."""
+    user_project_root = clean_test_directory.parent / "project"
+    user_project_root.mkdir(exist_ok=True)
+    locations = NWaveLocations(
+        agents_home=clean_test_directory.parent,
+        claude_config_dir=clean_test_directory,
+        codex_config_dir=clean_test_directory.parent / ".codex",
+    )
     return InstallContext(
         claude_dir=clean_test_directory,
         scripts_dir=project_root / "scripts" / "install",
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
+        user_project_root=user_project_root,
+        locations=locations,
         framework_source=project_root / "nWave",
         dry_run=False,
     )

@@ -44,7 +44,7 @@ def _home_with_attribution_on(tmp_path: Path) -> Path:
     """
     nwave = tmp_path / ".nwave"
     nwave.mkdir(parents=True, exist_ok=True)
-    (nwave / "global-config.json").write_text(
+    (nwave / "config.json").write_text(
         json.dumps({"attribution": {"enabled": True}}), encoding="utf-8"
     )
     return tmp_path
@@ -57,8 +57,8 @@ def _repo(tmp_path: Path, *, activated: bool) -> Path:
     if activated:
         marker_dir = repo / ".nwave"
         marker_dir.mkdir(parents=True, exist_ok=True)
-        (marker_dir / "local-config.json").write_text(
-            json.dumps({"enabled_for_repo": True}), encoding="utf-8"
+        (marker_dir / "config.json").write_text(
+            json.dumps({"enabled": True}), encoding="utf-8"
         )
     return repo
 
@@ -67,7 +67,11 @@ def test_unactivated_repo_receives_no_trailer_from_pretooluse(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
 ) -> None:
     """FALSIFIER: attribution ON but repo NOT activated ⇒ passthrough, no mutation."""
-    monkeypatch.setenv("HOME", str(_home_with_attribution_on(tmp_path)))
+    home = _home_with_attribution_on(tmp_path)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
     monkeypatch.setattr(
         pre_tool_use_handler, "_commit_attribution_service", _MutatingService()
     )
@@ -85,7 +89,11 @@ def test_activated_repo_still_receives_the_trailer_from_pretooluse(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
 ) -> None:
     """COUNTERPROOF: an ACTIVATED repo keeps mutating — the fix gates, not kills."""
-    monkeypatch.setenv("HOME", str(_home_with_attribution_on(tmp_path)))
+    home = _home_with_attribution_on(tmp_path)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
     monkeypatch.setattr(
         pre_tool_use_handler, "_commit_attribution_service", _MutatingService()
     )
@@ -105,10 +113,13 @@ def test_activated_repo_with_attribution_off_stays_passthrough(
     """The two conditions are conjunctive: active alone does not attribute."""
     nwave = tmp_path / ".nwave"
     nwave.mkdir(parents=True, exist_ok=True)
-    (nwave / "global-config.json").write_text(
+    (nwave / "config.json").write_text(
         json.dumps({"attribution": {"enabled": False}}), encoding="utf-8"
     )
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
     monkeypatch.setattr(
         pre_tool_use_handler, "_commit_attribution_service", _MutatingService()
     )

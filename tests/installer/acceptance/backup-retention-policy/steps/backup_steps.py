@@ -172,14 +172,14 @@ def given_foreign_directory(claude_config_home, scenario_state, name):
 
 @given("no override exists for the maximum backup count")
 def given_no_config_override(nwave_config_home):
-    config_file = nwave_config_home / "global-config.json"
+    config_file = nwave_config_home / "config.json"
     assert not config_file.exists()
 
 
 @given(parsers.parse("the maximum backup count is the default of {n:d}"))
 def given_default_cap(nwave_config_home, n):
     # D4 (scope.md): default cap is 10, no override file present
-    config_file = nwave_config_home / "global-config.json"
+    config_file = nwave_config_home / "config.json"
     assert not config_file.exists()
 
 
@@ -190,7 +190,7 @@ def given_default_cap(nwave_config_home, n):
 )
 def given_integer_cap_override(nwave_config_home, value):
     nwave_config_home.mkdir(parents=True, exist_ok=True)
-    config_file = nwave_config_home / "global-config.json"
+    config_file = nwave_config_home / "config.json"
     config_file.write_text(json.dumps({"backups": {"max_count": value}}) + "\n")
 
 
@@ -201,14 +201,14 @@ def given_integer_cap_override(nwave_config_home, value):
 )
 def given_string_cap_override(nwave_config_home, value):
     nwave_config_home.mkdir(parents=True, exist_ok=True)
-    config_file = nwave_config_home / "global-config.json"
+    config_file = nwave_config_home / "config.json"
     config_file.write_text(json.dumps({"backups": {"max_count": value}}) + "\n")
 
 
 @given("Marco has a nWave global config with no maximum backup count set")
 def given_config_without_cap_key(nwave_config_home):
     nwave_config_home.mkdir(parents=True, exist_ok=True)
-    config_file = nwave_config_home / "global-config.json"
+    config_file = nwave_config_home / "config.json"
     config_file.write_text(json.dumps({"attribution": {"enabled": False}}) + "\n")
 
 

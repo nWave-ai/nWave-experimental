@@ -14,6 +14,9 @@ import os
 import sys
 from pathlib import Path, PureWindowsPath
 
+from des.domain.nwave_locations import NWaveLocations
+from des.domain.result import Failure
+
 
 def _standard_temp_roots() -> list[Path]:
     """The hand-maintained enumeration of standard ephemeral-directory roots.
@@ -167,7 +170,10 @@ DES_LIB_SUBDIR = Path("lib") / "python" / "des"
 SCRIPTS_SUBDIR = Path("scripts")
 COMMANDS_LEGACY_SUBDIR = Path("commands") / "nw"  # deprecated, cleanup only
 MANIFEST_FILENAME = "nwave-manifest.txt"
-GLOBAL_CONFIG_FILENAME = "global-config.json"
+CONFIG_FILENAME = "config.json"
+# Compatibility spelling for callers being migrated. New code must import
+# CONFIG_FILENAME; the retired filename is only a ConfigWriter migration input.
+GLOBAL_CONFIG_FILENAME = CONFIG_FILENAME
 INSTALL_LOCK_FILENAME = "install.lock"
 
 
@@ -180,14 +186,23 @@ def env_or_none(environment_variable: str) -> str | None:
 def agents_home() -> Path:
     """Return the install root every platform target of one invocation shares.
 
-    ``NWAVE_AGENTS_HOME`` when set (the isolation override already honored by
-    ``install_nwave.create_backup``, ``record_install_metadata`` and the K4
-    harness), else the user home. Resolved through ONE helper so the install
-    lock and the install provenance record can never disagree about which
-    install they belong to.
+    The selected home is resolved by ``NWaveLocations.resolve`` -- the shared
+    authority used by the installer, CLI, doctor, and hooks -- so this legacy
+    convenience function cannot reimplement the override rule.
     """
-    override = env_or_none("NWAVE_AGENTS_HOME")
-    return Path(override) if override else Path.home()
+    locations = NWaveLocations.resolve(
+        home=Path.home(),
+        repo_root=Path.cwd(),
+        agents_home_override=env_or_none("NWAVE_AGENTS_HOME"),
+        claude_config_override=env_or_none("CLAUDE_CONFIG_DIR"),
+        codex_config_override=env_or_none("CODEX_HOME"),
+    )
+    # This convenience reader has historically been total.  The installer
+    # itself observes a Failure and refuses before writing; read-only callers
+    # retain their native-home fallback while never reimplementing selection.
+    if isinstance(locations, Failure):
+        return Path.home()
+    return locations.unwrap().agents_home
 
 
 def codex_config_dir() -> Path:

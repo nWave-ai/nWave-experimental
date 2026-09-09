@@ -356,15 +356,10 @@ class TestNWaveInstallerLogging:
         pinned here.
         """
         from scripts.install.install_nwave import NWaveInstaller
-        from scripts.install.install_utils import PathUtils
 
-        # ARRANGE - Mock the config directory
-        def mock_get_claude_config_dir():
-            return tmp_path / ".claude"
-
-        monkeypatch.setattr(
-            PathUtils, "get_claude_config_dir", mock_get_claude_config_dir
-        )
+        # ARRANGE - NWaveLocations reads the explicit supported input once at
+        # construction; patching the retired PathUtils seam cannot affect it.
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
 
         # ACT
         installer = NWaveInstaller(dry_run=False)
@@ -386,15 +381,9 @@ class TestNWaveInstallerLogging:
         THEN: No log file is created (only console output)
         """
         from scripts.install.install_nwave import NWaveInstaller
-        from scripts.install.install_utils import PathUtils
 
         # ARRANGE
-        def mock_get_claude_config_dir():
-            return tmp_path / ".claude"
-
-        monkeypatch.setattr(
-            PathUtils, "get_claude_config_dir", mock_get_claude_config_dir
-        )
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
 
         # ACT
         installer = NWaveInstaller(dry_run=True)

@@ -440,17 +440,6 @@ class DeliverySteps:
         design = runner.derive_authority(root, ready.authority)
         if isinstance(design, DeliveryOutcome):
             return _from_outcome(design, None, runner.turns_bought, runner.last_role)
-        if not runner.oracle_turn_complete(root, stored, ready, design):
-            return StepOutcome(
-                Disposition.Refusal,
-                FailureDetail(
-                    "OracleUnrecorded",
-                    "this value has no oracle turn on record, so there is nothing "
-                    "for a crafter to drive green",
-                    "author and admit it first with `des oracle --repo-root "
-                    f"<root> --value {position}`",
-                ),
-            )
         if runner.craft_turn_complete(root, stored, ready, design):
             return StepOutcome(
                 Disposition.Success,
@@ -495,7 +484,7 @@ class DeliverySteps:
         stored = _graph(root)
         if isinstance(stored, StepOutcome):
             return stored
-        prepared = _prepared(runner, root, stored, require_craft=True)
+        prepared = _prepared(runner, root, stored)
         if isinstance(prepared, StepOutcome):
             return prepared
         recorded = runner.verified_candidate(root, stored)
@@ -643,7 +632,7 @@ class DeliverySteps:
                 return _from_outcome(
                     unrecorded, None, runner.turns_bought, runner.last_role
                 )
-        prepared = _prepared(runner, root, stored, require_craft=False)
+        prepared = _prepared(runner, root, stored)
         if isinstance(prepared, StepOutcome):
             return prepared
         base = runner.candidate_base(root, candidate)
@@ -817,8 +806,6 @@ def _prepared(
     runner: DeliveryContinuationRunner,
     root: Path,
     stored: StoredHandover,
-    *,
-    require_craft: bool,
 ) -> list[tuple[str, object]] | StepOutcome:
     """Every value of the Request with its derived facts, or why one is not ready.
 
@@ -834,30 +821,6 @@ def _prepared(
         design = runner.derive_authority(root, value.authority)
         if isinstance(design, DeliveryOutcome):
             return _from_outcome(design, None, runner.turns_bought, runner.last_role)
-        if not runner.oracle_turn_complete(root, stored, value, design):
-            return StepOutcome(
-                Disposition.Refusal,
-                FailureDetail(
-                    "OracleUnrecorded",
-                    f"value {position} has no oracle turn on record, and the "
-                    "candidate covers every value of this Request",
-                    "admit it first with `des oracle --repo-root <root> --value "
-                    f"{position}`",
-                ),
-            )
-        if require_craft and not runner.craft_turn_complete(
-            root, stored, value, design
-        ):
-            return StepOutcome(
-                Disposition.Refusal,
-                FailureDetail(
-                    "CraftUnrecorded",
-                    f"value {position} has no craft turn on record, and the "
-                    "candidate covers every value of this Request",
-                    "implement it first with `des craft --repo-root <root> "
-                    f"--value {position}`",
-                ),
-            )
         prepared.append((value.observation, design))
     return prepared
 

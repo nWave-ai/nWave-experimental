@@ -426,6 +426,76 @@ def test_missing_declared_tools_fails_closed_without_provider_spend(
     assert "no explicit tools" in run.diagnostic
 
 
+def test_claude_uses_framework_role_bytes_but_keeps_candidate_execution_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate = tmp_path / "candidate"
+    old_spec = candidate / "nWave" / "agents" / "role.md"
+    old_spec.parent.mkdir(parents=True)
+    old_spec.write_text("---\nmodel: stale\ntools: Edit\n---\nold subject\n")
+    framework = tmp_path / "framework"
+    runtime_spec = framework / "nWave" / "agents" / "role.md"
+    runtime_spec.parent.mkdir(parents=True)
+    runtime_spec.write_text(
+        "---\nmodel: runtime\ntools: Read\n---\ncorrected runtime\n"
+    )
+    observed: dict[str, object] = {}
+
+    def fake_spawn(argv, **kwargs):
+        observed["argv"] = argv
+        observed["cwd"] = kwargs["cwd"]
+        observed["input"] = kwargs["input"]
+        return CompletedProcess(
+            argv,
+            0,
+            json.dumps(
+                {"structured_output": {"outcome": "accepted", "diagnostic": ""}}
+            ),
+            "",
+        )
+
+    monkeypatch.setattr("des.runtime.spawn.spawn", fake_spawn)
+    run = ClaudeCodeTaskAdapter(
+        Path("/usr/bin/claude"), framework_root=framework
+    ).invoke(role_id="role", prompt="candidate prompt", cwd=candidate)
+
+    argv = observed["argv"]
+    assert run.outcome is ModelOutcome.Accepted
+    assert observed["cwd"] == str(candidate)
+    assert observed["input"] == "candidate prompt"
+    assert isinstance(argv, list)
+    agents = json.loads(argv[argv.index("--agents") + 1])
+    assert agents["role"]["prompt"] == runtime_spec.read_text(encoding="utf-8")
+    assert argv[argv.index("--model") + 1] == "runtime"
+
+
+def test_claude_without_framework_root_keeps_cwd_local_role_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = tmp_path / "nWave" / "agents" / "role.md"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("---\nmodel: local\ntools: Read\n---\nlocal\n")
+    observed: list[str] = []
+
+    def fake_spawn(argv, **_kwargs):
+        observed.extend(argv)
+        return CompletedProcess(
+            argv,
+            0,
+            json.dumps(
+                {"structured_output": {"outcome": "accepted", "diagnostic": ""}}
+            ),
+            "",
+        )
+
+    monkeypatch.setattr("des.runtime.spawn.spawn", fake_spawn)
+    ClaudeCodeTaskAdapter(Path("/usr/bin/claude")).invoke(
+        role_id="role", prompt="local", cwd=tmp_path
+    )
+
+    assert observed[observed.index("--model") + 1] == "local"
+
+
 @pytest.mark.parametrize(("tools", "retry_safe"), [(" Read", True), (" Edit", False)])
 def test_nonzero_provider_run_is_safe_only_for_effectively_read_only_tools(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tools: str, retry_safe: bool

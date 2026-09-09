@@ -158,10 +158,9 @@ def build_guard_command(python_cmd: str) -> str:
     The guard:
     1. Buffers stdin (hook input JSON)
     2. If the target is execution-log.json, always invokes Python (unconditional)
-    3. Invokes Python when a
-       `.nwave/local-config.json` candidate exists in the project -- a cheap,
-       content-blind shell-level pre-filter (file EXISTENCE only, never the
-       marker's `enabled_for_repo` value or any other JSON). The shell never
+    3. Invokes Python when the canonical `.nwave/config.json` exists in the
+       project -- a cheap, content-blind shell-level pre-filter (file
+       EXISTENCE only, never an activation value or any other JSON). The shell never
        parses JSON or interprets activation state itself: the semantic
        `enabled_for_repo`/activation-mode resolution stays the sole
        responsibility of `activation_gate.apply_gate` (invoked once the
@@ -186,7 +185,7 @@ def build_guard_command(python_cmd: str) -> str:
         "INPUT=$(cat); "
         "printf '%s' \"$INPUT\" | grep -q 'execution-log\\.json' && "
         "{{ printf '%s' \"$INPUT\" | {python_cmd}; exit $?; }}; "
-        "test -f .nwave/local-config.json && "
+        "test -f .nwave/config.json && "
         "{{ printf '%s' \"$INPUT\" | {python_cmd}; exit $?; }}; "
         "exit 0"
     ).format(python_cmd=python_cmd)

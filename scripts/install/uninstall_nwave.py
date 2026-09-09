@@ -419,11 +419,11 @@ class NWaveUninstaller:
 
         Args:
             global_config_path: Override path to global config file.
-                Defaults to ~/.nwave/global-config.json.
+                Defaults to ~/.nwave/config.json.
             prompt_fn: Optional callable(prompt_str) -> bool for testing.
                 Defaults to confirm_action from install_utils.
         """
-        path = global_config_path or (Path.home() / ".nwave" / "global-config.json")
+        path = global_config_path or (Path.home() / ".nwave" / "config.json")
 
         if not path.exists():
             return
@@ -842,7 +842,7 @@ class NWaveUninstaller:
         than claude_config_dir/lib/python/des -- a native-only uninstall must
         remove it too, mirroring remove_lib_python for the Claude location.
         Only the "des" subtree is removed; sibling ~/.nwave content
-        (global-config.json, nWave/ operator state, etc.) is untouched, and
+        (config.json, nWave/ operator state, etc.) is untouched, and
         the "runtime" parent is removed only if it becomes empty.
         """
         runtime_des = host_neutral_runtime_dir() / "des"

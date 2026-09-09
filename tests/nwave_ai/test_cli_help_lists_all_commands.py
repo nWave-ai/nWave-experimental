@@ -101,17 +101,17 @@ _UNRELATED_JSON_MEMBERS = st.dictionaries(
 
 
 def _assert_refusal_preserves_previous_bytes(
-    argv: list[str], canonical_config: Path, legacy_marker: Path
+    argv: list[str], canonical_config: Path, retired_legacy_marker: Path
 ) -> None:
     previous_canonical_bytes = canonical_config.read_bytes()
-    previous_legacy_bytes = legacy_marker.read_bytes()
+    assert not retired_legacy_marker.exists()
     code, stdout, stderr = _invoke(argv)
     assert code != 0
     assert stdout == ""
     for part in ("WHAT", "WHY", "HOW"):
         assert part in stderr
     assert canonical_config.read_bytes() == previous_canonical_bytes
-    assert legacy_marker.read_bytes() == previous_legacy_bytes
+    assert not retired_legacy_marker.exists()
 
 
 @settings(
@@ -139,7 +139,8 @@ def test_project_activation_writer_is_canonical_atomic_and_status_observed(
         absent_config = absent_root / ".nwave" / "config.json"
         assert absent_code == 0
         assert json.loads(absent_config.read_text(encoding="utf-8")) == {
-            "enabled": expected_enabled
+            "enabled": expected_enabled,
+            "schema-version": 1,
         }
         assert not (absent_root / ".nwave" / "local-config.json").exists()
         status_code, status_stdout, _ = _invoke(["status"])
@@ -156,8 +157,10 @@ def test_project_activation_writer_is_canonical_atomic_and_status_observed(
         legacy_marker.write_bytes(legacy_bytes)
         monkeypatch.chdir(project_root)
 
-        original_replace = os.replace
-        with patch("os.replace", wraps=original_replace) as replace:
+        original_replace = Path.replace
+        with patch.object(
+            Path, "replace", autospec=True, side_effect=original_replace
+        ) as replace:
             action_code, _, _ = _invoke(action)
         assert action_code == 0
         canonical_replacements = [
@@ -173,8 +176,9 @@ def test_project_activation_writer_is_canonical_atomic_and_status_observed(
         assert json.loads(canonical_config.read_text(encoding="utf-8")) == {
             **unrelated_members,
             "enabled": expected_enabled,
+            "schema-version": 1,
         }
-        assert legacy_marker.read_bytes() == legacy_bytes
+        assert not legacy_marker.exists()
         status_code, status_stdout, _ = _invoke(["status"])
         assert status_code == 0
         assert f"This project is {status_word}." in status_stdout
@@ -185,55 +189,45 @@ def test_project_activation_writer_is_canonical_atomic_and_status_observed(
         )
 
         canonical_config.write_text(json.dumps(unrelated_members), encoding="utf-8")
-        original_write_text = Path.write_text
-
-        def fail_temporary_write(
-            path: Path,
-            *args,
-            _canonical_config=canonical_config,
-            _original_write_text=original_write_text,
-            **kwargs,
+        with patch(
+            "des.adapters.driven.config.config_writer.os.fdopen",
+            side_effect=PermissionError("temporary write permission denied"),
         ):
-            if path.parent == _canonical_config.parent and path != _canonical_config:
-                raise PermissionError("temporary write permission denied")
-            return _original_write_text(path, *args, **kwargs)
-
-        with patch.object(Path, "write_text", new=fail_temporary_write):
             _assert_refusal_preserves_previous_bytes(
                 action, canonical_config, legacy_marker
             )
 
         original_read_text = Path.read_text
 
-        def fail_temporary_read(
+        def fail_config_read(
             path: Path,
             *args,
             _canonical_config=canonical_config,
             _original_read_text=original_read_text,
             **kwargs,
         ):
-            if path.parent == _canonical_config.parent and path != _canonical_config:
-                raise OSError("temporary read failure")
+            if path == _canonical_config:
+                raise OSError("config read failure")
             return _original_read_text(path, *args, **kwargs)
 
-        with patch.object(Path, "read_text", new=fail_temporary_read):
+        with patch.object(Path, "read_text", new=fail_config_read):
             _assert_refusal_preserves_previous_bytes(
                 action, canonical_config, legacy_marker
             )
 
-        with patch("os.replace", side_effect=OSError("replace failure")):
+        with patch.object(Path, "replace", side_effect=OSError("replace failure")):
             _assert_refusal_preserves_previous_bytes(
                 action, canonical_config, legacy_marker
             )
 
-        with patch("os.replace", side_effect=InterruptedError("before replace")):
+        with patch.object(
+            Path, "replace", side_effect=InterruptedError("before replace")
+        ):
             _assert_refusal_preserves_previous_bytes(
                 action, canonical_config, legacy_marker
             )
 
-        completed_document = json.dumps(
-            {**unrelated_members, "enabled": expected_enabled}
-        ).encode("utf-8")
+        restored_document = json.dumps(unrelated_members).encode("utf-8")
 
         def replace_then_interrupt(
             source, destination, _original_replace=original_replace
@@ -241,17 +235,17 @@ def test_project_activation_writer_is_canonical_atomic_and_status_observed(
             _original_replace(source, destination)
             raise InterruptedError("after replace")
 
-        with patch("os.replace", side_effect=replace_then_interrupt):
+        with patch.object(Path, "replace", side_effect=replace_then_interrupt):
             interrupted_code, interrupted_stdout, interrupted_stderr = _invoke(action)
         assert interrupted_code != 0
         assert interrupted_stdout == ""
         for part in ("WHAT", "WHY", "HOW"):
             assert part in interrupted_stderr
-        assert canonical_config.read_bytes() == completed_document
-        assert legacy_marker.read_bytes() == legacy_bytes
+        assert canonical_config.read_bytes() == restored_document
+        assert not legacy_marker.exists()
         status_code, status_stdout, _ = _invoke(["status"])
         assert status_code == 0
-        assert f"This project is {status_word}." in status_stdout
+        assert "This project is inactive." in status_stdout
 
         externally_replaced_config = json.dumps(
             {
@@ -270,11 +264,13 @@ def test_project_activation_writer_is_canonical_atomic_and_status_observed(
             _original_replace(source, destination)
             Path(destination).write_bytes(_externally_replaced_config)
 
-        with patch("os.replace", side_effect=replace_then_externally_change_state):
+        with patch.object(
+            Path, "replace", side_effect=replace_then_externally_change_state
+        ):
             mismatch_code, mismatch_stdout, mismatch_stderr = _invoke(action)
         assert mismatch_code != 0
         assert mismatch_stdout == ""
         for part in ("WHAT", "WHY", "HOW"):
             assert part in mismatch_stderr
-        assert canonical_config.read_bytes() == externally_replaced_config
-        assert legacy_marker.read_bytes() == legacy_bytes
+        assert canonical_config.read_bytes() == restored_document
+        assert not legacy_marker.exists()

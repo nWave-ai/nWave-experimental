@@ -57,7 +57,7 @@ class TestPluginHookCorrectness:
         )
         command = entry["hooks"][0]["command"]
         assert "deliver-session.json" not in command
-        assert ".nwave/local-config.json" in command
+        assert ".nwave/config.json" in command
 
     def test_no_task_matcher_anywhere(self, hook_config: dict):
         """No hook uses legacy 'Task' matcher."""

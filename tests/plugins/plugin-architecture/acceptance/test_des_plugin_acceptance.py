@@ -188,7 +188,14 @@ def call_registry_install_all(
     clean_test_directory: Path, project_root: Path, test_logger
 ):
     """Call registry.install_all(context) to install all plugins."""
+    from des.domain.nwave_locations import NWaveLocations
     from scripts.install.plugins.base import InstallContext
+
+    # ``project_root`` supplies the framework assets.  Bootstrap's durable
+    # configuration belongs to a consumer project, so keep that write target
+    # inside this test's temporary tree rather than the source checkout.
+    user_project_root = clean_test_directory.parent / "project"
+    user_project_root.mkdir()
 
     # Create context with all required utilities
     context = InstallContext(
@@ -197,6 +204,12 @@ def call_registry_install_all(
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
+        user_project_root=user_project_root,
+        locations=NWaveLocations(
+            agents_home=clean_test_directory.parent,
+            claude_config_dir=clean_test_directory,
+            codex_config_dir=clean_test_directory.parent / ".codex",
+        ),
         framework_source=project_root / "nWave",
         dry_run=False,
     )

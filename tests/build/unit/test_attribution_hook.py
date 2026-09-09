@@ -34,9 +34,9 @@ def _write_global_config(
     enabled: bool = True,
     trailer: str = "Co-Authored-By: nWave <nwave@nwave.ai>",
 ) -> None:
-    """Write a global-config.json with attribution settings."""
+    """Write a config.json with attribution settings."""
     config_dir.mkdir(parents=True, exist_ok=True)
-    config_file = config_dir / "global-config.json"
+    config_file = config_dir / "config.json"
     config_file.write_text(
         json.dumps({"attribution": {"enabled": enabled, "trailer": trailer}}),
         encoding="utf-8",
@@ -48,10 +48,10 @@ def _write_project_config(
     *,
     enabled: bool,
 ) -> None:
-    """Write a .nwave/des-config.json with attribution override."""
+    """Write a .nwave/config.json with attribution override."""
     nwave_dir = project_dir / ".nwave"
     nwave_dir.mkdir(parents=True, exist_ok=True)
-    config_file = nwave_dir / "des-config.json"
+    config_file = nwave_dir / "config.json"
     config_file.write_text(
         json.dumps({"attribution": {"enabled": enabled}}),
         encoding="utf-8",
@@ -112,6 +112,25 @@ class TestAttributionHook:
         assert result == 0
         assert msg_file.read_text(encoding="utf-8") == original
 
+    def test_relative_selected_home_never_uses_the_native_home_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The standalone shim must fail open when its selected home is invalid."""
+        home = tmp_path / "home"
+        _write_global_config(home / ".nwave")
+        msg_file = tmp_path / "COMMIT_EDITMSG"
+        original = "chore: keep native authority isolated"
+        msg_file.write_text(original, encoding="utf-8")
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("NWAVE_AGENTS_HOME", "relative-selected-home")
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+        monkeypatch.delenv("CODEX_HOME", raising=False)
+
+        result = process_commit_message(str(msg_file))
+
+        assert result == 0
+        assert msg_file.read_text(encoding="utf-8") == original
+
     def test_no_duplication_on_amend(self, tmp_path: Path) -> None:
         """Trailer already present -> no second copy added."""
         global_dir = tmp_path / ".nwave"
@@ -136,7 +155,7 @@ class TestAttributionHook:
         """Bad JSON in config -> no trailer, exit 0."""
         global_dir = tmp_path / ".nwave"
         global_dir.mkdir(parents=True)
-        config_file = global_dir / "global-config.json"
+        config_file = global_dir / "config.json"
         config_file.write_text("{invalid json!!!", encoding="utf-8")
 
         msg_file = tmp_path / "COMMIT_EDITMSG"

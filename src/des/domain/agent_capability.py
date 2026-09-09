@@ -64,6 +64,8 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from des.runtime.packaged_asset import AssetOrigin, resolve_packaged_asset
+
 
 class ClaimRegister(Enum):
     """The register a briefing may use when speaking about an agent's access."""
@@ -96,10 +98,8 @@ _NON_SOURCE_REACHING_PREFIXES: tuple[str, ...] = (
 #: ``des.cli.mode_registry_completeness`` reads ``root / "nWave" / "agents"``.
 _CHECKOUT_AGENT_SPEC_PARTS: tuple[str, ...] = ("nWave", "agents")
 
-#: Candidate 2 -- the installed deployment. Precedent: ``des.cli.health_check``
-#: reads ``claude_dir / "agents" / "nw"``. The installed ``nWave`` SSOT axis
-#: (``<claude_dir>/lib/nWave/``) ships NO ``agents/``, so this second candidate
-#: is what makes the derivation work on an installed machine at all.
+#: Legacy installed Claude deployment. The provider-neutral packaged copy is
+#: considered before this compatibility location.
 _INSTALLED_AGENT_SPEC_PARTS: tuple[str, ...] = ("agents", "nw")
 
 _FRONTMATTER_DELIMITER = "---"
@@ -270,11 +270,18 @@ def candidate_spec_paths(
 ) -> tuple[Path, ...]:
     """The ordered candidate locations of ``agent``'s spec.
 
-    The checkout the caller POINTED AT first, the installed deployment second.
+    The checkout the caller POINTED AT first, then the provider-neutral
+    packaged nWave asset, then the legacy Claude deployment.
+
+    A package/repo ambiguity is deliberately omitted here; the resolver below
+    turns it into UNKNOWN rather than silently reaching the legacy candidate.
     """
     installed_root = claude_dir if claude_dir is not None else _default_claude_dir()
+    packaged = resolve_packaged_asset(f"nWave/agents/{agent}.md", start=repo_root)
+    package_path = (packaged.path,) if packaged.is_usable else ()
     return (
         repo_root.joinpath(*_CHECKOUT_AGENT_SPEC_PARTS, f"{agent}.md"),
+        *package_path,
         installed_root.joinpath(*_INSTALLED_AGENT_SPEC_PARTS, f"{agent}.md"),
     )
 
@@ -343,19 +350,46 @@ def _capability_from_spec(spec_path: Path) -> DeclaredCapability:
     return DeclaredCapability.from_declared_tools(spec_path, tools, model)
 
 
+def _entry_is_present(path: Path) -> bool:
+    """Whether a candidate was named, including an unreadable dangling link."""
+    return path.exists() or path.is_symlink()
+
+
 def resolve_declared_capability(
-    agent: str, *, repo_root: Path, claude_dir: Path | None = None
+    agent: str,
+    *,
+    repo_root: Path,
+    claude_dir: Path | None = None,
+    framework_root: Path | None = None,
 ) -> DeclaredCapability:
     """Resolve ``agent``'s declared capability from its published spec.
 
-    The FIRST candidate that EXISTS decides -- including deciding ``UNKNOWN``
-    when it exists but will not parse. Falling through on a parse failure would
-    answer with a different deployment's copy of the spec, i.e. answer a
-    question the caller never asked.
+    A supplied framework root owns its public roles; otherwise the invocation
+    repository is first. The FIRST candidate that EXISTS decides -- including
+    deciding ``UNKNOWN`` when it exists but will not parse. Falling through on
+    a parse failure would answer with a different deployment's copy of the
+    spec, i.e. answer a question the caller never asked.
     """
-    for candidate in candidate_spec_paths(
-        agent, repo_root=repo_root, claude_dir=claude_dir
-    ):
-        if candidate.is_file():
-            return _capability_from_spec(candidate)
+    if framework_root is not None:
+        framework = framework_root.joinpath(*_CHECKOUT_AGENT_SPEC_PARTS, f"{agent}.md")
+        if _entry_is_present(framework):
+            return _capability_from_spec(framework)
+
+    checkout = repo_root.joinpath(*_CHECKOUT_AGENT_SPEC_PARTS, f"{agent}.md")
+    if _entry_is_present(checkout):
+        return _capability_from_spec(checkout)
+
+    packaged = resolve_packaged_asset(f"nWave/agents/{agent}.md", start=repo_root)
+    if packaged.origin is AssetOrigin.AMBIGUOUS:
+        # The caller named a tree whose public role differs from the packaged
+        # runtime. Picking a Claude-profile copy after that refusal would hide
+        # the exact source/install disagreement the shared resolver detected.
+        return DeclaredCapability.unknown(None)
+    if packaged.path is not None and _entry_is_present(packaged.path):
+        return _capability_from_spec(packaged.path)
+
+    installed_root = claude_dir if claude_dir is not None else _default_claude_dir()
+    legacy = installed_root.joinpath(*_INSTALLED_AGENT_SPEC_PARTS, f"{agent}.md")
+    if _entry_is_present(legacy):
+        return _capability_from_spec(legacy)
     return DeclaredCapability.unknown(None)

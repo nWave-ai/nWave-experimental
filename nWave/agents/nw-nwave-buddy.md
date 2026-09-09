@@ -50,9 +50,10 @@ Skills are listed in frontmatter for auto-injection, but consult only the releva
 | Delivery authority, Request size, interaction level | `~/.claude/skills/nw-auto/SKILL.md` | Questions about who owns delivery work, how big one Request is, and when to ask the human; also onboarding/first-steps |
 | Document model, SSOT, file locations | `~/.claude/skills/nw-buddy-ssot-knowledge/SKILL.md` | Questions about where files are, document structure, migration; also onboarding |
 | Command help, "how do I...?" | `~/.claude/skills/nw-buddy-command-catalog/SKILL.md` | Questions about specific commands or which command to use; also onboarding |
+| Provider, model, competence, or global/project model configuration | `~/.claude/skills/nw-rigor/SKILL.md` | Route the user to `/nw-rigor`; it obtains an explicit Codex or Claude provider and model before invoking `nwave-ai model set` |
 | Feature status, project state, "what's next?" | `~/.claude/skills/nw-buddy-project-reading/SKILL.md` | Questions about progress, next steps, status dashboards, troubleshooting; also onboarding |
 
-For onboarding/first-steps, load all 4 rows — new-user orientation requires full context.
+For onboarding/first-steps, load the four general rows — new-user orientation requires full context. Load `nw-rigor` only for model configuration.
 
 Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo)
 

@@ -261,8 +261,8 @@ class HookAdapterComposition:
         ``_SRC_PATH``/``PYTHONPATH`` was a subprocess import-resolution concern
         only (``des`` is already importable in-process) -- a no-op here.
 
-        This composition explicitly supplies the enabled attribution preference
-        via a disposable mock home directory.
+        This composition explicitly supplies the enabled activation and
+        attribution preferences through a disposable selected home directory.
         """
         tool_input = {"command": str(command), **self.extra_tool_input}
         payload = json.dumps(
@@ -278,17 +278,25 @@ class HookAdapterComposition:
         # otherwise the gate resolves an unconfigured isolated root as
         # inactive and exits 0 before `handle_pre_tool_use` is ever reached.
         prior_des_project_dir = os.environ.get("DES_PROJECT_DIR")
+        prior_agents_home = os.environ.get("NWAVE_AGENTS_HOME")
         os.environ["DES_PROJECT_DIR"] = os.getcwd()
         try:
             with tempfile.TemporaryDirectory() as temp_home:
                 temp_home_path = Path(temp_home)
                 nwave_dir = temp_home_path / ".nwave"
                 nwave_dir.mkdir(parents=True, exist_ok=True)
-                config_file = nwave_dir / "global-config.json"
+                config_file = nwave_dir / "config.json"
                 config_file.write_text(
-                    json.dumps({"attribution": {"enabled": True}}),
+                    json.dumps(
+                        {
+                            "enabled": True,
+                            "activation": {"mode": "all"},
+                            "attribution": {"enabled": True},
+                        }
+                    ),
                     encoding="utf-8",
                 )
+                os.environ["NWAVE_AGENTS_HOME"] = str(temp_home_path)
                 with patch.object(Path, "home", return_value=temp_home_path):
                     exit_code, stdout, _stderr = run_hook_in_process(
                         _hook_router_main,
@@ -301,4 +309,8 @@ class HookAdapterComposition:
                 os.environ.pop("DES_PROJECT_DIR", None)
             else:
                 os.environ["DES_PROJECT_DIR"] = prior_des_project_dir
+            if prior_agents_home is None:
+                os.environ.pop("NWAVE_AGENTS_HOME", None)
+            else:
+                os.environ["NWAVE_AGENTS_HOME"] = prior_agents_home
         return HookResult(exit_code=exit_code, stdout=stdout)

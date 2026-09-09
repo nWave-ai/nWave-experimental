@@ -16,7 +16,7 @@ project entirely -- dispatching (or silencing) the wrong repo's hooks.
 
 DISCRIMINATING ARRANGEMENT (cwd != DES_PROJECT_DIR, the only way to tell the
 two reads apart): two real tmp roots, each carrying its OWN
-`.nwave/local-config.json` `enabled_for_repo` marker with an OPPOSITE value
+`.nwave/config.json` `enabled` declaration with an OPPOSITE value
 (`isolated_root` -> `True` / ACTIVE, `shared_cwd_root` -> `False` / INACTIVE).
 `resolve_activation` short-circuits on a present marker
 (`src/des/domain/activation_policy.py`), so this discriminates independently
@@ -45,11 +45,11 @@ from des.adapters.drivers.hooks.activation_gate import apply_gate
 _NEUTRAL_COMMAND = "subagent-stop"
 
 
-def _write_local_config(root: Path, *, enabled_for_repo: bool) -> None:
+def _write_repo_config(root: Path, *, enabled_for_repo: bool) -> None:
     config_dir = root / ".nwave"
     config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "local-config.json").write_text(
-        json.dumps({"enabled_for_repo": enabled_for_repo}), encoding="utf-8"
+    (config_dir / "config.json").write_text(
+        json.dumps({"enabled": enabled_for_repo}), encoding="utf-8"
     )
 
 
@@ -74,8 +74,8 @@ def test_apply_gate_cwd_fallback_ignores_des_project_dir_override(
     shared_cwd_root.mkdir()
     isolated_root.mkdir()
 
-    _write_local_config(isolated_root, enabled_for_repo=True)
-    _write_local_config(shared_cwd_root, enabled_for_repo=False)
+    _write_repo_config(isolated_root, enabled_for_repo=True)
+    _write_repo_config(shared_cwd_root, enabled_for_repo=False)
 
     monkeypatch.setenv("DES_PROJECT_DIR", str(isolated_root))
     monkeypatch.chdir(shared_cwd_root)
@@ -87,7 +87,7 @@ def test_apply_gate_cwd_fallback_ignores_des_project_dir_override(
         "(activation_gate.py:117, `project_root = _parse_cwd(stdin_text) or "
         "Path.cwd()`) must honour DES_PROJECT_DIR via resolve_nwave_root() "
         "when the stdin envelope carries no 'cwd' -- the isolated root's "
-        "local-config.json declares enabled_for_repo=True (active). Observed "
+        "config.json declares enabled=True (active). Observed "
         "sys.exit(0) (silenced): the gate read the SHARED cwd's INACTIVE "
         "marker via bare Path.cwd() instead of the isolated DES_PROJECT_DIR "
         "root."
@@ -99,7 +99,7 @@ def test_apply_gate_cwd_fallback_reads_cwd_when_des_project_dir_unset(
 ) -> None:
     project_root = tmp_path / "unset_cwd_project"
     project_root.mkdir()
-    _write_local_config(project_root, enabled_for_repo=True)
+    _write_repo_config(project_root, enabled_for_repo=True)
 
     monkeypatch.delenv("DES_PROJECT_DIR", raising=False)
     monkeypatch.chdir(project_root)
@@ -108,8 +108,8 @@ def test_apply_gate_cwd_fallback_reads_cwd_when_des_project_dir_unset(
 
     assert outcome != "__EXIT__", (
         "with DES_PROJECT_DIR unset, apply_gate's fallback must still read "
-        "Path.cwd() -- the cwd project's local-config.json declares "
-        "enabled_for_repo=True (active); observed sys.exit(0) (silenced) "
+        "Path.cwd() -- the cwd project's config.json declares enabled=True "
+        "(active); observed sys.exit(0) (silenced) "
         "instead of a dispatch."
     )
 

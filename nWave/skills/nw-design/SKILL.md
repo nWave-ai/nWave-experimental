@@ -103,9 +103,9 @@ Zero delta is accepted only when the authority locator was already resolved
 before invocation and the existing authority is complete. Missing or ambiguous
 ownership is `indeterminate`; conflicting authority is `rejected`.
 
-DISTILL asks the existing CLI/software producer to derive route, Git base,
-authority locator and handover bytes from Git and the durable product/design/
-oracle authorities.
+The invoking LLM selects the DISTILL route. Existing CLI/software constructs
+the Git base, authority locator, and typed handover facts and bytes from Git
+and the durable product/design/oracle authorities.
 The Request's ordered value graph is decomposed once; the
 producer emits one minimal whole-Request handover with one fan-in. Every
 independently observable, shippable value slice receives its value-level oracle,
@@ -185,10 +185,11 @@ temporal gap needs the model checker.
 
 ## Handoff
 
-After self-falsification and any runner-mediated initial ATD-to-DESIGN
-correction, update or reuse the one existing durable brief or ADR that owns the
-decision, then return the outcome ONCE. A correction changes only the already
-bound authority document and the runner re-derives its facts before ATD resumes.
+After self-falsification, the LLM routes an acceptance finding that needs
+upstream DESIGN rework to the owner of the one existing durable brief or ADR.
+A correction changes only the already bound authority document; software
+re-derives its typed facts, and the LLM chooses whether and how to reinvoke
+DESIGN or ATD while retaining every required quality check.
 The authority records paradigm, targets, obligations, oracle locator and
 supports, native command vectors and
 the public contract; the result carries none of them. Software owns the

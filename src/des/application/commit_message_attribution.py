@@ -52,7 +52,7 @@ def attribution_is_due(repo: Path, *, global_config_path: Path | None = None) ->
     Args:
         repo: the repository whose activation declaration (walk-up resolved) and
             attribution preference are read.
-        global_config_path: optional override for ``~/.nwave/global-config.json``.
+        global_config_path: optional override for ``~/.nwave/config.json``.
             Production callers either omit it (``DESConfig``'s own default) or,
             where ``$HOME`` must be resolved at CALL time rather than at class-
             definition time, pass the computed path explicitly.
@@ -78,10 +78,10 @@ def attribute_commit_message(
     exception can escape and block the commit it is meant to merely credit.
 
     Args:
-        repo: the repository whose ``.nwave/local-config.json`` marker (walk-up
+        repo: the repository whose ``.nwave/config.json`` marker (walk-up
             resolved) is read for the activation decision.
         message: the fully-assembled commit message BEFORE this call.
-        global_config_path: optional override for ``~/.nwave/global-config.json``
+        global_config_path: optional override for ``~/.nwave/config.json``
             (test hermeticity only -- production callers omit it and get the
             real per-machine global config via ``DESConfig``'s own default).
     """

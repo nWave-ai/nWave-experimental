@@ -206,6 +206,12 @@ class GraphifyAdapter:
         self._out_dir = _locate_graphify_out(self._root)
         self._graph: dict | None = None
         self._manifest: dict | None = None
+        # A failed synchronous refresh is expensive (the provider's default
+        # timeout is intentionally generous). Keep its honest failure only
+        # while the graph/manifest pair and the stale live inputs are the same;
+        # either side changing re-opens exactly one new refresh attempt.
+        self._operation_state: dict[str, object] = {"failed_refresh": None, "views": []}
+        self._operation_owner = self
         # Which of the two ABSENT sub-causes applies, recorded ONCE here so
         # a caller can name the exact closed detail without re-walking or
         # re-parsing anything a second time. ``None`` once real data is
@@ -225,6 +231,18 @@ class GraphifyAdapter:
                 self._absence_cause = "index present-but-unreadable"
         else:
             self._absence_cause = "index directory absent"
+
+    def scoped(self, root: Path | str) -> GraphifyAdapter:
+        """A per-query view sharing this operation's graph and refresh state."""
+        view = GraphifyAdapter(root)
+        # Each view keeps its own query root, but refreshes one graph index.
+        # Construct it normally so future adapter fields cannot be silently
+        # omitted by a brittle shallow ``__dict__`` clone, then join the
+        # operation state whose reload path updates every registered view.
+        view._operation_owner = self._operation_owner
+        view._operation_state = self._operation_state
+        self._operation_state["views"].append(view)
+        return view
 
     @property
     def has_data(self) -> bool:
@@ -346,8 +364,68 @@ class GraphifyAdapter:
         if descriptor.id not in _HANDLED_CAPABILITY_IDS:
             return None  # graphify never claims this capability -- not its call
         if not self._is_stale_for(descriptor.id, request):
+            self._operation_state["failed_refresh"] = None
             return None
-        return self._regenerate_and_recheck(descriptor.id, request)
+        fingerprint = self._refresh_failure_fingerprint(descriptor.id)
+        failed_refresh = self._operation_state["failed_refresh"]
+        if failed_refresh is not None and failed_refresh[0] == fingerprint:
+            return failed_refresh[1]
+        failure = self._regenerate_and_recheck(descriptor.id, request)
+        if failure is not None:
+            # Regeneration can change graph/manifest and still fail the
+            # post-check. Record the state it actually left, not the state
+            # before the attempt, so the next identical query does not retry.
+            self._operation_state["failed_refresh"] = (
+                self._refresh_failure_fingerprint(descriptor.id),
+                failure,
+            )
+        else:
+            self._operation_state["failed_refresh"] = None
+        return failure
+
+    def _refresh_failure_fingerprint(self, capability_id: str) -> tuple[object, ...]:
+        """The cheap measured state that permits one failed refresh retry.
+
+        The graph/manifest pair identifies the index state. The live inputs are
+        exactly those whose freshness this capability reads, including an absent
+        file as ``None``. This is adapter-local operation state, not a global
+        claim that Graphify can never recover.
+        """
+        assert self._out_dir is not None
+        index = tuple(
+            self._path_fingerprint(self._out_dir / name)
+            for name in (_GRAPH_FILE_NAME, _MANIFEST_FILE_NAME)
+        )
+        if capability_id == CAPABILITY_ATOMS_IN_FILE:
+            # A failed update speaks about the one graph index, not merely the
+            # first file that happened to query it. Fingerprint every live
+            # Python input under that index so sibling file views coalesce, yet
+            # any source change reopens one honest attempt.
+            relative_paths = tuple(
+                file.resolve().relative_to(self._out_dir.parent.resolve()).as_posix()
+                for file in TreeScope(self._out_dir.parent).files(_PYTHON_SOURCE_GLOB)
+            )
+            inputs = tuple(
+                (relative, self._path_fingerprint(self._out_dir.parent / relative))
+                for relative in sorted(relative_paths)
+            )
+        else:
+            inputs = tuple(
+                (
+                    live_file.resolve().as_posix(),
+                    self._path_fingerprint(live_file),
+                )
+                for live_file in TreeScope(self._root).files(_PYTHON_SOURCE_GLOB)
+            )
+        return capability_id, index, inputs
+
+    @staticmethod
+    def _path_fingerprint(path: Path) -> tuple[int, int] | None:
+        try:
+            state = path.stat()
+        except OSError:
+            return None
+        return state.st_mtime_ns, state.st_size
 
     def _is_stale_for(self, capability_id: str, request: Mapping[str, object]) -> bool:
         """Reuses the SAME witness checks :meth:`_atoms_in_file`/
@@ -465,6 +543,11 @@ class GraphifyAdapter:
         if graph is not None and manifest is not None:
             self._graph = graph
             self._manifest = manifest
+            self._operation_owner._graph = graph
+            self._operation_owner._manifest = manifest
+            for view in self._operation_state["views"]:
+                view._graph = graph
+                view._manifest = manifest
 
     # -- capability realizations --------------------------------------------
 

@@ -1,25 +1,60 @@
-"""Check all JSON files for valid syntax.
-
-Mirrors CI file-quality job: scans all JSON files in the repo, not just staged ones.
-Excludes .git/, dist/, and node_modules/ directories.
-"""
+"""Check every tracked source JSON file for valid UTF-8 JSON syntax."""
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 
+_EXCLUDED_DIRECTORY_NAMES = {".git", "dist", "node_modules"}
+
+
+def _tracked_json_files() -> list[Path]:
+    """Return versioned JSON paths, excluding tracked dependency directories."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z", "--", "*.json"],
+            capture_output=True,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError(f"could not list tracked JSON files: {error}") from error
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(
+            f"could not list tracked JSON files: {detail or result.returncode}"
+        )
+    return [
+        Path(item.decode("utf-8", errors="surrogateescape"))
+        for item in result.stdout.split(b"\0")
+        if item
+        and not any(
+            part in _EXCLUDED_DIRECTORY_NAMES
+            for part in Path(item.decode("utf-8", errors="surrogateescape")).parts
+        )
+    ]
+
+
 def main() -> int:
-    errors = []
-    for json_file in Path().rglob("*.json"):
-        path_str = str(json_file)
-        if ".git" in path_str or "dist" in path_str or "node_modules" in path_str:
-            continue
+    try:
+        json_files = _tracked_json_files()
+    except RuntimeError as error:
+        print(f"JSON error: {error}")
+        return 1
+
+    errors: list[str] = []
+    for json_file in json_files:
         try:
-            with open(json_file) as fh:
+            with json_file.open(encoding="utf-8") as fh:
                 json.load(fh)
-        except json.JSONDecodeError as e:
-            errors.append(f"{json_file}: {e}")
+        except UnicodeDecodeError as error:
+            errors.append(f"{json_file}: invalid UTF-8: {error}")
+        except json.JSONDecodeError as error:
+            errors.append(f"{json_file}: invalid JSON: {error}")
+        except OSError as error:
+            errors.append(f"{json_file}: could not read JSON: {error}")
 
     if errors:
         for e in errors:

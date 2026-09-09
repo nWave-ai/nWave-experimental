@@ -171,8 +171,6 @@ def test_g6_a_bought_turn_whose_words_died_still_reports_its_cost(
 def test_g7_a_sequence_refusal_prints_exactly_one_next(root: Path, step) -> None:
     """One lawful move -- the producing step -- so no fork is signalled."""
     decomposed(root, step)
-    # `craft` refuses DesignUnbound before OracleUnrecorded -- the order §2.4
-    # fixes -- so the second precondition is reached by binding the first.
     assert (
         step(
             "design",
@@ -186,7 +184,6 @@ def test_g7_a_sequence_refusal_prints_exactly_one_next(root: Path, step) -> None
     )
     for argv, what in (
         (("design", "--repo-root", str(root), "--value", "9"), "ValueOutOfRange"),
-        (("craft", "--repo-root", str(root), "--value", "1"), "OracleUnrecorded"),
         (("oracle", "--repo-root", str(root), "--value", "2"), "DesignUnbound"),
     ):
         code, out, err = step(*argv)

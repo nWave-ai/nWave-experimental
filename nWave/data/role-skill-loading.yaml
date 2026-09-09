@@ -124,3 +124,6 @@ roles:
   nw-skill-reviewer:
     on_demand:
       nw-ab-optimize-skill: reviewing a claimed optimized existing skill
+  nw-nwave-buddy:
+    on_demand:
+      nw-rigor: provider, model, competence, or global/project model configuration

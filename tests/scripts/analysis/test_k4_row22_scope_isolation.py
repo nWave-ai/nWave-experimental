@@ -303,7 +303,7 @@ def test_full_real_install_leaves_every_operator_root_untouched(tmp_path, monkey
             f".{name} root (only DECLARED_NEW_FILES[{name!r}] is admitted): "
             f"found {undeclared}"
         )
-    assert (workspace / ".nwave" / "global-config.json").exists(), (
+    assert (workspace / ".nwave" / "config.json").exists(), (
         "install provenance must land inside the isolated workspace instead"
     )
 

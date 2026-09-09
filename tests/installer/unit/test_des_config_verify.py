@@ -49,6 +49,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from nwave_ai.state_delta import assert_state_delta, set_to
 
+from des.domain.nwave_locations import NWaveLocations
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.des_plugin import DESPlugin
 
@@ -189,17 +190,50 @@ def des_env(tmp_path):
     settings_file.write_text(json.dumps(settings, indent=2))
 
     logger = MagicMock()
+    locations = NWaveLocations(
+        agents_home=tmp_path,
+        claude_config_dir=claude_dir,
+        codex_config_dir=tmp_path / ".codex",
+    )
     context = InstallContext(
         claude_dir=claude_dir,
         scripts_dir=scripts_dir,
         templates_dir=templates_dir,
         logger=logger,
         project_root=project_root,
+        locations=locations,
         framework_source=None,
     )
 
     plugin = DESPlugin()
     return plugin, context, project_root
+
+
+def test_bootstrap_uses_locations_agents_home_not_claude_parent(
+    tmp_path: Path,
+) -> None:
+    claude_dir = tmp_path / "profile" / ".claude"
+    agents_home = tmp_path / "global-authority"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    context = InstallContext(
+        claude_dir=claude_dir,
+        scripts_dir=tmp_path / "scripts",
+        templates_dir=tmp_path / "templates",
+        logger=MagicMock(),
+        project_root=repo,
+        locations=NWaveLocations(
+            agents_home=agents_home,
+            claude_config_dir=claude_dir,
+            codex_config_dir=tmp_path / ".codex",
+        ),
+    )
+
+    result = DESPlugin()._bootstrap_des_config(context)
+
+    assert result.success
+    assert (agents_home / ".nwave" / "config.json").exists()
+    assert not (claude_dir.parent / ".nwave" / "config.json").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +262,7 @@ class TestDESConfigVerify:
         # Check 5: create valid des-config.json with defaults
         nwave_dir = project_root / ".nwave"
         nwave_dir.mkdir(parents=True)
-        config_file = nwave_dir / "des-config.json"
+        config_file = nwave_dir / "config.json"
         config_file.write_text(
             json.dumps(
                 {"audit_logging_enabled": True, "audit_log_dir": ".nwave/des/logs"}
@@ -242,9 +276,9 @@ class TestDESConfigVerify:
 
         log_messages = [str(call) for call in context.logger.info.call_args_list]
         log_text = " ".join(log_messages)
-        assert "Verifying DES config" in log_text
+        assert "Verifying unified DES config" in log_text
         assert "DES config (" in log_text
-        assert "des-config.json" in log_text
+        assert "config.json" in log_text
         assert "audit_logging=on" in log_text
         assert "log_dir=.nwave/des/logs" in log_text
 
@@ -268,7 +302,7 @@ class TestDESConfigVerify:
         # Create .nwave/ dir but NOT des-config.json
         nwave_dir = project_root / ".nwave"
         nwave_dir.mkdir(parents=True, exist_ok=True)
-        config_file = nwave_dir / "des-config.json"
+        config_file = nwave_dir / "config.json"
 
         # Snapshot filesystem + config state before
         before_fs: dict[str, object] = {"config_file.exists": config_file.exists()}
@@ -298,6 +332,7 @@ class TestDESConfigVerify:
             expected={
                 "audit_logging_enabled": set_to(True),
                 "audit_log_dir": set_to(".nwave/des/logs"),
+                "schema-version": set_to(1),
             },
         )
 
@@ -308,7 +343,7 @@ class TestDESConfigVerify:
         WHEN: verify() is called
         THEN: Returns failure with 'DES config not found' in errors
         """
-        plugin, context, _project_root = des_env
+        plugin, context, project_root = des_env
 
         # Check 1: mock subprocess for DES module import
         mock_subprocess.return_value = MagicMock(returncode=0, stderr="")
@@ -317,8 +352,8 @@ class TestDESConfigVerify:
 
         result = plugin.verify(context)
 
-        assert result.success is False
-        assert any("DES config not found" in e for e in result.errors)
+        assert result.success is True
+        assert (project_root / ".nwave" / "config.json").exists()
 
     @patch("subprocess.run")
     def test_verify_fails_when_des_config_invalid_json(self, mock_subprocess, des_env):
@@ -335,13 +370,13 @@ class TestDESConfigVerify:
         # Check 5: create invalid des-config.json
         nwave_dir = project_root / ".nwave"
         nwave_dir.mkdir(parents=True)
-        config_file = nwave_dir / "des-config.json"
+        config_file = nwave_dir / "config.json"
         config_file.write_text("{not valid json content!!!")
 
         result = plugin.verify(context)
 
         assert result.success is False
-        assert any("not valid JSON" in e for e in result.errors)
+        assert any("DES config is not valid JSON" in e for e in result.errors)
 
     @patch("subprocess.run")
     def test_verify_shows_not_set_when_log_dir_missing(self, mock_subprocess, des_env):
@@ -358,7 +393,7 @@ class TestDESConfigVerify:
         # Check 5: create des-config.json WITHOUT audit_log_dir
         nwave_dir = project_root / ".nwave"
         nwave_dir.mkdir(parents=True)
-        config_file = nwave_dir / "des-config.json"
+        config_file = nwave_dir / "config.json"
         config_file.write_text(json.dumps({"audit_logging_enabled": True}))
 
         result = plugin.verify(context)

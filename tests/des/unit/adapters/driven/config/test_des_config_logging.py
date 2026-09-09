@@ -52,7 +52,7 @@ class TestLogLevelFromConfig:
         self, tmp_path, config_value, expected
     ) -> None:
         """log_level reads value from config and returns it uppercased."""
-        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file = tmp_path / ".nwave" / "config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         config_file.write_text(
             json.dumps({"log_level": config_value}), encoding="utf-8"
@@ -105,7 +105,7 @@ class TestLogEnabledFromConfig:
         self, tmp_path, config_value, expected
     ) -> None:
         """log_enabled reads boolean value from config file."""
-        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file = tmp_path / ".nwave" / "config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         config_file.write_text(
             json.dumps({"log_enabled": config_value}), encoding="utf-8"
@@ -135,7 +135,7 @@ class TestLogEnabledEnvVarOverride:
         self, tmp_path, monkeypatch, env_value, expected
     ) -> None:
         """NW_LOG env var takes priority over config file value."""
-        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file = tmp_path / ".nwave" / "config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         config_file.write_text(
             json.dumps({"log_enabled": not expected}), encoding="utf-8"
@@ -178,7 +178,7 @@ class TestGetNwaveLogWriterFactory:
         )
         from des.ports.driven_ports.nwave_log_writer import LogLevel
 
-        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file = tmp_path / ".nwave" / "config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         config_file.write_text(
             json.dumps({"log_enabled": True, "log_level": "debug"}),

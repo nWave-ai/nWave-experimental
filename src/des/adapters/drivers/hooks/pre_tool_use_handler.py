@@ -15,6 +15,7 @@ commit attribution.
 import contextlib
 import io
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -37,6 +38,8 @@ from des.adapters.drivers.hooks.root_activation_context import (
     resolve_subagent_agent_type,
 )
 from des.application.commit_attribution_service import CommitAttributionService
+from des.domain.nwave_locations import NWaveLocations
+from des.domain.result import Failure
 
 
 # nWave subagent host-scan lockdown (K4 architecture gap): a dispatched nw-*
@@ -175,12 +178,23 @@ def emit_commit_attribution_mutation(
         # `cwd` comes from the hook envelope, which need not name the root the
         # gate resolved (GDP-8 witness corollary).
         #
-        # `Path.home()` is computed HERE, per call, not taken from
-        # `DESConfig._DEFAULT_GLOBAL_CONFIG_PATH` -- that class attribute is
-        # bound at import time and would pin a stale home.
+        # Resolve per call through the same selected-home carrier as install.
+        # A hook can retain the system HOME while an operator deliberately
+        # installs nWave beneath NWAVE_AGENTS_HOME.
+        locations = NWaveLocations.resolve(
+            home=Path.home(),
+            repo_root=cwd or Path.cwd(),
+            agents_home_override=os.environ.get("NWAVE_AGENTS_HOME") or None,
+            claude_config_override=os.environ.get("CLAUDE_CONFIG_DIR") or None,
+            codex_config_override=os.environ.get("CODEX_HOME") or None,
+        )
+        if isinstance(locations, Failure):
+            return None
         if not attribution_is_due(
             cwd or Path.cwd(),
-            global_config_path=Path.home() / ".nwave" / "global-config.json",
+            global_config_path=locations.unwrap().agents_home
+            / ".nwave"
+            / "config.json",
         ):
             return None
 

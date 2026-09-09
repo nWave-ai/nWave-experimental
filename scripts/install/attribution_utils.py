@@ -27,8 +27,8 @@ _HOOK_ORIGINAL_SUFFIX = ".nwave-original"
 
 
 def read_global_config(config_dir: Path) -> dict:
-    """Read global-config.json, returning empty dict on error."""
-    config_file = config_dir / "global-config.json"
+    """Read config.json, returning empty dict on error."""
+    config_file = config_dir / "config.json"
     try:
         with open(config_file, encoding="utf-8") as f:
             return json.load(f)
@@ -37,12 +37,16 @@ def read_global_config(config_dir: Path) -> dict:
 
 
 def write_global_config(config_dir: Path, config: dict) -> None:
-    """Write global-config.json with read-modify-write to preserve other keys."""
-    config_dir.mkdir(parents=True, exist_ok=True)
-    config_file = config_dir / "global-config.json"
-    with open(config_file, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
-        f.write("\n")
+    """Replace global values through the sole atomic configuration writer."""
+    from des.adapters.driven.config.config_writer import ConfigWriter
+
+    writer = ConfigWriter(home_dir=config_dir.parent, repo_root=Path.cwd())
+
+    def replace(document: dict) -> None:
+        document.clear()
+        document.update(config)
+
+    writer.update_global(replace)
 
 
 def read_attribution_preference(config_dir: Path) -> bool | None:
@@ -261,7 +265,7 @@ def remove_attribution_hook(config_dir: Path | None = None) -> None:
     and otherwise delegates to the worktree-aware
     ``scripts.shared.git_hooks_paths.resolve_hooks_dir``). The
     ``attribution.hooks_dir`` value previously written into
-    ``~/.nwave/global-config.json`` is consulted only as a back-stop for
+    ``~/.nwave/config.json`` is consulted only as a back-stop for
     pre-existing installs whose absolute path was recorded there; if it
     is missing or relative, the live resolution wins. This is the RCA
     Branch C permanent fix: install and uninstall must agree on the

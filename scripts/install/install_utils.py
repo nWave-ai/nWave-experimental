@@ -525,7 +525,7 @@ Backup contents: {files_count} framework files
     # locked decisions D1-D5 that drive the semantics below.
 
     DEFAULT_MAX_BACKUP_COUNT = 10
-    """Default cap when ~/.nwave/global-config.json:backups.max_count is unset (D4)."""
+    """Default cap when ~/.nwave/config.json:backups.max_count is unset (D4)."""
 
     BACKUP_GLOB = "nwave-*"
     """Pattern identifying nWave-managed backup directories.
@@ -553,7 +553,7 @@ Backup contents: {files_count} framework files
         Args:
             max_count: Cap to enforce. If None, reads from global config or
                 falls back to DEFAULT_MAX_BACKUP_COUNT.
-            nwave_config_dir: Where to read ``global-config.json`` from when
+            nwave_config_dir: Where to read ``config.json`` from when
                 resolving the config-driven cap. Forwarded verbatim to
                 ``read_backup_retention_config`` (None there defaults to
                 ``Path.home() / ".nwave"``) -- an isolated caller (e.g. a K4
@@ -638,7 +638,7 @@ class RetentionResult:
 
 
 class ConfigValidationError(ValueError):
-    """Raised when ~/.nwave/global-config.json:backups.max_count is invalid.
+    """Raised when ~/.nwave/config.json:backups.max_count is invalid.
 
     Inherits from ValueError so existing handlers that catch ValueError
     continue to work; specialised callers can pattern-match on this subclass.
@@ -648,7 +648,7 @@ class ConfigValidationError(ValueError):
 def read_backup_retention_config(
     nwave_config_dir: Path | None = None,
 ) -> int:
-    """Resolve ``backups.max_count`` from ~/.nwave/global-config.json.
+    """Resolve ``backups.max_count`` from ~/.nwave/config.json.
 
     Pure helper (Mandate 4): the validation logic lives here, isolated from
     the I/O of pruning. Returns the validated cap, or
@@ -668,7 +668,7 @@ def read_backup_retention_config(
     import json
 
     config_dir = nwave_config_dir or (Path.home() / ".nwave")
-    config_file = config_dir / "global-config.json"
+    config_file = config_dir / "config.json"
 
     if not config_file.exists():
         return BackupManager.DEFAULT_MAX_BACKUP_COUNT

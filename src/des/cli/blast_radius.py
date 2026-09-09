@@ -22,7 +22,7 @@ exactly-one-input-mode grammar was violated (exit 2, never a silently
 fabricated S):
     {"event": "BlastRadiusInputRejected", "reasons": [<str>, ...]}
 
-stdout token, a present well-typed `.nwave/des-config.json` `blast_radius`
+stdout token, a present well-typed `.nwave/config.json` `blast_radius`
 threshold is outside its documented floor/ceiling (D4, exit 2, never a
 silent clamp/fallback):
     {"event": "BlastRadiusConfigRejected", "reasons": [<str>, ...]}

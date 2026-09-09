@@ -13,6 +13,8 @@ point. Step bodies delegate to the CLI; no business logic inlined
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
@@ -23,11 +25,16 @@ scenarios("../platform-contract.feature")
 
 
 @pytest.fixture
-def run_state(monkeypatch) -> dict:
+def run_state(monkeypatch, tmp_path: Path) -> dict:
+    """Run the public CLI seam from an isolated consumer project."""
+    monkeypatch.chdir(tmp_path)
     state: dict = {"forwarded": None}
 
-    def _spy_run_script(script: str, args: list[str]) -> int:
+    def _spy_run_script(
+        script: str, args: list[str], *, user_project_root: Path | None = None
+    ) -> int:
         state["forwarded"] = list(args)
+        state["user_project_root"] = user_project_root
         return 0
 
     # Pin the seam: capture what the CLI forwards to install_nwave.py and
@@ -87,3 +94,4 @@ def then_platform_forwarded(run_state, tool):
     assert "--platform" in forwarded, forwarded
     idx = forwarded.index("--platform")
     assert forwarded[idx + 1] == tool, f"platform mangled: {forwarded}"
+    assert run_state["user_project_root"] == Path.cwd().resolve()

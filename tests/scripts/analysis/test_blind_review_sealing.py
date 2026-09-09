@@ -316,9 +316,9 @@ def test_setup_gitignore_stripped_delivery_gitignore_survives(tmp_path):
         gitignore = workspace / ".gitignore"
         gitignore.write_text(
             gitignore.read_text()
-            + "# nWave activation marker (keep .nwave/local-config.json trackable)\n"
+            + "# nWave configuration (keep .nwave/config.json trackable)\n"
             ".nwave/*\n"
-            "!.nwave/local-config.json\n"
+            "!.nwave/config.json\n"
         )
 
     campaign1, _ = _campaign_with_workspace(tmp_path / "run1", populate_setup_only)
@@ -333,9 +333,9 @@ def test_setup_gitignore_stripped_delivery_gitignore_survives(tmp_path):
         gitignore = workspace / ".gitignore"
         gitignore.write_text(
             gitignore.read_text()
-            + "# nWave activation marker (keep .nwave/local-config.json trackable)\n"
+            + "# nWave configuration (keep .nwave/config.json trackable)\n"
             ".nwave/*\n"
-            "!.nwave/local-config.json\n"
+            "!.nwave/config.json\n"
             "# delivery\n"
             "*.log\n"
         )
@@ -346,9 +346,7 @@ def test_setup_gitignore_stripped_delivery_gitignore_survives(tmp_path):
     patch2 = (opaque2 / "DELIVERY.patch").read_text()
     assert "M .gitignore" in manifest2, "gitignore with delivery edits should appear"
     assert ".nwave" not in patch2, "setup .nwave line should be stripped"
-    assert "!.nwave/local-config.json" not in patch2, (
-        "setup negation should be stripped"
-    )
+    assert "!.nwave/config.json" not in patch2, "setup negation should be stripped"
     assert "*.log" in patch2, "delivery edit should survive"
 
 

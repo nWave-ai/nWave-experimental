@@ -7,9 +7,12 @@ filesystem isolation without mocking.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from des.domain.nwave_locations import NWaveLocations
+from des.domain.result import Failure
 from scripts.install.install_utils import PathUtils
 
 
@@ -50,7 +53,7 @@ class DoctorContext:
             ".claude" when it is (test isolation).
         settings_path: Claude settings file (claude_dir / "settings.json").
         global_config_path: nWave global config file (home_dir / ".nwave" /
-            "global-config.json").
+            "config.json").
     """
 
     home_dir: Path = field(default_factory=lambda: _HOME_DIR_UNSET)
@@ -61,7 +64,23 @@ class DoctorContext:
 
     def __post_init__(self) -> None:
         overridden = self.home_dir is not _HOME_DIR_UNSET
-        resolved_home = self.home_dir if overridden else Path.home()
+        if overridden:
+            # An explicit root is the hermetic-test seam and deliberately
+            # overrides ambient selected-home variables.
+            resolved_home = self.home_dir
+        else:
+            locations = NWaveLocations.resolve(
+                home=Path.home(),
+                repo_root=Path.cwd(),
+                agents_home_override=os.environ.get("NWAVE_AGENTS_HOME") or None,
+                claude_config_override=os.environ.get("CLAUDE_CONFIG_DIR") or None,
+                codex_config_override=os.environ.get("CODEX_HOME") or None,
+            )
+            resolved_home = (
+                Path.home()
+                if isinstance(locations, Failure)
+                else locations.unwrap().agents_home
+            )
         resolved_claude = (
             self.home_dir / ".claude"
             if overridden
@@ -73,7 +92,7 @@ class DoctorContext:
         object.__setattr__(
             self,
             "global_config_path",
-            resolved_home / ".nwave" / "global-config.json",
+            resolved_home / ".nwave" / "config.json",
         )
 
     @classmethod

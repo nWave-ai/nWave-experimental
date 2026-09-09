@@ -30,6 +30,13 @@ No alternatives (min 2 required). Each must be evaluated against requirements wi
 ### Missing Consequences
 Omits positive/negative consequences and trade-offs. Quality attribute impact not analyzed. Severity: MEDIUM.
 
+### Delivery Ownership Drift
+Pattern: an architecture assigns DES the choice or revision of SML, waves,
+feature/bugfix routing, upstream rework, retry, stop/resume, or invocation.
+Detection: distinguish DES's typed-document/fact construction and advisory
+`NEXT` from the LLM's orchestration; confirm required independent review,
+EXAMINE and quality obligations remain. Severity: CRITICAL.
+
 ## Dimension 3: Completeness Validation
 
 ### Missing Quality Attributes

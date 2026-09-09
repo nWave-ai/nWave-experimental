@@ -133,10 +133,12 @@ class ScriptedPort(TaskInvocationPort):
         crafts: list[ModelRun],
         *,
         corrected: DesignFacts | None = None,
+        judgements: list[ModelRun] | None = None,
     ) -> None:
         self.root = root
         self.crafts = list(crafts)
         self.corrected = corrected
+        self.judgements = list(judgements or ())
         self.roles: list[str] = []
         self.architect_turns: list[str] = []
         self.designer_findings: list[str] = []
@@ -193,7 +195,8 @@ class ScriptedPort(TaskInvocationPort):
                 produced.write_text(BODY, encoding="utf-8")
             return answer
         if role_id in ("nw-software-crafter-reviewer", "nw-user-examiner"):
-            return _accepted()
+            assert self.judgements, f"unscripted {role_id} judgement"
+            return self.judgements.pop(0)
         raise AssertionError(f"unscripted role {role_id}")
 
 
@@ -327,3 +330,128 @@ def test_an_accepted_craft_turn_changes_the_declared_target(subject: Path) -> No
     assert not isinstance(outcome, DeliveryOutcome), outcome
     assert (subject / PRODUCTION).read_text(encoding="utf-8") == BODY
     assert SHARED not in _fact(port.craft_prompts[-1], "mutable_targets")  # type: ignore[operator]
+
+
+def test_a_failed_standalone_verify_retains_native_evidence_after_candidate_cleanup(
+    subject: Path,
+) -> None:
+    """The terminal locator outlives the temporary candidate it observed."""
+    port = ScriptedPort(subject, [_accepted()])
+    runner, stored, design = through_oracle(port, subject, REQUEST)
+    assert not isinstance(
+        crafted(runner, port, subject, stored, design), DeliveryOutcome
+    )
+
+    # The declared oracle is genuine, then the candidate deliberately violates
+    # it. This is a native failure, not a mocked record or a provider verdict.
+    (subject / PRODUCTION).write_text("ANSWER = 41\n", encoding="utf-8")
+    outcome = runner.verify_request(
+        subject, port, stored, [(stored.values[0].observation, design)]
+    )
+
+    assert isinstance(outcome, DeliveryOutcome), outcome
+    assert outcome.disposition is Disposition.Refusal
+    assert outcome.failure is not None
+    assert outcome.failure.what == "VerificationFailed"
+    prefix = "; native evidence retained at "
+    locator = outcome.failure.why.partition(prefix)[2]
+    assert locator.startswith(".nwave/des/logs/native/"), outcome.failure.why
+    record = subject / locator
+    assert record.is_file(), locator
+    retained = json.loads(record.read_text(encoding="utf-8"))
+    assert retained[0]["argv"] == ["python", "-m", "pytest", ORACLE, "-q"]
+    assert retained[0]["exit"] == 1
+    assert "AssertionError" in retained[0]["stdout"] + retained[0]["stderr"]
+    # Candidate worktrees are still ephemeral; only their observation remains.
+    worktrees = subprocess.run(
+        ["git", "-C", str(subject), "worktree", "list", "--porcelain"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "nwave-candidate-" not in worktrees
+
+
+@pytest.mark.parametrize(
+    ("judgements", "disposition"),
+    [
+        (
+            [ModelRun(ModelOutcome.Rejected, "review refusal", 0, True)],
+            Disposition.Refusal,
+        ),
+        (
+            [ModelRun(ModelOutcome.Indeterminate, "review uncertainty", 0, True)],
+            Disposition.Indeterminate,
+        ),
+        (
+            [
+                _accepted(),
+                ModelRun(ModelOutcome.Rejected, "examiner refusal", 0, True),
+            ],
+            Disposition.Refusal,
+        ),
+        (
+            [
+                _accepted(),
+                ModelRun(ModelOutcome.Indeterminate, "examiner uncertainty", 0, True),
+            ],
+            Disposition.Indeterminate,
+        ),
+    ],
+    ids=[
+        "reviewer-refusal",
+        "reviewer-indeterminate",
+        "examiner-refusal",
+        "examiner-indeterminate",
+    ],
+)
+def test_native_success_evidence_survives_later_judgement_failure(
+    subject: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    judgements: list[ModelRun],
+    disposition: Disposition,
+) -> None:
+    """A later judge cannot discard the one successful native observation."""
+    port = ScriptedPort(subject, [_accepted()], judgements=judgements)
+    runner, stored, design = through_oracle(port, subject, REQUEST)
+    assert not isinstance(
+        crafted(runner, port, subject, stored, design), DeliveryOutcome
+    )
+
+    calls = 0
+    native = runner._native
+
+    def counted_native(*args: object, **kwargs: object):
+        nonlocal calls
+        calls += 1
+        return native(*args, **kwargs)
+
+    monkeypatch.setattr(runner, "_native", counted_native)
+    outcome = runner.verify_request(
+        subject, port, stored, [(stored.values[0].observation, design)]
+    )
+
+    assert isinstance(outcome, DeliveryOutcome), outcome
+    assert outcome.disposition is disposition
+    assert outcome.failure is not None
+    prefix = "; native evidence retained at "
+    locator = outcome.failure.why.partition(prefix)[2]
+    assert locator.startswith(".nwave/des/logs/native/"), outcome.failure.why
+    record = subject / locator
+    retained = json.loads(record.read_text(encoding="utf-8"))
+    assert len(retained) == 1
+    assert retained[0]["argv"] == ["python", "-m", "pytest", ORACLE, "-q"]
+    assert retained[0]["exit"] == 0
+    assert "1 passed" in retained[0]["stdout"]
+    assert retained[0]["stderr"] == ""
+    candidate = record.name.split("-20", 1)[0]
+    assert len(candidate) == 40
+    assert all(character in "0123456789abcdef" for character in candidate)
+    assert calls == 1
+    worktrees = subprocess.run(
+        ["git", "-C", str(subject), "worktree", "list", "--porcelain"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "nwave-candidate-" not in worktrees

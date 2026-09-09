@@ -19,13 +19,16 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from des.domain.nwave_locations import NWaveLocations
 from des.domain.nwave_root import resolve_nwave_root
+from des.domain.result import Failure
 
 
 class GateOutcome(Enum):
@@ -120,7 +123,25 @@ def _parse_cwd(stdin_text: str) -> Path | None:
 
 
 def _global_config_path() -> Path:
-    return Path.home() / ".nwave" / "global-config.json"
+    """Resolve the hook's global authority through the selected nWave home.
+
+    A hook is launched later by Claude, often with ``HOME`` naming the
+    machine account while ``NWAVE_AGENTS_HOME`` names the install selected by
+    the operator.  Re-resolving the same location carrier as the installer is
+    therefore necessary for the live gate to observe ``nwave-ai mode``.
+    A malformed location override remains fail-to-inactive: this helper raises
+    into the gate's existing error boundary, which suppresses dispatch.
+    """
+    result = NWaveLocations.resolve(
+        home=Path.home(),
+        repo_root=Path.cwd(),
+        agents_home_override=os.environ.get("NWAVE_AGENTS_HOME") or None,
+        claude_config_override=os.environ.get("CLAUDE_CONFIG_DIR") or None,
+        codex_config_override=os.environ.get("CODEX_HOME") or None,
+    )
+    if isinstance(result, Failure):
+        raise ValueError(result.error)
+    return result.unwrap().agents_home / ".nwave" / "config.json"
 
 
 def reinject_stdin(stdin_text: str) -> io.StringIO:

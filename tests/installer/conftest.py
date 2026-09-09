@@ -77,7 +77,7 @@ def guard_nwave_attribution_hook():
 
 @pytest.fixture(scope="session", autouse=True)
 def isolate_install_lock_destination(tmp_path_factory):
-    """Give this pytest worker its OWN install-lock destination.
+    """Give this pytest worker its own install and project destinations.
 
     ``install_nwave.main()`` takes an exclusive per-destination lock before any
     write (``scripts/install/install_lock.py``), keyed to ``NWAVE_AGENTS_HOME``
@@ -95,6 +95,12 @@ def isolate_install_lock_destination(tmp_path_factory):
     The lock still binds inside each worker, so a test that genuinely nests two
     installs still sees the refusal.
 
+    The project root is equally an effect destination after the unified-config
+    cutover: ``DESPlugin`` bootstraps and migrates
+    ``<NWAVE_PROJECT_ROOT>/.nwave/config.json``. Without this companion
+    override an in-process installer test inherits the checkout cwd and can
+    retire the lane's tracked legacy marker during migration.
+
     Bonus, and the reason this is scoped to the whole installer tree rather
     than the ``main()`` call sites alone: ``NWAVE_AGENTS_HOME`` also redirects
     ``create_backup``, ``record_install_metadata`` and the retention config
@@ -102,7 +108,9 @@ def isolate_install_lock_destination(tmp_path_factory):
     session hook guard above exists to repair after the fact.
     """
     destination = tmp_path_factory.mktemp("nwave_agents_home")
+    project = tmp_path_factory.mktemp("nwave_project_root")
     patch = pytest.MonkeyPatch()
     patch.setenv("NWAVE_AGENTS_HOME", str(destination))
+    patch.setenv("NWAVE_PROJECT_ROOT", str(project))
     yield destination
     patch.undo()

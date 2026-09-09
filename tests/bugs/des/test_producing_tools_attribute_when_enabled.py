@@ -2,7 +2,7 @@
 attribution trailer -- the PRODUCING TOOLS run `git commit` inside a Python
 subprocess the PreToolUse Bash rewriter (`trailer_rewriter.py`) never
 observes, so the trailer never landed even with `attribution.enabled: true`
-in `~/.nwave/global-config.json` (fix-attribution-trailer-never-applied).
+in `~/.nwave/config.json` (fix-attribution-trailer-never-applied).
 
 Measured (worktree HEAD ec9ae2a10, before the fix): with attribution ON,
 `des commit` produced a message ending in `Step-Id: 01-01` -- sentinel count
@@ -68,7 +68,7 @@ def _write_json(path: Path, content: str) -> None:
 
 def _activate_repo(repo: Path) -> None:
     """Write the per-project activation marker, enabled."""
-    _write_json(repo / ".nwave" / "local-config.json", '{"enabled_for_repo": true}\n')
+    _write_json(repo / ".nwave" / "config.json", '{"enabled": true}\n')
 
 
 def _global_config_enabled(path: Path, enabled: bool) -> None:
@@ -125,7 +125,7 @@ class TestPropertyOneIdempotentBySentinel:
         repo = tmp_path / "repo"
         _init_repo(repo)
         _activate_repo(repo)
-        global_config = tmp_path / "global-config.json"
+        global_config = tmp_path / "config.json"
         _global_config_enabled(global_config, enabled=True)
         monkeypatch.setattr(DESConfig, "_DEFAULT_GLOBAL_CONFIG_PATH", global_config)
 
@@ -174,7 +174,7 @@ class TestPropertyTwoOffMeansOff:
         repo = tmp_path / "repo"
         _init_repo(repo)
         _activate_repo(repo)
-        global_config = tmp_path / "global-config.json"
+        global_config = tmp_path / "config.json"
         _global_config_enabled(global_config, enabled=False)
         monkeypatch.setattr(DESConfig, "_DEFAULT_GLOBAL_CONFIG_PATH", global_config)
 
@@ -215,7 +215,7 @@ class TestPropertyThreeNeverBlocksACommit:
         repo = tmp_path / "repo"
         _init_repo(repo)
         _activate_repo(repo)
-        corrupt_global_config = tmp_path / "global-config.json"
+        corrupt_global_config = tmp_path / "config.json"
         corrupt_global_config.write_text("{not valid json", encoding="utf-8")
 
         message = "feat: add a\n\nStep-Id: 01-01"
@@ -239,7 +239,7 @@ class TestPropertyThreeNeverBlocksACommit:
         _init_repo(repo)
         _activate_repo(repo)
         seed_head = _git(repo, "rev-parse", "HEAD").strip()
-        corrupt_global_config = tmp_path / "global-config.json"
+        corrupt_global_config = tmp_path / "config.json"
         corrupt_global_config.write_text("{not valid json", encoding="utf-8")
         monkeypatch.setattr(
             DESConfig, "_DEFAULT_GLOBAL_CONFIG_PATH", corrupt_global_config
@@ -284,7 +284,7 @@ class TestPropertyFourGatedOnActivation:
 
         repo = tmp_path / "repo"
         _init_repo(repo)  # no `_activate_repo`: no marker at all
-        global_config = tmp_path / "global-config.json"
+        global_config = tmp_path / "config.json"
         _write_json(
             global_config,
             '{"activation": {"mode": "opt-in"}, "attribution": {"enabled": true}}\n',
@@ -310,7 +310,7 @@ class TestPropertyFourGatedOnActivation:
         repo = tmp_path / "repo"
         _init_repo(repo)
         _activate_repo(repo)
-        global_config = tmp_path / "global-config.json"
+        global_config = tmp_path / "config.json"
         _global_config_enabled(global_config, enabled=True)
         monkeypatch.setattr(DESConfig, "_DEFAULT_GLOBAL_CONFIG_PATH", global_config)
 
@@ -353,7 +353,7 @@ class TestPropertyFiveAbsentConfigResolvesNotEnabled:
         repo = tmp_path / "repo"
         _init_repo(repo)
         _activate_repo(repo)  # active repo, but...
-        missing_global_config = tmp_path / "does-not-exist" / "global-config.json"
+        missing_global_config = tmp_path / "does-not-exist" / "config.json"
 
         message = "feat: add a\n\nStep-Id: 01-01"
 
@@ -383,7 +383,7 @@ class TestPropertyFiveAbsentConfigResolvesNotEnabled:
         repo = tmp_path / "repo"
         _init_repo(repo)
         _activate_repo(repo)
-        global_config = tmp_path / "global-config.json"
+        global_config = tmp_path / "config.json"
         _global_config_enabled(global_config, enabled=True)
 
         message = "feat: add a\n\nStep-Id: 01-01"

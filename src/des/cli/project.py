@@ -25,7 +25,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from des.adapters.driven.rendering.nwave_document import build_page
+from des.adapters.driven.rendering.nwave_document import BrandAssetError, build_page
 from des.application.delivery_projection import project_markdown
 from des.application.delivery_state import read_state
 from des.application.delivery_steps import blocked_disposition
@@ -89,11 +89,22 @@ def main(argv: list[str] | None = None) -> int:
             ),
             moves_after_refusal(root, own, state.what),
         )
-    page = build_page(
-        project_markdown(stored, state),
-        str(handover_path(root).relative_to(root)),
-        TITLE,
-    )
+    try:
+        page = build_page(
+            project_markdown(stored, state),
+            str(handover_path(root).relative_to(root)),
+            TITLE,
+        )
+    except BrandAssetError as error:
+        return refuse(
+            StepRefusal(
+                "BrandAssetsInvalid",
+                str(error),
+                "repair the packaged nWave brand assets and run this projection again",
+                Disposition.Indeterminate,
+            ),
+            moves_after_refusal(root, own, "BrandAssetsInvalid"),
+        )
     try:
         args.html.parent.mkdir(parents=True, exist_ok=True)
         args.html.write_text(page, encoding="utf-8")

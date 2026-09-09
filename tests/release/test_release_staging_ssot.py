@@ -1751,14 +1751,23 @@ def test_real_pypi_fixture_wheel_installs_with_exact_dual_des_and_version(
             Path.home(),
         )
     )
+    # The clean consumer venv intentionally lives below pytest's tmp_path,
+    # which may itself be the copied build sandbox.  Exempt only paths that
+    # resolve below this exact venv; checkout, sandbox and host paths remain
+    # forbidden everywhere else.
+    sys_path_outside_consumer_venv = tuple(
+        entry
+        for entry in installed["sys_path"]
+        if not entry or not Path(entry).resolve().is_relative_to(venv)
+    )
     _require(
         all(
             not any(root in entry for root in borrowed_roots)
-            for entry in installed["sys_path"]
+            for entry in sys_path_outside_consumer_venv
         ),
         what=(
             "clean probe borrowed checkout, build sandbox, or HOME sys.path: "
-            f"{installed['sys_path']}"
+            f"{sys_path_outside_consumer_venv}"
         ),
     )
 
@@ -1954,6 +1963,9 @@ def test_pure_non_claude_source_install_never_creates_claude_discovery_surface(
     host_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.setenv("USERPROFILE", str(fake_home))
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    monkeypatch.setenv("NWAVE_PROJECT_ROOT", str(project_root))
     monkeypatch.setenv(platform_home_env, str(host_home))
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     if platform == "copilot":
@@ -2008,6 +2020,9 @@ def test_mixed_claude_copilot_source_install_keeps_claude_hook_on_existing_runti
     copilot_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.setenv("USERPROFILE", str(fake_home))
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    monkeypatch.setenv("NWAVE_PROJECT_ROOT", str(project_root))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
     monkeypatch.setenv("COPILOT_HOME", str(copilot_home))
     monkeypatch.setenv("COPILOT_CLI", "1")
@@ -2203,9 +2218,9 @@ def test_all_target_install_keeps_codex_and_copilot_hooks_on_one_runtime(
     )
     audit_dir = consumer / ".nwave" / "des" / "logs"
     environment["DES_AUDIT_LOG_DIR"] = str(audit_dir)
-    activation = consumer / ".nwave" / "local-config.json"
+    activation = consumer / ".nwave" / "config.json"
     activation.parent.mkdir(parents=True, exist_ok=True)
-    activation.write_text('{"enabled_for_repo": true}\n', encoding="utf-8")
+    activation.write_text('{"enabled": true}\n', encoding="utf-8")
     fired_codex = _run(
         codex_entries[0]["command"],
         cwd=consumer,

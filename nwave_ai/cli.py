@@ -1,10 +1,8 @@
 """nwave-ai CLI: thin wrapper around nWave install/uninstall scripts."""
 
-import json
 import os
 import subprocess
 import sys
-import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -24,25 +22,16 @@ def _prefer_current_distribution() -> None:
 # otherwise supply a stale namespace-package ``scripts`` implementation.
 _prefer_current_distribution()
 
-import nwave_ai  # noqa: E402
-from nwave_ai.doctor.context import DoctorContext  # noqa: E402
-from nwave_ai.doctor.formatter import render_human, render_json  # noqa: E402
-from nwave_ai.doctor.runner import run_doctor  # noqa: E402
-from scripts.install.attribution_utils import (  # noqa: E402
-    cleanup_legacy_attribution_hook,
-    migrate_legacy_hook,
-    migrate_legacy_settings_attribution,
-    read_attribution_preference,
-    read_global_config,
-    write_attribution_preference,
-    write_global_config,
-)
-from scripts.shared.install_paths import (  # noqa: E402
-    GLOBAL_CONFIG_FILENAME,
-    nwave_config_dir,
-)
-from scripts.shared.version import VersionResolutionError  # noqa: E402
-
+# In a development checkout, every import before the CLI bootstrap below must
+# resolve DES from this source tree.  Several CLI dependencies import DES at
+# module import time; adding ``src`` later would leave their already-cached
+# package bound to a freshly-installed (possibly older) runtime.
+_DEVELOPMENT_DES_ROOT = Path(_DISTRIBUTION_ROOT) / "src"
+if (_DEVELOPMENT_DES_ROOT / "des").is_dir():
+    _development_des_entry = str(_DEVELOPMENT_DES_ROOT)
+    if _development_des_entry in sys.path:
+        sys.path.remove(_development_des_entry)
+    sys.path.insert(0, _development_des_entry)
 
 # ---------------------------------------------------------------------------
 # DES module bootstrap.
@@ -70,6 +59,7 @@ def _bundled_des_paths(pkg_dir: Path, home: Path) -> list[Path]:
     priority order, existing-only.
     """
     candidates = [
+        pkg_dir.parent / "src",  # development checkout
         pkg_dir.parent / "nWave" / "lib" / "python",  # wheel-bundled (self-contained)
         home / ".claude" / "lib" / "python",  # installer copy
     ]
@@ -93,11 +83,16 @@ def _ensure_des_importable(
         importable = importlib.util.find_spec("des") is not None
     else:
         importable = is_importable()
-    if importable:
-        return None
-
     pkg_dir = pkg_dir if pkg_dir is not None else Path(__file__).resolve().parent
     home = home if home is not None else Path.home()
+    source_tree = pkg_dir.parent / "src"
+    if (source_tree / "des").is_dir():
+        entry = str(source_tree)
+        if entry not in sys.path:
+            sys.path.insert(0, entry)
+        return source_tree
+    if importable:
+        return None
     for path in _bundled_des_paths(pkg_dir, home):
         entry = str(path)
         if entry not in sys.path:
@@ -114,6 +109,32 @@ _ensure_des_importable()
 # code.  Keep this distribution (or the checkout in development) first for
 # installer imports while retaining the DES fallback immediately behind it.
 _prefer_current_distribution()
+
+# These imports transitively consume DES (DoctorContext resolves the selected
+# nWave location).  Keep them below the runtime bootstrap: a wheel stores DES
+# beneath its bundled ``nWave/lib/python`` tree rather than as a top-level
+# site-package, so importing them above this point would make every installed
+# CLI verb fail before it could discover that bundled runtime.
+import nwave_ai  # noqa: E402
+from des.domain.nwave_locations import NWaveLocations  # noqa: E402
+from des.domain.result import Failure  # noqa: E402
+from nwave_ai.doctor.context import DoctorContext  # noqa: E402
+from nwave_ai.doctor.formatter import render_human, render_json  # noqa: E402
+from nwave_ai.doctor.runner import run_doctor  # noqa: E402
+from scripts.install.attribution_utils import (  # noqa: E402
+    cleanup_legacy_attribution_hook,
+    migrate_legacy_hook,
+    migrate_legacy_settings_attribution,
+    read_attribution_preference,
+    read_global_config,
+    write_attribution_preference,
+    write_global_config,
+)
+from scripts.shared.install_paths import (  # noqa: E402
+    GLOBAL_CONFIG_FILENAME,
+    nwave_config_dir,
+)
+from scripts.shared.version import VersionResolutionError  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +229,10 @@ def _write_density_choice(config_dir: Path, *, choice: str) -> None:
     that match a fired trigger are shown to the user. This replaces the
     older broad `ask` default that surfaced the entire 8-item catalog.
     """
+    # A fresh public install creates the bundled DES runtime after this CLI
+    # module was imported. Refresh sys.path before the shared writer imports
+    # ConfigWriter from that newly installed runtime.
+    _ensure_des_importable()
     config = read_global_config(config_dir)
     documentation_block = config.get("documentation", {})
     documentation_block["density"] = choice
@@ -222,13 +247,86 @@ def _refuse_version_resolution(exc: VersionResolutionError) -> int:
     return 1
 
 
+def _handle_update(args: list[str]) -> int:
+    """Observe releases or apply an owner-bound update with explicit consent."""
+    is_check = args == ["--check"]
+    is_apply = len(args) == 3 and args[:2] == ["--yes", "--root"]
+    if not is_check and not is_apply:
+        print("Usage: nwave-ai update --check | --yes --root PATH", file=sys.stderr)
+        return 1
+
+    try:
+        # This is the only current-version read: product identity remains owned
+        # by nwave_ai's existing lazy projection.
+        current_version = nwave_ai.__version__
+    except VersionResolutionError as exc:
+        return _refuse_version_resolution(exc)
+
+    from packaging.version import InvalidVersion, Version
+
+    from nwave_ai.update import ReleaseDiscoveryRefusal, discover_latest_stable_release
+    from nwave_ai.update.service import UpdateService
+
+    try:
+        latest_version = discover_latest_stable_release()
+        parsed_current_version = Version(current_version)
+    except ReleaseDiscoveryRefusal as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except InvalidVersion as exc:
+        print(
+            "WHAT: the installed nwave-ai version cannot be compared to a public release. "
+            f"WHY: {exc}. "
+            "HOW: reinstall nwave-ai with valid PEP 440 version metadata.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if is_check:
+        state = (
+            "update-available"
+            if latest_version > parsed_current_version
+            else "up-to-date"
+        )
+        print(f"Installed version: {current_version}")
+        print(f"Latest stable release: {latest_version}")
+        print(f"Status: {state}")
+        return 0
+
+    outcome = UpdateService().apply(
+        current_version=parsed_current_version,
+        discovered_version=latest_version,
+        root=Path(args[2]),
+    )
+    if outcome.state == "up-to-date":
+        print(f"nwave-ai is up-to-date ({current_version}).")
+        return 0
+    if outcome.state == "refused":
+        stage = outcome.failed_stage or "package-owner"
+        command = " ".join(outcome.command) if outcome.command else "no process"
+        print(
+            f"WHAT: update stopped at {stage}. WHY: {outcome.cause}. "
+            f"HOW: repair the owner-bound command `{command}` and retry.",
+            file=sys.stderr,
+        )
+        return 1
+
+    for stage in outcome.completed_stages:
+        print(f"{stage}: completed")
+    # ``succeeded`` is the only state that carries a completed target version.
+    print(f"Updated nwave-ai to {outcome.version}.")
+    return 0
+
+
 def _get_project_root() -> Path:
     """Find the project root (where scripts/install/ lives)."""
     return Path(__file__).parent.parent
 
 
-def _run_script(script_name: str, args: list[str]) -> int:
-    """Run an install script as a subprocess."""
+def _run_script(
+    script_name: str, args: list[str], *, user_project_root: Path | None = None
+) -> int:
+    """Run an install script, carrying the caller project only to that process."""
     project_root = _get_project_root()
     script_path = project_root / "scripts" / "install" / script_name
 
@@ -238,13 +336,48 @@ def _run_script(script_name: str, args: list[str]) -> int:
         return 1
 
     cmd = [sys.executable, str(script_path), *args]
-    result = subprocess.run(cmd, cwd=str(project_root))
+    environment = os.environ.copy()
+    if user_project_root is not None:
+        environment["NWAVE_PROJECT_ROOT"] = str(user_project_root.resolve())
+    result = subprocess.run(cmd, cwd=str(project_root), env=environment)
     return result.returncode
 
 
 def _get_config_dir() -> Path:
-    """Return the nWave config directory for this install destination."""
+    """Return the read-compatible nWave config directory for this destination."""
     return nwave_config_dir()
+
+
+def _require_mutating_config_dir() -> Path:
+    """Resolve the selected global config directory or refuse before a write.
+
+    ``nwave_config_dir`` retains its native-home fallback for legacy read-only
+    callers. CLI commands that publish configuration must instead observe the
+    same ``NWaveLocations`` failure returned to the installer, so a relative
+    override never redirects a write to the operator's native home.
+    """
+    locations = NWaveLocations.resolve(
+        home=Path.home(),
+        repo_root=Path.cwd(),
+        agents_home_override=os.environ.get("NWAVE_AGENTS_HOME"),
+        claude_config_override=os.environ.get("CLAUDE_CONFIG_DIR"),
+        codex_config_override=os.environ.get("CODEX_HOME"),
+    )
+    if isinstance(locations, Failure):
+        raise ValueError(locations.error)
+    return locations.unwrap().agents_home / ".nwave"
+
+
+def _refuse_mutating_location(error: ValueError) -> int:
+    """Render one explicit selected-home refusal for a CLI write command."""
+    print(
+        "WHAT: configuration was not written. "
+        f"WHY: {error}. "
+        "HOW: set NWAVE_AGENTS_HOME, CLAUDE_CONFIG_DIR, and CODEX_HOME to "
+        "absolute paths or unset them and retry.",
+        file=sys.stderr,
+    )
+    return 1
 
 
 def _extract_target_flag(
@@ -379,22 +512,40 @@ def _handle_install(args: list[str]) -> int:
     )
     if not ownership_preflight.validate_codex_ownership_preflight():
         return 1
+    caller_project_root = Path.cwd().resolve()
     if "--dry-run" in pass_through_args:
-        return _run_script("install_nwave.py", pass_through_args)
+        return _run_script(
+            "install_nwave.py",
+            pass_through_args,
+            user_project_root=caller_project_root,
+        )
+
+    # The density preference is a CLI-owned write that follows installer
+    # preflight. Resolve its destination strictly before either density-only
+    # or full installation can persist user state.
+    try:
+        config_dir = _require_mutating_config_dir()
+    except ValueError as error:
+        return _refuse_mutating_location(error)
 
     if density_only:
-        config_dir = _get_config_dir()
         outcome = handle_install_density_prompt(
             config_dir=config_dir, non_interactive=non_interactive
         )
         _announce_density_upgrade(config_dir, outcome)
         return 0
 
-    result = _run_script("install_nwave.py", pass_through_args)
+    # The installer runs from its packaged source root so it can find its
+    # assets. Preserve the caller's repository separately: configuration and
+    # generated guidance belong to that user project, never the source tree.
+    result = _run_script(
+        "install_nwave.py",
+        pass_through_args,
+        user_project_root=caller_project_root,
+    )
     if result != 0:
         return result
 
-    config_dir = _get_config_dir()
     outcome = handle_install_density_prompt(
         config_dir=config_dir, non_interactive=non_interactive
     )
@@ -421,12 +572,10 @@ def _handle_install(args: list[str]) -> int:
     # by the preflight installer above (same `--platform` override, same
     # environment, resolved before any write), so this reads the decision the
     # run actually made rather than re-deriving it from post-install state.
-    from scripts.install.install_utils import PathUtils
-
     if "claude_code" in ownership_preflight.effective_target_platforms:
         try:
             _sync_project_claude_section(
-                "enable", PathUtils.get_claude_config_dir(), assume_yes=non_interactive
+                "enable", caller_project_root, assume_yes=non_interactive
             )
         except OSError as exc:
             print(f"  (could not sync guidance sections: {exc})", file=sys.stderr)
@@ -483,7 +632,6 @@ def _handle_attribution(args: list[str]) -> int:
         return 1
 
     action = args[0].lower()
-    config_dir = _get_config_dir()
     # CLAUDE_CONFIG_DIR / --target scoped (same property install/uninstall
     # already resolve on), NOT a fixed ~/.claude -- so the hook is
     # registered/removed in the profile actually in scope, and the success
@@ -493,6 +641,10 @@ def _handle_attribution(args: list[str]) -> int:
     claude_dir = PathUtils.get_claude_config_dir()
 
     if action == "on":
+        try:
+            config_dir = _require_mutating_config_dir()
+        except ValueError as error:
+            return _refuse_mutating_location(error)
         write_attribution_preference(config_dir, enabled=True)
         # ADR-CA-007: the activation-gated PreToolUse hook (universal pre-tool-use
         # adapter) is the SOLE attribution mechanism, observing attribution.enabled
@@ -512,6 +664,10 @@ def _handle_attribution(args: list[str]) -> int:
         return 0
 
     if action == "off":
+        try:
+            config_dir = _require_mutating_config_dir()
+        except ValueError as error:
+            return _refuse_mutating_location(error)
         write_attribution_preference(config_dir, enabled=False)
         # ADR-CA-007 DDD-3: clean any legacy nWave-managed settings credit,
         # preserving a user-modified value. Route through the claude_dir seam
@@ -542,6 +698,7 @@ def _handle_attribution(args: list[str]) -> int:
         return 0
 
     if action == "status":
+        config_dir = _get_config_dir()
         # ADR-CA-007: the EFFECTIVE attribution scope is the preference
         # (attribution.enabled) AND this repo's resolved activation. Report
         # BOTH so a user can tell on+active from on+inactive. Reuse the
@@ -805,6 +962,145 @@ def _handle_plugin(args: list[str]) -> int:
     return 0
 
 
+_MODEL_USAGE = (
+    "Usage: nwave-ai model set --provider {codex,claude} --model MODEL "
+    "[--role ROLE] [--project]"
+)
+
+
+def _handle_model(args: list[str]) -> int:
+    """Publish one complete provider/model declaration through ``ConfigWriter``."""
+    if not args or args[0] in {"--help", "-h", "help"}:
+        print(_MODEL_USAGE)
+        print()
+        print("Without --project the global default is updated.")
+        print("With --role, update that role instead of the tier default.")
+        return 0 if args else 1
+    if args[0] != "set":
+        print(_MODEL_USAGE, file=sys.stderr)
+        return 2
+    if len(args) == 2 and args[1] in {"--help", "-h", "help"}:
+        print(_MODEL_USAGE)
+        print()
+        print("Without --project the global default is updated.")
+        print("With --role, update that role instead of the tier default.")
+        return 0
+
+    provider: str | None = None
+    model: str | None = None
+    role: str | None = None
+    project = False
+    index = 1
+    while index < len(args):
+        option = args[index]
+        if option == "--project":
+            if project:
+                print(_MODEL_USAGE, file=sys.stderr)
+                return 2
+            project = True
+            index += 1
+            continue
+        if option in {"--provider", "--model", "--role"}:
+            if index + 1 >= len(args):
+                print(_MODEL_USAGE, file=sys.stderr)
+                return 2
+            value = args[index + 1]
+            if option == "--provider" and provider is None:
+                provider = value
+            elif option == "--model" and model is None:
+                model = value
+            elif option == "--role" and role is None:
+                role = value
+            else:
+                print(_MODEL_USAGE, file=sys.stderr)
+                return 2
+            index += 2
+            continue
+        print(_MODEL_USAGE, file=sys.stderr)
+        return 2
+
+    if (
+        provider not in {"codex", "claude"}
+        or not isinstance(model, str)
+        or not model.strip()
+    ):
+        print(
+            "WHAT: model selection requires provider codex|claude and a non-empty model. "
+            f"HOW: {_MODEL_USAGE}",
+            file=sys.stderr,
+        )
+        return 2
+    if role is not None and not role.strip():
+        print("WHAT: --role must be non-empty. HOW: " + _MODEL_USAGE, file=sys.stderr)
+        return 2
+    if role is not None:
+        # A role key is not free-form configuration: a typo would otherwise
+        # persist an override no invocation can ever select. Resolve it before
+        # importing or calling the mutating writer, so refusal preserves both
+        # unified config bytes exactly.
+        from des.domain.agent_capability import (
+            ClaimRegister,
+            resolve_declared_capability,
+        )
+
+        capability = resolve_declared_capability(role, repo_root=Path.cwd())
+        if capability.register is ClaimRegister.UNKNOWN or capability.spec_path is None:
+            print(
+                "WHAT: --role must name one readable published agent specification. "
+                f"HOW: correct {role!r} and retry.\n{_MODEL_USAGE}",
+                file=sys.stderr,
+            )
+            return 2
+
+    try:
+        config_dir = _require_mutating_config_dir()
+    except ValueError as error:
+        return _refuse_mutating_location(error)
+
+    # Import only when this mutating command is selected.  Version/help remain
+    # usable in a minimal installed runtime before the bundled DES layer loads.
+    from des.adapters.driven.config.config_writer import (
+        ConfigMigrationError,
+        ConfigWriter,
+    )
+
+    pair = {"provider": provider, "model": model}
+    # Share the same NWAVE_AGENTS_HOME-aware global authority that DESConfig
+    # reads. A bare Path.home() here would write a second global tier when an
+    # operator deliberately redirected the nWave home.
+    writer = ConfigWriter(home_dir=config_dir.parent, repo_root=Path.cwd())
+
+    def mutate(document: dict[str, object]) -> None:
+        current = document.get("model_runtime")
+        runtime = dict(current) if isinstance(current, dict) else {}
+        if role is None:
+            runtime["default"] = pair
+        else:
+            roles = runtime.get("roles")
+            role_map = dict(roles) if isinstance(roles, dict) else {}
+            role_map[role] = pair
+            runtime["roles"] = role_map
+        document["model_runtime"] = runtime
+
+    try:
+        if project:
+            writer.update_repo(mutate)
+            target = writer.repo_path
+        else:
+            writer.update_global(mutate)
+            target = writer.global_path
+    except ConfigMigrationError as error:
+        print(
+            f"WHAT: model selection was not written. WHY: {error}. "
+            "HOW: repair the unified config and retry.",
+            file=sys.stderr,
+        )
+        return 1
+    scope = f"role {role}" if role is not None else "default"
+    print(f"Model runtime {scope} set to {provider}/{model} in {target}.")
+    return 0
+
+
 def _print_usage(version: str) -> int:
     print(f"nwave-ai {version}")
     print()
@@ -815,12 +1111,14 @@ def _print_usage(version: str) -> int:
     print("  uninstall      Remove nWave framework from ~/.claude/")
     print("  doctor         Run diagnostics on the nWave installation")
     print("  attribution    Toggle commit attribution (on/off/status)")
+    print("  model          Select the provider and model for DES roles")
     print("  outcomes       Register / check shipped outcomes (Tier-1 collision)")
     print("  plugin         Manage tool plugins (install/uninstall/list)")
-    print("  project        Enable or disable nWave activation for this project")
+    print("  project        Enable, disable, or configure nWave for this project")
     print("  mode           Set the global activation mode (all/opt-in)")
     print("  status         Show global mode and this project's resolved state")
     print("  completion     Print a shell-completion script (bash/zsh)")
+    print("  update --check Discover the latest stable public release")
     print("  version        Show nwave-ai version")
     print()
     print("Install options:")
@@ -888,6 +1186,13 @@ def _sync_guidance_section_for_host(
     # action == "enable"
     try:
         content = load_section_content(_get_project_root(), host=host)
+        # Templates live with the installed distribution, while the generated
+        # region's configuration belongs to the caller's project.  Reproject
+        # the loaded template against that caller root so an install invoked
+        # from a project never publishes the distribution checkout's config.
+        from des.application.generated_region_projection import project_asset
+
+        content = project_asset(target_md, content, project_root).projected_text
     except OSError:
         # Template missing (unusual) — never block the toggle on it.
         return
@@ -929,11 +1234,25 @@ def _sync_project_claude_section(
         )
 
 
-_PROJECT_USAGE = "Usage: nwave-ai project <enable|disable> [--yes]"
+_PROJECT_USAGE = (
+    "Usage: nwave-ai project <enable|disable> [--yes]\n"
+    "       nwave-ai project set <enabled|verbosity|attribution> <value> [--yes]"
+)
+
+
+def _project_set_value(field: str, raw_value: str) -> bool | str | None:
+    """Parse the closed public type surface for a project override."""
+    if field == "enabled":
+        return {"true": True, "false": False}.get(raw_value)
+    if field == "verbosity" and raw_value in ("terse", "standard", "verbose"):
+        return raw_value
+    if field == "attribution":
+        return {"on": True, "off": False}.get(raw_value)
+    return None
 
 
 def _handle_project(args: list[str]) -> int:
-    """Handle 'project enable|disable' — write the marker + fix gitignore.
+    """Handle project activation and typed repository configuration overrides.
 
     On `enable`, also offers to inject the managed beta-feedback section into each
     supported host's guidance file (CLAUDE.md, AGENTS.md; consent-gated per host,
@@ -950,6 +1269,28 @@ def _handle_project(args: list[str]) -> int:
         return 0
     assume_yes = "--yes" in args
     positional = [a for a in args if a != "--yes"]
+    if args.count("--yes") > 1:
+        print(_PROJECT_USAGE, file=sys.stderr)
+        return 1
+
+    if positional[:1] == ["set"]:
+        if len(positional) != 3:
+            print(_PROJECT_USAGE, file=sys.stderr)
+            return 1
+        field, raw_value = positional[1:]
+        value = _project_set_value(field, raw_value)
+        if value is None:
+            print(_PROJECT_USAGE, file=sys.stderr)
+            return 1
+        project_root = Path.cwd()
+        if not _write_project_override(project_root, field=field, value=value):
+            return 1
+        print(f"nWave project override set: {field}={raw_value}.")
+        # The configuration commit is the success boundary.  Rendered guidance
+        # is refreshed only afterwards, through its existing merged projection.
+        _sync_project_claude_section("enable", project_root, assume_yes=assume_yes)
+        return 0
+
     if len(positional) != 1 or positional[0] not in ("enable", "disable"):
         print(_PROJECT_USAGE, file=sys.stderr)
         return 1
@@ -971,7 +1312,10 @@ def _handle_mode(args: list[str]) -> int:
     if not args or args[0] not in ("all", "opt-in"):
         print("Usage: nwave-ai mode <all|opt-in>", file=sys.stderr)
         return 1
-    config_dir = _get_config_dir()
+    try:
+        config_dir = _require_mutating_config_dir()
+    except ValueError as error:
+        return _refuse_mutating_location(error)
     config = read_global_config(config_dir)
     activation = config.get("activation", {})
     if not isinstance(activation, dict):
@@ -1029,34 +1373,17 @@ def _observe_project_activation(project_root: Path) -> bool:
 
 def _write_marker(project_root: Path, *, enabled: bool) -> bool:
     """Atomically publish the canonical project activation declaration."""
-    canonical = project_root / ".nwave" / "config.json"
-    temporary_path: Path | None = None
     try:
-        canonical.parent.mkdir(parents=True, exist_ok=True)
-        if canonical.exists():
-            document = json.loads(canonical.read_text(encoding="utf-8"))
-            if not isinstance(document, dict):
-                raise ValueError("canonical configuration is not an object")
-        else:
-            document = {}
-        document["enabled"] = enabled
-        serialized = json.dumps(document)
+        home_dir = _require_mutating_config_dir().parent
+    except ValueError as error:
+        _refuse_mutating_location(error)
+        return False
+    try:
+        from des.adapters.driven.config.config_writer import ConfigWriter
 
-        descriptor, temporary_name = tempfile.mkstemp(
-            dir=canonical.parent, prefix=".config.json.", text=True
-        )
-        os.close(descriptor)
-        temporary_path = Path(temporary_name)
-        temporary_path.write_text(serialized, encoding="utf-8")
-        if json.loads(temporary_path.read_text(encoding="utf-8")) != document:
-            raise ValueError("temporary canonical configuration did not validate")
-        temporary_path.replace(canonical)
+        writer = ConfigWriter(home_dir=home_dir, repo_root=project_root)
+        writer.update_repo(lambda document: document.update(enabled=enabled))
     except Exception as exc:
-        if temporary_path is not None:
-            try:
-                temporary_path.unlink(missing_ok=True)
-            except OSError:
-                pass
         print(
             "WHAT: project activation could not publish its canonical configuration. "
             f"WHY: {exc}. HOW: repair the .nwave directory and retry.",
@@ -1078,6 +1405,30 @@ def _write_marker(project_root: Path, *, enabled: bool) -> bool:
             "WHAT: project activation state did not match the requested state. "
             f"WHY: observed {observed!r} after publication. "
             "HOW: resolve concurrent changes to .nwave/config.json and retry.",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+def _write_project_override(
+    project_root: Path, *, field: str, value: bool | str
+) -> bool:
+    """Publish one typed project override through the sole repository writer."""
+    try:
+        home_dir = _require_mutating_config_dir().parent
+    except ValueError as error:
+        _refuse_mutating_location(error)
+        return False
+    try:
+        from des.adapters.driven.config.config_writer import ConfigWriter
+
+        writer = ConfigWriter(home_dir=home_dir, repo_root=project_root)
+        writer.set_repo_override(field, value)
+    except Exception as exc:
+        print(
+            "WHAT: project configuration could not publish its typed override. "
+            f"WHY: {exc}. HOW: repair the .nwave configuration and retry.",
             file=sys.stderr,
         )
         return False
@@ -1138,12 +1489,16 @@ def main() -> int:
         return _handle_attribution(sys.argv[2:])
     elif command == "doctor":
         return _handle_doctor(sys.argv[2:])
+    elif command == "update":
+        return _handle_update(sys.argv[2:])
     elif command == "outcomes":
         from nwave_ai.outcomes.cli import handle_outcomes
 
         return handle_outcomes(sys.argv[2:])
     elif command == "plugin":
         return _handle_plugin(sys.argv[2:])
+    elif command == "model":
+        return _handle_model(sys.argv[2:])
     elif command in ("project", "mode", "status", "completion"):
         return main_with_argv(sys.argv[1:])
     elif command == "version":

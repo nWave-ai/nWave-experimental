@@ -1,5 +1,7 @@
 # nw-rigor
 
-Selects a quality-vs-token-consumption profile (lean, standard, thorough, exhaustive, custom, inherit) and persists it globally (~/.nwave/global-config.json) or per-project (.nwave/des-config.json). Use when tuning how much rigor wave commands apply.
+Configure explicit Codex or Claude model selections for nWave DES defaults or published roles. Use when choosing provider/model defaults or project overrides; it never derives a model from a competence label.
+
+**Used by:** [nw-nwave-buddy](../agents/nw-nwave-buddy.md)
 
 **Source:** [SKILL.md on GitHub](https://github.com/nWave-ai/nWave/blob/main/nWave/skills/nw-rigor/SKILL.md)

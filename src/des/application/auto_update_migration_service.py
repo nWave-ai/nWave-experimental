@@ -30,12 +30,13 @@ from des.domain.workflow_format_migration import (
     WorkflowShapeUnmappable,
     apply_workflow_migration,
 )
+from des.domain.workflow_transition_catalog import WorkflowTransitionCatalogError
 
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from des.domain.workflow_format_migration import WorkflowMigrationMap
+    from des.domain.workflow_transition_catalog import WorkflowTransitionCatalog
     from des.ports.driven_ports.filesystem_port import FileSystemPort
 
 
@@ -66,7 +67,7 @@ def _is_kernel_int(raw: Any) -> bool:
 
 
 def _is_global_config(path: Path) -> bool:
-    return path.name == "des-config.json" and path.parent.name == ".nwave"
+    return path.name == "config.json" and path.parent.name == ".nwave"
 
 
 def _is_expectation_charter(path: Path) -> bool:
@@ -111,10 +112,10 @@ class AutoUpdateMigrationService:
         self,
         filesystem: FileSystemPort,
         *,
-        workflow_migration_map: WorkflowMigrationMap | None = None,
+        workflow_transition_catalog: WorkflowTransitionCatalog | None = None,
     ) -> None:
         self._filesystem = filesystem
-        self._workflow_migration_map = workflow_migration_map
+        self._workflow_transition_catalog = workflow_transition_catalog
 
     def dry_run(self, root: Path) -> DryRunPlan:
         """Discover + classify every artifact under ``root/.nwave``. Never writes.
@@ -146,20 +147,26 @@ class AutoUpdateMigrationService:
                     continue
                 self._validate_workflow_version(path, doc)
                 tag = doc.get("tag")
-                if self._workflow_migration_map is None:
+                if self._workflow_transition_catalog is None:
                     self._refuse(
-                        path, "the installed workflow migration map is unavailable"
+                        path, "the installed workflow-transition catalog is unavailable"
                     )
-                assert self._workflow_migration_map is not None
-                if tag == self._workflow_migration_map.to_tag:
-                    continue
+                assert self._workflow_transition_catalog is not None
                 try:
-                    migrated = apply_workflow_migration(
-                        doc, tag, self._workflow_migration_map
-                    )
+                    route = self._workflow_transition_catalog.route_from(tag)
+                    migrated = dict(doc)
+                    current_tag = tag
+                    for transition in route:
+                        migrated = apply_workflow_migration(
+                            migrated, current_tag, transition
+                        )
+                        current_tag = transition.to_tag
+                except WorkflowTransitionCatalogError:
+                    raise
                 except WorkflowShapeUnmappable as exc:
                     raise exc.with_details(f"path {path}") from exc
-                replacements.append((path, migrated))
+                if migrated != doc:
+                    replacements.append((path, migrated))
                 continue
             if _is_global_config(path):
                 raw_version = doc.get("schema-version", _MISSING)
@@ -282,17 +289,23 @@ class AutoUpdateMigrationService:
                 ),
             )
         tag = doc.get("tag")
-        migratable = (
-            self._workflow_migration_map is not None
-            and self._workflow_migration_map.can_migrate(tag)
-        )
-        if migratable:
-            assert self._workflow_migration_map is not None  # narrows for mypy
+        try:
+            route = (
+                self._workflow_transition_catalog.route_from(tag)
+                if self._workflow_transition_catalog is not None
+                else None
+            )
+        except WorkflowTransitionCatalogError:
+            route = None
+        if route:
             planned_action = "Upcast"
             reason = (
-                f"in flight; shape tag {tag!r} is a registered legacy tag, "
-                f"migratable to {self._workflow_migration_map.to_tag!r}"
+                f"in flight; shape tag {tag!r} is resolved by the packaged "
+                "workflow-transition catalog"
             )
+        elif route == ():
+            planned_action = "PreserveHistory"
+            reason = "in flight; shape tag already equals the catalog terminal"
         else:
             planned_action = "Indeterminate"
             reason = (

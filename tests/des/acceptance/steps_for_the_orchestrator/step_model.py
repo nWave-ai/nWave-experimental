@@ -78,8 +78,6 @@ class ModelTerminal:
 #: refusal spells it.
 OWED_BY_STEP = {
     "design": "DesignUnbound",
-    "oracle": "OracleUnrecorded",
-    "craft": "CraftUnrecorded",
 }
 
 #: §4 class B: the state does not admit the step. Exactly ONE lawful move, so
@@ -89,8 +87,6 @@ SEQUENCE_REFUSALS = frozenset(
         "HandoverAbsent",
         "ValueOutOfRange",
         "DesignUnbound",
-        "OracleUnrecorded",
-        "CraftUnrecorded",
         "CandidateUnverified",
         "AlreadyIntegrated",
     }
@@ -268,8 +264,6 @@ def step(
             )
         if not target.design_bound:
             return state, _refuse("DesignUnbound")
-        if not target.oracle_recorded:
-            return state, _refuse("OracleUnrecorded")
         if target.craft_recorded:
             return state, ModelTerminal("Success", facts=frozenset({"RECORDED"}))
         if answer != "accepted":
@@ -279,16 +273,8 @@ def step(
         )
 
     if name == "verify":
-        # §2.4 says the preconditions of `verify` ARE the canonical order run to
-        # the end: the candidate covers every value, so every value owes its
-        # three facts. Written as a second pass over the values, this model
-        # checked design and oracle and forgot craft, and named `DesignUnbound`
-        # where the surface truthfully named `CraftUnrecorded` -- a model that
-        # disagreed with its own `canonical_next`. Derived from that one
-        # function, the two cannot drift apart again.
-        owed = canonical_next(state)
-        if owed in OWED_BY_STEP:
-            return state, _refuse(OWED_BY_STEP[owed])
+        if any(not value.design_bound for value in state.values):
+            return state, _refuse("DesignUnbound")
         if state.candidate is not None:
             return state, ModelTerminal(
                 "Success", facts=frozenset({"CANDIDATE", "RECORDED"})

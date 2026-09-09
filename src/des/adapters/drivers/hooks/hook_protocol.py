@@ -32,7 +32,7 @@ def create_audit_writer() -> AuditLogWriter:
     """Create appropriate AuditLogWriter based on DES configuration.
 
     Returns JsonlAuditLogWriter by default,
-    NullAuditLogWriter when explicitly disabled in .nwave/des-config.json.
+    NullAuditLogWriter when explicitly disabled in .nwave/config.json.
     """
     from des.adapters.driven.config.des_config import DESConfig
     from des.adapters.driven.logging.null_audit_log_writer import NullAuditLogWriter

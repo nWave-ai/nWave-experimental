@@ -59,13 +59,6 @@ SEQUENCE_REFUSALS = frozenset(
         "HandoverAbsent",
         "ValueOutOfRange",
         "DesignUnbound",
-        "OracleUnrecorded",
-        # Omitted while its two siblings were listed, so `verify` on a Request
-        # whose values are designed and admitted but not yet implemented
-        # announced a fork of three where exactly one move exists. The reference
-        # model found it: the set is a hand-kept list of names, and a hand-kept
-        # list is a place a name can be forgotten.
-        "CraftUnrecorded",
         "CandidateUnverified",
         "CandidateUnreadable",
         "AlreadyIntegrated",

@@ -671,6 +671,13 @@ class TestInstalledShimResolvesRuntimeViaClaudeConfigDir:
         env = dict(os.environ)
         env["CLAUDE_CONFIG_DIR"] = str(claude_dir)
         env["HOME"] = str(distinct_home)
+        # The shim intentionally gives explicit runtime selection and the
+        # installer-owned active-runtime pointer precedence over the legacy
+        # Claude location exercised here.  Do not inherit either from the
+        # test runner, or a preceding installer test can select its runtime
+        # instead of this test's sentinel.
+        env.pop("NWAVE_RUNTIME", None)
+        env.pop("NWAVE_AGENTS_HOME", None)
 
         shim_path = claude_dir / "bin" / "des"
         result = subprocess.run(

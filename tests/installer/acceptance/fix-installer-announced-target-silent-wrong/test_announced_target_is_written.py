@@ -75,10 +75,20 @@ def _run_installer(root: Path, *, claude_config_dir: Path | None) -> tuple[int, 
     env["CODEX_HOME"] = str(root / "codex")
     env["NWAVE_AGENTS_HOME"] = str(root / "agents")
     env["OPENCODE_CONFIG_DIR"] = str(root / "opencode")
+    # The installer must run from the source checkout to find its assets, but
+    # configuration belongs to the test's user project, never that checkout.
+    project_root = root / "project"
+    env["NWAVE_PROJECT_ROOT"] = str(project_root)
     if claude_config_dir is not None:
         env["CLAUDE_CONFIG_DIR"] = str(claude_config_dir)
 
-    for path in (root / "home", root / "codex", root / "agents", root / "opencode"):
+    for path in (
+        root / "home",
+        root / "codex",
+        root / "agents",
+        root / "opencode",
+        project_root,
+    ):
         path.mkdir(parents=True, exist_ok=True)
 
     completed = subprocess.run(

@@ -73,6 +73,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -80,10 +81,12 @@ from pathlib import Path
 import pytest
 
 from des.adapters.driven.codefact.code_fact_chain import CodeFactChain
+from des.adapters.driven.codefact.graphify_code_fact_adapter import GraphifyAdapter
 from des.ports.code_fact_port import (
     CAPABILITY_ATOMS_IN_FILE,
     Answered,
     CapabilityDescriptor,
+    Failed,
 )
 
 
@@ -209,6 +212,81 @@ def _make_stale_fixture(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def test_one_blast_radius_operation_coalesces_failed_refresh_across_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """File scopes stay distinct while their one index failure is shared."""
+    from des.adapters.driven.codefact import graphify_code_fact_adapter as module
+    from des.application.blast_radius_measurement import _consumer_counts
+
+    root = _make_stale_fixture(tmp_path)
+    (root / "second.py").write_text("def second():\n    return 2\n", encoding="utf-8")
+    attempts = 0
+
+    def failing_spawn(argv, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        return subprocess.CompletedProcess(argv, 1, stdout="", stderr="unavailable")
+
+    monkeypatch.setattr(module, "spawn", failing_spawn)
+    assert _consumer_counts(root, ["subject.py", "second.py"]) == {
+        "subject.py": None,
+        "second.py": None,
+    }
+    assert attempts == 1
+    time.sleep(0.01)
+    (root / "second.py").write_text(
+        "def second_changed():\n    return 3\n", encoding="utf-8"
+    )
+    _consumer_counts(root, ["subject.py", "second.py"])
+    assert attempts == 2
+
+
+def test_scoped_views_share_a_successful_refresh_snapshot(tmp_path: Path) -> None:
+    """A refresh in one file view makes an already-created sibling fresh."""
+    root = _make_stale_fixture(tmp_path)
+    second = root / "second.py"
+    second.write_text("def second():\n    return 2\n", encoding="utf-8")
+    owner = GraphifyAdapter(root)
+    first = owner.scoped(root / "subject.py")
+    sibling = owner.scoped(second)
+    attempts = 0
+
+    def refresh(_executable: str):
+        nonlocal attempts
+        attempts += 1
+        (root / "graphify-out" / "graph.json").write_text(
+            json.dumps(
+                {
+                    "nodes": [
+                        {"label": "target", "source_file": "subject.py"},
+                        {"label": "second", "source_file": "second.py"},
+                    ]
+                }
+            )
+        )
+        (root / "graphify-out" / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "subject.py": {"mtime": (root / "subject.py").stat().st_mtime},
+                    "second.py": {"mtime": second.stat().st_mtime},
+                }
+            )
+        )
+
+    first._run_graphify_update = refresh
+    assert first.ensure_fresh_or_fail(_descriptor(), {}) is None
+    assert sibling.ensure_fresh_or_fail(_descriptor(), {}) is None
+    assert sibling._graph is owner._graph
+    assert attempts == 1
+    first_result = first.resolve(_descriptor(), {})
+    sibling_result = sibling.resolve(_descriptor(), {})
+    assert isinstance(first_result, Answered)
+    assert isinstance(sibling_result, Answered)
+    assert first_result.payload.payload["atoms"] == ["target"]
+    assert sibling_result.payload.payload["atoms"] == ["second"]
+
+
 class TestSanityCheckThePredicateCanBothPassAndFail:
     """Per the mandate: verify this oracle's own logic against a state
     where the property ALREADY holds today, before trusting its red
@@ -329,6 +407,57 @@ class TestPyExecutableIsLaunchedViaSysExecutable:
 
 
 class TestRegenerationImpossibleDegradesLoud:
+    def test_an_unchanged_failed_refresh_runs_once_and_stays_indeterminate(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A repeated query cannot spend another update on unchanged stale input."""
+        from des.adapters.driven.codefact import graphify_code_fact_adapter as module
+
+        root = _make_stale_fixture(tmp_path)
+        attempts = 0
+
+        def failing_spawn(argv, **_kwargs):
+            nonlocal attempts
+            attempts += 1
+            return subprocess.CompletedProcess(argv, 1, stdout="", stderr="unavailable")
+
+        monkeypatch.setattr(module, "spawn", failing_spawn)
+        chain = CodeFactChain(root=root)
+
+        first = chain.resolve(_descriptor(), {"symbol": ""})
+        second = chain.resolve(_descriptor(), {"symbol": ""})
+
+        assert attempts == 1
+        assert isinstance(first, Failed)
+        assert isinstance(second, Failed)
+        assert first.cause == second.cause == "provider-error"
+
+    def test_a_changed_stale_input_reopens_one_failed_refresh_attempt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The negative cache expires when the source input actually changes."""
+        from des.adapters.driven.codefact import graphify_code_fact_adapter as module
+
+        root = _make_stale_fixture(tmp_path)
+        attempts = 0
+
+        def failing_spawn(argv, **_kwargs):
+            nonlocal attempts
+            attempts += 1
+            return subprocess.CompletedProcess(argv, 1, stdout="", stderr="unavailable")
+
+        monkeypatch.setattr(module, "spawn", failing_spawn)
+        chain = CodeFactChain(root=root)
+
+        assert isinstance(chain.resolve(_descriptor(), {"symbol": ""}), Failed)
+        time.sleep(0.01)
+        (root / "subject.py").write_text(
+            "def changed():\n    return 3\n", encoding="utf-8"
+        )
+        assert isinstance(chain.resolve(_descriptor(), {"symbol": ""}), Failed)
+
+        assert attempts == 2
+
     def test_graphify_absent_on_stale_graph_never_silently_answers(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

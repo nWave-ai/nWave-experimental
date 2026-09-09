@@ -36,7 +36,7 @@ import pytest
 from nwave_ai.cli import main
 
 from des.adapters.driven.config.des_config import DESConfig
-from des.adapters.drivers.hooks.activation_gate import GateOutcome, run_gate
+from des.adapters.drivers.hooks.activation_gate import GateOutcome, apply_gate, run_gate
 from des.domain.config_merge import merge_config
 
 
@@ -58,7 +58,7 @@ def _write_raw(path: Path, text: str) -> None:
 
 
 def _unified(**fields: object) -> dict:
-    return {"schema-version": "1", **fields}
+    return {"schema-version": 1, **fields}
 
 
 def _invoke_cli(args: list[str]) -> tuple[int, str]:
@@ -315,6 +315,25 @@ def test_gate_dispatches_on_a_declared_per_repo_opt_in(tmp_path: Path) -> None:
     assert run.handler_stdin == envelope.raw
 
 
+def test_relative_selected_home_never_activates_the_native_home_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rejected selected-home override must fail inactive, never use HOME."""
+    home, repo = tmp_path / "home", tmp_path / "repo"
+    home.mkdir()
+    repo.mkdir()
+    _write_json(home / ".nwave" / "config.json", _unified(activation={"mode": "all"}))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", "relative-selected-home")
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+
+    with pytest.raises(SystemExit) as exited:
+        apply_gate("pre-tool-use", json.dumps({"cwd": str(repo)}))
+
+    assert exited.value.code == 0
+
+
 def test_gate_allows_without_dispatch_on_a_per_repo_opt_out(tmp_path: Path) -> None:
     """Canonical example (b): repo config.json has enabled: false -> gate
     resolves to disabled, the per-repo opt-out path."""
@@ -439,11 +458,15 @@ def test_install_reflects_the_current_verbosity_across_two_successive_reinstalls
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(home))
     monkeypatch.setenv("CLAUDE_CODE", "1")
     monkeypatch.chdir(repo)
 
     def _rendered() -> str:
-        installed_root = home / ".claude"
+        # The project Claude surface is where the generated communication
+        # rules are installed.  The selected HOME only owns host runtime
+        # assets; scanning it cannot observe this project-level projection.
+        installed_root = repo
         return "\n".join(
             p.read_text(errors="ignore")
             for p in installed_root.rglob("*")
@@ -507,12 +530,14 @@ def test_load_section_content_projects_the_merged_verbosity_via_docgen(
     home_terse.mkdir()
     _write_json(home_terse / ".nwave" / "config.json", _unified(verbosity="terse"))
     monkeypatch.setenv("HOME", str(home_terse))
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(home_terse))
     terse_content = load_section_content(host="claude")
 
     home_verbose = tmp_path / "home-verbose"
     home_verbose.mkdir()
     _write_json(home_verbose / ".nwave" / "config.json", _unified(verbosity="verbose"))
     monkeypatch.setenv("HOME", str(home_verbose))
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(home_verbose))
     verbose_content = load_section_content(host="claude")
 
     assert "terse" in terse_content.lower(), (

@@ -234,7 +234,7 @@ class TestBuildGuardCommand:
         """Guard command checks for local activation before spawning Python."""
         cmd = build_guard_command("python3 -m des.hook pre-write")
         assert "deliver-session.json" not in cmd
-        assert ".nwave/local-config.json" in cmd
+        assert ".nwave/config.json" in cmd
         assert "exit 0" in cmd
 
     def test_guard_command_checks_execution_log(self):
@@ -245,12 +245,12 @@ class TestBuildGuardCommand:
     def test_guard_command_uses_activation_marker_existence_not_path_regex(self):
         """Root-write-boundary slice: the shell candidate-existence check
         replaces the old product-directory path regex. The shell tests only
-        for `.nwave/local-config.json`'s EXISTENCE -- it must never parse
-        the marker's JSON content (`enabled_for_repo`) or grep the
+        for `.nwave/config.json`'s EXISTENCE -- it must never parse
+        the config's JSON content (`enabled`) or grep the
         `file_path` itself; that semantic interpretation is Python-only
         (`activation_gate.apply_gate`)."""
         cmd = build_guard_command("python3 -m des.hook pre-write")
-        assert "test -f .nwave/local-config.json" in cmd
+        assert "test -f .nwave/config.json" in cmd
         assert "/src/" not in cmd
         assert "/nWave/" not in cmd
         assert "/tests/" not in cmd

@@ -2107,47 +2107,9 @@ class DESPlugin(InstallationPlugin):
                 message=f"DES hooks install failed: {e}",
             )
 
-    _DEFAULT_DES_CONFIG = {
-        "audit_logging_enabled": True,
-        "audit_log_dir": ".nwave/des/logs",
-    }
-
-    def _write_json_config(self, path: Path, data: dict[str, Any]) -> None:
-        """Write dict as pretty-printed JSON with trailing newline."""
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-            f.write("\n")
-
-    def _read_json_config(self, path: Path) -> dict[str, Any]:
-        """Read JSON config file, returning empty dict on parse or IO error."""
-        try:
-            with open(path, encoding="utf-8") as f:
-                data: dict[str, Any] = json.load(f)
-                return data
-        except (json.JSONDecodeError, OSError):
-            return {}
-
-    def _migrate_config(
-        self, config_file: Path, context: InstallContext
-    ) -> PluginResult:
-        """Seed missing default blocks into an existing config (migration path).
-
-        Each seed is independent and idempotent: a block is added only when it is
-        absent, and an existing block is never overwritten. All pre-existing keys
-        are preserved (read-modify-write).
-        """
-        # Ensure .gitignore on every install/upgrade (migration for existing installs)
-        self._ensure_gitignore(config_file.parent)
-
-        return PluginResult(
-            success=True,
-            plugin_name="des",
-            message="DES config already exists",
-        )
-
     @staticmethod
     def _ensure_gitignore(nwave_dir: Path) -> None:
-        """Create .nwave/.gitignore with '*' to prevent accidental commits.
+        """Create the canonical .nwave/.gitignore.
 
         Idempotent: preserves user-customized .gitignore (no nWave marker).
         Handles read-only directories gracefully.
@@ -2159,77 +2121,62 @@ class DESPlugin(InstallationPlugin):
                 content = gitignore.read_text(encoding="utf-8")
                 if marker not in content:
                     return  # User-customized, don't overwrite
-            gitignore.write_text(f"{marker}\n*\n", encoding="utf-8")
+            gitignore.write_text(f"{marker}\n*\n!config.json\n", encoding="utf-8")
         except OSError:
             pass  # Read-only directory, skip silently
 
-    def _create_config(
-        self, config_file: Path, nwave_dir: Path, context: InstallContext
-    ) -> PluginResult:
-        """Create des-config.json with default settings."""
-        default_config = self._DEFAULT_DES_CONFIG
-        if context.dry_run:
-            context.logger.info(f"  🚨 [DRY RUN] Would create {config_file}")
-        else:
-            nwave_dir.mkdir(parents=True, exist_ok=True)
-            self._ensure_gitignore(nwave_dir)
-            self._write_json_config(config_file, default_config)
-            context.logger.info(f"  ✅ DES config created: {config_file}")
-        return PluginResult(
-            success=True,
-            plugin_name="des",
-            message=f"DES config bootstrapped at {config_file}",
-        )
-
     def _bootstrap_des_config(self, context: InstallContext) -> PluginResult:
-        """Bootstrap .nwave/des-config.json with default settings.
-
-        Creates the config file if it doesn't exist. If it already exists
-        and otherwise preserves its user-owned content unchanged.
-
-        The config lives in the project directory (.nwave/), not ~/.claude,
-        because audit log paths are project-relative.
-
-        Resilience: when the resolved project directory is read-only (e.g.
-        running the installer from a read-only mount or a site-packages
-        dir that the user doesn't own), silently skip config creation.
-        DES runs with sensible built-in defaults when the config is absent;
-        blocking the install over an optional customization file is wrong.
-        """
+        """Delegate unified config bootstrap and legacy migration to its writer."""
         try:
-            project_root = context.project_root or Path.cwd()
-            nwave_dir = project_root / ".nwave"
-            config_file = nwave_dir / "des-config.json"
+            from des.adapters.driven.config.config_writer import (  # type: ignore[import-untyped]
+                ConfigWriter,
+            )
 
-            if config_file.exists():
-                return self._migrate_config(config_file, context)
-
-            return self._create_config(config_file, nwave_dir, context)
-
-        except OSError as e:
-            # EROFS, EACCES, ENOSPC, etc. — directory not writable.
-            # Treat as soft-skip: DES operates on built-in defaults when
-            # the project-level config file is missing, so the install
-            # can continue safely.  The warning surfaces the condition
-            # without breaking the happy path.
+            if context.locations is None:
+                return PluginResult(
+                    success=False,
+                    plugin_name="des",
+                    message="Unified DES config requires installer locations.",
+                    errors=[
+                        "InstallContext.locations is required for config bootstrap."
+                    ],
+                )
+            self._locations = context.locations
+            project_root = (
+                context.user_project_root or context.project_root or Path.cwd()
+            )
+            writer = ConfigWriter(
+                home_dir=self._locations.agents_home,
+                repo_root=project_root,
+            )
+            result = writer.bootstrap(dry_run=context.dry_run)
+            if not context.dry_run:
+                self._ensure_gitignore(result.repo_path.parent)
+            action = "would bootstrap" if context.dry_run else "bootstrapped"
             context.logger.info(
-                f"  ⚠️  DES config skipped (read-only project dir): {e}. "
-                f"Built-in defaults apply; customize later via "
-                f"{config_file} when project dir is writable."
+                f"  ✅ Unified DES config {action}: {result.global_path}, {result.repo_path}"
             )
             return PluginResult(
                 success=True,
                 plugin_name="des",
-                message=(
-                    f"DES config skipped (project dir not writable): {e}. "
-                    "Built-in defaults in effect."
-                ),
+                message=f"Unified DES config {action} at {result.repo_path}",
             )
-        except Exception as e:
+
+        except Exception as exc:
+            if isinstance(exc.__cause__, OSError):
+                context.logger.info(
+                    "  ⚠️  Unified DES config skipped (project dir not writable). "
+                    "Built-in defaults apply."
+                )
+                return PluginResult(
+                    success=True,
+                    plugin_name="des",
+                    message="Unified DES config skipped (project dir not writable).",
+                )
             return PluginResult(
                 success=False,
                 plugin_name="des",
-                message=f"DES config bootstrap failed: {e}",
+                message=f"Unified DES config migration refused: {exc}",
             )
 
     def _load_settings(self, settings_file: Path) -> dict[str, Any]:
@@ -2692,37 +2639,14 @@ class DESPlugin(InstallationPlugin):
         else:
             errors.append("settings.json not found - DES hooks not installed")
 
-        # 5. Verify DES config exists and is valid JSON
-        context.logger.info("  \U0001f50e Verifying DES config...")
-        project_root = context.project_root or Path.cwd()
-        config_file = project_root / ".nwave" / "des-config.json"
-        nwave_dir = project_root / ".nwave"
+        # 5. Verify the sole unified DES config exists and is valid JSON.
+        context.logger.info("  \U0001f50e Verifying unified DES config...")
+        project_root = context.user_project_root or context.project_root or Path.cwd()
+        config_file = project_root / ".nwave" / "config.json"
         if not config_file.exists():
-            if nwave_dir.exists():
-                default_config = {
-                    "audit_logging_enabled": True,
-                    "audit_log_dir": ".nwave/des/logs",
-                }
-                try:
-                    nwave_dir.mkdir(parents=True, exist_ok=True)
-                    with open(config_file, "w", encoding="utf-8") as f:
-                        json.dump(default_config, f, indent=2)
-                        f.write("\n")
-                    context.logger.info(
-                        f"  \u2705 DES config created (migration): {config_file}"
-                    )
-                    des_cfg = default_config
-                except OSError as e:
-                    # Read-only project dir (e.g. installer invoked from a
-                    # mounted source repo); built-in defaults apply.  Match
-                    # the _bootstrap_des_config soft-skip semantics.
-                    context.logger.info(
-                        f"  \u26a0\ufe0f  DES config skipped (read-only project "
-                        f"dir): {e}. Built-in defaults apply."
-                    )
-                    des_cfg = default_config
-            else:
-                errors.append("DES config not found: .nwave/des-config.json")
+            bootstrap = self._bootstrap_des_config(context)
+            if not bootstrap.success:
+                errors.append(bootstrap.message)
         if not errors and config_file.exists():
             try:
                 with open(config_file, encoding="utf-8") as f:
@@ -2733,7 +2657,7 @@ class DESPlugin(InstallationPlugin):
                 context.logger.info(f"    \u2699\ufe0f audit_logging={audit_on}")
                 context.logger.info(f"    \u2699\ufe0f log_dir={log_dir}")
             except json.JSONDecodeError:
-                errors.append("DES config is not valid JSON: .nwave/des-config.json")
+                errors.append("DES config is not valid JSON: .nwave/config.json")
 
         if errors:
             return PluginResult(

@@ -18,10 +18,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from des.domain.turn_record_ref import CRAFT_TURN, ORACLE_TURN, turn_ref
+from tests.common.in_process_cli import run_cli_in_process
+from tests.des.acceptance import fake_provider
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
+    PACKAGE_PARENT,
     accepted_values,
     asked,
     block,
+    git,
+    hermetic_environment,
     nexts,
     observation,
 )
@@ -154,6 +160,71 @@ def test_a_different_request_rewrites_instead_of_refusing(
     assert len(asked(turns)) == spent + 1
     stored = json.loads((root / HANDOVER).read_text())
     assert stored["request"] == OTHER_REQUEST
+
+
+def test_a_new_request_in_a_linked_worktree_preserves_another_requests_records_and_state(
+    root: Path, step, tmp_path: Path
+) -> None:
+    """A sibling checkout cannot call its unknown request abandoned.
+
+    Linked worktrees share ``refs/nwave/turns`` but each owns a separate
+    handover.  Root A records a live request through the public PO step and
+    owns oracle/craft records; root B then records a different Request through
+    the same public step.  B must leave both A's records and its handover bytes
+    intact.  This is a real Git linked-worktree topology, not a namespace mock.
+    """
+    code, out, err = step(
+        "po", "--repo-root", str(root), answers=[accepted_values("A")], stdin=REQUEST
+    )
+    assert code == 0, out + err
+    state_before = (root / HANDOVER).read_bytes()
+    recorded = [
+        turn_ref(REQUEST, observation("A"), ORACLE_TURN),
+        turn_ref(REQUEST, observation("A"), CRAFT_TURN),
+    ]
+    head = git(root, "rev-parse", "HEAD")
+    for ref in recorded:
+        git(root, "update-ref", ref, head)
+
+    sibling = tmp_path / "sibling"
+    git(root, "worktree", "add", "-q", "-b", "lane/sibling-po", str(sibling), head)
+    try:
+        results = tmp_path / "sibling-results.json"
+        counter = tmp_path / "sibling-results-consumed"
+        turns = tmp_path / "sibling-turns.json"
+        launcher = tmp_path / "sibling-bin"
+        claude_dir = tmp_path / "sibling-claude-config"
+        results.write_text(json.dumps([accepted_values("B")]))
+        environment = hermetic_environment(
+            fake_provider.environment(
+                sibling,
+                launcher_dir=launcher,
+                results=results,
+                log=turns,
+                counter=counter,
+                package_parent=PACKAGE_PARENT,
+            ),
+            claude_dir,
+        )
+        code, out, err = run_cli_in_process(
+            ["po", "--repo-root", str(sibling)],
+            cwd=sibling,
+            env=environment,
+            stdin_text=OTHER_REQUEST,
+            catch_all=True,
+        )
+        assert code == 0, out + err
+        assert block(out, err)["DELIVERY-OUTCOME"] == "Success"
+        assert (sibling / HANDOVER).exists()
+        assert (root / HANDOVER).read_bytes() == state_before
+        remaining = set(
+            git(
+                root, "for-each-ref", "--format=%(refname)", "refs/nwave/turns"
+            ).splitlines()
+        )
+        assert set(recorded) <= remaining
+    finally:
+        git(root, "worktree", "remove", "--force", str(sibling))
 
 
 def test_an_empty_request_is_refused_before_any_turn_is_bought(

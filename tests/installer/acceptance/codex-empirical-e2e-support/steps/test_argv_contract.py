@@ -86,7 +86,7 @@ def _run_installer(install_context, patched_resolvers, state, hooks_path) -> Non
 
 
 def _invoke_adapter(
-    command: str, stdin: str, audit_dir: Path
+    command: str, stdin: str, audit_dir: Path, *, cwd: Path | None = None
 ) -> subprocess.CompletedProcess:
     """Invoke the installed hook command as a real subprocess.
 
@@ -130,6 +130,7 @@ def _invoke_adapter(
         capture_output=True,
         text=True,
         env=env,
+        cwd=cwd,
         timeout=15,
     )
 
@@ -214,12 +215,23 @@ def invoke_adapter_without_argv(state, tmp_path) -> None:
 
 
 @when("the installed PreToolUse hook command is invoked with malformed JSON on stdin")
-def invoke_hook_command_malformed_stdin(state, tmp_path) -> None:
+def invoke_hook_command_malformed_stdin(state, tmp_path, activated_project_dir) -> None:
+    """Launch from the enabled project because malformed stdin has no cwd.
+
+    The activation gate precedes protocol parsing. A valid Codex envelope
+    identifies its project through ``cwd``; this malformed envelope cannot, so
+    the production fallback is the hook process's current directory.
+    """
     audit_dir = tmp_path / "audit-logs"
     audit_dir.mkdir(parents=True, exist_ok=True)
     state["audit_dir"] = audit_dir
     command = state["commands"][0]
-    state["proc"] = _invoke_adapter(command, "{not valid json,,,", audit_dir)
+    state["proc"] = _invoke_adapter(
+        command,
+        "{not valid json,,,",
+        audit_dir,
+        cwd=activated_project_dir,
+    )
 
 
 # --- Then ------------------------------------------------------------------

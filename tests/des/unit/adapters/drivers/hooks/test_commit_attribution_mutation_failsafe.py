@@ -87,20 +87,23 @@ def test_attribution_enabled_true_mutates(
     """
     global_config_dir = tmp_path / ".nwave"
     global_config_dir.mkdir()
-    global_config_file = global_config_dir / "global-config.json"
+    global_config_file = global_config_dir / "config.json"
     global_config_file.write_text(
         json.dumps({"attribution": {"enabled": True}}), encoding="utf-8"
     )
     repo = tmp_path / "repo"
     (repo / ".nwave").mkdir(parents=True)
-    (repo / ".nwave" / "local-config.json").write_text(
-        json.dumps({"enabled_for_repo": True}), encoding="utf-8"
+    (repo / ".nwave" / "config.json").write_text(
+        json.dumps({"enabled": True}), encoding="utf-8"
     )
 
     monkeypatch.setattr(
         pre_tool_use_handler, "_commit_attribution_service", _MutatingService()
     )
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
 
     result = pre_tool_use_handler.emit_commit_attribution_mutation(
         {"command": 'git commit -m "x"'},

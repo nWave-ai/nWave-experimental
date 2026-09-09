@@ -2,7 +2,7 @@
 
 Pure-function domain helper. No I/O — caller passes an already-parsed dict.
 Hexagonal: this module is a Tier-1 driving port at domain scope; filesystem
-reads of `~/.nwave/global-config.json` live in caller adapters (CLI install,
+reads of `~/.nwave/config.json` live in caller adapters (CLI install,
 wave-skill harness, doctor).
 
 Per DDD-5 + D12 + Decision 4 (2026-04-28),
@@ -95,7 +95,7 @@ def resolve_density(global_config: dict[str, Any]) -> Density:
     """Return the active documentation density via the D12 cascade.
 
     Pure function. No I/O, no logging, no environment lookups. Caller is
-    responsible for parsing `~/.nwave/global-config.json` and passing the
+    responsible for parsing `~/.nwave/config.json` and passing the
     resulting dict in.
 
     Cascade order (per DDD-5 + D12 + Decision 4):
@@ -105,7 +105,7 @@ def resolve_density(global_config: dict[str, Any]) -> Density:
            hard default per Decision 4.
 
     Args:
-        global_config: Parsed contents of `~/.nwave/global-config.json`.
+        global_config: Parsed contents of `~/.nwave/config.json`.
             May be empty (fresh install) or arbitrary user-shaped dict.
 
     Returns:

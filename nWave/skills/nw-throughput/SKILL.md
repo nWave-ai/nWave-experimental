@@ -18,7 +18,8 @@ when contention increases end-to-end wall time.
 1. Select the nearest measurable constraint and shortest falsifier.
 2. Fan out only independent work with disjoint ownership in detached worktrees.
 3. Keep one heavy local build/test/install box; serialize its use.
-4. Fan in on the whole delivered value. Review, examine, integration,
-   observation and cleanup are runner-owned; do not repeat or stage them.
+4. Fan in on the whole delivered value. Keep required review, EXAMINE,
+   integration, observation and cleanup; the orchestrating LLM chooses and
+   invokes them, while DES persists typed facts and advisory `NEXT` data.
 5. Measure wall time, cost, tokens, retries, tool calls, and human
    intervention against the outcome.

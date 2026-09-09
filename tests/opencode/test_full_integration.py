@@ -23,16 +23,16 @@ TEMPLATE_PATH = (
 
 
 def _activate_project(project_root: Path) -> None:
-    """Write the activation marker so the gate dispatches hooks for this project.
+    """Write unified repo config so the gate dispatches hooks for this project.
 
     The activation gate (nwave-project-activation-gating) makes hooks
     non-invasive: they only run in an activated project. Hermetic DES test
     projects must declare themselves active to exercise the hook's internal
     behavior.
     """
-    marker = project_root / ".nwave" / "local-config.json"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(json.dumps({"enabled_for_repo": True}))
+    config = project_root / ".nwave" / "config.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(json.dumps({"schema-version": 1, "enabled": True}))
 
 
 def _run_adapter(

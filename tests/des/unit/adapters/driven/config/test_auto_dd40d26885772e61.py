@@ -103,19 +103,18 @@ class TestAttributionEnabledCascadePrecedence:
         home_dir = tmp_path / "home"
         repo_dir = tmp_path / "repo"
         repo_dir.mkdir(parents=True)
-        legacy_path = home_dir / ".nwave" / "global-config.json"
-        if legacy_attribution is not None:
-            _write_json(legacy_path, {"attribution": legacy_attribution})
+        global_path = home_dir / ".nwave" / "config.json"
+        global_attribution = (
+            global_attribution if global_attribution is not None else legacy_attribution
+        )
         if global_attribution is not None:
-            _write_json(
-                home_dir / ".nwave" / "config.json", {"attribution": global_attribution}
-            )
+            _write_json(global_path, {"attribution": global_attribution})
         if repo_attribution is not None:
             _write_json(
                 repo_dir / ".nwave" / "config.json", {"attribution": repo_attribution}
             )
 
-        config = DESConfig(cwd=repo_dir, global_config_path=legacy_path)
+        config = DESConfig(cwd=repo_dir, global_config_path=global_path)
 
         assert config.attribution_enabled is expected
 
@@ -128,10 +127,10 @@ class TestAttributionEnabledCascadePrecedence:
         home_dir = tmp_path / "home"
         repo_dir = tmp_path / "repo"
         repo_dir.mkdir(parents=True)
-        legacy_path = home_dir / ".nwave" / "global-config.json"
-        _write_json(legacy_path, {"attribution": ["not", "a", "dict"]})
+        global_path = home_dir / ".nwave" / "config.json"
+        _write_json(global_path, {"attribution": ["not", "a", "dict"]})
 
-        config = DESConfig(cwd=repo_dir, global_config_path=legacy_path)
+        config = DESConfig(cwd=repo_dir, global_config_path=global_path)
 
         assert config.attribution_enabled is False
 
@@ -172,10 +171,10 @@ class TestAttributionDoctorAndCommitIntegration:
         _write_json(
             home_dir / ".claude" / "settings.json", _settings_with_hook_registered()
         )
-        legacy_path = home_dir / ".nwave" / "global-config.json"
+        global_path = home_dir / ".nwave" / "config.json"
 
         result = attribute_commit_message(
-            repo_dir, "subject line", global_config_path=legacy_path
+            repo_dir, "subject line", global_config_path=global_path
         )
         assert ATTRIBUTION_TRAILER in result
 
@@ -217,17 +216,15 @@ class TestAttributionDoctorAndCommitIntegration:
         home_dir = tmp_path / "home"
         repo_dir = tmp_path / "repo"
         repo_dir.mkdir(parents=True)
-        legacy_path = home_dir / ".nwave" / "global-config.json"
-        _write_json(legacy_path, {"attribution": {"enabled": True}})
-        _write_json(
-            repo_dir / ".nwave" / "local-config.json", {"enabled_for_repo": True}
-        )
+        global_path = home_dir / ".nwave" / "config.json"
+        _write_json(global_path, {"attribution": "on"})
+        _write_json(repo_dir / ".nwave" / "config.json", {"enabled": True})
         _write_json(
             home_dir / ".claude" / "settings.json", _settings_with_hook_registered()
         )
 
         result = attribute_commit_message(
-            repo_dir, "subject line", global_config_path=legacy_path
+            repo_dir, "subject line", global_config_path=global_path
         )
         assert ATTRIBUTION_TRAILER in result
 

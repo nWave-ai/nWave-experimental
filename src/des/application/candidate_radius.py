@@ -25,10 +25,12 @@ the existing rule already classifies `L`.
 
 from __future__ import annotations
 
-import concurrent.futures
+import json
+import os
+import sys
 from typing import TYPE_CHECKING
 
-from des.application.blast_radius_measurement import measure_blast_radius
+from des.runtime.spawn import spawn
 
 
 if TYPE_CHECKING:
@@ -61,22 +63,63 @@ def candidate_radius(root: Path, paths: tuple[str, ...]) -> str:
             "tier=S files=0 boundary=0 consumers=none (the candidate changed no path)"
         )
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            verdict = pool.submit(measure_blast_radius, root, paths=list(paths)).result(
-                timeout=RADIUS_TIMEOUT_SECONDS
-            )
+        completed = spawn(
+            _blast_radius_argv(root, paths),
+            timeout=RADIUS_TIMEOUT_SECONDS,
+            capture_output=True,
+            text=True,
+            check=False,
+            reap_process_group=(os.name == "posix"),
+        )
+        if completed.returncode != 0:
+            return INDETERMINATE
+        return _radius_row(_final_json_line(completed.stdout))
     except Exception:
         # Every way of not knowing is one way: an unreadable scope, a path the
         # measurement refuses, a walk that did not return. None of them may
         # become a confident `S` (GDP-6).
         return INDETERMINATE
-    counts = list(verdict.measures.consumer_counts.values())
+
+
+def _blast_radius_argv(root: Path, paths: tuple[str, ...]) -> list[str]:
+    """Build the existing CLI producer invocation for this measurement."""
+    return [
+        sys.executable,
+        "-m",
+        "des.cli",
+        "blast-radius",
+        "--repo",
+        str(root),
+        "--paths",
+        *paths,
+    ]
+
+
+def _final_json_line(stdout: str) -> dict[str, object]:
+    """Decode the CLI's final nonempty stdout line as its verdict."""
+    lines = [line for line in stdout.splitlines() if line.strip()]
+    if not lines:
+        raise ValueError("blast-radius emitted no JSON verdict")
+    payload = json.loads(lines[-1])
+    return payload
+
+
+def _radius_row(payload: dict[str, object]) -> str:
+    """Project the existing ``BlastRadiusMeasured`` payload into its row."""
+    if payload.get("event") != "BlastRadiusMeasured":
+        raise ValueError("blast-radius did not emit a measurement")
+    tier = payload["tier"]
+    measures = payload["measures"]
+    files = measures["files"]
+    boundary_files = measures["boundary_files"]
+    consumer_counts = measures["consumer_counts"]
+    counts = list(consumer_counts.values())
     if not counts or any(count is None for count in counts):
         consumers = "indeterminate"
     else:
-        top = max(verdict.measures.consumer_counts.items(), key=lambda i: i[1] or 0)
+        top = max(consumer_counts.items(), key=lambda item: item[1] or 0)
         consumers = f"max {top[1]} ({top[0]})"
     return (
-        f"tier={verdict.tier.value} files={verdict.measures.files} "
-        f"boundary={len(verdict.measures.boundary_files)} consumers={consumers}"
+        f"tier={tier} files={files} boundary={len(boundary_files)} "
+        f"consumers={consumers}"
     )

@@ -24,13 +24,14 @@ packages = ["src/des", "nwave_ai", "src/nwave_capture"]
 [tool.hatch.build.targets.wheel.force-include]
 "scripts/install" = "scripts/install"
 "scripts/shared" = "scripts/shared"
+"nWave/data" = "nWave/data"
 
 [tool.hatch.build.hooks.custom]
 path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave"
-version = "4.0.0+atddpure.b22612e"
+version = "4.0.0+atddpure.2d5a26a"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -157,8 +158,11 @@ dev = [
     "docker>=7.2.0",
     # JSON Schema validation (used by the outcomes registry)
     "jsonschema>=4.0.0",
-    # Packaging (python -m build / scripts/build_dist.py)
+    # Packaging (python -m build / scripts/build_dist.py).  ``--no-isolation``
+    # deliberately uses this environment, so it must contain the declared
+    # backend as well as the frontend.
     "build>=1.5.0,!=1.5.1",  # 1.5.1 yanked on PyPI, makes fresh resolves unsatisfiable
+    "hatchling>=1.31.0",
     # pip — the WS-floor installable build leg shells `python -m pip wheel`
     # (src/des/cli/walking_skeleton_gate.py). uv venvs OMIT pip by default
     # (unlike the prior pipenv venv), so it MUST be declared or every

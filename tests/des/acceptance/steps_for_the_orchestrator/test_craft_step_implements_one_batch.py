@@ -193,7 +193,7 @@ def test_a_recorded_craft_turn_is_a_resume_and_buys_nothing(
     assert len(asked(turns)) == spent
 
 
-def test_crafting_before_the_oracle_is_recorded_is_refused(
+def test_crafting_before_the_oracle_is_recorded_succeeds(
     root: Path, step, turns: Path
 ) -> None:
     assert (
@@ -213,9 +213,21 @@ def test_crafting_before_the_oracle_is_recorded_is_refused(
         == 0
     )
     spent = len(asked(turns))
-    code, out, err = step("craft", "--repo-root", str(root), "--value", "1")
-    assert code == 1
-    lines = block(out, err)
-    assert lines["WHAT"] == "OracleUnrecorded"
-    assert len(asked(turns)) == spent
-    assert nexts(out) == [f"des oracle --repo-root {root} --value 1"]
+    code, out, err = step(
+        "craft",
+        "--repo-root",
+        str(root),
+        "--value",
+        "1",
+        answers=[
+            {
+                "structured_output": {
+                    "outcome": "accepted",
+                    "diagnostic": "implemented",
+                },
+                "writes": {TARGET: "VALUE = 1\n"},
+            }
+        ],
+    )
+    assert code == 0, out + err
+    assert len(asked(turns)) == spent + 1

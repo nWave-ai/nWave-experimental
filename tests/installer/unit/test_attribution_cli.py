@@ -1,7 +1,7 @@
 """Unit tests for CLI attribution subcommand.
 
 Tests validate on/off/status commands through the driving port
-(cli.main) and assert at driven port boundaries (global-config.json +
+(cli.main) and assert at driven port boundaries (config.json +
 ~/.claude/settings.json).
 
 Test Budget: 6 behaviors x 2 = 12 max. Using 6 tests.
@@ -55,9 +55,9 @@ def _scrub_claude_config_dir_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _write_config(config_dir: Path, *, enabled: bool) -> None:
-    """Write global-config.json with attribution preference."""
+    """Write the selected global config with attribution preference."""
     config_dir.mkdir(parents=True, exist_ok=True)
-    config_file = config_dir / "global-config.json"
+    config_file = config_dir / "config.json"
     config_file.write_text(
         json.dumps(
             {
@@ -89,8 +89,8 @@ def _hook_registered(claude_dir: Path) -> bool:
 
 
 def _read_config(config_dir: Path) -> dict:
-    """Read global-config.json."""
-    config_file = config_dir / "global-config.json"
+    """Read the selected global config."""
+    config_file = config_dir / "config.json"
     with open(config_file, encoding="utf-8") as f:
         return json.load(f)
 
@@ -110,7 +110,7 @@ class TestAttributionCLI:
 
         with (
             patch("sys.argv", ["nwave-ai", "attribution", "on"]),
-            patch("nwave_ai.cli._get_config_dir", return_value=nwave_dir),
+            patch("nwave_ai.cli._require_mutating_config_dir", return_value=nwave_dir),
             patch("nwave_ai.cli.cleanup_legacy_attribution_hook", return_value=False),
         ):
             result = main()
@@ -134,7 +134,7 @@ class TestAttributionCLI:
 
         with (
             patch("sys.argv", ["nwave-ai", "attribution", "off"]),
-            patch("nwave_ai.cli._get_config_dir", return_value=nwave_dir),
+            patch("nwave_ai.cli._require_mutating_config_dir", return_value=nwave_dir),
             patch("nwave_ai.cli.cleanup_legacy_attribution_hook", return_value=False),
             patch(
                 "nwave_ai.cli.migrate_legacy_settings_attribution", return_value=False
@@ -200,7 +200,7 @@ class TestAttributionCLI:
 
         with (
             patch("sys.argv", ["nwave-ai", "attribution", "off"]),
-            patch("nwave_ai.cli._get_config_dir", return_value=nwave_dir),
+            patch("nwave_ai.cli._require_mutating_config_dir", return_value=nwave_dir),
             patch(
                 "nwave_ai.cli.cleanup_legacy_attribution_hook",
                 side_effect=mock_cleanup,
@@ -233,7 +233,7 @@ class TestAttributionCLI:
 
         with (
             patch("sys.argv", ["nwave-ai", "attribution", "on"]),
-            patch("nwave_ai.cli._get_config_dir", return_value=nwave_dir),
+            patch("nwave_ai.cli._require_mutating_config_dir", return_value=nwave_dir),
             patch("nwave_ai.cli.cleanup_legacy_attribution_hook", return_value=False),
         ):
             result = main()

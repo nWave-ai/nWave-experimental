@@ -122,7 +122,7 @@ def _hook_pythonpath() -> str:
 
 
 def _activate_project(root: Path) -> None:
-    """Write the `.nwave/local-config.json` marker the activation gate reads.
+    """Write the unified `.nwave/config.json` activation declaration.
 
     `hook_router.main()` gates every dispatch on `activation_gate.apply_gate`
     (ADR-AG-001): an unactivated project exits 0 before `handle_pre_write`
@@ -132,8 +132,8 @@ def _activate_project(root: Path) -> None:
     """
     nwave_dir = root / ".nwave"
     nwave_dir.mkdir(parents=True, exist_ok=True)
-    (nwave_dir / "local-config.json").write_text(
-        json.dumps({"enabled_for_repo": True}), encoding="utf-8"
+    (nwave_dir / "config.json").write_text(
+        json.dumps({"enabled": True}), encoding="utf-8"
     )
 
 
@@ -159,7 +159,7 @@ def _run_installed_write_guard(
     # `resolve_nwave_root()` prefers that env var over cwd by design
     # (DDD-14). Without this override the subprocess resolves `.nwave` under
     # the fixture's root, never under `cwd` -- where `_activate_project`
-    # wrote `local-config.json` -- and the activation gate reads "not
+    # wrote `config.json` -- and the activation gate reads "not
     # activated" regardless of what this test actually set up. Same pattern
     # as `tests/des/acceptance/test_hook_protocol_conformance.py`.
     env["DES_PROJECT_DIR"] = str(cwd)
@@ -334,7 +334,7 @@ class TestBuildGuardCommandBytePreservation:
         (verified remedy, evidence report Section 4.1). Concrete,
         documentation-shaped instance of the universal law the property test
         below covers. Root-write-boundary slice: the guard's own fast-path
-        pre-filter is now a `.nwave/local-config.json` EXISTENCE check
+        pre-filter is now a `.nwave/config.json` EXISTENCE check
         (content- and path-blind), not a `file_path` regex -- `_activate_project`
         creates that candidate marker so the guard reaches the downstream
         command at all."""
@@ -438,7 +438,7 @@ class TestBuildGuardCommandBytePreservation:
 
 
 class TestGuardCandidateExistenceGate:
-    """The shell fast-path's ONLY pre-filter left is `.nwave/local-config.json`
+    """The shell fast-path's ONLY pre-filter left is `.nwave/config.json`
     EXISTENCE -- content-blind, path-blind. These pin that the downstream
     command is/isn't reached purely on that file's presence."""
 
@@ -446,7 +446,7 @@ class TestGuardCandidateExistenceGate:
     def test_no_marker_ordinary_path_never_invokes_downstream_command(
         self, tmp_path: Path
     ) -> None:
-        """Falsifier E: an unactivated project (no `.nwave/local-config.json`
+        """Falsifier E: an unactivated project (no `.nwave/config.json`
         at all), no deliver session, ordinary path -- the shell must exit 0
         before ever spawning the downstream (Python) command. Proven via the
         byte-capture sentinel (`capture_file` absence), not via stdout/exit-
@@ -465,7 +465,7 @@ class TestGuardCandidateExistenceGate:
         assert result.returncode == 0
         assert not capture_file.exists(), (
             "the guard invoked the downstream command despite no "
-            f".nwave/local-config.json candidate marker; stdout="
+            f".nwave/config.json candidate marker; stdout="
             f"{result.stdout!r} stderr={result.stderr!r}"
         )
 
@@ -473,7 +473,7 @@ class TestGuardCandidateExistenceGate:
     def test_malformed_marker_still_invokes_downstream_command(
         self, tmp_path: Path
     ) -> None:
-        """Falsifier G (shell half): a `.nwave/local-config.json` that exists
+        """Falsifier G (shell half): a `.nwave/config.json` that exists
         but is NOT valid JSON still passes the shell's `test -f` -- the shell
         never parses the marker's content, so a malformed marker reaches
         Python exactly like a well-formed one. Only Python (`DESConfig`'s
@@ -481,9 +481,7 @@ class TestGuardCandidateExistenceGate:
         malformed marker means."""
         nwave_dir = tmp_path / ".nwave"
         nwave_dir.mkdir(parents=True, exist_ok=True)
-        (nwave_dir / "local-config.json").write_text(
-            "{not valid json", encoding="utf-8"
-        )
+        (nwave_dir / "config.json").write_text("{not valid json", encoding="utf-8")
         payload = json.dumps(
             {
                 "tool_name": "Write",
@@ -515,9 +513,7 @@ class TestGuardCandidateExistenceGate:
         (the sentinel sibling test already proves Python IS reached)."""
         nwave_dir = tmp_path / ".nwave"
         nwave_dir.mkdir(parents=True, exist_ok=True)
-        (nwave_dir / "local-config.json").write_text(
-            "{not valid json", encoding="utf-8"
-        )
+        (nwave_dir / "config.json").write_text("{not valid json", encoding="utf-8")
         payload = json.dumps(
             {
                 "tool_name": "Write",

@@ -114,10 +114,18 @@ _ACCEPTANCE_SUPPORT_LABEL_RE = re.compile(
 #: (got 5)``.  Both probes are one command each and were reproduced
 #: independently in review.
 #: Two spellings of this grammar would be two contracts, so the schema IMPORTS
-#: this constant and never restates it; only ECMA-262-portable syntax is
-#: admissible here for that reason.
+#: this constant and never restates it.  Codex strict output rejects regex
+#: lookaround, therefore the exclusion of the two traversal segments is
+#: constructive: each accepted segment is either non-dot-led, dot-led with a
+#: non-dot second character, or at least three characters long.  This retains
+#: legitimate names such as ``.gitignore``, ``..keep`` and ``...`` while making
+#: ``.`` and ``..`` unrepresentable with plain ECMA-262 syntax.
+_SAFE_WHOLE_FILE_SEGMENT = (
+    r"(?:[A-Za-z0-9_-][A-Za-z0-9._-]*|\.[A-Za-z0-9_-][A-Za-z0-9._-]*|"
+    r"\.\.[A-Za-z0-9._-]+)"
+)
 _WHOLE_FILE_LOCATOR_BODY = (
-    r"(?!.*(?:^|/)\.{1,2}(?:/|$))(?:(?:[A-Za-z0-9._-]+|@v)/)*[A-Za-z0-9._-]+"
+    rf"(?:(?:{_SAFE_WHOLE_FILE_SEGMENT}|@v)/)*{_SAFE_WHOLE_FILE_SEGMENT}"
 )
 REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN = rf"^{_WHOLE_FILE_LOCATOR_BODY}$"
 
@@ -127,14 +135,27 @@ REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN = rf"^{_WHOLE_FILE_LOCATOR_BODY}$"
 #: do: the tail excludes CR and LF for the reason
 #: :func:`is_canonical_oracle_locator` already states -- a locator is
 #: interpolated into a Markdown heading, so no newline may ride along inside it
-#: -- and the dot-segment lookahead spans the whole string, so ``..`` cannot
-#: hide in the selector either.  The guard was ALIGNED to this pattern rather
+#: -- and each selector slash segment AFTER its initial component
+#: constructively excludes ``.`` and ``..`` too. The first component preserves
+#: the old lookahead's language exactly: it begins immediately after ``::``,
+#: not after a slash, and may therefore be ``.`` or ``..``. So does a final
+#: source-path segment immediately before ``::``; the old lookahead only saw
+#: slash and end boundaries. Empty selector segments remain valid for
+#: compatibility; later nonempty ones may contain any non-newline character
+#: except an exact dot segment. The guard was ALIGNED to this pattern rather
 #: than the pattern loosened to the guard, because the three shapes that
 #: separated them (``::x/../y``, ``::sel\n``, ``::sel\r``) are exactly the ones
-#: the canonical-locator rule already calls unsafe.  One grammar, one
+#: the canonical-locator rule already calls unsafe. One grammar, one
 #: definition: :func:`is_design_oracle_locator` and the provider schema now
 #: decide identically, which the tests assert over a shared corpus.
-DESIGN_ORACLE_LOCATOR_PATTERN = rf"^{_WHOLE_FILE_LOCATOR_BODY}(?:::[^\r\n]*)?$"
+_SAFE_SELECTOR_SEGMENT = r"(?:[^./\r\n][^/\r\n]*|\.[^./\r\n][^/\r\n]*|\.\.[^/\r\n]+)"
+_OPTIONAL_SAFE_SELECTOR_SEGMENT = rf"(?:{_SAFE_SELECTOR_SEGMENT})?"
+_SAFE_SELECTOR = rf"[^/\r\n]*(?:/{_OPTIONAL_SAFE_SELECTOR_SEGMENT})*"
+_LEGACY_SELECTOR_PATH_BODY = rf"(?:(?:{_SAFE_WHOLE_FILE_SEGMENT}|@v)/)*[A-Za-z0-9._-]+"
+DESIGN_ORACLE_LOCATOR_PATTERN = (
+    rf"^(?:{_WHOLE_FILE_LOCATOR_BODY}(?:::{_SAFE_SELECTOR})?|"
+    rf"{_LEGACY_SELECTOR_PATH_BODY}::{_SAFE_SELECTOR})$"
+)
 
 _REPOSITORY_RELATIVE_WHOLE_FILE_RE = re.compile(REPOSITORY_RELATIVE_WHOLE_FILE_PATTERN)
 _DESIGN_ORACLE_LOCATOR_RE = re.compile(DESIGN_ORACLE_LOCATOR_PATTERN)

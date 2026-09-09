@@ -20,7 +20,12 @@ from des.application.handover import (
     create_handover,
     handover_path,
 )
-from des.ports.driven_ports.task_invocation_port import DesignFacts, DesignTarget
+from des.ports.driven_ports.task_invocation_port import (
+    DesignFacts,
+    DesignTarget,
+    ModelOutcome,
+    ModelRun,
+)
 
 
 def test_initial_foreign_observation_includes_rename_and_copy_paths() -> None:
@@ -278,6 +283,28 @@ def test_a_provider_that_never_started_is_not_reported_as_an_envelope_defect(
     assert outcome.failure is not None
     assert outcome.failure.what == "ProviderSpawnFailed"
     assert "no provider process existed" in outcome.failure.how
+
+
+def test_preissue_refusal_does_not_increment_turns_bought(tmp_path) -> None:
+    class PreissuePort:
+        def invoke(self, **_kwargs):
+            return ModelRun(
+                ModelOutcome.Indeterminate,
+                "selected provider profile is unavailable",
+                0,
+                True,
+                issued=False,
+            )
+
+    runner = DeliveryContinuationRunner()
+    outcome = runner._invoke(
+        PreissuePort(), tmp_path, "nw-product-owner", "classify", None
+    )
+
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.failure is not None
+    assert outcome.failure.what == "ModelNotIssued"
+    assert runner.turns_bought == 0
 
 
 def test_the_runners_own_state_directory_is_not_workspace_drift(tmp_path) -> None:

@@ -1,7 +1,7 @@
 """
 DES Configuration Adapter - Driven Port Implementation.
 
-Loads configuration from .nwave/des-config.json and provides access to settings.
+Loads configuration from the unified global and repository ``config.json`` files.
 Falls back to safe defaults (audit logging ON) when file is missing or invalid.
 
 Hexagonal Architecture:
@@ -17,6 +17,7 @@ from typing import Any, cast
 from des.domain.artifact_versioning import ArtifactVersioningKernel
 from des.domain.blast_radius import BlastRadiusConfigRejected, BlastRadiusThresholds
 from des.domain.config_merge import declared_enabled, merge_config
+from des.domain.model_runtime import RoleRuntime, resolve_role_runtime
 from des.domain.nwave_locations import NWaveLocations
 from des.domain.nwave_root import resolve_nwave_root
 from des.domain.result import Failure
@@ -30,9 +31,7 @@ _KNOWN_DELIVERABLE_TYPES = frozenset({"application", "plugin", "skill"})
 # absence of a marker, so it resolves to the ``None`` sentinel, NOT itself.
 _POSITIVE_DELIVERABLE_MARKERS = frozenset({"plugin", "skill"})
 
-# F-ARTIFACT-VERSIONING-UPCASTING, slice 1: ``~/.nwave/global-config.json`` is
-# this kernel's first wired consumer (the census's simplest reader: a single
-# global cascade point, `des_config.py:_DEFAULT_GLOBAL_CONFIG_PATH`). v1's
+# ``config.json`` is the versioned persisted configuration artifact. v1's
 # entire purpose is introducing the ``schema-version`` field itself -- the
 # kernel stamps that field automatically once the chain runs, so the v0->v1
 # upcaster body is an identity copy; there is no other shape change yet.
@@ -64,7 +63,7 @@ def _translate_public_attribution(config: dict[str, Any]) -> dict[str, Any]:
     # `value` must be checked as a str BEFORE any dict lookup/membership test:
     # `_ATTRIBUTION_PUBLIC_VALUES.get(value)` (or `value in _ATTRIBUTION_PUBLIC_VALUES`)
     # hashes `value` first, and a dict/list-shaped attribution (the legacy
-    # ``global-config.json`` shape) is unhashable -- ``isinstance`` short-circuits
+    # pre-unification dict shape) is unhashable -- ``isinstance`` short-circuits
     # the `or` below before that hash ever happens, restoring totality for any
     # JSON value (ADR-CFG-002).
     if not isinstance(value, str) or value not in _ATTRIBUTION_PUBLIC_VALUES:
@@ -88,8 +87,8 @@ class DESConfig:
     """
     Configuration loader for DES settings.
 
-    Loads configuration from .nwave/des-config.json with on-by-default audit logging.
-    Supports global configuration via ~/.nwave/global-config.json for cross-project
+    Loads configuration from .nwave/config.json with on-by-default audit logging.
+    Supports global configuration via ~/.nwave/config.json for cross-project
     rigor preferences. Does NOT auto-create config files.
 
     Rigor cascade: project rigor -> global rigor -> standard defaults.
@@ -105,7 +104,7 @@ class DESConfig:
 
     @staticmethod
     def _default_global_config_path() -> Path:
-        """Resolve the NWAVE_AGENTS_HOME-aware global-config default.
+        """Resolve the NWAVE_AGENTS_HOME-aware unified config default.
 
         An explicit ``DESConfig._DEFAULT_GLOBAL_CONFIG_PATH`` override (set by
         a test via ``monkeypatch.setattr``) wins unconditionally. Otherwise
@@ -134,7 +133,7 @@ class DESConfig:
         agents_home = (
             Path.home() if isinstance(result, Failure) else result.unwrap().agents_home
         )
-        return agents_home / ".nwave" / "global-config.json"
+        return agents_home / ".nwave" / "config.json"
 
     def __init__(
         self,
@@ -149,9 +148,9 @@ class DESConfig:
         Args:
             config_path: Optional explicit path to project config file
             cwd: Optional working directory (defaults to Path.cwd());
-                 used to resolve .nwave/des-config.json when config_path is None
+                 used to resolve .nwave/config.json when config_path is None
             global_config_path: Optional explicit path to global config file
-                (keyword-only; defaults to ~/.nwave/global-config.json)
+                (keyword-only; defaults to ~/.nwave/config.json)
         """
         if config_path is None:
             effective_cwd = cwd or resolve_nwave_root()
@@ -166,16 +165,17 @@ class DESConfig:
             # built, so every downstream consumer (including
             # `_nearest_marker`) always ascends real directories regardless
             # of whether the caller passed a relative or absolute cwd.
-            config_path = effective_cwd.resolve() / ".nwave" / "des-config.json"
+            config_path = effective_cwd.resolve() / ".nwave" / "config.json"
 
         self._config_path = config_path
         self._config_data = self._load_json_file(self._config_path)
 
-        self._global_config_path = (
+        global_path = (
             global_config_path
             if global_config_path is not None
             else self._default_global_config_path()
         )
+        self._global_config_path = global_path
         self._global_config_data = self._load_versioned_global_config(
             self._global_config_path
         )
@@ -208,7 +208,7 @@ class DESConfig:
 
     @staticmethod
     def _load_versioned_global_config(path: Path) -> dict[str, Any]:
-        """Load ``~/.nwave/global-config.json`` through the versioning kernel.
+        """Load a unified ``config.json`` tier through the versioning kernel.
 
         A genuinely ABSENT file stays ``{}`` (no phantom schema-version is
         fabricated for a file that does not exist) -- the kernel only runs
@@ -258,7 +258,7 @@ class DESConfig:
         """Repo-wide coverage-map adoption switch: ``"active"`` | ``"inactive"``.
 
         fix-feature-end-ws-gate-applicability slice-04 (DDD-3). The feature-end
-        cycle reads this from ``repo_root/.nwave/des-config.json`` (the SAME
+        cycle reads this from ``repo_root/.nwave/config.json`` (the SAME
         repo-level path no individual feature can shadow -- the LOAD-BEARING
         un-per-feature-gameability invariant) to decide whether an absent
         ``distill/coverage-map.md`` may be granted NOT_APPLICABLE.
@@ -315,11 +315,10 @@ class DESConfig:
 
     # ------------------------------------------------------------------
     # Activation gating (EXTEND, ADR-AG-002 / DDD-3).
-    # ``activation_mode`` reads ``activation.mode`` from the GLOBAL config
-    # (default ``"opt-in"``). ``enabled_for_repo`` returns the DECLARED
-    # enablement opinion across the unified repo tier, the legacy per-project
-    # MARKER ``.nwave/local-config.json`` (NOT ``des-config.json``), and the
-    # unified global tier -- ``None`` when no tier declares one.
+    # ``activation_mode`` reads ``activation.mode`` from the global unified
+    # config (default ``"opt-in"``). ``enabled_for_repo`` returns the
+    # declared enablement opinion across the two unified tiers -- ``None``
+    # when no tier declares one.
     # Both fail-to-default; neither mutates.
     # ------------------------------------------------------------------
 
@@ -341,10 +340,7 @@ class DESConfig:
         :func:`des.domain.config_merge.declared_enabled` owns:
 
         1. ``<repo>/.nwave/config.json`` -> ``enabled``;
-        2. the LEGACY per-repo marker ``.nwave/local-config.json`` ->
-           ``enabled_for_repo`` (nearest, walk-up per ADR-AG-002), translated
-           by :meth:`_legacy_marker_tier`;
-        3. ``~/.nwave/config.json`` -> ``enabled``.
+        2. ``~/.nwave/config.json`` -> ``enabled``.
 
         ``None`` (no tier has an opinion) is REQUIRED, not incidental: it is
         the input on which ``activation_policy.resolve_activation`` defers to
@@ -358,41 +354,13 @@ class DESConfig:
         disagree where an opinion exists.
         """
         global_upcast, repo_upcast = self._unified_upcast_tiers()
-        return declared_enabled(global_upcast, repo_upcast, self._legacy_marker_tier())
-
-    def _legacy_marker_tier(self) -> dict[str, Any]:
-        """The legacy ``.nwave/local-config.json`` marker as a config tier.
-
-        Translates the marker's ``enabled_for_repo`` key into the unified
-        ``{"enabled": bool}`` tier shape so the ONE ``declared_enabled`` chain
-        consumes it -- no second precedence kernel. Resolved through the
-        existing walk-up :meth:`_nearest_marker` (nearer-wins, stops at
-        ``$HOME``), which this restores to a PRODUCTION caller: while it had
-        only test callers, a repository's own explicit opt-out was unreadable
-        (``F-ACTIVATION-MARKER-IS-DEAD-CODE-FLIP-IS-A-KILL-SWITCH``).
-
-        Never raises: missing / unreadable / non-object / keyless / wrongly
-        typed all degrade to ``{}`` == "this tier has no opinion", the same
-        fail-open convention as ``_load_json_file``.
-        """
-        marker_path = self._nearest_marker()
-        if marker_path is None:
-            return {}
-        try:
-            data = json.loads(marker_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError, ValueError):
-            return {}
-        if not isinstance(data, dict) or "enabled_for_repo" not in data:
-            return {}
-        return {"enabled": data["enabled_for_repo"]}
+        return declared_enabled(global_upcast, repo_upcast)
 
     def _unified_upcast_tiers(self) -> tuple[dict[str, Any], dict[str, Any]]:
         """Load and version-upcast the two unified ``config.json`` tiers.
 
-        Reads ``~/.nwave/config.json`` (this instance's ``global_config_path``)
-        and ``<repo>/.nwave/config.json`` (a sibling of ``des-config.json``
-        under the SAME ``.nwave`` dir this instance already resolved for
-        ``cwd``), upcasts each raw dict through the existing
+        Reads ``~/.nwave/config.json`` and ``<repo>/.nwave/config.json``,
+        upcasts each raw dict through the existing
         ``_GLOBAL_CONFIG_VERSIONING`` kernel (REUSE_CANDIDATE -- no second
         kernel instance), then translates each through
         ``_translate_public_attribution``. Shared by ``effective_config`` and
@@ -401,17 +369,30 @@ class DESConfig:
         collapses to ``{}``, exactly the existing ``_load_json_file``
         fail-open convention.
         """
-        repo_config_path = self._config_path.parent / "config.json"
-        # The global tier is the sibling ``config.json`` of whatever
-        # ``global_config_path`` resolves to (ADR-CFG-002 correction 2) --
-        # NOT the legacy ``global-config.json`` path itself, which the RCA's
-        # regression fed straight into ``_translate_public_attribution``.
-        unified_global_config_path = self._global_config_path.parent / "config.json"
-        global_upcast = self._load_versioned_global_config(unified_global_config_path)
-        repo_upcast = self._load_versioned_global_config(repo_config_path)
+        global_upcast = self._global_config_data
+        repo_upcast = self._config_data
         return (
             _translate_public_attribution(global_upcast),
             _translate_public_attribution(repo_upcast),
+        )
+
+    def role_runtime(
+        self, role_id: str, *, framework_root: Path | None = None
+    ) -> RoleRuntime:
+        """Return the atomically selected provider/model for ``role_id``.
+
+        Unlike the existing three-field configuration merge, model selection
+        cannot merge individual fields across tiers: an operator's provider and
+        model are one runtime declaration.  A present malformed declaration is
+        therefore surfaced by ``resolve_role_runtime`` rather than skipped.
+        """
+        global_tier, repo_tier = self._unified_upcast_tiers()
+        return resolve_role_runtime(
+            role_id,
+            global_tier=global_tier,
+            repo_tier=repo_tier,
+            repo_root=self._config_path.parent.parent,
+            framework_root=framework_root,
         )
 
     def effective_config(self) -> dict[str, Any]:
@@ -421,37 +402,22 @@ class DESConfig:
         values via the pure ``config_merge.merge_config`` law (no
         re-derivation of that cascade here).
 
-        The legacy per-repo marker tier is passed too (P-SSOT-1 P5-bis), so a
-        repository that today declares itself only through
-        ``.nwave/local-config.json`` is READ by the same law -- and
-        ``effective_config()['enabled']`` never contradicts the tri-state
-        :attr:`enabled_for_repo`.
+        The installer migrates legacy state before construction, so this
+        reader has exactly two inputs and no compatibility tail.
         """
         global_upcast, repo_upcast = self._unified_upcast_tiers()
-        return merge_config(global_upcast, repo_upcast, self._legacy_marker_tier())
+        return merge_config(global_upcast, repo_upcast)
 
     @property
     def attribution_enabled(self) -> bool:
         """Resolved ``attribution.enabled`` (ADR-CFG-003 correction 1).
 
-        The FIRST tier among {repo ``config.json``, global ``config.json``,
-        legacy ``global-config.json``} that explicitly declares
-        ``attribution.enabled`` wins; ``False`` only when none do. The two
-        unified tiers are resolved via the existing ``merge_config`` cascade
-        (REUSE_CANDIDATE -- no second precedence kernel); the legacy tier is
-        consulted ONLY when neither unified tier declares the field, so the
-        legacy-only flow (no ``config.json`` anywhere) keeps working
-        unchanged. Never raises: a missing, corrupt, or non-object
-        ``attribution`` block at any tier degrades to "absent for this tier".
+        The repo tier then global tier are resolved through the existing
+        ``merge_config`` cascade. Never raises: a missing, corrupt, or
+        non-object ``attribution`` block degrades to absent for its tier.
         """
         global_upcast, repo_upcast = self._unified_upcast_tiers()
-        if _declares_attribution(repo_upcast) or _declares_attribution(global_upcast):
-            return merge_config(global_upcast, repo_upcast)["attribution"]
-        attribution = self._global_config_data.get("attribution", {})
-        if not isinstance(attribution, dict):
-            return False
-        enabled = attribution.get("enabled", False)
-        return enabled if isinstance(enabled, bool) else False
+        return merge_config(global_upcast, repo_upcast)["attribution"]
 
     @property
     def deliverable_type(self) -> str | None:
@@ -459,9 +425,9 @@ class DESConfig:
 
         DISTILL scaffold (feature plugin-skill-deliverable-type, issue #66).
         Resolution precedence (first match wins), implemented by DELIVER:
-          1. declared ``.nwave/des-config.json`` -> ``deliverable_type`` (if in
+          1. declared ``.nwave/config.json`` -> ``deliverable_type`` (if in
              the known set ``{application, plugin, skill}``);
-          2. declared global ``~/.nwave/global-config.json`` ->
+          2. declared global ``~/.nwave/config.json`` ->
              ``defaults.deliverable_type``;
           3. root-only FS detection (``deliverable_type_detector``) -- fallback
              ONLY when the declaration is FULLY ABSENT;
@@ -518,7 +484,7 @@ class DESConfig:
         """Root-only FS detection rung; ``None`` for an unmarked (application) tree.
 
         Delegates to ``deliverable_type_detector`` over the project root (the
-        ``.nwave/des-config.json``'s grandparent). An ``"application"`` detection
+        ``.nwave/config.json``'s grandparent). An ``"application"`` detection
         means "no positive marker" -> ``None`` (HIGH-1: the unresolved sentinel,
         distinguishable from a declared ``application``). A positive
         ``plugin``/``skill`` marker resolves to that type.
@@ -532,23 +498,6 @@ class DESConfig:
         # "no positive marker" -> ``None`` (HIGH-1 sentinel). Using
         # ``_KNOWN_DELIVERABLE_TYPES`` here would wrongly return ``"application"``.
         return detected if detected in _POSITIVE_DELIVERABLE_MARKERS else None
-
-    def _nearest_marker(self) -> Path | None:
-        """Nearest ``.nwave/local-config.json`` at or above the project dir.
-
-        Starts at the project dir (``.nwave/des-config.json``'s grandparent) and
-        ascends while ``dir != Path.home()`` and ``dir != dir.parent``. The first
-        directory carrying a ``.nwave/local-config.json`` wins (nearer-wins).
-        ``$HOME`` is the stop boundary and is never inspected as a project root.
-        """
-        home = Path.home()
-        current = self._config_path.parent.parent
-        while current not in (home, current.parent):
-            candidate = current / ".nwave" / "local-config.json"
-            if candidate.exists():
-                return candidate
-            current = current.parent
-        return None
 
     def _housekeeping(self) -> dict:
         """Return housekeeping sub-config dict, defaulting to empty dict."""
@@ -611,7 +560,7 @@ class DESConfig:
             return default
         if value < floor or value > ceiling:
             raise BlastRadiusConfigRejected(
-                f"blast_radius.{key}={value} in .nwave/des-config.json is "
+                f"blast_radius.{key}={value} in .nwave/config.json is "
                 f"outside its valid range [{floor}, {ceiling}] -- fix the "
                 f"value, or remove the key to use the framework default "
                 f"({default})"
@@ -679,11 +628,11 @@ class DESConfig:
                 f"blast_radius.small_max_consumers={small_max} (effective, "
                 f"{small_source}) and blast_radius.large_min_consumers="
                 f"{value} (effective, {large_source}) in "
-                ".nwave/des-config.json are incoherent -- large_min_consumers "
+                ".nwave/config.json are incoherent -- large_min_consumers "
                 "must be strictly greater than small_max_consumers so the M "
                 "band never collapses to empty. Fix: raise "
                 "blast_radius.large_min_consumers above "
-                f"{small_max} in .nwave/des-config.json, or lower "
+                f"{small_max} in .nwave/config.json, or lower "
                 "blast_radius.small_max_consumers."
             )
         return value

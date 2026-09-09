@@ -39,12 +39,12 @@ def test_agents_home_override_unifies_mode_write_and_status_read(
 
     assert _handle_mode(["all"]) == 0
 
-    written = agents_home_b / ".nwave" / "global-config.json"
+    written = agents_home_b / ".nwave" / "config.json"
     assert written.exists()
     assert (
         json.loads(written.read_text(encoding="utf-8"))["activation"]["mode"] == "all"
     )
-    assert not (home_a / ".nwave" / "global-config.json").exists()
+    assert not (home_a / ".nwave" / "config.json").exists()
 
     capsys.readouterr()
     assert _handle_status([]) == 0

@@ -1,7 +1,7 @@
 """Unit tests for install-time density prompt (D6 + AC-3.a..e).
 
 Driving port: nwave_ai.cli.handle_install_density_prompt(...) — the pure
-function the install subcommand calls. Driven port: ~/.nwave/global-config.json
+function the install subcommand calls. Driven port: ~/.nwave/config.json
 on disk (real filesystem, tmp_path).
 
 Test budget: 5 distinct behaviors x 2 = 10 max. Using 5 tests.
@@ -53,7 +53,7 @@ class TestInstallDensityPrompt:
 
         prompt_mock.assert_called_once()
         assert outcome == "prompted"
-        config = _read(config_dir / "global-config.json")
+        config = _read(config_dir / "config.json")
         assert config["documentation"]["density"] == "lean"
         # Per Decision 4 (2026-04-28), default expansion_prompt is now
         # "ask-intelligent" (scoped trigger-based menu).
@@ -72,7 +72,7 @@ class TestInstallDensityPrompt:
 
         prompt_mock.assert_not_called()
         assert outcome == "default_silent"
-        config = _read(config_dir / "global-config.json")
+        config = _read(config_dir / "config.json")
         assert config["documentation"]["density"] == "lean"
         # Per Decision 4: silent default uses ask-intelligent.
         assert config["documentation"]["expansion_prompt"] == "ask-intelligent"
@@ -83,7 +83,7 @@ class TestInstallDensityPrompt:
         """Behavior 3: existing config without documentation -> silent lean (AC-3.e)."""
         config_dir = tmp_path / ".nwave"
         config_dir.mkdir()
-        config_path = config_dir / "global-config.json"
+        config_path = config_dir / "config.json"
         config_path.write_text(
             json.dumps({"attribution": {"enabled": False}}), encoding="utf-8"
         )
@@ -106,7 +106,7 @@ class TestInstallDensityPrompt:
         """Behavior 4: existing density -> no prompt, no write (AC-3.c)."""
         config_dir = tmp_path / ".nwave"
         config_dir.mkdir()
-        config_path = config_dir / "global-config.json"
+        config_path = config_dir / "config.json"
         original_payload = {
             "documentation": {"density": "full", "expansion_prompt": "always-expand"}
         }
@@ -130,7 +130,7 @@ class TestInstallDensityPrompt:
         with patch("nwave_ai.cli._prompt_density_choice", return_value="full"):
             handle_install_density_prompt(config_dir=config_dir, non_interactive=False)
 
-        config = _read(config_dir / "global-config.json")
+        config = _read(config_dir / "config.json")
         # Per Decision 4 (2026-04-28), the fresh-install default
         # expansion_prompt is "ask-intelligent" (scoped trigger-based menu).
         assert config["documentation"] == {

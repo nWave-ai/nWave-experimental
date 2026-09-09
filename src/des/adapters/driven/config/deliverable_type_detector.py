@@ -6,7 +6,7 @@ project-root directory listing: inspects ONLY project-root markers and returns
 directories -- a bounded (root-only) universe (Principle 12). The collision case
 ``nWave/skills/`` (nested) MUST NOT trigger ``skill``.
 
-Detection is the FALLBACK only; ``.nwave/des-config.json`` declaration is
+Detection is the FALLBACK only; ``.nwave/config.json`` declaration is
 authoritative (resolved in ``DESConfig.deliverable_type``). Detection on its own
 never DISABLES enforcement -- only a positive ``plugin``/``skill`` root marker does.
 

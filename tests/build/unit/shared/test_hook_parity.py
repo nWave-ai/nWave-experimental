@@ -119,7 +119,7 @@ class TestHookParityPluginVsInstaller:
                     e for e in config["PreToolUse"] if e.get("matcher") == matcher
                 )
                 command = entry["hooks"][0]["command"]
-                assert ".nwave/local-config.json" in command, (
+                assert ".nwave/config.json" in command, (
                     f"{path_name} path: {matcher} hook missing activation guard"
                 )
 

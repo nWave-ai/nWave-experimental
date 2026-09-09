@@ -101,7 +101,7 @@ def _logger_messages(context: InstallContext) -> str:
 
 
 def _read_config(nwave_dir: Path) -> dict:
-    with open(nwave_dir / "global-config.json", encoding="utf-8") as f:
+    with open(nwave_dir / "config.json", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -155,7 +155,7 @@ class TestAttributionInstallIsNonBlocking:
         context = _make_context(tmp_path)
         nwave_dir = tmp_path / ".nwave"
         nwave_dir.mkdir(parents=True)
-        (nwave_dir / "global-config.json").write_text(
+        (nwave_dir / "config.json").write_text(
             json.dumps(
                 {
                     "attribution": {
@@ -181,7 +181,7 @@ class TestAttributionInstallIsNonBlocking:
         context = _make_context(tmp_path)
         nwave_dir = tmp_path / ".nwave"
         nwave_dir.mkdir(parents=True)
-        (nwave_dir / "global-config.json").write_text(
+        (nwave_dir / "config.json").write_text(
             json.dumps(
                 {
                     "attribution": {

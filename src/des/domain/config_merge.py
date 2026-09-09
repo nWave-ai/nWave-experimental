@@ -45,7 +45,7 @@ def declared_enabled(
     tier in BOTH directions", ADR-AG-005 consequence 3):
 
     1. repo ``<repo>/.nwave/config.json`` -> ``enabled``
-    2. repo LEGACY marker ``<repo>/.nwave/local-config.json`` ->
+    2. repo LEGACY marker ``<repo>/.nwave/config.json`` ->
        ``enabled_for_repo``, translated to ``{"enabled": bool}`` at the adapter
        boundary (P-SSOT-1 P5: legacy files stay READ as a tail tier)
     3. global ``~/.nwave/config.json`` -> ``enabled``
@@ -96,7 +96,7 @@ def merge_config(
     malformed input -- a malformed value degrades to "absent for this tier".
 
     ``legacy_repo_config`` is the optional translated legacy per-repo marker
-    tier (``.nwave/local-config.json``), which participates ONLY in the
+    tier (``.nwave/config.json``), which participates ONLY in the
     ``enabled`` field and only below the unified repo tier (P-SSOT-1 P5-bis).
     ``enabled`` is resolved through :func:`declared_enabled` so there is ONE
     precedence chain, shared with the tri-state activation reader.

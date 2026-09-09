@@ -504,6 +504,10 @@
 
 - [nw-review-workflow](nw-review-workflow.md) — Detailed review process, v2 validation checklist, and scoring methodology for agent definition reviews
 
+## nw-rigor
+
+- [nw-rigor](nw-rigor.md) — Configure explicit Codex or Claude model selections for nWave DES defaults or published roles. Use when choosing provider/model defaults or project overrides; it never derives a model from a competence label.
+
 ## nw-root-why
 
 - [nw-root-why](nw-root-why.md) — Root cause analysis and debugging

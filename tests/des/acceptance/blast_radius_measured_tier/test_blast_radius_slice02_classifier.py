@@ -8,7 +8,7 @@ Slice-02 value (Slice Plan): the tier classifier is COMPLETE -- `boundary_files`
 detection (configurable globs), `consumer_counts` resolution via `CodeFactPort`
 (degrading a genuinely-unparseable touched file to `null`, never a fabricated
 0), the full S/M/L decision table, the `--staged`/`--diff <ref>` input modes,
-and thresholds read from the `.nwave/des-config.json` `blast_radius` block via
+and thresholds read from the `.nwave/config.json` `blast_radius` block via
 the `DESConfig` cascade (falling back to canonical defaults when absent, HARD
 FAILING loud when a present well-typed value is outside its floor/ceiling).
 
@@ -53,7 +53,7 @@ D2 -- an unparseable touched file (syntax error) cannot yield a symbol name at
      all, so its `consumer_counts` entry keys on the file's REPO-RELATIVE PATH
      (e.g. `"broken.py"`), value `null`.
 D3 -- the CLI resolves `DESConfig(cwd=Path(args.repo))`, so
-     `.nwave/des-config.json` lives under the MEASURED `--repo` root (not the
+     `.nwave/config.json` lives under the MEASURED `--repo` root (not the
      orchestrator's cwd) -- consistent with every other measure already being
      scoped to that tree.
 D4 -- a present, well-typed, out-of-range threshold HARD-FAILS with event
@@ -138,11 +138,11 @@ _RANGE_TABLE: dict[str, tuple[int, int]] = {
 
 
 def _write_config(repo: Path, blast_radius: dict[str, object]) -> None:
-    """Write `.nwave/des-config.json` with a `blast_radius` block (D3: rooted
+    """Write `.nwave/config.json` with a `blast_radius` block (D3: rooted
     at the measured `--repo`, not the orchestrator cwd)."""
     config_dir = repo / ".nwave"
     config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "des-config.json").write_text(
+    (config_dir / "config.json").write_text(
         json.dumps({"blast_radius": blast_radius}), encoding="utf-8"
     )
 
@@ -313,7 +313,7 @@ def test_boundary_globs_are_configurable_and_replace_the_default_list(
 
     # covers: a, d
 
-    D5: a project's `.nwave/des-config.json` `blast_radius.boundary_globs`
+    D5: a project's `.nwave/config.json` `blast_radius.boundary_globs`
     REPLACES the default list -- a path matching a DEFAULT glob
     (`**/ports/**`) is NOT flagged once a custom list is configured, while a
     path matching the CUSTOM glob IS flagged.
@@ -953,7 +953,7 @@ def test_multiple_input_modes_is_malformed_input(tmp_path: Path, capsys) -> None
     )
 
 
-# --- (d) thresholds read from .nwave/des-config.json via the DESConfig cascade --
+# --- (d) thresholds read from .nwave/config.json via the DESConfig cascade --
 
 
 def test_configured_thresholds_widen_the_small_band(tmp_path: Path, capsys) -> None:
@@ -965,7 +965,7 @@ def test_configured_thresholds_widen_the_small_band(tmp_path: Path, capsys) -> N
 
     An 11-line change is M under the CANONICAL default (`small_max_lines=10`,
     per slice-01's own pinned rule) but S once the project's
-    `.nwave/des-config.json` `blast_radius.small_max_lines` is raised to 50 --
+    `.nwave/config.json` `blast_radius.small_max_lines` is raised to 50 --
     proving the CLI actually reads the config cascade, not the hardcoded
     default, when the block is present.
     """
@@ -999,7 +999,7 @@ def test_present_but_empty_blast_radius_block_falls_back_per_key_to_canonical_de
 
     # covers: d
 
-    A `.nwave/des-config.json` with an explicit but EMPTY `blast_radius: {}`
+    A `.nwave/config.json` with an explicit but EMPTY `blast_radius: {}`
     block (distinct from a wholly-absent config file) still resolves every
     individual key to its canonical default -- per-key fallback, not an
     all-or-nothing block read. Also requires a REAL `consumer_counts`
@@ -1190,7 +1190,7 @@ def test_out_of_range_threshold_hard_fails_loud_never_clamps(
     assert any(
         "nwave" in reason.lower() or "des-config" in reason.lower()
         for reason in reasons
-    ), "the rejection must name HOW to fix it (points at .nwave/des-config.json)"
+    ), "the rejection must name HOW to fix it (points at .nwave/config.json)"
 
 
 def test_absent_threshold_key_never_triggers_the_hard_fail_path(

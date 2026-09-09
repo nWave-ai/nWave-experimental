@@ -32,7 +32,7 @@ class TestDESConfigLoadsValidConfiguration:
         self, tmp_path, audit_value, expected
     ):
         """DESConfig loads audit_logging_enabled from valid JSON config file."""
-        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file = tmp_path / ".nwave" / "config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         config_file.write_text(
             json.dumps({"audit_logging_enabled": audit_value}), encoding="utf-8"
@@ -230,7 +230,7 @@ class TestDESConfigHousekeepingReadsCustomValues:
         self, tmp_path, field, config_value, expected
     ):
         """DESConfig reads each housekeeping property from 'housekeeping' config key."""
-        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file = tmp_path / ".nwave" / "config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         config_file.write_text(
             json.dumps({"housekeeping": {field: config_value}}), encoding="utf-8"
@@ -288,8 +288,8 @@ class TestDESConfigEnabledForRepoRelativeCwd:
     def _write_local_config(root: Path, *, enabled_for_repo: bool) -> None:
         config_dir = root / ".nwave"
         config_dir.mkdir(parents=True, exist_ok=True)
-        (config_dir / "local-config.json").write_text(
-            json.dumps({"enabled_for_repo": enabled_for_repo}), encoding="utf-8"
+        (config_dir / "config.json").write_text(
+            json.dumps({"enabled": enabled_for_repo}), encoding="utf-8"
         )
 
     @pytest.mark.negative_at
@@ -330,7 +330,7 @@ class TestDESConfigEnabledForRepoRelativeCwd:
         project_root = tmp_path / "project_root"
         subdir = project_root / "sub"
         subdir.mkdir(parents=True)
-        self._write_local_config(project_root, enabled_for_repo=True)
+        self._write_local_config(subdir, enabled_for_repo=True)
         monkeypatch.chdir(project_root)
 
         from des.adapters.driven.config.des_config import DESConfig

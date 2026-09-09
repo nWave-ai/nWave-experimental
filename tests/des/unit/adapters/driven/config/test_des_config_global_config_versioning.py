@@ -53,9 +53,9 @@ class TestLegacyGlobalConfigIsUpcast:
         """The real v3.21.0 minimal file carries no `attribution` key -- the
         trunk-only property must still resolve to its documented safe
         default (False) after the kernel upcast, not crash or misread."""
-        global_config = tmp_path / "global-config.json"
+        global_config = tmp_path / "config.json"
         global_config.write_text(json.dumps(REAL_V0_MINIMAL_EXAMPLE), encoding="utf-8")
-        project_config = tmp_path / ".nwave" / "des-config.json"
+        project_config = tmp_path / ".nwave" / "config.json"
 
         config = DESConfig(config_path=project_config, global_config_path=global_config)
 
@@ -65,11 +65,11 @@ class TestLegacyGlobalConfigIsUpcast:
         """The real v3.21.0 `activation` example reads identically post-upcast
         -- `activation.mode` is one of the few keys BOTH v3.21.0 and this
         trunk read the same way, so this is the positive (non-default) case."""
-        global_config = tmp_path / "global-config.json"
+        global_config = tmp_path / "config.json"
         global_config.write_text(
             json.dumps(REAL_V0_ACTIVATION_EXAMPLE), encoding="utf-8"
         )
-        project_config = tmp_path / ".nwave" / "des-config.json"
+        project_config = tmp_path / ".nwave" / "config.json"
 
         config = DESConfig(config_path=project_config, global_config_path=global_config)
 
@@ -78,9 +78,9 @@ class TestLegacyGlobalConfigIsUpcast:
     def test_real_v0_minimal_example_gets_current_schema_version_stamped(
         self, tmp_path
     ):
-        global_config = tmp_path / "global-config.json"
+        global_config = tmp_path / "config.json"
         global_config.write_text(json.dumps(REAL_V0_MINIMAL_EXAMPLE), encoding="utf-8")
-        project_config = tmp_path / ".nwave" / "des-config.json"
+        project_config = tmp_path / ".nwave" / "config.json"
 
         config = DESConfig(config_path=project_config, global_config_path=global_config)
 
@@ -92,9 +92,9 @@ class TestLegacyGlobalConfigIsUpcast:
         """v1's only change is introducing schema-version -- every key a real
         v3.21.0 install wrote (even ones this trunk no longer reads, like
         `rigor`/`update_check`) must still be present afterwards, verbatim."""
-        global_config = tmp_path / "global-config.json"
+        global_config = tmp_path / "config.json"
         global_config.write_text(json.dumps(REAL_V0_MINIMAL_EXAMPLE), encoding="utf-8")
-        project_config = tmp_path / ".nwave" / "des-config.json"
+        project_config = tmp_path / ".nwave" / "config.json"
 
         config = DESConfig(config_path=project_config, global_config_path=global_config)
 
@@ -111,9 +111,9 @@ class TestGlobalConfigUpcastIsIdempotent:
             **REAL_V0_MINIMAL_EXAMPLE,
             SCHEMA_VERSION_KEY: current_version,
         }
-        global_config = tmp_path / "global-config.json"
+        global_config = tmp_path / "config.json"
         global_config.write_text(json.dumps(already_current), encoding="utf-8")
-        project_config = tmp_path / ".nwave" / "des-config.json"
+        project_config = tmp_path / ".nwave" / "config.json"
 
         config = DESConfig(config_path=project_config, global_config_path=global_config)
 
@@ -122,8 +122,8 @@ class TestGlobalConfigUpcastIsIdempotent:
 
 class TestMissingGlobalConfigIsNotFabricated:
     def test_missing_global_config_file_stays_empty_no_stamped_version(self, tmp_path):
-        global_config = tmp_path / "does-not-exist" / "global-config.json"
-        project_config = tmp_path / ".nwave" / "des-config.json"
+        global_config = tmp_path / "does-not-exist" / "config.json"
+        project_config = tmp_path / ".nwave" / "config.json"
 
         config = DESConfig(config_path=project_config, global_config_path=global_config)
 

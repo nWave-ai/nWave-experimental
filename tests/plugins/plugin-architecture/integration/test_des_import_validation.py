@@ -60,6 +60,7 @@ def installed_des_context(clean_test_directory, project_root, test_logger):
 
     Module-scoped: tests must NOT mutate the installed directory.
     """
+    from des.domain.nwave_locations import NWaveLocations
     from scripts.install.plugins.agents_plugin import AgentsPlugin
     from scripts.install.plugins.base import InstallContext
     from scripts.install.plugins.commands_plugin import CommandsPlugin
@@ -69,6 +70,11 @@ def installed_des_context(clean_test_directory, project_root, test_logger):
     from scripts.install.plugins.utilities_plugin import UtilitiesPlugin
 
     framework_source = project_root / "nWave"
+    # ``project_root`` is the framework source checkout needed for imports.
+    # DES bootstrap must instead write its user configuration under this test's
+    # isolated target.
+    user_project_root = clean_test_directory.parent / "project"
+    user_project_root.mkdir(exist_ok=True)
 
     context = InstallContext(
         claude_dir=clean_test_directory,
@@ -76,6 +82,12 @@ def installed_des_context(clean_test_directory, project_root, test_logger):
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
+        user_project_root=user_project_root,
+        locations=NWaveLocations(
+            agents_home=clean_test_directory.parent,
+            claude_config_dir=clean_test_directory,
+            codex_config_dir=clean_test_directory.parent / ".codex",
+        ),
         framework_source=framework_source,
         dry_run=False,
     )

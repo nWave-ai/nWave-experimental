@@ -16,13 +16,30 @@ byte.  The same measurement separates them, and neither answer is a verdict
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from des.application.delivery_continuation import DeliveryContinuationRunner
 from des.domain.exercised_modules import INDETERMINATE, MEASURED
 
 
-PYPROJECT = '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+PYPROJECT = (
+    '[project]\nname = "native-evidence-subject"\nversion = "0.0.0"\n'
+    'requires-python = ">=3.10"\n'
+    '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+)
+
+# This is the complete frozen lock for the fixture's dependency-free project.
+# Pytest remains supplied by the executing test environment linked below.
+UV_LOCK = """version = 1
+revision = 3
+requires-python = ">=3.10"
+
+[[package]]
+name = "native-evidence-subject"
+version = "0.0.0"
+source = { virtual = "." }
+"""
 
 #: The subject ships no installed package, exactly like run 24's: a test reaches
 #: its import through `sys.path`, which is why WHERE it reached is the fact.
@@ -56,6 +73,13 @@ def _subject(tmp_path: Path, test_body: str) -> Path:
     (root / "src" / "product").mkdir(parents=True)
     (root / "tests").mkdir(parents=True)
     (root / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+    (root / "uv.lock").write_text(UV_LOCK, encoding="utf-8")
+    # The disposable project has no dependencies of its own.  Give uv its local
+    # project environment from the current test runtime so `uv run pytest`
+    # executes the actual command without resolving packages under UV_FROZEN.
+    (root / ".venv").symlink_to(
+        Path(sys.executable).parent.parent, target_is_directory=True
+    )
     (root / "src" / "product" / "value.py").write_text("VALUE = 1\n", encoding="utf-8")
     (root / "tests" / "support.py").write_text("VALUE = 1\n", encoding="utf-8")
     (root / "tests" / "test_value.py").write_text(test_body, encoding="utf-8")
@@ -85,6 +109,29 @@ def test_a_pytest_run_that_drives_the_product_names_the_module_it_imported(
     assert item.touches_test_paths is True, item
     assert item.exercised.measure == MEASURED, item
     assert "src/product/value.py" in (item.exercised.paths or ()), item.exercised
+    assert item.exercised.changed_targets == ("src/product/value.py",), item.exercised
+
+
+def test_an_uv_run_pytest_that_drives_the_product_names_the_module_it_imported(
+    tmp_path: Path,
+) -> None:
+    """The declared ``uv run pytest`` shape receives the same session probe."""
+    root = _subject(tmp_path, DRIVES_PRODUCT)
+
+    evidence = DeliveryContinuationRunner()._native(
+        root,
+        (("uv", "run", "pytest", "tests/test_value.py", "-q"),),
+        root,
+        extra_env={
+            "UV_CACHE_DIR": str(root / ".uv-cache"),
+            "UV_NO_SYNC": "1",
+        },
+        changed=("src/product/value.py",),
+    )
+
+    item = _one(evidence)
+    assert item.exit_status == 0, item
+    assert item.exercised.measure == MEASURED, item
     assert item.exercised.changed_targets == ("src/product/value.py",), item.exercised
 
 

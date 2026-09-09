@@ -17,14 +17,14 @@ def resolve_activation(marker_enabled: bool | None, global_mode: str | None) -> 
     Args:
         marker_enabled: the DECLARED per-repo enablement opinion
             (``DESConfig.enabled_for_repo``): the unified ``.nwave/config.json``
-            repo tier, else the legacy ``.nwave/local-config.json`` marker's
+            repo tier, else the legacy ``.nwave/config.json`` marker's
             ``enabled_for_repo``, else the unified global tier. ``None`` when NO
             tier declares one (absent / keyless / corrupt / wrongly typed) --
             that is the state on which the ``mode`` branch below is reached.
             The short-circuit is intentional and load-bearing (an explicit
             opinion wins over ``mode`` in BOTH directions); it went dead only
             while the reader collapsed ``None`` into a bool (P-SSOT-1 P5-bis).
-        global_mode: ``~/.nwave/global-config.json`` -> ``activation.mode``
+        global_mode: ``~/.nwave/config.json`` -> ``activation.mode``
             (``None`` when absent / corrupt -> treated as ``"opt-in"``).
 
     Returns:

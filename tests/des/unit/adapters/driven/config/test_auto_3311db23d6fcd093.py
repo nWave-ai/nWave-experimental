@@ -126,7 +126,7 @@ class TestEffectiveConfigGlobalTierDecoupling:
             ),
             encoding="utf-8",
         )
-        (nwave_dir / "global-config.json").write_text(
+        (nwave_dir / "config.json").write_text(
             json.dumps(
                 {
                     "attribution": {
@@ -141,7 +141,7 @@ class TestEffectiveConfigGlobalTierDecoupling:
 
         config = DESConfig(
             config_path=repo_config_path,
-            global_config_path=nwave_dir / "global-config.json",
+            global_config_path=nwave_dir / "config.json",
         )
         effective = config.effective_config()
 
@@ -155,20 +155,15 @@ class TestEffectiveConfigGlobalTierDecoupling:
         sibling."""
         nwave_dir = tmp_path / ".nwave"
         nwave_dir.mkdir(parents=True)
-        legacy_path = nwave_dir / "global-config.json"
-        legacy_path.write_text(json.dumps({"attribution": "off"}), encoding="utf-8")
-        (nwave_dir / "config.json").write_text(
-            json.dumps({"attribution": "on"}), encoding="utf-8"
-        )
-        repo_config_path = tmp_path / "repo" / ".nwave" / "des-config.json"
+        global_path = nwave_dir / "config.json"
+        global_path.write_text(json.dumps({"attribution": "on"}), encoding="utf-8")
+        repo_config_path = tmp_path / "repo" / ".nwave" / "config.json"
 
-        config = DESConfig(config_path=repo_config_path, global_config_path=legacy_path)
+        config = DESConfig(config_path=repo_config_path, global_config_path=global_path)
         effective = config.effective_config()
 
         assert effective["attribution"] is True, (
-            "effective_config() must read the SIBLING config.json "
-            "(attribution: on) as its global tier, not the legacy "
-            "global-config.json path itself (attribution: off)."
+            "effective_config() must read config.json as its global tier."
         )
 
 
@@ -195,11 +190,11 @@ class TestEffectiveConfigReusesVersioningKernel:
         (repo_dir / "config.json").write_text(
             json.dumps({"verbosity": "verbose"}), encoding="utf-8"
         )
-        repo_config_path = repo_dir / "des-config.json"
+        repo_config_path = repo_dir / "config.json"
 
         config = DESConfig(
             config_path=repo_config_path,
-            global_config_path=nwave_dir / "global-config.json",
+            global_config_path=nwave_dir / "config.json",
         )
         effective = config.effective_config()
 

@@ -106,7 +106,8 @@ class ActivationGatingComposition:
 
     @property
     def global_config_path(self) -> Path:
-        return self.home_dir / ".nwave" / "global-config.json"
+        """Global tier of the unified config cascade (ADR-CFG-001)."""
+        return self.home_dir / ".nwave" / "config.json"
 
     # ---- PRECONDITION builders (typed in, on-disk state out) ----
 

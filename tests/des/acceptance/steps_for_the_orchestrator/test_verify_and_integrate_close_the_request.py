@@ -243,6 +243,92 @@ def test_integrate_swaps_the_head_reconciles_and_closes_the_handover(
     assert "NEXT" in lines
 
 
+def test_verify_and_integrate_need_current_bytes_not_each_roles_history(
+    root: Path, step, turns: Path
+) -> None:
+    """One shared green oracle admits all designed values without old role refs."""
+    assert (
+        step(
+            "po",
+            "--repo-root",
+            str(root),
+            answers=[accepted_values("A", "B", "C")],
+            stdin=REQUEST,
+        )[0]
+        == 0
+    )
+    for value in (1, 2, 3):
+        assert (
+            step(
+                "design",
+                "--repo-root",
+                str(root),
+                "--value",
+                str(value),
+                answers=[design_facts()],
+            )[0]
+            == 0
+        )
+    for value, marker in ((1, "MARKER = 1\n"), (3, "MARKER = 2\n")):
+        recorded = step(
+            "oracle",
+            "--repo-root",
+            str(root),
+            "--value",
+            str(value),
+            answers=[
+                {
+                    "structured_output": {
+                        "outcome": "accepted",
+                        "diagnostic": "authored shared oracle",
+                    },
+                    "writes": {ORACLE: RED_ORACLE, SUPPORT: marker},
+                },
+                verdict("the shared oracle is admissible"),
+            ],
+        )
+        assert recorded[0] == 0, recorded[1] + recorded[2]
+    state = step("state", "--repo-root", str(root))
+    assert "VALUE-1" in state[1] + state[2]
+    assert "oracle=bytes moved" in state[1] + state[2]
+    assert (
+        step(
+            "craft",
+            "--repo-root",
+            str(root),
+            "--value",
+            "3",
+            answers=[
+                {
+                    "structured_output": {
+                        "outcome": "accepted",
+                        "diagnostic": "implemented shared target",
+                    },
+                    "writes": {TARGET: "VALUE = 1\n"},
+                }
+            ],
+        )[0]
+        == 0
+    )
+    spent = len(asked(turns))
+    verified = step(
+        "verify",
+        "--repo-root",
+        str(root),
+        answers=[
+            verdict("the whole diff implements the observations"),
+            verdict("the captured evidence proves them"),
+        ],
+    )
+    assert verified[0] == 0, verified[1] + verified[2]
+    assert asked(turns)[spent:] == ["nw-software-crafter-reviewer", "nw-user-examiner"]
+    candidate = block(verified[1], verified[2])["CANDIDATE"]
+    integrated = step("integrate", "--repo-root", str(root), "--candidate", candidate)
+    assert integrated[0] == 0, integrated[1] + integrated[2]
+    assert git(root, "rev-parse", "HEAD") == candidate
+    assert not (root / ".nwave" / "des" / "handover.json").exists()
+
+
 def test_integrating_a_candidate_whose_base_moved_refuses_the_swap(
     root: Path, step
 ) -> None:

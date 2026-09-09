@@ -66,7 +66,8 @@ def claude_config_home(tmp_path, monkeypatch):
 def nwave_config_home(tmp_path, monkeypatch):
     """Real, isolated ~/.nwave/ home rooted in tmp_path.
 
-    Sets HOME so that Path.home() / '.nwave' / 'global-config.json' resolves
+    Sets HOME and NWAVE_AGENTS_HOME so that the selected global
+    '.nwave/config.json' resolves
     inside the sandbox. The directory is NOT created eagerly — Given steps
     that write a config will create it; absence-of-config scenarios rely on
     it staying absent.
@@ -74,6 +75,7 @@ def nwave_config_home(tmp_path, monkeypatch):
     home_dir = tmp_path / "marco-home"
     home_dir.mkdir()
     monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(home_dir))
     return home_dir / ".nwave"
 
 

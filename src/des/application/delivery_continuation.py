@@ -25,6 +25,9 @@ from des.adapters.driven.git.git_observation import (
     observe_bytes,
     observe_text,
 )
+from des.adapters.driven.task_invocation.configured_task_adapter import (
+    ModelRuntimeUnavailable,
+)
 from des.application.candidate_radius import INDETERMINATE, candidate_radius
 from des.application.commit_message_attribution import attribute_commit_message
 from des.application.handover import (
@@ -61,6 +64,7 @@ from des.domain.integration_commit_message import (
     IntegrationFacts,
     compose_integration_message,
 )
+from des.domain.model_runtime import ModelRuntimeConfigError
 from des.domain.repository_format_contract import (
     FormatContract,
     declared_format_contract,
@@ -68,21 +72,16 @@ from des.domain.repository_format_contract import (
 from des.domain.request_stimulus import (
     declared_test_paths,
     path_under_test_paths,
-    request_stimuli,
     touches_test_paths,
 )
 from des.domain.turn_record_ref import (
     CRAFT_TURN,
     ORACLE_TURN,
-    TURN_REF_ROOT,
     VERIFY_OUTCOME_TURN,
     VERIFY_TURN,
     archive_ref,
     decision_ref,
     turn_ref,
-)
-from des.domain.turn_record_ref import (
-    digest as ref_digest,
 )
 from des.domain.verification_authority_resolver import (
     ResolvedAuthoritySection,
@@ -129,7 +128,6 @@ _DESIGN_FACTS_REPAIR = (
 _VERDICT_SUBJECT = "nwave verify: "
 _DECISION_SUBJECT = "nwave integrate on orchestrator evidence over verdict: "
 
-_TURN_REF_ROOT = TURN_REF_ROOT
 _ORACLE_TURN = ORACLE_TURN
 _CRAFT_TURN = CRAFT_TURN
 
@@ -162,8 +160,6 @@ class DeliveryOutcome:
 
 #: The design's own declared native verification vectors.
 DECLARED_ORIGIN = "declared"
-#: A command the Request's AUTHOR wrote, executed against the candidate.
-REQUEST_ORIGIN = "request"
 
 #: The exercise measure of an execution no session report reached: the default
 #: for a record built outside the execution loop, and the honest answer for a
@@ -175,14 +171,9 @@ UNEXERCISED = ExercisedModules(NOT_APPLICABLE, None, None)
 class NativeEvidence:
     """One native execution, plus the facts that say what it observed.
 
-    `origin` separates the argv the DESIGN declared from the one the REQUEST'S
-    AUTHOR wrote in backticks.  They are different kinds of fact.  A declared
-    vector is a role's own choice inside the run, and every later role can be
-    shown to have accepted it; a Request stimulus was written before the run
-    began, by the one participant no role may overrule, so it is the closest
-    thing to an executable oracle the run holds that the run did not author.
-    Collapsing them hands the judging roles one undifferentiated list, which is
-    exactly what run 24's examiner received.
+    `origin` records the supplied provenance of the vector.  The current public
+    verification path executes design-declared vectors and records that fact;
+    the field remains evidence metadata rather than a second execution path.
 
     `touches_test_paths` is a MEASUREMENT of the argv against the subject's
     declared test paths, never a verdict.  Whether a promise about the product
@@ -196,7 +187,10 @@ class NativeEvidence:
     verification drove a stand-in under the test tree, and it rejected run 34,
     whose oracle drove the product from a path of the same shape.  The two
     differ in what the session loaded, never in the argv, so the argv cannot
-    tell them apart.  Both are measurements; neither is a verdict.
+    tell them apart.  Import metadata supplements the candidate-bound argv,
+    exit, stdout, stderr, and installed observations.  Its absence means
+    unmeasured, not that the product was unexercised, and cannot automatically
+    pass or fail a candidate.  Both are measurements; neither is a verdict.
 
     `exit_status` is None for a stimulus the runner declined to execute, and
     `stderr` then carries the reason.  Null rather than 0, because a zero would
@@ -830,20 +824,11 @@ class DeliveryContinuationRunner:
     def _port(self, root: Path) -> TaskInvocationPort | DeliveryOutcome:
         if self._invoker is not None:
             return self._invoker
-        from des.adapters.driven.task_invocation.claude_code_task_adapter import (
-            ClaudeCodeTaskAdapter,
-            resolve_launcher,
+        from des.adapters.driven.task_invocation.configured_task_adapter import (
+            ConfiguredTaskAdapter,
         )
 
-        launcher = resolve_launcher()
-        if launcher is None:
-            return self._fail(
-                Disposition.Retry,
-                "ModelNotIssued",
-                "launcher unavailable before issue",
-                "restore launcher and retry",
-            )
-        return ClaudeCodeTaskAdapter(launcher, record_root=root)
+        return ConfiguredTaskAdapter(root)
 
     def _invoke(
         self,
@@ -872,6 +857,13 @@ class DeliveryContinuationRunner:
                     cwd=root,
                     max_product_values=max_product_values,
                     defect_values=defect_values,
+                )
+            except (ModelRuntimeUnavailable, ModelRuntimeConfigError) as error:
+                return self._fail(
+                    Disposition.Retry,
+                    "ModelNotIssued",
+                    str(error),
+                    "repair model_runtime configuration or restore its selected launcher and retry",
                 )
             except OSError as error:
                 # NOT an envelope defect: the child process was never created,
@@ -902,6 +894,13 @@ class DeliveryContinuationRunner:
                     "ModelEnvelopeUnavailable",
                     str(error),
                     "observe the provider result",
+                )
+            if not run.issued:
+                return self._fail(
+                    Disposition.Retry,
+                    "ModelNotIssued",
+                    run.diagnostic,
+                    "repair the selected role runtime or its capability profile and retry",
                 )
             self._turns_bought += 1
             self._last_role = role
@@ -2032,13 +2031,11 @@ class DeliveryContinuationRunner:
     ) -> tuple[NativeEvidence, ...] | DeliveryOutcome:
         """`root` is the tree under verification; `subject` is the repository.
 
-        `origin` labels every record this execution produces, and with the label
-        goes the refusal policy.  A DECLARED vector is the run's own gate: a
-        spawn the kernel will not start leaves the run with no verification at
-        all, so it terminates.  A REQUEST stimulus is an OBSERVATION the author
-        asked for; failing to run one removes a fact but breaks no gate, so it
-        is recorded as not executed and the run continues.  One flag and not
-        two, because the two are the same distinction read twice.
+        `origin` labels every record this execution produces and determines the
+        refusal policy.  Public verification executes design-declared vectors:
+        a spawn the kernel will not start leaves the run with no verification,
+        so it terminates.  The retained metadata does not create a separate
+        Request-authored execution path.
 
         `extra_env` overlays the constructed environment for THIS execution
         only.  It exists for the pre-craft oracle run, which needs a report
@@ -2388,6 +2385,53 @@ class DeliveryContinuationRunner:
             }
             for item in evidence
         ]
+
+    @classmethod
+    def _retain_native_failure_evidence(
+        cls, root: Path, candidate: str, evidence: tuple[NativeEvidence, ...]
+    ) -> str | None:
+        """Retain a failed candidate's captured native records at its subject.
+
+        Candidate worktrees are deliberately ephemeral, but their failed native
+        observation is not: a refusal after cleanup must still let the author
+        read the argv and both streams that actually ran. The subject's
+        project-local diagnostic location is the existing durable substrate;
+        the record reuses the same serialized form supplied to reviewers, so a
+        second, lossy rendering cannot drift from the captured observation.
+
+        ``None`` is deliberately distinct from a locator. A filesystem that
+        will not retain the bytes must never cause a terminal to point at a
+        record that does not exist.
+        """
+        directory = root / ".nwave" / "des" / "logs" / "native"
+        name = (
+            f"{candidate}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}-"
+            f"{os.getpid()}.json"
+        )
+        path = directory / name
+        payload = json.dumps(
+            cls._evidence_records(evidence), ensure_ascii=False, indent=1
+        ).encode("utf-8")
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            descriptor, temporary = tempfile.mkstemp(
+                prefix=f".{name}-", suffix=".tmp", dir=directory
+            )
+            try:
+                with os.fdopen(descriptor, "wb") as stream:
+                    stream.write(payload)
+                Path(temporary).replace(path)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    Path(temporary).unlink()
+                raise
+            if path.read_bytes() != payload:
+                with contextlib.suppress(OSError):
+                    path.unlink()
+                return None
+        except OSError:
+            return None
+        return path.relative_to(root).as_posix()
 
     @staticmethod
     def _subject_test_paths(subject: Path) -> tuple[str, ...]:
@@ -2746,32 +2790,6 @@ class DeliveryContinuationRunner:
                     self._mutable_targets(design),
                 )
 
-    def _release_abandoned_turn_records(self, root: Path, request: str) -> None:
-        """Drop the records no live Request keys, and keep the ones it does.
-
-        NARROWED, and the reason is measured. It used to drop the WHOLE
-        namespace whenever a brand-new graph was persisted, on the argument that
-        a fresh handover meant the previous Request had been abandoned by
-        deleting its handover -- the documented repair at the time. ADR-DES-003
-        §7 removes that repair: a changed Request is a REWRITE that keeps what
-        still holds and re-keys its records onto the new digest. Against a
-        rewrite the old argument is false, and the whole-namespace drop would
-        delete the very records the rewrite just re-keyed -- the design, oracle
-        and craft turns of every kept value.
-
-        So the predicate becomes what it always should have been: a record is
-        released when the LIVE Request does not key it. Its key is the Request's
-        digest, which the ref grammar already carries, so this needs no new
-        state and no matching by anything but the name Git holds.
-        """
-        listed = self._git(root, "for-each-ref", "--format=%(refname)", _TURN_REF_ROOT)
-        if listed.returncode:
-            return
-        live = f"{_TURN_REF_ROOT}/{ref_digest(request)}/"
-        for ref in listed.stdout.split():
-            if not ref.startswith(live):
-                self._git(root, "update-ref", "-d", ref)
-
     def _release_turn_records(self, root: Path, stored: StoredHandover) -> None:
         """Unreference this Request's turn commits once it has integrated.
 
@@ -2988,24 +3006,9 @@ class DeliveryContinuationRunner:
         root: Path,
         candidate: str,
         commands: tuple[tuple[str, ...], ...],
-        request: str = "",
         changed: tuple[str, ...] = (),
     ) -> tuple[Path, tuple[NativeEvidence, ...]] | DeliveryOutcome:
-        """The declared verification, then the Request author's own stimulus.
-
-        Two `_native` calls and not one ordered sequence, because the two carry
-        different refusal policies and the environment is rebuilt cheaply -- one
-        shim directory and one venv link.  The declared vectors run FIRST so a
-        candidate that fails its own gate is still judged on that failure, with
-        the stimulus reported beside it rather than in place of it.
-
-        STATED LIMIT.  The candidate is an ephemeral worktree, so a stimulus
-        that presupposes an index or a build the worktree does not carry answers
-        about the world it actually ran in.  That is the fact to show: run 20's
-        examiner saw exactly such an answer and rejected on it, with reason.
-        Materialising anything to make the stimulus answer "better" would be the
-        runner deciding what the model is there to judge.
-        """
+        """Run only the design-declared verification against one candidate."""
         directory = Path(tempfile.mkdtemp(prefix="nwave-candidate-"))
         added = self._git(
             root, "worktree", "add", "--detach", str(directory), candidate
@@ -3024,48 +3027,7 @@ class DeliveryContinuationRunner:
             # the worktree goes away -- the failure branch previously carried
             # its own copy of the same three lines.
             return self._remove_candidate_worktree(root, directory) or evidence
-        observed = self._request_stimulus_evidence(directory, root, request, changed)
-        if isinstance(observed, DeliveryOutcome):
-            return self._remove_candidate_worktree(root, directory) or observed
-        return directory, evidence + observed
-
-    def _request_stimulus_evidence(
-        self,
-        directory: Path,
-        root: Path,
-        request: str,
-        changed: tuple[str, ...] = (),
-    ) -> tuple[NativeEvidence, ...] | DeliveryOutcome:
-        """Every admitted command the Request names, in the author's own order.
-
-        Withheld stimuli are recorded in place rather than appended, so the
-        reader sees the sequence the author wrote and not one the runner
-        reordered by whether it happened to run each entry.
-        """
-        stimuli = request_stimuli(request)
-        runnable = tuple(item.argv for item in stimuli if not item.withheld)
-        executed: tuple[NativeEvidence, ...] = ()
-        if runnable:
-            ran = self._native(
-                directory, runnable, root, origin=REQUEST_ORIGIN, changed=changed
-            )
-            if isinstance(ran, DeliveryOutcome):
-                return ran
-            executed = ran
-        test_paths = self._subject_test_paths(root)
-        remaining = list(executed)
-        return tuple(
-            remaining.pop(0)
-            if not item.withheld
-            else self._unobserved(
-                item.argv,
-                item.withheld,
-                REQUEST_ORIGIN,
-                touches_test_paths(item.argv, test_paths),
-                self._exercised(item.argv, None, directory, test_paths, changed),
-            )
-            for item in stimuli
-        )
+        return directory, evidence
 
     def _remove_candidate_worktree(
         self, root: Path, directory: Path
@@ -4499,17 +4461,11 @@ class DeliveryContinuationRunner:
                     f"the candidate {candidate} diff cannot be observed",
                     "restore Git",
                 )
-            checkout = self._with_candidate_worktree(
-                root, candidate, argvs, stored.request, touched
-            )
+            checkout = self._with_candidate_worktree(root, candidate, argvs, touched)
             if isinstance(checkout, DeliveryOutcome):
                 return checkout
             candidate_root, evidence = checkout
-            # Only the DECLARED vectors are this candidate's gate.  A Request
-            # stimulus is an observation the author asked for: it can answer
-            # nonzero about a world the ephemeral worktree does not carry, and
-            # reading that as a failed verification would let the runner decide
-            # what the judging roles exist to judge.
+            # Only typed, design-declared vectors execute against the candidate.
             failed = any(
                 item.exit_status for item in evidence if item.origin == DECLARED_ORIGIN
             )
@@ -4533,6 +4489,11 @@ class DeliveryContinuationRunner:
                     evidence,
                 )
             )
+            evidence_locator = (
+                self._retain_native_failure_evidence(root, candidate, evidence)
+                if failed or review is not None
+                else None
+            )
             cleanup = self._remove_candidate_worktree(root, candidate_root)
             if cleanup is not None:
                 return cleanup
@@ -4542,17 +4503,35 @@ class DeliveryContinuationRunner:
                 next_finding, what, why = (
                     json.dumps(self._evidence_records(evidence), ensure_ascii=False),
                     "VerificationFailed",
-                    f"candidate {candidate} failed its ordered native verification",
+                    f"candidate {candidate} failed its ordered native verification"
+                    + (
+                        f"; native evidence retained at {evidence_locator}"
+                        if evidence_locator is not None
+                        else "; native evidence could not be retained under "
+                        ".nwave/des/logs/native"
+                    ),
                 )
             else:
                 assert review is not None
                 if review.disposition is not Disposition.Refusal:
+                    if review.failure is not None and evidence_locator is not None:
+                        return DeliveryOutcome(
+                            review.disposition,
+                            FailureDetail(
+                                review.failure.what,
+                                review.failure.why
+                                + f"; native evidence retained at {evidence_locator}",
+                                review.failure.how,
+                            ),
+                        )
                     return review
                 next_finding, what, why = (
                     review.failure.why if review.failure else "",
                     "ImplementationReviewRejected",
                     f"candidate {candidate} was vetoed by the whole-diff reviewer",
                 )
+                if evidence_locator is not None:
+                    why += f"; native evidence retained at {evidence_locator}"
             if correcting or not correct:
                 return self._fail(Disposition.Refusal, what, why, "repair the value")
             owners = self._correction_owners(root, prepared, base, candidate)
@@ -5001,6 +4980,16 @@ class DeliveryContinuationRunner:
         candidate, evidence = verified
         denied = self._examine(root, port, prepared, stored.raw, candidate, evidence)
         if denied is not None:
+            locator = self._retain_native_failure_evidence(root, candidate, evidence)
+            if denied.failure is not None and locator is not None:
+                denied = DeliveryOutcome(
+                    denied.disposition,
+                    FailureDetail(
+                        denied.failure.what,
+                        denied.failure.why + f"; native evidence retained at {locator}",
+                        denied.failure.how,
+                    ),
+                )
             # The candidate is a BUILT and natively verified commit whatever the
             # examiner then said, so it is recorded with the judge's word on it.
             # Recording only admissions is what made the terminal's own «you may
@@ -5613,5 +5602,4 @@ class DeliveryContinuationRunner:
         created = create_handover(root, raw_request, values)
         if isinstance(created, Blocked):
             return self._blocked(created)
-        self._release_abandoned_turn_records(root, raw_request)
         return created

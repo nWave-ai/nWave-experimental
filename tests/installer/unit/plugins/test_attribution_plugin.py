@@ -2,14 +2,14 @@
 
 Tests validate install-time setup through the driving port
 (AttributionPlugin.install/verify) and assert at driven port boundaries
-(global-config.json + settings.json).
+(config.json + settings.json).
 
 Post-migration (ADR-CA-004): install drives ~/.claude/settings.json via
 write_settings_attribution and dismantles any legacy hook via
 migrate_legacy_hook, instead of installing a prepare-commit-msg git hook.
 The plugin-install/upgrade tests neutralize those two side-effecting functions
 (patched in the module-scoped autouse fixture) and assert the bookkeeping the
-plugin records in global-config.json plus the delegation to the settings
+plugin records in config.json plus the delegation to the settings
 writer. The retained install_attribution_hook regression class still exercises
 the kept hook function directly (Q9 keeps the runtime one release).
 
@@ -184,8 +184,8 @@ def _make_context(tmp_path: Path) -> InstallContext:
 
 
 def _read_global_config(config_dir: Path) -> dict:
-    """Read global-config.json from the given nwave config directory."""
-    config_file = config_dir / "global-config.json"
+    """Read config.json from the given nwave config directory."""
+    config_file = config_dir / "config.json"
     with open(config_file, encoding="utf-8") as f:
         return json.load(f)
 
@@ -226,7 +226,7 @@ class TestAttributionPluginInstall:
         context = _make_context(tmp_path)
         nwave_dir = tmp_path / ".nwave"
         plugin = AttributionPlugin(config_dir=nwave_dir)
-        config_file = nwave_dir / "global-config.json"
+        config_file = nwave_dir / "config.json"
 
         before = _flatten_config(config_file)
 
@@ -247,6 +247,7 @@ class TestAttributionPluginInstall:
             expected={
                 "attribution.enabled": set_to(True),
                 "attribution.trailer": set_to("Co-Authored-By: nWave <nwave@nwave.ai>"),
+                "schema-version": set_to(1),
             },
         )
         # No settings credit written; cleanup called but patched.
@@ -302,7 +303,7 @@ class TestAttributionPluginInstall:
         context = _make_context(tmp_path)
         nwave_dir = tmp_path / ".nwave"
         nwave_dir.mkdir(parents=True)
-        config_file = nwave_dir / "global-config.json"
+        config_file = nwave_dir / "config.json"
         existing_config = {
             "attribution": {
                 "enabled": True,
@@ -333,9 +334,9 @@ class TestAttributionPluginInstall:
     def test_missing_config_dir_created(self, tmp_path: Path) -> None:
         """Config directory does not exist -> created; attribution stored; no other mutations."""
         context = _make_context(tmp_path)
-        nwave_dir = tmp_path / ".nwave-fresh"
+        nwave_dir = tmp_path / ".nwave"
         assert not nwave_dir.exists()
-        config_file = nwave_dir / "global-config.json"
+        config_file = nwave_dir / "config.json"
 
         before_fs: dict[str, object] = {
             "nwave_dir.exists": nwave_dir.exists(),
@@ -375,6 +376,7 @@ class TestAttributionPluginInstall:
             expected={
                 "attribution.enabled": set_to(True),
                 "attribution.trailer": set_to("Co-Authored-By: nWave <nwave@nwave.ai>"),
+                "schema-version": set_to(1),
             },
         )
 
@@ -384,9 +386,9 @@ class TestAttributionPluginInstall:
         # Use a path that will cause write failure (file instead of directory)
         nwave_dir = tmp_path / ".nwave-bad"
         nwave_dir.mkdir(parents=True)
-        # Create a file where global-config.json should be a file in a dir
+        # Create a file where config.json should be a file in a dir
         # that cannot be created (simulate write error)
-        config_file = nwave_dir / "global-config.json"
+        config_file = nwave_dir / "config.json"
         # Make the config file a directory to cause json.dump to fail
         config_file.mkdir(parents=True)
 
@@ -412,7 +414,7 @@ class TestAttributionPluginVerify:
         context = _make_context(tmp_path)
         nwave_dir = tmp_path / ".nwave"
         nwave_dir.mkdir(parents=True)
-        config_file = nwave_dir / "global-config.json"
+        config_file = nwave_dir / "config.json"
         config_file.write_text(
             json.dumps({"attribution": {"enabled": True}}),
             encoding="utf-8",
@@ -456,7 +458,7 @@ class TestAttributionUpgradePreservation:
         context = _make_context(tmp_path)
         nwave_dir = tmp_path / ".nwave"
         nwave_dir.mkdir(parents=True)
-        config_file = nwave_dir / "global-config.json"
+        config_file = nwave_dir / "config.json"
         config_file.write_text(
             json.dumps(
                 {
@@ -496,7 +498,7 @@ class TestAttributionUpgradePreservation:
         context = _make_context(tmp_path)
         nwave_dir = tmp_path / ".nwave"
         nwave_dir.mkdir(parents=True)
-        config_file = nwave_dir / "global-config.json"
+        config_file = nwave_dir / "config.json"
         config_file.write_text(
             json.dumps(
                 {
@@ -533,7 +535,7 @@ class TestAttributionUpgradePreservation:
         context = _make_context(tmp_path)
         nwave_dir = tmp_path / ".nwave"
         nwave_dir.mkdir(parents=True)
-        config_file = nwave_dir / "global-config.json"
+        config_file = nwave_dir / "config.json"
         # Config exists but no attribution key
         config_file.write_text(
             json.dumps({"rigor": {"level": "standard"}}),
@@ -562,6 +564,7 @@ class TestAttributionUpgradePreservation:
                 # attribution keys created from None
                 "attribution.enabled": set_to(True),
                 "attribution.trailer": set_to("Co-Authored-By: nWave <nwave@nwave.ai>"),
+                "schema-version": set_to(1),
             },
             # rigor.level is NOT in expected -> implicit-unchanged enforced automatically
         )

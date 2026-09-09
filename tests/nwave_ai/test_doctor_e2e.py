@@ -121,12 +121,12 @@ def test_doctor_reports_healthy_install(tmp_path: Path) -> None:
     a read-only diagnostic that always passes, bumping the count from 8 to 9.
     The install-version-drift feature added VersionSyncCheck, bumping the count
     from 9 to 10. The config-SSOT feature added ConfigSsotCheck, bumping the
-    count from 10 to 11. A fresh tmp_path home has no `~/.nwave/global-config.json`
+    count from 10 to 11. A fresh tmp_path home has no `~/.nwave/config.json`
     or `~/.nwave/config.json`, so density, version-sync and config_ssot all
     resolve to their undeterminable/fresh-install pass branch. ``project_root``
     is pinned to the same isolated ``tmp_path`` (not the default ``Path.cwd()``)
     so ConfigSsotCheck's per-repo tier never leaks this checkout's own
-    committed ``.nwave/local-config.json`` into the fixture.
+    committed ``.nwave/config.json`` into the fixture.
     """
     stage_healthy_install(tmp_path)
     context = DoctorContext(home_dir=tmp_path, project_root=tmp_path)
@@ -155,22 +155,12 @@ def test_drift_on_otherwise_healthy_install_is_flagged(
     stage_healthy_install(tmp_path)
     # Record install provenance (what `nwave-ai install` wrote), then simulate a
     # later `pipx upgrade` advancing the live package ahead of it. Provenance
-    # (`install.installed_version`) still lives in the legacy global-config.json
-    # by design (version_sync's own contract, unrelated to the config-SSOT
-    # cascade) -- but leaving ONLY that legacy file present would make this
-    # otherwise-healthy install look un-migrated to ConfigSsotCheck too. A
-    # migrated install also carries the unified config.json, so it is staged
-    # here alongside the legacy file to isolate the drift to version_sync only.
-    global_config = tmp_path / ".nwave" / "global-config.json"
+    # (`install.installed_version`) lives in the unified global config.
+    global_config = tmp_path / ".nwave" / "config.json"
     global_config.parent.mkdir(parents=True, exist_ok=True)
     global_config.write_text(
         json.dumps({"install": {"installed_version": "1.1.0"}}), encoding="utf-8"
     )
-    # Presence alone flips ConfigSsotCheck's migrated/legacy verdict (its
-    # content is never inspected for that verdict) -- an empty object avoids
-    # perturbing the effective enabled/verbosity/attribution defaults this
-    # scenario does not otherwise exercise.
-    (tmp_path / ".nwave" / "config.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(version_sync, "_detect_running_version", lambda: "1.2.0")
 
     results = run_doctor(DoctorContext(home_dir=tmp_path, project_root=tmp_path))

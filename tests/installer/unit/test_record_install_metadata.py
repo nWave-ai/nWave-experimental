@@ -18,18 +18,18 @@ from scripts.install.install_nwave import record_install_metadata
 
 
 def test_writes_installed_version(tmp_path: Path) -> None:
-    cfg = tmp_path / ".nwave" / "global-config.json"
+    cfg = tmp_path / ".nwave" / "config.json"
 
-    record_install_metadata(cfg, installed_version="1.2.0")
+    record_install_metadata(cfg, installed_version="1.2.0", repo_root=tmp_path / "repo")
 
     data = json.loads(cfg.read_text(encoding="utf-8"))
     assert data["install"]["installed_version"] == "1.2.0"
 
 
 def test_creates_parent_directory_when_absent(tmp_path: Path) -> None:
-    cfg = tmp_path / "nested" / ".nwave" / "global-config.json"
+    cfg = tmp_path / "nested" / ".nwave" / "config.json"
 
-    record_install_metadata(cfg, installed_version="2.0.0")
+    record_install_metadata(cfg, installed_version="2.0.0", repo_root=tmp_path / "repo")
 
     assert cfg.exists()
     assert (
@@ -39,7 +39,7 @@ def test_creates_parent_directory_when_absent(tmp_path: Path) -> None:
 
 
 def test_preserves_unrelated_existing_keys(tmp_path: Path) -> None:
-    cfg = tmp_path / ".nwave" / "global-config.json"
+    cfg = tmp_path / ".nwave" / "config.json"
     cfg.parent.mkdir(parents=True)
     cfg.write_text(
         json.dumps(
@@ -52,7 +52,7 @@ def test_preserves_unrelated_existing_keys(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    record_install_metadata(cfg, installed_version="3.0.0")
+    record_install_metadata(cfg, installed_version="3.0.0", repo_root=tmp_path / "repo")
 
     data = json.loads(cfg.read_text(encoding="utf-8"))
     # Unrelated blocks untouched.
@@ -65,11 +65,10 @@ def test_preserves_unrelated_existing_keys(tmp_path: Path) -> None:
 
 def test_best_effort_on_corrupt_existing_config(tmp_path: Path) -> None:
     """Corrupt existing JSON is overwritten with a fresh valid config, no raise."""
-    cfg = tmp_path / ".nwave" / "global-config.json"
+    cfg = tmp_path / ".nwave" / "config.json"
     cfg.parent.mkdir(parents=True)
     cfg.write_text("{ not json", encoding="utf-8")
 
-    record_install_metadata(cfg, installed_version="1.0.0")
+    record_install_metadata(cfg, installed_version="1.0.0", repo_root=tmp_path / "repo")
 
-    data = json.loads(cfg.read_text(encoding="utf-8"))
-    assert data["install"]["installed_version"] == "1.0.0"
+    assert cfg.read_text(encoding="utf-8") == "{ not json"

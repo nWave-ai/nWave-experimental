@@ -1,12 +1,12 @@
-"""Regression: a subsequent ensure_nwave_gitignore must not re-ignore the marker.
+"""Regression: a subsequent ensure_nwave_gitignore keeps config trackable.
 
 Defect (DELIVER verification, feature nwave-project-activation-gating): after
 ``nwave-ai project enable`` repairs the nested ``.nwave/.gitignore``
-(adding ``!local-config.json`` so the activation marker ``.nwave/local-config.json`` is
+(adding ``!config.json`` so the canonical declaration ``.nwave/config.json`` is
 trackable), the very next runtime path that lazily creates ``.nwave/`` content
 calls ``ensure_nwave_gitignore`` — which unconditionally rewrote the nested
-ignore to ``"{marker}\n*\n"``, clobbering the ``!local-config.json`` re-include and
-re-hiding the marker from git.
+ignore to ``"{marker}\n*\n"``, clobbering the ``!config.json`` re-include and
+re-hiding the canonical configuration from git.
 
 The two nested-gitignore writers (``ProjectGitignoreService`` and
 ``ensure_nwave_gitignore``) must agree on ONE canonical content so they cannot
@@ -39,8 +39,8 @@ def _init_git_repo(project_root: Path) -> None:
         subprocess.run(argv, cwd=project_root, check=True, capture_output=True)
 
 
-def test_subsequent_ensure_preserves_marker_trackability(tmp_path: Path) -> None:
-    """A later ensure_nwave_gitignore must not re-ignore the activation marker."""
+def test_subsequent_ensure_preserves_config_trackability(tmp_path: Path) -> None:
+    """A later ensure_nwave_gitignore must not re-ignore config.json."""
     project_root = tmp_path / "project"
     nwave_dir = project_root / ".nwave"
     nwave_dir.mkdir(parents=True)
@@ -49,26 +49,26 @@ def test_subsequent_ensure_preserves_marker_trackability(tmp_path: Path) -> None
     # Shipped state: root ignores .nwave/, nested ignores everything.
     (project_root / ".gitignore").write_text(".nwave/\n", encoding="utf-8")
     (nwave_dir / ".gitignore").write_text(f"{_MARKER}\n*\n", encoding="utf-8")
-    marker = nwave_dir / "local-config.json"
-    marker.write_text('{"enabled_for_repo": true}\n', encoding="utf-8")
+    config = nwave_dir / "config.json"
+    config.write_text('{"enabled": true}\n', encoding="utf-8")
 
-    # Activation repairs both gitignore layers -> marker becomes trackable.
+    # The project command repairs both gitignore layers -> config is trackable.
     ProjectGitignoreService().fix_gitignore(project_root=project_root)
-    assert is_tracked(project_root, marker), (
-        "fix_gitignore should make marker trackable"
+    assert is_tracked(project_root, config), (
+        "fix_gitignore should make config trackable"
     )
 
     # A subsequent lazy .nwave/ write rewrites the nested .gitignore.
     ensure_nwave_gitignore(nwave_dir)
 
-    # The marker MUST remain trackable — the re-include must survive.
-    assert is_tracked(project_root, marker), (
-        "ensure_nwave_gitignore clobbered the !local-config.json re-include — "
-        "marker re-ignored after a subsequent .nwave/ write"
+    # The config MUST remain trackable — the re-include must survive.
+    assert is_tracked(project_root, config), (
+        "ensure_nwave_gitignore clobbered the !config.json re-include — "
+        "configuration re-ignored after a subsequent .nwave/ write"
     )
     nested = (nwave_dir / ".gitignore").read_text(encoding="utf-8")
     assert _MARKER in nested, "banner must be preserved"
-    assert "!local-config.json" in nested, "re-include must be preserved"
+    assert "!config.json" in nested, "re-include must be preserved"
 
 
 def test_ensure_nwave_gitignore_emits_reinclude_by_default(tmp_path: Path) -> None:
@@ -78,14 +78,14 @@ def test_ensure_nwave_gitignore_emits_reinclude_by_default(tmp_path: Path) -> No
     nwave_dir.mkdir(parents=True)
     _init_git_repo(project_root)
     (project_root / ".gitignore").write_text(
-        ".nwave/*\n!.nwave/local-config.json\n", encoding="utf-8"
+        ".nwave/*\n!.nwave/config.json\n", encoding="utf-8"
     )
 
     # First runtime write under .nwave/ creates the nested ignore from scratch.
     ensure_nwave_gitignore(nwave_dir)
 
-    marker = nwave_dir / "local-config.json"
-    marker.write_text('{"enabled_for_repo": true}\n', encoding="utf-8")
-    assert is_tracked(project_root, marker), (
-        "nested ignore created by ensure_nwave_gitignore must not hide the marker"
+    config = nwave_dir / "config.json"
+    config.write_text('{"enabled": true}\n', encoding="utf-8")
+    assert is_tracked(project_root, config), (
+        "nested ignore created by ensure_nwave_gitignore must not hide config.json"
     )

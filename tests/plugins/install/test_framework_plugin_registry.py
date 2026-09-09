@@ -38,6 +38,8 @@ def configured_installer(tmp_path):
         installer._effective_target_platforms = {"claude_code"}
         installer.claude_config_dir = tmp_path / "claude"
         installer.project_root = tmp_path
+        installer.user_project_root = tmp_path / "user-project"
+        installer.user_project_root.mkdir()
         installer.framework_source = tmp_path / "nWave"
         installer.logger = Mock()
         installer.logger.progress_spinner = MagicMock()

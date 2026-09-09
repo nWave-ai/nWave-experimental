@@ -38,7 +38,7 @@ class BlastRadiusConfigRejected(Exception):
     documented floor/ceiling -- never a silent clamp, never a silent fallback
     (that degrade is reserved for an ABSENT or WRONG-TYPE key). The message
     names the offending key, its value, its valid range, and points at
-    `.nwave/des-config.json` (GDP-3 what/why/how) -- mirrors
+    `.nwave/config.json` (GDP-3 what/why/how) -- mirrors
     `BlastRadiusInputRejected`'s shape.
     """
 
@@ -50,7 +50,7 @@ class BlastRadiusThresholds:
     Canonical defaults (feature-delta "Canonical default thresholds" table).
     `DESConfig._blast_radius()` wires these through the project -> global ->
     hardcoded-default cascade; this dataclass IS the hardcoded-default rung
-    (byte-identical to the canonical `.nwave/des-config.json` shape).
+    (byte-identical to the canonical `.nwave/config.json` shape).
     """
 
     small_max_files: int = 2

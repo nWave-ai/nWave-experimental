@@ -6,11 +6,13 @@ DoctorContext is a pure value object — its public interface IS the driving por
 
 from pathlib import Path
 
+import pytest
 from nwave_ai.doctor.context import DoctorContext
 
 
-def test_defaults_use_path_home():
+def test_defaults_use_path_home(monkeypatch: pytest.MonkeyPatch):
     """from_defaults() home_dir must equal Path.home() at construction time."""
+    monkeypatch.delenv("NWAVE_AGENTS_HOME", raising=False)
     context = DoctorContext.from_defaults()
     assert context.home_dir == Path.home()
 

@@ -29,6 +29,7 @@ from typing import Any
 
 from nwave_ai.state_delta import assert_state_delta, set_to
 
+from des.domain.nwave_locations import NWaveLocations
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.des_plugin import DESPlugin
 from scripts.shared.skill_distribution import read_manifest, write_manifest
@@ -118,6 +119,12 @@ class ScriptsUpgradeJourney:
             templates_dir=self._framework_source / "templates",
             logger=self._logger,
             project_root=self._tmp,
+            user_project_root=self._tmp,
+            locations=NWaveLocations(
+                agents_home=self._tmp,
+                claude_config_dir=self._claude_dir,
+                codex_config_dir=self._tmp / ".codex",
+            ),
             framework_source=self._framework_source,
             dry_run=False,
             dev_mode=True,

@@ -7,6 +7,7 @@ Exit 0 on ALL error paths (never block commits).
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -72,13 +73,24 @@ def process_commit_message(
     """
     try:
         if global_config_dir is None:
-            global_config_dir = Path.home() / ".nwave"
+            overrides = (
+                os.environ.get("NWAVE_AGENTS_HOME"),
+                os.environ.get("CLAUDE_CONFIG_DIR"),
+                os.environ.get("CODEX_HOME"),
+            )
+            # This installed shim intentionally has no framework imports. Keep
+            # its stdlib-only launch contract while matching NWaveLocations:
+            # any relative location override is invalid and must fail open,
+            # never become an authority below the hook's cwd.
+            if any(value and not Path(value).is_absolute() for value in overrides):
+                return 0
+            global_config_dir = Path(overrides[0] or Path.home()) / ".nwave"
         if project_config_dir is None:
             project_config_dir = Path.cwd() / ".nwave"
 
-        config_path = global_config_dir / "global-config.json"
+        config_path = global_config_dir / "config.json"
         global_config = _read_json(config_path)
-        project_config = _read_json(project_config_dir / "des-config.json")
+        project_config = _read_json(project_config_dir / "config.json")
 
         # If no attribution key in config, silently do nothing (default off).
         # Users enable via `nwave-ai attribution on` CLI command.

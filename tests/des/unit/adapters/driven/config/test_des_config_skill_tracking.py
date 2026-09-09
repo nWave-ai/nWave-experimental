@@ -46,7 +46,7 @@ class TestSkillTrackingEnabledViaConfig:
         self, tmp_path, strategy, expected_enabled
     ) -> None:
         """Skill tracking enabled depends on strategy value in config."""
-        config_file = tmp_path / ".nwave" / "des-config.json"
+        config_file = tmp_path / ".nwave" / "config.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         config_file.write_text(
             json.dumps({"skill_tracking": strategy}), encoding="utf-8"

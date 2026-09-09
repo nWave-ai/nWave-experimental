@@ -135,9 +135,9 @@ _FIXTURE_RESIDUE_ROOT_NAMES = frozenset(
 #: Same rule as `_NEVER_SEAL`, applied inside a file instead of to a path:
 #: strip what SETUP wrote, keep what DELIVERY wrote.
 _SETUP_GITIGNORE_BLOCK = (
-    "# nWave activation marker (keep .nwave/local-config.json trackable)",
+    "# nWave configuration (keep .nwave/config.json trackable)",
     ".nwave/*",
-    "!.nwave/local-config.json",
+    "!.nwave/config.json",
 )
 
 

@@ -15,7 +15,8 @@ obligation 6(a) requires, never a mocked FileSystemPort at this layer.
 
 Artifact conventions used by these fixtures (mirroring the ALREADY-LANDED
 global-config consumer, ``src/des/adapters/driven/config/des_config.py``):
-  - ``<root>/.nwave/des-config.json`` is the "global-config" artifact type.
+  - ``<root>/.nwave/config.json`` is the unified versioned configuration
+    artifact type.
     Its kernel-known current version is 1 (one landed v0->v1 upcaster,
     ``des_config.py:_GLOBAL_CONFIG_VERSIONING``) -- a declared
     ``schema-version`` of 2 or higher is "from the future" for this type.
@@ -42,10 +43,20 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from des.cli.update import main
+from des.runtime.packaged_asset import AssetOrigin, AssetResolution
 
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _fixture_tree_snapshot(root: Path) -> dict[Path, str]:
+    """Capture every fixture file by relative path and content digest."""
+    return {
+        path.relative_to(root): _sha256(path)
+        for path in root.rglob("*")
+        if path.is_file()
+    }
 
 
 def _write(path: Path, doc: dict) -> None:
@@ -110,7 +121,7 @@ class TestUpdateDryRun:
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """(c) A schema-version newer than this runtime's current one refuses LOUD."""
-        artifact = tmp_path / ".nwave" / "des-config.json"
+        artifact = tmp_path / ".nwave" / "config.json"
         _write(artifact, {"schema-version": 2})
 
         exit_code = main(["--dry-run", "--root", str(tmp_path)])
@@ -127,7 +138,7 @@ class TestUpdateDryRun:
     ) -> None:
         """(d) Every discovered artifact is byte-identical before and after."""
         artifacts = [
-            tmp_path / ".nwave" / "des-config.json",
+            tmp_path / ".nwave" / "config.json",
             tmp_path / ".nwave" / "expectation-charters" / "done.json",
             tmp_path / ".nwave" / "expectation-charters" / "wip.json",
             tmp_path / ".nwave" / "unregistered" / "widget.json",
@@ -328,3 +339,276 @@ class TestUpdateApply:
         assert "WHY" in captured.err
         assert "HOW" in captured.err
         assert _sha256(artifact) == before
+
+
+def _use_transition_catalog(monkeypatch: pytest.MonkeyPatch, catalog_dir: Path) -> None:
+    """Make the CLI read this test's packaged-transition directory.
+
+    The driving port remains ``main``.  This is only the packaged-asset
+    adapter seam the catalog design names, so the examples neither read nor
+    mutate the live installed workflow-transition data.
+    """
+    resolution = AssetResolution(
+        origin=AssetOrigin.REPO,
+        path=catalog_dir,
+        installed=catalog_dir,
+        repo=catalog_dir,
+        detail="isolated workflow-transition catalog fixture",
+    )
+    monkeypatch.setattr(
+        "des.cli.update.resolve_packaged_asset", lambda _relative: resolution
+    )
+
+
+def _write_transition(
+    catalog_dir: Path,
+    name: str,
+    *,
+    from_tags: list[str],
+    to_tag: str,
+) -> None:
+    _write(
+        catalog_dir / name,
+        {
+            "from-tags": from_tags,
+            "to-tag": to_tag,
+            "phase-map": {"RED": "RED", "COMPLETED": "COMPLETED"},
+            "required-fields": ["schema-version", "phase", "tag"],
+            "legacy-field-map": {
+                "schema-version": {
+                    "disposition": "copy",
+                    "destination": "schema-version",
+                },
+                "phase": {
+                    "disposition": "transform",
+                    "rule": "phase-map",
+                    "destination": "phase",
+                },
+                "tag": {
+                    "disposition": "transform",
+                    "rule": "target-tag",
+                    "destination": "tag",
+                },
+            },
+        },
+    )
+
+
+class TestWorkflowTransitionCatalogApply:
+    """Public oracle for the packaged, ordered workflow-transition catalog.
+
+    Every example drives ``des update --apply`` through its established
+    same-process CLI port.  The artifact hashes and residue assertions make
+    the batch preflight boundary observable without substituting its
+    FileSystemPort.
+    """
+
+    def test_apply_composes_the_unique_packaged_route_to_its_terminal(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        catalog = tmp_path / "packaged-transitions"
+        _write_transition(catalog, "10-v4-to-v5.json", from_tags=["v4"], to_tag="v5")
+        _write_transition(catalog, "20-v5-to-v6.json", from_tags=["v5"], to_tag="v6")
+        _use_transition_catalog(monkeypatch, catalog)
+
+        artifact = tmp_path / ".nwave" / "expectation-charters" / "wip.json"
+        _write(artifact, {"schema-version": 0, "phase": "RED", "tag": "v4"})
+        before = artifact.read_bytes()
+
+        exit_code = main(["--apply", "--root", str(tmp_path)])
+
+        assert exit_code == 0
+        assert json.loads(artifact.read_text(encoding="utf-8"))["tag"] == "v6"
+        assert any(
+            path != artifact and path.is_file() and path.read_bytes() == before
+            for path in tmp_path.rglob("*")
+        ), "the original bytes must remain recoverable after the composed route"
+
+    @pytest.mark.parametrize(
+        ("transitions", "diagnostic"),
+        [
+            (
+                (("10-v4-duplicated-source.json", ["v4", "v4"], "v5"),),
+                "duplicate source",
+            ),
+            (
+                (
+                    ("10-v4-to-v5.json", ["v4"], "v5"),
+                    ("20-v4-to-v6.json", ["v4"], "v6"),
+                ),
+                "duplicate source",
+            ),
+            (
+                (
+                    ("10-v4-to-v5.json", ["v4"], "v5"),
+                    ("20-v5-to-v4.json", ["v5"], "v4"),
+                ),
+                "cycle",
+            ),
+            (
+                (
+                    ("10-v4-to-v5.json", ["v4"], "v5"),
+                    ("20-v7-to-v8.json", ["v7"], "v8"),
+                ),
+                "terminal",
+            ),
+        ],
+        ids=[
+            "duplicated-source-within-one-transition",
+            "ambiguous-source",
+            "cyclic-route",
+            "gapped-multiple-terminal",
+        ],
+    )
+    def test_invalid_catalog_refuses_entire_inflight_batch_before_persistence(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        transitions: tuple[tuple[str, list[str], str], ...],
+        diagnostic: str,
+    ) -> None:
+        catalog = tmp_path / "packaged-transitions"
+        for name, from_tags, to_tag in transitions:
+            _write_transition(catalog, name, from_tags=from_tags, to_tag=to_tag)
+        _use_transition_catalog(monkeypatch, catalog)
+
+        inflight = tmp_path / ".nwave" / "expectation-charters" / "wip.json"
+        completed = tmp_path / ".nwave" / "expectation-charters" / "done.json"
+        _write(inflight, {"schema-version": 0, "phase": "RED", "tag": "v4"})
+        _write(
+            completed,
+            {"schema-version": 0, "phase": "COMPLETED", "tag": "unknown"},
+        )
+        before = _fixture_tree_snapshot(tmp_path)
+
+        exit_code = main(["--apply", "--root", str(tmp_path)])
+
+        captured = capsys.readouterr()
+        assert exit_code != 0
+        assert (
+            "WHAT" in captured.err and "WHY" in captured.err and "HOW" in captured.err
+        )
+        assert diagnostic in captured.err.lower()
+        assert _fixture_tree_snapshot(tmp_path) == before, (
+            "catalog refusal must occur before the first backup, replacement, "
+            "deletion, or production residue"
+        )
+
+    def test_malformed_catalog_refuses_before_persistence(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        catalog = tmp_path / "packaged-transitions"
+        _write(catalog / "broken.json", {"from-tags": ["v4"]})
+        _use_transition_catalog(monkeypatch, catalog)
+
+        inflight = tmp_path / ".nwave" / "expectation-charters" / "wip.json"
+        completed = tmp_path / ".nwave" / "expectation-charters" / "done.json"
+        _write(inflight, {"schema-version": 0, "phase": "RED", "tag": "v4"})
+        _write(
+            completed,
+            {"schema-version": 0, "phase": "COMPLETED", "tag": "unknown"},
+        )
+        before = _fixture_tree_snapshot(tmp_path)
+
+        exit_code = main(["--apply", "--root", str(tmp_path)])
+
+        captured = capsys.readouterr()
+        assert exit_code != 0
+        assert (
+            "WHAT" in captured.err and "WHY" in captured.err and "HOW" in captured.err
+        )
+        assert "malformed" in captured.err.lower()
+        assert _fixture_tree_snapshot(tmp_path) == before, (
+            "catalog refusal must occur before the first backup, replacement, "
+            "deletion, or production residue"
+        )
+
+    def test_present_non_dictionary_phase_map_refuses_before_persistence(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A malformed present phase-map refuses; it is never treated as empty.
+
+        This is deliberately a complete transition apart from the present
+        non-dictionary map.  It therefore distinguishes malformed catalog
+        input from a legitimately absent mapping, while the whole-tree
+        snapshot proves refusal precedes backup, replacement, and residue.
+        """
+        catalog = tmp_path / "packaged-transitions"
+        transition = catalog / "10-v4-to-v5.json"
+        _write_transition(catalog, transition.name, from_tags=["v4"], to_tag="v5")
+        transition_doc = json.loads(transition.read_text(encoding="utf-8"))
+        transition_doc["phase-map"] = ["RED-to-RED"]
+        _write(transition, transition_doc)
+        _use_transition_catalog(monkeypatch, catalog)
+
+        inflight = tmp_path / ".nwave" / "expectation-charters" / "wip.json"
+        completed = tmp_path / ".nwave" / "expectation-charters" / "done.json"
+        _write(inflight, {"schema-version": 0, "phase": "RED", "tag": "v4"})
+        _write(
+            completed,
+            {"schema-version": 0, "phase": "COMPLETED", "tag": "unknown"},
+        )
+        before = _fixture_tree_snapshot(tmp_path)
+
+        exit_code = main(["--apply", "--root", str(tmp_path)])
+
+        captured = capsys.readouterr()
+        assert exit_code != 0, (
+            "WHAT: a present non-dictionary phase-map must refuse des update --apply; "
+            "WHY: ADR-AUM-001 requires malformed packaged catalogs to stop the "
+            "whole batch before persistence; HOW: reject non-dictionary phase-map "
+            "values during catalog decoding."
+        )
+        assert (
+            "WHAT" in captured.err and "WHY" in captured.err and "HOW" in captured.err
+        ), (
+            "WHAT: malformed catalog refusal must expose a WHAT/WHY/HOW diagnostic; "
+            "WHY: operators need an actionable non-zero failure rather than a silent "
+            "coercion; HOW: render the existing catalog-failure diagnostic."
+        )
+        assert "malformed" in captured.err.lower() and "phase-map" in captured.err, (
+            "WHAT: the refusal must identify the malformed phase-map; "
+            "WHY: the catalog is otherwise complete and this field is the sole defect; "
+            "HOW: include the rejected field in the catalog validation reason."
+        )
+        assert _fixture_tree_snapshot(tmp_path) == before, (
+            "WHAT: every fixture byte and path must remain unchanged after malformed "
+            "catalog refusal; WHY: whole-batch preflight precedes all backup and write "
+            "operations; HOW: validate the packaged catalog before persistence planning."
+        )
+
+    def test_unknown_inflight_tag_refuses_before_persistence_but_completed_unknown_is_preserved(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        catalog = tmp_path / "packaged-transitions"
+        _write_transition(catalog, "10-v4-to-v5.json", from_tags=["v4"], to_tag="v5")
+        _use_transition_catalog(monkeypatch, catalog)
+
+        unknown = tmp_path / ".nwave" / "expectation-charters" / "unknown.json"
+        completed = tmp_path / ".nwave" / "expectation-charters" / "done.json"
+        _write(unknown, {"schema-version": 0, "phase": "RED", "tag": "v99"})
+        _write(completed, {"schema-version": 0, "phase": "COMPLETED", "tag": "v99"})
+        before = _fixture_tree_snapshot(tmp_path)
+
+        exit_code = main(["--apply", "--root", str(tmp_path)])
+
+        captured = capsys.readouterr()
+        assert exit_code != 0
+        assert (
+            "WHAT" in captured.err and "WHY" in captured.err and "HOW" in captured.err
+        )
+        assert "v99" in captured.err
+        assert _fixture_tree_snapshot(tmp_path) == before, (
+            "catalog refusal must occur before the first backup, replacement, "
+            "deletion, or production residue"
+        )

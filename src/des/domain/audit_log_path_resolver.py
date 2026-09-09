@@ -6,7 +6,7 @@ JsonlAuditLogWriter and JsonlAuditLogReader to prevent path divergence.
 Priority (highest to lowest):
 1. Explicit log_dir parameter
 2. DES_AUDIT_LOG_DIR environment variable
-3. .nwave/des-config.json audit_log_dir field
+3. .nwave/config.json audit_log_dir field
 4. Project-local .nwave/des/logs/ (using cwd or Path.cwd())
 5. Global ~/.claude/des/logs/ (fallback)
 """
@@ -76,8 +76,8 @@ class AuditLogPathResolver:
 
     @staticmethod
     def _resolve_config_dir(cwd: Path) -> Path | None:
-        """Read audit_log_dir from .nwave/des-config.json if it exists."""
-        config_file = cwd / ".nwave" / "des-config.json"
+        """Read audit_log_dir from the canonical .nwave/config.json."""
+        config_file = cwd / ".nwave" / "config.json"
         if config_file.exists():
             try:
                 config = json.loads(config_file.read_text(encoding="utf-8"))
@@ -85,7 +85,7 @@ class AuditLogPathResolver:
                 if audit_dir:
                     return Path(audit_dir)
             except (json.JSONDecodeError, OSError):
-                # WHAT: des-config.json exists but is malformed JSON, or
+                # WHAT: config.json exists but is malformed JSON, or
                 # became unreadable between the exists() check and read.
                 # WHY: this is priority-4-of-5 in the resolver's fallback
                 # chain (see method docstring) -- a bad config file must

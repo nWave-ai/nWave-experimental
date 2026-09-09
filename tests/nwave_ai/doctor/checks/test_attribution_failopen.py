@@ -34,7 +34,7 @@ def _raise(*_args: object, **_kwargs: object) -> object:
 
 @pytest.fixture()
 def context(tmp_path: Path) -> DoctorContext:
-    return DoctorContext(home_dir=tmp_path, project_root=tmp_path)
+    return DoctorContext(home_dir=tmp_path, project_root=tmp_path / "project")
 
 
 # ---------------------------------------------------------------------------
@@ -59,15 +59,13 @@ def _write_json(path: Path, payload: dict) -> None:
 
 
 def _declare_attribution_enabled(global_config_path: Path, *, enabled: bool) -> None:
-    """Write ``~/.nwave/global-config.json`` -> ``attribution.enabled``."""
+    """Write unified global config -> ``attribution.enabled``."""
     _write_json(global_config_path, {"attribution": {"enabled": enabled}})
 
 
 def _activate_repo(project_root: Path) -> None:
     """Write the per-project activation marker, enabled (ADR-AG-002)."""
-    _write_json(
-        project_root / ".nwave" / "local-config.json", {"enabled_for_repo": True}
-    )
+    _write_json(project_root / ".nwave" / "config.json", {"enabled": True})
 
 
 def _register_hook(settings_path: Path) -> None:

@@ -40,6 +40,9 @@ def _apply_patches(
         "argv": sys.argv,
         "opencode_env": os.environ.get("OPENCODE_CONFIG_DIR"),
         "home_env": os.environ.get("HOME"),
+        "agents_home_env": os.environ.get("NWAVE_AGENTS_HOME"),
+        "project_root_env": os.environ.get("NWAVE_PROJECT_ROOT"),
+        "claude_config_env": os.environ.get("CLAUDE_CONFIG_DIR"),
     }
 
     # HOME → temp. The uninstaller resolves ~/.nwave (global-config + attribution
@@ -49,6 +52,11 @@ def _apply_patches(
     # (prepare-commit-msg can no longer find the hook). Path.home() honors $HOME
     # on POSIX, so redirecting the env var isolates it.
     os.environ["HOME"] = str(home_dir)
+    os.environ["NWAVE_AGENTS_HOME"] = str(home_dir)
+    project_root = home_dir / "project"
+    project_root.mkdir()
+    os.environ["NWAVE_PROJECT_ROOT"] = str(project_root)
+    os.environ["CLAUDE_CONFIG_DIR"] = str(claude_config_dir)
 
     # Force plain text Logger (no Rich)
     def plain_logger_init(self, *args, **kwargs):
@@ -110,6 +118,18 @@ def _restore_patches(originals, original_logger_init):
         os.environ.pop("HOME", None)
     else:
         os.environ["HOME"] = originals["home_env"]
+    if originals["agents_home_env"] is None:
+        os.environ.pop("NWAVE_AGENTS_HOME", None)
+    else:
+        os.environ["NWAVE_AGENTS_HOME"] = originals["agents_home_env"]
+    if originals["project_root_env"] is None:
+        os.environ.pop("NWAVE_PROJECT_ROOT", None)
+    else:
+        os.environ["NWAVE_PROJECT_ROOT"] = originals["project_root_env"]
+    if originals["claude_config_env"] is None:
+        os.environ.pop("CLAUDE_CONFIG_DIR", None)
+    else:
+        os.environ["CLAUDE_CONFIG_DIR"] = originals["claude_config_env"]
 
 
 @pytest.fixture(scope="module")
@@ -130,7 +150,7 @@ def uninstaller_result(project_root, tmp_path_factory):
 
     try:
         # ── Phase 1: silent install to populate the config dir ──
-        sys.argv = ["install_nwave.py"]
+        sys.argv = ["install_nwave.py", "--platform", "claude-code"]
         devnull = io.StringIO()
         old_stdout = sys.stdout
         sys.stdout = devnull

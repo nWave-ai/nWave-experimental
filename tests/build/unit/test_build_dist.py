@@ -413,6 +413,38 @@ class TestDistConsistencyWithSource:
 class TestBuildDistCLI:
     """Test build_dist.py CLI invocation."""
 
+    def test_release_patch_bootstraps_source_des_without_editable_install(self):
+        """The public patch entry point resolves its source-only build dependency.
+
+        The subprocess starts in isolated mode, removes every checkout path
+        inherited from an editable test environment, then exposes only the
+        checkout root.  The real patch CLI must let ``build_dist`` add its
+        own ``src`` bootstrap before installer helpers import ``des``.
+        """
+        probe = (
+            "import pathlib, runpy, sys; "
+            "root = pathlib.Path(sys.argv[1]).resolve(); "
+            "src = root / 'src'; "
+            "sys.path[:] = [entry for entry in sys.path "
+            "if pathlib.Path(entry or '.').resolve() not in {root, src}]; "
+            "sys.path.insert(0, str(root)); "
+            "sys.argv = [str(root / 'scripts/release/patch_pyproject.py'), "
+            "'--input', str(root / 'pyproject.toml'), "
+            "'--output', str(root / 'ignored.toml'), "
+            "'--target-name', 'nwave-ai', "
+            "'--target-version', '0.0.0+bootstrap', '--dry-run']; "
+            "runpy.run_path(sys.argv[0], run_name='__main__')"
+        )
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", probe, str(PROJECT_ROOT)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env={},
+        )
+
+        assert result.returncode == 0, result.stderr
+
     def test_build_creates_dist_directory(self, mock_project):
         """Running build_dist.py creates dist/ directory."""
         build_script = PROJECT_ROOT / "scripts" / "build_dist.py"

@@ -2,7 +2,7 @@
 
 The ``nwave-ai`` package and the deployed nWave framework are kept in lock-step by
 ``nwave-ai install``: every install records the package version that performed it
-into ``~/.nwave/global-config.json`` (``install.installed_version``). When a
+into ``~/.nwave/config.json`` (``install.installed_version``). When a
 package manager later upgrades ``nwave-ai`` (``pipx upgrade`` / ``uv tool upgrade``)
 but the user forgets to re-run ``nwave-ai install``, the live package version
 drifts ahead of the deployed framework assets — silently, with confusing

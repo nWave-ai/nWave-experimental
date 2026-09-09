@@ -28,11 +28,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-# Ensure this checkout wins over an older installed ``scripts`` namespace.
-_project_root = str(Path(__file__).resolve().parent.parent)
-if _project_root in sys.path:
-    sys.path.remove(_project_root)
-sys.path.insert(0, _project_root)
+# Ensure this checkout wins over an older installed ``scripts`` namespace and
+# expose its source-only DES dependency to the build-time installer helpers.
+_project_root = Path(__file__).resolve().parent.parent
+_project_root_entry = str(_project_root)
+_project_src_entry = str(_project_root / "src")
+for _entry in (_project_root_entry, _project_src_entry):
+    if _entry in sys.path:
+        sys.path.remove(_entry)
+sys.path.insert(0, _project_root_entry)
+sys.path.insert(0, _project_src_entry)
 
 from scripts.install.plugins.des_plugin import _canonical_tree_hash  # noqa: E402
 from scripts.shared.agent_catalog import (  # noqa: E402

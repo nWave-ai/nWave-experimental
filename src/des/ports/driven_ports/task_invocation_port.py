@@ -163,6 +163,8 @@ class ModelRun:
     design_facts: DesignFacts | None = None
     review_defect: ReviewDefect | None = None
     craft_blocker: CraftBlocker | None = None
+    issued: bool = True
+    """Whether a provider process was actually issued for this result."""
 
 
 class TaskInvocationPort(ABC):

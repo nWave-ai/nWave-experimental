@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -81,6 +82,26 @@ def detect_pm(executable: Path) -> PMBackend:
     if uv_root is not None and _is_under(executable, uv_root):
         return "uv"
 
+    exe = str(executable).replace("\\", "/")
+    if "/uv/tools/" in exe:
+        return "uv"
+    if "/pipx/venvs/" in exe:
+        return "pipx"
+    return "unknown"
+
+
+def detect_running_interpreter_owner(interpreter: Path | None = None) -> PMBackend:
+    """Return only the owner of the interpreter running ``nwave-ai``.
+
+    Update replacement must never use the resolver's PATH fallback: an unknown
+    result is deliberate ownership evidence for a refusal.  In particular,
+    determining that ownership must not itself spawn ``uv tool dir``: an
+    unknown owner is a pre-mutation refusal, not a reason to launch a tool.
+    """
+    override = _override_pm()
+    if override is not None:
+        return override
+    executable = interpreter if interpreter is not None else Path(sys.executable)
     exe = str(executable).replace("\\", "/")
     if "/uv/tools/" in exe:
         return "uv"

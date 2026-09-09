@@ -2,7 +2,7 @@
 
 Thin doctor shell around the pure `resolve_density()` cascade per D6 + D12:
 
-  1. Reads `~/.nwave/global-config.json` (driven adapter: real filesystem).
+  1. Reads `~/.nwave/config.json` (driven adapter: real filesystem).
   2. Calls `scripts.shared.density_config.resolve_density()` (pure core).
   3. Formats provenance into a human-readable label and emits a CheckResult.
 
@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from nwave_ai.common.check_result import CheckResult
 from scripts.shared.density_config import Density, resolve_density
-from scripts.shared.install_paths import GLOBAL_CONFIG_FILENAME
+from scripts.shared.install_paths import CONFIG_FILENAME
 
 
 if TYPE_CHECKING:
@@ -37,14 +37,14 @@ if TYPE_CHECKING:
 
 
 def _read_global_config(home_dir: Path) -> dict[str, Any]:
-    """Return the parsed `~/.nwave/global-config.json` or an empty dict.
+    """Return the parsed `~/.nwave/config.json` or an empty dict.
 
     Pure read at the doctor adapter boundary. Returns {} when the file is
     absent OR when the file is unreadable / not valid JSON, since the doctor
     adapter must remain best-effort: a malformed config should surface as the
     "default" branch rather than crashing the whole doctor pass.
     """
-    config_file = home_dir / ".nwave" / GLOBAL_CONFIG_FILENAME
+    config_file = home_dir / ".nwave" / CONFIG_FILENAME
     try:
         parsed = json.loads(config_file.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
@@ -107,7 +107,7 @@ class DensityCheck:
                 error_code="DENSITY_RESOLUTION_FAILED",
                 message=(
                     "Documentation density could not be resolved: "
-                    f"{exc}. Check `rigor.profile` in ~/.nwave/global-config.json."
+                    f"{exc}. Check `rigor.profile` in ~/.nwave/config.json."
                 ),
                 remediation=(
                     "Set `rigor.profile` to one of: lean, standard, thorough, "

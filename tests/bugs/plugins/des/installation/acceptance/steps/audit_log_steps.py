@@ -129,11 +129,11 @@ def des_config_with_audit_dir(log_dir: str, tmp_path: Path, test_context: dict):
 
     actual_log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create .nwave/des-config.json or similar
+    # Use the canonical project configuration consumed by AuditLogPathResolver.
     config_dir = project_dir / ".nwave"
     config_dir.mkdir(parents=True, exist_ok=True)
 
-    config_file = config_dir / "des-config.json"
+    config_file = config_dir / "config.json"
     config = {"audit_log_dir": str(actual_log_dir)}
     config_file.write_text(json.dumps(config, indent=2))
 

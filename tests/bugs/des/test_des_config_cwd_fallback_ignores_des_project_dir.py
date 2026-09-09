@@ -6,7 +6,7 @@ Site under test (`src/des/adapters/driven/config/des_config.py:77`, inside
 
     if config_path is None:
         effective_cwd = cwd or Path.cwd()
-        config_path = effective_cwd / ".nwave" / "des-config.json"
+        config_path = effective_cwd / ".nwave" / "config.json"
 
 Reached ONLY when BOTH constructor params (`config_path`, `cwd`) are omitted
 -- exactly the shape `DESConfig()` (bare) is called with across the codebase
@@ -16,10 +16,10 @@ fallback reads bare `Path.cwd()` instead of consulting the isolation resolver
 `DES_PROJECT_DIR` when set. A test (or a real per-project isolation caller)
 that sets `DES_PROJECT_DIR` to redirect config resolution away from the
 shared process cwd is silently ignored by this call site -- it reads whatever
-`.nwave/des-config.json` sits at the ACTUAL process cwd instead.
+`.nwave/config.json` sits at the ACTUAL process cwd instead.
 
 DISCRIMINATING ARRANGEMENT (cwd != DES_PROJECT_DIR, the only way to tell the
-two reads apart): two real tmp roots, each carrying a `.nwave/des-config.json`
+two reads apart): two real tmp roots, each carrying a `.nwave/config.json`
 with a DIFFERENT `audit_logging_enabled` value (`False` at the isolated root,
 `True` at the shared cwd root -- deliberately the NON-default value at the
 isolated root so a read that silently falls through to the built-in default
@@ -44,7 +44,7 @@ from des.adapters.driven.config.des_config import DESConfig
 def _write_des_config(root: Path, data: dict[str, object]) -> None:
     config_dir = root / ".nwave"
     config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "des-config.json").write_text(json.dumps(data), encoding="utf-8")
+    (config_dir / "config.json").write_text(json.dumps(data), encoding="utf-8")
 
 
 @pytest.mark.negative_at
@@ -78,7 +78,7 @@ def test_des_config_default_cwd_resolution_ignores_des_project_dir_override(
         "DESConfig()'s default cwd resolution (des_config.py:77, "
         "`effective_cwd = cwd or Path.cwd()`) must honour DES_PROJECT_DIR via "
         "resolve_nwave_root() -- the isolated root's "
-        ".nwave/des-config.json declares audit_logging_enabled=False. "
+        ".nwave/config.json declares audit_logging_enabled=False. "
         f"Observed audit_logging_enabled={config.audit_logging_enabled!r}: the "
         "constructor read the SHARED cwd's config (audit_logging_enabled=True) "
         "via bare Path.cwd() instead of the isolated DES_PROJECT_DIR root."

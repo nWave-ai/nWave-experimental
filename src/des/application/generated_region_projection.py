@@ -115,10 +115,18 @@ def communication_rules_body(root: Path) -> str:
     """
     from des.adapters.driven.config.des_config import DESConfig
 
-    global_config_path = Path.home() / ".nwave" / "config.json"
-    config = DESConfig(cwd=root, global_config_path=global_config_path)
+    # Leave the global tier unresolved here: DESConfig delegates that choice to
+    # NWaveLocations.resolve, the sole selected-home resolver shared with the
+    # installer, CLI, doctor, and live hooks.
+    config = DESConfig(cwd=root)
     effective = config.effective_config()
-    return f"- Communication verbosity: **{effective['verbosity']}**"
+    attribution = "enabled" if effective["attribution"] else "disabled"
+    return "\n".join(
+        (
+            f"- Communication verbosity: **{effective['verbosity']}**",
+            f"- Commit attribution: **{attribution}**",
+        )
+    )
 
 
 #: Regions renderable from an INSTALLED layout -- every input is present on a

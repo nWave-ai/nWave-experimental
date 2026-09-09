@@ -18,6 +18,7 @@ from des.domain.agent_capability import (
     resolve_declared_capability,
     split_declared_tools,
 )
+from des.runtime.packaged_asset import AssetOrigin, AssetResolution
 
 
 class TestSplitDeclaredTools:
@@ -84,3 +85,136 @@ class TestResolveDeclaredCapability:
 
         assert capability.register is ClaimRegister.UNKNOWN
         assert capability.declared_tools is None
+
+    def test_codex_only_runtime_reads_the_packaged_public_role_spec(
+        self, tmp_path, monkeypatch
+    ):
+        """A wheel's nWave asset works when no Claude profile was installed."""
+        package_spec = tmp_path / "site-packages/nWave/agents/role.md"
+        package_spec.parent.mkdir(parents=True)
+        package_spec.write_text("---\ntools: \n---\nbody\n", encoding="utf-8")
+        repo_root = tmp_path / "codex-only-project"
+        repo_root.mkdir()
+        claude_dir = tmp_path / "no-claude-profile"
+
+        import des.domain.agent_capability as capability_module
+
+        monkeypatch.setattr(
+            capability_module,
+            "resolve_packaged_asset",
+            lambda *_args, **_kwargs: AssetResolution(
+                AssetOrigin.INSTALLED,
+                package_spec,
+                package_spec,
+                None,
+                "read from installed package",
+            ),
+        )
+
+        capability = resolve_declared_capability(
+            "role", repo_root=repo_root, claude_dir=claude_dir
+        )
+
+        assert capability.spec_path == package_spec
+        assert capability.register is ClaimRegister.ENFORCED
+
+    def test_packaged_asset_ambiguity_never_falls_through_to_claude_profile(
+        self, tmp_path, monkeypatch
+    ):
+        repo_root = tmp_path / "project"
+        repo_root.mkdir()
+        legacy = tmp_path / "claude/agents/nw/role.md"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text("---\ntools: Read\n---\nbody\n", encoding="utf-8")
+
+        import des.domain.agent_capability as capability_module
+
+        monkeypatch.setattr(
+            capability_module,
+            "resolve_packaged_asset",
+            lambda *_args, **_kwargs: AssetResolution(
+                AssetOrigin.AMBIGUOUS,
+                None,
+                tmp_path / "installed/nWave/agents/role.md",
+                tmp_path / "repo/nWave/agents/role.md",
+                "copies differ",
+            ),
+        )
+
+        capability = resolve_declared_capability(
+            "role", repo_root=repo_root, claude_dir=tmp_path / "claude"
+        )
+
+        assert capability.register is ClaimRegister.UNKNOWN
+        assert capability.spec_path is None
+
+    def test_framework_role_wins_over_the_invoked_repository_role(
+        self, tmp_path
+    ) -> None:
+        framework = tmp_path / "framework"
+        runtime = framework / "nWave" / "agents" / "role.md"
+        runtime.parent.mkdir(parents=True)
+        runtime.write_text("---\nmodel: runtime\ntools: Read\n---\nnew\n")
+        subject = tmp_path / "subject" / "nWave" / "agents" / "role.md"
+        subject.parent.mkdir(parents=True)
+        subject.write_text("---\nmodel: stale\ntools: Edit\n---\nold\n")
+
+        capability = resolve_declared_capability(
+            "role", repo_root=subject.parents[2], framework_root=framework
+        )
+
+        assert capability.spec_path == runtime
+        assert capability.declared_model == "runtime"
+        assert capability.declared_tools == ("Read",)
+
+    def test_malformed_framework_role_is_unknown_without_subject_fallback(
+        self, tmp_path
+    ) -> None:
+        framework = tmp_path / "framework"
+        runtime = framework / "nWave" / "agents" / "role.md"
+        runtime.parent.mkdir(parents=True)
+        runtime.write_text("not frontmatter\n")
+        subject = tmp_path / "subject" / "nWave" / "agents" / "role.md"
+        subject.parent.mkdir(parents=True)
+        subject.write_text("---\nmodel: stale\ntools: Edit\n---\nold\n")
+
+        capability = resolve_declared_capability(
+            "role", repo_root=subject.parents[2], framework_root=framework
+        )
+
+        assert capability.register is ClaimRegister.UNKNOWN
+        assert capability.spec_path == runtime
+
+    def test_broken_framework_role_link_is_unknown_without_subject_fallback(
+        self, tmp_path
+    ) -> None:
+        framework = tmp_path / "framework"
+        runtime = framework / "nWave" / "agents" / "role.md"
+        runtime.parent.mkdir(parents=True)
+        runtime.symlink_to(framework / "missing-role.md")
+        subject = tmp_path / "subject" / "nWave" / "agents" / "role.md"
+        subject.parent.mkdir(parents=True)
+        subject.write_text("---\nmodel: stale\ntools: Edit\n---\nold\n")
+
+        capability = resolve_declared_capability(
+            "role", repo_root=subject.parents[2], framework_root=framework
+        )
+
+        assert capability.register is ClaimRegister.UNKNOWN
+        assert capability.spec_path == runtime
+
+    def test_custom_role_absent_from_framework_falls_back_to_subject(
+        self, tmp_path
+    ) -> None:
+        framework = tmp_path / "framework"
+        framework.mkdir()
+        subject = tmp_path / "subject" / "nWave" / "agents" / "custom.md"
+        subject.parent.mkdir(parents=True)
+        subject.write_text("---\nmodel: subject\ntools: Read\n---\ncustom\n")
+
+        capability = resolve_declared_capability(
+            "custom", repo_root=subject.parents[2], framework_root=framework
+        )
+
+        assert capability.spec_path == subject
+        assert capability.declared_model == "subject"

@@ -312,7 +312,7 @@ def _consumer_counts(repo: Path, scope_paths: list[str]) -> dict[str, int | None
             # silence.
             consumer_counts[rel_path] = None
             continue
-        file_chain = CodeFactChain(root=repo / rel_path)
+        file_chain = CodeFactChain(root=repo / rel_path, graphify=repo_chain._graphify)
         atoms_resolution = file_chain.resolve(_ATOMS_DESCRIPTOR, {})
         atoms_payload = _answered_payload(atoms_resolution)
         if atoms_payload is None or atoms_payload.get("unparseable"):

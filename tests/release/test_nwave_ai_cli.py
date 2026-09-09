@@ -628,7 +628,9 @@ class TestMainDispatch:
             code = main()
 
         assert code == 0
-        mock_rs.assert_called_once_with("install_nwave.py", ["--dry-run"])
+        mock_rs.assert_called_once_with(
+            "install_nwave.py", ["--dry-run"], user_project_root=Path.cwd()
+        )
 
     def test_uninstall_routes_to_run_script(self):
         """Given argv=['nwave-ai', 'uninstall'],

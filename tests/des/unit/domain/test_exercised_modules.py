@@ -133,10 +133,12 @@ def test_duplicate_reported_paths_collapse_and_sort() -> None:
     assert measured.paths == ("src/a.py", "src/b.py")
 
 
-def test_invokes_pytest_reads_the_two_spellings_the_runner_guarantees() -> None:
+def test_invokes_pytest_reads_the_runner_guaranteed_spellings() -> None:
     assert invokes_pytest(("pytest", "tests")) is True
     assert invokes_pytest(("/usr/bin/pytest", "tests")) is True
     assert invokes_pytest(("python", "-m", "pytest", "-q")) is True
     assert invokes_pytest(("python3", "-m", "pytest")) is True
+    assert invokes_pytest(("uv", "run", "pytest", "tests", "-q")) is True
+    assert invokes_pytest(("uv", "pytest", "tests")) is False
     assert invokes_pytest(("des", "code-fact")) is False
     assert invokes_pytest(("python", "-c", "import pytest")) is False

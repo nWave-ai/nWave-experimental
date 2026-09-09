@@ -153,6 +153,9 @@ _project_root_entry = str(_project_root)
 if _project_root_entry in sys.path:
     sys.path.remove(_project_root_entry)
 sys.path.insert(0, _project_root_entry)
+_source_root = _project_root / "src"
+if _source_root.is_dir():
+    sys.path.insert(0, str(_source_root))
 
 
 # Support both standalone execution and package import
@@ -302,8 +305,10 @@ def _detect_installed_version() -> str | None:
 def record_install_metadata(
     global_config_path: Path,
     installed_version: str,
+    *,
+    repo_root: Path | None = None,
 ) -> None:
-    """Record install provenance into the global config (read-modify-write).
+    """Record install provenance through the sole atomic config writer.
 
     Writes ``install.installed_version`` — the anchor the doctor
     ``VersionSyncCheck`` compares against the live package version to flag a
@@ -314,24 +319,22 @@ def record_install_metadata(
     install itself.
     """
     try:
-        current: dict = {}
-        if global_config_path.exists():
-            try:
-                loaded = json.loads(global_config_path.read_text(encoding="utf-8"))
-                if isinstance(loaded, dict):
-                    current = loaded
-            except (json.JSONDecodeError, OSError):
-                current = {}
+        from des.adapters.driven.config.config_writer import ConfigWriter
 
-        existing_install = current.get("install")
-        install_block = (
-            dict(existing_install) if isinstance(existing_install, dict) else {}
+        writer = ConfigWriter(
+            home_dir=global_config_path.parent.parent,
+            repo_root=repo_root or Path.cwd(),
         )
-        install_block["installed_version"] = installed_version
-        current["install"] = install_block
 
-        global_config_path.parent.mkdir(parents=True, exist_ok=True)
-        global_config_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
+        def record(document: dict) -> None:
+            existing_install = document.get("install")
+            install_block = (
+                dict(existing_install) if isinstance(existing_install, dict) else {}
+            )
+            install_block["installed_version"] = installed_version
+            document["install"] = install_block
+
+        writer.update_global(record)
     except Exception:
         pass
 
@@ -436,7 +439,12 @@ class NWaveInstaller:
         self._effective_target_platforms: set[str] = self._resolve_target_platforms()
         self.script_dir = Path(__file__).parent
         self.project_root = PathUtils.get_project_root(self.script_dir)
-        self.claude_config_dir = PathUtils.get_claude_config_dir()
+        declared_user_root = os.environ.get("NWAVE_PROJECT_ROOT")
+        self.user_project_root = (
+            Path(declared_user_root).resolve()
+            if declared_user_root is not None
+            else Path.cwd().resolve()
+        )
         # Source-first: use nWave/ when in dev repo, dist/ only for distribution
         source_dir = self.project_root / "nWave"
         dist_dir = self.project_root / "dist"
@@ -467,6 +475,10 @@ class NWaveInstaller:
                 f"before any write: {locations_result.error}"
             )
         self._locations: NWaveLocations = locations_result.unwrap()
+        # Keep the Claude target on the same immutable location result as the
+        # selected nWave home.  Deriving it independently would re-read the
+        # environment and permit the installer to split its destinations.
+        self.claude_config_dir = self._locations.claude_config_dir
 
         # Persistent logging starts only after Codex ownership preflight.  A
         # refusal must leave every user-controlled byte untouched, including
@@ -540,14 +552,14 @@ class NWaveInstaller:
         ``apply_retention`` is a no-op when the cap is not exceeded.
 
         Raises:
-            ConfigValidationError: when ``~/.nwave/global-config.json``
+            ConfigValidationError: when ``~/.nwave/config.json``
                 provides an invalid ``backups.max_count`` value. Bubbled up
                 so ``main()`` aborts the install BEFORE ``install_framework``
                 runs — see scope.md S9 ("no backup is touched if config is
                 invalid"); equivalently, no install proceeds either.
         """
         # Read-only, but still an isolation boundary: `apply_retention` below
-        # reads `global-config.json`'s `backups.max_count` regardless of
+        # reads `config.json`'s `backups.max_count` regardless of
         # platform, and a sentinel byte-diff test cannot observe a READ the
         # way it observes a write. Computed once, for both branches.
         install_root = self._locations.agents_home
@@ -1342,7 +1354,7 @@ class NWaveInstaller:
             # ~/.nwave-rooted read/write in this file already honors): left
             # at AttributionPlugin's own default (None -> Path.home()), an
             # isolated caller with NWAVE_AGENTS_HOME pinned still had this
-            # plugin's config_dir/hooks_dir/global-config.json read-and-write
+            # plugin's config_dir/hooks_dir/config.json read-and-write
             # (migrate_legacy_hook, install_prepare_commit_msg_hook,
             # read/write_global_config) land in the operator's real home.
             # Default is unchanged when unset.
@@ -1495,6 +1507,8 @@ class NWaveInstaller:
             templates_dir=self.framework_source / "templates",
             logger=self.logger,
             project_root=self.project_root,
+            user_project_root=self.user_project_root,
+            locations=self._locations,
             framework_source=self.framework_source,
             dry_run=self.dry_run,
             dev_mode=self.dev_mode,
@@ -1580,6 +1594,8 @@ class NWaveInstaller:
             templates_dir=self.framework_source / "templates",
             logger=self.logger,
             project_root=self.project_root,
+            user_project_root=self.user_project_root,
+            locations=self._locations,
             framework_source=self.framework_source,
             dry_run=self.dry_run,
             dev_mode=self.dev_mode,
@@ -1809,6 +1825,8 @@ class NWaveInstaller:
                 templates_dir=self.framework_source / "templates",
                 logger=self.logger,
                 project_root=self.project_root,
+                user_project_root=self.user_project_root,
+                locations=self._locations,
                 framework_source=self.framework_source,
                 dry_run=self.dry_run,
                 dev_mode=self.dev_mode,
@@ -2272,8 +2290,9 @@ def _run_install(args: argparse.Namespace, installer: "NWaveInstaller") -> int:
         installed_version = _detect_installed_version()
         if installed_version is not None:
             record_install_metadata(
-                agents_home() / ".nwave" / "global-config.json",
+                installer._locations.agents_home / ".nwave" / "config.json",
                 installed_version=installed_version,
+                repo_root=installer.user_project_root,
             )
 
         installer.logger.info("")

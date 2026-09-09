@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from des.domain.nwave_locations import NWaveLocations
 from scripts.install.plugins.base import InstallContext
 from scripts.install.plugins.des_plugin import DESPlugin
 
@@ -49,12 +50,21 @@ def install_context(
     clean_test_directory: Path, project_root: Path, test_logger: logging.Logger
 ) -> InstallContext:
     """Create InstallContext for testing."""
+    user_project_root = clean_test_directory.parent / "project"
+    user_project_root.mkdir()
+    locations = NWaveLocations(
+        agents_home=clean_test_directory.parent,
+        claude_config_dir=clean_test_directory,
+        codex_config_dir=clean_test_directory.parent / ".codex",
+    )
     return InstallContext(
         claude_dir=clean_test_directory,
         scripts_dir=project_root / "scripts" / "install",
         templates_dir=project_root / "nWave" / "templates",
         logger=test_logger,
         project_root=project_root,
+        user_project_root=user_project_root,
+        locations=locations,
         framework_source=project_root / "nWave",
         dry_run=False,
     )
@@ -397,6 +407,11 @@ class TestBootstrapDesConfigReadOnlyProjectDir:
                 templates_dir=tmp_path / "templates",
                 logger=test_logger,
                 project_root=readonly_project,
+                locations=NWaveLocations(
+                    agents_home=tmp_path,
+                    claude_config_dir=tmp_path / "claude",
+                    codex_config_dir=tmp_path / ".codex",
+                ),
                 framework_source=tmp_path / "nwave-fs",
             )
 

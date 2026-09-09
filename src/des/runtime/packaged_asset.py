@@ -77,16 +77,17 @@ def installed_package_root() -> Path:
     adjacent = package_dir.parent
     enclosing = adjacent.parent
 
-    # ``des`` has three supported physical layouts:
+    # ``des`` has four supported physical layouts:
     #
     #   checkout:  <root>/src/des          + <root>/nWave
     #   bundled:   <root>/python/des       + <root>/nWave
     #   wheel:     <root>/des              + <root>/nWave
+    #   bundled:   <root>/nWave/lib/python/des + <root>/nWave
     #
-    # The first two need the enclosing candidate; a wheel needs the adjacent
-    # one.  Select the nearest candidate that actually owns the shipped tree
-    # instead of encoding one source-layout parent depth.
-    for candidate in (adjacent, enclosing):
+    # Select the nearest ancestor that actually owns the shipped tree instead
+    # of encoding a source-layout parent depth. The bundled wheel layout has
+    # two additional ancestors between ``des`` and the site-packages root.
+    for candidate in package_dir.parents:
         if (candidate / "nWave").is_dir():
             return candidate
 

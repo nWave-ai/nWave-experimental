@@ -78,15 +78,18 @@ from one can be wrong.** The columns below recur; they are not exhaustive.
   the CLI call REQUIRES its parameters; the bound stated to the model instead of tested
   after the paid turn. The CLI augments the model where it is weak — consistent formal
   bytes — never constrains it where it is strong.
-- **Software owns ENACTMENT.** Code acting on shared state can hit the wrong target
-  without being a judgement (`_integrate`, `_remove_candidate_worktree`), and so can a
-  safety admissibility rule (`_repo_local_markdown`). None has a model to be delegated
-  to: they stay in the software, and their failures are ordinary bugs.
-- **The model owns SEMANTIC DECISION.** Whether a decomposition is meaningful, whether a
-  value is independently shippable, whether a candidate implements the observation. A
-  software proxy is right in the common case and wrong where the world is shaped unlike
-  the fixture.
-- **The test that separates them:** *does an authority give a criterion DECIDABLE over
+- **Software owns an explicitly invoked mechanical effect.** Code that writes a bound
+  document, records typed facts, or applies a named mutation can hit the wrong target
+  without being a judgement. DES constructs and persists those typed artifacts and may
+  report advisory `NEXT` data; it neither admits a delivery path nor executes `NEXT`.
+- **The LLM owns semantic decision and orchestration.** It exclusively chooses or revises
+  SML, waves, feature/bugfix and upstream rework, stop/resume/retry, and which invocation
+  runs next. It still retains every required independent review, EXAMINE and quality
+  obligation; ownership never authorizes skipping them.
+- **The test for a software-owned effect:** apply this only to construction,
+  measurement, and explicitly invoked mechanical or safety effects. The enumerated
+  LLM orchestration choices remain LLM-owned regardless of their computability.
+  *Does an authority give a criterion DECIDABLE over
   facts the software ALREADY HOLDS, with no semantic judgement left?* If yes, the decision
   stays in the software even when the term SOUNDS semantic — `ProductCorrectionNoProgress`
   implements ADR-SSOT-002's decidable definition of progress, «Progress is the distinct
@@ -112,44 +115,19 @@ from one can be wrong.** The columns below recur; they are not exhaustive.
   wrong. Everything else about rejections is already stated: cite GDP-0, GDP-2's emission
   corollary, GDP-3 and GDP-5 instead of restating them, and a removal still owes GDP-10's
   adversarial challenge.
-- **Consequence for design.** What measures, constructs and enacts stays in the CLI, the
-  only source of truth about what happened. A SEMANTIC judgement moves to the role INSIDE
-  the competence that owns it. SEQUENCE AND RESUME MOVE to the orchestrating model:
-  ADR-SSOT-002 §4b, «LLM-orchestrated dynamic flow: the DES is a tool» (owner decision
-  2026-09-05, extended 2026-09-06), gives that model which step runs next, whether a turn is
-  repeated, whether the work is split, whether to go upstream to a durable authority, when to
-  stop, when to resume and when to ask the human. The software keeps MEASUREMENT,
-  CONSTRUCTION, ENACTMENT and the owned handover, and it keeps the SHAPE of a step: each step
-  is invocable singly, returns one closed outcome carrying the role's diagnostic verbatim, and
-  reports `NEXT` — the canonical successor with its exact invocation form — beside a
-  `HOW-TO-INVOKE` recall. Both lines are DATA the caller may ignore, never instructions the
-  software acts on; `des dispatch` is retired as an orchestrator and no executor composes the
-  steps. Obligation 5, `ARCHITECTURE_BOUNDARY_CHANGE`, «make CLI/hook thin drivers of one
-  resident owner», still stands in its thin-driver half: §4b re-reads the sentence «The
-  resident software owner is the existing `DeliveryContinuationRunner` application boundary,
-  modified in place; the CLI and hook are thin drivers» as «PRESERVED in its thin-driver half,
-  amended in its owner half» — exactly one resident boundary still owns measurement,
-  construction, enactment and the handover, the drivers stay thin, and that boundary is no
-  longer the owner of the delivery's continuation.
-  COMPETENCE SELECTION inside one value — design, oracle, implementation — DOES move: the
-  «Three-boundary delivery: one owner per value» amendment of 2026-09-04 supersedes «It
-  selects a competence only while its facts are unresolved» in part, and gives those choices
-  to the owner of that value.
-  *Superseded (2026-09-06) by §4b, quoted rather than deleted so a reader can tell drift from
-  disagreement:* «SEQUENCE does not move: ADR-SSOT-002 §4a keeps the ordering of the three
-  residual boundaries — Product Owner, one owner per value, one reviewer over the whole
-  candidate diff — in the resident runner», and «An orchestrating model reading a lean prose
-  sequence remains a possibility this project has not exercised: that amendment moves
-  competences to the value owner, never the sequence to an orchestrator.» Both were right on
-  the evidence they had — on 2026-09-04 nothing had measured a terminal where the runner holds
-  a closed outcome and no meaning — and §4b's eleven real-provider runs are that measurement:
-  in six of the seven derivable terminals the next move was the orchestrator's and the runner
-  took it.
-  **Falsifier for this consequence.** One invocable step invokes a second step or a second
-  role before returning to its caller; a software executor composes steps into a sequence; or
+- **Consequence for design.** The LLM decides sequence, resume, split, upstream rework,
+  stop, and the next invocation. DES remains a singly invocable tool: it measures,
+  constructs/persists its typed artifacts, returns one closed outcome and advisory `NEXT`, and
+  executes neither `NEXT` nor path admission. A bounded, explicitly requested verification may
+  still run native checks, review and EXAMINE; this boundary does not generalize to arbitrary
+  non-DES software.
+  **Falsifier for this consequence.** DES executes its `NEXT` or autonomously selects
+  and composes delivery steps; or
   a step's `NEXT` is presented as an instruction the caller must follow rather than as the
   canonical order it may ignore. §12, «A step names the canonical next step as data and
   executes none»: naming the successor is required, acting on that name is forbidden.
+  Native checks, independent review and EXAMINE within an explicitly requested bounded
+  verification are not autonomous selection of delivery steps.
 - **Anchor (2026-09-04, first real deliveries through `des dispatch`).** Five blocks were
   found by RUNNING deliveries, none by inspection or by the suite; two were asserted as
   EXPECTED behaviour by green tests, and across those runs the primitive measurement layer

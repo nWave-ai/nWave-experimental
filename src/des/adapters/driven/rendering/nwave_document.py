@@ -40,9 +40,107 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import re
 import sys
-from pathlib import Path
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+
+from des.runtime.packaged_asset import resolve_packaged_asset
+
+
+_BRAND_DIRECTORY = "nWave/data/brand"
+_BRAND_IDENTITY = "nwave-oss-neutral-v1"
+_MANIFEST_KEYS = frozenset({"schema-version", "identity", "stylesheet", "font-stack"})
+_FONT_STACK = re.compile(r"[A-Za-z0-9 _,.'\"-]+")
+_REMOTE_REFERENCE = re.compile(r"(?:https?:)?//", re.IGNORECASE)
+_CONTENT_SECURITY_POLICY = (
+    "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+    "font-src data:; connect-src 'none'"
+)
+
+
+class BrandAssetError(RuntimeError):
+    """A public HTML projection cannot safely use its packaged identity."""
+
+
+@dataclass(frozen=True)
+class Brand:
+    """The finite, versioned local inputs for an nWave HTML document."""
+
+    identity: str
+    stylesheet: str
+    font_stack: str
+
+
+def _local_asset_name(value: object) -> str:
+    if not isinstance(value, str) or not value:
+        raise BrandAssetError("brand manifest has no stylesheet name")
+    candidate = PurePosixPath(value)
+    if (
+        candidate.is_absolute()
+        or len(candidate.parts) != 1
+        or candidate.parts[0] in {".", ".."}
+        or ":" in value
+        or "//" in value
+    ):
+        raise BrandAssetError(
+            f"brand stylesheet is not a local relative asset: {value!r}"
+        )
+    return value
+
+
+def _font_stack_value(value: object) -> str:
+    """Accept a manifest-owned CSS font-list value that cannot inject CSS."""
+    if not isinstance(value, str) or not value.strip():
+        raise BrandAssetError("brand manifest has no font-stack")
+    if _FONT_STACK.fullmatch(value) is None:
+        raise BrandAssetError("brand manifest font-stack is not a safe CSS value")
+    return value
+
+
+def load_brand() -> Brand:
+    """Load one checked, offline brand manifest and its stylesheet.
+
+    Asset resolution uses the same source-vs-installed ambiguity rule as other
+    packaged DES assets.  A document is never silently branded from a random
+    checkout copy.
+    """
+    resolution = resolve_packaged_asset(_BRAND_DIRECTORY)
+    if not resolution.is_usable or resolution.path is None:
+        raise BrandAssetError(
+            f"brand asset directory is unavailable: {resolution.detail}"
+        )
+    directory = resolution.path
+    manifest_path = directory / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise BrandAssetError(f"brand manifest is unreadable: {error}") from error
+    if (
+        not isinstance(manifest, dict)
+        or frozenset(manifest) != _MANIFEST_KEYS
+        or manifest.get("schema-version") != 1
+    ):
+        raise BrandAssetError("brand manifest has an unsupported schema-version")
+    identity = manifest.get("identity")
+    if identity != _BRAND_IDENTITY:
+        raise BrandAssetError("brand manifest has an unsupported identity")
+    stylesheet_name = _local_asset_name(manifest.get("stylesheet"))
+    font_stack = _font_stack_value(manifest.get("font-stack"))
+    stylesheet_path = directory / stylesheet_name
+    try:
+        stylesheet_path.resolve().relative_to(directory.resolve())
+        stylesheet = stylesheet_path.read_text(encoding="utf-8")
+    except (OSError, ValueError) as error:
+        raise BrandAssetError(f"brand stylesheet is unavailable: {error}") from error
+    if not stylesheet.strip():
+        raise BrandAssetError("brand stylesheet is empty")
+    if "</style" in stylesheet.lower():
+        raise BrandAssetError("brand stylesheet cannot be embedded safely")
+    if _REMOTE_REFERENCE.search(stylesheet) is not None:
+        raise BrandAssetError("brand stylesheet contains a remote asset reference")
+    return Brand(identity=identity, stylesheet=stylesheet, font_stack=font_stack)
 
 
 _UNSUPPORTED: list[tuple[int, str]] = []
@@ -342,145 +440,9 @@ def render(markdown: str) -> str:
     return "\n".join(out)
 
 
-_CSS = """
-:root{
-  --paper:#fbfaf8; --ink:#14171c; --muted:#5f6672; --rule:#e3e0da;
-  --panel:#ffffff; --accent:#a8590c; --accent-soft:#f5ead9;
-  --ready:#0f766e; --wip:#1d4ed8; --done:#15803d;
-  --quar:#a16207; --cont:#7e22ce; --guard:#475569; --dsn:#c2410c;
-  --keep:#15803d; --simp:#1d4ed8; --drop:#b91c1c; --unk:#6b7280;
-}
-@media (prefers-color-scheme:dark){
-  :root{
-    --paper:#11141a; --ink:#e7e5e0; --muted:#98a0ad; --rule:#252a33;
-    --panel:#171b22; --accent:#e0964a; --accent-soft:#2a2118;
-    --ready:#5eead4; --wip:#93c5fd; --done:#86efac;
-    --quar:#fcd34d; --cont:#d8b4fe; --guard:#94a3b8; --dsn:#fb923c;
-    --keep:#86efac; --simp:#93c5fd; --drop:#fca5a5; --unk:#9ca3af;
-  }
-}
-:root[data-theme="light"]{
-  --paper:#fbfaf8; --ink:#14171c; --muted:#5f6672; --rule:#e3e0da;
-  --panel:#ffffff; --accent:#a8590c; --accent-soft:#f5ead9;
-  --ready:#0f766e; --wip:#1d4ed8; --done:#15803d;
-  --quar:#a16207; --cont:#7e22ce; --guard:#475569; --dsn:#c2410c;
-  --keep:#15803d; --simp:#1d4ed8; --drop:#b91c1c; --unk:#6b7280;
-}
-:root[data-theme="dark"]{
-  --paper:#11141a; --ink:#e7e5e0; --muted:#98a0ad; --rule:#252a33;
-  --panel:#171b22; --accent:#e0964a; --accent-soft:#2a2118;
-  --ready:#5eead4; --wip:#93c5fd; --done:#86efac;
-  --quar:#fcd34d; --cont:#d8b4fe; --guard:#94a3b8; --dsn:#fb923c;
-  --keep:#86efac; --simp:#93c5fd; --drop:#fca5a5; --unk:#9ca3af;
-}
-*{box-sizing:border-box}
-body{
-  margin:0; background:var(--paper); color:var(--ink);
-  font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
-  font-size:15px; line-height:1.62; -webkit-font-smoothing:antialiased;
-}
-.wrap{max-width:1180px;margin:0 auto;padding:2.5rem 1.5rem 6rem;
-  display:flex;flex-direction:column;gap:1.1rem}
-.provenance{
-  display:flex;flex-wrap:wrap;gap:.5rem .9rem;align-items:baseline;
-  background:var(--accent-soft);border-left:3px solid var(--accent);
-  padding:.7rem .95rem;border-radius:0 4px 4px 0;font-size:.8rem;color:var(--muted);
-}
-.provenance strong{color:var(--ink);font-weight:600}
-.provenance code{background:none;padding:0;color:var(--accent)}
-h1,h2,h3,h4{text-wrap:balance;line-height:1.22;margin:0;font-weight:640}
-h1{font-size:1.9rem;letter-spacing:-.018em;margin-top:.6rem}
-h2{font-size:1.28rem;letter-spacing:-.01em;margin-top:2.2rem;
-  padding-bottom:.4rem;border-bottom:1px solid var(--rule)}
-h3{font-size:1.02rem;margin-top:1.5rem;color:var(--accent)}
-h4{font-size:.9rem;margin-top:1.1rem;text-transform:uppercase;
-  letter-spacing:.07em;color:var(--muted)}
-p{margin:0;max-width:74ch}
-ul,ol{margin:0;padding-left:1.3rem;display:flex;flex-direction:column;gap:.35rem;max-width:74ch}
-hr{border:0;border-top:1px solid var(--rule);margin:1.6rem 0;width:100%}
-a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2px}
-a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.86em;
-  background:var(--accent-soft);padding:.1em .34em;border-radius:3px}
-pre{background:var(--panel);border:1px solid var(--rule);border-radius:5px;
-  padding:1rem 1.1rem;overflow-x:auto;margin:0;font-size:.78rem;line-height:1.5}
-pre code{background:none;padding:0;font-size:inherit}
-blockquote{margin:0;padding:.75rem 1rem;background:var(--panel);
-  border-left:3px solid var(--quar);border-radius:0 4px 4px 0;color:var(--muted);max-width:74ch}
-.tablewrap{overflow-x:auto;border:1px solid var(--rule);border-radius:5px;background:var(--panel)}
-table{border-collapse:collapse;width:100%;font-size:.83rem;
-  font-variant-numeric:tabular-nums}
-th{position:sticky;top:0;background:var(--panel);text-align:left;
-  font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;
-  color:var(--muted);font-weight:620;padding:.6rem .75rem;
-  border-bottom:1px solid var(--rule);white-space:nowrap}
-td{padding:.55rem .75rem;border-bottom:1px solid var(--rule);vertical-align:top}
-tbody tr:last-child td{border-bottom:0}
-.chip{display:inline-block;padding:.12em .55em;border-radius:100px;
-  font-size:.7rem;font-weight:650;letter-spacing:.03em;white-space:nowrap;
-  border:1px solid currentColor}
-.s-ready{color:var(--ready)} .s-wip{color:var(--wip)} .s-done{color:var(--done)}
-.s-quar{color:var(--quar)} .s-cont{color:var(--cont)} .s-guard{color:var(--guard)}
-.s-dsn{color:var(--dsn)}
-.v-keep{color:var(--keep)} .v-simp{color:var(--simp)}
-.v-drop{color:var(--drop)} .v-unk{color:var(--unk)}
-/* --- directory tree: connectors drawn with borders, not characters,
-   so the chips stay aligned regardless of name length --- */
-.treewrap{border:1px solid var(--rule);border-radius:5px;background:var(--panel);
-  padding:.9rem 1.1rem;overflow-x:auto}
-ul.tree{list-style:none;margin:0;padding:0;display:block;max-width:none;
-  font-size:.83rem;line-height:1.5}
-ul.tree ul.tree{margin-left:.62rem;padding-left:.95rem;border-left:1px solid var(--rule)}
-ul.tree li{position:relative;padding:.16rem 0 .16rem .95rem;margin:0}
-ul.tree ul.tree>li::before{content:"";position:absolute;left:-.95rem;top:.72rem;
-  width:.82rem;border-top:1px solid var(--rule)}
-ul.tree ul.tree>li:last-child::after{content:"";position:absolute;left:-1.02rem;
-  top:.75rem;bottom:0;width:1px;background:var(--panel)}
-ul.tree summary{cursor:pointer;list-style:none;padding:.16rem 0;margin-left:-.95rem;
-  padding-left:.95rem;border-radius:3px}
-ul.tree summary::-webkit-details-marker{display:none}
-ul.tree summary::before{content:"▾";position:absolute;left:-.15rem;color:var(--muted);
-  font-size:.7rem;transition:transform .12s ease}
-ul.tree details:not([open])>summary::before{content:"▸"}
-ul.tree summary:hover{background:var(--accent-soft)}
-ul.tree summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.t-id{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-weight:650;
-  color:var(--accent);margin-right:.55rem;white-space:nowrap}
-.t-name{color:var(--ink);margin-right:.55rem}
-.t-badge{display:inline-block;font-size:.7rem;color:var(--muted);
-  border:1px solid var(--rule);border-radius:3px;padding:.02em .4em;
-  margin-right:.35rem;white-space:nowrap}
-li.t-branch>details>summary .t-id{font-size:.86rem;letter-spacing:.01em}
-/* --- colore del TESTO per stato: si legge la riga intera, non solo la chip --- */
-li.row-s-done>.t-name,li.row-s-done>details>summary .t-name{color:var(--done);
-  text-decoration:line-through;text-decoration-thickness:1px;opacity:.82}
-li.row-s-done>.t-id,li.row-s-done>details>summary .t-id{color:var(--done)}
-li.row-s-wip>.t-name,li.row-s-wip>details>summary .t-name{color:var(--wip);font-weight:560}
-li.row-s-wip>.t-id,li.row-s-wip>details>summary .t-id{color:var(--wip)}
-li.row-s-wip>details>summary{background:color-mix(in srgb,var(--wip) 9%,transparent);
-  border-left:2px solid var(--wip);margin-left:-1.15rem;padding-left:1.1rem}
-li.row-s-quar>.t-name,li.row-s-quar>details>summary .t-name{color:var(--muted);opacity:.72}
-li.row-s-cont>.t-name,li.row-s-cont>details>summary .t-name{color:var(--cont)}
-li.row-s-dsn>.t-name,li.row-s-dsn>details>summary .t-name{color:var(--dsn)}
-li.row-s-dsn>.t-id,li.row-s-dsn>details>summary .t-id{color:var(--dsn)}
-/* leaf with detail: closed by default, so the tree stays scannable
-   and the full row is a click away instead of a table to search */
-li.t-has-detail>details>summary::before{content:"›";font-size:.85rem}
-li.t-has-detail>details[open]>summary::before{content:"⌄";font-size:.7rem}
-li.t-has-detail>details[open]>summary{background:var(--accent-soft)}
-dl.t-detail{display:grid;grid-template-columns:auto 1fr;gap:.28rem .9rem;
-  margin:.45rem 0 .6rem .3rem;padding:.6rem .8rem;font-size:.78rem;
-  background:var(--paper);border:1px solid var(--rule);border-radius:4px}
-dl.t-detail dt{color:var(--muted);font-size:.7rem;text-transform:uppercase;
-  letter-spacing:.05em;font-weight:620;white-space:nowrap;padding-top:.06rem}
-dl.t-detail dd{margin:0;color:var(--ink)}
-@media (max-width:640px){.wrap{padding:1.5rem 1rem 4rem}h1{font-size:1.5rem}}
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-"""
-
-
 def build_page(markdown: str, source: str, title: str) -> str:
     """Wrap the rendered fragment in the standalone page body."""
+    brand = load_brand()
     banner = (
         '<div class="provenance">'
         "<span><strong>Projection, not source.</strong> "
@@ -491,7 +453,10 @@ def build_page(markdown: str, source: str, title: str) -> str:
     )
     return (
         f"<title>{html.escape(title)}</title>\n"
-        f"<style>{_CSS}</style>\n"
+        f'<meta name="nwave-brand" content="{html.escape(brand.identity, quote=True)}">\n'
+        f'<meta http-equiv="Content-Security-Policy" content="{_CONTENT_SECURITY_POLICY}">\n'
+        f"<style>:root{{--nwave-font-stack:{brand.font_stack};}}\n"
+        f"{brand.stylesheet}</style>\n"
         f'<div class="wrap">{banner}\n{render(markdown)}</div>\n'
     )
 

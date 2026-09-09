@@ -563,7 +563,7 @@ def render_master_index(data: dict[str, list]) -> str:
             "",
             "- [CLI Reference](cli.md) — the `nwave-ai` command and its subcommands",
             "- [Global Config Reference](global-config.md) — "
-            "`~/.nwave/global-config.json` keys",
+            "`~/.nwave/config.json` keys",
             "- [Outcomes CLI Reference](outcomes-cli.md) — `nwave-ai outcomes …`",
             "- [DES Markers Reference](des-markers.md) — DES task-prompt markers",
             "",

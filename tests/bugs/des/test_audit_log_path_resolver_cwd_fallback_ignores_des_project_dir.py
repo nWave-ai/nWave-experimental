@@ -9,7 +9,7 @@ Site under test (`src/des/domain/audit_log_path_resolver.py:55`, inside
 
 Reached ONLY on Priority-4 resolution: no explicit `log_dir` constructor
 param, no `DES_AUDIT_LOG_DIR` env var, no explicit `cwd` constructor param,
-and no `audit_log_dir` key in `.nwave/des-config.json` at the resolved root
+and no `audit_log_dir` key in `.nwave/config.json` at the resolved root
 (so Priority 3 -- the config-file read, which itself ALSO uses
 `effective_cwd` -- falls through empty). At Priority 4 the resolver returns
 `effective_cwd / ".nwave" / "des" / "logs"`, reading bare `Path.cwd()`
@@ -19,7 +19,7 @@ to the shared process cwd's `.nwave/des/logs`.
 
 DISCRIMINATING ARRANGEMENT (cwd != DES_PROJECT_DIR, the only way to tell the
 two reads apart): two real, distinct tmp roots -- neither carries a
-`.nwave/des-config.json` (so Priority 3 is inert at both, isolating the
+`.nwave/config.json` (so Priority 3 is inert at both, isolating the
 assertion to the Priority-4 fallback under test).
 
 RED before the fix: `resolve()` returns `shared_cwd_root/.nwave/des/logs`

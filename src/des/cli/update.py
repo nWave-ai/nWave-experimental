@@ -24,12 +24,14 @@ from des.domain.workflow_format_migration import (
     WorkflowMigrationMap,
     WorkflowShapeUnmappable,
 )
+from des.domain.workflow_transition_catalog import (
+    WorkflowTransitionCatalog,
+    WorkflowTransitionCatalogError,
+)
 from des.runtime.packaged_asset import resolve_packaged_asset
 
 
-_WORKFLOW_MIGRATION_ASSET = (
-    "nWave/data/workflow-format-migrations/step-cycle-v4-to-v5.json"
-)
+_WORKFLOW_MIGRATION_ASSET = "nWave/data/workflow-format-migrations"
 
 
 def _build_phase_transform(phase_map: dict[str, str]):
@@ -43,42 +45,79 @@ def _build_phase_transform(phase_map: dict[str, str]):
     return _transform
 
 
-def _load_workflow_migration_map() -> WorkflowMigrationMap | None:
-    """Load the step-cycle v4/v4-revised -> v5 map from its packaged asset.
-
-    Never raises: an unresolved, ambiguous, malformed or absent asset
-    degrades to ``None`` -- every artifact with a shape tag is then reported
-    Indeterminate rather than guessed migratable, never a crash (this slice
-    is dry-run/discovery only, so a missing Layer-2 map is never fatal).
-    """
+def _load_workflow_transition_catalog() -> WorkflowTransitionCatalog | None:
+    """Load immutable per-file transitions from the packaged catalog directory."""
     resolution = resolve_packaged_asset(_WORKFLOW_MIGRATION_ASSET)
     if not resolution.is_usable or resolution.path is None:
         return None
+    if not resolution.path.is_dir():
+        return WorkflowTransitionCatalog((), "the packaged asset is not a directory")
+    transitions: list[WorkflowMigrationMap] = []
     try:
-        raw = json.loads(resolution.path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    to_tag = raw.get("to-tag")
-    from_tags = raw.get("from-tags")
-    phase_map = raw.get("phase-map", {})
-    legacy_fields = raw.get("legacy-field-map", raw.get("field-map"))
-    required_fields = raw.get("required-fields", [])
-    if (
-        not isinstance(to_tag, str)
-        or not isinstance(from_tags, list)
-        or not isinstance(legacy_fields, dict)
-        or not isinstance(required_fields, list)
-        or not all(isinstance(field, str) and field for field in required_fields)
-    ):
-        return None
-    transform = _build_phase_transform(phase_map if isinstance(phase_map, dict) else {})
-    forward = {tag: transform for tag in from_tags if isinstance(tag, str)}
-    return WorkflowMigrationMap(
-        to_tag=to_tag,
-        forward=forward,
-        legacy_fields=legacy_fields,
-        required_fields=tuple(required_fields),
-    )
+        entries = sorted(resolution.path.glob("*.json"))
+        for entry in entries:
+            raw = json.loads(entry.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                return WorkflowTransitionCatalog(
+                    (), f"malformed transition {entry.name!r}"
+                )
+            to_tag = raw.get("to-tag")
+            from_tags = raw.get("from-tags")
+            phase_map = raw.get("phase-map", {})
+            legacy_fields = raw.get("legacy-field-map", raw.get("field-map"))
+            required_fields = raw.get("required-fields", [])
+            if not isinstance(phase_map, dict):
+                return WorkflowTransitionCatalog(
+                    (),
+                    f"malformed transition {entry.name!r}: phase-map must be an object",
+                )
+            if not all(
+                isinstance(source, str)
+                and source
+                and isinstance(target, str)
+                and target
+                for source, target in phase_map.items()
+            ):
+                return WorkflowTransitionCatalog(
+                    (),
+                    f"malformed transition {entry.name!r}: phase-map must map non-empty strings",
+                )
+            if (
+                not isinstance(to_tag, str)
+                or not isinstance(from_tags, list)
+                or not from_tags
+                or not all(isinstance(tag, str) and tag for tag in from_tags)
+                or not isinstance(legacy_fields, dict)
+                or not isinstance(required_fields, list)
+                or not all(
+                    isinstance(field, str) and field for field in required_fields
+                )
+            ):
+                return WorkflowTransitionCatalog(
+                    (), f"malformed transition {entry.name!r}"
+                )
+            # Preserve source multiplicity until it has been rejected.  A
+            # dict comprehension would otherwise silently collapse duplicate
+            # entries in one JSON transition before the catalog can enforce
+            # its unique-source topology rule.
+            if len(set(from_tags)) != len(from_tags):
+                return WorkflowTransitionCatalog(
+                    (), f"duplicate source tag in transition {entry.name!r}"
+                )
+            transform = _build_phase_transform(phase_map)
+            transitions.append(
+                WorkflowMigrationMap(
+                    to_tag=to_tag,
+                    forward={
+                        tag: transform for tag in from_tags if isinstance(tag, str)
+                    },
+                    legacy_fields=legacy_fields,
+                    required_fields=tuple(required_fields),
+                )
+            )
+    except (OSError, json.JSONDecodeError, TypeError, AttributeError) as exc:
+        return WorkflowTransitionCatalog((), f"malformed transition data: {exc}")
+    return WorkflowTransitionCatalog(tuple(transitions))
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -129,9 +168,9 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     root = Path(args.root)
     filesystem = RealFileSystem()
-    workflow_migration_map = _load_workflow_migration_map()
+    workflow_transition_catalog = _load_workflow_transition_catalog()
     service = AutoUpdateMigrationService(
-        filesystem, workflow_migration_map=workflow_migration_map
+        filesystem, workflow_transition_catalog=workflow_transition_catalog
     )
     try:
         if args.apply:
@@ -141,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     except (
         ArtifactFromFutureRuntime,
         WorkflowShapeUnmappable,
+        WorkflowTransitionCatalogError,
         OSError,
         ValueError,
         TypeError,
