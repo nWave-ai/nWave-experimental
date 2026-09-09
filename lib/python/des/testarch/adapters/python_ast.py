@@ -1,0 +1,483 @@
+"""The reference Python stdlib-``ast`` adapter (ADR-TEST-002 D-C).
+
+This is the ONLY testarch module permitted to ``import ast`` — the rule layer
+dispatches through the ``TestSuiteAstAdapter`` port and never names a parser API
+(genericità, ADR-TEST-002 D-A). The dormant
+``scripts/hooks/check_driving_port_boundary.py`` IS this adapter's logic;
+slice-01 recasts it behind the port.
+
+The opaque tree handle returned by ``parse`` is an ``ast.Module``; callers
+treat it as opaque and only ever pass it back into adapter methods. Likewise the
+``FunctionInfo.node_ref`` returned here is the underlying ``ast.FunctionDef`` —
+an adapter-private handle the caller never inspects.
+
+slice-03 (M8 universe-bound assertion gate) ADDS three capability realizations —
+``calls_in_function``, ``keyword_arg_names``, ``layer_of_file`` — each a pure
+query over the opaque ``ast`` tree. The slice-01 surface (``parse``,
+``functions_with_decorator``, ``imports_in_function``) is preserved verbatim.
+
+slice-05 (CM-I seam-tag-honesty gate) ADDS two capability realizations —
+``marker_decorators`` (the pytest tags a test function carries) and
+``spawn_shape_in_body`` (whether the body spawns a real subprocess, drives an
+in-process ``main(argv)``, or neither). Both are RED scaffolds here (created by
+DISTILL, implemented by DELIVER). The slice-01/03 surface is preserved
+verbatim.
+
+slice-09 (P3 composition-root gate) ADDS one capability realization —
+``assignments_constructing_type`` — a pure query over the opaque ``ast`` tree that
+reports every ``name = Type(...)`` construction in a step body whose constructed
+type is in a requested set. The slice-01/03/05 surface is preserved verbatim.
+"""
+
+from __future__ import annotations
+
+import ast
+from typing import TYPE_CHECKING
+
+from des.testarch.ports import (
+    CallInfo,
+    ConstructInfo,
+    FunctionInfo,
+    ImportInfo,
+    Layer,
+    ReadInfo,
+    SpawnShape,
+    SymbolInfo,
+)
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+
+# The dotted callee names that signal a genuine real-subprocess spawn (slice-05
+# CM-I ``spawn_shape_in_body``). The ``subprocess.`` prefix is matched as well as
+# the bare callee so a ``from subprocess import run`` alias is still recognized.
+_REAL_SUBPROCESS_CALLEES: frozenset[str] = frozenset(
+    {
+        "subprocess.run",
+        "subprocess.Popen",
+        "subprocess.check_output",
+        "subprocess.call",
+        "run",
+        "Popen",
+        "check_output",
+    }
+)
+
+# The in-process CLI-entry callee name a ``main(argv)`` body drives (slice-05
+# CM-I). A ``main`` / ``*.main`` callee with no real-subprocess spawn is the
+# IN_PROCESS_MAIN shape — the very shape that is dishonest under a subprocess tag.
+_MAIN_CALLEE = "main"
+
+# Path-segment → structural layer convention (first match wins). Pure-string,
+# git-free, language-agnostic — the adapter classifies a file by its directory
+# segments, never by repository state.
+_SEGMENT_TO_LAYER: dict[str, Layer] = {
+    "unit": Layer.UNIT,
+    "acceptance": Layer.IN_MEMORY_ACCEPTANCE,
+    "integration": Layer.INTEGRATION,
+    "wiring_e2e": Layer.WIRING_E2E,
+    "wiring": Layer.WIRING_E2E,
+    "e2e": Layer.E2E,
+}
+
+
+class PythonAstAdapter:
+    """``TestSuiteAstAdapter`` implementation over Python stdlib ``ast``."""
+
+    def parse(self, source: str, filename: str) -> object:
+        """Parse ``source`` into an ``ast.Module`` (opaque to callers)."""
+        return ast.parse(source, filename=filename)
+
+    def functions_with_decorator(
+        self, tree: object, decorator_names: frozenset[str]
+    ) -> list[FunctionInfo]:
+        """Return every top-level function decorated with one of ``decorator_names``.
+
+        Decorator matching resolves the base callable name, so ``@when``,
+        ``@when("...")`` (a ``Call``) and ``@module.when`` (an ``Attribute``)
+        all match the name ``when``.
+        """
+        module = self._as_module(tree)
+        found: list[FunctionInfo] = []
+        for node in ast.walk(module):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if self._has_matching_decorator(node, decorator_names):
+                found.append(
+                    FunctionInfo(name=node.name, lineno=node.lineno, node_ref=node)
+                )
+        return found
+
+    def functions_in_module(self, tree: object) -> list[FunctionInfo]:
+        """Return every function/method defined in ``tree`` (slice-02 CodeFact).
+
+        Walks the whole module for ``ast.FunctionDef`` / ``ast.AsyncFunctionDef``
+        nodes — at any nesting depth, so a class method is reported as well as a
+        top-level function — and reports each as a ``FunctionInfo`` (name + 1-based
+        line + the ``ast`` node as the opaque handle). The unfiltered "every
+        function" surface the ``AstAdapter`` consumes for atoms / call-site walks.
+        """
+        module = self._as_module(tree)
+        return [
+            FunctionInfo(name=node.name, lineno=node.lineno, node_ref=node)
+            for node in ast.walk(module)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+
+    def imports_in_function(self, tree: object, fn: FunctionInfo) -> list[ImportInfo]:
+        """Return every import statement inside ``fn``'s body.
+
+        Both ``import x`` and ``from x import y`` forms are reported, using the
+        dotted source module as ``ImportInfo.module``. ``tree`` is unused here —
+        ``fn.node_ref`` already anchors the function subtree.
+        """
+        function_node = fn.node_ref
+        if not isinstance(function_node, ast.AST):
+            raise TypeError("FunctionInfo.node_ref must be an ast.AST handle")
+        return self._imports_from_nodes(ast.walk(function_node))
+
+    def imports_in_module(self, tree: object) -> list[ImportInfo]:
+        """Return every module-level import statement.
+
+        Reads the module body for ``ast.Import`` / ``ast.ImportFrom`` nodes and
+        reports each as an ``ImportInfo`` (dotted source module + 1-based line).
+        Both ``import x`` and ``from x import y`` forms are reported, using the
+        dotted source module as ``ImportInfo.module``. Only top-level statements
+        are read, not nested imports inside function bodies.
+        """
+        return self._imports_from_nodes(self._as_module(tree).body)
+
+    def calls_in_function(self, tree: object, fn: FunctionInfo) -> list[CallInfo]:
+        """Return every call site inside ``fn``'s body (slice-03 M8).
+
+        The dotted callee name is resolved for ``Name`` callees (``foo()`` →
+        ``foo``) and ``Attribute`` callees (``board.append()`` → ``board.append``);
+        an unresolvable callee yields the empty string. ``tree`` is unused — the
+        function subtree is anchored by ``fn.node_ref``. The ``Call`` node is
+        carried back as the opaque ``CallInfo.node_ref`` so a follow-up
+        ``keyword_arg_names`` query can read its keyword arguments.
+        """
+        return [
+            CallInfo(
+                callee=self._callee_name(node.func),
+                lineno=node.lineno,
+                node_ref=node,
+            )
+            for node in self._calls_in(fn)
+        ]
+
+    def reads_in_function(self, tree: object, fn: FunctionInfo) -> list[ReadInfo]:
+        """Return every non-call name reference inside ``fn``'s body.
+
+        TWO reference shapes are represented, never one:
+
+        * ``bare-name`` -- an ``ast.Name`` in ``Load`` context (``target``).
+        * ``dotted-attribute`` -- an ``ast.Attribute`` in ``Load`` context
+          (``cfg.retry_budget``, ``self.budget``), reported under its
+          ATTRIBUTE name. Until 2026-08-23 only ``ast.Name`` was walked, so
+          every property / ``self.`` / config-attribute access was invisible
+          and the caller's empty result was indistinguishable from a symbol
+          that does not exist -- measured on a symbol read three times.
+          The ``Name`` inside a dotted read (``cfg``) is a real read of the
+          OWNER and is still reported in its own right.
+
+        A node used as the ``.func`` of an ``ast.Call`` -- bare (``target()``)
+        or dotted (``cfg.method()``) -- is excluded by node identity: it is a
+        call site, not a read, so ``reads_in_function`` and
+        ``calls_in_function`` never report the same occurrence. ``tree`` is
+        unused -- ``fn.node_ref`` anchors the function subtree.
+        """
+        function_node = fn.node_ref
+        if not isinstance(function_node, ast.AST):
+            raise TypeError("FunctionInfo.node_ref must be an ast.AST handle")
+        call_callee_ids = {
+            id(call.func)
+            for call in ast.walk(function_node)
+            if isinstance(call, ast.Call)
+        }
+        reads: list[ReadInfo] = []
+        for node in ast.walk(function_node):
+            if not isinstance(node, (ast.Name, ast.Attribute)):
+                continue
+            if not isinstance(node.ctx, ast.Load):
+                continue
+            if id(node) in call_callee_ids:
+                continue
+            name = node.id if isinstance(node, ast.Name) else node.attr
+            reads.append(ReadInfo(name=name, lineno=node.lineno))
+        return reads
+
+    def keyword_arg_names(self, call: CallInfo, kw: str) -> list[str]:
+        """Return the literal names passed in ``call``'s ``kw`` keyword (slice-03 M8).
+
+        Reads the ``kw`` keyword argument of the call and returns the string-literal
+        names inside a set/list/tuple literal (e.g. ``universe={"a", "_b"}`` →
+        ``["a", "_b"]``). A non-literal or absent argument yields the empty list —
+        an undecidable universe is treated as out of audit scope by the rule.
+        """
+        call_node = call.node_ref
+        if not isinstance(call_node, ast.Call):
+            raise TypeError("CallInfo.node_ref must be an ast.Call handle")
+        for keyword in call_node.keywords:
+            if keyword.arg == kw:
+                return self._literal_names(keyword.value)
+        return []
+
+    def layer_of_file(self, path: str) -> Layer:
+        """Classify ``path`` into a structural ``Layer`` (slice-03 M8).
+
+        Pure path-segment convention (git-free, language-agnostic): the first
+        recognized directory segment fixes the layer. ``unit`` → UNIT;
+        ``acceptance`` → IN_MEMORY_ACCEPTANCE; ``integration`` → INTEGRATION;
+        ``e2e`` → E2E; ``wiring``/``wiring_e2e`` → WIRING_E2E. A path naming none of
+        these is ``UNKNOWN`` (the fail-safe).
+        """
+        segments = path.replace("\\", "/").split("/")
+        for segment in segments:
+            layer = _SEGMENT_TO_LAYER.get(segment)
+            if layer is not None:
+                return layer
+        return Layer.UNKNOWN
+
+    def marker_decorators(self, tree: object, fn: FunctionInfo) -> list[str]:
+        """Return the pytest marker names on ``fn`` (slice-05 CM-I).
+
+        Walks ``fn``'s decorator list and reports each ``@pytest.mark.<name>`` as
+        ``<name>`` (the test's CLAIM about what it spawns). A bare ``@something``
+        decorator that is not a ``pytest.mark.*`` attribute is not a marker and
+        is not reported. ``tree`` is unused — ``fn.node_ref`` anchors the
+        function subtree.
+        """
+        function_node = fn.node_ref
+        if not isinstance(function_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            raise TypeError("FunctionInfo.node_ref must be a function-def handle")
+        return [
+            name
+            for decorator in function_node.decorator_list
+            if (name := self._marker_name(decorator))
+        ]
+
+    def spawn_shape_in_body(self, tree: object, fn: FunctionInfo) -> SpawnShape:
+        """Return the spawn shape of ``fn``'s body (slice-05 CM-I).
+
+        ``REAL_SUBPROCESS`` if the body calls ``subprocess.run`` /
+        ``subprocess.Popen`` / ``subprocess.check_output`` (a genuine spawn);
+        else ``IN_PROCESS_MAIN`` if the body calls an in-process ``main(...)``
+        entry (a ``main`` / ``*.main`` callee); else ``NONE``. ``tree`` is
+        unused — ``fn.node_ref`` anchors the function subtree.
+        """
+        callees = self._callees_in_function(fn)
+        if any(callee in _REAL_SUBPROCESS_CALLEES for callee in callees):
+            return SpawnShape.REAL_SUBPROCESS
+        if any(self._is_main_callee(callee) for callee in callees):
+            return SpawnShape.IN_PROCESS_MAIN
+        return SpawnShape.NONE
+
+    def module_level_symbols_in_module(self, tree: object) -> list[SymbolInfo]:
+        """Return every module-level ``def``/``class`` symbol (WS-9b, similar-
+        responsibility slice-01).
+
+        Reads only ``tree``'s TOP-LEVEL body (``ast.Module.body``) — a nested
+        ``def``/``class`` (a method, a closure) is skipped, distinguishing this
+        from the unfiltered ``functions_in_module`` walk (which reports every
+        function at any nesting depth). ``arity`` is a function's positional +
+        keyword-only parameter count (``*args``/``**kwargs`` excluded — those are
+        variadic, not a fixed arity); a class always reports arity 0.
+        """
+        module = self._as_module(tree)
+        symbols: list[SymbolInfo] = []
+        for node in module.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                symbols.append(
+                    SymbolInfo(
+                        name=node.name,
+                        lineno=node.lineno,
+                        kind="function",
+                        arity=self._arity_of(node.args),
+                    )
+                )
+            elif isinstance(node, ast.ClassDef):
+                symbols.append(
+                    SymbolInfo(
+                        name=node.name, lineno=node.lineno, kind="class", arity=0
+                    )
+                )
+        return symbols
+
+    def module_level_assignment_targets_in_module(self, tree: object) -> list[str]:
+        """Return every module-level simple-assignment target name (CodeFact
+        atoms, F-fix-delta-grounding-incapacity-is-indeterminate slice-02).
+
+        Reads only ``tree``'s TOP-LEVEL body (``ast.Module.body``) for
+        ``ast.Assign`` statements with a SINGLE ``ast.Name`` target --
+        ``LIMIT = 5`` reports ``"LIMIT"``; a tuple/attribute/subscript
+        target, an augmented/annotated assignment, or a nested (function-
+        body) assignment is skipped. Companion to
+        ``module_level_symbols_in_module`` (functions/classes) -- the
+        ``AstAdapter``'s atoms surface reads this so a Reuse-Analysis
+        citation of a module-level constant grounds too.
+        """
+        module = self._as_module(tree)
+        return [
+            target
+            for node in module.body
+            if isinstance(node, ast.Assign)
+            and (target := self._single_name_target(node.targets)) is not None
+        ]
+
+    @staticmethod
+    def _arity_of(args: ast.arguments) -> int:
+        """A function's fixed parameter count: positional + keyword-only.
+
+        ``*args``/``**kwargs`` are variadic (no fixed count) and excluded.
+        """
+        return len(args.posonlyargs) + len(args.args) + len(args.kwonlyargs)
+
+    def assignments_constructing_type(
+        self, tree: object, fn: FunctionInfo, type_names: frozenset[str]
+    ) -> list[ConstructInfo]:
+        """Return every ``name = Type(...)`` construction in ``fn`` (slice-09 P3).
+
+        Walks ``fn``'s body for ``ast.Assign`` statements whose value is a call
+        whose callee name is in ``type_names`` (``service = OrderService(...)`` →
+        ``ConstructInfo(constructed="OrderService", target="service", ...)``). A
+        plain function call (``app = build_application()``) has a callee outside
+        ``type_names`` and is skipped; so is a construction of a type not in the
+        requested set (``money = Money(150)``). Only single-target name assignments
+        are reported (the hand-wiring shape). ``tree`` is unused — ``fn.node_ref``
+        anchors the function subtree.
+        """
+        function_node = fn.node_ref
+        if not isinstance(function_node, ast.AST):
+            raise TypeError("FunctionInfo.node_ref must be an ast.AST handle")
+        constructions: list[ConstructInfo] = []
+        for node in ast.walk(function_node):
+            if not isinstance(node, ast.Assign):
+                continue
+            construction = self._construction_of(node, type_names)
+            if construction is not None:
+                constructions.append(construction)
+        return constructions
+
+    def _construction_of(
+        self, node: ast.Assign, type_names: frozenset[str]
+    ) -> ConstructInfo | None:
+        """The ``ConstructInfo`` of a single ``name = Type(...)`` assignment, or None.
+
+        Reports only a single-target name assignment whose value is a call whose
+        callee name is in ``type_names``; any other assignment shape (tuple target,
+        non-call value, callee outside the set) yields None.
+        """
+        target = self._single_name_target(node.targets)
+        if target is None or not isinstance(node.value, ast.Call):
+            return None
+        constructed = self._callee_name(node.value.func)
+        if constructed not in type_names:
+            return None
+        return ConstructInfo(constructed=constructed, target=target, lineno=node.lineno)
+
+    @staticmethod
+    def _single_name_target(targets: list[ast.expr]) -> str | None:
+        """The bound variable name of a single-target name assignment, else None."""
+        if len(targets) != 1:
+            return None
+        target = targets[0]
+        return target.id if isinstance(target, ast.Name) else None
+
+    @staticmethod
+    def _marker_name(decorator: ast.expr) -> str:
+        """The ``<name>`` of a ``@pytest.mark.<name>`` decorator, else ``""``.
+
+        Both the bare attribute (``@pytest.mark.wiring_e2e``) and the parametrized
+        call (``@pytest.mark.parametrize(...)``) forms resolve to ``<name>``. A
+        decorator that is not anchored at ``mark`` (a plain ``@given`` or
+        ``@module.helper``) is not a pytest marker and yields ``""``.
+        """
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if isinstance(target, ast.Attribute) and isinstance(
+            target.value, ast.Attribute
+        ):
+            return target.attr if target.value.attr == "mark" else ""
+        return ""
+
+    def _callees_in_function(self, fn: FunctionInfo) -> list[str]:
+        """The dotted callee name of every call site inside ``fn``'s body."""
+        return [self._callee_name(call.func) for call in self._calls_in(fn)]
+
+    @staticmethod
+    def _calls_in(fn: FunctionInfo) -> list[ast.Call]:
+        """Every ``ast.Call`` node inside ``fn``'s body (shared call-site walk)."""
+        function_node = fn.node_ref
+        if not isinstance(function_node, ast.AST):
+            raise TypeError("FunctionInfo.node_ref must be an ast.AST handle")
+        return [node for node in ast.walk(function_node) if isinstance(node, ast.Call)]
+
+    @staticmethod
+    def _is_main_callee(callee: str) -> bool:
+        """True iff ``callee`` is a ``main`` / ``*.main`` in-process CLI entry."""
+        return callee == _MAIN_CALLEE or callee.endswith(f".{_MAIN_CALLEE}")
+
+    @staticmethod
+    def _callee_name(func: ast.expr) -> str:
+        if isinstance(func, ast.Name):
+            return func.id
+        if isinstance(func, ast.Attribute):
+            base = PythonAstAdapter._callee_name(func.value)
+            return f"{base}.{func.attr}" if base else func.attr
+        return ""
+
+    @staticmethod
+    def _literal_names(value: ast.expr) -> list[str]:
+        if not isinstance(value, (ast.Set, ast.List, ast.Tuple)):
+            return []
+        return [
+            element.value
+            for element in value.elts
+            if isinstance(element, ast.Constant) and isinstance(element.value, str)
+        ]
+
+    @staticmethod
+    def _as_module(tree: object) -> ast.Module:
+        if not isinstance(tree, ast.Module):
+            raise TypeError("PythonAstAdapter expects an ast.Module tree handle")
+        return tree
+
+    @staticmethod
+    def _imports_from_nodes(nodes: Iterable[ast.AST]) -> list[ImportInfo]:
+        """Collect ``ImportInfo`` from every ``ast.Import`` / ``ast.ImportFrom``.
+
+        ``import x`` reports one entry per alias (dotted name); ``from x import y``
+        reports the dotted source module ``x`` once (a ``from`` with no module —
+        a bare relative import — is skipped). Shared by ``imports_in_function``
+        (recursive walk) and ``imports_in_module`` (top-level body only); the
+        caller supplies the node sequence so the traversal scope stays its choice.
+        """
+        imports: list[ImportInfo] = []
+        for node in nodes:
+            if isinstance(node, ast.Import):
+                imports.extend(
+                    ImportInfo(module=alias.name, lineno=node.lineno)
+                    for alias in node.names
+                )
+            elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                imports.append(ImportInfo(module=node.module, lineno=node.lineno))
+        return imports
+
+    def _has_matching_decorator(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, names: frozenset[str]
+    ) -> bool:
+        return any(
+            self._decorator_base_name(decorator) in names
+            for decorator in node.decorator_list
+        )
+
+    @staticmethod
+    def _decorator_base_name(decorator: ast.expr) -> str:
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if isinstance(target, ast.Name):
+            return target.id
+        if isinstance(target, ast.Attribute):
+            return target.attr
+        return ""

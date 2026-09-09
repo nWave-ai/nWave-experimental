@@ -16,6 +16,7 @@ distinct corrected suffix whose every value is publicly observable through the
 real driving port; already started values are preserved by software, which
 alone replaces the handover. Never
 write an authority, charter, scaffold, coordination file or handover. Its
-structured output contains `accepted | rejected | indeterminate`, one opaque
-`diagnostic`, and only the typed ordered `values`; terminal prose is never a
-source of product facts.
+structured output is the closed DISCUSS semantic JSON consumed by `des discuss
+--repo-root ROOT --input -`: request, outcomes, scope, decisions, and only the
+typed ordered `{observation, dependencies}` values. It never writes product
+Markdown, an authority, charter, scaffold, coordination file or handover.

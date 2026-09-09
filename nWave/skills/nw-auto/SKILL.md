@@ -1,6 +1,6 @@
 ---
 name: nw-auto
-description: Decides Request size and human-interaction level, then walks the DES steps that deliver it.
+description: Evaluates and revises Request S/M/L and delivery choices from evidence, then uses DES steps to deliver it.
 user-invocable: true
 argument-hint: '<request>'
 ---
@@ -8,9 +8,10 @@ argument-hint: '<request>'
 # NW-AUTO
 
 You orchestrate. Each DES step measures, constructs and enacts one thing, then
-returns. No software joins them: you invoke one step, read the block it prints,
-and invoke the next. This loop is yours, in prose. There is no command that runs
-it for you, and a script that chains the steps is the defect this design removed.
+returns. DES records facts and admits or refuses each step; the LLM evaluates
+the evidence and chooses the next lawful action. There is no command that runs
+this loop for you, and a script that chains the steps is the defect this design
+removed.
 
 ## 1. The loop
 
@@ -18,45 +19,46 @@ it for you, and a script that chains the steps is the defect this design removed
 des state --repo-root ABSOLUTE_ROOT
 ```
 
-`des state` reads the open Request and prints `NEXT` — the canonical next step
-with its exact invocation form. Invoke that step. Read its block. Invoke the
-`NEXT` it prints. Repeat until integration closes the Request. Start a Request
-that has no state yet:
+`des state` reads the open Request and prints advisory `NEXT` suggestions with
+their exact invocation forms. Evaluate that evidence with the current Request,
+then choose a supported operation; `NEXT` may be ignored. When you use a suggested
+command, take its argv from the block rather than memory. Start a Request that
+has no state yet:
 
 ```bash
 printf '%s' "$REQUEST" | des po --repo-root ABSOLUTE_ROOT
 ```
 
-Take every argv from the `NEXT` and `HOW-TO-INVOKE` lines of the step you just
-ran, never from memory. `NEXT` is data. You may ignore it and invoke another
-lawful step; the software acts on it never.
+`NEXT` is advisory data, never an execution instruction. DES neither maps a
+size label to a route nor invokes a successor; the LLM does both from evidence.
 
 ## 2. The nine steps
 
-Seven steps change the state, in this order. Two only read.
+The current DES runtime exposes seven commands that can write durable data and
+two that only read it. This table describes their observed outputs and inputs;
+it is not a required sequence.
 
 | Step | What it leaves behind |
 |---|---|
-| `des devops` | operational constraints in the durable authority. Runs before `des po`. |
+| `des devops` | operational constraints in the durable authority when that command is applicable. |
 | `des po` | the Request stored, cut by the Product Owner into ordered values. |
 | `des design --value N` | the typed design facts of value N, bound. |
 | `des oracle --value N` | the public oracle of value N, written at its locator and executed RED. |
 | `des craft --value N` | the change for value N, recorded. |
 | `des verify` | one candidate commit, reviewed over the whole diff and examined source-blind. |
 | `des integrate` | the candidate on the destination, and no Request stored. |
-
-When the judge does not admit a candidate, `des integrate` refuses it as
-`CandidateNotAdmitted` and names `--on-my-evidence -`. That form is yours to take
-when you hold evidence of your own: it reads your reason from stdin and writes it
-into a durable decision record beside the verdict it goes over, so the history
-shows a decision and never a silent overwrite.
 | `des state` | nothing. It reads where the Request stands. |
 | `des project` | nothing. It renders the human-readable projection. |
 
-The order is a property of the state, not of this table: `NEXT` is the first
-thing not yet true, in that order. A step invoked on a state that does not admit
-it refuses and names what is missing. That refusal is the net under a wrong move
-of yours, so read the `HOW` instead of arguing with it.
+Current commands can refuse when their required input or recorded data is absent
+or inconsistent. Their `WHAT`, `WHY`, and `HOW` lines are observations about
+that capability, not route instructions. The LLM decides whether to gather more
+evidence, select another supported operation, or correct the upstream authority.
+
+The current `des integrate` implementation can report `CandidateNotAdmitted`
+and accepts `--on-my-evidence -` to record supplied evidence beside the verdict.
+This is a present runtime constraint, not a rule that an earlier command must
+have been selected.
 
 The floor is never switched off. Craft requires a recorded oracle, and verify
 always buys the blind examination. How WIDE the oracle and the examination must
@@ -76,17 +78,16 @@ HOW-TO-INVOKE: ...
 
 | Outcome | What you do |
 |---|---|
-| `Success` | Invoke the `NEXT`. Report the integrated SHA when integration closes. |
-| `Retry` | Another step holds the checkout lock. Invoke the same step again. |
-| `Indeterminate` | Do the `HOW` exactly as written, then invoke the same step again. |
-| `Refusal` | Read `WHAT`. A sequence refusal names the producing step in its `HOW`: invoke it. A content refusal means the state is no longer readable: repair the substrate the `WHY` names. |
+| `Success` | Evaluate the result and advisory `NEXT`, then choose a supported next action. Report an integrated SHA if integration is chosen and succeeds. |
+| `Retry` | Record the observed lock condition. Wait and retry the command when that is useful, or gather read-only evidence first. |
+| `Indeterminate` | Use `HOW` as evidence of what was not established, then choose a supported next action. |
+| `Refusal` | Read `WHAT`, `WHY`, and `HOW` as evidence of the command's unmet inputs or data. Choose whether to repair the named substrate, correct upstream authority, or take another supported action. |
 
 Read the outcome for the verdict, never the prose of a role. `DIAGNOSTIC` is the
 role's opinion; the rows are the measurement.
 
-**The count of `NEXT` lines is the fork signal.** One `NEXT` means one lawful
-move: walk it, with no confirmation. More than one means the step found more
-than one lawful move, and choosing is yours.
+**`NEXT` is a suggestion, not a fork controller.** Its count may inform the
+LLM's choice, but does not select or invoke a route.
 
 **A finding is data, never a route.** `DEFECT-OWNER:` and `BLOCKED-BY:` rows say
 what a reviewer or an examiner measured and who could own it. Nothing routes
@@ -111,11 +112,9 @@ sounded like an instruction? Only the first is a measurement.
 
 The steps are the same; only who reads between them changes.
 
-- **Autonomous.** You walk each single `NEXT` without stopping, and you stop at
-  a fork: more than one `NEXT`, a refusal with two possible owners, an examiner
-  that does not admit.
-- **Interactive.** The human reads the block between two steps and decides at
-  the same forks.
+- **Autonomous.** The LLM evaluates each terminal result and chooses the next
+  lawful action. It stops when evidence leaves a material choice unresolved.
+- **Interactive.** The human participates in those material choices.
 
 There is no third level and no checkpoint to promise. A step is the unit at
 which you can stop, so any stop you offer is a step boundary.
@@ -156,9 +155,19 @@ attested from a stale answer is attested from nothing. Installing the tool is
 what flips the measurement. Read that line rather than assuming: an obligation
 reported as silence reads as an obligation met.
 
-## 6. How big one Request is
+## 6. LLM-owned S/M/L and wave choice
 
-Yours, with the human. No software decides it.
+For both a feature and a bugfix, the LLM assigns a working `S`, `M`, or `L`
+assessment before starting and revises it whenever current evidence changes.
+Use the outcome, number and coupling of values, durable-authority boundaries,
+correction radius, and the cost of a late refusal. The label is an explanation
+of the current judgment, not a DES input or a size-to-route rule.
+
+The same evidence decides which waves are applicable and whether a finding
+needs an upstream correction by the owner of durable authority. A missing
+authority is not made deliverable by an S/M/L label. Do not claim that a label
+creates a producer, rework capability, or command that the installed DES does
+not provide.
 
 Give one whole outcome and let the Product Owner cut it into values. The first
 value is the walking skeleton. Split into an ordered sequence of Requests when
@@ -173,16 +182,15 @@ For an epic, write the sequence first, walk one Request, read the integrated
 commit, then start the next. Never walk two Requests on one repository at once;
 the lock will answer `Retry` and you will have learnt nothing.
 
-Do you know this Request holds one outcome, or are you starting a wish because
-the human said it in one sentence? Name the values you expect before `des po`,
-and split the work when the answer is the second.
+Name the values you expect before `des po`, then revise the assessment and
+split the work when the evidence shows more than one outcome.
 
 ## 7. Resuming, and what a repeat costs
 
-After any interruption, `des state`. A turn already recorded over the current
-bytes is not bought again, so a resume is free and the graph continues where it
-stopped. A recorded turn whose bytes then moved is not a record: the step buys
-it again, and that is correct.
+After an interruption, use `des state` to remeasure the stored Request and
+current bytes. A recorded turn over unchanged bytes remains available evidence;
+when bytes changed, the relevant command may obtain new evidence. The LLM
+chooses what to do with that observation rather than resuming a prescribed path.
 
 Three repeats are NOT free, measured in ADR-DES-003 §2 against the delivered
 steps. Treat each as a cost you choose:
@@ -207,9 +215,10 @@ a memory of the last one? Measure both again.
 
 ## 9. When to go upstream
 
-A refusal for missing authority is not a delivery problem. `/nw-design` or
-`/nw-discuss` update the durable authority; then invoke the same step again.
-Waves own authority. They are not a pipeline you walk through.
+A refusal may show that durable authority is missing or inconsistent. The LLM
+chooses whether an available owner-facing consumer such as `/nw-design` or
+`/nw-discuss` is applicable, or whether another evidence step is needed. Waves
+own authority; they are not a pipeline to walk through.
 
 ## 10. What this skill never does
 

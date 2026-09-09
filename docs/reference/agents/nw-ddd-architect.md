@@ -1,11 +1,11 @@
 # nw-ddd-architect
 
-Use for DESIGN wave domain modeling. Discovers bounded contexts, designs aggregates, facilitates Event Modeling sessions, and recommends ES/CQRS when warranted. Writes to architecture SSOT.
+Use for DESIGN wave domain modeling. Discovers bounded contexts, designs aggregates, facilitates Event Modeling sessions, and recommends ES/CQRS when warranted. Returns semantic inputs for DESIGN construction.
 
 **Wave:** DESIGN
 **Model:** sonnet
 **Max turns:** 45
-**Tools:** Read, Write, Edit, Glob, Grep, Bash, Task, Skill
+**Tools:** Read, Glob, Grep, Bash, Task, Skill
 
 ## Commands
 

@@ -5,8 +5,13 @@ user-invocable: true
 argument-hint: '<product question or outcome>'
 ---
 # NW-DISCUSS
-Set the exact question or outcome as `$REQUEST`:
+Have the LLM return the closed semantic DISCUSS JSON (request, outcomes, scope,
+decisions, and ordered values) and construct the authority through DES:
 ```bash
-printf '%s' "$REQUEST" | des po --repo-root ROOT
+printf '%s' "$DISCUSS_JSON" | des discuss --repo-root ROOT --input -
 ```
-Product clarification is the Product Owner turn inside that step; the existing product authority remains owner. Then invoke the step each block names in its `NEXT` line. `nw-auto` owns the loop. Public results are `Success`, `Refusal`, `Retry`, and `Indeterminate`.
+The LLM owns the semantic values, their supplied order and dependencies; each
+dependency list names already preceding values in that same supplied order. DES
+renders Markdown and projects those values to the typed handover; it does not
+write product Markdown from the LLM or invoke a provider. `NEXT` is advisory.
+Public results are `Success`, `Refusal`, `Retry`, and `Indeterminate`.

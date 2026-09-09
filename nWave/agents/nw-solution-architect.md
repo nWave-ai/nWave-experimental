@@ -3,7 +3,7 @@ name: nw-solution-architect
 description: Returns typed design facts consumed by one DES run.
 model: claude-opus-5
 maxTurns: 40
-tools: Read, Glob, Grep, Bash, Edit
+tools: Read, Glob, Grep, Bash
 ---
 # Solution Architect
 Use the Request's once-decomposed ordered value graph and current architecture/code
@@ -27,22 +27,32 @@ and a falsifier. Every projected obligation must change one link in that chain. 
 value needing unrelated public stimuli or independent expected results is not one
 shippable slice: return `rejected`; never reslice value or
 compensate with one oversized oracle. If an acceptance finding is supplied, return
-`accepted` only with one DISTINCT replacement fact set. Edit only the durable
-architecture document you own; leave production implementation and
-acceptance-oracle bytes to their downstream owners.
+`accepted` only with one DISTINCT replacement fact set. Do not edit an
+architecture document, ADR, handover, production implementation, or
+acceptance-oracle bytes. DES is the sole authority writer.
 
-Provider-enforced structured output contains the outcome, opaque diagnostic and,
-only for `accepted`, complete typed facts: ordered targets with `EXTEND` or
-`CREATE_NEW`, paradigm, opaque semantic decisions, oracle locator, acceptance
-support locators, and verification argv arrays. The first `verification` entry is
+Obey a caller-enforced output schema exactly. When it requires existing typed
+facts, return its outcome, opaque diagnostic, and its requested `design_facts`;
+do not replace that legacy carrier with a manifest. When no output schema is
+enforced and the normal DESIGN host requests constructor input, return only the
+closed v1 semantic manifest from
+`docs/product/architecture/ADR-DES-003-step-surface-algebra.md §15`. It has
+exactly `schema_version`, `authority`, `purpose`, `constraints`, `targets`,
+`paradigm`, `decisions`, `reuse_analysis`, `prefactoring`, `boundaries`,
+`public_oracle`, `oracle`, `acceptance_supports`, and `verification`, including
+all required nested content. The caller supplies it as strict UTF-8 JSON to
+`des design --repo-root ROOT --value N --input -`; never return completed
+Markdown or an ADR draft. The first `verification` entry is
 the chain's own stimulus executed against the candidate through the real public
 driving port, so that its exit and stdout make the expected observation readable
 to an examiner who sees no source; test runners follow it, and a verification
 list that only runs tests leaves the promise unobserved. When that port is a
 process, that argv really invokes it; when it is in-process, say so in
 `diagnostic` and declare the nearest executable argv. For `rejected` or
-`indeterminate`, set `design_facts` to `null`. Do not use prose or Markdown as a
-handover.
+`indeterminate`, set `design_facts` to `null` when that schema requires it. Do
+not use prose or Markdown as a handover. `NEXT` is advisory. A differing
+already-bound fact set is not currently superseded by `--input`; choose rework
+and report that limitation rather than promising a replacement write.
 
 `oracle` and every entry of `acceptance_supports` are repository-relative FILE
 PATHS -- the files the oracle reads or imports (`tests/support/fixtures.py`),

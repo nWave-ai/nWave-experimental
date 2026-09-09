@@ -1,4 +1,4 @@
-"""Public oracle: the two invocable lane steps, driven through the real CLI.
+"""Public oracle: the invocable lane steps, driven through the real CLI.
 
 THE ONE FILE OF THIS DIRECTORY THAT OUTLIVED `des dispatch`. Its nine scenarios
 drive `des lane`, which ADR-DES-003 Section 14 keeps untouched; the other eight
@@ -203,6 +203,100 @@ def test_integrate_names_the_reinstallation_when_the_delta_ships(temp_home, root
     assert SHIPPED_ASSET in step, step
 
 
+def test_integrate_keep_worktree_retains_the_registered_lane_after_fast_forward(
+    temp_home, root
+):
+    worktree = opened(temp_home, root, "probe")
+    tip = commit(worktree, PRIVATE_FILE, "note\n", "docs(probe): a note")
+
+    result = lane(
+        temp_home,
+        "integrate",
+        "--repo-root",
+        str(root),
+        "--worktree",
+        str(worktree),
+        "--keep-worktree",
+    )
+
+    assert result.returncode == 0, terminal(result)
+    assert field(result, "INTEGRATED") == tip
+    assert field(result, "RETAINED") == str(worktree)
+    assert field(result, "BRANCH-RETAINED") == "lane/probe"
+    assert git(root, "rev-parse", "HEAD") == tip
+    assert worktree.is_dir()
+    assert str(worktree) in git(root, "worktree", "list", "--porcelain")
+    assert git(root, "rev-parse", "--verify", "refs/heads/lane/probe") == tip
+
+
+def test_finalize_removes_retained_lane_after_destination_records_evolution(
+    temp_home, root
+):
+    worktree = opened(temp_home, root, "probe")
+    lane_tip = commit(worktree, PRIVATE_FILE, "note\n", "docs(probe): a note")
+    integrated = lane(
+        temp_home,
+        "integrate",
+        "--repo-root",
+        str(root),
+        "--worktree",
+        str(worktree),
+        "--keep-worktree",
+    )
+    assert integrated.returncode == 0, terminal(integrated)
+    evolution_tip = commit(
+        root,
+        "docs/evolution/2026-09-09-probe.md",
+        "# Probe evolution\n",
+        "docs(evolution): record probe",
+    )
+
+    finalized = lane(
+        temp_home, "finalize", "--repo-root", str(root), "--worktree", str(worktree)
+    )
+
+    assert finalized.returncode == 0, terminal(finalized)
+    assert field(finalized, "REMOVED") == str(worktree)
+    assert field(finalized, "BRANCH-REMOVED") == "lane/probe"
+    assert git(root, "rev-parse", "HEAD") == evolution_tip
+    assert git(root, "merge-base", "--is-ancestor", lane_tip, evolution_tip) == ""
+    assert not worktree.exists()
+    assert git(root, "branch", "--list", "lane/probe") == ""
+
+
+def test_finalize_refuses_unmerged_then_dirty_lane_without_losing_bytes(
+    temp_home, root
+):
+    worktree = opened(temp_home, root, "probe")
+    tip = commit(worktree, PRIVATE_FILE, "note\n", "docs(probe): a note")
+    head = git(root, "rev-parse", "HEAD")
+
+    unmerged = lane(
+        temp_home, "finalize", "--repo-root", str(root), "--worktree", str(worktree)
+    )
+
+    assert unmerged.returncode != 0, terminal(unmerged)
+    assert field(unmerged, "WHAT") == "LaneNotIntegrated"
+    assert worktree.is_dir()
+    assert git(worktree, "rev-parse", "HEAD") == tip
+    assert git(root, "rev-parse", "HEAD") == head
+    assert git(root, "rev-parse", "--verify", "refs/heads/lane/probe") == tip
+
+    put(worktree, "uncommitted.txt", "in flight\n")
+    dirty = lane(
+        temp_home, "finalize", "--repo-root", str(root), "--worktree", str(worktree)
+    )
+
+    assert dirty.returncode != 0, terminal(dirty)
+    assert field(dirty, "WHAT") == "LaneDirty"
+    assert "uncommitted.txt" in field(dirty, "WHY")
+    assert worktree.is_dir()
+    assert (worktree / "uncommitted.txt").read_text() == "in flight\n"
+    assert git(worktree, "rev-parse", "HEAD") == tip
+    assert git(root, "rev-parse", "HEAD") == head
+    assert git(root, "rev-parse", "--verify", "refs/heads/lane/probe") == tip
+
+
 def test_integrate_refuses_a_dirty_lane_and_loses_nothing(temp_home, root):
     worktree = opened(temp_home, root, "probe")
     head = git(root, "rev-parse", "HEAD")
@@ -280,7 +374,7 @@ def test_open_refuses_a_name_that_is_not_one_path_segment(temp_home, root):
     assert not (temp_home / "nwave-../escape-lane").exists()
 
 
-def test_both_steps_are_advertised_by_the_cli_that_carries_them(temp_home):
+def test_all_lane_steps_are_advertised_by_the_cli_that_carries_them(temp_home):
     environment = {**os.environ, "PYTHONPATH": str(PACKAGE_PARENT)}
     environment.pop("PYTHONSTARTUP", None)
     listed = subprocess.run(
@@ -293,3 +387,5 @@ def test_both_steps_are_advertised_by_the_cli_that_carries_them(temp_home):
     )
 
     assert "lane" in listed.stdout, listed.stdout + listed.stderr
+    lane_help = lane(temp_home, "--help")
+    assert "finalize" in lane_help.stdout, terminal(lane_help)

@@ -157,6 +157,197 @@ nwave-ai doctor
 
 Close and reopen Claude Code — the nWave agents and slash commands appear in your command palette.
 
+## Recover a previous experimental package identity
+
+The prior experimental package was published as `nwave`
+`4.0.0+atddpure.2d5a26a`, while its module and command were named `nwave_ai`
+and `nwave-ai`. A corrected release uses the canonical distribution
+`nwave-ai`. This procedure is for that specific predecessor only.
+
+Wait for the corrected release receipt. Set `CORRECTED_REF` to the exact commit
+recorded there; do not substitute an unverified branch or commit.
+
+```bash
+CORRECTED_REF='<exact corrected commit from the release receipt>'
+EXPECTED_VERSION='<exact corrected version from the release receipt>'
+CORRECTED_SOURCE="git+https://github.com/nWave-ai/nWave-experimental.git@${CORRECTED_REF}"
+ROOT='/absolute/path/to/the/project-to-migrate'
+```
+
+Before changing packages, select exactly one owner. Inspect `uv tool list
+--show-paths`, `pipx list --json`, and the affected virtual environment when it
+is known. Use the uv branch only when uv reports the affected app; use the pipx
+branch only when pipx reports it; use the same-venv branch only when the probe
+is run with that exact affected interpreter. If more than one record can own the
+installation, or none can, stop without changing packages.
+
+For the selected uv or pipx predecessor, set `PREDECESSOR_TOOL` to the exact
+tool-environment key that its manager record reports: `nwave-ai` for canonical
+v3 or `nwave` for the verified obsolete predecessor. Bind only its interpreter
+before the initial probe:
+
+```bash
+# uv
+PREDECESSOR_TOOL='<exact key from uv tool list --show-paths>'
+UV_TOOL_ROOT="$(uv tool dir)"
+PREDECESSOR_PYTHON="$UV_TOOL_ROOT/$PREDECESSOR_TOOL/bin/python"
+test -x "$PREDECESSOR_PYTHON" || exit 1
+```
+
+```bash
+# pipx
+PREDECESSOR_TOOL='<exact key from pipx list --json>'
+PIPX_VENVS="$(pipx environment --value PIPX_LOCAL_VENVS)"
+PREDECESSOR_PYTHON="$PIPX_VENVS/$PREDECESSOR_TOOL/bin/python"
+test -x "$PREDECESSOR_PYTHON" || exit 1
+```
+
+Run the initial probe with `PREDECESSOR_PYTHON`. It must report that exact
+predecessor identity before an obsolete owner can be removed.
+
+After the corrected install, bind the canonical manager launch paths. For uv:
+
+```bash
+UV_TOOL_ROOT="$(uv tool dir)"
+UV_BIN_DIR="$(uv tool dir --bin)"
+MANAGER_PYTHON="$UV_TOOL_ROOT/nwave-ai/bin/python"
+MANAGER_NWAVE_AI_CONSOLE="$UV_BIN_DIR/nwave-ai"
+MANAGER_DES_CONSOLE="$UV_BIN_DIR/des"
+test -x "$MANAGER_PYTHON" -a -x "$MANAGER_NWAVE_AI_CONSOLE" -a -x "$MANAGER_DES_CONSOLE" || exit 1
+```
+
+For pipx, bind all canonical paths from its post-install records:
+
+```bash
+PIPX_RECORD="$(mktemp)"
+pipx list --json > "$PIPX_RECORD"
+PIPX_VENVS="$(pipx environment --value PIPX_LOCAL_VENVS)"
+MANAGER_PYTHON="$PIPX_VENVS/nwave-ai/bin/python"
+manager_app() {
+  python3 -c 'import json,sys; v=json.load(open(sys.argv[1]))["venvs"]["nwave-ai"]["metadata"]["main_package"]["app_paths"]; out=[]; walk=lambda x: out.extend([x]) if isinstance(x,str) else [walk(y) for y in (x.values() if isinstance(x,dict) else x if isinstance(x,list) else [])]; walk(v); print(next(p for p in out if p.rsplit("/",1)[-1] == sys.argv[2]))' "$PIPX_RECORD" "$1"
+}
+MANAGER_NWAVE_AI_CONSOLE="$(manager_app nwave-ai)"
+MANAGER_DES_CONSOLE="$(manager_app des)"
+test -x "$MANAGER_PYTHON" -a -x "$MANAGER_NWAVE_AI_CONSOLE" -a -x "$MANAGER_DES_CONSOLE" || exit 1
+```
+
+If any binding is absent, stop.
+The manager-bin application paths are launch paths; the sibling paths reported
+by the probe are identity evidence in the manager environment and need not be
+the same filesystem paths.
+
+Define this probe once. Its argument is the interpreter whose package and
+console ownership it observes:
+
+```bash
+probe() {
+"$1" -I - <<'PY'
+import importlib.metadata as m, importlib.util, json, os, pathlib, sys
+bin_dir = pathlib.Path(sys.executable).parent
+apps = {name: bin_dir / (name + '.exe' if os.name == 'nt' else name) for name in ('nwave-ai', 'des')}
+distributions = {d.metadata['Name'].lower(): d.version for d in m.distributions()
+                 if d.metadata.get('Name', '').lower() in {'nwave', 'nwave-ai'}}
+owners = sorted(m.packages_distributions().get('nwave_ai', []))
+entry_points = {name: sorted(d.metadata['Name'] for d in m.distributions() for e in d.entry_points
+                             if e.group == 'console_scripts' and e.name == name)
+                for name in apps}
+spec = importlib.util.find_spec('nwave_ai')
+print(json.dumps({'python': sys.executable, 'distributions': distributions,
+                  'module_owners': owners, 'entry_point_owners': entry_points,
+                  'applications': {name: {'path': str(path), 'executable': path.is_file() and os.access(path, os.X_OK)} for name, path in apps.items()},
+                  'module_path': None if spec is None else spec.origin}, sort_keys=True))
+PY
+}
+probe "$PREDECESSOR_PYTHON"
+```
+
+Continue only when the probe shows one canonical `nwave-ai` owner, the verified
+obsolete `nwave` `4.0.0+atddpure.2d5a26a` owner, or the explicit same-venv pair
+of those two owners. If it shows an unknown `nwave`, a third owner, or paths
+outside the selected manager environment, stop without changing packages.
+
+### uv or pipx: previous experimental `nwave` only
+
+Remove the obsolete distribution before installing the canonical replacement:
+it shares files with the corrected package. Run the block for the one manager
+selected above.
+
+```bash
+# uv
+uv tool uninstall nwave
+uv tool install "${CORRECTED_SOURCE}"
+```
+
+```bash
+# pipx
+pipx uninstall nwave
+pipx install "${CORRECTED_SOURCE}"
+```
+
+After the manager reports the new `nwave-ai` environment, resolve
+`MANAGER_PYTHON`, `MANAGER_NWAVE_AI_CONSOLE`, and `MANAGER_DES_CONSOLE` again
+from the selected manager record, then run `probe "$MANAGER_PYTHON"`. It must
+show only `nwave-ai` as the module and both console-entry-point owner; both
+manager launch paths and both probe sibling paths must be executable. Then
+finish the deployed runtime and project migration:
+
+```bash
+probe "$MANAGER_PYTHON"
+test "$("$MANAGER_PYTHON" -I -c 'import importlib.metadata as m; print(m.version("nwave-ai"))')" = "$EXPECTED_VERSION" || exit 1
+test "$("$MANAGER_NWAVE_AI_CONSOLE" --version)" = "nwave-ai $EXPECTED_VERSION" || exit 1
+"$MANAGER_NWAVE_AI_CONSOLE" --version
+"$MANAGER_NWAVE_AI_CONSOLE" install --yes
+"$MANAGER_DES_CONSOLE" update --apply --root "$ROOT"
+"$MANAGER_NWAVE_AI_CONSOLE" doctor --json
+```
+
+### Same virtual environment containing both `nwave-ai` and obsolete `nwave`
+
+Assign the exact interpreter from the initial mixed-state probe, then remove `nwave` first and
+force-reinstall canonical `nwave-ai` so shared files are restored:
+
+```bash
+AFFECTED_PYTHON='<exact python field from the mixed-state probe>'
+test -x "$AFFECTED_PYTHON" || exit 1
+"$AFFECTED_PYTHON" -m pip uninstall -y nwave
+"$AFFECTED_PYTHON" -m pip install --upgrade --force-reinstall "nwave-ai @ ${CORRECTED_SOURCE}"
+```
+
+Run `probe "$AFFECTED_PYTHON"`, then bind its exact sibling paths:
+
+```bash
+probe "$AFFECTED_PYTHON"
+MANAGER_PYTHON="$AFFECTED_PYTHON"
+MANAGER_NWAVE_AI_CONSOLE="$(dirname "$AFFECTED_PYTHON")/nwave-ai"
+MANAGER_DES_CONSOLE="$(dirname "$AFFECTED_PYTHON")/des"
+test -x "$MANAGER_NWAVE_AI_CONSOLE" -a -x "$MANAGER_DES_CONSOLE" || exit 1
+test "$("$MANAGER_PYTHON" -I -c 'import importlib.metadata as m; print(m.version("nwave-ai"))')" = "$EXPECTED_VERSION" || exit 1
+test "$("$MANAGER_NWAVE_AI_CONSOLE" --version)" = "nwave-ai $EXPECTED_VERSION" || exit 1
+```
+
+Run the same `install`, `des update`, and `doctor` commands above only after the
+probe shows exactly one `nwave-ai` owner.
+
+### Canonical `nwave-ai` only
+
+For a canonical installation, reinstall through the manager that owns it, then
+repeat the post-install probe and the four absolute executable commands above:
+run one manager block only.
+
+```bash
+# uv
+uv tool install --reinstall "${CORRECTED_SOURCE}"
+```
+
+```bash
+# pipx
+pipx install --force "${CORRECTED_SOURCE}"
+```
+
+The recovery order is package replacement, identity proof, runtime install,
+DES migration, then doctor. It preserves the existing refusal for ambiguous
+metadata; it does not select a preferred owner automatically.
+
 ### `nwave-ai` not found after install
 
 If installation succeeds but the `nwave-ai` command isn't found, your tool's bin

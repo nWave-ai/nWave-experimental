@@ -1,0 +1,129 @@
+version: 1
+roles:
+  nw-software-crafter:
+    catalog_only:
+      - nw-code-design-oo
+      - nw-refactor
+      - nw-code-analysis-port
+      - nw-mutation-test
+      - nw-algebraic-design-protocol
+      - nw-certainty-by-construction
+  nw-functional-software-crafter:
+    catalog_only:
+      - nw-fp-principles
+      - nw-fp-algebra-driven-design
+      - nw-code-design-fp
+      - nw-refactor
+      - nw-code-analysis-port
+      - nw-mutation-test
+      - nw-algebraic-design-protocol
+      - nw-certainty-by-construction
+  nw-software-crafter-reviewer:
+    reviewer_of:
+      - nw-software-crafter
+      - nw-functional-software-crafter
+    phase:
+      nw-sc-review-dimensions: review start
+      nw-at-completeness-check: AT-density review
+  nw-solution-architect:
+    catalog_only:
+      - nw-cross-cutting-context-residency
+      - nw-cross-cutting-evidence-instrumentation
+      - nw-cross-cutting-input-data-contracts
+    phase:
+      nw-design: every DESIGN mandate
+      nw-solution-architect-formal-verification: separately selected formal proof obligation for local totality/inhabitation/canonicalization/preservation or state-machine safety/refinement/reachability/liveness/concurrency/recovery
+      nw-architecture-patterns: selecting an application architecture pattern
+      nw-architectural-styles-tradeoffs: comparing application architecture styles
+      nw-security-by-design: security boundary or threat claim
+      nw-domain-driven-design: domain boundary or aggregate responsibility claim
+      nw-formal-verification-tlaplus: TLA+/TLC state-machine modeling
+      nw-sa-critique-dimensions: self-reviewing an architecture authority
+      nw-code-analysis-port: resolving repository structural facts
+      nw-cross-cutting-invariants: every DESIGN authority before gate/error wording
+    on_demand:
+      nw-algebraic-design-protocol: every DESIGN authority before deciding public constructors, observations, or laws
+      nw-certainty-by-construction: invalid-state or preservation claim
+      nw-stress-analysis: external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
+    paradigm:
+      object_oriented: nw-code-design-oo
+      functional: nw-code-design-fp
+  nw-solution-architect-reviewer:
+    reviewer_of:
+      - nw-solution-architect
+    phase:
+      nw-sar-critique-dimensions: architecture review
+  nw-ddd-architect:
+    on_demand:
+      nw-algebraic-design-protocol: contested design or law
+      nw-certainty-by-construction: invalid-state or preservation claim
+      nw-stress-analysis: external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
+    paradigm:
+      object_oriented: nw-code-design-oo
+      functional: nw-code-design-fp
+  nw-ddd-architect-reviewer:
+    reviewer_of:
+      - nw-ddd-architect
+    phase:
+      nw-ddd-strategic: review start
+      nw-ddd-architect: review start
+      nw-ddd-tactical: aggregate review
+  nw-platform-architect:
+    on_demand:
+      nw-algebraic-design-protocol: contested design or law
+      nw-certainty-by-construction: invalid-state or preservation claim
+      nw-stress-analysis: external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
+  nw-system-designer:
+    on_demand:
+      nw-algebraic-design-protocol: contested infrastructure or recovery law
+      nw-certainty-by-construction: invalid recovery or failure-policy state
+      nw-stress-analysis: external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
+  nw-system-designer-reviewer:
+    reviewer_of:
+      - nw-system-designer
+  nw-platform-architect-reviewer:
+    reviewer_of:
+      - nw-platform-architect
+    phase:
+      nw-par-critique-dimensions: dimension review
+      nw-par-review-criteria: dimension review
+      nw-review-output-format: output generation
+  nw-acceptance-designer:
+    catalog_only:
+      - nw-bdd-methodology
+      - nw-test-design-mandates-scenario-design
+      - nw-test-design-mandates-layered-mechanics
+      - nw-test-design-mandates-composition-contract
+      - nw-test-organization-conventions
+      - nw-ad-critique-dimensions
+      - nw-tdd-methodology-paradigm
+      - nw-tdd-methodology-walking-skeleton
+      - nw-distill
+      - nw-distill-prior-wave-reading
+      - nw-distill-port-treatment-policy
+      - nw-distill-red-scaffolding
+      - nw-at-completeness-check
+      - nw-test-optimization-paradigm-match
+      - nw-test-optimization-consolidation
+      - nw-test-refactoring-catalog
+      - nw-cross-cutting-invariants
+  nw-acceptance-designer-reviewer:
+    reviewer_of:
+      - nw-acceptance-designer
+    phase:
+      nw-ad-critique-dimensions: review start
+      nw-at-completeness-check: review start
+  nw-user-examiner:
+    reviewer_of: []
+  nw-agent-builder:
+    on_demand:
+      nw-ab-optimize-skill: existing skill requested for optimization; procedure measures eligibility
+  nw-agent-builder-reviewer:
+    reviewer_of:
+      - nw-agent-builder
+  nw-skill-reviewer:
+    on_demand:
+      nw-ab-optimize-skill: reviewing a claimed optimized existing skill
+  nw-nwave-buddy:
+    on_demand:
+      nw-rigor: provider, model, competence, or global/project model configuration

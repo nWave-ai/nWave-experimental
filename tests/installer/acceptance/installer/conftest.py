@@ -36,7 +36,10 @@ def installer_result(project_root, tmp_path_factory):
     - PreflightChecker returns all-passing results
     - subprocess.run returns success for embedding/build calls
     """
-    claude_config_dir = tmp_path_factory.mktemp("claude_config")
+    home_dir = tmp_path_factory.mktemp("installer_home")
+    claude_config_dir = home_dir / ".claude"
+    codex_config_dir = home_dir / ".codex"
+    project_dir = tmp_path_factory.mktemp("installer_project")
     opencode_config_dir = tmp_path_factory.mktemp("opencode_config")
 
     # Save originals for cleanup
@@ -46,7 +49,12 @@ def installer_result(project_root, tmp_path_factory):
     original_run_checks = PreflightChecker.run_all_checks
     original_subprocess_run = subprocess.run
     original_argv = sys.argv
+    original_home_env = os.environ.get("HOME")
+    original_agents_home_env = os.environ.get("NWAVE_AGENTS_HOME")
+    original_claude_config_env = os.environ.get("CLAUDE_CONFIG_DIR")
+    original_codex_config_env = os.environ.get("CODEX_HOME")
     original_opencode_env = os.environ.get("OPENCODE_CONFIG_DIR")
+    original_project_root_env = os.environ.get("NWAVE_PROJECT_ROOT")
 
     try:
         # --- Patch Logger: disable Rich so output goes through plain print ---
@@ -57,6 +65,17 @@ def installer_result(project_root, tmp_path_factory):
         Logger.__init__ = plain_logger_init
 
         # --- Patch config dirs → temp ---
+        # The installer resolves its immutable locations at construction from
+        # HOME, NWAVE_AGENTS_HOME, CLAUDE_CONFIG_DIR and CODEX_HOME. Keep the
+        # real inputs in the same temporary home as the PathUtils seam so no
+        # plugin can reach a runner's shared configuration through Path.home()
+        # or an inherited override.
+        os.environ["HOME"] = str(home_dir)
+        os.environ["NWAVE_AGENTS_HOME"] = str(home_dir)
+        os.environ["CLAUDE_CONFIG_DIR"] = str(claude_config_dir)
+        os.environ["CODEX_HOME"] = str(codex_config_dir)
+        os.environ["NWAVE_PROJECT_ROOT"] = str(project_dir)
+
         # claude_config_dir: resolved via PathUtils.get_claude_config_dir
         # opencode_config_dir: resolved via both PathUtils.get_opencode_config_dir
         #   AND the per-plugin _opencode_*_dir functions that each read
@@ -138,10 +157,30 @@ def installer_result(project_root, tmp_path_factory):
         _attr_plugin.migrate_legacy_hook = original_migrate
         _attr_utils.write_attribution_preference = original_write_pref
         sys.argv = original_argv
+        if original_home_env is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = original_home_env
+        if original_agents_home_env is None:
+            os.environ.pop("NWAVE_AGENTS_HOME", None)
+        else:
+            os.environ["NWAVE_AGENTS_HOME"] = original_agents_home_env
+        if original_claude_config_env is None:
+            os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        else:
+            os.environ["CLAUDE_CONFIG_DIR"] = original_claude_config_env
+        if original_codex_config_env is None:
+            os.environ.pop("CODEX_HOME", None)
+        else:
+            os.environ["CODEX_HOME"] = original_codex_config_env
         if original_opencode_env is None:
             os.environ.pop("OPENCODE_CONFIG_DIR", None)
         else:
             os.environ["OPENCODE_CONFIG_DIR"] = original_opencode_env
+        if original_project_root_env is None:
+            os.environ.pop("NWAVE_PROJECT_ROOT", None)
+        else:
+            os.environ["NWAVE_PROJECT_ROOT"] = original_project_root_env
 
 
 @pytest.fixture(scope="module")

@@ -11,7 +11,7 @@ Load only the matching narrow knowledge skill:
 
 - `nw-buddy-command-catalog` for command choice;
 - `nw-rigor` for explicit Codex or Claude model configuration;
-- `nw-auto` for delivery authority, Request size and interaction level;
+- `nw-auto` for delivery authority, LLM-owned S/M/L assessment, wave choice and interaction level;
 - `nw-buddy-project-reading` for current project state; and
 - `nw-buddy-ssot-knowledge` for authority conflicts.
 
@@ -26,4 +26,7 @@ reference/schema rather than answering from memory.
 
 Explain WHAT, WHY and HOW in ordinary language. If evidence is missing or
 contradictory, say `INDETERMINATE`, name the owning authority and give the
-smallest falsifier. Buddy is read-only and never advances a wave.
+smallest falsifier. For a feature or bugfix routing question, explain that the
+LLM revises S/M/L and chooses applicable waves or upstream correction from
+evidence; `NEXT` is advisory and may be ignored. Buddy is read-only and never
+advances a wave.

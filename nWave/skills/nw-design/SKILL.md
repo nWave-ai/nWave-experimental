@@ -81,37 +81,43 @@ Code-level structure stays downstream unless a public contract needs a boundary.
    markdown, or the people who decide cannot take part. Gate: a section that
    opens with a table, a formula or an undefined term fails the projection.
 
-## Result and handover boundary
+## Result and constructor boundary
 
-DESIGN owns semantic decisions by editing or reusing the existing durable brief
-or ADR that owns them. It never authors a handover or per-delivery document. In
-a managed invocation, provider-enforced structured output contains only
-`accepted | rejected | indeterminate` and one opaque `diagnostic` string. It
-contains no design, locator, target, authority, argv, rationale or other
-semantic payload. The control plane branches only on the enum, forwards
-`diagnostic` intact, parses no terminal prose, and ignores the duplicate
-envelope `result`.
+DESIGN supplies semantic decisions; it does not edit a durable brief or ADR and
+never authors Markdown for a DESIGN document. For the executable v1 document
+increment, the LLM supplies the closed JSON manifest defined by
+`docs/product/architecture/ADR-DES-003-step-surface-algebra.md §15`. DES is the
+sole writer: the caller sends that strict UTF-8 object to
+`des design --repo-root ROOT --value N --input -`. DES validates it, constructs
+the human authority, and binds downstream typed facts from the same normalized
+input.
 
-Before invocation, software snapshots the already allowed authority scope. An
-accepted DESIGN turn may change only the existing durable authority document it
-owns; a correction may change only the document named by the already bound
-authority locator and must produce distinct bytes. A non-accepting turn changes
-nothing. Software observes that exact owned delta, then rereads paradigm,
-targets, obligations, oracle and
-native verification commands through the existing durable-authority resolvers.
-Zero delta is accepted only when the authority locator was already resolved
-before invocation and the existing authority is complete. Missing or ambiguous
-ownership is `indeterminate`; conflicting authority is `rejected`.
+The v1 manifest must contain exactly `schema_version`, `authority`, `purpose`,
+`constraints`, `targets`, `paradigm`, `decisions`, `reuse_analysis`,
+`prefactoring`, `boundaries`, `public_oracle`, `oracle`, `acceptance_supports`,
+and `verification`. Supply the nested reuse, prefactoring, boundary/failure,
+and public-oracle content required by §15; do not supply completed Markdown or
+an ADR draft. Resolve each semantic field from code facts, preserve the
+reuse/prefactoring/native-evidence and uncertainty duties above, and use at
+most one bounded Bash probe for a load-bearing unknown.
 
-The invoking LLM selects the DISTILL route. Existing CLI/software constructs
-the Git base, authority locator, and typed handover facts and bytes from Git
-and the durable product/design/oracle authorities.
-The Request's ordered value graph is decomposed once; the
-producer emits one minimal whole-Request handover with one fan-in. Every
-independently observable, shippable value slice receives its value-level oracle,
-acceptance-test review, whole-slice implementation review, source-blind EXAMINE
-when applicable, and integration/finalization. Internal technical shards receive
-no separate contract, review, EXAMINE or finalization.
+A provider-enforced output schema remains authoritative. When a caller requires
+existing typed `design_facts`, obey that schema exactly and do not substitute a
+v1 manifest for it. When no schema is enforced and the normal DESIGN host asks
+for constructor input, return the semantic v1 manifest only. In either case,
+do not write authority, handover, production, or oracle bytes. `NEXT` is
+advisory; the producer does not select or invoke another delivery step.
+
+The first producer intentionally does not supersede different already-bound
+facts through `--input`: an existing bound-facts conflict is refused before a
+write. Choose rework when that conflict is found and state the limitation; the
+explicit supersession/rework constructor is a later increment.
+
+The Request's ordered value graph is decomposed once. Every independently
+observable, shippable value slice retains its value-level oracle,
+acceptance-test review, whole-slice implementation review, conditional
+source-blind EXAMINE, and integration/finalization. Internal technical shards
+receive no separate contract, review, EXAMINE, or finalization.
 
 ## Constructive closure and refinement
 
@@ -185,18 +191,15 @@ temporal gap needs the model checker.
 
 ## Handoff
 
-After self-falsification, the LLM routes an acceptance finding that needs
-upstream DESIGN rework to the owner of the one existing durable brief or ADR.
-A correction changes only the already bound authority document; software
-re-derives its typed facts, and the LLM chooses whether and how to reinvoke
-DESIGN or ATD while retaining every required quality check.
-The authority records paradigm, targets, obligations, oracle locator and
-supports, native command vectors and
-the public contract; the result carries none of them. Software owns the
-handover and deterministically projects only the facts downstream consumers
-need. Never write the handover, create a design document or copy rationale into
-the diagnostic.
-Apply `construction:design-paradigm-projection` from the shared cross-cutting
-core; root never retypes or defaults that decision.
-Use the opaque diagnostic only to summarize a refusal or remaining uncertainty
-for the human, without a machine-readable terminal grammar.
+After self-falsification, return semantic input or the caller-enforced typed
+facts; never edit a brief, ADR, handover, or DESIGN document. An acceptance
+finding that needs upstream rework remains with the owner of the bound
+architecture decision. The caller may route that rework, while the current v1
+constructor continues to refuse conflicting already-bound facts rather than
+silently superseding them.
+
+The semantic input records paradigm, targets, obligations, oracle locator and
+supports, native command vectors, and the public contract. DES alone projects
+those facts into the authority and handover. Use an opaque diagnostic only to
+summarize a refusal or remaining uncertainty for a human; it is never a
+machine-readable terminal grammar.

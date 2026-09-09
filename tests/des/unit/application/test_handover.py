@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 
@@ -80,6 +81,38 @@ def test_reader_refuses_noncanonical_bytes_that_parse_to_a_valid_graph() -> None
         parsed = read_handover(raw)
         assert isinstance(parsed, Blocked)
         assert parsed.what == "HandoverMalformed"
+
+
+def test_reader_validates_raw_obligation_members_without_breaking_legacy_shape() -> (
+    None
+):
+    facts = DesignFacts(
+        (DesignTarget("src/value.py", "EXTEND"),),
+        "object_oriented",
+        ("reuse the existing boundary",),
+        "tests/test_value.py",
+        (),
+        (("python", "-m", "pytest"),),
+        ("constraint",),
+    )
+    canonical = json.loads(
+        _canonical_bytes("deliver", (HandoverValue("A", (), facts),))
+    )
+
+    for malformed in (1, [1], [""], [" "], ["constraint", "constraint"]):
+        payload = json.loads(json.dumps(canonical))
+        payload["values"][0]["authority"]["obligations"] = malformed
+        raw = json.dumps(payload, separators=(",", ":")).encode()
+        parsed = read_handover(raw)
+        assert isinstance(parsed, Blocked), malformed
+        assert parsed.what == "HandoverMalformed", malformed
+
+    legacy = json.loads(json.dumps(canonical))
+    del legacy["values"][0]["authority"]["obligations"]
+    parsed_legacy = read_handover(json.dumps(legacy, separators=(",", ":")).encode())
+    assert isinstance(parsed_legacy, StoredHandover)
+    assert isinstance(parsed_legacy.values[0].authority, DesignFacts)
+    assert parsed_legacy.values[0].authority.obligations == ()
 
 
 def test_create_rejects_unusable_graph_facts_before_write(tmp_path) -> None:

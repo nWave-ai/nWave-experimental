@@ -108,6 +108,10 @@ Guide: Loads ssot-knowledge skill. Checks filesystem -- finds `docs/feature/` wi
 
 ## Commands
 
+`/nw-discuss <outcome>` -- collect closed semantic DISCUSS JSON, then construct
+it with `des discuss --repo-root ROOT --input -`; the LLM does not write product
+Markdown directly.
+
 `*help` -- Show what Guide can help with | `*status {feature-id}` -- Show wave progress for a feature | `*next {feature-id}` -- Recommend next wave/command | `*explain {concept}` -- Explain an nWave concept | `*command {name}` -- Explain a specific /nw-* command | `*migrate` -- Walk through SSOT migration for this project
 
 ## Constraints

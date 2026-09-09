@@ -2,7 +2,7 @@
 
 > Experimental software: evaluate it on non-critical work and report concrete friction or defects.
 
-**Build:** `2d5a26a` from `feature/atdd-pure-staging` (`2d5a26a0e1fc7cc810581d5423ba912817c5ea0a`)
+**Build:** `821610d` from `feature/atdd-pure-staging` (`821610db594df04d6518be2f1a0ee83948989ce3`)
 
 ## Delivery
 
@@ -22,3 +22,13 @@ cd nWave-experimental
 uv run python -m nwave_ai.cli install
 ```
 Restart the host, then enable nWave with `nwave-ai project enable`. nWave sends no telemetry; share redacted feedback through the experimental issue tracker.
+
+## Recover the previous experimental package identity
+
+A previous experimental release used the distribution name `nwave` at version
+`4.0.0+atddpure.2d5a26a`, although it exported the `nwave_ai` module and the
+`nwave-ai` command. A corrected release uses the canonical distribution name
+`nwave-ai`. Recover only after the corrected release receipt gives its exact
+commit; set `CORRECTED_REF` to that receipt value, never to a guessed commit.
+
+Use the complete [installation recovery guide](docs/guides/installation-guide/#recover-a-previous-experimental-package-identity): it identifies the actual manager and absolute executables, removes the verified obsolete owner before reinstalling canonical `nwave-ai`, then runs install, DES migration, and doctor.

@@ -761,6 +761,9 @@ def replay(argv: list[str], cwd: Path, config_dir: Path, role: str) -> int:
             "prompt_bytes": len(prompt),
             "question_sha256": _question_digest(prompt),
             "recorded_question_sha256": _recorded_question_digest(record),
+            "expected_historical_question_sha256": (
+                _expected_historical_question_digest(record)
+            ),
             "is_error": False,
             "argv": argv,
             "spend_usd": 0.0,
@@ -793,6 +796,29 @@ def replay(argv: list[str], cwd: Path, config_dir: Path, role: str) -> int:
 #: is still asked".
 _RUN_LOCAL_FACTS = ("repository_root: ", "path_convention: ", "oracle_red: ")
 
+#: Commit e1d6278c8 repaired the typed-design handoff: ``decisions`` and
+#: ``obligations`` became distinct AuthorityFacts.  The named frozen records
+#: pre-date that schema: their legacy ``obligations`` array is the decisions
+#: payload, while their new obligations value is the empty array.  This is a
+#: migration of exactly those historical questions, never a projection of a
+#: newly asked question.
+_LEGACY_DECISIONS_RECORDS = frozenset(
+    {
+        "03-nw-acceptance-designer.json",
+        "05-nw-software-crafter.json",
+    }
+)
+_LEGACY_DECISIONS_CASE = "graphify-callers-of-run17-run20"
+_AUTHORITY_FACT_PREFIXES = (
+    "authority: ",
+    "targets: ",
+    "paradigm: ",
+    "decisions: ",
+    "oracle: ",
+    "acceptance_supports: ",
+    "obligations: ",
+)
+
 
 def _question(prompt: str) -> str:
     """The part of a prompt that is the QUESTION, free of where it was asked."""
@@ -813,14 +839,87 @@ def _recorded_question_digest(record: Path) -> str | None:
     that only worked when the prompt matched byte for byte would be a fixture,
     not a replay of the software.
     """
+    prompt = _recorded_question(record)
+    if prompt is None:
+        return None
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+
+def _expected_historical_question(record: Path) -> str | None:
+    """Return this record's exact expected question under known schema history.
+
+    Only the two frozen value-role records in the bundled case are migrated.
+    Their legacy shape is checked before relocating the old ``obligations``
+    JSON array to ``decisions`` and installing ``obligations: []``.  Any other
+    record remains its own question; a malformed named legacy record returns
+    ``None`` so the replay assertion fails rather than broadening equivalence.
+    """
+    question = _recorded_question(record)
+    if question is None:
+        return None
+    frozen_case = Path(__file__).resolve().parent / "replay" / _LEGACY_DECISIONS_CASE
+    if (
+        record.name not in _LEGACY_DECISIONS_RECORDS
+        or record.resolve() != (frozen_case / record.name).resolve()
+    ):
+        return question
+
+    lines = question.splitlines()
+    positions = {
+        prefix: [i for i, line in enumerate(lines) if line.startswith(prefix)]
+        for prefix in _AUTHORITY_FACT_PREFIXES
+    }
+    required = (
+        "authority: ",
+        "targets: ",
+        "paradigm: ",
+        "oracle: ",
+        "acceptance_supports: ",
+        "obligations: ",
+    )
+    if (
+        any(len(positions[prefix]) != 1 for prefix in required)
+        or positions["decisions: "]
+    ):
+        return None
+    authority, targets, paradigm, oracle, supports, obligations = (
+        positions[prefix][0] for prefix in required
+    )
+    if (authority, targets, paradigm, oracle, supports) != (1, 2, 3, 4, 5):
+        return None
+    legacy_payload = lines[obligations][len("obligations: ") :]
+    try:
+        if not isinstance(json.loads(legacy_payload), list):
+            return None
+    except json.JSONDecodeError:
+        return None
+    return "\n".join(
+        (
+            *lines[:oracle],
+            f"decisions: {legacy_payload}",
+            *lines[oracle:obligations],
+            "obligations: []",
+            *lines[obligations + 1 :],
+        )
+    )
+
+
+def _expected_historical_question_digest(record: Path) -> str | None:
+    """Digest the full expected historical question, if its shape is admissible."""
+    question = _expected_historical_question(record)
+    if question is None:
+        return None
+    return hashlib.sha256(question.encode("utf-8")).hexdigest()
+
+
+def _recorded_question(record: Path) -> str | None:
+    """Return the frozen envelope's question without mutating the envelope."""
     try:
         document = json.loads(record.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     prompt = document.get("prompt")
-    if not isinstance(prompt, str):
-        return None
-    return _question_digest(prompt)
+    return _question(prompt) if isinstance(prompt, str) else None
 
 
 def main(argv: list[str]) -> int:

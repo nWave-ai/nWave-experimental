@@ -574,6 +574,14 @@ def _doctor_checks(
         _write_json(repo / rel_path, content)
 
     monkeypatch.setenv("HOME", str(home))
+    # ``DoctorContext.from_defaults()`` resolves its global config through the
+    # selected-home contract, not HOME alone.  An inherited
+    # ``NWAVE_AGENTS_HOME`` otherwise makes the public CLI read a different
+    # tier than this fixture just wrote.  Pin every location input so all
+    # doctor checks see the isolated fixture roots.
+    monkeypatch.setenv("NWAVE_AGENTS_HOME", str(home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home / ".claude"))
+    monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
     monkeypatch.chdir(repo)
 
     exit_code, stdout = _invoke_cli(["doctor", "--json"])

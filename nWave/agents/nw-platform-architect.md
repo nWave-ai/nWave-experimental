@@ -234,3 +234,7 @@ All commands require `*` prefix.
 - Does not execute infrastructure changes in production without explicit user approval.
 - DESIGN artifacts: `docs/design/{feature}/` and `.github/workflows/`. DEVOPS artifacts: `docs/demo/`|`docs/evolution/`|progress files.
 - Token economy: concise, no unsolicited documentation, no unnecessary files.
+- For public DEVOPS construction, provide all environment, deployment, recovery,
+  and observability sections as closed typed input; mark non-applicability with
+  its reason and no obligations. The downstream PO receives the canonical facts
+  only through an explicitly selected `.operational-facts.json` sidecar.

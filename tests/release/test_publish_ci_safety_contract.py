@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -256,3 +258,106 @@ def test_ci_gate_exhausts_bounded_budget_and_fails_closed_on_persistent_transien
     # The load-bearing assertion: this fails against the old immediate-exit
     # behavior, which would leave the counter at 1, not at max_attempts.
     assert _counter(tmp_path, "view_counter") == max_attempts
+
+
+def test_experimental_public_tree_commits_generated_runtime_before_wheel_build(
+    tmp_path,
+):
+    """The public Git projection retains generated DES wheel inputs despite ignore rules."""
+    from scripts.release.publish_experimental import prepare_experimental_public_tree
+
+    public_tree = tmp_path / "public-tree"
+    for name in ("nWave", "scripts", "src", "nwave_ai", "schemas"):
+        shutil.copytree(REPO_ROOT / name, public_tree / name, symlinks=True)
+    for name in (".gitignore", "pyproject.toml", "README.md", "LICENSE"):
+        shutil.copy2(REPO_ROOT / name, public_tree / name)
+    for command in (
+        ["git", "init", "-q", str(public_tree)],
+        [
+            "git",
+            "-C",
+            str(public_tree),
+            "config",
+            "user.name",
+            "Public projection test",
+        ],
+        ["git", "-C", str(public_tree), "config", "user.email", "test@example.invalid"],
+    ):
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        assert completed.returncode == 0, completed.stderr
+
+    prepare_experimental_public_tree(public_tree, "abc1234", "abc1234full")
+    completed = subprocess.run(
+        ["git", "-C", str(public_tree), "add", "-A"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    completed = subprocess.run(
+        ["git", "-C", str(public_tree), "commit", "-qm", "public projection"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    tracked = subprocess.run(
+        ["git", "-C", str(public_tree), "ls-tree", "-r", "--name-only", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert tracked.returncode == 0, tracked.stderr
+    assert (
+        "lib/python/des/adapters/driven/build/__init__.py"
+        in tracked.stdout.splitlines()
+    )
+    assert (
+        "lib/nwave-runtime/des/adapters/driven/build/__init__.py"
+        in tracked.stdout.splitlines()
+    )
+
+    exported = tmp_path / "committed-public-tree"
+    exported.mkdir()
+    archive = subprocess.run(
+        ["git", "-C", str(public_tree), "archive", "--format=tar", "HEAD"],
+        capture_output=True,
+        check=False,
+    )
+    assert archive.returncode == 0, archive.stderr.decode("utf-8", errors="replace")
+    extracted = subprocess.run(
+        ["tar", "-x", "-C", str(exported)],
+        input=archive.stdout,
+        capture_output=True,
+        check=False,
+    )
+    assert extracted.returncode == 0, extracted.stderr.decode("utf-8", errors="replace")
+    assert (exported / "lib/python/des/adapters/driven/build/__init__.py").is_file()
+    assert (
+        exported / "lib/nwave-runtime/des/adapters/driven/build/__init__.py"
+    ).is_file()
+
+    built = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "build",
+            "--wheel",
+            "--outdir",
+            str(exported / "wheel"),
+        ],
+        cwd=exported,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert built.returncode == 0, built.stderr
+    wheels = tuple((exported / "wheel").glob("nwave_ai-*.whl"))
+    assert len(wheels) == 1
+    import zipfile
+
+    with zipfile.ZipFile(wheels[0]) as wheel:
+        assert "des/adapters/driven/build/__init__.py" in wheel.namelist()
+        assert (
+            "nWave/lib/python/des/adapters/driven/build/__init__.py" in wheel.namelist()
+        )

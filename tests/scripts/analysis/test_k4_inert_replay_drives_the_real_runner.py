@@ -73,6 +73,14 @@ FROM_RUN_17 = (
     "nw-software-crafter",
 )
 
+#: e1d6278c8 separated AuthorityFacts.decisions from obligations.  The legacy
+#: six-field DesignFacts records carry no constraints: their old obligations
+#: array is the decisions payload, and new obligations is therefore empty.
+LEGACY_DECISIONS_MIGRATION_ROLES = (
+    "nw-acceptance-designer",
+    "nw-software-crafter",
+)
+
 #: The steps this orchestrator expects to be walked to, in order. Asserted as a
 #: whole rather than step by step, because what is under test is that the DES
 #: names the canonical order correctly as data -- not that this file remembers
@@ -154,7 +162,18 @@ def _next_forms(terminal: str) -> list[list[str]]:
 def subject(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A throwaway clone checked out at the tree the recorded candidate applies to."""
     root = tmp_path_factory.mktemp("replay-subject") / "subject"
-    cloned = _git(REPO_ROOT, "clone", "--quiet", "--local", str(REPO_ROOT), str(root))
+    # ``--local`` normally hard-links objects.  The mandated TMPDIR is on a
+    # different filesystem in CI recovery, where that operation is invalid;
+    # copying remains an isolated clone with identical objects.
+    cloned = _git(
+        REPO_ROOT,
+        "clone",
+        "--quiet",
+        "--local",
+        "--no-hardlinks",
+        str(REPO_ROOT),
+        str(root),
+    )
     if cloned.returncode != 0:
         pytest.skip(f"cannot clone this repository: {cloned.stderr.strip()}")
     checked_out = _git(root, "checkout", "--quiet", "--detach", BASE_COMMIT)
@@ -290,7 +309,16 @@ def test_the_turns_of_the_recorded_run_are_asked_the_recorded_question(
     the absolute root the turn runs in, and a replay runs in a different
     directory than the recording did. Holding those facts equal would demand the
     replay happen in the recorded checkout, which no replay can do; every other
-    byte is still compared exactly.
+    byte is still compared exactly, save the explicitly measured one-field
+    schema evolution below.
+
+    e1d6278c8 separated AuthorityFacts.decisions from obligations.  The two
+    named frozen legacy prompts have only the old obligations array, which was
+    architecture decisions; DesignFacts then had no constraints field.  Their
+    expected question is constructed narrowly by moving that exact JSON payload
+    after paradigm and supplying ``obligations: []``.  The actual whole question
+    must equal that exact transformed historical question; no actual fact is
+    deleted or normalized.
     """
     from_run_17 = [r for r in walked["records"] if r["role"] in FROM_RUN_17]
 
@@ -300,7 +328,38 @@ def test_the_turns_of_the_recorded_run_are_asked_the_recorded_question(
         if record["question_sha256"] != record["recorded_question_sha256"]
     ]
 
-    assert divergent == []
+    assert tuple(divergent) == LEGACY_DECISIONS_MIGRATION_ROLES
+
+    expected_divergent = [
+        record["role"]
+        for record in from_run_17
+        if record["question_sha256"] != record["expected_historical_question_sha256"]
+    ]
+
+    assert expected_divergent == []
+
+
+def test_the_legacy_prompt_migration_rejects_any_other_question_change() -> None:
+    """The narrow migration cannot make altered facts equivalent."""
+    record = BUNDLED_CASE / "03-nw-acceptance-designer.json"
+    expected = inert_claude._expected_historical_question(record)
+    assert expected is not None
+
+    changed_decisions = expected.replace(
+        "decisions: [", 'decisions: ["counterexample: altered decision", ', 1
+    )
+    changed_obligations = expected.replace(
+        "obligations: []", 'obligations: ["counterexample: new constraint"]', 1
+    )
+    changed_authority = expected.replace(
+        'authority: "', 'authority: "counterexample: altered authority; ', 1
+    )
+
+    expected_digest = inert_claude._expected_historical_question_digest(record)
+    assert expected_digest is not None
+    assert inert_claude._question_digest(changed_decisions) != expected_digest
+    assert inert_claude._question_digest(changed_obligations) != expected_digest
+    assert inert_claude._question_digest(changed_authority) != expected_digest
 
 
 def test_the_replay_spends_nothing(walked: dict) -> None:

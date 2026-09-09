@@ -5,7 +5,7 @@ Returns typed design facts consumed by one DES run.
 **Wave:** Other
 **Model:** claude-opus-5
 **Max turns:** 40
-**Tools:** Read, Glob, Grep, Bash, Edit
+**Tools:** Read, Glob, Grep, Bash
 
 ## Commands
 

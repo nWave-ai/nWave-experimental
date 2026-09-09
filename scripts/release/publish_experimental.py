@@ -49,14 +49,26 @@ import tempfile
 from pathlib import Path
 
 
+# Direct public invocation has ``scripts/release`` on sys.path, not the
+# repository root.  Match the canonical release-script bootstrap before using
+# the shared public-wheel projection seam.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.release.patch_pyproject import patch_pyproject, tomli  # noqa: E402
+
+
 # --- constants ------------------------------------------------------------
 
 SOURCE_BRANCH = "feature/atdd-pure-staging"
 TARGET_SLUG = "nWave-ai/nWave-experimental"
 TARGET_BRANCH = "main"
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 STRIP_SCRIPT = REPO_ROOT / "scripts" / "release" / "strip_private_agents.py"
+BUILD_DIST_SCRIPT = Path("scripts/build_dist.py")
+STAGE_PUBLIC_WHEEL_DES_SCRIPT = Path("scripts/release/stage_public_wheel_des.py")
+GENERATED_RUNTIME_PATHS = ("lib/python/des", "lib/nwave-runtime/des")
 
 # rsync filter — mirrors release-prod.yml's exclude/include block verbatim so the
 # experimental tree carries the SAME public surface as a prod sync (restricted
@@ -226,6 +238,55 @@ def stamp_experimental_version(target: Path, sha: str) -> None:
         print("  ! no version line matched — skipping version stamp")
 
 
+def prepare_experimental_distribution(target: Path, sha: str) -> None:
+    """Project the preview tree through the canonical public-wheel patcher."""
+    stamp_experimental_version(target, sha)
+    pyproject = target / "pyproject.toml"
+    if not pyproject.is_file():
+        raise RuntimeError("experimental target has no pyproject.toml")
+    version = tomli.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
+    patch_pyproject(
+        input_path=str(pyproject),
+        output_path=str(pyproject),
+        target_name="nwave-ai",
+        target_version=version,
+    )
+
+
+def prepare_experimental_public_tree(
+    target: Path,
+    sha: str,
+    full_sha: str,
+    *,
+    command_runner=None,
+) -> None:
+    """Produce the experimental public tree in the same wheel-ready shape as CI."""
+    runner = run if command_runner is None else command_runner
+    prepare_experimental_distribution(target, sha)
+    runner(
+        [
+            sys.executable,
+            str(target / BUILD_DIST_SCRIPT),
+            "--project-root",
+            str(target),
+        ]
+    )
+    runner(
+        [
+            sys.executable,
+            str(target / STAGE_PUBLIC_WHEEL_DES_SCRIPT),
+            "--project-root",
+            str(target),
+            "--cleanup-dist",
+        ]
+    )
+    # The public target's .gitignore excludes output/ and build/, including
+    # these generated package paths. They are publisher-owned wheel inputs and
+    # must be staged explicitly before the ordinary later `git add -A`.
+    runner(["git", "-C", str(target), "add", "-f", *GENERATED_RUNTIME_PATHS])
+    write_experimental_readme(target, sha, full_sha)
+
+
 README_TEMPLATE = REPO_ROOT / "nWave" / "templates" / "experimental-readme.md"
 
 
@@ -335,8 +396,7 @@ def main() -> int:
         print("\n[4/5] strip restricted agents (canonical fail-closed SSOT)")
         run([sys.executable, str(STRIP_SCRIPT), str(target)])
 
-        stamp_experimental_version(target, sha)
-        write_experimental_readme(target, sha, full_sha)
+        prepare_experimental_public_tree(target, sha, full_sha)
 
         # 5) commit + push ------------------------------------------------
         print("\n[5/5] commit + push")

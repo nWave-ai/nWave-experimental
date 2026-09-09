@@ -10,8 +10,11 @@ BDD scenario mapping:
   - US-RTR-003: Stable release pipeline, pyproject patching step.
 """
 
+import os
 import posixpath
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -713,3 +716,43 @@ class TestErrorHandling:
                 target_name="nwave-ai",
                 target_version="1.1.22",
             )
+
+
+def test_experimental_public_projection_uses_nwave_ai_metadata(
+    sample_pyproject_path, tmp_path
+):
+    """The experimental Git-public publisher must reuse the PyPI name seam."""
+    from scripts.release.publish_experimental import prepare_experimental_distribution
+
+    target = tmp_path / "public-target"
+    target.mkdir()
+    pyproject = target / "pyproject.toml"
+    pyproject.write_text(
+        Path(sample_pyproject_path).read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    prepare_experimental_distribution(target, "abc1234")
+
+    projected = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]
+    assert projected["name"] == "nwave-ai"
+    assert projected["version"].endswith("+atddpure.abc1234")
+
+
+def test_experimental_publisher_help_runs_without_pythonpath():
+    """The public publisher remains directly runnable outside editable imports."""
+    repo = Path(__file__).resolve().parents[2]
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    environment.pop("PYTHONHOME", None)
+
+    completed = subprocess.run(
+        [sys.executable, "scripts/release/publish_experimental.py", "--help"],
+        cwd=repo,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "Publish the atdd_pure preview" in completed.stdout

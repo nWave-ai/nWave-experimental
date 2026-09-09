@@ -36,6 +36,7 @@ def test_a_request_mentioning_des_project_cannot_add_a_native_execution(
                 modified_authority_paths=(),
                 target_decisions=(("src/value.py", "CREATE_NEW"),),
                 paradigm="object_oriented",
+                decisions=(),
                 obligations=(),
                 acceptance_oracle_locator="tests/acceptance/test_value.py",
                 acceptance_paths=("tests/acceptance/test_value.py",),

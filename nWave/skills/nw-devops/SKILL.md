@@ -32,3 +32,18 @@ narrative.
 DEVOPS does not author a handover, feature workspace, rollout ledger or CI
 status copy. A downstream operational contradiction returns to the platform
 authority; software re-derives any needed execution facts.
+
+## Public construction
+
+For a machine-supplied operational brief, emit the complete closed
+`OperationalDocumentInput v1` JSON and invoke `des devops --repo-root ROOT
+--input -`.  The provider-free command writes the configured Markdown brief and
+canonical adjacent `.operational-facts.json` sidecar.  A later PO turn consumes
+facts only when the orchestrator explicitly selects that sidecar with
+`des po --operational-facts PATH`; never infer it from ambient documents.
+
+## Feature evolution
+
+Feature evolution applies to every completed feature, not only DEVOPS work.
+Follow the canonical whole-feature invocation and cleanup guidance in
+`nWave/skills/nw-throughput/SKILL.md#feature-evolution-before-cleanup`.

@@ -3,35 +3,37 @@ requires = ["hatchling>=1.31.0", "pip>=24"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-# Regular packages (have __init__.py at root of each):
-#   `nwave_ai` ships as nwave_ai/ — public CLI module, import target of
-#   the `nwave-ai` console script.
-#   `src/des` ships as des/ — DES runtime, src-layout flattening.
-#
-# `scripts/install` and `scripts/shared` are NOT in `packages` because
-# `scripts/` lacks a top-level `__init__.py` and hatchling silently
-# skips entries whose package root cannot be resolved. They are added
-# via the force-include map below so they ship at exact path
-# `scripts/install/` and `scripts/shared/` and remain importable as
-# `scripts.install.*` and `scripts.shared.*` (PEP 420 namespace
-# package via the implicit `scripts/` directory).
-#
-# Public PyPI wheel: patch_pyproject.py rewrites this entire section
-# to a narrower force-include map (see release-prod.yml). Dev/RC use
-# the wider map below; PyPI ships only nwave_ai + a curated subset.
-packages = ["src/des", "nwave_ai", "src/nwave_capture"]
+packages = ["nwave_ai"]
 
 [tool.hatch.build.targets.wheel.force-include]
+"nWave/agents" = "nWave/agents"
+"nWave/scripts" = "nWave/scripts"
+"nWave/skills" = "nWave/skills"
+"nWave/tasks/nw" = "nWave/tasks/nw"
+"nWave/templates" = "nWave/templates"
+".nwave-wheel-assets/templates" = "nWave/nWave/templates"
+"nWave/data" = "nWave/data"
+".nwave-wheel-assets/data" = "nWave/nWave/data"
+"nWave/schemas" = "nWave/nWave/schemas"
+".nwave-wheel-assets/framework-catalog.yaml" = "nWave/nWave/framework-catalog.yaml"
+"nWave/framework-catalog.yaml" = "nWave/framework-catalog.yaml"
+"scripts/hooks/git_stash_guard.py" = "nWave/nWave/hooks/git_stash_guard.py"
+"nWave/VERSION" = "nWave/VERSION"
+"nWave/README.md" = "nWave/README.md"
 "scripts/install" = "scripts/install"
 "scripts/shared" = "scripts/shared"
-"nWave/data" = "nWave/data"
+"scripts/install_nwave_target_hooks.py" = "scripts/install_nwave_target_hooks.py"
+"scripts/validate_step_file.py" = "scripts/validate_step_file.py"
+"lib/python/des" = "des"
+"src/nwave_capture" = "nwave_capture"
+"lib/nwave-runtime/des" = "nWave/lib/python/des"
 
 [tool.hatch.build.hooks.custom]
 path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
-name = "nwave"
-version = "4.0.0+atddpure.2d5a26a"
+name = "nwave-ai"
+version = "4.0.0+atddpure.821610d"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -180,13 +182,6 @@ Issues = "https://github.com/nWave-ai/nWave/issues"
 [project.scripts]
 nwave-ai = "nwave_ai.cli:main"
 des = "des.cli.__main__:main"
-
-[tool.nwave]
-# Override floor for nwave-ai public version (PyPI + GitHub).
-# The pipeline auto-bumps from the public repo's current version.
-# Only set this higher to force a version jump (e.g., 1.1.0 → 2.0.0).
-# Leave unchanged for normal patch releases.
-public_version = "4.0.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -90,7 +90,7 @@
 
 ## nw-auto
 
-- [nw-auto](nw-auto.md) — Decides Request size and human-interaction level, then walks the DES steps that deliver it.
+- [nw-auto](nw-auto.md) — Evaluates and revises Request S/M/L and delivery choices from evidence, then uses DES steps to deliver it.
 
 ## nw-bdd-methodology
 

@@ -194,12 +194,10 @@ class TestAgentFrontmatterAcceptance:
     @pytest.mark.parametrize(
         ("agent", "expected"),
         [
-            # The architect is deliberately equipped beyond read-only: `Bash`
-            # to measure a design empirically and `Edit` to author the
-            # architecture it owns (`fix(agents): equip architect for empirical
-            # design work`). That is its least-privilege set, not a relaxation —
-            # every other managed role stays exactly as narrow as before.
-            ("nw-solution-architect", ["Bash", "Edit", "Glob", "Grep", "Read"]),
+            # The architect measures and returns typed design facts. DES owns
+            # the resulting architecture-document writes, so the role needs no
+            # direct Edit capability.
+            ("nw-solution-architect", ["Bash", "Glob", "Grep", "Read"]),
             ("nw-product-owner", ["Read"]),
             ("nw-acceptance-designer-reviewer", []),
             ("nw-user-examiner", []),
