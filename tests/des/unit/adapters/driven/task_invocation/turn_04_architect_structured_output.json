@@ -62,6 +62,7 @@
         "tests/des/acceptance/coherence_codefact",
         "-q"
       ]
-    ]
+    ],
+    "authority_locator": ""
   }
 }

@@ -4,15 +4,22 @@ argument-hint: '[request]'
 ---
 # NW-DELIVER
 
-Interactive: invoke the first step, read its terminal, follow its `NEXT`.
+Interactive: invoke the first supported step and read its terminal. `NEXT` is
+advisory; the LLM chooses the next supported operation.
 
 ```bash
 printf '%s' "$REQUEST" | des po --repo-root ROOT
 ```
 
-Autonomous: one composed run of the same path.
+For an uncertain boundary, use the existing delegations to exercise an early
+concrete producer-to-consumer connection: semantic input through the DES
+constructor, an executable public-port oracle and RED observation, then its
+implementation and observation. If the consumer cannot proceed, return its
+specific missing semantic question and counterexample to the owning author
+before expanding the affected design or solution. This does not create a
+mandatory sequence, controller, or mini-cycle for internal technical fragments.
 
-```bash
-printf '%s' "$REQUEST" | des po --repo-root ROOT
-```
-Then invoke the step each block names in its `NEXT` line, until integration closes the Request. The source-blind EXAMINE inside `des verify` is never skipped. Each step returns only `Success`, `Refusal`, `Retry`, or `Indeterminate`. No command composes them; the loop is the caller's, and `nw-auto` owns it.
+After native `des verify`, the LLM independently invokes reviewer and source-blind examiner from persisted role inputs. Each step returns
+only `Success`, `Refusal`, `Retry`, or `Indeterminate`. No command composes the
+steps; the caller directs the existing operations, and `nw-auto` owns that
+guidance.

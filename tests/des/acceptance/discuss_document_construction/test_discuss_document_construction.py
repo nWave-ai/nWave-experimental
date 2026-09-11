@@ -236,3 +236,140 @@ def test_discuss_race_reports_indeterminate_with_authority_and_untouched_winner(
         f"DOCUMENT-SHA256: {hashlib.sha256(document.read_bytes()).hexdigest()}",
     )
     assert stored.read_bytes() == winner_raw
+
+
+def call_replacing(root: Path, raw: str) -> tuple[int, str, str]:
+    return run_cli_in_process(
+        ["discuss", "--repo-root", str(root), "--input", "-", "--replace-current"],
+        cwd=root,
+        stdin_text=raw,
+        catch_all=True,
+    )
+
+
+def bind_design(root: Path, position: int) -> None:
+    code, out, err = run_cli_in_process(
+        ["design", "--repo-root", str(root), "--value", str(position), "--input", "-"],
+        cwd=root,
+        stdin_text=json.dumps(MANIFEST),
+        catch_all=True,
+    )
+    assert code == 0, out + err
+
+
+def stored_values(root: Path) -> list[dict[str, object]]:
+    return json.loads((root / ".nwave/des/handover.json").read_text())["values"]
+
+
+def test_public_discuss_replace_current_corrects_the_brief_and_retains_bound_facts(
+    tmp_path: Path,
+) -> None:
+    """A correction rewrites the owned brief while every value keeps its authority."""
+    root = base_repository(tmp_path / "repository")
+    assert call(root, json.dumps(payload()))[0] == 0
+    bind_design(root, 1)
+    bind_design(root, 2)
+    document = root / "docs/product/brief.md"
+    handover = root / ".nwave/des/handover.json"
+    before_authorities = [value["authority"] for value in stored_values(root)]
+    before = (document.read_bytes(), handover.read_bytes())
+
+    corrected = payload()
+    corrected["decisions"] = ["Move color selection to the Palette boundary."]
+    raw = json.dumps(corrected)
+
+    code, out, err = call(root, raw)
+    assert code != 0 and "DiscussAuthorityDrift" in out + err
+    assert before == (document.read_bytes(), handover.read_bytes())
+
+    code, out, err = call_replacing(root, raw)
+    assert code == 0, out + err
+    assert "NEXT: des design --repo-root <root> --value 1" in out + err
+    rendered = document.read_text()
+    assert "Move color selection to the Palette boundary." in rendered
+    assert "Keep color selection in the Widget boundary." not in rendered
+    assert [value["authority"] for value in stored_values(root)] == before_authorities
+
+    replayed = (document.read_bytes(), handover.read_bytes())
+    assert call_replacing(root, raw)[0] == 0
+    assert replayed == (document.read_bytes(), handover.read_bytes())
+
+
+def test_public_discuss_replace_current_retains_only_the_surviving_observations_facts(
+    tmp_path: Path,
+) -> None:
+    """A renamed observation loses its bound authority; an untouched one keeps it."""
+    root = base_repository(tmp_path / "repository")
+    assert call(root, json.dumps(payload()))[0] == 0
+    bind_design(root, 1)
+    bind_design(root, 2)
+    retained = stored_values(root)[0]["authority"]
+    assert retained is not None
+
+    corrected = payload()
+    values = corrected["values"]
+    assert isinstance(values, list)
+    first = values[0]
+    values[1] = {
+        "observation": "A user reviews the selected widget color.",
+        "dependencies": [first["observation"]],
+    }
+    values.append(
+        {
+            "observation": "A user can clear the selected widget color.",
+            "dependencies": [first["observation"]],
+        }
+    )
+    code, out, err = call_replacing(root, json.dumps(corrected))
+    assert code == 0, out + err
+
+    after = stored_values(root)
+    assert [value["observation"] for value in after] == [
+        value["observation"] for value in values
+    ]
+    assert after[0]["authority"] == retained
+    assert after[1].get("authority") is None
+    assert after[2].get("authority") is None
+
+
+def test_public_discuss_replace_current_refuses_unproved_identity_before_writing(
+    tmp_path: Path,
+) -> None:
+    """Nothing is replaced when the canonical facts do not carry the authority."""
+    root = base_repository(tmp_path / "repository")
+    document = root / "docs/product/brief.md"
+    handover = root / ".nwave/des/handover.json"
+
+    code, out, err = call_replacing(root, json.dumps(payload()))
+    assert code != 0 and "DiscussAuthorityIdentityMismatch" in out + err
+    assert not document.exists() and not handover.exists()
+
+    assert call(root, json.dumps(payload()))[0] == 0
+    before = (document.read_bytes(), handover.read_bytes())
+    foreign = payload()
+    foreign["request"] = "Let a user choose a widget shape."
+    code, out, err = call_replacing(root, json.dumps(foreign))
+    assert code != 0 and "DiscussAuthorityIdentityMismatch" in out + err
+    assert before == (document.read_bytes(), handover.read_bytes())
+
+
+def test_public_discuss_replace_current_is_valid_only_with_stdin_input(
+    tmp_path: Path,
+) -> None:
+    root = base_repository(tmp_path / "repository")
+    code, out, err = run_cli_in_process(
+        [
+            "discuss",
+            "--repo-root",
+            str(root),
+            "--input",
+            "brief.json",
+            "--replace-current",
+        ],
+        cwd=root,
+        stdin_text="",
+        catch_all=True,
+    )
+    assert code != 0 and "InvalidDiscussInput" in out + err
+    assert "--replace-current is valid only with --input -" in out + err
+    assert not (root / "docs/product/brief.md").exists()

@@ -15,6 +15,7 @@ from des.application.handover import (
     StoredHandover,
     _canonical_bytes,
     acquire_delivery_lock,
+    bind_design_facts,
     create_handover,
     design_facts_defect,
     finalize_handover,
@@ -246,6 +247,25 @@ def test_rewrite_preserves_started_prefix_and_normalizes_suffix(tmp_path) -> Non
         HandoverValue("C", ("A",), None),
         HandoverValue("B", ("A",), None),
     )
+
+
+def test_binding_constructed_facts_does_not_decode_or_revalidate_its_own_bytes(
+    tmp_path, monkeypatch
+) -> None:
+    """Only persisted external bytes go through the reader/guard boundary."""
+    stored = create_handover(tmp_path, "deliver", (HandoverValue("A", (), None),))
+    assert isinstance(stored, StoredHandover)
+
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError("constructed facts were validated a second time")
+
+    monkeypatch.setattr("des.application.handover.read_handover", unexpected)
+    monkeypatch.setattr("des.application.handover.design_facts_defect", unexpected)
+
+    bound = bind_design_facts(tmp_path, stored, 1, _facts())
+
+    assert isinstance(bound, StoredHandover)
+    assert bound.values[0].authority == _facts()
 
 
 def test_cleanup_fsync_failure_restores_owned_bytes(tmp_path, monkeypatch) -> None:

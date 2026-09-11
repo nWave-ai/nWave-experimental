@@ -34,6 +34,37 @@ class ModelRuntimeConfigError(ValueError):
     """A present model-runtime declaration cannot safely select a provider."""
 
 
+#: Separates a role id from an optional competence label in one resolvable
+#: key. Kept out of role ids and competence labels themselves (rejected at
+#: construction below) so splitting is never ambiguous.
+_COMPETENCE_SEPARATOR = "#"
+
+
+def qualify_role_id(role_id: str, competence: str | None) -> str:
+    """Build the resolvable key for ``role_id`` under one optional competence.
+
+    The orchestrator passes ``competence`` as an explicit construction
+    parameter when a turn needs a different competence than the role's
+    ordinary one -- never derived here from Request size or any other
+    heuristic (ADR-SSOT-002 Section 4b: DES constructs, it does not route).
+    ``competence=None`` returns ``role_id`` unchanged, so every existing
+    caller that never passes a competence resolves byte-identically to today.
+    """
+    if competence is None:
+        return role_id
+    if not competence.strip():
+        raise ValueError("competence must be a non-empty string")
+    if _COMPETENCE_SEPARATOR in competence or _COMPETENCE_SEPARATOR in role_id:
+        raise ValueError(
+            f"role id and competence must not contain {_COMPETENCE_SEPARATOR!r}"
+        )
+    return f"{role_id}{_COMPETENCE_SEPARATOR}{competence}"
+
+
+def _base_role_id(role_id: str) -> str:
+    return role_id.split(_COMPETENCE_SEPARATOR, 1)[0]
+
+
 def _runtime(value: object, *, source: str) -> RoleRuntime:
     if not isinstance(value, dict):
         raise ModelRuntimeConfigError(
@@ -90,13 +121,24 @@ def resolve_role_runtime(
     repo_root: Path,
     framework_root: Path | None = None,
 ) -> RoleRuntime:
-    """Resolve one role with repo -> global -> declared-Claude precedence."""
+    """Resolve one role with repo -> global -> declared-Claude precedence.
+
+    ``role_id`` may carry a competence suffix from :func:`qualify_role_id`.
+    Each tier is searched for the qualified key first, falling back to the
+    bare role within the SAME tier before moving to the next tier -- so a
+    project override of the bare role still wins over a global competence
+    declaration, and an undeclared competence quietly resolves to whatever
+    the bare role already resolves to today.
+    """
+    base_role_id = _base_role_id(role_id)
+    candidates = (role_id,) if base_role_id == role_id else (role_id, base_role_id)
     for tier, source in ((repo_tier, "repo config"), (global_tier, "global config")):
-        selected = _declared(tier, role_id=role_id, source=source)
-        if selected is not None:
-            return selected
+        for candidate in candidates:
+            selected = _declared(tier, role_id=candidate, source=source)
+            if selected is not None:
+                return selected
     declared = resolve_declared_capability(
-        role_id, repo_root=repo_root, framework_root=framework_root
+        base_role_id, repo_root=repo_root, framework_root=framework_root
     ).declared_model
     if declared is None:
         raise ModelRuntimeConfigError(

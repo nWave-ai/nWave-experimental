@@ -354,8 +354,18 @@ class TestTheBundledCase:
     ) -> None:
         """The consumer, not a second parser: `extract_model_run` is the one reader."""
         record = inert_claude._select_record(BUNDLED_CASE, role, 0)
+        raw = inert_claude._recorded_envelope(record)
+        envelope, migration = inert_claude._replay_envelope(BUNDLED_CASE, record)
 
-        run = extract_model_run(inert_claude._recorded_envelope(record), role_id=role)
+        assert raw == inert_claude._recorded_envelope(record)
+        if role == "nw-solution-architect":
+            assert migration == "add-empty-authority-locator"
+            assert envelope != raw
+        else:
+            assert migration is None
+            assert envelope == raw
+
+        run = extract_model_run(envelope, role_id=role)
 
         assert run.exit_status == 0
         assert run.accounting is not None

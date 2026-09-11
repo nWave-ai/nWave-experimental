@@ -63,6 +63,7 @@ REGION_SOURCE_OF_TRUTH: dict[str, str] = {
         "des.adapters.driven.config.des_config.DESConfig.effective_config() "
         "(ADR-CFG-001 Slice 2 -- ~/.nwave/config.json + .nwave/config.json)"
     ),
+    "design-document-input": "des.domain.design_document.DesignDocument.input_description()",
 }
 
 #: ``(region_id, asset_path, root) -> body``.
@@ -129,12 +130,20 @@ def communication_rules_body(root: Path) -> str:
     )
 
 
+def design_document_input_body(root: Path) -> str:
+    """Render shipped DESIGN constructor guidance without source-tree inputs."""
+    from des.domain.design_document import DesignDocument
+
+    return DesignDocument.input_description()
+
+
 #: Regions renderable from an INSTALLED layout -- every input is present on a
 #: consumer machine. Adding a row here is a decision to ship that region's
 #: inputs too; a region whose inputs are dev/build-time-only belongs in
 #: ``docgen``'s dispatcher instead.
 INSTALLABLE_RENDERERS: dict[str, Callable[[Path], str]] = {
     "communication-rules": communication_rules_body,
+    "design-document-input": design_document_input_body,
 }
 
 

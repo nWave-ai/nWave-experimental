@@ -573,3 +573,356 @@ che ne discende NON e' chiuso e vive in `docs/product/backlog.md` -- una decisio
 - [x] k4-acceptance-base-commit-derived-from-clone-root-instead-of-declared-pin: paradigm=object-oriented discovered_by=k4-camp7-pair1-2026-08-23 defect="run_acceptance._base_commit_sha risolveva la base con git rev-list --max-parents=0 HEAD, cioe la RADICE della storia, assumendo un clone --depth 1 in cui radice e HEAD coincidono. Dal c8622cf32 (18 agosto) il setup dei bracci fa un clone COMPLETO piu checkout --detach sul pin: radice 00cdc313 contro pin 49653c35, nessun file .git/shallow. Ogni braccio di OGNI campagna veniva quindi rifiutato per -non corrisponde alla revisione fissata- PRIMA che girassero la suite nascosta e la sonda RED: nessun giudizio sulla consegna era possibile, ed e il motivo per cui la pipeline K4 non e mai arrivata a un verdetto con bracci valutati in cinque giorni." resolution="CHIUSO 2026-08-23 con b15b2e1ce: la base e LETTA dal pin dichiarato e verificata raggiungibile da HEAD, con ripiego sulla radice solo quando nessun pin e dichiarato (test sintetici). Falsificatore visto sulla stessa evidenza camp7: prima entrambi i bracci rifiutati, dopo 40 test passati e i due bracci GIA PAGATI accettati alla riesecuzione - primo giudizio di accettazione mai passato, suite nascosta 6/6, suite del soggetto 1769 e 1759 test verdi. Perche la sonda non ha protetto: substrato sintetico a un solo commit piu assunzione vera per caso, sonde 15/15 verdi sul codice difettoso; classe aperta e circoscritta in defects.md come k4-probe-substrate-single-commit-repo-hides-history-shape-defects."
 
 - [x] k4-sandbox-bridge-socket-path-exceeds-the-108-byte-unix-address-limit: paradigm=object-oriented discovered_by=k4-row11-canary-2026-08-23 defect="Il probe del ponte metteva il socket DENTRO la workspace, il cui percorso non e limitato da nulla: sotto esecuzione parallela xdist aggiunge un livello (popen-gw0/) e il percorso reale passava da 103 a 113 byte. Il campo sun_path di AF_UNIX e fisso a 108 byte, 107 usabili. Il ponte non nasceva, la richiesta sandboxata non arrivava mai, e il messaggio d errore accusava il supervisore - che era sano: un rifiuto BUGIARDO, la classe peggiore." resolution="CHIUSO 2026-08-23 in due commit tenuti separati apposta. 1ba66c718: il socket vive in una directory temporanea corta e propria, montata nella sandbox, con pulizia in uscita e una guardia RUMOROSA che rifiuta oltre i 107 byte invece di lasciare un ponte morto in silenzio (GDP-0, GDP-6). 384e79b5c: la sandbox monta la workspace e gira il blocco con cwd sulla workspace, perche il marker di reset .k4-reset e scritto dal blocco sandboxato e consumato dal supervisore, entrambi NELLA workspace - montando solo /tmp funzionava PER CASO finche ogni radice di campagna stava sotto /tmp. Verifica: 23 passati, 0 falliti sia sotto -n 2 sia in SERIALE, MemAvailable 9,39 GB; entrambi i commit hanno attraversato il gate pytest-touched-files senza --no-verify. Dettaglio completo nell entry di backlog F-K4-ROW11-CANARY-RED-UNDER-XDIST."
+
+## Closed backlog features — DES preconditions for K4 (moved 2026-09-10)
+
+Moved out of `docs/product/backlog.md` on completion, so the planning SSOT carries only
+open work. Each entry keeps its original heading, metadata line and closure record
+verbatim, including the measured sha and the evidence links.
+
+### Reduce rework across delivery boundaries   `F-DELIVERY-REWORK-REDUCTION`
+`id: F-DELIVERY-REWORK-REDUCTION` · `status: done` · `bucket: Critical` · `theme: throughput`
+
+Owner-authorized 2026-09-10, before the remaining goal work. Implement all six
+reviewed Astra proposals in dependency order P2, P1, P4, P0, P3, P5. The scope,
+conditional residue checks, quality guards and measurement obligations live in
+[the active goal](../analysis/2026-09-07-goal-k4-sandbox-and-objective.md#priorita-aggiunta-il-2026-09-10-ridurre-la-rilavorazione-delle-consegne).
+P2 is integrated at `378679871`: bounded complete diagnostics, explicit incomplete
+results, and YAML discovery that excludes generated execution state. Twelve
+focused checks and the three-file release diagnostic (43 checks) passed; normal
+commit hooks passed. [Evidence](../evidence/rework-optimizations-progress-2026-09-10.json).
+P0-P5 are integrated with scoped independent review and EXAMINE. The DES-generated
+[evolution](../evolution/2026-09-10-delivery-rework-reduction.md) was committed at
+`4eb3bd014`; the integrated lane was finalized after preserving its evidence.
+Conditional applicability and contrary Codex/Claude results remain in the evidence.
+No universal throughput benefit or K4 attainment is claimed.
+The original DES, publication, sandbox and K4 scope remains required.
+
+
+### Restore configurable DES model allocation   `F-DES-MODEL-CONFIG`
+`id: F-DES-MODEL-CONFIG` · `status: done` · `bucket: High` · `theme: configuration`
+
+Design and deliver a persistent, public configuration for model allocation by
+competence, including advanced design, ordinary design, DISTILL, DELIVER, review
+and EXAMINE. The DES must consume the resolved values; `nwave-ai` must own the
+write commands; a v4 `nw-rigor` skill must guide the user and execute those
+commands; `nw-buddy` must route configuration questions to it. Do not restore the
+retired v3 controls for TDD phases, review count, refactoring or mutation testing
+unless separately justified.
+
+The `nw-rigor` guide and Buddy routing are integrated in `98cc60ff3`, with
+independent review and repository checks passed. The existing CLI stores one
+provider/model pair per default or role, globally or per project. Distinct
+competence profiles, including advanced versus ordinary design for the same
+role, are delivered 2026-09-10 in `b4a4e59b8`. The construction interface carries an
+explicit optional competence: `nwave-ai model set --role R --competence C` persists the
+qualified key, `des design --competence` is the one propagated construction option, and
+resolution tries the qualified key then falls back to the bare role at each of the repo
+and global tiers. Absent the option the resolution reduces to the previous behaviour.
+No size-to-competence mapping exists: the orchestrator names the competence, the DES only
+resolves it. Nine focused tests were red first, independent whole-candidate review
+accepted all five properties by inspection, and one defect it named was repaired: the
+confirmation now composes its scope from the key actually persisted. Observed on the
+installed command, including the refusal of an embedded separator.
+
+### Write an evolution document after feature integration   `F-FEATURE-INTEGRATION-EVOLUTION`
+`id: F-FEATURE-INTEGRATION-EVOLUTION` · `status: done` · `bucket: High` · `theme: documentation`
+
+After successful integration of an entire feature, have the LLM invoke the DES
+document producer with structured delivery evidence; the DES writes the evolution
+document (default `docs/evolution/YYYY-MM-DD-{feature-id}.md`, destination governed
+by unified global config with project override). Apply the same construction
+interface and software-owned rendering as the wave document producers below;
+do not revalidate deterministically constructed data.
+Its contents cover purpose,
+key decisions, work delivered, verification results, problems encountered and
+lessons learned, with links to durable artifacts. Trigger this once at feature
+completion, never for individual slices. Preserve the evidence needed for the
+summary before cleanup releases the workspace; resuming finalization must not
+create duplicate evolution documents. This is a backlog item, outside G1-G3.
+
+Delivered 2026-09-09: `des evolution --input -` constructs the document from
+closed semantic fields. `des lane integrate --keep-worktree` leaves the explicit
+post-integration window; `des lane finalize` performs cleanup after the LLM has
+preserved the document and evidence. Candidate `785edc76c` passed 37 focused
+checks with Allure, independent whole-candidate source review, installed CLI
+construction/lifecycle observations, and source-blind EXAMINE of this actual
+feature closure. Same-input retry preserved bytes; the owned lane and branch
+were removed after the document commit. See
+[evolution](../evolution/2026-09-09-des-feature-evolution.md),
+[construction evidence](../evidence/evolution-construction-2026-09-09.json), and
+[actual closure and EXAMINE](../evidence/evolution-closure-2026-09-09.json).
+This closes this feature only; the other DES prerequisites and K4 remain open.
+
+<!-- F-DES-DOCUMENT-CONSTRUCTION split into the four wave items below; no separate active item. -->
+
+### Construct DISCUSS documents through the DES CLI   `F-DES-DISCUSS-DOCUMENT-CONSTRUCTION`
+`id: F-DES-DISCUSS-DOCUMENT-CONSTRUCTION` · `status: done` · `bucket: High` · `theme: documentation`
+
+The constructor-to-DESIGN boundary is integrated in `39344c934`:
+`des discuss --input -` creates a configured product document and the existing
+ordered handover from the same closed semantic input, without provider calls.
+Actual `des design --input -` consumes that handover; DISCUSS replay preserves
+its bound DESIGN facts. Shared whole-file publication also serves evolution.
+The candidate passed 87 focused tests, independent source review, and source-blind
+installed EXAMINE. Evidence: [construction record](../evidence/discuss-construction-2026-09-09.json)
+and `.nwave/recovery/discuss-document-20260909/evidence-candidate-v1/`.
+This does not yet close legacy route migration or generic upstream supersession;
+those remain required before the second experimental publication and K4.
+
+Persist the product document from the Request, outcomes, scope, observations
+and decisions needed downstream. Define mandatory DISCUSS sections. Preserve
+the ordered value/dependency projection used by DESIGN without making the human
+document a second handover.
+
+The LLM invokes the DES CLI with mandatory/optional semantic parameters whose
+types and required fields are enforced by the construction interface. DES renders
+and persists the document without revalidating deterministically constructed data
+or governing workflow transitions. No direct LLM document writing. Missing, invalid or empty required sections refuse before mutation;
+conditional applicability requires a reason. Independent review owns semantic
+correctness. Reuse the unified config resolver/writer for destinations:
+`~/.nwave/config.json`, overridden by `<repo>/.nwave/config.json`, with documented
+defaults and relative-path resolution shared by producers and consumers.
+Preserve one durable authority. Generate human documents and the structured
+downstream fact projection from the same construction parameters. Context minimality
+and token/reread optimization belong to K4, not prerequisite design. Verify valid
+construction, config inheritance/override and refusal-before-write. This restores
+previously agreed software ownership and is outside G1-G3.
+
+### Construct DESIGN documents through the DES CLI   `F-DES-DESIGN-DOCUMENT-CONSTRUCTION`
+`id: F-DES-DESIGN-DOCUMENT-CONSTRUCTION` · `status: done` · `bucket: High` · `theme: documentation`
+
+The first executable producer is integrated in `318cbb51b`: `des design --input -`
+constructs the configured human authority and typed downstream facts from the
+same semantic input. The 48 focused checks and normal repository checks passed;
+independent source-blind installed examination accepted project/global
+configuration, deterministic retry, matching durable facts and refusal-before-write.
+Actual authority, configuration, handover, input and refusal artifacts are
+preserved in `.nwave/recovery/design-producer-installed-proof-20260909/evidence-318cbb51-retained/`.
+Skill/agent consumers are aligned in `7fa894e5f`, included in that merge.
+The first real DEVOPS oracle exposed omitted constraints in that typed handoff.
+Correction `f8eb33478` preserves constraints as obligations, keeps decisions
+separate, and reconstructs stale facts through the same public constructor.
+It passed 76 focused checks, independent source review, and source-blind
+installed examination; raw evidence is retained in
+`.nwave/recovery/design-facts-installed-proof-20260909/evidence-f8eb3347/`.
+The real DEVOPS handover was reconstructed with all ten constraints, its prior
+six fields preserved, and unchanged authority bytes. This proves the repaired
+handoff boundary, not completion of the DEVOPS feature or full upstream rework.
+This is the v1 input-constructor boundary, not closure of all legacy wave
+invocations or the separate upstream-rework requirement. It is not included in
+the first G1/G2/G3 experimental publication; remaining DES prerequisites and
+the second publication stay open.
+
+
+Construct the architecture document with mandatory reuse analysis and
+prefactoring, plus applicable boundaries, laws, constructive public-oracle chain
+and verification substrate. Preserve typed targets, paradigm, obligations,
+oracle/support locators and verification commands for downstream consumers
+without reconstructing them from prose.
+
+The LLM invokes the DES CLI with mandatory/optional semantic parameters whose
+types and required fields are enforced by the construction interface. DES renders
+and persists the document without revalidating deterministically constructed data
+or governing workflow transitions. No direct LLM document writing. Missing, invalid or empty required sections refuse before mutation;
+conditional applicability requires a reason. Independent review owns semantic
+correctness. Reuse the unified config resolver/writer for destinations:
+`~/.nwave/config.json`, overridden by `<repo>/.nwave/config.json`, with documented
+defaults and relative-path resolution shared by producers and consumers.
+Preserve one durable authority. Generate human documents and the structured
+downstream fact projection from the same construction parameters. Context minimality
+and token/reread optimization belong to K4, not prerequisite design. Verify valid
+construction, config inheritance/override and refusal-before-write. This restores
+previously agreed software ownership and is outside G1-G3.
+
+### Construct DEVOPS documents through the DES CLI   `F-DES-DEVOPS-DOCUMENT-CONSTRUCTION`
+`id: F-DES-DEVOPS-DOCUMENT-CONSTRUCTION` · `status: done` · `bucket: High` · `theme: documentation`
+
+The reviewed constructor candidate `d4c8f78f` is integrated. Public
+`des devops --input -` accepts a closed UTF-8 operational input, resolves the
+default/global/project destination cascade, and writes both the human authority
+and its canonical `OperationalFacts` sidecar. `des po --operational-facts`
+forwards that generated sidecar only when selected; ordinary PO ignores a
+malformed ambient artifact. The installed proof is retained in
+`.nwave/recovery/devops-installed-proof-20260909/evidence-d4c8f78f-v2/`.
+It has accepted source review and a supplemental source-blind examination;
+the public integration evidence succeeds at `26799e62106bd823454118970ce8b9c3633dd0c4`.
+
+This ships the constructor boundary, including deterministic retry and
+refusal-before-mutation evidence, not the legacy LLM-authored DEVOPS path or
+the full producer migration. The controlled-provider PO observations prove
+prompt wiring, not Product Owner reasoning; retained legacy-consumer coverage
+is seven tests. The prior examination remains indeterminate, and the second
+publication remains open.
+
+Construct the operational document from environment, deployment, recovery and
+observability constraints. Define mandatory sections and project locatable,
+executable obligations to DESIGN/DISTILL. Keep the DEVOPS lens conditional on
+the platform work actually requested.
+
+The LLM invokes the DES CLI with mandatory/optional semantic parameters whose
+types and required fields are enforced by the construction interface. DES renders
+and persists the document without revalidating deterministically constructed data
+or governing workflow transitions. No direct LLM document writing. Missing, invalid or empty required sections refuse before mutation;
+conditional applicability requires a reason. Independent review owns semantic
+correctness. Reuse the unified config resolver/writer for destinations:
+`~/.nwave/config.json`, overridden by `<repo>/.nwave/config.json`, with documented
+defaults and relative-path resolution shared by producers and consumers.
+Preserve one durable authority. Generate human documents and the structured
+downstream fact projection from the same construction parameters. Context minimality
+and token/reread optimization belong to K4, not prerequisite design. Verify valid
+construction, config inheritance/override and refusal-before-write. This restores
+previously agreed software ownership and is outside G1-G3.
+
+### Construct DISTILL documents through the DES CLI   `F-DES-DISTILL-DOCUMENT-CONSTRUCTION`
+`id: F-DES-DISTILL-DOCUMENT-CONSTRUCTION` · `status: done` · `bucket: High` · `theme: documentation`
+
+
+Legacy route migration closed 2026-09-10 in `484f2757a`. The measured population was
+two, not one: the DESIGN task told the LLM to write the durable decision into the brief
+or the ADR, and the DEVOPS skill told it to update the platform authority directly. Both
+now send the same constraints to their public producer. A new acceptance oracle scans
+every shipped task and skill for the property rather than the phrase: a write-family verb
+taking a named durable document, with prohibitions and fenced data excluded, and three
+phrasings never fed to the pattern shown to turn it red. Corpus 126 passed, 0 failed.
+
+Implemented and integrated on 2026-09-09: `des distill --input -` constructs
+the acceptance brief and typed handover facts consumed by `des craft`. The exact
+installed candidate `d7b2c8ef6` passed constructor/config/retry/refusal observations
+and representative multi-language locator cases; independent source review and
+source-blind EXAMINE accepted the bounded increment. Evidence:
+`docs/evidence/distill-construction-2026-09-09.json`. Craft capture proves input
+propagation only. Legacy route migration, shared bugfix flow and upstream
+supersession remain incomplete; this item is not yet closed.
+
+Construct the acceptance document from value observations, acceptance
+obligations, public stimuli, expected results and oracle/support locators. Define
+mandatory sections and preserve minimum facts for DELIVER. Document generation
+does not replace executable acceptance tests; their authoring and execution
+remain separately observable.
+
+The LLM invokes the DES CLI with mandatory/optional semantic parameters whose
+types and required fields are enforced by the construction interface. DES renders
+and persists the document without revalidating deterministically constructed data
+or governing workflow transitions. No direct LLM document writing. Missing, invalid or empty required sections refuse before mutation;
+conditional applicability requires a reason. Independent review owns semantic
+correctness. Reuse the unified config resolver/writer for destinations:
+`~/.nwave/config.json`, overridden by `<repo>/.nwave/config.json`, with documented
+defaults and relative-path resolution shared by producers and consumers.
+Preserve one durable authority. Generate human documents and the structured
+downstream fact projection from the same construction parameters. Context minimality
+and token/reread optimization belong to K4, not prerequisite design. Verify valid
+construction, config inheritance/override and refusal-before-write. This restores
+previously agreed software ownership and is outside G1-G3.
+
+### Keep S/M/L evaluation and orchestration with the LLM   `F-DES-SML-GOVERNS-FLOW`
+`id: F-DES-SML-GOVERNS-FLOW` · `status: done` · `bucket: High` · `theme: delivery`
+
+User clarification, 2026-09-09, supersedes the previous DES-owned flow requirement.
+The identifier is retained only for backlog continuity. The LLM evaluates S/M/L,
+chooses the feature or bugfix workflow, and revises that choice when evidence
+changes or upstream rework is needed. Update skills and agents accordingly.
+DES deterministically produces structured files from the supplied construction
+parameters and suggests next steps. It does not classify requests, impose a
+size-to-path mapping, admit transitions, or orchestrate execution.
+Acceptance: observe LLM sizing and workflow choices, corresponding DES-produced
+files and advisory NEXT output, including reclassification and upstream rework.
+Required fields and types belong to the construction interface; do not add a
+second validation gate for deterministically constructed data. Prerequisite for K4.
+
+Delivered 2026-09-10 in `0c77bfaef`, corpus `steps_for_the_orchestrator` 120 passed,
+0 failed. Measured first: the DES already carried no request
+classifier and no size-to-path mapping, and `nw-auto`, `nw-deliver` and
+`nw-bugfix` already placed the S/M/L judgment with the LLM. The measured blast
+radius is a property of a candidate diff, not of a Request, and the sequence
+refusals are missing construction input, not a route admission. The gap was the
+absent public oracle: an acceptance corpus now observes that no step accepts a
+size, that a supported step the terminal did not name is still performed, that
+a reclassification is constructed rather than adjudicated, and that an upstream
+return re-binds a bound value on the orchestrator's finding, with no terminal
+printing a size verdict. Both falsifiers were executed: a size option added to
+`des po`, and a size verdict printed on its terminal, each turning the corpus
+red. One drift was repaired in `nw-bugfix`, which placed the source-blind
+EXAMINE inside `des verify` where the roles are selected and run by the LLM.
+
+### Preserve the constructed document flow for bugfixes   `F-DES-BUGFIX-DOCUMENT-FLOW`
+`id: F-DES-BUGFIX-DOCUMENT-FLOW` · `status: done` · `bucket: High` · `theme: delivery`
+
+Delivered 2026-09-10 in `6f4d412f2`. Measured first: the DES already carried the whole
+shared route, and walking it on a committed defect needed no production change. The real
+gap was the published route: `nw-bugfix` named only `des po`, which builds no durable
+authority, so following it literally delivered a correction without conforming documents.
+Both published assets now name the shared producers and the link to the regression oracle,
+while every wave stays optional and the LLM never writes a document itself. An acceptance
+scenario walks the observed defect verbatim into DISCUSS, then DESIGN, DISTILL with the
+regression obligation on that same observation, an oracle measured RED against the
+committed defect, the correction, a verified candidate, recorded review and examination,
+and integration. Independent review confirmed the diagnosis by measuring that the change
+touches no source file, and reproduced the red at the parent commit.
+
+The existing `nw-bugfix` already enters the common wave flow through `des po`;
+extend that shared route, never create a separate bugfix pipeline. Make it
+consume the same typed DES document producers and global
+configuration/project overrides as feature delivery. Preserve the observed defect,
+regression oracle and links to the correction without making every wave mandatory
+or allowing direct LLM document writes. Acceptance: a public bugfix invocation
+reaches a verified correction with conforming durable documents, independent
+review/examination and finalization. A schema/document-only result is incomplete.
+Prerequisite for K4 after G1-G3; reuse the four wave producers.
+
+### Rework upstream wave facts when downstream work is blocked   `F-DES-UPSTREAM-REWORK-CONSTRUCTION`
+`id: F-DES-UPSTREAM-REWORK-CONSTRUCTION` · `status: done` · `bucket: High` · `theme: delivery`
+
+For every delivery Request, not only bugfixes, support downstream findings that
+require correction in DISCUSS, DESIGN, DEVOPS
+or DISTILL. The LLM chooses the owning upstream competence and the work to repeat;
+it invokes the same typed DES document producer to persist the updated files and
+downstream facts. DES exposes data versions/dependencies and suggests next steps;
+it does not admit corrections or govern resumption. The LLM preserves independent
+work and completed integrations and arranges new verification where needed.
+Do not reintroduce dispatch or step orchestration inside DES. Acceptance: an LLM
+drives a downstream finding, upstream correction and resumed delivery through
+public CLI calls, including interruption and use of current evidence. No DES
+workflow gate or redundant revalidation of deterministically constructed data.
+Applies to features and bugfixes. Prerequisite for K4 after G1-G3.
+
+Progress (2026-09-10): explicit selective DISTILL replacement is integrated in
+`78e12dd29`, with 26 native acceptance tests passing and scoped installed EXAMINE.
+The corrected acceptance facts reach public `des craft`; unrelated facts and
+idempotent retry are preserved.
+[evidence](../evidence/distill-upstream-correction-2026-09-10.json)
+
+DEVOPS correction is integrated in `4c64d7bfb`: `des devops --input - --replace-current`
+replaces the owned authority section and its canonical sidecar from one closed input.
+The canonical sidecar proves which section may be replaced, and that proof is now owed
+whenever a replacement is requested rather than only when the section already diverges;
+an interrupted publication between the two files stays completable. Eleven focused
+checks and the DES acceptance and application suites passed, with independent source
+review accepted and source-blind EXAMINE of seven captured observations of the installed
+command, judged from file bytes rather than terminal text.
+[evidence](../evidence/devops-upstream-correction-2026-09-10.json)
+
+DISCUSS correction accepts the same explicit `--replace-current` constructor. The
+correction supersedes the owned brief and its ordered graph while preserving every DESIGN
+and acceptance fact bound to a surviving observation; an observation removed or renamed
+loses its bound facts observably, not silently. It refuses before writing when no
+persisted graph carries the supplied Request, and independent review confirmed the
+refusal from the file bytes.
+
+All four wave producers now carry the explicit selective correction. The complete
+blocked-downstream, upstream-correction, resumed-delivery flow is now walked through
+public calls only, in separate processes, so the scenario is an interruption as well
+as a correction. The measurement that opened it: `des state` already distinguished a
+value's stale oracle and craft records, but the verification record was read by mere
+existence, so a candidate verified BEFORE an upstream correction stayed integrable
+after it and `des integrate` accepted it. The verification is now recorded under the
+key of the graph it was measured against, which makes stale evidence unfindable
+rather than merely detected; `des state` projects the candidate with its record
+state, names `des verify` instead of `des integrate` once a correction supersedes it,
+and the refusal says which of the two causes held.
+
+Closed 2026-09-10 at `f71e3fb07`. All four wave producers accept the explicit
+selective correction, and `test_an_upstream_correction_resumes_the_delivery.py`
+walks the blocked-downstream, upstream-correction, resumed-delivery flow through
+public calls in separate processes. Corpus `steps_for_the_orchestrator`: 120 passed,
+0 failed.

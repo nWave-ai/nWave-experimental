@@ -22,6 +22,9 @@ from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     hermetic_environment,
 )
 
+from des.application import operational_document_producer
+from des.application.handover import Blocked
+
 
 DESTINATION = Path("docs/product/operations/release-brief.md")
 SIDECAR = DESTINATION.with_suffix(".operational-facts.json")
@@ -111,13 +114,56 @@ def _repository(tmp_path: Path, name: str) -> Path:
     return root
 
 
-def _devops(root: Path, raw: str) -> tuple[int, str, str]:
+def _devops(
+    root: Path, raw: str, *, replace_current: bool = False
+) -> tuple[int, str, str]:
+    arguments = ["devops", "--repo-root", str(root)]
+    if replace_current:
+        arguments.append("--replace-current")
+    arguments.extend(("--input", "-"))
     return run_cli_in_process(
-        ["devops", "--repo-root", str(root), "--input", "-"],
+        arguments,
         cwd=root,
         stdin_text=raw,
         catch_all=True,
     )
+
+
+def _corrected_input() -> dict[str, object]:
+    """A closed B correction for exactly DEVOPS's existing authority identity."""
+    corrected = json.loads(json.dumps(INPUT))
+    corrected["purpose"] = "Operate the Widget service safely after the correction."
+    return corrected
+
+
+def _seed_replaceable_operational_authority(
+    root: Path, tmp_path: Path
+) -> tuple[bytes, bytes, bytes]:
+    """Construct A publicly, then surround its sole owned H2 with human bytes."""
+    code, out, err = _devops(root, json.dumps(INPUT))
+    assert code == 0, out + err
+    authority, facts = root / DESTINATION, root / SIDECAR
+    authority_a, facts_a = authority.read_bytes(), facts.read_bytes()
+    prefix = (
+        b"# Operations authority\n\n"
+        b"This introduction belongs to a human editor.\n\n"
+        b"## Human preface\n\n"
+        b"Keep this H2 byte-for-byte.\n\n"
+    )
+    suffix = b"\n\n## Human appendix\n\nKeep this H2 byte-for-byte too.\n"
+    authority.write_bytes(prefix + authority_a + suffix)
+
+    po_code, po_out, po_err, _prompt = _po_with_facts(root, tmp_path)
+    assert po_code == 0, po_out + po_err
+    return prefix, suffix, facts_a
+
+
+def _public_b_projection(tmp_path: Path) -> tuple[bytes, bytes]:
+    """Obtain B's canonical section and sidecar through DEVOPS itself."""
+    reference = _repository(tmp_path, "corrected-projection")
+    code, out, err = _devops(reference, json.dumps(_corrected_input()))
+    assert code == 0, out + err
+    return (reference / DESTINATION).read_bytes(), (reference / SIDECAR).read_bytes()
 
 
 def test_invalid_utf8_stdin_refuses_before_constructing_operational_artifacts(
@@ -353,4 +399,171 @@ def test_complete_input_projects_configured_document_and_matching_operational_fa
     assert "operational_facts:" not in ordinary_prompt, (
         "without explicit selection, PO must not read ambient DEVOPS artifacts or add "
         "an operational-facts prompt fact"
+    )
+
+
+def test_public_devops_replace_current_replaces_only_its_section_and_facts(
+    tmp_path: Path,
+) -> None:
+    """B needs an explicit opt-in; surrounding human and PO bytes are immutable."""
+    root = _repository(tmp_path, "replace-current")
+    prefix, suffix, facts_a = _seed_replaceable_operational_authority(root, tmp_path)
+    authority, facts, handover = root / DESTINATION, root / SIDECAR, root / HANDOVER
+    authority_a, handover_a = authority.read_bytes(), handover.read_bytes()
+    section_b, facts_b = _public_b_projection(tmp_path)
+
+    refused_code, refused_out, refused_err = _devops(
+        root, json.dumps(_corrected_input())
+    )
+    assert (
+        refused_code != 0
+        and _terminal(refused_out, refused_err).get("DELIVERY-OUTCOME") == "Refusal"
+        and _terminal(refused_out, refused_err).get("WHAT")
+        == "OperationalAuthorityDrift"
+    ), (
+        "a divergent B submission without the explicit replacement flag must refuse "
+        f"at the public DEVOPS terminal (stdout={refused_out!r}, stderr={refused_err!r})"
+    )
+    assert (authority.read_bytes(), facts.read_bytes(), handover.read_bytes()) == (
+        authority_a,
+        facts_a,
+        handover_a,
+    ), "a no-flag refusal must retain authority A, facts A, and the PO handover"
+
+    code, out, err = _devops(root, json.dumps(_corrected_input()), replace_current=True)
+    assert code == 0 and _terminal(out, err).get("DELIVERY-OUTCOME") == "Success", (
+        "the explicit replacement form must publish B through the same configured "
+        f"DEVOPS destination and heading (stdout={out!r}, stderr={err!r})"
+    )
+    assert authority.read_bytes() == prefix + section_b + suffix, (
+        "B may replace only its sole DEVOPS-owned H2; every surrounding human byte "
+        "must be retained exactly"
+    )
+    assert facts.read_bytes() == facts_b, "B must replace the canonical facts sidecar"
+    assert handover.read_bytes() == handover_a, (
+        "DEVOPS replacement must neither admit a route nor rewrite an existing handover"
+    )
+
+    authority_b, handover_b = authority.read_bytes(), handover.read_bytes()
+    retry_code, retry_out, retry_err = _devops(
+        root, json.dumps(_corrected_input()), replace_current=True
+    )
+    assert retry_code == 0, retry_out + retry_err
+    assert (authority.read_bytes(), facts.read_bytes(), handover.read_bytes()) == (
+        authority_b,
+        facts_b,
+        handover_b,
+    ), "the same explicit B retry must create no duplicate section or new handover"
+
+
+def test_public_devops_sidecar_cas_loss_after_authority_replacement_is_indeterminate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second-file loss is observable as B authority with A facts, then retryable."""
+    root = _repository(tmp_path, "sidecar-cas-loss")
+    prefix, suffix, facts_a = _seed_replaceable_operational_authority(root, tmp_path)
+    authority, facts, handover = root / DESTINATION, root / SIDECAR, root / HANDOVER
+    handover_a = handover.read_bytes()
+    section_b, facts_b = _public_b_projection(tmp_path)
+
+    original_replace = operational_document_producer.replace_exact_bytes
+
+    def lose_sidecar_cas(
+        path: Path, expected: bytes | None, raw: bytes, **kwargs: object
+    ) -> Blocked | None:
+        if path == facts:
+            assert expected == facts_a and raw == facts_b
+            return Blocked(
+                "OperationalFactsDrift",
+                "simulated sidecar compare-and-swap loss",
+                "inspect the mixed DEVOPS projections and retry the same B input",
+                refusal=True,
+            )
+        return original_replace(path, expected, raw, **kwargs)
+
+    monkeypatch.setattr(
+        operational_document_producer, "replace_exact_bytes", lose_sidecar_cas
+    )
+    code, out, err = _devops(root, json.dumps(_corrected_input()), replace_current=True)
+    rows = _terminal(out, err)
+    assert code != 0 and rows.get("DELIVERY-OUTCOME") == "Indeterminate", (
+        "after authority CAS succeeds, a sidecar CAS loss must report the mixed "
+        f"result honestly rather than claim refusal (stdout={out!r}, stderr={err!r})"
+    )
+    assert rows.get("WHAT") == "OperationalFactsDrift"
+    assert authority.read_bytes() == prefix + section_b + suffix
+    assert facts.read_bytes() == facts_a
+    assert handover.read_bytes() == handover_a, (
+        "the fault path must not mutate the existing PO handover or trigger a wave"
+    )
+
+    monkeypatch.setattr(
+        operational_document_producer, "replace_exact_bytes", original_replace
+    )
+    retry_code, retry_out, retry_err = _devops(
+        root, json.dumps(_corrected_input()), replace_current=True
+    )
+    assert retry_code == 0, retry_out + retry_err
+    assert authority.read_bytes() == prefix + section_b + suffix
+    assert facts.read_bytes() == facts_b
+    assert handover.read_bytes() == handover_a
+
+
+@pytest.mark.parametrize(
+    ("case", "foreign_authority"),
+    (
+        (
+            "different-heading",
+            {
+                "destination": str(DESTINATION),
+                "heading": "Another operational brief",
+            },
+        ),
+        (
+            "different-destination",
+            {
+                "destination": "docs/product/operations/other-brief.md",
+                "heading": INPUT["authority"]["heading"],
+            },
+        ),
+        ("missing-sidecar", None),
+    ),
+)
+def test_public_devops_refuses_before_mutating_when_required_sidecar_is_not_this_authority(
+    tmp_path: Path,
+    case: str,
+    foreign_authority: dict[str, str] | None,
+) -> None:
+    """One existing sidecar is canonical only for its own destination and heading."""
+    root = _repository(tmp_path, case)
+    _prefix, _suffix, facts_a = _seed_replaceable_operational_authority(root, tmp_path)
+    authority, facts, handover = root / DESTINATION, root / SIDECAR, root / HANDOVER
+    if foreign_authority is None:
+        facts.unlink()
+    else:
+        foreign_facts = json.loads(facts_a)
+        foreign_facts["authority"] = foreign_authority
+        facts.write_bytes(
+            json.dumps(foreign_facts, ensure_ascii=False, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        )
+    before = (
+        authority.read_bytes(),
+        facts.read_bytes() if facts.exists() else None,
+        handover.read_bytes(),
+    )
+
+    code, out, err = _devops(root, json.dumps(INPUT), replace_current=True)
+    assert code != 0 and _terminal(out, err).get("DELIVERY-OUTCOME") == "Refusal", (
+        "DEVOPS must reject a different or absent required canonical sidecar before "
+        f"writing either projection (case={case!r}, stdout={out!r}, stderr={err!r})"
+    )
+    assert (
+        authority.read_bytes(),
+        facts.read_bytes() if facts.exists() else None,
+        handover.read_bytes(),
+    ) == before, (
+        "a sidecar that names another authority, or a missing required sidecar, must "
+        "leave the authority, sidecar state, and handover bytes unchanged"
     )

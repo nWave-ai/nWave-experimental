@@ -52,6 +52,16 @@ class ModelState:
 
     request: str | None = None
     values: tuple[ValueState, ...] = ()
+    # The model fixture deliberately gives every designed value the same
+    # acceptance oracle and support locators.  Verification consumes those
+    # declared bytes once per path, not one oracle-turn receipt per value.
+    # Keep that physical evidence separately from the per-value projection:
+    # a successful oracle turn for either value writes the shared bytes.
+    shared_acceptance_bytes: bool = False
+    # The fixture also gives every value `product_value.py` as its sole target.
+    # Native verification observes that one declared byte path, while state
+    # continues to report which value recorded the craft turn.
+    shared_target_bytes: bool = False
     candidate: str | None = None
     integrated: bool = False
 
@@ -137,7 +147,6 @@ REJECTED_BY = {
     "design": "DesignRejected",
     "oracle": "AcceptanceDesignRejected",
     "craft": "CraftRejected",
-    "verify": "ImplementationReviewRejected",
 }
 
 #: What a paid turn whose envelope the boundary cannot read answers: §4 class E,
@@ -259,35 +268,46 @@ def step(
             if answer != "accepted":
                 return state, _role_refusal(name, answer)
             # Authored and MEASURED red, one turn: §5 retires the pre-craft judge.
-            return _with(state, value, oracle_recorded=True), ModelTerminal(
-                "Success", turns_bought=1, facts=frozenset({"ORACLE-RED"})
-            )
+            return replace(
+                _with(state, value, oracle_recorded=True), shared_acceptance_bytes=True
+            ), ModelTerminal("Success", turns_bought=1, facts=frozenset({"ORACLE-RED"}))
         if not target.design_bound:
             return state, _refuse("DesignUnbound")
         if target.craft_recorded:
             return state, ModelTerminal("Success", facts=frozenset({"RECORDED"}))
         if answer != "accepted":
             return state, _role_refusal(name, answer)
-        return _with(state, value, craft_recorded=True), ModelTerminal(
-            "Success", turns_bought=1, facts=frozenset({"TARGETS"})
-        )
+        return replace(
+            _with(state, value, craft_recorded=True), shared_target_bytes=True
+        ), ModelTerminal("Success", turns_bought=1, facts=frozenset({"TARGETS"}))
 
     if name == "verify":
         if any(not value.design_bound for value in state.values):
             return state, _refuse("DesignUnbound")
+        if not state.shared_acceptance_bytes:
+            # Native verification first reads immutable authored acceptance
+            # evidence.  In this fixture the same declared paths are shared by
+            # every value, so one successful oracle write supplies those bytes
+            # even while another value still projects `oracle=unrecorded`.
+            return state, _refuse("AcceptanceEvidenceUnavailable")
+        if not state.shared_target_bytes:
+            # Authored evidence exists, so verification reaches the declared
+            # native argv; without its declared target byte that execution fails
+            # rather than becoming an evidence-loading refusal.  As with the
+            # oracle paths, a single shared target write is what native verify
+            # consumes, rather than a craft receipt for every value.
+            return state, ModelTerminal(
+                "Refusal", "VerificationFailed", facts=frozenset({"RADIUS"})
+            )
         if state.candidate is not None:
             return state, ModelTerminal(
                 "Success", facts=frozenset({"CANDIDATE", "RECORDED"})
             )
-        if answer != "accepted":
-            # A refusing review is bought; the examiner behind it never is. The
-            # radius is measured BEFORE either, so it survives the refusal.
-            return state, replace(
-                _role_refusal(name, answer), facts=frozenset({"RADIUS"})
-            )
-        # The whole-diff review and the source-blind judgement: two turns.
+        # Native verification has no provider answer. It constructs and
+        # captures one candidate with zero turns; a host separately chooses
+        # whether to prepare, invoke, and record either review role.
         return replace(state, candidate="c"), ModelTerminal(
-            "Success", turns_bought=2, facts=frozenset({"CANDIDATE", "RADIUS"})
+            "Success", facts=frozenset({"CANDIDATE", "RADIUS"})
         )
 
     if name == "integrate":

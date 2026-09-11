@@ -7,11 +7,13 @@ argument-hint: '<request>'
 
 # NW-AUTO
 
-You orchestrate. Each DES step measures, constructs and enacts one thing, then
-returns. DES records facts and admits or refuses each step; the LLM evaluates
-the evidence and chooses the next lawful action. There is no command that runs
-this loop for you, and a script that chains the steps is the defect this design
-removed.
+You orchestrate. DES constructs durable facts and, when asked, human-readable
+documents. Each DES step measures, constructs, or enacts one operation, then
+returns that operation's result. DES records the resulting facts and may report
+missing required input, a write conflict, or another result of that single
+operation. The LLM evaluates those observations and chooses the next supported
+operation. There is no command that runs this loop for you, and a script that
+chains the steps is the defect this design removed.
 
 ## 1. The loop
 
@@ -32,11 +34,9 @@ printf '%s' "$REQUEST" | des po --repo-root ABSOLUTE_ROOT
 `NEXT` is advisory data, never an execution instruction. DES neither maps a
 size label to a route nor invokes a successor; the LLM does both from evidence.
 
-## 2. The nine steps
+## 2. Public operations
 
-The current DES runtime exposes seven commands that can write durable data and
-two that only read it. This table describes their observed outputs and inputs;
-it is not a required sequence.
+This table describes observed inputs and outputs; it is not a required sequence.
 
 | Step | What it leaves behind |
 |---|---|
@@ -45,24 +45,27 @@ it is not a required sequence.
 | `des design --value N` | the typed design facts of value N, bound. |
 | `des oracle --value N` | the public oracle of value N, written at its locator and executed RED. |
 | `des craft --value N` | the change for value N, recorded. |
-| `des verify` | one candidate commit, reviewed over the whole diff and examined source-blind. |
+| `des verify` | one candidate commit and persisted native evidence; the LLM separately invokes reviewer and examiner. |
+| `des prepare-role --role reviewer\|examiner --candidate SHA` | one persisted, candidate-bound role input; it invokes no model and executes no native command. |
+| `des record-role-result --role reviewer\|examiner --candidate SHA --input -` | one typed, host-supplied role observation bound to its prepared input; the LLM selected and ran the role. |
+| `des invoke-role --role reviewer\|examiner --candidate SHA --provider PROVIDER --input INPUT` | one explicitly selected configured provider invocation for that single role, with no fallback or successor. |
 | `des integrate` | the candidate on the destination, and no Request stored. |
 | `des state` | nothing. It reads where the Request stands. |
 | `des project` | nothing. It renders the human-readable projection. |
 
-Current commands can refuse when their required input or recorded data is absent
-or inconsistent. Their `WHAT`, `WHY`, and `HOW` lines are observations about
-that capability, not route instructions. The LLM decides whether to gather more
-evidence, select another supported operation, or correct the upstream authority.
+Current commands can report missing required input or recorded data, a write
+conflict, or the result of the single operation they performed. Their
+`WHAT`, `WHY`, and `HOW` lines describe that runtime result; they do not choose
+a route. The LLM decides whether to gather more evidence, select another
+supported operation, or correct upstream authority.
 
-The current `des integrate` implementation can report `CandidateNotAdmitted`
-and accepts `--on-my-evidence -` to record supplied evidence beside the verdict.
-This is a present runtime constraint, not a rule that an earlier command must
-have been selected.
+`des integrate` performs only recorded candidate identity checks, compare-and-swap,
+and cleanup mechanics. Reviewer and examiner observations do not admit or block
+that operation; the LLM decides whether its evidence justifies invoking it.
 
-The floor is never switched off. Craft requires a recorded oracle, and verify
-always buys the blind examination. How WIDE the oracle and the examination must
-be is measured from what the candidate touched, and printed as a fact.
+The floor is never switched off. Craft requires the appropriate recorded oracle.
+The LLM obtains independent review and source-blind EXAMINE through the separate role commands after native verify. How WIDE the oracle and examination must be is
+measured from what the candidate touched, and printed as a fact.
 
 ## 3. Reading the block
 
@@ -105,15 +108,16 @@ Do not send a finding about the oracle back to the crafter. The crafter may not
 edit the oracle and will refuse again. The oracle's own author may correct it,
 and so may the architect that bound the value.
 
-Did you follow a `NEXT` because the state named it, or because a role's sentence
-sounded like an instruction? Only the first is a measurement.
+`NEXT` is advisory runtime output and a role's sentence is not an instruction.
+In either case, choose the next operation from the current Request and measured
+result.
 
 ## 4. Interactive and autonomous are one path
 
 The steps are the same; only who reads between them changes.
 
 - **Autonomous.** The LLM evaluates each terminal result and chooses the next
-  lawful action. It stops when evidence leaves a material choice unresolved.
+  supported operation. It stops when evidence leaves a material choice unresolved.
 - **Interactive.** The human participates in those material choices.
 
 There is no third level and no checkpoint to promise. A step is the unit at
@@ -155,13 +159,14 @@ attested from a stale answer is attested from nothing. Installing the tool is
 what flips the measurement. Read that line rather than assuming: an obligation
 reported as silence reads as an obligation met.
 
-## 6. LLM-owned S/M/L and wave choice
+## 6. LLM-owned S/M/L, bugfix, and upstream-rework choice
 
 For both a feature and a bugfix, the LLM assigns a working `S`, `M`, or `L`
 assessment before starting and revises it whenever current evidence changes.
-Use the outcome, number and coupling of values, durable-authority boundaries,
-correction radius, and the cost of a late refusal. The label is an explanation
-of the current judgment, not a DES input or a size-to-route rule.
+It also decides whether a bugfix or an upstream rework is needed. Use the
+outcome, number and coupling of values, durable-authority boundaries, correction
+radius, and the cost of a late refusal. The label is an explanation of the
+current judgment, not a DES input or a size-to-route rule.
 
 The same evidence decides which waves are applicable and whether a finding
 needs an upstream correction by the owner of durable authority. A missing
@@ -198,7 +203,7 @@ steps. Treat each as a cost you choose:
 | Repeat | What it costs today |
 |---|---|
 | `des design --value N` on an already bound value | buys the architect again and replaces the bound facts. Re-bind deliberately with `--finding -`, and not by accident. |
-| `des verify` after a successful verify | rebuilds the candidate and buys the reviewer and the examiner again over unchanged bytes. |
+| `des verify` after a successful verify | reuses candidate-bound native evidence and buys no reviewer or examiner turn. |
 | `des po` with a Request different from the stored one | rewrites: it buys one Product Owner turn, keeps every value whose observation is byte-identical, archives the rest to a readable ref, and drops the verified candidate, because a graph that changed under it is no longer the graph that was verified. The terminal shows `KEPT`, `ARCHIVED` and `NEW`, so you can correct the split. |
 
 ## 8. Before each step

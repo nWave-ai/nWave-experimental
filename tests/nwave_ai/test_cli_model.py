@@ -58,6 +58,81 @@ def test_model_set_writes_complete_project_role_pair(tmp_path, monkeypatch) -> N
     assert (selected.provider, selected.model) == (ModelProvider.CODEX, "gpt-5.6-sol")
 
 
+def test_model_set_competence_writes_distinct_pair_from_the_ordinary_role(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    role_spec = tmp_path / "nWave" / "agents" / "nw-solution-architect.md"
+    role_spec.parent.mkdir(parents=True)
+    role_spec.write_text(
+        "---\nname: nw-solution-architect\ntools: Read\n---\n",
+        encoding="utf-8",
+    )
+
+    code, stdout, stderr = _invoke(
+        [
+            "model",
+            "set",
+            "--provider",
+            "codex",
+            "--model",
+            "gpt-5.6-adv",
+            "--role",
+            "nw-solution-architect",
+            "--competence",
+            "advanced",
+            "--project",
+        ]
+    )
+
+    assert code == 0, stderr
+    written = json.loads((tmp_path / ".nwave" / "config.json").read_text())
+    assert written["model_runtime"]["roles"] == {
+        "nw-solution-architect#advanced": {"provider": "codex", "model": "gpt-5.6-adv"}
+    }
+    config = DESConfig(
+        cwd=tmp_path,
+        global_config_path=tmp_path / "home" / ".nwave" / "config.json",
+    )
+    advanced = config.role_runtime("nw-solution-architect#advanced")
+    assert (advanced.provider, advanced.model) == (ModelProvider.CODEX, "gpt-5.6-adv")
+    # The confirmation names the key actually persisted, not the bare role --
+    # a reader uses this line as evidence of what the config now contains.
+    assert "role nw-solution-architect#advanced" in stdout
+    assert "role nw-solution-architect " not in stdout
+
+
+def test_model_set_without_competence_confirms_the_bare_role_as_today(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    role_spec = tmp_path / "nWave" / "agents" / "nw-solution-architect.md"
+    role_spec.parent.mkdir(parents=True)
+    role_spec.write_text(
+        "---\nname: nw-solution-architect\ntools: Read\n---\n",
+        encoding="utf-8",
+    )
+
+    code, stdout, stderr = _invoke(
+        [
+            "model",
+            "set",
+            "--provider",
+            "codex",
+            "--model",
+            "gpt-5.6-sol",
+            "--role",
+            "nw-solution-architect",
+            "--project",
+        ]
+    )
+
+    assert code == 0, stderr
+    assert "role nw-solution-architect set" in stdout
+
+
 def test_unknown_provider_refuses_before_any_config_write(
     tmp_path, monkeypatch
 ) -> None:

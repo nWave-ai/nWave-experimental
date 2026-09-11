@@ -14,8 +14,27 @@ Exit codes:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+
+# Generated run state can contain deliberately malformed YAML fixtures. It is
+# neither authored project configuration nor a CI input, so prune it before
+# walking rather than discovering it and filtering it afterward.
+_EXCLUDED_DIRECTORY_NAMES = {
+    ".git",
+    ".mypy_cache",
+    ".nwave",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "dist",
+    "node_modules",
+    "venv",
+}
 
 
 def _load_yaml():
@@ -48,25 +67,17 @@ class YAMLValidator:
 
     def find_yaml_files(self) -> list[Path]:
         """Find all YAML files in the repository"""
-        yaml_patterns = ["**/*.yaml", "**/*.yml"]
-        exclude_dirs = {
-            ".git",
-            "node_modules",
-            ".pytest_cache",
-            "__pycache__",
-            "dist",
-            ".mypy_cache",
-            ".ruff_cache",
-        }
-
-        yaml_files = []
-        for pattern in yaml_patterns:
-            for file_path in self.root_dir.glob(pattern):
-                # Skip excluded directories
-                if any(exclude_dir in file_path.parts for exclude_dir in exclude_dirs):
-                    continue
-                yaml_files.append(file_path)
-
+        yaml_files: list[Path] = []
+        for directory, subdirectories, filenames in os.walk(self.root_dir):
+            subdirectories[:] = [
+                name for name in subdirectories if name not in _EXCLUDED_DIRECTORY_NAMES
+            ]
+            current_dir = Path(directory)
+            yaml_files.extend(
+                current_dir / filename
+                for filename in filenames
+                if filename.endswith((".yaml", ".yml"))
+            )
         return sorted(yaml_files)
 
     def validate_file(self, file_path: Path) -> tuple[bool, str]:

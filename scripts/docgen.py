@@ -974,6 +974,7 @@ def project_generated_regions(
         *asset_paths["agents"],
         *asset_paths["commands"],
         *asset_paths["skills"],
+        root / "docs/product/architecture/ADR-DES-003-step-surface-algebra.md",
     ]
     projections: list[AssetProjection] = []
     for path in files:

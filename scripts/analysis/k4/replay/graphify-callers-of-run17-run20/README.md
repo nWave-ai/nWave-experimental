@@ -30,6 +30,14 @@ The ONE modification is a trailing newline, which this repository's file-quality
 rule requires and the recorder does not write. It changes no parsed field, so
 the replayed envelope is still the recorded bytes.
 
+`replay-migrations.json` is a separate, declared compatibility projection --
+never a rewrite of a recorded turn. Its sole entry pins the SHA-256 of turn 02's
+raw `provider_stdout`, checks its exact six-field historical DESIGN shape, and
+adds `authority_locator: ""` only to the two redundant decoded projections.
+The durable section locator is assigned later by the closed DESIGN constructor;
+the recorded provider never supplied one. The source record remains unchanged
+and `_recorded_envelope` continues to expose its original bytes.
+
 `NN-<role>.patch.json` is the workspace effect of the same turn. A turn record
 carries what a role **said**, never what it **wrote**: the oracle and the
 implementation exist only in the candidate commit the run produced. Both diffs

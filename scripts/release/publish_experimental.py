@@ -56,7 +56,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.release.experimental_migration_decision import (  # noqa: E402
+    DecisionRefusal,
+    projected_candidate,
+    retry_message_matches,
+    short_sha_of,
+    validate_predecessor_metadata,
+)
 from scripts.release.patch_pyproject import patch_pyproject, tomli  # noqa: E402
+from scripts.release.release_migration_decision import decode_decision  # noqa: E402
 
 
 # --- constants ------------------------------------------------------------
@@ -174,21 +182,25 @@ def run(
 ) -> subprocess.CompletedProcess[str]:
     """Run a command, echoing it; capture nothing (stream to the console)."""
     print(f"  $ {' '.join(cmd)}{f'   (cwd={cwd})' if cwd else ''}")
-    return subprocess.run(cmd, cwd=cwd, check=check, text=True)
+    return subprocess.run(
+        cmd, cwd=cwd, check=check, text=True, stdin=subprocess.DEVNULL, timeout=600
+    )
 
 
 def capture(cmd: list[str], *, cwd: Path | None = None) -> str:
     return subprocess.run(
-        cmd, cwd=cwd, check=True, text=True, capture_output=True
+        cmd,
+        cwd=cwd,
+        check=True,
+        text=True,
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+        timeout=60,
     ).stdout.strip()
 
 
 def current_branch() -> str:
     return capture(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=REPO_ROOT)
-
-
-def short_sha(ref: str) -> str:
-    return capture(["git", "rev-parse", "--short", ref], cwd=REPO_ROOT)
 
 
 def export_committed_tree(ref: str, dest: Path) -> None:
@@ -204,8 +216,15 @@ def export_committed_tree(ref: str, dest: Path) -> None:
         cwd=REPO_ROOT,
         check=True,
         stdout=subprocess.PIPE,
+        stdin=subprocess.DEVNULL,
+        timeout=120,
     )
-    subprocess.run(["tar", "-x", "-C", str(dest)], input=archive.stdout, check=True)
+    subprocess.run(
+        ["tar", "-x", "-C", str(dest)],
+        input=archive.stdout,
+        check=True,
+        timeout=120,
+    )
 
 
 def stamp_experimental_version(target: Path, sha: str) -> None:
@@ -313,6 +332,93 @@ def write_experimental_readme(target: Path, sha: str, full_sha: str) -> None:
     print("  • wrote experimental README.md (local-install, no PyPI)")
 
 
+def target_snapshot(local_target: Path | None) -> tuple[str, str, str]:
+    """Read predecessor commit, metadata and footer before any clone/write."""
+    if local_target is not None:
+        commit = capture(
+            [
+                "git",
+                "--git-dir",
+                str(local_target),
+                "rev-parse",
+                f"refs/heads/{TARGET_BRANCH}",
+            ]
+        )
+        pyproject = capture(
+            ["git", "--git-dir", str(local_target), "show", f"{commit}:pyproject.toml"]
+        )
+        message = capture(
+            [
+                "git",
+                "--git-dir",
+                str(local_target),
+                "log",
+                "-1",
+                "--format=%B",
+                TARGET_BRANCH,
+            ]
+        )
+        return commit, pyproject, message
+    commit = capture(
+        [
+            "gh",
+            "api",
+            f"repos/{TARGET_SLUG}/git/ref/heads/{TARGET_BRANCH}",
+            "--jq",
+            ".object.sha",
+        ]
+    )
+    encoded = capture(
+        [
+            "gh",
+            "api",
+            f"repos/{TARGET_SLUG}/contents/pyproject.toml?ref={commit}",
+            "--jq",
+            ".content",
+        ]
+    )
+    pyproject = subprocess.run(
+        ["base64", "--decode"],
+        input=encoded,
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=30,
+    ).stdout
+    message = capture(
+        [
+            "gh",
+            "api",
+            f"repos/{TARGET_SLUG}/commits/{commit}",
+            "--jq",
+            ".commit.message",
+        ]
+    )
+    return commit, pyproject, message
+
+
+def _branch_publication_unit(decision: object, branch: str):
+    """Return the sole git_branch unit targeting ``branch``.
+
+    The experimental publisher writes exactly one branch on one target; its
+    staleness/lease value is that unit's declared ``predecessor`` commit, the
+    same fact a real dev/rc/prod ``git_branch`` publication unit already
+    carries. It is no longer read off a top-level ``decision.predecessor``
+    (the package-identity fact), which never named a git commit under the
+    real producer's schema.
+    """
+    matches = [
+        unit
+        for unit in decision.units  # type: ignore[attr-defined]
+        if unit.kind == "git_branch" and unit.body.get("branch") == branch
+    ]
+    if len(matches) != 1:
+        raise DecisionRefusal(
+            f"migration decision must declare exactly one git_branch unit for {branch}"
+        )
+    return matches[0]
+
+
 # --- main -----------------------------------------------------------------
 
 
@@ -328,6 +434,16 @@ def main() -> int:
         "(builds + strips locally, pushes nothing).",
     )
     ap.add_argument(
+        "--migration-decision",
+        type=Path,
+        help="External migration decision bundle required with --push.",
+    )
+    ap.add_argument(
+        "--target-local-repo",
+        type=Path,
+        help="Existing local bare Git target for controlled CLI verification.",
+    )
+    ap.add_argument(
         "--ref",
         default="HEAD",
         help="Committed ref to publish (default: HEAD of the current branch).",
@@ -338,6 +454,30 @@ def main() -> int:
         help=f"Override the {SOURCE_BRANCH}-only guard (use deliberately).",
     )
     args = ap.parse_args()
+
+    if args.target_local_repo is not None:
+        local = args.target_local_repo.resolve()
+        bare = subprocess.run(
+            ["git", "--git-dir", str(local), "rev-parse", "--is-bare-repository"],
+            capture_output=True,
+            text=True,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+        )
+        if bare.returncode or bare.stdout.strip() != "true":
+            print(
+                "WHAT: local target is not an existing bare Git repository. WHY: controlled publication must not fall back to a public target. HOW: pass --target-local-repo PATH to a bare repository.",
+                file=sys.stderr,
+            )
+            return 2
+        args.target_local_repo = local
+    if args.push and args.migration_decision is None:
+        print(
+            "WHAT: migration decision is required before publication. WHY: --push may write the public experimental channel. HOW: pass --migration-decision PATH with a bound record.",
+            file=sys.stderr,
+        )
+        return 2
 
     print("=== nWave EXPERIMENTAL publisher (segregated) ===")
 
@@ -352,8 +492,32 @@ def main() -> int:
         )
         return 2
 
-    sha = short_sha(args.ref)
     full_sha = capture(["git", "rev-parse", args.ref], cwd=REPO_ROOT)
+    sha = short_sha_of(full_sha)
+    target_commit: str | None = None
+    try:
+        candidate = projected_candidate(REPO_ROOT, full_sha)
+        if args.push:
+            decision = decode_decision(args.migration_decision, REPO_ROOT)
+            if (
+                decision.candidate.source_sha,
+                decision.candidate.name,
+                decision.candidate.version,
+            ) != (candidate.source_sha, candidate.name, candidate.version):
+                raise DecisionRefusal(
+                    "migration decision candidate does not match this projected source"
+                )
+            target_commit = _branch_publication_unit(decision, TARGET_BRANCH).body[
+                "predecessor"
+            ]
+        else:
+            decision = None
+    except DecisionRefusal as error:
+        print(
+            f"WHAT: migration decision was refused. WHY: {error}. HOW: provide retained bytes and identities bound to this source and candidate.",
+            file=sys.stderr,
+        )
+        return 2
     print(f"source: {branch} @ {sha} ({full_sha})")
     print(f"target: {TARGET_SLUG}@{TARGET_BRANCH}  (PUBLIC)")
     print(f"mode:   {'PUSH' if args.push else 'DRY RUN (no push)'}")
@@ -367,13 +531,54 @@ def main() -> int:
         export = tmpd / "source"
         target = tmpd / "target"
 
-        # 2) export the committed tree ------------------------------------
-        print("\n[1/5] export committed tree (git archive)")
-        export_committed_tree(args.ref, export)
+        # The target is read before clone/source projection, so stale records
+        # refuse without spending work or touching the clone boundary.
+        if decision is not None:
+            try:
+                commit, pyproject, message = target_snapshot(args.target_local_repo)
+                if retry_message_matches(message, decision):
+                    print(
+                        "ALREADY_PUBLISHED: target footer matches Source, Candidate, and Decision-SHA256."
+                    )
+                    return 0
+                validate_predecessor_metadata(
+                    commit, pyproject, decision, target_commit
+                )
+            except (DecisionRefusal, subprocess.CalledProcessError) as error:
+                print(
+                    f"WHAT: migration decision was refused. WHY: {error}. HOW: refresh the record from the current target predecessor.",
+                    file=sys.stderr,
+                )
+                return 2
+        print("\n[1/5] clone and bind experimental predecessor")
+        if args.target_local_repo is not None:
+            run(
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--branch",
+                    TARGET_BRANCH,
+                    str(args.target_local_repo),
+                    str(target),
+                ]
+            )
+        else:
+            run(["gh", "repo", "clone", TARGET_SLUG, str(target), "--", "--depth", "1"])
+        if (
+            decision is not None
+            and capture(["git", "rev-parse", "HEAD"], cwd=target) != target_commit
+        ):
+            print(
+                "WHAT: target predecessor changed during clone. WHY: the decision is stale. HOW: refresh the record and retry.",
+                file=sys.stderr,
+            )
+            return 2
 
-        # 3) clone the target (its own .git — no shared-.git contention) ---
-        print("\n[2/5] clone experimental target")
-        run(["gh", "repo", "clone", TARGET_SLUG, str(target), "--", "--depth", "1"])
+        # 2) export the committed tree ------------------------------------
+        print("\n[2/5] export committed tree (git archive)")
+        export_committed_tree(args.ref, export)
 
         # 4) rsync the public surface + strip restricted agents (fail-closed) -
         print("\n[3/5] rsync public surface (prod filter) + --delete --delete-excluded")
@@ -408,7 +613,9 @@ def main() -> int:
 
         msg = (
             f"experimental: atdd-pure preview @ {sha}\n\n"
-            f"Source: {SOURCE_BRANCH} {full_sha}\n"
+            f"Source: {full_sha}\n"
+            f"Candidate: {candidate.name} {candidate.version}\n"
+            f"Decision-SHA256: {decision.digest if decision else 'dry-run'}\n"
             f"Channel: experimental (segregated; not beta/rc/prod, no PyPI)\n"
         )
         run(
@@ -434,13 +641,32 @@ def main() -> int:
             # keep nothing; tempdir is cleaned on exit
             return 0
 
-        run(["git", "push", "origin", f"HEAD:{TARGET_BRANCH}"], cwd=target)
+        lease = f"--force-with-lease=refs/heads/{TARGET_BRANCH}:{target_commit}"
+        pushed_result = run(
+            ["git", "push", lease, "origin", f"HEAD:{TARGET_BRANCH}"],
+            cwd=target,
+            check=False,
+        )
+        if pushed_result.returncode:
+            print(
+                "WHAT: target changed during publication. WHY: the predecessor lease no longer matches. HOW: re-read the target and revalidate the migration decision before retrying.",
+                file=sys.stderr,
+            )
+            return 3
         pushed = capture(["git", "rev-parse", "--short", "HEAD"], cwd=target)
+        target_label = (
+            str(args.target_local_repo)
+            if args.target_local_repo is not None
+            else TARGET_SLUG
+        )
         print(
-            f"\n✅ PUBLISHED to {TARGET_SLUG}@{TARGET_BRANCH} "
+            f"\n✅ PUBLISHED to {target_label}@{TARGET_BRANCH} "
             f"(commit {pushed}) — atdd-pure preview @ {sha}"
         )
-        print(f"   Preview access = PUBLIC repository https://github.com/{TARGET_SLUG}")
+        if args.target_local_repo is None:
+            print(
+                f"   Preview access = PUBLIC repository https://github.com/{TARGET_SLUG}"
+            )
     return 0
 
 

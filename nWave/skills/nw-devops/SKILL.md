@@ -26,8 +26,10 @@ narrative.
    failure mode.
 5. Define literal environment-native verification commands and dependency
    ownership. Never substitute an ambient `.venv` or assume a language.
-6. Update the existing platform brief/ADR/environment authority once and return
-   stable ids plus the executable obligations DISTILL must project.
+6. Send the same constraints to `des devops --authority <doc.md> --section
+   <heading>`, which constructs the platform brief/ADR/environment authority
+   update and returns stable ids plus the executable obligations DISTILL must
+   project.
 
 DEVOPS does not author a handover, feature workspace, rollout ledger or CI
 status copy. A downstream operational contradiction returns to the platform

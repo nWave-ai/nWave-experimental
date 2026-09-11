@@ -5,6 +5,7 @@ import pytest
 from des.domain.model_runtime import (
     ModelProvider,
     ModelRuntimeConfigError,
+    qualify_role_id,
     resolve_role_runtime,
 )
 
@@ -84,3 +85,63 @@ def test_absent_config_uses_framework_role_model_before_subject(tmp_path) -> Non
     )
 
     assert runtime == type(runtime)(ModelProvider.CLAUDE, "framework")
+
+
+def test_distinct_competencies_of_the_same_role_resolve_distinct_pairs(
+    tmp_path,
+) -> None:
+    tier = {
+        "model_runtime": {
+            "roles": {
+                "nw-solution-architect": _pair("claude", "ordinary-model"),
+                qualify_role_id("nw-solution-architect", "advanced"): _pair(
+                    "codex", "advanced-model"
+                ),
+            }
+        }
+    }
+
+    ordinary = resolve_role_runtime(
+        "nw-solution-architect", repo_root=tmp_path, global_tier={}, repo_tier=tier
+    )
+    advanced = resolve_role_runtime(
+        qualify_role_id("nw-solution-architect", "advanced"),
+        repo_root=tmp_path,
+        global_tier={},
+        repo_tier=tier,
+    )
+
+    assert (ordinary.provider, ordinary.model) == (
+        ModelProvider.CLAUDE,
+        "ordinary-model",
+    )
+    assert (advanced.provider, advanced.model) == (
+        ModelProvider.CODEX,
+        "advanced-model",
+    )
+
+
+def test_qualified_role_falls_back_to_bare_role_when_competence_undeclared(
+    tmp_path,
+) -> None:
+    tier = {
+        "model_runtime": {"roles": {"nw-solution-architect": _pair("codex", "sol")}}
+    }
+
+    advanced = resolve_role_runtime(
+        qualify_role_id("nw-solution-architect", "advanced"),
+        repo_root=tmp_path,
+        global_tier={},
+        repo_tier=tier,
+    )
+
+    assert (advanced.provider, advanced.model) == (ModelProvider.CODEX, "sol")
+
+
+def test_absent_competence_qualifies_to_the_bare_role_id() -> None:
+    assert qualify_role_id("nw-solution-architect", None) == "nw-solution-architect"
+
+
+def test_qualify_role_id_rejects_a_competence_carrying_the_separator() -> None:
+    with pytest.raises(ValueError):
+        qualify_role_id("nw-solution-architect", "adv#anced")

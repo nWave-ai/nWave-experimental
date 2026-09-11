@@ -121,10 +121,13 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # turn's `blocked_by` word comes back as DATA on BLOCKED-BY -- the composed
     # run spends a window on the role it names, a lone step never does.
     _SubcommandRow("craft", "des.cli.craft", "main"),
-    # ADR-SSOT-002 Section 4b: the whole-Request candidate built from its base,
-    # verified natively with the evidence captured ONCE, reviewed whole, and
-    # judged source-blind. Nothing here moves a ref.
+    # The whole-Request candidate is built from its base and its declared native
+    # evidence is captured once. Host-selected review and examination consume
+    # the persisted observation separately. Nothing here moves a ref.
     _SubcommandRow("verify", "des.cli.verify", "main"),
+    _SubcommandRow("prepare-role", "des.cli.prepare_role", "main"),
+    _SubcommandRow("record-role-result", "des.cli.record_role_result", "main"),
+    _SubcommandRow("invoke-role", "des.cli.invoke_role", "main"),
     # ADR-SSOT-002 Section 4b: the one compare-and-swap, the owned-index
     # reconciliation, and the closure of the graph. It buys no turn.
     _SubcommandRow("integrate", "des.cli.integrate", "main"),

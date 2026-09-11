@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from des.application.handover import Blocked
-
-
-if TYPE_CHECKING:
-    from des.domain.operational_document import OperationalDocument
+from des.application.handover import Blocked, replace_exact_bytes
+from des.domain.operational_document import (
+    OperationalDocument,
+    OperationalDocumentInvalid,
+    operational_facts_from_json,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +20,7 @@ class PublishedOperationalDocument:
     locator: str
     digest: str
     facts_path: str
+    sidecar_failure: Blocked | None = None
 
 
 def _safe(root: Path, candidate: Path) -> bool:
@@ -33,8 +35,40 @@ def _safe(root: Path, candidate: Path) -> bool:
         return False
 
 
+def _prior_owned_section(raw: bytes, destination: str, heading: str) -> bytes | Blocked:
+    """Prove that the sole sidecar owns this configured authority section."""
+    try:
+        facts = operational_facts_from_json(raw.decode("utf-8"))
+        authority = facts["authority"]
+        if authority != {"destination": destination, "heading": heading}:
+            return Blocked(
+                "OperationalAuthorityIdentityMismatch",
+                "the existing OperationalFacts sidecar does not name the configured "
+                "DEVOPS destination and supplied authority heading",
+                "use the current destination and heading with its matching sidecar",
+                refusal=True,
+            )
+        prior_input = dict(facts)
+        prior_input["authority"] = {"heading": heading}
+        return (
+            OperationalDocument.from_json(json.dumps(prior_input)).markdown().encode()
+        )
+    except (OperationalDocumentInvalid, UnicodeDecodeError) as error:
+        return Blocked(
+            "OperationalAuthorityIdentityMismatch",
+            "the existing OperationalFacts sidecar is not canonical authority "
+            f"identity evidence: {error}",
+            "restore the matching canonical OperationalFacts sidecar before replacing",
+            refusal=True,
+        )
+
+
 def publish_operational_document(
-    root: Path, destination: str, document: OperationalDocument
+    root: Path,
+    destination: str,
+    document: OperationalDocument,
+    *,
+    replace_current: bool = False,
 ) -> PublishedOperationalDocument | Blocked:
     candidate = Path(destination)
     if not _safe(root, candidate) or candidate.suffix != ".md":
@@ -57,8 +91,9 @@ def publish_operational_document(
                     "choose regular authority and sidecar paths",
                     refusal=True,
                 )
+        authority_expected = path.read_bytes() if path.exists() else None
         existing, existing_facts = (
-            (path.read_bytes() if path.exists() else b""),
+            authority_expected or b"",
             (sidecar.read_bytes() if sidecar.exists() else None),
         )
         marker = f"## {document.heading}".encode()
@@ -80,31 +115,117 @@ def publish_operational_document(
             following = existing.find(b"\n## ", start + len(marker))
             end = len(existing) if following < 0 else following + 1
             owned = existing[start:end]
-            if not owned.startswith(section) or owned[len(section) :].strip(b"\r\n"):
+            owned_lines = owned.splitlines(keepends=True)
+            last_content = next(
+                (
+                    index
+                    for index in range(len(owned_lines) - 1, -1, -1)
+                    if owned_lines[index].rstrip(b"\r\n")
+                ),
+                None,
+            )
+            owned_section = (
+                b"".join(owned_lines[: last_content + 1])
+                if last_content is not None
+                else owned
+            )
+            delimiter = owned[len(owned_section) :]
+            if replace_current:
+                # The canonical sidecar proves WHICH authority section may be
+                # replaced. That proof is owed whenever a replacement is asked
+                # for, not only when the current section already diverges: an
+                # identical section with a foreign or absent sidecar is exactly
+                # the case where a silent write would adopt someone else's
+                # canonical facts.
+                if existing_facts is None:
+                    return Blocked(
+                        "OperationalAuthorityIdentityMismatch",
+                        "--replace-current requires the existing canonical "
+                        "OperationalFacts sidecar",
+                        "restore the matching sidecar before replacing this authority",
+                        refusal=True,
+                    )
+                prior_owned = _prior_owned_section(
+                    existing_facts, str(candidate), document.heading
+                )
+                if isinstance(prior_owned, Blocked):
+                    return prior_owned
+                if owned_section not in (prior_owned, section):
+                    # Two shapes are replaceable: the coherent prior state the
+                    # sidecar still owns, and this very section, which is what a
+                    # write interrupted between the two files leaves behind.
+                    # Anything else is a third party's authority.
+                    return Blocked(
+                        "OperationalAuthorityIdentityMismatch",
+                        "the current DEVOPS section does not equal the canonical "
+                        "section owned by its OperationalFacts sidecar",
+                        "restore matching authority and sidecar bytes before replacing",
+                        refusal=True,
+                    )
+                rendered = existing[:start] + section + delimiter + existing[end:]
+            elif owned_section != section:
                 return Blocked(
                     "OperationalAuthorityDrift",
                     "the existing DEVOPS heading has divergent content",
-                    "supply explicit supersession evidence before replacing the owned section",
+                    "supply --replace-current to replace this owned authority section",
                     refusal=True,
                 )
-            rendered = existing
+            else:
+                rendered = existing
+        elif replace_current:
+            return Blocked(
+                "OperationalAuthorityIdentityMismatch",
+                "--replace-current requires the configured DEVOPS destination to "
+                "already contain the supplied authority heading",
+                "use the current destination and heading, or publish without --replace-current",
+                refusal=True,
+            )
         else:
             rendered = existing + section
-        if existing_facts is not None and existing_facts != facts:
+        if (
+            existing_facts is not None
+            and existing_facts != facts
+            and not replace_current
+        ):
             return Blocked(
                 "OperationalFactsDrift",
                 "the existing OperationalFacts sidecar has divergent content",
-                "supply explicit supersession evidence before replacing the sidecar",
+                "supply --replace-current to replace the canonical facts sidecar",
                 refusal=True,
             )
         if rendered != existing:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            operation = "writing DEVOPS Markdown authority"
-            path.write_bytes(rendered)
+            operation = "replacing DEVOPS Markdown authority"
+            replaced = replace_exact_bytes(
+                path,
+                authority_expected,
+                rendered,
+                unavailable="OperationalAuthorityUnavailable",
+                repair="restore authority storage; the complete replacement may already be visible",
+                drift="OperationalAuthorityDrift",
+                drift_subject="authority",
+            )
+            if replaced is not None:
+                return replaced
         if existing_facts != facts:
-            sidecar.parent.mkdir(parents=True, exist_ok=True)
-            operation = "writing OperationalFacts sidecar"
-            sidecar.write_bytes(facts)
+            operation = "replacing OperationalFacts sidecar"
+            replaced = replace_exact_bytes(
+                sidecar,
+                existing_facts,
+                facts,
+                unavailable="OperationalAuthorityUnavailable",
+                repair="restore OperationalFacts storage; the complete replacement may already be visible",
+                drift="OperationalFactsDrift",
+                drift_subject="OperationalFacts sidecar",
+            )
+            if replaced is not None:
+                if rendered != existing:
+                    return PublishedOperationalDocument(
+                        f"{candidate}#{document.heading}",
+                        hashlib.sha256(rendered).hexdigest(),
+                        str(sidecar_candidate),
+                        replaced,
+                    )
+                return replaced
         return PublishedOperationalDocument(
             f"{candidate}#{document.heading}",
             hashlib.sha256(rendered).hexdigest(),

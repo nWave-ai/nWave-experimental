@@ -592,6 +592,28 @@ def _workflow_commands(path: Path) -> tuple[ShellCommand, ...]:
     return tuple(commands)
 
 
+def _decision_bundle_transport_steps(path: Path) -> frozenset[int]:
+    """Return steps that only prepare the retained decision bundle for decoding.
+
+    The migration bundle is an external immutable input.  Creating its local
+    extraction directory is not the retired wheel-DES staging choreography;
+    filesystem transforms in the same step remain subject to the normal check.
+    """
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    steps = data["jobs"]["pypi-publish"]["steps"]
+    required = (
+        "gh release download",
+        "experimental-migration-decision.zip",
+        "decode_decision",
+        ".nwave/release-migration-decision",
+    )
+    return frozenset(
+        index
+        for index, step in enumerate(steps)
+        if all(marker in str(step.get("run", "")) for marker in required)
+    )
+
+
 def _has_script(command: ShellCommand, script: str) -> bool:
     return script in command.argv
 
@@ -693,6 +715,7 @@ def _forbidden_choreography(command: ShellCommand) -> tuple[str, ...]:
 
 def _workflow_contract_violations(path: Path) -> list[str]:
     commands = _workflow_commands(path)
+    bundle_transport_steps = _decision_bundle_transport_steps(path)
     categories = {
         "patch": tuple(
             command
@@ -763,6 +786,8 @@ def _workflow_contract_violations(path: Path) -> list[str]:
                 )
     for command in commands:
         forbidden = _forbidden_choreography(command)
+        if command.step_index in bundle_transport_steps:
+            forbidden = tuple(item for item in forbidden if item != "mkdir")
         if forbidden:
             violations.append(
                 f"step {command.step_index} retains staging choreography {forbidden}"

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from des.adapters.driven.config.des_config import DESConfig
 from des.adapters.driven.task_invocation.turn_recorder import TurnRecorder
-from des.domain.model_runtime import ModelProvider, ModelRuntimeConfigError
+from des.domain.model_runtime import ModelProvider, ModelRuntimeConfigError, RoleRuntime
 from des.ports.driven_ports.task_invocation_port import ModelRun, TaskInvocationPort
 from des.runtime.packaged_asset import installed_package_root
 
@@ -22,17 +22,26 @@ class ModelRuntimeUnavailable(RuntimeError):
 class ConfiguredTaskAdapter(TaskInvocationPort):
     """Resolve each role once and delegate to its configured provider adapter."""
 
-    def __init__(self, root: Path, config: DESConfig | None = None) -> None:
+    def __init__(
+        self,
+        root: Path,
+        config: DESConfig | None = None,
+        *,
+        resolved_runtimes: dict[str, RoleRuntime] | None = None,
+    ) -> None:
         self._root = root
         self._framework_root = installed_package_root()
         self._config = config if config is not None else DESConfig(cwd=root)
         self._recorder = TurnRecorder(root=root)
         self._delegates: dict[tuple[ModelProvider, str], TaskInvocationPort] = {}
+        self._resolved_runtimes = dict(resolved_runtimes or {})
 
     def _delegate(self, role_id: str) -> TaskInvocationPort:
-        runtime = self._config.role_runtime(
-            role_id, framework_root=self._framework_root
-        )
+        runtime = self._resolved_runtimes.get(role_id)
+        if runtime is None:
+            runtime = self._config.role_runtime(
+                role_id, framework_root=self._framework_root
+            )
         key = (runtime.provider, runtime.model)
         if key in self._delegates:
             return self._delegates[key]

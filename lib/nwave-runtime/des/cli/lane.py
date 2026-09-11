@@ -566,6 +566,6 @@ def main(argv: list[str] | None = None) -> int:
             f"REMOVED: {finalized.worktree}",
             f"BRANCH-REMOVED: {finalized.branch or ''}",
         ],
-        NOTHING_OWED,
+        _NO_STEP_OWED,
     )
     return 0

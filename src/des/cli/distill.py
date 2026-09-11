@@ -20,6 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="des distill")
     add_repo_root_argument(parser, "--repo-root", type=Path, required=True)
     parser.add_argument("--input", required=True)
+    parser.add_argument("--replace-current", action="store_true")
     args = parser.parse_args(argv)
     root = resolved_root(args.repo_root)
     invocation = "des distill --repo-root <root> --input -"
@@ -44,7 +45,9 @@ def main(argv: list[str] | None = None) -> int:
             ),
             invocation,
         )
-    outcome = DeliverySteps().distill_document(root, raw)
+    outcome = DeliverySteps().distill_document(
+        root, raw, replace_current=args.replace_current
+    )
     if not outcome.succeeded:
         return refuse(
             StepRefusal(

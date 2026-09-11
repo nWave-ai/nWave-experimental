@@ -25,6 +25,14 @@ get no mini-cycle. Request-wide
 review or EXAMINE requires a named cross-slice observation not covered by slice
 evidence.
 
+When an uncertain boundary needs exercise, orient the existing delegation toward
+one concrete producer-to-consumer connection: semantic input through the DES
+constructor to an executable oracle on the real public port. Let that consumer's
+specific missing semantic question and counterexample return to its decision
+owner before expanding the affected design or solution. This selects an existing
+value-level connection; it creates no technical-fragment cycle or additional
+delivery phase.
+
 Route application/component to `nw-solution-architect`, domain boundaries to
 `nw-ddd-architect`, scale/distribution to `nw-system-designer`, deployment to
 `nw-platform-architect`. Invoke only risk-required lenses. Algebra, certainty
@@ -80,6 +88,14 @@ Code-level structure stays downstream unless a public contract needs a boundary.
    (`nw-doc-as-artifact`) adds no content, so readability must already be in the
    markdown, or the people who decide cannot take part. Gate: a section that
    opens with a table, a formula or an undefined term fails the projection.
+10. **Agreement analysis** — reuse asks "does something already own this?";
+    agreement analysis asks the question reuse cannot: "who else must agree
+    with the contract I am changing?" For every shared contract the change
+    touches (a schema, a wire format, a config shape read by more than one
+    producer/consumer), name every producer and every consumer with a locator
+    and a closed decision (`MIGRATED`, `UNCHANGED_COMPATIBLE`, or
+    `INCOMPATIBLE`) and a reason. Gate: a change touching no shared contract
+    must say so explicitly; it is never inferred from silence.
 
 ## Result and constructor boundary
 
@@ -92,14 +108,11 @@ sole writer: the caller sends that strict UTF-8 object to
 the human authority, and binds downstream typed facts from the same normalized
 input.
 
-The v1 manifest must contain exactly `schema_version`, `authority`, `purpose`,
-`constraints`, `targets`, `paradigm`, `decisions`, `reuse_analysis`,
-`prefactoring`, `boundaries`, `public_oracle`, `oracle`, `acceptance_supports`,
-and `verification`. Supply the nested reuse, prefactoring, boundary/failure,
-and public-oracle content required by §15; do not supply completed Markdown or
-an ADR draft. Resolve each semantic field from code facts, preserve the
-reuse/prefactoring/native-evidence and uncertainty duties above, and use at
-most one bounded Bash probe for a load-bearing unknown.
+The generated contract below is the sole field grammar for the v1 manifest. Do
+not supply completed Markdown or an ADR draft. Resolve the semantic decisions
+from code facts, preserve the reuse, prefactoring, native-evidence, and
+uncertainty duties above, and use at most one bounded Bash probe for a
+load-bearing unknown.
 
 A provider-enforced output schema remains authoritative. When a caller requires
 existing typed `design_facts`, obey that schema exactly and do not substitute a
@@ -108,10 +121,80 @@ for constructor input, return the semantic v1 manifest only. In either case,
 do not write authority, handover, production, or oracle bytes. `NEXT` is
 advisory; the producer does not select or invoke another delivery step.
 
-The first producer intentionally does not supersede different already-bound
-facts through `--input`: an existing bound-facts conflict is refused before a
-write. Choose rework when that conflict is found and state the limitation; the
-explicit supersession/rework constructor is a later increment.
+Plain `--input -` intentionally refuses different already-bound facts before a
+write. For a rework of the same configured destination and section heading, use
+the explicit `--replace-current --input -` constructor; do not imply replacement
+without that flag.
+
+<!-- GENERATED:design-document-input START — source of truth: des.domain.design_document.DesignDocument.input_description(); do not hand-edit (docgen renders this region) -->
+DESIGN constructor input is one strict UTF-8 JSON manifest:
+object with exactly:
+- `schema_version`: integer `1`.
+- `authority`: object with exactly:
+  - `heading`: plain non-empty text, not a Markdown heading.
+- `purpose`: non-empty text.
+- `constraints`: non-empty unique list of non-empty text.
+- `targets`: non-empty unique list with distinct paths of object with exactly:
+    - `path`: repository-relative file path.
+    - `decision`: `EXTEND` or `CREATE_NEW`
+    - `reason`: non-empty text.
+- `paradigm`: `object_oriented` or `functional`
+- `decisions`: non-empty unique list of non-empty text.
+- `reuse_analysis`: object with exactly:
+  - `candidates`: unique list of object with exactly:
+      - `symbol`: non-empty text.
+      - `locator`: repository-relative path and positive line.
+      - `decision`: `REUSE` or `EXTEND` or `REPLACE` or `CREATE_NEW`
+      - `reason`: non-empty text.
+- `prefactoring`: tagged object on `applicability`:
+  - `applicable`:
+    object with exactly:
+    - `applicability`: `applicable`
+    - `existing_oracle`: repository-relative DESIGN oracle locator.
+    - `move`: non-empty text.
+    - `preserved_observation`: non-empty text.
+  - `not_applicable`:
+    object with exactly:
+    - `applicability`: `not_applicable`
+    - `reason`: non-empty text.
+- `agreement_analysis`: tagged object on `applicability`:
+  - `applicable`:
+    object with exactly:
+    - `applicability`: `applicable`
+    - `parties`: non-empty unique list of object with exactly:
+        - `contract`: non-empty text.
+        - `role`: `producer` or `consumer`
+        - `locator`: repository-relative path and positive line.
+        - `decision`: `MIGRATED` or `UNCHANGED_COMPATIBLE` or `INCOMPATIBLE`
+        - `reason`: non-empty text.
+  - `not_applicable`:
+    object with exactly:
+    - `applicability`: `not_applicable`
+    - `reason`: non-empty text.
+- `boundaries`: tagged object on `applicability`:
+  - `applicable`:
+    object with exactly:
+    - `applicability`: `applicable`
+    - `driving_port`: non-empty text.
+    - `driven_ports`: non-empty unique list of non-empty text.
+    - `dependency_direction`: non-empty text.
+    - `failures`: non-empty unique list of object with exactly:
+        - `condition`: non-empty text.
+        - `outcome`: `Refusal` or `Retry` or `Indeterminate`
+        - `observation`: non-empty text.
+  - `not_applicable`:
+    object with exactly:
+    - `applicability`: `not_applicable`
+    - `reason`: non-empty text.
+- `public_oracle`: object with exactly:
+  - `observation`: non-empty text.
+  - `stimulus`: non-empty text.
+  - `expected`: non-empty text.
+  - `falsifier`: non-empty text.
+- `oracle`: repository-relative DESIGN oracle locator.
+- `acceptance_supports`: unique list of repository-relative file path.
+- `verification`: non-empty unique list of non-empty unique argv list of non-empty text.
+<!-- GENERATED:design-document-input END -->
 
 The Request's ordered value graph is decomposed once. Every independently
 observable, shippable value slice retains its value-level oracle,
@@ -194,12 +277,12 @@ temporal gap needs the model checker.
 After self-falsification, return semantic input or the caller-enforced typed
 facts; never edit a brief, ADR, handover, or DESIGN document. An acceptance
 finding that needs upstream rework remains with the owner of the bound
-architecture decision. The caller may route that rework, while the current v1
-constructor continues to refuse conflicting already-bound facts rather than
-silently superseding them.
+architecture decision. The caller may route that rework with
+`--replace-current --input -` when it deliberately replaces the same configured
+destination and section heading; plain `--input -` continues to refuse a
+conflicting already-bound fact set.
 
-The semantic input records paradigm, targets, obligations, oracle locator and
-supports, native command vectors, and the public contract. DES alone projects
-those facts into the authority and handover. Use an opaque diagnostic only to
-summarize a refusal or remaining uncertainty for a human; it is never a
-machine-readable terminal grammar.
+The semantic input records the decision evidence, public validation, and
+executable support. DES alone projects those facts into the authority and
+handover. Use an opaque diagnostic only to summarize a refusal or remaining
+uncertainty for a human; it is never a machine-readable terminal grammar.

@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from des.domain.architecture_brief_resolver import (
     is_design_oracle_locator,
     is_repository_relative_whole_file_locator,
 )
 from des.ports.driven_ports.task_invocation_port import DesignFacts, DesignTarget
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class DesignDocumentInvalid(ValueError):
@@ -31,14 +36,6 @@ def _text(value: object, name: str) -> str:
     if not isinstance(value, str) or not (normalized := value.strip()):
         raise DesignDocumentInvalid(f"{name} must be a non-empty string")
     return normalized
-
-
-def _texts(value: object, name: str, *, non_empty: bool = True) -> tuple[str, ...]:
-    if not isinstance(value, list) or (non_empty and not value):
-        raise DesignDocumentInvalid(f"{name} must be a list of non-empty strings")
-    texts = tuple(_text(item, f"{name}[{index}]") for index, item in enumerate(value))
-    _duplicates(texts, name)
-    return texts
 
 
 def _duplicates(values: tuple[object, ...], name: str) -> None:
@@ -75,6 +72,320 @@ def _reuse_locator(value: object, name: str) -> str:
     return locator
 
 
+T = TypeVar("T")
+
+
+class _Form(Generic[T]):
+    """One finite input form which can both decode and describe itself."""
+
+    def decode(self, value: object, name: str) -> T:
+        raise NotImplementedError
+
+    def describe(self, indent: int = 0) -> tuple[str, ...]:
+        raise NotImplementedError
+
+
+@dataclass(frozen=True, slots=True)
+class _Leaf(_Form[T]):
+    """A scalar whose semantic predicate is already part of this language."""
+
+    description: str
+    decoder: Callable[[object, str], T]
+
+    def decode(self, value: object, name: str) -> T:
+        return self.decoder(value, name)
+
+    def describe(self, indent: int = 0) -> tuple[str, ...]:
+        return (self.description,)
+
+
+@dataclass(frozen=True, slots=True)
+class _Field:
+    name: str
+    form: _Form[object]
+
+
+@dataclass(frozen=True, slots=True)
+class _Product(_Form[dict[str, object]]):
+    """A closed object with ordered, named child forms."""
+
+    fields: tuple[_Field, ...]
+
+    def decode(self, value: object, name: str) -> dict[str, object]:
+        decoded = _object(value, name)
+        _keys(decoded, {field.name for field in self.fields}, name)
+        return self.decode_fields(decoded, name)
+
+    def decode_fields(self, decoded: dict[str, object], name: str) -> dict[str, object]:
+        return {
+            field.name: field.form.decode(decoded[field.name], f"{name}.{field.name}")
+            for field in self.fields
+        }
+
+    def describe(self, indent: int = 0) -> tuple[str, ...]:
+        prefix = " " * indent
+        lines: list[str] = [f"{prefix}object with exactly:"]
+        for field in self.fields:
+            child = field.form.describe(indent + 2)
+            lines.append(f"{prefix}- `{field.name}`: {child[0].lstrip()}")
+            lines.extend(child[1:])
+        return tuple(lines)
+
+
+def _frozen(value: object) -> object:
+    if isinstance(value, dict):
+        return tuple((key, _frozen(item)) for key, item in value.items())
+    if isinstance(value, tuple):
+        return tuple(_frozen(item) for item in value)
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class _ListOf(_Form[tuple[object, ...]]):
+    """A list form that owns its element form and collection predicates."""
+
+    item: _Form[object]
+    non_empty: bool = True
+    unique: bool = True
+    collection: str = "list"
+    identity: Callable[[object], object] = _frozen
+
+    def decode(self, value: object, name: str) -> tuple[object, ...]:
+        if not isinstance(value, list) or (self.non_empty and not value):
+            qualifier = "non-empty " if self.non_empty else ""
+            raise DesignDocumentInvalid(f"{name} must be a {qualifier}list")
+        decoded = tuple(
+            self.item.decode(item, f"{name}[{index}]")
+            for index, item in enumerate(value)
+        )
+        if self.unique:
+            _duplicates(tuple(self.identity(item) for item in decoded), name)
+        return decoded
+
+    def describe(self, indent: int = 0) -> tuple[str, ...]:
+        qualifiers = []
+        if self.non_empty:
+            qualifiers.append("non-empty")
+        if self.unique:
+            qualifiers.append("unique")
+        qualifier = " ".join(qualifiers)
+        head = f"{qualifier} {self.collection}".strip()
+        child = self.item.describe(indent + 2)
+        return (f"{head} of {child[0].lstrip()}", *child[1:])
+
+
+@dataclass(frozen=True, slots=True)
+class _Choice(_Form[object]):
+    """Either an enum leaf or a tagged set of closed product alternatives."""
+
+    alternatives: tuple[str, ...] = ()
+    tag: str | None = None
+    products: tuple[tuple[str, _Product], ...] = ()
+
+    def decode(self, value: object, name: str) -> object:
+        if self.tag is None:
+            decoded = _text(value, name)
+            if decoded not in self.alternatives:
+                raise DesignDocumentInvalid(f"{name} is not supported")
+            return decoded
+        decoded = _object(value, name)
+        selected = _text(decoded.get(self.tag), f"{name}.{self.tag}")
+        for label, product in self.products:
+            if selected == label:
+                _keys(
+                    decoded,
+                    {self.tag, *(field.name for field in product.fields)},
+                    name,
+                )
+                return {self.tag: label, **product.decode_fields(decoded, name)}
+        raise DesignDocumentInvalid(f"{name}.{self.tag} is not supported")
+
+    def describe(self, indent: int = 0) -> tuple[str, ...]:
+        if self.tag is None:
+            return (" or ".join(f"`{item}`" for item in self.alternatives),)
+        prefix = " " * indent
+        lines = [f"{prefix}tagged object on `{self.tag}`:"]
+        for label, product in self.products:
+            lines.append(f"{prefix}- `{label}`:")
+            lines.append(f"{' ' * (indent + 2)}object with exactly:")
+            lines.append(f"{' ' * (indent + 2)}- `{self.tag}`: `{label}`")
+            for field in product.fields:
+                child = field.form.describe(indent + 4)
+                lines.append(
+                    f"{' ' * (indent + 2)}- `{field.name}`: {child[0].lstrip()}"
+                )
+                lines.extend(child[1:])
+        return tuple(lines)
+
+
+def _plain_heading(value: object, name: str) -> str:
+    heading = _text(value, name)
+    if "\n" in heading or "\r" in heading or heading.startswith("#"):
+        raise DesignDocumentInvalid(
+            f"{name} must be plain text, not a Markdown heading"
+        )
+    return heading
+
+
+_TEXT = _Leaf("non-empty text.", _text)
+_PATH = _Leaf("repository-relative file path.", _path)
+_ORACLE = _Leaf("repository-relative DESIGN oracle locator.", _oracle)
+_REUSE_LOCATOR = _Leaf("repository-relative path and positive line.", _reuse_locator)
+_SCHEMA_VERSION = _Leaf(
+    "integer `1`.",
+    lambda value, name: (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value == 1
+        else (_ for _ in ()).throw(DesignDocumentInvalid(f"{name} must be 1"))
+    ),
+)
+_PARADIGM = _Choice(("object_oriented", "functional"))
+_TARGET_DECISION = _Choice(("EXTEND", "CREATE_NEW"))
+_REUSE_DECISION = _Choice(("REUSE", "EXTEND", "REPLACE", "CREATE_NEW"))
+_FAILURE_OUTCOME = _Choice(("Refusal", "Retry", "Indeterminate"))
+
+_TEXTS = _ListOf(_TEXT)
+_PATHS = _ListOf(_PATH, non_empty=False)
+_ARGV = _ListOf(_TEXT, collection="argv list")
+_VERIFICATION = _ListOf(_ARGV)
+_TARGET = _Product(
+    (
+        _Field("path", _PATH),
+        _Field("decision", _TARGET_DECISION),
+        _Field("reason", _TEXT),
+    )
+)
+_TARGETS = _ListOf(
+    _TARGET,
+    collection="list with distinct paths",
+    identity=lambda item: item["path"],  # type: ignore[index]
+)
+_REUSE_CANDIDATE = _Product(
+    (
+        _Field("symbol", _TEXT),
+        _Field("locator", _REUSE_LOCATOR),
+        _Field("decision", _REUSE_DECISION),
+        _Field("reason", _TEXT),
+    )
+)
+_REUSE_ANALYSIS = _Product(
+    (
+        _Field(
+            "candidates",
+            _ListOf(
+                _REUSE_CANDIDATE,
+                non_empty=False,
+            ),
+        ),
+    )
+)
+_PREFACTORING = _Choice(
+    tag="applicability",
+    products=(
+        (
+            "applicable",
+            _Product(
+                (
+                    _Field("existing_oracle", _ORACLE),
+                    _Field("move", _TEXT),
+                    _Field("preserved_observation", _TEXT),
+                )
+            ),
+        ),
+        (
+            "not_applicable",
+            _Product((_Field("reason", _TEXT),)),
+        ),
+    ),
+)
+_AGREEMENT_ROLE = _Choice(("producer", "consumer"))
+_AGREEMENT_DECISION = _Choice(("MIGRATED", "UNCHANGED_COMPATIBLE", "INCOMPATIBLE"))
+_AGREEMENT_PARTY = _Product(
+    (
+        _Field("contract", _TEXT),
+        _Field("role", _AGREEMENT_ROLE),
+        _Field("locator", _REUSE_LOCATOR),
+        _Field("decision", _AGREEMENT_DECISION),
+        _Field("reason", _TEXT),
+    )
+)
+_AGREEMENT_ANALYSIS = _Choice(
+    tag="applicability",
+    products=(
+        (
+            "applicable",
+            _Product((_Field("parties", _ListOf(_AGREEMENT_PARTY)),)),
+        ),
+        (
+            "not_applicable",
+            _Product((_Field("reason", _TEXT),)),
+        ),
+    ),
+)
+_FAILURE = _Product(
+    (
+        _Field("condition", _TEXT),
+        _Field("outcome", _FAILURE_OUTCOME),
+        _Field("observation", _TEXT),
+    )
+)
+_BOUNDARIES = _Choice(
+    tag="applicability",
+    products=(
+        (
+            "applicable",
+            _Product(
+                (
+                    _Field("driving_port", _TEXT),
+                    _Field("driven_ports", _TEXTS),
+                    _Field("dependency_direction", _TEXT),
+                    _Field("failures", _ListOf(_FAILURE)),
+                )
+            ),
+        ),
+        (
+            "not_applicable",
+            _Product((_Field("reason", _TEXT),)),
+        ),
+    ),
+)
+_PUBLIC_ORACLE = _Product(
+    (
+        _Field("observation", _TEXT),
+        _Field("stimulus", _TEXT),
+        _Field("expected", _TEXT),
+        _Field("falsifier", _TEXT),
+    )
+)
+_AUTHORITY = _Product(
+    (
+        _Field(
+            "heading",
+            _Leaf("plain non-empty text, not a Markdown heading.", _plain_heading),
+        ),
+    )
+)
+_MANIFEST = _Product(
+    (
+        _Field("schema_version", _SCHEMA_VERSION),
+        _Field("authority", _AUTHORITY),
+        _Field("purpose", _TEXT),
+        _Field("constraints", _TEXTS),
+        _Field("targets", _TARGETS),
+        _Field("paradigm", _PARADIGM),
+        _Field("decisions", _TEXTS),
+        _Field("reuse_analysis", _REUSE_ANALYSIS),
+        _Field("prefactoring", _PREFACTORING),
+        _Field("agreement_analysis", _AGREEMENT_ANALYSIS),
+        _Field("boundaries", _BOUNDARIES),
+        _Field("public_oracle", _PUBLIC_ORACLE),
+        _Field("oracle", _ORACLE),
+        _Field("acceptance_supports", _PATHS),
+        _Field("verification", _VERIFICATION),
+    )
+)
+
+
 @dataclass(frozen=True, slots=True)
 class DesignDocument:
     heading: str
@@ -85,9 +396,20 @@ class DesignDocument:
     decisions: tuple[str, ...]
     reuse: tuple[tuple[str, str, str, str], ...]
     prefactoring: tuple[str, ...]
+    agreement_analysis: tuple[object, ...]
     boundaries: tuple[str, ...]
     public_oracle: tuple[str, str, str, str]
     facts: DesignFacts
+
+    def facts_at(self, authority_locator: str) -> DesignFacts:
+        """Return this closed document's facts bound to its durable section.
+
+        The configured destination is resolved at the application boundary,
+        after this document has validated but before either projection writes.
+        It must therefore be carried as data, rather than reconstructed from a
+        heading by a later reader.
+        """
+        return replace(self.facts, authority_locator=authority_locator)
 
     @classmethod
     def from_json(cls, raw: str) -> DesignDocument:
@@ -95,209 +417,83 @@ class DesignDocument:
             value = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError) as error:
             raise DesignDocumentInvalid(f"input is not JSON: {error}") from error
-        root = _object(value, "manifest")
-        _keys(
-            root,
-            {
-                "schema_version",
-                "authority",
-                "purpose",
-                "constraints",
-                "targets",
-                "paradigm",
-                "decisions",
-                "reuse_analysis",
-                "prefactoring",
-                "boundaries",
-                "public_oracle",
-                "oracle",
-                "acceptance_supports",
-                "verification",
-            },
-            "manifest",
+        root = _MANIFEST.decode(value, "manifest")
+        # Decoding above is the only validation pass.  Everything below is a
+        # projection of normalized descriptor values into domain records.
+        authority = root["authority"]  # type: ignore[assignment]
+        heading = authority["heading"]  # type: ignore[index]
+        purpose = root["purpose"]
+        constraints = root["constraints"]
+        paradigm = root["paradigm"]
+        decisions = root["decisions"]
+        oracle = root["oracle"]
+        targets = tuple(
+            (item["path"], item["decision"], item["reason"])  # type: ignore[index]
+            for item in root["targets"]  # type: ignore[union-attr]
         )
-        if (
-            not isinstance(root["schema_version"], int)
-            or isinstance(root["schema_version"], bool)
-            or root["schema_version"] != 1
-        ):
-            raise DesignDocumentInvalid("schema_version must be 1")
-        authority = _object(root["authority"], "authority")
-        _keys(authority, {"heading"}, "authority")
-        heading, purpose = (
-            _text(authority["heading"], "authority.heading"),
-            _text(root["purpose"], "purpose"),
+        reuse = tuple(
+            (item["symbol"], item["locator"], item["decision"], item["reason"])  # type: ignore[index]
+            for item in root["reuse_analysis"]["candidates"]  # type: ignore[index]
         )
-        if "\n" in heading or "\r" in heading or heading.startswith("#"):
-            raise DesignDocumentInvalid(
-                "authority.heading must be plain text, not a Markdown heading"
+        prefactoring_root = root["prefactoring"]  # type: ignore[assignment]
+        prefactoring = tuple(
+            prefactoring_root[key]  # type: ignore[index]
+            for key in (
+                ("applicability", "existing_oracle", "move", "preserved_observation")
+                if prefactoring_root["applicability"] == "applicable"  # type: ignore[index]
+                else ("applicability", "reason")
             )
-        constraints, decisions = (
-            _texts(root["constraints"], "constraints"),
-            _texts(root["decisions"], "decisions"),
         )
-        paradigm, oracle = (
-            _text(root["paradigm"], "paradigm"),
-            _text(root["oracle"], "oracle"),
-        )
-        if paradigm not in {"object_oriented", "functional"}:
-            raise DesignDocumentInvalid("paradigm is not supported")
-        targets_raw = root["targets"]
-        if not isinstance(targets_raw, list) or not targets_raw:
-            raise DesignDocumentInvalid("targets must be a non-empty list")
-        targets: list[tuple[str, str, str]] = []
-        for index, item in enumerate(targets_raw):
-            item = _object(item, f"targets[{index}]")
-            _keys(item, {"path", "decision", "reason"}, f"targets[{index}]")
-            path, decision, reason = (
-                _path(item["path"], "target.path"),
-                _text(item["decision"], "target.decision"),
-                _text(item["reason"], "target.reason"),
-            )
-            if decision not in {"EXTEND", "CREATE_NEW"}:
-                raise DesignDocumentInvalid("target.decision is not supported")
-            targets.append((path, decision, reason))
-        _duplicates(tuple(targets), "targets")
-        _duplicates(tuple(path for path, _, _ in targets), "targets paths")
-        reuse_root = _object(root["reuse_analysis"], "reuse_analysis")
-        _keys(reuse_root, {"candidates"}, "reuse_analysis")
-        candidates = reuse_root["candidates"]
-        if not isinstance(candidates, list):
-            raise DesignDocumentInvalid("reuse_analysis.candidates must be a list")
-        reuse: list[tuple[str, str, str, str]] = []
-        for index, item in enumerate(candidates):
-            item = _object(item, f"reuse candidate {index}")
-            _keys(
-                item,
-                {"symbol", "locator", "decision", "reason"},
-                f"reuse candidate {index}",
-            )
-            symbol, locator, decision, reason = (
-                _text(item["symbol"], "reuse candidate symbol"),
-                _reuse_locator(item["locator"], "reuse candidate locator"),
-                _text(item["decision"], "reuse candidate decision"),
-                _text(item["reason"], "reuse candidate reason"),
-            )
-            if decision not in {"REUSE", "EXTEND", "REPLACE", "CREATE_NEW"}:
-                raise DesignDocumentInvalid("reuse candidate decision is not supported")
-            reuse.append((symbol, locator, decision, reason))
-        _duplicates(tuple(reuse), "reuse_analysis.candidates")
-        pre = _object(root["prefactoring"], "prefactoring")
-        applicability = _text(pre.get("applicability"), "prefactoring.applicability")
-        if applicability == "applicable":
-            _keys(
-                pre,
-                {"applicability", "existing_oracle", "move", "preserved_observation"},
-                "prefactoring",
-            )
-            prefactoring = (
-                applicability,
-                _oracle(pre["existing_oracle"], "prefactoring.existing_oracle"),
-                _text(pre["move"], "prefactoring.move"),
-                _text(
-                    pre["preserved_observation"], "prefactoring.preserved_observation"
-                ),
-            )
-        elif applicability == "not_applicable":
-            _keys(pre, {"applicability", "reason"}, "prefactoring")
-            prefactoring = (applicability, _text(pre["reason"], "prefactoring.reason"))
-        else:
-            raise DesignDocumentInvalid("prefactoring.applicability is not supported")
-        boundaries_root = _object(root["boundaries"], "boundaries")
-        applicability = _text(
-            boundaries_root.get("applicability"), "boundaries.applicability"
-        )
-        if applicability == "not_applicable":
-            _keys(boundaries_root, {"applicability", "reason"}, "boundaries")
-            boundaries = (
-                applicability,
-                _text(boundaries_root["reason"], "boundaries.reason"),
-            )
-        elif applicability == "applicable":
-            _keys(
-                boundaries_root,
-                {
-                    "applicability",
-                    "driving_port",
-                    "driven_ports",
-                    "dependency_direction",
-                    "failures",
-                },
-                "boundaries",
-            )
-            driven = _texts(boundaries_root["driven_ports"], "boundaries.driven_ports")
-            failures_raw = boundaries_root["failures"]
-            if not isinstance(failures_raw, list) or not failures_raw:
-                raise DesignDocumentInvalid(
-                    "boundaries.failures must be a non-empty list"
-                )
-            failures: list[tuple[str, str, str]] = []
-            for index, failure in enumerate(failures_raw):
-                failure = _object(failure, f"boundaries.failures[{index}]")
-                _keys(
-                    failure,
-                    {"condition", "outcome", "observation"},
-                    f"boundaries.failures[{index}]",
-                )
-                condition, outcome, observation = (
-                    _text(failure["condition"], "boundaries.failure.condition"),
-                    _text(failure["outcome"], "boundaries.failure.outcome"),
-                    _text(failure["observation"], "boundaries.failure.observation"),
-                )
-                if outcome not in {"Refusal", "Retry", "Indeterminate"}:
-                    raise DesignDocumentInvalid(
-                        "boundaries.failure.outcome is not supported"
+        agreement_root = root["agreement_analysis"]  # type: ignore[assignment]
+        if agreement_root["applicability"] == "applicable":  # type: ignore[index]
+            agreement_analysis = (
+                agreement_root["applicability"],  # type: ignore[index]
+                tuple(
+                    (
+                        party["contract"],  # type: ignore[index]
+                        party["role"],  # type: ignore[index]
+                        party["locator"],  # type: ignore[index]
+                        party["decision"],  # type: ignore[index]
+                        party["reason"],  # type: ignore[index]
                     )
-                failures.append((condition, outcome, observation))
-            _duplicates(tuple(failures), "boundaries.failures")
-            boundaries = (
-                applicability,
-                f"Driving port: {_text(boundaries_root['driving_port'], 'boundaries.driving_port')}",
-                *(f"Driven port: {port}" for port in driven),
-                "Dependency direction: "
-                + _text(
-                    boundaries_root["dependency_direction"],
-                    "boundaries.dependency_direction",
+                    for party in agreement_root["parties"]  # type: ignore[index]
                 ),
+            )
+        else:
+            agreement_analysis = (
+                agreement_root["applicability"],  # type: ignore[index]
+                agreement_root["reason"],  # type: ignore[index]
+            )
+        boundaries_root = root["boundaries"]  # type: ignore[assignment]
+        if boundaries_root["applicability"] == "applicable":  # type: ignore[index]
+            boundaries = (
+                boundaries_root["applicability"],  # type: ignore[index]
+                f"Driving port: {boundaries_root['driving_port']}",  # type: ignore[index]
+                *(f"Driven port: {port}" for port in boundaries_root["driven_ports"]),  # type: ignore[index]
+                f"Dependency direction: {boundaries_root['dependency_direction']}",  # type: ignore[index]
                 *(
                     "Failure: "
-                    f"Condition: {condition} | Outcome: {outcome} | Observation: {observation}"
-                    for condition, outcome, observation in failures
+                    f"Condition: {failure['condition']} | Outcome: {failure['outcome']} | "
+                    f"Observation: {failure['observation']}"
+                    for failure in boundaries_root["failures"]  # type: ignore[index]
                 ),
             )
         else:
-            raise DesignDocumentInvalid("boundaries.applicability is not supported")
-        public = _object(root["public_oracle"], "public_oracle")
-        _keys(
-            public,
-            {"observation", "stimulus", "expected", "falsifier"},
-            "public_oracle",
-        )
+            boundaries = (
+                boundaries_root["applicability"],  # type: ignore[index]
+                boundaries_root["reason"],  # type: ignore[index]
+            )
         public_oracle = tuple(
-            _text(public[key], f"public_oracle.{key}")
+            root["public_oracle"][key]  # type: ignore[index]
             for key in ("observation", "stimulus", "expected", "falsifier")
         )
-        supports = tuple(
-            _path(item, f"acceptance_supports[{index}]")
-            for index, item in enumerate(
-                _texts(
-                    root["acceptance_supports"], "acceptance_supports", non_empty=False
-                )
-            )
-        )
-        verification_raw = root["verification"]
-        if not isinstance(verification_raw, list) or not verification_raw:
-            raise DesignDocumentInvalid("verification must be a non-empty list")
-        verification = tuple(
-            _texts(argv, f"verification[{index}]")
-            for index, argv in enumerate(verification_raw)
-        )
-        _duplicates(verification, "verification")
+        supports = root["acceptance_supports"]
+        verification = root["verification"]
         facts = DesignFacts(
             tuple(DesignTarget(path, decision) for path, decision, _ in targets),
             paradigm,
             decisions,
-            _oracle(oracle, "oracle"),
+            oracle,
             supports,
             verification,
             constraints,
@@ -306,14 +502,25 @@ class DesignDocument:
             heading,
             purpose,
             constraints,
-            tuple(targets),
+            targets,
             paradigm,
             decisions,
-            tuple(reuse),
+            reuse,
             prefactoring,
+            agreement_analysis,
             boundaries,
             public_oracle,
             facts,
+        )
+
+    @classmethod
+    def input_description(cls) -> str:
+        """The closed v1 input language for the CLI and installed author guidance."""
+        return "\n".join(
+            (
+                "DESIGN constructor input is one strict UTF-8 JSON manifest:",
+                *_MANIFEST.describe(),
+            )
         )
 
     def markdown(self) -> str:
@@ -361,6 +568,22 @@ class DesignDocument:
                 ]
             ),
             "",
+            "### Agreement analysis",
+            *(
+                [f"Not applicable: {self.agreement_analysis[1]}"]
+                if self.agreement_analysis[0] == "not_applicable"
+                else [
+                    "| Contract | Role | Locator | Decision | Reason |",
+                    "|---|---|---|---|---|",
+                    *(
+                        f"| {contract} | {role} | `{locator}` | {decision} | {reason} |"
+                        for contract, role, locator, decision, reason in self.agreement_analysis[
+                            1
+                        ]
+                    ),
+                ]
+            ),
+            "",
             "### Boundaries",
         ]
         lines += (
@@ -395,20 +618,24 @@ class DesignDocument:
         )
         return "\n".join(lines) + "\n"
 
-    def facts_json(self) -> str:
+    def facts_json(self, facts: DesignFacts | None = None) -> str:
+        facts = self.facts if facts is None else facts
+        projection: dict[str, object] = {
+            "targets": [
+                {"path": target.path, "decision": target.decision}
+                for target in facts.targets
+            ],
+            "paradigm": facts.paradigm,
+            "decisions": list(facts.decisions),
+            "oracle": facts.oracle,
+            "acceptance_supports": list(facts.acceptance_supports),
+            "verification": [list(argv) for argv in facts.verification],
+            "obligations": list(facts.obligations),
+        }
+        if facts.authority_locator:
+            projection["authority_locator"] = facts.authority_locator
         return json.dumps(
-            {
-                "targets": [
-                    {"path": target.path, "decision": target.decision}
-                    for target in self.facts.targets
-                ],
-                "paradigm": self.facts.paradigm,
-                "decisions": list(self.facts.decisions),
-                "oracle": self.facts.oracle,
-                "acceptance_supports": list(self.facts.acceptance_supports),
-                "verification": [list(argv) for argv in self.facts.verification],
-                "obligations": list(self.facts.obligations),
-            },
+            projection,
             ensure_ascii=False,
             separators=(",", ":"),
         )

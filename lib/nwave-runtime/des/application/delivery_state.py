@@ -55,6 +55,10 @@ if TYPE_CHECKING:
 #: `des craft` refused -- the projection naming a step that refuses in the very
 #: state it names it from (ADR-DES-003 §5). One predicate now, and the third
 #: state is SHOWN rather than folded into either neighbour.
+#: A verification record reads by these SAME three states, and MOVED is the one
+#: an upstream correction produces: the candidate is still on disk, the graph it
+#: was measured against is not. Naming `des integrate` there would send an
+#: orchestrator to bless evidence collected before the correction.
 ABSENT, RECORDED, MOVED = "absent", "recorded", "bytes moved"
 
 
@@ -90,6 +94,7 @@ class DeliveryState:
     request: str | None
     values: tuple[ValueState, ...]
     candidate: str | None = None
+    candidate_record: str = ABSENT
 
 
 def _turn_refs(root: Path, observe: Callable[..., GitObservation]) -> set[str] | None:
@@ -154,10 +159,15 @@ def read_state(
                 ),
             )
         )
+    verified = runner.verification_record(root, stored)
     return DeliveryState(
         stored.request,
         tuple(values),
-        runner.verified_candidate(root, stored),
+        None if verified is None else verified.candidate,
+        _record(
+            verified is not None,
+            verified is not None and verified.covers_current_upstream,
+        ),
     )
 
 
@@ -194,6 +204,6 @@ def canonical_next(state: DeliveryState, root: Path) -> str:
             return f"des oracle --repo-root {root} --value {value.position}"
         if not value.craft_recorded:
             return f"des craft --repo-root {root} --value {value.position}"
-    if state.candidate is not None:
+    if state.candidate is not None and state.candidate_record == RECORDED:
         return f"des integrate --repo-root {root} --candidate {state.candidate}"
     return f"des verify --repo-root {root}"

@@ -130,6 +130,10 @@ class DesignFacts:
     acceptance_supports: tuple[str, ...]
     verification: tuple[tuple[str, ...], ...]
     obligations: tuple[str, ...] = ()
+    # This is assigned by the closed DESIGN-document constructor, not guessed
+    # from Markdown by a later consumer.  Provider-authored design facts have
+    # no configured document section to name and retain the empty value.
+    authority_locator: str = ""
 
 
 @dataclass(frozen=True, slots=True)

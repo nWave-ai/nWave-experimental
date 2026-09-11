@@ -20,11 +20,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="des discuss")
     add_repo_root_argument(parser, "--repo-root", type=Path, required=True)
     parser.add_argument("--input", required=True)
+    parser.add_argument("--replace-current", action="store_true")
     args = parser.parse_args(argv)
     root = resolved_root(args.repo_root)
     invocation = "des discuss --repo-root <root> --input -"
     if isinstance(root, StepRefusal):
         return refuse(root, invocation)
+    if args.replace_current and args.input != "-":
+        return refuse(
+            StepRefusal(
+                "InvalidDiscussInput",
+                "--replace-current is valid only with --input -",
+                "use --replace-current only with closed v1 input",
+            ),
+            invocation,
+        )
     if args.input != "-":
         return refuse(
             StepRefusal(
@@ -44,7 +54,9 @@ def main(argv: list[str] | None = None) -> int:
             ),
             invocation,
         )
-    outcome = DeliverySteps().discuss_document(root, raw)
+    outcome = DeliverySteps().discuss_document(
+        root, raw, replace_current=args.replace_current
+    )
     if not outcome.succeeded:
         return refuse(
             StepRefusal(

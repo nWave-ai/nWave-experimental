@@ -70,9 +70,8 @@ def main(argv: list[str] | None = None) -> int:
                     "InvalidEvidence",
                     "`--on-my-evidence -` reads your reason from stdin, and "
                     "stdin carried no non-empty strict-UTF-8 text",
-                    "pipe the evidence that answers the judge into this step on "
-                    "stdin -- it is written into the durable record beside the "
-                    "verdict it goes over",
+                    "pipe an optional host rationale into this compatibility input "
+                    "on stdin",
                 ),
                 (own.format(root=root) + " --on-my-evidence - -- after the HOW above",),
             )

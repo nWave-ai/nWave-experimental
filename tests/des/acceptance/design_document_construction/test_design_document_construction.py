@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import socket
 import stat
 import sys
@@ -28,10 +29,26 @@ from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     hermetic_environment,
 )
 
+from des.application.handover import Blocked
+from scripts import docgen
+
 
 GLOBAL_DESTINATION = Path("docs/global-design.md")
 REPOSITORY_DESTINATION = Path("docs/product/architecture/brief.md")
 HANDOVER = Path(".nwave/des/handover.json")
+
+INPUT_DESCRIPTION_ASSETS = (
+    Path("nWave/skills/nw-design/SKILL.md"),
+    Path("nWave/agents/nw-solution-architect.md"),
+    Path("docs/product/architecture/ADR-DES-003-step-surface-algebra.md"),
+)
+
+_GENERATED_INPUT_DESCRIPTION = re.compile(
+    r"<!-- GENERATED:design-document-input START[^>]*-->\n"
+    r"(?P<body>.*?)"
+    r"<!-- GENERATED:design-document-input END -->",
+    re.DOTALL,
+)
 
 MANIFEST = {
     "schema_version": 1,
@@ -62,6 +79,11 @@ MANIFEST = {
         "existing_oracle": "tests/test_widget.py::test_default_color",
         "move": "Extract the current default lookup without changing output.",
         "preserved_observation": "A default widget remains blue.",
+    },
+    "agreement_analysis": {
+        "applicability": "not_applicable",
+        "reason": "The widget color extension touches no shared release or "
+        "interchange schema.",
     },
     "boundaries": {
         "applicability": "not_applicable",
@@ -109,6 +131,9 @@ Move: Extract the current default lookup without changing output.
 
 Preserved observation: A default widget remains blue.
 
+### Agreement analysis
+Not applicable: The widget color extension touches no shared release or interchange schema.
+
 ### Boundaries
 Not applicable: No port or dependency boundary changes.
 
@@ -135,6 +160,7 @@ EXPECTED_FACTS = {
     "acceptance_supports": [],
     "verification": [["pytest", "-q", "tests/test_widget.py"]],
     "obligations": ["Preserve existing callers."],
+    "authority_locator": "docs/product/architecture/brief.md#Widget color",
 }
 
 APPLICABLE_BOUNDARIES = {
@@ -200,14 +226,19 @@ def design_repository(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     return root, {**os.environ, "HOME": str(home)}
 
 
-def _bootstrap_value(root: Path, environment: dict[str, str], tmp_path: Path) -> None:
+def _bootstrap_value(
+    root: Path,
+    environment: dict[str, str],
+    tmp_path: Path,
+    *labels: str,
+) -> None:
     """Create DESIGN's declared prerequisite through the real public PO step."""
     results, turns, counter = (
         tmp_path / "answers.json",
         tmp_path / "turns.json",
         tmp_path / "counter",
     )
-    results.write_text(json.dumps([accepted_values("widget color")]))
+    results.write_text(json.dumps([accepted_values(*(labels or ("widget color",)))]))
     provider_environment = fake_provider.environment(
         root,
         launcher_dir=tmp_path / "bin",
@@ -233,15 +264,136 @@ def _bootstrap_value(root: Path, environment: dict[str, str], tmp_path: Path) ->
 
 
 def _design(
-    root: Path, environment: dict[str, str], manifest: dict
+    root: Path,
+    environment: dict[str, str],
+    manifest: dict,
+    *,
+    replace_current: bool = False,
+    value: int = 1,
 ) -> tuple[int, str, str]:
+    arguments = ["design", "--repo-root", str(root), "--value", str(value)]
+    if replace_current:
+        arguments.append("--replace-current")
+    arguments += ["--input", "-"]
     return run_cli_in_process(
-        ["design", "--repo-root", str(root), "--value", "1", "--input", "-"],
+        arguments,
         cwd=root,
         env=environment,
         stdin_text=json.dumps(manifest),
         catch_all=True,
     )
+
+
+def _words(value: str) -> str:
+    """Compare rendered guidance across CLI wrapping and Markdown layout."""
+    return " ".join(value.split())
+
+
+def test_design_input_help_and_author_guidance_share_one_generated_contract(
+    tmp_path: Path,
+) -> None:
+    """Authors can obtain the accepted manifest language from every public input surface."""
+    code, help_text, stderr = run_cli_in_process(
+        ["design", "--help"], cwd=tmp_path, catch_all=True
+    )
+
+    assert code == 0, (
+        "`des design --help` must remain a readable, successful public entry for "
+        f"constructor-input authors (stdout={help_text!r}, stderr={stderr!r})"
+    )
+    for semantic_term in (
+        "schema_version",
+        "acceptance_supports",
+        "functional",
+        "object_oriented",
+    ):
+        assert semantic_term in help_text, (
+            "`des design --help` must describe the accepted closed v1 manifest "
+            f"language, including {semantic_term!r}; otherwise a host cannot form "
+            "constructor input without copying a second contract"
+        )
+
+    repository = Path(__file__).resolve().parents[4]
+    bodies: list[str] = []
+    for relative_path in INPUT_DESCRIPTION_ASSETS:
+        source = (repository / relative_path).read_text(encoding="utf-8")
+        match = _GENERATED_INPUT_DESCRIPTION.search(source)
+        assert match is not None, (
+            f"{relative_path} must carry the generated DESIGN input-description "
+            "block so source guidance cannot drift from the public constructor"
+        )
+        bodies.append(match.group("body"))
+
+    assert len({_words(body) for body in bodies}) == 1, (
+        "the skill, agent, and ADR must publish one shared DESIGN input description; "
+        "independently edited manifest prose leaves different authors with different "
+        "accepted input languages"
+    )
+    assert _words(bodies[0]) in _words(help_text), (
+        "the public help must expose the same generated input description shipped "
+        "to DESIGN authors; a CLI-only or documentation-only description is not a "
+        "usable shared constructor contract"
+    )
+
+    projections = docgen.project_generated_regions(repository, docgen.scan(repository))
+    projected = {
+        projection.path.relative_to(repository): projection
+        for projection in projections
+    }
+    missing = set(INPUT_DESCRIPTION_ASSETS) - set(projected)
+    assert not missing, (
+        "docgen must own every source asset that publishes the DESIGN input "
+        f"description; missing projections={sorted(map(str, missing))}"
+    )
+    stale = docgen.check_generated_regions(
+        repository, [projected[path] for path in INPUT_DESCRIPTION_ASSETS]
+    )
+    assert not stale, (
+        "the checked source guidance must already equal docgen's projection of the "
+        f"shared constructor description; stale assets={stale}"
+    )
+
+
+def _craft_prompt(
+    root: Path, environment: dict[str, str], tmp_path: Path
+) -> tuple[int, str, str, str]:
+    """Run the real craft consumer and retain its controlled-provider input."""
+    results, turns, counter = (
+        tmp_path / "craft-answers.json",
+        tmp_path / "craft-turns.json",
+        tmp_path / "craft-counter",
+    )
+    results.write_text(
+        json.dumps(
+            [
+                {
+                    "structured_output": {
+                        "outcome": "rejected",
+                        "diagnostic": "captured corrected facts at craft boundary",
+                        "blocked_by": "design",
+                    }
+                }
+            ]
+        )
+    )
+    provider_environment = fake_provider.environment(
+        root,
+        launcher_dir=tmp_path / "craft-bin",
+        results=results,
+        log=turns,
+        counter=counter,
+        package_parent=PACKAGE_PARENT,
+    )
+    code, out, err = run_cli_in_process(
+        ["craft", "--repo-root", str(root), "--value", "1"],
+        cwd=root,
+        env=hermetic_environment(
+            provider_environment | {"HOME": environment["HOME"]},
+            tmp_path / "craft-claude-config",
+        ),
+        catch_all=True,
+    )
+    return code, out, err, json.loads(turns.read_text())[0]["prompt"]
 
 
 def _design_state(root: Path, environment: dict[str, str]) -> str:
@@ -360,6 +512,7 @@ def test_design_document_is_the_configured_authority_and_matching_bound_facts(
         "the terminal must classify the completed two-projection construction as "
         f"Success, not {rows.get('DELIVERY-OUTCOME')!r}"
     )
+    assert rows.get("SCHEMA-VERSION") == "1"
     assert not (root / GLOBAL_DESTINATION).exists(), (
         "repository documents.design.destination must override global configuration; "
         "the global authority was written despite the repository declaration"
@@ -564,6 +717,7 @@ def test_identical_normalized_input_preserves_owned_section_and_all_observations
         assert rows.get("DESIGN-FACTS") == json.dumps(
             EXPECTED_FACTS, ensure_ascii=False, separators=(",", ":")
         ), "each invocation must publish the same canonical bound facts"
+        assert rows.get("SCHEMA-VERSION") == "1"
     assert {
         label: second_rows.get(label)
         for label in ("DOCUMENT", "DOCUMENT-SHA256", "DESIGN-FACTS")
@@ -574,6 +728,115 @@ def test_identical_normalized_input_preserves_owned_section_and_all_observations
         "an identical normalized retry must return the same DOCUMENT locator, "
         "DOCUMENT-SHA256, and DESIGN-FACTS observations"
     )
+
+
+def test_replace_current_rebinds_only_the_selected_section_and_craft_reads_v2(
+    design_repository: tuple[Path, dict[str, str]], tmp_path: Path
+) -> None:
+    """The public correction changes one durable pair, then reaches craft."""
+    root, environment = design_repository
+    _bootstrap_value(root, environment, tmp_path, "widget color", "unrelated value")
+    authority = _track_authority(
+        root,
+        UNRELATED_AUTHORITY_PREFIX
+        + EXPECTED_SECTION.encode()
+        + UNRELATED_AUTHORITY_SUFFIX,
+    )
+    first_code, first_out, first_err = _design(root, environment, MANIFEST)
+    assert first_code == 0, first_out + first_err
+    authority_v1 = authority.read_bytes()
+    handover_v1 = (root / HANDOVER).read_bytes()
+    unrelated_v1 = json.loads(handover_v1)["values"][1]
+
+    corrected = json.loads(json.dumps(MANIFEST))
+    corrected["purpose"] = "Expose the corrected selected widget color."
+    corrected["decisions"] = ["Keep corrected color validation at Widget construction."]
+    expected_v2_facts = {
+        "targets": [{"path": "src/widget.py", "decision": "EXTEND"}],
+        "paradigm": "object_oriented",
+        "decisions": ["Keep corrected color validation at Widget construction."],
+        "oracle": "tests/test_widget.py::test_selected_color",
+        "acceptance_supports": [],
+        "verification": [["pytest", "-q", "tests/test_widget.py"]],
+        "obligations": ["Preserve existing callers."],
+        "authority_locator": "docs/product/architecture/brief.md#Widget color",
+    }
+
+    refused_code, refused_out, refused_err = _design(root, environment, corrected)
+    refused = _terminal(refused_out, refused_err)
+    assert refused_code != 0 and refused.get("WHAT") == "DesignAuthorityDrift"
+    assert authority.read_bytes() == authority_v1
+    assert (root / HANDOVER).read_bytes() == handover_v1
+
+    code, out, err = _design(root, environment, corrected, replace_current=True)
+    rows = _terminal(out, err)
+    authority_v2 = authority.read_bytes()
+    handover_v2 = (root / HANDOVER).read_bytes()
+    assert code == 0 and rows.get("DELIVERY-OUTCOME") == "Success", out + err
+    assert rows.get("SCHEMA-VERSION") == "1"
+    assert json.loads(rows["DESIGN-FACTS"]) == expected_v2_facts
+    assert authority_v2.startswith(UNRELATED_AUTHORITY_PREFIX)
+    assert authority_v2.endswith(UNRELATED_AUTHORITY_SUFFIX)
+    assert authority_v2 != authority_v1
+    assert json.loads(handover_v2)["values"][0]["authority"] == expected_v2_facts
+    assert json.loads(handover_v2)["values"][1] == unrelated_v1
+
+    craft_code, craft_out, craft_err, craft_prompt = _craft_prompt(
+        root, environment, tmp_path
+    )
+    craft_rows = _terminal(craft_out, craft_err)
+    assert craft_code != 0 and craft_rows.get("WHAT") == "CraftRejected"
+    prompt_facts = {
+        key: json.loads(value)
+        for line in craft_prompt.splitlines()
+        for key, separator, value in [line.partition(": ")]
+        if separator
+    }
+    assert prompt_facts["authority"] == expected_v2_facts["authority_locator"]
+    assert prompt_facts["decisions"] == expected_v2_facts["decisions"]
+    assert prompt_facts["targets"] == [["src/widget.py", "EXTEND"]]
+
+    retry_code, retry_out, retry_err = _design(
+        root, environment, corrected, replace_current=True
+    )
+    retry = _terminal(retry_out, retry_err)
+    assert retry_code == 0, retry_out + retry_err
+    assert authority.read_bytes() == authority_v2
+    assert (root / HANDOVER).read_bytes() == handover_v2
+    assert {
+        label: retry.get(label)
+        for label in ("SCHEMA-VERSION", "DOCUMENT-SHA256", "DESIGN-FACTS")
+    } == {
+        label: rows.get(label)
+        for label in ("SCHEMA-VERSION", "DOCUMENT-SHA256", "DESIGN-FACTS")
+    }
+
+
+def test_replace_current_directory_sync_failure_reports_whole_authority_as_indeterminate(
+    design_repository: tuple[Path, dict[str, str]], tmp_path: Path, monkeypatch
+) -> None:
+    """The public terminal is honest when rename succeeded but durability is unknown."""
+    root, environment = design_repository
+    _bootstrap_value(root, environment, tmp_path)
+    authority = _track_authority(root, UNRELATED_AUTHORITY_PREFIX)
+    assert _design(root, environment, MANIFEST)[0] == 0
+    handover_before = (root / HANDOVER).read_bytes()
+    corrected = json.loads(json.dumps(MANIFEST))
+    corrected["purpose"] = "Expose a corrected selected widget color."
+
+    monkeypatch.setattr(
+        "des.application.handover._fsync_directory",
+        lambda _path, **_kwargs: Blocked(
+            "DesignAuthorityUnavailable", "simulated directory sync failure", "repair"
+        ),
+    )
+    code, out, err = _design(root, environment, corrected, replace_current=True)
+    rows = _terminal(out, err)
+
+    assert code != 0 and rows.get("DELIVERY-OUTCOME") == "Indeterminate"
+    assert rows.get("WHAT") == "DesignAuthorityUnavailable"
+    assert b"Expose a corrected selected widget color." in authority.read_bytes()
+    assert (root / HANDOVER).read_bytes() == handover_before
 
 
 def test_conflicting_bound_design_facts_refuse_before_authority_or_handover_mutation(
@@ -653,7 +916,7 @@ def test_legacy_six_field_facts_are_repaired_by_the_same_closed_input(
     assert repaired["values"][0]["authority"]["decisions"] == MANIFEST["decisions"]
 
 
-def test_a_new_caller_selected_heading_binds_after_preserving_existing_authority(
+def test_changed_heading_refuses_without_guessing_a_new_section_identity(
     design_repository: tuple[Path, dict[str, str]], tmp_path: Path
 ) -> None:
     root, environment = design_repository
@@ -661,18 +924,20 @@ def test_a_new_caller_selected_heading_binds_after_preserving_existing_authority
     authority = _track_authority(root, UNRELATED_AUTHORITY_PREFIX)
     first_code, first_out, first_err = _design(root, environment, MANIFEST)
     assert first_code == 0, first_out + first_err
-    first_section = authority.read_bytes()
+    authority_before = authority.read_bytes()
+    handover_before = (root / HANDOVER).read_bytes()
 
     next_manifest = json.loads(json.dumps(MANIFEST))
     next_manifest["authority"]["heading"] = "Widget color accessibility"
     next_manifest["decisions"] = ["Keep color validation at the command boundary."]
-    next_code, next_out, next_err = _design(root, environment, next_manifest)
+    next_code, next_out, next_err = _design(
+        root, environment, next_manifest, replace_current=True
+    )
+    rows = _terminal(next_out, next_err)
 
-    assert next_code == 0, next_out + next_err
-    assert authority.read_bytes().startswith(first_section)
-    assert b"## Widget color accessibility\n" in authority.read_bytes()
-    rebound = json.loads((root / HANDOVER).read_text())["values"][0]["authority"]
-    assert rebound["decisions"] == next_manifest["decisions"]
+    assert next_code != 0 and rows.get("WHAT") == "DesignAuthorityIdentityMismatch"
+    assert authority.read_bytes() == authority_before
+    assert (root / HANDOVER).read_bytes() == handover_before
 
 
 def test_invalid_design_input_refuses_before_authority_or_handover_mutation(
@@ -966,6 +1231,158 @@ def test_closed_v1_optional_prefactoring_and_boundaries_forms_are_constructible(
         "an accepted optional form must reach the same two public durable "
         "projections as the complete semantic manifest"
     )
+
+
+def test_design_document_requires_agreement_analysis_before_authority_or_handover_mutation(
+    design_repository: tuple[Path, dict[str, str]], tmp_path: Path
+) -> None:
+    """A manifest silent on shared-contract consumers is refused, not assumed safe.
+
+    This is the observed regression class: commit 11352c52a migrated four of
+    five release-channel consumers of the same schema and forgot the fifth
+    because nothing forced the author to name every producer/consumer pair.
+    """
+    root, environment = design_repository
+    _bootstrap_value(root, environment, tmp_path)
+    missing_field = {
+        key: value for key, value in MANIFEST.items() if key != "agreement_analysis"
+    }
+
+    _assert_refusal_without_projection_mutation(root, environment, missing_field)
+
+
+def test_design_document_requires_a_reason_for_not_applicable_agreement_analysis(
+    design_repository: tuple[Path, dict[str, str]], tmp_path: Path
+) -> None:
+    """Declaring the not-applicable case still requires the closed reason field."""
+    root, environment = design_repository
+    _bootstrap_value(root, environment, tmp_path)
+    manifest = json.loads(json.dumps(MANIFEST))
+    manifest["agreement_analysis"] = {"applicability": "not_applicable"}
+
+    authority = root / REPOSITORY_DESTINATION
+    handover_before = (root / HANDOVER).read_bytes()
+
+    code, out, err = _design(root, environment, manifest)
+    rows = _terminal(out, err)
+
+    assert code != 0 and rows.get("DELIVERY-OUTCOME") == "Refusal", (
+        "a not_applicable agreement_analysis missing its reason must refuse at "
+        f"the public terminal (stdout={out!r}, stderr={err!r})"
+    )
+    assert "agreement_analysis" in (out + err), (
+        "the refusal must identify agreement_analysis by name so the author "
+        f"knows which closed field is incomplete (stdout={out!r}, stderr={err!r})"
+    )
+    assert not authority.exists(), (
+        "validation must precede every durable authority write"
+    )
+    assert (root / HANDOVER).read_bytes() == handover_before, (
+        "validation refusal must leave the existing handover byte-identical"
+    )
+
+
+APPLICABLE_AGREEMENT_ANALYSIS = {
+    "applicability": "applicable",
+    "parties": [
+        {
+            "contract": "release migration decision schema",
+            "role": "producer",
+            "locator": "scripts/release/release_migration_decision.py:47",
+            "decision": "MIGRATED",
+            "reason": "Emits schema v4 for every release channel.",
+        },
+        {
+            "contract": "release migration decision schema",
+            "role": "consumer",
+            "locator": "scripts/release/experimental_migration_decision.py:20",
+            "decision": "MIGRATED",
+            "reason": "Reads schema v4 like every other release channel.",
+        },
+    ],
+}
+
+
+def test_applicable_agreement_analysis_renders_every_declared_party(
+    design_repository: tuple[Path, dict[str, str]], tmp_path: Path
+) -> None:
+    """Each declared producer/consumer pair is readable in the rendered authority."""
+    root, environment = design_repository
+    _bootstrap_value(root, environment, tmp_path)
+    manifest = json.loads(json.dumps(MANIFEST))
+    manifest["agreement_analysis"] = APPLICABLE_AGREEMENT_ANALYSIS
+
+    code, out, err = _design(root, environment, manifest)
+    rows = _terminal(out, err)
+    authority = (root / REPOSITORY_DESTINATION).read_text()
+
+    assert code == 0 and rows.get("DELIVERY-OUTCOME") == "Success", (
+        "a complete applicable agreement_analysis manifest must construct "
+        f"through `des design` (stdout={out!r}, stderr={err!r})"
+    )
+    missing_authority_observations = {
+        observation
+        for party in APPLICABLE_AGREEMENT_ANALYSIS["parties"]
+        for observation in (
+            party["contract"],
+            party["role"],
+            party["locator"],
+            party["decision"],
+            party["reason"],
+        )
+        if observation not in authority
+    }
+    assert not missing_authority_observations, (
+        "the rendered authority must retain every declared party's contract, "
+        "role, locator, decision, and reason; render the missing fixture "
+        f"observations: {sorted(missing_authority_observations)!r}"
+    )
+    assert "### Agreement analysis" in authority, (
+        "the rendered authority must carry a distinct Agreement analysis "
+        "section, not fold parties into an unrelated section"
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "agreement_analysis"),
+    [
+        (
+            "duplicate declared parties",
+            {
+                "applicability": "applicable",
+                "parties": [APPLICABLE_AGREEMENT_ANALYSIS["parties"][0]] * 2,
+            },
+        ),
+        (
+            "empty declared parties",
+            {"applicability": "applicable", "parties": []},
+        ),
+        (
+            "unknown decision literal",
+            {
+                "applicability": "applicable",
+                "parties": [
+                    {
+                        **APPLICABLE_AGREEMENT_ANALYSIS["parties"][0],
+                        "decision": "FORGOTTEN",
+                    }
+                ],
+            },
+        ),
+    ],
+)
+def test_applicable_agreement_analysis_rejects_malformed_parties(
+    design_repository: tuple[Path, dict[str, str]],
+    tmp_path: Path,
+    case: str,
+    agreement_analysis: dict,
+) -> None:
+    root, environment = design_repository
+    _bootstrap_value(root, environment, tmp_path)
+    manifest = json.loads(json.dumps(MANIFEST))
+    manifest["agreement_analysis"] = agreement_analysis
+
+    _assert_refusal_without_projection_mutation(root, environment, manifest)
 
 
 def test_default_repository_relative_design_destination_is_used_without_config(

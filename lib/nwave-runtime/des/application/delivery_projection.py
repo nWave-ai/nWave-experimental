@@ -64,6 +64,8 @@ def _typed_facts_rows(facts: DesignFacts) -> list[str]:
         f"| ORACLE | `{facts.oracle}` |",
         f"| TARGETS | {targets} |",
     ]
+    if facts.authority_locator:
+        rows.append(f"| AUTHORITY LOCATOR | `{facts.authority_locator}` |")
     if supports:
         rows.append(f"| SUPPORTS | {supports} |")
     rows.append(f"| VERIFICATION | `{verification}` |")

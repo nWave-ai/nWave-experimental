@@ -47,6 +47,19 @@ def _value_lines(state: object) -> list[str]:
     return lines
 
 
+def _candidate_lines(state: object) -> list[str]:
+    """What the Request already carries as a verification, when it carries one.
+
+    Printed with its record state rather than as a bare SHA, because the two
+    states a candidate can be in differ by what the orchestrator may do next:
+    one is integrable, the other was measured against a graph a wave producer
+    has since corrected and buys nothing until it is verified again.
+    """
+    if state.candidate is None:  # type: ignore[attr-defined]
+        return []
+    return [f"CANDIDATE: {state.candidate} {state.candidate_record}"]  # type: ignore[attr-defined]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="des state")
     add_repo_root_argument(parser, "--repo-root", type=Path, required=True)
@@ -71,6 +84,6 @@ def main(argv: list[str] | None = None) -> int:
         else json.dumps(state.request, ensure_ascii=False)
     )
     return succeed(
-        [f"REQUEST: {request}", *_value_lines(state)],
+        [f"REQUEST: {request}", *_value_lines(state), *_candidate_lines(state)],
         canonical_next(state, root),
     )

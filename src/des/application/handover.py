@@ -137,6 +137,23 @@ def design_facts_defect(facts: DesignFacts) -> str | None:
                     f"verification[{index}][{position}] is not a non-empty "
                     f"string: {_shown(part)}"
                 )
+    if not isinstance(facts.authority_locator, str):
+        return f"authority_locator is not a string: {_shown(facts.authority_locator)}"
+    if facts.authority_locator:
+        document, separator, heading = facts.authority_locator.partition("#")
+        if (
+            not separator
+            or not is_repository_relative_whole_file_locator(document)
+            or not heading
+            or heading != heading.strip()
+            or "#" in heading
+            or "\n" in heading
+            or "\r" in heading
+        ):
+            return (
+                "authority_locator is not a repository-relative DESIGN section "
+                f"locator: {_shown(facts.authority_locator)}"
+            )
     return None
 
 
@@ -178,6 +195,7 @@ def _canonical_bytes(
     *,
     include_obligations: bool = True,
     include_acceptance: bool | None = None,
+    include_authority_locator: bool = True,
 ) -> bytes:
     def authority(value: str | DesignFacts | None) -> object:
         if isinstance(value, DesignFacts):
@@ -194,6 +212,8 @@ def _canonical_bytes(
             }
             if include_obligations:
                 facts["obligations"] = list(value.obligations)
+            if include_authority_locator:
+                facts["authority_locator"] = value.authority_locator
             return facts
         return value
 
@@ -346,7 +366,14 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
                 *legacy_keys,
                 "obligations",
             }
-            if set(authority) != legacy_keys and set(authority) != keys:
+            locator_keys = {*keys, "authority_locator"}
+            legacy_locator_keys = {*legacy_keys, "authority_locator"}
+            if set(authority) not in (
+                legacy_keys,
+                keys,
+                legacy_locator_keys,
+                locator_keys,
+            ):
                 return Blocked(
                     "HandoverMalformed",
                     "design facts are invalid",
@@ -367,6 +394,7 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
                     _obligations(authority["obligations"])
                     if "obligations" in authority
                     else (),
+                    authority.get("authority_locator", ""),
                 )
             except (KeyError, TypeError) as error:
                 return Blocked(
@@ -432,6 +460,16 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
     if raw not in (
         _canonical_bytes(request, stored),
         _canonical_bytes(request, stored, include_obligations=False),
+        # Typed handovers from before the section-identity migration have no
+        # authority_locator member.  They remain readable as external legacy
+        # bytes, while every newly constructed serialization includes it.
+        _canonical_bytes(request, stored, include_authority_locator=False),
+        _canonical_bytes(
+            request,
+            stored,
+            include_obligations=False,
+            include_authority_locator=False,
+        ),
         # Legacy handovers did not carry acceptance facts; their DESIGN facts
         # also predate the optional obligations member.
         _canonical_bytes(request, stored, include_acceptance=False),
@@ -440,10 +478,17 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
             stored,
             include_obligations=False,
             include_acceptance=False,
+            include_authority_locator=False,
         ),
         # Accept an early optional-field encoding so it can be changed by a
         # real fact update, but never force it onto an idempotent legacy retry.
         _canonical_bytes(request, stored, include_acceptance=True),
+        _canonical_bytes(
+            request,
+            stored,
+            include_acceptance=True,
+            include_authority_locator=False,
+        ),
     ):
         return Blocked(
             "HandoverMalformed",
@@ -453,7 +498,13 @@ def read_handover(raw: bytes) -> StoredHandover | Blocked:
     return StoredHandover(request, stored, raw)
 
 
-def _write_temporary(path: Path, raw: bytes) -> Path | Blocked:
+def _write_temporary(
+    path: Path,
+    raw: bytes,
+    *,
+    unavailable: str = "HandoverUnavailable",
+    repair: str = "restore handover storage",
+) -> Path | Blocked:
     descriptor: int | None = None
     temporary: Path | None = None
     try:
@@ -468,7 +519,7 @@ def _write_temporary(path: Path, raw: bytes) -> Path | Blocked:
         completed, temporary = temporary, None
         return completed
     except OSError as error:
-        return Blocked("HandoverUnavailable", str(error), "restore handover storage")
+        return Blocked(unavailable, str(error), repair)
     finally:
         if descriptor is not None:
             os.close(descriptor)
@@ -479,7 +530,12 @@ def _write_temporary(path: Path, raw: bytes) -> Path | Blocked:
                 pass
 
 
-def _fsync_directory(path: Path) -> Blocked | None:
+def _fsync_directory(
+    path: Path,
+    *,
+    unavailable: str = "HandoverUnavailable",
+    repair: str = "restore handover storage",
+) -> Blocked | None:
     try:
         descriptor = os.open(path, os.O_DIRECTORY)
         try:
@@ -487,8 +543,61 @@ def _fsync_directory(path: Path) -> Blocked | None:
         finally:
             os.close(descriptor)
     except OSError as error:
-        return Blocked("HandoverUnavailable", str(error), "restore handover storage")
+        return Blocked(unavailable, str(error), repair)
     return None
+
+
+def replace_exact_bytes(
+    path: Path,
+    expected: bytes | None,
+    raw: bytes,
+    *,
+    unavailable: str,
+    repair: str,
+    drift: str,
+    drift_subject: str = "stored bytes",
+) -> Blocked | None:
+    """Atomically replace ``path`` only when it still holds ``expected``.
+
+    The temporary is fully fsynced before rename, so an interruption cannot
+    expose a truncated target.  A directory fsync failure follows a successful
+    rename; callers receive an indeterminate result because the complete new
+    bytes may already be visible.  This is deliberately one-file atomicity:
+    callers that update a second projection must report a mixed outcome rather
+    than claim a transaction they do not own.
+    """
+    temporary = _write_temporary(path, raw, unavailable=unavailable, repair=repair)
+    if isinstance(temporary, Blocked):
+        return temporary
+    try:
+        try:
+            actual = path.read_bytes()
+        except FileNotFoundError:
+            actual = None
+        if actual != expected:
+            return Blocked(
+                drift,
+                f"{drift_subject} changed before atomic replace",
+                f"inspect {drift_subject} before restart",
+                refusal=True,
+            )
+        temporary.replace(path)
+        synced = _fsync_directory(path.parent, unavailable=unavailable, repair=repair)
+        if synced is not None:
+            return Blocked(
+                unavailable,
+                "the complete replacement may now be visible but its directory "
+                f"could not be synced: {synced.why}",
+                repair,
+            )
+        return None
+    except OSError as error:
+        return Blocked(unavailable, str(error), repair)
+    finally:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
 
 
 def _create_if_absent(path: Path, raw: bytes) -> bool | Blocked:
@@ -678,18 +787,6 @@ def create_constructed_handover(
 def rewrite_handover(
     root: Path, expected: bytes, request: str, values: tuple[HandoverValue, ...]
 ) -> StoredHandover | Blocked:
-    path = handover_path(root)
-    try:
-        actual = path.read_bytes()
-    except OSError as error:
-        return Blocked("HandoverUnavailable", str(error), "restore handover storage")
-    if actual != expected:
-        return Blocked(
-            "HandoverDrift",
-            "handover changed before compare-and-swap",
-            "inspect handover before restart",
-            refusal=True,
-        )
     normalized = _normalize_values(values)
     if isinstance(normalized, Blocked):
         return normalized
@@ -697,29 +794,42 @@ def rewrite_handover(
     validated = read_handover(raw)
     if isinstance(validated, Blocked):
         return validated
-    temporary = _write_temporary(path, raw)
-    if isinstance(temporary, Blocked):
-        return temporary
-    try:
-        if path.read_bytes() != expected:
-            return Blocked(
-                "HandoverDrift",
-                "handover changed before replace",
-                "inspect handover before restart",
-                refusal=True,
-            )
-        temporary.replace(path)
-        synced = _fsync_directory(path.parent)
-        if synced is not None:
-            return synced
-        return StoredHandover(request, normalized, raw)
-    except OSError as error:
-        return Blocked("HandoverUnavailable", str(error), "restore handover storage")
-    finally:
-        try:
-            temporary.unlink()
-        except OSError:
-            pass
+    replaced = replace_exact_bytes(
+        handover_path(root),
+        expected,
+        raw,
+        unavailable="HandoverUnavailable",
+        repair="restore handover storage",
+        drift="HandoverDrift",
+        drift_subject="handover",
+    )
+    if replaced is not None:
+        return replaced
+    return StoredHandover(request, normalized, raw)
+
+
+def rewrite_constructed_handover(
+    root: Path, expected: bytes, request: str, values: tuple[HandoverValue, ...]
+) -> StoredHandover | Blocked:
+    """CAS already-constructed values without decoding their canonical bytes.
+
+    Domain constructors have already established the typed values.  Re-reading
+    the bytes here would validate the same values a second time; only later
+    process boundaries use :func:`read_handover` for external persisted bytes.
+    """
+    raw = _canonical_bytes(request, values)
+    replaced = replace_exact_bytes(
+        handover_path(root),
+        expected,
+        raw,
+        unavailable="HandoverUnavailable",
+        repair="restore handover storage",
+        drift="HandoverDrift",
+        drift_subject="handover",
+    )
+    if replaced is not None:
+        return replaced
+    return StoredHandover(request, values, raw)
 
 
 def bind_design_facts(
@@ -750,7 +860,9 @@ def bind_design_facts(
         current.acceptance_oracle,
         current.acceptance_supports,
     )
-    bound = rewrite_handover(root, stored.raw, stored.request, tuple(values))
+    bound = rewrite_constructed_handover(
+        root, stored.raw, stored.request, tuple(values)
+    )
     if (
         authority_persisted
         and isinstance(bound, Blocked)

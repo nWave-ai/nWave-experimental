@@ -8,7 +8,9 @@ the irreversible publication operations.
 
 from __future__ import annotations
 
+import shlex
 import zipfile
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -24,6 +26,7 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 WHEEL_VERIFIER = "scripts/release/verify_wheel_privacy.py"
 PLUGIN_VERIFIER = "scripts/release/verify_plugin_privacy.py"
 TREE_VERIFIER = "scripts/release/verify_public_tree_privacy.py"
+DECISION_SCRIPT = "scripts/release/release_migration_decision.py"
 
 
 def _job(workflow_name: str, job_name: str) -> dict:
@@ -47,6 +50,114 @@ def _verifier_step(job: dict, verifier: str, artifact: str) -> int:
         "a source tree or a different build output."
     )
     return index
+
+
+def _logical_shell_segments(script: str) -> tuple[tuple[str, ...], ...]:
+    """Extract simple release-command segments; this is not a general shell parser."""
+    logical = _without_shell_comments(script).replace("\\\n", " ")
+    segments: list[tuple[str, ...]] = []
+    lexer = shlex.shlex(logical, posix=True, punctuation_chars=";&|\n")
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    current: list[str] = []
+    for token in lexer:
+        if token and all(character in ";&|\n" for character in token):
+            if current:
+                segments.append(tuple(current))
+                current = []
+        else:
+            current.append(token)
+    if current:
+        segments.append(tuple(current))
+    return tuple(segments)
+
+
+def _without_shell_comments(script: str) -> str:
+    """Remove unquoted shell comments while retaining newline command boundaries."""
+    kept: list[str] = []
+    quote: str | None = None
+    escaped = False
+    index = 0
+    while index < len(script):
+        character = script[index]
+        if escaped:
+            kept.append(character)
+            escaped = False
+        elif character == "\\" and quote != "'":
+            kept.append(character)
+            escaped = True
+        elif quote is not None:
+            kept.append(character)
+            if character == quote:
+                quote = None
+        elif character in "'\"":
+            kept.append(character)
+            quote = character
+        elif character == "#" and (
+            index == 0 or script[index - 1].isspace() or script[index - 1] in ";|&"
+        ):
+            while index < len(script) and script[index] != "\n":
+                index += 1
+            continue
+        else:
+            kept.append(character)
+        index += 1
+    return "".join(kept)
+
+
+def _is_publish_unit_invocation(argv: tuple[str, ...], unit: str) -> bool:
+    if (
+        len(argv) < 5
+        or Path(argv[0]).name not in {"python", "python3"}
+        or argv[1] != DECISION_SCRIPT
+        or argv[2] != "publish-unit"
+    ):
+        return False
+    return any(flag == "--unit" and value == unit for flag, value in pairwise(argv[3:]))
+
+
+def _publish_unit_step(job: dict, unit: str) -> int:
+    """Locate the reviewed writer boundary for one declared publication unit."""
+    for index, step in enumerate(job["steps"]):
+        for argv in _logical_shell_segments(str(step.get("run", ""))):
+            if _is_publish_unit_invocation(argv, unit):
+                return index
+    pytest.fail(
+        f"job must publish declared {unit!r} through the release decision writer"
+    )
+
+
+def test_publish_unit_step_ignores_comment_and_unrelated_unit_text() -> None:
+    """Only the command's own exact unit argument can satisfy the contract."""
+    job = {
+        "steps": [
+            {
+                "run": """
+                    python3 -c "
+                    print('multiline quoted helper')
+                    "
+                    echo "
+                    python scripts/release/release_migration_decision.py publish-unit --unit wanted
+                    "
+                    echo 'scripts/release/release_migration_decision.py publish-unit --unit wanted'
+                    echo python scripts/release/release_migration_decision.py publish-unit --unit wanted
+                    python scripts/release/release_migration_decision.py publish-unit --unit other.unit
+                    # comment's unrelated --unit wanted must not poison the lexer
+                    # python scripts/release/release_migration_decision.py publish-unit --unit wanted
+                """
+            }
+        ]
+    }
+
+    with pytest.raises(pytest.fail.Exception):
+        _publish_unit_step(job, "wanted")
+
+    job["steps"][0]["run"] += """
+        python scripts/release/release_migration_decision.py \\
+          publish-unit --unit wanted
+    """
+    assert _publish_unit_step(job, "wanted") == 0
 
 
 def _write_public_catalog(tree: Path, *, public_agents: str) -> None:
@@ -109,17 +220,17 @@ def test_public_tree_verifier_checks_marketplace_plugin_content(tmp_path: Path) 
 
 
 @pytest.mark.parametrize(
-    ("workflow_name", "release_operations"),
+    ("workflow_name", "release_metadata_unit"),
     [
-        ("release-dev.yml", ("gh release create",)),
-        ("release-rc.yml", ("gh release create",)),
-        ("release-prod.yml", ("gh release create", "gh release upload")),
+        ("release-dev.yml", "dev.release.metadata"),
+        ("release-rc.yml", "rc.release.metadata"),
+        ("release-prod.yml", "prod.release.metadata"),
     ],
 )
 def test_github_release_assets_are_privacy_verified_before_release_operation(
-    workflow_name: str, release_operations: tuple[str, ...]
+    workflow_name: str, release_metadata_unit: str
 ) -> None:
-    """Every GitHub Release path verifies its downloaded wheel and plugin ZIP."""
+    """Every GitHub Release path verifies assets before its release writer unit."""
     job = _job(workflow_name, "tag-release")
     needs = job.get("needs", [])
     assert "build" in needs and "build-plugin" in needs, (
@@ -129,40 +240,37 @@ def test_github_release_assets_are_privacy_verified_before_release_operation(
 
     wheel_index = _verifier_step(job, WHEEL_VERIFIER, "dist/*.whl")
     plugin_index = _verifier_step(job, PLUGIN_VERIFIER, "dist/nwave-plugin-v*.zip")
-    for release_operation in release_operations:
-        release_index = _step_index(job, release_operation)
-        assert release_index != -1, (
-            f"{workflow_name}:tag-release no longer contains {release_operation!r}; "
-            "update this publication contract."
-        )
-        assert wheel_index < release_index and plugin_index < release_index, (
-            f"{workflow_name}:tag-release must verify the exact downloaded wheel and "
-            f"plugin ZIP before {release_operation}."
-        )
+    release_index = _publish_unit_step(job, release_metadata_unit)
+    assert wheel_index < release_index and plugin_index < release_index, (
+        f"{workflow_name}:tag-release must verify the exact downloaded wheel and "
+        f"plugin ZIP before its GitHub Release metadata writer."
+    )
 
 
-@pytest.mark.parametrize("workflow_name", ["release-rc.yml", "release-prod.yml"])
+@pytest.mark.parametrize(
+    ("workflow_name", "package_index_unit"),
+    [
+        ("release-rc.yml", "rc.testpypi.wheel"),
+        ("release-prod.yml", "prod.pypi.wheel"),
+    ],
+)
 def test_pypi_rebuild_is_privacy_verified_after_build_and_before_publish(
-    workflow_name: str,
+    workflow_name: str, package_index_unit: str
 ) -> None:
     """RC and stable PyPI publish only a freshly rebuilt, verified wheel."""
     job = _job(workflow_name, "pypi-publish")
 
     build_index = _step_index(job, "python -m build --wheel")
     verifier_index = _verifier_step(job, WHEEL_VERIFIER, "dist/*.whl")
-    publish_index = _step_index(job, "pypa/gh-action-pypi-publish")
+    publish_index = _publish_unit_step(job, package_index_unit)
 
     assert build_index != -1, (
         f"{workflow_name}:pypi-publish must retain its independent final-wheel "
         "rebuild; this contract is not discharged by an earlier artifact."
     )
-    assert publish_index != -1, (
-        f"{workflow_name}:pypi-publish no longer contains the PyPI publish action; "
-        "update this publication contract."
-    )
     assert build_index < verifier_index < publish_index, (
         f"{workflow_name}:pypi-publish must order rebuild -> final-wheel privacy "
-        "verification -> publish."
+        "verification -> reviewed package-index writer."
     )
 
 
@@ -181,22 +289,18 @@ def test_public_repo_sync_verifies_final_target_immediately_before_push(
 
     strip_index = _step_index(job, "strip_private_agents.py")
     verifier_index = _verifier_step(job, TREE_VERIFIER, target_dir)
-    push_index = _step_index(job, "git push")
+    branch_unit = (
+        "rc.beta.branch" if workflow_name == "release-rc.yml" else "prod.public.branch"
+    )
+    publish_index = _publish_unit_step(job, branch_unit)
 
     assert strip_index != -1, (
         f"{workflow_name}:{job_name} must retain its private-artifact strip before "
         "the final public-tree verification."
     )
-    assert push_index != -1, (
-        f"{workflow_name}:{job_name} no longer contains its public git push; update "
-        "this final-target contract."
-    )
-    assert strip_index < verifier_index, (
-        f"{workflow_name}:{job_name} must verify the target after stripping it."
-    )
-    assert verifier_index + 1 == push_index, (
-        f"{workflow_name}:{job_name} must run {TREE_VERIFIER} after every target "
-        "transform and as the step immediately before git push."
+    assert strip_index < verifier_index < publish_index, (
+        f"{workflow_name}:{job_name} must order private-artifact stripping -> final "
+        "target verification -> declared public branch writer."
     )
 
 
@@ -215,7 +319,12 @@ def test_public_release_reverifies_plugin_zip_downloaded_after_tree_gate(
     tree_gate_index = _step_index(job, TREE_VERIFIER)
     download_index = _step_index(job, "Download plugin artifact")
     plugin_gate_index = _verifier_step(job, PLUGIN_VERIFIER, download_path)
-    release_index = _step_index(job, "gh release create")
+    metadata_unit = (
+        "rc.beta.release.metadata"
+        if workflow_name == "release-rc.yml"
+        else "prod.public.release.metadata"
+    )
+    release_index = _publish_unit_step(job, metadata_unit)
 
     assert tree_gate_index != -1, (
         f"{workflow_name}:{job_name} must retain the final target-tree gate."
@@ -224,36 +333,48 @@ def test_public_release_reverifies_plugin_zip_downloaded_after_tree_gate(
         f"{workflow_name}:{job_name} must download the plugin ZIP that its public "
         "GitHub Release attaches."
     )
-    assert release_index != -1, (
-        f"{workflow_name}:{job_name} no longer creates its public GitHub Release; "
-        "update this contract."
-    )
     assert tree_gate_index < download_index < plugin_gate_index < release_index, (
         f"{workflow_name}:{job_name} must verify the exact ZIP downloaded after "
-        "the tree gate and before gh release create."
+        "the tree gate and before the declared release metadata writer."
     )
 
 
 def test_stable_github_release_has_an_adjacent_final_asset_gate() -> None:
     """Stable tags or other mutations cannot occur after its last asset check."""
     job = _job("release-prod.yml", "tag-release")
-    release_index = _step_index(job, "gh release create")
-
-    assert release_index != -1, (
-        "release-prod.yml:tag-release must create a GitHub Release"
-    )
+    release_index = _publish_unit_step(job, "prod.release.metadata")
     final_gate = job["steps"][release_index - 1]
     final_gate_text = "\n".join(
         str(final_gate.get(key, "")) for key in ("name", "run", "uses")
     )
     assert WHEEL_VERIFIER in final_gate_text and "dist/*.whl" in final_gate_text, (
-        "the step immediately before stable gh release create/upload must verify the "
+        "the step immediately before the stable metadata writer must verify the "
         "final wheel; no tag or mutation step may intervene."
     )
     assert (
         PLUGIN_VERIFIER in final_gate_text
         and "dist/nwave-plugin-v*.zip" in final_gate_text
     ), (
-        "the step immediately before stable gh release create/upload must verify the "
+        "the step immediately before the stable metadata writer must verify the "
         "final plugin ZIP; no tag or mutation step may intervene."
+    )
+
+
+def test_standalone_github_release_verifies_the_wheel_before_the_dependent_writer() -> (
+    None
+):
+    """The standalone GitHub channel preserves its cross-job wheel gate."""
+    build = _job("release-github.yml", "build")
+    release = _job("release-github.yml", "publish-release")
+
+    wheel_index = _verifier_step(build, WHEEL_VERIFIER, "dist/*.whl")
+    upload_index = _step_index(build, "actions/upload-artifact")
+    _publish_unit_step(release, "github-prerelease.release.metadata")
+
+    assert "build" in release.get("needs", []), (
+        "release-github.yml:publish-release must depend on the wheel-producing job"
+    )
+    assert wheel_index < upload_index, (
+        "release-github.yml:build must verify its final wheel before uploading the "
+        "artifact consumed by the dependent metadata writer."
     )

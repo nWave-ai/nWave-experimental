@@ -142,3 +142,6 @@ _site/
 .tla-swarm-model/states/
 docs/product/architecture/tla/*_TTrace_*
 docs/product/architecture/tla/states/
+# nWave config (keep .nwave/config.json trackable)
+.nwave/*
+!.nwave/config.json

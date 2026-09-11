@@ -258,6 +258,7 @@ def test_finalize_removes_retained_lane_after_destination_records_evolution(
     assert finalized.returncode == 0, terminal(finalized)
     assert field(finalized, "REMOVED") == str(worktree)
     assert field(finalized, "BRANCH-REMOVED") == "lane/probe"
+    assert field(finalized, "NEXT") == "no step is owed"
     assert git(root, "rev-parse", "HEAD") == evolution_tip
     assert git(root, "merge-base", "--is-ancestor", lane_tip, evolution_tip) == ""
     assert not worktree.exists()

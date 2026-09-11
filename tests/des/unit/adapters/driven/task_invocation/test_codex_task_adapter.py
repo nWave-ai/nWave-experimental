@@ -371,6 +371,7 @@ def test_shared_decoder_refuses_duplicate_design_supports_after_codex_projection
             "oracle": "tests/test_example.py",
             "acceptance_supports": ["tests/support.py", "tests/support.py"],
             "verification": [["python", "-m", "pytest", "-q"]],
+            "authority_locator": "",
         },
     }
 
@@ -400,6 +401,7 @@ def test_shared_decoder_refuses_unsafe_locator_in_every_design_fact_field(
             "oracle": "tests/test_example.py",
             "acceptance_supports": ["tests/support.py"],
             "verification": [["python", "-m", "pytest", "-q"]],
+            "authority_locator": "",
         },
     }
     structured["design_facts"][field] = unsafe_value
@@ -420,6 +422,7 @@ def test_shared_decoder_preserves_legacy_oracle_selector_boundaries() -> None:
             "oracle": ".::../selector",
             "acceptance_supports": ["tests/support.py"],
             "verification": [["python", "-m", "pytest", "-q"]],
+            "authority_locator": "",
         },
     }
 

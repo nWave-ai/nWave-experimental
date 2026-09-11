@@ -230,6 +230,7 @@ def test_architect_outcome_keeps_opaque_diagnostic_and_typed_facts() -> None:
                         "oracle": "tests/test_x.py",
                         "acceptance_supports": [],
                         "verification": [["pytest", "-q"]],
+                        "authority_locator": "",
                     },
                 }
             }

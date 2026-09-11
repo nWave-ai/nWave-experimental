@@ -95,6 +95,26 @@ def test_the_assigned_value_is_the_first_fact_the_architect_reads(
     assert facts["observation"] == FIRST
 
 
+def test_an_explicit_competence_qualifies_the_invoked_role_id(tmp_path) -> None:
+    """The orchestrator's competence parameter reaches the invoked role_id.
+
+    Absent, the invoked role stays byte-identical to today
+    (``test_the_assigned_value_is_the_first_fact_the_architect_reads`` above).
+    Never derived here from Request size or any other heuristic -- construction
+    consumes what the caller passed, DES does not route.
+    """
+    stored = _two_value_graph(tmp_path)
+    adapter = MockedTaskAdapter(
+        predefined_result=ModelRun(ModelOutcome.Rejected, "", 0, False)
+    )
+    runner = DeliveryContinuationRunner(adapter)
+    with contextlib.suppress(StepRefused):
+        designed(runner, adapter, tmp_path, stored, competence="advanced")
+
+    role, _, _, _, _ = adapter.invocations[0]
+    assert role == "nw-solution-architect#advanced"
+
+
 def test_the_architect_reads_the_settled_decomposition_of_the_whole_request(
     architect_turn,
 ) -> None:

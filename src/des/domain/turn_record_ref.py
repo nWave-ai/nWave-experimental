@@ -86,3 +86,26 @@ DECISION_REF_ROOT = "refs/nwave/decisions"
 def decision_ref(request: str, candidate: str) -> str:
     """Where one orchestrator integration decision is found again."""
     return f"{DECISION_REF_ROOT}/{digest(request)}/{candidate}"
+
+
+#: The verify record's UPSTREAM key: the graph the verification was measured
+#: against. A candidate is verified against ONE Request graph, and an
+#: upstream correction through any wave producer rewrites that graph; a record
+#: keyed only on the candidate therefore survived the very correction that
+#: invalidated it, and `des integrate` blessed evidence collected before it.
+#: The binding is the ref NAME, not a byte inside an object: a record written
+#: under one graph's key cannot be found again under another's, so stale
+#: evidence is unrepresentable rather than merely detected.
+VERIFY_UPSTREAM_TURN = "verify-upstream"
+
+
+def upstream_key(raw: bytes) -> str:
+    """The fixed-length key one persisted graph contributes to a ref path."""
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def verify_upstream_ref(request: str, raw: bytes) -> str:
+    """Where the verification of THIS graph's candidate is found again."""
+    return (
+        f"{TURN_REF_ROOT}/{digest(request)}/{VERIFY_UPSTREAM_TURN}/{upstream_key(raw)}"
+    )

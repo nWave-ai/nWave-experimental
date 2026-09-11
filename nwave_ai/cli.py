@@ -467,6 +467,12 @@ def _handle_install(args: list[str]) -> int:
 
     All other args (including --platform) pass through to install_nwave.py.
     """
+    # The installer already owns this subcommand's public help text.  Dispatch
+    # it before parsing targets or constructing any write-capable preflight so
+    # discovery remains usable even when an actual installation is blocked.
+    if "--help" in args or "-h" in args:
+        return _run_script("install_nwave.py", ["--help"])
+
     target, args, error = _extract_target_flag(args)
     if error is not None:
         print(f"nwave-ai: {error}", file=sys.stderr)
@@ -964,7 +970,7 @@ def _handle_plugin(args: list[str]) -> int:
 
 _MODEL_USAGE = (
     "Usage: nwave-ai model set --provider {codex,claude} --model MODEL "
-    "[--role ROLE] [--project]"
+    "[--role ROLE [--competence COMPETENCE]] [--project]"
 )
 
 
@@ -989,6 +995,7 @@ def _handle_model(args: list[str]) -> int:
     provider: str | None = None
     model: str | None = None
     role: str | None = None
+    competence: str | None = None
     project = False
     index = 1
     while index < len(args):
@@ -1000,7 +1007,7 @@ def _handle_model(args: list[str]) -> int:
             project = True
             index += 1
             continue
-        if option in {"--provider", "--model", "--role"}:
+        if option in {"--provider", "--model", "--role", "--competence"}:
             if index + 1 >= len(args):
                 print(_MODEL_USAGE, file=sys.stderr)
                 return 2
@@ -1011,12 +1018,21 @@ def _handle_model(args: list[str]) -> int:
                 model = value
             elif option == "--role" and role is None:
                 role = value
+            elif option == "--competence" and competence is None:
+                competence = value
             else:
                 print(_MODEL_USAGE, file=sys.stderr)
                 return 2
             index += 2
             continue
         print(_MODEL_USAGE, file=sys.stderr)
+        return 2
+
+    if competence is not None and role is None:
+        print(
+            "WHAT: --competence requires --role. HOW: " + _MODEL_USAGE,
+            file=sys.stderr,
+        )
         return 2
 
     if (
@@ -1033,6 +1049,18 @@ def _handle_model(args: list[str]) -> int:
     if role is not None and not role.strip():
         print("WHAT: --role must be non-empty. HOW: " + _MODEL_USAGE, file=sys.stderr)
         return 2
+    role_key = role
+    if role is not None and competence is not None:
+        from des.domain.model_runtime import qualify_role_id
+
+        try:
+            role_key = qualify_role_id(role, competence)
+        except ValueError as error:
+            print(
+                f"WHAT: --competence is invalid. WHY: {error}. HOW: {_MODEL_USAGE}",
+                file=sys.stderr,
+            )
+            return 2
     if role is not None:
         # A role key is not free-form configuration: a typo would otherwise
         # persist an override no invocation can ever select. Resolve it before
@@ -1078,7 +1106,7 @@ def _handle_model(args: list[str]) -> int:
         else:
             roles = runtime.get("roles")
             role_map = dict(roles) if isinstance(roles, dict) else {}
-            role_map[role] = pair
+            role_map[role_key] = pair
             runtime["roles"] = role_map
         document["model_runtime"] = runtime
 
@@ -1096,7 +1124,7 @@ def _handle_model(args: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
-    scope = f"role {role}" if role is not None else "default"
+    scope = f"role {role_key}" if role_key is not None else "default"
     print(f"Model runtime {scope} set to {provider}/{model} in {target}.")
     return 0
 

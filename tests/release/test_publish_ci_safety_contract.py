@@ -44,7 +44,7 @@ def test_experimental_dispatch_and_permissions_are_narrow() -> None:
     workflow = _workflow(EXPERIMENTAL)
     trigger = workflow[True]  # PyYAML resolves the YAML 1.1 key `on` as True.
     assert "push" not in trigger
-    assert trigger["workflow_dispatch"] is None
+    assert "migration_decision_release_tag" in trigger["workflow_dispatch"]["inputs"]
     assert workflow["permissions"] == {"contents": "read", "actions": "read"}
 
     branch_guard = _step(
@@ -72,6 +72,207 @@ def test_experimental_publish_requires_exact_sha_terminal_ci_success() -> None:
     assert '.name == "CI Success"' in run
     assert '$terminal[0].status == "completed"' in run
     assert '$terminal[0].conclusion == "success"' in run
+
+
+def test_experimental_workflow_supplies_exact_candidate_decision_to_writer() -> None:
+    workflow = _workflow(EXPERIMENTAL)
+    dispatch = workflow[True]["workflow_dispatch"]
+    assert dispatch["inputs"]["migration_decision_release_tag"] == {
+        "description": "Draft release tag carrying the exact candidate migration-decision bundle",
+        "required": True,
+        "type": "string",
+    }
+    smoke = _step(
+        workflow, "Retrieve and validate exact candidate migration decision bundle"
+    )["run"]
+    # No `git rev-parse --short` here on purpose: its abbreviation width
+    # depends on this shallow clone's object count and diverges from a full
+    # local clone's (measured 2026-09-11, run 34587462454). `projected_candidate`
+    # derives the abbreviation itself from the full `$GITHUB_SHA` only.
+    assert 'git rev-parse --short "$GITHUB_SHA"' not in smoke
+    assert 'python - "$GITHUB_SHA" <<' in smoke
+    assert "projected_candidate(root, sys.argv[1])" in smoke
+    assert 'gh release download "$DECISION_RELEASE_TAG"' in smoke
+    assert "--pattern experimental-migration-decision.zip" in smoke
+    assert "unsafe decision bundle member" in smoke
+    assert "decode_decision" in smoke and "projected_candidate" in smoke
+    installed = _step(
+        workflow, "Smoke the installed OpenCode hook before experimental publish"
+    )["run"]
+    assert "candidate-wheel-path" in installed
+    publish = _step(workflow, "Publish to the experimental channel")["run"]
+    assert (
+        "--migration-decision .nwave/release-migration-decision/decision.json"
+        in publish
+    )
+
+
+RELEASE_WORKFLOWS = (
+    REPO_ROOT / ".github/workflows/release-dev.yml",
+    REPO_ROOT / ".github/workflows/release-rc.yml",
+    REPO_ROOT / ".github/workflows/release-prod.yml",
+    REPO_ROOT / ".github/workflows/release-github.yml",
+)
+
+
+def _runnable_lines(body: str) -> list[str]:
+    """Ignore comments and echo-only guidance; retain executable shell lines."""
+    return [
+        line.strip()
+        for line in body.splitlines()
+        if line.strip()
+        and not line.lstrip().startswith("#")
+        and not re.match(r"(?:echo|printf)\b", line.strip())
+    ]
+
+
+def _release_steps() -> list[
+    tuple[Path, str, dict[str, object], dict[str, object], list[str]]
+]:
+    found = []
+    for path in RELEASE_WORKFLOWS:
+        jobs = _workflow(path)["jobs"]
+        assert isinstance(jobs, dict)
+        for job_name, job in jobs.items():
+            if not isinstance(job, dict):
+                continue
+            steps = job.get("steps", [])
+            assert isinstance(steps, list)
+            for step in steps:
+                if isinstance(step, dict) and isinstance(step.get("run"), str):
+                    found.append(
+                        (path, str(job_name), job, step, _runnable_lines(step["run"]))
+                    )
+    return found
+
+
+def _is_dry_run_guard(condition: object) -> bool:
+    """A writer must be structurally skipped, rather than merely mention dry-run."""
+    if not isinstance(condition, str):
+        return False
+    compact = re.sub(r"\s+", "", condition).lower()
+    return "dry_run" in compact and (
+        "!=true" in compact or "==false" in compact or "!inputs.dry_run" in compact
+    )
+
+
+def _uses(steps: list[object], pattern: str) -> bool:
+    return any(
+        isinstance(step, dict)
+        and isinstance(step.get("uses"), str)
+        and re.search(pattern, step["uses"], re.IGNORECASE)
+        for step in steps
+    )
+
+
+def test_every_actual_release_writer_is_a_bound_publish_unit_not_an_unwrapped_command() -> (
+    None
+):
+    """Writers move inside ``publish-unit``; an earlier step cannot gate one."""
+    raw_writer = re.compile(
+        r"\b(?:git\s+push|gh\s+release\s+(?:create|upload)|gh\s+workflow\s+run|twine\s+upload)\b"
+    )
+    writer_jobs: set[tuple[str, str]] = set()
+    for path, job, job_body, step, lines in _release_steps():
+        runnable = "\n".join(lines)
+        if "release_migration_decision.py publish-unit" in runnable:
+            assert (
+                "--decision" in runnable
+                and "--channel" in runnable
+                and "--unit" in runnable
+            ), (path, job, step.get("name"))
+            assert "--repo-root" in runnable and "--target-repo-root" in runnable, (
+                path,
+                job,
+                step.get("name"),
+            )
+            assert re.search(
+                r"(?:--artifact-root|--source|SOURCE_SHA|VERSION|TAG)", runnable
+            ), (path, job, step.get("name"))
+            assert _is_dry_run_guard(step.get("if")) or _is_dry_run_guard(
+                job_body.get("if")
+            ), (path, job, step.get("name"))
+            writer_jobs.add((path.name, job))
+        assert not raw_writer.search(runnable), (path, job, step.get("name"), runnable)
+    for path in RELEASE_WORKFLOWS:
+        jobs = _workflow(path)["jobs"]
+        assert isinstance(jobs, dict)
+        for job in jobs.values():
+            if not isinstance(job, dict):
+                continue
+            for step in job.get("steps", []):
+                if isinstance(step, dict):
+                    uses = str(step.get("uses", ""))
+                    assert not re.match(
+                        r"pypa/gh-action-pypi-publish(?:@|$)", uses, re.IGNORECASE
+                    ), path
+    # Verify the existing writer scopes, not a private spelling of unit ids.
+    expected_writer_jobs = {
+        ("release-dev.yml", "tag-release"),
+        ("release-dev.yml", "promote-rc"),
+        ("release-rc.yml", "tag-release"),
+        ("release-rc.yml", "pypi-publish"),
+        ("release-rc.yml", "sync-beta"),
+        ("release-rc.yml", "promote-prod"),
+        ("release-prod.yml", "version-bump"),
+        ("release-prod.yml", "tag-release"),
+        ("release-prod.yml", "pypi-publish"),
+        ("release-prod.yml", "sync-public"),
+        ("release-prod.yml", "marker-tag"),
+        ("release-github.yml", "publish-release"),
+    }
+    assert expected_writer_jobs <= writer_jobs
+
+
+def test_writer_jobs_have_checkout_runtime_and_distinct_downstream_decisions() -> None:
+    workflows = [_workflow(path) for path in RELEASE_WORKFLOWS]
+    for workflow in workflows:
+        jobs = workflow["jobs"]
+        assert isinstance(jobs, dict)
+        for job_name, job in jobs.items():
+            if not isinstance(job, dict):
+                continue
+            steps = job.get("steps", [])
+            assert isinstance(steps, list)
+            body = "\n".join(
+                str(step.get("run", "")) for step in steps if isinstance(step, dict)
+            )
+            if "release_migration_decision.py publish-unit" not in body:
+                continue
+            assert _uses(steps, r"^actions/checkout@"), job_name
+            assert _uses(steps, r"^(?:actions/setup-python|astral-sh/setup-uv)@"), (
+                job_name
+            )
+    dev, rc, prod = (path.read_text(encoding="utf-8") for path in RELEASE_WORKFLOWS[:3])
+    assert "migration_decision_rc" in dev
+    assert "migration_decision_dev" in rc and "migration_decision_prod" in rc
+    assert "migration_decision" in prod
+
+
+def test_each_writer_job_owns_its_decision_bytes_and_declares_needs_references() -> (
+    None
+):
+    """Jobs do not share runner files; a writer must retrieve and decode locally."""
+    for workflow in [_workflow(path) for path in RELEASE_WORKFLOWS]:
+        jobs = workflow["jobs"]
+        assert isinstance(jobs, dict)
+        for job_name, job in jobs.items():
+            if not isinstance(job, dict):
+                continue
+            steps = job.get("steps", [])
+            assert isinstance(steps, list)
+            body = "\n".join(
+                str(step.get("run", "")) for step in steps if isinstance(step, dict)
+            )
+            if "release_migration_decision.py publish-unit" in body:
+                assert "gh release download" in body, job_name
+                assert "decision.json" in body and "decode_decision" in body, job_name
+            declared = job.get("needs", [])
+            if isinstance(declared, str):
+                declared = [declared]
+            assert isinstance(declared, list)
+            referenced = set(re.findall(r"needs\.([A-Za-z0-9_-]+)", str(job)))
+            assert referenced <= set(declared), (job_name, referenced, declared)
 
 
 def test_dev_release_refuses_non_master_before_ci_or_release_work() -> None:

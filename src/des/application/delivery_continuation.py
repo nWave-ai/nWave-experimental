@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import contextlib
 import errno
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -64,7 +66,7 @@ from des.domain.integration_commit_message import (
     IntegrationFacts,
     compose_integration_message,
 )
-from des.domain.model_runtime import ModelRuntimeConfigError
+from des.domain.model_runtime import ModelRuntimeConfigError, qualify_role_id
 from des.domain.repository_format_contract import (
     FormatContract,
     declared_format_contract,
@@ -82,12 +84,12 @@ from des.domain.turn_record_ref import (
     archive_ref,
     decision_ref,
     turn_ref,
+    verify_upstream_ref,
 )
 from des.domain.verification_authority_resolver import (
     ResolvedAuthoritySection,
     resolve_authority_section,
 )
-from des.domain.verification_verdict import verdict_of
 from des.ports.driven_ports.task_invocation_port import (
     MINIMUM_OBSERVATION_CHARACTERS,
     CraftBlocker,
@@ -193,9 +195,18 @@ class NativeEvidence:
     unmeasured, not that the product was unexercised, and cannot automatically
     pass or fail a candidate.  Both are measurements; neither is a verdict.
 
-    `exit_status` is None for a stimulus the runner declined to execute, and
-    `stderr` then carries the reason.  Null rather than 0, because a zero would
-    read as a successful observation of something that never ran (GDP-6).
+    `exit_status` is None for a stimulus the runner could not complete, and
+    `stderr` then carries the kernel or timeout diagnostic.  Null rather than
+    0, because a zero would read as a successful observation of an incomplete
+    command (GDP-6). `incomplete` makes that state explicit for a durable record
+    that contains earlier commands which did execute.
+
+    `duration_seconds`, `cwd`, and `declared_environment` describe the one
+    command invocation.  They are captured before the spawn (apart from the
+    elapsed duration), including for a launch refusal or timeout.  The
+    environment is deliberately the closed, nonsecret Python/pytest projection;
+    a record made without an invocation retains None for every one of these
+    facts, which is unknown rather than a successful context.
     """
 
     argv: tuple[str, ...]
@@ -205,6 +216,13 @@ class NativeEvidence:
     origin: str = DECLARED_ORIGIN
     touches_test_paths: bool = False
     exercised: ExercisedModules = UNEXERCISED
+    incomplete: bool = False
+    incomplete_what: str | None = None
+    incomplete_why: str | None = None
+    incomplete_how: str | None = None
+    duration_seconds: float | None = None
+    cwd: str | None = None
+    declared_environment: tuple[tuple[str, str], ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -343,6 +361,14 @@ class AuthorityFacts:
     acceptance_paths: tuple[str, ...]
     native_verification_argvs: tuple[tuple[str, ...], ...]
     acceptance_obligations: tuple[AcceptanceObligation, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class VerificationRecord:
+    """One recorded verification, and whether the graph it covers is current."""
+
+    candidate: str
+    covers_current_upstream: bool
 
 
 _RUNNER_OWNED_PREFIX = ".nwave/des/"
@@ -613,6 +639,8 @@ class DeliveryContinuationRunner:
         # did not reach us".
         self._turns_bought = 0
         self._last_role: str | None = None
+        self._native_evidence_locator: str | None = None
+        self._native_evidence_sha256: str | None = None
 
     @staticmethod
     def _fail(d: Disposition, what: str, why: str, how: str) -> DeliveryOutcome:
@@ -770,6 +798,85 @@ class DeliveryContinuationRunner:
     def radius(self) -> str:
         """The candidate radius the last `verify` measured (ADR-DES-003 §6)."""
         return self._radius
+
+    @property
+    def native_evidence_locator(self) -> str | None:
+        """The durable locator for this verify call's native observation."""
+        return self._native_evidence_locator
+
+    @property
+    def native_evidence_sha256(self) -> str | None:
+        """The content digest paired with ``native_evidence_locator``."""
+        return self._native_evidence_sha256
+
+    def persist_native_radius(self, root: Path, candidate: str) -> bool:
+        if self._native_evidence_sha256 is None:
+            return False
+        directory = root / ".nwave" / "des" / "logs" / "radius"
+        body = {
+            "candidate_sha": candidate,
+            "native_evidence_sha256": self._native_evidence_sha256,
+            "radius": self._radius,
+        }
+        payload = json.dumps(
+            {
+                **body,
+                "payload_sha256": hashlib.sha256(
+                    json.dumps(body, sort_keys=True).encode()
+                ).hexdigest(),
+            },
+            sort_keys=True,
+        ).encode()
+        path = directory / f"{candidate}.json"
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            descriptor, temporary = tempfile.mkstemp(
+                prefix=f".{candidate}-", dir=directory
+            )
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(payload)
+            Path(temporary).replace(path)
+            return path.read_bytes() == payload
+        except OSError:
+            return False
+
+    def load_native_evidence_identity(self, root: Path, candidate: str) -> bool:
+        """Load one complete, candidate-bound native observation for reuse.
+
+        The candidate record is sufficient to avoid a second declared command
+        only when its durable native bytes are still readable and unambiguous.
+        Older verify refs without this record are not evidence of a successful
+        native execution.
+        """
+        directory = root / ".nwave" / "des" / "logs" / "native"
+        try:
+            records = sorted(directory.glob(f"{candidate}-*.json"))
+        except OSError:
+            return False
+        if len(records) != 1:
+            return False
+        path = records[0]
+        try:
+            payload = path.read_bytes()
+            decoded = json.loads(payload)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        if not isinstance(decoded, list):
+            return False
+        embedded_digest, separator, _rest = path.name[len(candidate) + 1 :].partition(
+            "-"
+        )
+        actual_digest = hashlib.sha256(payload).hexdigest()
+        if (
+            not separator
+            or len(embedded_digest) != 64
+            or any(character not in "0123456789abcdef" for character in embedded_digest)
+            or embedded_digest != actual_digest
+        ):
+            return False
+        self._native_evidence_locator = path.relative_to(root).as_posix()
+        self._native_evidence_sha256 = actual_digest
+        return True
 
     @property
     def design_unchanged(self) -> bool:
@@ -1381,7 +1488,7 @@ class DeliveryContinuationRunner:
                 return inadmissible
             oracle = locator.oracle.partition("::")[0]
             typed = AuthorityFacts(
-                f"typed:{locator.oracle}",
+                locator.authority_locator or f"typed:{locator.oracle}",
                 (),
                 tuple((target.path, target.decision) for target in locator.targets),
                 locator.paradigm,
@@ -2033,6 +2140,7 @@ class DeliveryContinuationRunner:
         *,
         origin: str = DECLARED_ORIGIN,
         changed: tuple[str, ...] = (),
+        capture_incomplete: bool = False,
     ) -> tuple[NativeEvidence, ...] | DeliveryOutcome:
         """`root` is the tree under verification; `subject` is the repository.
 
@@ -2072,6 +2180,7 @@ class DeliveryContinuationRunner:
                     origin,
                     self._subject_test_paths(subject),
                     changed,
+                    capture_incomplete,
                 )
         finally:
             if venv_link == self._VENV_LINKED:
@@ -2087,6 +2196,7 @@ class DeliveryContinuationRunner:
         origin: str = DECLARED_ORIGIN,
         test_paths: tuple[str, ...] = (),
         changed: tuple[str, ...] = (),
+        capture_incomplete: bool = False,
     ) -> tuple[NativeEvidence, ...] | DeliveryOutcome:
         """The ordered execution itself, over an environment already built.
 
@@ -2105,15 +2215,21 @@ class DeliveryContinuationRunner:
             for index, argv in enumerate(commands):
                 touches = touches_test_paths(tuple(argv), test_paths)
                 report = reports / f"{index}.txt"
+                command_env = self._probed(argv, env, reports, report)
+                cwd, declared_environment = self._native_execution_context(
+                    root, command_env
+                )
+                started = time.monotonic()
                 try:
                     completed = spawn(
                         list(argv),
                         cwd=str(root),
                         capture_output=True,
                         text=True,
-                        env=self._probed(argv, env, reports, report),
+                        env=command_env,
                     )
                 except OSError as refused:
+                    duration_seconds = time.monotonic() - started
                     if observational:
                         evidence.append(
                             self._unobserved(
@@ -2122,11 +2238,33 @@ class DeliveryContinuationRunner:
                                 origin,
                                 touches,
                                 self._exercised(argv, None, root, test_paths, changed),
+                                duration_seconds,
+                                cwd,
+                                declared_environment,
                             )
                         )
                         continue
-                    return self._verification_refused(tuple(argv), refused, root)
+                    refusal = self._verification_refused(tuple(argv), refused, root)
+                    if not capture_incomplete:
+                        return refusal
+                    assert refusal.failure is not None
+                    evidence.append(
+                        self._incomplete_native(
+                            tuple(argv),
+                            "",
+                            f"not executed: {refused}",
+                            origin,
+                            touches,
+                            self._exercised(argv, None, root, test_paths, changed),
+                            refusal.failure,
+                            duration_seconds,
+                            cwd,
+                            declared_environment,
+                        )
+                    )
+                    break
                 except subprocess.TimeoutExpired as unbounded:
+                    duration_seconds = time.monotonic() - started
                     if observational:
                         evidence.append(
                             self._unobserved(
@@ -2135,6 +2273,9 @@ class DeliveryContinuationRunner:
                                 origin,
                                 touches,
                                 self._exercised(argv, None, root, test_paths, changed),
+                                duration_seconds,
+                                cwd,
+                                declared_environment,
                             )
                         )
                         continue
@@ -2144,13 +2285,35 @@ class DeliveryContinuationRunner:
                     # traceback.  Named separately because the operator's repair is
                     # the opposite one: not "restore the executable" but "find what
                     # the command is blocked on, or widen its bound".
-                    return self._fail(
-                        Disposition.Indeterminate,
+                    failure = FailureDetail(
                         "VerificationUnbounded",
                         f"the declared verification command did not finish: {unbounded}",
                         "clear what the command is blocked on, or widen "
                         "NWAVE_GATE_RUN_TIMEOUT, then re-run",
                     )
+                    if not capture_incomplete:
+                        return self._fail(
+                            Disposition.Indeterminate,
+                            failure.what,
+                            failure.why,
+                            failure.how,
+                        )
+                    evidence.append(
+                        self._incomplete_native(
+                            tuple(argv),
+                            self._stream_text(unbounded.output),
+                            self._stream_text(unbounded.stderr),
+                            origin,
+                            touches,
+                            self._exercised(argv, None, root, test_paths, changed),
+                            failure,
+                            duration_seconds,
+                            cwd,
+                            declared_environment,
+                        )
+                    )
+                    break
+                duration_seconds = time.monotonic() - started
                 evidence.append(
                     NativeEvidence(
                         tuple(argv),
@@ -2162,6 +2325,9 @@ class DeliveryContinuationRunner:
                         self._exercised(
                             argv, self._read_report(report), root, test_paths, changed
                         ),
+                        duration_seconds=duration_seconds,
+                        cwd=cwd,
+                        declared_environment=declared_environment,
                     )
                 )
             return tuple(evidence)
@@ -2173,6 +2339,9 @@ class DeliveryContinuationRunner:
         origin: str,
         touches: bool,
         exercised: ExercisedModules = UNEXERCISED,
+        duration_seconds: float | None = None,
+        cwd: str | None = None,
+        declared_environment: tuple[tuple[str, str], ...] | None = None,
     ) -> NativeEvidence:
         """A stimulus the runner could not start, recorded rather than dropped.
 
@@ -2181,7 +2350,73 @@ class DeliveryContinuationRunner:
         and it did not run" (GDP-6).
         """
         return NativeEvidence(
-            argv, None, "", f"not executed: {reason}", origin, touches, exercised
+            argv,
+            None,
+            "",
+            f"not executed: {reason}",
+            origin,
+            touches,
+            exercised,
+            duration_seconds=duration_seconds,
+            cwd=cwd,
+            declared_environment=declared_environment,
+        )
+
+    @staticmethod
+    def _stream_text(value: str | bytes | None) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8", "replace")
+        return value or ""
+
+    @staticmethod
+    def _incomplete_native(
+        argv: tuple[str, ...],
+        stdout: str,
+        stderr: str,
+        origin: str,
+        touches: bool,
+        exercised: ExercisedModules,
+        failure: FailureDetail,
+        duration_seconds: float | None = None,
+        cwd: str | None = None,
+        declared_environment: tuple[tuple[str, str], ...] | None = None,
+    ) -> NativeEvidence:
+        """Keep a declared command's partial observation with its terminal fact."""
+        return NativeEvidence(
+            argv,
+            None,
+            stdout,
+            stderr,
+            origin,
+            touches,
+            exercised,
+            incomplete=True,
+            incomplete_what=failure.what,
+            incomplete_why=failure.why,
+            incomplete_how=failure.how,
+            duration_seconds=duration_seconds,
+            cwd=cwd,
+            declared_environment=declared_environment,
+        )
+
+    @staticmethod
+    def _native_execution_context(
+        root: Path, env: dict[str, str]
+    ) -> tuple[str, tuple[tuple[str, str], ...]]:
+        """The nonsecret, command-relevant context captured before its spawn.
+
+        This is the same closed environment projection used by the native hook
+        receipt.  In particular, PATH and the ambient process environment are
+        intentionally absent: they may expose credentials and are not needed
+        to explain the Python/pytest execution declared here.
+        """
+        return (
+            str(root),
+            tuple(
+                (name, env[name])
+                for name in ("PYTHONPATH", "PYTEST_ADDOPTS")
+                if name in env
+            ),
         )
 
     @classmethod
@@ -2387,6 +2622,17 @@ class DeliveryContinuationRunner:
                 "exercised_measure": item.exercised.measure,
                 "exercised_product_modules": item.exercised.paths,
                 "exercised_changed_targets": item.exercised.changed_targets,
+                "incomplete": item.incomplete,
+                "incomplete_what": item.incomplete_what,
+                "incomplete_why": item.incomplete_why,
+                "incomplete_how": item.incomplete_how,
+                "duration_seconds": item.duration_seconds,
+                "cwd": item.cwd,
+                "declared_environment": (
+                    dict(item.declared_environment)
+                    if item.declared_environment is not None
+                    else None
+                ),
             }
             for item in evidence
         ]
@@ -2395,7 +2641,7 @@ class DeliveryContinuationRunner:
     def _retain_native_failure_evidence(
         cls, root: Path, candidate: str, evidence: tuple[NativeEvidence, ...]
     ) -> str | None:
-        """Retain a failed candidate's captured native records at its subject.
+        """Retain a candidate's captured native records at its subject.
 
         Candidate worktrees are deliberately ephemeral, but their failed native
         observation is not: a refusal after cleanup must still let the author
@@ -2409,14 +2655,16 @@ class DeliveryContinuationRunner:
         record that does not exist.
         """
         directory = root / ".nwave" / "des" / "logs" / "native"
-        name = (
-            f"{candidate}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}-"
-            f"{os.getpid()}.json"
-        )
-        path = directory / name
         payload = json.dumps(
             cls._evidence_records(evidence), ensure_ascii=False, indent=1
         ).encode("utf-8")
+        digest = hashlib.sha256(payload).hexdigest()
+        name = (
+            f"{candidate}-{digest}-"
+            f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}-"
+            f"{os.getpid()}.json"
+        )
+        path = directory / name
         try:
             directory.mkdir(parents=True, exist_ok=True)
             descriptor, temporary = tempfile.mkstemp(
@@ -2811,6 +3059,15 @@ class DeliveryContinuationRunner:
                 self._drop_turn_records(
                     root, stored.request, (value.observation,), role
                 )
+        # The verification records go with them, and they are the ones a NEXT
+        # Request can actually collide with: they are keyed on the Request text
+        # alone, so re-decomposing the same words in this repository used to
+        # inherit a candidate belonging to a delivery already integrated.
+        for role in (VERIFY_TURN, VERIFY_OUTCOME_TURN):
+            self._drop_turn_records(root, stored.request, (stored.request,), role)
+        self._git(
+            root, "update-ref", "-d", verify_upstream_ref(stored.request, stored.raw)
+        )
 
     def _candidate(
         self, root: Path, base: str, owned: tuple[str, ...], facts: IntegrationFacts
@@ -3026,11 +3283,12 @@ class DeliveryContinuationRunner:
                 what="CandidateCheckoutUnavailable",
                 how="restore Git worktree support",
             )
-        evidence = self._native(directory, commands, root, changed=changed)
+        evidence = self._native(
+            directory, commands, root, changed=changed, capture_incomplete=True
+        )
         if isinstance(evidence, DeliveryOutcome):
-            # One removal path, so the link the runner made is unmade wherever
-            # the worktree goes away -- the failure branch previously carried
-            # its own copy of the same three lines.
+            # The capture flag covers declared spawn failures only. Preserve the
+            # existing cleanup path for any earlier runtime/setup outcome.
             return self._remove_candidate_worktree(root, directory) or evidence
         return directory, evidence
 
@@ -4419,7 +4677,7 @@ class DeliveryContinuationRunner:
     def _verified_candidate(
         self,
         root: Path,
-        port: TaskInvocationPort,
+        port: TaskInvocationPort | None,
         prepared: list[tuple[str, AuthorityFacts]],
         handover_bytes: bytes,
         stored: StoredHandover,
@@ -4428,21 +4686,10 @@ class DeliveryContinuationRunner:
         silent: tuple[str, ...],
         correct: bool = True,
     ) -> tuple[str, tuple[NativeEvidence, ...]] | DeliveryOutcome:
-        """One candidate, one ordered native execution, one whole-diff review.
+        """One candidate and one ordered native execution.
 
-        Returns the approved candidate SHA and its captured evidence, or the
-        terminal outcome.  At most one correction pass runs, so there is no C2.
-
-        `correct` decides whether that pass runs at all.  The composed run buys
-        it; a step invoked ALONE passes False and returns the finding instead,
-        because Section 4b makes the fixed correction edges moves an
-        orchestrator may make, never moves the runner takes on its own.
-
-        `silent` carries the accepted craft turns that produced no bytes.  They
-        are read only on the empty-owner edge: a finding proves the work was
-        owed, and a turn that accepted while writing nothing is then the reason
-        no owner exists, which makes that edge attributable to a named role and
-        batch instead of to nobody.
+        Returns the candidate SHA and captured evidence, or the terminal native
+        verification outcome. It neither invokes a role nor decides a repair.
         """
         owned = self._request_owned_paths(prepared)
         argvs = self._request_argvs(prepared)
@@ -4451,23 +4698,14 @@ class DeliveryContinuationRunner:
             tuple(observation for observation, _ in prepared),
             tuple(dict.fromkeys(design.locator for _, design in prepared)),
         )
-        prior: str | None = None
         while True:
             created = self._candidate(root, base, owned, facts)
             if isinstance(created, DeliveryOutcome):
                 return created
-            candidate, diff = created
+            candidate, _diff = created
             # The one hand that moves recorded bytes after a turn is the
             # runner's own format contract, honoured inside `_candidate`.
             self._refresh_turn_records(root, base, stored, prepared)
-            if prior == candidate:
-                return self._fail(
-                    Disposition.Refusal,
-                    "CandidateUnchanged",
-                    f"the one correction repeated candidate {candidate}",
-                    "correct the finding in an owned mutable target",
-                )
-            correcting = prior is not None
             touched = self._changed_paths(root, base, candidate)
             if touched is None:
                 return self._fail(
@@ -4484,110 +4722,65 @@ class DeliveryContinuationRunner:
             failed = any(
                 item.exit_status for item in evidence if item.origin == DECLARED_ORIGIN
             )
+            incomplete = next(
+                (
+                    item
+                    for item in evidence
+                    if item.origin == DECLARED_ORIGIN and item.incomplete
+                ),
+                None,
+            )
             # ADR-DES-003 §6: measured here, after the candidate exists and
             # before a judgement is bought, and handed to BOTH judges as data.
             # The software refuses nothing on it -- width is their judgement
             # over a measured fact.
-            self._radius = candidate_radius(root, touched)
-            review = (
-                None
-                if failed
-                else self._implementation_review(
-                    candidate_root,
-                    root,
-                    port,
-                    prepared,
-                    handover_bytes,
-                    acceptance_evidence,
-                    candidate,
-                    diff,
-                    evidence,
-                )
+            self._radius = candidate_radius(candidate_root, touched)
+            evidence_locator = self._retain_native_failure_evidence(
+                root, candidate, evidence
             )
-            evidence_locator = (
-                self._retain_native_failure_evidence(root, candidate, evidence)
-                if failed or review is not None
-                else None
-            )
+            if evidence_locator is not None:
+                self._native_evidence_locator = evidence_locator
+                try:
+                    self._native_evidence_sha256 = hashlib.sha256(
+                        (root / evidence_locator).read_bytes()
+                    ).hexdigest()
+                except OSError:
+                    self._native_evidence_locator = None
+                    self._native_evidence_sha256 = None
             cleanup = self._remove_candidate_worktree(root, candidate_root)
             if cleanup is not None:
                 return cleanup
-            if not failed and review is None:
-                return candidate, evidence
-            if failed:
-                next_finding, what, why = (
-                    json.dumps(self._evidence_records(evidence), ensure_ascii=False),
-                    "VerificationFailed",
-                    f"candidate {candidate} failed its ordered native verification"
-                    + (
-                        f"; native evidence retained at {evidence_locator}"
-                        if evidence_locator is not None
-                        else "; native evidence could not be retained under "
-                        ".nwave/des/logs/native"
-                    ),
-                )
-            else:
-                assert review is not None
-                if review.disposition is not Disposition.Refusal:
-                    if review.failure is not None and evidence_locator is not None:
-                        return DeliveryOutcome(
-                            review.disposition,
-                            FailureDetail(
-                                review.failure.what,
-                                review.failure.why
-                                + f"; native evidence retained at {evidence_locator}",
-                                review.failure.how,
-                            ),
-                        )
-                    return review
-                next_finding, what, why = (
-                    review.failure.why if review.failure else "",
-                    "ImplementationReviewRejected",
-                    f"candidate {candidate} was vetoed by the whole-diff reviewer",
-                )
-                if evidence_locator is not None:
-                    why += f"; native evidence retained at {evidence_locator}"
-            if correcting or not correct:
-                return self._fail(Disposition.Refusal, what, why, "repair the value")
-            owners = self._correction_owners(root, prepared, base, candidate)
-            if isinstance(owners, DeliveryOutcome):
-                return owners
-            if not owners:
-                if silent:
+            if not failed:
+                if incomplete is not None:
+                    assert incomplete.incomplete_what is not None
+                    assert incomplete.incomplete_why is not None
+                    assert incomplete.incomplete_how is not None
                     return self._fail(
-                        Disposition.Refusal,
-                        "MutableTargetsUnchanged",
-                        f"{why}, and no admitted value changed a mutable target it "
-                        "owns because " + "; ".join(silent),
-                        "rerun the dispatch so the crafter changes its batch's "
-                        "mutable targets",
+                        Disposition.Indeterminate,
+                        incomplete.incomplete_what,
+                        f"candidate {candidate} has incomplete declared native verification: "
+                        f"{incomplete.incomplete_why}"
+                        + (
+                            f"; native evidence retained at {evidence_locator}"
+                            if evidence_locator is not None
+                            else "; native evidence could not be retained under "
+                            ".nwave/des/logs/native"
+                        ),
+                        incomplete.incomplete_how,
                     )
-                return self._fail(
-                    Disposition.Refusal,
-                    "UnownedFinding",
-                    f"{why}, and no admitted value changed a mutable target it owns",
-                    "no crafter may lawfully answer this finding; repair the Request",
-                )
-            # A correction pass opens no craft-blocker window, so it can
-            # neither rebind the handover nor produce a silent-batch sentence
-            # the caller has not already read.
-            corrected = self._contribute(
-                root,
-                base,
-                port,
-                prepared,
-                handover_bytes,
-                stored,
-                owners=owners,
-                correction={
-                    "candidate_sha": candidate,
-                    "diff": diff,
-                    "finding": next_finding,
-                },
+                return candidate, evidence
+            return self._fail(
+                Disposition.Refusal,
+                "VerificationFailed",
+                f"candidate {candidate} failed its ordered native verification"
+                + (
+                    f"; native evidence retained at {evidence_locator}"
+                    if evidence_locator is not None
+                    else "; native evidence could not be retained under "
+                    ".nwave/des/logs/native"
+                ),
+                "repair the value and explicitly verify the resulting candidate",
             )
-            if isinstance(corrected, DeliveryOutcome):
-                return corrected
-            prior = candidate
 
     def _integrate(
         self,
@@ -4652,6 +4845,7 @@ class DeliveryContinuationRunner:
         ready: HandoverValue,
         *,
         finding: str | None = None,
+        competence: str | None = None,
     ) -> tuple[StoredHandover, AuthorityFacts] | DeliveryOutcome:
         """One architect turn for one value, derived and bound, and nothing more.
 
@@ -4685,9 +4879,8 @@ class DeliveryContinuationRunner:
                     return derived_current
                 facts.update(self._typed_facts(derived_current))
             facts["finding"] = finding
-        turn = self._invoke(
-            port, root, "nw-solution-architect", self._prompt(**facts), stored.raw
-        )
+        role_id = qualify_role_id("nw-solution-architect", competence)
+        turn = self._invoke(port, root, role_id, self._prompt(**facts), stored.raw)
         denied = self._accepted(
             turn,
             rejected="DesignRejected",
@@ -4768,9 +4961,9 @@ class DeliveryContinuationRunner:
         )
 
     def record_verified_candidate(
-        self, root: Path, stored: StoredHandover, candidate: str, verdict: str
+        self, root: Path, stored: StoredHandover, candidate: str, verdict: str | None
     ) -> None:
-        """Record the candidate AND what the judge said about it, best-effort.
+        """Record a natively measured candidate, and an optional later verdict.
 
         Written whatever the judgement was, because the candidate was built and
         verified natively either way and that is a fact about the repository,
@@ -4797,6 +4990,19 @@ class DeliveryContinuationRunner:
             candidate,
             env=env,
         )
+        # The SAME candidate, under the key of the graph it was verified
+        # against. Written second and read first, so an interruption between
+        # the two leaves a candidate no upstream key covers -- which reads as
+        # superseded and costs one rebuild, never as evidence.
+        self._git(
+            root,
+            "update-ref",
+            verify_upstream_ref(stored.request, stored.raw),
+            candidate,
+            env=env,
+        )
+        if verdict is None:
+            return
         judged = self._git(
             root,
             "commit-tree",
@@ -4901,13 +5107,18 @@ class DeliveryContinuationRunner:
             )
         return None
 
-    def verified_candidate(self, root: Path, stored: StoredHandover) -> str | None:
-        """The candidate a verify record covers, or `None` when none does.
+    def verification_record(
+        self, root: Path, stored: StoredHandover
+    ) -> VerificationRecord | None:
+        """What the verify record says about this Request, in ONE reading.
 
-        Read by TREE EQUALITY like every other record in this namespace: a
-        recorded candidate whose owned bytes have since moved answers «not
-        recorded», so the next `des verify` rebuilds instead of blessing stale
-        work, and `des integrate` refuses it.
+        Read by the UPSTREAM KEY, the way every other record in this namespace
+        is read against the bytes it was measured over: a candidate verified
+        before a wave producer corrected the graph is found under the previous
+        key and not under the current one, so it is reported SUPERSEDED rather
+        than silently reused. The candidate itself is still returned, because a
+        refusal that cannot name the candidate it is refusing is a refusal that
+        lies about its own cause.
         """
         observed = self._git(
             root,
@@ -4918,7 +5129,31 @@ class DeliveryContinuationRunner:
         )
         if observed.returncode:
             return None
-        return observed.stdout.strip()
+        current = self._git(
+            root,
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            verify_upstream_ref(stored.request, stored.raw),
+        )
+        candidate = observed.stdout.strip()
+        return VerificationRecord(
+            candidate, not current.returncode and current.stdout.strip() == candidate
+        )
+
+    def verified_candidate(self, root: Path, stored: StoredHandover) -> str | None:
+        """The candidate a CURRENT verify record covers, or `None`.
+
+        One predicate, derived from the single reading above: every consumer
+        that only asks «may I build on this» gets the same answer the state
+        projection and `des integrate` derive theirs from.
+        """
+        record = self.verification_record(root, stored)
+        return (
+            None
+            if record is None or not record.covers_current_upstream
+            else record.candidate
+        )
 
     def destination_is(self, root: Path, candidate: str) -> bool:
         """Is the destination already this commit?
@@ -4955,22 +5190,15 @@ class DeliveryContinuationRunner:
     def verify_request(
         self,
         root: Path,
-        port: TaskInvocationPort,
+        port: TaskInvocationPort | None,
         stored: StoredHandover,
         prepared: list[tuple[str, AuthorityFacts]],
     ) -> tuple[str, str, tuple[NativeEvidence, ...]] | DeliveryOutcome:
-        """Build the one candidate, verify it natively, review it, judge it blind.
+        """Build the one candidate and persist its declared native observation.
 
-        FOUR OF SECTION 4b'S PROPERTIES IN ONE CALL, and the reason is two of
-        its own invariants meeting.  Native evidence is «captured exactly once
-        and never re-executed», and for the source-blind pass «the software
-        still CONSTRUCTS those three inputs».  Splitting the capture from the
-        judgement across two processes could satisfy both only by carrying
-        captured stdout and stderr in new owned state, which Section 4b's
-        falsifiers forbid, or in the orchestrator's hands, which would stop the
-        software constructing the input it must construct.  So they share one
-        process, and the orchestrator's real choice is kept where it exists:
-        after this terminal, where integration is a step of its own.
+        Native evidence is captured once, persisted candidate-bound, and then
+        returned for later host-selected review or examination. This method
+        resolves no provider and makes no semantic admission decision.
 
         Returns the base, the approved candidate SHA and its captured evidence.
         Nothing here moves a ref: the candidate is a commit OUT of the
@@ -4993,26 +5221,6 @@ class DeliveryContinuationRunner:
         if isinstance(verified, DeliveryOutcome):
             return verified
         candidate, evidence = verified
-        denied = self._examine(root, port, prepared, stored.raw, candidate, evidence)
-        if denied is not None:
-            locator = self._retain_native_failure_evidence(root, candidate, evidence)
-            if denied.failure is not None and locator is not None:
-                denied = DeliveryOutcome(
-                    denied.disposition,
-                    FailureDetail(
-                        denied.failure.what,
-                        denied.failure.why + f"; native evidence retained at {locator}",
-                        denied.failure.how,
-                    ),
-                )
-            # The candidate is a BUILT and natively verified commit whatever the
-            # examiner then said, so it is recorded with the judge's word on it.
-            # Recording only admissions is what made the terminal's own «you may
-            # integrate on evidence of your own» a move `des integrate` denied.
-            self.record_verified_candidate(
-                root, stored, candidate, verdict_of(denied.disposition)
-            )
-            return denied
         return base, candidate, evidence
 
     def integrate_candidate(

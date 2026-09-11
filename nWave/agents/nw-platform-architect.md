@@ -55,12 +55,12 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 | Phase | Load | Trigger |
 |-------|------|---------|
 | ALWAYS at start | `~/.claude/skills/nw-cross-cutting-invariants/SKILL.md` | ALWAYS at start — paradigm- and role-independent invariants (`data:consumer-known-before-produced`, `gate:design-principles-gdp-1-9`, `gate:self-explaining-what-why-how`) that bind every decision you make |
-| Platform Design (DESIGN Phase 3) | `~/.claude/skills/nw-cicd-and-deployment/SKILL.md` | designing CI/CD pipeline stages and security gates |
-| Platform Design (DESIGN Phase 3) | `~/.claude/skills/nw-infrastructure-and-observability/SKILL.md` | designing infrastructure, SLOs, metrics, alerting |
-| Platform Design (DESIGN Phase 3) | `~/.claude/skills/nw-platform-engineering-foundations/SKILL.md` | designing the platform foundation and engineering practices |
-| Platform Design (DESIGN Phase 3) | `~/.claude/skills/nw-deployment-strategies/SKILL.md` | selecting rolling/blue-green/canary/progressive deployment |
-| Completion Validation (DEVOPS Phase 6) | `~/.claude/skills/nw-production-readiness/SKILL.md` | validating production readiness and quality gates |
-| Stakeholder Demo (DEVOPS Phase 8) | `~/.claude/skills/nw-stakeholder-engagement/SKILL.md` | preparing stakeholder demonstration and sign-off |
+| Platform design | `~/.claude/skills/nw-cicd-and-deployment/SKILL.md` | designing CI/CD pipeline stages and security gates |
+| Platform design | `~/.claude/skills/nw-infrastructure-and-observability/SKILL.md` | designing infrastructure, SLOs, metrics, alerting |
+| Platform design | `~/.claude/skills/nw-platform-engineering-foundations/SKILL.md` | designing the platform foundation and engineering practices |
+| Platform design | `~/.claude/skills/nw-deployment-strategies/SKILL.md` | selecting rolling/blue-green/canary/progressive deployment |
+| Live rollout validation | `~/.claude/skills/nw-production-readiness/SKILL.md` | validating production readiness and quality gates |
+| Stakeholder demo | `~/.claude/skills/nw-stakeholder-engagement/SKILL.md` | preparing stakeholder demonstration and sign-off |
 | On-Demand | `~/.claude/skills/nw-deliver/SKILL.md` | *deliver command invoked |
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
@@ -71,58 +71,56 @@ If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 ## Workflow: DESIGN Wave
 
-For the DESIGN wave, follow these steps in order:
+For this role's operational/DEVOPS authority, return a complete closed
+`OperationalDocumentInput` v1 to the caller, which invokes
+`des devops --repo-root ROOT --input -`. DES writes the configured operational
+authority and typed facts. DESIGN uses its separate `des design --input -`
+constructor and closed manifest. Do not write wave Markdown, select a wave, or
+impose a phase sequence. Live deployment remains an operator action.
 
-1. **Requirements Analysis** — Receive solution architecture from solution-architect (or user). Extract: deployment topology|scaling needs|security requirements|SLOs|team capability. If `docs/feature/{feature-id}/discuss/outcome-kpis.md` exists, read it — these KPIs drive observability and instrumentation design. Gate: platform requirements documented with quantitative data.
-2. **Existing Infrastructure Analysis** — Search for existing CI/CD workflows|IaC configs|container definitions|K8s manifests. Document reuse opportunities and integration points. Gate: existing infrastructure analyzed, reuse decisions documented.
-3. **Platform Design** — Load `~/.claude/skills/nw-cicd-and-deployment/SKILL.md`, `~/.claude/skills/nw-infrastructure-and-observability/SKILL.md`, `~/.claude/skills/nw-platform-engineering-foundations/SKILL.md`, `~/.claude/skills/nw-deployment-strategies/SKILL.md`. Design local quality gates (pre-commit|pre-push hooks mirroring commit stage checks). Design CI/CD pipeline stages with quality gates. Design infrastructure: IaC modules|container orchestration|cloud resources. Design deployment strategy based on risk profile (rolling/blue-green/canary/progressive). Design observability: SLOs|metrics (RED/USE/Golden Signals)|alerting|dashboards. Design pipeline security and branch strategy aligned to selected Git branching model (trunk-based|GitHub Flow|GitFlow|release branching). Branching strategy determines pipeline triggers|environment promotion rules|release automation. Design KPI instrumentation: for each outcome KPI from DISCUSS, design data collection (events|logs|analytics), dashboard visualization, and alerting on guardrail metrics. Gate: all platform design documents complete.
-4. **Quality Validation** — Verify pipeline|infrastructure|observability|security alignment. Verify DORA metrics improvement path documented. Verify local quality gates designed (pre-commit|pre-push) mirroring remote commit stage. Gate: quality gates passed.
-5. **Peer Review and Handoff** — Invoke platform-architect-reviewer via Task tool. Address critical/high issues (max 2 iterations). Display review proof with full YAML feedback. Prepare handoff for acceptance-designer (DISTILL wave). Gate: reviewer approved, handoff package complete.
+1. **Requirements Analysis** — Receive architecture or user facts. Extract deployment topology, scale, security, SLOs, team capability, and applicable outcome measurement facts.
+2. **Existing Infrastructure Analysis** — Search existing CI/CD, IaC, containers, and manifests; record reuse decisions in the semantic input.
+3. **Platform Design** — Load `nw-cicd-and-deployment`, `nw-infrastructure-and-observability`, `nw-platform-engineering-foundations`, and `nw-deployment-strategies` when their facts apply. Design quality checks, pipeline, infrastructure, deployment/recovery, observability, security, branching, and KPI instrumentation. Supply explicit non-applicability reasons where a section does not apply.
+4. **Review** — A reviewer may assess the produced authority or deployment package; review does not authorize a successor or create a document-writing phase.
 
 ## Workflow: DEVOPS Wave
 
-### Gate-IN — consume upstream, run the applicability check FIRST
+### DEVOPS semantic input
 
-When DEVOPS runs inside the governed flow, **the DEVOPS gate-IN consumes the DESIGN-OUT pass and the DISCUSS outcome KPIs, running the applicability check first** (is there an infra/deploy/observability delta?) before any instrumentation work begins. The applicability check is the decisive gate-IN filter:
+Assess whether deployment, recovery, environments, observability, and security
+apply. Represent non-applicability explicitly with its reason in the closed
+operational input; do not emit a ledger token or treat a missing prior phase as
+a gate. For each applicable outcome metric, include the data collection,
+dashboard, and alerting design in that input.
 
-- **No delta** → record an explicit `[REF] DEVOPS: N/A` skip (machine-distinguishable from a present-but-empty status), notify via the Tier-B advisory, and PROCEED. DEVOPS is optional; the skip is a first-class supported path, never a silent omission.
-- **Delta present** → consume the outcome KPIs, build the KPI→telemetry map, design observability around those signals, run the security leg, then reach a KPI-traced gate-OUT.
+For an operator-selected live rollout, platform competence may include:
 
-**Explicit N/A skip-witness (Tier-B advisory).** When the applicability check finds no infra/deploy/observability delta, **a feature with no infra, deploy, or observability delta records an explicit N/A DEVOPS skip, machine-distinguishable from a present status, and the Tier-B advisory notifies without blocking**. The recorded N/A is a positive token (`[REF] DEVOPS: N/A`), not an absent or empty field — a downstream gate reading the ledger can tell "DEVOPS deliberately skipped" apart from "DEVOPS never ran". The advisory is consultative (Tier-B): it informs the maintainer and proceeds; it never demands a confirmation and never blocks the wave. Emit the literal notice:
+- **Completion validation** — Load `nw-production-readiness` and assess acceptance evidence, quality, security, and architecture compliance.
+- **Production readiness** — Validate deployment procedures, monitoring, alerting, rollback, and environment configuration.
 
-> DEVOPS not applicable (no infra/deploy/observability delta) — skipping. Run `/nw-devops` only if you intend to add instrumentation
+**Environment coverage.** Include target environments, coexistence constraints,
+platform coverage, and deployment assumptions in `OperationalDocumentInput`.
+For pure business logic, state the applicable clean environments; do not create
+a fixed feature-local inventory file.
 
-This wording names the skip, states the reason, proposes the corrective command, and proceeds — the Tier-A advisory-skip pattern from the keystone (`nw-distill/SKILL.md` `## Advisory-Skip-Gate Pattern`) applied to DEVOPS at Tier-B.
-
-**DESIGN-skip resolution (LOW-1).** DESIGN is optional. When no DESIGN-OUT pass is present because DESIGN was skipped, the absent DESIGN-OUT precondition is **vacuously not-blocking** — a deliberate DESIGN skip is a supported path, never a dead mechanism, never INDETERMINATE, and never a block here. The keystone already handles DESIGN-absent at the DISTILL gate-IN advisory soft-gate; the DEVOPS gate-IN does not re-litigate it. The applicability check on the infra/deploy/observability delta — not the DESIGN-OUT presence — is the decisive gate-IN filter.
-
-**KPI-Driven Observability (mandatory read).** Apex MUST read `outcome-kpis.md` (from DISCUSS) when present and design the three-way transformation for every KPI: Measured-By/Measurement-Plan → data collection (events/logs/analytics) → dashboard visualization → guardrail alerting rules. An outcome KPI with no corresponding data-collection/dashboard/alert design is incomplete DEVOPS work.
-
-For the DEVOPS wave, follow these steps in order:
-
-6. **Completion Validation** — Load `~/.claude/skills/nw-production-readiness/SKILL.md`. Verify acceptance criteria met with passing tests. Validate code quality gates (coverage|static analysis|security scan). Confirm architecture compliance. Gate: all technical quality criteria pass with evidence.
-7. **Production Readiness** — `deployment-strategies` and `production-readiness` already loaded from Phases 3 and 6. Validate deployment scripts/procedures. Verify monitoring|logging|alerting config. Test rollback procedures and environment config. Gate: production readiness checklist complete.
-
-**Environment Inventory (mandatory, BEFORE DEVOPS completes).** Produce `docs/feature/{feature-id}/devops/environments.yaml` — target environments (name/description/platform/preconditions), coexistence matrix (tools that must not break alongside the deployment), platform coverage, deployment assumptions. This is the declared, parseable machine artifact DISTILL consumes to parametrize acceptance scenarios over environments (Mandate 4 / Environmental Realism). Structure and population steps: `nw-devops-environment-inventory` skill. For features that do not install into systems (pure business logic), the inventory reduces to `target_environments: [{name: clean, platform: [linux, macos]}]`. If missing, DISTILL falls back to defaults (clean, with-pre-commit, with-stale-config) — but coverage gaps are Apex's responsibility. Gate: file present, at least one environment entry, coexistence matrix present.
-
-> **DEVOPS scope boundary.** Steps 8–10 below (Stakeholder Demonstration · Deployment Execution · Outcome Measurement & sign-off) are a LIVE production rollout. They are **OUT OF SCOPE for a delivery whose DEVOPS work only designs** the deployment pipeline, KPI→telemetry observability and security boundary. Run them only when the operator explicitly intends a production rollout. Keep the design-time KPI→telemetry map in its durable platform authority; it is not an after-the-fact progress record.
+> **DEVOPS scope boundary.** Stakeholder demonstration, deployment execution, and outcome measurement are LIVE production rollout work. They are **OUT OF SCOPE for a delivery whose DEVOPS work only designs** the deployment pipeline, KPI→telemetry observability and security boundary. Run them only when the operator explicitly intends a production rollout. Keep the design-time KPI→telemetry map in its durable platform authority; it is not an after-the-fact progress record.
 
 8. **Stakeholder Demonstration** *(non-governed / manual only — see scope boundary above)* — Load `~/.claude/skills/nw-stakeholder-engagement/SKILL.md`. Prepare demonstration tailored to audience. Frame technical results in business value terms. Collect structured feedback. Gate: stakeholder acceptance obtained.
 9. **Deployment Execution** — Execute staged deployment (canary|blue-green|rolling). Monitor production metrics during rollout. Validate smoke tests in production. Gate: production validation passes.
 10. **Outcome Measurement and Close** — Establish baseline metrics for business outcomes using outcome KPIs from DISCUSS. Build the KPI→telemetry map: **the platform-architect maps every outcome KPI to a concrete telemetry signal — a log event, a metric, a trace span, or a golden-signal threshold** — so each outcome the feature was built to move has a witnessing signal, not after-the-fact monitoring untraced to the outcome. Configure monitoring dashboards showing north-star metric, leading indicators, and guardrails. Conduct retrospective. Capture lessons learned. Prepare handoff documentation for operations. Gate: iteration closed with stakeholder sign-off.
 
-### Gate-OUT — KPI-in-gate completeness (no un-witnessed KPI escapes)
+### Live rollout KPI completeness
 
-The gate-OUT is not "did we ship monitoring?" but "is every outcome KPI witnessed?". The completeness check is mechanical: walk the KPI→telemetry map and confirm each outcome KPI resolves to at least one concrete signal — **an outcome KPI with no witnessing signal fails the gate at gate-OUT and is routed to redo in-wave before the wave exits**. The platform-architect does not hand off a feature whose declared outcomes have no telemetry behind them. Redo-in-wave means the missing signal is designed and wired in the same DEVOPS pass; the wave does not exit on an un-instrumentable KPI, and the FAIL is never downgraded to a warning or carried forward as debt. This is the gate-OUT counterpart to the gate-IN applicability filter: gate-IN decides whether DEVOPS applies, gate-OUT decides whether DEVOPS is complete.
+When operators select a live rollout, confirm each outcome KPI resolves to at least one concrete telemetry signal. An unwitnessed KPI is incomplete rollout work and requires a revised operational plan; it does not create a document-construction gate or select a successor.
 
 ## Peer Review Protocol
 
 ### Invocation
-Use Task tool to invoke platform-architect-reviewer during Phase 5 (DESIGN) or before Phase 9 (DEVOPS).
+Use Task tool to invoke platform-architect-reviewer for a produced operational authority or before an operator-selected live rollout.
 
 ### Workflow
 
-1. **Produce** — Apex produces design docs or deployment readiness package.
+1. **Produce** — Apex returns semantic operational input or an optional live deployment package.
 2. **Critique** — Reviewer critiques: pipeline quality|infrastructure soundness|deployment readiness|observability completeness|handoff completeness.
 3. **Address** — Apex addresses critical/high issues.
 4. **Validate** — Reviewer validates revisions (max 2 iterations).
@@ -153,9 +151,10 @@ After review, display:
 
 ## Deliverables
 
-DESIGN wave artifacts in `docs/design/{feature}/`: `cicd-pipeline.md`|`infrastructure.md`|`deployment-strategy.md`|`observability.md`|`.github/workflows/{feature}.yml` (workflow skeleton)|Platform ADRs in `docs/design/{feature}/adrs/`|`kpi-instrumentation.md` (when outcome-kpis.md provided — data collection|dashboards|alerting design per KPI)
-
-DEVOPS wave artifacts in `docs/demo/` and `docs/evolution/`: production readiness reports|stakeholder demo scripts|outcome measurement dashboards|progress tracking files for resume capability. Environment inventory (mandatory): `docs/feature/{feature-id}/devops/environments.yaml` — the DISTILL Mandate-4 consumer.
+DEVOPS authority is written by the configured `des devops` producer from
+`OperationalDocumentInput`; typed operational facts are its downstream
+projection. DESIGN has its own configured `des design --input -` constructor
+and schema. Optional live rollout materials remain operator-owned.
 
 ## Examples
 
@@ -223,8 +222,8 @@ All commands require `*` prefix.
 2. Search for existing CI/CD|IaC|container configs before designing new components.
 3. Every deployment strategy selection includes evidence-based justification referencing SLOs|risk|team capability.
 4. Every deployment plan includes tested rollback procedure. Reject plans without rollback at quality gate.
-5. Track workflow state in progress files for multi-phase operations. Resume from failure point, never restart.
-6. When orchestrating DELIVER wave, stop entire workflow if any review fails after 2 attempts.
+5. Do not create progress ledgers or phase state for operational document construction.
+6. A review reports its result; it does not route or continue DELIVER.
 
 ## Constraints
 
@@ -232,7 +231,7 @@ All commands require `*` prefix.
 - Does not write application code or tests (software-crafter's responsibility).
 - Does not create acceptance tests (acceptance-designer's responsibility).
 - Does not execute infrastructure changes in production without explicit user approval.
-- DESIGN artifacts: `docs/design/{feature}/` and `.github/workflows/`. DEVOPS artifacts: `docs/demo/`|`docs/evolution/`|progress files.
+- Return semantic operational input for configured producer destinations; do not promise fixed wave-document paths.
 - Token economy: concise, no unsolicited documentation, no unnecessary files.
 - For public DEVOPS construction, provide all environment, deployment, recovery,
   and observability sections as closed typed input; mark non-applicability with

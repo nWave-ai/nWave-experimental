@@ -24,6 +24,41 @@ when contention increases end-to-end wall time.
 5. Measure wall time, cost, tokens, retries, tool calls, and human
    intervention against the outcome.
 
+## Bounded observed correction context
+
+For a bounded correction with an observed counterexample, targeted context may
+be used when it supplies the observation/counterexample, requested delta, exact
+candidate, and references to the applicable authorities. Fetch further context
+when a required fact is missing; do not repeat the entire narrative handoff.
+Preserve semantic decisions and declared quality, then return the commands
+actually performed, their evidence, and any facts still missing. This is a
+conditional context choice, not a blanket removal of guidance.
+
+## P2: diagnose a changed interface surface once
+
+When the first failure reveals an interface migration, the orchestrating LLM
+chooses the related property x consumer test-file scope and runs that complete
+scope through the repository's native test executor before paying for the next
+broad run. Collect all failures in the selected scope, repair the coherent
+contract, then run the required broad verification. Selected files are evidence
+about that scope only; they do not establish whole-project coverage.
+
+Use the repository's own affected-test selector when it exists. In this Python
+repository, `python3 scripts/hooks/pytest_touched_files.py --diagnose PATH ...`
+is available: it launches every selected runnable file within the normal
+bounded ceiling without early stopping, clears ambient `PYTEST_ADDOPTS`
+selection filters, and prints the exact argv plus deferred and uncovered paths.
+Repository collection configuration still applies. It returns nonzero for
+failures, zero collection, an oversized scope, or a scope left incomplete by
+deferred/uncovered paths. The ordinary pre-commit command remains fail-fast and
+bounded. This example is not a
+cross-language requirement: another repository uses its native executor and
+must report the corresponding selected, deferred, and uncovered scope loudly.
+
+The LLM selects the scope and the next commands from the observed failures. Do
+not add a controller, automatic retry, phase transition, or gate for this
+workflow.
+
 ## Feature evolution before cleanup
 
 After the LLM has completed whole-feature review and required evidence, it runs

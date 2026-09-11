@@ -169,12 +169,9 @@ def _accepted(role: str) -> dict:
             },
             "writes": {TARGET: "VALUE = 1\n"},
         }
-    # `verify` buys TWO turns -- the whole-diff review and the source-blind
-    # judgement -- and this one envelope answers both. It carries no ownership
-    # word: the reviewer no longer needs one on an acceptance, and the examiner
-    # never did, so a field spelled for the first was an unexpected key to the
-    # second. The generated half reached that pair for the first time here and
-    # the examiner's turn came back MALFORMED.
+    # `verify` is native-only. The generated provider envelope is deliberately
+    # unused there: review and examination are explicit host choices through
+    # their separate public ports.
     return {
         "structured_output": {
             "outcome": "accepted",
@@ -190,7 +187,7 @@ _BUDGET = {
     "design": 1,
     "oracle": 1,
     "craft": 1,
-    "verify": 2,
+    "verify": 0,
     "integrate": 0,
 }
 
@@ -282,6 +279,14 @@ def walk(harness: Harness, moves) -> None:
     #: `integrate` passes back the SHA it was given, so the walk does too --
     #: which is what makes «this candidate is already the destination»
     #: reachable at all, and tells it apart from a Request that never existed.
+    #:
+    #: IT IS LEARNT WHERE THE SURFACE STATES IT, which is the `CANDIDATE` row
+    #: `verify` prints. Reading it only off a `NEXT` line that happens to name
+    #: `integrate` made the walk depend on the canonical order having nothing
+    #: else to owe: a candidate built while a later value still owes its oracle
+    #: is real and integrable, but the order names that oracle, so the walk
+    #: invented a SHA of zeros and measured the identity refusal that answers
+    #: it against a model that was talking about the candidate.
     last_named = ""
     while True:
         drawn = moves(state)
@@ -290,7 +295,7 @@ def walk(harness: Harness, moves) -> None:
         name, value, answer = drawn
         if name == "integrate":
             # The candidate SHA is not a model fact -- the model says only
-            # whether one exists -- so the real form is read from `des state`.
+            # whether one exists -- so the real form is read from the surface.
             _code, out, err = harness.run(["state", "--repo-root", str(root)], [])
             named = block(out, err).get("NEXT", "")
             if "--candidate " in named:
@@ -313,7 +318,14 @@ def walk(harness: Harness, moves) -> None:
             state, name, value, answer, same_candidate=bool(last_named)
         )
         rows = block(out, err)
+        if "CANDIDATE" in rows:
+            last_named = rows["CANDIDATE"].split()[0]
 
+        if "DELIVERY-OUTCOME" not in rows:
+            raise AssertionError(
+                "step emitted no terminal outcome",
+                {"argv": argv, "answer": answer, "stdout": out, "stderr": err},
+            )
         assert rows["DELIVERY-OUTCOME"] == expected.outcome, (argv, answer, out + err)
         assert (code == 0) is (expected.outcome == "Success"), (argv, answer)
         if expected.what is not None:
@@ -361,6 +373,12 @@ def walk(harness: Harness, moves) -> None:
             assert projected["REQUEST"] == "(none)", out + err
         else:
             assert projected["REQUEST"] != "(none)", out + err
+            # The verification the Request carries is projected on the same
+            # terms as the value rows: present when the model holds one, and
+            # never a bare SHA the reader has to decide the meaning of.
+            assert ("CANDIDATE" in projected) is (state.candidate is not None), (
+                out + err
+            )
             for index, value_state in enumerate(state.values, start=1):
                 row = projected[f"VALUE-{index}"]
                 assert ("design=bound" in row) is value_state.design_bound, row
@@ -459,6 +477,54 @@ def test_every_generated_sequence_agrees_with_the_model(
             ("oracle", 1, "accepted"),
             ("state", None, "accepted"),
             ("po", None, "accepted"),
+        ],
+        # Authored evidence without a craft is a real native execution that
+        # refuses as VerificationFailed; it is not missing evidence.
+        [
+            ("po", None, "accepted"),
+            ("design", 1, "accepted"),
+            ("oracle", 1, "accepted"),
+            ("design", 2, "accepted"),
+            ("oracle", 2, "accepted"),
+            ("verify", None, "accepted"),
+        ],
+        # Both values declare the fixture's same oracle/support paths.  An
+        # oracle turn for value 1 therefore leaves physical authored evidence
+        # for native verify even though value 2 still projects unrecorded.
+        # The verifier reaches its actual command and refuses for missing
+        # crafts; it must not report missing acceptance evidence by counting
+        # role receipts instead of the shared declared paths.
+        [
+            ("po", None, "accepted"),
+            ("design", 2, "accepted"),
+            ("design", 1, "accepted"),
+            ("oracle", 1, "accepted"),
+            ("verify", None, "accepted"),
+        ],
+        # The target path is shared too.  Once value 1 writes it, native verify
+        # can execute the one declared command after value 2 is designed even
+        # though value 2 still projects `craft=unrecorded`.
+        [
+            ("po", None, "accepted"),
+            ("design", 1, "accepted"),
+            ("oracle", 1, "accepted"),
+            ("craft", 1, "accepted"),
+            ("design", 2, "accepted"),
+            ("verify", None, "accepted"),
+        ],
+        # A candidate integrated while a LATER value still owes its oracle.
+        # The candidate is real and the destination accepts it, but the
+        # canonical order names that oracle rather than the integration, so
+        # this is the order in which the walk has to have learnt the SHA from
+        # the terminal that stated it instead of from a `NEXT` line.
+        [
+            ("po", None, "accepted"),
+            ("design", 1, "accepted"),
+            ("oracle", 1, "accepted"),
+            ("craft", 1, "accepted"),
+            ("design", 2, "accepted"),
+            ("verify", None, "accepted"),
+            ("integrate", None, "accepted"),
         ],
         # The §7 rewrite, and the rewrite twice, which is L1 over it.
         [("po", None, "accepted"), ("rewrite", None, "accepted")],

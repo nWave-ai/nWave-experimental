@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from des.adapters.driven.config.des_config import DESConfig
 from des.application.delivery_continuation import (
@@ -46,20 +46,29 @@ from des.application.handover import (
     acquire_delivery_lock,
     bind_design_facts,
     create_constructed_handover,
+    rewrite_handover,
     stored_handover,
 )
 from des.application.operational_document_producer import publish_operational_document
 from des.domain.algebraic_modelling_tools import algebra_line
 from des.domain.delivery_disposition import Disposition
 from des.domain.design_document import DesignDocument, DesignDocumentInvalid
-from des.domain.discuss_document import DiscussDocument, DiscussDocumentInvalid
-from des.domain.distill_document import DistillDocument, DistillDocumentInvalid
+from des.domain.discuss_document import (
+    DiscussDocument,
+    DiscussDocumentInvalid,
+    DiscussValue,
+)
+from des.domain.distill_document import (
+    DistillDocument,
+    DistillDocumentInvalid,
+    DistillValue,
+)
 from des.domain.evolution_document import EvolutionDocument, EvolutionDocumentInvalid
 from des.domain.operational_document import (
     OperationalDocument,
     OperationalDocumentInvalid,
 )
-from des.domain.verification_verdict import ADMITTED
+from des.ports.driven_ports.task_invocation_port import DesignFacts, ModelRun
 
 
 if TYPE_CHECKING:
@@ -98,6 +107,14 @@ class StepOutcome:
         return self.disposition is Disposition.Success
 
 
+@dataclass(frozen=True, slots=True)
+class RoleInvocation:
+    """The one host-selected role turn and its closed step observation."""
+
+    outcome: StepOutcome
+    model_run: ModelRun | None = None
+
+
 def blocked_disposition(blocked: Blocked) -> Disposition:
     """The ONE reading of `Blocked`'s two booleans (ADR-DES-003 §4).
 
@@ -127,6 +144,28 @@ def _from_outcome(
 ) -> StepOutcome:
     return StepOutcome(
         outcome.disposition, outcome.failure, (), diagnostic, turns_bought, role
+    )
+
+
+def _retaining_bound_facts(
+    supplied: DiscussValue, bound: HandoverValue | None
+) -> HandoverValue:
+    """Carry an already-bound value's downstream facts onto its corrected shape.
+
+    DISCUSS names an observation and its dependencies; it never names the DESIGN
+    authority or the acceptance projection keyed to that observation.  A
+    correction therefore preserves those facts wherever the observation itself
+    survives, and starts a renamed or newly added observation unbound.
+    """
+    if bound is None:
+        return HandoverValue(supplied.observation, supplied.dependencies, None)
+    return HandoverValue(
+        supplied.observation,
+        supplied.dependencies,
+        bound.authority,
+        bound.acceptance,
+        bound.acceptance_oracle,
+        bound.acceptance_supports,
     )
 
 
@@ -160,7 +199,12 @@ class DeliverySteps:
         )
 
     def design(
-        self, root: Path, position: int, finding: str | None = None
+        self,
+        root: Path,
+        position: int,
+        finding: str | None = None,
+        *,
+        competence: str | None = None,
     ) -> StepOutcome:
         """One architect turn for the value at `position`, derived and bound.
 
@@ -169,13 +213,21 @@ class DeliverySteps:
         receives the CURRENT typed facts beside the finding and what it returns
         REPLACES them.  Which finding goes back to which role, and whether to
         spend a turn on it at all, is the orchestrator's decision.
+
+        `competence` is an explicit construction parameter: absent, the invoked
+        role resolves exactly as before; the orchestrator passes it only when
+        this turn needs a different competence than the role's ordinary one.
         """
         return self._locked(
             root,
-            lambda runner, port: self._design(runner, port, root, position, finding),
+            lambda runner, port: self._design(
+                runner, port, root, position, finding, competence
+            ),
         )
 
-    def design_document(self, root: Path, position: int, raw: str) -> StepOutcome:
+    def design_document(
+        self, root: Path, position: int, raw: str, *, replace_current: bool = False
+    ) -> StepOutcome:
         """Bind a caller-supplied closed v1 document without a provider turn."""
         try:
             document = DesignDocument.from_json(raw)
@@ -208,14 +260,50 @@ class DeliverySteps:
                         "configure documents.design.destination in repository or global config",
                     ),
                 )
+            authority_locator = f"{destination}#{document.heading}"
+            if isinstance(ready.authority, DesignFacts) and (
+                ready.authority.authority_locator
+                and ready.authority.authority_locator != authority_locator
+            ):
+                return StepOutcome(
+                    Disposition.Refusal,
+                    FailureDetail(
+                        "DesignAuthorityIdentityMismatch",
+                        "the manifest heading does not equal this value's persisted "
+                        "DESIGN authority locator",
+                        "keep the original configured path and heading for this value",
+                    ),
+                )
+            if replace_current and (
+                not isinstance(ready.authority, DesignFacts)
+                or not ready.authority.authority_locator
+                or ready.authority.authority_locator != authority_locator
+            ):
+                return StepOutcome(
+                    Disposition.Refusal,
+                    FailureDetail(
+                        "DesignAuthorityIdentityMismatch",
+                        "--replace-current requires the selected value's persisted "
+                        "DESIGN authority locator",
+                        "first bind this value through the closed DESIGN constructor",
+                    ),
+                )
+            facts = document.facts_at(authority_locator)
             allow_untracked_recovery = (
-                ready.authority is None or ready.authority == document.facts
+                ready.authority is None or ready.authority == facts
             )
             published = publish_design_document(
                 root,
                 destination,
                 document,
                 allow_untracked_recovery=allow_untracked_recovery,
+                replace_current=replace_current,
+                authority_locator=(
+                    ready.authority.authority_locator
+                    if isinstance(ready.authority, DesignFacts)
+                    and ready.authority.authority_locator
+                    else None
+                ),
             )
             if isinstance(published, Blocked):
                 return _from_blocked(published)
@@ -223,23 +311,37 @@ class DeliverySteps:
                 root,
                 stored,
                 position,
-                document.facts,
+                facts,
                 authority_persisted=published.authority_persisted,
             )
             if isinstance(bound, Blocked):
+                if published.authority_persisted:
+                    return StepOutcome(
+                        Disposition.Indeterminate,
+                        FailureDetail(
+                            "DesignProjectionMixed",
+                            "the complete DESIGN authority section was persisted but "
+                            "the handover facts could not be compare-and-swap bound: "
+                            + bound.why,
+                            "inspect the authority and handover together before retrying",
+                        ),
+                    )
                 return _from_blocked(bound)
             return StepOutcome(
                 Disposition.Success,
                 facts=(
                     f"DOCUMENT: {published.locator}",
                     f"DOCUMENT-SHA256: {published.digest}",
-                    f"DESIGN-FACTS: {document.facts_json()}",
+                    f"DESIGN-FACTS: {document.facts_json(facts)}",
+                    "SCHEMA-VERSION: 1",
                 ),
             )
         finally:
             lock.release()
 
-    def operational_document(self, root: Path, raw: str) -> StepOutcome:
+    def operational_document(
+        self, root: Path, raw: str, *, replace_current: bool = False
+    ) -> StepOutcome:
         """Construct DEVOPS authority without resolving a provider or successor."""
         try:
             document = OperationalDocument.from_json(raw)
@@ -266,9 +368,24 @@ class DeliverySteps:
         if isinstance(lock, Blocked):
             return _from_blocked(lock)
         try:
-            published = publish_operational_document(root, destination, document)
+            published = publish_operational_document(
+                root, destination, document, replace_current=replace_current
+            )
             if isinstance(published, Blocked):
                 return _from_blocked(published)
+            if published.sidecar_failure is not None:
+                failure = published.sidecar_failure
+                return StepOutcome(
+                    Disposition.Indeterminate,
+                    FailureDetail(
+                        failure.what,
+                        "OperationalProjectionMixed: the Markdown authority was "
+                        "persisted but the OperationalFacts sidecar was not confirmed: "
+                        + failure.why,
+                        "inspect the authority and sidecar together, then retry the "
+                        "same OperationalDocumentInput",
+                    ),
+                )
             return StepOutcome(
                 Disposition.Success,
                 facts=(
@@ -315,7 +432,17 @@ class DeliverySteps:
         finally:
             lock.release()
 
-    def discuss_document(self, root: Path, raw: str) -> StepOutcome:
+    def discuss_document(
+        self, root: Path, raw: str, *, replace_current: bool = False
+    ) -> StepOutcome:
+        """Construct the DISCUSS authority, or explicitly correct the current one.
+
+        ``replace_current`` supersedes the owned brief and its ordered graph in
+        one turn.  The correction is SELECTIVE: every downstream fact already
+        bound to an observation that survives the correction is carried over
+        unchanged, and only an observation the supplied graph drops or renames
+        loses the facts that were keyed to it.
+        """
         try:
             document = DiscussDocument.from_json(raw)
         except DiscussDocumentInvalid as error:
@@ -334,30 +461,71 @@ class DeliverySteps:
             stored = stored_handover(root)
             if isinstance(stored, Blocked):
                 return _from_blocked(stored)
+            if replace_current and (
+                stored is None or stored.request != document.request
+            ):
+                return StepOutcome(
+                    Disposition.Refusal,
+                    FailureDetail(
+                        "DiscussAuthorityIdentityMismatch",
+                        "--replace-current requires a persisted graph carrying this "
+                        "Request",
+                        "construct this Request through des discuss before correcting "
+                        "it",
+                    ),
+                )
+            retained = (
+                {value.observation: value for value in stored.values}
+                if replace_current and stored is not None
+                else {}
+            )
             graph = tuple(
-                HandoverValue(value.observation, value.dependencies, None)
+                _retaining_bound_facts(value, retained.get(value.observation))
                 for value in document.values
             )
-            if stored is not None and (
-                stored.request != document.request
-                or tuple(
-                    (value.observation, value.dependencies) for value in stored.values
+            if (
+                not replace_current
+                and stored is not None
+                and (
+                    stored.request != document.request
+                    or tuple(
+                        (value.observation, value.dependencies)
+                        for value in stored.values
+                    )
+                    != tuple((value.observation, value.dependencies) for value in graph)
                 )
-                != tuple((value.observation, value.dependencies) for value in graph)
             ):
                 return StepOutcome(
                     Disposition.Refusal,
                     FailureDetail(
                         "DiscussHandoverConflict",
-                        "stored and supplied request/value graphs are incompatible; replacement or supersession is not implemented here",
-                        "resume the stored graph or use an explicit future replacement protocol",
+                        "stored and supplied request/value graphs are incompatible; supply --replace-current to correct the persisted graph",
+                        "resume the stored graph or rerun with --replace-current",
                     ),
                 )
             published = publish_discuss_document(
-                root, DESConfig.discuss_document_destination(root), document
+                root,
+                DESConfig.discuss_document_destination(root),
+                document,
+                replace_current=replace_current,
             )
             if isinstance(published, Blocked):
                 return _from_blocked(published)
+            if replace_current and stored is not None and graph != stored.values:
+                rewritten = rewrite_handover(root, stored.raw, document.request, graph)
+                if isinstance(rewritten, Blocked):
+                    return StepOutcome(
+                        Disposition.Indeterminate,
+                        FailureDetail(
+                            rewritten.what,
+                            f"{rewritten.why}; DISCUSS authority may already have changed at {published.locator}",
+                            rewritten.how,
+                        ),
+                        (
+                            f"DOCUMENT: {published.locator}",
+                            f"DOCUMENT-SHA256: {published.digest}",
+                        ),
+                    )
             if stored is None:
                 created = create_constructed_handover(root, document.request, graph)
                 if isinstance(created, Blocked):
@@ -387,7 +555,9 @@ class DeliverySteps:
         finally:
             lock.release()
 
-    def distill_document(self, root: Path, raw: str) -> StepOutcome:
+    def distill_document(
+        self, root: Path, raw: str, *, replace_current: bool = False
+    ) -> StepOutcome:
         try:
             document = DistillDocument.from_json(raw)
         except DistillDocumentInvalid as error:
@@ -442,10 +612,14 @@ class DeliverySteps:
                 )
                 proposed = (supplied.obligations, supplied.oracle, supplied.supports)
                 if (
-                    value.acceptance
-                    or value.acceptance_oracle is not None
-                    or value.acceptance_supports
-                ) and existing != proposed:
+                    not replace_current
+                    and (
+                        value.acceptance
+                        or value.acceptance_oracle is not None
+                        or value.acceptance_supports
+                    )
+                    and existing != proposed
+                ):
                     return StepOutcome(
                         Disposition.Refusal,
                         FailureDetail(
@@ -454,11 +628,37 @@ class DeliverySteps:
                             "resume with the same acceptance facts",
                         ),
                     )
+            prior_values = tuple(
+                DistillValue(
+                    value.observation,
+                    value.acceptance,
+                    cast("str", value.acceptance_oracle),
+                    value.acceptance_supports,
+                )
+                for value in stored.values
+                if value.acceptance
+            )
+            prior_document = DistillDocument(prior_values) if prior_values else None
+            merged_document = DistillDocument(
+                tuple(
+                    incoming[value.observation]
+                    if value.observation in incoming
+                    else DistillValue(
+                        value.observation,
+                        value.acceptance,
+                        cast("str", value.acceptance_oracle),
+                        value.acceptance_supports,
+                    )
+                    for value in stored.values
+                    if value.observation in incoming or value.acceptance
+                )
+            )
             published = publish_distill_document(
                 root,
                 DESConfig.distill_document_destination(root),
-                document,
+                merged_document,
                 stored.request,
+                prior_document,
             )
             if isinstance(published, Blocked):
                 return _from_blocked(published)
@@ -540,19 +740,57 @@ class DeliverySteps:
         )
 
     def verify(self, root: Path) -> StepOutcome:
-        """One whole-Request candidate, verified natively, reviewed and judged."""
-        return self._locked(root, lambda runner, port: self._verify(runner, port, root))
+        """One whole-Request candidate and its declared native observation."""
+        return self._locked_native(root, lambda runner: self._verify(runner, root))
+
+    def invoke_role(
+        self, root: Path, cwd: Path, role_id: str, prompt: str
+    ) -> RoleInvocation:
+        """Issue one already-selected host role and return its typed observation.
+
+        The CLI binds the selected runtime and the persisted role input. This
+        boundary owns the one provider turn, its cooperative lock, and the
+        truthful turn telemetry; it neither sequences another role nor
+        interprets the returned model result.
+        """
+        runner = DeliveryContinuationRunner(self.invoker)
+        port = runner.resolve_port(root)
+        if isinstance(port, DeliveryOutcome):
+            return RoleInvocation(_from_outcome(port, None))
+        lock = acquire_delivery_lock(root)
+        if isinstance(lock, Blocked):
+            return RoleInvocation(_from_blocked(lock))
+        try:
+            invoked = runner._invoke(port, cwd, role_id, prompt, None)
+            if isinstance(invoked, DeliveryOutcome):
+                return RoleInvocation(
+                    _from_outcome(
+                        invoked,
+                        runner.last_diagnostic,
+                        runner.turns_bought,
+                        runner.last_role,
+                    )
+                )
+            return RoleInvocation(
+                StepOutcome(
+                    Disposition.Success,
+                    diagnostic=runner.last_diagnostic,
+                    turns_bought=runner.turns_bought,
+                    role=runner.last_role,
+                ),
+                invoked,
+            )
+        finally:
+            lock.release()
 
     def integrate(
         self, root: Path, candidate: str, on_my_evidence: str | None = None
     ) -> StepOutcome:
         """Compare-and-swap one candidate in, reconcile, and close the graph.
 
-        `on_my_evidence` is the orchestrator's own reason for integrating a
-        candidate the judge did not admit. Whether that evidence is enough is a
-        SEMANTIC decision, and ADR-DES-003 leaves semantic decisions to the
-        model: this software measures, records and enacts. What it does keep is
-        the trace -- the decision is written down with the verdict it went over.
+        `on_my_evidence` is an optional host rationale retained for compatibility.
+        Integration performs candidate identity, compare-and-swap, reconciliation,
+        and cleanup mechanics; it does not interpret role observations as admission.
         """
         return self._locked(
             root,
@@ -637,6 +875,7 @@ class DeliverySteps:
         root: Path,
         position: int,
         finding: str | None,
+        competence: str | None = None,
     ) -> StepOutcome:
         stored = _graph(root)
         if isinstance(stored, StepOutcome):
@@ -672,7 +911,9 @@ class DeliverySteps:
                     "--finding -`",
                 ),
             )
-        designed = runner.design_value(root, port, stored, ready, finding=finding)
+        designed = runner.design_value(
+            root, port, stored, ready, finding=finding, competence=competence
+        )
         diagnostic = runner.last_diagnostic
         if isinstance(designed, DeliveryOutcome):
             return _from_outcome(
@@ -851,7 +1092,6 @@ class DeliverySteps:
     def _verify(
         self,
         runner: DeliveryContinuationRunner,
-        port: TaskInvocationPort,
         root: Path,
     ) -> StepOutcome:
         stored = _graph(root)
@@ -861,19 +1101,31 @@ class DeliverySteps:
         if isinstance(prepared, StepOutcome):
             return prepared
         recorded = runner.verified_candidate(root, stored)
-        if recorded is not None and runner.verified_verdict(root, stored) == ADMITTED:
-            # L1: the candidate is built, reviewed and examined. Rebuilding it
-            # would re-buy a whole-diff review and a source-blind judgement to
-            # reach the state it is already in.
+        if recorded is not None:
+            # The native observation is candidate-bound and durable. Re-running
+            # would execute its declared argv a second time rather than recover
+            # the one measurement already made.
+            if runner.load_native_evidence_identity(root, recorded):
+                assert runner.native_evidence_locator is not None
+                assert runner.native_evidence_sha256 is not None
+                return StepOutcome(
+                    Disposition.Success,
+                    facts=(
+                        f"CANDIDATE: {recorded}",
+                        f"NATIVE-EVIDENCE: {runner.native_evidence_locator}",
+                        f"NATIVE-EVIDENCE-SHA256: {runner.native_evidence_sha256}",
+                        "RECORDED: this candidate already has native evidence, so no command ran",
+                    ),
+                )
             return StepOutcome(
-                Disposition.Success,
-                facts=(
-                    f"CANDIDATE: {recorded}",
-                    "RECORDED: this candidate is already verified and examined "
-                    "over these bytes, so no turn was bought",
+                Disposition.Indeterminate,
+                FailureDetail(
+                    "NativeEvidenceUnavailable",
+                    f"candidate {recorded} has a verify record but no single readable native observation bound to it",
+                    "inspect .nwave/des/logs/native and explicitly decide whether to rebuild native evidence",
                 ),
             )
-        verified = runner.verify_request(root, port, stored, prepared)
+        verified = runner.verify_request(root, None, stored, prepared)
         diagnostic = runner.last_diagnostic
         if isinstance(verified, DeliveryOutcome):
             # The measurement survives the refusal: Section 4b forbids a
@@ -910,11 +1162,33 @@ class DeliverySteps:
                 role=runner.last_role,
             )
         _, candidate, evidence = verified
-        runner.record_verified_candidate(root, stored, candidate, ADMITTED)
+        locator = runner.native_evidence_locator
+        digest = runner.native_evidence_sha256
+        if locator is None or digest is None:
+            return StepOutcome(
+                Disposition.Indeterminate,
+                FailureDetail(
+                    "NativeEvidenceUnretained",
+                    f"candidate {candidate} completed native verification but its observation could not be persisted",
+                    "restore write access to .nwave/des/logs/native and verify again",
+                ),
+            )
+        if not runner.persist_native_radius(root, candidate):
+            return StepOutcome(
+                Disposition.Indeterminate,
+                FailureDetail(
+                    "NativeRadiusUnretained",
+                    f"candidate {candidate} native radius could not be persisted",
+                    "restore .nwave/des/logs/radius write access",
+                ),
+            )
+        runner.record_verified_candidate(root, stored, candidate, None)
         return StepOutcome(
             Disposition.Success,
             facts=(
                 f"CANDIDATE: {candidate}",
+                f"NATIVE-EVIDENCE: {locator}",
+                f"NATIVE-EVIDENCE-SHA256: {digest}",
                 f"RADIUS: {runner.radius}",
                 *(
                     f"NATIVE: exit={item.exit_status} origin={item.origin} "
@@ -961,15 +1235,21 @@ class DeliverySteps:
         # bound -- and §4's class rule is «one per `requires` bit of §2.4». It is
         # also unnecessary: a verified candidate implies the values were designed,
         # because `verify` refuses without them. The reference model found this.
-        verified = runner.verified_candidate(root, stored)
-        if verified != candidate:
+        record = runner.verification_record(root, stored)
+        verified = None if record is None else record.candidate
+        superseded = record is not None and not record.covers_current_upstream
+        if verified != candidate or superseded:
             return StepOutcome(
                 Disposition.Refusal,
                 FailureDetail(
                     "CandidateUnverified",
-                    f"no verification record covers {candidate}"
+                    f"no current verification record covers {candidate}"
                     + (
-                        f"; the recorded candidate is {verified}"
+                        "; it was verified against a Request graph a wave "
+                        "producer has since corrected, so the evidence covering "
+                        "it was collected before the correction"
+                        if superseded and verified == candidate
+                        else f"; the recorded candidate is {verified}"
                         if verified is not None
                         else " and none is recorded for this Request"
                     ),
@@ -977,34 +1257,6 @@ class DeliverySteps:
                     "integrate the CANDIDATE that step printed",
                 ),
             )
-        verdict = runner.verified_verdict(root, stored)
-        if verdict != ADMITTED:
-            # NOT a sequence refusal: the state admits the step, and what is
-            # missing is a DECISION only the orchestrator can take. So the
-            # refusal names the form that takes it instead of sending the reader
-            # back to a step that would re-buy two judgements to hear the same
-            # word again.
-            if on_my_evidence is None:
-                return StepOutcome(
-                    Disposition.Refusal,
-                    FailureDetail(
-                        "CandidateNotAdmitted",
-                        f"the judge answered {verdict or 'nothing readable'} on "
-                        f"{candidate}, and integrating over that is your "
-                        "decision to take, not this software's",
-                        "answer the finding at the step that owns it, or take "
-                        "the decision: `des integrate --repo-root <root> "
-                        f"--candidate {candidate} --on-my-evidence -` with your "
-                        "reason on stdin",
-                    ),
-                )
-            unrecorded = runner.record_integration_decision(
-                root, stored, candidate, verdict or "unreadable", on_my_evidence
-            )
-            if unrecorded is not None:
-                return _from_outcome(
-                    unrecorded, None, runner.turns_bought, runner.last_role
-                )
         prepared = _prepared(runner, root, stored)
         if isinstance(prepared, StepOutcome):
             return prepared
@@ -1021,11 +1273,6 @@ class DeliverySteps:
             facts=(
                 f"INTEGRATED: {candidate}",
                 "CLEANUP: complete",
-                *(
-                    ()
-                    if on_my_evidence is None or verdict == ADMITTED
-                    else (f"DECIDED-BY: orchestrator over a {verdict} judgement",)
-                ),
             ),
         )
 
@@ -1086,6 +1333,21 @@ class DeliverySteps:
             return _from_blocked(lock)
         try:
             return work(runner, port)
+        finally:
+            lock.release()
+
+    def _locked_native(
+        self,
+        root: Path,
+        work: Callable[[DeliveryContinuationRunner], StepOutcome],
+    ) -> StepOutcome:
+        """Run a native-only step without resolving a model provider."""
+        runner = DeliveryContinuationRunner(self.invoker)
+        lock = acquire_delivery_lock(root)
+        if isinstance(lock, Blocked):
+            return _from_blocked(lock)
+        try:
+            return work(runner)
         finally:
             lock.release()
 

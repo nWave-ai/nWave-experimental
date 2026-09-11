@@ -87,6 +87,15 @@ if answer.get("retry_safe"):
     sys.exit(answer.get("exit", 1))
 
 payload = answer.get("structured_output", default)
+# The full DesignFacts schema travels through every provider response.  A
+# model-authored design has no configured DESIGN document section; the closed
+# constructor assigns that identity later, so its explicit provider value is
+# the empty string rather than a guessed heading-derived locator.
+if agent == "nw-solution-architect" and isinstance(payload.get("design_facts"), dict):
+    payload = {{**payload, "design_facts": {{
+        **payload["design_facts"],
+        "authority_locator": payload["design_facts"].get("authority_locator", ""),
+    }}}}
 # Three roles owe a closed word on a non-accepting envelope, and the real
 # boundary refuses one that omits it: the two reviewers name whose defect they
 # found, the crafters name who can unblock them. Filling the default here is

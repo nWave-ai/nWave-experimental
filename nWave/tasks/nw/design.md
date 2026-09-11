@@ -39,10 +39,11 @@ DEVOPS handoff.
    with `EXTEND`/`CREATE_NEW`, obligations, oracle locator and supports, native
    verification argv vectors and the public contract, and SOFTWARE renders the
    canonical section of `docs/product/architecture/brief.md`. In a human-driven
-   consultation, write the smallest durable decision into that brief or the
-   affected ADR. Produce diagrams, ADRs, specialist handoffs, or readiness
-   facts only when this boundary needs them. Gate: downstream receives typed
-   facts or a cited durable authority, never a new side artifact.
+   consultation, send the same smallest durable decision to `des design
+   --input -`, which constructs that brief or the affected ADR. Produce
+   diagrams, specialist handoffs, or readiness facts only when this boundary
+   needs them. Gate: downstream receives typed facts or a cited durable
+   authority, never a new side artifact.
 6. **Correct at the owner** — If the result contradicts a prior fact, correct
    that product/design SSOT under ADR-SSOT-002 §7. Gate: no delta ledger or
    copied correction narrative.

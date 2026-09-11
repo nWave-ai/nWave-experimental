@@ -33,6 +33,7 @@ from des.cli.step_terminal import (
     resolved_root,
     succeed,
 )
+from des.domain.design_document import DesignDocument
 
 
 #: The one form that reads the finding from stdin.  A finding is a role's own
@@ -42,11 +43,24 @@ STDIN = "-"
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="des design")
+    parser = argparse.ArgumentParser(
+        prog="des design",
+        epilog=DesignDocument.input_description(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     add_repo_root_argument(parser, "--repo-root", type=Path, required=True)
     parser.add_argument("--value", type=int, required=True)
     parser.add_argument("--finding", default=None)
+    parser.add_argument(
+        "--competence",
+        default=None,
+        help=(
+            "optional competence label for this turn's role, e.g. advanced; "
+            "absent, the role's ordinary competence resolves as today"
+        ),
+    )
     parser.add_argument("--input", default=None)
+    parser.add_argument("--replace-current", action="store_true")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     root = resolved_root(args.repo_root)
     if isinstance(root, StepRefusal):
@@ -54,6 +68,15 @@ def main(argv: list[str] | None = None) -> int:
             root, "des design --repo-root <root> --value N -- after the HOW above"
         )
     own = "des design --repo-root {root} --value " + str(args.value)
+    if args.replace_current and args.input != STDIN:
+        return refuse(
+            StepRefusal(
+                "InvalidDesignInput",
+                "--replace-current is valid only with --input -",
+                "use --replace-current only with closed v1 input",
+            ),
+            (own.format(root=root),),
+        )
     if args.input is not None:
         if args.input != STDIN:
             return refuse(
@@ -74,7 +97,9 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 (own.format(root=root),),
             )
-        outcome = DeliverySteps().design_document(root, args.value, manifest)
+        outcome = DeliverySteps().design_document(
+            root, args.value, manifest, replace_current=args.replace_current
+        )
         if not outcome.succeeded:
             return refuse(
                 StepRefusal(
@@ -102,7 +127,9 @@ def main(argv: list[str] | None = None) -> int:
                 (own.format(root=root) + " -- after the HOW above",),
             )
         finding = read
-    outcome = DeliverySteps().design(root, args.value, finding)
+    outcome = DeliverySteps().design(
+        root, args.value, finding, competence=args.competence
+    )
     if not outcome.succeeded:
         return refuse(
             StepRefusal(

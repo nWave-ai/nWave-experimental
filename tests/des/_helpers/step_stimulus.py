@@ -79,10 +79,16 @@ def designed(
     position: int = 0,
     *,
     finding: str | None = None,
+    competence: str | None = None,
 ) -> tuple[StoredHandover, AuthorityFacts]:
     """`des design --value N`, once, for the value at `position`."""
     bound = runner.design_value(
-        root, port, stored, stored.values[position], finding=finding
+        root,
+        port,
+        stored,
+        stored.values[position],
+        finding=finding,
+        competence=competence,
     )
     if isinstance(bound, DeliveryOutcome):
         raise StepRefused("design", bound)

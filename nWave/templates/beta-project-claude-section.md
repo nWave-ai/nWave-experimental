@@ -25,8 +25,6 @@ Human authority decides only genuine scope or trade-offs.
 | Decide how big a Request is, and when to ask the human | skill `nw-auto` |
 | Anything else — methodology, routing, "what do I do" | skill `nw-buddy` |
 
-**Mandatory floor**: every Request goes to the runner. The Product Owner decomposes it into ordered values, the runner prepares and crafts the values that consume identical design facts as one group against one shared executable oracle, and one independent reviewer reads the whole candidate diff. Never hand-roll that work, and never substitute a role.
-
 {{TOOL_BATCHING_FRAGMENT}}
 
 {{QUESTION_FORMAT_FRAGMENT}}

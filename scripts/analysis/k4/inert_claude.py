@@ -28,29 +28,31 @@ verification, integration, scorers, verdict) then runs for real against frozen
 model output, which is the whole point: it is provable offline at zero spend,
 while the judgment layer stays the model's.
 
-## What SPAWNS those role turns, since ADR-SSOT-002 Section 4b
+## Who selects those role turns, since ADR-SSOT-002 Section 4b
 
-The STEPS do, one invocation at a time, and no longer one composed run. Section
+The host does, one invocation at a time, and no longer one composed run. Section
 4b retires `des dispatch` as an orchestrator: «No executor in the software
 composes the steps. No code path calls one step and then calls the next.» The
 orchestrating model invokes `des po`, then `des design --value N`, then
-`des oracle --value N`, `des craft --value N`, `des verify` and
-`des integrate --candidate SHA`, reading each terminal's `NEXT` line as data.
+`des oracle --value N`, `des craft --value N`, and `des verify`; after native
+verification it explicitly prepares and invokes reviewer and examiner roles,
+then decides whether to integrate the candidate.
 
 Three consequences this file is written to, each measured at `steps@6d817bc91`
 rather than assumed:
 
-1. **The retirement itself took no role away.** `des verify` runs the whole-diff
-   reviewer and the source-blind examiner exactly as the composed run did, and
-   no bundled record is retired by the retirement. What DID drop a turn is
-   ADR-DES-003 Section 2.4: `des oracle` runs the acceptance author alone, with
-   the record written on RED and no pre-craft judge, so the corpus's
-   `nw-acceptance-designer-reviewer` record is simply never asked for -- records
-   are selected by ROLE, so an unasked one answers nothing.
+1. **The retirement moved review and examine to the host.** `des verify` now
+   performs native verification only. The host selects the whole-diff reviewer
+   and source-blind examiner explicitly through `des prepare-role` and `des
+   invoke-role`; the bundled records still answer those invocations. What DID
+   drop a turn is ADR-DES-003 Section 2.4: `des oracle` runs the acceptance
+   author alone, with the record written on RED and no pre-craft judge, so the
+   corpus's `nw-acceptance-designer-reviewer` record is simply never asked for
+   -- records are selected by ROLE, so an unasked one answers nothing.
 2. **One process per turn is no longer incidental, it is the shape.** Each step
-   is its own `des` process, so the occurrence counter CANNOT live in memory --
-   see `_next_occurrence`, which persists it beside the arm's own
-   `CLAUDE_CONFIG_DIR`, the one thing every step of one Request shares.
+   and host role invocation is its own process, so the occurrence counter CANNOT
+   live in memory -- see `_next_occurrence`, which persists it beside the arm's
+   own `CLAUDE_CONFIG_DIR`, the one thing every call for one Request shares.
 3. **A role may be asked more times than the corpus records, lawfully.** The
    orchestrator decides the sequence, so it may re-invoke a step. Where the step
    is idempotent (ADR-DES-003 Section 2, law L1) the re-invocation buys no turn
@@ -493,6 +495,8 @@ def _replay_dir() -> Path:
 
 #: The sibling that carries a turn's WORKSPACE effect, next to its envelope.
 _PATCH_SUFFIX = ".patch.json"
+_REPLAY_MIGRATIONS_NAME = "replay-migrations.json"
+_ADD_EMPTY_AUTHORITY_LOCATOR = "add-empty-authority-locator"
 
 
 def _recorded_turns(directory: Path) -> dict[str, list[Path]]:
@@ -594,6 +598,83 @@ def _recorded_envelope(record: Path) -> str:
     return stdout
 
 
+def _replay_envelope(directory: Path, record: Path) -> tuple[str, str | None]:
+    """Return a replay projection, retaining the recorded envelope untouched.
+
+    A replay record is historical evidence, not a current provider response.
+    When a later required transport member makes an otherwise valid historical
+    envelope unreadable, the case may declare one hash-pinned mechanical
+    projection in ``replay-migrations.json``.  The source record stays raw and
+    inspectable through :func:`_recorded_envelope`; an absent, mismatched, or
+    differently-shaped record is never silently repaired.
+    """
+    raw = _recorded_envelope(record)
+    migration_file = directory / _REPLAY_MIGRATIONS_NAME
+    if not migration_file.is_file():
+        return raw, None
+    try:
+        declared = json.loads(migration_file.read_text(encoding="utf-8"))
+        migrations = declared["migrations"]
+    except (OSError, TypeError, ValueError, KeyError):
+        raise ReplayRefused(
+            f"cannot read replay migrations at {migration_file}; restore its declared JSON"
+        ) from None
+    if not isinstance(migrations, list):
+        raise ReplayRefused(f"replay migrations at {migration_file} are not a list")
+    matching = [
+        item
+        for item in migrations
+        if isinstance(item, dict) and item.get("record") == record.name
+    ]
+    if not matching:
+        return raw, None
+    if len(matching) != 1:
+        raise ReplayRefused(f"replay migrations name {record.name!r} more than once")
+    migration = matching[0]
+    if migration.get("operation") != _ADD_EMPTY_AUTHORITY_LOCATOR:
+        raise ReplayRefused(
+            f"replay migration for {record.name!r} has an unknown operation"
+        )
+    source_sha256 = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    if migration.get("source_sha256") != source_sha256:
+        raise ReplayRefused(
+            f"replay migration for {record.name!r} names a different source digest"
+        )
+    try:
+        envelope = json.loads(raw)
+        structured_facts = envelope["structured_output"]["design_facts"]
+        result = json.loads(envelope["result"])
+        result_facts = result["design_facts"]
+    except (KeyError, TypeError, ValueError):
+        raise ReplayRefused(
+            f"replay migration for {record.name!r} cannot find both design-facts projections"
+        ) from None
+    historical_keys = {
+        "targets",
+        "paradigm",
+        "decisions",
+        "oracle",
+        "acceptance_supports",
+        "verification",
+    }
+    if (
+        not isinstance(structured_facts, dict)
+        or not isinstance(result_facts, dict)
+        or set(structured_facts) != historical_keys
+        or result_facts != structured_facts
+    ):
+        raise ReplayRefused(
+            f"replay migration for {record.name!r} does not match its declared historical shape"
+        )
+    structured_facts["authority_locator"] = ""
+    result_facts["authority_locator"] = ""
+    envelope["result"] = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
+    return (
+        json.dumps(envelope, ensure_ascii=False, separators=(",", ":")),
+        _ADD_EMPTY_AUTHORITY_LOCATOR,
+    )
+
+
 def _apply_recorded_patch(record: Path, cwd: Path) -> str | None:
     """Reproduce the workspace bytes that turn wrote, from RECORDED evidence.
 
@@ -683,6 +764,19 @@ def _admit_the_workspace(directory: Path, cwd: Path) -> None:
     )
 
 
+def _replay_subject(cwd: Path) -> Path:
+    """Return the subject whose object store admits a detached role context.
+
+    The public examiner lifecycle deliberately creates an empty source-blind
+    context. It has no Git object store, yet a replay case must still prove that
+    its recorded effects belong to the Request's subject. A host that uses the
+    inert shim supplies that subject explicitly; ordinary in-workspace role
+    calls keep their current working directory as the subject.
+    """
+    supplied = os.environ.get("K4_INERT_REPLAY_SUBJECT")
+    return Path(supplied) if supplied else cwd
+
+
 def _refuse(reason: str) -> int:
     """One LOUD refusal on stderr; the shim never answers with an invention."""
     sys.stderr.write(
@@ -722,11 +816,12 @@ def replay(argv: list[str], cwd: Path, config_dir: Path, role: str) -> int:
         prompt = ""
     arm, pair = _identity(cwd)
     directory = _replay_dir()
+    subject = _replay_subject(cwd)
     try:
-        _admit_the_workspace(directory, cwd)
+        _admit_the_workspace(directory, subject)
         occurrence = _next_occurrence(config_dir, role)
         record = _select_record(directory, role, occurrence)
-        envelope = _recorded_envelope(record)
+        envelope, migration = _replay_envelope(directory, record)
         # The bytes FIRST, the envelope second: a turn whose recorded effect
         # cannot be reproduced must not answer `accepted` over a workspace that
         # never received it.
@@ -738,6 +833,7 @@ def replay(argv: list[str], cwd: Path, config_dir: Path, role: str) -> int:
                 "arm": arm,
                 "pair": pair,
                 "cwd": str(cwd),
+                "replay_subject": str(subject),
                 "role": role,
                 "replay_dir": str(directory),
                 "refused": str(refused),
@@ -754,9 +850,11 @@ def replay(argv: list[str], cwd: Path, config_dir: Path, role: str) -> int:
             "arm": arm,
             "pair": pair,
             "cwd": str(cwd),
+            "replay_subject": str(subject),
             "role": role,
             "occurrence": occurrence,
             "record": str(record),
+            "migration": migration,
             "patch": patch,
             "prompt_bytes": len(prompt),
             "question_sha256": _question_digest(prompt),

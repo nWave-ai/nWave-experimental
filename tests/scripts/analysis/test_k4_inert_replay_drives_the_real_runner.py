@@ -16,9 +16,9 @@ them.
 
 WHAT THIS TEST DOES **NOT** CLAIM. It does not claim a Success. The recorded
 examiner turn rejected its candidate (see the case's README), so a faithful
-replay stops at `des verify`. A replay that closed Success would mean an
-envelope no model produced, which is the one failure mode a replay must not
-have. `ExamineRejected` here IS the replay working: every earlier step ran.
+replay records that result through `des invoke-role --role examiner`. A replay
+that closed Success would mean an envelope no model produced, which is the one
+failure mode a replay must not have. The host still owns the next move.
 """
 
 from __future__ import annotations
@@ -45,14 +45,10 @@ BUNDLED_CASE = (
 )
 BASE_COMMIT = (BUNDLED_CASE / "base-commit.txt").read_text(encoding="utf-8").split()[0]
 
-#: Every role a stepped run buys for one delivered value, in the order the steps
-#: buy them. READ OFF THE RUNNER rather than assumed: `des oracle` buys the
-#: acceptance author alone -- `oracle_value` authors, measures the set RED and
-#: records the turn, with no pre-craft judge, which is ADR-DES-003 Section 2.4
-#: («the record is written on RED, no judge») as delivered -- and `des verify`
-#: buys the whole-diff reviewer and the source-blind examiner. The retirement of
-#: the composition did not take a role out of this list: it removed aggregate
-#: methods only the composer could reach.
+#: Every role this host-led replay buys for one delivered value, in invocation
+#: order. `des oracle` buys the acceptance author alone. After native `des
+#: verify`, this test is the host: it prepares and invokes the independent
+#: reviewer and source-blind examiner through their public role lifecycle.
 EXPECTED_ROLES = (
     "nw-product-owner",
     "nw-solution-architect",
@@ -158,6 +154,18 @@ def _next_forms(terminal: str) -> list[list[str]]:
     return forms
 
 
+def _terminal_value(terminal: str, label: str) -> str | None:
+    prefix = f"{label}: "
+    return next(
+        (
+            line[len(prefix) :]
+            for line in terminal.splitlines()
+            if line.startswith(prefix)
+        ),
+        None,
+    )
+
+
 @pytest.fixture(scope="module")
 def subject(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A throwaway clone checked out at the tree the recorded candidate applies to."""
@@ -216,6 +224,9 @@ def walked(subject: Path, tmp_path_factory: pytest.TempPathFactory) -> dict:
         ),
         "CLAUDE_CONFIG_DIR": str(scratch / "config"),
         "K4_INERT_CLAUDE_LEDGER": str(ledger),
+        # The source-blind examiner runs in an intentionally empty context;
+        # the shim checks this detached role against the subject explicitly.
+        "K4_INERT_REPLAY_SUBJECT": str(subject),
     }
 
     def invoke(argv: list[str]) -> subprocess.CompletedProcess[str]:
@@ -260,12 +271,57 @@ def walked(subject: Path, tmp_path_factory: pytest.TempPathFactory) -> dict:
             break
         pending = _next_forms(done.stdout)
 
+    # `verify` is native-only. The host selects both independent roles through
+    # their public lifecycle; DES neither composes the calls nor selects a move
+    # after the recorded examiner result.
+    host_roles: list[dict] = []
+    if walk and walk[-1]["step"] == "verify" and walk[-1]["returncode"] == 0:
+        candidate = _terminal_value(walk[-1]["stdout"], "CANDIDATE")
+        assert candidate is not None, walk[-1]["stdout"]
+        for role in ("reviewer", "examiner"):
+            prepared = invoke(
+                [
+                    "prepare-role",
+                    "--repo-root",
+                    str(subject),
+                    "--role",
+                    role,
+                    "--candidate",
+                    candidate,
+                ]
+            )
+            input_path = _terminal_value(prepared.stdout, "INPUT")
+            assert prepared.returncode == 0 and input_path is not None, (
+                prepared.stdout + prepared.stderr
+            )
+            invoked = invoke(
+                [
+                    "invoke-role",
+                    "--repo-root",
+                    str(subject),
+                    "--role",
+                    role,
+                    "--candidate",
+                    candidate,
+                    "--provider",
+                    "claude",
+                    "--input",
+                    input_path,
+                ]
+            )
+            host_roles.append({"role": role, "prepare": prepared, "invoke": invoked})
+
     records = [
         json.loads(line)
         for line in ledger.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    return {"projection": projection.stdout, "walk": walk, "records": records}
+    return {
+        "projection": projection.stdout,
+        "walk": walk,
+        "host_roles": host_roles,
+        "records": records,
+    }
 
 
 def test_the_projection_names_the_first_step_and_never_the_composer(
@@ -362,6 +418,27 @@ def test_the_legacy_prompt_migration_rejects_any_other_question_change() -> None
     assert inert_claude._question_digest(changed_authority) != expected_digest
 
 
+def test_the_authority_locator_replay_projection_keeps_the_paid_record_raw() -> None:
+    """A current transport member is projected mechanically, never backfilled.
+
+    The paid architect turn predates ``authority_locator``. The case's declared
+    migration is hash-pinned to those raw bytes and may add only the empty value
+    the closed DESIGN constructor later binds to its actual section.
+    """
+    record = BUNDLED_CASE / "02-nw-solution-architect.json"
+    raw = inert_claude._recorded_envelope(record)
+    projected, migration = inert_claude._replay_envelope(BUNDLED_CASE, record)
+
+    assert "authority_locator" not in raw
+    assert migration == "add-empty-authority-locator"
+    assert raw == inert_claude._recorded_envelope(record)
+
+    envelope = json.loads(projected)
+    result = json.loads(envelope["result"])
+    assert envelope["structured_output"]["design_facts"]["authority_locator"] == ""
+    assert result["design_facts"]["authority_locator"] == ""
+
+
 def test_the_replay_spends_nothing(walked: dict) -> None:
     assert [r["spend_usd"] for r in walked["records"]] == [0.0] * len(EXPECTED_ROLES)
 
@@ -381,31 +458,35 @@ def test_native_verification_really_ran_inside_the_candidate_worktree(
     assert "candidate=" in native[0]
 
 
-def test_the_walk_stops_at_verify_on_the_recorded_verdict(walked: dict) -> None:
-    """`ExamineRejected` is the recorded judgment, so every step before it ran."""
-    verify = walked["walk"][-1]
-    what = [line for line in verify["stdout"].splitlines() if line.startswith("WHAT: ")]
-
-    assert verify["step"] == "verify"
-    assert verify["returncode"] != 0
-    assert what and what[0].startswith("WHAT: ExamineRejected on candidate "), verify[
-        "stdout"
-    ]
-
-
-def test_the_refusing_step_leaves_the_next_move_to_the_orchestrator(
+def test_the_host_records_the_examiner_rejection_without_closing_the_request(
     walked: dict,
 ) -> None:
-    """Section 4b: a refusal names every available move and ranks none.
+    """The recorded judgment is durable data; its next move remains the host's."""
+    verify = walked["walk"][-1]
+    examiner = walked["host_roles"][-1]
+    invoked = examiner["invoke"]
 
-    The composed run answered a refusing examiner itself. Invoked alone the step
-    stops and prints the moves, so more than one `NEXT` is the observable
-    difference between the two shapes.
-    """
-    forms = _next_forms(walked["walk"][-1]["stdout"])
+    assert verify["step"] == "verify"
+    assert verify["returncode"] == 0
+    assert examiner["role"] == "examiner"
+    assert invoked.returncode == 0, invoked.stdout + invoked.stderr
+    assert _terminal_value(invoked.stdout, "OUTCOME") == "rejected"
+    assert _terminal_value(invoked.stdout, "RESULT") is not None
 
-    assert len(forms) > 1, walked["walk"][-1]["stdout"]
-    assert any(form[0] == "integrate" for form in forms)
+
+def test_the_host_selects_both_independent_roles_and_no_role_selects_the_next_step(
+    walked: dict,
+) -> None:
+    """The public role lifecycle records an answer; it does not orchestrate it."""
+    host_roles = walked["host_roles"]
+
+    assert [entry["role"] for entry in host_roles] == ["reviewer", "examiner"]
+    for entry in host_roles:
+        prepared = entry["prepare"]
+        invoked = entry["invoke"]
+        assert prepared.returncode == 0, prepared.stdout + prepared.stderr
+        assert invoked.returncode == 0, invoked.stdout + invoked.stderr
+        assert _next_forms(invoked.stdout) == []
 
 
 # The composed run's own aggregate -- `num_turns` and `total_cost_usd` summed

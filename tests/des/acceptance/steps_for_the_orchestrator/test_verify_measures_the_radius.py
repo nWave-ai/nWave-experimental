@@ -1,4 +1,4 @@
-"""`des verify` measures the candidate's radius and hands it to both judges.
+"""`des verify` measures the candidate's radius for explicit role inputs.
 
 ADR-DES-003 §6: two things are never skipped -- an oracle exists before the
 code, and a blind examiner judges the result without seeing it -- and how WIDE
@@ -7,24 +7,21 @@ promised by the Request: it is measured from what the candidate actually
 touched».
 
 The measure already exists (`measure_blast_radius`) and had one caller, its own
-CLI. It enters the algebra at `verify`, after the candidate is built and before
-the reviewer is bought: printed as a primitive `RADIUS:` row, and handed to the
-whole-diff reviewer and to the examiner as DATA beside the admitted
-observations. The software refuses NOTHING on it -- width is the reviewer's and
-the examiner's judgement over a measured fact.
-
-With the pre-craft oracle judge retired (§5), the whole-diff reviewer is the
-oracle's only independent judge, so a finding «the oracle does not cover surface
-X» comes back as `DEFECT-OWNER: oracle` and `NEXT` names the author's step. That
-is the fork §6 describes and G7 signals by cardinality.
+CLI. It enters the algebra at `verify`, after the candidate is built: printed
+as a primitive `RADIUS:` row, then copied into reviewer and examiner artifacts
+only when the host explicitly calls `prepare-role`. The software refuses
+nothing on it and routes no finding; width remains an observation for a chosen
+reviewer or examiner to assess.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
+    asked,
     block,
     nexts,
 )
@@ -129,6 +126,20 @@ def accepted(diagnostic: str) -> dict:
     }
 
 
+def _prepare(root: Path, step, role: str, candidate: str) -> Path:
+    code, out, err = step(
+        "prepare-role",
+        "--repo-root",
+        str(root),
+        "--role",
+        role,
+        "--candidate",
+        candidate,
+    )
+    assert code == 0, out + err
+    return root / block(out, err)["INPUT"]
+
+
 def test_the_radius_is_a_primitive_row_on_the_verify_terminal(root: Path, step) -> None:
     crafted(root, step)
     code, out, err = step(
@@ -153,46 +164,54 @@ def test_the_radius_is_a_primitive_row_on_the_verify_terminal(root: Path, step) 
     assert "consumers=" in radius
 
 
-def test_both_judges_are_handed_the_same_measured_facts(
+def test_explicit_role_inputs_receive_the_same_measured_radius(
     root: Path, step, turns: Path
 ) -> None:
-    """Data, not a gate: the reviewer and the examiner judge width over it."""
-    import json
+    """The host separately selects role inputs from one measured candidate."""
 
     crafted(root, step)
+    spent = len(asked(turns))
     code, out, err = step(
         "verify",
         "--repo-root",
         str(root),
-        answers=[
-            accepted("the whole diff implements the observation"),
-            {
-                "structured_output": {
-                    "outcome": "accepted",
-                    "diagnostic": "the observation is in the evidence",
-                }
-            },
-        ],
+        answers=[],
     )
     assert code == 0, out + err
-    rows = json.loads(turns.read_text())
-    reviewer = next(r for r in rows if r["agent"] == "nw-software-crafter-reviewer")
-    examiner = next(r for r in rows if r["agent"] == "nw-user-examiner")
-    for row in (reviewer, examiner):
-        assert "radius" in row["prompt"], row["agent"]
-        assert "tier" in row["prompt"], row["agent"]
+    candidate = block(out, err)["CANDIDATE"]
+    reviewer = json.loads(_prepare(root, step, "reviewer", candidate).read_bytes())
+    examiner = json.loads(_prepare(root, step, "examiner", candidate).read_bytes())
+    assert asked(turns)[spent:] == []
+    assert reviewer["radius"] == examiner["radius"]
+    assert "tier=" in reviewer["radius"]
 
 
-def test_a_reviewer_charging_the_oracle_names_the_authors_step(
+def test_a_host_recorded_reviewer_finding_is_typed_without_auto_routing(
     root: Path, step
 ) -> None:
     """§6's own example, and the fork G7 signals by cardinality."""
     crafted(root, step)
-    code, out, err = step(
-        "verify",
+    code, out, err = step("verify", "--repo-root", str(root), answers=[])
+    assert code == 0, out + err
+    candidate = block(out, err)["CANDIDATE"]
+    _prepare(root, step, "reviewer", candidate)
+    code, recorded_out, recorded_err = step(
+        "record-role-result",
         "--repo-root",
         str(root),
-        answers=[
+        "--role",
+        "reviewer",
+        "--candidate",
+        candidate,
+        "--provider",
+        "claude",
+        "--model",
+        "host-observation-model",
+        "--session-id",
+        "radius-reviewer-finding",
+        "--input",
+        "-",
+        stdin=json.dumps(
             {
                 "structured_output": {
                     "outcome": "rejected",
@@ -201,13 +220,14 @@ def test_a_reviewer_charging_the_oracle_names_the_authors_step(
                     "defect_value": None,
                 }
             }
-        ],
+        ),
     )
-    assert code == 1
-    lines = block(out, err)
-    assert lines["DEFECT-OWNER"] == "oracle"
-    assert "RADIUS" in lines
-    assert "does not cover" in lines["DIAGNOSTIC"]
-    moves = " ".join(nexts(out))
-    assert f"des oracle --repo-root {root} --value 1 --finding -" in moves
-    assert len(nexts(out)) > 1
+    assert code == 0, recorded_out + recorded_err
+    result = root / block(recorded_out, recorded_err)["RESULT"]
+    observed = json.loads(result.read_bytes())
+    assert observed["result"]["defect_owner"] == "oracle"
+    assert (
+        observed["result"]["diagnostic"]
+        == "the oracle does not cover the touched surface"
+    )
+    assert all("des oracle" not in move for move in nexts(recorded_out))

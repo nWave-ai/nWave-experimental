@@ -33,7 +33,7 @@ path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave-ai"
-version = "4.0.0+atddpure.821610d"
+version = "4.0.0+atddpure.1c287e8dd"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}

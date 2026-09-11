@@ -49,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--authority")
     parser.add_argument("--section")
     parser.add_argument("--input")
+    parser.add_argument("--replace-current", action="store_true")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     root = resolved_root(args.repo_root)
     if isinstance(root, StepRefusal):
@@ -56,6 +57,15 @@ def main(argv: list[str] | None = None) -> int:
             root,
             "des devops --repo-root <root> --authority <doc.md> --section <heading>"
             " -- after the HOW above",
+        )
+    if args.replace_current and args.input != "-":
+        return refuse(
+            StepRefusal(
+                "InvalidDEVOPSForm",
+                "--replace-current is valid only with --input -",
+                "use --replace-current only with closed v1 input",
+            ),
+            "des devops --repo-root <root> --input -",
         )
     if args.input is not None:
         if args.input != "-" or args.authority is not None or args.section is not None:
@@ -78,7 +88,9 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 "des devops --repo-root <root> --input -",
             )
-        outcome = DeliverySteps().operational_document(root, raw)
+        outcome = DeliverySteps().operational_document(
+            root, raw, replace_current=args.replace_current
+        )
         if not outcome.succeeded:
             return refuse(
                 StepRefusal(

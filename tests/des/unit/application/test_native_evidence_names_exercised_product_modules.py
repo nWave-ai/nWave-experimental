@@ -19,7 +19,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from des.application.delivery_continuation import DeliveryContinuationRunner
+from des.application.delivery_continuation import (
+    DeliveryContinuationRunner,
+    NativeEvidence,
+)
 from des.domain.exercised_modules import INDETERMINATE, MEASURED
 
 
@@ -205,3 +208,41 @@ def test_the_evidence_record_delivers_all_three_facts(tmp_path: Path) -> None:
     assert record["exercised_measure"] == MEASURED, record
     assert "src/product/value.py" in record["exercised_product_modules"], record
     assert record["exercised_changed_targets"] == ("src/product/value.py",), record
+    assert (
+        "-p nwave_exercised_modules" in record["declared_environment"]["PYTEST_ADDOPTS"]
+    )
+
+
+def test_a_native_record_keeps_measured_duration_and_nonsecret_execution_context(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Readers receive the command's actual, bounded context, never all of env."""
+    root = _subject(tmp_path, DRIVES_PRODUCT)
+    monkeypatch.setenv("PYTHONPATH", "test-declared-pythonpath")
+    monkeypatch.setenv("NATIVE_EVIDENCE_SECRET", "must-not-be-recorded")
+
+    evidence = DeliveryContinuationRunner()._native(
+        root,
+        (("python", "-c", "print(1)"),),
+        root,
+    )
+    record = DeliveryContinuationRunner._evidence_records(evidence)[0]
+
+    assert isinstance(record["duration_seconds"], float), record
+    assert record["duration_seconds"] >= 0, record
+    assert record["cwd"] == str(root), record
+    assert set(record["declared_environment"]) <= {"PYTHONPATH", "PYTEST_ADDOPTS"}
+    assert "PYTHONPATH" in record["declared_environment"], record
+    assert "NATIVE_EVIDENCE_SECRET" not in record["declared_environment"], record
+
+
+def test_a_native_record_without_execution_context_preserves_unknown() -> None:
+    """Synthetic or legacy evidence cannot read as a successful execution."""
+    record = DeliveryContinuationRunner._evidence_records(
+        (NativeEvidence(("python", "-c", "pass"), None, "", "not executed"),)
+    )[0]
+
+    assert record["exit"] is None, record
+    assert record["duration_seconds"] is None, record
+    assert record["cwd"] is None, record
+    assert record["declared_environment"] is None, record

@@ -37,13 +37,18 @@ finding's prose is forbidden: a diagnostic is diagnostic only.
 
 from __future__ import annotations
 
+import errno
+import hashlib
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from des.application.delivery_continuation import DeliveryOutcome, Disposition
+from des.cli.role_artifacts import prepare as prepare_role
+from des.cli.role_artifacts import record as record_role_result
 from des.ports.driven_ports.task_invocation_port import (
     CraftBlocker,
     DesignFacts,
@@ -122,6 +127,18 @@ def _fact(prompt: str, key: str) -> object:
 
 def _has(prompt: str, key: str) -> bool:
     return any(line.startswith(f"{key}: ") for line in prompt.splitlines())
+
+
+def _native_record_identity(record: Path) -> tuple[str, str]:
+    """Read the candidate and evidence digest the retained filename commits to."""
+    candidate, digest, timestamp, process = record.stem.split("-", 3)
+    assert len(candidate) == 40
+    assert set(candidate) <= set("0123456789abcdef")
+    assert len(digest) == 64
+    assert set(digest) <= set("0123456789abcdef")
+    assert timestamp.endswith("Z") and process.isdecimal()
+    assert hashlib.sha256(record.read_bytes()).hexdigest() == digest
+    return candidate, digest
 
 
 class ScriptedPort(TaskInvocationPort):
@@ -373,46 +390,110 @@ def test_a_failed_standalone_verify_retains_native_evidence_after_candidate_clea
 
 
 @pytest.mark.parametrize(
-    ("judgements", "disposition"),
+    ("failure", "what", "partial"),
     [
-        (
-            [ModelRun(ModelOutcome.Rejected, "review refusal", 0, True)],
-            Disposition.Refusal,
-        ),
-        (
-            [ModelRun(ModelOutcome.Indeterminate, "review uncertainty", 0, True)],
-            Disposition.Indeterminate,
-        ),
-        (
-            [
-                _accepted(),
-                ModelRun(ModelOutcome.Rejected, "examiner refusal", 0, True),
-            ],
-            Disposition.Refusal,
-        ),
-        (
-            [
-                _accepted(),
-                ModelRun(ModelOutcome.Indeterminate, "examiner uncertainty", 0, True),
-            ],
-            Disposition.Indeterminate,
-        ),
-    ],
-    ids=[
-        "reviewer-refusal",
-        "reviewer-indeterminate",
-        "examiner-refusal",
-        "examiner-indeterminate",
+        ("timeout", "VerificationUnbounded", "partial timeout output\n"),
+        ("launch", "VerificationExecutableAbsent", ""),
     ],
 )
-def test_native_success_evidence_survives_later_judgement_failure(
+def test_an_incomplete_declared_native_command_retains_prior_evidence_after_cleanup(
     subject: Path,
     monkeypatch: pytest.MonkeyPatch,
-    judgements: list[ModelRun],
-    disposition: Disposition,
+    failure: str,
+    what: str,
+    partial: str,
 ) -> None:
-    """A later judge cannot discard the one successful native observation."""
-    port = ScriptedPort(subject, [_accepted()], judgements=judgements)
+    """A late native interruption cannot erase the command that already answered."""
+    port = ScriptedPort(subject, [_accepted()])
+    runner, stored, design = through_oracle(port, subject, REQUEST)
+    assert not isinstance(
+        crafted(runner, port, subject, stored, design), DeliveryOutcome
+    )
+    design = replace(
+        design,
+        native_verification_argvs=(
+            ("python", "-m", "pytest", ORACLE, "-q"),
+            ("python", "-m", "pytest", "tests/acceptance/test_late.py", "-q"),
+        ),
+    )
+    calls = 0
+
+    def native_spawn(
+        argv: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return subprocess.CompletedProcess(argv, 0, "first command output\n", "")
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(
+                argv, 1.0, output=partial, stderr="partial stderr\n"
+            )
+        raise OSError(errno.ENOENT, "missing declared executable", argv[0])
+
+    monkeypatch.setattr("des.application.delivery_continuation.spawn", native_spawn)
+    outcome = runner.verify_request(
+        subject, port, stored, [(stored.values[0].observation, design)]
+    )
+
+    assert isinstance(outcome, DeliveryOutcome), outcome
+    assert outcome.disposition is Disposition.Indeterminate
+    assert outcome.failure is not None
+    assert outcome.failure.what == what
+    prefix = "; native evidence retained at "
+    locator = outcome.failure.why.partition(prefix)[2]
+    assert locator.startswith(".nwave/des/logs/native/"), outcome.failure.why
+    record = subject / locator
+    retained = json.loads(record.read_text(encoding="utf-8"))
+    _candidate, _digest = _native_record_identity(record)
+    assert [item["argv"] for item in retained] == [
+        ["python", "-m", "pytest", ORACLE, "-q"],
+        ["python", "-m", "pytest", "tests/acceptance/test_late.py", "-q"],
+    ]
+    assert retained[0]["exit"] == 0
+    assert retained[0]["stdout"] == "first command output\n"
+    assert retained[1]["exit"] is None
+    assert retained[1]["stdout"] == partial
+    assert isinstance(retained[0]["duration_seconds"], float)
+    assert isinstance(retained[1]["duration_seconds"], float)
+    assert retained[0]["duration_seconds"] >= 0
+    assert retained[1]["duration_seconds"] >= 0
+    assert retained[1]["cwd"]
+    assert set(retained[1]["declared_environment"]) <= {
+        "PYTHONPATH",
+        "PYTEST_ADDOPTS",
+    }
+    if failure == "timeout":
+        assert retained[1]["stderr"] == "partial stderr\n"
+    assert retained[1]["incomplete"] is True
+    assert retained[1]["incomplete_what"] == what
+    assert retained[1]["incomplete_why"] in outcome.failure.why
+    worktrees = subprocess.run(
+        ["git", "-C", str(subject), "worktree", "list", "--porcelain"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "nwave-candidate-" not in worktrees
+
+
+@pytest.mark.parametrize(
+    ("role", "outcome"),
+    [
+        ("reviewer", "rejected"),
+        ("reviewer", "indeterminate"),
+        ("examiner", "rejected"),
+        ("examiner", "indeterminate"),
+    ],
+)
+def test_native_success_evidence_survives_a_later_host_recorded_role_failure(
+    subject: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    role: str,
+    outcome: str,
+) -> None:
+    """A separately recorded role result cannot discard native evidence."""
+    port = ScriptedPort(subject, [_accepted()])
     runner, stored, design = through_oracle(port, subject, REQUEST)
     assert not isinstance(
         crafted(runner, port, subject, stored, design), DeliveryOutcome
@@ -427,16 +508,42 @@ def test_native_success_evidence_survives_later_judgement_failure(
         return native(*args, **kwargs)
 
     monkeypatch.setattr(runner, "_native", counted_native)
-    outcome = runner.verify_request(
+    verified = runner.verify_request(
         subject, port, stored, [(stored.values[0].observation, design)]
     )
 
-    assert isinstance(outcome, DeliveryOutcome), outcome
-    assert outcome.disposition is disposition
-    assert outcome.failure is not None
-    prefix = "; native evidence retained at "
-    locator = outcome.failure.why.partition(prefix)[2]
-    assert locator.startswith(".nwave/des/logs/native/"), outcome.failure.why
+    assert not isinstance(verified, DeliveryOutcome), verified
+    _base, candidate, _evidence = verified
+    assert runner.persist_native_radius(subject, candidate)
+    runner.record_verified_candidate(subject, stored, candidate, None)
+
+    # The host selects and records the later role through its own port.  Verify
+    # remains native-only: the later refusal is an observation, never a reason
+    # to discard or reinterpret its already-persisted native measurement.
+    input_locator, _input_digest = prepare_role(subject, role, candidate)
+    assert (subject / input_locator).is_file()
+    role_payload: dict[str, object] = {
+        "outcome": outcome,
+        "diagnostic": f"host-recorded {role} {outcome}",
+    }
+    if role == "reviewer":
+        role_payload |= {"defect_owner": "oracle", "defect_value": None}
+    recorded, result_locator, _result_digest = record_role_result(
+        subject,
+        role,
+        candidate,
+        "host",
+        "host-selected-model",
+        f"later-{role}-{outcome}",
+        json.dumps({"structured_output": role_payload}).encode(),
+    )
+    assert recorded == outcome
+    result = json.loads((subject / result_locator).read_text(encoding="utf-8"))
+    assert result["result"]["outcome"] == outcome
+
+    locator = runner.native_evidence_locator
+    assert locator is not None
+    assert locator.startswith(".nwave/des/logs/native/"), locator
     record = subject / locator
     retained = json.loads(record.read_text(encoding="utf-8"))
     assert len(retained) == 1
@@ -444,9 +551,9 @@ def test_native_success_evidence_survives_later_judgement_failure(
     assert retained[0]["exit"] == 0
     assert "1 passed" in retained[0]["stdout"]
     assert retained[0]["stderr"] == ""
-    candidate = record.name.split("-20", 1)[0]
-    assert len(candidate) == 40
-    assert all(character in "0123456789abcdef" for character in candidate)
+    retained_candidate, digest = _native_record_identity(record)
+    assert retained_candidate == candidate
+    assert runner.native_evidence_sha256 == digest
     assert calls == 1
     worktrees = subprocess.run(
         ["git", "-C", str(subject), "worktree", "list", "--porcelain"],

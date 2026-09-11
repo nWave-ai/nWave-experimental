@@ -286,42 +286,44 @@ def test_delivery_route_fragment_is_spliced_once_and_host_neutral(host: str) -> 
 
 
 @pytest.mark.parametrize("host", HOST_IDS)
-def test_delivery_route_fragment_states_the_runner_owned_guarantees(host: str) -> None:
-    """The reader must learn WHO owns the work and WHAT happens to a delivered
-    value: the runner slices and routes, review is independent, EXAMINE is
-    conditional, FINALIZE happens once. Matched on the load-bearing terms, not
-    on exact sentences, so the wording stays free to improve."""
+def test_delivery_route_fragment_keeps_semantic_routing_with_the_llm(host: str) -> None:
+    """The projection names LLM routing and DES's limited construction role.
+
+    It also retains the quality and whole-feature closure observations without
+    restoring a resident-runner mandate.
+    """
     content = load_section_content(host=host)
     lowered = content.lower()
 
-    assert "runner" in lowered
-    for guarantee in ("slice", "rout", "independent review", "examine", "finalize"):
+    for guarantee in (
+        "llm",
+        "s/m/l",
+        "rout",
+        "independent review",
+        "examine",
+        "whole feature",
+        "evolution",
+        "finalize",
+        "des constructs",
+        "next is advisory",
+    ):
         assert guarantee in lowered, f"{host} guidance never states: {guarantee}"
-    assert "once" in lowered, "FINALIZE's exactly-once guarantee is unstated"
     assert "applicable" in lowered or "where" in lowered, (
         "EXAMINE must read as conditional, not unconditional"
     )
+    for retired in ("resident runner", "mandatory floor", "every request goes"):
+        assert retired not in lowered, f"{host} guidance restores: {retired}"
 
 
 @pytest.mark.parametrize("host", HOST_IDS)
-def test_delivery_route_fragment_demands_no_llm_classification(host: str) -> None:
-    """The retired protocol must not survive as prose: the reader is never
-    asked to size, classify, or hand-sequence the work.
-
-    ``M/L`` is listed because this guard did NOT discriminate without it.
-    Measured 2026-09-04: the template carried ``**Mandatory floor**: M/L
-    `DISTILL -> DELIVER``` while this test was green, because the size
-    vocabulary the retired protocol actually shipped is ``M/L`` and only the
-    longer ``S/M/L`` was forbidden. ``S/M/L`` stays first so it is still the
-    token reported when it is the one present.
-    """
+def test_delivery_route_fragment_allows_llm_sizing_and_routing(host: str) -> None:
+    """Sizing and routing are LLM semantic decisions, not runner protocol."""
     content = load_section_content(host=host)
 
-    for retired in ("nw-mode-select", "NW-MODE-SELECTED", "S/M/L", "M/L"):
+    for retired in ("nw-mode-select", "NW-MODE-SELECTED", "resident runner"):
         assert retired not in content, f"{host} guidance still carries {retired}"
-    # A manual route table is a markdown table whose header names the sizing
-    # axis the runner now owns.
-    assert "| Size |" not in content, f"{host} guidance still carries a route table"
+    assert "S/M/L" in content
+    assert "LLM evaluates the Request" in content
 
 
 @pytest.mark.parametrize("host", HOST_IDS)

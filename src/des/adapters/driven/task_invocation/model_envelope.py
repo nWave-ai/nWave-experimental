@@ -290,6 +290,11 @@ _SOLUTION_ARCHITECT_SCHEMA: dict[str, Any] = {
                         "items": _NON_EMPTY_STRING,
                     },
                 },
+                # A provider that returns typed facts must carry the field even
+                # when no configured DESIGN-document constructor assigned a
+                # section identity.  The constructor, never the provider,
+                # later replaces the empty value with its configured locator.
+                "authority_locator": {"type": "string"},
             },
             "required": [
                 "targets",
@@ -298,6 +303,7 @@ _SOLUTION_ARCHITECT_SCHEMA: dict[str, Any] = {
                 "oracle",
                 "acceptance_supports",
                 "verification",
+                "authority_locator",
             ],
             "additionalProperties": False,
         },
@@ -569,6 +575,7 @@ def decode_model_run(
                     )
                 raw_targets = raw_facts["targets"]
                 oracle = raw_facts["oracle"]
+                authority_locator = raw_facts["authority_locator"]
                 if (
                     not isinstance(raw_targets, list)
                     or not all(
@@ -576,6 +583,7 @@ def decode_model_run(
                         for item in raw_targets
                     )
                     or not isinstance(oracle, str)
+                    or not isinstance(authority_locator, str)
                 ):
                     raise MalformedModelEnvelope("DesignFactsMalformed")
                 if (
@@ -587,6 +595,19 @@ def decode_model_run(
                     or not all(
                         is_repository_relative_whole_file_locator(path)
                         for path in supports
+                    )
+                    or (
+                        bool(authority_locator)
+                        and (
+                            "#" not in authority_locator
+                            or not is_repository_relative_whole_file_locator(
+                                authority_locator.partition("#")[0]
+                            )
+                            or not authority_locator.partition("#")[2]
+                            or "#" in authority_locator.partition("#")[2]
+                            or "\n" in authority_locator.partition("#")[2]
+                            or "\r" in authority_locator.partition("#")[2]
+                        )
                     )
                 ):
                     # The provider schema carries the same grammar, but replayed
@@ -605,6 +626,7 @@ def decode_model_run(
                     oracle,
                     tuple(supports),
                     verification,
+                    authority_locator=authority_locator,
                 )
             except (KeyError, TypeError):
                 raise MalformedModelEnvelope("DesignFactsMalformed") from None

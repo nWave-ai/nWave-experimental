@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from des.application.handover import Blocked
+from des.application.handover import Blocked, replace_exact_bytes
 from des.runtime.spawn import GIT_TIMEOUT_ENV, git_timeout_seconds, spawn
 
 
@@ -59,6 +59,8 @@ def publish_design_document(
     document: DesignDocument,
     *,
     allow_untracked_recovery: bool = False,
+    replace_current: bool = False,
+    authority_locator: str | None = None,
 ) -> PublishedDesignDocument | Blocked:
     candidate = Path(destination)
     if candidate.is_absolute() or ".." in candidate.parts or not candidate.parts:
@@ -69,6 +71,15 @@ def publish_design_document(
             refusal=True,
         )
     path = root / candidate
+    expected_locator = f"{candidate}#{document.heading}"
+    if authority_locator is not None and authority_locator != expected_locator:
+        return Blocked(
+            "DesignAuthorityIdentityMismatch",
+            "the configured destination and manifest heading do not equal the "
+            "selected value's persisted authority locator",
+            "keep the original configured path and heading when replacing this value",
+            refusal=True,
+        )
     try:
         resolved = path.resolve(strict=False)
         resolved.relative_to(root.resolve())
@@ -137,29 +148,56 @@ def publish_design_document(
                     break
                 cursor += len(line)
             owned = snapshot[start:next_h2]
+            # The section owns its final content-line terminator.  Blank lines
+            # between it and a following H2 are the surrounding document's
+            # delimiter, so a correction must splice them back byte-for-byte.
+            # ``splitlines(keepends=True)`` lets this work for either newline
+            # convention without normalizing any human-owned bytes.
+            owned_lines = owned.splitlines(keepends=True)
+            last_content = next(
+                (
+                    index
+                    for index in range(len(owned_lines) - 1, -1, -1)
+                    if owned_lines[index].rstrip(b"\r\n")
+                ),
+                None,
+            )
+            owned_section = (
+                b"".join(owned_lines[: last_content + 1])
+                if last_content is not None
+                else owned
+            )
+            delimiter = owned[len(owned_section) :]
             # Separators belong to the surrounding document.  The canonical
             # section must be the complete owned content before those bytes.
-            if not owned.startswith(section) or owned[len(section) :].strip(b"\r\n"):
-                return Blocked(
-                    "DesignAuthorityDrift",
-                    "the existing DESIGN heading has divergent content",
-                    "supply explicit supersession evidence before replacing an owned authority section",
-                    refusal=True,
-                )
-            rendered = snapshot
+            if owned_section != section:
+                if replace_current:
+                    rendered = (
+                        snapshot[:start] + section + delimiter + snapshot[next_h2:]
+                    )
+                else:
+                    return Blocked(
+                        "DesignAuthorityDrift",
+                        "the existing DESIGN heading has divergent content",
+                        "supply --replace-current to replace this owned authority section",
+                        refusal=True,
+                    )
+            else:
+                rendered = snapshot
         else:
             rendered = snapshot + section
         if rendered != snapshot:
-            current = path.read_bytes() if path.exists() else None
-            if current != existing:
-                return Blocked(
-                    "DesignAuthorityDrift",
-                    "authority changed before compare-and-swap",
-                    "inspect authority before restart",
-                    refusal=True,
-                )
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(rendered)
+            replaced = replace_exact_bytes(
+                path,
+                existing,
+                rendered,
+                unavailable="DesignAuthorityUnavailable",
+                repair="restore authority storage; the complete replacement may already be visible",
+                drift="DesignAuthorityDrift",
+                drift_subject="authority",
+            )
+            if replaced is not None:
+                return replaced
         return PublishedDesignDocument(
             f"{candidate}#{document.heading}",
             hashlib.sha256(rendered).hexdigest(),

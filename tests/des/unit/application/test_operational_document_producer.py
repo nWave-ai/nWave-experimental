@@ -5,8 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from des.application import operational_document_producer
 from des.application.handover import Blocked
-from des.application.operational_document_producer import publish_operational_document
+from des.application.operational_document_producer import (
+    PublishedOperationalDocument,
+    publish_operational_document,
+)
 from des.domain.operational_document import OperationalDocument
 
 
@@ -86,30 +90,35 @@ def test_divergent_existing_sidecar_is_refused_before_markdown_append(
     )
 
 
-def test_sidecar_write_failure_reports_possible_partial_markdown_change(
+def test_sidecar_cas_failure_reports_possible_partial_markdown_change(
     tmp_path: Path, monkeypatch
 ) -> None:
     authority = tmp_path / DESTINATION
     sidecar = authority.with_suffix(".operational-facts.json")
-    original_write_bytes = Path.write_bytes
+    original_replace = operational_document_producer.replace_exact_bytes
 
-    def fail_sidecar_write(path: Path, content: bytes) -> int:
+    def fail_sidecar_replace(
+        path: Path, expected: bytes | None, raw: bytes, **kwargs: object
+    ) -> Blocked | None:
         if path == sidecar:
-            raise OSError("sidecar storage failed")
-        return original_write_bytes(path, content)
+            assert expected is None
+            return Blocked(
+                "OperationalAuthorityUnavailable",
+                "sidecar storage failed",
+                "restore authority storage",
+            )
+        return original_replace(path, expected, raw, **kwargs)
 
-    monkeypatch.setattr(Path, "write_bytes", fail_sidecar_write)
+    monkeypatch.setattr(
+        operational_document_producer, "replace_exact_bytes", fail_sidecar_replace
+    )
 
     result = publish_operational_document(tmp_path, DESTINATION, _document())
 
-    assert isinstance(result, Blocked)
-    assert result.what == "OperationalAuthorityUnavailable"
-    assert "writing OperationalFacts sidecar failed" in result.why
-    assert (
-        "Markdown authority and/or OperationalFacts sidecar may already have changed"
-        in result.why
-    )
-    assert "sidecar storage failed" in result.why
+    assert isinstance(result, PublishedOperationalDocument)
+    assert result.sidecar_failure is not None
+    assert result.sidecar_failure.what == "OperationalAuthorityUnavailable"
+    assert "sidecar storage failed" in result.sidecar_failure.why
     assert authority.read_bytes() == _document().markdown().encode(), (
         "the Markdown write has already persisted when the subsequent sidecar write fails"
     )
