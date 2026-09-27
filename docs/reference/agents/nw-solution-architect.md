@@ -11,7 +11,6 @@ Returns typed design facts consumed by one DES run.
 
 - [`/nw-design`](../commands/index.md)
 - [`/nw-diagram`](../commands/index.md)
-- [`/nw-spike`](../commands/index.md)
 
 ## Preloaded skills
 

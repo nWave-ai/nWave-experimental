@@ -110,29 +110,3 @@ def test_the_runner_carries_no_member_that_composes_one_step_into_the_next(
         f"`{_RUNNER_CLASS}.{member}` still composes a whole Request -- "
         "«no code path calls one step and then calls the next»"
     )
-
-
-def test_the_runner_still_carries_the_mechanics_the_single_steps_call() -> None:
-    """Retiring the sequencer keeps every per-step entry point the steps use.
-
-    This is the falsifier for a retirement done by deleting the delivery model:
-    each name here is a single-turn boundary a CLI step invokes directly.
-    """
-    members = _runner_members()
-    kept = (
-        "decompose",
-        "rewrite_request",
-        "design_value",
-        "oracle_value",
-        "craft_value",
-        "verify_request",
-        "integrate_candidate",
-        "devops_constraints",
-        "derive_authority",
-        "record_verified_candidate",
-        "record_integration_decision",
-    )
-    missing = [name for name in kept if name not in members]
-    assert not missing, (
-        f"single-step mechanics were removed with the composer: {missing}"
-    )

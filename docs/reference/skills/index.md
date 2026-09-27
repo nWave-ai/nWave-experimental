@@ -630,7 +630,7 @@
 
 ## nw-spike-methodology
 
-- [nw-spike-methodology](nw-spike-methodology.md) — Teaches agents how to run a timeboxed spike - throwaway code that validates one assumption before DESIGN
+- [nw-spike-methodology](nw-spike-methodology.md) — Guides a bounded, decision-relevant probe for a product, visual or technical uncertainty without creating wave authority
 
 ## nw-stakeholder-engagement
 

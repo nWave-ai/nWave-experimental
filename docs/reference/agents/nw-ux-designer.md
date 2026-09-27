@@ -7,6 +7,10 @@ Supports PO-led DISCUSS with user journeys, accessible interface design and boun
 **Max turns:** 45
 **Tools:** Read, Write, Edit, Glob, Grep
 
+## Commands
+
+- [`/nw-spike`](../commands/index.md)
+
 ## Preloaded skills
 
 - [nw-human-collaboration](../skills/nw-human-collaboration.md) — Collaborate with the human to refine product, architecture and operational decisions before implementation; preserve explicit delegation preferences.

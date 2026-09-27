@@ -13,10 +13,10 @@ each step two directions instead of one: a terminal that describes rows it does
 not have is a rejection that lies, and a reader who looks for them and finds
 nothing learns to stop reading the line.
 
-SIX steps carried it -- `po`, `design`, `oracle`, `craft`, `verify`, `devops` --
-which is why the repair is one derivation in the shared terminal rather than six
-edited sentences. A step now supplies only the MOVE a refusing role leaves; the
-terminal decides what to name from the rows it is actually printing, so a step
+Five role-backed steps carried it -- `po`, `design`, `oracle`, `craft`, `verify` --
+which is why the repair is one derivation in the shared terminal rather than
+five edited sentences. DEVOPS constructs typed input without invoking a role.
+The terminal decides what to name from rows it actually prints, so a step
 that names an absent row is unrepresentable (GDP-0).
 """
 
@@ -33,7 +33,6 @@ from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
 
 
 REQUEST = "one Request whose second value is never designed"
-AUTHORITY = "docs/product/architecture/operational-authority.md"
 ORACLE = "tests/acceptance/test_value.py"
 SUPPORT = "tests/acceptance/support.py"
 TARGET = "product_value.py"
@@ -171,29 +170,6 @@ def test_a_refusing_role_without_a_named_word_points_only_at_its_diagnostic(
     assert "BLOCKED-BY" not in line
     assert "DEFECT-OWNER" not in line
     assert carried(out, err, "DIAGNOSTIC")
-
-
-def test_a_step_refused_on_its_argument_shape_says_no_turn_ran(
-    root: Path, step
-) -> None:
-    """`des devops` with an inadmissible authority buys nothing and says so."""
-    two_values(root, step)
-    code, out, err = step(
-        "devops",
-        "--project",
-        "--repo-root",
-        str(root),
-        "--authority",
-        "../escape.md",
-        "--section",
-        "Operational constraints",
-        stdin=REQUEST,
-    )
-    assert code == 1
-    assert block(out, err)["WHAT"] == "AuthorityInadmissible"
-    line = orchestrator_line(out, err)
-    assert "DIAGNOSTIC" not in line
-    assert "no role turn ran" in line
 
 
 def test_a_terminal_carrying_blocked_by_points_at_it(root: Path, step) -> None:

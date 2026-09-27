@@ -5937,7 +5937,7 @@ class DeliveryContinuationRunner:
         longer carried.  A designation is not evidence, so the record is
         confirmed HERE against the document itself, through the same
         `resolve_authority_section` law that already decides what `<doc>#<heading>`
-        names for the post-write and DEVOPS read-backs, and through the same
+        names after construction, and through the same
         property-admitted read (`_markdown_text`) that keeps a symlinked or
         out-of-root file from deciding what a bound record means.
 
@@ -6346,134 +6346,6 @@ class DeliveryContinuationRunner:
             return self._blocked(cleanup)
         self._release_turn_records(root, stored)
         return integrated
-
-    def devops_constraints(
-        self,
-        root: Path,
-        port: TaskInvocationPort,
-        request: str,
-        authority: str,
-        section: str,
-    ) -> str | DeliveryOutcome:
-        """One platform-architect turn that writes LOCATABLE operational constraints.
-
-        `F-DEVOPS-CONSTRAINTS-INTO-DISTILL` states the shape: DEVOPS is
-        optional, and when it is asked for, its product is not an essay -- it is
-        CONSTRAINTS the Product Owner decomposes into observable values and the
-        acceptance designer turns into execution-observing oracles, examined
-        like any other code.  The same row names what was missing, and its item
-        (3) is the falsifier this method is built around: verify that the
-        authority resolver can read the section DEVOPS writes.
-
-        So the product is resolved through `resolve_authority_section`, the
-        SAME function the architect will later cite that section by, and the
-        turn is refused when what it left is unreachable or empty.  A constraint
-        no locator reaches is exactly the essay the decision forbids, and
-        catching it here is GDP-1: before the Request that would consume it is
-        ever decomposed.
-
-        NO DEVOPS ROLE ENTERS THIS RUNNER.  This method runs before any
-        decomposition exists, writes durable authority, and returns a locator.
-        Everything downstream of it is an ordinary value.
-        """
-        document = _repo_local_markdown(root, authority)
-        if document is None:
-            return self._fail(
-                Disposition.Refusal,
-                "AuthorityInadmissible",
-                f"{authority} is not a repository-local Markdown file this step "
-                "may write: no absolute path, no traversal, no symlink leaving "
-                "the root, and the suffix must be .md",
-                "pass a repository-relative path to a tracked .md file that "
-                "already exists",
-            )
-        observed = self._observed_scope(root)
-        if isinstance(observed, DeliveryOutcome):
-            return observed
-        status, before = observed
-        turn = self._invoke(
-            port,
-            root,
-            "nw-platform-architect",
-            self._prompt(
-                request=request,
-                authority_document=authority,
-                authority_section=section,
-                constraint_task=(
-                    "Write the operational constraints this Request implies into "
-                    "the named section of the named document, and nothing else. "
-                    "Each constraint must be observable by executing something "
-                    "against the running system, because the acceptance designer "
-                    "will turn it into an executable oracle."
-                ),
-            ),
-            None,
-            root,
-        )
-        denied = self._accepted(
-            turn,
-            rejected="ConstraintsRejected",
-            indeterminate="ConstraintsIndeterminate",
-            handover=False,
-        )
-        # A rejecting author owns no byte, exactly as at every other authoring
-        # boundary in this runner: its finding travels, its edits do not.
-        drift = self._scope_drift(
-            root,
-            status,
-            before,
-            (authority,) if denied is None else (),
-            (authority,),
-            None if denied is not None else (lambda path: path == authority),
-        )
-        if isinstance(drift, DeliveryOutcome):
-            return drift
-        if drift.attributed or drift.unattributed:
-            changed = ", ".join(sorted({*drift.attributed, *drift.unattributed}))
-            return self._fail(
-                Disposition.Refusal,
-                "ConstraintScopeDrift",
-                f"the platform architect changed bytes outside the one authority "
-                f"document it was given: {changed}",
-                f"restore {changed} and re-invoke this step, which writes only "
-                f"{authority}",
-            )
-        if denied is not None:
-            return denied
-        text = _markdown_text(root, authority)
-        if text is None:
-            return self._fail(
-                Disposition.Indeterminate,
-                "AuthorityUnreadable",
-                f"{authority} cannot be read back after the turn, so whether the "
-                "constraints were written is unknown",
-                f"restore read access to {authority}, then re-invoke this step",
-            )
-        locator = f"{authority}#{section}"
-        resolved = resolve_authority_section(
-            text, section, locator=locator, doc_part=authority
-        )
-        if not isinstance(resolved, ResolvedAuthoritySection):
-            return self._fail(
-                Disposition.Refusal,
-                "ConstraintsUnlocatable",
-                f"the accepted turn left no section the authority resolver can "
-                f"reach at {locator}: {resolved.reason}",
-                f"re-invoke this step so the turn writes a heading named "
-                f"{section!r} into {authority}; a constraint no locator reaches "
-                "is an essay, and the Product Owner cannot consume it",
-            )
-        body = resolved.text.partition("\n")[2].strip()
-        if not body:
-            return self._fail(
-                Disposition.Refusal,
-                "ConstraintsEmpty",
-                f"the section at {locator} carries a heading and no constraint "
-                "under it",
-                f"re-invoke this step so the turn writes at least one observable "
-                f"constraint under {section!r} in {authority}",
-            )
-        return locator
 
     def craft_value(
         self,

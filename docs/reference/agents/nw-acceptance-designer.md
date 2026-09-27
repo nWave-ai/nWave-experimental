@@ -9,7 +9,6 @@ Authors the public executable oracle when required.
 
 ## Commands
 
-- [`/nw-devops`](../commands/index.md)
 - [`/nw-distill`](../commands/index.md)
 
 ## Preloaded skills

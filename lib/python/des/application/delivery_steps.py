@@ -1215,32 +1215,6 @@ class DeliverySteps:
             ),
         )
 
-    def devops(
-        self,
-        root: Path,
-        request: str,
-        authority: str,
-        section: str,
-        feature: DocumentScope | str | None = None,
-        project: bool = False,
-    ) -> StepOutcome:
-        """One OPTIONAL platform-architect turn, upstream of any decomposition.
-
-        It is refused once a Request is already decomposed. Constraints are
-        durable authority the whole run is BOUND to, so writing them after the
-        graph exists would retroactively change what every earlier turn was
-        measured against -- the same reason `AuthorityDrift` refuses a designer
-        that rewrites an approved section.
-        """
-        self._feature = feature
-        self._project = project
-        return self._locked(
-            root,
-            lambda runner, port: self._devops(
-                runner, port, root, request, authority, section
-            ),
-        )
-
     # ----------------------------------------------------------------- inner
 
     def _decompose(
@@ -1805,50 +1779,6 @@ class DeliverySteps:
                 f"INTEGRATED: {candidate}",
                 "CLEANUP: complete",
             ),
-        )
-
-    def _devops(
-        self,
-        runner: DeliveryContinuationRunner,
-        port: TaskInvocationPort,
-        root: Path,
-        request: str,
-        authority: str,
-        section: str,
-    ) -> StepOutcome:
-        existing = stored_handover(root)
-        if isinstance(existing, Blocked):
-            return _from_blocked(existing)
-        scope = _feature_scope(existing, self._feature, project=self._project)
-        if isinstance(scope, StepOutcome):
-            return scope
-        checked = _scoped_destination(
-            DESConfig.operational_document_destination, root, scope
-        )
-        if isinstance(checked, StepOutcome):
-            return checked
-        # An admissible order, so it is MEASURED and not refused (ADR-DES-003
-        # §2.5). The refusal it replaces claimed the content class on an
-        # argument -- «it would change what earlier turns were bound to» -- with
-        # no measured incident behind it; the count is the fact the orchestrator
-        # actually needs, because those values were decomposed without these
-        # constraints in front of the Product Owner.
-        decomposed_before = 0 if existing is None else len(existing.values)
-        locator = runner.devops_constraints(root, port, request, authority, section)
-        diagnostic = runner.last_diagnostic
-        if isinstance(locator, DeliveryOutcome):
-            return _from_outcome(
-                locator, diagnostic, runner.turns_bought, runner.last_role
-            )
-        facts = [f"CONSTRAINTS: {locator}"]
-        if decomposed_before:
-            facts.append(f"DECOMPOSED-BEFORE: {decomposed_before}")
-        return StepOutcome(
-            Disposition.Success,
-            facts=tuple(facts),
-            diagnostic=diagnostic,
-            turns_bought=runner.turns_bought,
-            role=runner.last_role,
         )
 
     def _locked(

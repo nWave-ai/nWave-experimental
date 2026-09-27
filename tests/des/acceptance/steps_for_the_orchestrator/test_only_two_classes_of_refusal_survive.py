@@ -10,9 +10,8 @@ own verdict».
 §2.5 applies that to the delivered code and retires four refusals with the
 reason each was found to lack. This file is their executable half.
 
-- `RequestAlreadyDecomposed` claimed content on an argument, with no incident:
-  `devops` after `po` is an admissible order, so it is accepted and MEASURED as
-  `DECOMPOSED-BEFORE`.
+- `DEVOPS` produces an operational authority from typed facts without a role
+  turn; there is no model-authored DEVOPS section to reconcile after `po`.
 - `CraftUnrecorded` claimed sequence, but the state admits it: under §4a shared
   work is done once, so a value can be green without its own craft turn.
   `verify` runs the native verification and measures `UNCRAFTED`.
@@ -37,8 +36,6 @@ from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
 
 
 REQUEST = "one Request whose steps refuse only where the state does not admit them"
-AUTHORITY = "docs/product/architecture/operational-authority.md"
-SECTION = "Operational constraints"
 ORACLE = "tests/acceptance/test_value.py"
 SUPPORT = "tests/acceptance/support.py"
 TARGET = "product_value.py"
@@ -46,10 +43,6 @@ RED_ORACLE = (
     "import pathlib\nimport sys\n\n\ndef test_value():\n"
     "    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))\n"
     "    from product_value import VALUE\n\n    assert VALUE == 1\n"
-)
-CONSTRAINTS = (
-    "# Operational authority\n\n## Operational constraints\n\n"
-    "- The service exposes `/healthz` returning 200 within 500 ms.\n"
 )
 
 
@@ -93,41 +86,6 @@ def decomposed(root: Path, step, *labels: str) -> None:
         )[0]
         == 0
     )
-
-
-def test_devops_after_a_decomposition_is_accepted_and_measured(
-    root: Path, step
-) -> None:
-    """An admissible order, so the software measures it instead of refusing."""
-    (root / AUTHORITY).parent.mkdir(parents=True, exist_ok=True)
-    (root / AUTHORITY).write_text("# Operational authority\n")
-    decomposed(root, step, "A", "B")
-
-    code, out, err = step(
-        "devops",
-        "--project",
-        "--repo-root",
-        str(root),
-        "--authority",
-        AUTHORITY,
-        "--section",
-        SECTION,
-        answers=[
-            {
-                "structured_output": {
-                    "outcome": "accepted",
-                    "diagnostic": "one observable operational constraint",
-                },
-                "writes": {AUTHORITY: CONSTRAINTS},
-            }
-        ],
-        stdin=REQUEST,
-    )
-
-    assert code == 0, out + err
-    lines = block(out, err)
-    assert lines["DECOMPOSED-BEFORE"] == "2"
-    assert lines["CONSTRAINTS"] == f"{AUTHORITY}#{SECTION}"
 
 
 def test_an_oracle_step_buys_one_turn_and_records_on_red(

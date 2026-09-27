@@ -93,10 +93,6 @@ Targets L3 responsibility smells only (Large Class, Feature Envy, Shotgun Surger
 
 ## Expected Outputs
 
-```
-src/*                              (refactored production code)
-tests/*                            (refactored test code)
-docs/refactoring/
-  refactoring-log.md
-  quality-metrics.md
-```
+- Refactored production code with measurable quality improvements.
+- End-of-batch test-suite result; if RED, diagnose and correct production code as specified above.
+- Standalone refactoring documentation only when explicitly requested by the user.
