@@ -214,7 +214,10 @@ def design_facts_defect(facts: DesignFacts) -> str | None:
     if conflict is not None:
         return (
             "a non-oracle CREATE_NEW target is also a required acceptance support: "
-            f"{_shown(conflict)}"
+            f"{_shown(conflict)}; the acceptance designer must create supports "
+            "before craft: declare an oracle fixture only as acceptance_supports, "
+            "or remove a craft-created target from acceptance_supports; "
+            "do not label a new file EXTEND"
         )
     if not facts.verification:
         return "verification is empty"

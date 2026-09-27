@@ -801,7 +801,10 @@ class DesignDocument:
         if conflict is not None:
             raise DesignDocumentInvalid(
                 "a non-oracle CREATE_NEW target cannot also be a required "
-                f"acceptance support: {conflict}"
+                f"acceptance support: {conflict}; the acceptance designer must "
+                "create supports before craft: declare an oracle fixture only "
+                "as acceptance_supports, or remove a craft-created target from "
+                "acceptance_supports; do not label a new file EXTEND"
             )
         facts = DesignFacts(
             tuple(DesignTarget(path, decision) for path, decision, _ in targets),

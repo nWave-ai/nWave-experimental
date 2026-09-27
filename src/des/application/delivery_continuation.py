@@ -1763,8 +1763,9 @@ class DeliveryContinuationRunner:
                 "TargetAcceptanceSupportConflict",
                 "a non-oracle CREATE_NEW target is also a required acceptance "
                 f"support: {conflict}",
-                "declare that path only as a support, or make its target decision "
-                "EXTEND before binding DESIGN",
+                "the acceptance designer creates supports before craft: declare "
+                "an oracle fixture only as a support, or remove a craft-created "
+                "target from supports; do not label a new file EXTEND",
             )
         declared = AuthorityFacts(
             locator,

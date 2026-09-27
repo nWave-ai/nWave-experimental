@@ -163,6 +163,17 @@ and falsifier you closed the chain with are reasoning, not facts: state them in
 `diagnostic`, which is carried verbatim and never reparsed. The constructor
 refuses prose where a repository location is required before your turn can end.
 
+Classify each path by who creates it and when. The acceptance designer writes the
+oracle and its declared supports before the crafter runs. A new fixture or probe
+needed by that oracle belongs in `acceptance_supports` only, not also in
+`targets` with `CREATE_NEW`. A production file for the crafter to create belongs
+in `targets`; do not require it as pre-craft acceptance support. An existing
+production file may be both an `EXTEND` target and a support. Never label an
+absent file `EXTEND` to avoid a conflict. If the oracle cannot be authored
+without a production file that only craft can create, revise the oracle's
+stimulus or report the unresolved design gap instead of submitting contradictory
+facts.
+
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
 - Read `~/.claude/skills/nw-solution-architect-formal-verification/SKILL.md` ON-TRIGGER — separately selected formal proof obligation for local totality/inhabitation/canonicalization/preservation, state-machine safety/refinement/reachability/liveness/concurrency/recovery, or modelable non-functional deadlines/resources/isolation/availability
 - Read `~/.claude/skills/nw-architecture-patterns/SKILL.md` ON-TRIGGER — selecting an application architecture pattern

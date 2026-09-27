@@ -2,7 +2,7 @@
 
 > Experimental software: evaluate it on non-critical work and report concrete friction or defects.
 
-**Build:** `350deade8` from `atdd_pure_staging` (`350deade8ae6a8ec0afeacb484e5ca65e583aabf`)
+**Build:** `684d6d2a3` from `atdd_pure_staging` (`684d6d2a394341347e0059be9303594ed081b095`)
 
 ## Delivery
 
