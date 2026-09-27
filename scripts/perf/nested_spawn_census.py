@@ -45,6 +45,7 @@ import resource
 import statistics
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -116,11 +117,24 @@ def _child_cpu() -> tuple[float, float]:
     return usage.ru_utime, usage.ru_stime
 
 
+@dataclass(frozen=True)
+class _SpawnCost:
+    """One spawn's measured cost: wall clock, plus the child CPU deltas.
+
+    The three travel together because they are one measurement of one
+    interval -- a wall time from one spawn beside a CPU delta from another is
+    not a cost, and the `timed` flag that says whether they are the CHILD's
+    cost applies to all three at once.
+    """
+
+    wall: float
+    cpu_user: float
+    cpu_sys: float
+
+
 def _record(
     argv: str,
-    wall: float,
-    cpu_user: float,
-    cpu_sys: float,
+    cost: _SpawnCost,
     api: str,
     *,
     timed: bool,
@@ -137,9 +151,9 @@ def _record(
             "kind": _classify(argv),
             "nested_pytest": _classify(argv) == "nested_pytest",
             "timed": timed,
-            "wall_s": round(wall, 4) if timed else None,
-            "cpu_user_s": round(cpu_user, 4) if timed else None,
-            "cpu_sys_s": round(cpu_sys, 4) if timed else None,
+            "wall_s": round(cost.wall, 4) if timed else None,
+            "cpu_user_s": round(cost.cpu_user, 4) if timed else None,
+            "cpu_sys_s": round(cost.cpu_sys, 4) if timed else None,
             "argv": argv[:400],
         }
     )
@@ -175,7 +189,12 @@ def _wrap(original: Any, api: str, counter_key: str, *, timed: bool) -> Any:
                 argv = _argv_text(args[argv_index])
             else:
                 argv = _argv_text(kwargs.get("args", ""))
-            _record(argv, wall, user1 - user0, sys1 - sys0, api, timed=timed)
+            _record(
+                argv,
+                _SpawnCost(wall=wall, cpu_user=user1 - user0, cpu_sys=sys1 - sys0),
+                api,
+                timed=timed,
+            )
 
     return wrapper
 

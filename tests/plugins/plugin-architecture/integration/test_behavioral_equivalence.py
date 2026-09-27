@@ -299,16 +299,26 @@ def test_identical_installations_produce_matching_snapshots(
     registry2.install_all(second_context)
     snapshot2 = InstallationSnapshot.capture(second_dir)
 
-    # Compare
-    comparison = compare_snapshots(snapshot1, snapshot2)
+    # File sets must match exactly (raw snapshot mechanism).
+    raw = compare_snapshots(snapshot1, snapshot2)
+    assert raw.files_match, (
+        f"File sets differ: missing={raw.missing_files}, extra={raw.extra_files}"
+    )
 
-    assert comparison.files_match, (
-        f"File sets differ: missing={comparison.missing_files}, extra={comparison.extra_files}"
+    # Content must match byte-for-byte, except the installation-owned deployed
+    # skills root (<claude_dir>/skills), which intentionally differs per install.
+    marker = b"<DEPLOYED_SKILLS_ROOT>"
+    root1 = (str(install_context.claude_dir / "skills") + "/").encode()
+    root2 = (str(second_dir / "skills") + "/").encode()
+    mismatches = [
+        rel
+        for rel in sorted(snapshot1.files)
+        if (install_context.claude_dir / rel).read_bytes().replace(root1, marker)
+        != (second_dir / rel).read_bytes().replace(root2, marker)
+    ]
+    assert not mismatches, (
+        f"Content differs (beyond deployed skills root) for files: {mismatches}"
     )
-    assert comparison.content_match, (
-        f"Content differs for files: {comparison.content_mismatches}"
-    )
-    assert comparison.identical, comparison.message
 
 
 # -----------------------------------------------------------------------------

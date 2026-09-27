@@ -96,7 +96,7 @@ Acceptance test files and cross-feature documents live outside the per-feature t
 
 ## Feature ID Derivation
 
-When you run `/nw-new`, `/nw-deliver`, or any wave command, nWave derives a feature ID from your description:
+When you run `/nw-deliver` or any wave command, nWave derives a feature ID from your description:
 
 1. Strip common prefixes: "implement", "add", "create", "build"
 2. Remove English stop words: "a", "the", "to", "for", "with", "and", "in", "on", "of"

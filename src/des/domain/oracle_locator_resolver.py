@@ -148,6 +148,13 @@ _TEST_NAME_CONVENTIONS: dict[str, tuple[str, ...]] = {
     ".tsx": ("*.test.tsx", "*.spec.tsx"),
     ".js": ("*.test.js", "*.spec.js"),
     ".jsx": ("*.test.jsx", "*.spec.jsx"),
+    # ES-module / CommonJS variants of the same family -- exactly the ones
+    # Vitest's default `include` glob names (`**/*.{test,spec}.?(c|m)[jt]s?(x)`);
+    # an ESM-only Node repository's Jest suite is all `*.test.mjs`.
+    ".mjs": ("*.test.mjs", "*.spec.mjs"),
+    ".cjs": ("*.test.cjs", "*.spec.cjs"),
+    ".mts": ("*.test.mts", "*.spec.mts"),
+    ".cts": ("*.test.cts", "*.spec.cts"),
     # .NET (xUnit/NUnit naming idiom)
     ".cs": ("*Test.cs", "*Tests.cs"),
     ".fs": ("*Test.fs", "*Tests.fs"),

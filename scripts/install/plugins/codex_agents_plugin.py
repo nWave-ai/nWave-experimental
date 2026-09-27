@@ -33,7 +33,10 @@ import shutil
 import sys
 from pathlib import Path
 
-from des.domain.agent_capability import split_declared_tools
+from des.adapters.driven.task_invocation.role_instructions import (
+    render_installed_role,
+)
+from des.domain.agent_capability import REPLY_CHANNEL_TOOLS, split_declared_tools
 from scripts.install.plugins.base import (
     InstallationPlugin,
     InstallContext,
@@ -98,6 +101,12 @@ def _find_agents_source(context: InstallContext) -> Path | None:
         Path to the agents source directory, or None if not found
     """
     dist_agents = context.framework_source / "agents"
+    # Distribution builds retain the host grouping (agents/nw), whereas a
+    # project checkout has nWave/agents directly.  Return the actual role
+    # directory in either layout so the shared loader can derive its owned
+    # skills root without guessing.
+    if (dist_agents / "nw").exists():
+        return dist_agents / "nw"
     if dist_agents.exists():
         return dist_agents
 
@@ -278,13 +287,25 @@ def _capability_preamble(frontmatter: dict) -> str:
     declared = _parse_declared_tools(frontmatter)
     if not declared:
         return ""
-    declared_set = set(declared)
-    # A declared entry may be a permission SPECIFIER ("Bash(graphify
-    # explain:*)") rather than a bare tool name.  It grants exactly what it
-    # names and implies nothing else, so it is matched verbatim -- the Read and
-    # search denials below stay as strict as they were -- and carries its own
-    # grant line instead of widening the role to the whole shell.
-    scoped_shell = [name for name in declared if name.startswith("Bash(")]
+    # A reply-channel token (StructuredOutput) names the shape of the role's
+    # ANSWER, never an executable Codex capability: Codex enforces the typed
+    # reply through --output-schema regardless of declared tools. It must
+    # therefore never appear on the "Declared tools:" line and never drive a
+    # grant/denial -- but its presence alone still emits this preamble (the
+    # role declared a ``tools:`` key), so a reply-channel-only role keeps its
+    # explicit source-blind denial block instead of falling back to none.
+    declared = [name for name in declared if name not in REPLY_CHANNEL_TOOLS]
+    if not declared:
+        declared_set: set[str] = set()
+        scoped_shell: list[str] = []
+    else:
+        declared_set = set(declared)
+        # A declared entry may be a permission SPECIFIER ("Bash(tool
+        # explain:*)") rather than a bare tool name. It grants exactly what it
+        # names and implies nothing else, so it is matched verbatim -- the Read
+        # and search denials below stay as strict as they were -- and carries
+        # its own grant line instead of widening the role to the whole shell.
+        scoped_shell = [name for name in declared if name.startswith("Bash(")]
 
     grants = [line for members, line in _CAPABILITY_GRANTS if members & declared_set]
     if scoped_shell and "Bash" not in declared_set:
@@ -420,7 +441,9 @@ def _translate_skill_invocations(body: str) -> str:
     return _SKILL_INVOKE_PATTERN.sub(_replace, body)
 
 
-def _transform_agent(source_content: str, agent_name: str) -> str:
+def _transform_agent(
+    source_content: str, agent_name: str, *, source_path: Path | None = None
+) -> str:
     """Full transform pipeline: Claude Code agent MD -> Codex TOML.
 
     Pipeline:
@@ -431,12 +454,19 @@ def _transform_agent(source_content: str, agent_name: str) -> str:
       5. Render TOML with body as developer_instructions
 
     Args:
-        source_content: Full source agent file content (Claude Code format)
+        source_content: Full source agent file content (Claude Code format).
+            Retained for pure callers that do not have an owned source path.
         agent_name: Agent stem name (used for log context only)
+        source_path: Owned role source path during installation.  When given,
+            explicit frontmatter skills are materialized through the shared
+            runtime loader before their paths are projected to Codex.
 
     Returns:
         Transformed agent TOML content
     """
+    if source_path is not None:
+        source_content = render_installed_role(source_path, "~/.agents/skills")
+
     frontmatter, body = parse_frontmatter(source_content)
     _log_tools_translated(agent_name, frontmatter)
     scalar_fields = _extract_scalar_fields(frontmatter)
@@ -589,17 +619,6 @@ class CodexAgentsPlugin(InstallationPlugin):
             target_dir = _codex_agents_dir()
             target_dir.mkdir(parents=True, exist_ok=True)
 
-            # Clean-then-write (as the Claude agents plugin does): the target
-            # holds ONLY what this run writes.  Ownership comes from the
-            # previous manifest, never from the nw- prefix alone.
-            stale = remove_manifest_owned_assets(
-                target_dir, _MANIFEST_FILENAME, ".toml"
-            )
-            if stale:
-                context.logger.info(
-                    f"  Removed {len(stale)} previously installed Codex agents"
-                )
-
             public_agents = (
                 set()
                 if context.dev_mode
@@ -615,38 +634,65 @@ class CodexAgentsPlugin(InstallationPlugin):
                     message="No agent files found in source directory",
                 )
 
+            # Render everything first: a failure keeps the previous install.
+            rendered: list[tuple[str, str]] = []
+            try:
+                for source_file in agent_files:
+                    if not is_public_agent(source_file.name, public_agents):
+                        continue
+                    content = source_file.read_text(encoding="utf-8")
+                    rendered.append(
+                        (
+                            source_file.stem,
+                            _transform_agent(
+                                content, source_file.stem, source_path=source_file
+                            ),
+                        )
+                    )
+                # Known legacy aliases from the pre-manifest bootstrap.
+                codex_dir = _codex_config_dir()
+                for legacy_name in sorted(_legacy_agent_names(codex_dir, target_dir)):
+                    source_file = (
+                        agents_source / f"{_LEGACY_AGENT_SOURCES[legacy_name]}.md"
+                    )
+                    if not source_file.is_file():
+                        continue
+                    content = source_file.read_text(encoding="utf-8")
+                    rendered.append(
+                        (
+                            legacy_name,
+                            _transform_agent(
+                                content, legacy_name, source_path=source_file
+                            ),
+                        )
+                    )
+            except (OSError, ValueError) as error:
+                message = (
+                    f"Cannot render Codex role: {error}. "
+                    "Restore the SKILL.md or fix the role's skills declaration."
+                )
+                context.logger.error(f"  ❌ {message}")
+                return PluginResult(
+                    success=False,
+                    plugin_name=self.name,
+                    message=message,
+                    errors=[message],
+                )
+
+            stale = remove_manifest_owned_assets(
+                target_dir, _MANIFEST_FILENAME, ".toml"
+            )
+            if stale:
+                context.logger.info(
+                    f"  Removed {len(stale)} previously installed Codex agents"
+                )
+
             installed_names: list[str] = []
             installed_files: list[Path] = []
-
-            for source_file in agent_files:
-                if not is_public_agent(source_file.name, public_agents):
-                    continue
-
-                agent_name = source_file.stem
-                content = source_file.read_text(encoding="utf-8")
-                transformed = _transform_agent(content, agent_name)
-
-                target_file = target_dir / f"{agent_name}.toml"
+            for name, transformed in rendered:
+                target_file = target_dir / f"{name}.toml"
                 target_file.write_text(transformed, encoding="utf-8")
-
-                installed_names.append(agent_name)
-                installed_files.append(target_file)
-
-            # The old bootstrap used two role aliases before the native Codex
-            # agent manifest existed.  The exact DES witness authorizes only
-            # these known aliases; arbitrary ``nw-*.toml`` files remain the
-            # preflight's fail-closed concern.
-            codex_dir = _codex_config_dir()
-            for legacy_name in sorted(_legacy_agent_names(codex_dir, target_dir)):
-                source_name = _LEGACY_AGENT_SOURCES[legacy_name]
-                source_file = agents_source / f"{source_name}.md"
-                if not source_file.is_file():
-                    continue
-                content = source_file.read_text(encoding="utf-8")
-                transformed = _transform_agent(content, legacy_name)
-                target_file = target_dir / f"{legacy_name}.toml"
-                target_file.write_text(transformed, encoding="utf-8")
-                installed_names.append(legacy_name)
+                installed_names.append(name)
                 installed_files.append(target_file)
 
             _write_manifest(target_dir, installed_names)

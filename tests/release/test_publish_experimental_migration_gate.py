@@ -669,3 +669,77 @@ def test_concurrent_target_head_is_preserved_by_cli_force_with_lease(
     assert result.returncode != 0, result.stdout + result.stderr
     _assert_no_gh(log)
     assert _git("--git-dir", str(target), "rev-parse", "refs/heads/main") == race_head
+
+
+def test_clone_disables_maintenance_autodetach_to_prevent_directory_not_empty(
+    tmp_path: Path,
+) -> None:
+    """Publisher must disable autodetach settings in cloned targets.
+
+    When temporary clones are removed and detached git maintenance processes are
+    still running, cleanup fails with "Directory not empty" errors. The publisher
+    prevents this by disabling gc.autodetach and maintenance.autodetach on the
+    clone immediately after creation, ensuring all git operations are synchronous.
+
+    This test uses --project-into to capture the publisher's own clone, verifying
+    that the publisher (not the test) applies these settings, and that the clone
+    remains functional for subsequent operations.
+    """
+    # Setup: local bare target and migration record
+    target, predecessor = _bare_target(tmp_path)
+    record = _record(
+        tmp_path,
+        predecessor=predecessor,
+        required=False,
+        source_sha=_source_sha(),
+    )
+    env, log = _local_target_env(tmp_path)
+
+    # Execute: publisher with --project-into to capture the clone for inspection
+    # (not --push, so no publication occurs; the clone remains after publisher exits)
+    project_dir = tmp_path / "project"
+    result = _run(
+        [
+            "--project-into",
+            str(project_dir),
+            "--allow-branch",
+            "--target-local-repo",
+            str(target),
+            "--migration-decision",
+            str(record),
+        ],
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    _assert_no_gh(log)
+
+    # Verify: inspect the clone the publisher created (before any commit).
+    # The publisher projects to --project-into/target and stops before committing,
+    # leaving the clone with exact configuration applied by the publisher itself.
+    clone = project_dir / "target"
+    assert clone.is_dir(), f"Expected publisher to project clone at {clone}"
+
+    # Read autodetach settings from the publisher's clone.
+    # These values must have been written by the publisher (via git config),
+    # not pre-existing or inherited from system/user config. The publisher writes
+    # them immediately after clone, using git -C, before any other operation.
+    gc_autodetach = _git("config", "gc.autodetach", cwd=clone).strip()
+    maintenance_autodetach = _git("config", "maintenance.autodetach", cwd=clone).strip()
+
+    # Both must be explicitly "false"; if the publisher did not write them,
+    # they would be absent (empty output) or show inherited values. The test
+    # itself does not configure the clone—only the publisher does.
+    assert gc_autodetach == "false", (
+        f"Publisher must set gc.autodetach=false in clone; got '{gc_autodetach}'"
+    )
+    assert maintenance_autodetach == "false", (
+        f"Publisher must set maintenance.autodetach=false in clone; "
+        f"got '{maintenance_autodetach}'"
+    )
+
+    # Verify the clone is functional for git operations (add/commit/push integration).
+    # The synchronous cleanup ensures that subsequent git operations (add, commit,
+    # push) do not spawn detached maintenance processes that outlive the tempdir.
+    status = _git("status", "--porcelain", cwd=clone)
+    assert status is not None  # should succeed without error

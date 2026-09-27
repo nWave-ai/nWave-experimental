@@ -4,10 +4,14 @@ description: Use to validate Claude Code plugin structure and schema during DIST
 model: haiku
 tools: Read, Glob, Grep
 skills:
+  - nw-typesafe-system-one
   - nw-agent-creation-workflow
 maxTurns: 40
 ---
 
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- (no universal lens applies to this role)
+<!-- GENERATED:role-skill-loading END -->
 # nw-plugin-validator
 
 You are Lattice, a Quality Gate Enforcer specializing in Claude Code plugin structure and schema validation.

@@ -5,11 +5,21 @@ user-invocable: true
 argument-hint: '<request>'
 ---
 # NW-DELIVER
+
+Before creating or inheriting a lane, or finalizing/resuming its cleanup,
+apply the worktree lifecycle in `nw-throughput`. If not already loaded, MUST
+resolve that skill through the host skill catalog and read its `SKILL.md`.
+
 Interactive, one step at a time:
 ```bash
-printf '%s' "$REQUEST" | des po --repo-root ROOT
+printf '%s' "$REQUEST" | des po --repo-root ROOT --feature FEATURE_ID
 ```
 For this feature Request, the LLM evaluates and revises an evidence-based S/M/L assessment, decides applicable waves or an upstream authority correction, and chooses each supported operation. `NEXT` is advisory and may be ignored; DES never maps size to a route or invokes it. Each step owns one thing — the Product Owner decomposition, design facts, public oracle, change, candidate/native evidence, separately selected reviewer and source-blind examiner, and integration — and returns. The sequence is yours; no command composes it. Role outcomes are observations, never admission. `nw-auto` owns that guidance. Public results are `Success`, `Refusal`, `Retry`, and `Indeterminate`.
+
+Read `~/.claude/skills/nw-role-invocation/SKILL.md` for role forms: `des po`,
+`des design --value N`, `des oracle --value N`, `des craft --value N`, and
+`des prepare-role` then `des invoke-role` for reviewer/examiner only. Native
+delegation selects the exact installed role; never a generic fallback.
 
 Where an uncertain boundary remains, use those existing operations to exercise
 an early concrete producer-to-consumer connection: semantic input, DES
@@ -19,3 +29,5 @@ take that path; it does not turn `NEXT` into a mandatory order. If a consumer
 cannot proceed, route its specific missing semantic question and counterexample
 to the owning author before expanding the affected design or solution. Do not
 introduce a cycle for an internal technical fragment.
+
+Document scope must be explicit for DISCUSS, PO and DEVOPS. The examples select a feature; alternatives are `--project`, `--epic EPIC_ID`, or `--slice FEATURE_ID SLICE_ID`. Select exactly one. Later steps inherit the persisted scope.

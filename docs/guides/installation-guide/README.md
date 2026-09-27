@@ -374,7 +374,7 @@ not to the bootstrap script above:
 
 ## Installing for OpenCode
 
-nWave also works with [OpenCode](https://github.com/opencode-dev/opencode), an open-source IDE for AI pair programming. Installation needs a few extra steps to configure OpenCode's environment.
+nWave also works with [OpenCode](https://github.com/anomalyco/opencode), an open-source IDE for AI pair programming. Installation needs a few extra steps to configure OpenCode's environment.
 
 **1. Install prerequisites:**
 ```bash
@@ -406,7 +406,7 @@ nwave-ai install
 
 ## Installing for Codex CLI
 
-nWave integrates with the [OpenAI Codex CLI](https://platform.openai.com/docs/guides/codex) via pre-tool-use hooks. Once installed, every Bash and file-edit action fires nWave's DES validation — the same enforcement that runs on Claude Code.
+nWave integrates with the [OpenAI Codex CLI](https://developers.openai.com/codex/cli) via pre-tool-use hooks. Once installed, every Bash and file-edit action fires nWave's DES validation — the same enforcement that runs on Claude Code.
 
 **Prerequisites:**
 - OpenAI Codex CLI installed (`codex` binary on `PATH`) or a `~/.codex/` directory present

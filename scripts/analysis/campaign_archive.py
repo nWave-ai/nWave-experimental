@@ -64,6 +64,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -81,13 +82,48 @@ DEFAULT_ARCHIVE_ROOT = Path.home() / ".nwave" / "k4-evidence"
 #: Suffixes an evidence file may carry. An allow-list, not a deny-list: a new
 #: fat artifact type appearing in a campaign root must not silently start
 #: costing gigabytes per archive.
-EVIDENCE_SUFFIXES = (".json", ".err", ".txt", ".md", ".log", ".jsonl", ".csv")
+# `.patch` carries each arm's delivery diff, written by
+# `capture_delivery_diffs` before the workspace is skipped. Without it here
+# the diff would be written and then dropped by the same pass that keeps
+# the run's logs.
+EVIDENCE_SUFFIXES = (
+    ".json",
+    ".err",
+    ".txt",
+    ".md",
+    ".log",
+    ".jsonl",
+    ".csv",
+    ".patch",
+)
 
 MANIFEST_NAME = "MANIFEST.json"
 
 #: Never archived even when it matches a suffix above: probe scratch space the
 #: campaign itself treats as disposable.
 SKIPPED_DIR_PREFIXES = (".headroom-probe-",)
+
+#: Installed dependencies, skipped whatever they contain. The suffix allow-list
+#: above asks WHAT EXTENSION a file carries, never what it MEANS, and a
+#: virtualenv is full of files that answer it by accident: measured 2026-09-12
+#: on `campaign-20260906T213056Z-b4a4f5`, 76 `.txt`/`.md`/`.json` files inside
+#: `k4-fixture-venv` -- requirement lists, `top_level.txt`, package metadata.
+#: A directory was kept when ANY descendant matched, so the fixture virtualenv
+#: was archived while the delivered source, being `.py`, was not: ~10,900 of
+#: ~11,200 reconstructed diff lines were that virtualenv. The rule preferred
+#: the noise to the substance, and it did so by construction rather than by
+#: accident. The delivered work now travels as `*.delivery.patch`
+#: (`capture_delivery_diffs`), so nothing of value depends on walking these.
+INSTALLED_DEPENDENCY_DIRS = frozenset(
+    {
+        "site-packages",
+        "node_modules",
+        ".venv",
+        "venv",
+        "k4-fixture-venv",
+        "nwave-venv",
+    }
+)
 
 
 def _is_transcript(relative: Path) -> bool:
@@ -180,6 +216,53 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def capture_delivery_diffs(campaign_root: Path) -> list[Path]:
+    """Write each arm's delivery diff beside it, BEFORE the workspace is skipped.
+
+    `_classify` drops every arm workspace with the reason "the delivered code is
+    recoverable from its own commit". That was true while the workspace existed
+    and false the moment it did not: the commit dies with the directory, and the
+    archive then holds the run's noise -- a fixture virtualenv, two logs -- while
+    the changed source is gone.
+
+    Measured 2026-09-12 on `campaign-20260906T213056Z-b4a4f5`: 301 files kept,
+    35,978 skipped. Reconstructing the delivery from the public subject at the
+    pinned base and sealing it produced packets whose only real delivery files
+    were `CHANGELOG.md` and `templates/docs/api.md` -- ~10,900 of ~11,200 diff
+    lines were the fixture virtualenv. The blind rubric scored 17 criteria over
+    that material, 5 INDETERMINATE purely for want of code, which is a verdict on
+    documentation rather than on a delivery.
+
+    A diff is kilobytes where the workspace is gigabytes, so this keeps the
+    substance without reopening the decision to skip the tree, which was right.
+    An arm that is not a git checkout, or whose diff cannot be taken, is left
+    alone: no file is written, so an absent diff is never mistaken for an empty
+    one.
+    """
+    written: list[Path] = []
+    for workspace in sorted(campaign_root.glob("pair-*/*")):
+        if not (workspace.is_dir() and (workspace / ".git").exists()):
+            continue
+        result = subprocess.run(
+            ["git", "diff", "HEAD"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            check=False,
+            # Inherited stdin can block forever on a descriptor that delivers
+            # data and never reaches EOF; an unbounded call would hang the
+            # archive step that exists to save already-paid evidence.
+            stdin=subprocess.DEVNULL,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            continue
+        target = workspace.parent / f"{workspace.name}.delivery.patch"
+        target.write_text(result.stdout, encoding="utf-8")
+        written.append(target)
+    return written
+
+
 def _classify(campaign_root: Path) -> tuple[list[Path], list[tuple[Path, str]]]:
     """Split the campaign tree into evidence to copy and entries to name.
 
@@ -196,6 +279,10 @@ def _classify(campaign_root: Path) -> tuple[list[Path], list[tuple[Path, str]]]:
         ):  # probe scratch
             if entry.parent == campaign_root:
                 skip.append((relative, "headroom-probe scratch workspace"))
+            continue
+        if any(part in INSTALLED_DEPENDENCY_DIRS for part in relative.parts):
+            if entry.parent.name not in INSTALLED_DEPENDENCY_DIRS:
+                skip.append((relative, "installed dependencies, never delivered work"))
             continue
         if entry.is_dir():
             has_evidence = any(
@@ -264,6 +351,11 @@ def archive_campaign(
                 "archive under a different --id, or read the existing archive.",
             )
         )
+
+    # BEFORE classification, because classification is what drops the arm
+    # workspaces: once they are skipped the delivered code is unrecoverable, and
+    # the archive keeps the run's noise instead of its substance.
+    capture_delivery_diffs(campaign_root)
 
     keep, skip = _classify(campaign_root)
 

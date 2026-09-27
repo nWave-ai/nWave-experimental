@@ -77,10 +77,14 @@ def test_auto_hot_path_never_calls_charter_scaffold():
 
 def test_source_blind_examiner_does_not_cross_into_implementation():
     examiner = _body("nw-user-examiner.md").lower().replace("‐", "-")
-    assert "source-blind" in examiner
-    assert "do not execute commands" in examiner
-    assert "inspect source" in examiner
-    assert "derive evidence" in examiner
+    normalized = " ".join(examiner.split())
+    assert "source-blind" in normalized
+    assert "do not execute commands" in normalized
+    assert "inspect source" in normalized
+    # The current negative-capability list reads "derive new evidence"
+    # (line-wrapped in the source); "new" is meaningful — it distinguishes
+    # deriving fresh evidence from consuming the evidence already supplied.
+    assert "derive new evidence" in normalized
 
 
 def test_authors_receive_ordered_batches_only_after_runner_binding():
@@ -95,12 +99,21 @@ def test_authors_receive_ordered_batches_only_after_runner_binding():
 
 
 def test_whole_request_reviewer_and_examiner_projections_exclude_slice_flow():
-    """The only review and optional examination cover one whole candidate."""
+    """The only review and optional examination cover one whole candidate.
+
+    The reviewer judges a whole-Request candidate diff, so it carries the
+    literal "whole-request candidate" phrase. The examiner instead judges
+    supplied installed-observation evidence source-blind over the whole
+    Request — it never sees a "candidate diff" to name — so its scope is
+    checked against its own declared wording (whole-Request source-blind
+    judgment) rather than the reviewer's phrase.
+    """
     reviewer = _body("nw-software-crafter-reviewer.md").lower()
-    examiner = _body("nw-user-examiner.md").lower()
+    examiner = " ".join(_body("nw-user-examiner.md").lower().split())
 
     assert "whole-request candidate" in reviewer
-    assert "whole-request candidate" in examiner
+    assert "judge the whole request" in examiner
+    assert "source-blind" in examiner
     assert "value-slice" not in reviewer
     assert "value slice" not in examiner
 

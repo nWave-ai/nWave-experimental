@@ -195,6 +195,24 @@ def resolve_authority_section(
     )
 
 
+def authority_section_sha256(document_text: str, locator: str) -> str | None:
+    """The byte identity of one cited Markdown section, or ``None``.
+
+    A whole document is deliberately not the carrier here: callers that need
+    the identity of a value's cited DESIGN fact use the same heading law as the
+    resolver, then hash exactly the resolved section's UTF-8 bytes.
+    """
+    document, separator, heading = locator.partition("#")
+    if not separator or not document or not heading:
+        return None
+    resolved = resolve_authority_section(
+        document_text, heading, locator=locator, doc_part=document
+    )
+    if not isinstance(resolved, ResolvedAuthoritySection):
+        return None
+    return hashlib.sha256(resolved.text.encode("utf-8")).hexdigest()
+
+
 def changed_authority_locator(
     old_text: str, new_text: str, document: str
 ) -> str | UnresolvedAuthorityReference | AmbiguousAuthorityReference:

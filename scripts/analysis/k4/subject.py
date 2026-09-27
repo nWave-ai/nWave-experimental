@@ -44,4 +44,20 @@ SUT_PINNED_REV = "49653c350cddc47fc00a471bd1b08b5771a7967c"
 #: fragment (`prepare_examiner_fixture.render_project_fragment`) derive
 #: from, so an agent reading the fragment and the settings enforcing it
 #: can never disagree.
-SANDBOX_ALLOWED_NETWORK_DOMAINS = ("localhost", "127.0.0.1", "[::1]")
+#: `api.anthropic.com` is here for ONE reason, measured 2026-09-14: a nested
+#: model turn is the only way DES buys a role, and with localhost alone it came
+#: back `403 Connection blocked by network allowlist` -- so the treatment arm
+#: could never run the method, on any campaign this project ever bought.
+#:
+#: It is granted to BOTH arms, so the arms still differ only in the treatment.
+#: The control never launches a nested turn, and giving only the treatment a
+#: wider network would be a second, undeclared difference.
+#:
+#: The subject's hermetic property is untouched: package indexes stay
+#: unreachable, so `pip install` still fails exactly as the task states.
+SANDBOX_ALLOWED_NETWORK_DOMAINS = (
+    "localhost",
+    "127.0.0.1",
+    "[::1]",
+    "api.anthropic.com",
+)

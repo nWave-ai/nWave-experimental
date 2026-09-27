@@ -8,7 +8,7 @@ Interactive: invoke the first supported step and read its terminal. `NEXT` is
 advisory; the LLM chooses the next supported operation.
 
 ```bash
-printf '%s' "$REQUEST" | des po --repo-root ROOT
+printf '%s' "$REQUEST" | des po --repo-root ROOT --feature FEATURE_ID
 ```
 
 For an uncertain boundary, use the existing delegations to exercise an early
@@ -19,7 +19,8 @@ specific missing semantic question and counterexample to the owning author
 before expanding the affected design or solution. This does not create a
 mandatory sequence, controller, or mini-cycle for internal technical fragments.
 
-After native `des verify`, the LLM independently invokes reviewer and source-blind examiner from persisted role inputs. Each step returns
+Role forms and their supported invocations: `nw-role-invocation` (never a
+generic persona). After native `des verify`, the LLM independently invokes reviewer and source-blind examiner from persisted role inputs. Each step returns
 only `Success`, `Refusal`, `Retry`, or `Indeterminate`. No command composes the
 steps; the caller directs the existing operations, and `nw-auto` owns that
 guidance.

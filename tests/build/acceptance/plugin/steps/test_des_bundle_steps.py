@@ -284,10 +284,9 @@ def hooks_have_every_event(build_result: dict[str, Any]):
     Compared against the HOOK_EVENTS SSOT (scripts/shared/hook_definitions.
     py), never a literal set here -- a legitimate new event (e.g.
     PostToolUse, 1d5035131's oracle-write hook) must not need a second
-    place updated. SessionStart and UserPromptSubmit are absent by design:
-    they carried the session ceremony deleted in 22ea19309; that guard
-    stays a separate, still-literal check below since comparing against
-    the SSOT alone could never catch them reappearing IN the SSOT itself.
+    place updated. UserPromptSubmit remains absent: it carried session
+    ceremony retired in 22ea19309. SessionStart is now the separate,
+    read-only route notice, and must remain registered.
     """
     registered_events = set(_get_registered_events(build_result))
     expected_events = set(HOOK_EVENT_TYPES)
@@ -295,6 +294,6 @@ def hooks_have_every_event(build_result: dict[str, Any]):
         f"Missing events: {expected_events - registered_events}, "
         f"Extra events: {registered_events - expected_events}"
     )
-    assert "SessionStart" not in registered_events
+    assert "SessionStart" in registered_events
     assert "UserPromptSubmit" not in registered_events
     assert "SubagentStart" not in registered_events

@@ -231,6 +231,13 @@ agents:
     role: investigation_review
     public: true
     description: Reviews root cause analyses and failure mode investigations
+  ux-designer:
+    wave: CROSS_WAVE
+    priority: 2
+    role: visual_design
+    public: true
+    description: UX/UI support for PO-led DISCUSS, accessible journeys, existing design
+      systems and bounded visual prototypes
   nwave-buddy:
     wave: CROSS_WAVE
     priority: 1
@@ -258,6 +265,12 @@ agents:
       \ gate (Trim Review)"
 skills: {}
 commands:
+  mode-select:
+    description: Choose or change the human collaboration mode without runtime gates.
+    argument_hint: '[interactive | final human review | full delegation] [scope]'
+    agents: []
+    wave: CROSS_WAVE
+    outputs: []
   discover:
     description: Conducts evidence-based product discovery through customer interviews
       and assumption testing. Use at project start to validate problem-solution fit.
@@ -426,14 +439,6 @@ commands:
     outputs:
     - review_report
     agents: []
-  new:
-    description: Reads where an open request stands, then routes to the earliest authority
-      that lacks evidence.
-    argument_hint: '[request]'
-    agents: []
-    wave: CROSS_WAVE
-    outputs:
-    - wave_dispatch
   rigor:
     description: Selects a quality-vs-token-consumption profile (lean, standard, thorough,
       exhaustive, custom, inherit) and persists it globally (~/.nwave/global-config.json)

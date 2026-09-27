@@ -1219,6 +1219,7 @@ def _clean_install_probe(
     assert des_console.is_file(), "installed des console script is absent"
     probe_source = (
         "import json, os, shutil, sys\n"
+        "import sysconfig\n"
         "from importlib.metadata import version\n"
         "import des, nwave_ai\n"
         "print(json.dumps({"
@@ -1229,6 +1230,10 @@ def _clean_install_probe(
         "'console': shutil.which('nwave-ai'), "
         "'des_console': shutil.which('des'), "
         "'home': os.path.expanduser('~'), "
+        "'stdlib': sysconfig.get_paths()['stdlib'], "
+        "'platstdlib': sysconfig.get_paths()['platstdlib'], "
+        "'base_prefix': sys.base_prefix, "
+        "'purelib': sysconfig.get_paths()['purelib'], "
         "'sys_path': sys.path"
         "}))\n"
     )
@@ -1780,10 +1785,44 @@ def test_real_pypi_fixture_wheel_installs_with_exact_dual_des_and_version(
     # which may itself be the copied build sandbox.  Exempt only paths that
     # resolve below this exact venv; checkout, sandbox and host paths remain
     # forbidden everywhere else.
+    #
+    # The base interpreter's STDLIB is exempt too, and it has to be: a venv does
+    # not copy the standard library, it points at the interpreter that made it.
+    # On a pyenv, asdf or uv-managed Python that interpreter lives under HOME,
+    # so `Path.home()` in `borrowed_roots` otherwise matches python3.NN, its zip
+    # and lib-dynload and reports the standard library as borrowed host code.
+    # That made this assertion pass on CI (system Python outside HOME) and fail
+    # on every developer machine, which is a DESIGNATION check (does the string
+    # start with HOME) standing in for the PROPERTY the gate exists to enforce
+    # (is this the checkout, the build sandbox, or host site-packages).
+    #
+    # site-packages is NOT exempt, and on a pyenv layout it is nested INSIDE the
+    # stdlib directory, so it is excluded explicitly rather than by path depth.
+    # A consumer that borrowed host site-packages still fails here.
+    stdlib_roots = tuple(
+        Path(installed[key]).resolve()
+        for key in ("stdlib", "platstdlib", "base_prefix")
+        if installed.get(key)
+    )
+    host_site_packages = (
+        Path(installed["purelib"]).resolve() if installed.get("purelib") else None
+    )
+
+    def _is_interpreter_stdlib(resolved: Path) -> bool:
+        if host_site_packages is not None and resolved.is_relative_to(
+            host_site_packages
+        ):
+            return False
+        return any(resolved.is_relative_to(root) for root in stdlib_roots)
+
     sys_path_outside_consumer_venv = tuple(
         entry
         for entry in installed["sys_path"]
-        if not entry or not Path(entry).resolve().is_relative_to(venv)
+        if not entry
+        or not (
+            Path(entry).resolve().is_relative_to(venv)
+            or _is_interpreter_stdlib(Path(entry).resolve())
+        )
     )
     _require(
         all(
@@ -1945,10 +1984,22 @@ def test_same_real_wheel_installs_public_native_surfaces_for_non_codex_hosts(
         not missing_surfaces,
         what=f"{platform} install omitted native public surfaces: {missing_surfaces}",
     )
-    private_artifacts = sorted(
+    # The substring is matched against the path RELATIVE to the fake home, never
+    # the absolute one. `host_home` lives under pytest's tmp_path, and on macOS
+    # that resolves below /private/var, because /var is a symlink to /private/var.
+    # Matching the absolute path therefore reported EVERY installed file as a
+    # private artifact on every macOS machine, while passing on Linux CI where
+    # tmp_path is /tmp. That made this gate impossible to satisfy locally and
+    # green only on the one platform nobody develops on.
+    installed_relative_paths = (
         path.relative_to(host_home).as_posix()
         for path in host_home.rglob("*")
-        if path.is_file() and "private" in path.as_posix().lower()
+        if path.is_file()
+    )
+    private_artifacts = sorted(
+        relative
+        for relative in installed_relative_paths
+        if "private" in relative.lower()
     )
     _require(
         not private_artifacts,
@@ -2433,6 +2484,16 @@ def test_same_real_wheel_native_lifecycle_is_owned_and_never_creates_claude(
             "console.log('nwave-opencode-lifecycle-executed');\n",
             encoding="utf-8",
         )
+        # The OpenCode lifecycle probe needs the `bun` runtime, which is not a
+        # declared dependency of this repository (Python is). Absent, the honest
+        # outcome is could-not-verify, not a red: a missing toolchain is not a
+        # release-contract defect. CI, which provisions bun, owns this coverage.
+        # This matches how the polyglot pilots defer on an absent dotnet, mvn or
+        # gradle rather than failing.
+        if shutil.which("bun") is None:
+            pytest.skip(
+                "`bun` not on PATH, OpenCode hook lifecycle probe deferred to CI"
+            )
         fired = _run(["bun", "run", str(harness)], cwd=consumer, env=environment)
         _require(
             fired.returncode == 0

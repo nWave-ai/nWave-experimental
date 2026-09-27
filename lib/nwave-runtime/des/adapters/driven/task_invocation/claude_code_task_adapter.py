@@ -33,8 +33,10 @@ from des.adapters.driven.task_invocation.model_envelope import (
     _schema_for,
     decode_model_run,
 )
+from des.adapters.driven.task_invocation.role_instructions import load_role_instructions
 from des.adapters.driven.task_invocation.turn_recorder import TurnRecorder
 from des.domain.agent_capability import (
+    REPLY_CHANNEL_TOOLS,
     ClaimRegister,
     provider_tool_name,
     resolve_declared_capability,
@@ -62,16 +64,19 @@ _LAUNCHER_NAME = "claude"
 _EFFORT = "low"
 _PERMISSION_MODE = "dontAsk"
 _OUTPUT_FORMAT = "json"
-_STRUCTURED_OUTPUT_TOOL = "StructuredOutput"
+#: The one owner of this literal is ``des.domain.agent_capability`` --
+#: read here rather than redeclared, so the Claude and Codex adapters and the
+#: Codex installer preamble can never drift apart on it.
+_STRUCTURED_OUTPUT_TOOL = next(iter(REPLY_CHANNEL_TOOLS))
 #: Declared entries whose whole reach is a read-only query.  A turn holding only
 #: these stays retry-safe after a failed spawn.  A scoped grant on the
 #: provider-neutral code-fact port reads; it never writes.
 _READ_ONLY_PROVIDER_TOOLS = frozenset(
     {
         "Read",
-        _STRUCTURED_OUTPUT_TOOL,
         "Bash(des code-fact:*)",
     }
+    | REPLY_CHANNEL_TOOLS
 )
 
 
@@ -170,9 +175,10 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
         *,
         role_id: str,
         model: str,
-        agents: dict[str, object] | None = None,
         max_product_values: int | None = None,
         defect_values: tuple[str, ...] = (),
+        semantic_task: str | None = None,
+        role_instructions: str | None = None,
     ) -> list[str]:
         """The exact argv one turn spawns -- built once, here, and nowhere else.
 
@@ -215,8 +221,6 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
         argv = [
             str(self._launcher),
             "-p",
-            "--agent",
-            role_id,
             "--model",
             model,
             "--effort",
@@ -224,7 +228,7 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
             "--output-format",
             _OUTPUT_FORMAT,
             "--json-schema",
-            _schema_for(role_id, max_product_values, defect_values),
+            _schema_for(role_id, max_product_values, defect_values, semantic_task),
             "--permission-mode",
             _PERMISSION_MODE,
             "--setting-sources",
@@ -234,8 +238,24 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
             '{"mcpServers":{}}',
             "--no-chrome",
         ]
-        if agents is not None:
-            argv.extend(("--agents", json.dumps(agents, separators=(",", ":"))))
+        if semantic_task == "expectation-charter":
+            if not role_instructions:
+                raise ValueError(
+                    "charter task requires preloaded installed role knowledge"
+                )
+            setting_sources = argv.index("--setting-sources")
+            del argv[setting_sources : setting_sources + 2]
+            argv.extend(
+                (
+                    "--safe-mode",
+                    "--restricted",
+                    "--system-prompt",
+                    role_instructions,
+                    "--no-session-persistence",
+                )
+            )
+        else:
+            argv[2:2] = ["--agent", role_id]
         return argv
 
     def invoke(
@@ -246,6 +266,7 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
         cwd: Path,
         max_product_values: int | None = None,
         defect_values: tuple[str, ...] = (),
+        semantic_task: str | None = None,
     ) -> ModelRun:
         """Run one turn, record it as a diagnostic, and report its terminal.
 
@@ -266,6 +287,7 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
         replay) that this turn ended by raising rather than by answering.
         """
         started_at = time.time()
+        recorder_start = self._recorder.begin(root=cwd, role_id=role_id)
         # One mutable slot per CALL, filled by `_run_turn` the moment each piece
         # of evidence exists.  Per-call rather than per-instance so two turns can
         # never interleave their evidence, and filled progressively so a turn
@@ -279,9 +301,13 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
                 cwd=cwd,
                 max_product_values=max_product_values,
                 defect_values=defect_values,
+                semantic_task=semantic_task,
                 captured=captured,
             )
-        except (MalformedModelEnvelope, OSError) as error:
+        except Exception as error:
+            producer_projection = self._recorder.finish(
+                started=recorder_start, role_id=role_id
+            )
             self._recorder.record(
                 root=cwd,
                 role_id=role_id,
@@ -296,8 +322,12 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
                 started_at=started_at,
                 ended_at=time.time(),
                 raised=type(error).__name__,
+                producer_projection=producer_projection,
             )
             raise
+        producer_projection = self._recorder.finish(
+            started=recorder_start, role_id=role_id
+        )
         self._recorder.record(
             root=cwd,
             role_id=role_id,
@@ -311,6 +341,7 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
             provider_stderr=captured["stderr"],
             started_at=started_at,
             ended_at=time.time(),
+            producer_projection=producer_projection,
         )
         return run
 
@@ -322,6 +353,7 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
         cwd: Path,
         max_product_values: int | None = None,
         defect_values: tuple[str, ...] = (),
+        semantic_task: str | None = None,
         captured: dict[str, Any],
     ) -> ModelRun:
         """One turn, filling `captured` with the evidence the recorder wants.
@@ -366,39 +398,49 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
                 True,
                 issued=False,
             )
-        try:
-            agent_spec = capability.spec_path.read_text(encoding="utf-8")
-        except OSError:
-            return ModelRun(
-                ModelOutcome.Indeterminate,
-                "agent specification is unreadable",
-                0,
-                False,
-                issued=False,
-            )
+        declared_tools = capability.declared_tools
+        role_instructions = None
+        if semantic_task == "expectation-charter":
+            try:
+                role_instructions = load_role_instructions(
+                    capability.spec_path, semantic_task
+                )
+            except (OSError, UnicodeError, ValueError) as error:
+                return ModelRun(
+                    ModelOutcome.Indeterminate,
+                    f"installed charter role knowledge is unavailable: {error}",
+                    0,
+                    False,
+                    issued=False,
+                )
+        if semantic_task == "selected-revision-recovery":
+            # Recovery reads the sealed revision's declared assets to realign
+            # or extend them; it never edits or executes. The turn is
+            # read-only BY CONSTRUCTION: cap the projected tools to Read,
+            # narrowing (never widening) whatever the role's spec declares.
+            declared_tools = tuple(t for t in declared_tools if t == "Read")
+        elif semantic_task == "expectation-charter":
+            # The charter task's only product inputs are the stored
+            # observation, caller intent and recipe, all inlined in the
+            # prompt. Remove declared source tools; the structured-reply
+            # channel is added back below for every role.
+            declared_tools = ()
         declared_entries = tuple(
-            dict.fromkeys((*capability.declared_tools, _STRUCTURED_OUTPUT_TOOL))
+            dict.fromkeys((*declared_tools, _STRUCTURED_OUTPUT_TOOL))
         )
         provider_tools = tuple(
             dict.fromkeys(provider_tool_name(entry) for entry in declared_entries)
         )
-        agents = {
-            role_id: {
-                "description": role_id,
-                "prompt": agent_spec,
-                "tools": list(provider_tools),
-            },
-        }
         argv = self.argv_for(
             role_id=role_id,
             model=model,
-            agents=agents,
             max_product_values=max_product_values,
             defect_values=defect_values,
+            semantic_task=semantic_task,
+            role_instructions=role_instructions,
         )
         argv.extend(
             (
-                "--restricted",
                 "--disable-slash-commands",
                 "--tools",
                 ",".join(provider_tools),
@@ -456,6 +498,7 @@ class ClaudeCodeTaskAdapter(TaskInvocationPort):
             role_id=role_id,
             max_product_values=max_product_values,
             defect_values=defect_values,
+            semantic_task=semantic_task,
         )
 
 
@@ -539,6 +582,7 @@ def extract_model_run(
     role_id: str = "",
     max_product_values: int | None = None,
     defect_values: tuple[str, ...] = (),
+    semantic_task: str | None = None,
 ) -> ModelRun:
     """Unwrap Claude stdout, then apply the provider-neutral envelope law."""
     try:
@@ -572,5 +616,6 @@ def extract_model_run(
         role_id=role_id,
         max_product_values=max_product_values,
         defect_values=defect_values,
+        semantic_task=semantic_task,
         accounting=_accounting(document),
     )

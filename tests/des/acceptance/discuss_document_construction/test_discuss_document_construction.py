@@ -44,7 +44,7 @@ def payload() -> dict[str, object]:
 
 def call(root: Path, raw: str) -> tuple[int, str, str]:
     return run_cli_in_process(
-        ["discuss", "--repo-root", str(root), "--input", "-"],
+        ["discuss", "--repo-root", str(root), "--project", "--input", "-"],
         cwd=root,
         stdin_text=raw,
         catch_all=True,
@@ -200,6 +200,12 @@ def test_discuss_markdown_keeps_multiline_semantic_text_out_of_heading_and_table
         "## Scope",
         "### In scope",
         "### Out of scope",
+        "## Jobs to be done",
+        "### Human",
+        "### LLM",
+        "## User journey",
+        "## Gherkin scenarios",
+        "## Quint scenarios",
         "## Observations",
         "## Decisions",
         "## Values",
@@ -224,7 +230,9 @@ def test_discuss_race_reports_indeterminate_with_authority_and_untouched_winner(
         return False
 
     monkeypatch.setattr(handover, "_create_if_absent", external_creator)
-    outcome = DeliverySteps().discuss_document(root, json.dumps(payload()))
+    outcome = DeliverySteps().discuss_document(
+        root, json.dumps(payload()), project=True
+    )
     document = root / "docs/product/brief.md"
     stored = root / ".nwave/des/handover.json"
     assert outcome.disposition is Disposition.Indeterminate
@@ -240,7 +248,15 @@ def test_discuss_race_reports_indeterminate_with_authority_and_untouched_winner(
 
 def call_replacing(root: Path, raw: str) -> tuple[int, str, str]:
     return run_cli_in_process(
-        ["discuss", "--repo-root", str(root), "--input", "-", "--replace-current"],
+        [
+            "discuss",
+            "--repo-root",
+            str(root),
+            "--project",
+            "--input",
+            "-",
+            "--replace-current",
+        ],
         cwd=root,
         stdin_text=raw,
         catch_all=True,
@@ -362,6 +378,7 @@ def test_public_discuss_replace_current_is_valid_only_with_stdin_input(
             "discuss",
             "--repo-root",
             str(root),
+            "--project",
             "--input",
             "brief.json",
             "--replace-current",

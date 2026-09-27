@@ -38,9 +38,9 @@ if TYPE_CHECKING:
 def stage_healthy_install(base: Path) -> Path:
     """Stage a complete healthy fake ~/.claude directory under base.
 
-    Creates the minimum layout that satisfies all 7 doctor checks:
+    Creates the minimum layout that satisfies all doctor checks:
       - bin/ with 5 shims (chmod 755)
-      - settings.json with all 6 hook types + real python binary + env.PATH
+      - settings.json with every active hook type + real python binary + env.PATH
       - lib/python/des/domain/phase_events.py
       - agents/, skills/, commands/ each containing >= 1 file
 
@@ -93,6 +93,7 @@ def stage_healthy_install(base: Path) -> Path:
             "PreToolUse": [{"hooks": [{"command": hook_command}]}],
             "PostToolUse": [{"hooks": [{"command": hook_command}]}],
             "SubagentStop": [{"hooks": [{"command": hook_command}]}],
+            "SessionStart": [{"hooks": [{"command": hook_command}]}],
         },
         "env": {
             "PATH": f"{bin_dir}:/usr/bin:/bin",

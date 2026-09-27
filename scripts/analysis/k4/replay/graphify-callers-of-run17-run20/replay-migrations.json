@@ -3,8 +3,8 @@
     {
       "record": "02-nw-solution-architect.json",
       "source_sha256": "2b8be6bfe52a80fe66d405be1ffbe554a358b8c37c273a13126476ababf34e63",
-      "operation": "add-empty-authority-locator",
-      "reason": "The authority-locator transport member became required after this paid turn was recorded. The closed DESIGN constructor, not the provider, binds its actual section; this projection adds only its historical empty value."
+      "operation": "complete-legacy-design-facts",
+      "reason": "The authority-locator and oracle-verification-index transport members became required after this paid turn was recorded. The closed DESIGN constructor binds the empty locator to its actual section; the index is mechanically derived only when one recorded verification argv names the recorded oracle file. A support that is also a non-oracle CREATE_NEW target is removed because the current constructor rejects that historical overlap."
     }
   ]
 }

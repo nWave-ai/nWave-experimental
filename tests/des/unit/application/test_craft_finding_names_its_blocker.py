@@ -40,7 +40,9 @@ from __future__ import annotations
 import errno
 import hashlib
 import json
+import os
 import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -91,6 +93,7 @@ def _facts(*, extra: tuple[str, ...] = ()) -> DesignFacts:
         oracle=ORACLE,
         acceptance_supports=(),
         verification=(("python", "-m", "pytest", ORACLE, "-q"),),
+        oracle_verification_index=0,
     )
 
 
@@ -389,6 +392,46 @@ def test_a_failed_standalone_verify_retains_native_evidence_after_candidate_clea
     assert "nwave-candidate-" not in worktrees
 
 
+def test_verification_record_becomes_historical_when_a_declared_target_changes(
+    subject: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A target edit after verify cannot reuse its old native measurement."""
+    executable = subject / "bin" / "python"
+    executable.parent.mkdir()
+    executable.symlink_to(sys.executable)
+    monkeypatch.setenv("PATH", f"{executable.parent}:{os.environ['PATH']}")
+    port = ScriptedPort(subject, [_accepted()])
+    runner, stored, design = through_oracle(port, subject, REQUEST)
+    assert not isinstance(
+        crafted(runner, port, subject, stored, design), DeliveryOutcome
+    )
+    verified = runner.verify_request(
+        subject, port, stored, [(stored.values[0].observation, design)]
+    )
+    assert not isinstance(verified, DeliveryOutcome), verified
+    _base, candidate, _evidence = verified
+    assert runner.persist_native_radius(subject, candidate)
+    runner.record_verified_candidate(subject, stored, candidate, None)
+
+    current = runner.verification_record(subject, stored)
+    assert current is not None and current.candidate == candidate
+    assert current.covers_current_upstream
+
+    (subject / PRODUCTION).write_text("ANSWER = 43\n", encoding="utf-8")
+
+    historical = runner.verification_record(subject, stored)
+    selected = runner.selected_authority(subject, stored, 1)
+    assert not isinstance(selected, DeliveryOutcome)
+    owned = runner._owned_with_authority(
+        subject, stored, [(stored.values[0].observation, selected)]
+    )
+    assert historical is not None and historical.candidate == candidate
+    assert PRODUCTION in owned
+    assert not historical.covers_current_upstream
+    assert runner.verified_candidate(subject, stored) is None
+
+
 @pytest.mark.parametrize(
     ("failure", "what", "partial"),
     [
@@ -536,6 +579,7 @@ def test_native_success_evidence_survives_a_later_host_recorded_role_failure(
         "host-selected-model",
         f"later-{role}-{outcome}",
         json.dumps({"structured_output": role_payload}).encode(),
+        prepared_input=Path(input_locator) if role == "examiner" else None,
     )
     assert recorded == outcome
     result = json.loads((subject / result_locator).read_text(encoding="utf-8"))

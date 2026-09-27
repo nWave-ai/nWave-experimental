@@ -39,6 +39,7 @@ the repository stays authoritative and the link is a convenience, not an authori
 from __future__ import annotations
 
 import argparse
+import base64
 import html
 import json
 import re
@@ -50,6 +51,7 @@ from des.runtime.packaged_asset import resolve_packaged_asset
 
 
 _BRAND_DIRECTORY = "nWave/data/brand"
+_LOGO_ASSET = "scripts/docs_site/static/logo.svg"
 _BRAND_IDENTITY = "nwave-oss-neutral-v1"
 _MANIFEST_KEYS = frozenset({"schema-version", "identity", "stylesheet", "font-stack"})
 _FONT_STACK = re.compile(r"[A-Za-z0-9 _,.'\"-]+")
@@ -141,6 +143,20 @@ def load_brand() -> Brand:
     if _REMOTE_REFERENCE.search(stylesheet) is not None:
         raise BrandAssetError("brand stylesheet contains a remote asset reference")
     return Brand(identity=identity, stylesheet=stylesheet, font_stack=font_stack)
+
+
+def load_logo_data_uri() -> str:
+    """The canonical nWave logo as an offline ``data:`` URI (one SVG, no copy)."""
+    resolution = resolve_packaged_asset(_LOGO_ASSET)
+    if not resolution.is_usable or resolution.path is None:
+        raise BrandAssetError(f"brand logo is unavailable: {resolution.detail}")
+    try:
+        svg = resolution.path.read_bytes()
+    except OSError as error:
+        raise BrandAssetError(f"brand logo is unreadable: {error}") from error
+    if b"<svg" not in svg:
+        raise BrandAssetError("brand logo is not an SVG document")
+    return "data:image/svg+xml;base64," + base64.b64encode(svg).decode("ascii")
 
 
 _UNSUPPORTED: list[tuple[int, str]] = []
@@ -443,6 +459,11 @@ def render(markdown: str) -> str:
 def build_page(markdown: str, source: str, title: str) -> str:
     """Wrap the rendered fragment in the standalone page body."""
     brand = load_brand()
+    header = (
+        '<header class="brandbar">'
+        f'<img class="brandbar-logo" src="{load_logo_data_uri()}" alt="nWave">'
+        "</header>"
+    )
     banner = (
         '<div class="provenance">'
         "<span><strong>Projection, not source.</strong> "
@@ -457,7 +478,7 @@ def build_page(markdown: str, source: str, title: str) -> str:
         f'<meta http-equiv="Content-Security-Policy" content="{_CONTENT_SECURITY_POLICY}">\n'
         f"<style>:root{{--nwave-font-stack:{brand.font_stack};}}\n"
         f"{brand.stylesheet}</style>\n"
-        f'<div class="wrap">{banner}\n{render(markdown)}</div>\n'
+        f'<div class="wrap">{header}\n{banner}\n{render(markdown)}</div>\n'
     )
 
 

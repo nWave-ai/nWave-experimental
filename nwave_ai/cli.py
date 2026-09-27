@@ -1264,7 +1264,11 @@ def _sync_project_claude_section(
 
 _PROJECT_USAGE = (
     "Usage: nwave-ai project <enable|disable> [--yes]\n"
-    "       nwave-ai project set <enabled|verbosity|attribution> <value> [--yes]"
+    "       nwave-ai project set <enabled|verbosity|attribution> <value> [--yes]\n"
+    "       nwave-ai project feature-document <feature-id> <discuss|design|distill|devops> <path>\n"
+    "           (one feature's document destination, under docs/feature/<feature-id>/)\n"
+    "       nwave-ai project feature-template <discuss|design|distill|devops> <template-with-{feature}>\n"
+    "           (project-wide default for every feature; project keys documents.<wave> stay project-only)"
 )
 
 
@@ -1300,6 +1304,33 @@ def _handle_project(args: list[str]) -> int:
     if args.count("--yes") > 1:
         print(_PROJECT_USAGE, file=sys.stderr)
         return 1
+
+    if positional[:1] in (["feature-document"], ["feature-template"]):
+        expected = 4 if positional[0] == "feature-document" else 3
+        if len(positional) != expected:
+            print(_PROJECT_USAGE, file=sys.stderr)
+            return 1
+        try:
+            _require_mutating_config_dir()
+            from des.adapters.driven.config.config_writer import ConfigWriter
+
+            writer = ConfigWriter(
+                home_dir=_require_mutating_config_dir().parent, repo_root=Path.cwd()
+            )
+            if positional[0] == "feature-document":
+                writer.set_feature_document(*positional[1:])
+            else:
+                writer.set_feature_template(*positional[1:])
+        except Exception as exc:
+            print(
+                "WHAT: feature document configuration was not written. "
+                f"WHY: {exc}. HOW: use a safe path under the feature directory "
+                "(or a template containing {feature}) and retry.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"nWave feature configuration set: {' '.join(positional[1:])}.")
+        return 0
 
     if positional[:1] == ["set"]:
         if len(positional) != 3:

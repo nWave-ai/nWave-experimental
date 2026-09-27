@@ -14,9 +14,19 @@ import os
 from pathlib import Path
 from typing import Any, cast
 
+from des.adapters.driven.config.repository_config_root import (
+    resolve_repository_config_root,
+)
 from des.domain.artifact_versioning import ArtifactVersioningKernel
 from des.domain.blast_radius import BlastRadiusConfigRejected, BlastRadiusThresholds
 from des.domain.config_merge import declared_enabled, merge_config
+from des.domain.document_scope import DocumentScope, Epic, Feature, Project, Slice
+from des.domain.feature_documents import (
+    DEFAULT_TEMPLATES,
+    FeatureDocumentsInvalid,
+    merge_feature_destinations,
+    require_feature_id,
+)
 from des.domain.model_runtime import RoleRuntime, resolve_role_runtime
 from des.domain.nwave_locations import NWaveLocations
 from des.domain.nwave_root import resolve_nwave_root
@@ -165,9 +175,30 @@ class DESConfig:
             # built, so every downstream consumer (including
             # `_nearest_marker`) always ascends real directories regardless
             # of whether the caller passed a relative or absolute cwd.
-            config_path = effective_cwd.resolve() / ".nwave" / "config.json"
+            #
+            # CONFIGURATION FOLLOWS THE REPOSITORY. A git worktree checkout is
+            # a distinct working directory of the SAME repository, so the
+            # repository-root `.nwave/config.json` governs it too.
+            # `resolve_repository_config_root` ascends git's own
+            # `gitdir:`/`commondir` marker chain in pure Python (no `git`
+            # binary) and returns the start directory UNCHANGED for an
+            # ordinary checkout at any depth -- so this is the single place
+            # the project config path is derived, and no call site moves.
+            project_root = effective_cwd.resolve()
+            config_path = (
+                resolve_repository_config_root(project_root) / ".nwave" / "config.json"
+            )
+        else:
+            # An explicitly supplied config_path is honoured verbatim and is
+            # never re-resolved; its grandparent is the project root exactly
+            # as every pre-existing consumer already derived it.
+            project_root = config_path.parent.parent
 
         self._config_path = config_path
+        # The EXECUTING checkout, kept distinct from `_config_path`'s
+        # grandparent now that the config may live in another directory.
+        # Under an ordinary checkout the two coincide, byte-for-byte as before.
+        self._project_root = project_root
         self._config_data = self._load_json_file(self._config_path)
 
         global_path = (
@@ -181,8 +212,146 @@ class DESConfig:
         )
 
     @staticmethod
-    def design_document_destination(root: Path) -> str | None:
+    def feature_config_path(
+        root: Path, feature_id: Epic | Feature | Slice | str
+    ) -> Path:
+        """Shared repository-config location of one feature's overrides."""
+        base = DESConfig(cwd=root)._config_path.parent
+        if isinstance(feature_id, Epic):
+            return base / "epics" / feature_id.epic_id / "config.json"
+        if isinstance(feature_id, (Feature, Slice)):
+            feature_id = feature_id.feature_id
+        require_feature_id(feature_id)
+        return base / "features" / feature_id / "config.json"
+
+    @staticmethod
+    def feature_document_destinations(
+        root: Path, feature_id: Epic | Feature | Slice | str
+    ) -> dict[str, str]:
+        """Resolve every wave's FEATURE destination or raise FeatureDocumentsInvalid.
+
+        A selected feature file that is present but corrupt is refused, never
+        treated as absent; a destination crossing a symlink is refused before
+        any producer writes.
+        """
+        if isinstance(feature_id, (Feature, Slice)):
+            feature_id = feature_id.feature_id
+        epic = feature_id if isinstance(feature_id, Epic) else None
+        config = DESConfig(cwd=root)
+        path = DESConfig.feature_config_path(root, feature_id)
+        if epic is not None:
+            feature_id = epic.epic_id
+        feature_documents: object = None
+        if path.exists():
+            try:
+                parsed = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise FeatureDocumentsInvalid(
+                    "FeatureConfigMalformed",
+                    f"{path} cannot be read as JSON: {error}",
+                    "repair the file or set it with nwave-ai project feature-document",
+                ) from error
+            if not isinstance(parsed, dict) or not set(parsed) <= {
+                "documents",
+                "schema-version",
+            }:
+                raise FeatureDocumentsInvalid(
+                    "FeatureConfigMalformed",
+                    "a feature config holds only a documents object",
+                    "remove other keys from the feature config",
+                )
+            feature_documents = parsed.get("documents", {})
+            if not isinstance(feature_documents, dict):
+                raise FeatureDocumentsInvalid(
+                    "FeatureConfigMalformed",
+                    "documents must be an object",
+                    "repair the feature config",
+                )
+        global_tier, repo_tier = config._unified_upcast_tiers()
+        if epic is not None:
+
+            def epic_tier(tier):
+                documents = tier.get("documents", {})
+                if not isinstance(documents, dict):
+                    raise FeatureDocumentsInvalid(
+                        "EpicConfigMalformed",
+                        "documents must be an object",
+                        "repair the configuration",
+                    )
+                block = documents.get("epic", {})
+                if not isinstance(block, dict):
+                    raise FeatureDocumentsInvalid(
+                        "EpicConfigMalformed",
+                        "documents.epic must be an object",
+                        "repair the configuration",
+                    )
+                templates = {
+                    wave: {"destination": path.replace("docs/feature/", "docs/epic/")}
+                    for wave, path in DEFAULT_TEMPLATES.items()
+                }
+                for wave, entry in block.items():
+                    if (
+                        wave not in templates
+                        or not isinstance(entry, dict)
+                        or set(entry) != {"destination"}
+                    ):
+                        raise FeatureDocumentsInvalid(
+                            "EpicConfigMalformed",
+                            "invalid epic wave configuration",
+                            "supply a wave destination template",
+                        )
+                    template = entry["destination"]
+                    if not isinstance(template, str) or "{epic}" not in template:
+                        raise FeatureDocumentsInvalid(
+                            "InvalidEpicTemplate",
+                            "epic template must contain {epic}",
+                            "include {epic} in the destination",
+                        )
+                    templates[wave] = {
+                        "destination": template.replace("{epic}", "{feature}")
+                    }
+                return {"documents": {**documents, "feature": templates}}
+
+            # Defaults enter once; project overrides preserve global epic values.
+            global_tier = epic_tier(global_tier)
+            merged_epic = dict(global_tier["documents"]["feature"])
+            project_epic = repo_tier.get("documents", {}).get("epic", {})
+            project_tier = epic_tier(repo_tier)
+            for wave in project_epic:
+                merged_epic[wave] = project_tier["documents"]["feature"][wave]
+            repo_tier = {
+                "documents": {**project_tier["documents"], "feature": merged_epic}
+            }
+        resolved = merge_feature_destinations(
+            feature_id,
+            global_documents=global_tier.get("documents"),
+            project_documents=repo_tier.get("documents"),
+            feature_documents=feature_documents,
+        )
+        top = root.resolve()
+        for destination in resolved.values():
+            current = root
+            for part in destination.split("/"):
+                current = current / part
+                if current.is_symlink() or (
+                    current.exists() and not current.resolve().is_relative_to(top)
+                ):
+                    raise FeatureDocumentsInvalid(
+                        "FeatureDestinationSymlink",
+                        f"{destination} crosses a symlink at {part}",
+                        "use a real repository-local directory",
+                    )
+        return resolved
+
+    @staticmethod
+    def design_document_destination(
+        root: Path, feature_id: DocumentScope | str | None = None
+    ) -> str | None:
         """Resolve DESIGN's destination from the existing effective config."""
+        if isinstance(feature_id, Project):
+            feature_id = None
+        if feature_id is not None:
+            return DESConfig.feature_document_destinations(root, feature_id)["design"]
         documents = DESConfig(cwd=root).effective_config().get("documents")
         design = documents.get("design") if isinstance(documents, dict) else None
         value = design.get("destination") if isinstance(design, dict) else None
@@ -193,8 +362,14 @@ class DESConfig:
         )
 
     @staticmethod
-    def operational_document_destination(root: Path) -> str | None:
+    def operational_document_destination(
+        root: Path, feature_id: DocumentScope | str | None = None
+    ) -> str | None:
         """Resolve DEVOPS's destination through the same effective cascade."""
+        if isinstance(feature_id, Project):
+            feature_id = None
+        if feature_id is not None:
+            return DESConfig.feature_document_destinations(root, feature_id)["devops"]
         documents = DESConfig(cwd=root).effective_config().get("documents")
         devops = documents.get("devops") if isinstance(documents, dict) else None
         value = devops.get("destination") if isinstance(devops, dict) else None
@@ -216,7 +391,13 @@ class DESConfig:
         )
 
     @staticmethod
-    def discuss_document_destination(root: Path) -> str:
+    def discuss_document_destination(
+        root: Path, feature_id: DocumentScope | str | None = None
+    ) -> str:
+        if isinstance(feature_id, Project):
+            feature_id = None
+        if feature_id is not None:
+            return DESConfig.feature_document_destinations(root, feature_id)["discuss"]
         documents = DESConfig(cwd=root).effective_config().get("documents")
         discuss = documents.get("discuss") if isinstance(documents, dict) else None
         value = discuss.get("destination") if isinstance(discuss, dict) else None
@@ -227,7 +408,13 @@ class DESConfig:
         )
 
     @staticmethod
-    def distill_document_destination(root: Path) -> str:
+    def distill_document_destination(
+        root: Path, feature_id: DocumentScope | str | None = None
+    ) -> str:
+        if isinstance(feature_id, Project):
+            feature_id = None
+        if feature_id is not None:
+            return DESConfig.feature_document_destinations(root, feature_id)["distill"]
         documents = DESConfig(cwd=root).effective_config().get("documents")
         distill = documents.get("distill") if isinstance(documents, dict) else None
         value = distill.get("destination") if isinstance(distill, dict) else None
@@ -448,7 +635,7 @@ class DESConfig:
             role_id,
             global_tier=global_tier,
             repo_tier=repo_tier,
-            repo_root=self._config_path.parent.parent,
+            repo_root=self._project_root,
             framework_root=framework_root,
         )
 
@@ -550,7 +737,7 @@ class DESConfig:
             detect_deliverable_type,
         )
 
-        detected = detect_deliverable_type(self._config_path.parent.parent)
+        detected = detect_deliverable_type(self._project_root)
         # Only a POSITIVE marker resolves; an ``"application"`` detection means
         # "no positive marker" -> ``None`` (HIGH-1 sentinel). Using
         # ``_KNOWN_DELIVERABLE_TYPES`` here would wrongly return ``"application"``.

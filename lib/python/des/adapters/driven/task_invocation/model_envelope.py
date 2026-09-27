@@ -16,12 +16,18 @@ from des.domain.architecture_brief_resolver import (
     is_design_oracle_locator,
     is_repository_relative_whole_file_locator,
 )
+from des.domain.design_authority_locator import (
+    UNSAFE_LOCATOR_REFUSAL,
+    is_design_authority_locator,
+)
+from des.domain.distill_document import DistillDocument, DistillDocumentInvalid
 from des.ports.driven_ports.task_invocation_port import (
     MINIMUM_OBSERVATION_CHARACTERS,
     CraftBlocker,
     DefectOwner,
     DesignFacts,
     DesignTarget,
+    ExpectationCharterAnswer,
     MalformedModelEnvelope,
     ModelAccounting,
     ModelOutcome,
@@ -31,8 +37,14 @@ from des.ports.driven_ports.task_invocation_port import (
 )
 
 
+#: The one semantic task this decoder branches on for the shared Product Owner
+#: role, distinct from the ordinary decomposition/correction envelope.
+_EXPECTATION_CHARTER_TASK = "expectation-charter"
+
+
 _PRODUCT_OWNER = "nw-product-owner"
 _SOLUTION_ARCHITECT = "nw-solution-architect"
+_ACCEPTANCE_DESIGNER = "nw-acceptance-designer"
 _ACCEPTANCE_REVIEWER = "nw-acceptance-designer-reviewer"
 
 #: The whole-diff reviewer owes the same ownership word. ADR-DES-003 §5 retires
@@ -52,8 +64,30 @@ _DEFECT_NAMING = frozenset({_ACCEPTANCE_REVIEWER, _WHOLE_DIFF_REVIEWER})
 _CRAFTERS = frozenset({"nw-software-crafter", "nw-functional-software-crafter"})
 
 
+def _base_role_id(role_id: str) -> str:
+    """Return the published role identity behind an optional competence key.
+
+    ``role#competence`` selects a configured runtime.  It does not create a
+    second specialist or a second semantic envelope.  The provider adapters
+    must therefore use the base role for every role-shaped schema and decoder
+    decision, while the qualified id remains available to the runtime and turn
+    record.
+    """
+    return role_id.partition("#")[0]
+
+
+def is_crafter_role(role_id: str) -> bool:
+    """Whether this role owns one implementation batch.
+
+    This is the one role classification shared by the semantic envelope and
+    native producer capture.  A recorder must never grow a second, drifting
+    spelling of the crafter set.
+    """
+    return _base_role_id(role_id) in _CRAFTERS
+
+
 _ACCEPTING: dict[str, Any] = {
-    "properties": {"outcome": {"const": ModelOutcome.Accepted.value}},
+    "properties": {"outcome": {"type": "string", "const": ModelOutcome.Accepted.value}},
     "required": ["outcome"],
 }
 _NOT_ACCEPTING: dict[str, Any] = {
@@ -290,6 +324,7 @@ _SOLUTION_ARCHITECT_SCHEMA: dict[str, Any] = {
                         "items": _NON_EMPTY_STRING,
                     },
                 },
+                "oracle_verification_index": {"type": "integer", "minimum": 0},
                 # A provider that returns typed facts must carry the field even
                 # when no configured DESIGN-document constructor assigned a
                 # section identity.  The constructor, never the provider,
@@ -303,6 +338,7 @@ _SOLUTION_ARCHITECT_SCHEMA: dict[str, Any] = {
                 "oracle",
                 "acceptance_supports",
                 "verification",
+                "oracle_verification_index",
                 "authority_locator",
             ],
             "additionalProperties": False,
@@ -325,43 +361,78 @@ _SOLUTION_ARCHITECT_SCHEMA: dict[str, Any] = {
 }
 
 
-_DEFECT_OWNERS = [owner.value for owner in DefectOwner]
+#: The charter Product Owner turn's closed qualitative payload. It never
+#: carries `values`: this is not a decomposition, it is one value's charter.
+_CHARTER_FACTS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "intent": _NON_EMPTY_STRING,
+        "exploration": _NON_EMPTY_STRING,
+        "positive_observations": {
+            "type": "array",
+            "minItems": 1,
+            "items": _NON_EMPTY_STRING,
+        },
+        "negative_observation": _NON_EMPTY_STRING,
+    },
+    "required": [
+        "intent",
+        "exploration",
+        "positive_observations",
+        "negative_observation",
+    ],
+    "additionalProperties": False,
+}
+_EXPECTATION_CHARTER_SCHEMA: dict[str, Any] = {
+    **_OUTCOME_SCHEMA,
+    "properties": {
+        **_OUTCOME_SCHEMA["properties"],
+        "charter": {**_CHARTER_FACTS_SCHEMA, "type": ["object", "null"]},
+    },
+    "required": ["outcome", "diagnostic", "charter"],
+    "if": _ACCEPTING,
+    "then": {
+        "properties": {
+            "diagnostic": _NON_EMPTY_DIAGNOSTIC,
+            "charter": _CHARTER_FACTS_SCHEMA,
+        }
+    },
+    "else": {
+        "properties": {
+            "diagnostic": _NON_EMPTY_DIAGNOSTIC,
+            "charter": {"type": "null"},
+        }
+    },
+}
+
+
+def _defect_owners_for(role_id: str) -> list[str]:
+    role_id = _base_role_id(role_id)
+    owners = [DefectOwner.Oracle.value, DefectOwner.Design.value]
+    if role_id == _WHOLE_DIFF_REVIEWER:
+        owners.append(DefectOwner.Implementation.value)
+    return owners
 
 
 def _acceptance_reviewer_schema(
     defect_values: tuple[str, ...] = (),
+    *,
+    role_id: str = _ACCEPTANCE_REVIEWER,
 ) -> dict[str, Any]:
-    """The reviewer answers WHO owns each defect, in a word the provider imposes.
+    """Constrain findings to this reviewer's scope and this Request's values.
 
-    MEASURED, run 28c (2026-09-06, turns 07-09) and the same class in run 25
-    turn 04.  The aggregate review refused the oracle set over a fact of the
-    DESIGN -- a test file a value's obligation must rewrite that the value's own
-    `targets` list never declared -- and the runner opened its one correction
-    window on the acceptance designer, who owns no target.  The designer could
-    not repair it, the second review restated the same finding, and the Request
-    ended `AcceptanceReviewRejected` after roughly $1.5 and 25 minutes of turns
-    spent on a correction no role in that window was able to make.
+    Acceptance review can identify oracle or design defects. Whole-candidate
+    review can also identify implementation defects; forcing such a finding
+    into the design category requests rework from the wrong owner.
 
-    The MODEL decides whose defect it is; the SOFTWARE only routes on the word
-    (`boundary:software-measures-model-decides`).  Reading the owner off the
-    finding's prose is forbidden -- diagnostics are diagnostic only -- so the
-    word is a field the provider validates against a closed enum, and the
-    routing fact reaches the runner in the typed payload (GDP-0).
-
-    ``defect_value`` carries the observation the defect is charged to.  Its enum
-    is built by the caller from THIS Request's observations, so a value the
-    Request does not contain is unrepresentable rather than caught afterwards.
-    It admits `null` as well, because the aggregate review exists precisely to
-    catch set-level defects -- a duplicate stimulus across two oracles belongs
-    to no single value -- and forcing a name there would make the model invent
-    one.  The one rule the schema does NOT state is "a `design` defect must name
-    a value": that would need a second conditional nested in the first, a shape
-    no probe has measured at this boundary, and its consumer already refuses
-    LOUD (GDP-6) with a diagnostic naming the omission.
+    The model names the owner. The schema and decoder preserve that fact; they
+    do not choose a correction route. A null value represents a set-level
+    finding, while an accepted result cannot carry a defect.
     """
+    owners = _defect_owners_for(role_id)
     owner: dict[str, Any] = {
         "type": ["string", "null"],
-        "enum": [*_DEFECT_OWNERS, None],
+        "enum": [*owners, None],
     }
     value: dict[str, Any] = {
         "type": ["string", "null"],
@@ -382,7 +453,7 @@ def _acceptance_reviewer_schema(
         "then": {
             "properties": {
                 "diagnostic": _NON_EMPTY_DIAGNOSTIC,
-                "defect_owner": {"type": "string", "enum": _DEFECT_OWNERS},
+                "defect_owner": {"type": "string", "enum": owners},
             }
         },
         "else": {
@@ -440,6 +511,86 @@ _CRAFTER_SCHEMA: dict[str, Any] = {
 }
 
 
+# The recovery turn does not author code or choose a route.  Its accepted
+# payload is exactly the public v2 DISTILL grammar, so the caller can preserve
+# its canonical bytes and submit them to the existing constructor unchanged.
+_DISTILL_VALUE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "observation": _NON_EMPTY_STRING,
+        "acceptance_obligations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": _NON_EMPTY_STRING,
+                    "stimulus": _NON_EMPTY_STRING,
+                    "expected": _NON_EMPTY_STRING,
+                },
+                "required": ["id", "stimulus", "expected"],
+                "additionalProperties": False,
+            },
+        },
+        "oracle": {"type": "string", "pattern": DESIGN_ORACLE_LOCATOR_PATTERN},
+        "acceptance_supports": {
+            "type": "array",
+            "items": _LOCATOR_STRING,
+            "uniqueItems": True,
+        },
+        "verification": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "array",
+                "minItems": 1,
+                "items": _NON_EMPTY_STRING,
+            },
+        },
+        "oracle_verification_index": {"type": "integer", "minimum": 0},
+    },
+    "required": [
+        "observation",
+        "acceptance_obligations",
+        "oracle",
+        "acceptance_supports",
+        "verification",
+        "oracle_verification_index",
+    ],
+    "additionalProperties": False,
+}
+_DISTILL_DOCUMENT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "schema_version": {"type": "integer", "const": 2},
+        "values": {"type": "array", "minItems": 1, "items": _DISTILL_VALUE_SCHEMA},
+    },
+    "required": ["schema_version", "values"],
+    "additionalProperties": False,
+}
+_ACCEPTANCE_DESIGNER_SCHEMA: dict[str, Any] = {
+    **_OUTCOME_SCHEMA,
+    "properties": {
+        **_OUTCOME_SCHEMA["properties"],
+        "distill_document": {**_DISTILL_DOCUMENT_SCHEMA, "type": ["object", "null"]},
+    },
+    "required": ["outcome", "diagnostic", "distill_document"],
+    "if": _ACCEPTING,
+    "then": {
+        "properties": {
+            "diagnostic": _NON_EMPTY_DIAGNOSTIC,
+            "distill_document": _DISTILL_DOCUMENT_SCHEMA,
+        }
+    },
+    "else": {
+        "properties": {
+            "diagnostic": _NON_EMPTY_DIAGNOSTIC,
+            "distill_document": {"type": "null"},
+        }
+    },
+}
+
+
 _ROLE_SCHEMAS = {
     _PRODUCT_OWNER: _PRODUCT_OWNER_SCHEMA,
     _SOLUTION_ARCHITECT: _SOLUTION_ARCHITECT_SCHEMA,
@@ -453,17 +604,28 @@ def _schema_for(
     role_id: str,
     max_product_values: int | None = None,
     defect_values: tuple[str, ...] = (),
+    semantic_task: str | None = None,
 ) -> str:
+    role_id = _base_role_id(role_id)
+    if role_id == _PRODUCT_OWNER and semantic_task == _EXPECTATION_CHARTER_TASK:
+        return json.dumps(_EXPECTATION_CHARTER_SCHEMA, separators=(",", ":"))
     if role_id == _PRODUCT_OWNER and max_product_values is not None:
         return json.dumps(
             _product_owner_schema(max_product_values), separators=(",", ":")
         )
     if role_id in _DEFECT_NAMING:
         return json.dumps(
-            _acceptance_reviewer_schema(defect_values), separators=(",", ":")
+            _acceptance_reviewer_schema(defect_values, role_id=role_id),
+            separators=(",", ":"),
         )
+    schema = (
+        _ACCEPTANCE_DESIGNER_SCHEMA
+        if role_id == _ACCEPTANCE_DESIGNER
+        and semantic_task == "selected-revision-recovery"
+        else _ROLE_SCHEMAS.get(role_id, _OUTCOME_SCHEMA)
+    )
     return json.dumps(
-        _ROLE_SCHEMAS.get(role_id, _OUTCOME_SCHEMA),
+        schema,
         separators=(",", ":"),
     )
 
@@ -474,6 +636,7 @@ def decode_model_run(
     role_id: str = "",
     max_product_values: int | None = None,
     defect_values: tuple[str, ...] = (),
+    semantic_task: str | None = None,
     accounting: ModelAccounting | None = None,
 ) -> ModelRun:
     """Validate one already-unwrapped terminal structured-output object.
@@ -482,12 +645,25 @@ def decode_model_run(
     including cross-field checks a replayed or hand-written answer did not pass
     at the provider boundary.
     """
+    semantic_role_id = _base_role_id(role_id)
+    charter_task = (
+        semantic_role_id == _PRODUCT_OWNER
+        and semantic_task == _EXPECTATION_CHARTER_TASK
+    )
     expected = {"outcome", "diagnostic"}
-    if role_id == _PRODUCT_OWNER:
+    if semantic_role_id == _PRODUCT_OWNER and not charter_task:
         expected.add("values")
-    if role_id == _SOLUTION_ARCHITECT:
+    if charter_task:
+        expected.add("charter")
+    if semantic_role_id == _SOLUTION_ARCHITECT:
         expected.add("design_facts")
-    if role_id in _CRAFTERS:
+    recovery_task = (
+        semantic_role_id == _ACCEPTANCE_DESIGNER
+        and semantic_task == "selected-revision-recovery"
+    )
+    if recovery_task:
+        expected.add("distill_document")
+    if is_crafter_role(semantic_role_id):
         expected.add("blocked_by")
     # The ownership word routes a FINDING, so it is owed on a refusal and on
     # nothing else. The schema's own `else` branch already forces both fields to
@@ -497,7 +673,11 @@ def decode_model_run(
     # defect-naming role refused the k4 replay corpus's recorded turn 06, an
     # ACCEPTED review from before the word existed, for a field that could only
     # ever have been null. The half the routing depends on stays strict below.
-    optional = {"defect_owner", "defect_value"} if role_id in _DEFECT_NAMING else set()
+    optional = (
+        {"defect_owner", "defect_value"}
+        if semantic_role_id in _DEFECT_NAMING
+        else set()
+    )
     if not set(structured) <= expected | optional or not expected <= set(structured):
         raise MalformedModelEnvelope(
             "ModelOutcomeMalformed: structured output has unexpected fields"
@@ -512,7 +692,7 @@ def decode_model_run(
             "ModelOutcomeMalformed: diagnostic must be a string"
         )
     values: tuple[ProductValue, ...] = ()
-    if role_id == _PRODUCT_OWNER:
+    if semantic_role_id == _PRODUCT_OWNER and not charter_task:
         raw_values = structured["values"]
         if not isinstance(raw_values, list):
             raise MalformedModelEnvelope("ProductValuesMalformed")
@@ -554,7 +734,7 @@ def decode_model_run(
             )
         values = tuple(extracted)
     design_facts: DesignFacts | None = None
-    if role_id == _SOLUTION_ARCHITECT:
+    if semantic_role_id == _SOLUTION_ARCHITECT:
         raw_facts = structured["design_facts"]
         if raw_facts is not None:
             try:
@@ -596,29 +776,31 @@ def decode_model_run(
                         is_repository_relative_whole_file_locator(path)
                         for path in supports
                     )
-                    or (
-                        bool(authority_locator)
-                        and (
-                            "#" not in authority_locator
-                            or not is_repository_relative_whole_file_locator(
-                                authority_locator.partition("#")[0]
-                            )
-                            or not authority_locator.partition("#")[2]
-                            or "#" in authority_locator.partition("#")[2]
-                            or "\n" in authority_locator.partition("#")[2]
-                            or "\r" in authority_locator.partition("#")[2]
-                        )
-                    )
+                    or not is_design_authority_locator(authority_locator)
                 ):
                     # The provider schema carries the same grammar, but replayed
                     # and hand-written envelopes reach this shared decoder too.
                     # Keep traversal/prose locators from becoming DesignFacts
                     # after a provider-specific transport projection.
-                    raise MalformedModelEnvelope("DesignFactsUnsafeLocator")
+                    #
+                    # The `<document>#<heading>` clauses are NOT spelled here:
+                    # they are `des.domain.design_authority_locator`'s ordered
+                    # table, which also publishes the statement the architect
+                    # reads while authoring the field -- the rule that refuses a
+                    # turn and the rule it was taught are one object.
+                    raise MalformedModelEnvelope(UNSAFE_LOCATOR_REFUSAL)
                 targets = tuple(
                     DesignTarget(item["path"], item["decision"]) for item in raw_targets
                 )
                 verification = tuple(tuple(argv) for argv in raw_facts["verification"])
+                oracle_verification_index = raw_facts["oracle_verification_index"]
+                if (
+                    not isinstance(oracle_verification_index, int)
+                    or isinstance(oracle_verification_index, bool)
+                    or oracle_verification_index < 0
+                    or oracle_verification_index >= len(verification)
+                ):
+                    raise MalformedModelEnvelope("OracleVerificationIndexInvalid")
                 design_facts = DesignFacts(
                     targets,
                     raw_facts["paradigm"],
@@ -626,17 +808,77 @@ def decode_model_run(
                     oracle,
                     tuple(supports),
                     verification,
+                    oracle_verification_index,
                     authority_locator=authority_locator,
                 )
             except (KeyError, TypeError):
                 raise MalformedModelEnvelope("DesignFactsMalformed") from None
+    charter: ExpectationCharterAnswer | None = None
+    if charter_task:
+        raw_charter = structured["charter"]
+        if outcome is ModelOutcome.Accepted:
+            required_keys = {
+                "intent",
+                "exploration",
+                "positive_observations",
+                "negative_observation",
+            }
+            if not isinstance(raw_charter, dict) or set(raw_charter) != required_keys:
+                raise MalformedModelEnvelope("CharterFactsMalformed")
+            intent = raw_charter["intent"]
+            exploration = raw_charter["exploration"]
+            positives = raw_charter["positive_observations"]
+            negative = raw_charter["negative_observation"]
+            if (
+                not isinstance(intent, str)
+                or not intent.strip()
+                or not isinstance(exploration, str)
+                or not exploration.strip()
+                or not isinstance(positives, list)
+                or not positives
+                or not all(isinstance(item, str) and item.strip() for item in positives)
+                or not isinstance(negative, str)
+                or not negative.strip()
+            ):
+                raise MalformedModelEnvelope("CharterFactsMalformed")
+            charter = ExpectationCharterAnswer(
+                intent, exploration, tuple(positives), negative
+            )
+        elif raw_charter is not None:
+            raise MalformedModelEnvelope(
+                "EnvelopeOutcomeContradictsPayload: a non-accepting charter turn "
+                "carried charter facts"
+            )
+    distill_document: DistillDocument | None = None
+    if recovery_task:
+        raw_document = structured["distill_document"]
+        if outcome is ModelOutcome.Accepted:
+            if not isinstance(raw_document, dict):
+                raise MalformedModelEnvelope("DistillDocumentMissing")
+            try:
+                distill_document = DistillDocument.from_json(
+                    json.dumps(
+                        raw_document,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    )
+                )
+            except DistillDocumentInvalid as error:
+                raise MalformedModelEnvelope(
+                    f"DistillDocumentMalformed: {error}"
+                ) from None
+        elif raw_document is not None:
+            raise MalformedModelEnvelope(
+                "EnvelopeOutcomeContradictsPayload: a non-accepting acceptance-designer turn carried a DISTILL document"
+            )
     review_defect = (
-        _review_defect(structured, outcome, defect_values)
-        if role_id in _DEFECT_NAMING
+        _review_defect(structured, outcome, defect_values, semantic_role_id)
+        if semantic_role_id in _DEFECT_NAMING
         else None
     )
     craft_blocker = (
-        _craft_blocker(structured, outcome) if role_id in _CRAFTERS else None
+        _craft_blocker(structured, outcome) if is_crafter_role(role_id) else None
     )
     return ModelRun(
         outcome=outcome,
@@ -648,6 +890,8 @@ def decode_model_run(
         design_facts=design_facts,
         review_defect=review_defect,
         craft_blocker=craft_blocker,
+        distill_document=distill_document,
+        charter=charter,
     )
 
 
@@ -683,6 +927,7 @@ def _review_defect(
     structured: dict[str, Any],
     outcome: ModelOutcome,
     defect_values: tuple[str, ...],
+    role_id: str,
 ) -> ReviewDefect | None:
     """The reviewer's routing word, re-stated against the same law it declared.
 
@@ -709,10 +954,13 @@ def _review_defect(
                 "defect owner; an approval owns no defect"
             )
         return None
+    owners = _defect_owners_for(role_id)
     try:
+        if owner not in owners:
+            raise ValueError("owner outside role scope")
         return ReviewDefect(DefectOwner(owner), value)
     except (TypeError, ValueError):
         raise MalformedModelEnvelope(
             "ReviewDefectOwnerMissing: a non-accepting review named no owner in "
-            f"{_DEFECT_OWNERS} for its finding"
+            f"{owners} for its finding"
         ) from None

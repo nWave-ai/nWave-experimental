@@ -1,0 +1,7 @@
+id,request,expected_outcome,observed_stdout
+missing-put,A customer can create delivery windows with POST and replace them with PUT. Subsequent GET returns the submitted windows.,indeterminate,"POST /checks status=201 windows=A; GET /checks/42 status=200 windows=A
+13 tests passed. All observations hold."
+observed-put,A customer can create delivery windows with POST and replace them with PUT. Subsequent GET returns the submitted windows.,accepted,"POST /checks status=201 windows=A; GET /checks/42 status=200 windows=A
+PUT /checks/42 windows=B status=200; GET /checks/42 status=200 windows=B"
+failed-put,A customer can create delivery windows with POST and replace them with PUT. Subsequent GET returns the submitted windows.,rejected,"POST /checks status=201 windows=A; GET /checks/42 status=200 windows=A
+PUT /checks/42 windows=B status=405; GET /checks/42 status=200 windows=A"

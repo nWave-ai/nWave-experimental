@@ -17,6 +17,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @dataclass(frozen=True)
@@ -108,6 +113,19 @@ HOOK_EVENTS: tuple[HookEvent, ...] = (
     # `subagent_stop_handler.py`'s module docstring for the verified real
     # payload shape and the residual obligation this closes.
     HookEvent(event="SubagentStop", matcher=None, action="subagent-stop"),
+    # Route notice into the agent's OWN starting context. `matcher=None` is
+    # load-bearing, not a default: SessionStart fires on
+    # startup|resume|clear|compact, and the historical `matcher="startup"`
+    # entry never fired on resume/clear/compact. `generate_hook_config` omits
+    # the "matcher" key entirely when it is None, which is the published shape.
+    #
+    # This does NOT reopen the retired DES-runtime SessionStart entry: the
+    # standing decision refused that one because it performed maintenance, so
+    # opening a session mutated maintainer state. `session_start_notice_handler`
+    # is read-only by mandate -- it reads one shipped template and prints one
+    # JSON object, with no ledger write, update check, housekeeping or
+    # filesystem mutation of any kind.
+    HookEvent(event="SessionStart", matcher=None, action="session-start"),
 )
 
 # The distinct event types DES registers (for validation).
@@ -214,6 +232,26 @@ _KNOWN_HOOK_ACTIONS: frozenset[str] = (
 )
 
 
+def is_des_python_command(command: str) -> bool:
+    """The path-independent half of DES ownership: the Python invocations.
+
+    Recognizes ONLY the two Python structures the installer itself emits
+    (present `-m` module form, historical flat script form with a known
+    action). It deliberately excludes the leading `# des-hook:` shell marker,
+    because a user may have kept a MODIFIED near-match of a withdrawn
+    installer shell payload (the exact command plus their own argument) that
+    must survive reinstall byte-for-byte.
+
+    Structural and path-independent: it still matches a command written by a
+    previous install under a different interpreter path, which exact equality
+    with the currently desired command would miss.
+    """
+    if _DES_MODULE_INVOCATION in command:
+        return True
+    legacy_match = _LEGACY_SCRIPT_INVOCATION_RE.match(command)
+    return legacy_match is not None and legacy_match.group(1) in _KNOWN_HOOK_ACTIONS
+
+
 def _is_des_command(command: str) -> bool:
     """Check if a command string is an installer-owned DES hook command.
 
@@ -240,10 +278,7 @@ def _is_des_command(command: str) -> bool:
     positives while still matching every command the installer itself
     writes (present or historical).
     """
-    if _DES_MODULE_INVOCATION in command or command.startswith("# des-hook:"):
-        return True
-    legacy_match = _LEGACY_SCRIPT_INVOCATION_RE.match(command)
-    return legacy_match is not None and legacy_match.group(1) in _KNOWN_HOOK_ACTIONS
+    return is_des_python_command(command) or command.startswith("# des-hook:")
 
 
 def is_des_hook_entry(hook_entry: dict) -> bool:
@@ -270,7 +305,9 @@ def is_des_hook_entry(hook_entry: dict) -> bool:
     return False
 
 
-def strip_des_hooks_from_entries(entries: list) -> list:
+def strip_des_hooks_from_entries(
+    entries: list, *, is_owned: Callable | None = None
+) -> list:
     """Remove DES-owned commands from a hook-event's entry list.
 
     An old flat entry whose own command is DES-owned is dropped outright.
@@ -279,16 +316,25 @@ def strip_des_hooks_from_entries(entries: list) -> list:
     DES-owned nested hooks are removed, so the sibling and all entry
     metadata survive. The entry itself is dropped only once stripping
     leaves it with no hooks at all.
+
+    Args:
+        entries: the hook-event's entry list.
+        is_owned: optional ownership predicate replacing the default
+            `_is_des_command`, so a caller can NARROW ownership for an event
+            key whose array is known to carry user-owned near-matches of
+            withdrawn installer shell payloads. The sibling- and
+            metadata-preserving traversal itself stays here, in one place.
     """
+    owned = _is_des_command if is_owned is None else is_owned
     result = []
     for entry in entries:
-        if _is_des_command(entry.get("command", "")):
+        if owned(entry.get("command", "")):
             continue
         hooks = entry.get("hooks")
         if hooks is None:
             result.append(entry)
             continue
-        retained_hooks = [h for h in hooks if not _is_des_command(h.get("command", ""))]
+        retained_hooks = [h for h in hooks if not owned(h.get("command", ""))]
         if not retained_hooks:
             continue
         if len(retained_hooks) != len(hooks):

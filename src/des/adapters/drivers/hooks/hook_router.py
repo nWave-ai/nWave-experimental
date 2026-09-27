@@ -16,6 +16,9 @@ from des.adapters.drivers.hooks.pre_tool_use_handler import (
     handle_pre_tool_use,
 )
 from des.adapters.drivers.hooks.pre_write_handler import handle_pre_write
+from des.adapters.drivers.hooks.session_start_notice_handler import (
+    handle_session_start,
+)
 from des.adapters.drivers.hooks.subagent_stop_handler import handle_subagent_stop
 
 
@@ -128,6 +131,8 @@ def main() -> None:
         exit_code = handle_pre_write()
     elif command == "subagent-stop":
         exit_code = handle_subagent_stop()
+    elif command == "session-start":
+        exit_code = handle_session_start()
     else:
         print(json.dumps({"status": "error", "reason": f"Unknown command: {command}"}))
         exit_code = 1

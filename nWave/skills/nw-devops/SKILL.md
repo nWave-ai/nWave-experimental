@@ -7,6 +7,15 @@ argument-hint: '[platform risk or deployment target]'
 
 # NW-DEVOPS
 
+Read `~/.claude/skills/nw-human-collaboration/SKILL.md` to offer and conduct
+interactive refinement with the human. Honor an already selected final-review
+or full-delegation mode; the LLM manages the dialogue and progression.
+
+
+Read `~/.claude/skills/nw-role-invocation/SKILL.md` before delegating. Invoke
+the installed `nw-platform-architect` role natively to supply semantic facts;
+`des devops --input -` constructs the document and buys no role turn.
+
 ## Purpose
 
 Apply the platform lens only when infrastructure, deployment, recovery,
@@ -38,7 +47,7 @@ authority; software re-derives any needed execution facts.
 ## Public construction
 
 For a machine-supplied operational brief, emit the complete closed
-`OperationalDocumentInput v1` JSON and invoke `des devops --repo-root ROOT
+`OperationalDocumentInput v1` JSON and invoke `des devops --repo-root ROOT --feature FEATURE_ID
 --input -`.  The provider-free command writes the configured Markdown brief and
 canonical adjacent `.operational-facts.json` sidecar.  A later PO turn consumes
 facts only when the orchestrator explicitly selects that sidecar with
@@ -47,5 +56,9 @@ facts only when the orchestrator explicitly selects that sidecar with
 ## Feature evolution
 
 Feature evolution applies to every completed feature, not only DEVOPS work.
-Follow the canonical whole-feature invocation and cleanup guidance in
-`nWave/skills/nw-throughput/SKILL.md#feature-evolution-before-cleanup`.
+Before creating or inheriting a lane, or finalizing/resuming its cleanup,
+apply the worktree lifecycle and completed-feature evolution guidance in
+`nw-throughput`. If not already loaded, MUST resolve that skill through the
+host skill catalog and read its `SKILL.md`.
+
+Document scope must be explicit for DISCUSS, PO and DEVOPS. The examples select a feature; alternatives are `--project`, `--epic EPIC_ID`, or `--slice FEATURE_ID SLICE_ID`. Select exactly one. Later steps inherit the persisted scope.

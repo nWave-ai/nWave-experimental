@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from des.application.whole_file_document_publisher import (
     PublishedWholeFile,
+    PublishRefusalVocabulary,
     publish_whole_file,
     publish_whole_file_revision,
 )
@@ -32,14 +33,17 @@ def publish_discuss_document(
     canonical facts, so the current bytes are the revision being superseded.
     """
     content = document.markdown().encode()
+    refusals = PublishRefusalVocabulary(
+        unsafe="UnsafeDiscussDestination",
+        drift="DiscussAuthorityDrift",
+        unavailable="DiscussAuthorityUnavailable",
+    )
     if not replace_current:
         return publish_whole_file(
             root,
             destination,
             content,
-            unsafe="UnsafeDiscussDestination",
-            drift="DiscussAuthorityDrift",
-            unavailable="DiscussAuthorityUnavailable",
+            refusals=refusals,
         )
     candidate = Path(destination)
     expected: bytes | None = None
@@ -53,7 +57,5 @@ def publish_discuss_document(
         destination,
         expected,
         content,
-        unsafe="UnsafeDiscussDestination",
-        drift="DiscussAuthorityDrift",
-        unavailable="DiscussAuthorityUnavailable",
+        refusals=refusals,
     )

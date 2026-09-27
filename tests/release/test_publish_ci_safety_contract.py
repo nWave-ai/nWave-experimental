@@ -18,7 +18,7 @@ EXPERIMENTAL = REPO_ROOT / ".github" / "workflows" / "publish-experimental.yml"
 RELEASE_DEV = REPO_ROOT / ".github" / "workflows" / "release-dev.yml"
 WORKFLOW_README = REPO_ROOT / ".github" / "workflows" / "README.md"
 PUBLISHER = REPO_ROOT / "scripts" / "release" / "publish_experimental.py"
-SOURCE_BRANCH = "feature/atdd-pure-staging"
+SOURCE_BRANCH = "atdd_pure_staging"
 
 
 def _workflow(path: Path) -> dict[str, object]:

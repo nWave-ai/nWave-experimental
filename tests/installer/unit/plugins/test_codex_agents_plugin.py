@@ -907,6 +907,73 @@ class TestCapabilityPreamble:
         assert "File and content search is NOT granted" in instructions
         assert "Creating or modifying files is NOT granted" in instructions
 
+    def test_structured_output_reply_channel_omitted_from_declared_tools(self):
+        """StructuredOutput names the ANSWER shape, not an executable tool.
+
+        On Codex the typed-reply contract is enforced by --output-schema, so
+        a role told it holds a callable StructuredOutput tool is misinstructed.
+        The 'Declared tools:' line lists executable tools only (WHAT: the
+        reply-channel token must not appear there; WHY: brief.md §typed reply
+        channel -- 'preamble's ... Declared tools: line never name the
+        reply-channel token'; HOW: derive declared/grants/denials from
+        executable tools only, excluding the reply-channel token set).
+        """
+        instructions = self._instructions("tools: Read, StructuredOutput\n")
+        declared_line = next(
+            line
+            for line in instructions.splitlines()
+            if line.startswith("Declared tools:")
+        )
+        assert "StructuredOutput" not in declared_line
+        assert "Read" in declared_line
+
+    def test_structured_output_reply_channel_grants_no_capability_line(self):
+        """StructuredOutput alone is a reply channel, not an executable grant.
+
+        WHAT: a role declaring ONLY StructuredOutput must render no grant
+        line for it (no executable capability was declared).
+        WHY: brief.md §typed reply channel -- 'granted and denied lines ...
+        never name the reply-channel token'.
+        HOW: exclude the reply-channel token set before computing grants.
+        """
+        instructions = self._instructions("tools: StructuredOutput\n")
+        assert "StructuredOutput" not in instructions
+
+    def test_structured_output_only_role_keeps_source_blind_denials(self):
+        """A role declaring only the reply channel still executes nothing.
+
+        WHAT: with tools: StructuredOutput (no executable tool declared),
+        the explicit source-blind denial block for Read/Bash search/write
+        must still be present -- the reply-channel token is metadata-only
+        and confers no capability.
+        WHY: brief.md §typed reply channel -- 'a role whose only declared
+        token is the reply channel keeps its explicit source-blind denial
+        block instead of falling back to no capability mapping'.
+        HOW: the preamble is emitted whenever tools: is declared at all,
+        even when the only token is the reply channel; declared-executable
+        set is empty, so every denial fires.
+        """
+        instructions = self._instructions("tools: StructuredOutput\n")
+        assert "Reading file contents is NOT granted" in instructions
+        assert "Command execution is NOT granted" in instructions
+        assert "File and content search is NOT granted" in instructions
+        assert "Creating or modifying files is NOT granted" in instructions
+
+    def test_structured_output_mixed_with_read_retains_read_grant(self):
+        """The reply channel never widens or narrows an unrelated grant.
+
+        WHAT: tools: Read, StructuredOutput retains the Read grant exactly
+        as tools: Read alone would.
+        WHY: brief.md §typed reply channel -- adding the reply-channel
+        token leaves the claim register of the role unchanged; StructuredOutput
+        names an answer shape, never a tree permission or a sandbox grant.
+        HOW: exclude only the reply-channel token from the capability
+        computation, leaving every executable tool's grant untouched.
+        """
+        instructions = self._instructions("tools: Read, StructuredOutput\n")
+        assert "ARE the sanctioned Read on this platform" in instructions
+        assert "Reading file contents is NOT granted" not in instructions
+
     def test_agent_without_tools_is_unchanged(self):
         # bypass: pure function -- absent tools block keeps today's output
         source = "---\nname: nw-x\ndescription: d\n---\n\n# Role\n\nBody.\n"

@@ -359,7 +359,7 @@ class TestTheBundledCase:
 
         assert raw == inert_claude._recorded_envelope(record)
         if role == "nw-solution-architect":
-            assert migration == "add-empty-authority-locator"
+            assert migration == "complete-legacy-design-facts"
             assert envelope != raw
         else:
             assert migration is None

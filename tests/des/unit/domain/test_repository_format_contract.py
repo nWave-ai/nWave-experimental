@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+from pathlib import Path
+
 import pytest
 
 from des.domain.repository_format_contract import declared_format_contract
@@ -83,7 +87,16 @@ def test_the_declared_repair_is_the_ordered_pair_the_quality_job_runs() -> None:
 
     assert [repair[0] for repair in declared] == ["check", "format"]
     assert "--fix-only" in declared[0]
-    assert declared[0][-2:] == ("--select", "I")
+    assert declared[0] == (
+        "check",
+        "--fix-only",
+        "--force-exclude",
+        "--no-cache",
+        "--extend-select",
+        "RUF100",
+        "--fixable",
+        "I,RUF100",
+    )
 
 
 @pytest.mark.parametrize(
@@ -129,6 +142,45 @@ def test_every_repair_overrules_neither_the_repositorys_exclude_nor_its_disk() -
     for repair in repairs('[tool.ruff.lint]\nselect = ["I"]\n'):
         assert "--force-exclude" in repair
         assert "--no-cache" in repair
+
+
+@pytest.mark.skipif(shutil.which("ruff") is None, reason="Ruff is not installed")
+def test_the_declared_repair_keeps_active_noqa_and_repairs_only_form(
+    tmp_path: Path,
+) -> None:
+    """RUF100 sees the repository's configured diagnostics before it removes a noqa."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.ruff.lint]\nselect = ["E", "F", "I"]\n', encoding="utf-8"
+    )
+    active = tmp_path / "active.py"
+    active.write_text("import unused  # noqa: F401\n", encoding="utf-8")
+    unused = tmp_path / "unused.py"
+    unused.write_text("value = 1  # noqa: E402\n", encoding="utf-8")
+    imports = tmp_path / "imports.py"
+    imports.write_text(
+        "import sys\nimport os\nprint(os.path, sys.path)\n", encoding="utf-8"
+    )
+    semantic = tmp_path / "semantic.py"
+    semantic.write_text("if value == None:\n    pass\n", encoding="utf-8")
+
+    declared = repairs('[tool.ruff.lint]\nselect = ["E", "F", "I"]\n')[0]
+    ruff = shutil.which("ruff")
+    assert ruff is not None
+    completed = subprocess.run(
+        [ruff, *declared, "--", active, unused, imports, semantic],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert active.read_text(encoding="utf-8") == "import unused  # noqa: F401\n"
+    assert unused.read_text(encoding="utf-8") == "value = 1\n"
+    assert imports.read_text(encoding="utf-8") == (
+        "import os\nimport sys\n\nprint(os.path, sys.path)\n"
+    )
+    assert semantic.read_text(encoding="utf-8") == "if value == None:\n    pass\n"
 
 
 def test_an_empty_ruff_config_file_declares_the_formatter_by_existing() -> None:

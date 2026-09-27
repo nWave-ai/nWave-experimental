@@ -11,25 +11,22 @@ disable-model-invocation: true
 
 Create agents through 5 phases: ANALYZE -> DESIGN -> CREATE -> VALIDATE -> REFINE. Each phase has clear inputs, outputs, and quality gates. Follow "start minimal, add based on failure."
 
-## Skill-addressing tables (the load-by-trigger convention)
+## Skill addressing
 
-Every agent that carries `skills:` in frontmatter needs two things, kept aligned (DESIGN step 6, CREATE steps 4-6 below):
+Classify every skill by how the role needs it:
 
-1. **A `## Skill Loading` section with a MANDATORY-first-action instruction** — the agent's FIRST action is reading the table and loading, via Read tool at the exact path, ONLY the skill(s) whose Trigger matches its CURRENT phase/task. Every other skill loads on-demand the moment its trigger fires; never preload the whole set. Then a `| Phase | Load | Trigger |` table, one row per skill, where **Trigger is a precise load-when condition**, not a vague "when needed".
+1. **Always-needed knowledge** belongs in frontmatter `skills:`. Supported native hosts and DES adapters eagerly preload each declared skill once. Do not add a second `Load:` directive or table row for it.
+2. **Conditional knowledge** stays outside frontmatter. State a precise trigger and an executable `Read ~/.agents/skills/{name}/SKILL.md` (or the host path) instruction. Use `Invoke Skill(name)` only when that skill permits model invocation.
+3. A table is optional documentation for conditional knowledge. It must not mirror frontmatter preloads. An orphan is an unavailable declared asset or intended conditional knowledge with no reachable trigger, not a missing duplicate directive.
+4. **Self-description in the skill itself** — the skill's `description` frontmatter states when to use it. Knowledge skills with `disable-model-invocation: true` use `Read` on their trigger, never `Invoke Skill`.
 
-   Well-formed row (from `nw-product-owner`):
-   `| Expectation Charter Authoring | nw-expectation-charter | when examine=true and total charter discovery returns Missing or Empty |`
-
-2. **Frontmatter <-> table coherence (avoids the D1 packaging-bug)** — every skill in frontmatter `skills:` MUST have a row in the table, and every row's skill MUST be in frontmatter. Declaring in only one is D1 (checklist items #12/#13 exist to catch it). Direction to converge on: GENERATE the frontmatter list FROM the table (one SSOT) instead of hand-keeping two lists in sync — not built yet; prescribe double-declaration-with-coherence-check until it is.
-
-3. **Self-description in the skill itself** — the skill's own `description` frontmatter field states its when-to-use (no separate field); this is what a buddy-recommender or another agent uses to discover it. KNOWLEDGE skills (reference, no forced sequence) carry `user-invocable: false` + `disable-model-invocation: true` — they load ONLY via Read-on-trigger, never model-invoked directly.
-
-4. **GOOD vs BAD**:
+**GOOD vs BAD**:
 
 | | Shape | Why |
 |---|---|---|
-| GOOD | table row with a precise Trigger condition (see example above) | the agent knows exactly WHEN to load it |
-| BAD | skill in frontmatter, absent from the table (orphan) | D1 packaging-bug — declared but never wired to load |
+| GOOD | conditional table row with a precise `Read`/permitted `Invoke Skill` trigger | the agent knows exactly when and how to load it |
+| GOOD | always-needed skill in frontmatter only | supported paths preload it once |
+| BAD | frontmatter skill also reloaded by directive or table | duplicates already-loaded knowledge |
 | BAD | table row with no Trigger column value | the agent doesn't know WHEN — defaults to preloading everything (wastes context) or never loading it |
 
 ## Phase 1: ANALYZE
@@ -68,12 +65,12 @@ Every agent that carries `skills:` in frontmatter needs two things, kept aligned
    - Non-obvious constraints | Project-specific conventions
 4. Design workflow (3-7 phases)
 5. Plan Skills extraction: domain knowledge -> separate Skill | Testing/validation -> separate Skill | Keep workflow and principles in core agent
-6. Design Skill Loading Strategy (required for 3+ skills):
-   - Map each skill to the workflow phase where it's needed
-   - Create a loading table: Phase → Skill → Trigger condition
-   - Add explicit `Load: skill-name` directives in each workflow phase
+6. Design conditional skill addressing when the role has conditional knowledge:
+   - Put only always-needed skills in frontmatter
+   - For each conditional skill, add a precise executable Read/Skill trigger
+   - Create a table only when it makes conditional triggers clearer
    - Document path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo)
-   - Note: `skills:` in frontmatter eagerly preloads full skill content into context — reserve it for always-needed skills; skills meant for on-demand loading stay out of frontmatter and load via `Load:` directives (Read tool or Skill invocation) triggered by workflow text instead.
+   - `skills:` eagerly preloads full skill content into supported role contexts. Reserve it for always-needed skills; conditional skills stay out of frontmatter and load through their workflow trigger.
 7. Draft frontmatter:
    ```yaml
    ---
@@ -110,11 +107,11 @@ Every agent that carries `skills:` in frontmatter needs two things, kept aligned
 2. Create Skill files if needed: each in `nWave/skills/{agent-name}/` | YAML frontmatter with `name` and `description` | Focused content, 100-250 lines each
 3. Measure: `wc -l`. Target: under 300 lines.
 
-4. Add Skill Loading Strategy section (required for agents with 3+ skills):
+4. Add a Skill Loading Strategy section when conditional knowledge needs several documented triggers:
    ```markdown
    ## Skill Loading Strategy
 
-   Load on-demand by phase, not all at once:
+   Conditional reads by phase:
 
    | Phase | Load | Trigger |
    |-------|------|---------|
@@ -123,10 +120,10 @@ Every agent that carries `skills:` in frontmatter needs two things, kept aligned
 
    Skills path: `~/.claude/skills/nw-{skill-name}/SKILL.md` (installed) or `nWave/skills/nw-{skill-name}/SKILL.md` (repo)
    ```
-5. Add `Load:` directives at the start of each workflow phase referencing the applicable skills
-6. Verify: every skill in frontmatter `skills:` has at least one `Load:` directive in the workflow text. Orphan skills (declared but never loaded) are a bug.
+5. Add exact `Read` or permitted `Invoke Skill` instructions where each conditional trigger occurs
+6. Verify: every frontmatter skill exists and is always needed; every intended conditional skill has a reachable precise trigger. Do not reload preloaded skills.
 
-**Gate**: Agent file created. Under 300 lines. Skills created if needed. Skill Loading Strategy present for 3+ skills.
+**Gate**: Agent file created. Under 300 lines. Skills created if needed. Every conditional skill has a reachable trigger.
 
 **Output**: Agent `.md` file + Skill files.
 

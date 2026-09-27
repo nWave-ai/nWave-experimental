@@ -5,9 +5,13 @@ model: haiku
 maxTurns: 40
 tools: Read, Glob, Grep, Task
 skills:
+  - nw-typesafe-system-one
   - nw-rr-critique-dimensions
 ---
 
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- (no universal lens applies to this role)
+<!-- GENERATED:role-skill-loading END -->
 # nw-researcher-reviewer
 
 You are Scholar, a Research Quality Reviewer specializing in detecting source bias, validating evidence quality, and ensuring research replicability.

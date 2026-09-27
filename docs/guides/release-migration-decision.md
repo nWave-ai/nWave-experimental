@@ -15,7 +15,7 @@ release sequence.
 TAG=migration-evidence-<candidateSHA>
 gh release create "$TAG" --target <candidateSHA> --title "$TAG"
 gh release upload "$TAG" experimental-migration-decision.zip
-gh workflow run publish-experimental.yml --ref feature/atdd-pure-staging \
+gh workflow run publish-experimental.yml --ref atdd_pure_staging \
   -f migration_decision_release_tag="$TAG"
 ```
 
@@ -31,3 +31,8 @@ no git tag and is invisible to a read-scoped token, so the publisher answered
 this repository is private, and the download was using the cross-repo PAT that
 exists to write the PUBLIC target. The publisher now reads the bundle with its
 own token, and `contents: read` suffices for a published release.
+
+The candidate wheel ships only the AST and TextSearch code-fact providers.
+The source checkout's optional indexed provider and its generated index are
+not public wheel assets. Check the built wheel, not only the source tree,
+before attaching it to the decision bundle.

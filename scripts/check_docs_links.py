@@ -20,10 +20,19 @@ Checks performed:
    a 404/401/403/429/timeout stays a WARNING (the repo may be private, or we
    are rate-limited), but a 5xx / DNS / connection failure => ERROR. Links
    matched by the auto-loaded ignore config (``.docs-link-ignore.yaml``,
-   ``ignore_urls``) are silenced.
+   ``ignore_urls``) are silenced. Links matched by ``external_org_urls`` cannot
+   be relative (another repo, an issue tracker, a CI run): they are still
+   checked for liveness, without the "prefer a relative repo link" warning.
 4. With ``--check-external``, all other absolute http(s) URLs are checked too:
    401/403/405/429/timeout => WARNING (likely login-walled or bot-blocked),
-   404/410/5xx/DNS-failure => ERROR.
+   404/410/5xx/DNS-failure => ERROR. Links to medium.com and *.medium.com, which
+   block automated page loads, are checked through ``/p/<post id>`` instead
+   (moved => WARNING, gone => ERROR) and, when that is blocked too, the author
+   or publication feed (missing => ERROR). A Medium URL with no post id => ERROR.
+   Substack posts (``<publication>.substack.com/p/<slug>``) are checked the same
+   way, through the post API (``/api/v1/posts/<slug>``) and the publication feed.
+   A Substack post that refuses both checks outright (as it does from GitHub's
+   runner) is not reported; a timeout still warns.
 5. With ``--check-site-links`` (opt-in), relative links that resolve on disk
    but escape the ``docs/`` site root => ERROR (they 404 on the rendered site).
 
@@ -52,10 +61,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -69,8 +80,14 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 # Markdown link/image: [text](url) and ![alt](url). Captures the URL portion,
-# optionally followed by a "title" we ignore.
-LINK_PATTERN = re.compile(r"!?\[[^\]]*\]\((?P<url>[^)\s]+)(?:\s+\"[^\"]*\")?\)")
+# optionally followed by a "title" we ignore. The URL may hold one level of
+# balanced parentheses, e.g. https://en.wikipedia.org/wiki/Flow_(psychology).
+# Anything that form cannot parse (deeper nesting, unbalanced) falls back to
+# "stop at the first )", so the link is still checked and flagged, never skipped.
+LINK_PATTERN = re.compile(
+    r"!?\[[^\]]*\]\((?P<url>(?:[^()\s]|\([^()\s]*\))+|[^)\s]+)"
+    r"(?:\s+\"[^\"]*\")?\)"
+)
 
 # {{NWAVE_RAW_URL}}/<path> — the path stops at whitespace or a closing
 # delimiter (paren, quote, backtick, bracket). Matched everywhere, including
@@ -89,9 +106,10 @@ GITHUB_HOSTS = ("github.com", "www.github.com", "raw.githubusercontent.com")
 NWAVE_ORG = "nwave-ai"
 
 # Default ignore-config path (auto-loaded, no flag required): a repo-root YAML
-# file with two keys — `ignore_urls` (substrings that silence org-link findings)
-# and `ignore_paths` (dirs/files skipped during scanning). Excluded from
-# releases alongside this script.
+# file with three keys: `ignore_urls` (substrings that silence org-link
+# findings), `external_org_urls` (org links still checked, without the "prefer
+# relative" nudge) and `ignore_paths` (dirs/files skipped during scanning).
+# Excluded from releases alongside this script.
 DEFAULT_IGNORE_FILE = ".docs-link-ignore.yaml"
 
 # HTTP request settings for liveness checks.
@@ -262,7 +280,7 @@ def is_org_link(url: str) -> bool:
 # block lists (or an inline `key: value` scalar), with `#` comments.
 _CFG_KEY_RE = re.compile(r"^([A-Za-z_][\w-]*):\s*(.*)$")
 _CFG_ITEM_RE = re.compile(r"^-\s+(.*)$")
-_IGNORE_KEYS = ("ignore_urls", "ignore_paths")
+_IGNORE_KEYS = ("ignore_urls", "ignore_paths", "external_org_urls")
 
 
 def _cfg_scalar(raw: str) -> str:
@@ -282,8 +300,10 @@ def load_ignore_config(path: Path) -> dict[str, list[str]]:
           - nWave-ai/nwave-dev
         ignore_paths:  # repo-relative dirs/files skipped during scanning
           - docs/internal
+        external_org_urls:  # nWave-ai links that cannot be relative; still checked
+          - nWave-ai/nWave/issues
     """
-    cfg: dict[str, list[str]] = {"ignore_urls": [], "ignore_paths": []}
+    cfg: dict[str, list[str]] = {key: [] for key in _IGNORE_KEYS}
     if not path.is_file():
         return cfg
     try:
@@ -327,6 +347,15 @@ def load_ignore_excludes(path: Path) -> list[str]:
     return load_ignore_config(path)["ignore_paths"]
 
 
+def load_external_org_urls(path: Path) -> list[str]:
+    """Load `external_org_urls` (lowercased): nWave-ai links that cannot be relative.
+
+    Matched like `ignore_urls`, but a match only drops the "prefer a relative repo
+    link" nudge; the link is still checked for liveness.
+    """
+    return [u.lower() for u in load_ignore_config(path)["external_org_urls"]]
+
+
 def is_allowlisted(url: str, allowlist: Sequence[str]) -> bool:
     low = url.lower()
     return any(entry in low for entry in allowlist)
@@ -340,9 +369,19 @@ def is_allowlisted(url: str, allowlist: Sequence[str]) -> bool:
 def probe_url(url: str, timeout: float) -> Category:
     """Probe a URL with HEAD (falling back to GET) and classify the result.
 
+    A network failure is retried once, so a single transient blip does not read
+    as a dead link; a host that fails both attempts is still a NETWORK_ERROR.
+
     Pure-ish wrapper over urllib so the real network is the only side effect;
     tests inject a stub with the same ``(url, timeout) -> Category`` shape.
     """
+    category = _probe_once(url, timeout)
+    if category is Category.NETWORK_ERROR:
+        category = _probe_once(url, timeout)
+    return category
+
+
+def _probe_once(url: str, timeout: float) -> Category:
     for method in ("HEAD", "GET"):
         req = urllib.request.Request(
             url, method=method, headers={"User-Agent": USER_AGENT}
@@ -352,8 +391,12 @@ def probe_url(url: str, timeout: float) -> Category:
                 return _status_to_category(resp.status)
         except urllib.error.HTTPError as exc:
             category = _status_to_category(exc.code)
-            # Some servers reject HEAD with 403/405 but allow GET — retry once.
-            if method == "HEAD" and category is Category.UNAUTHORIZED:
+            # Some servers reject HEAD with 403/405, or answer it with 404, but
+            # serve GET. Retry once; the GET result is the verdict.
+            if method == "HEAD" and category in (
+                Category.UNAUTHORIZED,
+                Category.NOT_FOUND,
+            ):
                 continue
             return category
         except (TimeoutError, urllib.error.URLError) as exc:
@@ -379,7 +422,247 @@ def _status_to_category(status: int) -> Category:
     return Category.NOT_FOUND
 
 
+# ---------------------------------------------------------------------------
+# Medium links
+# ---------------------------------------------------------------------------
+
+# Medium blocks automated page loads, and even when it does not, a real-looking
+# URL with an unknown post id still answers 200. Existence is read instead from
+# https://medium.com/p/<post id>, which redirects to the canonical URL for a real
+# post and answers 404 otherwise. When that is blocked too, the author or
+# publication feed (still served to scripts) shows whether the author exists.
+MEDIUM_POST_ID = re.compile(r"-([0-9a-f]{12})$")
+MEDIUM_P_PATH = re.compile(r"^/p/([0-9a-f]{12})$")
+REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+
+
+@dataclass(frozen=True)
+class MediumRef:
+    post_id: str
+    feed_url: str | None  # None for /p/<id> links, which name no author
+
+
+@dataclass(frozen=True)
+class PostProbe:
+    post: str  # "exists" | "gone" | "blocked"
+    canonical: str = ""
+    feed: Category | None = None
+    detail: str = ""  # when blocked: what the post check got back
+    refused: bool = False  # when blocked: the post check was refused, not timed out
+
+
+MediumProbe = PostProbe  # Medium's name for the shared post probe
+
+
+def is_medium_link(url: str) -> bool:
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    return host in ("medium.com", "www.medium.com") or host.endswith(".medium.com")
+
+
+def parse_medium_url(url: str) -> MediumRef | None:
+    """Post id and feed for a Medium post URL, or None if it names no post."""
+    parts = urllib.parse.urlsplit(url)
+    host = (parts.hostname or "").lower()
+    segments = [s for s in parts.path.split("/") if s]
+    if host in ("medium.com", "www.medium.com"):
+        p_link = MEDIUM_P_PATH.match(parts.path.rstrip("/"))
+        if p_link:
+            return MediumRef(p_link.group(1), None)
+        if len(segments) != 2:
+            return None
+        owner, slug = segments
+        feed = f"https://medium.com/feed/{owner}"
+    elif host.endswith(".medium.com"):
+        if len(segments) != 1:
+            return None
+        slug = segments[0]
+        feed = f"https://{host}/feed"
+    else:
+        return None
+    post = MEDIUM_POST_ID.search(slug)
+    return MediumRef(post.group(1), feed) if post else None
+
+
+def _same_page(a: str, b: str) -> bool:
+    pa, pb = urllib.parse.urlsplit(a), urllib.parse.urlsplit(b)
+    return (pa.hostname, pa.path.rstrip("/")) == (pb.hostname, pb.path.rstrip("/"))
+
+
+@dataclass(frozen=True)
+class PostContext:
+    """The external post reference under check: which site, and where to look
+
+    when the post itself cannot be confirmed (the not-found message and the
+    author/publication feed to fall back on).
+    """
+
+    site: str
+    missing: str
+    feed_url: str | None
+
+
+def classify_post(
+    url: str,
+    probe: PostProbe,
+    context: PostContext,
+    *,
+    quiet_when_refused: bool = False,
+) -> tuple[Severity, str] | None:
+    """Severity + message for a Medium or Substack link; None when it is fine.
+
+    A post found at another URL => WARNING (it moved). A missing post, or a
+    missing author or publication when the post check is blocked => ERROR. A
+    blocked post check with the author found => no finding. Both checks blocked
+    => WARNING, so an unverifiable link never passes silently, unless
+    quiet_when_refused is set and both checks were refused outright.
+    """
+    site, missing, feed_url = context.site, context.missing, context.feed_url
+    if probe.post == "exists":
+        if probe.canonical and not _same_page(url, probe.canonical):
+            return (
+                Severity.WARNING,
+                f"{site} article moved; canonical URL is {probe.canonical}",
+            )
+        return None
+    if probe.post == "gone":
+        return Severity.ERROR, f"{site} post not found ({missing})"
+    if probe.feed is Category.OK:
+        return None
+    if probe.feed is Category.NOT_FOUND:
+        return (
+            Severity.ERROR,
+            f"{site} author or publication not found ({feed_url})",
+        )
+    if quiet_when_refused and probe.refused and probe.feed is Category.UNAUTHORIZED:
+        # Refused by both checks: the same answer whether or not the post exists.
+        return None
+    feed_result = probe.feed.value if probe.feed else "none"
+    return (
+        Severity.WARNING,
+        f"{site} link not confirmed; {site} blocked both the post and feed checks "
+        f"(post check: {probe.detail or 'blocked'}; feed check: {feed_result})",
+    )
+
+
+def classify_medium(
+    url: str, ref: MediumRef, probe: MediumProbe
+) -> tuple[Severity, str] | None:
+    """Severity + message for a Medium link; None when the link is fine."""
+    return classify_post(
+        url, probe, PostContext("Medium", f"post id {ref.post_id}", ref.feed_url)
+    )
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def _status_without_redirect(url: str, timeout: float) -> tuple[int | None, str]:
+    """HEAD ``url`` without following redirects: (status, Location) or (None, "")."""
+    opener = urllib.request.build_opener(_NoRedirect)
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": USER_AGENT})
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            return resp.status, resp.headers.get("Location", "")
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.headers.get("Location", "")
+    except Exception:
+        return None, ""
+
+
+def probe_medium(ref: MediumRef, timeout: float) -> MediumProbe:
+    """Whether a Medium post exists, without loading the (blocked) article page."""
+    status, location = _status_without_redirect(
+        f"https://medium.com/p/{ref.post_id}", timeout
+    )
+    if status in REDIRECT_STATUSES and location:
+        return MediumProbe(post="exists", canonical=location)
+    if status in (404, 410):
+        return MediumProbe(post="gone")
+    feed = probe_url(ref.feed_url, timeout) if ref.feed_url else None
+    detail = f"HTTP {status}" if status is not None else "no response"
+    return MediumProbe(post="blocked", feed=feed, detail=detail)
+
+
+# ---------------------------------------------------------------------------
+# Substack links
+# ---------------------------------------------------------------------------
+
+# Substack blocks automated page loads from some networks, and its article page
+# redirects rather than answering 404 for an unknown post. The post API answers
+# JSON for a real post and 404 otherwise; when that is blocked too, the
+# publication feed shows whether the publication exists. Handled like Medium.
+SUBSTACK_POST_PATH = re.compile(r"^/p/([a-z0-9-]+)$")
+
+
+@dataclass(frozen=True)
+class SubstackRef:
+    slug: str
+    api_url: str
+    feed_url: str
+
+
+def is_substack_link(url: str) -> bool:
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    return host.endswith(".substack.com")
+
+
+def parse_substack_url(url: str) -> SubstackRef | None:
+    """Slug, post API and feed of a Substack post URL; None if it is not a post."""
+    parts = urllib.parse.urlsplit(url)
+    host = (parts.hostname or "").lower()
+    post = SUBSTACK_POST_PATH.match(parts.path.rstrip("/"))
+    if not host.endswith(".substack.com") or host == "www.substack.com" or not post:
+        return None
+    slug = post.group(1)
+    return SubstackRef(
+        slug, f"https://{host}/api/v1/posts/{slug}", f"https://{host}/feed"
+    )
+
+
+def _substack_post(api_url: str, timeout: float) -> tuple[Category, str, str]:
+    """GET a Substack post API URL: (category, canonical URL, what came back).
+
+    Only the post's JSON counts as found; a 200 that is not that JSON is a
+    challenge page, so it counts as blocked.
+    """
+    req = urllib.request.Request(api_url, headers={"User-Agent": USER_AGENT})
+    not_the_post = (Category.UNAUTHORIZED, "", "HTTP 200 without the post's JSON")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        return _status_to_category(exc.code), "", f"HTTP {exc.code}"
+    except ValueError:
+        return not_the_post
+    except (TimeoutError, urllib.error.URLError) as exc:
+        reason = getattr(exc, "reason", exc)
+        if isinstance(reason, TimeoutError) or "timed out" in str(reason).lower():
+            return Category.TIMEOUT, "", "timeout"
+        return Category.NETWORK_ERROR, "", "no response"
+    except Exception:
+        return Category.NETWORK_ERROR, "", "no response"
+    if not isinstance(data, dict) or "slug" not in data:
+        return not_the_post
+    return Category.OK, str(data.get("canonical_url") or ""), "HTTP 200"
+
+
+def probe_substack(ref: SubstackRef, timeout: float) -> PostProbe:
+    """Whether a Substack post exists, without loading the article page."""
+    category, canonical, detail = _substack_post(ref.api_url, timeout)
+    if category is Category.OK:
+        return PostProbe(post="exists", canonical=canonical)
+    if category is Category.NOT_FOUND:
+        return PostProbe(post="gone")
+    feed = probe_url(ref.feed_url, timeout)
+    refused = category is Category.UNAUTHORIZED
+    return PostProbe(post="blocked", feed=feed, detail=detail, refused=refused)
+
+
 UrlChecker = Callable[[str], Category]
+MediumChecker = Callable[[MediumRef], MediumProbe]
+SubstackChecker = Callable[[SubstackRef], PostProbe]
 
 
 # ---------------------------------------------------------------------------
@@ -393,6 +676,8 @@ class Options:
     check_site_links: bool = False
     network: bool = True
     allowlist: Sequence[str] = ()
+    # Links that cannot be relative: still probed, no "prefer relative" nudge.
+    external_org_urls: Sequence[str] = ()
     site_roots: tuple[Path, ...] = ()
     # Predicate: given an out-of-root target path, is it private (will 404 on the
     # public site)? None => flag every out-of-root link (used by unit tests).
@@ -413,11 +698,17 @@ class LinkChecker:
         project_root: Path,
         options: Options,
         url_checker: UrlChecker | None = None,
+        medium_checker: MediumChecker | None = None,
+        substack_checker: SubstackChecker | None = None,
     ) -> None:
         self.root = project_root.resolve()
         self.options = options
         self._url_checker = url_checker
+        self._medium_checker = medium_checker
         self._cache: dict[str, Category] = {}
+        self._medium_cache: dict[str, MediumProbe] = {}
+        self._substack_checker = substack_checker
+        self._substack_cache: dict[str, PostProbe] = {}
 
     # -- liveness ----------------------------------------------------------
 
@@ -535,14 +826,82 @@ class LinkChecker:
         url = link.value
         if is_allowlisted(url, self.options.allowlist):
             return None
+        # Listed links cannot be relative (another repo, an issue tracker, a CI
+        # run): still checked for liveness, but no "prefer relative" nudge.
+        external = is_allowlisted(url, self.options.external_org_urls)
         severity = Severity.WARNING
         note = ""
         if self.options.network:
-            severity, note = classify_org(self._check_url(url))
-        message = "absolute nWave-ai org link (prefer a relative repo link)" + note
+            category = self._check_url(url)
+            if external and category is Category.OK:
+                return None
+            severity, note = classify_org(category)
+        elif external:
+            return None
+        if external:
+            message = "nWave-ai link outside this repo" + note
+        else:
+            message = "absolute nWave-ai org link (prefer a relative repo link)" + note
         return Finding(severity, self._rel(src), link.line, url, message)
 
+    def _check_medium(self, ref: MediumRef) -> MediumProbe:
+        if ref.post_id not in self._medium_cache:
+            if self._medium_checker is not None:
+                probe = self._medium_checker(ref)
+            else:
+                probe = probe_medium(ref, self.options.timeout)
+            self._medium_cache[ref.post_id] = probe
+        return self._medium_cache[ref.post_id]
+
+    def check_medium(self, src: Path, link: RawLink) -> Finding | None:
+        ref = parse_medium_url(link.value)
+        if ref is None:
+            message = "not a valid Medium post URL (no 12-character post id)"
+            return Finding(
+                Severity.ERROR, self._rel(src), link.line, link.value, message
+            )
+        if not self.options.network:
+            return None
+        result = classify_medium(link.value, ref, self._check_medium(ref))
+        if result is None:
+            return None
+        severity, message = result
+        return Finding(severity, self._rel(src), link.line, link.value, message)
+
+    def _check_substack(self, ref: SubstackRef) -> PostProbe:
+        if ref.api_url not in self._substack_cache:
+            if self._substack_checker is not None:
+                probe = self._substack_checker(ref)
+            else:
+                probe = probe_substack(ref, self.options.timeout)
+            self._substack_cache[ref.api_url] = probe
+        return self._substack_cache[ref.api_url]
+
+    def check_substack(self, src: Path, link: RawLink) -> Finding | None:
+        ref = parse_substack_url(link.value)
+        if ref is None:
+            message = "not a Substack post URL (expected .../p/<slug>)"
+            return Finding(
+                Severity.ERROR, self._rel(src), link.line, link.value, message
+            )
+        if not self.options.network:
+            return None
+        result = classify_post(
+            link.value,
+            self._check_substack(ref),
+            PostContext("Substack", f"slug {ref.slug}", ref.feed_url),
+            quiet_when_refused=True,
+        )
+        if result is None:
+            return None
+        severity, message = result
+        return Finding(severity, self._rel(src), link.line, link.value, message)
+
     def check_external(self, src: Path, link: RawLink) -> Finding | None:
+        if self.options.check_external and is_medium_link(link.value):
+            return self.check_medium(src, link)
+        if self.options.check_external and is_substack_link(link.value):
+            return self.check_substack(src, link)
         if not self.options.check_external or not self.options.network:
             return None
         result = classify_external(self._check_url(link.value))
@@ -599,7 +958,9 @@ class LinkChecker:
                 if is_org_link(link.value):
                     if not is_allowlisted(link.value, self.options.allowlist):
                         urls.append(link.value)
-                elif self.options.check_external:
+                elif self.options.check_external and not (
+                    is_medium_link(link.value) or is_substack_link(link.value)
+                ):
                     urls.append(link.value)
         return urls
 
@@ -810,26 +1171,31 @@ def _network_reachable(timeout: float) -> bool:
     )
 
 
+@dataclass(frozen=True)
+class LinkCheckRequest:
+    """What kind of check to run, and how: flags plus the run mechanics."""
+
+    check_external: bool
+    check_site_links: bool
+    network: bool
+    ignore_path: Path | None = None
+    timeout: float = 10.0
+    workers: int = 8
+
+
 def build_link_options(
-    project_root: Path,
-    *,
-    check_external: bool,
-    check_site_links: bool,
-    network: bool,
-    ignore_path: Path | None = None,
-    timeout: float = 10.0,
-    workers: int = 8,
+    project_root: Path, *, request: LinkCheckRequest
 ) -> tuple[Options, list[Path]]:
     """Build Options + the ignore-file path excludes.
 
     Shared by run() (CLI) and the weekly reporter so ignore-file loading,
     published-root derivation, and privacy-predicate wiring live in one place.
     """
-    ignore_path = ignore_path or project_root / DEFAULT_IGNORE_FILE
+    ignore_path = request.ignore_path or project_root / DEFAULT_IGNORE_FILE
     excludes = [project_root / p for p in load_ignore_excludes(ignore_path)]
     site_roots: tuple[Path, ...] = ()
     site_private: Callable[[Path], bool] | None = None
-    if check_site_links:
+    if request.check_site_links:
         site_private = _build_privacy_predicate(project_root)
         # Only enable site-escape checks when the catalog is available to tell
         # public from private. Without it, leave site_roots empty so no
@@ -844,14 +1210,15 @@ def build_link_options(
                 file=sys.stderr,
             )
     options = Options(
-        check_external=check_external,
-        check_site_links=check_site_links,
-        network=network,
+        check_external=request.check_external,
+        check_site_links=request.check_site_links,
+        network=request.network,
         allowlist=load_allowlist(ignore_path),
+        external_org_urls=load_external_org_urls(ignore_path),
         site_roots=site_roots,
         site_private=site_private,
-        timeout=timeout,
-        workers=workers,
+        timeout=request.timeout,
+        workers=request.workers,
     )
     return options, excludes
 
@@ -877,12 +1244,14 @@ def run(argv: Sequence[str], *, url_checker: UrlChecker | None = None) -> int:
 
     options, ignore_excludes = build_link_options(
         project_root,
-        check_external=args.check_external,
-        check_site_links=args.check_site_links,
-        network=network,
-        ignore_path=ignore_path,
-        timeout=args.timeout,
-        workers=args.workers,
+        request=LinkCheckRequest(
+            check_external=args.check_external,
+            check_site_links=args.check_site_links,
+            network=network,
+            ignore_path=ignore_path,
+            timeout=args.timeout,
+            workers=args.workers,
+        ),
     )
 
     raw_paths = args.paths or ["docs"]

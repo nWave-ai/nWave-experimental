@@ -446,9 +446,9 @@ def simulate_changelog(version: str, stage: str) -> StepResult:
         changelog = changelog_mod._render_markdown(
             stage=stage,
             version=version,
-            source_tag="",
-            repo="",
-            prev_tag=prev_tag,
+            lineage=changelog_mod._ReleaseLineage(
+                source_tag="", repo="", prev_tag=prev_tag
+            ),
             categories=categories,
             release_date=release_date,
         )

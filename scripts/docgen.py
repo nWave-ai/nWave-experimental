@@ -177,7 +177,17 @@ def scan(root: Path, *, public_only: bool = False) -> dict[str, list[Path]]:
                 private_skills=private_skills,
             )
         ]
-    skills = sorted(md for d in skill_dirs for md in d.rglob("*.md"))
+    # A flat skill directory has exactly one catalogued entry point: SKILL.md.
+    # Supporting material below it (for example ``references/``) ships with
+    # the skill but is not itself a skill, agent-owned artifact, or reference
+    # page. Legacy hierarchical directories retain their direct ``*.md`` skill
+    # entries. The old recursive scan misclassified support material by its
+    # immediate parent directory and rejected valid local links as orphan skills.
+    from scripts.shared.skill_discovery import skill_entrypoints
+
+    skills = [
+        path for path in skill_entrypoints(skills_dir) if path.parent in skill_dirs
+    ]
 
     templates = sorted(
         p for p in (nwave / "templates").glob("*.yaml") if not p.name.startswith(".")
@@ -913,11 +923,20 @@ def _role_skill_loading_body(agent_id: str, root: Path) -> str:
     fallback, so the wrong directive is made unrepresentable here rather than
     caught downstream."""
     registry_path = root / _ROLE_SKILL_REGISTRY_REL
-    roles = subset_parser.load_file(registry_path).get("roles", {})
+    registry = subset_parser.load_file(registry_path)
+    roles = registry.get("roles", {})
     entry = roles.get(agent_id)
-    if entry is None:
+    global_on_demand = registry.get("global_on_demand", {})
+    if entry is None and not global_on_demand:
         raise DocgenError(f"{agent_id!r} has no entry in {registry_path}")
+    if entry is None:
+        entry = {}
+    if not isinstance(entry, dict):
+        raise DocgenError(f"{agent_id!r} must map to an object in {registry_path}")
     lines: list[str] = []
+    if not isinstance(global_on_demand, dict):
+        raise DocgenError(f"global_on_demand must be an object in {registry_path}")
+    lines += _role_skill_on_demand_lines({"on_demand": global_on_demand}, root)
     reviewed = entry.get("reviewer_of")
     if reviewed:
         if len(reviewed) == 1:
@@ -940,6 +959,31 @@ def _role_skill_loading_body(agent_id: str, root: Path) -> str:
         else:
             path = _INSTALLED_SKILL_PATH.format(skill=target)
             lines.append(f"- Read ONE `{path}` ON-TRIGGER — {trigger}")
+    # A target being invocable does not give its receiving role a Skill tool.
+    spec = root / "nWave" / "agents" / f"{agent_id}.md"
+    metadata = parse_front_matter(spec)
+    preloaded = metadata.get("skills", [])
+    lines = [
+        line
+        for line in lines
+        if not any(
+            f"Skill({skill})" in line or f"/skills/{skill}/SKILL.md" in line
+            for skill in preloaded
+        )
+    ]
+    tools = str(metadata.get("tools", ""))
+    declared = {entry.strip() for entry in tools.split(",")}
+    if "Read" in declared and "Skill" not in declared:
+        lines = [
+            re.sub(
+                r"Invoke (?:ONE )?Skill\(([^)]+)\)",
+                lambda match: (
+                    "Read `" + _INSTALLED_SKILL_PATH.format(skill=match[1]) + "`"
+                ),
+                line,
+            )
+            for line in lines
+        ]
     return "\n".join(lines) if lines else "- (no universal lens applies to this role)"
 
 

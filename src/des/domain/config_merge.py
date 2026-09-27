@@ -13,6 +13,11 @@ the (deferred) adapter boundary that will wire this pure function to the two
 on-disk ``config.json`` tiers.
 """
 
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+
 VERBOSITY_VALUES = ("terse", "standard", "verbose")
 
 ENABLED_DEFAULT = False
@@ -78,17 +83,33 @@ def _documents_well_typed(value: object) -> bool:
     return isinstance(value, dict)
 
 
-def _same_value(value):
+def _same_value(value: Any) -> Any:
     return value
 
 
+@dataclass(frozen=True)
+class _ConfigTiers:
+    """The two config tiers a field is resolved across, in precedence order.
+
+    ``repo_config`` is consulted first, ``global_config`` second; the default
+    applies when neither tier declares a well-typed value (ADR-CFG-001).
+    """
+
+    repo_config: dict
+    global_config: dict
+
+
 def _resolve_field(
-    repo_config, global_config, field, well_typed, default, unwrap=_same_value
-):
-    if field in repo_config and well_typed(repo_config[field]):
-        return unwrap(repo_config[field])
-    if field in global_config and well_typed(global_config[field]):
-        return unwrap(global_config[field])
+    tiers: _ConfigTiers,
+    field: str,
+    well_typed: Callable[[Any], bool],
+    default: object,
+    unwrap: Callable[[Any], object] = _same_value,
+) -> object:
+    if field in tiers.repo_config and well_typed(tiers.repo_config[field]):
+        return unwrap(tiers.repo_config[field])
+    if field in tiers.global_config and well_typed(tiers.global_config[field]):
+        return unwrap(tiers.global_config[field])
     return default
 
 
@@ -96,7 +117,7 @@ def merge_config(
     global_config: dict, repo_config: dict, legacy_repo_config: dict | None = None
 ) -> dict:
     """Resolve the effective ``enabled``/``verbosity``/``attribution``/``documents`` values
-    from the global-then-repo cascade (ADR-CFG-001 Config-merge law). Pure:
+    from the repo-over-global cascade (ADR-CFG-001 Config-merge law). Pure:
     never mutates ``global_config`` or ``repo_config``, never raises on
     malformed input -- a malformed value degrades to "absent for this tier".
 
@@ -107,26 +128,24 @@ def merge_config(
     precedence chain, shared with the tri-state activation reader.
     """
     declared = declared_enabled(global_config, repo_config, legacy_repo_config)
+    tiers = _ConfigTiers(repo_config=repo_config, global_config=global_config)
     return {
         "enabled": ENABLED_DEFAULT if declared is None else declared,
         "verbosity": _resolve_field(
-            repo_config,
-            global_config,
+            tiers,
             "verbosity",
             _verbosity_well_typed,
             VERBOSITY_DEFAULT,
         ),
         "attribution": _resolve_field(
-            repo_config,
-            global_config,
+            tiers,
             "attribution",
             _attribution_well_typed,
             ATTRIBUTION_DEFAULT,
             unwrap=_attribution_value,
         ),
         "documents": _resolve_field(
-            repo_config,
-            global_config,
+            tiers,
             "documents",
             _documents_well_typed,
             DOCUMENTS_DEFAULT,

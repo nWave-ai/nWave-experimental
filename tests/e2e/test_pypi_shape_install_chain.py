@@ -245,6 +245,7 @@ def installed_console_script(
         stderr=subprocess.STDOUT,
         input=b"y\n" * 20,
         env=install_env,
+        cwd=str(fake_home),
         timeout=600,
         check=False,
     )

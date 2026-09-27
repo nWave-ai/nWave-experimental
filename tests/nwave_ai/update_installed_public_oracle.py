@@ -209,30 +209,36 @@ sys.exit(44 if os.environ["G2_SCENARIO"] == "migration-fails" else 0)
     des.chmod(0o755)
 
 
+@dataclass(frozen=True)
+class _ApplyRowEnvironment:
+    """The apply-row fixture that stays fixed across every scenario row."""
+
+    console: Path
+    pristine_console: Path
+    root: Path
+    env: dict[str, str]
+    events: Path
+
+
 def _apply_row(
-    *,
-    console: Path,
-    pristine_console: Path,
-    root: Path,
-    env: dict[str, str],
-    events: Path,
-    scenario: str,
-    latest: str,
+    environment: _ApplyRowEnvironment, *, scenario: str, latest: str
 ) -> dict[str, Any]:
-    shutil.copy2(pristine_console, console)
-    events.unlink(missing_ok=True)
-    row_env = dict(env)
+    shutil.copy2(environment.pristine_console, environment.console)
+    environment.events.unlink(missing_ok=True)
+    row_env = dict(environment.env)
     row_env.update(
         {"NWAVE_INSTALLER": "uv", "G2_SCENARIO": scenario, "G2_VERSION": latest}
     )
     invocation = _run(
-        [str(console), "update", "--yes", "--root", str(root)], env=row_env, cwd=root
+        [str(environment.console), "update", "--yes", "--root", str(environment.root)],
+        env=row_env,
+        cwd=environment.root,
     )
     return {
         "fixture": "controlled external package-manager/post-replacement executable/des boundaries; initial command is installed candidate console",
         "scenario": scenario,
         "invocation": _json_process(invocation),
-        "external_events": _read_json_lines(events),
+        "external_events": _read_json_lines(environment.events),
     }
 
 
@@ -408,16 +414,15 @@ def main() -> int:
                 "G2_EVENTS": str(events),
                 "G2_OWNED_CONSOLE": str(console),
             }
+            row_environment = _ApplyRowEnvironment(
+                console=console,
+                pristine_console=pristine,
+                root=check_root,
+                env=apply_env,
+                events=events,
+            )
             rows = [
-                _apply_row(
-                    console=console,
-                    pristine_console=pristine,
-                    root=check_root,
-                    env=apply_env,
-                    events=events,
-                    scenario=name,
-                    latest=latest,
-                )
+                _apply_row(row_environment, scenario=name, latest=latest)
                 for name in (
                     "success",
                     "replace-fails",

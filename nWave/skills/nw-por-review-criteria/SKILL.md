@@ -11,6 +11,12 @@ Domain knowledge for product-owner-reviewer (Eclipse). Covers journey coherence,
 
 ## Review Dimensions
 
+For an initial DISCUSS, apply these dimensions only to the requested depth.
+Visible unexpanded sections are valid; do not demand a fully annotated emotional
+arc or exhaustive branches before the human chooses to deepen them. Missing
+emotional evidence must stay unknown, never be invented to satisfy this checklist.
+The detailed checks below apply to an explicitly expanded journey review.
+
 ### Journey Coherence
 Validate complete flow with no gaps.
 

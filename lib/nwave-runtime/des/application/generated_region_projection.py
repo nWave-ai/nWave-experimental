@@ -64,6 +64,9 @@ REGION_SOURCE_OF_TRUTH: dict[str, str] = {
         "(ADR-CFG-001 Slice 2 -- ~/.nwave/config.json + .nwave/config.json)"
     ),
     "design-document-input": "des.domain.design_document.DesignDocument.input_description()",
+    "design-authority-locator": (
+        "des.domain.design_authority_locator.design_authority_locator_description()"
+    ),
 }
 
 #: ``(region_id, asset_path, root) -> body``.
@@ -137,6 +140,20 @@ def design_document_input_body(root: Path) -> str:
     return DesignDocument.input_description()
 
 
+def design_authority_locator_body(root: Path) -> str:
+    """State the `<document>#<heading>` rule where the field is AUTHORED.
+
+    Its only input is a ``des.domain`` module, which every wheel force-includes
+    by construction, so this region ships without creating a packaging-tier
+    whitelist to keep in sync.
+    """
+    from des.domain.design_authority_locator import (
+        design_authority_locator_description,
+    )
+
+    return design_authority_locator_description()
+
+
 #: Regions renderable from an INSTALLED layout -- every input is present on a
 #: consumer machine. Adding a row here is a decision to ship that region's
 #: inputs too; a region whose inputs are dev/build-time-only belongs in
@@ -144,6 +161,7 @@ def design_document_input_body(root: Path) -> str:
 INSTALLABLE_RENDERERS: dict[str, Callable[[Path], str]] = {
     "communication-rules": communication_rules_body,
     "design-document-input": design_document_input_body,
+    "design-authority-locator": design_authority_locator_body,
 }
 
 

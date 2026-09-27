@@ -17,6 +17,7 @@ software, and the crafted correction is what turns it GREEN.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
@@ -119,13 +120,14 @@ def design_payload() -> dict[str, object]:
         },
         "oracle": ORACLE,
         "acceptance_supports": [SUPPORT],
-        "verification": [["python", "-m", "pytest", ORACLE]],
+        "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+        "oracle_verification_index": 0,
     }
 
 
 def distill_payload() -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "values": [
             {
                 "observation": CORRECTED_OBSERVATION,
@@ -138,6 +140,8 @@ def distill_payload() -> dict[str, object]:
                 ],
                 "oracle": ORACLE,
                 "acceptance_supports": [SUPPORT],
+                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                "oracle_verification_index": 0,
             }
         ],
     }
@@ -171,18 +175,17 @@ def role_result(role: str, outcome: str) -> str:
 
 
 def observed(root: Path, step, role: str, candidate: str) -> dict[str, str]:
-    assert (
-        step(
-            "prepare-role",
-            "--repo-root",
-            str(root),
-            "--role",
-            role,
-            "--candidate",
-            candidate,
-        )[0]
-        == 0
+    prepared = step(
+        "prepare-role",
+        "--repo-root",
+        str(root),
+        "--role",
+        role,
+        "--candidate",
+        candidate,
     )
+    assert prepared[0] == 0, prepared[1] + prepared[2]
+    prepared_lines = block(prepared[1], prepared[2])
     code, out, err = step(
         "record-role-result",
         "--repo-root",
@@ -199,6 +202,7 @@ def observed(root: Path, step, role: str, candidate: str) -> dict[str, str]:
         f"bugfix-{role}",
         "--input",
         "-",
+        *(("--prepared-input", prepared_lines["INPUT"]) if role == "examiner" else ()),
         stdin=role_result(role, "accepted"),
     )
     assert code == 0, out + err
@@ -230,6 +234,7 @@ def test_an_observed_defect_reaches_a_verified_correction_through_the_shared_pro
 
     code, out, err = step(
         "discuss",
+        "--project",
         "--repo-root",
         str(root),
         "--input",
@@ -315,6 +320,7 @@ def test_the_published_bugfix_entry_step_composes_with_the_document_producers(
     defective_repository(root)
     code, out, err = step(
         "po",
+        "--project",
         "--repo-root",
         str(root),
         answers=[
@@ -333,6 +339,7 @@ def test_the_published_bugfix_entry_step_composes_with_the_document_producers(
 
     code, out, err = step(
         "discuss",
+        "--project",
         "--repo-root",
         str(root),
         "--input",

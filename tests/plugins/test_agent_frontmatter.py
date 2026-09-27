@@ -197,10 +197,15 @@ class TestAgentFrontmatterAcceptance:
             # The architect measures and returns typed design facts. DES owns
             # the resulting architecture-document writes, so the role needs no
             # direct Edit capability.
-            ("nw-solution-architect", ["Bash", "Glob", "Grep", "Read"]),
-            ("nw-product-owner", ["Read"]),
-            ("nw-acceptance-designer-reviewer", []),
-            ("nw-user-examiner", []),
+            # StructuredOutput shapes the role's typed reply channel; it grants
+            # no read access, so it does not weaken the declared blindness.
+            (
+                "nw-solution-architect",
+                ["Bash", "Glob", "Grep", "Read", "StructuredOutput"],
+            ),
+            ("nw-product-owner", ["Read", "StructuredOutput"]),
+            ("nw-acceptance-designer-reviewer", ["StructuredOutput"]),
+            ("nw-user-examiner", ["StructuredOutput"]),
         ],
     )
     def test_managed_roles_declare_least_privilege_tools(self, agent, expected):

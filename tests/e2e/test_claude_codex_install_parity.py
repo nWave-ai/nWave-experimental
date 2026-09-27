@@ -99,6 +99,7 @@ def _install_into_home(venv: Path, home: Path, seed) -> str:
         stderr=subprocess.STDOUT,
         input=b"y\n" * 20,
         env=env,
+        cwd=str(home),
         timeout=600,
         check=False,
     )
@@ -462,6 +463,7 @@ def test_legacy_attribution_upgrade_collapses_to_one_universal_registration(
     tmp_path_factory,
     custom_config_dir: bool,
     attribution_enabled: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Reinstalling over a CA-004-era ``~/.claude/settings.json`` (the exact
     retired ``pre-commit-attribution`` command, ADR-CA-006 D6/D7) collapses to
@@ -479,12 +481,17 @@ def test_legacy_attribution_upgrade_collapses_to_one_universal_registration(
         if custom_config_dir
         else (home / ".claude")
     )
-    legacy_command = _attribution_hook_command(claude_dir)
+    # The retired default-profile command used $HOME at registration time.
+    # Generate it under the same HOME as the installed CLI below; the pytest
+    # worker's HOME belongs to a different profile.
+    with monkeypatch.context() as sandbox_env:
+        sandbox_env.setenv("HOME", str(home))
+        legacy_command = _attribution_hook_command(claude_dir)
     _seed_legacy_attribution_settings(claude_dir, legacy_command)
 
     nwave_dir = home / ".nwave"
     nwave_dir.mkdir(parents=True)
-    (nwave_dir / "global-config.json").write_text(
+    (nwave_dir / "config.json").write_text(
         json.dumps({"attribution": {"enabled": attribution_enabled}}), encoding="utf-8"
     )
 
@@ -502,6 +509,7 @@ def test_legacy_attribution_upgrade_collapses_to_one_universal_registration(
         stderr=subprocess.STDOUT,
         input=b"y\n" * 20,
         env=env,
+        cwd=str(home),
         timeout=600,
         check=False,
     )
@@ -555,9 +563,9 @@ def test_legacy_attribution_upgrade_collapses_to_one_universal_registration(
         f"{sibling_entries[0]}"
     )
 
-    preference = json.loads(
-        (nwave_dir / "global-config.json").read_text(encoding="utf-8")
-    )["attribution"]["enabled"]
+    preference = json.loads((nwave_dir / "config.json").read_text(encoding="utf-8"))[
+        "attribution"
+    ]["enabled"]
     assert preference == attribution_enabled, (
         f"attribution.enabled preference was not preserved across upgrade: "
         f"expected {attribution_enabled}, got {preference}"
@@ -575,15 +583,15 @@ def test_installed_universal_handler_emits_dual_trailer_on_real_commit(
     home = tmp_path_factory.mktemp("nwave_dual_trailer_home")
     nwave_dir = home / ".nwave"
     nwave_dir.mkdir(parents=True)
-    (nwave_dir / "global-config.json").write_text(
+    (nwave_dir / "config.json").write_text(
         json.dumps({"attribution": {"enabled": True}}), encoding="utf-8"
     )
 
     repo = tmp_path_factory.mktemp("nwave_dual_trailer_repo")
     marker_dir = repo / ".nwave"
     marker_dir.mkdir()
-    (marker_dir / "local-config.json").write_text(
-        json.dumps({"enabled_for_repo": True}), encoding="utf-8"
+    (marker_dir / "config.json").write_text(
+        json.dumps({"enabled": True}), encoding="utf-8"
     )
     env = {
         "HOME": str(home),
@@ -743,6 +751,7 @@ def test_claude_settings_receipt_uninstall_roundtrip_preserves_user_sentinel(
         stderr=subprocess.STDOUT,
         input=b"y\n" * 20,
         env=env,
+        cwd=str(home),
         timeout=600,
         check=False,
     )

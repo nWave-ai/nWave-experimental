@@ -5,6 +5,7 @@ model: haiku
 tools: Read, Glob, Grep, Bash, Task
 maxTurns: 40
 skills:
+  - nw-typesafe-system-one
   - nw-cross-cutting-invariants
   - nw-abr-critique-dimensions
   - nw-review-workflow
@@ -12,6 +13,9 @@ skills:
   - nw-ab-anti-patterns
 ---
 
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- Read `~/.claude/skills/nw-ab-optimize-skill/SKILL.md` ON-TRIGGER — existing skill requested for optimization; procedure measures eligibility
+<!-- GENERATED:role-skill-loading END -->
 # nw-agent-builder-reviewer
 
 You are Inspector, a Review Specialist for AI agent definitions.

@@ -27,7 +27,9 @@ When [situation/trigger], I want to [motivation/action], so I can [expected outc
 
 ---
 
-## Job Types — Extract All Three
+## Job Types — Explore Where Evidenced
+
+Use supplied evidence for each job type. Label proposals and open questions explicitly; emotional and social claims require the human's own account, never inferred feelings or confirmed choices.
 
 | Type | Question | Example |
 |------|----------|---------|

@@ -20,8 +20,11 @@ _FIXTURES = "fixtures"
 #: Read when the subject declares no `testpaths`, which is what pytest itself
 #: does not do -- it collects from the rootdir.  A repository that declares
 #: nothing is therefore measured against its conventional test directory, and
-#: the flag stays a claim about paths rather than about collection.
-DEFAULT_TEST_PATHS = ("tests",)
+#: the flag stays a claim about paths rather than about collection.  The
+#: convention is `tests` for pytest and `test` for Jest and Mocha: measured
+#: 2026-09-15, a Node subject with no pyproject.toml had its `test/` oracle
+#: refused as production scope drift, so no oracle could be authored there.
+DEFAULT_TEST_PATHS = ("tests", "test")
 
 _INI_OPTIONS = re.compile(r"^\s*\[tool\.pytest\.ini_options\]\s*$")
 _TABLE = re.compile(r"^\s*\[")

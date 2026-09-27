@@ -55,23 +55,39 @@ Stdlib only.
 from __future__ import annotations
 
 import argparse
-import fnmatch
+import base64
 import hashlib
 import json
+import os
 import random
 import secrets
 import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from scripts.analysis.k4 import prepare_examiner_fixture as pef
+from des.domain.filesystem_projection import (
+    STRICT_DELIVERY_POLICY,
+    FilesystemProjectionError,
+    GitPath,
+    PathTransition,
+    ProjectionIndeterminate,
+    WorkspaceProjection,
+    observe_workspace,
+)
 from scripts.analysis.k4 import quality_rubric
 from scripts.analysis.paired_campaign import git_checkout_targets
 
 
-#: Never copied into a review packet. Measured 2026-08-07, before the first seal:
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+#: The strict delivery policy excludes setup content from every packet. Measured
+#: 2026-08-07, before the first seal:
 #: copying the arm's workspace wholesale would have shipped, to a reviewer,
 #:
 #:   * `.claude-k4/.credentials.json` -- a LIVE subscription OAuth token;
@@ -87,44 +103,6 @@ from scripts.analysis.paired_campaign import git_checkout_targets
 #: created, keep everything DELIVERY created.** The installer's own footprint
 #: existed before any work and is not part of the work; it is scored, if at all,
 #: from the campaign record, never from a packet that would name its own arm.
-_NEVER_SEAL = (
-    ".claude-k4",
-    ".credentials.json",
-    ".claude.json",
-    ".nwave",
-    "CLAUDE.md",
-    ".venv*",
-    ".k4-acceptance-venv",
-    ".mypy_cache",
-    ".hypothesis",
-    "__pycache__",
-    ".git",
-    "AGENTS.md",
-    "test_k4_acceptance.py",
-)
-
-
-#: Root-only runtime residue created by the K4 examiner fixture.  These names
-#: describe the fixture's own database, supervisor, and public environment --
-#: never a delivery.  They deliberately are not `_NEVER_SEAL`: a delivery may
-#: legitimately contain a same-named file below its own directory.
-_FIXTURE_RESIDUE_ROOT_NAMES = frozenset(
-    {
-        pef.DOC_NAME,
-        pef.DB_FILE_NAME,
-        pef.DB_PRISTINE_SNAPSHOT_NAME,
-        pef.DB_LOCK_FILE_NAME,
-        pef.SERVER_PID_FILE_NAME,
-        pef.SUPERVISOR_PID_FILE_NAME,
-        pef.SUPERVISOR_SCRIPT_NAME,
-        pef.SUPERVISOR_LOCK_FILE_NAME,
-        pef.SUPERVISOR_LOG_FILE_NAME,
-        pef.RESET_MARKER_FILE_NAME,
-        pef.SERVER_LOG_FILE_NAME,
-    }
-)
-
-
 #: The exact block `nwave-ai project enable` appends to the subject's own
 #: `.gitignore`. It cannot be handled by excluding the file: `.gitignore` is a
 #: real project file a delivery may legitimately edit, so dropping it would hide
@@ -132,7 +110,7 @@ _FIXTURE_RESIDUE_ROOT_NAMES = frozenset(
 #: 6 packets -- a perfect discriminator, found by auditing the sealed output
 #: rather than by trusting the exclusion list.
 #:
-#: Same rule as `_NEVER_SEAL`, applied inside a file instead of to a path:
+#: Same strict-delivery policy, applied inside a file instead of to a path:
 #: strip what SETUP wrote, keep what DELIVERY wrote.
 _SETUP_GITIGNORE_BLOCK = (
     "# nWave configuration (keep .nwave/config.json trackable)",
@@ -142,9 +120,15 @@ _SETUP_GITIGNORE_BLOCK = (
 
 
 def strip_setup_traces(delivery: Path) -> None:
-    """Remove setup-written lines that would name the arm."""
+    """Remove setup-written lines from a regular local `.gitignore` only.
+
+    A packet workspace can contain delivery-controlled links.  ``Path.is_file``
+    and ``write_text`` follow them, so treating a `.gitignore` symlink as a
+    normal file would mutate its target while merely preparing a packet.
+    Links are delivery content, never setup residue to rewrite.
+    """
     gitignore = delivery / ".gitignore"
-    if not gitignore.is_file():
+    if gitignore.is_symlink() or not gitignore.is_file():
         return
     lines = gitignore.read_text(encoding="utf-8", errors="replace").splitlines()
     kept = [ln for ln in lines if ln.strip() not in _SETUP_GITIGNORE_BLOCK]
@@ -161,18 +145,32 @@ _STATUS_RENAMED = "R"
 
 
 def _excluded_path(rel_path: str) -> bool:
-    """True if ``rel_path`` is bulk-excluded or a root fixture residue.
-
-    Mirrors `shutil.ignore_patterns`, which matches basenames per directory
-    level during the walk -- so a manifest entry never names a path that
-    `seal`'s own copytree would have refused to copy.
-    """
-    parts = Path(rel_path).parts
-    if len(parts) == 1 and parts[0] in _FIXTURE_RESIDUE_ROOT_NAMES:
+    """True when the canonical strict policy excludes this relative path."""
+    try:
+        return STRICT_DELIVERY_POLICY.excludes(GitPath(os.fsencode(rel_path)))
+    except FilesystemProjectionError:
+        # Git evidence paths must be valid GitPaths.  Treat an invalid value as
+        # non-delivery here; the independent canonical observer still refuses
+        # an unrepresentable filesystem path before capture can publish.
         return True
-    return any(
-        fnmatch.fnmatch(part, pattern) for part in parts for pattern in _NEVER_SEAL
-    )
+
+
+def _manifest_path(path: str) -> str:
+    """Render any native path as unambiguous UTF-8 manifest text."""
+    raw = os.fsencode(path)
+    try:
+        decoded = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        decoded = ""
+    if (
+        decoded
+        and not decoded.startswith("@b64:")
+        and "\n" not in decoded
+        and "\r" not in decoded
+        and " -> " not in decoded
+    ):
+        return decoded
+    return "@b64:" + base64.b64encode(raw).decode("ascii")
 
 
 def _git_status(workspace: Path) -> list[tuple[str, str, str | None]]:
@@ -193,6 +191,8 @@ def _git_status(workspace: Path) -> list[tuple[str, str, str | None]]:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         stdin=subprocess.DEVNULL,
         timeout=30,
     )
@@ -315,6 +315,437 @@ def _arm_baselines(campaign: Path) -> dict[str, str]:
 _PATCH_NAME = "DELIVERY.patch"
 
 
+@dataclass(frozen=True)
+class DeliveryCapture:
+    """A strict, reconstructible delivery packet published at ``target``.
+
+    ``baseline`` is the resolved commit the packet applies to. ``paths`` is
+    the complete, sorted delivery projection that was compared after applying
+    the packet in a new checkout of that commit. The projection itself stays
+    private: it can carry delivery bytes, while the packet is the handoff.
+    """
+
+    workspace: Path
+    target: Path
+    baseline: str
+    paths: tuple[str, ...]
+    projection: WorkspaceProjection | None = None
+    transitions: tuple[PathTransition, ...] = ()
+
+
+class DeliveryCaptureError(RuntimeError):
+    """A capture refusal that names WHAT failed, WHY, and a safe recovery."""
+
+
+def _capture_refusal(what: str, why: str, how: str) -> DeliveryCaptureError:
+    return DeliveryCaptureError(f"WHAT: {what}\nWHY:  {why}\nHOW:  {how}\n")
+
+
+def _run_capture_git(
+    workspace: Path, *args: str, timeout: int = 30
+) -> subprocess.CompletedProcess[str]:
+    """Run a bounded git read/write inside an isolated capture workspace."""
+    try:
+        return subprocess.run(
+            ["git", "-C", str(workspace), *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
+            stdin=subprocess.DEVNULL,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise _capture_refusal(
+            "git could not complete a strict delivery capture",
+            f"the capture cannot prove its baseline or reconstruction ({exc}).",
+            "Make git and the delivery checkout readable, then capture again.",
+        ) from exc
+
+
+def _require_strict_baseline(workspace: Path, baseline: str) -> str:
+    """Resolve the caller-supplied baseline without ever choosing HEAD."""
+    if (
+        not isinstance(baseline, str)
+        or not baseline.strip()
+        or baseline.upper() == "HEAD"
+    ):
+        raise _capture_refusal(
+            "strict capture has no exact baseline commit",
+            "a HEAD-relative patch loses delivery changes that were committed after the baseline.",
+            "Pass the recorded immutable checkout commit as baseline, then capture again.",
+        )
+    resolved = _run_capture_git(
+        workspace, "rev-parse", "--verify", "--quiet", f"{baseline}^{{commit}}"
+    )
+    if resolved.returncode != 0:
+        raise _capture_refusal(
+            "the requested baseline is not reachable from the delivery workspace",
+            "a packet cannot be reconstructed against a commit this checkout does not have.",
+            "Restore or fetch the recorded baseline commit, then capture again.",
+        )
+    return resolved.stdout.strip()
+
+
+def _refuse_unsupported_delivery_state(workspace: Path) -> None:
+    """Reject states the legacy writer could otherwise describe incompletely."""
+    if not (workspace / ".git").is_dir():
+        raise _capture_refusal(
+            "the delivery workspace is not a supported git checkout",
+            "strict capture needs its repository metadata to create and verify a patch.",
+            "Point capture at a readable git checkout, then capture again.",
+        )
+
+    try:
+        status = _git_status(workspace)
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        raise _capture_refusal(
+            "git status could not describe the delivery workspace",
+            "strict capture must reject an unobservable working-tree state.",
+            "Repair the checkout so `git status --porcelain=v1 -z` succeeds, then capture again.",
+        ) from exc
+
+    allowed = {" ", "?", "A", "M", "D", "R", "C"}
+    unsupported = [
+        code for code, _, _ in status if any(mark not in allowed for mark in code)
+    ]
+    if unsupported:
+        raise _capture_refusal(
+            "the delivery workspace has an unsupported git status",
+            "unmerged, type-changed, or otherwise unrepresentable paths could make a packet incomplete.",
+            "Resolve the working tree to ordinary add, modify, delete, rename, or clean paths, then capture again.",
+        )
+
+    staged = _run_capture_git(workspace, "ls-files", "--stage", "-z")
+    if staged.returncode != 0:
+        raise _capture_refusal(
+            "git could not inspect tracked path modes",
+            "strict capture must reject a packet when it cannot rule out submodules.",
+            "Repair the checkout so `git ls-files --stage` succeeds, then capture again.",
+        )
+    if any(
+        record.startswith("160000 ") for record in staged.stdout.split("\0") if record
+    ):
+        raise _capture_refusal(
+            "the delivery workspace contains a submodule",
+            "a submodule is a separate repository, not bytes a delivery patch can reconstruct safely.",
+            "Replace the submodule with captured project files or remove it, then capture again.",
+        )
+
+
+def _delivery_projection(root: Path) -> WorkspaceProjection:
+    """Use the canonical observer with the strict delivery policy directly."""
+    try:
+        return observe_workspace(root, STRICT_DELIVERY_POLICY)
+    except ProjectionIndeterminate as exc:
+        what = (
+            "a delivery symlink has an unsafe target"
+            if "symlink" in str(exc).lower()
+            else "the delivery projection could not be observed canonically"
+        )
+        raise _capture_refusal(
+            what,
+            f"a packet cannot prove paths, bytes, modes, or links it could not inspect ({exc}).",
+            "Make every delivery path stable and Git-representable, then capture again.",
+        ) from exc
+
+
+def _copy_delivery_projection(workspace: Path, target: Path) -> None:
+    """Copy exactly the canonical strict delivery projection input shape.
+
+    The caller validates links before it invokes ``strip_setup_traces``. This
+    helper must not transform the copy: transformation before that validation
+    could follow a delivery-controlled `.gitignore` link.
+    """
+    try:
+        shutil.copytree(
+            workspace,
+            target,
+            symlinks=True,
+            ignore=_strict_delivery_ignore(workspace),
+        )
+    except OSError as exc:
+        raise _capture_refusal(
+            "the original delivery projection could not be prepared",
+            f"a partial copy would make successful reconstruction a false claim ({exc}).",
+            "Make the checkout readable and stable, then capture again.",
+        ) from exc
+
+
+def _strict_delivery_ignore(
+    workspace: Path, *, retain_root_git: bool = False
+) -> Callable[[str, list[str]], set[str]]:
+    """Translate the canonical policy for ``copytree`` without a glob engine."""
+
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        parent = Path(directory).relative_to(workspace)
+        prefix = b"" if parent == Path() else os.fsencode(parent.as_posix())
+        ignored: set[str] = set()
+        for name in names:
+            raw_name = os.fsencode(name)
+            raw_path = raw_name if not prefix else prefix + b"/" + raw_name
+            path = GitPath(raw_path)
+            if retain_root_git and path.raw == b".git":
+                continue
+            if STRICT_DELIVERY_POLICY.excludes(path):
+                ignored.add(name)
+        return ignored
+
+    return ignore
+
+
+def _parse_delivery_manifest(manifest: Path) -> tuple[str, ...]:
+    """Read the writer's compact manifest without accepting an invented form."""
+    try:
+        raw = manifest.read_bytes()
+    except OSError as exc:
+        raise _capture_refusal(
+            "the delivery manifest could not be read for reconstruction",
+            f"strict capture cannot verify a manifest it could not inspect ({exc}).",
+            "Repair the packet writer and capture again.",
+        ) from exc
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise _capture_refusal(
+            "the delivery manifest is not UTF-8 text",
+            "the established writer publishes a UTF-8 manifest, so this packet cannot be its complete result.",
+            "Repair the packet writer and capture again.",
+        ) from exc
+    if not text:
+        return ()
+    if not text.endswith("\n"):
+        raise _capture_refusal(
+            "the delivery manifest has an unsupported shape",
+            "the established writer terminates every non-empty manifest entry with a newline.",
+            "Repair the packet writer and capture again.",
+        )
+
+    lines = tuple(text[:-1].split("\n"))
+    for line in lines:
+        if line.startswith(("A ", "M ", "D ")) and line[2:]:
+            continue
+        if line.startswith("R "):
+            old_path, separator, new_path = line[2:].partition(" -> ")
+            if old_path and separator and new_path:
+                continue
+        raise _capture_refusal(
+            "the delivery manifest has an unsupported entry",
+            "a strict packet needs the writer's exact A, M, D, or R path form.",
+            "Repair the packet writer and capture again.",
+        )
+    return lines
+
+
+def _reconstructed_manifest_lines(workspace: Path, baseline: str) -> tuple[str, ...]:
+    """Rebuild the writer-format manifest from an applied reconstruction."""
+    try:
+        entries = _git_status(workspace)
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        raise _capture_refusal(
+            "git status could not describe the reconstructed delivery",
+            "strict capture cannot verify manifest paths and statuses without git evidence.",
+            "Repair the reconstruction checkout and capture again.",
+        ) from exc
+
+    untracked = [
+        path for code, path, _ in entries if code == "??" and not _excluded_path(path)
+    ]
+    if untracked:
+        added = _run_capture_git(workspace, "add", "-N", "--", *untracked)
+        if added.returncode != 0:
+            raise _capture_refusal(
+                "git could not inspect untracked reconstructed delivery paths",
+                "untracked paths must be included before the manifest can prove complete delivery coverage.",
+                "Repair the reconstruction checkout and capture again.",
+            )
+
+    listed = _run_capture_git(workspace, "diff", "--name-status", "-z", "-M", baseline)
+    if listed.returncode not in (0, 1):
+        raise _capture_refusal(
+            "git could not list reconstructed delivery changes",
+            "strict capture cannot verify manifest paths and statuses without a complete diff.",
+            "Repair the reconstruction checkout and capture again.",
+        )
+
+    lines: list[str] = []
+    for status, path, old_path in _parse_name_status(listed.stdout):
+        if _excluded_path(path) or (old_path and _excluded_path(old_path)):
+            continue
+        bucket = _classify_diff_status(status)
+        if bucket is None:
+            raise _capture_refusal(
+                "the reconstructed delivery has an unsupported git status",
+                "a strict manifest cannot represent this reconstructed change honestly.",
+                "Repair the delivery state or packet writer, then capture again.",
+            )
+        if bucket == _STATUS_RENAMED:
+            lines.append(
+                f"{_STATUS_RENAMED} {_manifest_path(old_path or '')} -> {_manifest_path(path)}"
+            )
+        else:
+            lines.append(f"{bucket} {_manifest_path(path)}")
+    return tuple(sorted(lines))
+
+
+def capture_delivery_packet(
+    workspace: Path, target: Path, *, baseline: str
+) -> DeliveryCapture:
+    """Create a strict packet and prove it reconstructs the complete delivery.
+
+    The caller must supply a reachable, non-``HEAD`` baseline. The legacy
+    :func:`write_delivery_packet` remains compatible, including its historical
+    fallback; this API intentionally has no fallback. It writes only into a
+    private staging directory until a fresh clone at the exact baseline accepts
+    the binary patch and has the same paths, file bytes, git modes, safe link
+    targets, and deletions as the original delivery projection.
+
+    Raises :class:`DeliveryCaptureError` on refusal. In every refusal case
+    ``target`` remains absent; an existing target is never overwritten.
+    """
+    # All three capture roots must be absolute before any command changes
+    # directory. In particular, git resolves clone sources relative to its
+    # current directory, which is the private staging directory below.
+    workspace = Path(workspace).resolve(strict=False)
+    requested_target = Path(target)
+    if requested_target.exists() or requested_target.is_symlink():
+        raise _capture_refusal(
+            f"strict capture target already exists: {requested_target}",
+            "publishing over an existing packet could make a prior handoff appear verified.",
+            "Choose a new empty target path, then capture again.",
+        )
+    target = requested_target.resolve(strict=False)
+    if target.exists() or target.is_symlink():
+        raise _capture_refusal(
+            f"strict capture target already exists: {target}",
+            "publishing over an existing packet could make a prior handoff appear verified.",
+            "Choose a new empty target path, then capture again.",
+        )
+    _refuse_unsupported_delivery_state(workspace)
+    resolved_baseline = _require_strict_baseline(workspace, baseline)
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise _capture_refusal(
+            "the strict capture target parent could not be created",
+            f"a packet cannot be staged for atomic publication there ({exc}).",
+            "Choose a writable target parent, then capture again.",
+        ) from exc
+    with tempfile.TemporaryDirectory(
+        prefix="blind-review-strict-", dir=target.parent
+    ) as temporary:
+        staging = Path(temporary).resolve(strict=False)
+        original = staging / "original"
+        packet = staging / "packet"
+        clone = staging / "clone"
+        _copy_delivery_projection(workspace, original)
+        # Validate the copied source before `strip_setup_traces`, which reads
+        # and may write `.gitignore`. An absolute or escaping link must fail
+        # while it is still only a link in our private copy.
+        _delivery_projection(original)
+        strip_setup_traces(original)
+        original_projection = _delivery_projection(original)
+        packet.mkdir()
+
+        if write_delivery_packet(workspace, packet, resolved_baseline) != 0:
+            raise _capture_refusal(
+                "the delivery packet writer refused this workspace",
+                "strict capture cannot publish a packet the established writer could not build completely.",
+                "Resolve the writer's reported condition, then capture again.",
+            )
+        if {path.name for path in packet.iterdir()} != {_MANIFEST_NAME, _PATCH_NAME}:
+            raise _capture_refusal(
+                "the delivery packet has an unsupported shape",
+                "a strict handoff is exactly its manifest and binary patch.",
+                "Repair the packet writer so it emits only the documented packet files, then capture again.",
+            )
+        manifest_lines = _parse_delivery_manifest(packet / _MANIFEST_NAME)
+
+        cloned = _run_capture_git(
+            staging, "clone", "--no-local", "--no-checkout", str(workspace), str(clone)
+        )
+        if cloned.returncode != 0:
+            raise _capture_refusal(
+                "a fresh clone for strict reconstruction could not be created",
+                "the packet must be proven in a new checkout, not in the source delivery tree.",
+                "Make the source repository cloneable and the baseline reachable, then capture again.",
+            )
+        checked_out = _run_capture_git(
+            clone, "checkout", "--detach", "--quiet", resolved_baseline
+        )
+        if checked_out.returncode != 0:
+            raise _capture_refusal(
+                "the exact baseline could not be checked out in a fresh clone",
+                "a packet is useful only when its declared baseline can be reconstructed independently.",
+                "Make the baseline available to a fresh clone, then capture again.",
+            )
+        baseline_projection = _delivery_projection(clone)
+        try:
+            patch_has_changes = bool((packet / _PATCH_NAME).read_bytes())
+        except OSError as exc:
+            raise _capture_refusal(
+                "the binary delivery patch could not be read for reconstruction",
+                f"strict capture cannot apply bytes it could not inspect ({exc}).",
+                "Repair the packet writer and capture again.",
+            ) from exc
+        # `git apply --check` calls an empty file "No valid patches". An
+        # empty packet is nevertheless valid when the complete original
+        # projection equals the baseline; the comparison below proves that
+        # case and rejects an empty tampered packet for a changed delivery.
+        if patch_has_changes:
+            applied = _run_capture_git(
+                clone, "apply", "--check", "--binary", str(packet / _PATCH_NAME)
+            )
+            if applied.returncode != 0:
+                raise _capture_refusal(
+                    "the binary delivery patch does not apply to its exact baseline",
+                    "a reviewer would receive a packet that cannot reconstruct the claimed delivery.",
+                    "Repair the delivery state or packet writer, then capture again.",
+                )
+            applied = _run_capture_git(
+                clone, "apply", "--binary", str(packet / _PATCH_NAME)
+            )
+            if applied.returncode != 0:
+                raise _capture_refusal(
+                    "the checked delivery patch could not be applied",
+                    "a successful preflight without a completed application is not reconstruction proof.",
+                    "Repair the patch application failure, then capture again.",
+                )
+
+        reconstructed_projection = _delivery_projection(clone)
+        if reconstructed_projection != original_projection:
+            raise _capture_refusal(
+                "the reconstructed delivery projection differs from the original",
+                "the packet changed, omitted, or added paths, bytes, modes, link targets, or deletions.",
+                "Repair the delivery state or packet writer, then capture again.",
+            )
+        if manifest_lines != _reconstructed_manifest_lines(clone, resolved_baseline):
+            raise _capture_refusal(
+                "the delivery manifest differs from the reconstructed delivery",
+                "the manifest must name the exact changed paths and statuses, including mode changes represented as M.",
+                "Repair the packet writer and capture again.",
+            )
+
+        try:
+            packet.replace(target)
+        except OSError as exc:
+            raise _capture_refusal(
+                "the verified delivery packet could not be published",
+                f"the packet remains staged and no complete target was published ({exc}).",
+                "Make the target parent writable and choose an absent target, then capture again.",
+            ) from exc
+
+    return DeliveryCapture(
+        workspace=workspace,
+        target=target,
+        baseline=resolved_baseline,
+        paths=tuple(os.fsdecode(path.raw) for path, _ in original_projection.states),
+        projection=original_projection,
+        transitions=baseline_projection.transitions_to(original_projection),
+    )
+
+
 def write_delivery_packet(workspace: Path, target: Path, baseline: str | None) -> int:
     """`DELIVERY-CHANGES.txt` + `DELIVERY.patch`: every non-setup delivery
     change from `baseline` (the arm's recorded checkout commit, or this
@@ -354,18 +785,14 @@ def write_delivery_packet(workspace: Path, target: Path, baseline: str | None) -
     with tempfile.TemporaryDirectory(prefix="blind-review-patch-") as tmp:
         tmp_ws = Path(tmp) / "ws"
         try:
-            # Ignore the same bulk `_NEVER_SEAL` would exclude from the
-            # packet -- credentials, venvs, caches -- so the throwaway copy
-            # never holds them even transiently. `.git` is the one exception:
-            # the diff below needs it, and it was never in `_NEVER_SEAL` for
-            # a leak reason, only so manifest paths never name it.
+            # Ignore the canonical strict projection's excluded content so the
+            # throwaway copy never holds it. Root `.git` is retained only for
+            # the diff command; it remains excluded from packet paths.
             shutil.copytree(
                 workspace,
                 tmp_ws,
                 symlinks=True,
-                ignore=shutil.ignore_patterns(
-                    *(name for name in _NEVER_SEAL if name != ".git")
-                ),
+                ignore=_strict_delivery_ignore(workspace, retain_root_git=True),
             )
         except OSError as exc:
             sys.stderr.write(
@@ -393,6 +820,8 @@ def write_delivery_packet(workspace: Path, target: Path, baseline: str | None) -
                 ],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="surrogateescape",
                 stdin=subprocess.DEVNULL,
                 timeout=30,
             )
@@ -434,6 +863,8 @@ def write_delivery_packet(workspace: Path, target: Path, baseline: str | None) -
                 ["git", "-C", str(tmp_ws), "add", "-N", "--", *untracked],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="surrogateescape",
                 stdin=subprocess.DEVNULL,
                 timeout=30,
             )
@@ -452,6 +883,8 @@ def write_delivery_packet(workspace: Path, target: Path, baseline: str | None) -
             ["git", "-C", str(tmp_ws), "diff", "--name-status", "-z", "-M", base],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
             stdin=subprocess.DEVNULL,
             timeout=30,
         )
@@ -480,9 +913,11 @@ def write_delivery_packet(workspace: Path, target: Path, baseline: str | None) -
             if old_path:
                 paths.append(old_path)
             if bucket == _STATUS_RENAMED:
-                lines.append(f"{_STATUS_RENAMED} {old_path} -> {path}")
+                lines.append(
+                    f"{_STATUS_RENAMED} {_manifest_path(old_path or '')} -> {_manifest_path(path)}"
+                )
             else:
-                lines.append(f"{bucket} {path}")
+                lines.append(f"{bucket} {_manifest_path(path)}")
 
         if unrepresentable:
             sys.stderr.write(
@@ -522,6 +957,8 @@ def write_delivery_packet(workspace: Path, target: Path, baseline: str | None) -
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
             stdin=subprocess.DEVNULL,
             timeout=30,
         )
@@ -535,7 +972,7 @@ def write_delivery_packet(workspace: Path, target: Path, baseline: str | None) -
                 "      re-seal.\n"
             )
             return 1
-        patch_path.write_text(diff.stdout, encoding="utf-8")
+        patch_path.write_text(diff.stdout, encoding="utf-8", errors="surrogateescape")
     return 0
 
 
@@ -723,7 +1160,7 @@ def seal(campaign: Path, out: Path, map_path: Path) -> int:
                 + "WHY:  this is the tool whose whole claim is that blinding is STRUCTURAL\n"
                 "      rather than promised. A packet carrying the runtime config leaks\n"
                 "      the arm three ways and a live credential once.\n"
-                "HOW:  if this is a missed filename, add it to _NEVER_SEAL; if it is the\n"
+                "HOW:  if this is a missed filename, add it to the strict delivery policy; if it is the\n"
                 "      setup gitignore block or this delivery's own identity, the writers\n"
                 "      above have a bug -- fix it there. Then re-seal. Do not hand out the\n"
                 "      packets produced by this run.\n"

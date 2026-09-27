@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -204,12 +205,19 @@ def _categorize_commits(raw_log: str) -> dict[str, list[str]]:
     }
 
 
+@dataclass(frozen=True)
+class _ReleaseLineage:
+    """Where this release came from and how to link to what changed."""
+
+    source_tag: str
+    repo: str
+    prev_tag: str
+
+
 def _render_markdown(
     stage: str,
     version: str,
-    source_tag: str,
-    repo: str,
-    prev_tag: str,
+    lineage: _ReleaseLineage,
     categories: dict[str, list[str]],
     release_date: str,
 ) -> str:
@@ -218,20 +226,20 @@ def _render_markdown(
 
     if stage == "dev":
         sections.append(f"**Dev snapshot** `{version}` ({release_date})\n")
-        if prev_tag and repo:
+        if lineage.prev_tag and lineage.repo:
             sections.append(
-                f"**Changes since**: [{prev_tag}]"
-                f"(https://github.com/{repo}/compare/{prev_tag}...v{version})\n"
+                f"**Changes since**: [{lineage.prev_tag}]"
+                f"(https://github.com/{lineage.repo}/compare/{lineage.prev_tag}...v{version})\n"
             )
         empty_message = "No notable changes (internal improvements)\n"
     elif stage == "rc":
         sections.append(f"**Release candidate** `{version}` ({release_date})\n")
-        if source_tag:
-            sections.append(f"**Promoted from**: `{source_tag}`\n")
-        if prev_tag and repo:
+        if lineage.source_tag:
+            sections.append(f"**Promoted from**: `{lineage.source_tag}`\n")
+        if lineage.prev_tag and lineage.repo:
             sections.append(
-                f"**Changes since**: [{prev_tag}]"
-                f"(https://github.com/{repo}/compare/{prev_tag}...v{version})\n"
+                f"**Changes since**: [{lineage.prev_tag}]"
+                f"(https://github.com/{lineage.repo}/compare/{lineage.prev_tag}...v{version})\n"
             )
         sections.append(
             "## Install\n"
@@ -250,12 +258,12 @@ def _render_markdown(
     else:
         sections.append(f"# nWave Framework v{version}\n")
         sections.append(f"**Release Date**: {release_date}\n")
-        if source_tag:
-            sections.append(f"**Promoted from**: `{source_tag}`\n")
-        if prev_tag and repo:
+        if lineage.source_tag:
+            sections.append(f"**Promoted from**: `{lineage.source_tag}`\n")
+        if lineage.prev_tag and lineage.repo:
             sections.append(
-                f"**Full Changelog**: [{prev_tag}...v{version}]"
-                f"(https://github.com/{repo}/compare/{prev_tag}...v{version})\n"
+                f"**Full Changelog**: [{lineage.prev_tag}...v{version}]"
+                f"(https://github.com/{lineage.repo}/compare/{lineage.prev_tag}...v{version})\n"
             )
         sections.append(
             "## Installation\n"
@@ -300,9 +308,9 @@ def main(argv: list[str] | None = None) -> None:
     notes = _render_markdown(
         stage=args.stage,
         version=args.version,
-        source_tag=args.source_tag,
-        repo=args.repo,
-        prev_tag=prev_tag,
+        lineage=_ReleaseLineage(
+            source_tag=args.source_tag, repo=args.repo, prev_tag=prev_tag
+        ),
         categories=categories,
         release_date=release_date,
     )

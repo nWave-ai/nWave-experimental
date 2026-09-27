@@ -14,13 +14,27 @@ from des.cli.step_terminal import (
     resolved_root,
     succeed,
 )
+from des.domain.distill_document import DistillDocument
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="des distill")
+    parser = argparse.ArgumentParser(
+        prog="des distill",
+        description="Construct a provider-free DISTILL acceptance authority.",
+        epilog=DistillDocument.input_description(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     add_repo_root_argument(parser, "--repo-root", type=Path, required=True)
     parser.add_argument("--input", required=True)
     parser.add_argument("--replace-current", action="store_true")
+    parser.add_argument(
+        "--feature",
+        default=None,
+        help=(
+            "feature id ([a-z0-9][a-z0-9-]*) selecting FEATURE document destinations; "
+            "optional here: the handover's bound scope is used and a different id is refused"
+        ),
+    )
     args = parser.parse_args(argv)
     root = resolved_root(args.repo_root)
     invocation = "des distill --repo-root <root> --input -"
@@ -31,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
             StepRefusal(
                 "InvalidDistillInput",
                 "--input accepts only -",
-                "pipe closed v1 DISTILL JSON into des distill --input -",
+                "pipe closed schema_version 2 DISTILL JSON into des distill --input -",
             ),
             invocation,
         )
@@ -40,13 +54,13 @@ def main(argv: list[str] | None = None) -> int:
         return refuse(
             StepRefusal(
                 "InvalidDistillDocument",
-                "stdin must carry one non-empty strict-UTF-8 DISTILL JSON",
-                "pipe closed v1 DISTILL JSON into des distill --input -",
+                "stdin must carry one non-empty strict-UTF-8 schema_version 2 DISTILL JSON",
+                "pipe closed schema_version 2 DISTILL JSON into des distill --input -",
             ),
             invocation,
         )
     outcome = DeliverySteps().distill_document(
-        root, raw, replace_current=args.replace_current
+        root, raw, replace_current=args.replace_current, feature=args.feature
     )
     if not outcome.succeeded:
         return refuse(

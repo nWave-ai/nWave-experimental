@@ -334,6 +334,7 @@ def _ensure_venv(workspace: Path) -> Path:
     """Return the fixture-owned interpreter, creating+installing it only if
     it does not already exist -- a test-provided fake is never replaced."""
     venv_python = workspace / VENV_PYTHON
+    _link_subject_venv(workspace)
     if venv_python.exists():
         return venv_python
     venv_dir = workspace / _VENV_DIR_NAME
@@ -406,7 +407,28 @@ def _ensure_venv(workspace: Path) -> Path:
                     f"HOW:  reproduce `{pip} install -r {filtered_req}` in "
                     f"{workspace} and read the error below.\n{tail}"
                 )
+    code, tail = _run(
+        [str(pip), "install", "-q", *DECLARED_RUNNER_REQUIREMENTS], workspace
+    )
+    if code != 0:
+        raise SystemExit(
+            "WHAT: could not install the declared test runner "
+            f"({', '.join(DECLARED_RUNNER_REQUIREMENTS)}) into the fixture venv.\n"
+            "WHY:  the layout this fixture declares names pytest, and DES runs "
+            "every acceptance oracle as `python -m pytest <oracle>`; a runner "
+            "the venv does not carry makes every oracle exit 1 before it runs.\n"
+            f"HOW:  reproduce `{pip} install {' '.join(DECLARED_RUNNER_REQUIREMENTS)}` "
+            f"in {workspace} and read the error below.\n{tail}"
+        )
     return venv_python
+
+
+def _link_subject_venv(workspace: Path) -> None:
+    """Answer at `.venv` with the fixture venv, unless the subject already has one."""
+    link = workspace / SUBJECT_VENV_LINK
+    if link.exists() or link.is_symlink():
+        return
+    link.symlink_to(_VENV_DIR_NAME, target_is_directory=True)
 
 
 def _migrate(venv_python: Path, workspace: Path) -> None:
@@ -463,6 +485,45 @@ def _probe_subject_test_dependencies(venv_python: Path, workspace: Path) -> None
             "requirements-dev.txt (or requirements.txt, if it belongs to "
             "the subject's runtime rather than its tests) before rerunning."
             f"\n{tail}"
+        )
+
+
+def _probe_declared_runner(venv_python: Path, workspace: Path) -> None:
+    """Run ONE pre-existing subject test module under the runner DES will invoke.
+
+    The falsifier run 13 lacked: `_probe_subject_test_dependencies` runs
+    `manage.py test`, which says nothing about `python -m pytest`. This runs the
+    exact form DES uses, asks for the junit report DES reads, and refuses LOUD
+    when the session did not complete green WITH a report -- exit status alone
+    cannot tell a failing test from a runner that never started.
+    """
+    report = workspace / _VENV_DIR_NAME / "declared-runner-probe.xml"
+    report.unlink(missing_ok=True)
+    argv = [
+        str(venv_python),
+        "-m",
+        "pytest",
+        _DECLARED_RUNNER_PROBE_MODULE,
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        f"--junitxml={report}",
+    ]
+    code, tail = _run(argv, workspace)
+    if code != 0 or not report.is_file():
+        raise SystemExit(
+            "WHAT: the declared test runner did not run the subject's own "
+            f"`{_DECLARED_RUNNER_PROBE_MODULE}` green with a junit report "
+            f"(exit {code}, report {'present' if report.is_file() else 'absent'}).\n"
+            "WHY:  DES executes every acceptance oracle as `python -m pytest "
+            "<oracle>` and reads its junit report; a runner that cannot run a "
+            "pre-existing Django TestCase here will report every oracle RED on "
+            "exit status alone, never green -- measured on run 13, where the "
+            "value-1 oracle was never observed.\n"
+            f"HOW:  reproduce `{' '.join(argv)}` in {workspace}; check that "
+            f"{', '.join(DECLARED_RUNNER_REQUIREMENTS)} are installed and that "
+            "pyproject.toml declares DJANGO_SETTINGS_MODULE.\n"
+            f"{tail}"
         )
 
 
@@ -1292,7 +1353,13 @@ def render_project_fragment(
         "(pip list failed; treat the venv as fixed regardless)"
     )
     domains = ", ".join(network_allowed_domains)
-    test_command = f"{VENV_PYTHON} {' '.join(_SUBJECT_DEPENDENCY_PROBE_ARGV)}"
+    # `python`, never the venv path: the arm's PATH resolves it to the fixture
+    # venv in the workspace, and DES's shim resolves the same name to the
+    # subject's `.venv` inside a candidate checkout, where `k4-fixture-venv/`
+    # does not exist. Measured on the 2026-09-14 resume: every declared vector
+    # that copied the venv path from this line was refused at verify with
+    # `VerificationExecutableAbsent`, after all five values had been crafted.
+    test_command = f"python {' '.join(_SUBJECT_DEPENDENCY_PROBE_ARGV)}"
     return (
         "## K4 sandbox facts\n\n"
         f"- Open `{DOC_NAME}` FIRST: did you open the environment file "
@@ -1305,6 +1372,11 @@ def render_project_fragment(
         "what this venv already has:\n"
         f"  {deps}\n"
         f"- Run the subject's own tests: `{test_command}`\n"
+        "- Acceptance oracles run under pytest (pytest-django, settings "
+        "declared in pyproject.toml): `python -m pytest <oracle file> -q`. "
+        "Declare verification commands with `python`, never with a venv "
+        "path: only `python`, `python3` and `pytest` resolve inside a "
+        "verification candidate.\n"
         f"- API documentation: `{_API_DOCS_PATH}`\n"
         f"{_wall_clock_budget_bullet()}"
     )
@@ -1363,7 +1435,60 @@ def _write_project_fragment(workspace: Path, content: str) -> None:
     claude_md.write_text(joined, encoding="utf-8")
 
 
-def _add_exclude_entries(workspace: Path) -> None:
+#: The subject keeps its tests at `hc/<app>/tests/` and ships no `pyproject.toml`.
+#: DES reads test paths from that file alone and otherwise assumes `tests/`, so
+#: on this subject every acceptance-design write under `hc/api/tests/` was
+#: refused as ProductionScopeDrift -- a false refusal by construction, one
+#: bought turn plus one rework cycle per run. Measured 2026-09-14 in the first
+#: campaign where the method actually ran, and the night before by an agent
+#: that added exactly this file by hand to get past it.
+#:
+#: Declared here, ONCE, identically for both arms (this step is shared
+#: verbatim), and excluded from the delivery diff so the blind packet never
+#: shows setup as delivered work. Written only when the subject declares
+#: nothing of its own: a subject's own declaration is never overruled.
+SUBJECT_TEST_LAYOUT = (
+    "[tool.pytest.ini_options]\n"
+    'testpaths = ["hc"]\n'
+    'DJANGO_SETTINGS_MODULE = "hc.settings"\n'
+)
+
+#: The runner the declared layout NAMES, so the venv must CARRY it. The
+#: subject runs Django's own unittest runner and ships no pytest; declaring
+#: `[tool.pytest.ini_options]` tells DES this is a pytest project, and DES's
+#: floor vector for an oracle is `python -m pytest <oracle> -q`. Measured on
+#: run 13 (2026-09-14): every such execution exited 1 on `No module named
+#: pytest`, which the runner could only read as RED on exit status alone --
+#: the value-1 oracle was never observed red or green, and a settlement that
+#: needed a real green bought a crafter turn instead. pytest-django is what
+#: lets pytest run the subject's `django.test.TestCase` classes; the settings
+#: module it needs is the one declared above. Pinned to the versions this
+#: repository's own lock resolves, so the arm runs one known runner.
+DECLARED_RUNNER_REQUIREMENTS = ("pytest==9.1.1", "pytest-django==4.14.0")
+
+#: Where DES resolves the SUBJECT's interpreter (`_SUBJECT_INTERPRETERS`:
+#: `.venv/bin/python`). The fixture venv keeps its own name -- every
+#: environment doc and probe already says `k4-fixture-venv` -- and a relative
+#: link answers at the path DES reads, so an oracle runs under the venv that
+#: carries the runner instead of the runner's own `sys.executable`.
+SUBJECT_VENV_LINK = ".venv"
+
+#: One pre-existing subject test module, run under the DECLARED runner at setup.
+#: `_probe_subject_test_dependencies` proves the subject's own command imports;
+#: this proves the runner DES will invoke exists and can run a Django TestCase.
+_DECLARED_RUNNER_PROBE_MODULE = "hc/api/tests/test_ping.py"
+
+
+def _declare_subject_test_layout(workspace: Path) -> tuple[str, ...]:
+    """Write the subject's real test layout when it declares none; say what landed."""
+    target = workspace / "pyproject.toml"
+    if target.exists():
+        return ()
+    target.write_text(SUBJECT_TEST_LAYOUT, encoding="utf-8")
+    return ("pyproject.toml",)
+
+
+def _add_exclude_entries(workspace: Path, *, extra: tuple[str, ...] = ()) -> None:
     exclude = workspace / ".git" / "info" / "exclude"
     exclude.parent.mkdir(parents=True, exist_ok=True)
     existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
@@ -1373,8 +1498,10 @@ def _add_exclude_entries(workspace: Path) -> None:
         for entry in (
             DOC_NAME,
             f"{_VENV_DIR_NAME}/",
+            SUBJECT_VENV_LINK,
             DB_PRISTINE_SNAPSHOT_NAME,
             ".claude-k4/",
+            *extra,
         )
         if entry not in lines
     ]
@@ -1482,7 +1609,9 @@ def prepare_delivery(workspace: Path) -> Path:
     _migrate(venv_python, workspace)
     _probe_subject_test_dependencies(venv_python, workspace)
     _write_project_fragment(workspace, render_project_fragment(venv_python, workspace))
-    _add_exclude_entries(workspace)
+    declared_layout = _declare_subject_test_layout(workspace)
+    _probe_declared_runner(venv_python, workspace)
+    _add_exclude_entries(workspace, extra=declared_layout)
     (workspace / DOC_NAME).unlink(missing_ok=True)
     return venv_python
 

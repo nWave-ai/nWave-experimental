@@ -155,6 +155,36 @@ def test_language_native_test_conventions_are_test_shaped() -> None:
     assert is_test_shaped_path("src/WidgetTest.kt")
 
 
+# -- ES-module / CommonJS extension variants -- friction 2026-09-15: an
+# ESM-only Node repository whose whole Jest suite is `test/*.test.mjs` had
+# every test read as a PRODUCTION target, so `des compile-contract` refused a
+# RED_TO_GREEN bugfix with no admissible oracle, even with an explicit
+# `Oracle target locator:` line. The variants are exactly the ones Vitest's
+# default `include` glob names: `**/*.{test,spec}.?(c|m)[jt]s?(x)`.
+
+
+def test_module_variant_javascript_and_typescript_tests_are_test_shaped() -> None:
+    assert is_test_shaped_path("test/install.test.mjs")
+    assert is_test_shaped_path("src/widget.spec.mjs")
+    assert is_test_shaped_path("src/widget.test.cjs")
+    assert is_test_shaped_path("src/widget.spec.cjs")
+    assert is_test_shaped_path("src/widget.test.mts")
+    assert is_test_shaped_path("src/widget.spec.mts")
+    assert is_test_shaped_path("src/widget.test.cts")
+    assert is_test_shaped_path("src/widget.spec.cts")
+
+
+def test_module_variant_production_files_are_not_test_shaped() -> None:
+    # The same word-boundary discipline as every other family: a helper that
+    # lives under test/ or a stem that merely contains "test" stays a target.
+    assert not is_test_shaped_path("scripts/version.mjs")
+    assert not is_test_shaped_path("test/helpers/artifacts.mjs")
+    assert not is_test_shaped_path("src/contest.mjs")
+    assert not is_test_shaped_path("src/latest.cjs")
+    assert not is_test_shaped_path("src/contest.mts")
+    assert not is_test_shaped_path("src/attestation.cts")
+
+
 def test_unknown_extension_is_never_test_shaped() -> None:
     assert not is_test_shaped_path("scripts/test_runner.sh")
 

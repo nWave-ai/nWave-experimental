@@ -24,6 +24,7 @@ graph without its records.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
@@ -65,7 +66,8 @@ def design_facts() -> dict:
                 "decisions": ["one opaque semantic decision"],
                 "oracle": ORACLE,
                 "acceptance_supports": [SUPPORT],
-                "verification": [["python", "-m", "pytest", ORACLE]],
+                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                "oracle_verification_index": 0,
             },
         }
     }
@@ -84,6 +86,7 @@ def two_values_one_bound(root: Path, step) -> None:
     assert (
         step(
             "po",
+            "--project",
             "--repo-root",
             str(root),
             answers=[accepted_values("A", "B")],
@@ -108,6 +111,7 @@ def test_a_different_request_keeps_what_still_holds_and_archives_the_rest(
 
     code, out, err = step(
         "po",
+        "--project",
         "--repo-root",
         str(root),
         answers=[rewrite("A", "C")],
@@ -140,7 +144,12 @@ def test_the_archive_is_a_readable_ref_and_nothing_is_deleted_silently(
     before = (root / HANDOVER).read_text()
 
     code, out, err = step(
-        "po", "--repo-root", str(root), answers=[rewrite("A", "C")], stdin=SECOND
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[rewrite("A", "C")],
+        stdin=SECOND,
     )
 
     assert code == 0, out + err
@@ -183,9 +192,14 @@ def test_a_kept_value_keeps_its_turn_records_under_the_new_request(
     assert any(ref.endswith("/oracle") for ref in before), before
 
     assert (
-        step("po", "--repo-root", str(root), answers=[rewrite("A", "C")], stdin=SECOND)[
-            0
-        ]
+        step(
+            "po",
+            "--project",
+            "--repo-root",
+            str(root),
+            answers=[rewrite("A", "C")],
+            stdin=SECOND,
+        )[0]
         == 0
     )
 
@@ -203,7 +217,12 @@ def test_an_archived_value_offers_the_objection_as_a_second_next(
     """A real fork under G7: the orchestrator may send the split back."""
     two_values_one_bound(root, step)
     code, out, err = step(
-        "po", "--repo-root", str(root), answers=[rewrite("A", "C")], stdin=SECOND
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[rewrite("A", "C")],
+        stdin=SECOND,
     )
     assert code == 0, out + err
     moves = nexts(out)
@@ -215,16 +234,26 @@ def test_the_same_new_request_twice_is_a_resume(root: Path, step, turns: Path) -
     """L1 over the rewrite: the second call is free."""
     two_values_one_bound(root, step)
     assert (
-        step("po", "--repo-root", str(root), answers=[rewrite("A", "C")], stdin=SECOND)[
-            0
-        ]
+        step(
+            "po",
+            "--project",
+            "--repo-root",
+            str(root),
+            answers=[rewrite("A", "C")],
+            stdin=SECOND,
+        )[0]
         == 0
     )
     spent = len(asked(turns))
     graph = stored(root)
 
     code, out, err = step(
-        "po", "--repo-root", str(root), answers=[rewrite("A", "C")], stdin=SECOND
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[rewrite("A", "C")],
+        stdin=SECOND,
     )
 
     assert code == 0, out + err

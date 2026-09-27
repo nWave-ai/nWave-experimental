@@ -236,14 +236,29 @@ class DistBuilder:
         return count
 
     def build_des_module(self) -> int:
-        """Build one rewritten DES runtime under both public and bundled roots."""
+        """Build a public DES runtime under both entry-point and bundled roots."""
         src = self.project_root / "src" / "des"
         if not src.exists():
             self._log("DES module: src/des/ not found, skipping", "WARN")
             return 0
 
         dst = self.dist_dir / "lib" / "python" / "des"
-        shutil.copytree(src, dst, dirs_exist_ok=True)
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(
+            src,
+            dst,
+            dirs_exist_ok=False,
+            ignore=shutil.ignore_patterns(
+                "__pycache__", "*.pyc", "*.pyo", "graphify-out"
+            ),
+        )
+        codefact = dst / "adapters" / "driven" / "codefact"
+        if codefact.is_dir():
+            (codefact / "graphify_code_fact_adapter.py").unlink(missing_ok=True)
+            (codefact / "public_code_fact_chain.py").replace(
+                codefact / "code_fact_chain.py"
+            )
 
         # Rewrite imports: src.des → des
         files_modified = 0

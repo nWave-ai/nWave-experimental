@@ -117,7 +117,7 @@ def _repository(tmp_path: Path, name: str) -> Path:
 def _devops(
     root: Path, raw: str, *, replace_current: bool = False
 ) -> tuple[int, str, str]:
-    arguments = ["devops", "--repo-root", str(root)]
+    arguments = ["devops", "--repo-root", str(root), "--project"]
     if replace_current:
         arguments.append("--replace-current")
     arguments.extend(("--input", "-"))
@@ -184,7 +184,7 @@ def test_invalid_utf8_stdin_refuses_before_constructing_operational_artifacts(
             ),
         )
         code, out, err = run_cli_in_process(
-            ["devops", "--repo-root", str(root), "--input", "-"],
+            ["devops", "--repo-root", str(root), "--project", "--input", "-"],
             cwd=root,
             catch_all=True,
         )
@@ -245,7 +245,14 @@ def _po_with_facts(root: Path, tmp_path: Path) -> tuple[int, str, str, str]:
         tmp_path / "claude-config",
     )
     code, out, err = run_cli_in_process(
-        ["po", "--repo-root", str(root), "--operational-facts", str(SIDECAR)],
+        [
+            "po",
+            "--repo-root",
+            str(root),
+            "--project",
+            "--operational-facts",
+            str(SIDECAR),
+        ],
         cwd=root,
         env=environment,
         stdin_text="Decompose the Widget release.",
@@ -385,7 +392,7 @@ def test_complete_input_projects_configured_document_and_matching_operational_fa
         tmp_path / "ordinary-claude-config",
     )
     ordinary_code, ordinary_out, ordinary_err = run_cli_in_process(
-        ["po", "--repo-root", str(ordinary)],
+        ["po", "--repo-root", str(ordinary), "--project"],
         cwd=ordinary,
         env=ordinary_environment,
         stdin_text="Decompose without operational facts.",

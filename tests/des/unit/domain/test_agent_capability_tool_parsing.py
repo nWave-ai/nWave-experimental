@@ -17,6 +17,7 @@ from des.domain.agent_capability import (
     provider_tool_name,
     resolve_declared_capability,
     split_declared_tools,
+    tool_reaches_source,
 )
 from des.runtime.packaged_asset import AssetOrigin, AssetResolution
 
@@ -40,6 +41,30 @@ class TestSplitDeclaredTools:
     def test_unbalanced_parentheses_are_refused_loud(self, raw):
         with pytest.raises(UnbalancedToolSpecifier):
             split_declared_tools(raw)
+
+
+class TestStructuredOutputIsNonSourceReaching:
+    """``StructuredOutput`` shapes the reply schema, never the tree.
+
+    Declaring it in frontmatter (so a provider emits ``--json-schema
+    structured_output``) must not move a role's register off ``ENFORCED``.
+    """
+
+    def test_structured_output_does_not_reach_source(self):
+        assert tool_reaches_source("StructuredOutput") is False
+
+    def test_a_role_declaring_only_confined_tools_plus_structured_output_stays_enforced(
+        self, tmp_path
+    ):
+        spec = tmp_path / "nWave/agents/role.md"
+        spec.parent.mkdir(parents=True)
+        spec.write_text(
+            "---\ntools: WebFetch, StructuredOutput\n---\nbody\n", encoding="utf-8"
+        )
+
+        capability = resolve_declared_capability("role", repo_root=tmp_path)
+
+        assert capability.register is ClaimRegister.ENFORCED
 
 
 class TestProviderToolName:
@@ -166,6 +191,16 @@ class TestResolveDeclaredCapability:
         assert capability.spec_path == runtime
         assert capability.declared_model == "runtime"
         assert capability.declared_tools == ("Read",)
+
+    def test_runtime_competence_uses_the_published_base_role_spec(
+        self, tmp_path
+    ) -> None:
+        self._spec(tmp_path, "tools: Read, Bash")
+
+        capability = resolve_declared_capability("role#advanced", repo_root=tmp_path)
+
+        assert capability.spec_path == tmp_path / "nWave/agents/role.md"
+        assert capability.declared_tools == ("Read", "Bash")
 
     def test_malformed_framework_role_is_unknown_without_subject_fallback(
         self, tmp_path

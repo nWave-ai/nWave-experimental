@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from des.domain.discuss_contract import (
+    CURRENT_VERSION,
+    LEGACY_VERSIONS,
+    SECTION_NAMES,
+)
+from des.domain.discuss_sections import DiscussSections, SectionInvalid
 
 
 class DiscussDocumentInvalid(ValueError):
@@ -59,6 +66,7 @@ class DiscussDocument:
     out_of_scope: tuple[str, str, tuple[str, ...]]
     decisions: tuple[str, ...]
     values: tuple[DiscussValue, ...]
+    sections: DiscussSections = field(default_factory=DiscussSections)
 
     @classmethod
     def from_json(cls, raw: str) -> DiscussDocument:
@@ -66,21 +74,32 @@ class DiscussDocument:
             payload = json.loads(raw)
         except json.JSONDecodeError as error:
             raise DiscussDocumentInvalid(f"input is not JSON: {error}") from error
-        expected = {
-            "schema_version",
-            "request",
-            "outcomes",
-            "scope",
-            "decisions",
-            "values",
-        }
-        if not isinstance(payload, dict) or set(payload) != expected:
+        if not isinstance(payload, dict):
+            raise DiscussDocumentInvalid("input must be a JSON object")
+        version = payload.get("schema_version")
+        supported = (CURRENT_VERSION, *LEGACY_VERSIONS)
+        if (
+            not isinstance(version, int)
+            or isinstance(version, bool)
+            or version not in supported
+        ):
             raise DiscussDocumentInvalid(
-                f"input must contain exactly {sorted(expected)}"
+                f"schema_version must be integer {CURRENT_VERSION} (current) "
+                f"or legacy {LEGACY_VERSIONS[0]}"
             )
-        version = payload["schema_version"]
-        if not isinstance(version, int) or isinstance(version, bool) or version != 1:
-            raise DiscussDocumentInvalid("schema_version must be integer 1")
+        core = {"schema_version", "request", "outcomes", "scope", "decisions", "values"}
+        sections = set(SECTION_NAMES)
+        allowed = core | sections
+        required = core | (sections if version == CURRENT_VERSION else set())
+        if not required <= set(payload) <= allowed:
+            raise DiscussDocumentInvalid(
+                f"schema_version {version} input must contain {sorted(required)}"
+                f" and no key outside {sorted(allowed)}"
+            )
+        try:
+            parsed_sections = DiscussSections.from_payload(payload, version)
+        except SectionInvalid as error:
+            raise DiscussDocumentInvalid(str(error)) from error
         scope = payload["scope"]
         if not isinstance(scope, dict) or set(scope) != {"in_scope", "out_of_scope"}:
             raise DiscussDocumentInvalid(
@@ -157,6 +176,7 @@ class DiscussDocument:
             (applicability, reason, out_items),
             _texts(payload["decisions"], "decisions"),
             tuple(values),
+            parsed_sections,
         )
 
     def markdown(self) -> str:
@@ -180,6 +200,7 @@ class DiscussDocument:
             f"Reason: {_markdown_content(reason)}",
             *[f"- {_markdown_content(item)}" for item in items],
             "",
+            *self.sections.markdown(),
             "## Observations",
             *[f"- {_markdown_content(value.observation)}" for value in self.values],
             "",

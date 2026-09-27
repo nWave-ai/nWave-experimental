@@ -483,6 +483,23 @@ def test_resolve_pbt_adapter_resolves_specific_variant_matching_targets(
     assert result["resolved-variant"] == "nw-pbt-rust"
 
 
+def test_resolve_pbt_adapter_maps_module_variant_javascript_and_typescript_targets(
+    tmp_path: Path,
+) -> None:
+    # Friction 2026-09-15: an ESM-only Node repository's targets are `.mjs`.
+    # The ES-module / CommonJS variants belong to the same family as `.js` and
+    # `.ts`, so they resolve to its adapter, never to the family fallback.
+    _seed_skill(tmp_path, "nw-pbt-typescript")
+    for target in ("lib/calc.mjs", "lib/calc.cjs", "lib/calc.mts", "lib/calc.cts"):
+        result = resolve_pbt_adapter(tmp_path, [PBT_FAMILY_SKILL], [target])
+        assert result is not None
+        assert (target, result["status"], result["resolved-variant"]) == (
+            target,
+            "resolved",
+            "nw-pbt-typescript",
+        )
+
+
 def test_resolve_pbt_adapter_flags_discrepancy_when_cited_variant_disagrees(
     tmp_path: Path,
 ) -> None:
@@ -673,6 +690,27 @@ def test_a_declared_oracle_locator_naming_a_production_file_is_never_an_oracle()
     # stays the discriminator, exactly as for any other citation source.
     brief = "Oracle target locator: `src/des/cli/update.py` (CREATE_NEW)."
     assert extract_oracle_citations(brief) == []
+
+
+def test_a_declared_module_variant_javascript_oracle_is_admitted_and_never_a_target() -> (
+    None
+):
+    # Friction 2026-09-15: an ESM-only Node repository declared its oracle as
+    # `test/install.test.mjs` and cited the same suite at `path:line`. With no
+    # `.mjs` test convention the declaration was refused as a production file,
+    # and the cited test files were compiled as contract TARGETS instead.
+    brief = (
+        "Oracle target locator: `test/install.test.mjs`\n"
+        "The defining assertion is `test/install.test.mjs:41`, the parity check is "
+        "`test/version.test.mjs:98`, and the fix lands in `scripts/install.mjs:26`.\n"
+    )
+    assert extract_oracle_citations(brief) == [
+        "test/install.test.mjs",
+        "test/version.test.mjs",
+    ]
+    assert extract_target_citations(brief) == {
+        "scripts/install.mjs": ["scripts/install.mjs:26"]
+    }
 
 
 def test_declared_oracle_locator_candidates_are_shape_only_and_ordered() -> None:

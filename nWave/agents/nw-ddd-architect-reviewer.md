@@ -5,6 +5,7 @@ model: sonnet
 maxTurns: 40
 tools: Read, Glob, Grep, Task, Bash, Skill
 skills:
+  - nw-typesafe-system-one
   - nw-code-analysis-port
 ---
 

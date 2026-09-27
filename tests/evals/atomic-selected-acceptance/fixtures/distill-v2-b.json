@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "values": [
+    {
+      "observation": "A customer submits an order and it is recorded as unpaid.",
+      "acceptance_obligations": [
+        {
+          "id": "submit-b",
+          "stimulus": "Run `order submit --order-id O1`.",
+          "expected": "stdout is exactly `O1 unpaid` and exit is 0; any other stdout or a non-zero exit falsifies it."
+        }
+      ],
+      "oracle": "tests/acceptance/test_order_b.py::test_submit_b",
+      "acceptance_supports": [
+        "tests/support/b_driver.py"
+      ],
+      "verification": [
+        [
+          "{PYTHON}",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/acceptance/test_order_b.py"
+        ]
+      ],
+      "oracle_verification_index": 0
+    }
+  ]
+}

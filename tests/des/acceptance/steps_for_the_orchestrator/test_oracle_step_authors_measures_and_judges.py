@@ -16,6 +16,7 @@ still come back as `BLOCKED-BY: oracle` to `des oracle --finding -`.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
@@ -57,7 +58,8 @@ def design_facts() -> dict:
                 "decisions": ["one opaque semantic decision"],
                 "oracle": ORACLE,
                 "acceptance_supports": [SUPPORT],
-                "verification": [["python", "-m", "pytest", ORACLE]],
+                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                "oracle_verification_index": 0,
             },
         }
     }
@@ -73,7 +75,12 @@ def authored(body: str = RED_ORACLE, diagnostic: str = "authored the oracle") ->
 def bound(root: Path, step) -> None:
     """Decompose and bind, so the value carries what the oracle step consumes."""
     code, out, err = step(
-        "po", "--repo-root", str(root), answers=[accepted_values("A")], stdin=REQUEST
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[accepted_values("A")],
+        stdin=REQUEST,
     )
     assert code == 0, out + err
     code, out, err = step(
@@ -164,7 +171,12 @@ def test_an_unbound_value_is_refused_and_names_the_architect_step(
     root: Path, step, turns: Path
 ) -> None:
     code, out, err = step(
-        "po", "--repo-root", str(root), answers=[accepted_values("A")], stdin=REQUEST
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[accepted_values("A")],
+        stdin=REQUEST,
     )
     assert code == 0, out + err
     code, out, err = step("oracle", "--repo-root", str(root), "--value", "1")

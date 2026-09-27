@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from des.application.handover import Blocked
-from des.application.whole_file_document_publisher import publish_whole_file
+from des.application.whole_file_document_publisher import (
+    PublishRefusalVocabulary,
+    publish_whole_file,
+)
 
 
 if TYPE_CHECKING:
@@ -24,10 +27,7 @@ class PublishedEvolutionDocument:
 def publish_evolution_document(
     root: Path, destination: str, document: EvolutionDocument
 ) -> PublishedEvolutionDocument | Blocked:
-    published = publish_whole_file(
-        root,
-        destination,
-        document.markdown().encode(),
+    refusals = PublishRefusalVocabulary(
         unsafe="UnsafeEvolutionDestination",
         drift="EvolutionAuthorityDrift",
         unavailable="EvolutionAuthorityUnavailable",
@@ -37,6 +37,12 @@ def publish_evolution_document(
         regular_how="choose a regular evolution authority path",
         drift_why="the existing evolution document has divergent content",
         drift_how="use a distinct explicit feature identity or reconcile the authority",
+    )
+    published = publish_whole_file(
+        root,
+        destination,
+        document.markdown().encode(),
+        refusals=refusals,
     )
     if isinstance(published, Blocked):
         return published

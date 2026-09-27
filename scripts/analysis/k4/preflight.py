@@ -36,9 +36,15 @@ from scripts.analysis.k4 import prepare_examiner_fixture as pef
 from scripts.analysis.k4 import subject as k4_subject
 
 
+try:
+    from scripts.analysis.k4 import sut_mirror
+except ImportError:  # invoked as a script, with this directory on sys.path
+    import sut_mirror  # type: ignore[no-redef]
+
+
 #: Executables the fail-closed Claude delivery sandbox needs at RUN time: `claude`
 #: is the arm itself, `socat` backs the sandbox's localhost network bridge (see
-#: `seed_auth._sandbox_settings().sandbox.network`). A host missing either
+#: `seed_auth._sandbox_settings(config_dir).sandbox.network`). A host missing either
 #: still lets a campaign build its wheel, write `arms.json`, and spend a pair
 #: before the gap surfaces as an opaque sandbox failure mid-delivery -- a K4
 #: delivery, and a dead campaign it broke, both burned that way.
@@ -76,6 +82,13 @@ def missing_sandbox_prerequisites(path: str | None = None) -> list[str]:
 #: canonical source both this module and `run_acceptance.py` read; bump the
 #: pin there, never here.
 _SUT = k4_subject.SUT_URL
+"""The clone source BOTH arms use.
+
+Rebound once by `main()` when a mirror is resolved, so the two setup lists are
+still byte-identical on this step and `arm_footprint_problems` sees no fourth
+undeclared difference. Two NETWORK clones inside the concurrent setup barrier
+killed six consecutive runs for memory; one local mirror removes that class.
+"""
 _SUT_PINNED_REV = k4_subject.SUT_PINNED_REV
 
 
@@ -131,8 +144,31 @@ _PACKAGING = (
     ["python", "-m", "build", "--wheel"],
 )
 
+# `.nwave` is LOCAL STATE, never source: lanes' worktrees, recovery trees,
+# evidence archives, audit logs. Measured 2026-09-12 on this checkout: 22 GB,
+# of which 20 GB is recovery alone, against 3 GB for the whole rest of the
+# project. Copying it cost the arm build ~26 minutes before it could even
+# start, on every arm of every pair, and it is not a difference between the
+# arms -- both pay it, so it inflates the wall-clock axis this campaign
+# exists to measure without belonging to the treatment.
+#
+# It also carried a UNIX socket left behind by a verification run on
+# 2026-09-08 (`.nwave/retire-dispatch-20260908/.../sock-*`), which `copytree`
+# cannot copy: the whole preflight died with "No such device or address" and
+# every later stage failed for want of `arms.json`. Removing that one socket
+# would have cured the symptom; excluding the tree removes the class, since
+# a directory that accumulates other runs' leftovers will grow new ones.
+#
+# Nothing under it is referenced by the packaging that builds the arm wheel.
 _NEVER_COPY = shutil.ignore_patterns(
-    ".git", ".venv", "node_modules", ".claude", ".tsunami", "dist", "graphify-out"
+    ".git",
+    ".venv",
+    ".nwave",
+    "node_modules",
+    ".claude",
+    ".tsunami",
+    "dist",
+    "graphify-out",
 )
 
 
@@ -525,16 +561,89 @@ _ARM_MASK = "<per-arm>"
 #: the treatment-footprint check -- are untouched.
 TREATMENT_INSTALL_STEP = ("nwave-ai", "install", "--platform", "claude-code")
 
+#: Installing nWave does not switch it on. Activation is `opt-in` by default, so
+#: a project that never declares `enabled` resolves INACTIVE and the activation
+#: gate exits before every hook -- measured 2026-09-13 on a real arm workspace:
+#: `enabled_for_repo=None`, `activation_mode='opt-in'`, active=False. Three
+#: campaigns had therefore compared vanilla against an nWave that could not run,
+#: and reported it as nWave against vanilla.
+#:
+#: `--yes` is load-bearing: the arm runs with stdin at DEVNULL and the command
+#: would otherwise wait for a confirmation nobody can type.
+TREATMENT_ENABLE_STEP = ("nwave-ai", "project", "enable", "--yes")
+
+
+#: DES buys a role turn by LAUNCHING the model, and it finds the launcher with
+#: `shutil.which("claude")`. Measured 2026-09-13 inside a real delivery: that
+#: returns nothing, so `des po` refuses with ModelNotIssued and the method cannot
+#: run at all -- a second, independent reason no campaign in this project's
+#: history could exercise it.
+#:
+#: The launcher IS resolvable under the arm's declared env from outside; the
+#: delivery's own PATH is narrower. `.claude-k4/bin` is on it, because the
+#: delivery resolves `des` from there, so the arm links the launcher into that
+#: same directory rather than trying to widen a PATH it does not own.
+def treatment_launcher_link_step() -> tuple[str, ...]:
+    """Link the resolved launcher into the config dir the delivery reads.
+
+    The launcher is resolved HERE, on the machine building the spec, baked in
+    absolute, and FULLY RESOLVED through every symlink: an installation that
+    updates by repointing a version symlink leaves the old target gone, and a
+    shim naming the link would die inside the delivery - measured 2026-09-14.
+
+    And the binary is COPIED into the workspace, not linked to: a delivery
+    resolves nothing outside its own tree, which is why `command -v claude`
+    found nothing while `ls` of the workspace bin listed it, and why a shim
+    that ran died reaching a path outside. A copy is the only form the
+    delivery can both see and execute.
+
+    Resolved absolute: the arm's own rendered environment does not carry the directory
+    it lives in, and a step that re-resolves it at setup time would fail there
+    for a reason the spec never shows. Baked in, arms.json states exactly which
+    binary the arm will launch.
+    """
+    discovered = shutil.which("claude")
+    found = str(Path(discovered).resolve()) if discovered else None
+    if not found:
+        sys.stderr.write(
+            "WHAT: no `claude` launcher is resolvable on this machine's PATH.\n"
+            "WHY:  DES buys every role turn by launching the model, so an arm\n"
+            "      without a launcher cannot run the method at all.\n"
+            "HOW:  install the Claude CLI, or build the spec where it resolves.\n"
+        )
+        raise SystemExit(1)
+    return (
+        "python",
+        "-c",
+        "import os, pathlib, shutil, stat\n"
+        "dest = pathlib.Path(os.environ['CLAUDE_CONFIG_DIR']) / 'bin' / 'claude'\n"
+        "dest.parent.mkdir(parents=True, exist_ok=True)\n"
+        f"shutil.copy2({found!r}, dest)\n"
+        "dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)\n"
+        "print('launcher copied:', dest, dest.stat().st_size, 'bytes')\n",
+    )
+
 
 def treatment_steps(venv: Path) -> list[list[str]]:
-    """Install nWave into the arm's own config dir. THE treatment, and only it.
+    """Install nWave into the arm's own config dir AND switch it on.
+
+    THE treatment, and only it. Installing without enabling leaves every hook
+    behind an activation gate that exits first, which is an arm carrying nWave
+    rather than an arm running it.
 
     Built from `TREATMENT_INSTALL_STEP` rather than from a second hand-typed
     argv, so the constant that documents what the treatment IS and the step that
     performs it cannot drift apart.
     """
-    binary, *arguments = TREATMENT_INSTALL_STEP
-    return [[str(venv / "bin" / binary), *arguments]]
+    steps = []
+    for declared in (
+        TREATMENT_INSTALL_STEP,
+        TREATMENT_ENABLE_STEP,
+        treatment_launcher_link_step(),
+    ):
+        binary, *arguments = declared
+        steps.append([str(venv / "bin" / binary), *arguments])
+    return steps
 
 
 def _masked_arm_step(step: list[str], arm: str) -> tuple[list[str], list[str]]:
@@ -1444,6 +1553,250 @@ def probe_git_identity(workspace: Path, env: dict[str, str]) -> list[str]:
     return []
 
 
+def probe_project_activation(workspace: Path, venv: Path) -> list[str]:
+    """Problems found proving the arm's project is ACTIVE, empty when it is.
+
+    Installing nWave does not switch it on. With the default `opt-in`
+    activation mode, a project that declares no `enabled` opinion resolves
+    INACTIVE and the activation gate exits before EVERY hook -- so the arm
+    carries nWave and never runs it, every step exits 0, and the campaign
+    reports vanilla against vanilla as nWave against vanilla.
+
+    This is not hypothetical: measured on a real arm workspace 2026-09-13,
+    `enabled_for_repo=None`, `activation_mode='opt-in'`, active=False, after a
+    setup whose every step had exited 0 and whose step surface probe passed.
+    The step surface answers whether the binary works; only this answers
+    whether the product is switched on.
+    """
+    probe = (
+        "import pathlib;"
+        "from des.adapters.driven.config.des_config import DESConfig;"
+        "from des.domain.activation_policy import resolve_activation;"
+        "c=DESConfig(cwd=pathlib.Path('.'));"
+        "print(resolve_activation(c.enabled_for_repo, c.activation_mode),"
+        "c.enabled_for_repo, c.activation_mode)"
+    )
+    try:
+        result = subprocess.run(
+            [str(venv / "bin" / "python"), "-c", probe],
+            cwd=workspace,
+            env=_rendered_arm_env(workspace),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return [f"activation could not be resolved: {exc}"]
+    if result.returncode != 0:
+        return [f"activation probe exited {result.returncode}: {result.stderr.strip()}"]
+    verdict, *observed = result.stdout.split()
+    if verdict != "True":
+        return [
+            "the project is INACTIVE, so every nWave hook exits before it runs "
+            f"(enabled_for_repo={observed[0] if observed else '?'}, "
+            f"activation_mode={observed[1] if len(observed) > 1 else '?'})"
+        ]
+    return []
+
+
+def probe_launcher_is_inside_the_workspace(workspace: Path) -> list[str]:
+    """Problems found proving the launcher is COPIED in, empty when it is.
+
+    The existing engagement probe runs `resolve_launcher()` in a plain,
+    unsandboxed harness subprocess, where a symlink resolves whatever its target
+    -- so it PASSED under the configuration that could not launch a role turn at
+    all. This checks the invariant the fix actually relies on instead.
+
+    Measured 2026-09-14 inside a real delivery: with the launcher linked rather
+    than copied, `command -v claude` resolved nothing even though the workspace
+    bin was first on PATH and listed the entry, and every role turn refused with
+    ModelNotIssued. A delivery resolves nothing outside its own tree, so only a
+    regular file inside the workspace can be both seen and executed there.
+    """
+    launcher = workspace / ".claude-k4" / "bin" / "claude"
+    if not launcher.exists():
+        return [f"no launcher at {launcher}: the arm cannot buy a role turn"]
+    if launcher.is_symlink():
+        return [
+            f"{launcher} is a SYMLINK, not a copy: a delivery cannot resolve "
+            "its target, and every role turn would refuse with ModelNotIssued"
+        ]
+    if not launcher.is_file():
+        return [f"{launcher} is not a regular file"]
+    if launcher.resolve() != launcher:
+        return [f"{launcher} resolves outside itself, to {launcher.resolve()}"]
+    if not os.access(launcher, os.X_OK):
+        return [f"{launcher} is not executable"]
+    return []
+
+
+def probe_sandbox_allows_the_model_api(workspace: Path) -> list[str]:
+    """Problems found reading back the allowlist AS WRITTEN, empty when sound.
+
+    DES buys every role turn by launching the model, so a sandbox that cannot
+    reach the model's API makes the method unrunnable. Measured 2026-09-14: with
+    localhost alone, a nested turn came back `403 Connection blocked by network
+    allowlist`, and no campaign this project had ever bought could exercise the
+    method.
+
+    This reads the settings the sandbox will ACTUALLY consult, on disk, rather
+    than asserting that a constant exists somewhere in source: the property, not
+    the designation. It would catch the writer drifting to a stale list, or the
+    write path changing, neither of which a source-level check can see.
+    """
+    settings = workspace / ".claude-k4" / "settings.json"
+    if not settings.is_file():
+        return [f"no rendered settings at {settings}"]
+    try:
+        written = json.loads(settings.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as unreadable:
+        return [f"{settings} is unreadable: {unreadable}"]
+    allowed = (written.get("sandbox") or {}).get("network", {}).get("allowedDomains")
+    if not isinstance(allowed, list):
+        return [f"{settings} declares no sandbox.network.allowedDomains"]
+    missing = [
+        domain
+        for domain in k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS
+        if domain not in allowed
+    ]
+    if missing:
+        return [
+            f"the written allowlist is missing {missing}: a nested role turn "
+            "would come back 403 and the method could not run"
+        ]
+    leaked = [d for d in allowed if "pypi" in d or "npm" in d]
+    if leaked:
+        return [f"the written allowlist reaches a package index ({leaked})"]
+    return []
+
+
+def _resolve_sandbox_filesystem_path(entry: str, config_dir: Path) -> Path:
+    """Resolve one filesystem policy entry as Claude 2.1.271 does.
+
+    Relative sandbox filesystem entries are relative to `CLAUDE_CONFIG_DIR`,
+    not to the delivery workspace. Keep this translation next to the probe
+    that decides the rendered policy, rather than repeating the old workspace
+    interpretation in each assertion below.
+    """
+    path = Path(entry).expanduser()
+    if not path.is_absolute():
+        path = config_dir / path
+    return path.resolve(strict=False)
+
+
+def probe_sandbox_filesystem_policy(workspace: Path) -> list[str]:
+    """Reject a rendered filesystem policy that cannot protect its config dir.
+
+    This reads the policy Claude will use on disk and costs no model call. In
+    Claude Code 2.1.271, relative filesystem entries resolve from
+    `CLAUDE_CONFIG_DIR`; the former `./.claude-k4/...` entries therefore named
+    `<config>/.claude-k4/...`, leaving the actual credentials writable and
+    creating a nested config shape. The delivery workspace itself needs an
+    absolute allowRead entry; `.` would resolve only to the config directory.
+    Check the resolved paths, not the source spelling, so a later writer cannot
+    reintroduce either error under another relative spelling.
+    """
+    config_dir = workspace / ".claude-k4"
+    settings = config_dir / "settings.json"
+    if not settings.is_file():
+        return [f"no rendered settings at {settings}"]
+    try:
+        written = json.loads(settings.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as unreadable:
+        return [f"{settings} is unreadable: {unreadable}"]
+
+    filesystem = (written.get("sandbox") or {}).get("filesystem")
+    if not isinstance(filesystem, dict):
+        return [f"{settings} declares no sandbox.filesystem policy"]
+
+    entries: dict[str, list[str]] = {}
+    problems: list[str] = []
+    for name in ("denyRead", "allowRead", "denyWrite"):
+        declared = filesystem.get(name)
+        if not isinstance(declared, list) or not all(
+            isinstance(entry, str) for entry in declared
+        ):
+            problems.append(f"{settings} declares invalid sandbox.filesystem.{name}")
+            continue
+        entries[name] = declared
+    if problems:
+        return problems
+
+    config_root = config_dir.resolve(strict=False)
+    resolved = {
+        name: [
+            _resolve_sandbox_filesystem_path(entry, config_root) for entry in declared
+        ]
+        for name, declared in entries.items()
+    }
+    nested_config = config_root / config_root.name
+    for name, paths in resolved.items():
+        nested = [
+            str(path)
+            for path in paths
+            if path == nested_config or nested_config in path.parents
+        ]
+        if nested:
+            problems.append(
+                f"sandbox.filesystem.{name} resolves into nested "
+                f"{config_root.name}/{config_root.name}: {nested}"
+            )
+
+    expected_credentials = {
+        config_root / ".credentials.json",
+        config_root / ".claude.json",
+    }
+    expected_credential_entries = {"./.credentials.json", "./.claude.json"}
+    missing_credential_entries = sorted(
+        expected_credential_entries - set(entries["denyRead"])
+    )
+    if missing_credential_entries:
+        problems.append(
+            "sandbox.filesystem.denyRead lacks the exact credential entries: "
+            f"{missing_credential_entries}"
+        )
+    missing_credentials = sorted(
+        str(path) for path in expected_credentials - set(resolved["denyRead"])
+    )
+    if missing_credentials:
+        problems.append(
+            "sandbox.filesystem.denyRead does not resolve to the actual "
+            f"credential files: {missing_credentials}"
+        )
+    absent_credentials = sorted(
+        str(path) for path in expected_credentials if not path.is_file()
+    )
+    if absent_credentials:
+        problems.append(
+            f"the rendered config has no credential files at {absent_credentials}"
+        )
+    workspace_root = workspace.resolve(strict=False)
+    if resolved["allowRead"] != [workspace_root]:
+        problems.append(
+            "sandbox.filesystem.allowRead does not resolve exactly to "
+            f"the delivery workspace ({workspace_root})"
+        )
+    if resolved["denyWrite"] != [config_root]:
+        problems.append(
+            "sandbox.filesystem.denyWrite does not resolve exactly to "
+            f"CLAUDE_CONFIG_DIR ({config_root})"
+        )
+    for entry in ("~/", "/mnt/c/Users", "/root"):
+        if entry not in entries["denyRead"]:
+            problems.append(
+                f"sandbox.filesystem.denyRead lacks required external deny {entry!r}"
+            )
+            continue
+        resolved_external = _resolve_sandbox_filesystem_path(entry, config_root)
+        if not resolved_external.is_absolute():
+            problems.append(
+                f"sandbox.filesystem.denyRead does not resolve external deny "
+                f"{entry!r} to an absolute path"
+            )
+    return problems
+
+
 def probe_engagement(
     root: Path, venv: Path, auth_profile: Path
 ) -> tuple[str, list[str]]:
@@ -1483,6 +1836,22 @@ def probe_engagement(
     step_surface_problems = probe_installed_step_surface(workspace, venv)
     if step_surface_problems:
         return "broken-steps", step_surface_problems
+
+    activation_problems = probe_project_activation(workspace, venv)
+    if activation_problems:
+        return "inactive", activation_problems
+
+    launcher_problems = probe_launcher_is_inside_the_workspace(workspace)
+    if launcher_problems:
+        return "launcher-escapes-workspace", launcher_problems
+
+    filesystem_problems = probe_sandbox_filesystem_policy(workspace)
+    if filesystem_problems:
+        return "sandbox-filesystem-policy-invalid", filesystem_problems
+
+    allowlist_problems = probe_sandbox_allows_the_model_api(workspace)
+    if allowlist_problems:
+        return "sandbox-blocks-the-model", allowlist_problems
     try:
         launcher = subprocess.run(
             [
@@ -1555,6 +1924,33 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--task-prefix-file",
+        type=Path,
+        default=None,
+        help=(
+            "prose prepended to the Request for the TREATMENT arm only, "
+            "declaring the route it is asked to take. Versioned prose read the "
+            "way --task-file is read, because a prefix retyped per run is a "
+            "prefix nobody can review; omitting it leaves the arms reading "
+            "byte-identical Requests"
+        ),
+    )
+    parser.add_argument(
+        "--sut-mirror",
+        type=Path,
+        default=None,
+        help=(
+            "local mirror of the subject both arms clone from "
+            "(default: <root>/../sut-mirror.git). Built on first use and "
+            "fetched when the pin has moved; --no-sut-mirror declines it"
+        ),
+    )
+    parser.add_argument(
+        "--no-sut-mirror",
+        action="store_true",
+        help="clone the subject directly in each arm, stating that choice",
+    )
+    parser.add_argument(
         "--wall-clock-minutes",
         type=int,
         default=60,
@@ -1571,6 +1967,22 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
+
+    # Resolved BEFORE any arm is built, and rebound on the module attribute both
+    # setup lists read, so the mirror reaches the two arms identically. Stated,
+    # never inferred: a run says which source it used.
+    global _SUT
+    try:
+        subject_source = sut_mirror.resolve_subject_source(
+            None
+            if args.no_sut_mirror
+            else (args.sut_mirror or args.root.parent / "sut-mirror.git")
+        )
+    except sut_mirror.MirrorUnavailable as unavailable:
+        sys.stderr.write(f"{unavailable}\n")
+        return 1
+    _SUT = subject_source.source
+    print(f"sut source  : {subject_source.detail}")
 
     # Run 14 debrief stable-design report Sec.1.3: the campaign's OWN start
     # moment, recorded ONCE here, propagated to every arm's setup subprocess
@@ -1654,6 +2066,61 @@ def main(argv: list[str] | None = None) -> int:
             "      would measure a broken install rather than nWave.\n"
             f"HOW:  reproduce the step in {args.root / 'probe-nwave'} and read the error\n"
             "      above. This is the loud failure; it is NOT the silent-skip case.\n"
+        )
+        return 1
+    if verdict == "sandbox-filesystem-policy-invalid":
+        sys.stderr.write(
+            "WHAT: the arm's rendered sandbox filesystem policy does not protect "
+            "the actual Claude config directory.\n"
+            + "".join(f"      - {line}\n" for line in detail)
+            + "WHY:  Claude Code 2.1.271 resolves relative filesystem entries from "
+            "CLAUDE_CONFIG_DIR. A nested `.claude-k4/.claude-k4` path leaves the "
+            "seeded credentials outside the intended deny policy and can let a "
+            "delivery mutate them.\n"
+            "HOW:  render credential denyRead entries as `./.credentials.json` and "
+            "`./.claude.json`, denyWrite as `.`, and allowRead as the absolute "
+            "delivery workspace (the config directory's parent). Re-run this zero-cost "
+            "preflight before writing arms.json or delivering a model turn.\n"
+        )
+        return 1
+    if verdict == "sandbox-blocks-the-model":
+        sys.stderr.write(
+            "WHAT: the arm's rendered sandbox cannot reach the model's API.\n"
+            + "".join(f"      - {line}\n" for line in detail)
+            + "WHY:  DES buys every role turn by launching the model. With the\n"
+            "      API unreachable a nested turn returns 403 and the treatment\n"
+            "      arm cannot exercise the method at all, while every setup step\n"
+            "      still exits 0 and the campaign reports vanilla against vanilla.\n"
+            "HOW:  the allowlist is declared once in\n"
+            "      `k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS` and rendered by\n"
+            "      `seed_auth`; check what actually landed in the probe workspace.\n"
+        )
+        return 1
+    if verdict == "launcher-escapes-workspace":
+        sys.stderr.write(
+            "WHAT: the arm's model launcher is not a copy inside its workspace.\n"
+            + "".join(f"      - {line}\n" for line in detail)
+            + "WHY:  a delivery resolves nothing outside its own tree, so a link\n"
+            "      to a launcher elsewhere reads as absent from inside it and\n"
+            "      every role turn refuses with ModelNotIssued -- while a plain\n"
+            "      harness probe of the same launcher still passes.\n"
+            "HOW:  the treatment must COPY the resolved binary in; see\n"
+            "      `treatment_launcher_link_step`.\n"
+        )
+        return 1
+    if verdict == "inactive":
+        sys.stderr.write(
+            "WHAT: nWave installed into the arm, and the arm's project is not\n"
+            "      ACTIVE.\n"
+            + "".join(f"      - {line}\n" for line in detail)
+            + "WHY:  activation is opt-in by default, so a project that declares no\n"
+            "      `enabled` opinion resolves inactive and the activation gate exits\n"
+            "      before EVERY hook. The arm would carry nWave and never run it,\n"
+            "      every setup step would still exit 0, and the campaign would report\n"
+            "      vanilla against vanilla as nWave against vanilla.\n"
+            "HOW:  the treatment must both install AND enable -- see\n"
+            "      `TREATMENT_ENABLE_STEP`. Check the probe workspace under\n"
+            "      <root>/probe-nwave to see what its .nwave/config.json declares.\n"
         )
         return 1
     if verdict == "broken-steps":
@@ -1823,10 +2290,19 @@ def main(argv: list[str] | None = None) -> int:
                 "argv": control_delivery,
                 "env": arm_env,
             },
+            # The prefix is written HERE and only here, onto the treatment arm.
+            # A single, hand-scoped write site makes the "at most one arm may
+            # declare it" invariant true by construction rather than by a check
+            # in the consumer -- the double-declared state is unrepresentable.
             "nwave": {
                 "setup": nwave_steps,
                 "argv": nwave_delivery,
                 "env": arm_env,
+                **(
+                    {"task_prefix": args.task_prefix_file.read_text(encoding="utf-8")}
+                    if args.task_prefix_file
+                    else {}
+                ),
             },
         },
     }

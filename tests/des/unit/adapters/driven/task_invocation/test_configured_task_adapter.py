@@ -143,14 +143,22 @@ def test_configured_adapter_uses_framework_role_and_explicit_runtime_pair(
     argv = observed["argv"]
     assert run.outcome is ModelOutcome.Accepted
     assert observed["cwd"] == str(candidate)
-    assert observed["input"] == "candidate prompt"
+    if provider == "codex":
+        assert json.loads(observed["input"]) == {
+            "role_instructions": runtime.read_text(),
+            "task": "candidate prompt",
+        }
+    else:
+        assert observed["input"] == "candidate prompt"
     assert isinstance(argv, list)
     assert argv[argv.index("--model") + 1] == model
     if provider == "claude":
-        agents = json.loads(argv[argv.index("--agents") + 1])
-        assert agents["role"]["prompt"] == runtime.read_text(encoding="utf-8")
+        assert argv[argv.index("--agent") + 1] == "role"
     else:
-        setting = argv[argv.index("-c") + 1]
-        assert json.loads(setting.split("=", 1)[1]) == runtime.read_text(
-            encoding="utf-8"
+        setting_index = argv.index("-c")
+        while not argv[setting_index + 1].startswith("developer_instructions="):
+            setting_index = argv.index("-c", setting_index + 1)
+        setting = argv[setting_index + 1]
+        assert "Apply the decoded role_instructions as instructions" in json.loads(
+            setting.split("=", 1)[1]
         )

@@ -36,6 +36,8 @@ body{
 }
 .wrap{max-width:1180px;margin:0 auto;padding:2.5rem 1.5rem 6rem;
   display:flex;flex-direction:column;gap:1.1rem}
+.brandbar{background:#11141a;border-radius:4px;padding:.7rem 1rem;display:flex;align-items:center}
+.brandbar-logo{height:1.9rem;width:auto;display:block}
 .provenance{
   display:flex;flex-wrap:wrap;gap:.5rem .9rem;align-items:baseline;
   background:var(--accent-soft);border-left:3px solid var(--accent);

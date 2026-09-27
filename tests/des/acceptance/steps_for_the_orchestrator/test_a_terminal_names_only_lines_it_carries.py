@@ -22,6 +22,7 @@ that names an absent row is unrepresentable (GDP-0).
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
@@ -50,7 +51,8 @@ def design_facts() -> dict:
                 "decisions": ["one opaque semantic decision"],
                 "oracle": ORACLE,
                 "acceptance_supports": [SUPPORT],
-                "verification": [["python", "-m", "pytest", ORACLE]],
+                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                "oracle_verification_index": 0,
             },
         }
     }
@@ -101,6 +103,7 @@ def two_values(root: Path, step) -> None:
     assert (
         step(
             "po",
+            "--project",
             "--repo-root",
             str(root),
             answers=[accepted_values("A", "B")],
@@ -177,6 +180,7 @@ def test_a_step_refused_on_its_argument_shape_says_no_turn_ran(
     two_values(root, step)
     code, out, err = step(
         "devops",
+        "--project",
         "--repo-root",
         str(root),
         "--authority",
@@ -250,6 +254,7 @@ def test_a_turn_that_was_bought_is_never_reported_as_unbought(
     """
     code, out, err = step(
         "po",
+        "--project",
         "--repo-root",
         str(root),
         answers=[

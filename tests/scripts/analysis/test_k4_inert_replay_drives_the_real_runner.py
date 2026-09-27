@@ -86,6 +86,10 @@ EXPECTED_STEPS = ("po", "design", "oracle", "craft", "verify")
 #: The one step whose input is the Request itself.
 READS_STDIN = "po"
 
+# Scope is chosen by the host.  The DES deliberately advertises the grammar in
+# its initial NEXT but never invents project, feature, epic, or slice identity.
+REPLAY_SCOPE = ("--project",)
+
 #: How many invocations the orchestrator will make before it declares the walk
 #: unterminated. A ceiling, never a schedule: the walk stops on the first step
 #: that does not succeed, and this only stops a `NEXT` cycle from hanging.
@@ -148,6 +152,10 @@ def _next_forms(terminal: str) -> list[list[str]]:
         if not line.startswith("NEXT: "):
             continue
         form = line[len("NEXT: ") :].split(" -- ", 1)[0].strip()
+        # The CLI appends a parenthesized scope grammar after the invocable
+        # argv.  It is reader guidance, like the prose tail above, and must
+        # never be replayed as an argparse token.
+        form = form.split(" (", 1)[0].strip()
         words = shlex.split(form)
         if words and words[0] == "des":
             forms.append(words[1:])
@@ -230,8 +238,9 @@ def walked(subject: Path, tmp_path_factory: pytest.TempPathFactory) -> dict:
     }
 
     def invoke(argv: list[str]) -> subprocess.CompletedProcess[str]:
+        invocation = [*argv, *REPLAY_SCOPE] if argv[0] == READS_STDIN else argv
         return subprocess.run(
-            [sys.executable, "-m", "des.cli", *argv],
+            [sys.executable, "-m", "des.cli", *invocation],
             input=_recorded_request() if argv[0] == READS_STDIN else "",
             capture_output=True,
             text=True,
@@ -267,7 +276,10 @@ def walked(subject: Path, tmp_path_factory: pytest.TempPathFactory) -> dict:
                 "stderr": done.stderr,
             }
         )
-        if done.returncode != 0:
+        if done.returncode != 0 or argv[0] == "verify":
+            # VERIFY closes the deterministic walk.  The host independently
+            # chooses and invokes reviewer/examiner below; following VERIFY's
+            # advisory NEXT here would make the test a DES orchestrator.
             break
         pending = _next_forms(done.stdout)
 
@@ -311,6 +323,18 @@ def walked(subject: Path, tmp_path_factory: pytest.TempPathFactory) -> dict:
             )
             host_roles.append({"role": role, "prepare": prepared, "invoke": invoked})
 
+    assert ledger.is_file(), {
+        "projection": projection.stdout + projection.stderr,
+        "walk": [
+            {
+                "argv": entry["argv"],
+                "returncode": entry["returncode"],
+                "stdout": entry["stdout"],
+                "stderr": entry["stderr"],
+            }
+            for entry in walk
+        ],
+    }
     records = [
         json.loads(line)
         for line in ledger.read_text(encoding="utf-8").splitlines()
@@ -343,7 +367,21 @@ def test_the_steps_walk_the_canonical_order_they_themselves_name(
     walked: dict,
 ) -> None:
     """Nothing composed them: each step was reached by reading the last NEXT."""
-    assert tuple(entry["step"] for entry in walked["walk"]) == EXPECTED_STEPS
+    assert tuple(entry["step"] for entry in walked["walk"]) == EXPECTED_STEPS, (
+        json.dumps(
+            [
+                {
+                    "step": entry["step"],
+                    "argv": entry["argv"],
+                    "returncode": entry["returncode"],
+                    "stdout": entry["stdout"],
+                    "stderr": entry["stderr"],
+                }
+                for entry in walked["walk"]
+            ],
+            indent=2,
+        )
+    )
 
 
 def test_every_declared_role_is_answered_from_a_recorded_turn(walked: dict) -> None:
@@ -430,13 +468,17 @@ def test_the_authority_locator_replay_projection_keeps_the_paid_record_raw() -> 
     projected, migration = inert_claude._replay_envelope(BUNDLED_CASE, record)
 
     assert "authority_locator" not in raw
-    assert migration == "add-empty-authority-locator"
+    assert migration == "complete-legacy-design-facts"
     assert raw == inert_claude._recorded_envelope(record)
 
     envelope = json.loads(projected)
     result = json.loads(envelope["result"])
     assert envelope["structured_output"]["design_facts"]["authority_locator"] == ""
     assert result["design_facts"]["authority_locator"] == ""
+    assert (
+        envelope["structured_output"]["design_facts"]["oracle_verification_index"] == 2
+    )
+    assert result["design_facts"]["oracle_verification_index"] == 2
 
 
 def test_the_replay_spends_nothing(walked: dict) -> None:
@@ -474,19 +516,25 @@ def test_the_host_records_the_examiner_rejection_without_closing_the_request(
     assert _terminal_value(invoked.stdout, "RESULT") is not None
 
 
-def test_the_host_selects_both_independent_roles_and_no_role_selects_the_next_step(
+def test_the_host_selects_both_independent_roles_and_owns_advisory_next(
     walked: dict,
 ) -> None:
-    """The public role lifecycle records an answer; it does not orchestrate it."""
+    """Role answers suggest steps; the host alone chooses whether to invoke them."""
     host_roles = walked["host_roles"]
 
     assert [entry["role"] for entry in host_roles] == ["reviewer", "examiner"]
+    suggestions = []
     for entry in host_roles:
         prepared = entry["prepare"]
         invoked = entry["invoke"]
         assert prepared.returncode == 0, prepared.stdout + prepared.stderr
         assert invoked.returncode == 0, invoked.stdout + invoked.stderr
-        assert _next_forms(invoked.stdout) == []
+        suggestions.append(_next_forms(invoked.stdout))
+
+    # Reviewer suggests preparation of examiner; examiner suggests integration.
+    # This host invokes exactly its independently selected reviewer/examiner pair
+    # and stops, so neither suggestion is an execution path owned by the role.
+    assert [forms[0][0] for forms in suggestions] == ["prepare-role", "integrate"]
 
 
 # The composed run's own aggregate -- `num_turns` and `total_cost_usd` summed

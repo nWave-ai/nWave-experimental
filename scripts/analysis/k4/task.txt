@@ -24,4 +24,4 @@ The clone-local fixture interpreter is first on PATH as `python`; use it for pro
 
 Deliver this as production code for a codebase other people maintain.
 
-Proceed autonomously, make the necessary implementation and design decisions, and do not pause to ask me to choose a workflow.
+Proceed autonomously, make the necessary implementation and design decisions, and do not pause to ask me questions.

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import ast
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -126,35 +127,53 @@ def test_tracked_skill_removed_while_untracked_custom_survives(claude_dir):
     assert uninstaller.validate_removal() is True
 
 
+@dataclass(frozen=True)
+class _ManifestRefusal:
+    """A seeded manifest condition and the refusal it must produce."""
+
+    manifest_bytes: bytes | None
+    unsafe_member: str | None
+    expected_state: str
+    expected_how_fragment: str
+
+
 @pytest.mark.parametrize(
-    ("manifest_bytes", "unsafe_member", "expected_state", "expected_how_fragment"),
+    "refusal",
     [
-        (None, None, "absent-before-run", "re-run the nWave installer"),
-        (b"not valid json", None, "corrupt", "restore skills/.nwave-manifest.json"),
+        _ManifestRefusal(
+            manifest_bytes=None,
+            unsafe_member=None,
+            expected_state="absent-before-run",
+            expected_how_fragment="re-run the nWave installer",
+        ),
+        _ManifestRefusal(
+            manifest_bytes=b"not valid json",
+            unsafe_member=None,
+            expected_state="corrupt",
+            expected_how_fragment="restore skills/.nwave-manifest.json",
+        ),
         # A tracked member whose name fails `_is_safe_member_name` (contains
         # "/") blocks the whole family before any filesystem mutation --
         # this drives `remove_family_record`'s real unsafe-name branch, not
         # a mocked ownership scan.
-        (None, "nested/escape", "blocked", "check filesystem permissions"),
+        _ManifestRefusal(
+            manifest_bytes=None,
+            unsafe_member="nested/escape",
+            expected_state="blocked",
+            expected_how_fragment="check filesystem permissions",
+        ),
     ],
     ids=["missing_manifest", "corrupt_manifest", "blocked_unsafe_member"],
 )
-def test_missing_or_corrupt_manifest_cannot_green(
-    claude_dir,
-    capsys,
-    manifest_bytes,
-    unsafe_member,
-    expected_state,
-    expected_how_fragment,
-):
+def test_missing_or_corrupt_manifest_cannot_green(claude_dir, capsys, refusal):
     skills_dir = claude_dir / "skills"
     skills_dir.mkdir()
     (skills_dir / "nw-candidate").mkdir()
     (skills_dir / "nw-candidate" / "file.txt").write_text("data")
-    if manifest_bytes is not None:
-        (skills_dir / ".nwave-manifest.json").write_bytes(manifest_bytes)
-    elif unsafe_member is not None:
-        write_family_record(skills_dir, [unsafe_member], key=SKILLS_FAMILY_KEY)
+    if refusal.manifest_bytes is not None:
+        (skills_dir / ".nwave-manifest.json").write_bytes(refusal.manifest_bytes)
+    elif refusal.unsafe_member is not None:
+        write_family_record(skills_dir, [refusal.unsafe_member], key=SKILLS_FAMILY_KEY)
 
     uninstaller = NWaveUninstaller(force=True)
     uninstaller.remove_skills()
@@ -165,14 +184,14 @@ def test_missing_or_corrupt_manifest_cannot_green(
     removal_output = capsys.readouterr().out
     assert "WHAT:" in removal_output
     assert "WHY:" in removal_output
-    assert expected_how_fragment in removal_output
+    assert refusal.expected_how_fragment in removal_output
 
     assert (skills_dir / "nw-candidate").exists()
-    assert uninstaller._skills_removal_state() == expected_state
+    assert uninstaller._skills_removal_state() == refusal.expected_state
     assert uninstaller.validate_removal() is False
     validation_output = capsys.readouterr().out
     assert "WHAT:" in validation_output
-    assert expected_how_fragment in validation_output
+    assert refusal.expected_how_fragment in validation_output
 
 
 def test_two_run_idempotence_after_real_removal(claude_dir):

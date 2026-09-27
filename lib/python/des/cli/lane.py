@@ -218,6 +218,9 @@ class LaneSteps:
         registered = self._registered(root, worktree)
         if isinstance(registered, StepRefusal):
             return registered
+        not_disposable = self._not_a_disposable_lane(root, registered)
+        if not_disposable is not None:
+            return not_disposable
         dirty = self._dirty(registered.worktree)
         if dirty is not None:
             return dirty
@@ -250,6 +253,9 @@ class LaneSteps:
         registered = self._registered(root, worktree)
         if isinstance(registered, StepRefusal):
             return registered
+        not_disposable = self._not_a_disposable_lane(root, registered)
+        if not_disposable is not None:
+            return not_disposable
         dirty = self._dirty(registered.worktree)
         if dirty is not None:
             return dirty
@@ -260,6 +266,29 @@ class LaneSteps:
         if closed is not None:
             return closed
         return registered
+
+    def _not_a_disposable_lane(
+        self, root: Path, lane: RegisteredLane
+    ) -> StepRefusal | None:
+        """Refuse before cleanup when ``lane`` IS the destination workspace itself.
+
+        Checked by path equality against ``root``, not by asking Git which
+        worktree is "main": the destination can itself be a linked worktree,
+        so the only fact this step owns is that ``lane`` is the workspace it
+        was asked to integrate into -- never a claim that Git would refuse to
+        remove it, which does not hold for every destination.
+        """
+        if lane.worktree.resolve() != root.resolve():
+            return None
+        return StepRefusal(
+            "NotALane",
+            f"{lane.worktree} is {root}'s own destination workspace, not a "
+            "disposable lane -- this step never removes the workspace it "
+            "integrates into",
+            "pass the worktree path `des lane open` reported for the lane you "
+            f"want to close, for example `des lane finalize --repo-root {root} "
+            "--worktree <the lane path>`",
+        )
 
     def _is_integrated(self, root: Path, lane: RegisteredLane) -> StepRefusal | None:
         """Refuse cleanup unless Git proves the lane tip is destination history."""
@@ -358,7 +387,7 @@ class LaneSteps:
                 "already succeeded",
                 f"run `git -C {root} diff --name-only {base} {tip}` and reinstall "
                 "if it names a shipped asset",
-                Disposition.Indeterminate,
+                indeterminate=True,
             )
         return tuple(
             path
@@ -373,17 +402,23 @@ class LaneSteps:
         worktree cannot be deleted.  `-d` and never `-D`, so Git itself measures
         reachability and refuses a branch carrying anything the destination does
         not already hold.
+
+        The WHY below states one fact true of both callers: by the time
+        `_close` runs, the lane tip is already present in the destination --
+        `integrate` just fast-forwarded onto it, `finalize` just proved it an
+        ancestor -- so neither caller needs its own wording for it.
         """
+        done = "the lane tip is already present in the destination"
         removed = self.observe(root, "worktree", "remove", str(lane.worktree))
         if removed.returncode:
             return self._git_refusal(
                 removed,
                 "CleanupUnproven",
-                f"the fast-forward succeeded, but {lane.worktree} could not be "
+                f"{done}, but {lane.worktree} could not be "
                 f"removed: {removed.stderr.strip()}",
                 f"inspect {lane.worktree} and remove it once you have read what "
                 "it holds; the integration itself is done and must not be repeated",
-                Disposition.Indeterminate,
+                indeterminate=True,
             )
         if lane.branch is None:
             return None
@@ -392,12 +427,12 @@ class LaneSteps:
             return self._git_refusal(
                 deleted,
                 "CleanupUnproven",
-                f"the fast-forward succeeded and {lane.worktree} is gone, but "
+                f"{done} and {lane.worktree} is gone, but "
                 f"the branch {lane.branch} could not be deleted: "
                 f"{deleted.stderr.strip()}",
                 f"run `git -C {root} branch -d {lane.branch}` and read what it "
                 "refuses; the integration itself is done and must not be repeated",
-                Disposition.Indeterminate,
+                indeterminate=True,
             )
         return None
 
@@ -450,7 +485,9 @@ def _next_after_open(root: Path, lane: OpenedLane) -> str:
     what is owed next, one step at a time.
     """
     return (
-        f"des po --repo-root {lane.worktree} -- one Request on stdin, decomposed "
+        f"des po --repo-root {lane.worktree} "
+        "(--project | --epic ID | --feature ID | --slice FEATURE_ID SLICE_ID) "
+        "-- one Request on stdin, decomposed "
         f"inside the lane; then `des state --repo-root {lane.worktree}` names "
         f"each following step, and close the lane with "
         f"`des lane integrate --repo-root {root} --worktree {lane.worktree}`"

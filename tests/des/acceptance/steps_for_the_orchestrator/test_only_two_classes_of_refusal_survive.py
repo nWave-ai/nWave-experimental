@@ -26,6 +26,7 @@ reason each was found to lack. This file is their executable half.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
@@ -63,7 +64,8 @@ def design_facts(target: str = TARGET) -> dict:
                 "decisions": ["one opaque semantic decision"],
                 "oracle": ORACLE,
                 "acceptance_supports": [SUPPORT],
-                "verification": [["python", "-m", "pytest", ORACLE]],
+                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                "oracle_verification_index": 0,
             },
         }
     }
@@ -83,6 +85,7 @@ def decomposed(root: Path, step, *labels: str) -> None:
     assert (
         step(
             "po",
+            "--project",
             "--repo-root",
             str(root),
             answers=[accepted_values(*labels)],
@@ -102,6 +105,7 @@ def test_devops_after_a_decomposition_is_accepted_and_measured(
 
     code, out, err = step(
         "devops",
+        "--project",
         "--repo-root",
         str(root),
         "--authority",

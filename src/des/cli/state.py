@@ -22,7 +22,12 @@ from des.application.delivery_state import canonical_next, read_state
 from des.application.delivery_steps import blocked_disposition
 from des.application.handover import Blocked
 from des.cli._repo_root_arg import add_repo_root_argument
-from des.cli.step_terminal import StepRefusal, refuse, resolved_root, succeed
+from des.cli.step_terminal import (
+    StepRefusal,
+    refuse,
+    repository_top_level,
+    succeed,
+)
 
 
 #: What the projection prints for a root nothing has been decomposed in.  An
@@ -44,6 +49,12 @@ def _value_lines(state: object) -> list[str]:
             f"VALUE-{value.position}: {json.dumps(value.observation, ensure_ascii=False)}"
             f" {carried}"
         )
+        selection = value.selection
+        if selection is not None and selection.label == "uncertain":
+            if selection.what is not None:
+                lines.append(f"VALUE-{value.position}-SELECTION: {selection.what}")
+            if selection.how is not None:
+                lines.append(f"VALUE-{value.position}-RECOVERY: {selection.how}")
     return lines
 
 
@@ -64,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="des state")
     add_repo_root_argument(parser, "--repo-root", type=Path, required=True)
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
-    root = resolved_root(args.repo_root)
+    root = repository_top_level(args.repo_root)
     if isinstance(root, StepRefusal):
         return refuse(root, "des state --repo-root <root> -- after the HOW above")
     state = read_state(root)

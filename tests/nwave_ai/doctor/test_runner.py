@@ -61,6 +61,7 @@ def _stage_healthy_claude(base: Path) -> Path:
             "PreToolUse": [{"hooks": [{"command": hook_command}]}],
             "PostToolUse": [{"hooks": [{"command": hook_command}]}],
             "SubagentStop": [{"hooks": [{"command": hook_command}]}],
+            "SessionStart": [{"hooks": [{"command": hook_command}]}],
         },
         "env": {
             "PATH": f"{bin_dir}:/usr/bin:/bin",

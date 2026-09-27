@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -38,6 +40,13 @@ def test_page_identifies_the_versioned_local_brand_and_has_no_remote_url() -> No
     assert "img-src data:" in page
     assert "font-src data:" in page
     assert "connect-src 'none'" in page
+    logo = re.search(
+        r'<img class="brandbar-logo" src="data:image/svg\+xml;base64,([^"]+)" alt="nWave">',
+        page,
+    )
+    canonical = Path(manifest_path).parents[3] / "scripts/docs_site/static/logo.svg"
+    assert logo is not None
+    assert base64.b64decode(logo.group(1)) == canonical.read_bytes()
     assert "http://" not in page
     assert "https://" not in page
 

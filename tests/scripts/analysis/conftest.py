@@ -14,6 +14,40 @@ import os
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _bounded_launcher_prerequisites_on_path(tmp_path_factory, monkeypatch):
+    """Every test in this directory sees `claude` resolvable on PATH, via a
+    bounded, test-only stand-in -- not because that tool is installed on the
+    machine running the suite.
+
+    `preflight.treatment_launcher_link_step` (called from `treatment_steps`,
+    reached from most of this directory's arm-construction tests) resolves
+    the launcher with `shutil.which("claude")` and raises `SystemExit` when
+    it is absent. That refusal is correct production behaviour for a real
+    arm with no launcher; it is not a property these packaging/probe tests
+    exercise. CI runners with no Claude CLI installed (observed: GitHub
+    Actions run 35868878462, shard 4) hit the same gate these tests do not
+    mean to probe.
+
+    `socat` is deliberately NOT stubbed here: it is a real sandbox-bridge
+    dependency some tests (e.g. `test_k4_row11_start_recipe.py::test_the_
+    sandbox_bridge_survives_a_workspace_too_deep_for_a_unix_socket`) need to
+    exercise for real, and `missing_sandbox_prerequisites`'s loud refusal
+    for a genuinely-absent `socat` IS a property under test there. A test
+    that wants a bounded `socat` stand-in provides its own per-file fixture
+    (e.g. `test_k4_probe_workspace_cleanup.py`'s `_bounded_sandbox_
+    prerequisites`), narrowing PATH further with its own
+    `monkeypatch.setenv` -- `monkeypatch` restores in LIFO order, so that
+    later, narrower `setenv` wins for the test and still reverts cleanly
+    afterward.
+    """
+    bin_dir = tmp_path_factory.mktemp("bounded-launcher-bin")
+    exe = bin_dir / "claude"
+    exe.write_text("#!/bin/sh\nexit 0\n")
+    exe.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+
 # Stable-design report 2026-08-19 Sec.1.3: `preflight.main()` sets these
 # env vars directly on `os.environ` (the SAME channel every other arm-
 # specific fact travels through to setup subprocesses) -- never through

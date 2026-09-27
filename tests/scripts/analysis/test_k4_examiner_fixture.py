@@ -135,6 +135,14 @@ if "migrate" in argv:
 
 if {seed_marker!r} in argv:
     print({seed_key!r})
+
+for arg in argv:
+    # The declared-runner probe asks pytest for a junit report and refuses
+    # when none appears; the fake runner writes the smallest one.
+    if arg.startswith("--junitxml="):
+        Path(arg.split("=", 1)[1]).write_text(
+            '<testsuite tests="1" errors="0" failures="0"/>', encoding="utf-8"
+        )
 sys.exit(0)
 """
     venv_python.write_text(script, encoding="utf-8")

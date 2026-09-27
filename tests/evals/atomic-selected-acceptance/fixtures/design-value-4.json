@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "authority": {
+    "heading": "Order value 4: duplicate"
+  },
+  "purpose": "A duplicate payment notification leaves exactly one payment.",
+  "constraints": [
+    "Preserve the shared order decisions where the design carries them.",
+    "Public port: the `order` command, invoked as `order <subcommand> --order-id <id>`, is a future implementation.",
+    "Test environment: pytest comes from the repository's declared test environment; a missing test framework is an environment gap, not product behaviour."
+  ],
+  "targets": [
+    {
+      "path": "src/orders/duplicate.py",
+      "decision": "CREATE_NEW",
+      "reason": "Owns the behaviour this section binds."
+    }
+  ],
+  "paradigm": "object_oriented",
+  "decisions": [
+    "Value 4 binds only its delta over the shared decisions."
+  ],
+  "reuse_analysis": {
+    "candidates": [
+      {
+        "symbol": "Order",
+        "locator": "src/orders/order.py:1",
+        "decision": "CREATE_NEW",
+        "reason": "No existing order responsibility."
+      }
+    ]
+  },
+  "prefactoring": {
+    "applicability": "not_applicable",
+    "reason": "New behaviour; no preserving move needed."
+  },
+  "agreement_analysis": {
+    "applicability": "not_applicable",
+    "reason": "No shared release or interchange schema is touched."
+  },
+  "boundaries": {
+    "applicability": "not_applicable",
+    "reason": "The only boundary is the already-declared public `order` CLI; no port or dependency boundary changes."
+  },
+  "public_oracle": {
+    "observation": "A duplicate payment notification leaves exactly one payment.",
+    "stimulus": "Run `order submit --order-id O1`, then `order pay --order-id O1 --key K1` twice.",
+    "expected": "Both pay stdouts are exactly `O1 paid payments 1` and exit is 0.",
+    "falsifier": "A second payment recorded (`payments 2`), or a non-zero exit."
+  },
+  "oracle": "tests/acceptance/test_order_duplicate.py::test_duplicate",
+  "acceptance_supports": [],
+  "verification": [
+    [
+      "{PYTHON}",
+      "-m",
+      "pytest",
+      "-q",
+      "tests/acceptance/test_order_duplicate.py"
+    ]
+  ],
+  "oracle_verification_index": 0
+}

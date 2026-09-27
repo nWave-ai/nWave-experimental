@@ -39,6 +39,9 @@ EXAMINE and quality obligations remain. Severity: CRITICAL.
 
 ## Dimension 3: Completeness Validation
 
+### Requested Scope Not Covered
+Pattern: a required shared contract or dependency is unresolved, or a partial design is reported as covering the requested feature. Detection: compare the requested value graph with the shared contracts/dependencies/observation and the claimed coverage; cite the actual missing decision. An undesigned slice delta is open scope, not itself a defect. A single slice is not the whole feature. Do not demand speculative local implementation detail or accept adequate existing authority as missing. Severity: CRITICAL.
+
 ### Missing Quality Attributes
 Architecture doesn't address required attributes. Verify: performance (latency, throughput) | scalability | security (auth, data protection) | maintainability (modularity, testability) | reliability (fault tolerance, recovery) | observability (logging, monitoring, alerting). Severity: CRITICAL.
 

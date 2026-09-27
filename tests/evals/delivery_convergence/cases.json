@@ -1,0 +1,302 @@
+{
+  "format": "delivery-convergence-role-eval-v1",
+  "fixture_kind": "synthetic bounded public role inputs with independently determined expected judgments; not real installed observations, provider results, or a CI gate",
+  "shared_constraints": {
+    "no_production_or_oracle_source": true,
+    "no_fake_provider_result": true,
+    "fixture_observations_are_not_installed_evidence": true,
+    "reuse_existing_packet_revision_tests": [
+      "tests/des/acceptance/steps_for_the_orchestrator/test_host_review_examine_artifacts.py::test_examiner_observation_revisions_keep_prior_inputs_and_results",
+      "tests/des/acceptance/distill_document_construction/test_exact_restore_reuses_matching_evidence.py::test_exact_design_restore_reuses_evidence_only_when_every_identity_matches"
+    ],
+    "original_promise": "A coordinator can select a delivery and, after pressing Confirm, sees a confirmation that the delivery is scheduled.",
+    "selected_criterion": "The selected delivery is shown and the Confirm control is visible."
+  },
+  "cases": [
+    {
+      "id": "examiner-rejects-selected-criteria-that-lost-original-confirmation",
+      "target": "nw-user-examiner",
+      "task": "final EXAMINE",
+      "observation_kind": "synthetic fixture; the described public observations are a future installed-role stimulus, not installed evidence",
+      "expected_provider_outcomes": ["rejected"],
+      "public_input": {
+        "request": "A coordinator can select a delivery and, after pressing Confirm, sees a confirmation that the delivery is scheduled.",
+        "selected_behavioral_contract": {
+          "criteria": [
+            "The selected delivery is shown and the Confirm control is visible."
+          ],
+          "original_value_to_preserve": "After pressing Confirm, the coordinator sees that the delivery is scheduled."
+        },
+        "candidate_identity": "candidate-delivery-convergence-01",
+        "public_observations": [
+          {
+            "stimulus": "Coordinator selects delivery D-17.",
+            "response": "D-17 is displayed and Confirm is visible."
+          },
+          {
+            "stimulus": "Coordinator presses Confirm for D-17.",
+            "response": "The visible control returns status=500; no scheduled confirmation is shown."
+          }
+        ],
+        "observations_provenance": {
+          "captured_from": "installed public journey",
+          "unverified": []
+        }
+      },
+      "expected": {
+        "outcome": "rejected",
+        "classification": "lost-original-value / observed product violation",
+        "reason": "The supplied click observation contradicts the original promise. Agreement with the selected button-visible criterion cannot approve a delivery that fails to schedule after Confirm.",
+        "owner": "product/correction owner determined by the observed public behavior; do not approve from criterion agreement"
+      },
+      "counterexample": "An examiner that returns accepted because D-17 and Confirm are visible has treated the narrowed selected criterion as the complete original promise."
+    },
+    {
+      "id": "examiner-keeps-unobserved-confirmation-indeterminate",
+      "target": "nw-user-examiner",
+      "task": "final EXAMINE",
+      "observation_kind": "synthetic fixture; the absent click observation is deliberate and is not a failed installed capture",
+      "expected_provider_outcomes": ["indeterminate"],
+      "public_input": {
+        "request": "A coordinator can select a delivery and, after pressing Confirm, sees a confirmation that the delivery is scheduled. The change adds no new dependency or persistence layer.",
+        "selected_behavioral_contract": {
+          "criteria": [
+            "The selected delivery is shown and the Confirm control is visible."
+          ],
+          "original_value_to_preserve": "After pressing Confirm, the coordinator sees that the delivery is scheduled."
+        },
+        "candidate_identity": "candidate-delivery-convergence-02",
+        "public_observations": [
+          {
+            "stimulus": "Coordinator selects delivery D-17.",
+            "response": "D-17 is displayed and Confirm is visible."
+          }
+        ],
+        "observations_provenance": {
+          "captured_from": "installed public journey",
+          "unverified": [
+            "No observation captures pressing Confirm or the resulting scheduled confirmation."
+          ]
+        },
+        "native_evidence": [{"argv": {"withheld": true, "reason": "source-blind examiner"}, "stdout": {"withheld": true, "reason": "source-blind examiner"}, "stderr": {"withheld": true, "reason": "source-blind examiner"}, "exit": 0}]
+      },
+      "expected": {
+        "outcome": "indeterminate",
+        "classification": "missing public observation",
+        "reason": "No supplied event establishes either success or failure of the Confirm behavior. Missing evidence is not an observed product defect. The dependency and persistence limits are reviewer concerns; their architectural absence cannot be inferred from this finite public packet or demanded as another public event. Withheld native details create no obligation to link a public event to the hidden command.",
+        "owner": "evidence-capture owner; collect the missing public observation before proposing code work"
+      },
+      "counterexample": "Returning rejected invents a failed click; returning accepted treats a visible control as evidence of the unobserved outcome. Demanding public proof that no dependency or persistence layer exists, or linkage to withheld native details, adds impossible obligations to source-blind EXAMINE."
+    },
+    {
+      "id": "examiner-rejects-established-confirmation-failure-despite-positive-observation",
+      "target": "nw-user-examiner",
+      "task": "final EXAMINE",
+      "observation_kind": "synthetic fixture; both supplied confirmation observations are established relevant public observations, not installed evidence",
+      "expected_provider_outcomes": ["rejected"],
+      "public_input": {
+        "request": "A coordinator can select a delivery and, after pressing Confirm, sees a confirmation that the delivery is scheduled.",
+        "selected_behavioral_contract": {
+          "criteria": ["The selected delivery is shown and the Confirm control is visible."],
+          "original_value_to_preserve": "After pressing Confirm, the coordinator sees that the delivery is scheduled."
+        },
+        "candidate_identity": "fixture-candidate-conflicting-observations",
+        "public_observations": [
+          {"stimulus":"Coordinator selects D-17.","response":"D-17 is displayed and Confirm is visible."},
+          {"stimulus":"Coordinator presses Confirm for D-17.","response":"A scheduled confirmation is shown."},
+          {"stimulus":"Coordinator presses Confirm for D-17.","response":"Status=500; no scheduled confirmation is shown."}
+        ],
+        "observations_provenance": {
+          "captured_from":"synthetic fixture; both observations are authenticated and candidate-bound",
+          "unverified":[]
+        }
+      },
+      "expected": {
+        "outcome":"rejected",
+        "classification":"established relevant product failure despite positive observation",
+        "reason":"The selection observation supports only visibility. The established status=500 confirmation contradicts the universal original promise; a positive observation does not erase that relevant negative.",
+        "owner":"product/correction owner",
+        "retention":"Keep both observations and any superseded history; exact restore reuse remains conditional on matching relevant dependencies."
+      },
+      "counterexample":"Approving from the positive confirmation or discarding the established status=500 record allows a contradicted original promise to pass."
+    },
+    {
+      "id":"examiner-keeps-unresolved-evidentiary-confirmation-conflict-indeterminate",
+      "target":"nw-user-examiner",
+      "task":"final EXAMINE",
+      "observation_kind":"synthetic fixture; incompatible reports are unresolved evidence claims, not authenticated installed observations",
+      "expected_provider_outcomes":["indeterminate"],
+      "public_input":{
+        "request":"A coordinator can select a delivery and, after pressing Confirm, sees a confirmation that the delivery is scheduled.",
+        "selected_behavioral_contract":{"criteria":["The selected delivery is shown and the Confirm control is visible."],"original_value_to_preserve":"After pressing Confirm, the coordinator sees that the delivery is scheduled."},
+        "candidate_identity":"fixture-candidate-evidentiary-conflict",
+        "public_observations":[
+          {"reported_event":"Report A claims Confirm for D-17 showed a scheduled confirmation.","authenticity":"unresolved","candidate_link":"unresolved","same_event_link":"unresolved"},
+          {"reported_event":"Report B claims Confirm for D-17 returned status=500 with no scheduled confirmation.","authenticity":"unresolved","candidate_link":"unresolved","same_event_link":"unresolved"}
+        ],
+        "observations_provenance":{"captured_from":"two unverified reports","unverified":["Neither report is authenticated or bound to the named candidate.","No discriminator establishes whether the reports concern one event, different temporal conditions, or a defective observation."]}
+      },
+      "expected":{
+        "outcome":"indeterminate",
+        "classification":"unresolved evidentiary conflict",
+        "reason":"Neither incompatible report is independently established as a relevant candidate-bound event. The examiner cannot turn an unresolved evidence conflict into either product success or failure.",
+        "owner":"evidence-capture/applicability owner",
+        "retention":"Retain both reports until an owner supplies an authenticity/candidate-linkage/temporal discriminator or identifies a defective observation."
+      },
+      "counterexample":"Rejecting treats the unverified negative report as established; accepting treats the unverified positive report as established; retaining only one report destroys the unresolved conflict."
+    },
+    {
+      "id": "reviewer-rejects-v1-weakened-matching-oracle",
+      "target": "nw-acceptance-designer-reviewer",
+      "task": "acceptance review before craft",
+      "expected_provider_outcomes": ["rejected"],
+      "review_defect_values": ["delivery-convergence-v1-fixture"],
+      "public_input": {
+        "request": "A coordinator can select a delivery and, after pressing Confirm, sees a confirmation that the delivery is scheduled.",
+        "value_identity": "delivery-convergence-v1-fixture",
+        "selected_behavioral_contract": {
+          "criteria": ["The selected delivery is shown and the Confirm control is visible."]
+        },
+        "declared_public_oracle": {
+          "stimulus": "Coordinator selects D-17.",
+          "expected_observation": "D-17 and a visible Confirm control are shown.",
+          "falsifier": "D-17 is not shown or Confirm is not visible."
+        },
+        "declared_supports": [],
+        "evidence_kind": "synthetic fixture acceptance evidence; no production source or runtime result is supplied"
+      },
+      "expected": {
+        "outcome": "rejected",
+        "classification": "V1 adequacy gap before craft",
+        "reason": "The visibility-only selected criterion and matching oracle omit the promised successful confirmation after Confirm. Internal agreement between those weakened artifacts is not adequacy.",
+        "defect_owner": "design",
+        "route": "criteria/product owner resolves the lost original value before craft"
+      },
+      "counterexample": "Approving because the oracle exactly proves the visibility criterion accepts a contract that cannot falsify loss of the original successful-confirmation value."
+    },
+    {
+      "id": "unchanged-alignment-reuses-existing-judgment",
+      "target": "nw-acceptance-designer",
+      "task": "bounded preimplementation alignment-reuse assessment",
+      "expected_provider_outcomes": ["accepted"],
+      "public_input": {
+        "task": "Bounded preimplementation alignment-reuse assessment only. Do not author or revise an oracle, do not claim product acceptance, and do not require a new meeting. Decide whether the supplied current and prior canonical contract bytes are identical and the supplied hypothetical prior alignment record binds exactly those bytes; if so, report that no new preimplementation assessment is required.",
+        "request": "Preserve agreed delivery value across applicable nWave waves.",
+        "current_selected_behavioral_contract": {
+          "canonical_utf8_json": "{\"criteria\":[\"The selected delivery is shown and the Confirm control is visible.\"],\"original_value_to_preserve\":\"After pressing Confirm, the coordinator sees that the delivery is scheduled.\",\"request\":\"Preserve agreed delivery value across applicable nWave waves.\"}",
+          "sha256": "0b5f6ef999b5c80fc5251f5b44686ba1c28bf5604ec6153a6e4b8c87ece6360f"
+        },
+        "prior_selected_behavioral_contract": {
+          "canonical_utf8_json": "{\"criteria\":[\"The selected delivery is shown and the Confirm control is visible.\"],\"original_value_to_preserve\":\"After pressing Confirm, the coordinator sees that the delivery is scheduled.\",\"request\":\"Preserve agreed delivery value across applicable nWave waves.\"}",
+          "sha256": "0b5f6ef999b5c80fc5251f5b44686ba1c28bf5604ec6153a6e4b8c87ece6360f"
+        },
+        "prior_alignment_record": {
+          "fixture_status": "hypothetical evaluator setup only; this is not a claim that a real acceptance role previously ran",
+          "outcome": "accepted",
+          "bound_contract_sha256": "0b5f6ef999b5c80fc5251f5b44686ba1c28bf5604ec6153a6e4b8c87ece6360f",
+          "scope": "original value, selected criteria, public stimuli, and falsifiers"
+        },
+        "change_since_prior_alignment": "none; byte equality is supplied above as canonical bytes and independently stated digest"
+      },
+      "expected": {
+        "outcome": "reuse",
+        "classification": "unchanged alignment",
+        "reason": "The selected contract and its identity are unchanged, so the existing adequate alignment is reusable. No compulsory new meeting or role invocation follows from no change.",
+        "owner": "none unless a changed or ambiguous contract is later supplied"
+      },
+      "counterexample": "Demanding another alignment meeting despite identical canonical bytes and a record bound to their real digest adds the excluded mandatory role turn without a changed semantic input."
+    },
+    {
+      "id": "unknown-dependency-does-not-authorize-evidence-reuse",
+      "target": "nw-auto",
+      "task": "recovery/reuse routing",
+      "execution": "pending-installed-outer-route: no existing direct native-role port selects nw-auto",
+      "public_input": {
+        "candidate_identity": "candidate-delivery-convergence-03",
+        "prior_evidence_identity": "evidence-for-candidate-delivery-convergence-03",
+        "dependency_pertinence": "unknown",
+        "known_facts": [
+          "Candidate bytes and the recorded prior evidence identity match."
+        ],
+        "unknown_fact": "Whether a shared dependency of the verified observation changed is not known."
+      },
+      "expected": {
+        "outcome": "do-not-authorize-reuse",
+        "classification": "unresolved applicability",
+        "reason": "Matching stored identities do not establish that an unknown shared dependency is irrelevant. Retain the evidence, make uncertainty explicit, and route dependency resolution to its owner.",
+        "owner": "dependency/applicability owner"
+      },
+      "counterexample": "Reusing the verdict merely because candidate and evidence identifiers match silently converts unknown dependency pertinence into independence."
+    },
+    {
+      "id": "optional-jev-unavailability-falls-back-locally",
+      "target": "nw-auto",
+      "task": "optional bounded semantic assistance",
+      "execution": "pending-installed-outer-route: no existing direct native-role port selects nw-auto",
+      "public_input": {
+        "decision": "Classify whether the retained evidence may be reused after a local observation correction.",
+        "jev_usefulness": "useful if available for this bounded classification",
+        "jev_availability": "unavailable",
+        "permitted_context": "minimal non-secret public facts only",
+        "local_evidence": "Candidate, prior observations, and applicability state are available to the orchestrator.",
+        "examine_context": "source-blind EXAMINE has not received and must not receive any Jev request or result."
+      },
+      "expected": {
+        "outcome": "continue-local-recovery",
+        "classification": "optional assistance unavailable",
+        "reason": "Availability is checked only for a useful bounded call. Its absence cannot block local classification or create retries, and Jev remains outside source-blind EXAMINE.",
+        "owner": "orchestrator using local evidence; semantic owner decides any unresolved classification"
+      },
+      "counterexample": "Blocking recovery until Jev responds, or sending a Jev result to the examiner, makes optional assistance a mandatory second decision system."
+    },
+    {
+      "id": "review-round2-demonstrated-regression-blocks-integration",
+      "target": "nw-review",
+      "task": "orchestrated candidate review after a prior repair",
+      "execution": "pending-installed-outer-route: nw-review is a route/skill concern and this corpus adds no alternate review runner",
+      "public_input": {
+        "candidate_identity": "fixture-candidate-round2",
+        "review_round": 2,
+        "prior_repair": "A previous repair changed the candidate to address a separate finding.",
+        "demonstrated_public_observation": "After that repair, submitting an eligible delivery now returns a refusal instead of the promised scheduling confirmation.",
+        "finding_origin": "the previous repair",
+        "integration_requested": true
+      },
+      "expected": {
+        "outcome": "correct-defect-block-integration",
+        "classification": "demonstrated product-breaking regression in the previous repair",
+        "reason": "The round-two public observation is a known blocking defect. Its origin inside the prior repair does not license integration or turn the finding into a suggestion.",
+        "owner": "correction owner for the regression, determined by the review finding",
+        "oracle_first": "Ask ATD whether the existing oracle covers this counterexample before editing production; correct the oracle first when it does not.",
+        "integration": "prohibited until the demonstrated regression is corrected and independently reviewed"
+      },
+      "counterexample": "Integrating because the regression was introduced by an earlier repair applies a stopping rule to a demonstrated defect and ships known broken public behavior."
+    },
+    {
+      "id": "examiner-input-remains-source-blind-from-jev-and-source",
+      "target": "nw-user-examiner",
+      "task": "input-boundary preflight for final EXAMINE",
+      "observation_kind": "synthetic fixture input-shape check; not a final installed examination",
+      "public_input": {
+        "request": "A coordinator can select a delivery and, after pressing Confirm, sees a confirmation that the delivery is scheduled.",
+        "selected_behavioral_contract": "The same selected behavioral contract supplied to ATD.",
+        "candidate_identity": "candidate-delivery-convergence-04",
+        "public_observations": "Captured public stimuli, responses, and state snapshots only.",
+        "forbidden_inputs": [
+          "production source",
+          "acceptance-oracle source",
+          "test-derived expectations",
+          "Jev request",
+          "Jev result"
+        ]
+      },
+      "expected": {
+        "outcome": "input-admissible",
+        "classification": "source-blind boundary preserved",
+        "reason": "The examiner can judge the original request, selected contract, candidate identity, and supplied public observations without code, oracle, or Jev material.",
+        "owner": "examiner invocation owner if a forbidden input is proposed"
+      },
+      "counterexample": "Adding source or a Jev recommendation to help the examiner decide collapses independent source-blind EXAMINE into a prepared verdict."
+    }
+  ]
+}

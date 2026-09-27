@@ -165,6 +165,20 @@ class AuditResult:
     notes: str = ""
 
 
+@dataclass(frozen=True)
+class AuditPaths:
+    """Where one audit run reads from: the backlog, the tests tree, the repo.
+
+    Frozen: these three are fixed for the whole run, and a test path is
+    resolved against `repo_root` on every item, so a mid-run change would
+    silently split the results between two trees.
+    """
+
+    backlog_path: Path
+    tests_root: Path
+    repo_root: Path
+
+
 # ─── Parser ─────────────────────────────────────────────────────────────────
 
 
@@ -679,15 +693,13 @@ def render_json_report(results: list[AuditResult]) -> str:
 
 
 def audit(
-    backlog_path: Path,
-    tests_root: Path,
-    repo_root: Path,
+    paths: AuditPaths,
     mode: str,
     sections_filter: list[str] | None,
     check_completed: bool,
 ) -> list[AuditResult]:
     """Run the full audit and return results."""
-    text = backlog_path.read_text(encoding="utf-8")
+    text = paths.backlog_path.read_text(encoding="utf-8")
     items = parse_backlog(text)
 
     if sections_filter:
@@ -701,12 +713,12 @@ def audit(
 
     results: list[AuditResult] = []
     for item in items:
-        test_paths = find_acceptance_tests(item, repo_root, tests_root)
-        result = classify_item(item, test_paths, repo_root)
+        test_paths = find_acceptance_tests(item, paths.repo_root, paths.tests_root)
+        result = classify_item(item, test_paths, paths.repo_root)
 
         # Run tests for items provisionally GREEN
         if result.status == AuditStatus.GREEN and mode != "no-run":
-            outcome = run_pytest(test_paths, mode, repo_root)
+            outcome = run_pytest(test_paths, mode, paths.repo_root)
             result.test_outcome = outcome
             if outcome == TestOutcome.FAILED:
                 result.status = AuditStatus.RED
@@ -752,9 +764,11 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         results = audit(
-            backlog_path=args.backlog,
-            tests_root=args.tests_root,
-            repo_root=REPO_ROOT,
+            paths=AuditPaths(
+                backlog_path=args.backlog,
+                tests_root=args.tests_root,
+                repo_root=REPO_ROOT,
+            ),
             mode=args.mode,
             sections_filter=args.sections,
             check_completed=args.check_completed,

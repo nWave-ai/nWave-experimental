@@ -43,7 +43,7 @@ def test_canonical_graph_carries_exact_minimal_bytes_on_restart(
     assert isinstance(second, StoredHandover)
     assert first.raw == second.raw == handover_path(tmp_path).read_bytes()
     assert first.raw == (
-        b'{"request":"deliver","values":['
+        b'{"request":"deliver","scope":{"kind":"project"},"values":['
         b'{"observation":"A","dependencies":[],"authority":null},'
         b'{"observation":"B","dependencies":["A"],"authority":"docs/brief.md#B"}]}'
     )
@@ -94,6 +94,7 @@ def test_reader_validates_raw_obligation_members_without_breaking_legacy_shape()
         "tests/test_value.py",
         (),
         (("python", "-m", "pytest"),),
+        0,
         ("constraint",),
     )
     canonical = json.loads(
@@ -114,6 +115,86 @@ def test_reader_validates_raw_obligation_members_without_breaking_legacy_shape()
     assert isinstance(parsed_legacy, StoredHandover)
     assert isinstance(parsed_legacy.values[0].authority, DesignFacts)
     assert parsed_legacy.values[0].authority.obligations == ()
+
+
+def test_reader_validates_raw_public_oracle_members_without_breaking_legacy_shape() -> (
+    None
+):
+    from des.ports.driven_ports.task_invocation_port import PublicOracle
+
+    facts = DesignFacts(
+        (DesignTarget("src/value.py", "EXTEND"),),
+        "object_oriented",
+        ("reuse the existing boundary",),
+        "tests/test_value.py",
+        (),
+        (("python", "-m", "pytest"),),
+        0,
+        ("constraint",),
+        public_oracle=PublicOracle(
+            observation="observed",
+            stimulus="stimulus text",
+            expected="expected outcome",
+            falsifier="falsifier text",
+        ),
+    )
+    canonical = json.loads(
+        _canonical_bytes("deliver", (HandoverValue("A", (), facts),))
+    )
+
+    # Malformed public_oracle values should be rejected
+    for malformed in (
+        1,  # not an object
+        [],  # not an object
+        {"observation": "obs"},  # missing keys
+        {
+            "observation": "obs",
+            "stimulus": "",
+            "expected": "exp",
+            "falsifier": "fals",
+        },  # empty string
+        {
+            "observation": "obs",
+            "stimulus": " ",
+            "expected": "exp",
+            "falsifier": "fals",
+        },  # whitespace only
+        {
+            "observation": "obs",
+            "stimulus": "stim",
+            "expected": "exp",
+            "falsifier": "fals",
+            "extra": "key",
+        },  # extra key
+    ):
+        payload = json.loads(json.dumps(canonical))
+        payload["values"][0]["authority"]["public_oracle"] = malformed
+        raw = json.dumps(payload, separators=(",", ":")).encode()
+        parsed = read_handover(raw)
+        assert isinstance(parsed, Blocked), malformed
+        assert parsed.what == "HandoverMalformed", malformed
+
+    # Legacy absence (no public_oracle field) should be accepted
+    legacy = json.loads(json.dumps(canonical))
+    del legacy["values"][0]["authority"]["public_oracle"]
+    parsed_legacy = read_handover(json.dumps(legacy, separators=(",", ":")).encode())
+    assert isinstance(parsed_legacy, StoredHandover)
+    assert isinstance(parsed_legacy.values[0].authority, DesignFacts)
+    assert parsed_legacy.values[0].authority.public_oracle is None
+
+    # Re-encode should be byte-identical when public_oracle was absent
+    reparsed = read_handover(
+        json.dumps(
+            json.loads(parsed_legacy.raw.decode()), separators=(",", ":")
+        ).encode()
+    )
+    assert isinstance(reparsed, StoredHandover)
+    # Both should have identical bytes when no public_oracle is present
+    legacy_bytes = json.dumps(legacy, separators=(",", ":")).encode()
+    reparsed_bytes = reparsed.raw
+    assert json.loads(legacy_bytes.decode()) == json.loads(reparsed_bytes.decode()), (
+        "re-encode must preserve legacy shape for handovers without public_oracle"
+    )
 
 
 def test_create_rejects_unusable_graph_facts_before_write(tmp_path) -> None:
@@ -141,12 +222,67 @@ def test_typed_design_facts_reject_every_non_repository_locator() -> None:
             oracle,
             support,
             (("python", "-m", "pytest"),),
+            0,
         )
 
     assert valid_design_facts(facts())
     assert not valid_design_facts(facts(target="../outside.py"))
     assert not valid_design_facts(facts(oracle="/tmp/oracle.py"))
     assert not valid_design_facts(facts(support=("../support.py",)))
+
+
+def test_handover_persists_and_restores_the_explicit_oracle_command_binding(
+    tmp_path,
+) -> None:
+    broad = ("python", "manage.py", "test", "hc.api.tests")
+    selected = (
+        "python",
+        "manage.py",
+        "test",
+        "hc.api.tests.test_maintenance_windows",
+    )
+    facts = _facts(verification=(broad, selected), oracle_verification_index=1)
+
+    stored = create_handover(tmp_path, "deliver", (HandoverValue("A", (), facts),))
+    restored = load_handover(tmp_path, "deliver")
+
+    assert isinstance(stored, StoredHandover)
+    assert isinstance(restored, StoredHandover)
+    authority = restored.values[0].authority
+    assert isinstance(authority, DesignFacts)
+    assert authority.oracle_verification_index == 1
+    assert authority.verification[authority.oracle_verification_index] == selected
+    assert broad != authority.verification[authority.oracle_verification_index]
+
+
+@pytest.mark.parametrize("index", [-1, 1, True, "0"])
+def test_handover_refuses_a_missing_or_invalid_oracle_command_binding(index) -> None:
+    facts = _facts(oracle_verification_index=index)
+
+    parsed = read_handover(
+        _canonical_bytes("deliver", (HandoverValue("A", (), facts),))
+    )
+
+    assert isinstance(parsed, Blocked)
+    assert parsed.what == "HandoverMalformed"
+    assert "oracle_verification_index" in parsed.why
+
+
+def test_restored_legacy_handover_names_the_missing_oracle_binding(tmp_path) -> None:
+    facts = _facts()
+    canonical = json.loads(
+        _canonical_bytes("deliver", (HandoverValue("A", (), facts),))
+    )
+    del canonical["values"][0]["authority"]["oracle_verification_index"]
+
+    parsed = read_handover(json.dumps(canonical, separators=(",", ":")).encode())
+
+    assert isinstance(parsed, Blocked)
+    assert parsed.what == "HandoverMalformed"
+    assert (
+        parsed.why == "design facts omit the required oracle_verification_index binding"
+    )
+    assert parsed.how == _HANDOVER_REPAIR
 
 
 def test_create_normalizes_an_out_of_order_semantic_graph(tmp_path) -> None:
@@ -291,6 +427,7 @@ def _facts(**overrides) -> DesignFacts:
         "oracle": "tests/test_value.py",
         "acceptance_supports": (),
         "verification": (("python", "-m", "pytest"),),
+        "oracle_verification_index": 0,
     }
     fields.update(overrides)
     return DesignFacts(*fields.values())
@@ -325,6 +462,29 @@ def test_the_guard_still_owns_every_clause_json_schema_cannot_express() -> None:
         "acceptance_supports[0] repeats the oracle, which is never its own "
         'support: "tests/test_value.py"'
     )
+
+
+def test_a_new_non_oracle_target_cannot_also_be_required_acceptance_support() -> None:
+    conflict = _facts(
+        targets=(DesignTarget("tests/support/new_helper.py", "CREATE_NEW"),),
+        acceptance_supports=("tests/support/new_helper.py",),
+    )
+
+    assert design_facts_defect(conflict) == (
+        "a non-oracle CREATE_NEW target is also a required acceptance support: "
+        '"tests/support/new_helper.py"'
+    )
+
+
+def test_a_new_support_only_helper_and_an_extended_support_target_are_valid() -> None:
+    support_only = _facts(acceptance_supports=("tests/support/new_helper.py",))
+    extended = _facts(
+        targets=(DesignTarget("src/value.py", "EXTEND"),),
+        acceptance_supports=("src/value.py",),
+    )
+
+    assert design_facts_defect(support_only) is None
+    assert design_facts_defect(extended) is None
 
 
 def test_a_rejection_names_the_field_and_the_value_it_refused() -> None:
@@ -397,6 +557,7 @@ def test_restoring_inadmissible_design_facts_names_the_field_and_the_repair() ->
                 "tests/test_value.py",
                 (prose,),
                 (("python", "-m", "pytest"),),
+                0,
             ),
         ),
     )

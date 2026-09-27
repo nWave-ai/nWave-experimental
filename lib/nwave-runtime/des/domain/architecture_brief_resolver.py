@@ -200,6 +200,26 @@ def is_design_oracle_locator(locator: str) -> bool:
     return _DESIGN_ORACLE_LOCATOR_RE.fullmatch(locator) is not None
 
 
+def new_target_acceptance_support_conflict(
+    oracle: str,
+    target_decisions: Iterable[tuple[str, str]],
+    acceptance_supports: Iterable[str],
+) -> str | None:
+    """Return the non-oracle new target reused as required support, if any.
+
+    An acceptance support may be new when it is only support evidence, and an
+    existing target may be read as support.  The contradiction is narrower:
+    DESIGN cannot require the crafter to create a non-oracle target while the
+    same path is already required as acceptance evidence.
+    """
+    oracle_path = oracle.partition("::")[0]
+    support_paths = frozenset(acceptance_supports)
+    for path, decision in target_decisions:
+        if path != oracle_path and decision == "CREATE_NEW" and path in support_paths:
+            return path
+    return None
+
+
 def is_canonical_oracle_locator(locator: str) -> bool:
     """The two shapes an oracle locator is ever allowed to have, WHOLE.
 
@@ -750,6 +770,19 @@ def extract_declared_verification_commands(brief_text: str) -> list[list[str]]:
     return commands
 
 
+_ORACLE_VERIFICATION_INDEX_RE = re.compile(
+    r"Oracle verification command index:[^`\n]*`(?P<index>0|[1-9][0-9]*)`"
+)
+
+
+def extract_declared_oracle_verification_indices(brief_text: str) -> list[int]:
+    """Return every explicit oracle-to-verification ordinal in source order."""
+    return [
+        int(match.group("index"))
+        for match in _ORACLE_VERIFICATION_INDEX_RE.finditer(brief_text)
+    ]
+
+
 #: The declared verification-authority DELEGATION line shape -- the same
 #: declarative family as ``Oracle target locator:``/``Verification
 #: command:`` above: a label, optional prose, then ONE backtick-delimited
@@ -1085,6 +1118,10 @@ _EXTENSION_TO_PBT_ADAPTER: dict[str, tuple[str, str]] = {
     ".tsx": ("TypeScript", "nw-pbt-typescript"),
     ".js": ("JavaScript", "nw-pbt-typescript"),
     ".jsx": ("JavaScript", "nw-pbt-typescript"),
+    ".mjs": ("JavaScript", "nw-pbt-typescript"),
+    ".cjs": ("JavaScript", "nw-pbt-typescript"),
+    ".mts": ("TypeScript", "nw-pbt-typescript"),
+    ".cts": ("TypeScript", "nw-pbt-typescript"),
     ".cs": ("C#", "nw-pbt-dotnet"),
     ".fs": ("F#", "nw-pbt-dotnet"),
     ".java": ("Java", "nw-pbt-jvm"),

@@ -61,7 +61,16 @@ def run_step(
     if path is not None:
         environment["PATH"] = path
     return subprocess.run(
-        [sys.executable, "-m", "des.cli", STEP, "--repo-root", repo_root, *extra],
+        [
+            sys.executable,
+            "-m",
+            "des.cli",
+            STEP,
+            "--project",
+            "--repo-root",
+            repo_root,
+            *extra,
+        ],
         input="Deliver value\n",
         text=True,
         capture_output=True,
@@ -173,7 +182,15 @@ def test_a_step_killed_before_it_reads_its_request_still_names_its_tree(
     """
     environment = {**os.environ, "PYTHONPATH": str(SOURCE_PACKAGE.parent)}
     with subprocess.Popen(
-        [sys.executable, "-m", "des.cli", STEP, "--repo-root", str(tmp_path)],
+        [
+            sys.executable,
+            "-m",
+            "des.cli",
+            STEP,
+            "--project",
+            "--repo-root",
+            str(tmp_path),
+        ],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

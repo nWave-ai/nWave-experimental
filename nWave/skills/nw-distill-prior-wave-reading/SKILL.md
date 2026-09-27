@@ -14,6 +14,10 @@ Run before authoring or binding an acceptance oracle.
 2. Read the relevant architecture brief/ADRs, including reuse, route,
    prefactoring, paradigm, targets, ports/boundaries, cross-layer laws,
    residual stress decisions and test substrate.
+   For a multi-value feature read the relevant common authority plus the local
+   slice delta. If the public oracle needs a semantic decision neither states,
+   ask its owner only for that decision; adequate existing authority needs no
+   new ceremony, and you never write authority yourself.
 3. Read platform/environment authorities only when the delivery has an
    operational obligation.
 4. Reconcile contradictions by their durable owner. A contradiction blocks and is

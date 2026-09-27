@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -176,6 +177,97 @@ class TestTheEngagementVerdictNamesTheStepSurface:
         assert verdict == "broken-steps"
         assert detail == ["the installed des does not carry the steps"]
 
+    def test_the_filesystem_policy_verdict_stops_before_any_delivery_probe(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """An invalid rendered policy must refuse before arms.json/model delivery."""
+        monkeypatch.setattr(preflight, "nwave_setup_steps", lambda venv, auth: [])
+        monkeypatch.setattr(preflight, "probe_installed_step_surface", lambda *a: [])
+        monkeypatch.setattr(preflight, "probe_project_activation", lambda *a: [])
+        monkeypatch.setattr(
+            preflight, "probe_launcher_is_inside_the_workspace", lambda *a: []
+        )
+        monkeypatch.setattr(
+            preflight,
+            "probe_sandbox_filesystem_policy",
+            lambda *a: ["denyWrite resolves outside CLAUDE_CONFIG_DIR"],
+        )
+        monkeypatch.setattr(
+            preflight,
+            "probe_sandbox_allows_the_model_api",
+            lambda *a: (_ for _ in ()).throw(AssertionError("must not run")),
+        )
+
+        verdict, detail = preflight.probe_engagement(
+            tmp_path / "root", tmp_path / "venv", tmp_path / "auth"
+        )
+
+        assert verdict == "sandbox-filesystem-policy-invalid"
+        assert detail == ["denyWrite resolves outside CLAUDE_CONFIG_DIR"]
+
+    def test_the_filesystem_policy_refusal_precedes_arms_and_delivery(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """The distinct verdict must stop the full preflight before either output."""
+        root = tmp_path / "campaign"
+        task = tmp_path / "task.md"
+        task.write_text("finite request\n", encoding="utf-8")
+        wheel = tmp_path / "nwave.whl"
+        wheel.write_bytes(b"wheel")
+        monkeypatch.setattr(
+            preflight.sut_mirror,
+            "resolve_subject_source",
+            lambda path: SimpleNamespace(source="subject", detail="test subject"),
+        )
+        monkeypatch.setattr(preflight, "missing_sandbox_prerequisites", lambda: [])
+        monkeypatch.setattr(
+            preflight, "resolve_clean_commit_sha", lambda checkout: "a" * 40
+        )
+        monkeypatch.setattr(
+            preflight,
+            "build_arm_runtime",
+            lambda output, checkout: (output / "venv", wheel),
+        )
+        monkeypatch.setattr(preflight, "control_setup_steps", lambda auth: [])
+        monkeypatch.setattr(preflight, "nwave_setup_steps", lambda venv, auth: [])
+        monkeypatch.setattr(preflight, "treatment_steps", lambda venv: [])
+        monkeypatch.setattr(
+            preflight, "refuse_undeclared_arm_footprint", lambda *a, **k: 0
+        )
+        monkeypatch.setattr(
+            preflight,
+            "probe_engagement",
+            lambda root, venv, auth: (
+                "sandbox-filesystem-policy-invalid",
+                ["denyWrite resolves outside CLAUDE_CONFIG_DIR"],
+            ),
+        )
+        monkeypatch.setattr(
+            preflight,
+            "delivery_argv",
+            lambda model: (_ for _ in ()).throw(AssertionError("must not deliver")),
+        )
+
+        assert (
+            preflight.main(
+                [
+                    "--root",
+                    str(root),
+                    "--checkout",
+                    str(tmp_path),
+                    "--task-file",
+                    str(task),
+                ]
+            )
+            == 1
+        )
+
+        assert not (root / "arms.json").exists()
+        assert "sandbox filesystem policy" in capsys.readouterr().err
+
 
 class TestTheTwoArmsAreSymmetric:
     """The pair must differ in the treatment and in nothing else.
@@ -199,12 +291,26 @@ class TestTheTwoArmsAreSymmetric:
         assert not [word for word in argv if word == "des" or word.endswith("/des")]
         assert "dispatch" not in argv
 
-    def test_the_treatment_is_one_declared_setup_step(self) -> None:
-        steps = preflight.treatment_steps(Path("/venv"))
+    def test_the_treatment_is_exactly_its_declared_setup_steps(self) -> None:
+        """Install AND enable, both declared, and nothing beyond them.
 
-        assert len(steps) == 1
-        assert steps[0][1:] == list(preflight.TREATMENT_INSTALL_STEP[1:])
-        assert Path(steps[0][0]).name == preflight.TREATMENT_INSTALL_STEP[0]
+        Installing alone leaves activation opt-in and unset, so the gate exits
+        before every hook and the arm carries nWave without running it --
+        measured on a real arm workspace 2026-09-13. The guarantee this check
+        holds is that the arms differ only in the treatment, never that the
+        treatment is one command.
+        """
+        steps = preflight.treatment_steps(Path("/venv"))
+        declared = (
+            preflight.TREATMENT_INSTALL_STEP,
+            preflight.TREATMENT_ENABLE_STEP,
+            preflight.treatment_launcher_link_step(),
+        )
+
+        assert len(steps) == len(declared)
+        for step, expected in zip(steps, declared, strict=True):
+            assert step[1:] == list(expected[1:])
+            assert Path(step[0]).name == expected[0]
 
 
 class TestTheAdmissionGateChecksThatSymmetry:

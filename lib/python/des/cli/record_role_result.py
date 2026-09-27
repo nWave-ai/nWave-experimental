@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from des.cli.role_artifacts import record
+from des.cli.role_guidance import successor_next
 from des.cli.step_terminal import (
     NOTHING_OWED,
     StepRefusal,
@@ -24,6 +25,11 @@ def main(argv=None):
     p.add_argument("--model", required=True)
     p.add_argument("--session-id", required=True)
     p.add_argument("--input", choices=("-",), required=True)
+    p.add_argument(
+        "--prepared-input",
+        type=Path,
+        help="exact examiner INPUT returned by des prepare-role; selects one revision",
+    )
     a = p.parse_args(argv)
     r = resolved_root(a.repo_root)
     if isinstance(r, StepRefusal):
@@ -40,6 +46,7 @@ def main(argv=None):
             a.model,
             a.session_id,
             read.encode("utf-8"),
+            prepared_input=a.prepared_input,
         )
     except (ValueError, KeyError, json.JSONDecodeError) as e:
         return refuse(
@@ -56,5 +63,5 @@ def main(argv=None):
             f"RESULT: {path}",
             f"RESULT-SHA256: {digest}",
         ],
-        NOTHING_OWED,
+        successor_next(r, a.role, a.candidate),
     )

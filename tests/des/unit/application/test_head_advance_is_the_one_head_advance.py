@@ -74,6 +74,18 @@ class TestTheCompareAndSwapWritesOnlyOntoWhatItLastObserved:
         assert refused.unanswered is None
         assert git(root, "rev-parse", "HEAD") == moved
 
+    def test_it_accepts_an_already_integrated_candidate_without_another_write(
+        self, root
+    ):
+        """A retry may close its handover when the target is already HEAD."""
+        candidate = git(root, "rev-parse", "HEAD")
+        unrelated_expected_base = git(
+            root, "commit-tree", f"{candidate}^{{tree}}", "-m", "prior"
+        )
+
+        assert HeadAdvance().swap(root, candidate, unrelated_expected_base) is None
+        assert git(root, "rev-parse", "HEAD") == candidate
+
     def test_a_git_that_never_answered_is_not_reported_as_a_moved_destination(
         self, root
     ):

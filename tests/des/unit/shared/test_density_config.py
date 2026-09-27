@@ -92,3 +92,119 @@ def test_unknown_rigor_profile_raises_value_error() -> None:
     config = {"rigor": {"profile": "ludicrous"}}
     with pytest.raises(ValueError, match="ludicrous"):
         resolve_density(config)
+
+
+# --- V4-02: explicit expansion_prompt with density omitted; invalid values ---
+
+
+@pytest.mark.parametrize(
+    ("expansion_prompt", "expected_mode", "expected_provenance"),
+    [
+        ("ask", "lean", "default"),
+        ("always-skip", "lean", "default"),
+        ("always-expand", "lean", "default"),
+        ("smart", "lean", "default"),
+        ("ask-intelligent", "lean", "default"),
+    ],
+)
+def test_explicit_expansion_prompt_is_respected_with_default_density(
+    expansion_prompt: str, expected_mode: str, expected_provenance: str
+) -> None:
+    """All five legal expansion_prompt values are honored even when
+    documentation.density is omitted (V4-02): the bug silently dropped an
+    explicit expansion_prompt whenever the cascade fell through to the
+    rigor-profile or hard-default branch instead of the explicit-override
+    branch.
+    """
+    config = {"documentation": {"expansion_prompt": expansion_prompt}}
+    result = resolve_density(config)
+    assert result.mode == expected_mode
+    assert result.expansion_prompt == expansion_prompt
+
+
+def test_explicit_expansion_prompt_is_respected_with_inherited_rigor_density() -> None:
+    """Explicit expansion_prompt overrides the rigor-profile's own mapped
+    expansion_prompt while still inheriting the rigor-mapped density mode.
+    """
+    config = {
+        "rigor": {"profile": "thorough"},
+        "documentation": {"expansion_prompt": "always-skip"},
+    }
+    result = resolve_density(config)
+    assert result.mode == "full"  # inherited from rigor.profile=thorough
+    assert result.expansion_prompt == "always-skip"  # explicit wins
+
+
+def test_invalid_density_mode_raises_value_error_not_attribute_error() -> None:
+    config = {"documentation": {"density": "extreme"}}
+    with pytest.raises(ValueError, match="extreme"):
+        resolve_density(config)
+
+
+def test_invalid_expansion_prompt_raises_value_error_not_attribute_error() -> None:
+    config = {"documentation": {"density": "lean", "expansion_prompt": "yolo"}}
+    with pytest.raises(ValueError, match="yolo"):
+        resolve_density(config)
+
+
+def test_malformed_documentation_section_raises_value_error_not_attribute_error() -> (
+    None
+):
+    """A malformed JSON type (e.g. a list instead of an object) for
+    ``documentation`` must not crash with AttributeError deep in ``.get()``.
+    """
+    config = {"documentation": ["not", "an", "object"]}
+    with pytest.raises(ValueError):
+        resolve_density(config)
+
+
+def test_malformed_rigor_section_raises_value_error_not_attribute_error() -> None:
+    config = {"rigor": "not-an-object"}
+    with pytest.raises(ValueError):
+        resolve_density(config)
+
+
+# --- rigor.profile boundary-type handling: unhashable / wrong-shaped values ---
+
+
+@pytest.mark.parametrize(
+    "bad_profile",
+    [[], {}, True, False, ["lean"], {"name": "lean"}],
+)
+def test_non_string_rigor_profile_raises_value_error_not_type_error(
+    bad_profile: object,
+) -> None:
+    """A non-string `rigor.profile` (list/dict/bool) must surface as a
+    resolver-level ValueError, never as a TypeError from an unhashable-type
+    dict lookup deep in `_from_rigor_profile` (`resolve_density({'rigor':
+    {'profile': []}})` previously raised `TypeError: unhashable type: 'list'`).
+    """
+    config = {"rigor": {"profile": bad_profile}}
+    with pytest.raises(ValueError):
+        resolve_density(config)
+
+
+@pytest.mark.parametrize(
+    "legal_profile",
+    ["lean", "standard", "thorough", "exhaustive", "custom"],
+)
+def test_current_legal_rigor_profiles_still_resolve(legal_profile: str) -> None:
+    """All current legal string profiles keep resolving without error."""
+    config = {"rigor": {"profile": legal_profile}}
+    result = resolve_density(config)
+    assert result.provenance == f"rigor.profile={legal_profile}"
+
+
+def test_explicit_density_precedence_over_malformed_rigor_profile() -> None:
+    """Explicit `documentation.density` wins even when the unused
+    lower-priority `rigor.profile` is malformed (unhashable list): the
+    malformed rigor.profile must not decide the density nor raise, because
+    it is never consulted once the explicit override applies.
+    """
+    config = {
+        "documentation": {"density": "full"},
+        "rigor": {"profile": []},
+    }
+    result = resolve_density(config)
+    assert result.mode == "full"
+    assert result.provenance == "explicit_override"

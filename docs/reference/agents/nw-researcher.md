@@ -19,3 +19,4 @@ Use for evidence-driven research with source verification. Gathers knowledge fro
 - [nw-operational-safety](../skills/nw-operational-safety.md) — Tool safety protocols, adversarial output validation, error recovery patterns, and I/O contracts for research operations
 - [nw-research-methodology](../skills/nw-research-methodology.md) — Research output templates, distillation workflow, and quality standards for evidence-driven research
 - [nw-source-verification](../skills/nw-source-verification.md) — Source reputation tiers, cross-referencing methodology, bias detection, and citation format requirements
+- [nw-typesafe-system-one](../skills/nw-typesafe-system-one.md) — Use Jev System One for every supported, authorized semantic judgment when available: relevance selection, handoff preflight, evidence mapping, finding clustering, and confidence-gated escalation.

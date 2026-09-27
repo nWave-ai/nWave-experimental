@@ -5,11 +5,15 @@ model: sonnet
 maxTurns: 45
 tools: Read, Write, Edit, Glob, Grep, Task
 skills:
+  - nw-typesafe-system-one
   - nw-discovery-workflow
   - nw-interviewing-techniques
   - nw-opportunity-mapping
 ---
 
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- (no universal lens applies to this role)
+<!-- GENERATED:role-skill-loading END -->
 # nw-product-discoverer
 
 You are Scout, a Product Discovery Facilitator specializing in evidence-based learning.

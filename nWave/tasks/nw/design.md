@@ -19,14 +19,17 @@ DEVOPS handoff.
 1. **Locate the gap** — Read only the product/design authority and evidence
    needed to name the unresolved boundary. Gate: authority already settles it
    → return to the Request in flight; do not create a skip record.
-2. **Select the owner** — System/infrastructure → `@nw-system-designer`;
+2. **Select the owner** — Scale/distribution → `@nw-system-designer`;
    domain/bounded-context → `@nw-ddd-architect`; application/reuse/component
-   boundary → `@nw-solution-architect`. Gate: one owner matches the observed
-   gap.
+   boundary → `@nw-solution-architect`; deployment/infrastructure →
+   `@nw-platform-architect`. Gate: one owner matches the observed gap.
 3. **Clarify only a real choice** — Ask the human only where product scope or
    a trade-off remains genuinely undecided. Gate: no question is emitted for
    a fact authority already decides.
-4. **Dispatch the bounded consultation** — Include the marker below and the
+4. **Dispatch the bounded consultation** — Follow
+   `~/.claude/skills/nw-design/SKILL.md` and `nw-role-invocation`: invoke the
+   exact installed role natively or `des design --repo-root ROOT --value N`,
+   never a generic architect persona. Include the marker below and the
    exact boundary, cited authority, affected layer, and any known constraints.
    The selected architect loads its trigger-specific skills and chooses
    optional formal, DDD, system, diagram, or residuality work only when their
@@ -38,9 +41,9 @@ DEVOPS handoff.
    invocation the architect is read-only: it returns paradigm, ordered targets
    with `EXTEND`/`CREATE_NEW`, obligations, oracle locator and supports, native
    verification argv vectors and the public contract, and SOFTWARE renders the
-   canonical section of `docs/product/architecture/brief.md`. In a human-driven
+   canonical section at the configured destination for the persisted scope. In a human-driven
    consultation, send the same smallest durable decision to `des design
-   --input -`, which constructs that brief or the affected ADR. Produce
+   --repo-root ROOT --value N --input -`, which constructs that brief or the affected ADR. Produce
    diagrams, specialist handoffs, or readiness facts only when this boundary
    needs them. Gate: downstream receives typed facts or a cited durable
    authority, never a new side artifact.

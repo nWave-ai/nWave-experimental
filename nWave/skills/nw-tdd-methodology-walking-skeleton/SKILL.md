@@ -1,17 +1,17 @@
 ---
 name: nw-tdd-methodology-walking-skeleton
-description: Building and validating a walking skeleton - the WS protocol, per-slice JIT E2E management, Mandate 5 adapter port-class real-I/O treatment (resource table), and Mandate 6 adapter-integration real-I/O requirement
+description: Building and validating a walking skeleton - the WS protocol scoped to the FEATURE (one skeleton, extended by every slice), Mandate 5 adapter port-class real-I/O treatment (resource table), and Mandate 6 adapter-integration real-I/O requirement
 user-invocable: false
 disable-model-invocation: true
 ---
 
 # Walking Skeleton — Protocol, Adapter Strategy, Real-I/O Mandates
 
-**Trigger**: building or validating a walking skeleton — classifying WS adapter port-class real-I/O treatment, managing per-slice E2E scenarios, or deciding adapter-integration real-I/O coverage.
+**Trigger**: building or validating a walking skeleton — classifying WS adapter port-class real-I/O treatment, extending the feature's skeleton with a new slice, or deciding adapter-integration real-I/O coverage.
 
 ## Walking Skeleton Protocol
 
-At most one walking skeleton per new feature. When `is_walking_skeleton: true` in roadmap:
+Exactly ONE walking skeleton per FEATURE, not one per slice (see `nw-product-value-slicing`). When `is_walking_skeleton: true` in roadmap — i.e. this is the FIRST slice of a new feature:
 - Write exactly ONE E2E/acceptance test proving end-to-end wiring with REAL adapters
 - Implement thinnest possible slice — hardcoded values, minimal branching
 - Unit tests are written ONLY if needed to decompose complex GREEN implementation
@@ -26,7 +26,7 @@ Integration tests for adapters (real filesystem, real subprocess) are naturally 
 
 **Oracle path**: DISTILL compiles the executable oracle for the current value slice. Do not author speculative future scenarios and do not use `@skip` as a plan. Implement the smallest causally complete RED scope to GREEN, then extend only when the next observable requires it.
 
-**Test-pyramid default: at most ONE `@walking_skeleton` subprocess-E2E per independently shippable value slice.** It proves installed wiring once; every other scenario drives in-process/in-memory through the driving port. The evidence is the union of that skeleton, the Examiner exercising charter observables through the real surface, and final whole-slice verification. An additional subprocess E2E requires an observable integration boundary the first skeleton cannot exercise.
+**Test-pyramid default: at most ONE `@walking_skeleton` subprocess-E2E per FEATURE, established by its first slice.** Every subsequent slice EXTENDS that same skeleton with the new observable value — it never authors a second skeleton. It proves installed wiring once; every other scenario drives in-process/in-memory through the driving port. The evidence is the union of that skeleton, the Examiner exercising charter observables through the real surface, and final whole-slice verification. An additional independently-needed subprocess E2E is a SCENARIO, not another walking skeleton — it requires an observable integration boundary the feature's skeleton cannot exercise, and does not replace or duplicate it.
 
 
 ## Mandate 5: Walking Skeleton Real-I/O Treatment
@@ -96,7 +96,7 @@ The distinguishing token between the two modes is **property-matrix row contract
 
 ### Mandate-7 applies in both modes
 
-The fail-for-right-reason gate is mandatory in both modes. Crafters MUST verify the RED failure is a semantic `AssertionError` (or expected-exception-not-raised), NOT a collection error, NOT an import error, NOT a skip marker, NOT a timeout. The mode distinction does NOT relax the gate; it only changes the assertion subject (feature behavior vs property-matrix row contract).
+The fail-for-right-reason gate is mandatory in both modes. The RED failure must be a semantic `AssertionError` (or expected-exception-not-raised), NOT a collection error, NOT an import error, NOT a skip marker, NOT a timeout — the verification owner runs the native check that observes this, per the active role boundary, not necessarily the crafter itself. The mode distinction does NOT relax the gate; it only changes the assertion subject (feature behavior vs property-matrix row contract).
 
 ### Practical implication for DELIVER crafters
 

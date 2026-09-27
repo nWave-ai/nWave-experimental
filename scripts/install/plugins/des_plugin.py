@@ -1723,6 +1723,22 @@ class DESPlugin(InstallationPlugin):
             for command in commands
         )
 
+    @classmethod
+    def _owned_command_predicate(cls, event: str) -> Any:
+        """The ownership predicate the strip pass must use for one event key.
+
+        `None` selects `strip_des_hooks_from_entries`'s default (broad) DES
+        ownership. For `_RETIRED_LIFECYCLE_EVENTS` -- the arrays known to carry
+        user-owned near-matches of withdrawn installer shell payloads -- the
+        NARROWED, structural, path-independent Python predicate is selected
+        instead, so a user-modified near-match survives byte-for-byte while a
+        previously-written DES Python command (even under a different
+        interpreter path) is still removed before the re-add.
+        """
+        if event in cls._RETIRED_LIFECYCLE_EVENTS:
+            return shared_hooks.is_des_python_command
+        return None
+
     # --- P1-C settings provenance (reversible settings.json edits) ---
     #
     # `nwave_hook_version` (D6/M13 stamp) and the `env.PATH` shim-bin prepend
@@ -1971,12 +1987,16 @@ class DESPlugin(InstallationPlugin):
             # so retired-event residue does not survive install; unrelated
             # user hooks nested in the same event are preserved by
             # strip_des_hooks_from_entries's positive-identification
-            # contract. _RETIRED_LIFECYCLE_EVENTS are excluded here: the
-            # exact-match pass above is their SOLE governor, because this
-            # generic classifier's broad leading '# des-hook:' match would
-            # also catch a user-modified near-match of a historical lifecycle
-            # command (exact command plus a user-supplied argument) that the
-            # exact pass correctly preserves.
+            # contract. _RETIRED_LIFECYCLE_EVENTS are excluded from THIS
+            # generic residue pass, which keeps the broad default predicate:
+            # that classifier's leading '# des-hook:' match would also catch a
+            # user-modified near-match of a historical lifecycle command
+            # (exact command plus a user-supplied argument) that must be
+            # preserved. For a retired lifecycle event that is ALSO a current
+            # event (SessionStart), the exact-match pass above governs the
+            # historical shell payloads, and the strip-then-re-add loop further
+            # below visits it under the NARROWED structural Python predicate
+            # (`_owned_command_predicate`) -- never the broad one.
             for event, entries in config["hooks"].items():
                 if (
                     event in self.HOOK_EVENTS
@@ -2080,10 +2100,16 @@ class DESPlugin(InstallationPlugin):
             # Remove any existing DES hooks (both old flat and new nested
             # format), preserving unrelated sibling hooks nested under the
             # same matcher entry.
+            # A `_RETIRED_LIFECYCLE_EVENTS` key that is ALSO a current event
+            # (SessionStart) is stripped under the narrowed, structural Python
+            # predicate: an exclusion here would leave the array unstripped
+            # before the re-add, and exact equality with the desired command
+            # would leak a duplicate after an interpreter-path change.
             for event in self.HOOK_EVENTS:
                 if event in config["hooks"]:
                     config["hooks"][event] = shared_hooks.strip_des_hooks_from_entries(
-                        config["hooks"][event]
+                        config["hooks"][event],
+                        is_owned=self._owned_command_predicate(event),
                     )
 
             # Add all DES hooks from shared definitions
@@ -2524,15 +2550,27 @@ class DESPlugin(InstallationPlugin):
                 legacy_user_prompt_command = self._generate_hook_command(
                     context, "user-prompt-submit"
                 )
-                # Scan all events so retired DES entries are removed too.
-                # Retired lifecycle events keep their exact matcher below.
+                # Scan EVERY event so installer-owned entries are removed
+                # wherever they live -- including the arrays that also carry
+                # retired entries. SessionStart is a CURRENT event whose
+                # command this installer writes, so skipping those arrays here
+                # left a dangling entry pointing at the lib/python/des this
+                # same uninstall deletes.
+                #
+                # Ownership is decided by the SAME selector the install
+                # strip-then-re-add loop uses, so there is one ownership
+                # vocabulary and two writers: the narrowed, structural,
+                # interpreter-path-independent Python predicate for the
+                # lifecycle arrays (which deliberately cannot see the
+                # withdrawn shell payloads a user may have since modified),
+                # and broad DES ownership everywhere else. The retired
+                # exact/digest pass below is unchanged and remains the sole
+                # governor of those historical shell payloads.
                 for event, entries in config["hooks"].items():
-                    if event in self._RETIRED_LIFECYCLE_EVENTS or not isinstance(
-                        entries, list
-                    ):
+                    if not isinstance(entries, list):
                         continue
                     config["hooks"][event] = shared_hooks.strip_des_hooks_from_entries(
-                        entries
+                        entries, is_owned=self._owned_command_predicate(event)
                     )
                 for event in self._RETIRED_LIFECYCLE_EVENTS:
                     if event in config["hooks"]:

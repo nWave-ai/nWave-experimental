@@ -81,7 +81,7 @@ def clear_git_environment():
         os.environ.pop(var, None)
 
 
-def get_targeted_test_dirs() -> list[str] | None | str:
+def get_targeted_test_dirs() -> list[str] | str | None:
     """Map staged files to relevant test directories.
 
     Returns:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -52,25 +53,37 @@ def test_ignores_untracked_worktree_json_with_invalid_encoding(
     assert "All JSON files have valid syntax" in capsys.readouterr().out
 
 
+@dataclass(frozen=True)
+class _MalformedTrackedJson:
+    """Malformed bytes tracked in the repo, with the diagnostic they must earn."""
+
+    payload: bytes
+    expected_diagnostic: str
+
+
 @pytest.mark.parametrize(
-    ("payload", "expected"),
+    "malformed",
     [
-        (b'{"missing": }', "invalid JSON"),
-        (b"\xff\xfebroken", "invalid UTF-8"),
+        _MalformedTrackedJson(
+            payload=b'{"missing": }', expected_diagnostic="invalid JSON"
+        ),
+        _MalformedTrackedJson(
+            payload=b"\xff\xfebroken", expected_diagnostic="invalid UTF-8"
+        ),
     ],
+    ids=["invalid-json", "invalid-utf8"],
 )
 def test_reports_tracked_json_and_encoding_failures_with_path(
     gate,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    payload: bytes,
-    expected: str,
+    malformed: _MalformedTrackedJson,
 ) -> None:
     """Tracked malformed bytes fail cleanly and identify the offending file."""
     _init_repo(tmp_path)
     tracked = tmp_path / "broken.json"
-    tracked.write_bytes(payload)
+    tracked.write_bytes(malformed.payload)
     _track(tmp_path, tracked)
     monkeypatch.chdir(tmp_path)
 
@@ -78,4 +91,4 @@ def test_reports_tracked_json_and_encoding_failures_with_path(
 
     output = capsys.readouterr().out
     assert "broken.json" in output
-    assert expected in output
+    assert malformed.expected_diagnostic in output

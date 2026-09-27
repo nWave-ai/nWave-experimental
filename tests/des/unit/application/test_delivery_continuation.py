@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import stat
 import subprocess
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from des.application.delivery_continuation import (
 from des.application.handover import (
     Blocked,
     HandoverValue,
+    StoredHandover,
     create_handover,
     handover_path,
 )
@@ -49,6 +51,7 @@ Paradigm: object-oriented
 | `src/value.py` | EXTEND |
 **PRESERVATION**
 Oracle target locator: `tests/acceptance/test_value.py`
+Oracle verification command index: `0`
 Verification command: `python3 -m pytest tests/acceptance/test_value.py`
 """
 
@@ -152,6 +155,7 @@ Paradigm: object-oriented
 | `src/value.py` | EXTEND |
 **PRESERVATION**
 Oracle target locator: `tests/acceptance/test_value.py`
+Oracle verification command index: `0`
 Acceptance support locator: `{support}`
 Verification command: `python3 -m pytest tests/acceptance/test_value.py`
 """
@@ -165,6 +169,7 @@ def _typed(supports: tuple[str, ...]) -> DesignFacts:
         oracle="tests/acceptance/test_value.py",
         acceptance_supports=supports,
         verification=(("python3", "-m", "pytest", "tests/acceptance/test_value.py"),),
+        oracle_verification_index=0,
     )
 
 
@@ -307,6 +312,76 @@ def test_preissue_refusal_does_not_increment_turns_bought(tmp_path) -> None:
     assert runner.turns_bought == 0
 
 
+def test_selected_revision_recovery_never_repeats_an_issued_retry_safe_turn(
+    tmp_path,
+) -> None:
+    """Recovery is one explicit ATD turn even when the provider says retry-safe.
+
+    The caller owns a later retry.  Repeating it here would spend a second turn
+    behind an explicit `des invoke-role` request, which contradicts the
+    recovery contract and hides the cost from the orchestrator.
+    """
+
+    class RetrySafePort:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def invoke(self, **kwargs):
+            self.calls += 1
+            assert kwargs["semantic_task"] == "selected-revision-recovery"
+            return ModelRun(
+                ModelOutcome.Indeterminate,
+                "provider session is unavailable",
+                1,
+                True,
+            )
+
+    port = RetrySafePort()
+    runner = DeliveryContinuationRunner()
+    outcome = runner._invoke(
+        port,
+        tmp_path,
+        "nw-acceptance-designer",
+        "recover the selected revision",
+        None,
+        semantic_task="selected-revision-recovery",
+    )
+
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.failure is not None
+    assert outcome.failure.what == "ProviderRetry"
+    assert port.calls == 1
+    assert runner.turns_bought == 1
+
+
+def test_generic_retry_safe_turn_keeps_its_existing_second_attempt(tmp_path) -> None:
+    """The recovery exception does not change the generic retry contract."""
+
+    class RetrySafePort:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def invoke(self, **kwargs):
+            self.calls += 1
+            assert "semantic_task" not in kwargs
+            return ModelRun(
+                ModelOutcome.Indeterminate,
+                "provider session is unavailable",
+                1,
+                True,
+            )
+
+    port = RetrySafePort()
+    runner = DeliveryContinuationRunner()
+    outcome = runner._invoke(port, tmp_path, "nw-product-owner", "classify", None)
+
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.failure is not None
+    assert outcome.failure.what == "ProviderRetry"
+    assert port.calls == 2
+    assert runner.turns_bought == 2
+
+
 def test_the_runners_own_state_directory_is_not_workspace_drift(tmp_path) -> None:
     """Measured 2026-09-05: turn records made the runner accuse itself.
 
@@ -364,6 +439,7 @@ def _typed_targets(
         oracle="tests/acceptance/test_value.py",
         acceptance_supports=supports,
         verification=(("python3", "-m", "pytest", "tests/acceptance/test_value.py"),),
+        oracle_verification_index=0,
     )
 
 
@@ -394,6 +470,90 @@ def test_a_declared_target_that_is_also_an_acceptance_support_stays_mutable(
 
     assert isinstance(facts, AuthorityFacts)
     assert DeliveryContinuationRunner._mutable_targets(facts) == ("src/value.py",)
+
+
+def test_markdown_refuses_a_new_non_oracle_target_required_as_acceptance_support(
+    tmp_path,
+) -> None:
+    root = repo(
+        tmp_path,
+        "notes/any.md",
+        SECTION.replace(
+            "| `src/value.py` | EXTEND |",
+            "| `tests/support/new_helper.py` | CREATE_NEW |",
+        ).replace(
+            "Oracle verification command index: `0`",
+            "Acceptance support locator: `tests/support/new_helper.py`\n"
+            "Oracle verification command index: `0`",
+        ),
+    )
+
+    outcome = DeliveryContinuationRunner._derive(root, "notes/any.md#Value")
+
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.failure is not None
+    assert outcome.failure.what == "TargetAcceptanceSupportConflict"
+
+
+def test_typed_facts_refuse_a_new_non_oracle_target_required_as_acceptance_support(
+    tmp_path,
+) -> None:
+    root = repo(tmp_path, "notes/any.md")
+
+    outcome = DeliveryContinuationRunner._derive(
+        root,
+        _typed_targets(
+            (DesignTarget("tests/support/new_helper.py", "CREATE_NEW"),),
+            ("tests/support/new_helper.py",),
+        ),
+    )
+
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.failure is not None
+    assert outcome.failure.what == "DesignFactsMalformed"
+    assert (
+        "CREATE_NEW target is also a required acceptance support" in outcome.failure.why
+    )
+
+
+def test_inherited_authority_projects_its_explicit_oracle_command_binding(
+    tmp_path,
+) -> None:
+    bound = DesignFacts(
+        (DesignTarget("src/value.py", "EXTEND"),),
+        "object_oriented",
+        ("reuse the existing port",),
+        "tests/acceptance/test_value.py",
+        (),
+        (
+            ("python3", "-m", "pytest", "tests/acceptance"),
+            ("python3", "-m", "pytest", "tests/acceptance/test_value.py"),
+        ),
+        1,
+    )
+    from des.domain.document_scope import Project
+
+    stored = StoredHandover(
+        "deliver",
+        (
+            HandoverValue("first", (), bound),
+            HandoverValue("second", ("first",), None),
+        ),
+        b"",
+        Project(),
+    )
+
+    inherited = DeliveryContinuationRunner._inherited(
+        tmp_path, stored, stored.values[1]
+    )
+
+    assert inherited[0]["oracle_verification_index"] == 1
+    assert inherited[0]["verification"][1] == [
+        "python3",
+        "-m",
+        "pytest",
+        "tests/acceptance/test_value.py",
+    ]
 
 
 def test_the_oracle_is_never_a_mutable_target(tmp_path) -> None:
@@ -443,6 +603,162 @@ def test_a_target_table_that_declares_only_the_oracle_is_refused_before_binding(
     assert "tests/acceptance/test_value.py" in outcome.failure.how
 
 
+def _verification_facts(
+    *,
+    targets: tuple[DesignTarget, ...] = (DesignTarget("src/value.py", "EXTEND"),),
+    supports: tuple[str, ...] = (),
+    verification: tuple[tuple[str, ...], ...],
+) -> DesignFacts:
+    return DesignFacts(
+        targets=targets,
+        paradigm="object_oriented",
+        decisions=("reuse the existing port",),
+        oracle="tests/acceptance/test_value.py",
+        acceptance_supports=supports,
+        verification=verification,
+        oracle_verification_index=0,
+    )
+
+
+def test_an_unresolvable_typed_verification_executable_is_refused_before_bind(
+    tmp_path, monkeypatch
+) -> None:
+    """The architect's facts stay ephemeral when argv0 cannot ever start."""
+    root = repo(tmp_path, "notes/any.md")
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))
+
+    outcome = DeliveryContinuationRunner._derive(
+        root,
+        _verification_facts(verification=(("missing-verification-tool",),)),
+    )
+
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.disposition is Disposition.Indeterminate
+    assert outcome.failure is not None
+    assert outcome.failure.what == "VerificationExecutableUnresolvable"
+    assert "verification[0]" in outcome.failure.why
+    assert "missing-verification-tool" in outcome.failure.why
+    assert "PATH" in outcome.failure.how
+
+
+def test_bare_and_absolute_verification_executables_are_admitted(
+    tmp_path, monkeypatch
+) -> None:
+    root = repo(tmp_path, "notes/any.md")
+    tools = root / "tools"
+    tools.mkdir()
+    bare = tools / "bare-checker"
+    absolute = tools / "absolute-checker"
+    for tool in (bare, absolute):
+        tool.write_text("#!/bin/sh\nexit 0\n")
+        tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("PATH", str(tools))
+
+    facts = DeliveryContinuationRunner._derive(
+        root,
+        _verification_facts(
+            verification=(("bare-checker",), (str(absolute),)),
+        ),
+    )
+
+    assert isinstance(facts, AuthorityFacts)
+
+
+def test_an_unresolvable_markdown_verification_executable_is_refused_before_bind(
+    tmp_path,
+) -> None:
+    """The Markdown authority follows the same pre-publication admission."""
+    text = SECTION.replace(
+        "python3 -m pytest tests/acceptance/test_value.py", "tools/missing-checker"
+    )
+    root = repo(tmp_path, "notes/any.md", text)
+
+    outcome = DeliveryContinuationRunner._derive(root, "notes/any.md#Value")
+
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.failure is not None
+    assert outcome.failure.what == "VerificationExecutableUnresolvable"
+    assert "tools/missing-checker" in outcome.failure.why
+
+
+def test_a_missing_relative_verification_executable_is_admitted_when_targeted(
+    tmp_path, monkeypatch
+) -> None:
+    """A CREATE_NEW command may be authored by this delivery before it runs."""
+    root = repo(tmp_path, "notes/any.md")
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-path"))
+
+    facts = DeliveryContinuationRunner._derive(
+        root,
+        _verification_facts(
+            targets=(DesignTarget("tools/checker", "CREATE_NEW"),),
+            verification=(("./tools/checker",),),
+        ),
+    )
+
+    assert isinstance(facts, AuthorityFacts)
+
+
+def test_a_missing_relative_markdown_executable_is_admitted_when_support_declares_it(
+    tmp_path,
+) -> None:
+    """Acceptance supports are also materialized before native verification."""
+    text = SUPPORTED_SECTION.format(support="tools/checker").replace(
+        "python3 -m pytest tests/acceptance/test_value.py", "./tools/checker"
+    )
+    root = repo(tmp_path, "notes/any.md", text)
+
+    facts = DeliveryContinuationRunner._derive(root, "notes/any.md#Value")
+
+    assert isinstance(facts, AuthorityFacts)
+
+
+def test_an_existing_relative_verification_executable_must_be_executable(
+    tmp_path,
+) -> None:
+    root = repo(tmp_path, "notes/any.md")
+    checker = root / "tools" / "checker"
+    checker.parent.mkdir()
+    checker.write_text("not executable\n")
+
+    outcome = DeliveryContinuationRunner._derive(
+        root,
+        _verification_facts(verification=(("./tools/checker",),)),
+    )
+
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.failure is not None
+    assert outcome.failure.what == "VerificationExecutableUnresolvable"
+
+    checker.chmod(checker.stat().st_mode | stat.S_IXUSR)
+    admitted = DeliveryContinuationRunner._derive(
+        root,
+        _verification_facts(verification=(("./tools/checker",),)),
+    )
+
+    assert isinstance(admitted, AuthorityFacts)
+
+
+def test_a_relative_executable_outside_the_repository_is_refused_before_bind(
+    tmp_path,
+) -> None:
+    root = repo(tmp_path / "repository", "notes/any.md")
+    checker = tmp_path / "outside" / "checker"
+    checker.parent.mkdir()
+    checker.write_text("#!/bin/sh\nexit 0\n")
+    checker.chmod(checker.stat().st_mode | stat.S_IXUSR)
+
+    outcome = DeliveryContinuationRunner._derive(
+        root,
+        _verification_facts(verification=(("../outside/checker",),)),
+    )
+
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.failure is not None
+    assert outcome.failure.what == "VerificationExecutableUnresolvable"
+    assert "../outside/checker" in outcome.failure.why
+
+
 ORACLE_ONLY_SECTION = """## Value
 Paradigm: object-oriented
 | Target | Decision |
@@ -450,6 +766,7 @@ Paradigm: object-oriented
 | `tests/acceptance/test_value.py` | CREATE_NEW |
 **PRESERVATION**
 Oracle target locator: `tests/acceptance/test_value.py`
+Oracle verification command index: `0`
 Verification command: `python3 -m pytest tests/acceptance/test_value.py`
 """
 
@@ -465,6 +782,24 @@ def test_the_oracle_only_target_table_is_refused_in_markdown_authority_too(
     assert isinstance(outcome, DeliveryOutcome)
     assert outcome.failure is not None
     assert outcome.failure.what == "NoMutableProductionTarget"
+
+
+def test_an_out_of_range_markdown_oracle_binding_names_its_repair(tmp_path) -> None:
+    root = repo(
+        tmp_path,
+        "notes/any.md",
+        SECTION.replace(
+            "Oracle verification command index: `0`",
+            "Oracle verification command index: `1`",
+        ),
+    )
+
+    outcome = DeliveryContinuationRunner._derive(root, "notes/any.md#Value")
+
+    assert isinstance(outcome, DeliveryOutcome)
+    assert outcome.failure is not None
+    assert outcome.failure.what == "OracleVerificationBindingInvalid"
+    assert "zero-based verification command ordinal" in outcome.failure.how
 
 
 def test_a_resumed_handover_bound_to_an_oracle_only_table_is_refused(tmp_path) -> None:

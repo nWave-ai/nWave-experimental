@@ -69,7 +69,7 @@ is no `upstream-changes.md` ledger.
 
 ## Agent Invocation
 
-@nw-platform-architect
+@nw-platform-architect (the exact installed role; see `~/.claude/skills/nw-devops/SKILL.md` and `nw-role-invocation`; `des devops --input -` constructs, buys no turn)
 
 <!-- DES-WAVE: devops -->
 

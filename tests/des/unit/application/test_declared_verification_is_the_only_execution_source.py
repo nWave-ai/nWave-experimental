@@ -41,13 +41,17 @@ def test_a_request_mentioning_des_project_cannot_add_a_native_execution(
                 acceptance_oracle_locator="tests/acceptance/test_value.py",
                 acceptance_paths=("tests/acceptance/test_value.py",),
                 native_verification_argvs=(declared,),
+                oracle_verification_index=0,
             ),
         )
     ]
+    from des.domain.document_scope import Project
+
     stored = StoredHandover(
         "The Request narrative mentions `des project`, but does not declare it.",
         (),
         b"handover",
+        Project(),
     )
 
     monkeypatch.setattr(
@@ -78,17 +82,7 @@ def test_a_request_mentioning_des_project_cannot_add_a_native_execution(
 
     monkeypatch.setattr(runner, "_native", native)
 
-    result = runner._verified_candidate(
-        root,
-        object(),
-        prepared,
-        b"handover",
-        stored,
-        "base",
-        (),
-        (),
-        correct=False,
-    )
+    result = runner._verified_candidate(root, prepared, stored, "base")
 
     assert executed == [(declared,)]
     assert narrative_des_project not in executed[0]

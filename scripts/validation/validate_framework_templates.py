@@ -19,10 +19,15 @@ _project_src = str(Path(__file__).resolve().parents[2] / "src")
 if Path(_project_src).is_dir() and _project_src not in sys.path:
     sys.path.insert(0, _project_src)
 
+_project_root = str(Path(__file__).resolve().parents[2])
+if _project_root in sys.path:
+    sys.path.remove(_project_root)
+sys.path.insert(0, _project_root)
 from des.domain.agent_capability import (  # noqa: E402
     provider_tool_name,
     split_declared_tools,
 )
+from scripts.shared.skill_discovery import skill_entrypoints  # noqa: E402
 
 
 @dataclass
@@ -146,7 +151,7 @@ def validate_cross_references(project_root: Path, result: ValidationResult) -> N
     skills_dir = project_root / "nWave" / "skills"
     available = {
         skill_file.parent.name if skill_file.name == "SKILL.md" else skill_file.stem
-        for skill_file in skills_dir.glob("**/*.md")
+        for skill_file in skill_entrypoints(skills_dir)
     }
     available |= {name.removeprefix("nw-") for name in available}
     for agent_file in sorted((project_root / "nWave" / "agents").glob("nw-*.md")):
@@ -226,7 +231,7 @@ def main() -> int:
     result = ValidationResult()
     selected = not (args.agents_only or args.skills_only or args.commands_only)
     agents = sorted((project_root / "nWave" / "agents").glob("nw-*.md"))
-    skills = sorted((project_root / "nWave" / "skills").glob("**/*.md"))
+    skills = skill_entrypoints(project_root / "nWave" / "skills")
     commands = sorted((project_root / "nWave" / "tasks" / "nw").glob("*.md"))
     if selected or args.agents_only:
         for agent in agents:

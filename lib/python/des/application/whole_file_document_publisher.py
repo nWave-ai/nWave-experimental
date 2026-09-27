@@ -17,20 +17,31 @@ class PublishedWholeFile:
     digest: str
 
 
+@dataclass(frozen=True, slots=True)
+class PublishRefusalVocabulary:
+    """The refusal vocabulary a whole-file publish answers with.
+
+    Three outcome codes plus the three why/how message pairs used to build
+    the :class:`Blocked` returned for each of them.
+    """
+
+    unsafe: str
+    drift: str
+    unavailable: str
+    unsafe_why: str = "destination must be a safe repository-relative Markdown file"
+    unsafe_how: str = "set the destination to a repository-relative .md file"
+    regular_why: str = "an existing destination must be a regular file"
+    regular_how: str = "choose a regular authority path"
+    drift_why: str = "the existing authority has divergent content"
+    drift_how: str = "reconcile the authority before retrying"
+
+
 def publish_whole_file(
     root: Path,
     destination: str,
     content: bytes,
     *,
-    unsafe: str,
-    drift: str,
-    unavailable: str,
-    unsafe_why: str = "destination must be a safe repository-relative Markdown file",
-    unsafe_how: str = "set the destination to a repository-relative .md file",
-    regular_why: str = "an existing destination must be a regular file",
-    regular_how: str = "choose a regular authority path",
-    drift_why: str = "the existing authority has divergent content",
-    drift_how: str = "reconcile the authority before retrying",
+    refusals: PublishRefusalVocabulary,
 ) -> PublishedWholeFile | Blocked:
     candidate = Path(destination)
     try:
@@ -44,25 +55,25 @@ def publish_whole_file(
         safe = False
     if not safe or candidate.suffix != ".md":
         return Blocked(
-            unsafe,
-            unsafe_why,
-            unsafe_how,
+            refusals.unsafe,
+            refusals.unsafe_why,
+            refusals.unsafe_how,
             refusal=True,
         )
     path = root / candidate
     try:
         if path.is_symlink() or (path.exists() and not path.is_file()):
             return Blocked(
-                unsafe,
-                regular_why,
-                regular_how,
+                refusals.unsafe,
+                refusals.regular_why,
+                refusals.regular_how,
                 refusal=True,
             )
         if path.exists() and path.read_bytes() != content:
             return Blocked(
-                drift,
-                drift_why,
-                drift_how,
+                refusals.drift,
+                refusals.drift_why,
+                refusals.drift_how,
                 refusal=True,
             )
         if not path.exists():
@@ -71,7 +82,7 @@ def publish_whole_file(
         return PublishedWholeFile(str(candidate), hashlib.sha256(content).hexdigest())
     except OSError as error:
         return Blocked(
-            unavailable,
+            refusals.unavailable,
             f"writing authority failed; authority may already have changed: {error}",
             "restore authority storage, then retry",
         )
@@ -83,15 +94,7 @@ def publish_whole_file_revision(
     expected_content: bytes | None,
     content: bytes,
     *,
-    unsafe: str,
-    drift: str,
-    unavailable: str,
-    unsafe_why: str = "destination must be a safe repository-relative Markdown file",
-    unsafe_how: str = "set the destination to a repository-relative .md file",
-    regular_why: str = "an existing destination must be a regular file",
-    regular_how: str = "choose a regular authority path",
-    drift_why: str = "the existing authority has divergent content",
-    drift_how: str = "reconcile the authority before retrying",
+    refusals: PublishRefusalVocabulary,
 ) -> PublishedWholeFile | Blocked:
     """Publish ``content`` only as an exact revision of a known projection.
 
@@ -111,11 +114,18 @@ def publish_whole_file_revision(
     except OSError:
         safe = False
     if not safe or candidate.suffix != ".md":
-        return Blocked(unsafe, unsafe_why, unsafe_how, refusal=True)
+        return Blocked(
+            refusals.unsafe, refusals.unsafe_why, refusals.unsafe_how, refusal=True
+        )
     path = root / candidate
     try:
         if path.is_symlink() or (path.exists() and not path.is_file()):
-            return Blocked(unsafe, regular_why, regular_how, refusal=True)
+            return Blocked(
+                refusals.unsafe,
+                refusals.regular_why,
+                refusals.regular_how,
+                refusal=True,
+            )
         try:
             actual = path.read_bytes()
         except FileNotFoundError:
@@ -126,10 +136,15 @@ def publish_whole_file_revision(
             )
         if actual is None and expected_content is not None:
             return Blocked(
-                drift, "the existing authority is missing", drift_how, refusal=True
+                refusals.drift,
+                "the existing authority is missing",
+                refusals.drift_how,
+                refusal=True,
             )
         if actual is not None and actual != expected_content:
-            return Blocked(drift, drift_why, drift_how, refusal=True)
+            return Blocked(
+                refusals.drift, refusals.drift_why, refusals.drift_how, refusal=True
+            )
 
         path.parent.mkdir(parents=True, exist_ok=True)
         descriptor, name = tempfile.mkstemp(prefix=".authority-", dir=path.parent)
@@ -144,14 +159,24 @@ def publish_whole_file_revision(
                 try:
                     path.hardlink_to(temporary)
                 except FileExistsError:
-                    return Blocked(drift, drift_why, drift_how, refusal=True)
+                    return Blocked(
+                        refusals.drift,
+                        refusals.drift_why,
+                        refusals.drift_how,
+                        refusal=True,
+                    )
             else:
                 if (
                     path.is_symlink()
                     or not path.is_file()
                     or path.read_bytes() != expected_content
                 ):
-                    return Blocked(drift, drift_why, drift_how, refusal=True)
+                    return Blocked(
+                        refusals.drift,
+                        refusals.drift_why,
+                        refusals.drift_how,
+                        refusal=True,
+                    )
                 temporary.replace(path)
             directory = os.open(path.parent, os.O_DIRECTORY)
             try:
@@ -168,7 +193,7 @@ def publish_whole_file_revision(
         return PublishedWholeFile(str(candidate), hashlib.sha256(content).hexdigest())
     except OSError as error:
         return Blocked(
-            unavailable,
+            refusals.unavailable,
             f"writing authority failed; authority may already have changed: {error}",
             "restore authority storage, then retry",
         )

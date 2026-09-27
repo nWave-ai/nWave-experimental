@@ -41,7 +41,6 @@ class TestLoadPublicAgents:
             "business-reviewer",
             "deal-closer",
             "outreach-writer",
-            "ux-designer",
         }
         leaked = private_agents & result
         assert leaked == set(), f"Private agents leaked into public set: {leaked}"
@@ -49,6 +48,7 @@ class TestLoadPublicAgents:
     def test_includes_known_public_agents(self):
         result = load_public_agents(NWAVE_DIR)
         expected_public = {
+            "ux-designer",
             "software-crafter",
             "product-owner",
             "solution-architect",
@@ -252,6 +252,28 @@ class TestBuildOwnershipMapUnit:
         self._create_agent_file(agents_dir, "nw-my-agent", ["nw-my-skill"])
         result = build_ownership_map(agents_dir)
         assert result["nw-my-skill"] == {"my-agent"}
+
+    def test_global_on_demand_skill_is_owned_by_every_agent(self, tmp_path):
+        agents_dir = tmp_path / "nWave" / "agents"
+        agents_dir.mkdir(parents=True)
+        self._create_agent_file(agents_dir, "nw-one", [])
+        self._create_agent_file(agents_dir, "nw-two", [])
+        data = agents_dir.parent / "data"
+        data.mkdir()
+        (data / "role-skill-loading.yaml").write_text(
+            "version: 1\n"
+            "global_on_demand:\n"
+            "  nw-typesafe-system-one: every semantic judgment\n"
+            "roles:\n"
+            "  nw-one:\n"
+            "    catalog_only:\n"
+            "      - nw-existing\n",
+            encoding="utf-8",
+        )
+
+        result = build_ownership_map(agents_dir)
+
+        assert result["nw-typesafe-system-one"] == {"one", "two"}
 
     def test_role_skill_loading_registry_maps_keys_and_values(self, tmp_path):
         import yaml
@@ -516,7 +538,6 @@ class TestBuildOwnershipMap:
             "business-reviewer",
             "deal-closer",
             "outreach-writer",
-            "ux-designer",
         }
         private_only_skills = [
             skill

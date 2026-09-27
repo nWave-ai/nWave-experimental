@@ -30,6 +30,47 @@ on another host.
 The lenses are independent KNOWLEDGE: no forced sequence and no artificial precedence. A compound
 task loads multiple lenses; return here only to route the next concern.
 
+## `delivery:trustworthy-baseline-and-repair-scope` — preserve the safety net without expanding the request
+
+Before product changes, is the required verification trustworthy for the current
+source and relevant environment? Establish a baseline or reuse applicable evidence;
+check known local/CI differences early. Follow the project's required checks, not a
+new full-suite run per slice. Pause affected product changes when that safety basis
+is broken; independent work needs its own unaffected basis.
+
+Does a failure demonstrate the agreed missing behavior? Expected ATDD RED, including
+an existing reproduction of the requested bug, permits implementation when execution
+reaches the intended behavioral assertion and the other required checks remain
+trustworthy. Collection, setup and incidental failures are not that RED. The expected
+failure must become GREEN before completion.
+
+Before buying a repair turn, does the intervention satisfy an agreed outcome, restore
+a regression caused by this request's work, or restore its required safety net?
+State that connection, observed failure, intervention limit and expected proof in the
+existing dispatch. Proportionate reversible setup, capture helpers and diagnostic
+execution already implied by the request need no repeated approval. Missing evidence
+alone does not establish a product defect. A defect's age alone never decides scope.
+
+If pertinence or cause is unknown, choose the smallest useful discriminator before
+repairing. Another attempt needs new evidence, a changed falsifiable hypothesis, or a
+materially different experiment that can obtain the named missing fact; name which
+outcome would change the next decision. Otherwise retain the affected blocker and
+uncertainty instead of repeating an inconclusive attempt.
+
+Keep responsibility for regressions caused by preparation and previous repairs too;
+prefer the smallest restoration, preserving others' work. A newly discovered defect
+does not inherit repair authority merely from its discovery. Independent redesign,
+broad migration or new behavior outside the request requires an explicit scope/priority
+decision with concrete evidence. Reuse existing authorization for routine delivery work.
+Do not silently absorb unrelated improvements or claim a blocked delivery complete.
+
+Is the required check itself wrong? Its owner may correct the harness or assertion
+while preserving the agreed property and counterexample. Skipping a required check,
+weakening its property, or relabeling its failure as optional is not restoration.
+Report independent defects without silently fixing or dismissing them. Review notes
+are not automatic same-slice work. The LLM chooses the action; this clause adds no DES
+controller, runtime gate, mandatory artifact or guarantee of termination.
+
 ## `construction:design-paradigm-projection` — DESIGN owns the crafter paradigm
 
 Before handing any durable DESIGN authority to DISTILL, its writer records the

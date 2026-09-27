@@ -98,13 +98,20 @@ def turns(tmp_path: Path) -> Path:
     return tmp_path / "model-log.json"
 
 
-@pytest.fixture
-def step(root: Path, tmp_path: Path, turns: Path):
-    """Invoke one real `des` step against `root`, with the provider faked."""
-    launcher_dir = tmp_path / "bin"
-    results = tmp_path / "results.json"
-    counter = tmp_path / "results-consumed"
-    claude_dir = tmp_path / "claude-config"
+def stepper(root: Path, workspace: Path, turns: Path):
+    """Invoke one real `des` step against `root`, with the provider faked.
+
+    Factored out of the `step` fixture unchanged so a scenario that needs a
+    SECOND checkout -- because its arms must not read each other's destination
+    bytes or turn log -- drives it through the same launcher, the same hermetic
+    installed-spec candidate and the same per-invocation answer ordinal. A
+    second hand-rolled harness would be a second provider surface, which is the
+    drift this corpus already paid for once.
+    """
+    launcher_dir = workspace / "bin"
+    results = workspace / "results.json"
+    counter = workspace / "results-consumed"
+    claude_dir = workspace / "claude-config"
 
     def invoke(*argv: str, answers: list[dict] | None = None, stdin: str = ""):
         results.write_text(json.dumps(answers if answers is not None else []))
@@ -132,6 +139,27 @@ def step(root: Path, tmp_path: Path, turns: Path):
         )
 
     return invoke
+
+
+@pytest.fixture
+def step(root: Path, tmp_path: Path, turns: Path):
+    """Invoke one real `des` step against `root`, with the provider faked."""
+    return stepper(root, tmp_path, turns)
+
+
+@pytest.fixture
+def another(tmp_path: Path):
+    """Build one further checkout with its OWN step harness and turn log."""
+    made: list[Path] = []
+
+    def new() -> tuple[Path, object, Path]:
+        workspace = tmp_path / f"checkout-{len(made)}"
+        made.append(workspace)
+        repository = base_repository(workspace / "root")
+        log = workspace / "model-log.json"
+        return repository, stepper(repository, workspace, log), log
+
+    return new
 
 
 def asked(turns: Path) -> list[str]:

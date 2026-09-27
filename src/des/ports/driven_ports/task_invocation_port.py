@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from des.domain.distill_document import DistillDocument
+
 
 class ModelOutcome(str, Enum):
     """The complete provider-enforced semantic result of one turn."""
@@ -66,28 +68,38 @@ class ProductValue:
     observation: str
 
 
-class DefectOwner(str, Enum):
-    """Who owns one non-accepting acceptance-review finding.
+@dataclass(frozen=True, slots=True)
+class ExpectationCharterAnswer:
+    """The Product Owner's closed qualitative facts for one charter task.
 
-    The reviewer decides this; the software only routes on it.  Two members and
-    not more, because exactly two roles can repair a rejected oracle set: the
-    acceptance designer, who owns the oracle and its declared supports, and the
-    architect of one value, who owns that value's targets, obligations and
-    verification.  A third word would name a role no correction edge reaches.
+    Carried only on an accepted ``semantic_task="expectation-charter"`` turn.
+    DES alone writes canonical charter bytes from these facts plus the CLI's
+    own recipe and the stored value's own source fingerprint.
+    """
+
+    intent: str
+    exploration: str
+    positive_observations: tuple[str, ...]
+    negative_observation: str
+
+
+class DefectOwner(str, Enum):
+    """The reviewer's correction owner; role-specific schemas restrict its scope.
+
+    This fact describes the finding. The calling LLM chooses any subsequent action.
     """
 
     Oracle = "oracle"
     Design = "design"
+    Implementation = "implementation"
 
 
 @dataclass(frozen=True, slots=True)
 class ReviewDefect:
-    """The reviewer's own closed routing word, plus the value it speaks about.
+    """The reviewer's correction owner and optional affected observation.
 
-    ``value`` is the observation the defect is charged to, or ``None`` for a
-    set-level defect belonging to no single value.  A ``Design`` defect without
-    one names no architect, and its consumer refuses LOUD rather than choosing
-    a value on the reviewer's behalf.
+    A null value describes a set-level finding. Consumers preserve these facts;
+    the LLM decides whether and where to request a correction.
     """
 
     owner: DefectOwner
@@ -120,6 +132,16 @@ class DesignTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class PublicOracle:
+    """The public oracle declared in the DESIGN manifest: observation, stimulus, expected, falsifier."""
+
+    observation: str
+    stimulus: str
+    expected: str
+    falsifier: str
+
+
+@dataclass(frozen=True, slots=True)
 class DesignFacts:
     """Provider-neutral, minimum semantic design consumed by the runner."""
 
@@ -129,11 +151,16 @@ class DesignFacts:
     oracle: str
     acceptance_supports: tuple[str, ...]
     verification: tuple[tuple[str, ...], ...]
+    oracle_verification_index: int
     obligations: tuple[str, ...] = ()
     # This is assigned by the closed DESIGN-document constructor, not guessed
     # from Markdown by a later consumer.  Provider-authored design facts have
     # no configured document section to name and retain the empty value.
     authority_locator: str = ""
+    # This is assigned by the closed DESIGN-document constructor from the
+    # manifest's public_oracle section, if present. Provider-authored facts and
+    # handovers written before this field existed have public_oracle=None.
+    public_oracle: PublicOracle | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,8 +195,12 @@ class ModelRun:
     design_facts: DesignFacts | None = None
     review_defect: ReviewDefect | None = None
     craft_blocker: CraftBlocker | None = None
+    charter: ExpectationCharterAnswer | None = None
     issued: bool = True
     """Whether a provider process was actually issued for this result."""
+    #: A complete provider-authored recovery document.  Only the explicitly
+    #: selected acceptance-designer recovery task may carry it.
+    distill_document: DistillDocument | None = None
 
 
 class TaskInvocationPort(ABC):
@@ -184,6 +215,7 @@ class TaskInvocationPort(ABC):
         cwd: Path,
         max_product_values: int | None = None,
         defect_values: tuple[str, ...] = (),
+        semantic_task: str | None = None,
     ) -> ModelRun:
         """Run one turn of ``role_id`` over ``prompt`` with ``cwd`` as its root.
 

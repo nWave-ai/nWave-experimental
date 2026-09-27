@@ -5,9 +5,13 @@ model: haiku
 tools: Read, Glob, Grep, Bash
 maxTurns: 40
 skills:
+  - nw-typesafe-system-one
   - nw-test-optimization
 ---
 
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- (no universal lens applies to this role)
+<!-- GENERATED:role-skill-loading END -->
 # nw-test-optimizer-reviewer
 
 Review independently and read-only. Inspect the complete optimization diff and

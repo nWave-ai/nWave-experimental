@@ -118,6 +118,22 @@ class IdentityWorld:
     range_commit_shas: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class _ValidatorStimulus:
+    """The optional inputs applied at a validator driving port.
+
+    ``stdin`` is the text fed to the entry point (the pre-push ref line).
+    ``strip_identity`` and ``identity`` are the two mutually exclusive controls
+    over the identity the validator's ``git var`` resolves; ``identity`` is
+    ignored when ``strip_identity`` is set. The default stimulus supplies no
+    stdin and leaves the isolated repo's ambient identity alone.
+    """
+
+    stdin: str | None = None
+    strip_identity: bool = False
+    identity: dict[str, str] | None = None
+
+
 class IdentityComposition:
     """Wires the production validator + a real isolated git repo (Pillar 3)."""
 
@@ -270,8 +286,9 @@ class IdentityComposition:
             _VALIDATOR_SCRIPT,
             [],
             repo,
-            strip_identity=strip_identity,
-            identity=identity,
+            stimulus=_ValidatorStimulus(
+                strip_identity=strip_identity, identity=identity
+            ),
         )
         self.world.exit_code = result.returncode
         self.world.captured_output = result.stderr
@@ -513,7 +530,9 @@ class IdentityComposition:
                 .splitlines()[0]
             )
         ref_line = f"refs/heads/main {local_sha} refs/heads/main {remote_sha}\n"
-        result = self._run_validator(_PUSH_SCRIPT, [], repo, stdin=ref_line)
+        result = self._run_validator(
+            _PUSH_SCRIPT, [], repo, stimulus=_ValidatorStimulus(stdin=ref_line)
+        )
         self.world.exit_code = result.returncode
         self.world.captured_output = result.stderr
         return GateOutcome.ADMITTED if result.returncode == 0 else GateOutcome.REJECTED
@@ -686,23 +705,26 @@ class IdentityComposition:
         script: Path,
         args: list[str],
         repo: Path,
-        stdin: str | None = None,
-        strip_identity: bool = False,
-        identity: dict[str, str] | None = None,
+        stimulus: _ValidatorStimulus = _ValidatorStimulus(),
     ) -> subprocess.CompletedProcess[str]:
-        """Run a validator entry as a real subprocess inside the isolated repo.
+        """Drive a validator entry in-process against the isolated repo.
 
-        With ``identity`` supplied, the four ``GIT_AUTHOR_*`` / ``GIT_COMMITTER_*``
-        vars are injected so the validator's ``git var`` resolves the prospective
-        commit identity (the pre-commit path — research §2.4). With
-        ``strip_identity`` set, those same vars are removed so git (with
-        ``user.useConfigOnly true``) can resolve no identity — the
-        degraded-environment path. The two are mutually exclusive; ``identity``
-        is ignored when ``strip_identity`` is set.
+        Despite the returned ``CompletedProcess``, no interpreter is forked: the
+        validator's real ``main`` edge is called directly and the result is
+        packaged in that shape for the callers. Each validator still forks
+        ``git`` internally, inheriting the swapped environment below.
+
+        With ``stimulus.identity`` supplied, the four ``GIT_AUTHOR_*`` /
+        ``GIT_COMMITTER_*`` vars are injected so the validator's ``git var``
+        resolves the prospective commit identity (the pre-commit path — research
+        §2.4). With ``stimulus.strip_identity`` set, those same vars are removed
+        so git (with ``user.useConfigOnly true``) can resolve no identity — the
+        degraded-environment path. The two are mutually exclusive;
+        ``stimulus.identity`` is ignored when ``stimulus.strip_identity`` is set.
         """
         env = _isolated_git_env(repo)
         env["PYTHONPATH"] = str(_REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
-        if strip_identity:
+        if stimulus.strip_identity:
             for var in (
                 "GIT_AUTHOR_NAME",
                 "GIT_AUTHOR_EMAIL",
@@ -710,8 +732,8 @@ class IdentityComposition:
                 "GIT_COMMITTER_EMAIL",
             ):
                 env.pop(var, None)
-        elif identity is not None:
-            env.update(identity)
+        elif stimulus.identity is not None:
+            env.update(stimulus.identity)
 
         # In-process driving port: call the validator's real `main` EDGE directly
         # (no interpreter fork). Each validator still forks `git` internally
@@ -736,7 +758,7 @@ class IdentityComposition:
             cwd=str(repo),
             main=edge,
             env=env,
-            stdin_text=stdin,
+            stdin_text=stimulus.stdin,
             catch_all=True,
         )
         return subprocess.CompletedProcess(

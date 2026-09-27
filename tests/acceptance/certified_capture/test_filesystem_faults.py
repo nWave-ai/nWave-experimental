@@ -9,6 +9,7 @@ import hashlib
 import importlib
 import json
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from multiprocessing import get_context
 from pathlib import Path
@@ -198,19 +199,26 @@ def _attempt_synchronized_open(
         outcomes.put(("owner", ""))
 
 
+@dataclass(frozen=True)
+class _PartitionClosure:
+    """The evidence a partition appends and the reason it then terminates."""
+
+    records: tuple[str, ...]
+    reason: str
+
+
 def _close_partition(
     capture: ModuleType,
     root: Path,
     manifest,
     expected,
-    records: tuple[str, ...],
-    reason: str,
+    closure: _PartitionClosure,
 ):
     primary = _writer(capture, root, manifest, expected)
     primary.open()
-    for sequence, payload_json in enumerate(records, start=1):
+    for sequence, payload_json in enumerate(closure.records, start=1):
         primary.append(capture.EvidenceRecord(sequence, "usage", payload_json))
-    return primary.close(getattr(capture.TerminalReason, reason))
+    return primary.close(getattr(capture.TerminalReason, closure.reason))
 
 
 def _receipt_map(health, expected) -> dict[str, bytes]:
@@ -415,7 +423,7 @@ def _assert_health_receipt(
         name: type(envelope[name]).__name__ for name in _HEALTH_KEYS - {"payload"}
     }
     _assert_contract(
-        all(name == "str" for name in non_payload_types.values()),
+        all(type_name == "str" for type_name in non_payload_types.values()),
         invariant="a non-payload health field is not a JSON string",
         observed=non_payload_types,
         expected="str for every non-payload field",
@@ -736,8 +744,7 @@ def test_retained_bundle_bytes_match_ratified_primary_and_health_forms(
         root,
         manifest,
         expected,
-        ('{"tokens":1}',),
-        "CAPTURED",
+        _PartitionClosure(records=('{"tokens":1}',), reason="CAPTURED"),
     )
     receipts = _receipt_map(health, expected)
     _assert_exact_contract(
@@ -802,29 +809,50 @@ def test_retained_bundle_bytes_match_ratified_primary_and_health_forms(
     )
 
 
+@dataclass(frozen=True)
+class _CardinalityCase:
+    """One closed partition and the retained cardinality it must produce."""
+
+    closure: _PartitionClosure
+    expected_first: int | None
+    expected_last: int | None
+    expected_result: str
+
+
 @pytest.mark.parametrize(
-    ("records", "reason", "expected_first", "expected_last", "expected_result"),
+    "case",
     (
-        ((), "NO_ELIGIBLE_EVENT", None, None, "LocalEvidenceVerified"),
-        ((), "REFUSED_BEFORE_WORK", None, None, "LocalEvidenceIncomplete"),
-        (('{"tokens":1}',), "CAPTURED", 1, 1, "LocalEvidenceVerified"),
-        (
-            ('{"tokens":1}', '{"tokens":2}'),
-            "CAPTURED",
-            1,
-            2,
-            "LocalEvidenceVerified",
+        _CardinalityCase(
+            closure=_PartitionClosure(records=(), reason="NO_ELIGIBLE_EVENT"),
+            expected_first=None,
+            expected_last=None,
+            expected_result="LocalEvidenceVerified",
+        ),
+        _CardinalityCase(
+            closure=_PartitionClosure(records=(), reason="REFUSED_BEFORE_WORK"),
+            expected_first=None,
+            expected_last=None,
+            expected_result="LocalEvidenceIncomplete",
+        ),
+        _CardinalityCase(
+            closure=_PartitionClosure(records=('{"tokens":1}',), reason="CAPTURED"),
+            expected_first=1,
+            expected_last=1,
+            expected_result="LocalEvidenceVerified",
+        ),
+        _CardinalityCase(
+            closure=_PartitionClosure(
+                records=('{"tokens":1}', '{"tokens":2}'), reason="CAPTURED"
+            ),
+            expected_first=1,
+            expected_last=2,
+            expected_result="LocalEvidenceVerified",
         ),
     ),
     ids=("verified-zero", "refused-zero", "one-record", "many-records"),
 )
 def test_retained_record_cardinality_preserves_terminal_reason_and_local_result(
-    tmp_path: Path,
-    records: tuple[str, ...],
-    reason: str,
-    expected_first: int | None,
-    expected_last: int | None,
-    expected_result: str,
+    tmp_path: Path, case: _CardinalityCase
 ) -> None:
     # covers: R11
     # covers: R12
@@ -835,7 +863,7 @@ def test_retained_record_cardinality_preserves_terminal_reason_and_local_result(
     population = _population(capture, manifest, (expected,))
     before = _bundle_state(health, expected)
 
-    terminal = _close_partition(capture, root, manifest, expected, records, reason)
+    terminal = _close_partition(capture, root, manifest, expected, case.closure)
     result = verifier.verify(population)
     after = _bundle_state(health, expected, result)
 
@@ -845,7 +873,7 @@ def test_retained_record_cardinality_preserves_terminal_reason_and_local_result(
         universe={"health.receipt-kinds", "verifier.local-result"},
         expected={
             "health.receipt-kinds": set_to(("expected", "started", "terminal")),
-            "verifier.local-result": set_to(expected_result),
+            "verifier.local-result": set_to(case.expected_result),
         },
         strict=True,
     )
@@ -855,15 +883,18 @@ def test_retained_record_cardinality_preserves_terminal_reason_and_local_result(
         terminal.last_sequence,
         terminal.reason,
     ) == (
-        len(records),
-        expected_first,
-        expected_last,
-        getattr(capture.TerminalReason, reason),
+        len(case.closure.records),
+        case.expected_first,
+        case.expected_last,
+        getattr(capture.TerminalReason, case.closure.reason),
     )
     terminal_payload = json.loads(_receipt_map(health, expected)["terminal"])["payload"]
-    assert terminal_payload["reason"] == getattr(capture.TerminalReason, reason).value
-    assert type(result).__name__ == expected_result
-    if expected_result == "LocalEvidenceVerified":
+    assert (
+        terminal_payload["reason"]
+        == getattr(capture.TerminalReason, case.closure.reason).value
+    )
+    assert type(result).__name__ == case.expected_result
+    if case.expected_result == "LocalEvidenceVerified":
         assert result.bundle_digest == _derive_bundle_digest(
             capture, root, manifest, health, (expected,)
         )
@@ -882,7 +913,13 @@ def test_refused_zero_never_collapses_into_verified_known_zero(tmp_path: Path) -
         health, verifier, manifest = _public_boundaries(capture, root)
         expected = _expected_partitions(capture, manifest, 1)[0]
         population = _population(capture, manifest, (expected,))
-        _close_partition(capture, root, manifest, expected, (), reason)
+        _close_partition(
+            capture,
+            root,
+            manifest,
+            expected,
+            _PartitionClosure(records=(), reason=reason),
+        )
         observed[reason] = (
             _receipt_map(health, expected)["terminal"],
             verifier.verify(population),
@@ -927,7 +964,13 @@ def test_expected_population_preserves_zero_one_and_many_partitions(
     expected = _expected_partitions(capture, manifest, partition_count)
     population = _population(capture, manifest, expected)
     for item in expected:
-        _close_partition(capture, root, manifest, item, ('{"tokens":1}',), "CAPTURED")
+        _close_partition(
+            capture,
+            root,
+            manifest,
+            item,
+            _PartitionClosure(records=('{"tokens":1}',), reason="CAPTURED"),
+        )
 
     result = verifier.verify(population)
 
@@ -1109,7 +1152,13 @@ def test_caller_created_terminal_cannot_replace_retained_terminal_authority(
     health, verifier, manifest = _public_boundaries(capture, root)
     expected = _expected_partitions(capture, manifest, 1)[0]
     population = _population(capture, manifest, (expected,))
-    _close_partition(capture, root, manifest, expected, ('{"tokens":1}',), "CAPTURED")
+    _close_partition(
+        capture,
+        root,
+        manifest,
+        expected,
+        _PartitionClosure(records=('{"tokens":1}',), reason="CAPTURED"),
+    )
     forged = capture.PartitionTerminal(
         "f" * 64, 1, 1, 1, capture.TerminalReason.CAPTURED
     )
@@ -1160,7 +1209,13 @@ def test_verifier_never_accepts_canonical_forged_expected_or_started_receipt(
     health, verifier, manifest = _public_boundaries(capture, root)
     expected = _expected_partitions(capture, manifest, 1)[0]
     population = _population(capture, manifest, (expected,))
-    _close_partition(capture, root, manifest, expected, ('{"tokens":1}',), "CAPTURED")
+    _close_partition(
+        capture,
+        root,
+        manifest,
+        expected,
+        _PartitionClosure(records=('{"tokens":1}',), reason="CAPTURED"),
+    )
     retained = _receipt_map(health, expected)[receipt_kind]
     envelope = cast(
         "dict[str, Any]",
@@ -1218,7 +1273,13 @@ def test_receipt_kind_must_match_its_physical_slot(tmp_path: Path) -> None:
     _health, verifier, manifest = _public_boundaries(capture, root)
     expected = _expected_partitions(capture, manifest, 1)[0]
     population = _population(capture, manifest, (expected,))
-    _close_partition(capture, root, manifest, expected, ('{"tokens":1}',), "CAPTURED")
+    _close_partition(
+        capture,
+        root,
+        manifest,
+        expected,
+        _PartitionClosure(records=('{"tokens":1}',), reason="CAPTURED"),
+    )
     expected_slot = next((root / "health").rglob("expected.json"))
     started_slot = next((root / "health").rglob("started.json"))
     expected_bytes = expected_slot.read_bytes()
@@ -1315,7 +1376,13 @@ def test_corrupted_retained_evidence_is_never_locally_verified(
     health, verifier, manifest = _public_boundaries(capture, root)
     expected = _expected_partitions(capture, manifest, 1)[0]
     population = _population(capture, manifest, (expected,))
-    _close_partition(capture, root, manifest, expected, ('{"tokens":1}',), "CAPTURED")
+    _close_partition(
+        capture,
+        root,
+        manifest,
+        expected,
+        _PartitionClosure(records=('{"tokens":1}',), reason="CAPTURED"),
+    )
     terminal_bytes = _receipt_map(health, expected)["terminal"]
     if target == "primary":
         primary = _primary_file(root, terminal_bytes)

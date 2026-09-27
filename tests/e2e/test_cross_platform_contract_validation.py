@@ -64,6 +64,8 @@ def contract_validation_container():
     with managed_container(container) as container:
         setup = (
             "set -e && "
+            "sed -i 's@http://deb.debian.org@https://deb.debian.org@g' "
+            "/etc/apt/sources.list.d/debian.sources && "
             "apt-get update -qq && "
             "apt-get install -y --no-install-recommends git -qq && "
             "rm -rf /var/lib/apt/lists/* && "

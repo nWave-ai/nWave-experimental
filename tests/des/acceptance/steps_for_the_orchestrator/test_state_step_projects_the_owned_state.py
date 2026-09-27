@@ -19,7 +19,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from tests.des.acceptance.steps_for_the_orchestrator.conftest import block, git, nexts
+from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
+    accepted_values,
+    asked,
+    block,
+    git,
+    nexts,
+)
 
 
 PACKAGE_PARENT = Path(__file__).parents[4] / "src"
@@ -43,59 +49,36 @@ def decompose(root: Path, request: str, *observations: str) -> None:
         sys.path.remove(str(PACKAGE_PARENT))
 
 
-def bind(root: Path, observation: str) -> None:
-    """Bind one value's typed design facts, through the same boundary."""
-    sys.path.insert(0, str(PACKAGE_PARENT))
-    try:
-        from des.application.handover import (
-            HandoverValue,
-            handover_path,
-            read_handover,
-            rewrite_handover,
-        )
-        from des.ports.driven_ports.task_invocation_port import (
-            DesignFacts,
-            DesignTarget,
-        )
-
-        raw = handover_path(root).read_bytes()
-        stored = read_handover(raw)
-        facts = DesignFacts(
-            (DesignTarget("src/probe.py", "CREATE_NEW"),),
-            "object_oriented",
-            ("build it",),
-            "tests/acceptance/test_probe.py",
-            (),
-            (("pytest", "tests/acceptance/test_probe.py"),),
-        )
-        rewritten = rewrite_handover(
-            root,
-            raw,
-            stored.request,
-            tuple(
-                HandoverValue(
-                    value.observation,
-                    value.dependencies,
-                    facts if value.observation == observation else value.authority,
-                )
-                for value in stored.values
-            ),
-        )
-        assert not hasattr(rewritten, "what"), rewritten
-    finally:
-        sys.path.remove(str(PACKAGE_PARENT))
+ORACLE = "tests/acceptance/test_value.py"
+SUPPORT = "tests/acceptance/support.py"
 
 
-def record_oracle_turn(root: Path, request: str, observation: str) -> None:
-    """Point the value's approved-oracle ref at a real commit, as the runner does."""
-    sys.path.insert(0, str(PACKAGE_PARENT))
-    try:
-        from des.application.delivery_continuation import DeliveryContinuationRunner
+def design_answer() -> dict:
+    return {
+        "structured_output": {
+            "outcome": "accepted",
+            "diagnostic": "bound the value to its typed design facts",
+            "design_facts": {
+                "targets": [{"path": "src/product/value.py", "decision": "CREATE_NEW"}],
+                "paradigm": "object_oriented",
+                "decisions": ["one opaque semantic decision"],
+                "oracle": ORACLE,
+                "acceptance_supports": [SUPPORT],
+                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                "oracle_verification_index": 0,
+            },
+        }
+    }
 
-        ref = DeliveryContinuationRunner._turn_ref(request, observation, "oracle")
-    finally:
-        sys.path.remove(str(PACKAGE_PARENT))
-    git(root, "update-ref", ref, git(root, "rev-parse", "HEAD"))
+
+def oracle_answer() -> dict:
+    return {
+        "structured_output": {"outcome": "accepted", "diagnostic": "authored"},
+        "writes": {
+            ORACLE: "def test_value():\n    import product.value  # noqa\n",
+            SUPPORT: "MARKER = 1\n",
+        },
+    }
 
 
 def test_an_undecomposed_root_projects_no_request_and_names_the_product_owner(
@@ -128,20 +111,40 @@ def test_the_projection_carries_the_exact_request_and_its_ordered_values(
 
 
 def test_the_next_step_is_derived_from_what_the_state_already_carries(
-    root: Path, step
+    root: Path, step, turns: Path
 ) -> None:
     """The canonical next step is the FIRST one the state does not already hold."""
-    decompose(root, REQUEST, "first observable value", "second observable value")
+    code, out, err = step(
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[accepted_values("A", "B")],
+        stdin=REQUEST,
+    )
+    assert code == 0, out + err
+    spent = len(asked(turns))
     unbound = nexts(step("state", "--repo-root", str(root))[1])
     assert unbound == [f"des design --repo-root {root} --value 1"]
+    assert len(asked(turns)) == spent
 
-    bind(root, "first observable value")
+    code, out, err = step(
+        "design", "--repo-root", str(root), "--value", "1", answers=[design_answer()]
+    )
+    assert code == 0, out + err
+    spent = len(asked(turns))
     bound = nexts(step("state", "--repo-root", str(root))[1])
     assert bound == [f"des oracle --repo-root {root} --value 1"]
+    assert len(asked(turns)) == spent
 
-    record_oracle_turn(root, REQUEST, "first observable value")
+    code, out, err = step(
+        "oracle", "--repo-root", str(root), "--value", "1", answers=[oracle_answer()]
+    )
+    assert code == 0, out + err
+    spent = len(asked(turns))
     with_oracle = nexts(step("state", "--repo-root", str(root))[1])
     assert with_oracle == [f"des craft --repo-root {root} --value 1"]
+    assert len(asked(turns)) == spent
 
 
 def test_the_projection_writes_nothing_and_runs_no_step_it_names(

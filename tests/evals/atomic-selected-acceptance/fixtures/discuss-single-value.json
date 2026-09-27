@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "request": "Let a customer submit an order.",
+  "outcomes": [
+    "A customer can submit an order and see it recorded as unpaid."
+  ],
+  "scope": {
+    "in_scope": [
+      "Order submission."
+    ],
+    "out_of_scope": {
+      "applicability": "not_applicable",
+      "reason": "No exclusions are needed.",
+      "items": []
+    }
+  },
+  "decisions": [
+    "Confirmed: one observable value.",
+    "The architect chooses the technical public command and state substrate; product intent above is the only fixed input."
+  ],
+  "values": [
+    {
+      "observation": "A customer submits an order and it is recorded as unpaid.",
+      "dependencies": []
+    }
+  ],
+  "jtbd": {
+    "status": "not_explored"
+  },
+  "journey": {
+    "status": "not_explored"
+  },
+  "gherkin": {
+    "status": "not_explored"
+  },
+  "quint_scenarios": {
+    "status": "not_run"
+  }
+}

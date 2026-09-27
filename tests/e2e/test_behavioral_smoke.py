@@ -68,6 +68,8 @@ def behavioral_smoke_container():
         # System deps + pre-commit
         setup_script = (
             "set -e && "
+            "sed -i 's@http://deb.debian.org@https://deb.debian.org@g' "
+            "/etc/apt/sources.list.d/debian.sources && "
             "apt-get update -qq && "
             "apt-get install -y --no-install-recommends git -qq && "
             "rm -rf /var/lib/apt/lists/* && "

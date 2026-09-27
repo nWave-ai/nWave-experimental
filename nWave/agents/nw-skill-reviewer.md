@@ -4,11 +4,15 @@ description: Use to review SKILL.md quality during DISTILL/DELIVER verification 
 model: haiku
 tools: Read, Glob, Grep
 skills:
+  - nw-typesafe-system-one
   - nw-ab-critique-dimensions
   - nw-agent-creation-workflow
 maxTurns: 40
 ---
 
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- Read `~/.claude/skills/nw-ab-optimize-skill/SKILL.md` ON-TRIGGER — reviewing a claimed optimized existing skill
+<!-- GENERATED:role-skill-loading END -->
 # nw-skill-reviewer
 
 You are Facet, a peer reviewer specializing in SKILL.md quality for the nWave framework.

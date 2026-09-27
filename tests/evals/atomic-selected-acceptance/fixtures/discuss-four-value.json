@@ -1,0 +1,58 @@
+{
+  "schema_version": 2,
+  "request": "Deliver a feature with four values: customer submits order; cancels before payment; operator sees final status; duplicate payment notifications leave one payment.",
+  "outcomes": [
+    "Orders can be submitted, cancelled before payment, observed and paid exactly once."
+  ],
+  "scope": {
+    "in_scope": [
+      "Order submission, cancellation, status and payment notification."
+    ],
+    "out_of_scope": {
+      "applicability": "not_applicable",
+      "reason": "No exclusions are needed.",
+      "items": []
+    }
+  },
+  "decisions": [
+    "Confirmed: the four values are delivered in dependency order.",
+    "The architect chooses the technical public command and state substrate; product intent above is the only fixed input."
+  ],
+  "values": [
+    {
+      "observation": "A customer submits an order and it is recorded as unpaid.",
+      "dependencies": []
+    },
+    {
+      "observation": "A customer cancels an unpaid order before payment is committed.",
+      "dependencies": [
+        "A customer submits an order and it is recorded as unpaid."
+      ]
+    },
+    {
+      "observation": "An operator sees the final status of an order.",
+      "dependencies": [
+        "A customer submits an order and it is recorded as unpaid.",
+        "A customer cancels an unpaid order before payment is committed."
+      ]
+    },
+    {
+      "observation": "A duplicate payment notification leaves exactly one payment.",
+      "dependencies": [
+        "A customer submits an order and it is recorded as unpaid."
+      ]
+    }
+  ],
+  "jtbd": {
+    "status": "not_explored"
+  },
+  "journey": {
+    "status": "not_explored"
+  },
+  "gherkin": {
+    "status": "not_explored"
+  },
+  "quint_scenarios": {
+    "status": "not_run"
+  }
+}

@@ -24,6 +24,7 @@ verify`, the same substrate and the same tree-equality predicate as `oracle` and
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
@@ -57,7 +58,8 @@ def design_facts(target: str = TARGET) -> dict:
                 "decisions": ["one opaque semantic decision"],
                 "oracle": ORACLE,
                 "acceptance_supports": [SUPPORT],
-                "verification": [["python", "-m", "pytest", ORACLE]],
+                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                "oracle_verification_index": 0,
             },
         }
     }
@@ -75,6 +77,7 @@ def bound(root: Path, step) -> None:
     assert (
         step(
             "po",
+            "--project",
             "--repo-root",
             str(root),
             answers=[accepted_values("A")],

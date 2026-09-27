@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sys
 import textwrap
+from dataclasses import dataclass
 from enum import Enum
 from typing import IO
 
@@ -110,13 +111,37 @@ def _detail_lines(label: str, text: str) -> list[str]:
     return [f"{head}{wrapped[0]}"] + [f"{hanging}{line}" for line in wrapped[1:]]
 
 
+@dataclass(frozen=True)
+class Remediation:
+    """The WHY / HOW / command trio that turns a verdict into an actionable one.
+
+    One value object because the three travel together: they are the repo's
+    standing "every failure states WHAT failed, WHY, and HOW to fix it"
+    vocabulary, and a verdict carrying a WHY but no HOW is the half-answer that
+    rule exists to forbid. Every field defaults to empty, so an omitted
+    remediation renders as a bare headline exactly as before.
+
+    Attributes:
+        why: Prose reason the verdict was reached; wrapped, label-aligned
+        how: Prose remediation; wrapped, label-aligned
+        command: A literal command, emitted verbatim and NEVER wrapped
+    """
+
+    why: str = ""
+    how: str = ""
+    command: str = ""
+
+
+# The "no remediation" default -- a frozen, shared singleton, safe as a default
+# argument precisely because it is immutable.
+_NO_REMEDIATION = Remediation()
+
+
 def print_human_summary(
     verdict: Verdict,
     summary: str,
     file: IO[str] | None = None,
-    why: str = "",
-    how: str = "",
-    command: str = "",
+    remediation: Remediation = _NO_REMEDIATION,
 ) -> None:
     """Emit a human-readable verdict, ANSI-colored when ``file`` is a TTY.
 
@@ -124,14 +149,14 @@ def print_human_summary(
     one of ``✅ PASS`` / ``❌ FAIL`` / ``⚠️ DEGRADED`` / ``⚪ NOT_APPLICABLE`` /
     ``❓ INDETERMINATE`` — optionally followed by an indented detail block naming
     ``WHY`` the verdict was reached and ``HOW`` to act on it, and finally an
-    optional ``command``. When ``file.isatty()`` returns True the prefix is
-    wrapped in the verdict-matching ANSI CSI color escape; otherwise the line is
-    plain text.
+    optional command, all three carried by ``remediation``. When
+    ``file.isatty()`` returns True the prefix is wrapped in the verdict-matching
+    ANSI CSI color escape; otherwise the line is plain text.
 
-    ``command`` IS NOT PROSE, AND IS NEVER WRAPPED. It is emitted verbatim, alone
-    on its own line, at column zero, with no indent, no label, no surrounding
-    punctuation and no trailing character. This is the whole point of the
-    parameter: a command embedded in a wrapped paragraph gets broken across lines
+    ``remediation.command`` IS NOT PROSE, AND IS NEVER WRAPPED. It is emitted
+    verbatim, alone on its own line, at column zero, with no indent, no label, no
+    surrounding punctuation and no trailing character. This is the whole point of
+    the field: a command embedded in a wrapped paragraph gets broken across lines
     with a hanging indent, and what the developer selects and pastes is a
     multi-line fragment with leading whitespace and a stray bracket — which
     ERRORS. Making the command *correct* is not enough; it must be *pasteable*.
@@ -140,12 +165,13 @@ def print_human_summary(
     line. Blank lines fence it off so a select-the-line gesture picks up exactly
     it and nothing else.
 
-    ``why`` / ``how`` / ``command`` are OPTIONAL and default to empty, so every
-    pre-existing call site renders byte-identically to before (headline only).
-    They exist so a long diagnostic is FORMATTED rather than either (a) crammed
-    into a 490-char headline that wraps across four terminal lines and destroys
-    the at-a-glance scan, or (b) demoted to JSON-only, which would breach the
-    standing rule that a failure explains itself on the surface a human reads.
+    ``remediation`` is OPTIONAL and each of its three fields defaults to empty,
+    so every pre-existing call site renders byte-identically to before (headline
+    only). They exist so a long diagnostic is FORMATTED rather than either
+    (a) crammed into a 490-char headline that wraps across four terminal lines
+    and destroys the at-a-glance scan, or (b) demoted to JSON-only, which would
+    breach the standing rule that a failure explains itself on the surface a
+    human reads.
 
     ``file`` LATE-BINDS ``sys.stderr``: the default is ``None`` and the live
     ``sys.stderr`` is resolved HERE, at CALL-time, not captured at DEF-time.
@@ -163,12 +189,14 @@ def print_human_summary(
     else:
         line = f"{prefix} — {summary}"
     print(line, file=file)
-    for detail in _detail_lines("WHY", why) + _detail_lines("HOW", how):
+    why_lines = _detail_lines("WHY", remediation.why)
+    how_lines = _detail_lines("HOW", remediation.how)
+    for detail in why_lines + how_lines:
         print(detail, file=file)
-    if command.strip():
+    if remediation.command.strip():
         # Verbatim, alone, column zero, blank-line-fenced -- NOT through the
         # wrapper, and with nothing appended. Select-the-line and paste must
         # yield a command that runs.
         print("", file=file)
-        print(command.strip(), file=file)
+        print(remediation.command.strip(), file=file)
         print("", file=file)

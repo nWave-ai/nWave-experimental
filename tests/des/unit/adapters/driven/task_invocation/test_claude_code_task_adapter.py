@@ -230,6 +230,7 @@ def test_architect_outcome_keeps_opaque_diagnostic_and_typed_facts() -> None:
                         "oracle": "tests/test_x.py",
                         "acceptance_supports": [],
                         "verification": [["pytest", "-q"]],
+                        "oracle_verification_index": 0,
                         "authority_locator": "",
                     },
                 }
@@ -357,14 +358,15 @@ def test_declared_tools_are_available_and_allowed_without_extra_permission(
     granted = ",".join(provider_tools)
     assert captured[captured.index("--tools") + 1] == granted
     assert captured[captured.index("--allowedTools") + 1] == granted
-    agents = json.loads(captured[captured.index("--agents") + 1])
-    assert agents == {
-        "reviewer": {
-            "description": "reviewer",
-            "prompt": spec.read_text(encoding="utf-8"),
-            "tools": list(provider_tools),
-        }
-    }
+    assert captured[captured.index("--agent") + 1] == "reviewer"
+    assert "--agents" not in captured
+    assert "--append-system-prompt-file" not in captured
+    # `--restricted` hid natively-installed roles such as
+    # `nw-acceptance-designer` from the child's own discovery, on top of the
+    # `--tools`/`--allowedTools` limits this adapter already enforces. Native
+    # discovery must stay possible; the declared-tool ceiling is enforced by
+    # `--tools`/`--allowedTools` alone.
+    assert "--restricted" not in captured
 
 
 def test_declared_specifier_grants_the_bare_tool_and_allows_only_that_invocation(
@@ -372,11 +374,12 @@ def test_declared_specifier_grants_the_bare_tool_and_allows_only_that_invocation
 ) -> None:
     """A `Bash(...)` specifier reaches the two provider flags in different shapes.
 
-    Measured against Claude Code 2.1.261 under `--restricted` (2026-09-05): the
-    specifier in `--tools` registers no tool at all, so the declaring role
-    silently loses the capability; the bare name in `--tools` with the specifier
-    in `--allowedTools` runs the named invocation and denies the sibling
-    subcommand that writes.
+    Measured against Claude Code 2.1.261 (2026-09-05, at the time still under
+    `--restricted`, since removed because it hid natively-installed roles from
+    discovery): the specifier in `--tools` registers no tool at all, so the
+    declaring role silently loses the capability; the bare name in `--tools`
+    with the specifier in `--allowedTools` runs the named invocation and
+    denies the sibling subcommand that writes.
     """
     spec = tmp_path / "nWave/agents/architect.md"
     spec.parent.mkdir(parents=True)
@@ -408,8 +411,8 @@ def test_declared_specifier_grants_the_bare_tool_and_allows_only_that_invocation
     assert captured[captured.index("--allowedTools") + 1] == (
         "Read,Bash(des code-fact:*),StructuredOutput"
     )
-    agents = json.loads(captured[captured.index("--agents") + 1])
-    assert agents["architect"]["tools"] == ["Read", "Bash", "StructuredOutput"]
+    assert captured[captured.index("--agent") + 1] == "architect"
+    assert "--agents" not in captured
 
 
 def test_missing_declared_tools_fails_closed_without_provider_spend(
@@ -425,6 +428,32 @@ def test_missing_declared_tools_fails_closed_without_provider_spend(
 
     assert run.outcome is ModelOutcome.Indeterminate
     assert "no explicit tools" in run.diagnostic
+    assert run.issued is False
+
+
+def test_declared_tools_but_no_model_fails_closed_without_provider_spend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A spec with tools but no `model:` must refuse before any model spend.
+
+    The model has one home, the spec's frontmatter, so an undeclared model
+    leaves the turn with nothing to spawn on -- the same GDP-6 degrade-LOUD
+    posture as the missing-tools case, on the other half of admission.
+    """
+    monkeypatch.setattr(
+        "des.runtime.spawn.spawn", lambda *_args, **_kwargs: pytest.fail("spawned")
+    )
+    spec = tmp_path / "nWave/agents/reviewer.md"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("---\ntools: Read\n---\nreview\n", encoding="utf-8")
+
+    run = ClaudeCodeTaskAdapter(Path("/usr/bin/claude")).invoke(
+        role_id="reviewer", prompt="review", cwd=tmp_path
+    )
+
+    assert run.outcome is ModelOutcome.Indeterminate
+    assert "declares no `model:`" in run.diagnostic
+    assert run.issued is False
 
 
 def test_claude_uses_framework_role_bytes_but_keeps_candidate_execution_cwd(
@@ -465,8 +494,8 @@ def test_claude_uses_framework_role_bytes_but_keeps_candidate_execution_cwd(
     assert observed["cwd"] == str(candidate)
     assert observed["input"] == "candidate prompt"
     assert isinstance(argv, list)
-    agents = json.loads(argv[argv.index("--agents") + 1])
-    assert agents["role"]["prompt"] == runtime_spec.read_text(encoding="utf-8")
+    assert argv[argv.index("--agent") + 1] == "role"
+    assert "--agents" not in argv
     assert argv[argv.index("--model") + 1] == "runtime"
 
 
@@ -1247,7 +1276,8 @@ def test_the_review_call_declares_the_values_a_defect_may_be_charged_to() -> Non
 
     assert schema["properties"]["defect_value"]["enum"] == [*_REVIEWED, None]
     assert schema["properties"]["defect_owner"]["enum"] == [
-        *(owner.value for owner in DefectOwner),
+        DefectOwner.Oracle.value,
+        DefectOwner.Design.value,
         None,
     ]
 

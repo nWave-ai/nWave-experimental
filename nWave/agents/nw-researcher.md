@@ -5,12 +5,16 @@ model: inherit
 maxTurns: 45
 tools: Read, Write, Edit, Glob, Grep, WebFetch, WebSearch
 skills:
+  - nw-typesafe-system-one
   - nw-research-methodology
   - nw-source-verification
   - nw-operational-safety
   - nw-authoritative-sources
 ---
 
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- (no universal lens applies to this role)
+<!-- GENERATED:role-skill-loading END -->
 # nw-researcher
 
 You are Nova, an Evidence-Driven Knowledge Researcher specializing in gathering, verifying, and synthesizing information from reputable sources.

@@ -96,8 +96,9 @@ def test_ensure_venv_installs_requirements_dev_minus_the_skip_list(
     venv_python = pef._ensure_venv(workspace)
 
     pip_calls = [c for c in invoked if len(c) > 1 and c[1] == "install"]
-    assert len(pip_calls) == 2, f"expected exactly 2 pip installs, got {pip_calls}"
+    assert len(pip_calls) == 3, f"expected exactly 3 pip installs, got {pip_calls}"
     assert pip_calls[0][-1] == "requirements.txt"
+    assert tuple(pip_calls[2][-2:]) == pef.DECLARED_RUNNER_REQUIREMENTS
 
     filtered_req_path = Path(pip_calls[1][-1])
     assert filtered_req_path.parent == workspace / pef._VENV_DIR_NAME
@@ -129,10 +130,11 @@ def test_ensure_venv_skips_dev_requirements_install_when_file_absent(
     pef._ensure_venv(workspace)
 
     pip_calls = [c for c in invoked if len(c) > 1 and c[1] == "install"]
-    assert len(pip_calls) == 1, (
-        f"no requirements-dev.txt on disk must mean no second pip install, "
-        f"got {pip_calls}"
+    assert len(pip_calls) == 2, (
+        f"no requirements-dev.txt on disk must mean no dev pip install; the "
+        f"declared runner is still installed, got {pip_calls}"
     )
+    assert tuple(pip_calls[1][-2:]) == pef.DECLARED_RUNNER_REQUIREMENTS
 
 
 def test_probe_subject_test_dependencies_refuses_loud_on_modulenotfounderror(
@@ -217,11 +219,19 @@ def test_prepare_delivery_runs_the_dependency_probe_between_migrate_and_exclude(
         "_probe_subject_test_dependencies",
         lambda venv_python, ws: calls.append("probe"),
     )
-    monkeypatch.setattr(pef, "_add_exclude_entries", lambda ws: calls.append("exclude"))
+    monkeypatch.setattr(
+        pef,
+        "_probe_declared_runner",
+        lambda venv_python, ws: calls.append("runner_probe"),
+    )
+    monkeypatch.setattr(
+        pef, "_add_exclude_entries", lambda ws, extra=(): calls.append("exclude")
+    )
 
     pef.prepare_delivery(workspace)
 
-    assert calls == ["ensure_venv", "migrate", "probe", "exclude"], (
-        "the dependency probe must run after migrate (needs a migrated DB) "
-        "and before the exclude/cleanup step"
+    assert calls == ["ensure_venv", "migrate", "probe", "runner_probe", "exclude"], (
+        "the dependency probe must run after migrate (needs a migrated DB), the "
+        "declared-runner probe after the layout is declared, both before the "
+        "exclude/cleanup step"
     )

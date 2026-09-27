@@ -29,6 +29,8 @@ none.
 
 from __future__ import annotations
 
+import errno
+import os
 import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -44,7 +46,11 @@ if TYPE_CHECKING:
 HOW_TO_INVOKE = (
     "every DES step is invoked alone -- `des <step> --repo-root <root> ...` -- "
     "and returns one closed outcome plus the canonical next step as DATA; no "
-    "step executes what its own NEXT names, and the orchestrator may ignore it"
+    "step executes what its own NEXT names, and the orchestrator may ignore it; "
+    "a step that buys a role turn can run for minutes, past a shell tool's "
+    "default timeout -- invoke it in the foreground with an explicit long "
+    "timeout, never backgrounded, because no notification reaches a step "
+    "invocation"
 )
 
 #: What a step prints when the canonical order has nothing further to name.
@@ -224,8 +230,24 @@ def read_request(stream: object | None = None) -> str | StepRefusal:
     return raw
 
 
+def _name_too_long(raw: Path) -> StepRefusal:
+    """The one refusal for a root the filesystem refuses as too long a name."""
+    return StepRefusal(
+        "InvalidRepositoryRoot",
+        f"the --repo-root path of {len(str(raw))} characters is too long to "
+        "resolve: the filesystem refused the name as too long",
+        "pass the physical repository root as a path the filesystem can resolve",
+    )
+
+
 def resolved_root(raw: Path) -> Path | StepRefusal:
     """The one physical repository root, or the refusal that it is not one."""
+    if raw.is_absolute():
+        try:
+            os.lstat(raw)
+        except OSError as exc:
+            if exc.errno == errno.ENAMETOOLONG:
+                return _name_too_long(raw)
     if not raw.is_absolute() or not raw.is_dir() or raw.is_symlink():
         return StepRefusal(
             "InvalidRepositoryRoot",
@@ -233,3 +255,58 @@ def resolved_root(raw: Path) -> Path | StepRefusal:
             "pass the physical repository root",
         )
     return raw.resolve()
+
+
+def repository_top_level(raw: Path) -> Path | StepRefusal:
+    """The resolved root when it IS a repository top level, else the refusal.
+
+    A pure read of checkout markers (the freshness semantics: `.git/HEAD`, or a
+    `.git` file whose `gitdir:` target carries HEAD); it never runs git.
+    """
+    root = resolved_root(raw)
+    if isinstance(root, StepRefusal):
+        return root
+    try:
+        return _top_level_of(root)
+    except OSError as exc:
+        if exc.errno == errno.ENAMETOOLONG:
+            return _name_too_long(raw)
+        return _root_unavailable(root, exc)
+
+
+def _root_unavailable(root: Path, exc: OSError) -> StepRefusal:
+    """The filesystem did not answer whether `root` is a top level: Indeterminate.
+
+    Not a Refusal: the argument is well-formed, only the substrate was silent.
+    """
+    denied = exc.errno in (errno.EACCES, errno.EPERM) or isinstance(
+        exc, PermissionError
+    )
+    prefix = "permission denied inspecting" if denied else "could not inspect"
+    return StepRefusal(
+        "RepositoryRootUnavailable",
+        f"{prefix} {root}: cannot tell whether it is a repository top level ({exc})",
+        f"grant read and search permission on {root} (for example chmod u+rx "
+        f"{root}) and re-run des state",
+        Disposition.Indeterminate,
+    )
+
+
+def _top_level_of(root: Path) -> Path | StepRefusal:
+    from des.runtime.freshness import is_git_checkout_marker
+
+    if is_git_checkout_marker(root / ".git"):
+        return root
+    for ancestor in root.parents:
+        if is_git_checkout_marker(ancestor / ".git"):
+            return StepRefusal(
+                "InvalidRepositoryRoot",
+                f"{root} is not a repository top level; "
+                f"the repository top level above it is {ancestor}",
+                f"pass the repository top level {ancestor} as --repo-root",
+            )
+    return StepRefusal(
+        "InvalidRepositoryRoot",
+        f"{root} is not a repository top level and is inside no repository",
+        "pass the top level of the repository to read",
+    )

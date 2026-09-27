@@ -5,10 +5,11 @@ Use for DESIGN wave (infrastructure design) and DEVOPS wave (deployment executio
 **Wave:** DESIGN
 **Model:** sonnet
 **Max turns:** 45
-**Tools:** Read, Write, Edit, Bash, Glob, Grep, Task, Skill
+**Tools:** Read, Write, Edit, Bash, Glob, Grep, StructuredOutput
 
 ## Commands
 
+- [`/nw-design`](../commands/index.md)
 - [`/nw-devops`](../commands/index.md)
 
 ## Preloaded skills
@@ -17,7 +18,10 @@ Use for DESIGN wave (infrastructure design) and DEVOPS wave (deployment executio
 - [nw-cross-cutting-invariants](../skills/nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — routing core for the software/model boundary doctrine, gate/construction principles and on-demand knowledge lenses. Cite clause ids; never re-declare.
 - [nw-deliver](../skills/nw-deliver.md) — Routes one strict Request into the DES steps that deliver it.
 - [nw-deployment-strategies](../skills/nw-deployment-strategies.md) — Rollback procedures, risk assessment, pre/post-deployment validation, and contingency planning. Load when orchestrating deployment or preparing rollback plans. For deployment strategy details (canary, blue-green, rolling), see `cicd-and-deployment` skill.
+- [nw-human-collaboration](../skills/nw-human-collaboration.md) — Collaborate with the human to refine product, architecture and operational decisions before implementation; preserve explicit delegation preferences.
 - [nw-infrastructure-and-observability](../skills/nw-infrastructure-and-observability.md) — Infrastructure as Code patterns (Terraform, Kubernetes), observability design (SLOs, metrics, alerting, dashboards), and pipeline security stages. Load when designing infrastructure, observability, or security scanning.
 - [nw-platform-engineering-foundations](../skills/nw-platform-engineering-foundations.md) — Foundational platform engineering knowledge from key references -- Continuous Delivery, SRE, Accelerate, Team Topologies, Chaos Engineering, and Secure Delivery. Load when contextual grounding in platform engineering theory is needed.
 - [nw-production-readiness](../skills/nw-production-readiness.md) — Monitoring, observability, operational procedures, CI/CD lessons learned, and quality gate definitions. Load when assessing production readiness or validating operational excellence.
 - [nw-stakeholder-engagement](../skills/nw-stakeholder-engagement.md) — Demonstration preparation, audience-tailored presentations, feedback collection, and business outcome measurement. Load when preparing demos or measuring business value delivery.
+- [nw-throughput](../skills/nw-throughput.md) — Evidence-led orchestration for maximizing delivery throughput with independent fan-out, one heavy local box, and concise whole-value evidence.
+- [nw-typesafe-system-one](../skills/nw-typesafe-system-one.md) — Use Jev System One for every supported, authorized semantic judgment when available: relevance selection, handoff preflight, evidence mapping, finding clustering, and confidence-gated escalation.

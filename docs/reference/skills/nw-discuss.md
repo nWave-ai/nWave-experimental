@@ -1,5 +1,5 @@
 # nw-discuss
 
-Routes a product question or outcome into the DES steps.
+PO-led product conversation, visible feedback increments and a DES-constructed human-readable brief.
 
 **Source:** [SKILL.md on GitHub](https://github.com/nWave-ai/nWave/blob/main/nWave/skills/nw-discuss/SKILL.md)

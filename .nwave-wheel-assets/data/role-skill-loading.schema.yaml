@@ -4,6 +4,7 @@ required: [version, roles]
 additionalProperties: false
 properties:
   version: { const: 1 }
+  global_on_demand: { $ref: "#/$defs/triggers" }
   roles:
     type: object
     minProperties: 1

@@ -17,7 +17,11 @@ from typing import TYPE_CHECKING, Any
 from des.domain.artifact_versioning import ArtifactFromFutureRuntime
 from des.domain.config_merge import VERBOSITY_VALUES
 
-from .des_config import _GLOBAL_CONFIG_ARTIFACT_TYPE, _GLOBAL_CONFIG_VERSIONING
+from .des_config import (
+    _GLOBAL_CONFIG_ARTIFACT_TYPE,
+    _GLOBAL_CONFIG_VERSIONING,
+    _translate_public_attribution,
+)
 
 
 if TYPE_CHECKING:
@@ -307,6 +311,92 @@ class ConfigWriter:
             )
         raise ValueError(f"Invalid project override: {field}={value!r}")
 
+    def _feature_config_root(self) -> Path:
+        """The repository-config root DES reads feature config from.
+
+        From any subdirectory, ascend to the checkout root (first ``.git``
+        entry), then apply the SAME resolver the reader uses so a linked
+        worktree writes where DES reads.
+        """
+        from des.adapters.driven.config.repository_config_root import (
+            resolve_repository_config_root,
+        )
+
+        checkout = next(
+            (
+                d
+                for d in (self._repo_root, *self._repo_root.parents)
+                if (d / ".git").exists()
+            ),
+            self._repo_root,
+        )
+        return resolve_repository_config_root(checkout)
+
+    def set_feature_document(
+        self, feature_id: str, wave: str, destination: str
+    ) -> Path:
+        """Publish one FEATURE wave destination into the shared feature config.
+
+        The file is ``<repo config root>/.nwave/features/<id>/config.json``
+        and holds only ``documents``; the same pure law that resolves it at
+        read time validates it before the atomic write.
+        """
+        from des.domain.feature_documents import (
+            WAVES,
+            FeatureDocumentsInvalid,
+            merge_feature_destinations,
+            require_feature_id,
+        )
+
+        require_feature_id(feature_id)
+        if wave not in WAVES:
+            raise ValueError(f"wave must be one of {WAVES}")
+        path = (
+            self._feature_config_root()
+            / ".nwave"
+            / "features"
+            / feature_id
+            / "config.json"
+        )
+        document = self._read_object(path, role="feature config")
+        documents = document.get("documents", {})
+        if not isinstance(documents, dict):
+            raise ConfigMigrationError(f"{path}: documents must be an object")
+        documents = {**documents, wave: {"destination": destination}}
+        try:
+            merge_feature_destinations(feature_id, feature_documents=documents)
+        except FeatureDocumentsInvalid as error:
+            raise ValueError(f"{error.why}; {error.how}") from error
+        self._atomic_write(path, self._json_bytes({**document, "documents": documents}))
+        return path
+
+    def set_feature_template(self, wave: str, template: str) -> dict[str, Any]:
+        """Publish a project-tier ``documents.feature.<wave>.destination`` template."""
+        from des.domain.feature_documents import (
+            WAVES,
+            FeatureDocumentsInvalid,
+            merge_feature_destinations,
+        )
+
+        if wave not in WAVES:
+            raise ValueError(f"wave must be one of {WAVES}")
+
+        def mutate(document: dict[str, Any]) -> None:
+            documents = document.get("documents")
+            documents = dict(documents) if isinstance(documents, dict) else {}
+            feature = dict(documents.get("feature") or {})
+            feature[wave] = {"destination": template}
+            documents["feature"] = feature
+            try:
+                merge_feature_destinations("probe", project_documents=documents)
+            except FeatureDocumentsInvalid as error:
+                raise ValueError(f"{error.why}; {error.how}") from error
+            document["documents"] = documents
+
+        return ConfigWriter(
+            home_dir=self._home_dir, repo_root=self._feature_config_root()
+        ).update_repo(mutate)
+
     def _commit_authority(
         self, path: Path, document: dict[str, Any], legacy_paths: tuple[Path, ...]
     ) -> dict[str, Any]:
@@ -353,17 +443,74 @@ class ConfigWriter:
             )
         return raw
 
-    @staticmethod
+    @classmethod
     def _reconcile(
-        existing: dict[str, Any], legacy: dict[str, Any], legacy_path: Path
+        cls, existing: dict[str, Any], legacy: dict[str, Any], legacy_path: Path
     ) -> dict[str, Any]:
+        merged_overrides: dict[str, Any] = {}
         for key in existing.keys() & legacy.keys():
-            if key != "schema-version" and existing[key] != legacy[key]:
+            if key == "schema-version":
+                continue
+            if key == "attribution":
+                merged_overrides["attribution"] = cls._reconcile_attribution(
+                    existing[key], legacy[key], legacy_path
+                )
+                continue
+            if existing[key] != legacy[key]:
                 raise ConfigMigrationError(
                     f"Cannot migrate conflicting values in {legacy_path}: key {key!r} "
                     "already differs in config.json"
                 )
-        return {**legacy, **existing}
+        return {**legacy, **existing, **merged_overrides}
+
+    @staticmethod
+    def _attribution_translated(value: Any) -> Any:
+        """Reuse ``des_config``'s public on/off translation (V4-24) so an
+        attribution value is compared and merged by its real boolean
+        meaning, not by its raw on-disk shape (string vs legacy dict).
+        """
+        return _translate_public_attribution({"attribution": value})["attribution"]
+
+    @classmethod
+    def _reconcile_attribution(
+        cls, existing_value: Any, legacy_value: Any, legacy_path: Path
+    ) -> Any:
+        """Semantically reconcile one ``attribution`` field (V4-24).
+
+        Both sides are translated through ``_translate_public_attribution``
+        first, so ``"on"`` vs ``{"enabled": True}`` is the same fact rather
+        than a raw-string/raw-dict false conflict. When both translate to a
+        dict, every field the two sides SHARE must agree -- including a
+        disagreeing ``trailer`` alongside a matching ``enabled`` -- and
+        disjoint extra fields merge, preserving legacy's own extras. When
+        either side does not translate to a dict (an unrecognised public
+        value), an unknown shape is compared verbatim rather than treated as
+        an absent, always-compatible fact.
+        """
+        translated_existing = cls._attribution_translated(existing_value)
+        translated_legacy = cls._attribution_translated(legacy_value)
+        if not (
+            isinstance(translated_existing, dict)
+            and isinstance(translated_legacy, dict)
+        ):
+            if existing_value != legacy_value:
+                raise ConfigMigrationError(
+                    f"Cannot migrate conflicting values in {legacy_path}: key "
+                    "'attribution' already differs in config.json"
+                )
+            return existing_value
+        for key in translated_existing.keys() & translated_legacy.keys():
+            if translated_existing[key] != translated_legacy[key]:
+                raise ConfigMigrationError(
+                    f"Cannot migrate conflicting values in {legacy_path}: key "
+                    f"'attribution.{key}' already differs in config.json"
+                )
+        legacy_extra = {
+            k: v for k, v in translated_legacy.items() if k not in translated_existing
+        }
+        if not legacy_extra:
+            return existing_value
+        return {**translated_legacy, **translated_existing}
 
     @classmethod
     def _with_global_defaults(cls, document: dict[str, Any]) -> dict[str, Any]:

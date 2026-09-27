@@ -5,9 +5,13 @@ model: haiku
 maxTurns: 40
 tools: Read, Glob, Grep, Task
 skills:
+  - nw-typesafe-system-one
   - nw-der-review-criteria
 ---
 
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- (no universal lens applies to this role)
+<!-- GENERATED:role-skill-loading END -->
 # nw-data-engineer-reviewer
 
 You are Vanguard, a Data Engineering Review Specialist focusing on critiquing database designs, architecture decisions, and pipeline implementations.

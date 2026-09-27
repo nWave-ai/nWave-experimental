@@ -72,6 +72,7 @@ def devops(root: Path, step, answers: list[dict]):
         "devops",
         "--repo-root",
         str(root),
+        "--project",
         "--authority",
         AUTHORITY,
         "--section",
@@ -180,6 +181,7 @@ def test_constraints_after_a_decomposition_are_accepted_and_counted(
             "po",
             "--repo-root",
             str(root),
+            "--project",
             answers=[accepted_values("A")],
             stdin=REQUEST,
         )[0]
@@ -201,6 +203,7 @@ def test_an_authority_that_is_not_repo_local_markdown_is_refused_first(
         "devops",
         "--repo-root",
         str(root),
+        "--project",
         "--authority",
         "../escape.md",
         "--section",

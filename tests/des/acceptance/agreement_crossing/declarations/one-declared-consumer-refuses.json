@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "contract": "nwave.test_result.v1",
+  "producer": {
+    "name": "des.cli.run_tests",
+    "argv": [
+      "des",
+      "verify-test-runner",
+      "--target",
+      "tests/des/unit/domain/test_iso_utc.py",
+      "--out",
+      "{artifact}"
+    ]
+  },
+  "consumers": [
+    {
+      "name": "des.domain.test_run.test_run_from_envelope",
+      "argv": [
+        "python3",
+        "-c",
+        "import json, sys\nfrom des.domain.test_run import test_run_from_envelope\n\nwith open(sys.argv[1], encoding='utf-8') as handle:\n    envelope = json.load(handle)\ntry:\n    test_run_from_envelope(envelope)\nexcept ValueError as rejected:\n    print(rejected, file=sys.stderr)\n    raise SystemExit(1)\n",
+        "{artifact}"
+      ]
+    },
+    {
+      "name": "synthetic.consumer.requiring_generated_at",
+      "argv": [
+        "python3",
+        "-c",
+        "import json, sys\n\nwith open(sys.argv[1], encoding='utf-8') as handle:\n    artifact = json.load(handle)\nif 'generated_at' not in artifact:\n    print('missing required field: generated_at', file=sys.stderr)\n    raise SystemExit(1)\n",
+        "{artifact}"
+      ]
+    },
+    {
+      "name": "nWave/schemas/nwave.test_result.v1.schema.json",
+      "argv": [
+        "python3",
+        "-c",
+        "import json, sys\n\nwith open(sys.argv[1], encoding='utf-8') as handle:\n    artifact = json.load(handle)\nwith open(sys.argv[2], encoding='utf-8') as handle:\n    frozen = json.load(handle)['fields']\nmissing = sorted(set(frozen) - set(artifact))\nextra = sorted(set(artifact) - set(frozen))\nif missing:\n    print('missing required field: ' + ', '.join(missing), file=sys.stderr)\nif extra:\n    print('undeclared field: ' + ', '.join(extra), file=sys.stderr)\nif missing or extra:\n    raise SystemExit(1)\n",
+        "{artifact}",
+        "nWave/schemas/nwave.test_result.v1.schema.json"
+      ]
+    }
+  ]
+}

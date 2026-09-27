@@ -52,10 +52,12 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
+import shutil
 import signal
 import subprocess
 import threading
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 
@@ -149,6 +151,60 @@ def classify_spawn_refusal(refused: OSError) -> SpawnRefusal:
     if isinstance(refused, FileNotFoundError | NotADirectoryError | PermissionError):
         return SpawnRefusal.ExecutableAbsent
     return SpawnRefusal.KernelRefused
+
+
+def resolve_executable(
+    argv0: str, *, cwd: str | os.PathLike[str] | None = None
+) -> str | None:
+    """The ABSOLUTE program an ``argv[0]`` names, or ``None`` if nothing answers.
+
+    This lives beside ``spawn`` and ``classify_spawn_refusal`` because those
+    already own the ``execve`` boundary, and answering "which program will this
+    argv[0] really run" is the same boundary asked one question earlier. Asking
+    it BEFORE the spawn -- and then spawning the ANSWER -- is what lets a caller
+    report the runtime that ran BY CONSTRUCTION, rather than re-deriving it
+    afterwards from a lookup that can disagree with what the kernel picked.
+
+    TWO RULES, both measured rather than assumed:
+
+    1. SYMLINKS ARE NOT FOLLOWED. ``shutil.which`` returns an absolute path that
+       PRESERVES the declared basename (``/usr/bin/sh``); ``os.path.realpath``
+       rewrites it (``/usr/bin/sh`` -> ``/usr/bin/dash``, ``awk`` -> ``gawk``,
+       ``python3`` -> ``python3.12``). A multi-call binary DISPATCHES ON
+       ``argv[0]``, so following the link would name -- and execute -- a
+       different program than the one the caller declared.
+    2. A SEPARATOR-BEARING ``argv[0]`` IS NOT A PATH SEARCH. POSIX resolves it
+       against the CHILD's working directory, so it is joined to ``cwd`` here
+       rather than looked up on ``PATH`` or against the parent's cwd -- which is
+       what ``shutil.which`` alone gets wrong for a repository-relative tool the
+       child really executes.
+
+    ``None`` is the honest answer for "nothing answers to this name": the caller
+    decides what an unresolvable party means, and this function never guesses a
+    path that would only fail at ``execve``.
+    """
+    if not argv0:
+        return None
+
+    separators = [os.sep] + ([os.altsep] if os.altsep else [])
+    if any(separator in argv0 for separator in separators):
+        candidate = Path(argv0)
+        if not candidate.is_absolute():
+            base = Path(cwd) if cwd is not None else Path.cwd()
+            candidate = base / candidate
+        # Normalised LEXICALLY (never `resolve()`): the basename must survive,
+        # and a `..` segment is the caller's own spelling of the path.
+        normalised = os.path.normpath(str(candidate))
+        if os.path.isfile(normalised) and os.access(normalised, os.X_OK):
+            return normalised
+        return None
+
+    found = shutil.which(argv0)
+    if found is None:
+        return None
+    # `Path.absolute()`, never `Path.resolve()`: absolute() only prepends cwd to
+    # a relative path, it does not follow a symlink, so rule 1 above still holds.
+    return str(Path(found).absolute())
 
 
 AGENT_TIMEOUT_ENV = "NWAVE_REFACTOR_AGENT_TIMEOUT"
@@ -447,5 +503,6 @@ __all__ = [
     "default_timeout_seconds",
     "git_timeout_seconds",
     "reap_active_process_groups",
+    "resolve_executable",
     "spawn",
 ]

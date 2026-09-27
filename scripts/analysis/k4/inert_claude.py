@@ -132,6 +132,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -241,17 +242,34 @@ def _model_usage(total_tokens: int) -> dict:
     }
 
 
+@dataclass(frozen=True, kw_only=True)
+class _RunFigures:
+    """What one run reports having spent: money, tokens, wall and turns.
+
+    Decided at one place per run -- `_figures` for a delivery's cost, tokens
+    and wall, the arm for its turn count, four fixed literals for a ping -- and
+    read as one set by `_payload`. `turns` is the odd one: `_figures` never
+    produces it and no verdict axis reads it, it reaches `num_turns` only.
+
+    `kw_only` is load-bearing, not decoration: `cost`/`duration_s` are both
+    float and `tokens`/`turns` are both int, so two of the possible positional
+    swaps would construct cleanly and report the wrong figure.
+    """
+
+    cost: float
+    tokens: int
+    duration_s: float
+    turns: int
+
+
 def _payload(
     session_id: str,
     result: str,
     *,
-    cost: float,
-    tokens: int,
-    duration_s: float,
-    turns: int,
+    figures: _RunFigures,
     is_error: bool = False,
 ) -> dict:
-    usage = _model_usage(tokens)
+    usage = _model_usage(figures.tokens)
     totals = {
         "input_tokens": sum(m["inputTokens"] for m in usage.values()),
         "output_tokens": sum(m["outputTokens"] for m in usage.values()),
@@ -267,13 +285,13 @@ def _payload(
         "subtype": "error" if is_error else "success",
         "is_error": is_error,
         "session_id": session_id,
-        "num_turns": turns,
+        "num_turns": figures.turns,
         # Deliberately SHORTER than the transcript span this run writes: the
         # root payload stops when the root process returns, which is the exact
         # gap `resolve_transcript_wall` exists to correct.
-        "duration_ms": int(duration_s * 1000 * 0.4),
-        "duration_api_ms": int(duration_s * 1000 * 0.35),
-        "total_cost_usd": cost,
+        "duration_ms": int(figures.duration_s * 1000 * 0.4),
+        "duration_api_ms": int(figures.duration_s * 1000 * 0.35),
+        "total_cost_usd": figures.cost,
         "usage": totals,
         "modelUsage": usage,
         "permission_denials": [],
@@ -496,7 +514,7 @@ def _replay_dir() -> Path:
 #: The sibling that carries a turn's WORKSPACE effect, next to its envelope.
 _PATCH_SUFFIX = ".patch.json"
 _REPLAY_MIGRATIONS_NAME = "replay-migrations.json"
-_ADD_EMPTY_AUTHORITY_LOCATOR = "add-empty-authority-locator"
+_COMPLETE_LEGACY_DESIGN_FACTS = "complete-legacy-design-facts"
 
 
 def _recorded_turns(directory: Path) -> dict[str, list[Path]]:
@@ -598,6 +616,55 @@ def _recorded_envelope(record: Path) -> str:
     return stdout
 
 
+def _legacy_design_projection(facts: object, record: Path) -> tuple[list[str], int]:
+    """Derive the two current fields an old architect envelope did not carry.
+
+    The caller supplies the recorded DESIGN facts.  Every derivation is
+    one-to-one: exactly one verification argv must name the oracle, and each
+    removed support must be a non-oracle CREATE_NEW target.  Anything else is
+    not a migration and must remain a loud replay refusal.
+    """
+    if not isinstance(facts, dict):
+        raise ReplayRefused(f"replay migration for {record.name!r} has no facts object")
+    oracle = facts.get("oracle")
+    verification = facts.get("verification")
+    targets = facts.get("targets")
+    supports = facts.get("acceptance_supports")
+    if (
+        not isinstance(oracle, str)
+        or not isinstance(verification, list)
+        or not isinstance(targets, list)
+        or not isinstance(supports, list)
+        or not all(isinstance(path, str) for path in supports)
+        or not all(
+            isinstance(item, dict)
+            and isinstance(item.get("path"), str)
+            and isinstance(item.get("decision"), str)
+            for item in targets
+        )
+    ):
+        raise ReplayRefused(
+            f"replay migration for {record.name!r} cannot read recorded DESIGN facts"
+        )
+    oracle_path = oracle.split("::", 1)[0]
+    candidates = [
+        index
+        for index, argv in enumerate(verification)
+        if isinstance(argv, list) and oracle_path in argv
+    ]
+    if len(candidates) != 1:
+        raise ReplayRefused(
+            f"replay migration for {record.name!r} cannot derive one oracle "
+            "verification index from the recorded facts"
+        )
+    non_supports = {
+        item["path"]
+        for item in targets
+        if item["decision"] == "CREATE_NEW" and item["path"] != oracle_path
+    }
+    return [path for path in supports if path not in non_supports], candidates[0]
+
+
 def _replay_envelope(directory: Path, record: Path) -> tuple[str, str | None]:
     """Return a replay projection, retaining the recorded envelope untouched.
 
@@ -631,7 +698,7 @@ def _replay_envelope(directory: Path, record: Path) -> tuple[str, str | None]:
     if len(matching) != 1:
         raise ReplayRefused(f"replay migrations name {record.name!r} more than once")
     migration = matching[0]
-    if migration.get("operation") != _ADD_EMPTY_AUTHORITY_LOCATOR:
+    if migration.get("operation") != _COMPLETE_LEGACY_DESIGN_FACTS:
         raise ReplayRefused(
             f"replay migration for {record.name!r} has an unknown operation"
         )
@@ -666,12 +733,20 @@ def _replay_envelope(directory: Path, record: Path) -> tuple[str, str | None]:
         raise ReplayRefused(
             f"replay migration for {record.name!r} does not match its declared historical shape"
         )
-    structured_facts["authority_locator"] = ""
-    result_facts["authority_locator"] = ""
+    # The historical model predates two transport fields.  The empty authority
+    # locator is explicitly constructor-owned.  The shared projection derives
+    # the oracle index and excludes an overlap current DESIGN rejects.
+    migrated_supports, oracle_index = _legacy_design_projection(
+        structured_facts, record
+    )
+    for facts in (structured_facts, result_facts):
+        facts["acceptance_supports"] = migrated_supports
+        facts["authority_locator"] = ""
+        facts["oracle_verification_index"] = oracle_index
     envelope["result"] = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
     return (
         json.dumps(envelope, ensure_ascii=False, separators=(",", ":")),
-        _ADD_EMPTY_AUTHORITY_LOCATOR,
+        _COMPLETE_LEGACY_DESIGN_FACTS,
     )
 
 
@@ -906,7 +981,7 @@ _LEGACY_DECISIONS_RECORDS = frozenset(
         "05-nw-software-crafter.json",
     }
 )
-_LEGACY_DECISIONS_CASE = "graphify-callers-of-run17-run20"
+_LEGACY_DECISIONS_CASE = _DEFAULT_REPLAY_CASE
 _AUTHORITY_FACT_PREFIXES = (
     "authority: ",
     "targets: ",
@@ -987,15 +1062,27 @@ def _expected_historical_question(record: Path) -> str | None:
         return None
     legacy_payload = lines[obligations][len("obligations: ") :]
     try:
-        if not isinstance(json.loads(legacy_payload), list):
-            return None
-    except json.JSONDecodeError:
+        decisions = json.loads(legacy_payload)
+        architect_record = frozen_case / "02-nw-solution-architect.json"
+        architect_envelope = json.loads(_recorded_envelope(architect_record))
+        architect_facts = architect_envelope["structured_output"]["design_facts"]
+        migrated_supports, oracle_index = _legacy_design_projection(
+            architect_facts, architect_record
+        )
+        verification = architect_facts["verification"]
+    except (KeyError, TypeError, ValueError, ReplayRefused):
+        return None
+    if not isinstance(decisions, list) or not isinstance(verification, list):
         return None
     return "\n".join(
         (
             *lines[:oracle],
             f"decisions: {legacy_payload}",
-            *lines[oracle:obligations],
+            *lines[oracle:supports],
+            f"acceptance_supports: {json.dumps(migrated_supports, ensure_ascii=False)}",
+            f"verification: {json.dumps(verification, ensure_ascii=False)}",
+            f"oracle_verification_index: {oracle_index}",
+            *lines[supports + 1 : obligations],
             "obligations: []",
             *lines[obligations + 1 :],
         )
@@ -1062,10 +1149,12 @@ def main(argv: list[str]) -> int:
     payload = _payload(
         session_id,
         result,
-        cost=cost,
-        tokens=tokens,
-        duration_s=span,
-        turns=turns,
+        figures=_RunFigures(
+            cost=cost,
+            tokens=tokens,
+            duration_s=span,
+            turns=turns,
+        ),
         is_error=error,
     )
     _ledger(

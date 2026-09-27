@@ -63,6 +63,7 @@
         "-q"
       ]
     ],
+    "oracle_verification_index": 0,
     "authority_locator": ""
   }
 }

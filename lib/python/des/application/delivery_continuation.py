@@ -12,15 +12,14 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, ClassVar
 from xml.etree import ElementTree
 
-from des.adapters.driven.codefact.graphify_code_fact_adapter import (
-    GRAPH_INDEX_DIR_NAME,
-)
+from des.adapters.driven.codefact.code_fact_chain import CodeFactChain
 from des.adapters.driven.git.git_observation import (
     GitObservation,
     declared_child_environment,
@@ -32,35 +31,47 @@ from des.adapters.driven.task_invocation.configured_task_adapter import (
 )
 from des.application.candidate_radius import INDETERMINATE, candidate_radius
 from des.application.commit_message_attribution import attribute_commit_message
+from des.application.design_document_producer import (
+    bound_authority_headings,
+    publish_design_document,
+)
 from des.application.handover import (
     Blocked,
     HandoverValue,
     StoredHandover,
     create_handover,
+    design_basis_sha256,
     design_facts_defect,
     finalize_handover,
     handover_path,
     handover_unchanged,
+    read_handover,
+    retain_candidate_handover,
     rewrite_handover,
 )
 from des.application.head_advance import AdvanceRefusal, HeadAdvance
 from des.domain.architecture_brief_resolver import (
     canonical_paradigm,
     extract_acceptance_support_locators,
+    extract_declared_oracle_verification_indices,
     extract_declared_paradigms,
     extract_declared_target_table,
     extract_declared_verification_commands,
     extract_obligations,
     extract_oracle_citations,
     is_repository_relative_whole_file_locator,
+    new_target_acceptance_support_conflict,
 )
 from des.domain.delivery_disposition import Disposition
+from des.domain.design_document import DesignFactsSection
+from des.domain.distill_document import selected_revision_sha256
 from des.domain.exercised_modules import (
     NOT_APPLICABLE,
     ExercisedModules,
     exercised_modules,
     invokes_pytest,
 )
+from des.domain.feature_documents import FeatureDocumentsInvalid
 from des.domain.integration_commit_message import (
     CommitMessageRule,
     IntegrationFacts,
@@ -88,6 +99,7 @@ from des.domain.turn_record_ref import (
 )
 from des.domain.verification_authority_resolver import (
     ResolvedAuthoritySection,
+    authority_section_sha256,
     resolve_authority_section,
 )
 from des.ports.driven_ports.task_invocation_port import (
@@ -98,12 +110,18 @@ from des.ports.driven_ports.task_invocation_port import (
     MalformedModelEnvelope,
     ModelOutcome,
 )
-from des.runtime.spawn import SpawnRefusal, classify_spawn_refusal, spawn
+from des.runtime.spawn import (
+    SpawnRefusal,
+    classify_spawn_refusal,
+    resolve_executable,
+    spawn,
+)
 
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from des.application.design_document_producer import PublishedDesignDocument
     from des.domain.distill_document import AcceptanceObligation
     from des.ports.driven_ports.task_invocation_port import (
         ModelRun,
@@ -265,6 +283,69 @@ class OracleExecution:
     refusal: OracleRedRefusal | None
 
 
+class CraftSettlement(Enum):
+    """How a value's craft turn stands, as ONE closed word the step branches on.
+
+    Three members and no fourth, because the caller has exactly three moves:
+    report the turn already recorded over these very bytes, report that an
+    observed-green oracle settled a record whose bytes had MOVED, or buy the
+    crafter turn.  A pair of booleans would admit a fourth, meaningless state --
+    «recorded over current bytes AND settled by a green oracle» -- and would let
+    two call sites drift on which one wins; a closed word makes that
+    unrepresentable (GDP-0, representation before validation).
+
+    `RecordedOverCurrentBytes` is answered by CALLING `craft_turn_complete` and
+    never by a second spelling of tree equality: ADR-DES-003 §5 requires that
+    question to be read by ONE predicate, and `des state`'s read-only projection
+    is its other reader.
+
+    `Unsettled` is also the answer every UNRESOLVED measurement degrades to -- a
+    Git that would not say what HEAD is, an owned tree that did not resolve, an
+    oracle that is red, broken or could not be executed at all.  An unresolved
+    measurement never authorises a skipped turn, so the only cost of any of them
+    is the turn that would have been bought anyway.
+    """
+
+    RecordedOverCurrentBytes = "recorded-over-current-bytes"
+    SettledByGreenOracle = "settled-by-green-oracle"
+    Unsettled = "unsettled"
+
+
+class OracleSettlement(Enum):
+    """How a value's ORACLE turn stands, as ONE closed word the step branches on.
+
+    Three members and no fourth, for the reason `CraftSettlement` states: a pair
+    of booleans would admit «recorded over current bytes AND settled by its own
+    execution», which means nothing, and would let two call sites drift on which
+    one wins.
+
+    A SECOND enum rather than a widened `CraftSettlement`, because the two lanes
+    admit DIFFERENT witnesses.  Craft settles only on an all-GREEN oracle -- a
+    red one is evidence the work is not done.  The oracle lane settles on any
+    RESOLVED verdict, red or green, because what it needs witnessed is that the
+    authored oracle still reaches its own assertion, and RED is the admitted
+    answer before craft.  `CraftSettlement.SettledByGreenOracle` names the
+    stricter witness in its own member name, and renaming it to cover both lanes
+    would rewrite the craft lane's vocabulary to say something it does not mean.
+
+    `RecordedOverCurrentBytes` is answered by CALLING `oracle_turn_complete` and
+    never by a second spelling of tree equality: ADR-DES-003 §5 requires that
+    question to be read by ONE predicate, and `des state`'s read-only projection
+    is its other reader.
+
+    `Unsettled` is the answer every UNRESOLVED measurement degrades to -- an
+    absent record, a tracked acceptance path that is gone or that the filesystem
+    would not answer for, an execution that did not resolve, a Git that would not
+    say what HEAD is, an owned tree that did not resolve.  None of them
+    authorises a skipped turn, so the only cost of any of them is the
+    acceptance-designer turn that would have been bought anyway.
+    """
+
+    RecordedOverCurrentBytes = "recorded-over-current-bytes"
+    SettledByItsOwnExecution = "settled-by-its-own-execution"
+    Unsettled = "unsettled"
+
+
 @dataclass(frozen=True, slots=True)
 class AcceptanceFinding:
     """One refusal of the oracle set that ONE named owner may still answer.
@@ -360,7 +441,68 @@ class AuthorityFacts:
     acceptance_oracle_locator: str
     acceptance_paths: tuple[str, ...]
     native_verification_argvs: tuple[tuple[str, ...], ...]
+    oracle_verification_index: int
     acceptance_obligations: tuple[AcceptanceObligation, ...] = ()
+
+    @property
+    def oracle_verification_argv(self) -> tuple[str, ...]:
+        """The explicitly selected vector for this authority's oracle."""
+        return self.native_verification_argvs[self.oracle_verification_index]
+
+    @property
+    def selected_revision_sha256(self) -> str:
+        """The identity of all DESIGN facts a turn is allowed to reuse.
+
+        A selected oracle revision alone omits architecture decisions and
+        target ownership.  Those omissions let a changed DESIGN reuse a turn
+        that never saw its current authority.
+        """
+        selected = selected_revision_sha256(
+            self.acceptance_obligations or None,
+            self.acceptance_oracle_locator,
+            self.acceptance_paths[1:],
+            self.native_verification_argvs,
+            self.oracle_verification_index,
+        )
+        payload = json.dumps(
+            {
+                "selected": selected,
+                "locator": self.locator,
+                "targets": self.target_decisions,
+                "paradigm": self.paradigm,
+                "decisions": self.decisions,
+                "obligations": self.obligations,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class RecordIdentity:
+    """The selected revision and cited DESIGN sections a turn records."""
+
+    revision: str
+    design_sections: str
+
+    @classmethod
+    def of(
+        cls,
+        root: Path,
+        stored: StoredHandover,
+        value: HandoverValue,
+        design: AuthorityFacts,
+    ) -> RecordIdentity | None:
+        sections = DeliveryContinuationRunner().cited_design_sections(
+            root, stored, value
+        )
+        if sections is None:
+            return None
+        encoded = json.dumps(
+            [[locator, digest] for locator, digest in sections], separators=(",", ":")
+        ).encode("utf-8")
+        return cls(design.selected_revision_sha256, hashlib.sha256(encoded).hexdigest())
 
 
 @dataclass(frozen=True, slots=True)
@@ -641,6 +783,10 @@ class DeliveryContinuationRunner:
         self._last_role: str | None = None
         self._native_evidence_locator: str | None = None
         self._native_evidence_sha256: str | None = None
+        # The authority section the last `design_value` PUBLISHED, or `None`
+        # when that turn's facts named no configured section.  A measurement,
+        # never a decision: the step prints it and nothing branches on it.
+        self._published_design: PublishedDesignDocument | None = None
 
     @staticmethod
     def _fail(d: Disposition, what: str, why: str, how: str) -> DeliveryOutcome:
@@ -887,6 +1033,16 @@ class DeliveryContinuationRunner:
         return self._design_unchanged
 
     @property
+    def published_design(self) -> PublishedDesignDocument | None:
+        """The authority section this runner's last design turn published.
+
+        `None` means no section was published -- the returned facts named no
+        configured document -- so the caller prints no DOCUMENT rows rather
+        than a locator pointing at bytes nothing wrote.
+        """
+        return self._published_design
+
+    @property
     def last_role(self) -> str | None:
         """The last role whose PROCESS ran, or `None` when none did.
 
@@ -950,6 +1106,7 @@ class DeliveryContinuationRunner:
         handover_root: Path | None = None,
         max_product_values: int | None = None,
         defect_values: tuple[str, ...] = (),
+        semantic_task: str | None = None,
     ) -> ModelRun | DeliveryOutcome:
         prompt = self._rooted(root, prompt)
         for attempt in range(2):
@@ -961,13 +1118,16 @@ class DeliveryContinuationRunner:
             if frozen is not None:
                 return self._blocked(frozen)
             try:
-                run = port.invoke(
-                    role_id=role,
-                    prompt=prompt,
-                    cwd=root,
-                    max_product_values=max_product_values,
-                    defect_values=defect_values,
-                )
+                invocation = {
+                    "role_id": role,
+                    "prompt": prompt,
+                    "cwd": root,
+                    "max_product_values": max_product_values,
+                    "defect_values": defect_values,
+                }
+                if semantic_task is not None:
+                    invocation["semantic_task"] = semantic_task
+                run = port.invoke(**invocation)
             except (ModelRuntimeUnavailable, ModelRuntimeConfigError) as error:
                 return self._fail(
                     Disposition.Retry,
@@ -1031,7 +1191,11 @@ class DeliveryContinuationRunner:
                     run.diagnostic or "provider did not complete cleanly",
                     "observe real effect",
                 )
-            if attempt:
+            # A selected-revision recovery is deliberately one paid
+            # acceptance-designer turn.  A provider-level failure still reaches
+            # the caller as a retryable terminal, but DES must not buy a second
+            # turn on its own: the caller chooses whether and when to retry.
+            if attempt or semantic_task == "selected-revision-recovery":
                 return self._fail(
                     Disposition.Retry,
                     "ProviderRetry",
@@ -1262,24 +1426,31 @@ class DeliveryContinuationRunner:
             owns,
         )
 
-    def _designer_owns(self, root: Path) -> Callable[[str], bool]:
-        """Every path under the subject's own test paths belongs to the designer.
+    def _designer_owns(
+        self, root: Path, acceptance_paths: tuple[str, ...]
+    ) -> Callable[[str], bool]:
+        """The designer owns test substrate and the authority's acceptance paths.
 
-        The PROPERTY, not the target table (GDP-8).  Runs 25 and 26 both refused
-        the designer for realigning `tests/des/unit/adapters/driven/codefact/
-        test_graphify_code_fact_adapter.py`, a UNIT TEST the architect had also
-        named in `targets` -- so the runner read it as production and refused
-        work the designer's own obligations demanded.  Two runs, roughly $2.6
-        and 25 minutes, and a rewritten Request bought zero defects.  A path is
+        The PROPERTY, not the target table (GDP-8). Runs 25 and 26 both
+        refused the designer for realigning a code-fact adapter UNIT TEST the
+        architect had also named in `targets` -- so the runner read it as
+        production and refused work the designer's own obligations demanded.
+        Two runs, roughly $2.6 and 25 minutes, and a rewritten Request bought
+        zero defects. A path is
         test substrate because of where it sits, and naming it somewhere else
         never moves it.
 
-        The measurement is `path_under_test_paths`, the same function the
-        request stimulus already uses, so "a test path" cannot mean two things
-        in one runner.
+        The authority may declare a test outside the subject's pytest layout.
+        That explicit declaration belongs to the acceptance designer; unrelated
+        production paths remain outside its scope.  Existing test substrate
+        stays owned by `path_under_test_paths`, the same measurement the
+        request stimulus uses.
         """
         test_paths = self._subject_test_paths(root)
-        return lambda path: path_under_test_paths(path, test_paths)
+        declared_acceptance = frozenset(acceptance_paths)
+        return lambda path: (
+            path in declared_acceptance or path_under_test_paths(path, test_paths)
+        )
 
     def _measured_by_design(self, drift: ScopeObservation) -> None:
         """Keep every byte a design turn moved inside its own substrate.
@@ -1440,9 +1611,9 @@ class DeliveryContinuationRunner:
         because a handover written before this rule existed carries the bad
         locator into every resume.
 
-        Measured 2026-09-05, run 12: DESIGN declared `graphify-out/graph.json`
-        -- 60 MB, generated, `.gitignore`d -- and the runner inlined its bytes
-        into the review prompt, where a single `execve` argument had 128 KiB.
+        Measured 2026-09-05, run 12: DESIGN declared a 60 MB generated
+        structural index file ignored by Git, and the runner inlined its bytes
+        into the review prompt, exceeding the per-argument process limit.
         """
         ignored = DeliveryContinuationRunner._ignored_supports(root, supports)
         if ignored is None:
@@ -1469,9 +1640,15 @@ class DeliveryContinuationRunner:
 
     @staticmethod
     def _derive(
-        root: Path, locator: str | DesignFacts
+        root: Path, locator: str | DesignFacts, *, admit_verification: bool = True
     ) -> AuthorityFacts | DeliveryOutcome:
-        """Derive runner facts by rereading one durable authority section."""
+        """Derive runner facts by rereading one durable authority section.
+
+        ``admit_verification=False`` leaves the DESIGN verification and target
+        admission to the caller, which overrides it with a selected revision's
+        own commands and then admits THAT tuple, so a discarded DESIGN argv is
+        never judged.
+        """
         if isinstance(locator, DesignFacts):
             defect = design_facts_defect(locator)
             if defect is not None:
@@ -1497,7 +1674,15 @@ class DeliveryContinuationRunner:
                 locator.oracle,
                 (oracle, *locator.acceptance_supports),
                 locator.verification,
+                locator.oracle_verification_index,
             )
+            if not admit_verification:
+                return typed
+            unresolvable = DeliveryContinuationRunner._admit_verification_executables(
+                root, typed
+            )
+            if unresolvable is not None:
+                return unresolvable
             return DeliveryContinuationRunner._admit_targets(typed) or typed
         document, separator, heading = locator.partition("#")
         text = _markdown_text(root, document) if separator and heading else None
@@ -1536,6 +1721,9 @@ class DeliveryContinuationRunner:
         oracles = extract_oracle_citations(section.text)
         supports = extract_acceptance_support_locators(section.text)
         commands = extract_declared_verification_commands(section.text)
+        oracle_verification_indices = extract_declared_oracle_verification_indices(
+            section.text
+        )
         obligations = tuple(extract_obligations(section.text))
         if (
             not isinstance(targets, list)
@@ -1544,6 +1732,7 @@ class DeliveryContinuationRunner:
             or paradigms[0] is None
             or len(oracles) != 1
             or not commands
+            or len(oracle_verification_indices) != 1
             or len(set(oracles + supports)) != len(oracles + supports)
             or not all(
                 is_repository_relative_whole_file_locator(row.path) for row in targets
@@ -1556,12 +1745,27 @@ class DeliveryContinuationRunner:
                 Disposition.Indeterminate,
                 "ArchitectureAuthorityIncomplete",
                 "resolved authority lacks complete unambiguous consumed facts",
-                "complete the existing durable authority",
+                "declare exactly one oracle verification command index that names "
+                "one declared verification command in the existing durable authority",
             )
         inadmissible = DeliveryContinuationRunner._admit_supports(root, tuple(supports))
         if inadmissible is not None:
             return inadmissible
         oracle = oracles[0].partition("::")[0]
+        conflict = new_target_acceptance_support_conflict(
+            oracles[0],
+            ((row.path, row.decision) for row in targets),
+            supports,
+        )
+        if conflict is not None:
+            return DeliveryContinuationRunner._fail(
+                Disposition.Indeterminate,
+                "TargetAcceptanceSupportConflict",
+                "a non-oracle CREATE_NEW target is also a required acceptance "
+                f"support: {conflict}",
+                "declare that path only as a support, or make its target decision "
+                "EXTEND before binding DESIGN",
+            )
         declared = AuthorityFacts(
             locator,
             (document,),
@@ -1572,8 +1776,89 @@ class DeliveryContinuationRunner:
             oracles[0],
             (oracle, *supports),
             tuple(tuple(command) for command in commands),
+            oracle_verification_indices[0],
         )
+        binding = DeliveryContinuationRunner._admit_oracle_verification_binding(
+            declared
+        )
+        if binding is not None:
+            return binding
+        unresolvable = DeliveryContinuationRunner._admit_verification_executables(
+            root, declared
+        )
+        if unresolvable is not None:
+            return unresolvable
         return DeliveryContinuationRunner._admit_targets(declared) or declared
+
+    @staticmethod
+    def _admit_oracle_verification_binding(
+        facts: AuthorityFacts,
+    ) -> DeliveryOutcome | None:
+        index = facts.oracle_verification_index
+        if (
+            not isinstance(index, int)
+            or isinstance(index, bool)
+            or not 0 <= index < len(facts.native_verification_argvs)
+        ):
+            return DeliveryContinuationRunner._fail(
+                Disposition.Indeterminate,
+                "OracleVerificationBindingInvalid",
+                "the declared oracle verification command index "
+                f"{index!r} does not name one of the "
+                f"{len(facts.native_verification_argvs)} declared verification commands",
+                "set the oracle verification command index to an existing "
+                "zero-based verification command ordinal in the durable authority",
+            )
+        return None
+
+    @staticmethod
+    def _admit_verification_executables(
+        root: Path, facts: AuthorityFacts
+    ) -> DeliveryOutcome | None:
+        """Refuse a verification argv whose first token cannot start here.
+
+        This runs while authority facts are still ephemeral.  A missing
+        repository-relative executable is the one constructive exception: a
+        delivery may declare that exact target, oracle, or support for creation,
+        so refusing it before its author can materialize the path would make a
+        valid ``CREATE_NEW`` delivery impossible.  Every other missing argv0
+        would reach native verification only after publication, binding, and
+        paid turns, even though resolving it performs no process execution.
+        """
+        materializable = {
+            os.path.normpath(path)
+            for path in (
+                *(target for target, _ in facts.target_decisions),
+                *facts.acceptance_paths,
+            )
+        }
+        separators = (os.sep, *((os.altsep,) if os.altsep else ()))
+        for index, argv in enumerate(facts.native_verification_argvs):
+            argv0 = argv[0]
+            has_separator = any(separator in argv0 for separator in separators)
+            normalized = os.path.normpath(argv0)
+            repository_relative = (
+                has_separator
+                and not Path(argv0).is_absolute()
+                and is_repository_relative_whole_file_locator(normalized)
+            )
+            if resolve_executable(argv0, cwd=root) is not None and (
+                not has_separator or Path(argv0).is_absolute() or repository_relative
+            ):
+                continue
+            if repository_relative and normalized in materializable:
+                continue
+            return DeliveryContinuationRunner._fail(
+                Disposition.Indeterminate,
+                "VerificationExecutableUnresolvable",
+                f"verification[{index}] declares `{argv0}`, which does not resolve "
+                "to an executable in this repository or on PATH and is not a "
+                "declared delivery path that this value can materialize",
+                "declare an executable available on PATH or an executable absolute "
+                "or repository-relative path; a missing repository-relative argv0 "
+                "must normalize to a declared target, oracle, or acceptance support",
+            )
+        return None
 
     @staticmethod
     def _admit_targets(facts: AuthorityFacts) -> DeliveryOutcome | None:
@@ -1748,7 +2033,7 @@ class DeliveryContinuationRunner:
     )
 
     #: The shims the runner writes so a declared INTERPRETER name resolves to the
-    #: interpreter the runner is already running.  Pure Python, never a shell
+    #: interpreter `_subject_interpreter` resolved.  Pure Python, never a shell
     #: script (portability rule).  ``os.execv`` and not a subprocess: the child
     #: REPLACES the shim, so its exit status and any signal that kills it reach
     #: the runner unchanged, and no wrapper process sits between them.  The
@@ -1894,12 +2179,11 @@ class DeliveryContinuationRunner:
                 linked.unlink()
 
     #: The directory an ephemeral candidate worktree is missing for the SECOND
-    #: class of measurement precondition: the structural index the code-fact
-    #: port reads.  IMPORTED from the tier that owns it rather than re-typed --
-    #: two copies of a directory name drift the day one of them changes, and the
-    #: runner would then carry a directory nothing reads (GDP-8: the fact is the
-    #: directory the port opens, not a name this module happens to spell).
-    _SUBJECT_INDEX = GRAPH_INDEX_DIR_NAME
+    #: class of measurement precondition: the optional structural index the
+    #: code-fact composition reads. The public composition has no such index.
+    #: The provider owns the name so this runner cannot accidentally link an
+    #: unrelated analysis cache.
+    _SUBJECT_INDEX = CodeFactChain.optional_index_dir
 
     #: What `_link_subject_index` observed, printed verbatim in the operator
     #: line.  The LINKED world names WHICH directory, because the name is not
@@ -1959,6 +2243,8 @@ class DeliveryContinuationRunner:
         code-fact answer can tell which of them produced it.
         """
         name = DeliveryContinuationRunner._SUBJECT_INDEX
+        if name is None:
+            return DeliveryContinuationRunner._INDEX_ABSENT
         declared = subject / name
         linked = candidate / name
         if linked.exists() or linked.is_symlink():
@@ -1984,6 +2270,8 @@ class DeliveryContinuationRunner:
         whose failure mode is the same: the runner made the link, so the runner
         removes it and no Git command ever meets it.
         """
+        if DeliveryContinuationRunner._SUBJECT_INDEX is None:
+            return
         linked = candidate / DeliveryContinuationRunner._SUBJECT_INDEX
         if linked.is_symlink():
             with contextlib.suppress(OSError):
@@ -2031,7 +2319,15 @@ class DeliveryContinuationRunner:
                 DeliveryContinuationRunner._INTERPRETER_SHIM.format(
                     executable=interpreter, prefix=prefix
                 ),
-                interpreter,
+                # The trampoline runs on the RUNNER's interpreter, a real binary,
+                # and only its execv reaches the subject's.  With the subject's as
+                # the shebang, a target the kernel will not use as an interpreter
+                # (a `#!` script on XNU, a non-executable format anywhere) made
+                # execve fail with ENOEXEC and subprocess resumed its PATH search:
+                # the next `python` on PATH answered, exit 0, while NATIVE-RUNTIME
+                # said subject-venv.  From inside the trampoline the same refusal
+                # is an OSError and a non-zero exit, never another interpreter.
+                sys.executable,
             )
         return list(DeliveryContinuationRunner._INTERPRETER_SHIMS)
 
@@ -2226,6 +2522,7 @@ class DeliveryContinuationRunner:
                         cwd=str(root),
                         capture_output=True,
                         text=True,
+                        errors="replace",
                         env=command_env,
                     )
                 except OSError as refused:
@@ -2891,32 +3188,148 @@ class DeliveryContinuationRunner:
             with contextlib.suppress(OSError):
                 Path(index).unlink()
 
+    def _paths_tree(self, root: Path, paths: tuple[str, ...]) -> str | None:
+        """The tree made by these present paths alone, or ``None``.
+
+        Turn evidence is a fact about its owned paths, not about the repository
+        commit it happened beside.  This intentionally starts with an empty
+        index: unlike `_owned_tree`, it never carries unrelated base bytes.
+        """
+        descriptor, index = tempfile.mkstemp(prefix="nwave-turn-paths-index-")
+        os.close(descriptor)
+        env = {**declared_child_environment(), "GIT_INDEX_FILE": index}
+        try:
+            present = {path: self._path_present(root / path) for path in paths}
+            if any(seen is None for seen in present.values()):
+                return None
+            stageable = [path for path in paths if present[path]]
+            initialized = self._git(root, "read-tree", "--empty", env=env)
+            staged = (
+                self._git(root, "add", "--", *stageable, env=env)
+                if not initialized.returncode and stageable
+                else initialized
+            )
+            tree = self._git(root, "write-tree", env=env)
+            if initialized.returncode or staged.returncode or tree.returncode:
+                return None
+            return tree.stdout.strip()
+        finally:
+            with contextlib.suppress(OSError):
+                Path(index).unlink()
+
+    def cited_design_sections(
+        self, root: Path, stored: StoredHandover, value: HandoverValue
+    ) -> tuple[tuple[str, str], ...] | None:
+        """The unique cited DESIGN section identities for one value.
+
+        Documents remain admitted through `_markdown_text` and exact tracked
+        checks.  An empty or non-heading locator is not a citation; a cited
+        document or section that cannot be measured makes the answer unknown.
+        """
+        locators: list[str] = []
+        if stored.shared_design is not None:
+            locators.append(stored.shared_design.authority_locator)
+        authority = value.authority
+        locator = (
+            authority.authority_locator
+            if isinstance(authority, DesignFacts)
+            else authority
+        )
+        if isinstance(locator, str):
+            locators.append(locator)
+        result: list[tuple[str, str]] = []
+        for locator in dict.fromkeys(locators):
+            document, separator, heading = locator.partition("#")
+            if not locator or not separator or not document or not heading:
+                continue
+            text = _markdown_text(root, document)
+            # A DES authority is already admitted from its constructed bytes
+            # during an in-progress delivery.  Requiring it to have been
+            # committed would turn every pre-integration record into
+            # ``uncertain`` and force paid replay before the one eventual
+            # integration.  The section digest is the identity here; Git
+            # tracking remains an integration concern, not a precondition for
+            # measuring this current worktree authority.
+            digest = None if text is None else authority_section_sha256(text, locator)
+            if digest is None:
+                return None
+            result.append((locator, digest))
+        return tuple(result)
+
+    def _record_identity(
+        self,
+        root: Path,
+        stored: StoredHandover,
+        observation: str,
+        design: AuthorityFacts,
+    ) -> RecordIdentity | None:
+        value = next(
+            (item for item in stored.values if item.observation == observation), None
+        )
+        if value is None:
+            return None
+        return RecordIdentity.of(root, stored, value, design)
+
+    def _record_pairs(
+        self,
+        root: Path,
+        stored: StoredHandover,
+        values: tuple[tuple[str, AuthorityFacts], ...],
+    ) -> tuple[tuple[str, RecordIdentity], ...] | None:
+        pairs = tuple(
+            (observation, self._record_identity(root, stored, observation, design))
+            for observation, design in values
+        )
+        if any(identity is None for _, identity in pairs):
+            return None
+        return tuple(
+            (observation, identity)
+            for observation, identity in pairs
+            if identity is not None
+        )
+
     def _turn_completed(
         self,
         root: Path,
-        base: str,
         request: str,
-        observations: tuple[str, ...],
+        values: tuple[tuple[str, RecordIdentity], ...],
         role: str,
         paths: tuple[str, ...],
     ) -> bool:
         """Is every one of these values' `role` turn already a recorded fact?
+
+        ``values`` are (observation, selected-revision identity) pairs.  A
+        record is current only when its tree equals the owned tree AND its
+        message names this value's own revision: the tree alone cannot see a
+        selection that changed the criteria but not the bytes.
 
         Absent record, a workspace that no longer holds what the record
         describes, and a measurement that did not resolve all answer NO: the
         turn is invoked again, exactly as it is today.
         """
         recorded: set[str] = set()
-        for observation in observations:
+        for observation, identity in values:
             ref = self._turn_ref(request, observation, role)
             observed = self._git(
                 root, "rev-parse", "--verify", "--quiet", f"{ref}^{{tree}}"
             )
             if observed.returncode:
                 return False
+            message = self._git(root, "show", "-s", "--format=%B", ref)
+            if message.returncode or message.stdout.strip() != self._turn_message(
+                role, identity
+            ):
+                return False
             recorded.add(observed.stdout.strip())
-        current = self._owned_tree(root, base, paths)
+        current = self._paths_tree(root, paths)
         return current is not None and recorded == {current}
+
+    @staticmethod
+    def _turn_message(role: str, identity: RecordIdentity) -> str:
+        return (
+            f"nwave turn: {role}\n\nselected-revision: {identity.revision}\n"
+            f"design-sections: {identity.design_sections}"
+        )
 
     def _turn_recorded(
         self, root: Path, request: str, observation: str, role: str
@@ -2930,26 +3343,33 @@ class DeliveryContinuationRunner:
         root: Path,
         base: str,
         request: str,
-        observations: tuple[str, ...],
+        values: tuple[tuple[str, RecordIdentity], ...],
         role: str,
         tree: str,
     ) -> None:
-        """Write the turn commit and point every value's ref at it.
+        """Write one turn commit per (observation, identity) and point its ref.
 
-        The commit's whole job is to be found again, so its message is a
-        constant: nothing downstream parses it, and composing a conventional
-        subject here would claim it is a delivery commit, which it is not.
+        The commit's job is to be found again and compared: its message names
+        the value's selected-revision identity, so a record of another revision
+        reads as moved bytes.  It claims to be no delivery commit.
 
         Recording is best-effort for the same reason reading is: a record that
         is not written costs the NEXT run one re-invoked turn and nothing else.
         """
         env = declared_child_environment()
-        commit = self._git(
-            root, "commit-tree", tree, "-p", base, "-m", f"nwave turn: {role}", env=env
-        )
-        if commit.returncode:
-            return
-        for observation in observations:
+        for observation, identity in values:
+            commit = self._git(
+                root,
+                "commit-tree",
+                tree,
+                "-p",
+                base,
+                "-m",
+                self._turn_message(role, identity),
+                env=env,
+            )
+            if commit.returncode:
+                continue
             self._git(
                 root,
                 "update-ref",
@@ -2973,10 +3393,14 @@ class DeliveryContinuationRunner:
         base: str,
         base_tree: str,
         request: str,
-        observations: tuple[str, ...],
+        values: tuple[tuple[str, RecordIdentity], ...],
         mutable: tuple[str, ...],
+        record_paths: tuple[str, ...],
     ) -> None:
         """Point a craft record at the CURRENT bytes, or drop it when there are none.
+
+        "Wrote nothing" is judged over the ``mutable`` targets alone; the
+        record itself is the tree over ``record_paths``.
 
         A record buys back WORK, and a turn that contributed nothing has none to
         buy back.  Recording one would make the empty-owner repair -- "rerun the
@@ -2988,13 +3412,50 @@ class DeliveryContinuationRunner:
         turn whose only edit was whitespace the declared formatter undoes wrote
         no bytes, and `_candidate` already says so about its own tree.
         """
-        tree = self._owned_tree(root, base, mutable)
+        written = self._owned_tree(root, base, mutable)
+        if written is None:
+            return
+        if written == base_tree:
+            self._drop_turn_records(
+                root, request, tuple(o for o, _ in values), _CRAFT_TURN
+            )
+            return
+        tree = self._paths_tree(root, record_paths)
         if tree is None:
             return
-        if tree == base_tree:
-            self._drop_turn_records(root, request, observations, _CRAFT_TURN)
-            return
-        self._record_turn(root, base, request, observations, _CRAFT_TURN, tree)
+        self._record_turn(root, base, request, values, _CRAFT_TURN, tree)
+
+    def _pre_candidate_currentness(
+        self,
+        root: Path,
+        stored: StoredHandover,
+        prepared: list[tuple[str, AuthorityFacts]],
+    ) -> dict[str, tuple[bool, bool]]:
+        """Snapshot, per value, whether its oracle/craft record was current.
+
+        Taken BEFORE `_candidate` runs the declared formatter, so an external,
+        unreviewed edit -- bytes nobody's oracle/craft turn produced -- reads
+        as NOT current here, using the same completed-turn predicates the rest
+        of the runner already trusts (`oracle_turn_complete`,
+        `craft_turn_complete`).  `_refresh_turn_records` may only re-point a
+        record this snapshot already found current: normalization can move
+        bytes honestly, but it cannot make a record current that was already
+        stale for a reason of its own.
+        """
+        snapshot: dict[str, tuple[bool, bool]] = {}
+        for observation, design in prepared:
+            ready = next(
+                (item for item in stored.values if item.observation == observation),
+                None,
+            )
+            if ready is None:
+                snapshot[observation] = (False, False)
+                continue
+            snapshot[observation] = (
+                self.oracle_turn_complete(root, stored, ready, design),
+                self.craft_turn_complete(root, stored, ready, design),
+            )
+        return snapshot
 
     def _refresh_turn_records(
         self,
@@ -3002,6 +3463,7 @@ class DeliveryContinuationRunner:
         base: str,
         stored: StoredHandover,
         prepared: list[tuple[str, AuthorityFacts]],
+        was_current: dict[str, tuple[bool, bool]],
     ) -> None:
         """Re-point this Request's records at bytes the RUNNER itself moved.
 
@@ -3014,33 +3476,50 @@ class DeliveryContinuationRunner:
         `ruff.toml` present: the resume re-invoked designer, reviewer and
         crafter over bytes only `ruff format` had changed.
 
-        Only records that ALREADY exist are re-pointed.  An absent record is a
-        turn that is not complete, and normalizing bytes does not complete it.
+        Only records that ALREADY exist are re-pointed, and only when
+        ``was_current`` -- captured BEFORE `_candidate` normalized anything --
+        says this value's record was still current at that time.  A record
+        that was already stale before normalization (an oracle or craft file
+        an operator edited outside `des oracle`/`des craft`) stays historical:
+        the formatter moving further bytes is not a native witness that an
+        unreviewed edit was ever reviewed.
         """
         observed_base = self._git(root, "rev-parse", f"{base}^{{tree}}")
         if observed_base.returncode:
             return
         base_tree = observed_base.stdout.strip()
         for observation, design in prepared:
-            if self._turn_recorded(root, stored.request, observation, _ORACLE_TURN):
-                tree = self._owned_tree(root, base, design.acceptance_paths)
-                if tree is not None:
+            oracle_was_current, craft_was_current = was_current.get(
+                observation, (False, False)
+            )
+            if oracle_was_current and self._turn_recorded(
+                root, stored.request, observation, _ORACLE_TURN
+            ):
+                identity = self._record_identity(root, stored, observation, design)
+                tree = self._paths_tree(root, design.acceptance_paths)
+                if identity is not None and tree is not None:
                     self._record_turn(
                         root,
                         base,
                         stored.request,
-                        (observation,),
+                        ((observation, identity),),
                         _ORACLE_TURN,
                         tree,
                     )
-            if self._turn_recorded(root, stored.request, observation, _CRAFT_TURN):
+            if craft_was_current and self._turn_recorded(
+                root, stored.request, observation, _CRAFT_TURN
+            ):
+                pairs = self._record_pairs(root, stored, ((observation, design),))
+                if pairs is None:
+                    continue
                 self._stamp_craft_record(
                     root,
                     base,
                     base_tree,
                     stored.request,
-                    (observation,),
+                    pairs,
                     self._mutable_targets(design),
+                    self._craft_record_paths(design),
                 )
 
     def _release_turn_records(self, root: Path, stored: StoredHandover) -> None:
@@ -3065,9 +3544,9 @@ class DeliveryContinuationRunner:
         # inherit a candidate belonging to a delivery already integrated.
         for role in (VERIFY_TURN, VERIFY_OUTCOME_TURN):
             self._drop_turn_records(root, stored.request, (stored.request,), role)
-        self._git(
-            root, "update-ref", "-d", verify_upstream_ref(stored.request, stored.raw)
-        )
+        ref = self._verify_upstream(root, stored)
+        if ref is not None:
+            self._git(root, "update-ref", "-d", ref)
 
     def _candidate(
         self, root: Path, base: str, owned: tuple[str, ...], facts: IntegrationFacts
@@ -3321,6 +3800,97 @@ class DeliveryContinuationRunner:
         ]
 
     @staticmethod
+    def _inherited(
+        root: Path, stored: StoredHandover, ready: HandoverValue
+    ) -> list[dict[str, object]]:
+        """Every already-bound ANCESTOR of this value, in canonical order.
+
+        THE SET IS THE TRANSITIVE DEPENDENCY ANCESTRY, walked over the same
+        `{observation: dependencies}` map `_dependency_path` reads, and never
+        "every value at a lower position".  For a Product-Owner graph the two
+        coincide -- `_ordered_po_values` gives each value its immediate
+        predecessor as its sole dependency, so the persisted DAG is a total
+        chain -- and for a graph with real edges the ancestry is the honest one.
+
+        RENDERED FROM THE HANDOVER'S BOUND FACTS, never through
+        `derive_authority`: that resolver reads a section out of a DESIGN
+        document and can answer `DesignAuthorityUnavailable` or
+        `DesignAuthorityUnlocatable`, which would let an unrelated value's
+        renamed section turn THIS value's paid turn Indeterminate.  The bound
+        `DesignFacts` are already the durable, validated carrier, so "nothing
+        inferred" holds by construction.
+
+        EXACTLY THE SIX ENUMERATED FIELDS, plus the optional probe path.
+        `decisions` and `obligations` are deliberately absent: a real bound
+        authority carries `decisions` entries of many hundreds of characters
+        each, and inheriting them would inflate the very prompt this projection
+        exists to make cheaper.  A later value that wants a predecessor's
+        rationale reads the authority section its locator names.
+
+        A predecessor whose `authority` is a legacy bare locator string rather
+        than typed facts CONTRIBUTES NOTHING AND REFUSES NOTHING: the handover
+        admits `str | DesignFacts | None`, and a restored older handover must
+        not wedge every later design turn.
+        """
+        dependencies = {
+            value.observation: value.dependencies for value in stored.values
+        }
+        pending = list(dependencies.get(ready.observation, ()))
+        ancestry: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current in ancestry or current == ready.observation:
+                continue
+            ancestry.add(current)
+            pending.extend(dependencies.get(current, ()))
+        entries: list[dict[str, object]] = []
+        for position, value in enumerate(stored.values, start=1):
+            if value.observation not in ancestry:
+                continue
+            bound = value.authority
+            if not isinstance(bound, DesignFacts):
+                continue
+            entry: dict[str, object] = {
+                "observation": value.observation,
+                "authority": bound.authority_locator,
+                "targets": [
+                    {"path": target.path, "decision": target.decision}
+                    for target in bound.targets
+                ],
+                "paradigm": bound.paradigm,
+                "acceptance_supports": list(bound.acceptance_supports),
+                "oracle": bound.oracle,
+                "verification": [list(argv) for argv in bound.verification],
+                "oracle_verification_index": bound.oracle_verification_index,
+            }
+            probe = DeliveryContinuationRunner._probe_evidence(root, position)
+            if probe is not None:
+                entry["probe_evidence"] = probe
+            entries.append(entry)
+        return entries
+
+    @staticmethod
+    def _probe_evidence(root: Path, position: int) -> str | None:
+        """This predecessor's probe directory, reported only when it exists.
+
+        A filesystem that cannot answer means the same as ABSENT.  An optional
+        convenience hint must never be able to refuse, or to make Indeterminate
+        a step that succeeds today: the totality of `des design` is not traded
+        for a path string.
+
+        The directory sits under `_RUNNER_OWNED_PREFIX`, which is already
+        excluded from `WorkspaceDriftUnattributed`, so reporting it adds no new
+        drift surface.
+        """
+        relative = f"{_RUNNER_OWNED_PREFIX}probe-value-{position}/"
+        try:
+            if not (root / relative).is_dir():
+                return None
+        except OSError:
+            return None
+        return relative
+
+    @staticmethod
     def _typed_facts(design: AuthorityFacts) -> dict[str, object]:
         """Project the facts that the resolved authority actually declares."""
         facts: dict[str, object] = {
@@ -3330,6 +3900,8 @@ class DeliveryContinuationRunner:
             "decisions": design.decisions,
             "oracle": design.acceptance_oracle_locator,
             "acceptance_supports": design.acceptance_paths[1:],
+            "verification": [list(argv) for argv in design.native_verification_argvs],
+            "oracle_verification_index": design.oracle_verification_index,
             "obligations": design.obligations,
         }
         if design.acceptance_obligations:
@@ -3338,6 +3910,37 @@ class DeliveryContinuationRunner:
                 for item in design.acceptance_obligations
             )
         return facts
+
+    @staticmethod
+    def _shared(stored: StoredHandover) -> dict[str, object]:
+        """The one shared feature DESIGN, rendered from the stored binding.
+
+        Never through ``derive_authority`` (same reason as ``_inherited``), and
+        empty when unbound so an unbound handover's prompts stay byte-identical.
+        """
+        bound = stored.shared_design
+        if bound is None:
+            return {}
+        design = bound.design
+        return {
+            "shared_design": {
+                "authority": bound.authority_locator,
+                "semantic_sha256": bound.semantic_sha256,
+                "targets": [
+                    {"path": target.path, "decision": target.decision}
+                    for target in design.targets
+                ],
+                "paradigm": design.paradigm,
+                "decisions": list(design.decisions),
+                "obligations": list(design.obligations),
+            }
+        }
+
+    @classmethod
+    def _shared_of(cls, handover_bytes: bytes) -> dict[str, object]:
+        """``_shared`` for a site that holds only the frozen handover bytes."""
+        stored = read_handover(handover_bytes)
+        return {} if isinstance(stored, Blocked) else cls._shared(stored)
 
     @staticmethod
     def _prepared_facts(
@@ -3378,11 +3981,6 @@ class DeliveryContinuationRunner:
     #: run 23's `python -c "..."`, where a trailing flag is program input.
     _ORACLE_REPORT_VAR = "PYTEST_ADDOPTS"
 
-    #: The floor form, used when no declared vector names the oracle.  Identical
-    #: to the one `_ADMITTED_VERIFICATION_FORM` promises resolves in every
-    #: candidate, and to the one this refusal's HOW tells the author to run.
-    _ORACLE_FLOOR_FORM = ("python", "-m", "pytest", "{oracle}", "-q")
-
     #: The verdicts that REFUSE before one craft turn is paid.
     #:
     #: `broken` alone, and the omission of `green` is MEASURED rather than
@@ -3416,33 +4014,41 @@ class DeliveryContinuationRunner:
     #: traceback.  Whether a graph survived is measured once, where the run ends,
     #: never asserted from inside it.
     _ORACLE_NOT_RED_HOW = (
-        "EXECUTE the oracle before declaring it authored: `python -m pytest "
-        "<oracle> -q` must exit 1 with at least one FAILURE and zero ERRORS, so "
-        "it fails on its own assertion and not on an import, a fixture or a "
-        "path; repair the named oracle in the acceptance paths this Request "
-        "already declares, then re-run the Request"
+        "RUN THE DECLARED ORACLE VECTOR from the repository root; use its "
+        "native evidence to distinguish an unmet behavior from a setup, build "
+        "or tooling failure. Repair the reported problem within the declared "
+        "acceptance paths, then retry the oracle step"
     )
 
-    @staticmethod
-    def _oracle_command(
-        oracle: str, declared: tuple[tuple[str, ...], ...]
-    ) -> tuple[str, ...]:
-        """The declared vector that NAMES this oracle, or the admitted floor form.
+    #: The MOVE for an oracle whose vector asked for a report and produced none.
+    #: The oracle's own bytes are not the suspect here -- nothing about them was
+    #: observed -- so telling the author to repair assertions would be advice
+    #: written for a different incident.  The `argv=` already printed on this
+    #: oracle's `ORACLE-RED:` line is what makes the vector runnable by hand.
+    _ORACLE_REPORT_ABSENT_HOW = (
+        "RUN THE PRINTED VECTOR IN THE WORKSPACE and read its first lines -- the "
+        "`argv=` on this oracle's `ORACLE-RED:` line, executed from the "
+        "repository root, says why no session completed (measured: `No module "
+        "named pytest`); install the runner under that interpreter or declare a "
+        "verification vector whose interpreter carries it, then re-run the Request"
+    )
 
-        Preferring the design's own vector keeps the pre-craft execution and the
-        candidate verification the SAME command, so an oracle admitted here
-        cannot be refused there for a difference this runner introduced.  The
-        match is exact token equality and not a substring: a vector naming
-        `tests/` selects the oracle too, but running it would execute the whole
-        directory and classify a SIBLING's failure as this oracle's red.
-        """
-        for argv in declared:
-            if oracle in argv:
-                return argv
-        return tuple(
-            part.format(oracle=oracle)
-            for part in DeliveryContinuationRunner._ORACLE_FLOOR_FORM
+    #: The HOW each refusing AXIS names.  Selecting on the axes that actually
+    #: refused keeps a set that refused only on assertions emitting today's
+    #: single sentence unchanged, and makes a mixed set state BOTH moves rather
+    #: than give one of them advice written for the other.
+    _ORACLE_REFUSAL_HOWS = {"junit-report-absent": _ORACLE_REPORT_ABSENT_HOW}
+
+    #: The WHY each refusing AXIS adds to its per-oracle sentence.  Only an axis
+    #: whose incident the bare diagnosis cannot explain appears here.
+    _ORACLE_REFUSAL_WHYS = {
+        "junit-report-absent": (
+            "the runner asked this vector for a junit report and none was "
+            "produced, so pytest did not complete a session under this "
+            "interpreter (typically it is not installed there) and nothing "
+            "about this oracle's own assertions was observed"
         )
+    }
 
     @staticmethod
     def _junit_counts(report: Path) -> tuple[int, int, int] | None:
@@ -3543,38 +4149,52 @@ class DeliveryContinuationRunner:
 
     @staticmethod
     def _oracle_verdict(
-        exit_status: int | None, counts: tuple[int, int, int] | None
+        exit_status: int | None,
+        counts: tuple[int, int, int] | None,
+        report_requested: bool,
     ) -> tuple[str, str]:
-        """The verdict, and the AXIS that reached it -- never the verdict alone.
+        """Classify evidence without assigning pytest exit semantics to other tools.
 
-        MEASURED on run 23's real oracle (2026-09-05) before this existed:
-        three tests that ERRORED in fixture setup exit `1`, the identical status
-        a genuine assertion failure returns.  Exit status alone therefore admits
-        exactly the artefact this step exists to refuse, which is why the report
-        is read at all and why the axis travels with the answer: a `red` reached
-        on `exit-status-only` is a WEAKER claim than one reached on the report,
-        and the operator line says which was available.
-
-        A None status -- an oracle the runner never started -- is `broken` on
-        the same first branch, which is the honest answer: nothing about the
-        oracle was observed, so nothing about it may be claimed.
-
-        The fourth state is not decoration.  A completed session that failed
-        while its own report records neither a failure nor an error is a world
-        the runner cannot describe, and answering `red` there would be a
-        silent-wrong pass into a paid craft turn (GDP-6, GDP-8 arity corollary).
+        A requested pytest report must exist. Its known completed exits and
+        error/failure counts distinguish broken setup from assertion failure.
+        Other tools without a report provide only an exit observation: success
+        is green; nonzero is indeterminate, with diagnostics for the LLM.
+        A native JUnit report can establish errors/failures independently of
+        that tool's numeric exit convention. No process exit remains broken.
         """
-        if exit_status not in DeliveryContinuationRunner._ORACLE_COMPLETED_EXITS:
+        if exit_status is None:
+            return "broken", "exit-status"
+        if report_requested and counts is None:
+            return "broken", "junit-report-absent"
+        if not report_requested and counts is None:
+            # Native tools need not use pytest's exit conventions. A nonzero
+            # status alone cannot distinguish assertion, build and setup errors.
+            return ("green" if not exit_status else "indeterminate"), "exit-status-only"
+        if (
+            report_requested
+            and exit_status not in DeliveryContinuationRunner._ORACLE_COMPLETED_EXITS
+        ):
             return "broken", "exit-status"
         if counts is None:
             return ("green" if not exit_status else "red"), "exit-status-only"
         _, errors, failures = counts
-        if not exit_status:
-            return "green", "junit-report"
+        # Read the report's own errors/failures BEFORE trusting a zero exit:
+        # a process can exit 0 while its own JUnit report records a failed or
+        # errored test case (a native tool's exit convention need not track
+        # its report), and a zero exit must never outrank a report that
+        # disagrees with it. An error keeps the SAME "broken" designation
+        # this method already gives an errored report on the nonzero-exit
+        # path; a failure against a clean exit is a genuine two-axis
+        # contradiction and earns the same conservative designation the
+        # mirror contradiction (nonzero exit, clean report) earns below.
         if errors:
             return "broken", "junit-report"
         if failures:
+            if not exit_status:
+                return "indeterminate", "junit-report-contradicts-exit-status"
             return "red", "junit-report"
+        if not exit_status:
+            return "green", "junit-report"
         return "indeterminate", "junit-report-contradicts-exit-status"
 
     @staticmethod
@@ -3648,18 +4268,19 @@ class DeliveryContinuationRunner:
         where the runner refuses would discard it exactly where it is needed
         (GDP-8: decide on the property, never the designation).
         """
-        declared = self._request_argvs(prepared)
-        oracles = tuple(
-            dict.fromkeys(design.acceptance_paths[0] for _, design in prepared)
+        oracle_bindings = tuple(
+            dict.fromkeys(
+                (design.acceptance_paths[0], design.oracle_verification_argv)
+                for _, design in prepared
+            )
         )
         inherited = os.environ.get(self._ORACLE_REPORT_VAR, "")
         records: list[dict[str, object]] = []
         measured: list[dict[str, object]] = []
         refused: list[str] = []
         with tempfile.TemporaryDirectory(prefix="nwave-oracle-red-") as reports:
-            for index, oracle in enumerate(oracles):
+            for index, (oracle, argv) in enumerate(oracle_bindings):
                 report = Path(reports) / f"{index}.xml"
-                argv = self._oracle_command(oracle, declared)
                 evidence = self._native(
                     root,
                     (argv,),
@@ -3675,7 +4296,9 @@ class DeliveryContinuationRunner:
                 item = evidence[0]
                 counts = self._junit_counts(report)
                 failures = self._junit_failures(report)
-                verdict, axis = self._oracle_verdict(item.exit_status, counts)
+                verdict, axis = self._oracle_verdict(
+                    item.exit_status, counts, invokes_pytest(tuple(argv))
+                )
                 measured.append(
                     {
                         "path": oracle,
@@ -3685,6 +4308,7 @@ class DeliveryContinuationRunner:
                         "argv": list(item.argv),
                         "exit": item.exit_status,
                         "failures": failures,
+                        "diagnostic": self._oracle_diagnosis(item),
                     }
                 )
                 # Operator channel only, exactly like `NATIVE-RUNTIME`: the
@@ -3696,7 +4320,7 @@ class DeliveryContinuationRunner:
                     f"argv={' '.join(argv)}",
                     file=sys.stderr,
                 )
-                if verdict == "indeterminate":
+                if verdict == "indeterminate" and axis != "exit-status-only":
                     return self._fail(
                         Disposition.Indeterminate,
                         "OracleRedUnobservable",
@@ -3720,10 +4344,12 @@ class DeliveryContinuationRunner:
                         "stderr": item.stderr,
                     }
                 )
+                why = self._ORACLE_REFUSAL_WHYS.get(str(axis), "")
                 refused.append(
                     f"{oracle} is {verdict} before any implementation "
                     f"(exit {item.exit_status}, {axis}) -- "
-                    f"{self._oracle_diagnosis(item)}"
+                    + (f"{why} -- " if why else "")
+                    + self._oracle_diagnosis(item)
                 )
         if not records:
             return OracleExecution(tuple(measured), None)
@@ -3735,7 +4361,14 @@ class DeliveryContinuationRunner:
                     Disposition.Refusal,
                     "OracleNotRed",
                     "; ".join(refused),
-                    self._ORACLE_NOT_RED_HOW,
+                    "; ".join(
+                        dict.fromkeys(
+                            self._ORACLE_REFUSAL_HOWS.get(
+                                str(record["axis"]), self._ORACLE_NOT_RED_HOW
+                            )
+                            for record in records
+                        )
+                    ),
                 ),
             ),
         )
@@ -3782,6 +4415,7 @@ class DeliveryContinuationRunner:
                     "finding; do not judge, implement, or execute production."
                 ),
                 values=self._prepared_facts(prepared),
+                **self._shared_of(handover_bytes),
                 finding=finding,
                 oracle_red=list(oracle_red),
             ),
@@ -3805,7 +4439,7 @@ class DeliveryContinuationRunner:
             before,
             (),
             self._request_owned_paths(prepared),
-            None if denied is not None else self._designer_owns(root),
+            None if denied is not None else self._designer_owns(root, acceptance_paths),
         )
         if isinstance(drift, DeliveryOutcome):
             return drift
@@ -3911,6 +4545,7 @@ class DeliveryContinuationRunner:
                 observation=value,
                 decomposition=self._decomposition(stored),
                 **self._typed_facts(design),
+                **self._shared(stored),
                 finding=finding,
             ),
             stored.raw,
@@ -4005,6 +4640,7 @@ class DeliveryContinuationRunner:
                 candidate_sha=candidate,
                 diff=diff,
                 values=self._prepared_facts(prepared),
+                **self._shared_of(handover_bytes),
                 owned_paths=self._request_owned_paths(prepared),
                 approved_oracles=[
                     [path, raw.decode("utf-8", errors="replace")]
@@ -4124,25 +4760,47 @@ class DeliveryContinuationRunner:
         observation: str,
         locator: str | DesignFacts,
     ) -> StoredHandover | DeliveryOutcome:
+        """Rebind one value's authority while retaining historical evidence.
+
+        A changed DESIGN is a SEMANTIC decision only the architect makes, and
+        a recorded oracle or craft turn was authored/measured/built against
+        the OLD typed facts.  `_turn_completed`'s tree-only comparison cannot
+        see a changed `decisions` (or any other typed field) that happens to
+        leave the same acceptance or mutable bytes on disk, so unchanged
+        oracle bytes are not evidence of judgement over the NEW design.  The
+        current authority, still readable from `stored` before this rewrite,
+        is compared with the replacement by the typed facts' own equality --
+        no new storage, gate or comparison is introduced.  An identical
+        accepted correction (`current == locator`) changes nothing and keeps
+        both the completion claims and the cheap resume they buy.
+
+        Turn records carry the selected revision identity and an owned-byte
+        snapshot.  The normal currentness predicate reads both, so records for
+        a superseded DESIGN are historical rather than live.  Keeping them is
+        what permits an exact restoration to reuse the original proof.
+        """
         updated = rewrite_handover(
             root,
             stored.raw,
             stored.request,
             tuple(
-                HandoverValue(
-                    value.observation,
-                    value.dependencies,
-                    locator if value.observation == observation else value.authority,
-                    value.acceptance,
-                    value.acceptance_oracle,
-                    value.acceptance_supports,
-                )
+                self._rebound(value, locator)
+                if value.observation == observation
+                else value
                 for value in stored.values
             ),
         )
         if isinstance(updated, Blocked):
             return self._blocked(updated)
         return updated
+
+    @staticmethod
+    def _rebound(value: HandoverValue, authority: str | DesignFacts) -> HandoverValue:
+        """The value bound to ``authority``: identical facts keep the full-input
+        identity, different facts (bound without naming their input) clear it."""
+        if value.authority == authority:
+            return value
+        return replace(value, authority=authority, design_semantic_sha256=None)
 
     @staticmethod
     def _owned_paths(design: AuthorityFacts) -> tuple[str, ...]:
@@ -4167,10 +4825,19 @@ class DeliveryContinuationRunner:
         initial_status: str,
         initial_workspace: dict[str, tuple[str, bytes | str]],
         declared: tuple[str, ...] = (),
+        finding: str | None = None,
     ) -> DeliveryOutcome | None:
-        """Author one batch's candidate public oracle.  No review or craft."""
+        """Author one batch's candidate public oracle.  No review or craft.
+
+        ``finding`` travels verbatim into the author's prompt when a caller
+        reaches this first-authoring path wearing one -- exactly the state a
+        rejected first turn that wrote no oracle byte leaves behind: nothing
+        on disk to correct, so the same author call `finding is None` already
+        makes is the one this second turn takes too, only with the original
+        finding string attached rather than dropped.
+        """
         acceptance_paths = design.acceptance_paths
-        owns_path = self._designer_owns(root)
+        owns_path = self._designer_owns(root, acceptance_paths)
         approved_authority = _authority_bytes(root, design.modified_authority_paths)
         if approved_authority is None:
             return self._fail(
@@ -4218,7 +4885,6 @@ class DeliveryContinuationRunner:
             self._measured_by_design(drift)
             return None
 
-        oracle = root / acceptance_paths[0]
         acceptance_before = _workspace_bytes(root, acceptance_paths)
         atd = self._invoke(
             port,
@@ -4231,6 +4897,8 @@ class DeliveryContinuationRunner:
                     else {"observations": list(observations)}
                 ),
                 **self._typed_facts(design),
+                **self._shared_of(handover_bytes),
+                **({} if finding is None else {"finding": finding}),
             ),
             handover_bytes,
             root,
@@ -4252,23 +4920,31 @@ class DeliveryContinuationRunner:
                 )
             return authoring_scope_unchanged() or not_accepted
         observed = [
-            self._regular_file(oracle),
-            *(self._regular_file(root / path) for path in acceptance_paths),
+            (path, self._regular_file(root / path)) for path in acceptance_paths
         ]
-        if any(seen is None for seen in observed):
+        unavailable = "; ".join(
+            f"{'oracle' if index == 0 else 'acceptance support'} {path!r}: "
+            + ("unobservable" if seen is None else "missing or not a regular file")
+            for index, (path, seen) in enumerate(observed)
+            if seen is not True
+        )
+        if any(seen is None for _, seen in observed):
             return self._fail(
                 Disposition.Indeterminate,
                 "OracleUnobservable",
-                "the declared oracle or acceptance support cannot be observed on "
-                "this filesystem, so whether the design created it is unknown",
-                "restore read access to the declared acceptance paths, then re-run",
+                f"acceptance files declared by {design.locator!r} cannot all be "
+                f"observed: {unavailable}",
+                "restore read access to the named paths and inspect any missing "
+                "files against their declaration before re-running the oracle step",
             )
-        if not all(observed):
+        if unavailable:
             return self._fail(
                 Disposition.Indeterminate,
                 "OracleUnavailable",
-                "accepted acceptance design did not create the declared candidate oracle",
-                "observe or restore the oracle",
+                f"accepted acceptance design left files declared by "
+                f"{design.locator!r} unavailable: {unavailable}",
+                "restore the named acceptance files or correct their declaration "
+                "before re-running the oracle step",
             )
         return authoring_scope_unchanged()
 
@@ -4284,6 +4960,68 @@ class DeliveryContinuationRunner:
         )
 
     @staticmethod
+    def _bound_authority_documents(
+        root: Path, stored: StoredHandover
+    ) -> tuple[str, ...]:
+        """Whole-file authority documents the declared commands and handoff derive from."""
+        from des.adapters.driven.config.des_config import DESConfig
+
+        paths: list[str] = []
+        selected = False
+        for value in stored.values:
+            authority = value.authority
+            locator = (
+                authority.authority_locator
+                if isinstance(authority, DesignFacts)
+                else authority
+            )
+            if isinstance(locator, str) and locator:
+                paths.append(locator.partition("#")[0])
+            selected = selected or bool(
+                value.acceptance or value.acceptance_oracle is not None
+            )
+        if stored.shared_design is not None:
+            paths.append(stored.shared_design.authority_locator.partition("#")[0])
+        if selected:
+            try:
+                paths.append(DESConfig.distill_document_destination(root, stored.scope))
+            except FeatureDocumentsInvalid:
+                paths.append(".nwave/des/unreadable-distill-authority")
+        return tuple(dict.fromkeys(p for p in paths if p))
+
+    def _verify_upstream(self, root: Path, stored: StoredHandover) -> str | None:
+        """The verify upstream ref over handover AND authority bytes, or None."""
+        documents = _authority_bytes(
+            root, self._bound_authority_documents(root, stored)
+        )
+        if documents is None:
+            return None
+        upstream = (
+            stored.raw
+            + b"\0"
+            + json.dumps(
+                [[p, hashlib.sha256(b).hexdigest()] for p, b in documents],
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        return verify_upstream_ref(stored.request, upstream)
+
+    def _owned_with_authority(
+        self,
+        root: Path,
+        stored: StoredHandover,
+        prepared: list[tuple[str, AuthorityFacts]],
+    ) -> tuple[str, ...]:
+        return tuple(
+            dict.fromkeys(
+                (
+                    *self._request_owned_paths(prepared),
+                    *self._bound_authority_documents(root, stored),
+                )
+            )
+        )
+
+    @staticmethod
     def _request_owned_paths(
         prepared: list[tuple[str, AuthorityFacts]],
     ) -> tuple[str, ...]:
@@ -4295,6 +5033,17 @@ class DeliveryContinuationRunner:
                 for path in DeliveryContinuationRunner._owned_paths(design)
             )
         )
+
+    @staticmethod
+    def _craft_record_paths(design: AuthorityFacts) -> tuple[str, ...]:
+        """The bytes a craft record is a fact about, uniform for every source.
+
+        The production targets and the acceptance bytes those targets were built
+        against: a record measured beside another oracle is not current for this
+        one, with no ref deleted.
+        """
+        mutable = DeliveryContinuationRunner._mutable_targets(design)
+        return tuple(dict.fromkeys((*mutable, *design.acceptance_paths)))
 
     @staticmethod
     def _mutable_targets(design: AuthorityFacts) -> tuple[str, ...]:
@@ -4438,6 +5187,7 @@ class DeliveryContinuationRunner:
                 if set(observations) <= completed:
                     continue
                 observation, design = batch[0]
+                pairs = self._record_pairs(root, stored, tuple(batch))
                 mutable = self._mutable_targets(design)
                 agent = (
                     "nw-software-crafter"
@@ -4447,8 +5197,13 @@ class DeliveryContinuationRunner:
                 if (
                     correction is None
                     and base_tree is not None
+                    and pairs is not None
                     and self._turn_completed(
-                        root, base, stored.request, observations, _CRAFT_TURN, mutable
+                        root,
+                        stored.request,
+                        pairs,
+                        _CRAFT_TURN,
+                        self._craft_record_paths(design),
                     )
                 ):
                     completed.update(observations)
@@ -4468,6 +5223,7 @@ class DeliveryContinuationRunner:
                             else {"observations": list(observations)}
                         ),
                         **self._typed_facts(design),
+                        **self._shared_of(handover_bytes),
                         target_decisions=design.target_decisions,
                         mutable_targets=mutable,
                         **(correction or {}),
@@ -4520,13 +5276,65 @@ class DeliveryContinuationRunner:
                         f"the crafter for {observations!r}", drift
                     )
                 if mutable and not set(mutable) & set(drift.in_scope):
-                    silent[observations] = (
-                        f"{agent} accepted {observations!r} without changing any of "
-                        "its batch's mutable targets: " + ", ".join(mutable)
-                    )
-                if base_tree is not None:
+                    # An accepted no-op is evidence only that the role said it
+                    # had nothing to write.  The value may already be complete,
+                    # or it may still be RED.  Execute the declared oracle here,
+                    # after the bought turn, and record the turn only in the
+                    # former case.  This preserves the retry path for a silent
+                    # non-delivery while preventing the state projection from
+                    # repeatedly buying the same accepted turn for code already
+                    # proved GREEN.
+                    if base_tree is not None and self._observed_green(
+                        self._executed_oracle_set(root, batch)
+                    ):
+                        tree = self._paths_tree(root, self._craft_record_paths(design))
+                        if pairs is not None and tree is not None:
+                            self._record_turn(
+                                root,
+                                base,
+                                stored.request,
+                                pairs,
+                                _CRAFT_TURN,
+                                tree,
+                            )
+                            if self._turn_completed(
+                                root,
+                                stored.request,
+                                pairs,
+                                _CRAFT_TURN,
+                                self._craft_record_paths(design),
+                            ):
+                                silent[observations] = (
+                                    f"{agent} accepted {observations!r} without changing "
+                                    "any of its batch's mutable targets; its tracked oracle "
+                                    "was executed on the current workspace bytes and observed "
+                                    "GREEN, so this craft turn was recorded: "
+                                    + ", ".join(mutable)
+                                )
+                            else:
+                                silent[observations] = (
+                                    f"{agent} accepted {observations!r} without changing any of "
+                                    "its batch's mutable targets: " + ", ".join(mutable)
+                                )
+                        else:
+                            silent[observations] = (
+                                f"{agent} accepted {observations!r} without changing any of "
+                                "its batch's mutable targets: " + ", ".join(mutable)
+                            )
+                    else:
+                        silent[observations] = (
+                            f"{agent} accepted {observations!r} without changing any of "
+                            "its batch's mutable targets: " + ", ".join(mutable)
+                        )
+                elif base_tree is not None and pairs is not None:
                     self._stamp_craft_record(
-                        root, base, base_tree, stored.request, observations, mutable
+                        root,
+                        base,
+                        base_tree,
+                        stored.request,
+                        pairs,
+                        mutable,
+                        self._craft_record_paths(design),
                     )
                 completed.update(observations)
             if not reopened:
@@ -4677,21 +5485,16 @@ class DeliveryContinuationRunner:
     def _verified_candidate(
         self,
         root: Path,
-        port: TaskInvocationPort | None,
         prepared: list[tuple[str, AuthorityFacts]],
-        handover_bytes: bytes,
         stored: StoredHandover,
         base: str,
-        acceptance_evidence: tuple[tuple[str, bytes], ...],
-        silent: tuple[str, ...],
-        correct: bool = True,
     ) -> tuple[str, tuple[NativeEvidence, ...]] | DeliveryOutcome:
         """One candidate and one ordered native execution.
 
         Returns the candidate SHA and captured evidence, or the terminal native
         verification outcome. It neither invokes a role nor decides a repair.
         """
-        owned = self._request_owned_paths(prepared)
+        owned = self._owned_with_authority(root, stored, prepared)
         argvs = self._request_argvs(prepared)
         facts = IntegrationFacts(
             stored.request,
@@ -4699,13 +5502,17 @@ class DeliveryContinuationRunner:
             tuple(dict.fromkeys(design.locator for _, design in prepared)),
         )
         while True:
+            # Captured BEFORE `_candidate` normalizes anything, so an
+            # external, unreviewed edit to an oracle or craft file reads as
+            # NOT current here and cannot be laundered by the refresh below.
+            was_current = self._pre_candidate_currentness(root, stored, prepared)
             created = self._candidate(root, base, owned, facts)
             if isinstance(created, DeliveryOutcome):
                 return created
             candidate, _diff = created
             # The one hand that moves recorded bytes after a turn is the
             # runner's own format contract, honoured inside `_candidate`.
-            self._refresh_turn_records(root, base, stored, prepared)
+            self._refresh_turn_records(root, base, stored, prepared, was_current)
             touched = self._changed_paths(root, base, candidate)
             if touched is None:
                 return self._fail(
@@ -4790,6 +5597,7 @@ class DeliveryContinuationRunner:
         candidate: str,
         foreign_baseline: str,
         foreign_bytes: dict[str, tuple[str, bytes | str]],
+        owned_paths: tuple[str, ...] | None = None,
     ) -> DeliveryOutcome:
         """One compare-and-swap, one owned-index reconciliation, one cleanup.
 
@@ -4797,7 +5605,7 @@ class DeliveryContinuationRunner:
         a concurrently moved ref refuses instead of yielding a Success nobody
         verified against the destination.
         """
-        owned = self._request_owned_paths(prepared)
+        owned = owned_paths or self._request_owned_paths(prepared)
         # The observation, the comparison and the swap live in `HeadAdvance`,
         # which the `des lane integrate` step also calls: one implementation of
         # "the destination is not where you last saw it", so the two cannot
@@ -4846,6 +5654,7 @@ class DeliveryContinuationRunner:
         *,
         finding: str | None = None,
         competence: str | None = None,
+        destination: str | None = None,
     ) -> tuple[StoredHandover, AuthorityFacts] | DeliveryOutcome:
         """One architect turn for one value, derived and bound, and nothing more.
 
@@ -4866,12 +5675,38 @@ class DeliveryContinuationRunner:
         of this Request behind a handover deletion.  Deriving first keeps
         `authority` unset for a refused value, so the next call re-elicits
         DESIGN for it, which is the HOW the refusal names.
+
+        PUBLISH BEFORE BIND, between that derivation and the bind, and for the
+        same reason.  A value's typed facts may name an authority section, and
+        a record naming a section no document carries is exactly the
+        disagreement the replay arm refuses as `DesignAuthorityUnlocatable` --
+        which a role turn used to manufacture on its very first success,
+        because nothing ever wrote the section its own record named.  So the
+        section is rendered from those typed facts, published through the ONE
+        producer the closed-document path uses, and read back with the
+        consumer's own resolver; only a resolved read-back reaches the bind.  A
+        refusing publication leaves the value UNBOUND, so the next call
+        re-elicits DESIGN, which is what the shipped derive-before-bind order
+        already promises.
+
+        `destination` is the configured `documents.design.destination`, resolved
+        by the caller at the application boundary exactly as the closed-document
+        path resolves it.  It is passed in rather than read here so this runner
+        gains no configuration dependency.
         """
+        self._published_design = None
         current = ready.authority
         facts: dict[str, object] = {
             "observation": ready.observation,
             "decomposition": self._decomposition(stored),
         }
+        # ABSENT, never empty: `inherited: []` would move the prompt bytes of
+        # every first value, and "nothing to inherit" is represented by the key
+        # not being there at all.
+        facts.update(self._shared(stored))
+        inherited: list[dict[str, object]] = self._inherited(root, stored, ready)
+        if inherited:
+            facts["inherited"] = inherited
         if finding is not None:
             if current is not None:
                 derived_current = self._derive(root, current)
@@ -4919,10 +5754,165 @@ class DeliveryContinuationRunner:
         design = self._derive(root, replacement)
         if isinstance(design, DeliveryOutcome):
             return design
+        published = self._publish_design_section(
+            root, current, replacement, destination, stored
+        )
+        if isinstance(published, DeliveryOutcome):
+            return published
+        self._published_design = published
         bound = self._bind_authority(root, stored, ready.observation, replacement)
         if isinstance(bound, DeliveryOutcome):
+            if published is not None and published.authority_persisted:
+                # BOTH projections, named together.  The section is on disk and
+                # the facts carrier is not, and a bare retry would hide half of
+                # a mixed durable state from the only reader who can repair it.
+                detail = bound.failure
+                return self._fail(
+                    Disposition.Indeterminate,
+                    "DesignProjectionMixed",
+                    f"the DESIGN authority section {published.locator} was "
+                    "persisted but the handover facts could not be "
+                    "compare-and-swap bound"
+                    + (f": {detail.why}" if detail is not None else ""),
+                    "inspect the authority and handover together before retrying",
+                )
             return bound
         return bound, design
+
+    def _publish_design_section(
+        self,
+        root: Path,
+        current: str | DesignFacts | None,
+        facts: DesignFacts,
+        destination: str | None,
+        stored: StoredHandover,
+    ) -> PublishedDesignDocument | DeliveryOutcome | None:
+        """Publish the section this turn's facts NAME, or say why it cannot be.
+
+        `None` means the facts name no configured section at all -- the
+        documented provider-authored-facts value, whose empty locator
+        `confirm_recorded_authority` already reads the same way -- so there is
+        nothing to render and nothing to refuse.
+        """
+        locator = facts.authority_locator
+        if not locator:
+            return None
+        if destination is None:
+            return self._fail(
+                Disposition.Refusal,
+                "DesignDestinationMissing",
+                f"the architect's facts name the authority section {locator} "
+                "while no effective documents.design.destination is configured, "
+                "so there is no document this repository owns to publish it into",
+                "configure documents.design.destination in repository or global "
+                "config, then re-invoke this step",
+            )
+        document = locator.partition("#")[0]
+        section = DesignFactsSection.for_locator(locator, facts)
+        if section is None or document != str(destination):
+            # The document is fine and the facts are well formed; the two sides
+            # simply name different destinations.  That is a role/step CONTRACT
+            # GAP, so both sides are named and neither projection moves.
+            return self._fail(
+                Disposition.Refusal,
+                "DesignFactsUnpublishable",
+                f"the architect returned authority_locator {locator}, which "
+                f"names no section of the configured documents.design.destination "
+                f"{destination}, so these typed facts cannot be rendered into "
+                "the architecture document this repository owns",
+                f"have the role return an authority_locator of the form "
+                f"{destination}#<heading>, or set documents.design.destination to "
+                "the document the role names; nothing was written and nothing "
+                "was bound",
+            )
+        recorded = (
+            current.authority_locator
+            if isinstance(current, DesignFacts) and current.authority_locator
+            else None
+        )
+        published = publish_design_document(
+            root,
+            str(destination),
+            section,
+            # The same expression the closed-document path uses, so the two
+            # publication paths cannot disagree about what a recoverable
+            # untracked destination means.
+            allow_untracked_recovery=(current is None or current == facts),
+            # A correction replaces its OWN section in place; a correction that
+            # renames the heading refuses rather than orphaning the section this
+            # value already owns.
+            replace_current=recorded == locator,
+            authority_locator=recorded,
+            # The same handover the pre-turn judge read, so the two judgements
+            # cannot disagree about which sections this Request published.
+            published_headings=bound_authority_headings(stored, str(destination)),
+        )
+        if isinstance(published, Blocked):
+            return self._blocked(published)
+        return published
+
+    def selected_authority(
+        self, root: Path, stored: StoredHandover, position: int
+    ) -> AuthorityFacts | DeliveryOutcome:
+        """The ONE source of one value's selected acceptance revision.
+
+        ORACLE, CRAFT, VERIFY, prepare-role and ``des state`` all read this and
+        nothing else.  A value with no DISTILL selection is judged on its DESIGN
+        facts.  A selection is a complete tuple or it is not usable: a persisted
+        schema_version 1 selection (legacy partial, wins precedence) is
+        ``SelectedRevisionIncomplete``, and a complete one made over another
+        DESIGN is ``SelectedRevisionRealignmentNeeded``.  Nothing is borrowed
+        from DESIGN and no byte is written.
+        """
+        value = stored.values[position - 1]
+        assert value.authority is not None
+        selected = bool(value.acceptance or value.acceptance_oracle is not None)
+        design = self._derive(root, value.authority, admit_verification=not selected)
+        if isinstance(design, DeliveryOutcome) or not selected:
+            return design
+        how = (
+            "des distill --repo-root ROOT --replace-current --input - with a "
+            "complete schema_version 2 revision (verification and "
+            "oracle_verification_index included)"
+        )
+        if value.acceptance_verification is None:
+            return self._fail(
+                Disposition.Indeterminate,
+                "SelectedRevisionIncomplete",
+                f"value {position} holds a schema_version 1 acceptance selection "
+                "without verification or oracle_verification_index, so its "
+                "complete revision is unknown and is never borrowed from DESIGN",
+                how,
+            )
+        if value.acceptance_design_basis_sha256 != design_basis_sha256(
+            stored.shared_design, value
+        ):
+            return self._fail(
+                Disposition.Indeterminate,
+                "SelectedRevisionRealignmentNeeded",
+                f"value {position}'s selected revision was built over another "
+                "DESIGN: the DESIGN changed after the selection, whose bytes are "
+                "kept unchanged",
+                how + ", or restore the DESIGN with des design --replace-current",
+            )
+        assert value.acceptance_oracle is not None
+        assert value.acceptance_oracle_verification_index is not None
+        revision = replace(
+            design,
+            acceptance_obligations=value.acceptance,
+            acceptance_oracle_locator=value.acceptance_oracle,
+            acceptance_paths=(
+                value.acceptance_oracle.partition("::")[0],
+                *value.acceptance_supports,
+            ),
+            native_verification_argvs=value.acceptance_verification,
+            oracle_verification_index=value.acceptance_oracle_verification_index,
+        )
+        return (
+            self._admit_verification_executables(root, revision)
+            or self._admit_targets(revision)
+            or revision
+        )
 
     def derive_authority(
         self, root: Path, locator: str | DesignFacts
@@ -4934,6 +5924,60 @@ class DeliveryContinuationRunner:
         the same bytes is the whole reason the authority is durable.
         """
         return self._derive(root, locator)
+
+    def confirm_recorded_authority(
+        self, root: Path, authority: str | DesignFacts, position: int
+    ) -> DeliveryOutcome | None:
+        """Does the document on disk still resolve this value's recorded locator?
+
+        The zero-cost replay arm trusts a stored `design=bound` designation.
+        MEASURED: after a human renamed the owned H2 out of the configured
+        document, that arm still reported Success over a section the file no
+        longer carried.  A designation is not evidence, so the record is
+        confirmed HERE against the document itself, through the same
+        `resolve_authority_section` law that already decides what `<doc>#<heading>`
+        names for the post-write and DEVOPS read-backs, and through the same
+        property-admitted read (`_markdown_text`) that keeps a symlinked or
+        out-of-root file from deciding what a bound record means.
+
+        `None` is agreement: the caller then publishes exactly today's answer.
+        An EMPTY recorded locator names no configured section -- it is the
+        documented provider-authored facts value -- so it is not a disagreement
+        and L1 (ADR-DES-003 §2) stays free for it.
+        """
+        if not isinstance(authority, DesignFacts):
+            return None
+        locator = authority.authority_locator
+        document, separator, heading = locator.partition("#")
+        if not (separator and heading):
+            return None
+        text = _markdown_text(root, document)
+        if text is None:
+            # The world did not say no, it did not answer: class C (§2.5).
+            return self._fail(
+                Disposition.Indeterminate,
+                "DesignAuthorityUnavailable",
+                f"the stored record says this value's design is bound to "
+                f"{locator}, and {document} cannot be read, so whether the "
+                "document still carries that section is unknown",
+                f"restore a readable repo-local {document} in this repository, "
+                f"then re-invoke `des design --repo-root <root> --value "
+                f"{position}`",
+            )
+        resolved = resolve_authority_section(
+            text, heading, locator=locator, doc_part=document
+        )
+        if isinstance(resolved, ResolvedAuthoritySection):
+            return None
+        return self._fail(
+            Disposition.Refusal,
+            "DesignAuthorityUnlocatable",
+            f"the stored record says this value's design is bound to {locator}, "
+            f"while {document} on disk resolves no such section: the record and "
+            f"the file disagree ({resolved.reason})",
+            f"re-bind this value over the document as it now stands with `des "
+            f"design --repo-root <root> --value {position} --finding -`",
+        )
 
     def oracle_turn_complete(
         self,
@@ -4951,11 +5995,13 @@ class DeliveryContinuationRunner:
         head = self._head(root)
         if isinstance(head, DeliveryOutcome):
             return False
+        identity = RecordIdentity.of(root, stored, ready, design)
+        if identity is None:
+            return False
         return self._turn_completed(
             root,
-            head,
             stored.request,
-            (ready.observation,),
+            ((ready.observation, identity),),
             _ORACLE_TURN,
             design.acceptance_paths,
         )
@@ -4994,13 +6040,10 @@ class DeliveryContinuationRunner:
         # against. Written second and read first, so an interruption between
         # the two leaves a candidate no upstream key covers -- which reads as
         # superseded and costs one rebuild, never as evidence.
-        self._git(
-            root,
-            "update-ref",
-            verify_upstream_ref(stored.request, stored.raw),
-            candidate,
-            env=env,
-        )
+        ref = self._verify_upstream(root, stored)
+        if ref is None:
+            return
+        self._git(root, "update-ref", ref, candidate, env=env)
         if verdict is None:
             return
         judged = self._git(
@@ -5129,17 +6172,49 @@ class DeliveryContinuationRunner:
         )
         if observed.returncode:
             return None
-        current = self._git(
-            root,
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            verify_upstream_ref(stored.request, stored.raw),
-        )
         candidate = observed.stdout.strip()
-        return VerificationRecord(
-            candidate, not current.returncode and current.stdout.strip() == candidate
-        )
+        ref = self._verify_upstream(root, stored)
+        if ref is None:
+            return VerificationRecord(candidate, False)
+        current = self._git(root, "rev-parse", "--verify", "--quiet", ref)
+        if not current.returncode:
+            # The key names the candidate verified over exactly these bytes, so
+            # restoring identical authority bytes finds the earlier record again.
+            candidate = current.stdout.strip()
+            if self._candidate_covers_current_owned_bytes(root, stored, candidate):
+                return VerificationRecord(candidate, True)
+        return VerificationRecord(candidate, False)
+
+    def _candidate_covers_current_owned_bytes(
+        self, root: Path, stored: StoredHandover, candidate: str
+    ) -> bool:
+        """Whether a recorded candidate still contains every declared owned byte.
+
+        The upstream key establishes that the handover and bound authorities are
+        unchanged.  It cannot establish that a declared production target,
+        oracle or support stayed unchanged after verification.  Re-derive the
+        same selected facts every consumer reads, then ask Git one question over
+        their one existing owned-path union.  A derivation or Git failure is not
+        evidence of currentness, so it conservatively makes the record stale.
+        """
+        prepared: list[tuple[str, AuthorityFacts]] = []
+        for position, value in enumerate(stored.values, start=1):
+            if value.authority is None:
+                return False
+            selected = self.selected_authority(root, stored, position)
+            if isinstance(selected, DeliveryOutcome):
+                return False
+            prepared.append((value.observation, selected))
+        owned = self._owned_with_authority(root, stored, prepared)
+        if not owned:
+            return False
+        current = _workspace_bytes(root, owned)
+        for path in owned:
+            candidate_bytes = self._git_bytes(root, "show", f"{candidate}:{path}")
+            observed = current[path]
+            if candidate_bytes is None or observed != ("file", candidate_bytes):
+                return False
+        return True
 
     def verified_candidate(self, root: Path, stored: StoredHandover) -> str | None:
         """The candidate a CURRENT verify record covers, or `None`.
@@ -5149,11 +6224,15 @@ class DeliveryContinuationRunner:
         projection and `des integrate` derive theirs from.
         """
         record = self.verification_record(root, stored)
-        return (
-            None
-            if record is None or not record.covers_current_upstream
-            else record.candidate
-        )
+        if record is None or not record.covers_current_upstream:
+            return None
+        head = self._head(root)
+        if isinstance(head, DeliveryOutcome):
+            return None
+        base = self.candidate_base(root, record.candidate)
+        if isinstance(base, DeliveryOutcome) or base != head:
+            return None
+        return record.candidate
 
     def destination_is(self, root: Path, candidate: str) -> bool:
         """Is the destination already this commit?
@@ -5208,19 +6287,21 @@ class DeliveryContinuationRunner:
         if isinstance(base, DeliveryOutcome):
             return base
         approved = _authority_bytes(root, self._prepared_acceptance_paths(prepared))
-        if approved is None:
+        bound = _authority_bytes(root, self._bound_authority_documents(root, stored))
+        if approved is None or bound is None:
             return self._fail(
                 Disposition.Indeterminate,
                 "AcceptanceEvidenceUnavailable",
                 "approved authority, oracle or declared support is unavailable",
                 "restore immutable acceptance evidence",
             )
-        verified = self._verified_candidate(
-            root, port, prepared, stored.raw, stored, base, approved, (), correct=False
-        )
+        verified = self._verified_candidate(root, prepared, stored, base)
         if isinstance(verified, DeliveryOutcome):
             return verified
         candidate, evidence = verified
+        retained = retain_candidate_handover(root, candidate, stored.raw)
+        if retained is not None:
+            return self._blocked(retained)
         return base, candidate, evidence
 
     def integrate_candidate(
@@ -5243,7 +6324,7 @@ class DeliveryContinuationRunner:
         handover that outlives its own integrated candidate would make the next
         `des state` name work that is already in the destination.
         """
-        owned = self._request_owned_paths(prepared)
+        owned = self._owned_with_authority(root, stored, prepared)
         observed = self._observed_scope(root)
         if isinstance(observed, DeliveryOutcome):
             return observed
@@ -5255,6 +6336,7 @@ class DeliveryContinuationRunner:
             candidate,
             _foreign_status(status, owned),
             _foreign_bytes(workspace, owned),
+            owned,
         )
         if integrated.disposition is not Disposition.Success:
             return integrated
@@ -5441,14 +6523,97 @@ class DeliveryContinuationRunner:
         head = self._head(root)
         if isinstance(head, DeliveryOutcome):
             return False
+        identity = RecordIdentity.of(root, stored, ready, design)
+        if identity is None:
+            return False
         return self._turn_completed(
+            root,
+            stored.request,
+            ((ready.observation, identity),),
+            _CRAFT_TURN,
+            self._craft_record_paths(design),
+        )
+
+    @staticmethod
+    def _observed_green(executed: OracleExecution | DeliveryOutcome) -> bool:
+        """Did the whole executed set come back GREEN, read totally and closed?
+
+        Every one of the four ways this can be anything else answers NO on its
+        own branch: a `DeliveryOutcome` (the set could not be executed, or its
+        report contradicted its exit status), a refusal (some oracle was `red`
+        or `broken`), an EMPTY `measured` tuple (nothing was observed, which is
+        not the same as observed green -- GDP-6), and any entry whose verdict is
+        not the literal word `green` that `_oracle_verdict` produces.
+
+        Read here rather than at the call site because "green" is a property of
+        the EXECUTION, and a caller that re-derived it from exit statuses would
+        be the second reading of a verdict this runner already owns.
+        """
+        if isinstance(executed, DeliveryOutcome):
+            return False
+        if executed.refusal is not None or not executed.measured:
+            return False
+        return all(item.get("verdict") == "green" for item in executed.measured)
+
+    def craft_settlement(
+        self,
+        root: Path,
+        stored: StoredHandover,
+        ready: HandoverValue,
+        design: AuthorityFacts,
+    ) -> CraftSettlement:
+        """Where this value's craft turn stands, and settle it when it may be.
+
+        THE GATE ORDER IS THE DESIGN.  The recorded-over-current-bytes question
+        is asked FIRST, so the ordinary resume keeps costing only Git.  Then the
+        RECORD must exist: an absent craft record is never settled by a green
+        oracle and the oracle is not even executed for it.  That is the
+        2026-09-04 guard, where path-existence-as-green skipped craft twice --
+        bytes that happen to satisfy an assertion are not evidence that the work
+        was ever done, and ADR-DES-003 fixes craft's precondition as the RECORD
+        rather than the file.  It is also what bounds the added cost: the first
+        craft and the recorded-current resume buy no execution at all.
+
+        THE WITNESS IS THE RUNNER'S EXISTING EXECUTION.  `_executed_oracle_set`
+        runs the value's TRACKED oracle in the workspace through the design's own
+        declared vector -- the same call, the same `ORACLE-RED:` operator line,
+        the same verdict axis the pre-craft step already uses.  Nothing new is
+        executed and no second notion of «green» is introduced.
+
+        THE RE-POINT IS DELIBERATELY NOT `_stamp_craft_record`.  That helper
+        DROPS the record when the owned tree equals the base, so that a bought
+        turn which wrote nothing keeps its "rerun the dispatch" repair honest.
+        No turn is bought here, so dropping would instead break this step's own
+        promise -- the record re-pointed at the current bytes -- and send the
+        next `des state` straight back to `des craft`.
+        """
+        if self.craft_turn_complete(root, stored, ready, design):
+            return CraftSettlement.RecordedOverCurrentBytes
+        recorded = self._turn_recorded(
+            root, stored.request, ready.observation, _CRAFT_TURN
+        )
+        if not recorded:
+            return CraftSettlement.Unsettled
+        if not self._observed_green(
+            self._executed_oracle_set(root, [(ready.observation, design)])
+        ):
+            return CraftSettlement.Unsettled
+        head = self._head(root)
+        if isinstance(head, DeliveryOutcome):
+            return CraftSettlement.Unsettled
+        tree = self._paths_tree(root, self._craft_record_paths(design))
+        identity = RecordIdentity.of(root, stored, ready, design)
+        if tree is None or identity is None:
+            return CraftSettlement.Unsettled
+        self._record_turn(
             root,
             head,
             stored.request,
-            (ready.observation,),
+            ((ready.observation, identity),),
             _CRAFT_TURN,
-            self._mutable_targets(design),
+            tree,
         )
+        return CraftSettlement.SettledByGreenOracle
 
     def oracle_value(
         self,
@@ -5489,7 +6654,18 @@ class DeliveryContinuationRunner:
         resume skip a review that had vetoed.
         """
         prepared = [(ready.observation, design)]
-        if finding is None:
+        # A `finding` with NO oracle byte observable on disk is still a FIRST
+        # authoring turn wearing one -- a prior rejecting turn owns no byte by
+        # construction (`_prepare_single`'s own rule), so "correct the existing
+        # evidence" has nothing to read and must not be attempted.  Route it to
+        # the same author call `finding is None` already makes, carrying the
+        # finding along, rather than answering with a preverification refusal
+        # that treats "not authored yet" as "authored and broken".
+        no_oracle_byte = (
+            finding is not None
+            and _authority_bytes(root, design.acceptance_paths) is None
+        )
+        if finding is None or no_oracle_byte:
             observed = self._observed_scope(root)
             if isinstance(observed, DeliveryOutcome):
                 return MeasuredOracleSet((), observed)
@@ -5502,6 +6678,7 @@ class DeliveryContinuationRunner:
                 stored.raw,
                 status,
                 workspace,
+                finding=finding,
             )
             if authored is not None:
                 return MeasuredOracleSet((), authored)
@@ -5531,25 +6708,158 @@ class DeliveryContinuationRunner:
                     executed.measured,
                 ),
             )
-        self._record_oracle_turn(root, stored.request, ready.observation, design)
+        self._record_oracle_turn(root, stored, ready.observation, design)
         return MeasuredOracleSet(executed.measured, None)
 
     def _record_oracle_turn(
-        self, root: Path, request: str, observation: str, design: AuthorityFacts
-    ) -> None:
+        self,
+        root: Path,
+        stored: StoredHandover,
+        observation: str,
+        design: AuthorityFacts,
+    ) -> bool:
         """Record the approved oracle turn, best-effort, exactly as the loop does.
 
         Best-effort for the reason recording is everywhere in this runner: a
         record that is not written costs the NEXT invocation one re-authored
         turn and nothing else, and a Git that never answered must not turn an
         approved oracle into a refusal.
+
+        It ANSWERS whether it recorded, because `oracle_settlement` may only
+        report a re-pointed record when one was actually written, and the
+        alternative was a second spelling of «resolve HEAD, take the owned tree
+        over the acceptance paths, record the oracle turn» beside this one.
+        `oracle_value` ignores the answer and behaves exactly as before: there
+        the unwritten record costs a re-authored turn and nothing else.
         """
         head = self._head(root)
         if isinstance(head, DeliveryOutcome):
-            return
-        tree = self._owned_tree(root, head, design.acceptance_paths)
-        if tree is not None:
-            self._record_turn(root, head, request, (observation,), _ORACLE_TURN, tree)
+            return False
+        tree = self._paths_tree(root, design.acceptance_paths)
+        identity = self._record_identity(root, stored, observation, design)
+        if tree is None or identity is None:
+            return False
+        self._record_turn(
+            root,
+            head,
+            stored.request,
+            ((observation, identity),),
+            _ORACLE_TURN,
+            tree,
+        )
+        return True
+
+    @staticmethod
+    def _resolved_execution(executed: OracleExecution | DeliveryOutcome) -> bool:
+        """Did the executed set reach its own assertion and ANSWER, red or green?
+
+        A different question from `_observed_green`, asked by a different lane,
+        and deliberately not a refactor of it: craft settles only on all-GREEN,
+        while the oracle lane settles on any RESOLVED verdict because RED is the
+        admitted pre-craft answer.  One shared predicate would make the two
+        lanes' rules interchangeable in a way neither step means.
+
+        Total and closed.  A `DeliveryOutcome` (the set could not be executed, or
+        its report contradicted its exit status -- including the `indeterminate`
+        verdict `_executed_oracle_set` turns into an `OracleRedUnobservable`
+        terminal), an EMPTY `measured` tuple (nothing was observed, which is not
+        the same as observed anything -- GDP-6), and any entry whose verdict is
+        not one of the two words `red` and `green` that `_oracle_verdict`
+        produces -- `broken` above all -- each answer NO on their own branch.
+
+        `refusal` is deliberately NOT consulted.  It answers «may this set
+        proceed to craft», a different question, and `_ORACLE_REFUSING` is
+        documented as a set that may later be armed with more verdicts -- which
+        must not silently stop a resolved oracle from witnessing its own record.
+        Today the two readings coincide; that is exactly why the divergent one is
+        written down here rather than assumed.
+        """
+        if isinstance(executed, DeliveryOutcome):
+            return False
+        if not executed.measured:
+            return False
+        return all(
+            item.get("verdict") in ("red", "green") for item in executed.measured
+        )
+
+    def oracle_settlement(
+        self,
+        root: Path,
+        stored: StoredHandover,
+        ready: HandoverValue,
+        design: AuthorityFacts,
+    ) -> OracleSettlement:
+        """Where this value's oracle turn stands, and settle it when it may be.
+
+        THE GATE ORDER IS THE DESIGN, and it is FOUR gates.
+
+        (1) Recorded over the CURRENT bytes is asked first, by calling
+        `oracle_turn_complete`, so the ordinary resume keeps costing only Git and
+        executes nothing at all.
+
+        (2) The RECORD must then exist.  An absent oracle record is never
+        settled, and the oracle is not even executed for it: bytes that happen to
+        satisfy an assertion are not evidence that a turn was ever approved,
+        which is ADR-SSOT-002's 2026-09-04 class.  It also closes the
+        shared-acceptance-bytes hazard the reference model names -- when a
+        SIBLING value's authoring wrote the shared oracle file, the value that
+        never recorded its own oracle turn still buys it.  This gate is what
+        bounds the added cost: the first authoring and the recorded-current
+        resume buy no execution.
+
+        (3) Every TRACKED acceptance path must still be present, and this is its
+        OWN gate rather than something folded into the verdict, because MEASURED
+        they disagree: with a tracked SUPPORT path deleted, the tracked oracle
+        still executed green, and `_owned_tree` stages only what is present, so a
+        verdict-only reading would have re-pointed a record over a path set that
+        had lost a file.  `_path_present`'s third state, `None` for a filesystem
+        that refused to say, degrades to `Unsettled` like every other unresolved
+        measurement.
+
+        (4) The execution must have RESOLVED.  The witness is the runner's own
+        `_executed_oracle_set` -- the same call, the same `ORACLE-RED:` operator
+        line, the same verdict axis the pre-craft step already uses.  Nothing new
+        is executed and no second notion of a verdict is introduced.
+
+        The re-point REUSES `_record_oracle_turn`, so there is one spelling of
+        «record this value's oracle turn» and not two.  It is deliberately not
+        the craft lane's `_stamp_craft_record`, which DROPS a record whose tree
+        equals base and would break this step's own promise.
+        """
+        if self.oracle_turn_complete(root, stored, ready, design):
+            return OracleSettlement.RecordedOverCurrentBytes
+        if not self._turn_recorded(
+            root, stored.request, ready.observation, _ORACLE_TURN
+        ):
+            return OracleSettlement.Unsettled
+        for tracked in design.acceptance_paths:
+            if self._path_present(root / tracked) is not True:
+                return OracleSettlement.Unsettled
+        executed = self._executed_oracle_set(root, [(ready.observation, design)])
+        if not self._resolved_execution(executed):
+            return OracleSettlement.Unsettled
+        assert isinstance(executed, OracleExecution)
+        if not self._record_oracle_turn(root, stored, ready.observation, design):
+            return OracleSettlement.Unsettled
+        self._settled_oracle_measured = executed.measured
+        return OracleSettlement.SettledByItsOwnExecution
+
+    #: The measurement the last `SettledByItsOwnExecution` stood on.  Empty on a
+    #: runner that never settled one, and never read on any other arm.
+    _settled_oracle_measured: tuple[dict[str, object], ...] = ()
+
+    @property
+    def settled_oracle_measured(self) -> tuple[dict[str, object], ...]:
+        """The execution that witnessed the last settled oracle record.
+
+        Carried the way `last_role` and `last_diagnostic` are, because the
+        settlement's answer is one closed WORD -- widening it to a pair would put
+        the evidence inside the branching type and give the step a second thing
+        to branch on.  The step prints these rows so that an examiner can tell
+        the red arm from the green arm, rather than reading a success that
+        promises evidence it never shows.
+        """
+        return self._settled_oracle_measured
 
     def rewrite_request(
         self,
@@ -5585,8 +6895,9 @@ class DeliveryContinuationRunner:
             "nw-product-owner",
             self._prompt(
                 rewrite_task=(
-                    "The Request has changed. Return the whole new ordered value "
-                    "sequence for it, reusing a stored observation VERBATIM "
+                    "Return the whole ordered value sequence for the supplied "
+                    "Request, addressing the finding when present and reusing "
+                    "a stored observation VERBATIM "
                     "wherever it still holds -- an observation reused byte for "
                     "byte keeps everything already paid for it. Write no "
                     "document, authority or handover."
@@ -5627,13 +6938,18 @@ class DeliveryContinuationRunner:
         # THE SPLIT, by byte identity and by nothing else.
         by_observation = {value.observation: value for value in stored.values}
         rewritten = tuple(
-            HandoverValue(
-                value.observation,
-                value.dependencies,
-                by_observation[value.observation].authority
-                if value.observation in by_observation
-                else None,
+            replace(
+                by_observation[value.observation],
+                dependencies=value.dependencies,
+                acceptance=(),
+                acceptance_oracle=None,
+                acceptance_supports=(),
+                acceptance_verification=None,
+                acceptance_oracle_verification_index=None,
+                acceptance_design_basis_sha256=None,
             )
+            if value.observation in by_observation
+            else value
             for value in proposed
         )
         kept = tuple(v.observation for v in rewritten if v.observation in previous)
@@ -5748,6 +7064,8 @@ class DeliveryContinuationRunner:
         port: TaskInvocationPort,
         raw_request: str,
         operational_facts: dict[str, object] | None = None,
+        *,
+        finding: str | None = None,
     ) -> StoredHandover | DeliveryOutcome:
         """One Product Owner turn, and the ordered graph it is recorded as.
 
@@ -5779,6 +7097,8 @@ class DeliveryContinuationRunner:
             )
         product_before = self._snapshot(root, _PRODUCT_ROOT)
         facts: dict[str, object] = {"request": raw_request}
+        if finding is not None:
+            facts["finding"] = finding
         if operational_facts is not None:
             facts["operational_facts"] = operational_facts
         po = self._invoke(port, root, "nw-product-owner", self._prompt(**facts), None)
@@ -5827,7 +7147,9 @@ class DeliveryContinuationRunner:
                 "accepted PO supplied no values",
                 "return a nonempty ordered value sequence",
             )
-        created = create_handover(root, raw_request, values)
+        created = create_handover(
+            root, raw_request, values, getattr(self, "feature_id", None)
+        )
         if isinstance(created, Blocked):
             return self._blocked(created)
         return created

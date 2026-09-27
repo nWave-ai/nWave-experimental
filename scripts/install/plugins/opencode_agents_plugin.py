@@ -20,6 +20,7 @@ from scripts.install.plugins.base import (
     PluginResult,
 )
 from scripts.install.plugins.opencode_common import (
+    ManifestPluginConfig,
     opencode_config_dir,
     parse_frontmatter,
     remove_manifest_owned_assets,
@@ -292,21 +293,25 @@ class OpenCodeAgentsPlugin(InstallationPlugin):
         """Uninstall only nWave-installed OpenCode agents using manifest."""
         return uninstall_with_manifest(
             context=context,
-            plugin_name=self.name,
-            target_dir=_opencode_agents_dir(),
-            manifest_filename=_MANIFEST_FILENAME,
-            noun="agents",
-            installed_key="installed_agents",
+            config=ManifestPluginConfig(
+                plugin_name=self.name,
+                target_dir=_opencode_agents_dir(),
+                manifest_filename=_MANIFEST_FILENAME,
+                noun="agents",
+                installed_key="installed_agents",
+            ),
         )
 
     def verify(self, context: InstallContext) -> PluginResult:
         """Verify OpenCode agents were installed correctly."""
         return verify_with_manifest(
             context=context,
-            plugin_name=self.name,
-            target_dir=_opencode_agents_dir(),
-            manifest_filename=_MANIFEST_FILENAME,
-            noun="agents",
-            installed_key="installed_agents",
+            config=ManifestPluginConfig(
+                plugin_name=self.name,
+                target_dir=_opencode_agents_dir(),
+                manifest_filename=_MANIFEST_FILENAME,
+                noun="agents",
+                installed_key="installed_agents",
+            ),
             source_finder=_find_agents_source,
         )

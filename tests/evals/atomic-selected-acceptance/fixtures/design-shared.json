@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "authority": {
+    "heading": "Order feature shared decisions"
+  },
+  "purpose": "Hold the decisions every value of the order feature shares.",
+  "constraints": [
+    "Value sections carry only their delta.",
+    "Public port: the `order` command, invoked as `order <subcommand> --order-id <id>`, is a future implementation.",
+    "Test environment: pytest comes from the repository's declared test environment; a missing test framework is an environment gap, not product behaviour."
+  ],
+  "targets": [
+    {
+      "path": "src/orders/shared.py",
+      "decision": "CREATE_NEW",
+      "reason": "Owns the behaviour this section binds."
+    }
+  ],
+  "paradigm": "object_oriented",
+  "decisions": [
+    "Order identity and revision are defined once.",
+    "Cancellation racing payment is resolved atomically: payment first refuses cancellation; cancellation first refuses payment.",
+    "Views display committed status.",
+    "A duplicate notification with the same key changes nothing and returns the original result."
+  ],
+  "reuse_analysis": {
+    "candidates": [
+      {
+        "symbol": "Order",
+        "locator": "src/orders/order.py:1",
+        "decision": "CREATE_NEW",
+        "reason": "No existing order responsibility."
+      }
+    ]
+  },
+  "prefactoring": {
+    "applicability": "not_applicable",
+    "reason": "New behaviour; no preserving move needed."
+  },
+  "agreement_analysis": {
+    "applicability": "not_applicable",
+    "reason": "No shared release or interchange schema is touched."
+  },
+  "boundaries": {
+    "applicability": "not_applicable",
+    "reason": "No port or dependency boundary changes."
+  },
+  "public_oracle": {
+    "observation": "The order command reports the committed status.",
+    "stimulus": "Run `order submit --order-id O1`.",
+    "expected": "stdout is exactly `O1 unpaid` and exit is 0.",
+    "falsifier": "Any other stdout or a non-zero exit."
+  },
+  "oracle": "tests/acceptance/test_order_shared.py::test_shared",
+  "acceptance_supports": [],
+  "verification": [
+    [
+      "{PYTHON}",
+      "-m",
+      "pytest",
+      "-q",
+      "tests/acceptance/test_order_shared.py"
+    ]
+  ],
+  "oracle_verification_index": 0
+}

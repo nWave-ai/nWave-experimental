@@ -17,3 +17,4 @@ Use for any nWave question — methodology, project navigation, command help, wa
 - [nw-buddy-command-catalog](../skills/nw-buddy-command-catalog.md) — Current public nWave delivery commands.
 - [nw-buddy-project-reading](../skills/nw-buddy-project-reading.md) — Evidence-first project reading protocol based on durable authorities, Git, tests, and installed surfaces.
 - [nw-buddy-ssot-knowledge](../skills/nw-buddy-ssot-knowledge.md) — Single Source of Truth detection — where truth lives in an nWave repo and how to avoid contradicting it.
+- [nw-typesafe-system-one](../skills/nw-typesafe-system-one.md) — Use Jev System One for every supported, authorized semantic judgment when available: relevance selection, handoff preflight, evidence mapping, finding clustering, and confidence-gated escalation.

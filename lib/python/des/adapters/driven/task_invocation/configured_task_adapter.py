@@ -96,6 +96,7 @@ class ConfiguredTaskAdapter(TaskInvocationPort):
         cwd: Path,
         max_product_values: int | None = None,
         defect_values: tuple[str, ...] = (),
+        semantic_task: str | None = None,
     ) -> ModelRun:
         return self._delegate(role_id).invoke(
             role_id=role_id,
@@ -103,4 +104,5 @@ class ConfiguredTaskAdapter(TaskInvocationPort):
             cwd=cwd,
             max_product_values=max_product_values,
             defect_values=defect_values,
+            semantic_task=semantic_task,
         )

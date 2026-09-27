@@ -62,7 +62,8 @@ def design_facts() -> dict:
                 "decisions": ["one opaque semantic decision"],
                 "oracle": ORACLE,
                 "acceptance_supports": [SUPPORT],
-                "verification": [["python", "-m", "pytest", ORACLE]],
+                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                "oracle_verification_index": 0,
             },
         }
     }
@@ -72,6 +73,7 @@ def bound(root: Path, step) -> None:
     assert (
         step(
             "po",
+            "--project",
             "--repo-root",
             str(root),
             answers=[accepted_values("A", "B")],
@@ -104,7 +106,7 @@ def test_the_page_carries_the_request_the_values_and_the_typed_facts(
     assert ORACLE in page
     assert TARGET in page
     assert "object_oriented" in page
-    assert "python -m pytest" in page
+    assert f"{sys.executable} -m pytest" in page
     # Rendered through the ONE nWave renderer: its palette and its provenance
     # banner, never a second stylesheet invented here.
     assert "--paper" in page

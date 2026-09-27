@@ -83,6 +83,18 @@ class _Holder:
         return max(0.0, time.time() - self.acquired_at)
 
 
+@dataclass(frozen=True)
+class _TimeBounds:
+    """The two bounds an acquire runs under.
+
+    ``wait_s`` is how long to keep waiting for a busy lane; ``max_age_s`` is how
+    long a live holder may hold before it is treated as hung and displaced.
+    """
+
+    wait_s: float
+    max_age_s: float
+
+
 def _emit(payload: dict[str, object]) -> None:
     """One JSON line on stdout -- the caller branches on it, never on prose."""
     print(json.dumps(payload))
@@ -165,12 +177,11 @@ def _acquire(
     repo: Path,
     lane: str,
     owner: str,
-    wait_s: float,
-    max_age_s: float,
+    bounds: _TimeBounds,
     holder_pid: int,
 ) -> int:
     path = _lane_path(repo, lane)
-    deadline = time.time() + wait_s
+    deadline = time.time() + bounds.wait_s
     announced_wait = False
 
     while True:
@@ -188,7 +199,7 @@ def _acquire(
             )
             return 0
 
-        stale = _stale_reason(holder, max_age_s)
+        stale = _stale_reason(holder, bounds.max_age_s)
         if stale is not None:
             got = _write_holder(path, owner, holder_pid)
             _emit(
@@ -385,7 +396,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.verb == "acquire":
         owner = args.owner or f"pid-{os.getpid()}"
         holder_pid = args.holder_pid if args.holder_pid > 0 else os.getppid()
-        return _acquire(repo, args.lane, owner, args.wait, args.max_age, holder_pid)
+        return _acquire(
+            repo,
+            args.lane,
+            owner,
+            _TimeBounds(wait_s=args.wait, max_age_s=args.max_age),
+            holder_pid,
+        )
     if args.verb == "release":
         return _release(repo, args.lane)
     return _status(repo, args.lane, args.max_age)

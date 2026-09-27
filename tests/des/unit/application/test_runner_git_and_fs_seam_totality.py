@@ -53,7 +53,14 @@ from des.application.delivery_continuation import (
 from des.runtime.spawn import git_timeout_seconds
 
 
-UNDECODABLE_NAME = os.fsdecode(b"note-\xff.md")
+UNDECODABLE_PATH = b"note-\xff.md"
+
+#: One argument longer than the kernel's WHOLE argument budget.  Linux refuses
+#: any single argument over ``MAX_ARG_STRLEN`` (131072 bytes); macOS has no
+#: per-argument ceiling and refuses only past ``ARG_MAX`` in total, so a 200000
+#: byte argument ran git there and exited 0.  A length past ``SC_ARG_MAX`` is
+#: ``E2BIG`` under both rules.
+OVER_LONG_ARGUMENT = "x" * (os.sysconf("SC_ARG_MAX") + 1)
 
 
 def repo(root: Path) -> Path:
@@ -67,6 +74,35 @@ def repo(root: Path) -> Path:
         subprocess.run(["git", "-C", str(root), *argv], check=True, capture_output=True)
     (root / "README.md").write_text("x\n")
     return root
+
+
+def tracked_without_a_file(root: Path, path: bytes) -> None:
+    """Put ``path`` in git's index WITHOUT asking the filesystem to hold the name.
+
+    APFS refuses a non-UTF-8 name at ``open`` (``EILSEQ``), so writing the file
+    failed on macOS before git ever ran.  Git's index holds bytes on every
+    platform, so ``git status -z`` emits the same raw byte either way.
+    """
+    blob = subprocess.run(
+        ["git", "-C", str(root), "hash-object", "-w", "--stdin"],
+        input=b"x\n",
+        check=True,
+        capture_output=True,
+    ).stdout.strip()
+    cacheinfo = b"100644," + blob + b"," + path
+    subprocess.run(
+        [
+            b"git",
+            b"-C",
+            os.fsencode(root),
+            b"update-index",
+            b"--add",
+            b"--cacheinfo",
+            cacheinfo,
+        ],
+        check=True,
+        capture_output=True,
+    )
 
 
 def without_git(monkeypatch: pytest.MonkeyPatch, empty: Path) -> None:
@@ -107,7 +143,7 @@ def test_undecodable_git_output_is_a_disposition_not_a_unicode_error(
     holding ``0xff``, and ``text=True`` decoded it with no fallback.
     """
     root = repo(tmp_path / "repo")
-    (root / UNDECODABLE_NAME).write_bytes(b"x\n")
+    tracked_without_a_file(root, UNDECODABLE_PATH)
 
     observed = DeliveryContinuationRunner()._observed_scope(root)
 
@@ -389,7 +425,7 @@ def test_an_over_long_argument_vector_is_a_non_answer_not_an_oserror(
     """
     root = repo(tmp_path / "repo")
 
-    observed = observe_text(root, "status", "--porcelain", "--", "x" * 200000)
+    observed = observe_text(root, "status", "--porcelain", "--", OVER_LONG_ARGUMENT)
 
     assert observed.unanswered is not None
     assert observed.returncode == GIT_UNANSWERED_RETURNCODE
@@ -402,7 +438,7 @@ def test_the_byte_seam_answers_the_same_over_long_vector(tmp_path: Path) -> None
     """The byte form carried the identical gap and is repaired by the same seam."""
     root = repo(tmp_path / "repo")
 
-    observed = observe_bytes(root, "status", "--porcelain", "--", "x" * 200000)
+    observed = observe_bytes(root, "status", "--porcelain", "--", OVER_LONG_ARGUMENT)
 
     assert observed.unanswered is not None
     assert "argument vector is too long" in observed.unanswered.why

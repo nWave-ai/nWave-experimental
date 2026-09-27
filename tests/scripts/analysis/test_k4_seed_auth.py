@@ -9,12 +9,13 @@ import sys
 from pathlib import Path
 
 from scripts.analysis.k4 import preflight, seed_auth
+from scripts.analysis.k4 import subject as k4_subject
 
 
 def test_seed_carries_identity_trust_and_shared_sandbox_settings(tmp_path, monkeypatch):
     source = tmp_path / "source"
-    target = tmp_path / "target"
     checkout = tmp_path / "pair" / "nwave"
+    target = checkout / ".claude-k4"
     source.mkdir()
     checkout.mkdir(parents=True)
     (source / ".credentials.json").write_text(
@@ -62,12 +63,33 @@ def test_seed_carries_identity_trust_and_shared_sandbox_settings(tmp_path, monke
     settings = json.loads((target / "settings.json").read_text())
     assert settings["env"]["PATH"] == "/sandbox/bin:/usr/bin"
     assert settings["sandbox"]["failIfUnavailable"] is True
+    assert settings["sandbox"]["enabled"] is True
+    assert settings["sandbox"]["allowUnsandboxedCommands"] is False
+    assert settings["sandbox"]["filesystem"] == {
+        "denyRead": [
+            "~/",
+            "/mnt/c/Users",
+            "/root",
+            "./.credentials.json",
+            "./.claude.json",
+        ],
+        "allowRead": [str(checkout.resolve())],
+        "denyWrite": ["."],
+    }
     assert settings["permissions"]["allow"] == [
         "Read",
         "Edit",
         "Write",
         "Bash",
         "Agent",
+    ]
+    assert settings["permissions"]["deny"] == [
+        "Read(/.claude-k4/.credentials.json)",
+        "Read(/.claude-k4/.claude.json)",
+        "Edit(./.claude-k4/**)",
+        "Write(./.claude-k4/**)",
+        "WebFetch",
+        "WebSearch",
     ]
     assert stat.S_IMODE((target / ".credentials.json").stat().st_mode) == 0o600
     assert stat.S_IMODE((target / ".claude.json").stat().st_mode) == 0o600
@@ -108,8 +130,14 @@ def test_seed_script_runs_by_path_from_an_external_working_directory(tmp_path):
 
     assert done.returncode == 0, done.stderr
     settings = json.loads((target / "settings.json").read_text())
-    assert settings["sandbox"]["network"]["allowedDomains"] == [
-        "localhost",
-        "127.0.0.1",
-        "[::1]",
+    assert settings["sandbox"]["filesystem"]["allowRead"] == [str(external.resolve())]
+    assert settings["sandbox"]["network"]["allowedDomains"] == list(
+        k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS
+    )
+    # The hermetic property the task states is what this guards, not the list's
+    # length: an arm that could fetch packages would not be the subject.
+    assert not [
+        domain
+        for domain in settings["sandbox"]["network"]["allowedDomains"]
+        if "pypi" in domain or "npm" in domain
     ]

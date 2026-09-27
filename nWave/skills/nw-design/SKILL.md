@@ -10,6 +10,11 @@ argument-hint: '[bounded design question] --paradigm=[auto|oop|fp] [--residualit
 
 # NW-DESIGN
 
+Read `~/.claude/skills/nw-human-collaboration/SKILL.md` to offer and conduct
+interactive refinement with the human. Honor an already selected final-review
+or full-delegation mode; the LLM manages the dialogue and progression.
+
+
 ## Authority
 
 DESIGN updates durable architecture brief/ADRs, never a per-delivery narrative,
@@ -25,13 +30,36 @@ get no mini-cycle. Request-wide
 review or EXAMINE requires a named cross-slice observation not covered by slice
 evidence.
 
+**Requested scope, designed scope and unresolved shared decisions are distinct.**
+For a feature with several values, first establish or confirm existing common contracts,
+dependencies and observation of the whole requested result, then design
+per-slice deltas; a slice is not ready until the shared decisions it depends on
+are resolved. Inherit epic/project decisions when present; never invent them. A
+one-value or local change reuses adequate existing architecture: no full upfront
+local implementation design, repeated boilerplate or universal gate. Resolve a
+shared contract the slice needs first; an independent slice proceeds when
+inherited architecture suffices, and that does not make the feature design
+complete. Honor an explicit human instruction to design shared decisions first.
+A single-value Request needs no shared section. A value oracle covers the slice
+delta and still carries inherited common constraints and feature
+walking-skeleton obligations; it does not attest feature completeness. This paragraph is the sole owner
+of this rule; other roles and skills reference it.
+
 When an uncertain boundary needs exercise, orient the existing delegation toward
 one concrete producer-to-consumer connection: semantic input through the DES
 constructor to an executable oracle on the real public port. Let that consumer's
 specific missing semantic question and counterexample return to its decision
-owner before expanding the affected design or solution. This selects an existing
-value-level connection; it creates no technical-fragment cycle or additional
-delivery phase.
+owner before expanding the affected design or solution. This tests one
+uncertainty in an existing value-level connection; it neither shrinks the
+requested architecture scope nor attests that feature DESIGN is complete, and it
+creates no technical-fragment cycle or additional delivery phase.
+
+Read `~/.claude/skills/nw-role-invocation/SKILL.md` before delegating. Use the
+exact installed role, natively or via `des design --repo-root ROOT --value N`
+(buys the solution architect); `--input -` constructs and buys no turn.
+The outer `/nw-design` caller invokes the relevant installed specialist per
+that skill; the Required Design Pass, self-falsification and Handoff below are
+that architect's duties, and its returned facts feed `--input -`.
 
 Route application/component to `nw-solution-architect`, domain boundaries to
 `nw-ddd-architect`, scale/distribution to `nw-system-designer`, deployment to
@@ -39,13 +67,31 @@ Route application/component to `nw-solution-architect`, domain boundaries to
 and formal verification are owner-scoped lenses, never replacement routes.
 Code-level structure stays downstream unless a public contract needs a boundary.
 
+**Consultation policy (short).** The application/component architect owns
+coherent design decisions by default — no fanout for routine work. Involve the
+system designer only for a genuinely consequential distribution, capacity,
+scaling, or availability trade-off. Involve the DDD architect only when
+language, bounded context, aggregate, or invariant boundaries are actually
+contested. Pattern/style selection (e.g. hexagonal, CQRS, event-driven)
+applies only when system structure is actually in scope for the change at
+hand — not by default on every design pass. The LLM chooses which consult(s)
+to make and integrates their input into one coherent decision; DES never
+dispatches or governs which specialist is consulted — that choice stays
+semantic and upstream of the constructor boundary below.
+
 ## Required Design Pass
+
+Performed by the invoked architect, not the outer host.
 
 1. **Intent and constraints** — bind product identities/observations; name
    uncertainty, never invent a requirement.
 2. **Code facts and reuse** — map responsibilities/callers/ports/dependencies;
    choose evidence-backed `REUSE`, `EXTEND`, `REPLACE` or `CREATE_NEW` for each.
-   Gate: `CREATE_NEW` explains why no candidate safely owns it.
+   Check specifically for a SEMANTIC duplicate authority or a parallel
+   implementation independently deciding the same business rule/fact under a
+   different name or shape — not only a textual/symbol match (see
+   `nw-code-craftsmanship`). Gate: `CREATE_NEW` explains why no candidate
+   safely owns it.
 3. **Prefactoring** — before behavior, define the smallest observationally
    preserving `GREEN_TO_GREEN` move and existing green oracle. Gate: no hidden
    behavior change.
@@ -100,15 +146,20 @@ Code-level structure stays downstream unless a public contract needs a boundary.
 ## Result and constructor boundary
 
 DESIGN supplies semantic decisions; it does not edit a durable brief or ADR and
-never authors Markdown for a DESIGN document. For the executable v1 document
-increment, the LLM supplies the closed JSON manifest defined by
-`docs/product/architecture/ADR-DES-003-step-surface-algebra.md §15`. DES is the
-sole writer: the caller sends that strict UTF-8 object to
-`des design --repo-root ROOT --value N --input -`. DES validates it, constructs
-the human authority, and binds downstream typed facts from the same normalized
-input.
+never authors Markdown for a DESIGN document. The LLM supplies typed semantic
+inputs as a closed, complete JSON manifest (schema_version 1). The same field
+grammar applies to `--shared`: fill targets, obligations, primary observable
+oracle and verification from the common feature-level contract, without a slice ID. DES is the sole writer: for a feature with missing or
+human-requested common decisions, invoke
+`des design --repo-root ROOT --shared [--feature ID] --input -` once, with
+explicit or inherited scope, for the common section; then send each slice delta
+to `des design --repo-root ROOT --value N --input -`. Pass exactly one of
+`--value` or `--shared`; there is no automatic project fallback.
+`--replace-current` is only a deliberate same-identity replacement. DES
+validates the input, constructs the human authority, and binds downstream typed
+facts from the same normalized input.
 
-The generated contract below is the sole field grammar for the v1 manifest. Do
+The generated contract below is the sole field grammar for the manifest. Do
 not supply completed Markdown or an ADR draft. Resolve the semantic decisions
 from code facts, preserve the reuse, prefactoring, native-evidence, and
 uncertainty duties above, and use at most one bounded Bash probe for a
@@ -116,8 +167,8 @@ load-bearing unknown.
 
 A provider-enforced output schema remains authoritative. When a caller requires
 existing typed `design_facts`, obey that schema exactly and do not substitute a
-v1 manifest for it. When no schema is enforced and the normal DESIGN host asks
-for constructor input, return the semantic v1 manifest only. In either case,
+manifest for it. When no schema is enforced and the normal DESIGN host asks
+for constructor input, return the semantic manifest only. In either case,
 do not write authority, handover, production, or oracle bytes. `NEXT` is
 advisory; the producer does not select or invoke another delivery step.
 
@@ -150,7 +201,7 @@ object with exactly:
   - `applicable`:
     object with exactly:
     - `applicability`: `applicable`
-    - `existing_oracle`: repository-relative DESIGN oracle locator.
+    - `existing_oracle`: a repository-relative DESIGN oracle locator: the whole file (`tests/verify_order.py`) or the file with an optional `::selector` (`tests/verify_order.py::Class::case`); a `:line` suffix is not accepted.
     - `move`: non-empty text.
     - `preserved_observation`: non-empty text.
   - `not_applicable`:
@@ -191,9 +242,10 @@ object with exactly:
   - `stimulus`: non-empty text.
   - `expected`: non-empty text.
   - `falsifier`: non-empty text.
-- `oracle`: repository-relative DESIGN oracle locator.
+- `oracle`: a repository-relative DESIGN oracle locator: the whole file (`tests/verify_order.py`) or the file with an optional `::selector` (`tests/verify_order.py::Class::case`); a `:line` suffix is not accepted.
 - `acceptance_supports`: unique list of repository-relative file path.
-- `verification`: non-empty unique list of non-empty unique argv list of non-empty text.
+- `verification`: non-empty unique list of non-empty argv list of non-empty text without NUL.
+- `oracle_verification_index`: non-negative integer.
 <!-- GENERATED:design-document-input END -->
 
 The Request's ordered value graph is decomposed once. Every independently
@@ -262,7 +314,13 @@ becomes a wave.
 This discipline requires no proof assistant or model checker: property tests
 in the project's own language, exhaustive finite checks, or a model checker
 when one is available all qualify — a prover is never a prerequisite. Probe
-the host, not assumed Linux/tooling. When an applicable Agda/TLA+/TLC claim's
+the host, not assumed Linux/tooling. For a new selected temporal or modelable
+non-functional claim, use Quint as the standard readable notation with
+Apalache/TLC as the selected verifier. Preserve useful existing TLA+ models;
+choose direct TLA+ for a new model only with a recorded capability or tooling
+reason. Agda complements these for applicable local
+proofs. Use `nw-solution-architect-formal-verification` for tool selection,
+installation offers and explicit model-versus-runtime evidence. When an applicable claim's
 tool is available, execute it; otherwise use explicit algebraic fallback and
 mark only that proof `INDETERMINATE`. Offer installation only on a known,
 bounded, user-consented path. Tool absence never blocks DESIGN or becomes proof.

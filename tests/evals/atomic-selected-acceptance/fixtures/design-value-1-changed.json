@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "authority": {
+    "heading": "Order value 1: submit"
+  },
+  "purpose": "A customer submits an order and it is recorded as unpaid.",
+  "constraints": [
+    "Preserve the shared order decisions where the design carries them.",
+    "Public port: the `order` command, invoked as `order <subcommand> --order-id <id>`, is a future implementation.",
+    "Test environment: pytest comes from the repository's declared test environment; a missing test framework is an environment gap, not product behaviour."
+  ],
+  "targets": [
+    {
+      "path": "bin/order",
+      "decision": "CREATE_NEW",
+      "reason": "Public order CLI executable named by the accepted port contract."
+    },
+    {
+      "path": "src/orders/__init__.py",
+      "decision": "CREATE_NEW",
+      "reason": "Package support required by the declared CLI implementation."
+    },
+    {
+      "path": "src/orders/order.py",
+      "decision": "CREATE_NEW",
+      "reason": "Order domain record with status and revision."
+    },
+    {
+      "path": "src/orders/submit.py",
+      "decision": "CREATE_NEW",
+      "reason": "Submission behavior behind the public order CLI."
+    }
+  ],
+  "paradigm": "object_oriented",
+  "decisions": [
+    "Value 1 now records the order with a revision number as well."
+  ],
+  "reuse_analysis": {
+    "candidates": [
+      {
+        "symbol": "Order",
+        "locator": "src/orders/order.py:1",
+        "decision": "CREATE_NEW",
+        "reason": "No existing order responsibility."
+      }
+    ]
+  },
+  "prefactoring": {
+    "applicability": "not_applicable",
+    "reason": "New behaviour; no preserving move needed."
+  },
+  "agreement_analysis": {
+    "applicability": "not_applicable",
+    "reason": "No shared release or interchange schema is touched."
+  },
+  "boundaries": {
+    "applicability": "applicable",
+    "driving_port": "bin/order: order submit --order-id ID, executable on PATH",
+    "driven_ports": [
+      "order domain record in src/orders/order.py"
+    ],
+    "dependency_direction": "CLI adapter calls submission behavior; domain code does not depend on the CLI.",
+    "failures": [
+      {
+        "condition": "The required --order-id argument is absent.",
+        "outcome": "Refusal",
+        "observation": "The CLI exits non-zero without reporting a successful submission."
+      }
+    ]
+  },
+  "public_oracle": {
+    "observation": "The order command reports the committed status with its revision.",
+    "stimulus": "Run `order submit --order-id O1`.",
+    "expected": "stdout is exactly `O1 unpaid revision 1` and exit is 0.",
+    "falsifier": "Any other stdout or a non-zero exit."
+  },
+  "oracle": "tests/acceptance/test_order_submit.py::test_submit",
+  "acceptance_supports": [],
+  "verification": [
+    [
+      "{PYTHON}",
+      "-m",
+      "pytest",
+      "-q",
+      "tests/acceptance/test_order_submit.py"
+    ]
+  ],
+  "oracle_verification_index": 0
+}

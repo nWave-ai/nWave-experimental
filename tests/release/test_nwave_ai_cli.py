@@ -26,6 +26,7 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -99,19 +100,30 @@ def _build_checkout(
     return checkout
 
 
-def _write_dist_info(
-    checkout: Path,
-    *,
-    dist_name: str,
-    version: str | None,
-    owned_package: str,
-    include_metadata: bool = True,
-    include_top_level: bool = True,
-) -> None:
-    """One ephemeral ``*.dist-info`` directory naming *owned_package* through
-    either optional ``top_level.txt`` or wheel-standard ``RECORD`` evidence,
-    the two shapes ``importlib.metadata.packages_distributions()`` infers.
+@dataclass(frozen=True)
+class _InstalledDistribution:
+    """One installed distribution identity plus which of the two evidence
+    shapes its ``*.dist-info`` writes.
     """
+
+    dist_name: str
+    version: str | None
+    owned_package: str
+    include_metadata: bool = True
+    include_top_level: bool = True
+
+
+def _write_dist_info(checkout: Path, *, distribution: _InstalledDistribution) -> None:
+    """One ephemeral ``*.dist-info`` directory naming the distribution's owned
+    package through either optional ``top_level.txt`` or wheel-standard
+    ``RECORD`` evidence, the two shapes
+    ``importlib.metadata.packages_distributions()`` infers.
+    """
+    dist_name = distribution.dist_name
+    version = distribution.version
+    owned_package = distribution.owned_package
+    include_metadata = distribution.include_metadata
+    include_top_level = distribution.include_top_level
     dist_info = checkout / f"{dist_name}-{version or 'unknown'}.dist-info"
     dist_info.mkdir()
     if include_metadata:
@@ -215,10 +227,12 @@ class TestVersionDerivation:
         )
         _write_dist_info(
             checkout,
-            dist_name="nwave-ai-fork",
-            version="7.7.7",
-            owned_package="nwave_ai",
-            include_top_level=include_top_level,
+            distribution=_InstalledDistribution(
+                dist_name="nwave-ai-fork",
+                version="7.7.7",
+                owned_package="nwave_ai",
+                include_top_level=include_top_level,
+            ),
         )
 
         for argv in (("--version",), ("version",)):
@@ -275,11 +289,13 @@ class TestVersionDerivation:
         for index, version in enumerate(versions):
             _write_dist_info(
                 checkout,
-                dist_name=f"nwave-ai-owner-{index}",
-                version=version,
-                owned_package="nwave_ai",
-                include_metadata=include_metadata,
-                include_top_level=include_metadata,
+                distribution=_InstalledDistribution(
+                    dist_name=f"nwave-ai-owner-{index}",
+                    version=version,
+                    owned_package="nwave_ai",
+                    include_metadata=include_metadata,
+                    include_top_level=include_metadata,
+                ),
             )
 
         _assert_cli_refuses(checkout, (("--version",), ("version",)))
@@ -468,9 +484,11 @@ class TestBuildIdentityConstruction:
         )
         _write_dist_info(
             installed_checkout,
-            dist_name="nwave-ai",
-            version="4.0.1+candidate",
-            owned_package="nwave_ai",
+            distribution=_InstalledDistribution(
+                dist_name="nwave-ai",
+                version="4.0.1+candidate",
+                owned_package="nwave_ai",
+            ),
         )
 
         source_result = _run_cli(source_checkout, ["version"])

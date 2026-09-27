@@ -104,6 +104,36 @@ def test_every_interpreter_spelling_reaches_the_same_subject_interpreter(
     assert _stdout(evidence) == "SUBJECT-VENV-ANSWERED"
 
 
+def test_a_declared_interpreter_the_kernel_refuses_fails_loud_not_elsewhere(
+    tmp_path: Path,
+) -> None:
+    """A shim whose target will not start must not fall through ``PATH``.
+
+    MEASURED 2026-09-16: with the shim's shebang naming the SUBJECT interpreter,
+    ``execve`` refused the shim with ``ENOEXEC`` and ``subprocess`` resumed its
+    ``PATH`` search, so the NEXT ``python`` on ``PATH`` ran and exited 0 while
+    ``NATIVE-RUNTIME`` said ``python-source=subject-venv``.  On macOS a ``#!``
+    script as interpreter is refused the same way, which is how the tests above
+    failed there.  This one discriminates on Linux as well.
+    """
+    subject = tmp_path / "subject"
+    interpreter = subject / ".venv" / "bin" / "python"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.write_bytes(b"\x00\x01 not an executable format\n")
+    interpreter.chmod(0o755)
+    candidate = _candidate_tree(tmp_path / "candidate")
+
+    evidence = DeliveryContinuationRunner()._native(
+        candidate,
+        (("python", "-c", "print('ANOTHER-INTERPRETER-ANSWERED')"),),
+        subject,
+    )
+
+    assert isinstance(evidence, tuple), evidence
+    assert evidence[0].exit_status != 0
+    assert "ANOTHER-INTERPRETER-ANSWERED" not in evidence[0].stdout
+
+
 def test_a_subject_declaring_no_environment_falls_back_and_says_so(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

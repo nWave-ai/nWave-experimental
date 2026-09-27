@@ -18,10 +18,16 @@ Numbering is an SSOT-internal index defined in the recomposing core `nw-test-des
 Tests invoke through driving ports (entry points), never internal components.
 
 ### Driving Ports (Test Through These)
-Application services/orchestrators | API controllers/CLI handlers | Message consumers/event handlers | Public API facade classes
+Application services/orchestrators | API controllers/CLI handlers | Message consumers/event handlers | Public API facade classes | For a library: its public function/value API (the exported surface a consumer imports) — a library's public function is a driving port exactly like a service method.
 
 ### Not Entry Points (Never Test Directly)
-Internal validators, parsers, formatters | Domain entities/value objects | Repository implementations | Internal service components
+Internal validators, parsers, formatters | Domain entities/value objects | Repository implementations | Internal service components | A library's private/internal classes and helpers not part of its exported API
+
+### Public Library API vs Private Internal Domain Objects
+
+A domain library distinguishes its PUBLIC function/value API (what a consumer is allowed to import and call — the driving boundary) from PRIVATE internal domain objects (implementation detail behind that API). Tests couple to the former only. Coupling to a private internal class or helper — even one that looks stable — is the same boundary violation as calling an internal validator directly; it breaks the moment internals are refactored even though the public contract did not change.
+
+Expected outcomes are derived independently from the requirements/spec, never by reading the implementation and echoing back whatever it currently does — an oracle copied from the code under test cannot catch a defect in that code.
 
 ### Correct Pattern
 
@@ -83,6 +89,10 @@ def then_order_is_confirmed(self):
 ### Test Smell Indicators
 `requests.post()` in step method | `db.execute()` in step method | `assert response.status_code` | Technical terms in Gherkin
 
+### File/Function Naming
+
+Test file and function names describe the feature/business value under test, not test bookkeeping (`test_1`, `test_helper_setup`, `test_case_final_v2`). The canonical test-identifier rule is `nw-test-design-mandates` → Durable outcome naming; apply it to files and functions as well as scenarios.
+
 ## Mandate 3: User Journey Completeness
 
 Tests validate complete user journeys with business value, not isolated technical operations.
@@ -117,10 +127,10 @@ Does name express user value or technical operation? "Customer completes purchas
 
 ## Walking Skeleton Strategy
 
-Balance user-centric E2E integration tests with focused boundary tests.
+Balance one feature-level E2E walking skeleton with many focused boundary tests. A feature is not "entire feature or extra skeleton per slice" — see `nw-tdd-methodology-walking-skeleton`: exactly ONE walking skeleton per feature, established by its first slice and extended by every later slice; a scenario that needs its own independent E2E boundary is an additional SCENARIO, never a second skeleton.
 
-### Walking Skeletons (2-5 per feature)
-Trace thin vertical slice delivering observable user value E2E | Each answers: "Can a user accomplish this goal and see the result?" | Express simplest complete user journey | Validate system delivers demo-able stakeholder value | Touch all layers as consequence of journey, not as design goal
+### The Feature's Walking Skeleton (one per feature)
+Trace thin vertical slice delivering observable user value E2E | Answers: "Can a user accomplish this goal and see the result?" | Express simplest complete user journey | Validate system delivers demo-able stakeholder value | Touch all layers as consequence of journey, not as design goal
 
 ### Walking Skeleton Litmus Test
 1. Title describes user goal ("Customer purchases a product") not technical flow ("Order passes through all layers")
@@ -132,7 +142,7 @@ Trace thin vertical slice delivering observable user value E2E | Each answers: "
 Test specific business rules at driving port boundary | Test doubles for external dependencies (faster, isolated) | Cover business rule variations and edge cases | Invoke through entry point (OrderService, Orchestrator)
 
 ### Recommended Ratio
-For typical feature with 20 scenarios: 2-3 walking skeletons (user value E2E) | 17-18 focused scenarios (boundary tests with test doubles). Walking skeletons prove users achieve goals. Focused scenarios run fast, cover breadth. Both use business language and invoke through entry points.
+For a typical feature with 20 scenarios: 1 walking skeleton (user value E2E, established once and extended) | 19 focused scenarios (boundary tests with test doubles, plus any independently-justified extra E2E). The skeleton proves users achieve the goal end-to-end once. Focused scenarios run fast, cover breadth. Both use business language and invoke through entry points.
 
 ## Mandate 4: Pure Function Extraction Before Fixtures
 

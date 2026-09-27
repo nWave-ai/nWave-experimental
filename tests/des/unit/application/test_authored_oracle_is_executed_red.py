@@ -32,9 +32,11 @@ import pytest
 
 from des.application.delivery_continuation import (
     AcceptanceFinding,
+    AuthorityFacts,
     DeliveryContinuationRunner,
     DeliveryOutcome,
     Disposition,
+    NativeEvidence,
 )
 from des.ports.driven_ports.task_invocation_port import (
     DesignFacts,
@@ -53,6 +55,8 @@ from tests.des._helpers.step_stimulus import decomposed, designed, oracled
 OBSERVATION = "the installed answer module answers 42 through its public entry point"
 ORACLE = "tests/acceptance/test_answer.py"
 PRODUCTION = "src/answer.py"
+DECLARED_OUTSIDE_ORACLE = "hc/api/tests/test_maintenance_windows_api.py"
+DECLARED_OUTSIDE_SUPPORT = "hc/api/tests/maintenance_windows_support.py"
 
 BROKEN_AT_IMPORT = "import nwave_absent_module_for_this_test\n\n\ndef test_answer():\n    assert True\n"
 BROKEN_AT_SETUP = """import pytest
@@ -109,9 +113,20 @@ def _accepted(**facts: object) -> ModelRun:
 class ScriptedPort(TaskInvocationPort):
     """Every role answers from a script; the designer writes the queued oracle."""
 
-    def __init__(self, root: Path, oracles: list[str]) -> None:
+    def __init__(
+        self,
+        root: Path,
+        oracles: list[str],
+        *,
+        oracle: str = ORACLE,
+        acceptance_supports: tuple[str, ...] = (),
+        mutate_production: bool = False,
+    ) -> None:
         self.root = root
         self.oracles = list(oracles)
+        self.oracle = oracle
+        self.acceptance_supports = acceptance_supports
+        self.mutate_production = mutate_production
         self.roles: list[str] = []
         self.prompts: list[tuple[str, str]] = []
 
@@ -133,19 +148,32 @@ class ScriptedPort(TaskInvocationPort):
                 design_facts=DesignFacts(
                     targets=(
                         DesignTarget(PRODUCTION, "CREATE_NEW"),
-                        DesignTarget(ORACLE, "CREATE_NEW"),
+                        DesignTarget(self.oracle, "CREATE_NEW"),
                     ),
                     paradigm="object_oriented",
                     decisions=("one observable value",),
-                    oracle=ORACLE,
-                    acceptance_supports=(),
-                    verification=(("python", "-m", "pytest", ORACLE, "-q"),),
+                    oracle=self.oracle,
+                    acceptance_supports=self.acceptance_supports,
+                    verification=(("python", "-m", "pytest", self.oracle, "-q"),),
+                    oracle_verification_index=0,
                 )
             )
         if role_id == "nw-acceptance-designer":
-            written = self.root / ORACLE
+            written = self.root / self.oracle
             written.parent.mkdir(parents=True, exist_ok=True)
             written.write_text(self.oracles.pop(0), encoding="utf-8")
+            for support in self.acceptance_supports:
+                support_path = self.root / support
+                support_path.parent.mkdir(parents=True, exist_ok=True)
+                support_path.write_text(
+                    "# declared acceptance support\n", encoding="utf-8"
+                )
+            if self.mutate_production:
+                production = self.root / PRODUCTION
+                production.parent.mkdir(parents=True, exist_ok=True)
+                production.write_text(
+                    "unexpected production mutation\n", encoding="utf-8"
+                )
             return _accepted()
         if role_id in (
             "nw-acceptance-designer-reviewer",
@@ -252,6 +280,145 @@ def test_a_correction_repeating_its_bytes_is_refused_for_no_progress(
     assert outcome.failure.what == "AcceptanceCorrectionNoProgress"
 
 
+def test_a_declared_oracle_and_support_outside_pytest_testpaths_are_authored(
+    subject: Path,
+) -> None:
+    """Authority, rather than a fixture pyproject, authorizes this test layout."""
+    port = ScriptedPort(
+        subject,
+        [RED_ON_ITS_ASSERTION],
+        oracle=DECLARED_OUTSIDE_ORACLE,
+        acceptance_supports=(DECLARED_OUTSIDE_SUPPORT,),
+    )
+
+    _, _, design, measured = one_oracle_turn(subject, port)
+
+    assert measured.refusal is None, measured.refusal
+    assert design.acceptance_paths == (
+        DECLARED_OUTSIDE_ORACLE,
+        DECLARED_OUTSIDE_SUPPORT,
+    )
+    assert (subject / DECLARED_OUTSIDE_ORACLE).is_file()
+    assert (subject / DECLARED_OUTSIDE_SUPPORT).is_file()
+
+
+def test_aggregate_correction_owns_declared_oracle_outside_pytest_testpaths(
+    subject: Path,
+) -> None:
+    port = ScriptedPort(
+        subject,
+        [BROKEN_AT_SETUP, RED_ON_ITS_ASSERTION],
+        oracle=DECLARED_OUTSIDE_ORACLE,
+        acceptance_supports=(DECLARED_OUTSIDE_SUPPORT,),
+    )
+
+    runner, stored, design, first = one_oracle_turn(subject, port)
+    assert first.refusal is not None
+
+    corrected = oracled(
+        runner,
+        port,
+        subject,
+        stored,
+        design,
+        finding="the oracle errors at setup",
+    )
+
+    assert corrected.refusal is None, corrected.refusal
+
+
+def test_acceptance_design_still_refuses_an_unowned_production_mutation(
+    subject: Path,
+) -> None:
+    port = ScriptedPort(
+        subject,
+        [RED_ON_ITS_ASSERTION],
+        oracle=DECLARED_OUTSIDE_ORACLE,
+        mutate_production=True,
+    )
+
+    _, _, _, measured = one_oracle_turn(subject, port)
+
+    outcome = measured.refusal
+    assert isinstance(outcome, DeliveryOutcome), outcome
+    assert outcome.failure is not None
+    assert outcome.failure.what == "ProductionScopeDrift"
+    assert PRODUCTION in outcome.failure.why
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [(ORACLE,), (DECLARED_OUTSIDE_SUPPORT,), (ORACLE, DECLARED_OUTSIDE_SUPPORT)],
+    ids=["oracle", "support", "oracle-and-support"],
+)
+def test_missing_acceptance_files_are_named_with_their_actual_role(
+    subject: Path, missing: tuple[str, ...]
+) -> None:
+    class IncompleteAuthor(ScriptedPort):
+        def invoke(self, **kwargs: object) -> ModelRun:
+            result = super().invoke(**kwargs)
+            if kwargs["role_id"] == "nw-acceptance-designer":
+                for path in missing:
+                    (self.root / path).unlink()
+            return result
+
+    port = IncompleteAuthor(
+        subject,
+        [RED_ON_ITS_ASSERTION],
+        acceptance_supports=(DECLARED_OUTSIDE_SUPPORT,),
+    )
+
+    _, _, _, measured = one_oracle_turn(subject, port)
+
+    outcome = measured.refusal
+    assert isinstance(outcome, DeliveryOutcome), outcome
+    assert outcome.failure is not None
+    assert outcome.failure.what == "OracleUnavailable"
+    for path in missing:
+        role = "oracle" if path == ORACLE else "acceptance support"
+        assert f"{role} {path!r}" in outcome.failure.why
+    if ORACLE not in missing:
+        assert f"oracle {ORACLE!r}" not in outcome.failure.why
+    assert "declaration" in outcome.failure.how
+    assert not crafted(port)
+
+
+def test_unobservable_support_is_not_reported_as_a_missing_oracle(
+    subject: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    port = ScriptedPort(
+        subject,
+        [RED_ON_ITS_ASSERTION],
+        acceptance_supports=(DECLARED_OUTSIDE_SUPPORT,),
+    )
+    runner = DeliveryContinuationRunner(port)
+    stored = decomposed(runner, port, subject, REQUEST)
+    stored, design = designed(runner, port, subject, stored)
+    regular_file = DeliveryContinuationRunner._regular_file
+
+    def observe(path: Path) -> bool | None:
+        if path == subject / DECLARED_OUTSIDE_SUPPORT:
+            return None
+        return regular_file(path)
+
+    monkeypatch.setattr(
+        DeliveryContinuationRunner, "_regular_file", staticmethod(observe)
+    )
+
+    measured = oracled(runner, port, subject, stored, design)
+
+    outcome = measured.refusal
+    assert isinstance(outcome, DeliveryOutcome), outcome
+    assert outcome.failure is not None
+    assert outcome.failure.what == "OracleUnobservable"
+    assert f"acceptance support {DECLARED_OUTSIDE_SUPPORT!r}: unobservable" in (
+        outcome.failure.why
+    )
+    assert "missing" not in outcome.failure.why
+    assert f"oracle {ORACLE!r}" not in outcome.failure.why
+    assert (subject / DECLARED_OUTSIDE_SUPPORT).is_file()
+
+
 def test_a_green_oracle_is_measured_and_reported_but_does_not_refuse(
     subject: Path, capfd: pytest.CaptureFixture[str]
 ) -> None:
@@ -319,58 +486,166 @@ def test_the_step_measures_the_red_before_it_admits_the_set(subject: Path) -> No
 
 
 @pytest.mark.parametrize(
-    ("exit_status", "counts", "verdict"),
+    ("exit_status", "counts", "report_requested", "verdict"),
     [
-        (1, (3, 0, 3), "red"),
-        (1, (3, 3, 0), "broken"),
-        (1, (5, 1, 4), "broken"),
-        (1, None, "red"),
-        (0, (2, 0, 0), "green"),
-        (0, None, "green"),
-        (2, None, "broken"),
-        (4, (0, 0, 0), "broken"),
-        (5, (0, 0, 0), "broken"),
-        (1, (0, 0, 0), "indeterminate"),
+        (1, (3, 0, 3), False, "red"),
+        (1, (3, 3, 0), False, "broken"),
+        (1, (5, 1, 4), False, "broken"),
+        (1, None, False, "indeterminate"),
+        (1, None, True, "broken"),
+        (0, (2, 0, 0), False, "green"),
+        (0, None, False, "green"),
+        (0, None, True, "broken"),
+        (2, None, False, "indeterminate"),
+        (4, (0, 0, 0), True, "broken"),
+        (5, (0, 0, 0), True, "broken"),
+        (1, (0, 0, 0), False, "indeterminate"),
     ],
     ids=[
         "failures-only-is-red",
         "errors-only-is-broken",
         "any-error-is-broken",
-        "no-report-admits-exit-one",
+        "native-exit-one-is-unclassified",
+        "no-report-under-a-pytest-vector-is-broken",
         "green-report",
         "green-no-report",
-        "collection-interrupted",
+        "green-no-report-under-a-pytest-vector-is-broken",
+        "native-exit-two-is-unclassified",
         "internal-usage-error",
         "no-test-collected",
         "exit-one-with-a-silent-report",
     ],
 )
 def test_the_verdict_reads_both_axes(
-    exit_status: int, counts: tuple[int, int, int] | None, verdict: str
+    exit_status: int,
+    counts: tuple[int, int, int] | None,
+    report_requested: bool,
+    verdict: str,
 ) -> None:
-    assert DeliveryContinuationRunner._oracle_verdict(exit_status, counts)[0] == verdict
-
-
-def test_the_declared_verification_vector_naming_the_oracle_is_reused() -> None:
-    declared = (
-        ("python", "-m", "pytest", "tests/other.py", "-q"),
-        ("uv", "run", "pytest", ORACLE, "-q"),
-        ("python", "-m", "pytest", ORACLE, "-q"),
+    measured = DeliveryContinuationRunner._oracle_verdict(
+        exit_status, counts, report_requested
     )
+    assert measured[0] == verdict
 
-    assert DeliveryContinuationRunner._oracle_command(ORACLE, declared) == declared[1]
+
+@pytest.mark.parametrize(
+    "selected,oracle",
+    [
+        (
+            ("python", "manage.py", "test", "hc.api.tests.test_maintenance_windows"),
+            ORACLE,
+        ),
+        (
+            (
+                "npm",
+                "test",
+                "--",
+                "--runTestsByPath",
+                "web/src/test/acceptance/live_progress.test.ts",
+            ),
+            "web/src/test/acceptance/live_progress.test.ts",
+        ),
+        (
+            ("go", "test", "./internal/tui", "-run", "^TestRun_RendersGrowingLog$"),
+            "internal/tui/run_test.go",
+        ),
+        (
+            (
+                "cargo",
+                "test",
+                "--test",
+                "live_progress",
+                "observes_live_updates",
+                "--",
+                "--exact",
+            ),
+            "tests/live_progress.rs",
+        ),
+    ],
+    ids=["django-module", "javascript-selector", "go-selector", "rust-selector"],
+)
+def test_oracle_red_preserves_the_selected_project_command_and_locator(
+    subject: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selected: tuple[str, ...],
+    oracle: str,
+) -> None:
+    broad = ("python", "manage.py", "test", "hc.api.tests")
+    authority = AuthorityFacts(
+        locator="docs/architecture.md#Maintenance windows",
+        modified_authority_paths=(),
+        target_decisions=((PRODUCTION, "CREATE_NEW"),),
+        paradigm="object_oriented",
+        decisions=(),
+        obligations=(),
+        acceptance_oracle_locator=oracle,
+        acceptance_paths=(oracle,),
+        native_verification_argvs=(broad, selected),
+        oracle_verification_index=1,
+    )
+    executed: list[tuple[str, ...]] = []
+
+    def native(
+        _root: Path, commands: tuple[tuple[str, ...], ...], *_args: object
+    ) -> tuple[NativeEvidence, ...]:
+        assert len(commands) == 1
+        executed.extend(commands)
+        return (NativeEvidence(commands[0], 1, "", ""),)
+
+    runner = DeliveryContinuationRunner()
+    monkeypatch.setattr(runner, "_native", native)
+    monkeypatch.setattr(runner, "_junit_counts", lambda _report: None)
+    monkeypatch.setattr(runner, "_junit_failures", lambda _report: ())
+
+    measured = runner._executed_oracle_set(subject, [(OBSERVATION, authority)])
+
+    assert not isinstance(measured, DeliveryOutcome)
+    assert executed == [selected]
+    assert broad not in executed
 
 
-def test_an_oracle_no_declared_vector_names_falls_back_to_the_admitted_form() -> None:
-    declared = (("python", "-m", "pytest", "tests/other.py", "-q"),)
-
-    assert DeliveryContinuationRunner._oracle_command(ORACLE, declared) == (
+def test_same_oracle_with_distinct_explicit_bindings_executes_each_binding(
+    subject: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broad = ("python", "manage.py", "test", "hc.api.tests")
+    django_module = (
         "python",
-        "-m",
-        "pytest",
-        ORACLE,
-        "-q",
+        "manage.py",
+        "test",
+        "hc.api.tests.test_maintenance_windows",
     )
+    common = {
+        "locator": "docs/architecture.md#Maintenance windows",
+        "modified_authority_paths": (),
+        "target_decisions": ((PRODUCTION, "CREATE_NEW"),),
+        "paradigm": "object_oriented",
+        "decisions": (),
+        "obligations": (),
+        "acceptance_oracle_locator": ORACLE,
+        "acceptance_paths": (ORACLE,),
+        "native_verification_argvs": (broad, django_module),
+    }
+    first = AuthorityFacts(**common, oracle_verification_index=0)
+    second = AuthorityFacts(**common, oracle_verification_index=1)
+    executed: list[tuple[str, ...]] = []
+
+    def native(
+        _root: Path, commands: tuple[tuple[str, ...], ...], *_args: object
+    ) -> tuple[NativeEvidence, ...]:
+        executed.extend(commands)
+        return (NativeEvidence(commands[0], 1, "", ""),)
+
+    runner = DeliveryContinuationRunner()
+    monkeypatch.setattr(runner, "_native", native)
+    monkeypatch.setattr(runner, "_junit_counts", lambda _report: (1, 0, 1))
+    monkeypatch.setattr(runner, "_junit_failures", lambda _report: ())
+
+    measured = runner._executed_oracle_set(
+        subject, [("first", first), ("second", second)]
+    )
+
+    assert not isinstance(measured, DeliveryOutcome)
+    assert executed == [broad, django_module]
 
 
 def test_the_measured_red_carries_every_axis_the_reader_needs(subject: Path) -> None:
@@ -469,3 +744,43 @@ def test_an_unreadable_report_is_absence_of_observation_not_of_failures(
     # tuple there would tell the judge the oracle failed nowhere, which is a
     # claim nothing observed (GDP-6).
     assert DeliveryContinuationRunner._junit_failures(tmp_path / "absent.xml") is None
+
+
+@pytest.mark.parametrize("exit_status", [1, 101])
+def test_unclassified_native_failure_is_recorded_without_inventing_a_pytest_verdict(
+    subject: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    exit_status: int,
+) -> None:
+    command = ("cargo", "test", "--offline")
+    authority = AuthorityFacts(
+        locator="docs/architecture.md#Queue visibility",
+        modified_authority_paths=(),
+        target_decisions=(("src/lib.rs", "EXTEND"),),
+        paradigm="functional",
+        decisions=(),
+        obligations=(),
+        acceptance_oracle_locator="tests/queue_visibility.rs",
+        acceptance_paths=("tests/queue_visibility.rs",),
+        native_verification_argvs=(command,),
+        oracle_verification_index=0,
+    )
+    runner = DeliveryContinuationRunner()
+    monkeypatch.setattr(
+        runner,
+        "_native",
+        lambda *_args: (
+            NativeEvidence(
+                command, exit_status, "native test output", "native diagnostic"
+            ),
+        ),
+    )
+    monkeypatch.setattr(runner, "_junit_counts", lambda _report: None)
+    monkeypatch.setattr(runner, "_junit_failures", lambda _report: ())
+    result = runner._executed_oracle_set(subject, [(OBSERVATION, authority)])
+    assert not isinstance(result, DeliveryOutcome)
+    assert result.refusal is None
+    assert result.measured[0]["verdict"] == "indeterminate"
+    assert result.measured[0]["exit"] == exit_status
+    assert result.measured[0]["argv"] == list(command)
+    assert "native diagnostic" in result.measured[0]["diagnostic"]

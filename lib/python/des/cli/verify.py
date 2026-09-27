@@ -8,9 +8,9 @@ from pathlib import Path
 
 from des.application.delivery_steps import DeliverySteps
 from des.cli._repo_root_arg import add_repo_root_argument
+from des.cli.role_guidance import prepare_next
 from des.cli.step_next import moves_after_refusal, projection
 from des.cli.step_terminal import (
-    NOTHING_OWED,
     StepRefusal,
     refuse,
     resolved_root,
@@ -52,9 +52,11 @@ def main(argv: list[str] | None = None) -> int:
             turns_bought=outcome.turns_bought,
             role=outcome.role,
         )
+    candidate = _fact("CANDIDATE")
+    assert candidate is not None
     return succeed(
         facts,
-        NOTHING_OWED,
+        prepare_next(root, "reviewer", candidate),
         diagnostic=outcome.diagnostic,
         turns_bought=outcome.turns_bought,
         role=outcome.role,

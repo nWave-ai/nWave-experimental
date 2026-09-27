@@ -181,9 +181,14 @@ def test_reinstall_removes_only_exact_retired_lifecycle_hooks(tmp_path: Path):
     result = plugin._install_des_hooks(context)
 
     assert result.success
+    # SessionStart is a current event again (the route notice), so this array is
+    # stripped and re-added. The narrowed structural predicate keeps Lyra AND the
+    # user-modified near-match byte-for-byte; the ADDITION is the one
+    # installer-owned command.
     assert _lifecycle_commands(context, "SessionStart") == [
         "python3 -m lyra.session_start",
         _historical_affordance_command("SessionStart") + " --user-supplied-argument",
+        plugin._generate_hook_command(context, "session-start"),
     ]
     assert _lifecycle_commands(context, "UserPromptSubmit") == [
         "python3 /opt/persona/prompt_context.py",

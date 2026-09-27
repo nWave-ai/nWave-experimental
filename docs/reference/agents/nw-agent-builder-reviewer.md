@@ -14,3 +14,4 @@ Use for review and critique tasks - Agent design and quality review specialist. 
 - [nw-abr-critique-dimensions](../skills/nw-abr-critique-dimensions.md) — Review dimensions for validating agent quality - template compliance, safety, testing, and priority validation
 - [nw-cross-cutting-invariants](../skills/nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — routing core for the software/model boundary doctrine, gate/construction principles and on-demand knowledge lenses. Cite clause ids; never re-declare.
 - [nw-review-workflow](../skills/nw-review-workflow.md) — Detailed review process, v2 validation checklist, and scoring methodology for agent definition reviews
+- [nw-typesafe-system-one](../skills/nw-typesafe-system-one.md) — Use Jev System One for every supported, authorized semantic judgment when available: relevance selection, handoff preflight, evidence mapping, finding clustering, and confidence-gated escalation.

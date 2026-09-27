@@ -42,10 +42,26 @@ import hashlib
 import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 
 REDUCER_VERSION = "1"
+
+
+@dataclass(frozen=True)
+class _TranscriptIdentity:
+    """Whose consumption a record measures: the session, the agent, its lane name.
+
+    The three are one fact about one transcript, and two of them are the
+    reduction key (`_reduction_key`), so they must not be assembled from
+    different transcripts. `None` is a legitimate value for each -- it says
+    the transcript did not state it, never that it is zero.
+    """
+
+    session_id: str | None
+    agent_name: str | None = None
+    agent_id: str | None = None
 
 
 def _reduction_key(session_id: str | None, agent_id: str | None) -> str | None:
@@ -101,9 +117,7 @@ def _finalize_turns_record(
     malformed_line_count: int,
     last_request_id: str | None,
     *,
-    session_id: str | None,
-    agent_name: str | None = None,
-    agent_id: str | None = None,
+    identity: _TranscriptIdentity,
 ) -> dict[str, object]:
     """Pure formula step (no I/O): dedup'd per-turn usages -> one record.
 
@@ -113,9 +127,9 @@ def _finalize_turns_record(
     """
     if not ordered_usages:
         return _could_not_verify_consumption_record(
-            session_id=session_id,
-            agent_name=agent_name,
-            agent_id=agent_id,
+            session_id=identity.session_id,
+            agent_name=identity.agent_name,
+            agent_id=identity.agent_id,
             reason="zero_valid_assistant_records",
             malformed_line_count=malformed_line_count,
         )
@@ -150,9 +164,9 @@ def _finalize_turns_record(
         "schema_version": REDUCER_VERSION,
         "kind": "context_consumption",
         "ts": time.time(),
-        "session_id": session_id,
-        "agent_name": agent_name,
-        "agent_id": agent_id,
+        "session_id": identity.session_id,
+        "agent_name": identity.agent_name,
+        "agent_id": identity.agent_id,
         "turns": turns_count,
         "input_tokens": input_tokens,
         "cache_creation_tokens": cache_creation_tokens,
@@ -164,7 +178,7 @@ def _finalize_turns_record(
         "chain_identity_drift": chain_identity_drift,
         "determination": "measured",
         "could_not_verify_reason": None,
-        "reduction_key": _reduction_key(session_id, agent_id),
+        "reduction_key": _reduction_key(identity.session_id, identity.agent_id),
         "reduced_through_request": last_request_id,
         "reduction_seq": turns_count,
         "reducer_version": REDUCER_VERSION,
@@ -294,9 +308,11 @@ def reduce_transcript_stream(
         ordered_usages,
         malformed_line_count,
         last_request_id,
-        session_id=observed["session_id"] or session_id,
-        agent_name=agent_name or _agent_name_from_filename(transcript_path),
-        agent_id=observed["agent_id"] or agent_id,
+        identity=_TranscriptIdentity(
+            session_id=observed["session_id"] or session_id,
+            agent_name=agent_name or _agent_name_from_filename(transcript_path),
+            agent_id=observed["agent_id"] or agent_id,
+        ),
     )
 
 

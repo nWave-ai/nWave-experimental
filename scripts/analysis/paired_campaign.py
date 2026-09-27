@@ -95,6 +95,11 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
 
 
 # Sibling stdlib-only module, NOT a harness/`des` import: the no-`des` rule in
@@ -144,6 +149,22 @@ class ArmSpec:
     only one to have. Isolation is a parity requirement before it is a safety one.
     """
 
+    task_prefix: str = ""
+    """Prepended to the Request this arm receives, and DECLARED when non-empty.
+
+    The arms exist to differ in one thing. Normally that thing is the setup, and
+    both arms read a byte-identical Request. This field is the exception, and it
+    is a loud one: it changes what an arm is ASKED, so a campaign that uses it is
+    no longer measuring what an agent does when left alone -- it is measuring
+    what the named route costs.
+
+    Measured five times on 2026-09-13, four wordings of guidance and one reshaped
+    subject: an agent handed an implementation task never chooses the method. A
+    campaign that wants the method's cost must therefore ask for it, and must say
+    so in its own record rather than let a reader assume otherwise. At most one
+    arm may carry a prefix; two would be two different tasks.
+    """
+
     def rendered(self, workspace: Path) -> list[str]:
         """Render only the workspace; stdin is the one shared task carrier.
 
@@ -179,11 +200,15 @@ def parse_arm(name: str, declared: object) -> ArmSpec:
         isinstance(k, str) and isinstance(v, str) for k, v in env.items()
     ):
         raise ValueError(f"arm '{name}': `env` must be an object of string to string")
+    prefix = declared.get("task_prefix", "")
+    if not isinstance(prefix, str):
+        raise ValueError(f"arm '{name}': `task_prefix` must be a string")
     return ArmSpec(
         name,
         tuple(declared["argv"]),
         tuple(tuple(str(t) for t in step) for step in steps),
         tuple(sorted(env.items())),
+        prefix,
     )
 
 
@@ -222,6 +247,13 @@ def declared_identity_violations(arms: list[ArmSpec]) -> list[str]:
             f"declared `git checkout` targets differ across arms: "
             f"{checkout_targets} -- every arm must be measured against the "
             "identical pinned subject revision"
+        )
+    prefixed = [arm.name for arm in arms if arm.task_prefix]
+    if len(prefixed) > 1:
+        problems.append(
+            f"more than one arm declares a `task_prefix` ({prefixed}): a prefix "
+            "changes what an arm is ASKED, so two of them are two different "
+            "tasks and the pair compares nothing"
         )
     for arm in arms:
         for step in arm.setup:
@@ -415,7 +447,14 @@ def _delivery_is_valid(stdout: str, returncode: int) -> bool:
     return isinstance(session_id, str) and session_id != ""
 
 
-def _run_delivery(arm: ArmSpec, *, task: str, pair_dir: Path, timeout: int) -> bool:
+def _run_delivery(
+    arm: ArmSpec,
+    *,
+    task: str,
+    pair_dir: Path,
+    timeout: int,
+    environment_delta: Mapping[str, str] | None = None,
+) -> bool:
     """Run only the timed invocation (setup must already have succeeded).
 
     The PGID is captured immediately after `Popen(start_new_session=True)`
@@ -431,7 +470,24 @@ def _run_delivery(arm: ArmSpec, *, task: str, pair_dir: Path, timeout: int) -> b
     delivery's child never outlives the runner that spawned it.
     """
     workspace = pair_dir / arm.name
-    environment = {**os.environ, **arm.rendered_env(workspace)}
+    arm_environment = arm.rendered_env(workspace)
+    delta = dict(environment_delta or {})
+    if any(
+        not isinstance(name, str) or not isinstance(value, str)
+        for name, value in delta.items()
+    ):
+        raise ValueError("delivery environment delta must map strings to strings")
+    collisions = {
+        name
+        for name, value in delta.items()
+        if name in arm_environment and arm_environment[name] != value
+    }
+    if collisions:
+        raise ValueError(
+            "delivery environment delta conflicts with declared arm environment: "
+            + ", ".join(sorted(collisions))
+        )
+    environment = {**os.environ, **arm_environment, **delta}
     started = time.monotonic()
     stdout, stderr = "", ""
     returncode: int | None = None
@@ -451,7 +507,9 @@ def _run_delivery(arm: ArmSpec, *, task: str, pair_dir: Path, timeout: int) -> b
         )
         pgid = os.getpgid(proc.pid)
         try:
-            stdout, stderr = proc.communicate(input=task, timeout=timeout)
+            stdout, stderr = proc.communicate(
+                input=arm.task_prefix + task, timeout=timeout
+            )
             returncode = proc.returncode
         except subprocess.TimeoutExpired:
             stdout, stderr = "", f"TIMEOUT after {timeout}s"
@@ -505,6 +563,58 @@ def _run_delivery(arm: ArmSpec, *, task: str, pair_dir: Path, timeout: int) -> b
     valid = _delivery_is_valid(stdout, returncode)
     print(f"  {arm.name}: {duration_ms / 1000:.0f}s", flush=True)
     return valid
+
+
+@dataclass(frozen=True)
+class DeclaredArmRun:
+    """The observed outcome of one declared arm execution.
+
+    This is deliberately a thin public composition of the existing setup and
+    delivery mechanics.  A diagnostic runner can execute one arm without
+    recreating (and then drifting from) the subprocess, timeout, stdin, and
+    process-group rules that paired campaigns already use.
+    """
+
+    workspace: Path
+    setup_ok: bool
+    setup_seconds: float
+    delivery_ok: bool | None
+
+
+def execute_declared_arm_once(
+    arm: ArmSpec,
+    *,
+    task: str,
+    run_dir: Path,
+    timeout: int,
+    before_delivery: Callable[[Path], Mapping[str, str] | None] | None = None,
+    after_delivery: Callable[[Path, bool], None] | None = None,
+) -> DeclaredArmRun:
+    """Execute exactly one declared arm, setup then delivery, sequentially.
+
+    ``before_delivery`` and ``after_delivery`` are observation hooks.  The
+    former may return a string-only environment delta, merged after the declared
+    arm environment. An unequal collision is refused: a diagnostic reservation
+    must not silently replace an arm declaration. A hook exception propagates.
+    """
+    workspace = run_dir / arm.name
+    workspace.mkdir(parents=True, exist_ok=True)
+    setup_ok, setup_seconds = _run_setup(arm, workspace=workspace, pair_dir=run_dir)
+    if not setup_ok:
+        return DeclaredArmRun(workspace, False, setup_seconds, None)
+    environment_delta = (
+        before_delivery(workspace) if before_delivery is not None else None
+    )
+    delivery_ok = _run_delivery(
+        arm,
+        task=task,
+        pair_dir=run_dir,
+        timeout=timeout,
+        environment_delta=environment_delta,
+    )
+    if after_delivery is not None:
+        after_delivery(workspace, delivery_ok)
+    return DeclaredArmRun(workspace, True, setup_seconds, delivery_ok)
 
 
 def main(argv: list[str] | None = None) -> int:

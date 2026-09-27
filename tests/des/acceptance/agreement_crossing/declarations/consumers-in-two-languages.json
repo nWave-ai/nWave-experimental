@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "contract": "nwave.test_result.v1",
+  "producer": {
+    "name": "des.cli.run_tests",
+    "argv": [
+      "des",
+      "verify-test-runner",
+      "--target",
+      "tests/des/unit/domain/test_iso_utc.py",
+      "--out",
+      "{artifact}"
+    ]
+  },
+  "consumers": [
+    {
+      "name": "des.domain.test_run.test_run_from_envelope",
+      "argv": [
+        "python3",
+        "-c",
+        "import json, sys\nfrom des.domain.test_run import test_run_from_envelope\n\nwith open(sys.argv[1], encoding='utf-8') as handle:\n    envelope = json.load(handle)\ntry:\n    test_run_from_envelope(envelope)\nexcept ValueError as rejected:\n    print(rejected, file=sys.stderr)\n    raise SystemExit(1)\n",
+        "{artifact}"
+      ]
+    },
+    {
+      "name": "sh.consumer.frozen_field_list_from_schema",
+      "argv": [
+        "sh",
+        "-c",
+        "set -e\nartifact=\"$1\"\nschema=\"$2\"\nfields=$(sed -n '/\"fields\": {/,/^  }/p' \"$schema\" | sed -n 's/^    \"\\([a-z_]*\\)\".*/\\1/p')\n[ -n \"$fields\" ] || { echo \"could not derive the frozen field list from $schema\" >&2; exit 1; }\nmissing=\"\"\nfor field in $fields; do\n  grep -q \"\\\"$field\\\"\" \"$artifact\" || missing=\"${missing:+$missing, }$field\"\ndone\nif [ -n \"$missing\" ]; then\n  echo \"missing required field: $missing\" >&2\n  exit 1\nfi\n",
+        "sh.consumer.frozen_field_list_from_schema",
+        "{artifact}",
+        "nWave/schemas/nwave.test_result.v1.schema.json"
+      ]
+    }
+  ]
+}

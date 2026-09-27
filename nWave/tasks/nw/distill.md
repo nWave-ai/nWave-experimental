@@ -13,13 +13,19 @@ task.
 
 ## Invocation
 
+Role: installed `nw-acceptance-designer`, invoked as `nw-role-invocation`
+describes (native, or `des oracle --repo-root ROOT --value N`).
+
 Resolve the durable value and architecture authority needed for the selected
 outcome. Missing authority is `EVIDENCE_GAP`; do not reconstruct it from
 workflow history or request an intermediate handoff.
 
 DISTILL changes only the durable authority and executable public oracle it
 owns. The resident software derives the one whole-Request handover and all
-continuation facts; no model returns locators, command vectors or a handover.
+continuation facts; no model returns a handover. The complete selected
+acceptance revision (schema_version 2: oracle, supports, obligations, ordered
+native verification argvs and `oracle_verification_index`) is supplied to
+`des distill --input -`; `des distill --help` prints the exact contract.
 
 ## Success Criteria
 

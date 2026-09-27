@@ -405,8 +405,13 @@ class BackupManager:
         # Check if there's anything to backup
         agents_dir = self.claude_config_dir / "agents"
         commands_dir = self.claude_config_dir / "commands"
+        skills_dir = self.claude_config_dir / "skills"
 
-        if not agents_dir.exists() and not commands_dir.exists():
+        if (
+            not agents_dir.exists()
+            and not commands_dir.exists()
+            and not skills_dir.exists()
+        ):
             self.logger.info("  ℹ️  No existing installation, skipping backup")
             return None
 
@@ -438,6 +443,17 @@ class BackupManager:
                 ignore_dangling_symlinks=True,
             )
             self.logger.info("  ✅ Commands backed up")
+
+        # Backup skills (includes any user-customized distributed SKILL.md)
+        if skills_dir.exists():
+            backup_skills = self.backup_dir / "skills"
+            shutil.copytree(
+                skills_dir,
+                backup_skills,
+                dirs_exist_ok=True,
+                ignore_dangling_symlinks=True,
+            )
+            self.logger.info("  ✅ Skills backed up")
 
         # Backup config files
         for config_file in ["nwave-manifest.txt", "nwave-install.log"]:
@@ -803,7 +819,7 @@ Framework Components:
 
 Usage:
 - Use nWave commands: '/nw-discuss', '/nw-design', '/nw-distill', '/nw-deliver'
-- Use '/nw-new "feature description"' to initialize nWave workflow
+- Use '/nw-deliver "request"' to start a delivery; 'des state --repo-root "$(pwd -P)"' resumes one
 - All agents available globally across projects
 
 For help: https://github.com/nWave-ai/nWave

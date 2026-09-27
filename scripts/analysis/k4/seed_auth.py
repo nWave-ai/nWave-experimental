@@ -73,13 +73,20 @@ _IDENTITY_KEYS = (
 )
 
 
-def _sandbox_settings() -> dict[str, object]:
+def _sandbox_settings(config_dir: Path) -> dict[str, object]:
     """The shared fail-closed Claude policy for both isolated arms.
 
     The setup process runs under the rendered arm environment, so this records
     that exact PATH for Claude's later sandbox bridge.  The treatment installer
     deliberately merges this document and prepends its installed DES shim.
+
+    Claude Code 2.1.271 resolves relative filesystem entries from
+    `CLAUDE_CONFIG_DIR`. The actual delivery workspace is therefore the config
+    directory's parent and is rendered as an absolute allow path. This derives
+    the sandbox boundary from the one config directory the seed owns, rather
+    than accepting a second caller-supplied workspace path that could drift.
     """
+    workspace = config_dir.resolve().parent
     return {
         "env": {"PATH": os.environ.get("PATH", "")},
         "permissions": {
@@ -102,11 +109,11 @@ def _sandbox_settings() -> dict[str, object]:
                     "~/",
                     "/mnt/c/Users",
                     "/root",
-                    "./.claude-k4/.credentials.json",
-                    "./.claude-k4/.claude.json",
+                    "./.credentials.json",
+                    "./.claude.json",
                 ],
-                "allowRead": ["."],
-                "denyWrite": ["./.claude-k4"],
+                "allowRead": [str(workspace)],
+                "denyWrite": ["."],
             },
             "network": {
                 "allowedDomains": list(k4_subject.SANDBOX_ALLOWED_NETWORK_DOMAINS)
@@ -121,6 +128,20 @@ def seed(
     *,
     trust_project: Path | None = None,
 ) -> int:
+    config_dir = config_dir.resolve()
+    workspace = config_dir.parent
+    if trust_project is not None and trust_project.expanduser().resolve() != workspace:
+        sys.stderr.write(
+            "WHAT: the trusted project is not the parent of the isolated Claude "
+            "config directory.\n"
+            f"      trusted project: {trust_project.expanduser().resolve()}\n"
+            f"      config parent:   {workspace}\n"
+            "WHY:  the rendered sandbox allowRead boundary is derived from the "
+            "config parent. Trusting a different path would create two competing "
+            "workspace definitions.\n"
+            "HOW:  seed `<workspace>/.claude-k4` with `--trust-project <workspace>`.\n"
+        )
+        return 1
     source = source_profile / _CREDENTIALS
     if not source.is_file():
         sys.stderr.write(
@@ -175,15 +196,13 @@ def seed(
         )
         return 1
     if trust_project is not None:
-        identity["projects"] = {
-            str(trust_project.expanduser().resolve()): {"hasTrustDialogAccepted": True}
-        }
+        identity["projects"] = {str(workspace): {"hasTrustDialogAccepted": True}}
     (config_dir / _CONFIG).write_text(
         json.dumps(identity, indent=2) + "\n", encoding="utf-8"
     )
     (config_dir / _CONFIG).chmod(stat.S_IRUSR | stat.S_IWUSR)
     (config_dir / "settings.json").write_text(
-        json.dumps(_sandbox_settings(), indent=2) + "\n", encoding="utf-8"
+        json.dumps(_sandbox_settings(config_dir), indent=2) + "\n", encoding="utf-8"
     )
 
     plan = document[_KEEP].get("subscriptionType", "<unstated>")

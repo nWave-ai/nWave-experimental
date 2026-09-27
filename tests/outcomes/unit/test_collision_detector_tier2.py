@@ -15,12 +15,35 @@ Tier-2 matches are reported with their Jaccard score for observability.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import pytest
 from nwave_ai.outcomes.application.collision_detector import (
     CollisionDetector,
     TargetShape,
 )
 from nwave_ai.outcomes.domain.outcome import InputShape, Outcome, OutputShape
+
+
+@dataclass(frozen=True)
+class _RegisteredCase:
+    input_shape: str
+    output_shape: str
+    keywords: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _TargetCase:
+    input_shape: str
+    output_shape: str
+    keywords: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _ExpectedOutcome:
+    verdict: str
+    tier1: tuple[str, ...]
+    tier2_id: str | None
 
 
 def _outcome(
@@ -44,96 +67,110 @@ def _outcome(
 
 
 @pytest.mark.parametrize(
-    (
-        "registered_input,registered_output,registered_keywords,"
-        "target_input,target_output,target_keywords,"
-        "expected_verdict,expected_tier1,expected_tier2_id"
-    ),
+    ("registered", "target", "expected"),
     [
-        # Tier-1 YES + Tier-2 YES (identical keywords) -> collision
-        (
-            "FeatureDeltaModel",
-            "tuple[Violation, ...]",
-            ("cherry-pick", "row-count"),
-            "FeatureDeltaModel",
-            "tuple[Violation, ...]",
-            ("cherry-pick", "row-count"),
-            "collision",
-            ("OUT-A",),
-            "OUT-A",
+        pytest.param(
+            _RegisteredCase(
+                input_shape="FeatureDeltaModel",
+                output_shape="tuple[Violation, ...]",
+                keywords=("cherry-pick", "row-count"),
+            ),
+            _TargetCase(
+                input_shape="FeatureDeltaModel",
+                output_shape="tuple[Violation, ...]",
+                keywords=("cherry-pick", "row-count"),
+            ),
+            _ExpectedOutcome(
+                verdict="collision",
+                tier1=("OUT-A",),
+                tier2_id="OUT-A",
+            ),
+            id="tier1-yes-tier2-yes-collision",
         ),
-        # Tier-1 YES + Tier-2 NO (disjoint keywords) -> ambiguous
-        (
-            "(text: str, file_path: str)",
-            "tuple[Violation, ...]",
-            ("section", "heading", "wave", "format"),
-            "(text: str, file_path: str)",
-            "tuple[Violation, ...]",
-            ("column", "ddd", "table", "header"),
-            "ambiguous",
-            ("OUT-A",),
-            None,
+        pytest.param(
+            _RegisteredCase(
+                input_shape="(text: str, file_path: str)",
+                output_shape="tuple[Violation, ...]",
+                keywords=("section", "heading", "wave", "format"),
+            ),
+            _TargetCase(
+                input_shape="(text: str, file_path: str)",
+                output_shape="tuple[Violation, ...]",
+                keywords=("column", "ddd", "table", "header"),
+            ),
+            _ExpectedOutcome(
+                verdict="ambiguous",
+                tier1=("OUT-A",),
+                tier2_id=None,
+            ),
+            id="tier1-yes-tier2-no-ambiguous",
         ),
-        # Tier-1 NO + Tier-2 YES (different shapes, identical keywords) -> ambiguous
-        (
-            "ModelOne",
-            "tuple[Violation, ...]",
-            ("cherry-pick", "row-count"),
-            "ModelTwo",
-            "str",
-            ("cherry-pick", "row-count"),
-            "ambiguous",
-            (),
-            "OUT-A",
+        pytest.param(
+            _RegisteredCase(
+                input_shape="ModelOne",
+                output_shape="tuple[Violation, ...]",
+                keywords=("cherry-pick", "row-count"),
+            ),
+            _TargetCase(
+                input_shape="ModelTwo",
+                output_shape="str",
+                keywords=("cherry-pick", "row-count"),
+            ),
+            _ExpectedOutcome(
+                verdict="ambiguous",
+                tier1=(),
+                tier2_id="OUT-A",
+            ),
+            id="tier1-no-tier2-yes-ambiguous",
         ),
-        # Tier-1 NO + Tier-2 NO -> clean
-        (
-            "ModelOne",
-            "tuple[Violation, ...]",
-            ("alpha", "beta"),
-            "ModelTwo",
-            "str",
-            ("totally", "different"),
-            "clean",
-            (),
-            None,
+        pytest.param(
+            _RegisteredCase(
+                input_shape="ModelOne",
+                output_shape="tuple[Violation, ...]",
+                keywords=("alpha", "beta"),
+            ),
+            _TargetCase(
+                input_shape="ModelTwo",
+                output_shape="str",
+                keywords=("totally", "different"),
+            ),
+            _ExpectedOutcome(
+                verdict="clean",
+                tier1=(),
+                tier2_id=None,
+            ),
+            id="tier1-no-tier2-no-clean",
         ),
     ],
 )
 def test_verdict_matrix(
-    registered_input: str,
-    registered_output: str,
-    registered_keywords: tuple[str, ...],
-    target_input: str,
-    target_output: str,
-    target_keywords: tuple[str, ...],
-    expected_verdict: str,
-    expected_tier1: tuple[str, ...],
-    expected_tier2_id: str | None,
+    registered: _RegisteredCase,
+    target: _TargetCase,
+    expected: _ExpectedOutcome,
 ) -> None:
     detector = CollisionDetector()
     snapshot = (
         _outcome(
             "OUT-A",
-            registered_input,
-            registered_output,
-            keywords=registered_keywords,
+            registered.input_shape,
+            registered.output_shape,
+            keywords=registered.keywords,
         ),
     )
-    target = TargetShape(
-        input_shape=target_input,
-        output_shape=target_output,
-        keywords=target_keywords,
+    candidate_shape = TargetShape(
+        input_shape=target.input_shape,
+        output_shape=target.output_shape,
+        keywords=target.keywords,
     )
 
-    report = detector.check(target=target, snapshot=snapshot)
+    report = detector.check(target=candidate_shape, snapshot=snapshot)
 
-    assert report.verdict == expected_verdict
-    assert report.tier1_matches == expected_tier1
-    if expected_tier2_id is None:
+    assert report.verdict == expected.verdict
+    assert report.tier1_matches == expected.tier1
+    if expected.tier2_id is None:
         assert report.tier2_matches == ()
     else:
         assert len(report.tier2_matches) == 1
         match_id, match_score = report.tier2_matches[0]
-        assert match_id == expected_tier2_id
+        assert match_id == expected.tier2_id
         assert match_score >= 0.4

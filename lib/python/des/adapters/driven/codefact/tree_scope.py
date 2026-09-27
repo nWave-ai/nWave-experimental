@@ -38,11 +38,8 @@ tree-per-symbol`), so the properties below are fixed ONCE, never duplicated
    and non-negotiable in every git repository that exists — never a guess,
    never project-specific. Measured 2026-08-24: a real installed git hook
    (``.git/hooks/commit_msg.py``, gitlint's own commit-msg hook) is real,
-   on-disk, valid Python a naive ``*.py`` walk finds -- and graphify (the
-   precision `CodeFactPort` tier, `GraphifyAdapter`) structurally never
-   scans ``.git`` internals either (confirmed: the file is simply absent
-   from a real, freshly-materialized manifest), so this exclusion aligns
-   `TreeScope`'s scope with what the producer already, correctly, excludes.
+   on-disk, valid Python a naive ``*.py`` walk finds. Structural providers
+   omit ``.git`` internals too, so this exclusion keeps their scopes aligned.
 4. **Single-pass-per-glob caching** — a ``root``/glob-pattern pair is walked at
    most ONCE per :class:`TreeScope` instance; a second call with the same
    pattern reuses the prior result. This is the no-reparse-per-symbol contract:

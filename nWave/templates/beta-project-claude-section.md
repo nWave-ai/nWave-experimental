@@ -1,10 +1,16 @@
 ## nWave (beta) — How to Work in This Project
 
+At session start, read `~/.claude/skills/nw-typesafe-system-one/SKILL.md`
+alongside these instructions. Loading alone is not use: every supported semantic question MUST use Jev when
+authorized and available, with valid same-owner reuse and explicit capability
+limits as defined by the skill. Confidence and predicted savings are not exemptions.
+Skip this load for source-blind EXAMINE until isolated access is verified.
+
+{{DELIVERY_ROUTE_FRAGMENT}}
+
 nWave is a spine-driven delivery framework. Wave commands (`/nw-*`) carry the
 gates; skills carry on-demand knowledge; agents execute. This section is an
 INDEX — it tells you which to reach for, not how each one works internally.
-
-{{DELIVERY_ROUTE_FRAGMENT}}
 
 Human authority decides only genuine scope or trade-offs.
 
@@ -21,7 +27,7 @@ Human authority decides only genuine scope or trade-offs.
 | Review an artifact or diff | `/nw-review` |
 | Reduce a noisy test suite | `/nw-optimize-tests` |
 | Explicit mutation probe | `/nw-mutation-test` |
-| Resume after an interruption | `/nw-new` (reads durable authorities, routes to the earliest missing owner) |
+| Resume after an interruption | `des state --repo-root "$(pwd -P)"` from the repository root (where the Request stands; `NEXT` is advisory) |
 | Decide how big a Request is, and when to ask the human | skill `nw-auto` |
 | Anything else — methodology, routing, "what do I do" | skill `nw-buddy` |
 
@@ -37,4 +43,4 @@ Human authority decides only genuine scope or trade-offs.
 
 ### Privacy — Non-Negotiable
 
-nWave runs entirely local: no telemetry ([PRIVACY.md](../../PRIVACY.md)). Feedback via GitHub Issues is welcome, never required.
+nWave stores workflow data locally and collects no telemetry. Explicitly authorized Jev questions use a remote service; credential presence alone is not authorization ([PRIVACY.md](../../PRIVACY.md)). Feedback via GitHub Issues is welcome, never required.

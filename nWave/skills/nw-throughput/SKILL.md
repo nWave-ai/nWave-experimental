@@ -6,6 +6,11 @@ user-invocable: true
 
 # nw-throughput
 
+Before diagnosing or assigning corrections, load `nw-cross-cutting-invariants`
+and apply `delivery:trustworthy-baseline-and-repair-scope`. A blocking observation
+requires attention; it does not alone authorize an independent repair.
+
+
 ## Constraint
 
 The bottleneck is usually the shared machine or a causal boundary, not the
@@ -16,7 +21,8 @@ when contention increases end-to-end wall time.
 ## Strategy
 
 1. Select the nearest measurable constraint and shortest falsifier.
-2. Fan out only independent work with disjoint ownership in detached worktrees.
+2. Fan out only independent work with disjoint ownership in detached worktrees;
+   apply the worktree lifecycle below when creating or inheriting a lane.
 3. Keep one heavy local build/test/install box; serialize its use.
 4. Fan in on the whole delivered value. Keep required review, EXAMINE,
    integration, observation and cleanup; the orchestrating LLM chooses and
@@ -40,7 +46,8 @@ When the first failure reveals an interface migration, the orchestrating LLM
 chooses the related property x consumer test-file scope and runs that complete
 scope through the repository's native test executor before paying for the next
 broad run. Collect all failures in the selected scope, repair the coherent
-contract, then run the required broad verification. Selected files are evidence
+contract within the shared repair-scope clause, then run the required broad verification.
+Diagnosing an interface migration does not itself authorize that migration. Selected files are evidence
 about that scope only; they do not establish whole-project coverage.
 
 Use the repository's own affected-test selector when it exists. In this Python
@@ -58,6 +65,50 @@ must report the corresponding selected, deferred, and uncovered scope loudly.
 The LLM selects the scope and the next commands from the observed failures. Do
 not add a controller, automatic retry, phase transition, or gate for this
 workflow.
+
+## Worktree lifecycle
+
+Use at lane creation, inheritance, finalization and resumed cleanup. Scope:
+the Request's owned or explicitly inherited lanes, including temporary build
+and evidence copies. Preserve other owners' work; this is no machine-wide sweep.
+
+- **Creation** — In existing task context, name the checkout's purpose, owner
+  and condition under which it is no longer needed. Keep one named scope per
+  lane; place discovered work under its actual owner in the existing disposition.
+- **Reconciliation** — Does the current inventory cover every owned/inherited
+  lane and useful residual, or only the accepted feature? Refresh it from current
+  bytes and assign each residual a disposition below before claiming closure.
+
+| Disposition | Required basis in existing task context |
+|---|---|
+| Integrated | Destination and integration evidence for the exact revision. |
+| Superseded | Legitimate replacement reference and verified retained replacement bytes. |
+| Transferred | Named backlog item plus a verified recoverable artifact outside the checkout, bound to the exact revision. Transfer leaves the work unfinished. |
+| Unfinished | Concrete residual, owner and next action; keep required checkout bytes until a verified destination exists. |
+
+- **Cleanup** — Have all useful current revisions survived outside the checkout,
+  and has active use ended, or are you relying on an old archive receipt? Verify
+  actual destination bytes for current work, including dirty/untracked work and
+  needed evidence, or its legitimate retained replacement, immediately before
+  removal. Bind that observation to the current revision. Edits invalidate
+  verification for the changed revision; refresh preservation and verification.
+  Establish no active users/writers and keep the checkout quiescent through
+  removal; if this cannot be established, retain it and state the next action.
+- **Removal** — Evidence retention needs recoverable bytes, not a live checkout.
+  Once reconciliation and no active use are established, invoke existing
+  `des lane finalize --repo-root ROOT --worktree PATH` for clean reachable
+  lanes. For archive-only temporary copies or dirty/superseded historical
+  lanes, use explicitly authorized caller cleanup after verified preservation;
+  report the archive disposition, never an invented integration. Report any
+  remaining checkout with its purpose and concrete next action.
+- **Resume** — After interruption, resume the existing inventory/dispositions;
+  reobserve bytes, destinations and active use before the next cleanup action.
+  Report feature acceptance separately from residual completion and checkout
+  removal. Use existing task context; no new ledger, document or runtime gate.
+
+Incident anchor: `docs/analysis/2026-09-26-worktree-reconciliation.md` — selected
+integration left mixed residual work; evidence copies had separate retention
+purposes. Feature closure alone did not reconcile those checkouts.
 
 ## Feature evolution before cleanup
 
@@ -80,8 +131,9 @@ feature size or cleanup action.
 Example shape: `{"schema_version":1,"date":"2026-09-09","feature_id":"feature-id","purpose":"...","key_decisions":["..."],"delivered_work":["..."],"verification_results":["..."],"problems":{"applicability":"not_applicable","reason":"...","items":[]},"lessons":{"applicability":"applicable","reason":"...","items":["..."]},"durable_artifacts":[{"label":"evidence","path":"docs/evidence.md"}]}`. Artifact paths are repository-relative or HTTPS.
 
 Preserve and commit the generated evolution document and its evidence on `ROOT`
-before cleanup, then explicitly run `des lane finalize --repo-root ROOT
---worktree PATH`. Finalize only removes a clean lane whose tip is already
+before cleanup, then apply the worktree lifecycle above and explicitly run
+`des lane finalize --repo-root ROOT --worktree PATH` for this integrated lane.
+Finalize only removes a clean lane whose tip is already
 reachable from `ROOT`; it never merges or reintegrates. The destination may have
 advanced with the evolution-document commit after integration. LLM chooses these
 commands; `NEXT` remains advisory.

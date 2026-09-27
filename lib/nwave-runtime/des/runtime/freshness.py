@@ -73,7 +73,7 @@ _FORCE_GATE_ENV_VAR = "NWAVE_FRESHNESS_FORCE_GATE"
 _FORCE_GATE_ENABLED = "1"
 
 
-def _is_git_checkout_marker(marker: Path) -> bool:
+def is_git_checkout_marker(marker: Path) -> bool:
     """Return whether ``marker`` identifies an actual Git checkout.
 
     A directory merely named ``.git`` is not evidence of a checkout.  Normal
@@ -401,7 +401,7 @@ def assert_fresh_or_explain(
     ):
         cwd = Path.cwd()
         while True:
-            if _is_git_checkout_marker(cwd / ".git"):
+            if is_git_checkout_marker(cwd / ".git"):
                 if opt_out_value == "verbose":
                     _emit_event(
                         {

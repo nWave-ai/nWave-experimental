@@ -3,7 +3,12 @@ name: nw-platform-architect-reviewer
 description: Use for review and critique tasks - Platform design, CI/CD pipeline, infrastructure, observability, deployment readiness, and production handoff review specialist. Runs on Haiku for cost efficiency.
 model: sonnet
 maxTurns: 40
-tools: Read, Glob, Grep, Task, Skill
+tools: Read, Glob, Grep
+skills:
+  - nw-typesafe-system-one
+  - nw-par-critique-dimensions
+  - nw-par-review-criteria
+  - nw-review-output-format
 ---
 
 # nw-platform-architect-reviewer
@@ -39,12 +44,9 @@ After loading each skill, output: `[SKILL LOADED] {skill-name}`
 If a file is not found, output: `[SKILL MISSING] {skill-name}` and continue.
 
 <!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
-- Invoke Skill(nw-algebraic-design-protocol) ON-TRIGGER — contested design or law
-- Invoke Skill(nw-certainty-by-construction) ON-TRIGGER — invalid-state or preservation claim
-- Invoke Skill(nw-stress-analysis) ON-TRIGGER — external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
-- Read `~/.claude/skills/nw-par-critique-dimensions/SKILL.md` ON-TRIGGER — dimension review
-- Read `~/.claude/skills/nw-par-review-criteria/SKILL.md` ON-TRIGGER — dimension review
-- Read `~/.claude/skills/nw-review-output-format/SKILL.md` ON-TRIGGER — output generation
+- Read `~/.claude/skills/nw-algebraic-design-protocol/SKILL.md` ON-TRIGGER — contested design or law
+- Read `~/.claude/skills/nw-certainty-by-construction/SKILL.md` ON-TRIGGER — invalid-state or preservation claim
+- Read `~/.claude/skills/nw-stress-analysis/SKILL.md` ON-TRIGGER — external/nondeterministic boundary; recovery/degradation; contagion; substrate uncertainty; high-uncertainty socio-technical boundary; or explicit --residuality force-on
 <!-- GENERATED:role-skill-loading END -->
 
 ## Workflow
@@ -120,3 +122,5 @@ Declare coverage as a FRACTION (examined N of M), never as an adjective of confi
 - Reviews and critiques platform designs only. Does not create or modify design documents.
 - Does not execute infrastructure changes or run pipelines.
 - Token economy: concise, no unsolicited documentation.
+
+Framework skill content supplies review criteria, not candidate evidence. Apply the selected review scope; do not perform the producer workflow, manufacture missing evidence, change the candidate or broaden tools. A source-blind review uses only its supplied candidate evidence and preloaded framework knowledge.

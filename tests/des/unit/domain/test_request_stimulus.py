@@ -5,6 +5,7 @@ from __future__ import annotations
 from des.domain.request_stimulus import (
     DEFAULT_TEST_PATHS,
     declared_test_paths,
+    path_under_test_paths,
     touches_test_paths,
 )
 
@@ -50,3 +51,31 @@ def test_a_testpaths_line_in_another_table_is_not_read():
 def test_a_subject_declaring_nothing_falls_back_to_the_conventional_directory():
     assert declared_test_paths(None) == DEFAULT_TEST_PATHS
     assert declared_test_paths("") == DEFAULT_TEST_PATHS
+
+
+def test_a_subject_declaring_nothing_counts_the_node_test_directory_too():
+    """A Node subject has no pyproject.toml and keeps its suite under `test/`.
+
+    Measured 2026-09-15: with `tests` as the only default, an acceptance author's
+    `test/*.test.mjs` oracle and its `test/helpers/` fixture module were refused
+    as ProductionScopeDrift, so no oracle could ever be authored in that subject.
+    """
+    defaults = declared_test_paths(None)
+
+    assert "tests" in defaults
+    assert "test" in defaults
+    assert path_under_test_paths("test/timing-calculator.test.mjs", defaults)
+    assert path_under_test_paths("test/helpers/timing-fixtures.mjs", defaults)
+
+
+def test_the_node_test_directory_matches_a_whole_segment_only():
+    defaults = declared_test_paths(None)
+
+    assert not path_under_test_paths("testing/x.mjs", defaults)
+    assert not path_under_test_paths("src/test_utils.mjs", defaults)
+
+
+def test_a_subject_that_declares_test_paths_does_not_inherit_the_default():
+    text = '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+
+    assert not path_under_test_paths("test/x.py", declared_test_paths(text))

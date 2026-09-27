@@ -18,6 +18,7 @@ is the executable half of G1, G3, G5, G6 and G7.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
@@ -40,8 +41,9 @@ BOUND = {
             "oracle": "tests/acceptance/test_value.py",
             "acceptance_supports": ["tests/acceptance/support.py"],
             "verification": [
-                ["python", "-m", "pytest", "tests/acceptance/test_value.py"]
+                [sys.executable, "-m", "pytest", "tests/acceptance/test_value.py"]
             ],
+            "oracle_verification_index": 0,
         },
     }
 }
@@ -81,6 +83,7 @@ def decomposed(root: Path, step) -> None:
     assert (
         step(
             "po",
+            "--project",
             "--repo-root",
             str(root),
             answers=[accepted_values("A", "B")],
@@ -119,7 +122,7 @@ def test_g5_no_orchestrator_line_on_success(root: Path, step) -> None:
     decomposed(root, step)
     for argv in (
         ("state", "--repo-root", str(root)),
-        ("po", "--repo-root", str(root)),
+        ("po", "--project", "--repo-root", str(root)),
     ):
         code, out, err = step(*argv, answers=[accepted_values("A", "B")], stdin=REQUEST)
         assert code == 0, (argv, out + err)
@@ -130,6 +133,7 @@ def test_g6_every_step_prints_the_turns_it_bought(root: Path, step) -> None:
     """The count is a primitive row, not two English sentences chosen from it."""
     code, out, err = step(
         "po",
+        "--project",
         "--repo-root",
         str(root),
         answers=[accepted_values("A")],
@@ -150,6 +154,7 @@ def test_g6_a_bought_turn_whose_words_died_still_reports_its_cost(
     """The incident of §0: a paid turn reported as no turn at all."""
     code, out, err = step(
         "po",
+        "--project",
         "--repo-root",
         str(root),
         answers=[

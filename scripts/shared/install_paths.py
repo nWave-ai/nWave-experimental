@@ -125,15 +125,26 @@ def is_durable_interpreter_path(path: str) -> bool:
     enumeration rather than ``tempfile.gettempdir()`` alone, and why the
     current working directory is excluded from it on purpose.
 
-    Both ``path`` and each candidate root are compared in TWO forms:
+    Both ``path`` and each candidate root are taken in TWO forms:
     normalized lexical (absolute, with ``.``/``..`` collapsed but symlinks
     retained) and resolved physical (``Path.resolve()``, with symlinks
-    followed). The lexical comparison rejects a temporary launcher path
-    whose interpreter symlink happens to point to a durable binary; the
-    physical comparison rejects a durable-looking alias that resolves into
-    a temporary directory. The latter also covers macOS ``/tmp`` aliases
-    for per-process ``$TMPDIR`` roots. Do not reduce either comparison to
-    a plain ``str.startswith`` check.
+    followed). All FOUR pairings are compared, not the two like-for-like
+    ones: a lexical candidate under a resolved root is the macOS case where
+    ``$TMPDIR`` is spelled ``/var/folders/...`` while the same directory
+    resolves to ``/private/var/folders/...``, and comparing lexical to
+    lexical and physical to physical alone lets an ephemeral launcher pass
+    when BOTH halves hold, a resolved spelling AND an interpreter symlink
+    pointing at a durable binary: the lexical form misses the alias and the
+    physical form follows the symlink out of the temporary directory. The
+    resolved spelling alone was already caught, because ``resolve()`` of a
+    path with no symlink normalizes to itself. Do not reduce any comparison
+    to a plain ``str.startswith`` check.
+
+    Known gap, measured and deliberately not closed here: only the whole
+    path's two forms are examined, so a durable-looking path whose
+    INTERMEDIATE component symlinks into a temporary root, with a durable
+    final target, is still judged durable although it breaks once that
+    directory is cleaned up.
     """
     if not path:
         return False
@@ -153,12 +164,18 @@ def is_durable_interpreter_path(path: str) -> bool:
     for root in _standard_temp_roots():
         lexical_root = Path(os.path.abspath(root))  # noqa: PTH100
         physical_root = root.resolve()
-        for candidate, candidate_root in (
-            (lexical_candidate, lexical_root),
-            (physical_candidate, physical_root),
-        ):
-            if candidate == candidate_root or candidate_root in candidate.parents:
-                return False
+        # Every pairing, not just like-for-like: on macOS a per-user $TMPDIR is
+        # spelled /var/folders/... while the same directory resolves to
+        # /private/var/folders/..., so a LEXICAL candidate under the resolved
+        # spelling matches only the PHYSICAL root. Comparing lexical-to-lexical
+        # and physical-to-physical alone lets an ephemeral launcher whose
+        # symlink points at a durable binary pass both checks: the lexical form
+        # misses the alias and the physical form follows the symlink out of the
+        # temporary directory altogether.
+        for candidate in (lexical_candidate, physical_candidate):
+            for candidate_root in (lexical_root, physical_root):
+                if candidate == candidate_root or candidate_root in candidate.parents:
+                    return False
     return True
 
 

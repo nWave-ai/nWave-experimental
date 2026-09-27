@@ -926,3 +926,54 @@ selective correction, and `test_an_upstream_correction_resumes_the_delivery.py`
 walks the blocked-downstream, upstream-correction, resumed-delivery flow through
 public calls in separate processes. Corpus `steps_for_the_orchestrator`: 120 passed,
 0 failed.
+
+### Gate every release on an explicit previous-version migration decision   `F-RELEASE-MIGRATION-DECISION-GATE`
+`id: F-RELEASE-MIGRATION-DECISION-GATE` · `status: done` · `bucket: High` · `theme: release-update`
+
+Make publication of a new version mechanically impossible until a version-bound
+decision records whether migration from the immediately preceding published
+version is required. When required, the release candidate must contain the
+migration and executable upgrade proof from that predecessor; when unnecessary,
+the decision must state the evidence and compatibility boundary. Apply the gate
+before every public publish path, including experimental, development, RC and
+stable channels; missing, stale or mismatched evidence must refuse publication.
+
+The experimental writer and workflow are implemented, with independent review,
+local CLI observations and source-blind EXAMINE. Remote workflow execution and
+publication remain unobserved for this increment. Development, RC (including
+its nested dev publication), stable and GitHub prerelease writer changes are
+now integrated at `11352c52a`, with independent source review, local CLI EXAMINE
+and an examined real installed upgrade from the immediate experimental
+predecessor `821610d`. Remote workflow activation remains to be observed at
+the authorized publication; installed upgrade proof does not establish it.
+[Channel integration evidence](../evidence/release-migration-channels-progress-2026-09-10.json). See
+[experimental evidence](../evidence/experimental-migration-decision-gate-2026-09-09.json).
+
+Closed 2026-09-11. Remote workflow activation is now OBSERVED: run 34591199505 carried
+a decision bundle through the whole gate and published, moving the experimental target
+from `7978de4460b1` to `91e86e47f752` at version `4.0.0+atddpure.1c287e8dd`. It was the
+first run ever to reach the end, and it exposed four defects in sequence, each hidden by
+the one before it, all repaired with the run that proved them recorded alongside:
+
+1. The bundle download used the cross-repo token on this PRIVATE repository and answered
+   `release not found` for a present, correct release. The draft hypothesis was ruled out
+   by publishing the release and observing the identical failure (runs 34580884541 and
+   34585321557); the step now reads with this workflow's own token, and the guide no
+   longer prescribes a draft.
+2. Converging the channel on the schema owner added an import the retired decoder never
+   made, and the job installed nothing (run 34585664991).
+3. The candidate version embeds an abbreviated sha, and git picks the abbreviation width
+   from the repository's object count: nine characters here, seven on a shallow CI clone,
+   so the same revision compared unequal (run 34587462454). The abbreviation is now
+   derived from the full sha at a fixed width in one place, and the three sites that
+   shelled out for it are gone.
+4. The bundle did not carry the wheel's adjacent offline wheelhouse, which the OpenCode
+   smoke requires as a real distribution contract (run 34590377773). The producer now
+   retains it, and the smoke was executed for real against the extracted wheel.
+
+Local validation was reported each time with an explicit statement of what it does NOT
+cover, which is why no local green was mistaken for a publication guarantee.
+
+## Retained unreviewed inventory
+
+Every row below is `to-do` only in the sense that it needs current reconciliation; it is neither a new priority nor a completion claim. G4 is excluded because its sole canonical terminal record is in `done.md`.

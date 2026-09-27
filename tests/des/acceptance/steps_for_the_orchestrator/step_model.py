@@ -44,6 +44,9 @@ class ValueState:
     design_bound: bool = False
     oracle_recorded: bool = False
     craft_recorded: bool = False
+    #: A record exists but the later first oracle write changed its acceptance
+    #: bytes.  The public CRAFT step can settle it by executing that oracle.
+    craft_moved: bool = False
 
 
 @dataclass(frozen=True)
@@ -268,17 +271,50 @@ def step(
             if answer != "accepted":
                 return state, _role_refusal(name, answer)
             # Authored and MEASURED red, one turn: §5 retires the pre-craft judge.
+            # The fixture deliberately gives every value the same acceptance
+            # paths.  An oracle authored after an early craft therefore moves
+            # that craft's record: its bytes were built against an earlier
+            # acceptance tree.  The public state reports ``bytes moved`` and
+            # owes CRAFT again, so the independent model must carry that fact
+            # rather than treating a role receipt as eternally current.
+            with_oracle = _with(state, value, oracle_recorded=True)
+            # The fake oracle's later writes are byte-identical.  Only its first
+            # write can move a craft record; invalidating on every receipt would
+            # model a changed file that the public surface did not observe.
+            values = (
+                tuple(
+                    replace(
+                        item,
+                        craft_moved=item.craft_recorded or item.craft_moved,
+                        craft_recorded=False,
+                    )
+                    for item in with_oracle.values
+                )
+                if not state.shared_acceptance_bytes
+                else with_oracle.values
+            )
             return replace(
-                _with(state, value, oracle_recorded=True), shared_acceptance_bytes=True
+                with_oracle,
+                values=values,
+                shared_acceptance_bytes=True,
             ), ModelTerminal("Success", turns_bought=1, facts=frozenset({"ORACLE-RED"}))
         if not target.design_bound:
             return state, _refuse("DesignUnbound")
         if target.craft_recorded:
             return state, ModelTerminal("Success", facts=frozenset({"RECORDED"}))
+        # A moved record is not an absent record.  The public CRAFT step first
+        # runs its tracked oracle; in this fixture the target written by the
+        # earlier craft makes that vector GREEN, so it re-points the record and
+        # buys no model turn.  The provider answer is deliberately irrelevant.
+        if target.craft_moved and state.shared_target_bytes:
+            return _with(
+                state, value, craft_recorded=True, craft_moved=False
+            ), ModelTerminal("Success", facts=frozenset({"WITNESS"}))
         if answer != "accepted":
             return state, _role_refusal(name, answer)
         return replace(
-            _with(state, value, craft_recorded=True), shared_target_bytes=True
+            _with(state, value, craft_recorded=True, craft_moved=False),
+            shared_target_bytes=True,
         ), ModelTerminal("Success", turns_bought=1, facts=frozenset({"TARGETS"}))
 
     if name == "verify":

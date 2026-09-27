@@ -8,6 +8,7 @@ the already-shipped CodeFactChain and report which bundled tier answered.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -249,45 +250,59 @@ def test_unrecognized_arguments_carries_a_how_line_with_a_working_example(
     assert "query.callers-of SYMBOL --root ROOT" in err
 
 
+@dataclass(frozen=True)
+class _NonCallReferenceSubject:
+    """One subject file and the disjoint reads-of/callers-of answer it earns."""
+
+    file_name: str
+    file_source: str
+    expected_provider: str
+
+
 @pytest.mark.parametrize(
-    ("file_name", "file_source", "expected_provider", "callers_answers_absence"),
+    "reference_subject",
     [
         pytest.param(
-            "subject.py",
-            "def target():\n"
-            "    return 1\n\n"
-            "def observer():\n"
-            "    observed = target\n"
-            "    return observed\n",
-            "ast",
-            True,
+            _NonCallReferenceSubject(
+                file_name="subject.py",
+                file_source=(
+                    "def target():\n"
+                    "    return 1\n\n"
+                    "def observer():\n"
+                    "    observed = target\n"
+                    "    return observed\n"
+                ),
+                expected_provider="ast",
+            ),
             id="python_ast_scope",
         ),
         pytest.param(
-            "subject.ts",
-            "function target() { return 1; }\n"
-            "function observer() {\n"
-            "  const observed = target;\n"
-            "  return observed;\n"
-            "}\n",
-            "textsearch",
-            True,
+            _NonCallReferenceSubject(
+                file_name="subject.ts",
+                file_source=(
+                    "function target() { return 1; }\n"
+                    "function observer() {\n"
+                    "  const observed = target;\n"
+                    "  return observed;\n"
+                    "}\n"
+                ),
+                expected_provider="textsearch",
+            ),
             id="non_python_textsearch_floor",
         ),
     ],
 )
 def test_reads_of_reports_a_non_call_reference_while_callers_of_stays_absent(
-    file_name: str,
-    file_source: str,
-    expected_provider: str,
-    callers_answers_absence: bool,
+    reference_subject: _NonCallReferenceSubject,
     tmp_path: Path,
     capsys: pytest.CaptureFixture,
 ) -> None:
     """reads-of and callers-of stay disjoint. Both tiers represent bare and
     dotted trailing identifiers, so their empty callers result is an honest
     structural/noisy absence rather than hidden dotted-reference blindness."""
-    (tmp_path / file_name).write_text(file_source, encoding="utf-8")
+    (tmp_path / reference_subject.file_name).write_text(
+        reference_subject.file_source, encoding="utf-8"
+    )
 
     reads_exit_code, reads_result = _invoke(
         ["query.reads-of", "target", "--root", str(tmp_path)], capsys
@@ -297,12 +312,11 @@ def test_reads_of_reports_a_non_call_reference_while_callers_of_stays_absent(
     )
 
     assert reads_exit_code == 0
-    assert reads_result["provider"] == expected_provider
+    assert reads_result["provider"] == reference_subject.expected_provider
     assert reads_result["payload"]["sites"]
 
-    assert callers_answers_absence
     assert callers_exit_code == 0
-    assert callers_result["provider"] == expected_provider
+    assert callers_result["provider"] == reference_subject.expected_provider
     assert not callers_result["payload"]["sites"]
 
 

@@ -36,9 +36,8 @@ normalization no semantic judgement enters. Refusing a delivered value because a
 list fitted on one line rather than three would spend a paid turn to punish the
 software for not having normalized what only the software can normalize.
 
-WHY NOT `pre-commit run --files`, MEASURED 2026-09-05 in this repository on the
-run-12 oracle (`tests/bugs/des/test_graphify_callers_of_answers_the_real_call_
-sites.py`), the exact file that produced the defect:
+WHY NOT `pre-commit run --files`, MEASURED 2026-09-05 against an oracle
+written by the delivery runner in this repository:
 
 * wall 5.5s with the four pytest hooks skipped, and **zero files modified**;
 * the only hook that observed the form, `python-quality`, is declared read-only
@@ -120,9 +119,22 @@ _REPAIR_FLAGS = ("--force-exclude", "--no-cache")
 #: The auto-repairable FORM half, applied before the formatter.  `--fix-only`
 #: rather than `--fix`: the latter exits non-zero for leftover violations it
 #: could not fix, which are the model's to answer for, and would turn ordinary
-#: lint into an integration failure.  `--select I` narrows the run to import
-#: order no matter what else the repository selects.
-_ISORT_REPAIR = ("check", "--fix-only", *_REPAIR_FLAGS, "--select", "I")
+#: lint into an integration failure.  `--extend-select RUF100` preserves the
+#: repository's effective selection, so an active F401 suppression remains
+#: active while an unused suppression can be removed.  `--fixable I,RUF100`
+#: limits mutation to import order and unused Ruff suppressions, no matter what
+#: other selected rules Ruff could fix.  The latter is byte-level FORM: the
+#: suppression refers to no active diagnostic and its removal cannot change
+#: program behavior.
+_ISORT_REPAIR = (
+    "check",
+    "--fix-only",
+    *_REPAIR_FLAGS,
+    "--extend-select",
+    "RUF100",
+    "--fixable",
+    "I,RUF100",
+)
 _FORMAT_REPAIR = ("format", *_REPAIR_FLAGS)
 
 

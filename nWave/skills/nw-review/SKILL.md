@@ -7,8 +7,18 @@ argument-hint: '[owner] [repository-relative artifact or diff identity]'
 
 # NW-REVIEW
 
+Before diagnosing or assigning corrections, load `nw-cross-cutting-invariants`
+and apply `delivery:trustworthy-baseline-and-repair-scope`. A blocking observation
+requires attention; it does not alone authorize an independent repair.
+
+
 Select the reviewer that owns the artifact class. Give it the actual
 repository-relative artifact or actual diff, not copied prose.
+
+Read `~/.claude/skills/nw-role-invocation/SKILL.md`. Invoke the exact installed
+reviewer/examiner role natively, or `des prepare-role` then `des invoke-role`
+(exact flags from `--help`). A tools-empty role cannot read paths: put the
+actual evidence bytes in its prompt.
 
 Reviews are read-only and adversarial. Every finding cites a file/line,
 terminal command or exhibited counterexample. `APPROVE` requires the artifact
@@ -27,20 +37,25 @@ owner for each required correction.
 
 A review converges only against a CLOSED criterion set. Four rules, all binding.
 
-- **Declared before, not chosen during.** The dispatcher states the closed set of
-  criteria in the dispatch, and the reviewer judges those and nothing else. Where an
-  executable reference model exists, the set is "the surface agrees with the model"
-  plus the named suites; anything outside it is not review material. A criterion the
-  reviewer invents mid-review is out of scope, however true it is.
-- **Blocking is a narrow class.** A finding blocks only when it breaks the product or
-  would let a falsehood be integrated. Everything else is a note, corrected inside the
-  same slice, and never triggers a re-review.
-- **Measured stopping rule.** When a round finds defects only INSIDE the previous
-  round's repair, the cycle stops and the work integrates. Each round declares its
-  gain: how many blocking findings, and where each one originated.
-- **A repair adds no new prose.** Repair is production, so new sentences are new
-  unverified surface. If a fact is worth stating, it is a test; see
-  `authoring:a-measurable-fact-is-a-test-not-prose` in `nw-cross-cutting-invariants`.
+- **Declared before, not chosen during.** The dispatcher states the original agreed
+  value and the closed criteria in the dispatch. The reviewer first checks that the
+  criteria preserve that value, then judges the declared set. Where an executable
+  reference model exists, the set is "the surface agrees with the model" plus the
+  named suites; anything outside it is not review material. A criterion the reviewer
+  invents mid-review is out of scope, however true it is.
+- **Classify against the request.** Judge agreed behavior, required quality and
+  delivery obligations, and regressions caused by the request's work. Apply the
+  shared repair-scope clause to safety-net failures and uncertain relevance.
+  Independent improvements are notes, not automatic same-slice corrections.
+- **Preserve the safety net.** A required failure cannot be waived. Its owner
+  diagnoses and restores the required verification within the existing authority;
+  independent redesign requires a scope decision, not an implicit repair chain.
+  For public behavior corrections, compare existing coverage with the counterexample;
+  invoke ATD only for uncovered behavior. Retain normal independent review after
+  corrections; notes alone do not require another review round.
+- **Precise instruction repair is allowed.** Change the smallest instruction bytes
+  that remove a proven contradiction. State measurable claims in executable checks
+  where one exists; prose may state role boundaries, ownership, or remediation.
 
 ## Design-review question set
 

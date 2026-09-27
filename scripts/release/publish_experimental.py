@@ -2,21 +2,21 @@
 """Publish the atdd_pure preview to the EXPERIMENTAL channel.
 
 SEGREGATED from the prod/rc/dev release train (Ale 2026-06-07): this is a
-standalone publisher for ONE branch (`feature/atdd-pure-staging`) to ONE PUBLIC
+standalone publisher for ONE branch (`atdd_pure_staging`) to ONE PUBLIC
 target (`nWave-ai/nWave-experimental`). It is wired only to the experimental
 workflow, creates NO git tag, and touches NO shared release script except the
 privacy gate.
 
 Why it exists
 -------------
-The atdd_pure version lives on `feature/atdd-pure-staging` (the OSS de-facto
+The atdd_pure version lives on `atdd_pure_staging` (the OSS de-facto
 trunk until release), NOT on master. We want a PUBLIC PREVIEW of it without
 contaminating beta/prod/rc or the PyPI version namespace. The target repository
 is PUBLIC.
 
 Anti-contamination invariants (the whole point)
 -----------------------------------------------
-* SOURCE is pinned to `feature/atdd-pure-staging` — the script REFUSES any other
+* SOURCE is pinned to `atdd_pure_staging` — the script REFUSES any other
   branch (`--allow-branch` to override deliberately).
 * Publishes the COMMITTED tree (`git archive <ref>`), never the dirty working
   tree, and never mutates this repo's `.git` (no worktree add, no config writes
@@ -69,7 +69,7 @@ from scripts.release.release_migration_decision import decode_decision  # noqa: 
 
 # --- constants ------------------------------------------------------------
 
-SOURCE_BRANCH = "feature/atdd-pure-staging"
+SOURCE_BRANCH = "atdd_pure_staging"
 TARGET_SLUG = "nWave-ai/nWave-experimental"
 TARGET_BRANCH = "main"
 
@@ -453,7 +453,27 @@ def main() -> int:
         action="store_true",
         help=f"Override the {SOURCE_BRANCH}-only guard (use deliberately).",
     )
+    ap.add_argument(
+        "--project-into",
+        type=Path,
+        default=None,
+        help="Non-publishing mode: materialise the publishable projection of "
+        "--ref at DIR/target and stop BEFORE committing anything. Writes "
+        "nothing to any target and refuses together with --push, so this "
+        "publisher stays the single definition of what would be published.",
+    )
     args = ap.parse_args()
+
+    # Refuse the impossible combination before the branch guard and any clone:
+    # the projection mode must never be reachable as a publication path.
+    if args.project_into is not None and args.push:
+        print(
+            "WHAT: --project-into was combined with --push. WHY: the projection "
+            "mode writes nothing and must never become a publication path. HOW: "
+            "run --project-into DIR to inspect, then --push separately to publish.",
+            file=sys.stderr,
+        )
+        return 2
 
     if args.target_local_repo is not None:
         local = args.target_local_repo.resolve()
@@ -529,7 +549,15 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="nwave-exp-") as tmp:
         tmpd = Path(tmp)
         export = tmpd / "source"
-        target = tmpd / "target"
+        # In projection mode the materialised tree must OUTLIVE this process, so
+        # it is placed beside the caller's directory rather than in the tempdir
+        # that is cleaned on exit.  Everything else below is the identical
+        # inline sequence that publication itself runs.
+        if args.project_into is not None:
+            args.project_into.mkdir(parents=True, exist_ok=True)
+            target = args.project_into.resolve() / "target"
+        else:
+            target = tmpd / "target"
 
         # The target is read before clone/source projection, so stale records
         # refuse without spending work or touching the clone boundary.
@@ -566,6 +594,12 @@ def main() -> int:
             )
         else:
             run(["gh", "repo", "clone", TARGET_SLUG, str(target), "--", "--depth", "1"])
+        # Prevent detached git maintenance in temporary clone: synchronize cleanup
+        # to avoid "Directory not empty" failures when the tempdir is removed.
+        # Both gc.autodetach and maintenance.autodetach must be false so that
+        # subsequent git add/commit/push operations do not spawn background processes.
+        run(["git", "-C", str(target), "config", "gc.autodetach", "false"])
+        run(["git", "-C", str(target), "config", "maintenance.autodetach", "false"])
         if (
             decision is not None
             and capture(["git", "rev-parse", "HEAD"], cwd=target) != target_commit
@@ -606,6 +640,14 @@ def main() -> int:
         # 5) commit + push ------------------------------------------------
         print("\n[5/5] commit + push")
         run(["git", "add", "-A"], cwd=target)
+
+        # Projection mode stops HERE, before any commit exists: the index and
+        # worktree now hold exactly what publication would commit, and the
+        # caller reads it with plain `git write-tree` / `git diff`.
+        if args.project_into is not None:
+            print(f"PROJECTED: {target}")
+            return 0
+
         status = capture(["git", "status", "--porcelain"], cwd=target)
         if not status:
             print("  • no changes vs current experimental HEAD — nothing to publish")

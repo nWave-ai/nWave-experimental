@@ -22,7 +22,7 @@ re-running the cascade.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 
 DensityMode = Literal["lean", "full"]
@@ -91,6 +91,27 @@ def _from_rigor_profile(profile: str) -> Density:
     )
 
 
+def _require_object(value: Any, *, field: str) -> dict[str, Any]:
+    """Return ``value`` as a dict, or raise a useful ``ValueError``.
+
+    A malformed JSON type for a config section (e.g. a list where an
+    object is expected) must surface as a clear resolver-level ValueError,
+    never as an ``AttributeError`` from a stray ``.get()`` deep in the
+    cascade (V4-02).
+    """
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"Invalid {field!r} config: expected a JSON object, got "
+            f"{type(value).__name__}."
+        )
+    return value
+
+
+def _validate_choice(value: str | None, *, field: str, legal: tuple[str, ...]) -> None:
+    if value is not None and value not in legal:
+        raise ValueError(f"Unknown {field} {value!r}; expected one of {sorted(legal)}.")
+
+
 def resolve_density(global_config: dict[str, Any]) -> Density:
     """Return the active documentation density via the D12 cascade.
 
@@ -99,10 +120,14 @@ def resolve_density(global_config: dict[str, Any]) -> Density:
     resulting dict in.
 
     Cascade order (per DDD-5 + D12 + Decision 4):
-        1. Explicit `documentation.density` override wins.
-        2. Else `rigor.profile` D12 mapping.
-        3. Else fallback to ("lean", "ask-intelligent") — fresh-install
-           hard default per Decision 4.
+        1. Explicit `documentation.density` override wins for the mode.
+        2. Else `rigor.profile` D12 mapping decides the mode.
+        3. Else fallback to "lean" — fresh-install hard default per
+           Decision 4.
+        Independently of which branch decided the mode, an explicit
+        `documentation.expansion_prompt` always wins for the prompt
+        (V4-02: previously dropped whenever density was omitted and the
+        cascade fell through to the rigor-profile or hard-default branch).
 
     Args:
         global_config: Parsed contents of `~/.nwave/config.json`.
@@ -113,28 +138,59 @@ def resolve_density(global_config: dict[str, Any]) -> Density:
         and provenance.
 
     Raises:
-        ValueError: rigor.profile is set to an unknown value.
+        ValueError: `rigor.profile` is unknown, `documentation.density` or
+            `documentation.expansion_prompt` is not one of their legal
+            values, or `documentation`/`rigor` is not a JSON object.
     """
-    # Step 1: explicit override wins — both density and expansion_prompt.
-    documentation = global_config.get("documentation", {})
+    documentation = _require_object(
+        global_config.get("documentation", {}), field="documentation"
+    )
+    rigor = _require_object(global_config.get("rigor", {}), field="rigor")
+
     explicit_mode = documentation.get("density")
+    explicit_expansion_prompt = documentation.get("expansion_prompt")
+    _validate_choice(
+        explicit_mode, field="documentation.density", legal=get_args(DensityMode)
+    )
+    _validate_choice(
+        explicit_expansion_prompt,
+        field="documentation.expansion_prompt",
+        legal=get_args(ExpansionPromptMode),
+    )
+
+    # Step 1: explicit density override wins for the mode.
     if explicit_mode is not None:
         return Density(
             mode=explicit_mode,
-            expansion_prompt=documentation.get("expansion_prompt", "ask-intelligent"),
+            expansion_prompt=explicit_expansion_prompt or "ask-intelligent",
             provenance="explicit_override",
         )
 
-    # Step 2: rigor.profile inheritance per D12.
-    rigor_profile = global_config.get("rigor", {}).get("profile")
+    # Step 2: rigor.profile inheritance per D12 decides the mode.
+    rigor_profile = rigor.get("profile")
     if rigor_profile is not None:
-        return _from_rigor_profile(rigor_profile)
+        if not isinstance(rigor_profile, str):
+            raise ValueError(
+                f"Invalid rigor.profile: expected a string, got "
+                f"{type(rigor_profile).__name__}."
+            )
+        base = _from_rigor_profile(rigor_profile)
+    else:
+        # Step 3: hard default — fresh install, no documentation, no rigor.
+        # Per Decision 4 (2026-04-28), the fresh-install default is
+        # ("lean", "ask-intelligent"): emit minimal Tier-1 baseline, then
+        # show a scoped expansion menu only when triggers fire (the wave
+        # skill prose owns trigger detection).
+        base = Density(
+            mode="lean", expansion_prompt="ask-intelligent", provenance="default"
+        )
 
-    # Step 3: hard default — fresh install, no documentation, no rigor.
-    # Per Decision 4 (2026-04-28), the fresh-install default is
-    # ("lean", "ask-intelligent"): emit minimal Tier-1 baseline, then
-    # show a scoped expansion menu only when triggers fire (the wave
-    # skill prose owns trigger detection).
-    return Density(
-        mode="lean", expansion_prompt="ask-intelligent", provenance="default"
-    )
+    # An explicit expansion_prompt is honored regardless of whether the
+    # mode came from the rigor cascade or the hard default (V4-02).
+    if explicit_expansion_prompt is not None:
+        return Density(
+            mode=base.mode,
+            expansion_prompt=explicit_expansion_prompt,
+            provenance=base.provenance,
+        )
+    return base

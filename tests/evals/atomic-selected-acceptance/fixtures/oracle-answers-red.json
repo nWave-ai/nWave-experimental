@@ -1,0 +1,12 @@
+[
+  {
+    "structured_output": {
+      "outcome": "accepted",
+      "diagnostic": "authored the oracle"
+    },
+    "writes": {
+      "tests/acceptance/test_order_a.py": "import pathlib\nimport sys\n\nsys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / \"support\"))\nimport a_driver\n\n\ndef test_submit_a():\n    result = a_driver.run_order_submit(\"O1\")\n    assert result is not None, \"public `order` CLI is absent: implement `order submit --order-id O1` (expected stdout 'O1 unpaid\\\\n', exit 0)\"\n    assert result.returncode == 0, f\"order submit exited {result.returncode}; it must exit 0\"\n    assert result.stdout == \"O1 unpaid\\n\", f\"stdout was {result.stdout!r}; expected 'O1 unpaid\\\\n' (single trailing newline)\"\n",
+      "tests/support/a_driver.py": "import subprocess\n\n\ndef run_order_submit(order_id):\n    try:\n        return subprocess.run([\"order\", \"submit\", \"--order-id\", order_id], capture_output=True, text=True)\n    except FileNotFoundError:\n        return None\n"
+    }
+  }
+]

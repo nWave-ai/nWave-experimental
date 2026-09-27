@@ -11,6 +11,7 @@ from des.adapters.drivers.hooks import des_task_signal, hook_protocol
 from des.adapters.drivers.hooks.hook_protocol import (
     EXIT_CODE_TO_DECISION,
     STDERR_CAPTURE_MAX_CHARS,
+    HookCompletion,
     log_hook_completed,
     log_hook_error,
     log_hook_invoked,
@@ -117,9 +118,11 @@ def handle_pre_write() -> int:
         duration_ms = (time.perf_counter_ns() - start_ns) / 1_000_000
         decision_str = EXIT_CODE_TO_DECISION.get(exit_code, "error")
         log_hook_completed(
-            hook_id=hook_id,
-            handler="pre_write",
-            exit_code=exit_code,
-            decision=decision_str,
-            duration_ms=duration_ms,
+            HookCompletion(
+                hook_id=hook_id,
+                handler="pre_write",
+                exit_code=exit_code,
+                decision=decision_str,
+                duration_ms=duration_ms,
+            )
         )

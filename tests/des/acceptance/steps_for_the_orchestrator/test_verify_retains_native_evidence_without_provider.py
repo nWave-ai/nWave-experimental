@@ -36,11 +36,12 @@ RED_ORACLE = (
 )
 
 
-def _crafted(root: Path, step) -> None:
+def _crafted(root: Path, step, *, verification: list[list[str]] | None = None) -> None:
     """Reach a real crafted state through explicit, pre-existing public steps."""
     assert (
         step(
             "po",
+            "--project",
             "--repo-root",
             str(root),
             answers=[accepted_values("A")],
@@ -66,7 +67,9 @@ def _crafted(root: Path, step) -> None:
                             "decisions": ["one observable value"],
                             "oracle": ORACLE,
                             "acceptance_supports": [SUPPORT],
-                            "verification": [["python", "-m", "pytest", ORACLE]],
+                            "verification": verification
+                            or [[sys.executable, "-m", "pytest", ORACLE]],
+                            "oracle_verification_index": 0,
                         },
                     }
                 }
@@ -161,6 +164,6 @@ def test_verify_succeeds_without_a_provider_and_retains_the_native_observation(
     assert len(records) == 1
     evidence = json.loads(records[0].read_text(encoding="utf-8"))
     assert len(evidence) == 1
-    assert evidence[0]["argv"] == ["python", "-m", "pytest", ORACLE]
+    assert evidence[0]["argv"] == [sys.executable, "-m", "pytest", ORACLE]
     assert evidence[0]["exit"] == 0
     assert "1 passed" in evidence[0]["stdout"]

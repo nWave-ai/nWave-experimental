@@ -29,6 +29,7 @@ where a reviewer can see it.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,13 @@ ORACLE = "tests/acceptance/test_value.py"
 SUPPORT = "tests/acceptance/support.py"
 TARGET = "product_value.py"
 RED_ORACLE = "def test_value():\n    import product_value  # noqa\n"
+# This property explores many generated command sequences. Its native command
+# must resolve, but must not run a real suite for every generated state.
+FAST_VERIFICATION = [
+    sys.executable,
+    "-c",
+    "from pathlib import Path; raise SystemExit(not Path('product_value.py').exists())",
+]
 
 #: The invocations the generator may draw. Positions 1 and 2 exist after `po`;
 #: 9 never does, which is how `ValueOutOfRange` is reached.
@@ -149,7 +157,8 @@ def _accepted(role: str) -> dict:
                     "decisions": ["one opaque semantic decision"],
                     "oracle": ORACLE,
                     "acceptance_supports": [SUPPORT],
-                    "verification": [["python", "-m", "pytest", ORACLE]],
+                    "verification": [FAST_VERIFICATION],
+                    "oracle_verification_index": 0,
                 },
             }
         }
@@ -258,6 +267,8 @@ def _canonical_invocation(state) -> tuple[str, int | None]:
 
 def _argv(root: Path, name: str, value: int | None) -> list[str]:
     argv = [name, "--repo-root", str(root)]
+    if name == "po":
+        argv.append("--project")
     if name == "project":
         argv += ["--html", str(root.parent / f"{root.name}-projection.html")]
     if value is not None:

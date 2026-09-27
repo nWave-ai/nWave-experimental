@@ -46,6 +46,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 import yaml
 
@@ -73,6 +74,54 @@ TAG_PATTERN = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 # Public GitHub repo, for rewriting links that point outside the doc roots
 # (e.g. into nWave/skills/**/SKILL.md) to a browsable source location.
 GITHUB_REPO = "https://github.com/nWave-ai/nWave"
+
+
+# ---------- argument groups ----------
+#
+# Module-private: each groups parameters that are always produced and passed
+# together, to keep the functions below at or under five arguments.
+#
+# These are NamedTuple and NOT @dataclass, deliberately. This module declares
+# `from __future__ import annotations`, so every annotation is a string, and
+# @dataclass resolves string annotations by looking itself up in sys.modules to
+# detect ClassVar/InitVar. tests/build/unit/test_docs_site_build.py loads this
+# file with importlib `spec_from_file_location` + `exec_module` WITHOUT
+# registering it in sys.modules, so that lookup returns None and every test in
+# that file errors with:
+#     AttributeError: 'NoneType' object has no attribute '__dict__'
+# NamedTuple does not take that code path and loads cleanly under the same
+# loader. Measured 2026-09-25: dataclass+unregistered fails, NamedTuple+
+# unregistered passes. Do not "modernise" these to dataclasses.
+
+
+class _VersionInfo(NamedTuple):
+    """One built version's label and release date."""
+
+    version: str
+    date: str
+
+
+class _PageNav(NamedTuple):
+    """The navigation tree and its category links, computed together and
+    passed as a pair into page-rendering functions."""
+
+    nav: list[dict]
+    cats: list[dict]
+
+
+class _PageIdentity(NamedTuple):
+    """Per-page identity stamped into a rendered template."""
+
+    title: str
+    version: str
+    current_url: str
+
+
+class _PageChrome(NamedTuple):
+    """Optional page-chrome fragments injected into a rendered template."""
+
+    category_nav: str = ""
+    head_extra: str = ""
 
 
 # ---------- git helpers ----------
@@ -415,21 +464,18 @@ def load_template(name: str) -> str:
 def render_page(
     template: str,
     *,
-    title: str,
-    version: str,
-    current_url: str,
+    identity: _PageIdentity,
     body: str,
     config: dict,
-    category_nav: str = "",
-    head_extra: str = "",
+    chrome: _PageChrome,
 ) -> str:
     return (
-        template.replace("{{TITLE}}", html.escape(title))
-        .replace("{{VERSION}}", html.escape(version))
-        .replace("{{CURRENT_URL}}", html.escape(current_url))
+        template.replace("{{TITLE}}", html.escape(identity.title))
+        .replace("{{VERSION}}", html.escape(identity.version))
+        .replace("{{CURRENT_URL}}", html.escape(identity.current_url))
         .replace("{{SITE_NAME}}", html.escape(config.get("site_name", "nWave Docs")))
-        .replace("{{CATEGORY_NAV}}", category_nav)
-        .replace("{{HEAD_EXTRA}}", head_extra)
+        .replace("{{CATEGORY_NAV}}", chrome.category_nav)
+        .replace("{{HEAD_EXTRA}}", chrome.head_extra)
         .replace("{{BODY}}", body)
     )
 
@@ -578,8 +624,7 @@ def render_category_nav(cats: list[dict], active_section: str | None) -> str:
 
 
 def build_version(
-    version: str,
-    date: str,
+    info: _VersionInfo,
     config: dict,
     *,
     source_tag: str | None,
@@ -594,6 +639,7 @@ def build_version(
     ``latest_slugs`` is the set of slugs that exist in the ``latest`` tree,
     used to canonicalise versioned pages to their ``/latest/`` equivalent.
     """
+    version, date = info.version, info.date
     latest_slugs = latest_slugs or set()
     indexable = version == "latest"
     print(f"build_site: {version}", file=sys.stderr)
@@ -654,13 +700,17 @@ def build_version(
         )
         page = render_page(
             page_template,
-            title=title,
-            version=version,
-            current_url=current_url,
+            identity=_PageIdentity(
+                title=title, version=version, current_url=current_url
+            ),
             body=page_body,
             config=config,
-            category_nav=render_category_nav(cats, active),
-            head_extra=build_head_extra(canonical_url=canonical, indexable=indexable),
+            chrome=_PageChrome(
+                category_nav=render_category_nav(cats, active),
+                head_extra=build_head_extra(
+                    canonical_url=canonical, indexable=indexable
+                ),
+            ),
         )
         out_dir = SITE_DIR / version / slug if slug else SITE_DIR / version
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -682,7 +732,13 @@ def build_version(
             shutil.copyfile(SOURCE_REPO / path, dst)
 
     # Per-version landing page (getting-started prose + Divio quadrant cards).
-    write_version_landing(version, date, config, nav, page_template, cats, landing_html)
+    write_version_landing(
+        version=version,
+        config=config,
+        page_nav=_PageNav(nav=nav, cats=cats),
+        template=page_template,
+        landing_html=landing_html,
+    )
 
     return {
         "version": version,
@@ -734,11 +790,9 @@ def _video_html(config: dict) -> str:
 
 def write_version_landing(
     version: str,
-    date: str,
     config: dict,
-    nav: list[dict],
+    page_nav: _PageNav,
     template: str,
-    cats: list[dict],
     landing_html: str = "",
 ) -> None:
     """Per-version landing: hero, optional video, getting-started prose, and
@@ -749,6 +803,7 @@ def write_version_landing(
     falls back to the quadrant's first existing page, then the version root —
     so no card is ever a dead link across the version history.
     """
+    nav, cats = page_nav.nav, page_nav.cats
     quadrants = config.get("quadrants", [])
     valid = _all_urls(nav, version)
     cards = []
@@ -795,14 +850,16 @@ def write_version_landing(
     canonical = "/latest/" if version != "latest" else f"/{version}/"
     page = render_page(
         template,
-        title="Documentation",
-        version=version,
-        current_url=f"/{version}/",
+        identity=_PageIdentity(
+            title="Documentation", version=version, current_url=f"/{version}/"
+        ),
         body=body,
         config=config,
-        category_nav=render_category_nav(cats, None),
-        head_extra=build_head_extra(
-            canonical_url=canonical, indexable=version == "latest"
+        chrome=_PageChrome(
+            category_nav=render_category_nav(cats, None),
+            head_extra=build_head_extra(
+                canonical_url=canonical, indexable=version == "latest"
+            ),
         ),
     )
     (SITE_DIR / version).mkdir(parents=True, exist_ok=True)
@@ -1010,8 +1067,7 @@ def main() -> None:
     for tag in doc_tags:
         entries.append(
             build_version(
-                tag,
-                tag_date(tag),
+                _VersionInfo(version=tag, date=tag_date(tag)),
                 config,
                 source_tag=tag,
                 landing_html=landing_html,
@@ -1022,8 +1078,7 @@ def main() -> None:
     if args.working_tree or args.working_tree_only:
         entries.append(
             build_version(
-                "dev",
-                today,
+                _VersionInfo(version="dev", date=today),
                 config,
                 source_tag=None,
                 landing_html=landing_html,
@@ -1036,8 +1091,7 @@ def main() -> None:
     has_latest = bool(latest_slugs)
     if has_latest:
         latest_entry = build_version(
-            "latest",
-            latest_date,
+            _VersionInfo(version="latest", date=latest_date),
             config,
             source_tag=latest_source,
             landing_html=landing_html,

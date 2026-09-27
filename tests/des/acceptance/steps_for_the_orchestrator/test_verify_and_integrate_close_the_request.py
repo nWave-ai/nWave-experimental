@@ -13,6 +13,7 @@ results are observations and cannot become an admission gate or correction flow.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
@@ -56,7 +57,8 @@ def design_facts() -> dict:
                 "decisions": ["one opaque semantic decision"],
                 "oracle": ORACLE,
                 "acceptance_supports": [SUPPORT],
-                "verification": [["python", "-m", "pytest", ORACLE]],
+                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                "oracle_verification_index": 0,
             },
         }
     }
@@ -87,6 +89,7 @@ def _prepare_and_record(root: Path, step, role: str, candidate: str, outcome: st
         candidate,
     )
     assert prepared[0] == 0, prepared[1] + prepared[2]
+    prepared_lines = block(prepared[1], prepared[2])
     code, out, err = step(
         "record-role-result",
         "--repo-root",
@@ -103,6 +106,7 @@ def _prepare_and_record(root: Path, step, role: str, candidate: str, outcome: st
         f"legacy-{role}-{outcome}",
         "--input",
         "-",
+        *(("--prepared-input", prepared_lines["INPUT"]) if role == "examiner" else ()),
         stdin=_role_result(role, outcome, f"host {role} {outcome}"),
     )
     assert code == 0, out + err
@@ -114,6 +118,7 @@ def crafted(root: Path, step) -> None:
     assert (
         step(
             "po",
+            "--project",
             "--repo-root",
             str(root),
             answers=[accepted_values("A")],
@@ -185,7 +190,19 @@ def test_verify_builds_one_candidate_runs_it_natively_without_buying_a_judge(
     # The candidate is a real commit parented on the base, and HEAD has NOT moved.
     assert git(root, "rev-parse", f"{lines['CANDIDATE']}^") == head_before
     assert git(root, "rev-parse", "HEAD") == head_before
-    assert all("des integrate" not in move for move in nexts(out))
+    assert nexts(out) == [
+        f"des prepare-role --repo-root {root} --role reviewer --candidate {lines['CANDIDATE']}"
+    ]
+
+
+def test_verify_does_not_govern_direct_integration(root: Path, step) -> None:
+    """The host may integrate a native-success candidate without any role result."""
+    crafted(root, step)
+    code, out, err = step("verify", "--repo-root", str(root), answers=[])
+    assert code == 0, out + err
+    candidate = block(out, err)["CANDIDATE"]
+    integrated = step("integrate", "--repo-root", str(root), "--candidate", candidate)
+    assert integrated[0] == 0, integrated[1] + integrated[2]
 
 
 def test_a_host_recorded_reviewer_rejection_is_observation_not_admission(
@@ -258,6 +275,32 @@ def test_integrate_swaps_the_head_reconciles_and_closes_the_handover(
     assert "NEXT" in lines
 
 
+def test_prepare_role_can_read_the_verified_candidate_after_integration(
+    root: Path, step
+) -> None:
+    """Cleanup closes current work without erasing candidate-bound review evidence."""
+    crafted(root, step)
+    verified = step("verify", "--repo-root", str(root), answers=[])
+    assert verified[0] == 0, verified[1] + verified[2]
+    candidate = block(verified[1], verified[2])["CANDIDATE"]
+
+    integrated = step("integrate", "--repo-root", str(root), "--candidate", candidate)
+    assert integrated[0] == 0, integrated[1] + integrated[2]
+    assert not (root / ".nwave" / "des" / "handover.json").exists()
+
+    prepared = step(
+        "prepare-role",
+        "--repo-root",
+        str(root),
+        "--role",
+        "reviewer",
+        "--candidate",
+        candidate,
+    )
+    assert prepared[0] == 0, prepared[1] + prepared[2]
+    assert block(prepared[1], prepared[2])["CANDIDATE"] == candidate
+
+
 def test_verify_and_integrate_need_current_bytes_not_each_roles_history(
     root: Path, step, turns: Path
 ) -> None:
@@ -265,6 +308,7 @@ def test_verify_and_integrate_need_current_bytes_not_each_roles_history(
     assert (
         step(
             "po",
+            "--project",
             "--repo-root",
             str(root),
             answers=[accepted_values("A", "B", "C")],

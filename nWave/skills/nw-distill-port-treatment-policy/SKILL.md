@@ -46,7 +46,7 @@ Port unclassifiable by agent → ask the user with a soft prompt. Do NOT improvi
 
 The Driving default INVERTS the old "CLI = subprocess runner" assumption. A new acceptance test drives the entry point **in-process** by default: it calls the real `cli main(argv)` (or an application-service method) directly, threading a fake `OutputPort` that captures the terminal output a `Then` asserts on. No `subprocess.run([sys.executable, ...])` fork — the same Mandate-13 driving-port semantics, 10–100× faster. (Language-agnostic: the rule is "call the shipped entry in-process with a captured output sink"; the `cli main(argv)` form is the Python illustration.)
 
-**subprocess-e2e is reserved for `@walking_skeleton` — ONE per independently shippable value slice.** That scenario proves the installed artifact is wired end-to-end. Every other AT defaults to in-process/in-memory. Wiring coverage beyond it comes from the independent Examiner exercising charter observables through the real surface and the final whole-slice verification; never multiply E2E scenarios to imitate confidence.
+**The feature has ONE `@walking_skeleton` subprocess-E2E, reused and extended by its slices** (canonical policy: `nw-tdd-methodology-walking-skeleton`). That scenario proves the installed artifact is wired end-to-end. Additional E2E scenarios require distinct observable integration needs; they are not additional walking skeletons. Every other AT defaults to in-process/in-memory. Wiring coverage beyond it comes from the independent Examiner exercising charter observables through the real surface and the final whole-slice verification; never multiply E2E scenarios to imitate confidence.
 
 ### The "CLI = e2e by construction" caveat is DISSOLVED
 

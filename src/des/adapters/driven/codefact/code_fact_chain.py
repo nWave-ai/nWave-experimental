@@ -37,7 +37,10 @@ import dataclasses
 from typing import TYPE_CHECKING
 
 from des.adapters.driven.codefact.ast_code_fact_adapter import AstAdapter
-from des.adapters.driven.codefact.graphify_code_fact_adapter import GraphifyAdapter
+from des.adapters.driven.codefact.graphify_code_fact_adapter import (
+    GRAPH_INDEX_DIR_NAME,
+    GraphifyAdapter,
+)
 from des.adapters.driven.codefact.text_search_code_fact_adapter import TextSearchAdapter
 from des.ports.code_fact_port import (
     Answered,
@@ -81,6 +84,8 @@ class CodeFactChain:
     wiring change, no port/fold change.
     """
 
+    optional_index_dir = GRAPH_INDEX_DIR_NAME
+
     def __init__(
         self, root: Path | str, graphify: GraphifyAdapter | None = None
     ) -> None:
@@ -96,6 +101,10 @@ class CodeFactChain:
         providers.append(self._floor)
         self._providers = tuple(providers)
         verify_composition_coverage(self._providers)
+
+    def scoped(self, root: Path | str) -> CodeFactChain:
+        """Scope a new chain to a file while sharing this operation's index."""
+        return CodeFactChain(root, graphify=self._graphify)
 
     def resolve(
         self, descriptor: CapabilityDescriptor, request: dict[str, object]

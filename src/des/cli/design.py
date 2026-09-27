@@ -49,7 +49,19 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     add_repo_root_argument(parser, "--repo-root", type=Path, required=True)
-    parser.add_argument("--value", type=int, required=True)
+    intent = parser.add_mutually_exclusive_group(required=True)
+    intent.add_argument(
+        "--value", type=int, help="the value whose DESIGN facts to bind"
+    )
+    intent.add_argument(
+        "--shared",
+        action="store_true",
+        help=(
+            "construct the one DESIGN section shared by every value of the "
+            "Request; requires --input -, buys no turn, refuses --finding "
+            "and --competence"
+        ),
+    )
     parser.add_argument("--finding", default=None)
     parser.add_argument(
         "--competence",
@@ -61,19 +73,49 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--input", default=None)
     parser.add_argument("--replace-current", action="store_true")
+    parser.add_argument(
+        "--migrate-legacy-rendering",
+        action="store_true",
+        help=(
+            "explicitly replace an unbound tracked DESIGN section only when its "
+            "complete bytes equal the frozen pre-lint renderer"
+        ),
+    )
+    parser.add_argument(
+        "--replace-unbound",
+        action="store_true",
+        help=(
+            "explicitly replace a tracked unbound DESIGN section with a complete "
+            "closed manifest and bind its facts"
+        ),
+    )
+    parser.add_argument(
+        "--feature",
+        default=None,
+        help=(
+            "feature id ([a-z0-9][a-z0-9-]*) selecting FEATURE document destinations; "
+            "optional here: the handover's bound scope is used and a different id is refused"
+        ),
+    )
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     root = resolved_root(args.repo_root)
     if isinstance(root, StepRefusal):
         return refuse(
             root, "des design --repo-root <root> --value N -- after the HOW above"
         )
-    own = "des design --repo-root {root} --value " + str(args.value)
-    if args.replace_current and args.input != STDIN:
+    own = "des design --repo-root {root} " + (
+        "--shared" if args.shared else f"--value {args.value}"
+    )
+    if args.shared:
+        return _shared(args, root, own)
+    if (
+        args.replace_current or args.migrate_legacy_rendering or args.replace_unbound
+    ) and args.input != STDIN:
         return refuse(
             StepRefusal(
                 "InvalidDesignInput",
-                "--replace-current is valid only with --input -",
-                "use --replace-current only with closed v1 input",
+                "DESIGN replacement and recovery flags are valid only with --input -",
+                "use explicit DESIGN mutation flags only with closed v1 input",
             ),
             (own.format(root=root),),
         )
@@ -98,7 +140,13 @@ def main(argv: list[str] | None = None) -> int:
                 (own.format(root=root),),
             )
         outcome = DeliverySteps().design_document(
-            root, args.value, manifest, replace_current=args.replace_current
+            root,
+            args.value,
+            manifest,
+            replace_current=args.replace_current,
+            migrate_legacy_rendering=args.migrate_legacy_rendering,
+            replace_unbound=args.replace_unbound,
+            feature=args.feature,
         )
         if not outcome.succeeded:
             return refuse(
@@ -128,7 +176,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         finding = read
     outcome = DeliverySteps().design(
-        root, args.value, finding, competence=args.competence
+        root,
+        args.value,
+        finding,
+        competence=args.competence,
+        feature=args.feature,
     )
     if not outcome.succeeded:
         return refuse(
@@ -150,3 +202,56 @@ def main(argv: list[str] | None = None) -> int:
         turns_bought=outcome.turns_bought,
         role=outcome.role,
     )
+
+
+def _shared(args: argparse.Namespace, root: Path, own: str) -> int:
+    """Construct the shared feature DESIGN: input only, never a provider turn."""
+    move = (own.format(root=root),)
+    if args.input != STDIN:
+        return refuse(
+            StepRefusal(
+                "InvalidDesignInput",
+                "--shared requires --input -",
+                "pipe closed v1 semantic JSON into `des design --shared --input -`",
+            ),
+            move,
+        )
+    if args.finding is not None or args.competence is not None:
+        return refuse(
+            StepRefusal(
+                "InvalidDesignInput",
+                "--shared buys no turn, so --finding and --competence do not apply",
+                "drop --finding and --competence",
+            ),
+            move,
+        )
+    manifest = read_request()
+    if isinstance(manifest, StepRefusal):
+        return refuse(
+            StepRefusal(
+                "InvalidDesignDocument",
+                "stdin must carry one non-empty strict-UTF-8 JSON manifest",
+                "pipe closed v1 semantic JSON into `des design --shared --input -`",
+            ),
+            move,
+        )
+    outcome = DeliverySteps().shared_design_document(
+        root,
+        manifest,
+        replace_current=args.replace_current,
+        migrate_legacy_rendering=args.migrate_legacy_rendering,
+        replace_unbound=args.replace_unbound,
+        feature=args.feature,
+    )
+    if not outcome.succeeded:
+        return refuse(
+            StepRefusal(
+                outcome.failure.what,
+                outcome.failure.why,
+                outcome.failure.how,
+                outcome.disposition,
+            ),
+            moves_after_refusal(root, own, outcome.failure.what),
+            facts=list(outcome.facts),
+        )
+    return succeed(list(outcome.facts), after_step(root))

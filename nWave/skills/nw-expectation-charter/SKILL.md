@@ -1,6 +1,6 @@
 ---
 name: nw-expectation-charter
-description: "Authors or reviews one value-side, source-blind expectation charter when EXAMINE applies."
+description: "Supplies or reviews source-blind qualitative charter facts for deterministic DES construction when EXAMINE applies."
 user-invocable: false
 ---
 
@@ -23,18 +23,46 @@ Run only when the resident route determines that EXAMINE applies. Discover
 every direct entry under the assigned expectation-charter namespace and classify
 the whole namespace:
 
-- `Missing` or `Empty` -> a fresh PO may author;
-- `Valid(NonEmptySeq<ValidatedCharter>)` -> reuse every member in deterministic
-  order;
+- `Missing` or `Empty` -> a fresh PO supplies qualitative facts to DES;
+- `Valid` -> reuse the selected value's member without a PO turn; if it is
+  missing, construct only that member and preserve valid siblings;
 - `Invalid(reason)` -> block; never filter a malformed, unfilled, nested,
   ambiguous or path-unsafe member away.
 
 When examine is false, skip PO, charter and Vera entirely.
 
-## Charter content
+## Construction contract
 
-Write one concise direct member of the assigned namespace using exactly the
-canonical section headings, in order:
+The caller invokes the existing public step:
+
+```text
+des po --repo-root ROOT --project --charter --value N --input FILE
+```
+
+Use the persisted scope: `--project`, `--epic ID`, `--feature ID`, or
+`--slice FEATURE_ID SLICE_ID`. `--input -` reads stdin. For a missing selected
+charter, input is a closed JSON object with integer `schema_version: 1` and
+nonblank strings `intent`, `observation` and `public_start_recipe`.
+`observation` must equal the persisted selected value's observation exactly.
+Missing semantic facts require clarification before a model turn. Invalid
+types, extra keys or conflicting observations refuse. A valid selected member
+ignores supplied input without opening it and buys no new PO turn.
+
+DES invokes a fresh installed PO with effective structured-reply-only tools in
+a private directory. It supplies only those three value-side facts and
+independently loads role and charter knowledge. If isolation is unavailable,
+return Indeterminate; do not fall back to a source-reaching invocation.
+
+The PO returns exactly `outcome`, a nonblank `diagnostic`, and `charter`.
+An accepted `charter` contains nonblank `intent`, `exploration`,
+`negative_observation`, and a nonempty array of nonblank `positive_observations`.
+A rejected or indeterminate response has `charter: null`. Rejection asks for
+clarification; diagnostics never become inferred charter facts.
+
+## DES-owned charter content
+
+DES alone writes `value-N.md` in the assigned namespace. The PO never writes
+Markdown. DES constructs exactly these canonical sections, in order:
 
 - `## Intent` — human intent and user/operator perspective;
 - `## Preconditions` — one exact modality-appropriate `PublicStartRecipe`
@@ -68,12 +96,23 @@ same promised observation on the same admitted input/surface — it is not a
 new scenario. If desired behavior is missing from the seed and no durable
 authority covers it, block or clarify at value authority; never guess a new
 requirement to fill the gap. The same law binds the `PublicStartRecipe`:
-copy or losslessly project it from the supplied immutable value-side facts.
-Those facts may carry a citation to a public product document, but must also
-carry the exact recipe: the Write-only PO never reads that document. Never
-recover the recipe from architecture, design, source or tests; when the
-supplied facts do not state an exact modality-appropriate recipe, return
-`CLARIFICATION_NEEDED` and write nothing rather than inventing one.
+DES copies the supplied recipe unchanged; the PO neither recovers nor replaces
+it. Supplied facts may cite a public product document, but must also contain
+the exact recipe: the isolated PO cannot read that document. Never recover it
+from architecture, design, source or tests. If supplied facts do not identify
+an exact modality-appropriate recipe, reject for `CLARIFICATION_NEEDED`;
+DES writes no charter.
 
 The charter path and validated content digest join the delivery evidence; they
 do not become a second delivery authority or progress artifact.
+
+Namespaces are `docs/product/expectations/_project/`, `_epic/ID/`,
+`FEATURE_ID/`, or `_slice/FEATURE_ID/SLICE_ID/` under the same expectations
+root. Every direct member must be canonical and bound to its persisted value.
+DES embeds the value position and source fingerprint, initializes the session
+log, and preserves valid appended rows on reuse.
+
+Include the constructed authority in Git before candidate verification so
+the candidate snapshot contains it. EXAMINE consumes the candidate-bound
+`expectation_charters` projection alongside selected acceptance and public
+observations. A charter is an expectation, not proof of product behavior.

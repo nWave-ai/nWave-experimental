@@ -1,0 +1,26 @@
+[
+  {
+    "id": "new-ui",
+    "request": "Let customers book an appointment and understand whether it is confirmed.",
+    "recorded_answers": ["Show me a small wireframe before implementation, using our existing design system.", "Double submission must create one booking. A slot is not confirmed until accepted by the service.", "A failed confirmation must show that no appointment is confirmed and let me retry.", "Reminder timing is still open. Do not decide it for me."],
+    "checks": ["one booking after duplicate submission", "pending distinct from confirmed", "recoverable confirmation failure", "reminder timing stays open", "wireframe requested, never claimed implemented or approved", "visible vertical first increment"]
+  },
+  {
+    "id": "existing-ui",
+    "request": "Let staff cancel an appointment from the existing booking screen.",
+    "recorded_answers": ["Reuse the current components. A sketch is enough; no new design system.", "Cancellation can be undone until the appointment starts.", "Correction: customers cannot cancel here. This screen is for staff only."],
+    "checks": ["staff actor preserved", "undo boundary explicit", "existing components reused", "sketch choice honored", "no frontend-only slice"]
+  },
+  {
+    "id": "no-ui",
+    "request": "A scheduled import must not create duplicate orders when the same batch is retried.",
+    "recorded_answers": ["There is no user interface change and no prototype is needed.", "Operators inspect the existing import summary; retries report existing orders instead of creating new ones.", "Use the same external order identifier. Do not choose a database for this discussion."],
+    "checks": ["retry semantics preserved", "existing operator observation", "no UI prototype or solver imposed", "no database decision invented"]
+  },
+  {
+    "id": "quint-open-timing",
+    "request": "Let an operator observe whether a job is running or completed.",
+    "recorded_answers": ["We have not selected a time limit for the display update.", "I would like to discuss whether completion followed by a delayed display update is acceptable.", "No Quint trace or renderer output has been supplied yet. Offer exploration, but do not invent results or install anything."],
+    "checks": ["timing remains open", "actual and displayed state distinguished", "optional exploration offered", "no invented trace, proof or installation", "no approval claimed"]
+  }
+]

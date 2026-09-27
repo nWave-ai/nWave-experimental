@@ -13,7 +13,7 @@ After this guide, every Bash and apply_patch tool invocation by OpenAI Codex CLI
   # or, as a fallback:
   python3 -m pip install pipx && pipx ensurepath     # pipx
   ```
-- **OpenAI Codex CLI** — Download from [platform.openai.com/docs/guides/codex](https://platform.openai.com/docs/guides/codex) and install per OpenAI's instructions. Verify with `which codex` or `ls ~/.codex/`.
+- **OpenAI Codex CLI** — Download from [developers.openai.com/codex/cli](https://developers.openai.com/codex/cli) and install per OpenAI's instructions. Verify with `which codex` or `ls ~/.codex/`.
 
 ## Install
 

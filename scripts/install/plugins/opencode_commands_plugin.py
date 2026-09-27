@@ -19,6 +19,7 @@ from scripts.install.plugins.base import (
     PluginResult,
 )
 from scripts.install.plugins.opencode_common import (
+    ManifestPluginConfig,
     opencode_config_dir,
     parse_frontmatter,
     remove_manifest_owned_assets,
@@ -301,21 +302,25 @@ class OpenCodeCommandsPlugin(InstallationPlugin):
         """Uninstall only nWave-installed OpenCode commands using manifest."""
         return uninstall_with_manifest(
             context=context,
-            plugin_name=self.name,
-            target_dir=_opencode_commands_dir(),
-            manifest_filename=_MANIFEST_FILENAME,
-            noun="commands",
-            installed_key="installed_commands",
+            config=ManifestPluginConfig(
+                plugin_name=self.name,
+                target_dir=_opencode_commands_dir(),
+                manifest_filename=_MANIFEST_FILENAME,
+                noun="commands",
+                installed_key="installed_commands",
+            ),
         )
 
     def verify(self, context: InstallContext) -> PluginResult:
         """Verify OpenCode commands were installed correctly."""
         return verify_with_manifest(
             context=context,
-            plugin_name=self.name,
-            target_dir=_opencode_commands_dir(),
-            manifest_filename=_MANIFEST_FILENAME,
-            noun="commands",
-            installed_key="installed_commands",
+            config=ManifestPluginConfig(
+                plugin_name=self.name,
+                target_dir=_opencode_commands_dir(),
+                manifest_filename=_MANIFEST_FILENAME,
+                noun="commands",
+                installed_key="installed_commands",
+            ),
             source_finder=_find_commands_source,
         )

@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -196,13 +197,25 @@ def remove_manifest_owned_assets(
     return sorted(removed)
 
 
+@dataclass(frozen=True, slots=True)
+class ManifestPluginConfig:
+    """What a manifest-driven plugin lifecycle needs: its name, where and how
+    its manifest lives, and the noun to call its items in a message.
+
+    Abstracts the noun-vs-noun differences ("commands" vs "agents") between
+    the two OpenCode plugins that both drive their lifecycle off a manifest.
+    """
+
+    plugin_name: str
+    target_dir: Path
+    manifest_filename: str
+    noun: str
+    installed_key: str
+
+
 def uninstall_with_manifest(
     context: InstallContext,
-    plugin_name: str,
-    target_dir: Path,
-    manifest_filename: str,
-    noun: str,
-    installed_key: str,
+    config: ManifestPluginConfig,
 ) -> PluginResult:
     """Manifest-driven uninstall shared between OpenCode commands + agents plugins.
 
@@ -212,17 +225,19 @@ def uninstall_with_manifest(
 
     Args:
         context: Install context (used for logging).
-        plugin_name: Plugin identifier for the returned PluginResult.
-        target_dir: OpenCode subdirectory containing items + manifest.
-        manifest_filename: Manifest file name.
-        noun: Human label for log + message ("commands" or "agents").
-        installed_key: Manifest key listing installed item names
-            (e.g. "installed_commands" or "installed_agents").
+        config: Plugin name, target directory, manifest file name, noun
+            label, and manifest key shared between commands + agents plugins.
 
     Returns:
         PluginResult with success/failure outcome.
     """
     from scripts.install.plugins.base import PluginResult
+
+    plugin_name = config.plugin_name
+    target_dir = config.target_dir
+    manifest_filename = config.manifest_filename
+    noun = config.noun
+    installed_key = config.installed_key
 
     try:
         context.logger.info(f"  \U0001f5d1️ Uninstalling OpenCode {noun}...")
@@ -266,11 +281,7 @@ def uninstall_with_manifest(
 
 def verify_with_manifest(
     context: InstallContext,
-    plugin_name: str,
-    target_dir: Path,
-    manifest_filename: str,
-    noun: str,
-    installed_key: str,
+    config: ManifestPluginConfig,
     source_finder: Callable[[InstallContext], Path | None],
 ) -> PluginResult:
     """Manifest-driven verify shared between OpenCode commands + agents plugins.
@@ -282,11 +293,8 @@ def verify_with_manifest(
 
     Args:
         context: Install context (used for logging).
-        plugin_name: Plugin identifier for the returned PluginResult.
-        target_dir: OpenCode subdirectory.
-        manifest_filename: Manifest file name.
-        noun: Human label ("commands" or "agents").
-        installed_key: Manifest key listing installed names.
+        config: Plugin name, target directory, manifest file name, noun
+            label, and manifest key shared between commands + agents plugins.
         source_finder: Callable returning the source directory if present,
             or None if the plugin had nothing to install.
 
@@ -294,6 +302,12 @@ def verify_with_manifest(
         PluginResult with verification outcome.
     """
     from scripts.install.plugins.base import PluginResult
+
+    plugin_name = config.plugin_name
+    target_dir = config.target_dir
+    manifest_filename = config.manifest_filename
+    noun = config.noun
+    installed_key = config.installed_key
 
     try:
         context.logger.info(f"  \U0001f50e Verifying OpenCode {noun}...")

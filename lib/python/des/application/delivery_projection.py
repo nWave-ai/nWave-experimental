@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from des.application.delivery_state import DeliveryState
+    from des.application.delivery_state import DeliveryState, SelectionView
     from des.application.handover import StoredHandover
     from des.ports.driven_ports.task_invocation_port import DesignFacts
 
@@ -46,8 +46,8 @@ def _carried(state: DeliveryState, position: int) -> str:
     return " · ".join(
         (
             f"design {'bound' if value.design_bound else 'absent'}",
-            f"oracle {'recorded' if value.oracle_recorded else 'absent'}",
-            f"craft {'recorded' if value.craft_recorded else 'absent'}",
+            f"oracle {value.oracle}",
+            f"craft {value.craft}",
         )
     )
 
@@ -58,6 +58,8 @@ def _typed_facts_rows(facts: DesignFacts) -> list[str]:
     supports = ", ".join(f"`{path}`" for path in facts.acceptance_supports)
     verification = "; ".join(" ".join(argv) for argv in facts.verification)
     rows = [
+        "The bound design facts below describe this value's declared acceptance work.",
+        "",
         "| Fact | Value |",
         "| --- | --- |",
         f"| PARADIGM | {facts.paradigm} |",
@@ -71,6 +73,66 @@ def _typed_facts_rows(facts: DesignFacts) -> list[str]:
     rows.append(f"| VERIFICATION | `{verification}` |")
     rows.append("")
     return rows
+
+
+def _command(argv: tuple[str, ...]) -> str:
+    return " ".join(argv)
+
+
+def _selection_rows(selection: SelectionView) -> list[str]:
+    """One value's selected tuple with its source, labelled and never merged.
+
+    Opens with one plain sentence before the table.  A selection whose facts are
+    not derivable says so with the DES HOW and shows what was kept; nothing here
+    is a new authority, every cell is read from the handover.
+    """
+    lines = [
+        "The selected acceptance revision below is the one tuple every role "
+        f"and the verification read; its source is {selection.source}.",
+        "",
+        "| Selected | Value |",
+        "| --- | --- |",
+        f"| SELECTED STATE | {selection.label} |",
+        f"| SELECTED ORACLE | `{selection.oracle}` |",
+    ]
+    if selection.supports:
+        lines.append(
+            "| SELECTED SUPPORTS | "
+            + ", ".join(f"`{path}`" for path in selection.supports)
+            + " |"
+        )
+    if selection.verification is not None:
+        lines.append(
+            "| SELECTED VERIFICATION | "
+            + "; ".join(f"`{_command(argv)}`" for argv in selection.verification)
+            + f" (oracle command index {selection.oracle_verification_index}) |"
+        )
+    lines.append("")
+    if selection.how is not None:
+        lines += [f"Uncertain: repair with `{selection.how}`.", ""]
+    return lines
+
+
+def _evidence_section(state: DeliveryState) -> list[str]:
+    lines = [
+        "## Verification evidence",
+        "",
+        "Each retained native observation is labelled by what it was measured "
+        "over; kept bytes are never deleted, and only one labelled current "
+        "covers the graph as it stands.",
+        "",
+    ]
+    if not state.evidence:
+        return [
+            *lines,
+            "Verification evidence is absent: nothing was verified yet.",
+            "",
+        ]
+    lines += ["| Evidence | State | SHA-256 |", "| --- | --- | --- |"]
+    lines += [
+        f"| `{row.locator}` | {row.label} | `{row.sha256}` |" for row in state.evidence
+    ]
+    return [*lines, ""]
 
 
 def project_markdown(stored: StoredHandover, state: DeliveryState) -> str:
@@ -104,4 +166,8 @@ def project_markdown(stored: StoredHandover, state: DeliveryState) -> str:
             lines += [f"Authority cited: `{authority}`", ""]
         else:
             lines += _typed_facts_rows(authority)
+        selection = state.values[position - 1].selection
+        if selection is not None:
+            lines += _selection_rows(selection)
+    lines += _evidence_section(state)
     return "\n".join(lines)

@@ -5,9 +5,13 @@ model: haiku
 maxTurns: 40
 tools: Read, Glob, Grep, Bash
 skills:
+  - nw-typesafe-system-one
   - nw-code-analysis-port
 ---
 
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- (no universal lens applies to this role)
+<!-- GENERATED:role-skill-loading END -->
 # RCA Review
 
 Review one complete RCA independently and read-only. Never edit the analysis,

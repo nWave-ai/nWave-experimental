@@ -150,3 +150,102 @@ class TestCodexAgentBodyHasCodexSkillPaths:
         assert frontmatter["name"] == "nw-foo"
         # Same right-reason RED anchor: rewrite must have happened.
         assert "~/.claude/skills/" not in parsed["developer_instructions"]
+
+    def test_install_preloads_explicit_skills_once_without_expanding_tools(
+        self, tmp_path, monkeypatch
+    ):
+        """Explicit owned skills are materialized; conditional skills stay reads."""
+        context, agents_source, target = _make_context(tmp_path)
+        _force_codex_present(monkeypatch, target)
+        skills_dir = agents_source.parent / "skills"
+        for name, marker in (
+            ("nw-alpha", "ALPHA KNOWLEDGE"),
+            ("nw-beta", "BETA KNOWLEDGE"),
+        ):
+            skill_dir = skills_dir / name
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                f"---\nname: {name}\ndescription: test\n---\n{marker}\n",
+                encoding="utf-8",
+            )
+        (agents_source / "nw-foo.md").write_text(
+            "---\n"
+            "name: nw-foo\n"
+            "description: Some agent\n"
+            "tools: Read\n"
+            "skills:\n"
+            "  - nw-alpha\n"
+            "  - nw-beta\n"
+            "---\n"
+            "# Role\n"
+            "Invoke Skill(nw-conditional) only when the named condition holds.\n",
+            encoding="utf-8",
+        )
+
+        result = CodexAgentsPlugin().install(context)
+        assert result.success is True
+
+        import tomllib
+
+        body = tomllib.loads((target / "nw-foo.toml").read_text())[
+            "developer_instructions"
+        ]
+        assert body.count("ALPHA KNOWLEDGE") == 1
+        assert body.count("BETA KNOWLEDGE") == 1
+        assert "PRELOADED SKILL START: nw-conditional" not in body
+        assert "~/.agents/skills/nw-conditional/SKILL.md" in body
+        assert str(skills_dir) not in body
+        assert "~/.claude/skills/" not in body
+        assert "Declared tools: Read" in body
+        assert "Write/Edit ->" not in body
+        assert "Bash -> command execution" not in body
+
+    def test_distribution_agents_nw_layout_resolves_owned_skills(
+        self, tmp_path, monkeypatch
+    ):
+        """The wheel-shaped agents/nw layout uses its sibling skills root."""
+        context, _agents_source, target = _make_context(tmp_path)
+        _force_codex_present(monkeypatch, target)
+        dist_root = tmp_path / "dist"
+        source_dir = dist_root / "agents" / "nw"
+        source_dir.mkdir(parents=True)
+        skill_dir = dist_root / "skills" / "nw-alpha"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("DIST KNOWLEDGE\n", encoding="utf-8")
+        (source_dir / "nw-foo.md").write_text(
+            "---\nname: nw-foo\ndescription: Some agent\nskills: [nw-alpha]\n---\n# Role\n",
+            encoding="utf-8",
+        )
+        context.framework_source = dist_root
+
+        result = CodexAgentsPlugin().install(context)
+
+        assert result.success is True
+        import tomllib
+
+        body = tomllib.loads((target / "nw-foo.toml").read_text())[
+            "developer_instructions"
+        ]
+        assert body.count("DIST KNOWLEDGE") == 1
+        assert "~/.agents/skills/nw-alpha/SKILL.md" in body
+        assert str(skill_dir.parent) not in body
+
+    def test_install_refuses_a_missing_declared_skill(self, tmp_path, monkeypatch):
+        """A frontmatter declaration cannot degrade to an incomplete Codex role."""
+        context, agents_source, target = _make_context(tmp_path)
+        _force_codex_present(monkeypatch, target)
+        (agents_source / "nw-foo.md").write_text(
+            "---\n"
+            "name: nw-foo\n"
+            "description: Some agent\n"
+            "skills: [nw-missing]\n"
+            "---\n"
+            "# Role\n",
+            encoding="utf-8",
+        )
+
+        result = CodexAgentsPlugin().install(context)
+
+        assert result.success is False
+        assert "Cannot preload declared skill nw-missing" in result.message
+        assert not (target / "nw-foo.toml").exists()

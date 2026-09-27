@@ -1,0 +1,12 @@
+Take this Request through the applicable nWave waves end to end. Evaluate its
+S/M/L scope, use `des state --repo-root $(pwd -P)` to read durable state, and
+invoke each selected step as `des <step> --repo-root $(pwd -P)`. Read every
+result. Treat `NEXT` as advice: you remain responsible for the route. Preserve
+independent review and source-blind EXAMINE. For a whole feature, write its
+evolution record and FINALIZE after successful integration. If a step refuses,
+use its WHAT, WHY and HOW to repair the blocking fact or return lightweight to
+the responsible upstream wave; never edit a DES-owned handoff by hand.
+
+This Request is a whole feature. Its selected construction route includes
+`des po`, `des design`, `des oracle`, `des craft`, and `des verify`; invoke the
+reviewer and examiner that verification prepares before integration.

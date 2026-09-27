@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
+import shlex
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 from des.domain.architecture_brief_resolver import (
     is_design_oracle_locator,
     is_repository_relative_whole_file_locator,
+    new_target_acceptance_support_conflict,
 )
-from des.ports.driven_ports.task_invocation_port import DesignFacts, DesignTarget
+from des.ports.driven_ports.task_invocation_port import (
+    DesignFacts,
+    DesignTarget,
+    PublicOracle,
+)
 
 
 if TYPE_CHECKING:
@@ -50,10 +58,17 @@ def _path(value: object, name: str) -> str:
     return path
 
 
+_ORACLE_SHAPE = (
+    "a repository-relative DESIGN oracle locator: the whole file "
+    "(`tests/verify_order.py`) or the file with an optional `::selector` "
+    "(`tests/verify_order.py::Class::case`); a `:line` suffix is not accepted"
+)
+
+
 def _oracle(value: object, name: str) -> str:
     locator = _text(value, name)
     if not is_design_oracle_locator(locator):
-        raise DesignDocumentInvalid(f"{name} must be a DESIGN oracle locator")
+        raise DesignDocumentInvalid(f"{name} must be {_ORACLE_SHAPE}")
     return locator
 
 
@@ -229,7 +244,7 @@ def _plain_heading(value: object, name: str) -> str:
 
 _TEXT = _Leaf("non-empty text.", _text)
 _PATH = _Leaf("repository-relative file path.", _path)
-_ORACLE = _Leaf("repository-relative DESIGN oracle locator.", _oracle)
+_ORACLE = _Leaf(f"{_ORACLE_SHAPE}.", _oracle)
 _REUSE_LOCATOR = _Leaf("repository-relative path and positive line.", _reuse_locator)
 _SCHEMA_VERSION = _Leaf(
     "integer `1`.",
@@ -246,8 +261,52 @@ _FAILURE_OUTCOME = _Choice(("Refusal", "Retry", "Indeterminate"))
 
 _TEXTS = _ListOf(_TEXT)
 _PATHS = _ListOf(_PATH, non_empty=False)
-_ARGV = _ListOf(_TEXT, collection="argv list")
-_VERIFICATION = _ListOf(_ARGV)
+
+
+def _argv_token(value: object, name: str) -> str:
+    text = _text(value, name)
+    if "\x00" in text:
+        raise DesignDocumentInvalid(
+            f"{name} must not contain a NUL character: no process can receive it"
+        )
+    return text
+
+
+_ARGV_TOKEN = _Leaf("non-empty text without NUL.", _argv_token)
+#: One argv: tokens may repeat (`-q -q`, `-k a -k b` are real commands).
+_ARGV = _ListOf(_ARGV_TOKEN, collection="argv list", unique=False)
+#: The one public native argv contract: distinct whole argv lists.
+NATIVE_VERIFICATION = _ListOf(_ARGV)
+_VERIFICATION = NATIVE_VERIFICATION
+
+
+def native_verification_defect(verification: object) -> str | None:
+    """The WHAT/WHY/HOW defect of typed native argv lists, or None if valid."""
+    try:
+        NATIVE_VERIFICATION.decode(
+            [list(argv) for argv in verification],  # type: ignore[attr-defined]
+            "verification",
+        )
+    except DesignDocumentInvalid as error:
+        return (
+            f"{error}: every declared native command runs once as text tokens; "
+            "remove the NUL character or the repeated whole argv"
+        )
+    except TypeError as error:
+        return f"verification must be a list of argv lists: {error}"
+    return None
+
+
+_ORACLE_VERIFICATION_INDEX = _Leaf(
+    "non-negative integer.",
+    lambda value, name: (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        else (_ for _ in ()).throw(
+            DesignDocumentInvalid(f"{name} must be a non-negative integer")
+        )
+    ),
+)
 _TARGET = _Product(
     (
         _Field("path", _PATH),
@@ -382,8 +441,234 @@ _MANIFEST = _Product(
         _Field("oracle", _ORACLE),
         _Field("acceptance_supports", _PATHS),
         _Field("verification", _VERIFICATION),
+        _Field("oracle_verification_index", _ORACLE_VERIFICATION_INDEX),
     )
 )
+
+
+_WRAP_WIDTH = 80
+
+#: A word that CommonMark could read as a block start when it opens a line:
+#: a bullet, an ATX heading, a block quote, an ordered-list marker, a fence,
+#: or a setext underline / thematic break made of one repeated character.
+_BLOCK_START = re.compile(
+    r"[-+*]$|#{1,6}$|>|\d{1,9}[.)]$|`{3}|~{3}|=+$|-+$|\*{3,}$|_{3,}$"
+)
+_ORDERED_MARKER = re.compile(r"\d{1,9}(?=[.)]$)")
+_FENCE_RUN = re.compile(r"`{3,}|~{3,}")
+_LINE_BREAKS = re.compile(r"\r\n|\r|\n")
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _code_spans(text: str) -> tuple[tuple[int, int], ...]:
+    """Half-open index ranges of CommonMark backtick code spans in ``text``.
+
+    A backtick run opens a span only when a later run of the same length
+    closes it; an unmatched run is literal.  A backslash outside a span
+    escapes the next character, so an escaped backtick opens nothing.
+    """
+    spans: list[tuple[int, int]] = []
+    index = 0
+    while index < len(text):
+        if text[index] == "\\":
+            index += 2
+            continue
+        if text[index] != "`":
+            index += 1
+            continue
+        run_end = index
+        while run_end < len(text) and text[run_end] == "`":
+            run_end += 1
+        closer = None
+        cursor = run_end
+        while cursor < len(text):
+            if text[cursor] != "`":
+                cursor += 1
+                continue
+            candidate = cursor
+            while candidate < len(text) and text[candidate] == "`":
+                candidate += 1
+            if candidate - cursor == run_end - index:
+                closer = candidate
+                break
+            cursor = candidate
+        if closer is None:
+            index = run_end
+        else:
+            spans.append((index, closer))
+            index = closer
+    return tuple(spans)
+
+
+def _inside(spans: tuple[tuple[int, int], ...], index: int) -> bool:
+    return any(start <= index < end for start, end in spans)
+
+
+def _escape_outside_code(text: str, specials: str) -> str:
+    """Backslash-escape ``specials`` everywhere except inside code spans."""
+    spans = _code_spans(text)
+    return "".join(
+        f"\\{char}" if char in specials and not _inside(spans, index) else char
+        for index, char in enumerate(text)
+    )
+
+
+def _table_cell(text: str) -> str:
+    """One unwrapped table cell: one line, no inline HTML, no cell split.
+
+    GFM splits cells on every unescaped pipe, code spans included, and drops
+    the backslash of an escaped one before inline parsing, so a pipe is
+    escaped everywhere while ``<`` is escaped only outside code spans.
+    """
+    return _escape_outside_code(_LINE_BREAKS.sub(" ", text), "<").replace("|", "\\|")
+
+
+def _neutralized(word: str) -> str:
+    """The same rendered text, escaped so it cannot open a block at line start."""
+    if not _BLOCK_START.match(word):
+        return word
+    if marker := _ORDERED_MARKER.match(word):
+        return f"{marker.group()}\\{word[marker.end() :]}"
+    if fence := _FENCE_RUN.match(word):
+        return "".join(f"\\{char}" for char in fence.group()) + word[fence.end() :]
+    return f"\\{word}"
+
+
+def _wrap(text: str, first: str = "", continuation: str = "") -> list[str]:
+    """Hard-wrap one prose block at whitespace to at most 80 columns.
+
+    Pure and deterministic.  It never breaks inside a word and never
+    hyphenates; a word longer than the width stands alone on its line.  It
+    escapes ``<`` outside code spans and never lets a continuation line open
+    block markup: outside a code span the opening word is escaped, and inside
+    one (where a backslash would be literal) no break is taken there.
+    """
+    escaped = _escape_outside_code(text.strip(), "<")
+    spans = _code_spans(escaped)
+    chunks: list[str] = []
+    cursor = 0
+    for separator in _WHITESPACE.finditer(escaped):
+        word = escaped[cursor : separator.start()]
+        following = _WHITESPACE.split(escaped[separator.end() :], maxsplit=1)[0]
+        cursor = separator.end()
+        in_code = _inside(spans, separator.start())
+        breakable = (
+            separator.group() == " " and not _BLOCK_START.match(following)
+            if in_code
+            else (len(word) - len(word.rstrip("\\"))) % 2 == 0
+        )
+        joint = _LINE_BREAKS.sub(" ", separator.group()) if in_code else " "
+        if not chunks:
+            chunks.append(word)
+        else:
+            chunks[-1] += word
+        if breakable:
+            chunks.append("")
+        else:
+            chunks[-1] += joint
+    if chunks:
+        chunks[-1] += escaped[cursor:]
+    else:
+        chunks.append(escaped[cursor:])
+    lines = [first + chunks[0]]
+    for chunk in chunks[1:]:
+        candidate = f"{lines[-1]} {chunk}"
+        if len(candidate) <= _WRAP_WIDTH:
+            lines[-1] = candidate
+        else:
+            lines.append(continuation + _neutralized(chunk))
+    return lines
+
+
+def _bullets(items: tuple[str, ...]) -> list[str]:
+    """One tight list; continuation lines are indented under the item text."""
+    return [line for item in items for line in _wrap(item, "- ", "  ")]
+
+
+def _fenced(language: str, content: str) -> list[str]:
+    """A fence longer than any backtick run inside, so content never closes it."""
+    longest = max((len(run) for run in re.findall(r"`+", content)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return [f"{fence}{language}", content, fence]
+
+
+@dataclass(frozen=True, slots=True)
+class DesignFactsSection:
+    """The authority section one architect turn's TYPED FACTS alone render.
+
+    The closed-document path renders from a whole human manifest.  A role turn
+    returns :class:`DesignFacts` and nothing else, so this value renders the
+    same `## heading` plus `### ` subsection vocabulary from exactly those
+    fields and INVENTS NOTHING: a field the architect did not return simply has
+    no subsection, because fabricating prose into a human-owned architecture
+    authority is the one thing this projection must never do.
+
+    It is deliberately the same SHAPE the producer already publishes -- a
+    `heading` and a `markdown()` -- so one producer and one law continue to
+    decide what `<document>#<heading>` names.
+    """
+
+    heading: str
+    facts: DesignFacts
+
+    @classmethod
+    def for_locator(cls, locator: str, facts: DesignFacts) -> DesignFactsSection | None:
+        """The section a declared `<document>#<heading>` locator names, or None.
+
+        `None` is "these facts name no renderable section", which is a contract
+        gap between the role and the step: its caller refuses and binds nothing,
+        rather than guessing a heading the role never declared.
+        """
+        _document, separator, heading = locator.partition("#")
+        heading = heading.strip()
+        if not separator or not heading or "\n" in heading or heading.startswith("#"):
+            return None
+        return cls(heading, facts)
+
+    def markdown(self) -> str:
+        lines: list[str] = [f"## {self.heading}", ""]
+        if self.facts.obligations:
+            lines += [
+                "### Constraints",
+                *(f"- {item}" for item in self.facts.obligations),
+                "",
+            ]
+        lines += [
+            "### Targets",
+            "| Path | Decision |",
+            "|---|---|",
+            *(
+                f"| `{target.path}` | {target.decision} |"
+                for target in self.facts.targets
+            ),
+            "",
+            "### Paradigm",
+            self.facts.paradigm,
+            "",
+        ]
+        if self.facts.decisions:
+            lines += [
+                "### Decisions",
+                *(f"- {item}" for item in self.facts.decisions),
+                "",
+            ]
+        if self.facts.acceptance_supports:
+            lines += [
+                "### Acceptance supports",
+                *(f"- `{support}`" for support in self.facts.acceptance_supports),
+                "",
+            ]
+        lines += [
+            "### Oracle and verification",
+            f"Oracle target locator: `{self.facts.oracle}`",
+            f"Oracle verification command index: `{self.facts.oracle_verification_index}`",
+            "",
+            *(
+                f"Verification command: `{' '.join(argv)}`"
+                for argv in self.facts.verification
+            ),
+        ]
+        return "\n".join(lines) + "\n"
 
 
 @dataclass(frozen=True, slots=True)
@@ -398,8 +683,11 @@ class DesignDocument:
     prefactoring: tuple[str, ...]
     agreement_analysis: tuple[object, ...]
     boundaries: tuple[str, ...]
-    public_oracle: tuple[str, str, str, str]
+    public_oracle: PublicOracle
     facts: DesignFacts
+    #: SHA-256 of the complete normalized constructor input, distinct from any
+    #: digest of the rendered Markdown, which is lossy (argv boundaries vanish).
+    semantic_sha256: str = ""
 
     def facts_at(self, authority_locator: str) -> DesignFacts:
         """Return this closed document's facts bound to its durable section.
@@ -418,6 +706,11 @@ class DesignDocument:
         except (json.JSONDecodeError, UnicodeDecodeError) as error:
             raise DesignDocumentInvalid(f"input is not JSON: {error}") from error
         root = _MANIFEST.decode(value, "manifest")
+        semantic_sha256 = hashlib.sha256(
+            json.dumps(
+                root, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
         # Decoding above is the only validation pass.  Everything below is a
         # projection of normalized descriptor values into domain records.
         authority = root["authority"]  # type: ignore[assignment]
@@ -483,12 +776,33 @@ class DesignDocument:
                 boundaries_root["applicability"],  # type: ignore[index]
                 boundaries_root["reason"],  # type: ignore[index]
             )
-        public_oracle = tuple(
+        public_oracle_tuple = tuple(
             root["public_oracle"][key]  # type: ignore[index]
             for key in ("observation", "stimulus", "expected", "falsifier")
         )
+        public_oracle = PublicOracle(*public_oracle_tuple)
         supports = root["acceptance_supports"]
         verification = root["verification"]
+        oracle_verification_index = root["oracle_verification_index"]
+        if oracle_verification_index >= len(verification):
+            raise DesignDocumentInvalid(
+                "manifest.oracle_verification_index must name one declared verification command"
+            )
+        if oracle.partition("::")[0] in supports:
+            raise DesignDocumentInvalid(
+                "manifest.acceptance_supports must not list the oracle's own "
+                f"file, which is never its own support: {oracle.partition('::')[0]}"
+            )
+        conflict = new_target_acceptance_support_conflict(
+            oracle,
+            ((path, decision) for path, decision, _ in targets),
+            supports,
+        )
+        if conflict is not None:
+            raise DesignDocumentInvalid(
+                "a non-oracle CREATE_NEW target cannot also be a required "
+                f"acceptance support: {conflict}"
+            )
         facts = DesignFacts(
             tuple(DesignTarget(path, decision) for path, decision, _ in targets),
             paradigm,
@@ -496,7 +810,9 @@ class DesignDocument:
             oracle,
             supports,
             verification,
+            oracle_verification_index,
             constraints,
+            public_oracle=public_oracle,
         )
         return cls(
             heading,
@@ -511,6 +827,7 @@ class DesignDocument:
             boundaries,
             public_oracle,
             facts,
+            semantic_sha256,
         )
 
     @classmethod
@@ -524,6 +841,114 @@ class DesignDocument:
         )
 
     def markdown(self) -> str:
+        """Render the owned section as Markdown a default markdownlint accepts.
+
+        Every block is separated by exactly one blank line, sub-headings carry
+        the section heading so several sections in one file stay unique, prose
+        is wrapped at 80 columns, and tables and fences are never wrapped.
+        """
+
+        def heading(title: str) -> list[str]:
+            return [f"### {title} ({self.heading})"]
+
+        def table(header: tuple[str, ...], rows: object) -> list[str]:
+            return [
+                "| " + " | ".join(header) + " |",
+                "|" + "---|" * len(header),
+                *(
+                    "| " + " | ".join(_table_cell(cell) for cell in row) + " |"
+                    for row in rows  # type: ignore[attr-defined]
+                ),
+            ]
+
+        blocks: list[list[str]] = [
+            [f"## {self.heading}"],
+            heading("Purpose"),
+            _wrap(self.purpose),
+            heading("Constraints"),
+            _bullets(self.constraints),
+            heading("Targets"),
+            table(
+                ("Path", "Decision", "Reason"),
+                (
+                    (f"`{path}`", decision, reason)
+                    for path, decision, reason in self.targets
+                ),
+            ),
+            heading("Paradigm"),
+            _wrap(self.paradigm),
+            heading("Decisions"),
+            _bullets(self.decisions),
+            heading("Reuse analysis"),
+            table(
+                ("Symbol", "Locator", "Decision", "Reason"),
+                (
+                    (symbol, f"`{locator}`", decision, reason)
+                    for symbol, locator, decision, reason in self.reuse
+                ),
+            ),
+            heading("Prefactoring"),
+        ]
+        if self.prefactoring[0] == "not_applicable":
+            blocks.append(_wrap(f"Not applicable: {self.prefactoring[1]}"))
+        else:
+            blocks += [
+                _wrap(f"Existing oracle: `{self.prefactoring[1]}`"),
+                _wrap(f"Move: {self.prefactoring[2]}"),
+                _wrap(f"Preserved observation: {self.prefactoring[3]}"),
+            ]
+        blocks.append(heading("Agreement analysis"))
+        if self.agreement_analysis[0] == "not_applicable":
+            blocks.append(_wrap(f"Not applicable: {self.agreement_analysis[1]}"))
+        else:
+            blocks.append(
+                table(
+                    ("Contract", "Role", "Locator", "Decision", "Reason"),
+                    (
+                        (contract, role, f"`{locator}`", decision, reason)
+                        for contract, role, locator, decision, reason in self.agreement_analysis[  # type: ignore[misc]
+                            1
+                        ]
+                    ),
+                )
+            )
+        blocks.append(heading("Boundaries"))
+        blocks.append(
+            _wrap(f"Not applicable: {self.boundaries[1]}")
+            if self.boundaries[0] == "not_applicable"
+            else _bullets(self.boundaries[1:])
+        )
+        if self.facts.acceptance_supports:
+            blocks += [
+                heading("Acceptance supports"),
+                _bullets(
+                    tuple(f"`{support}`" for support in self.facts.acceptance_supports)
+                ),
+            ]
+        blocks += [
+            heading("Public oracle"),
+            _wrap(f"Observation: {self.public_oracle.observation}"),
+            _wrap(f"Stimulus: {self.public_oracle.stimulus}"),
+            _wrap(f"Expected: {self.public_oracle.expected}"),
+            _wrap(f"Falsifier: {self.public_oracle.falsifier}"),
+            heading("Oracle and verification"),
+            [
+                *_wrap(f"Oracle target locator: `{self.facts.oracle}`"),
+                f"Oracle verification command index: "
+                f"`{self.facts.oracle_verification_index}`",
+            ],
+        ]
+        for argv in self.facts.verification:
+            blocks += [_wrap("Verification command:"), _fenced("sh", shlex.join(argv))]
+        return "\n\n".join("\n".join(block) for block in blocks) + "\n"
+
+    def legacy_markdown_v1(self) -> str:
+        """Return the frozen pre-lint projection for exact migration proof.
+
+        This is deliberately a historical compatibility projection, not an
+        alternative authoring format.  A migration admits it only when the
+        complete owned section on disk equals these bytes exactly.
+        """
         lines = [
             f"## {self.heading}",
             "",
@@ -600,16 +1025,17 @@ class DesignDocument:
         lines += [
             "",
             "### Public oracle",
-            f"Observation: {self.public_oracle[0]}",
+            f"Observation: {self.public_oracle.observation}",
             "",
-            f"Stimulus: {self.public_oracle[1]}",
+            f"Stimulus: {self.public_oracle.stimulus}",
             "",
-            f"Expected: {self.public_oracle[2]}",
+            f"Expected: {self.public_oracle.expected}",
             "",
-            f"Falsifier: {self.public_oracle[3]}",
+            f"Falsifier: {self.public_oracle.falsifier}",
             "",
             "### Oracle and verification",
             f"Oracle target locator: `{self.facts.oracle}`",
+            f"Oracle verification command index: `{self.facts.oracle_verification_index}`",
             "",
         ]
         lines.extend(
@@ -630,6 +1056,7 @@ class DesignDocument:
             "oracle": facts.oracle,
             "acceptance_supports": list(facts.acceptance_supports),
             "verification": [list(argv) for argv in facts.verification],
+            "oracle_verification_index": facts.oracle_verification_index,
             "obligations": list(facts.obligations),
         }
         if facts.authority_locator:

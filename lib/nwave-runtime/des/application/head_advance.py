@@ -115,6 +115,8 @@ class HeadAdvance:
         destination = self.destination(root)
         if isinstance(destination, AdvanceRefusal):
             return destination
+        if destination == new:
+            return None
         if destination != expected_old:
             return self._stale(new)
         swapped = self.observe(root, "update-ref", "HEAD", new, expected_old)

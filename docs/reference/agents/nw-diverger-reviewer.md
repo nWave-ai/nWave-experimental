@@ -14,3 +14,4 @@ Use as peer reviewer for nw-diverger outputs — validates JTBD rigor, research 
 ## Preloaded skills
 
 - [nw-diverger-review-criteria](../skills/nw-diverger-review-criteria.md) — Review criteria for the nw-diverger-reviewer — validates JTBD rigor, research quality, option diversity, taste application correctness, and recommendation coherence in DIVERGE wave artifacts
+- [nw-typesafe-system-one](../skills/nw-typesafe-system-one.md) — Use Jev System One for every supported, authorized semantic judgment when available: relevance selection, handoff preflight, evidence mapping, finding clustering, and confidence-gated escalation.

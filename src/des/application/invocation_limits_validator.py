@@ -32,6 +32,19 @@ class InvocationLimitsResult:
     guidance: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class _FieldGuidance:
+    """Actionable guidance for one tdd_cycle field, one message per failure mode.
+
+    Attributes:
+        missing: Guidance emitted when the field is absent
+        invalid: Guidance emitted when the field is present but not a positive integer
+    """
+
+    missing: str
+    invalid: str
+
+
 class InvocationLimitsValidator:
     """Validates turn and timeout configuration before sub-agent invocation.
 
@@ -76,16 +89,20 @@ class InvocationLimitsValidator:
         self._validate_positive_int_field(
             tdd_cycle,
             "max_turns",
-            missing_guidance="Add 'max_turns' field to tdd_cycle section with a positive integer value. Example: \"max_turns\": 50",
-            invalid_guidance="Set 'max_turns' to a positive integer value. Typical values: 50 for simple tasks, 100 for complex refactoring",
+            field_guidance=_FieldGuidance(
+                missing="Add 'max_turns' field to tdd_cycle section with a positive integer value. Example: \"max_turns\": 50",
+                invalid="Set 'max_turns' to a positive integer value. Typical values: 50 for simple tasks, 100 for complex refactoring",
+            ),
             errors=errors,
             guidance=guidance,
         )
         self._validate_positive_int_field(
             tdd_cycle,
             "duration_minutes",
-            missing_guidance="Add 'duration_minutes' field to tdd_cycle section with a positive integer value. Example: \"duration_minutes\": 30",
-            invalid_guidance="Set 'duration_minutes' to a positive integer value. Typical values: 30 for simple tasks, 60-120 for complex refactoring",
+            field_guidance=_FieldGuidance(
+                missing="Add 'duration_minutes' field to tdd_cycle section with a positive integer value. Example: \"duration_minutes\": 30",
+                invalid="Set 'duration_minutes' to a positive integer value. Typical values: 30 for simple tasks, 60-120 for complex refactoring",
+            ),
             errors=errors,
             guidance=guidance,
         )
@@ -105,8 +122,7 @@ class InvocationLimitsValidator:
     def _validate_positive_int_field(
         tdd_cycle: dict,
         field_name: str,
-        missing_guidance: str,
-        invalid_guidance: str,
+        field_guidance: _FieldGuidance,
         errors: list[str],
         guidance: list[str],
     ) -> None:
@@ -114,9 +130,9 @@ class InvocationLimitsValidator:
         value = tdd_cycle.get(field_name)
         if value is None:
             errors.append(f"MISSING: {field_name} not configured in step file")
-            guidance.append(missing_guidance)
+            guidance.append(field_guidance.missing)
         elif not isinstance(value, int) or value <= 0:
             errors.append(
                 f"INVALID: {field_name} must be a positive integer (got: {value})"
             )
-            guidance.append(invalid_guidance)
+            guidance.append(field_guidance.invalid)

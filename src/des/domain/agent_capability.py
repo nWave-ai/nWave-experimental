@@ -75,16 +75,32 @@ class ClaimRegister(Enum):
     UNKNOWN = "unknown"
 
 
+#: The ONE owner of the typed reply-channel token set (brief.md §typed reply
+#: channel). A reply-channel token names the SHAPE of a role's answer -- never
+#: a tree permission and never a sandbox grant. Every consumer that used to
+#: hold its own copy of the literal (the Claude adapter's
+#: ``_STRUCTURED_OUTPUT_TOOL``, the Codex adapter's ``_METADATA_CAPABILITIES``,
+#: the Codex installer's capability preamble) reads this set instead, so the
+#: token can never drift out of step between them.
+REPLY_CHANNEL_TOOLS: frozenset[str] = frozenset({"StructuredOutput"})
+
 #: Tools that reach only the running product or the web -- never the tree.
 #: Everything NOT named here (or matching a prefix below) is treated as
 #: source-reaching, so an unrecognised tool can never yield a false absolute.
-_NON_SOURCE_REACHING_TOOLS: frozenset[str] = frozenset(
-    {
-        "WebFetch",
-        "WebSearch",
-        "AskUserQuestion",
-        "TodoWrite",
-    }
+#: The reply-channel tokens are declared in native frontmatter so a provider
+#: emits ``--json-schema structured_output``: they shape the reply's own
+#: schema, never the tree, so declaring one must not move a role's register
+#: off ENFORCED.
+_NON_SOURCE_REACHING_TOOLS: frozenset[str] = (
+    frozenset(
+        {
+            "WebFetch",
+            "WebSearch",
+            "AskUserQuestion",
+            "TodoWrite",
+        }
+    )
+    | REPLY_CHANNEL_TOOLS
 )
 
 #: Tool-name prefixes for the browser-driving MCP servers (the examiner's real
@@ -370,16 +386,25 @@ def resolve_declared_capability(
     a parse failure would answer with a different deployment's copy of the
     spec, i.e. answer a question the caller never asked.
     """
+    # A runtime may qualify a role as ``role#competence`` to select its model.
+    # The qualifier is configuration identity, not an agent filename: both
+    # provider adapters must load the one published base-role specification.
+    # ``qualify_role_id`` rejects ``#`` in either component, so taking the
+    # first component here cannot reinterpret a valid role name.
+    base_agent = agent.partition("#")[0]
+
     if framework_root is not None:
-        framework = framework_root.joinpath(*_CHECKOUT_AGENT_SPEC_PARTS, f"{agent}.md")
+        framework = framework_root.joinpath(
+            *_CHECKOUT_AGENT_SPEC_PARTS, f"{base_agent}.md"
+        )
         if _entry_is_present(framework):
             return _capability_from_spec(framework)
 
-    checkout = repo_root.joinpath(*_CHECKOUT_AGENT_SPEC_PARTS, f"{agent}.md")
+    checkout = repo_root.joinpath(*_CHECKOUT_AGENT_SPEC_PARTS, f"{base_agent}.md")
     if _entry_is_present(checkout):
         return _capability_from_spec(checkout)
 
-    packaged = resolve_packaged_asset(f"nWave/agents/{agent}.md", start=repo_root)
+    packaged = resolve_packaged_asset(f"nWave/agents/{base_agent}.md", start=repo_root)
     if packaged.origin is AssetOrigin.AMBIGUOUS:
         # The caller named a tree whose public role differs from the packaged
         # runtime. Picking a Claude-profile copy after that refusal would hide
@@ -389,7 +414,7 @@ def resolve_declared_capability(
         return _capability_from_spec(packaged.path)
 
     installed_root = claude_dir if claude_dir is not None else _default_claude_dir()
-    legacy = installed_root.joinpath(*_INSTALLED_AGENT_SPEC_PARTS, f"{agent}.md")
+    legacy = installed_root.joinpath(*_INSTALLED_AGENT_SPEC_PARTS, f"{base_agent}.md")
     if _entry_is_present(legacy):
         return _capability_from_spec(legacy)
     return DeclaredCapability.unknown(None)

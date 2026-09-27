@@ -1,0 +1,29 @@
+{
+  "label": "redacted real Codex host evidence",
+  "files": {
+    "rollout-2026-09-21T13-09-25-01a0c3de-f9d5-7932-9831-446c9d2cdad9.jsonl": {
+      "original_sha256": "fe390c90c7e07bfccc78375eb3d5db50bc20cca9168d71559365b4b70b1fb01e",
+      "retained_native_path": "role-boundary-install/clean-profile/.codex/sessions/2026/09/21/rollout-2026-09-21T13-09-25-01a0c3de-f9d5-7932-9831-446c9d2cdad9.jsonl",
+      "retained_native_root": "~/.nwave/recovery/atomic-selected-acceptance-20260921",
+      "extraction_scope": "session_meta plus custom_tool_call, custom_tool_call_output, function_call, function_call_output events; instructions, thinking and messages omitted",
+      "fixture_sha256": "db9e320ebfcea1d3b0bbece1c91aadc2b00414195bf1a50cfb7662080fe45b9f"
+    },
+    "rollout-2026-09-21T13-09-54-01a0c3df-6b49-77e2-b844-af4e8e0593e0.jsonl": {
+      "original_sha256": "6154c7f090faa475c61385cba9008cdcc8024d9b540af4189f0e3af3d8a2c139",
+      "retained_native_path": "role-boundary-install/clean-profile/.codex/sessions/2026/09/21/rollout-2026-09-21T13-09-54-01a0c3df-6b49-77e2-b844-af4e8e0593e0.jsonl",
+      "retained_native_root": "~/.nwave/recovery/atomic-selected-acceptance-20260921",
+      "extraction_scope": "session_meta plus custom_tool_call, custom_tool_call_output, function_call, function_call_output events; instructions, thinking and messages omitted",
+      "fixture_sha256": "a146ff67b3029824f8d57f8a4a3d6697c0899ec862b497b28e17dd14446ec55f"
+    }
+  },
+  "redactions": [
+    [
+      "/home/alexd/.nwave/recovery/atomic-selected-acceptance-20260921",
+      "/redacted/recovery"
+    ],
+    [
+      "/home/alexd",
+      "/redacted/home"
+    ]
+  ]
+}

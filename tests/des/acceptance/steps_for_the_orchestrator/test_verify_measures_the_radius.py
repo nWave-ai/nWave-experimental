@@ -17,8 +17,10 @@ reviewer or examiner to assess.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
+from des.domain.public_observations import WITHHELD
 from tests.des.acceptance.steps_for_the_orchestrator.conftest import (
     accepted_values,
     asked,
@@ -42,6 +44,7 @@ def crafted(root: Path, step) -> None:
     assert (
         step(
             "po",
+            "--project",
             "--repo-root",
             str(root),
             answers=[accepted_values("A")],
@@ -67,7 +70,8 @@ def crafted(root: Path, step) -> None:
                             "decisions": ["one opaque semantic decision"],
                             "oracle": ORACLE,
                             "acceptance_supports": [SUPPORT],
-                            "verification": [["python", "-m", "pytest", ORACLE]],
+                            "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                            "oracle_verification_index": 0,
                         },
                     }
                 }
@@ -164,10 +168,10 @@ def test_the_radius_is_a_primitive_row_on_the_verify_terminal(root: Path, step) 
     assert "consumers=" in radius
 
 
-def test_explicit_role_inputs_receive_the_same_measured_radius(
+def test_reviewer_receives_measured_radius_while_examiner_stays_source_blind(
     root: Path, step, turns: Path
 ) -> None:
-    """The host separately selects role inputs from one measured candidate."""
+    """The host separately selects full review and source-blind EXAMINE inputs."""
 
     crafted(root, step)
     spent = len(asked(turns))
@@ -182,8 +186,8 @@ def test_explicit_role_inputs_receive_the_same_measured_radius(
     reviewer = json.loads(_prepare(root, step, "reviewer", candidate).read_bytes())
     examiner = json.loads(_prepare(root, step, "examiner", candidate).read_bytes())
     assert asked(turns)[spent:] == []
-    assert reviewer["radius"] == examiner["radius"]
     assert "tier=" in reviewer["radius"]
+    assert examiner["radius"] == WITHHELD
 
 
 def test_a_host_recorded_reviewer_finding_is_typed_without_auto_routing(

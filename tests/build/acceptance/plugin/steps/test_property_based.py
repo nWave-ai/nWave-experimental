@@ -88,15 +88,13 @@ def test_property_hook_config_event_keys():
     PostToolUse, 1d5035131's oracle-write hook) must not need a second
     place updated. The retired-ceremony guard below is a SEPARATE, still-
     literal check on purpose: comparing against the SSOT alone would move
-    in lockstep with it and could never catch SessionStart/UserPromptSubmit
-    reappearing IN the SSOT itself.
+    in lockstep with it and could never catch UserPromptSubmit reappearing.
     """
     config = generate_hook_config()
     assert set(config.keys()) == set(HOOK_EVENT_TYPES)
-    # SessionStart and UserPromptSubmit were the session-ceremony anchors
-    # and went with it (22ea19309) -- a reappearance here means the
-    # ceremony came back.
-    assert "SessionStart" not in config
+    # SessionStart is the read-only route notice. UserPromptSubmit was part
+    # of the retired mutable session ceremony and must not return.
+    assert "SessionStart" in config
     assert "UserPromptSubmit" not in config
     # Every event must have at least one entry with a non-empty command
     for event, entries in config.items():

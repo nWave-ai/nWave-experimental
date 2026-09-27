@@ -563,12 +563,51 @@ class NWaveInstaller:
         # platform, and a sentinel byte-diff test cannot observe a READ the
         # way it observes a write. Computed once, for both branches.
         install_root = self._locations.agents_home
-        if "codex" in self.effective_target_platforms:
-            codex_dir = self._locations.codex_config_dir
-            self.backup_manager.backup_root = install_root / ".nwave" / "backups"
+        target_platforms = self.effective_target_platforms
+
+        # Each selected platform gets its own snapshot at its own existing
+        # supported location -- Claude under claude_config_dir/backups, Codex
+        # under install_root/.nwave/backups. A combined selection must run
+        # BOTH, not just whichever branch a prior single-target `if/else`
+        # happened to test first (that earlier shape silently dropped the
+        # Claude snapshot whenever Codex was also selected). Codex-only
+        # isolation is preserved: the Claude branch below only runs when
+        # "claude_code" is actually selected, so a Codex-only invocation
+        # still never touches claude_config_dir.
+        #
+        # `backup_manager` is one shared, mutable object reused across calls
+        # (and across both branches of a single call). Its `backup_root`/
+        # `backup_dir` are therefore rebound EXPLICITLY, from this
+        # invocation's own locations, immediately before each store's use --
+        # never left to whatever a previous call or branch last set. Two
+        # defects this closes: (1) a combined run used to prune retention
+        # only on whichever store the manager's fields pointed to LAST
+        # (Codex, since that branch mutated them after Claude's); (2) a
+        # second `create_backup()` call reusing the same installer used to
+        # find `backup_dir` still redirected to the Codex store by the
+        # previous call, so a Claude-only follow-up call wrote Claude bytes
+        # into the Codex backup tree.
+        backup_type = self.backup_manager.backup_type
+        timestamp = self.backup_manager.timestamp
+        claude_backup_root = self.claude_config_dir / "backups"
+        codex_backup_root = install_root / ".nwave" / "backups"
+
+        if "claude_code" in target_platforms:
+            self.backup_manager.backup_root = claude_backup_root
             self.backup_manager.backup_dir = (
-                self.backup_manager.backup_root
-                / f"nwave-install-{self.backup_manager.timestamp}"
+                claude_backup_root / f"nwave-{backup_type}-{timestamp}"
+            )
+            self.backup_manager.create_backup(dry_run=self.dry_run)
+            if not self.dry_run:
+                self.backup_manager.apply_retention(
+                    max_count=None, nwave_config_dir=install_root / ".nwave"
+                )
+
+        if "codex" in target_platforms:
+            codex_dir = self._locations.codex_config_dir
+            self.backup_manager.backup_root = codex_backup_root
+            self.backup_manager.backup_dir = (
+                codex_backup_root / f"nwave-{backup_type}-{timestamp}"
             )
             self._codex_backup_dir = self.backup_manager.create_codex_backup(
                 skills_dir=install_root / ".agents" / "skills",
@@ -576,13 +615,10 @@ class NWaveInstaller:
                 codex_dir=codex_dir,
                 dry_run=self.dry_run,
             )
-        else:
-            self.backup_manager.create_backup(dry_run=self.dry_run)
-        if self.dry_run:
-            return
-        self.backup_manager.apply_retention(
-            max_count=None, nwave_config_dir=install_root / ".nwave"
-        )
+            if not self.dry_run:
+                self.backup_manager.apply_retention(
+                    max_count=None, nwave_config_dir=install_root / ".nwave"
+                )
 
     def _legacy_codex_dev_candidates(self) -> list[tuple[Path, Path]]:
         """Return only safe, non-manifested legacy dev assets for quarantine.
@@ -1287,6 +1323,18 @@ class NWaveInstaller:
 
         latest_backup = backups[-1]
         self.last_restored_from = latest_backup
+
+        # dry_run must remain non-mutating, symmetrically with
+        # BackupManager.create_backup's own dry_run branch: report the
+        # backup that WOULD be restored from (selection is observable,
+        # `last_restored_from` above is already set) without touching
+        # agents_dir/commands_dir/skills_dir, and without the "complete"
+        # verdict below, which would otherwise claim an actual restoration
+        # never performed.
+        if self.dry_run:
+            self.logger.info(f"  🚨 [DRY RUN] Would restore from {latest_backup}")
+            return True
+
         self.logger.info(f"  ⏳ Restoring from {latest_backup}")
 
         # Remove current installation
@@ -1317,6 +1365,19 @@ class NWaveInstaller:
 
             shutil.copytree(backup_commands, commands_dir)
             self.logger.info("  ✅ Commands restored")
+
+        # Restore skills as an overlay, never a blanket delete: a legacy
+        # backup predating skills/ capture must leave currently-installed
+        # skills untouched, and a skill added independently after the
+        # snapshot (absent from it) must survive restore too.
+        backup_skills = latest_backup / "skills"
+        if backup_skills.exists():
+            import shutil
+
+            skills_dir = self.claude_config_dir / "skills"
+            skills_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(backup_skills, skills_dir, dirs_exist_ok=True)
+            self.logger.info("  ✅ Skills restored")
 
         self.logger.info(f"  🍾 Restoration complete from {latest_backup}")
         return True
@@ -2216,7 +2277,12 @@ def _run_install(args: argparse.Namespace, installer: "NWaveInstaller") -> int:
     # Handle restore mode
     if args.restore:
         if installer.restore_backup():
-            installer.logger.info("  🍾 Restoration completed successfully")
+            if args.dry_run:
+                installer.logger.info(
+                    "  🚨 [DRY RUN] Restoration preview complete -- no files changed"
+                )
+            else:
+                installer.logger.info("  🍾 Restoration completed successfully")
             return 0
         else:
             return 1

@@ -32,6 +32,11 @@ import sys
 from pathlib import Path
 
 from des.application.delivery_steps import DeliverySteps
+from des.cli._document_scope_args import (
+    add_document_scope_arguments,
+    scope_arguments,
+    selected_scope,
+)
 from des.cli._repo_root_arg import add_repo_root_argument
 from des.cli.step_next import moves_after_refusal
 from des.cli.step_terminal import (
@@ -50,12 +55,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--section")
     parser.add_argument("--input")
     parser.add_argument("--replace-current", action="store_true")
+    add_document_scope_arguments(parser)
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+    scope_flags = scope_arguments(args)
     root = resolved_root(args.repo_root)
     if isinstance(root, StepRefusal):
         return refuse(
             root,
-            "des devops --repo-root <root> --authority <doc.md> --section <heading>"
+            f"des devops --repo-root <root> {scope_flags} --authority <doc.md> --section <heading>"
             " -- after the HOW above",
         )
     if args.replace_current and args.input != "-":
@@ -65,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
                 "--replace-current is valid only with --input -",
                 "use --replace-current only with closed v1 input",
             ),
-            "des devops --repo-root <root> --input -",
+            f"des devops --repo-root <root> {scope_flags} --input -",
         )
     if args.input is not None:
         if args.input != "-" or args.authority is not None or args.section is not None:
@@ -73,9 +80,9 @@ def main(argv: list[str] | None = None) -> int:
                 StepRefusal(
                     "InvalidDEVOPSForm",
                     "--input - cannot be combined with --authority or --section",
-                    "use exactly des devops --repo-root ROOT --input -",
+                    f"use des devops --repo-root ROOT {scope_flags} --input -",
                 ),
-                "des devops --repo-root <root> --input -",
+                f"des devops --repo-root <root> {scope_flags} --input -",
             )
         raw = read_request()
         if isinstance(raw, StepRefusal):
@@ -86,10 +93,14 @@ def main(argv: list[str] | None = None) -> int:
                     "OperationalDocumentInput",
                     "provide strict UTF-8 OperationalDocumentInput JSON",
                 ),
-                "des devops --repo-root <root> --input -",
+                f"des devops --repo-root <root> {scope_flags} --input -",
             )
         outcome = DeliverySteps().operational_document(
-            root, raw, replace_current=args.replace_current
+            root,
+            raw,
+            replace_current=args.replace_current,
+            feature=selected_scope(args),
+            project=args.project,
         )
         if not outcome.succeeded:
             return refuse(
@@ -99,11 +110,11 @@ def main(argv: list[str] | None = None) -> int:
                     outcome.failure.how,
                     outcome.disposition,
                 ),
-                "des devops --repo-root <root> --input -",
+                f"des devops --repo-root <root> {scope_flags} --input -",
             )
         return succeed(
             list(outcome.facts),
-            f"des po --repo-root {root} --operational-facts <repository-relative-json>",
+            f"des po --repo-root {root} {scope_flags} --operational-facts <repository-relative-json>",
         )
     if args.authority is None or args.section is None:
         return refuse(
@@ -112,10 +123,12 @@ def main(argv: list[str] | None = None) -> int:
                 "locator-only DEVOPS requires both --authority and --section",
                 "use --authority DOC.md --section HEADING, or --input -",
             ),
-            "des devops --repo-root <root> --input -",
+            f"des devops --repo-root <root> {scope_flags} --input -",
         )
     own = (
-        "des devops --repo-root {root} --authority "
+        "des devops --repo-root {root} "
+        + scope_flags
+        + " --authority "
         + args.authority
         + " --section "
         + repr(args.section)
@@ -123,7 +136,14 @@ def main(argv: list[str] | None = None) -> int:
     request = read_request()
     if isinstance(request, StepRefusal):
         return refuse(request, (own.format(root=root) + " -- after the HOW above",))
-    outcome = DeliverySteps().devops(root, request, args.authority, args.section)
+    outcome = DeliverySteps().devops(
+        root,
+        request,
+        args.authority,
+        args.section,
+        feature=selected_scope(args),
+        project=args.project,
+    )
     if not outcome.succeeded:
         return refuse(
             StepRefusal(
@@ -145,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     return succeed(
         list(outcome.facts),
-        f"des po --repo-root {root} -- one Request on stdin that CITES "
+        f"des po --repo-root {root} {scope_flags} -- one Request on stdin that CITES "
         f"{locator}, so the Product Owner decomposes those constraints into "
         "observable values",
         diagnostic=outcome.diagnostic,

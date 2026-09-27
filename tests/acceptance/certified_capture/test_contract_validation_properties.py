@@ -98,18 +98,33 @@ def _capture_public_port() -> ModuleType:
     return capture
 
 
+# Hoisted out of the dataclass body: a call in a dataclass default is RUF009,
+# and these two are constants rather than per-instance values.
+_DEFAULT_RUN_ID = UUID("12345678-1234-5678-1234-567812345678")
+_DEFAULT_STARTED_AT = datetime(2026, 8, 5, tzinfo=UTC)
+
+
+@dataclasses.dataclass(frozen=True)
+class _RunAttempt:
+    """Which attempt of which run a manifest describes, and when it started."""
+
+    run_id: UUID = _DEFAULT_RUN_ID
+    attempt_no: int = 1
+    started_at: datetime = _DEFAULT_STARTED_AT
+
+
 def _valid_manifest(
     capture: ModuleType,
     *,
     identifier: str = "case-1",
     digest: str = "a" * 64,
-    run_id: UUID = UUID("12345678-1234-5678-1234-567812345678"),
-    attempt_no: int = 1,
-    started_at: datetime = datetime(2026, 8, 5, tzinfo=UTC),
+    attempt: _RunAttempt = _RunAttempt(),
 ) -> Any:
+    run_id = attempt.run_id
+    started_at = attempt.started_at
     capture.TaskCaseContractRef(identifier, digest, digest, digest, digest)
     study = capture.StudyRef("study-1", digest, "current-des")
-    run = capture.RunRef(run_id, attempt_no, study)
+    run = capture.RunRef(run_id, attempt.attempt_no, study)
     root = capture.PartitionRef("root", run_id, "host-1", "host")
     semantics = capture.UsageObservationSemantics(
         "anthropic", "v1", capture.UsageObservationMode.CUMULATIVE_SNAPSHOT, "max-v1"
@@ -338,9 +353,9 @@ def test_external_harness_constructs_immutable_coherent_capture_manifest(
         capture,
         identifier=identifier,
         digest=digest,
-        run_id=run_id,
-        attempt_no=attempt_no,
-        started_at=started_at,
+        attempt=_RunAttempt(
+            run_id=run_id, attempt_no=attempt_no, started_at=started_at
+        ),
     )
     mode_members = {
         name: member.value

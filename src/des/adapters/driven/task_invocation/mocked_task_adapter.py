@@ -51,6 +51,7 @@ class MockedTaskAdapter(TaskInvocationPort):
         cwd: Path,
         max_product_values: int | None = None,
         defect_values: tuple[str, ...] = (),
+        semantic_task: str | None = None,
     ) -> ModelRun:
         """Return the next scripted run, recording the request that asked for it."""
         self.invocation_count += 1

@@ -58,6 +58,7 @@ PUBLIC_SHARED_SKILLS: frozenset[str] = frozenset(
         # hook spine directly, not via any owning public agent's frontmatter
         # skills list -- same load-bearing pattern as above.
         "nw-auto",
+        "nw-role-invocation",
         "nw-jtbd-core",
         "nw-jtbd-interviews",
         "nw-jtbd-opportunity-scoring",
@@ -90,6 +91,10 @@ PUBLIC_SHARED_SKILLS: frozenset[str] = frozenset(
         "nw-spike-methodology",
         "nw-speculative-dispatch",
         "nw-tdd-cross-language",
+        # Optional remote System One methodology, available to every installed
+        # host but never preloaded into a role. It is used by default when its
+        # API key is available and falls back locally when it is not.
+        "nw-typesafe-system-one",
         # Decomposed command-design-patterns modules (2026-06-17): the public
         # core nw-command-design-patterns (load-bearing for the public
         # agent-builder via *optimize-command) composes these via its loading
@@ -362,6 +367,12 @@ def _add_role_skill_registry_ownership(
     if not isinstance(roles, dict):
         return
 
+    global_on_demand = registry.get("global_on_demand")
+    if global_on_demand is None:
+        global_on_demand = {}
+    if not isinstance(global_on_demand, dict):
+        return
+
     for role_name, entry in roles.items():
         if not isinstance(role_name, str) or not isinstance(entry, dict):
             continue
@@ -379,6 +390,18 @@ def _add_role_skill_registry_ownership(
         if isinstance(catalog_only, list):
             skills.extend(v for v in catalog_only if isinstance(v, str))
         for skill in skills:
+            skill_key = skill if skill.startswith("nw-") else f"nw-{skill}"
+            ownership.setdefault(skill_key, set()).add(owner)
+
+    # Global on-demand lenses are rendered into every shipped agent, including
+    # older roles that have no role-specific registry entry.  Their ownership
+    # must use the same complete population or the public strip can preserve a
+    # skill while the loaded-but-unowned validator still reports drift.
+    for agent_file in sorted(agents_dir.glob("nw-*.md")):
+        owner = agent_file.stem.removeprefix("nw-")
+        for skill in global_on_demand:
+            if not isinstance(skill, str):
+                continue
             skill_key = skill if skill.startswith("nw-") else f"nw-{skill}"
             ownership.setdefault(skill_key, set()).add(owner)
 

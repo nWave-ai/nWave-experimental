@@ -373,7 +373,7 @@ def test_running_every_step_for_real_starts_no_des_process_and_re_enters_nothing
     invocations = {
         "state": ["--repo-root", str(root)],
         "project": ["--repo-root", str(root), "--html", str(tmp_path / "p.html")],
-        "po": ["--repo-root", str(root)],
+        "po": ["--repo-root", str(root), "--project"],
         "design": ["--repo-root", str(root), "--value", "1"],
         "oracle": ["--repo-root", str(root), "--value", "1"],
         "craft": ["--repo-root", str(root), "--value", "1"],

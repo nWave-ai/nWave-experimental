@@ -17,6 +17,7 @@ Extracted from claude_code_hook_adapter.py as part of P4 decomposition (step 4a)
 import json
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from des.adapters.driven.logging.jsonl_audit_log_writer import JsonlAuditLogWriter
 from des.adapters.driven.time.system_time import SystemTimeProvider
@@ -226,15 +227,29 @@ def log_hook_invoked(
         pass  # Diagnostic logging must never break the hook
 
 
+@dataclass(frozen=True)
+class HookCompletion:
+    """The completion event itself: what happened and how long it took."""
+
+    hook_id: str
+    handler: str
+    exit_code: int
+    decision: str
+    duration_ms: float
+
+
+@dataclass(frozen=True)
+class TaskAccounting:
+    """Optional task-lifecycle accounting linked to a HOOK_COMPLETED event."""
+
+    task_correlation_id: str | None = None
+    turns_used: int | None = None
+    tokens_used: int | None = None
+
+
 def log_hook_completed(
-    hook_id: str,
-    handler: str,
-    exit_code: int,
-    decision: str,
-    duration_ms: float,
-    task_correlation_id: str | None = None,
-    turns_used: int | None = None,
-    tokens_used: int | None = None,
+    completion: HookCompletion,
+    accounting: TaskAccounting | None = None,
     *,
     audit_writer_factory: AuditWriterFactory | None = None,
 ) -> None:
@@ -244,34 +259,32 @@ def log_hook_completed(
     Wrapped in try/except so logging never breaks the hook.
 
     Args:
-        hook_id: UUID4 correlation ID matching the HOOK_INVOKED event.
-        handler: Name of the handler that completed.
-        exit_code: Process exit code (0=allow, 1=error, 2=block).
-        decision: Human-readable decision string.
-        duration_ms: Wall-clock duration of the handler in milliseconds.
-        task_correlation_id: Optional UUID4 linking events across the DES task lifecycle.
-        turns_used: Optional number of turns used by the subagent.
-        tokens_used: Optional number of tokens used by the subagent.
+        completion: The completion event (hook_id, handler, exit_code,
+            decision, duration_ms).
+        accounting: Optional task-lifecycle accounting (task_correlation_id,
+            turns_used, tokens_used), linking events across the DES task
+            lifecycle.
         audit_writer_factory: Callable returning an AuditLogWriter.
     """
     try:
         factory = audit_writer_factory or _audit_writer_factory
         audit_writer = factory()
         data: dict = {
-            "hook_id": hook_id,
-            "handler": handler,
-            "exit_code": exit_code,
-            "decision": decision,
-            "duration_ms": duration_ms,
+            "hook_id": completion.hook_id,
+            "handler": completion.handler,
+            "exit_code": completion.exit_code,
+            "decision": completion.decision,
+            "duration_ms": completion.duration_ms,
         }
-        if duration_ms > SLOW_HOOK_THRESHOLD_MS:
+        if completion.duration_ms > SLOW_HOOK_THRESHOLD_MS:
             data["slow_hook"] = True
-        if task_correlation_id is not None:
-            data["task_correlation_id"] = task_correlation_id
-        if turns_used is not None:
-            data["turns_used"] = turns_used
-        if tokens_used is not None:
-            data["tokens_used"] = tokens_used
+        if accounting is not None:
+            if accounting.task_correlation_id is not None:
+                data["task_correlation_id"] = accounting.task_correlation_id
+            if accounting.turns_used is not None:
+                data["turns_used"] = accounting.turns_used
+            if accounting.tokens_used is not None:
+                data["tokens_used"] = accounting.tokens_used
         audit_writer.log_event(
             AuditEvent(
                 event_type="HOOK_COMPLETED",

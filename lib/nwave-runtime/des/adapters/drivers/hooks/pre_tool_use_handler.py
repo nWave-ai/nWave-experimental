@@ -29,6 +29,8 @@ from des.adapters.drivers.hooks.bash_command_guards import (
 from des.adapters.drivers.hooks.hook_protocol import (
     EXIT_CODE_TO_DECISION,
     STDERR_CAPTURE_MAX_CHARS,
+    HookCompletion,
+    TaskAccounting,
     log_hook_completed,
     log_hook_error,
     log_hook_invoked,
@@ -354,10 +356,12 @@ def handle_pre_tool_use() -> int:
         duration_ms = (time.perf_counter_ns() - start_ns) / 1_000_000
         decision_str = EXIT_CODE_TO_DECISION.get(exit_code, "error")
         log_hook_completed(
-            hook_id=hook_id,
-            handler="pre_tool_use",
-            exit_code=exit_code,
-            decision=decision_str,
-            duration_ms=duration_ms,
-            task_correlation_id=task_correlation_id,
+            HookCompletion(
+                hook_id=hook_id,
+                handler="pre_tool_use",
+                exit_code=exit_code,
+                decision=decision_str,
+                duration_ms=duration_ms,
+            ),
+            TaskAccounting(task_correlation_id=task_correlation_id),
         )

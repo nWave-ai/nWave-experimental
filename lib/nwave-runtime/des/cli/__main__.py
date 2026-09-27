@@ -173,6 +173,13 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # (InFlight/Completed/Indeterminate) and planned action
     # (Upcast/PreserveHistory/Indeterminate), writing nothing.
     _SubcommandRow("update", "des.cli.update", "main"),
+    # The EXECUTABLE agreement crossing: run the declared producer for real,
+    # carry the artifact it actually wrote to the ONE declared consumer, and
+    # report that consumer's own exit code as acceptance. Nothing on this path
+    # reads source, an import graph or a syntax tree, so a green verdict cannot
+    # be produced by a crossing that carried nothing. This row is the whole
+    # public surface of that value -- no second surface advertises it.
+    _SubcommandRow("verify-agreement", "des.cli.verify_agreement", "main"),
 )
 
 

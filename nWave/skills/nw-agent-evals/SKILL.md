@@ -26,7 +26,8 @@ Use both: `nw-agent-testing` to vet the spec, `nw-agent-evals` to watch behavior
 One eval = **prompt -> run -> checks -> score**.
 
 - **prompt** — a single input that should (or should NOT) trigger the agent/skill.
-- **run** — one dispatch via the Claude Code `Agent` tool, with its trace + artifacts captured.
+- **run** — one provider turn through the selected nWave adapter, with its
+  available native evidence and artifacts captured.
 - **checks** — a small set of targeted assertions (not one monolithic check).
 - **score** — a comparable number you can track across runs to catch regressions.
 
@@ -41,7 +42,7 @@ Write the success criteria FIRST, before implementing the agent/skill or its eva
 | Category | Question | Graded by |
 |---|---|---|
 | OUTCOME | Did the task get completed through its public effect or provider-enforced semantic outcome? | deterministic |
-| PROCESS | Was the right skill loaded + the expected tool/step sequence run? | deterministic |
+| PROCESS | Was required skill delivery or use evidenced, with only behavior-relevant tool observations? | deterministic |
 | STYLE | Does the output respect nWave conventions (sections, format)? | model-graded |
 | EFFICIENCY | No useless commands / no token blowup? | deterministic |
 
@@ -51,27 +52,46 @@ If you cannot state DoD before writing the skill, the skill's job is not yet def
 
 Run these steps in order:
 
-1. **Define success first** — write the DoD (4 categories above) as concrete checks. Gate: every check is falsifiable.
-2. **Manual trigger probe** — dispatch the agent once by hand to surface hidden assumptions. Gate: you have seen one real trace.
-3. **Build the dataset** — 10-20 prompts in a CSV (see Dataset). Include explicit-invocation, implicit-from-description, contextual, and NEGATIVE-CONTROLS (`should_trigger=false`). Gate: >=2 negative controls present.
-4. **Deterministic grading** — parse the provider-owned trace (JSONL) -> assert on tools run, files created, step sequence and public effects. Never parse model terminal prose. Gate: grader runs with zero human judgement.
-5. **Qualitative grading** — use provider-enforced structured output for the ephemeral STYLE/quality result. Keep narrative feedback diagnostic and unparsed; never ask the grader to print a JSON/YAML grammar. Gate: the adapter validates the provider result.
-6. **Grow coverage from failures** — every real failure/manual fix becomes one new eval row. Gate: regression net only grows from observed gaps, never speculatively.
+1. **Define success first** — write a small set of falsifiable checks in the
+   four categories above.
+2. **Use one representative probe when needed** — capture the provider-native
+   evidence that the selected adapter actually exposes.
+3. **Add only the cases needed** — include a positive case and a relevant
+   negative control; grow the set from observed failures.
+4. **Grade deterministic evidence** — check public effects, admitted tool
+   evidence, and structured artifacts. Do not derive a verdict from terminal
+   prose.
+5. **Grade semantic quality separately** — use the provider-enforced structured
+   result and retain narrative feedback only as diagnostic evidence.
 
-## Capturing the trace (nWave mechanism)
+## Capturing provider evidence
 
-nWave does NOT use `codex exec` — agents are dispatched via the Claude Code **`Agent` tool** (`subagent_type`, `prompt`); resume a spawned agent with **`SendMessage`**. The run is captured from the sub-agent's transcript (the `agent-*.jsonl` files in the transcript dir), which already exists:
+The selected adapter owns the provider projection. Claude roles run through
+the Claude adapter; Codex roles run through the Codex adapter's `codex exec`
+projection. Do not substitute one provider's trace shape, tool names, or
+launcher for the other's.
 
-- **Transcript JSONL** — each sub-agent run writes a JSONL transcript; the hook payload exposes its path as `agent_transcript_path` (the same field `src/des/.../hooks/skill_tracking_hooks.py:maybe_track_skill_loads` and `deliver_progress_handler.py` already consume). Each line is one event: `tool_use` (name + input), `tool_result`, assistant text.
-- **What to parse from it**:
-  - skill loaded? -> `Read` tool_use whose path matches `skills/.../SKILL.md` (this is exactly what `skill_tracking_hooks` scans for).
-  - expected tools run? -> tool_use `name` values (e.g. a `Bash` call running `des code-fact` present, `Grep` alone absent).
-  - files created? -> `Write`/`Edit` tool_use inputs + the artifact on disk.
-  - sequence? -> ordered list of tool_use names.
-- **Final message** — the agent's last assistant message is diagnostic input for qualitative review only; no deterministic grader parses its headings, fields, JSON or verdict strings.
-- **Artifacts** — any file the agent wrote (ADR, review, design doc) is graded by existence + structure.
+Distinguish these three facts when evaluating a skill:
 
-Capture pattern: dispatch via `Agent`, then read the transcript path + the on-disk artifacts. For a one-off eval you can dispatch and inspect the returned final message + written files directly; for a tracked net, persist the transcript alongside the dataset row.
+| Fact | Evidence | What it establishes |
+|---|---|---|
+| **Preloaded knowledge** | The role declares the skill in frontmatter and `load_role_instructions` materializes it in the provider instruction. | The role received the skill before the turn. It creates no native `Read` event. |
+| **Native read** | A provider-native tool event reads a conditional `SKILL.md` path. Claude's existing transcript tracker records this form. | The turn fetched that file on demand. It does not prove that the knowledge affected the result. |
+| **Actual use** | A predicted, observable effect or a capability-specific tool/result is present, with no simpler explanation. | The role applied the skill sufficiently for this eval. A catalog entry, preload, or `Read` alone is insufficient. |
+
+The adapter returns a provider-enforced structured terminal result for semantic
+facts. Its stdout, stderr, recorder entry, and any provider-native tool trace
+are provenance or diagnostic evidence; do not parse model-authored prose into
+control flow. For a Claude subagent transcript, reuse
+`des.application.skill_tracking_service.read_transcript_tool_calls` rather
+than creating another JSONL parser. For Codex, inspect only the JSONL events and recorder evidence
+that its adapter preserves. If the required observation is absent on the
+selected provider, report that check as **INDETERMINATE**; do not infer it from
+another projection.
+
+Check an artifact on disk as well as its reported tool event. Only ask for a
+tool when the behavior requires it. Tool order and an exact command sequence
+are not general quality signals.
 
 ## Deterministic graders (nWave-native signals)
 
@@ -79,13 +99,13 @@ Parse the trace, assert mechanically. nWave-specific, high-value signals:
 
 | Signal | Assertion | Why it matters |
 |---|---|---|
-| Right skill loaded | `Read` of the expected `SKILL.md` appears | skill that is catalogued but never loaded = inferior output |
-| Code analysis via CLI, not grep | a `des code-fact query.<capability>` Bash call with JSON parse present, `Grep`-only absent | the standing CLI-first preference (degrade-LOUD if AST unavailable). Eval must inspect the JSON envelope: provider + confidence labels in the agent's answer, not raw tool names. |
-| Semantic outcome observed | provider-enforced ephemeral outcome plus the required public effect are present; final prose is not parsed | separates semantic judgement from control-plane serialization |
-| Gate respected | no bypass marker; expected gate/step trailer present | off-spine dispatch guard |
-| Artifact structure | required sections present (grep the written file) | OUTCOME completeness |
-| Efficiency | tool_use count within a ceiling; no redundant re-reads | token economy |
-| Negative control | for `should_trigger=false`, the skill/tool was NOT invoked | guards against over-eager invocation |
+| Declared preload | resolved role instruction contains the declared skill once | verifies delivery of resident knowledge, not its use |
+| Conditional read | native `Read` event for the resolved skill path, where the provider exposes one | verifies on-demand fetch, not semantic use |
+| Capability-specific behavior | required public effect or justified tool/result is present | tests actual application of the skill |
+| Semantic outcome observed | provider-enforced outcome plus the required public effect are present | separates semantic judgement from terminal serialization |
+| Artifact structure | the DES-produced document contains required sections and facts | checks durable outcome without asking the model to author it |
+| Efficiency | compare only a measured, relevant excess such as duplicate calls | avoids arbitrary ceilings |
+| Negative control | the unsupported behavior or unnecessary skill effect is absent | guards against over-eager invocation |
 
 Bind to the code-fact CLI where useful: e.g. assert the agent invoked `des code-fact query.callers-of` rather than relying on a catalog entry (catalogued != wired). Note that feature-level change-scope analysis has no stable CLI today — an eval must not demand a capability the production CLI does not expose, or it grades the tooling rather than the agent.
 
@@ -108,22 +128,29 @@ the prompt or parse terminal prose. Narrative notes remain diagnostic.
 }
 ```
 
-Rules: small rubric (3-7 checks), each check single-purpose, `notes` cites evidence. Provider-validate the structured result so an invalid grading turn fails closed rather than passing on vibes.
+Rules: keep the rubric small, make each check single-purpose, and have
+`notes` cite evidence. Provider-validate the structured result so an invalid
+grading turn fails closed rather than passing on vibes.
 
-When the behavior under eval produces a DES handover, the eval crosses the real
-boundary: competency -> existing CLI/software producer -> one whole-Request
-handover containing the ordered value graph -> downstream consumer -> one
-fan-in. Perfect fake `*-RESULT` strings, per-value contracts, and per-slice
-review/finalization are not delivery evidence.
+When behavior under eval supplies a DESIGN decision, the LLM returns semantic
+facts in its structured result. DES constructs the durable document through
+its existing producer from those facts. Evaluate the boundary as two linked
+observations: facts are valid for the request, then the DES-produced document
+contains them. The LLM does not author a durable ADR or brief.
+
+For an EXAMINE eval, preserve the source-blind boundary. Give the examiner the
+available observation packet, not source access; an absent observation remains
+**INDETERMINATE** rather than becoming an inferred pass or failure.
 
 ## Dataset
 
-10-20 rows, CSV, small on purpose. Minimum columns:
+Use the smallest CSV dataset that covers the observed positive behavior and a
+relevant negative control. Minimum columns:
 
 ```csv
-id,prompt,should_trigger,expected_skill,expected_tools,expected_artifact,notes
-ev-01,"Design the ADR for X",true,nw-design-patterns,"Write",docs/.../adr-*.md,explicit
-ev-07,"Just fix this typo",false,,,,"negative control - architect must not fire"
+id,prompt,should_trigger,expected_skill,expected_observation,notes
+ev-01,"Provide semantic design facts for X",true,nw-design-patterns,"accepted facts; DES producer constructs durable document",explicit
+ev-07,"Just fix this typo",false,,,"negative control - no design facts"
 ```
 
 - Mix: explicit-invocation, implicit-from-description (does `description` alone trigger it?), contextual, and NEGATIVE-CONTROLS (`should_trigger=false`).
@@ -140,7 +167,9 @@ tests/evals/<agent-or-skill-name>/
   runs/                # captured transcripts + scores per run (gitignored or pruned)
 ```
 
-`tests/evals/` (sibling to the 5-layer suite), NOT `docs/` — these are executable, not documentation. Keep `runs/` out of the committed bloat; commit the dataset + rubric + scores, not raw transcripts.
+Reuse the existing `tests/evals/` facility; do not create a new general
+harness. Keep raw provider records out of committed bloat unless a test needs a
+small, scrubbed fixture.
 
 ## Principles
 
@@ -154,24 +183,31 @@ tests/evals/<agent-or-skill-name>/
 
 ## Example: eval for `nw-solution-architect`
 
-DoD — dispatching the architect on a design prompt must produce a structured ADR via the right skill, using the `des code-fact` CLI for code facts.
+DoD — the architect returns valid semantic design facts for a design request.
+When structural code facts are necessary and the role can obtain them, they
+are provider-labelled and support the decision. DES then constructs the ADR;
+the architect never authors it.
 
 Dataset rows (excerpt):
 
 ```csv
-id,prompt,should_trigger,expected_skill,expected_tools,expected_artifact,notes
-sa-01,"Design architecture for the handoff-state-algebra feature; write the ADR",true,nw-design-patterns,"Bash:des code-fact query.callers-of,Write","docs/**/adr-*.md",explicit design
-sa-02,"What ADRs exist for the gate layer?",true,,"Bash:des code-fact query.adr-section,Read,Glob",,implicit code-fact lookup via query.adr-section
-sa-03,"Rename this variable to camelCase",false,,,,negative control - not an architecture task
+id,prompt,should_trigger,expected_skill,expected_observation,notes
+sa-01,"Provide design facts for the handoff-state-algebra feature",true,nw-design-patterns,"accepted facts; DES-produced ADR contains the facts",design
+sa-02,"What ADRs exist for the gate layer?",true,,"provider-labelled code facts support the answer when code facts are needed",lookup
+sa-03,"Rename this variable to camelCase",false,,,negative control - not an architecture task
 ```
 
 Deterministic grader (over the captured trace + artifact):
 
-- PROCESS: `Read` of `nw-design-patterns/SKILL.md` present.
-- PROCESS: structural code facts came from `des code-fact query.<capability>`, NOT `Grep`/`Bash grep`.
-- OUTCOME: an `adr-*.md` was `Write`-n and on disk.
-- OUTCOME: artifact contains the required ADR sections (`## Context`, `## Decision`, `## Consequences`).
-- NEGATIVE (sa-03): architect did not author an ADR.
+- DELIVERY: the role's resolved instruction contains the declared preload once;
+  a conditional native read is checked only when this case requires it.
+- OUTCOME: the provider-enforced result has valid semantic facts for the
+  requested decision.
+- OUTCOME: the existing DES producer constructs an ADR that contains those
+  facts and required sections (`## Context`, `## Decision`, `## Consequences`).
+- EVIDENCE: when structural analysis is necessary, its provider and confidence
+  labels support the decision; do not demand a fixed shell spelling or order.
+- NEGATIVE (sa-03): no architecture facts or durable-design production occurs.
 
 Model-graded rubric (STYLE/quality):
 
@@ -187,4 +223,7 @@ Model-graded rubric (STYLE/quality):
 }
 ```
 
-Score = deterministic checks (binary, weighted) + rubric `score`, tracked per run. A drop on `code-fact-cli-not-grep` or `adr-sections-present` flags a behavioral regression before it ships.
+Score = deterministic checks (binary, weighted) + rubric `score`, tracked per
+comparable run. A missing required fact, DES document, or relevant supporting
+observation flags a regression; unavailable evidence is reported as
+**INDETERMINATE**.

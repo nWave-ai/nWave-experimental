@@ -79,6 +79,41 @@ def test_manual_ci_defaults_to_the_economical_matrix_and_keeps_full_opt_in() -> 
     }
 
 
+def test_ci_retains_duration_records_without_making_them_a_gate() -> None:
+    workflow = _workflow()
+    jobs = workflow["jobs"]
+    assert isinstance(jobs, dict)
+    test_job = jobs["test"]
+    assert isinstance(test_job, dict)
+    pytest_step = next(
+        step
+        for step in test_job["steps"]
+        if step.get("name") == "Run pytest test suite (excludes e2e — gated separately)"
+    )
+    assert "NWAVE_TEST_DURATIONS_FILE" in pytest_step["env"]
+
+    upload = next(
+        step
+        for step in test_job["steps"]
+        if step.get("name") == "Upload per-shard test durations"
+    )
+    assert upload["if"] == "always()"
+    assert upload["with"]["include-hidden-files"] is True
+    assert ".nwave/test-durations-*.jsonl" in upload["with"]["path"]
+
+    report = jobs["test-duration-report"]
+    assert report["needs"] == ["test"]
+    assert report["if"] == "always()"
+    assert "test-duration-report" not in jobs["ci-success"]["needs"]
+    report_run = next(
+        step["run"]
+        for step in report["steps"]
+        if step.get("name") == "Consolidate and publish ordered report"
+    )
+    assert "scripts/test_durations_report.py" in report_run
+    assert "serial-equivalent" in report_run
+
+
 def test_worktree_topology_job_runs_exact_audited_contract_without_heavy_artifacts() -> (
     None
 ):

@@ -44,6 +44,51 @@ def test_report_truncates_long_lists():
     assert f"and {5} more" in out
 
 
+def test_slack_report_points_to_the_full_list_when_truncated():
+    findings = [_f(Severity.WARNING, i) for i in range(MAX_LISTED + 5)]
+    out = format_report(findings, run_url="https://ci/run/1")
+    assert "full list in the run summary" in out
+
+
+def test_full_report_lists_every_finding():
+    # Regression: "View full run" only ever showed the capped Slack text, so
+    # findings past MAX_LISTED were visible nowhere.
+    from scripts.reports.docs_link_report import format_full_report
+
+    errors = [_f(Severity.ERROR, i) for i in range(MAX_LISTED + 5)]
+    warnings = [_f(Severity.WARNING, i) for i in range(100, 100 + MAX_LISTED + 5)]
+    out = format_full_report(errors + warnings)
+    assert f"{len(errors)} error(s), {len(warnings)} warning(s)" in out
+    for f in errors + warnings:
+        assert f"`{f.file}:{f.line}`" in out
+    assert "more" not in out
+
+
+def test_full_report_clean_is_healthy():
+    from scripts.reports.docs_link_report import format_full_report
+
+    assert "all links healthy" in format_full_report([])
+
+
+def test_main_writes_every_finding_to_the_run_summary_and_the_log(
+    tmp_path, monkeypatch, capsys
+):
+    from scripts.reports import docs_link_report
+
+    findings = [_f(Severity.WARNING, i) for i in range(MAX_LISTED + 5)]
+    monkeypatch.setattr(docs_link_report, "run_check", lambda _root: findings)
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+
+    assert docs_link_report.main() == 0
+    written = summary.read_text(encoding="utf-8")
+    logged = capsys.readouterr().out
+    for f in findings:
+        assert f"`{f.file}:{f.line}`" in written
+        assert f"`{f.file}:{f.line}`" in logged
+
+
 def test_run_check_constructs_options_and_runs(tmp_path, monkeypatch):
     # Regression: run_check must build Options with valid kwargs and not crash.
     # Force the network canary offline so the test stays hermetic.

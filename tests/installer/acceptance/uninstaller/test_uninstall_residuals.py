@@ -39,6 +39,14 @@ pytestmark = pytest.mark.xdist_group("installer_walking_skeleton")
 _USER_SUBAGENT_START_COMMAND = "python3 -m operator_tools.subagent_start --audit"
 _USER_SUBAGENT_START_SIBLING_COMMAND = "/opt/operator/notify.sh subagent-start"
 
+# The installer's own SessionStart command, written under a different
+# interpreter path than this run would produce -- removal must be structural,
+# not equality against a freshly generated command string.
+_DES_SESSION_START_COMMAND = (
+    "PYTHONPATH=/anywhere/lib/python python3 -m "
+    "des.adapters.drivers.hooks.claude_code_hook_adapter session-start"
+)
+
 
 def _apply_patches(
     original_logger_init, claude_config_dir, opencode_config_dir, home_dir
@@ -188,6 +196,18 @@ def post_uninstall_state(tmp_path_factory) -> dict:
                     {"type": "command", "command": "python3 -m lyra.session_start"}
                 ]
             },
+            # The installer's OWN SessionStart command. Overwriting this array
+            # wholesale used to drop it before uninstall ever saw it, leaving
+            # this suite blind to a residual entry that points at the deleted
+            # lib/python/des and fails every later session start.
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": _DES_SESSION_START_COMMAND,
+                    }
+                ]
+            },
             {
                 "hooks": [
                     {
@@ -324,6 +344,36 @@ class TestUninstallResiduals:
             "# des-hook:orchestrator-affordance-refresh-standalone\n"
             "python3 /opt/operator/session_start.py --keep",
         ]
+
+    def test_real_uninstall_removes_the_installer_owned_session_start_hook(
+        self, post_uninstall_state
+    ):
+        """No installer-owned SessionStart command survives uninstall.
+
+        A surviving entry points at the lib/python/des the same uninstall
+        deleted, so every later session start runs a dangling command that
+        fails. An emptied array is tolerated: emptied event keys are
+        pre-existing convention across every event.
+        """
+        session_entries = post_uninstall_state["settings_post"]["hooks"]["SessionStart"]
+        commands = [
+            hook["command"]
+            for entry in session_entries
+            for hook in entry.get("hooks", [])
+        ]
+
+        assert _DES_SESSION_START_COMMAND not in commands, (
+            "Uninstall left the installer's own SessionStart command in "
+            f"settings.json: {commands!r}"
+        )
+        owned = [
+            command
+            for command in commands
+            if "des.adapters.drivers.hooks.claude_code_hook_adapter" in command
+        ]
+        assert owned == [], (
+            f"Uninstall left installer-owned SessionStart hooks: {owned}"
+        )
 
     def test_uninstall_removes_retired_subagent_start_hook_keeping_user_siblings(
         self, post_uninstall_state

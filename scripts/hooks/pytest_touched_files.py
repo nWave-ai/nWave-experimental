@@ -103,6 +103,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
@@ -456,54 +457,102 @@ def _declared_environment(env: dict[str, str]) -> dict[str, str]:
     return {name: env[name] for name in ("PYTHONPATH", "PYTEST_ADDOPTS") if name in env}
 
 
+# The three records below are NamedTuple and NOT @dataclass, deliberately. This
+# module declares `from __future__ import annotations`, so every annotation is a
+# string, and the dataclass machinery resolves string annotations by looking the
+# module up in sys.modules to detect ClassVar/InitVar.
+# tests/build/test_pytest_touched_files_gate.py loads this file with importlib
+# `spec_from_file_location` + `exec_module` WITHOUT registering it in sys.modules,
+# so that lookup returns None and every test in that file errors at setup with:
+#     AttributeError: 'NoneType' object has no attribute '__dict__'
+# NamedTuple does not take that code path and loads cleanly under the same loader.
+# Measured 2026-09-25 on this file: 12 tests error as dataclasses, all pass as
+# NamedTuple. The same trap was hit and recorded in scripts/docs_site/build_site.py.
+# Do not "modernise" these back.
+class _RunContext(NamedTuple):
+    """The invocation this run launches, and the Git facts observed beside it.
+
+    One value per run: every receipt this run writes -- the pre-run one and the
+    one that closes it -- describes the SAME launch, so building it once is what
+    keeps them from disagreeing about the argv or the cwd they ran in.
+    """
+
+    command: list[str]
+    root: Path
+    env: dict[str, str]
+    started_at: str
+    git_observation: dict[str, object]
+
+
+class _SourceIdentity(NamedTuple):
+    """The path snapshots taken before the run, and after it when one ended.
+
+    The two ``_after`` halves stay None until a run has actually finished:
+    "not measured yet" and "measured and unchanged" are different facts, and
+    only the second one may be reported as drift.
+    """
+
+    selected_sources: list[dict[str, str | None]]
+    declared_touched_inputs: list[dict[str, str | None]]
+    selected_sources_after: list[dict[str, str | None]] | None = None
+    declared_touched_inputs_after: list[dict[str, str | None]] | None = None
+
+
+class _RunOutcome(NamedTuple):
+    """How far the pytest run got, if it was launched at all, and what it wrote.
+
+    ``state`` is the word that says which: `incomplete` before anything ran,
+    `timeout` for a run the bound cut off, `complete` for one that answered.
+    """
+
+    state: str
+    duration_seconds: float | None = None
+    stdout: str = ""
+    stderr: str = ""
+    exit_code: int | None = None
+
+
 def _receipt(
     *,
-    command: list[str],
-    root: Path,
-    selected_sources: list[dict[str, str | None]],
-    declared_touched_inputs: list[dict[str, str | None]],
-    git_observation: dict[str, object],
-    env: dict[str, str],
-    started: str,
-    state: str,
-    duration_seconds: float | None = None,
-    stdout: str = "",
-    stderr: str = "",
-    exit_code: int | None = None,
-    selected_sources_after: list[dict[str, str | None]] | None = None,
-    declared_touched_inputs_after: list[dict[str, str | None]] | None = None,
+    context: _RunContext,
+    outcome: _RunOutcome,
+    source_identity: _SourceIdentity,
 ) -> dict[str, object]:
     receipt: dict[str, object] = {
         "schema_version": 2,
-        "state": state,
-        "started_at": started,
-        "argv": command,
-        "cwd": str(root),
-        "selected_sources": selected_sources,
-        "declared_touched_inputs": declared_touched_inputs,
+        "state": outcome.state,
+        "started_at": context.started_at,
+        "argv": context.command,
+        "cwd": str(context.root),
+        "selected_sources": source_identity.selected_sources,
+        "declared_touched_inputs": source_identity.declared_touched_inputs,
         "candidate_identity": {
             "kind": "unknown",
             "reason": "observed_git_and_input_subset_cannot_identify_complete_executed_candidate",
-            "observed_git": git_observation,
+            "observed_git": context.git_observation,
         },
         "receipt_scope": (
             "declared touched input paths and selected test files only; excludes "
             "transitive dependencies and the ambient environment; this receipt "
             "does not grant candidate reuse"
         ),
-        "declared_environment": _declared_environment(env),
-        "stdout": stdout,
-        "stderr": stderr,
-        "exit_code": exit_code,
-        "duration_seconds": duration_seconds,
+        "declared_environment": _declared_environment(context.env),
+        "stdout": outcome.stdout,
+        "stderr": outcome.stderr,
+        "exit_code": outcome.exit_code,
+        "duration_seconds": outcome.duration_seconds,
     }
-    if selected_sources_after is not None:
-        receipt["selected_sources_after"] = selected_sources_after
-        receipt["source_identity_drift"] = selected_sources_after != selected_sources
-    if declared_touched_inputs_after is not None:
-        receipt["declared_touched_inputs_after"] = declared_touched_inputs_after
+    selected_after = source_identity.selected_sources_after
+    inputs_after = source_identity.declared_touched_inputs_after
+    if selected_after is not None:
+        receipt["selected_sources_after"] = selected_after
+        receipt["source_identity_drift"] = (
+            selected_after != source_identity.selected_sources
+        )
+    if inputs_after is not None:
+        receipt["declared_touched_inputs_after"] = inputs_after
         receipt["input_identity_drift"] = (
-            declared_touched_inputs_after != declared_touched_inputs
+            inputs_after != source_identity.declared_touched_inputs
         )
     return receipt
 
@@ -680,18 +729,23 @@ def main(argv: list[str]) -> int:
         _source_snapshots(root, runnable, initial_source_cache) if evidence_path else []
     )
     git_observation = _git_observation(root) if evidence_path else {}
+    run_context = _RunContext(
+        command=command,
+        root=root,
+        env=env,
+        started_at=started_at,
+        git_observation=git_observation,
+    )
     if evidence_path is not None:
         _atomic_json(
             evidence_path,
             _receipt(
-                command=command,
-                root=root,
-                selected_sources=selected_sources,
-                declared_touched_inputs=declared_touched_inputs,
-                git_observation=git_observation,
-                env=env,
-                started=started_at,
-                state="incomplete",
+                context=run_context,
+                outcome=_RunOutcome(state="incomplete"),
+                source_identity=_SourceIdentity(
+                    selected_sources=selected_sources,
+                    declared_touched_inputs=declared_touched_inputs,
+                ),
             ),
         )
 
@@ -702,25 +756,26 @@ def main(argv: list[str]) -> int:
         stderr = expired.stderr if isinstance(expired.stderr, str) else ""
         if evidence_path is not None:
             post_run_cache: dict[str, dict[str, str | None]] = {}
+            duration_seconds = time.monotonic() - started
             _atomic_json(
                 evidence_path,
                 _receipt(
-                    command=command,
-                    root=root,
-                    selected_sources=selected_sources,
-                    declared_touched_inputs=declared_touched_inputs,
-                    git_observation=git_observation,
-                    env=env,
-                    started=started_at,
-                    state="timeout",
-                    duration_seconds=time.monotonic() - started,
-                    stdout=stdout,
-                    stderr=stderr,
-                    selected_sources_after=_source_snapshots(
-                        root, runnable, post_run_cache
+                    context=run_context,
+                    outcome=_RunOutcome(
+                        state="timeout",
+                        duration_seconds=duration_seconds,
+                        stdout=stdout,
+                        stderr=stderr,
                     ),
-                    declared_touched_inputs_after=_source_snapshots(
-                        root, declared_touched_paths, post_run_cache
+                    source_identity=_SourceIdentity(
+                        selected_sources=selected_sources,
+                        declared_touched_inputs=declared_touched_inputs,
+                        selected_sources_after=_source_snapshots(
+                            root, runnable, post_run_cache
+                        ),
+                        declared_touched_inputs_after=_source_snapshots(
+                            root, declared_touched_paths, post_run_cache
+                        ),
                     ),
                 ),
             )
@@ -737,26 +792,27 @@ def main(argv: list[str]) -> int:
     _print_captured(stdout, stderr)
     if evidence_path is not None:
         post_run_cache = {}
+        duration_seconds = time.monotonic() - started
         _atomic_json(
             evidence_path,
             _receipt(
-                command=command,
-                root=root,
-                selected_sources=selected_sources,
-                declared_touched_inputs=declared_touched_inputs,
-                git_observation=git_observation,
-                env=env,
-                started=started_at,
-                state="complete",
-                duration_seconds=time.monotonic() - started,
-                stdout=stdout,
-                stderr=stderr,
-                exit_code=result.returncode,
-                selected_sources_after=_source_snapshots(
-                    root, runnable, post_run_cache
+                context=run_context,
+                outcome=_RunOutcome(
+                    state="complete",
+                    duration_seconds=duration_seconds,
+                    stdout=stdout,
+                    stderr=stderr,
+                    exit_code=result.returncode,
                 ),
-                declared_touched_inputs_after=_source_snapshots(
-                    root, declared_touched_paths, post_run_cache
+                source_identity=_SourceIdentity(
+                    selected_sources=selected_sources,
+                    declared_touched_inputs=declared_touched_inputs,
+                    selected_sources_after=_source_snapshots(
+                        root, runnable, post_run_cache
+                    ),
+                    declared_touched_inputs_after=_source_snapshots(
+                        root, declared_touched_paths, post_run_cache
+                    ),
                 ),
             ),
         )

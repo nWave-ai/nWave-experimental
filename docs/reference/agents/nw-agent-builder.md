@@ -31,3 +31,4 @@ Use when creating new AI agents, validating agent specifications, optimizing req
 - [nw-command-optimization-workflow](../skills/nw-command-optimization-workflow.md) — Step-by-step workflow for converting bloated command files to lean declarative definitions
 - [nw-cross-cutting-invariants](../skills/nw-cross-cutting-invariants.md) — Cross-cutting normative invariants — routing core for the software/model boundary doctrine, gate/construction principles and on-demand knowledge lenses. Cite clause ids; never re-declare.
 - [nw-design-patterns](../skills/nw-design-patterns.md) — 7 agentic design patterns with decision tree for choosing the right pattern for each agent type
+- [nw-typesafe-system-one](../skills/nw-typesafe-system-one.md) — Use Jev System One for every supported, authorized semantic judgment when available: relevance selection, handoff preflight, evidence mapping, finding clustering, and confidence-gated escalation.

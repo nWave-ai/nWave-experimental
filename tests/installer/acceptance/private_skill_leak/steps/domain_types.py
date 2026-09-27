@@ -73,7 +73,6 @@ PRIVATE_AGENT_FILES: tuple[AgentFileName, ...] = tuple(
         "nw-copywriter-reviewer.md",
         "nw-business-discoverer.md",
         "nw-business-reviewer.md",
-        "nw-ux-designer.md",
         "nw-adoption-strategist.md",
         "nw-adoption-strategist-reviewer.md",
     )

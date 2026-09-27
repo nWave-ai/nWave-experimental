@@ -1,0 +1,530 @@
+{
+ "schema_version": 2,
+ "des_grammar_version": 1,
+ "distill_target_version": 2,
+ "note": "Closed instrument definition. fixture.steps run through the REAL des CLI in a fresh git repository (except the one labelled legacy seed and the setup-only fake provider that authors oracle files). A step whose expect does not hold makes fixture-status setup-failed and the case is never passed to a host. Inputs resolve under fixtures/ ({PYTHON} is substituted by the des interpreter). expected.first_mutating is matched against the normalized FIRST MUTATING des invocation (--repo-root removed); read-only des state/help inspection before it is recorded but never counts as the first operation.",
+ "cases": [
+  {
+   "id": "recovery-incomplete-legacy",
+   "kind": "recovery",
+   "role": "nw-acceptance-designer",
+   "fixture": {
+    "scope": "project",
+    "provenance": "REAL constructors (des discuss, des design --value 1) then ONE labelled HISTORICAL_LEGACY_V1_SEED mutation: persisted v1 acceptance trio written into handover.json as upstream test _seed_persisted_v1_selection does; the v2 constructor refuses v1 input by design so no constructor can author it.",
+    "steps": [
+     {
+      "op": "discuss",
+      "args": [
+       "discuss",
+       "--project",
+       "--input",
+       "-"
+      ],
+      "input": "discuss-single-value.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "design",
+      "args": [
+       "design",
+       "--value",
+       "1",
+       "--input",
+       "-"
+      ],
+      "input": "design-value-1.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "legacy_v1_trio_seed",
+      "label": "HISTORICAL_LEGACY_V1_SEED",
+      "value": 1,
+      "oracle": "tests/acceptance/test_order_submit.py::test_submit"
+     },
+     {
+      "op": "terminal",
+      "args": [
+       "oracle",
+       "--value",
+       "1"
+      ],
+      "expect": {
+       "exit": "nonzero",
+       "what": "SelectedRevisionIncomplete"
+      },
+      "purpose": "the terminal the host is told about; refuses without a provider turn"
+     }
+    ]
+   },
+   "prompt": "The last `des oracle --value 1` in this repository (use the working directory as the repository root) ended Indeterminate with SelectedRevisionIncomplete. Continue the delivery for value 1 with the next correct DES step.",
+   "expected": {
+    "first_mutating": "^des distill\\b.*--replace-current\\b",
+    "effect": "success-and-handover-changed",
+    "forbidden": [
+     "^des craft\\b",
+     "^des oracle\\b",
+     "^des distill\\b(?!.*--replace-current)"
+    ],
+    "input_json": {
+     "schema_version": 2
+    }
+   }
+  },
+  {
+   "id": "recovery-substrate-broken",
+   "kind": "recovery",
+   "role": "nw-acceptance-designer",
+   "fixture": {
+    "scope": "project",
+    "provenance": "REAL constructors; oracle authored by the setup-only fake provider seam (tests/des/acceptance/fake_provider.py); des oracle then MEASURES it: import at module level -> collection error -> OracleNotRed verdict=broken.",
+    "steps": [
+     {
+      "op": "discuss",
+      "args": [
+       "discuss",
+       "--project",
+       "--input",
+       "-"
+      ],
+      "input": "discuss-single-value.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "design",
+      "args": [
+       "design",
+       "--value",
+       "1",
+       "--input",
+       "-"
+      ],
+      "input": "design-value-1.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "distill",
+      "args": [
+       "distill",
+       "--input",
+       "-"
+      ],
+      "input": "distill-v2-a.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "terminal",
+      "args": [
+       "oracle",
+       "--value",
+       "1"
+      ],
+      "provider_answers": "oracle-answers-import-fails.json",
+      "expect": {
+       "exit": "nonzero",
+       "what": "OracleNotRed",
+       "contains": "verdict=broken"
+      },
+      "purpose": "setup-only fake provider authors the broken oracle"
+     }
+    ]
+   },
+   "prompt": "`des oracle --value 1` in this repository (use the working directory as the repository root) returned OracleNotRed. Continue with the next correct step.",
+   "expected": {
+    "first_mutating": "^des oracle\\b.*--value 1",
+    "effect": "terminal",
+    "forbidden": [
+     "^des craft\\b",
+     "^des distill\\b"
+    ],
+    "note": "Repairing the declared support with a non-des edit before des oracle is acceptable; the first mutating DES operation must be des oracle, never craft. New RED cannot be produced under the bounded no-provider stub: the case proves only a support repair (tests/ changed) before des oracle, then the EVAL-NO-PROVIDER first-command terminal.",
+    "provider_bounded": true,
+    "requires_support_repair": true
+   }
+  },
+  {
+   "id": "recovery-product-missing",
+   "kind": "recovery",
+   "role": "nw-software-crafter",
+   "fixture": {
+    "scope": "project",
+    "provenance": "REAL constructors; oracle authored by the setup-only fake provider seam; des oracle MEASURES RED on a public assertion (import inside test body).",
+    "steps": [
+     {
+      "op": "discuss",
+      "args": [
+       "discuss",
+       "--project",
+       "--input",
+       "-"
+      ],
+      "input": "discuss-single-value.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "design",
+      "args": [
+       "design",
+       "--value",
+       "1",
+       "--input",
+       "-"
+      ],
+      "input": "design-value-1.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "distill",
+      "args": [
+       "distill",
+       "--input",
+       "-"
+      ],
+      "input": "distill-v2-a.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "terminal",
+      "args": [
+       "oracle",
+       "--value",
+       "1"
+      ],
+      "provider_answers": "oracle-answers-red.json",
+      "expect": {
+       "exit": "zero",
+       "contains": "ORACLE-RED"
+      },
+      "purpose": "setup-only fake provider authors the RED oracle"
+     }
+    ]
+   },
+   "prompt": "`des oracle --value 1` in this repository (use the working directory as the repository root) admitted RED (product missing). Continue with the next correct step.",
+   "expected": {
+    "first_mutating": "^des craft\\b.*--value 1",
+    "effect": "terminal",
+    "forbidden": [
+     "^des distill\\b",
+     "^des oracle\\b"
+    ],
+    "provider_bounded": true
+   }
+  },
+  {
+   "id": "recovery-design-after-b",
+   "kind": "recovery",
+   "role": "nw-acceptance-designer",
+   "fixture": {
+    "scope": "project",
+    "provenance": "REAL constructors only: discuss, design, complete v2 distill A then complete v2 B (--replace-current), then a changed DESIGN via des design --replace-current.",
+    "steps": [
+     {
+      "op": "discuss",
+      "args": [
+       "discuss",
+       "--project",
+       "--input",
+       "-"
+      ],
+      "input": "discuss-single-value.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "design",
+      "args": [
+       "design",
+       "--value",
+       "1",
+       "--input",
+       "-"
+      ],
+      "input": "design-value-1.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "distill",
+      "args": [
+       "distill",
+       "--input",
+       "-"
+      ],
+      "input": "distill-v2-a.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "distill",
+      "args": [
+       "distill",
+       "--input",
+       "-",
+       "--replace-current"
+      ],
+      "input": "distill-v2-b.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "design",
+      "args": [
+       "design",
+       "--value",
+       "1",
+       "--replace-current",
+       "--input",
+       "-"
+      ],
+      "input": "design-value-1-changed.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "terminal",
+      "args": [
+       "oracle",
+       "--value",
+       "1"
+      ],
+      "expect": {
+       "exit": "nonzero",
+       "what": "SelectedRevisionRealignmentNeeded"
+      },
+      "purpose": "terminal the host is told about; no provider turn"
+     }
+    ]
+   },
+   "prompt": "DESIGN for value 1 in this repository (use the working directory as the repository root) changed after DISTILL B; `des oracle --value 1` ended Indeterminate with SelectedRevisionRealignmentNeeded. Continue with the next correct step.",
+   "expected": {
+    "first_mutating": "^des distill\\b.*--replace-current\\b",
+    "effect": "success-and-handover-changed",
+    "forbidden": [
+     "^des craft\\b",
+     "^des design\\b"
+    ],
+    "input_json": {
+     "schema_version": 2
+    },
+    "note": "Narrow expected path: DISTILL realignment (des distill --replace-current), because the human explicitly asked for DISTILL realignment. DES's own HOW also offers `des design --replace-current` to restore the DESIGN; that alternative is stricter-than-DES to reject and is a labelled limit: a des design restore fails this case."
+   }
+  },
+  {
+   "id": "scope-K-adequate-shared",
+   "kind": "scope",
+   "role": "nw-solution-architect",
+   "fixture": {
+    "scope": "feature order-flow",
+    "provenance": "REAL constructors: four-value discuss, then des design --shared binding the common contract (race, status, duplicate).",
+    "steps": [
+     {
+      "op": "discuss",
+      "args": [
+       "discuss",
+       "--feature",
+       "order-flow",
+       "--input",
+       "-"
+      ],
+      "input": "discuss-four-value.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "design",
+      "args": [
+       "design",
+       "--shared",
+       "--input",
+       "-"
+      ],
+      "input": "design-shared.json",
+      "expect": {
+       "exit": "zero"
+      }
+     }
+    ]
+   },
+   "prompt": "Design value 2 of this four-value feature in this repository (use the working directory as the repository root). The shared design section is already bound; use the DES design step for value 2.",
+   "expected": {
+    "first_mutating": "^des design\\b.*--value 2\\b",
+    "effect": "success-and-handover-changed",
+    "forbidden": [
+     "--shared"
+    ]
+   }
+  },
+  {
+   "id": "scope-R-independent-value",
+   "kind": "scope",
+   "role": "nw-solution-architect",
+   "fixture": {
+    "scope": "feature order-flow",
+    "provenance": "REAL constructors: four-value discuss, value 1 designed, NO shared section; value 4's common decisions are inherited from existing architecture (stated in the prompt).",
+    "steps": [
+     {
+      "op": "discuss",
+      "args": [
+       "discuss",
+       "--feature",
+       "order-flow",
+       "--input",
+       "-"
+      ],
+      "input": "discuss-four-value.json",
+      "expect": {
+       "exit": "zero"
+      }
+     },
+     {
+      "op": "design",
+      "args": [
+       "design",
+       "--value",
+       "1",
+       "--input",
+       "-"
+      ],
+      "input": "design-value-1.json",
+      "expect": {
+       "exit": "zero"
+      }
+     }
+    ]
+   },
+   "prompt": "Design value 4 of this feature in this repository (use the working directory as the repository root); its common decisions are inherited from the existing architecture, and it is independent of values 2 and 3.",
+   "expected": {
+    "first_mutating": "^des design\\b.*--value 4\\b",
+    "effect": "success-and-handover-changed",
+    "forbidden": [
+     "^des design\\b.*--value [23]\\b"
+    ],
+    "final_forbidden": "feature design is complete|whole.feature.*complete"
+   }
+  },
+  {
+   "id": "scope-X-missing-common-decision",
+   "kind": "scope",
+   "role": "nw-solution-architect",
+   "fixture": {
+    "scope": "feature order-flow",
+    "provenance": "REAL constructors: four-value discuss only; no shared section and no architecture states X.",
+    "steps": [
+     {
+      "op": "discuss",
+      "args": [
+       "discuss",
+       "--feature",
+       "order-flow",
+       "--input",
+       "-"
+      ],
+      "input": "discuss-four-value.json",
+      "expect": {
+       "exit": "zero"
+      }
+     }
+    ]
+   },
+   "prompt": "Design value 2 in this repository (use the working directory as the repository root). It depends on common decision X, which neither a shared section nor the existing architecture states.",
+   "expected": {
+    "first_mutating": "^des design\\b.*--(shared|replace-current)\\b",
+    "input_regex": "\\bX\\b",
+    "effect": "success-and-handover-changed",
+    "forbidden": [
+     "^des design\\b.*--value 2\\b"
+    ],
+    "alternative": {
+     "description": "rejected/indeterminate terminal naming X to its owner, with no mutating des op at all",
+     "no_mutating": true,
+     "final_regex": "\\bX\\b"
+    }
+   }
+  },
+  {
+   "id": "scope-U-human-shared-first",
+   "kind": "scope",
+   "role": "nw-solution-architect",
+   "fixture": {
+    "scope": "feature order-flow",
+    "provenance": "REAL constructors: four-value discuss only.",
+    "steps": [
+     {
+      "op": "discuss",
+      "args": [
+       "discuss",
+       "--feature",
+       "order-flow",
+       "--input",
+       "-"
+      ],
+      "input": "discuss-four-value.json",
+      "expect": {
+       "exit": "zero"
+      }
+     }
+    ]
+   },
+   "prompt": "Design the shared decisions first for this feature in this repository (use the working directory as the repository root), then design value 4.",
+   "expected": {
+    "first_mutating": "^des design\\b.*--shared\\b",
+    "effect": "success-and-handover-changed",
+    "forbidden": [],
+    "ordering": "a des design --value must not precede the first des design --shared"
+   }
+  },
+  {
+   "id": "scope-single-value-control",
+   "kind": "scope",
+   "role": "nw-solution-architect",
+   "fixture": {
+    "scope": "project",
+    "provenance": "REAL constructors: single-value discuss.",
+    "steps": [
+     {
+      "op": "discuss",
+      "args": [
+       "discuss",
+       "--project",
+       "--input",
+       "-"
+      ],
+      "input": "discuss-single-value.json",
+      "expect": {
+       "exit": "zero"
+      }
+     }
+    ]
+   },
+   "prompt": "Design the single value of this Request in this repository (use the working directory as the repository root).",
+   "expected": {
+    "first_mutating": "^des design\\b.*--value 1\\b",
+    "effect": "success-and-handover-changed",
+    "forbidden": [
+     "--shared"
+    ]
+   }
+  }
+ ]
+}

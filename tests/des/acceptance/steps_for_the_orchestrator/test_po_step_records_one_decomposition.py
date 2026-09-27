@@ -43,6 +43,7 @@ def test_an_accepted_turn_records_the_graph_and_names_the_next_step(
 ) -> None:
     code, out, err = step(
         "po",
+        "--project",
         "--repo-root",
         str(root),
         answers=[accepted_values("A", "B")],
@@ -64,6 +65,87 @@ def test_an_accepted_turn_records_the_graph_and_names_the_next_step(
     assert asked(turns) == ["nw-product-owner"]
 
 
+def test_initial_finding_reaches_po_without_replacing_the_request(
+    root: Path, step, turns: Path
+) -> None:
+    finding = "Treat this as one cohesive M feature, with all requested operations."
+
+    code, out, err = step(
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        "--finding",
+        finding,
+        answers=[accepted_values("A")],
+        stdin=REQUEST,
+    )
+
+    assert code == 0, out + err
+    prompt = json.loads(turns.read_text())[-1]["prompt"]
+    assert f"request: {json.dumps(REQUEST)}" in prompt
+    assert f"finding: {json.dumps(finding)}" in prompt
+    assert json.loads((root / HANDOVER).read_text())["request"] == REQUEST
+    assert asked(turns) == ["nw-product-owner"]
+
+
+def test_stdin_finding_corrects_the_graph_and_preserves_the_original_request(
+    root: Path, step, turns: Path
+) -> None:
+    first = step(
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[accepted_values("A", "B")],
+        stdin=REQUEST,
+    )
+    assert first[0] == 0, first[1] + first[2]
+    finding = (
+        "The two values belong to one deliverable; preserve every requested behavior."
+    )
+
+    code, out, err = step(
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        "--finding",
+        "-",
+        answers=[accepted_values("A")],
+        stdin=finding,
+    )
+
+    assert code == 0, out + err
+    prompt = json.loads(turns.read_text())[-1]["prompt"]
+    assert f"request: {json.dumps(REQUEST)}" in prompt
+    assert f"finding: {json.dumps(finding)}" in prompt
+    stored = json.loads((root / HANDOVER).read_text())
+    assert stored["request"] == REQUEST
+    assert [value["observation"] for value in stored["values"]] == [observation("A")]
+    assert asked(turns) == ["nw-product-owner", "nw-product-owner"]
+
+
+def test_stdin_finding_without_a_request_buys_no_turn(
+    root: Path, step, turns: Path
+) -> None:
+    code, out, err = step(
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        "--finding",
+        "-",
+        answers=[],
+        stdin="Keep the existing request as one value.",
+    )
+
+    assert code == 1, out + err
+    assert block(out, err)["WHAT"] == "FindingRequestUnavailable"
+    assert not (root / HANDOVER).exists()
+    assert asked(turns) == []
+
+
 def test_a_rejecting_turn_forwards_the_role_diagnostic_and_runs_nothing_else(
     root: Path, step, turns: Path
 ) -> None:
@@ -75,6 +157,7 @@ def test_a_rejecting_turn_forwards_the_role_diagnostic_and_runs_nothing_else(
     )
     code, out, err = step(
         "po",
+        "--project",
         "--repo-root",
         str(root),
         answers=[
@@ -105,13 +188,23 @@ def test_the_same_request_twice_is_a_resume_and_never_a_second_paid_turn(
 ) -> None:
     """Section 4b: every step is idempotent against the two owned facts."""
     first = step(
-        "po", "--repo-root", str(root), answers=[accepted_values("A")], stdin=REQUEST
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[accepted_values("A")],
+        stdin=REQUEST,
     )
     assert first[0] == 0, first[1] + first[2]
     persisted = (root / HANDOVER).read_bytes()
 
     code, out, err = step(
-        "po", "--repo-root", str(root), answers=[accepted_values("A")], stdin=REQUEST
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[accepted_values("A")],
+        stdin=REQUEST,
     )
 
     assert code == 0, out + err
@@ -133,11 +226,19 @@ def test_a_different_request_rewrites_instead_of_refusing(
     can be corrected. Nothing is deleted silently; the previous graph is a
     readable ref.
     """
-    step("po", "--repo-root", str(root), answers=[accepted_values("A")], stdin=REQUEST)
+    step(
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[accepted_values("A")],
+        stdin=REQUEST,
+    )
     spent = len(asked(turns))
 
     code, out, err = step(
         "po",
+        "--project",
         "--repo-root",
         str(root),
         answers=[
@@ -174,7 +275,12 @@ def test_a_new_request_in_a_linked_worktree_preserves_another_requests_records_a
     intact.  This is a real Git linked-worktree topology, not a namespace mock.
     """
     code, out, err = step(
-        "po", "--repo-root", str(root), answers=[accepted_values("A")], stdin=REQUEST
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[accepted_values("A")],
+        stdin=REQUEST,
     )
     assert code == 0, out + err
     state_before = (root / HANDOVER).read_bytes()
@@ -207,7 +313,7 @@ def test_a_new_request_in_a_linked_worktree_preserves_another_requests_records_a
             claude_dir,
         )
         code, out, err = run_cli_in_process(
-            ["po", "--repo-root", str(sibling)],
+            ["po", "--repo-root", str(sibling), "--project"],
             cwd=sibling,
             env=environment,
             stdin_text=OTHER_REQUEST,
@@ -230,7 +336,9 @@ def test_a_new_request_in_a_linked_worktree_preserves_another_requests_records_a
 def test_an_empty_request_is_refused_before_any_turn_is_bought(
     root: Path, step, turns: Path
 ) -> None:
-    code, out, err = step("po", "--repo-root", str(root), answers=[], stdin="")
+    code, out, err = step(
+        "po", "--project", "--repo-root", str(root), answers=[], stdin=""
+    )
     assert code == 1
     assert block(out, err)["WHAT"] == "InvalidRequest"
     assert asked(turns) == []

@@ -5,6 +5,7 @@ model: inherit
 tools: Read, Write, Edit, Glob, Grep, Task
 maxTurns: 40
 skills:
+  - nw-typesafe-system-one
   - nw-cross-cutting-invariants
   - nw-agent-creation-workflow
   - nw-design-patterns
@@ -25,6 +26,9 @@ skills:
   - nw-ab-examples
 ---
 
+<!-- GENERATED:role-skill-loading START — source of truth: role-skill-loading.yaml (build-time registry, not shipped); do not hand-edit (docgen renders this region) -->
+- Read `~/.claude/skills/nw-ab-optimize-skill/SKILL.md` ON-TRIGGER — existing skill requested for optimization; procedure measures eligibility
+<!-- GENERATED:role-skill-loading END -->
 # nw-agent-builder
 
 You are Zeus, an Agent Architect specializing in creating Claude Code agents.

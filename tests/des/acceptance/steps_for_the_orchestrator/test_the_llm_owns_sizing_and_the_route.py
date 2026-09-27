@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 from des.cli.__main__ import _REGISTRY
@@ -63,7 +64,8 @@ def design_facts(target: str = TARGET) -> dict:
                 "decisions": ["one opaque semantic decision"],
                 "oracle": ORACLE,
                 "acceptance_supports": [SUPPORT],
-                "verification": [["python", "-m", "pytest", ORACLE]],
+                "verification": [[sys.executable, "-m", "pytest", ORACLE]],
+                "oracle_verification_index": 0,
             },
         }
     }
@@ -120,7 +122,7 @@ def test_a_size_handed_to_a_step_is_rejected_and_buys_no_turn(
 ) -> None:
     """A classification cannot be expressed to the software at all."""
     for argv in (
-        ("po", "--repo-root", str(root), "--size", "S"),
+        ("po", "--project", "--repo-root", str(root), "--size", "S"),
         ("design", "--repo-root", str(root), "--value", "1", "--size", "L"),
         ("craft", "--repo-root", str(root), "--value", "1", "--size", "M"),
         ("state", "--repo-root", str(root), "--size", "M"),
@@ -137,7 +139,12 @@ def test_the_orchestrator_may_take_a_supported_step_the_terminal_did_not_name(
 ) -> None:
     """`NEXT` is advisory data: the step it does not name is performed anyway."""
     code, out, err = step(
-        "po", "--repo-root", str(root), answers=[accepted_values("A", "B")], stdin=RECUT
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[accepted_values("A", "B")],
+        stdin=RECUT,
     )
     assert code == 0, out + err
     suggested = nexts(out)
@@ -159,13 +166,23 @@ def test_a_reclassification_is_constructed_and_never_adjudicated(
     """Re-cutting one value into two costs one turn and no admission."""
     assert (
         step(
-            "po", "--repo-root", str(root), answers=[accepted_values("A")], stdin=FIRST
+            "po",
+            "--project",
+            "--repo-root",
+            str(root),
+            answers=[accepted_values("A")],
+            stdin=FIRST,
         )[0]
         == 0
     )
 
     code, out, err = step(
-        "po", "--repo-root", str(root), answers=[accepted_values("A", "B")], stdin=RECUT
+        "po",
+        "--project",
+        "--repo-root",
+        str(root),
+        answers=[accepted_values("A", "B")],
+        stdin=RECUT,
     )
 
     assert code == 0, out + err
@@ -185,7 +202,12 @@ def test_an_upstream_return_over_a_bound_value_rebinds_on_the_finding(
     """Going back upstream needs a decision, not a permitted transition."""
     assert (
         step(
-            "po", "--repo-root", str(root), answers=[accepted_values("A")], stdin=FIRST
+            "po",
+            "--project",
+            "--repo-root",
+            str(root),
+            answers=[accepted_values("A")],
+            stdin=FIRST,
         )[0]
         == 0
     )

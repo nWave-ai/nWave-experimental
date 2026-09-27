@@ -325,3 +325,70 @@ def test_the_campaign_run_archives_without_anyone_remembering_to(
         "the durable path must be printed: an archive nobody is told about is "
         "not findable evidence"
     )
+
+
+def test_the_delivery_diff_survives_while_the_workspace_is_still_skipped(
+    tmp_path, monkeypatch
+):
+    """The archive must keep the delivered CODE, not only the run's noise.
+
+    Measured 2026-09-12 on `campaign-20260906T213056Z-b4a4f5`: 301 files kept,
+    35,978 skipped, the arm workspaces dropped with the reason "the delivered
+    code is recoverable from its own commit". That reason held while the
+    workspace existed and failed the moment it did not -- the commit dies with
+    the directory. Reconstructing the delivery and sealing it produced packets
+    whose only real files were `CHANGELOG.md` and a docs page, ~10,900 of
+    ~11,200 diff lines being a fixture virtualenv the archive HAD kept. A blind
+    rubric then scored documentation instead of a delivery, with 5 of 17
+    criteria INDETERMINATE purely for want of code.
+
+    This pins both halves at once, because either alone is the defect: the diff
+    is present, and the gigabyte workspace is still absent.
+    """
+    import subprocess
+
+    campaign = tmp_path / "campaign"
+    workspace = campaign / "pair-1" / "nwave"
+    workspace.mkdir(parents=True)
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=workspace, check=True, capture_output=True)
+
+    git("init", "--quiet", ".")
+    git("config", "user.email", "k4@example.invalid")
+    git("config", "user.name", "k4")
+    (workspace / "module.py").write_text("before\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "--quiet", "-m", "base")
+    (workspace / "module.py").write_text("after the delivery\n", encoding="utf-8")
+    # A virtualenv whose files answer the suffix allow-list BY ACCIDENT --
+    # requirement lists and package metadata are `.txt`. This is what kept
+    # the 2026-09-06 archive's fixture virtualenv while dropping the source.
+    venv = workspace / "k4-fixture-venv" / "lib" / "site-packages" / "pkg.dist-info"
+    venv.mkdir(parents=True)
+    (venv / "top_level.txt").write_text("pkg\n", encoding="utf-8")
+    (workspace / "k4-fixture-venv" / "requirements-filtered.txt").write_text(
+        "django\n", encoding="utf-8"
+    )
+
+    (campaign / "campaign.json").write_text('{"pairs": 1}', encoding="utf-8")
+    (campaign / "pair-1" / "nwave.json").write_text('{"ok": true}', encoding="utf-8")
+
+    durable = tmp_path / "durable"
+    archived = campaign_archive.archive_campaign(
+        campaign, archive_root=durable, campaign_id="probe"
+    )
+
+    patch = archived / "pair-1" / "nwave.delivery.patch"
+    assert patch.is_file(), (
+        "the delivered diff must survive archiving -- without it the quality "
+        "axis has no material and every criterion reads INDETERMINATE"
+    )
+    assert "after the delivery" in patch.read_text(encoding="utf-8"), (
+        "the patch must carry the delivered change, not an empty file: an empty "
+        "patch is indistinguishable from a delivery that changed nothing"
+    )
+    assert not (archived / "pair-1" / "nwave").exists(), (
+        "the arm workspace must still be skipped -- keeping gigabytes per "
+        "campaign is the cost that got the previous archive step switched off"
+    )

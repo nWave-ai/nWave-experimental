@@ -245,6 +245,7 @@ def _patch_wheel_packages(text: str, new_name: str) -> tuple[str, str | None]:
         '"nWave/README.md" = "nWave/README.md"\n'
         '"scripts/install" = "scripts/install"\n'
         '"scripts/shared" = "scripts/shared"\n'
+        '"scripts/docs_site/static/logo.svg" = "scripts/docs_site/static/logo.svg"\n'
         f"{utility_scripts_block}"
         '"lib/python/des" = "des"\n'
         '"src/nwave_capture" = "nwave_capture"\n'

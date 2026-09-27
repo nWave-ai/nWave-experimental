@@ -5,11 +5,20 @@ Defect (audit AUDIT-installer.md #2, ALTA): the post-install Quick-start
 panel (``install_nwave.py:show_installation_summary``) and the persisted
 ``nwave-manifest.txt`` (``install_utils.py:ManifestWriter.
 write_install_manifest``) advertised ``/nw-develop`` and ``/nw-start`` --
-neither exists. The real commands are ``/nw-deliver`` (Outside-In TDD
+neither exists. The real commands were ``/nw-deliver`` (Outside-In TDD
 implementation with refactoring) and ``/nw-new`` (the feature-start wizard).
+``/nw-new`` has since been retired: its Claude Code skill in ``cd0ce87c4``,
+and its ``nWave/tasks/nw/new.md`` OpenCode and plugin command on 2026-09-21.
 Wrong from the FIRST interaction offered after a declared-successful install,
 and persisted to disk in the manifest (a durable reference, not a transient
 terminal message).
+
+Second defect (2026-09-17): the tasks directory is the SSOT for which commands
+exist on OpenCode, not on Claude Code, where every command is a skill under
+``nWave/skills/nw-<name>/``. So the Claude-facing manifest line and the
+Claude ``CLAUDE.md`` section kept advertising ``/nw-new`` while the check below
+passed. ``TestClaudeFacingSurfacesNameShippedSkills`` checks those surfaces
+against the skills directory instead.
 
 Fix: the two wrong tuples/strings were corrected. This module additionally
 guards against RE-divergence: every ``/nw-*`` or ``$nw-*`` token that appears
@@ -107,3 +116,57 @@ class TestManifestReferencesRealCommands:
         manifest_text = (claude_dir / "nwave-manifest.txt").read_text(encoding="utf-8")
         assert "nw-develop" not in manifest_text
         assert "nw-start" not in manifest_text
+
+
+_CLAUDE_SECTION_BEGIN = "<!-- BEGIN nWave-beta-section"
+_CLAUDE_SECTION_END = "<!-- END nWave-beta-section -->"
+
+
+def _shipped_skill_names() -> set[str]:
+    """The Claude Code SSOT: every command ships as nWave/skills/nw-<name>/."""
+    skills_dir = _project_root() / "nWave" / "skills"
+    return {p.name for p in skills_dir.glob("nw-*") if (p / "SKILL.md").is_file()}
+
+
+def _assert_all_commands_are_shipped_skills(text: str, *, surface: str) -> None:
+    shipped = _shipped_skill_names()
+    assert shipped, "Sanity check: nWave/skills/nw-*/SKILL.md must be discoverable"
+    referenced = set(_COMMAND_TOKEN_RE.findall(text))
+    unknown = sorted(referenced - shipped)
+    assert not unknown, (
+        f"{surface} names command(s) that Claude Code does not ship as a skill "
+        f"under nWave/skills/: {unknown}"
+    )
+
+
+class TestClaudeFacingSurfacesNameShippedSkills:
+    """Claude-facing text must name only commands Claude Code actually installs."""
+
+    def test_claude_manifest_names_only_shipped_skills(self, tmp_path):
+        from scripts.install.install_utils import ManifestWriter
+
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        ManifestWriter.write_install_manifest(claude_dir, None, tmp_path)
+
+        manifest_text = (claude_dir / "nwave-manifest.txt").read_text(encoding="utf-8")
+        _assert_all_commands_are_shipped_skills(
+            manifest_text, surface="nwave-manifest.txt (Claude Code)"
+        )
+
+    def test_claude_section_template_names_only_shipped_skills(self):
+        template = (
+            _project_root() / "nWave" / "templates" / "beta-project-claude-section.md"
+        ).read_text(encoding="utf-8")
+        _assert_all_commands_are_shipped_skills(
+            template, surface="beta-project-claude-section.md"
+        )
+
+    def test_rendered_repository_claude_section_names_only_shipped_skills(self):
+        text = (_project_root() / "CLAUDE.md").read_text(encoding="utf-8")
+        start = text.find(_CLAUDE_SECTION_BEGIN)
+        end = text.find(_CLAUDE_SECTION_END)
+        assert 0 <= start < end, "CLAUDE.md must carry the managed nWave section"
+        _assert_all_commands_are_shipped_skills(
+            text[start:end], surface="CLAUDE.md managed nWave section"
+        )

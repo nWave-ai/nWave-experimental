@@ -6,5 +6,5 @@ argument-hint: '[product question or outcome]'
 # NW-DISCUSS
 
 Load `~/.claude/skills/nw-discuss/SKILL.md`; it is the sole orchestration owner.
-Update durable product authorities once. Do not create a feature workspace,
+Role: installed `nw-product-owner` (see `nw-role-invocation`). Update durable product authorities once. Do not create a feature workspace,
 delivery plan, contract, charter or progress artifact in this task.

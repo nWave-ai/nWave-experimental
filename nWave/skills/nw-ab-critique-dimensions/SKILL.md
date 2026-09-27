@@ -57,11 +57,11 @@ Which producer could make the unsafe action unrepresentable — did the spec con
 
 Does the agent ensure skills are actually loaded during execution?
 
-**Check**: Skill Loading Strategy table present for agents with 3+ skills | Every frontmatter skill has matching `Load:` directive in workflow | Skills path documented (`~/.claude/skills/nw-{skill-name}/SKILL.md`) | Phase-gated loading (not "load everything at start")
+**Check**: Every frontmatter skill is an existing always-needed asset and is not reloaded by a matching directive or table row | Supported native hosts and DES adapters preload those skills once | Each intended conditional skill stays outside frontmatter and has a precise executable `Read` path or permitted `Invoke Skill` trigger | A knowledge skill with `disable-model-invocation: true` uses `Read`, never `Invoke Skill`.
 
-**Severity**: High — orphan skills (declared but never loaded ON-TRIGGER) mean sub-agents either waste context on unused eager preload or operate without domain knowledge. The `skills:` frontmatter field eagerly preloads full skill content into context; omit it and load ON-TRIGGER instead. A directive that invokes a skill carrying `disable-model-invocation: true` is worse than an orphan: the role reaches the trigger, the Skill tool refuses, and the run stalls with no fallback. Reject any `Invoke Skill(x)` whose target carries that flag — it must instruct a Read of the skill path.
+**Severity**: High — an orphan is a missing declared asset or genuinely intended conditional knowledge without a reachable trigger. It is not an eager frontmatter preload with no redundant directive. A directive that invokes a skill carrying `disable-model-invocation: true` stalls when the Skill tool refuses; require a Read path instead.
 
-**Gold standard**: `nw-product-owner.md` — Skill Loading Strategy table mapping phases to skills with triggers + explicit `Load:` directives in each workflow phase.
+**Evidence**: Review the exact candidate under review and name its source, staged-build, or installed-artifact location. Do not attribute a finding from an unrelated or stale distribution artifact to that candidate.
 
 ## Dimension 8: Token Efficiency
 
