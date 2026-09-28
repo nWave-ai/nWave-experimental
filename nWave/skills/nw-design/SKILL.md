@@ -344,3 +344,68 @@ The semantic input records the decision evidence, public validation, and
 executable support. DES alone projects those facts into the authority and
 handover. Use an opaque diagnostic only to summarize a refusal or remaining
 uncertainty for a human; it is never a machine-readable terminal grammar.
+
+## Wave-end expansion offer — resolved at entry, said at the end
+
+At the START of this wave, before any design work, run once:
+
+```
+des wave-entry --repo-root <repository top level> --wave design
+```
+
+It is read-only: it writes nothing and changes no document. Retain its output
+for the rest of the wave.
+
+When the wave is complete:
+
+- If the output contains `WAVE-END-OFFER-CHAT: `, say only the text that
+  follows that marker as the optional offer. You may render it in the language
+  of the conversation. Add no label, token, metadata, or second offer. Other
+  modes follow their distinct rules below.
+- Obey the `WAVE-END-OFFER-INTERNAL-*` rows. They are addressed to you alone;
+  never show them, or any part of them, to the user.
+- Do NOT reread the configuration at the end of the wave. The preference was
+  already resolved at entry.
+
+If the output says `WAVE-END-OFFER: none`, say nothing about expansion at all.
+That silence is the resolved preference, not a missing capability. It constrains
+only what you raise proactively: a direct request from the user for more detail is
+answered as usual.
+
+If the output says `WAVE-END-OFFER: unprompted`, there is no offer and nothing for
+the user to accept. Obey the `WAVE-END-OFFER-INTERNAL-EXPAND` row: at the end of
+the wave, explain unprompted — in the language of the conversation — what the
+completed design wave produced, writing that explanation yourself from the wave's
+accepted documents. Ask no question and wait for no acceptance. There is no
+`WAVE-END-OFFER-CHAT` row in this mode, so relay nothing verbatim.
+
+If the output says `WAVE-END-OFFER: conditional`, ask whether the completed wave
+really produced `concrete optional context` according to the
+`WAVE-END-OFFER-INTERNAL-TRIGGER` rows. Only if it did, say in chat only the text
+following `WAVE-END-OFFER-CHAT-IF: ` and nothing else about expansion. Otherwise,
+say nothing about expansion and do not invent context to justify an offer. Do not
+reread the configuration and do not invoke a wave-end step.
+
+If the output says `WAVE-END-OFFER: named`, the same gate applies: ask whether the
+completed wave really produced `concrete optional context` according to the
+`WAVE-END-OFFER-INTERNAL-TRIGGER` rows. There is no relayable sentence in this
+mode — relay nothing verbatim and repeat no internal row. Obey the
+`WAVE-END-OFFER-INTERNAL-NAMING` row: compose one short question yourself, in the
+language of the conversation, naming explicitly **at most two** specific topics,
+each taken from what the wave really produced — never a category label from the
+trigger rows. Do not invent a topic; name one if only one exists, and say nothing
+about expansion if none exists. Say the explanation is optional and that silence
+changes nothing. Do not reread the configuration and do not invoke a wave-end step.
+
+If `des wave-entry` prints `DELIVERY-OUTCOME: Refusal`, do NOT begin the wave
+work. Show the operator that refusal's WHAT/WHY/HOW verbatim — it already names
+the offending setting, the value supplied and every accepted value — and stop
+until the configuration is repaired.
+
+If it returns `Indeterminate`, make no offer and do not invent one; report its
+WHAT/WHY/HOW to the human.
+
+Say nothing about expansion before your final response for this wave, and only
+after the whole wave has really completed. The `WAVE-END-OFFER-INTERNAL-NOT-NOW`
+rows decide which situations carry no offer — a single DES step terminal of any
+outcome among them. Invoke no wave-end step: none exists.

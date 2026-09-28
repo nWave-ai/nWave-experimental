@@ -281,8 +281,19 @@ class OpenCodeSkillsPlugin(InstallationPlugin):
                 build_ownership_map(agents_dir) if agents_dir.exists() else {}
             )
 
+            # User-invocable command skills (e.g. the wave skills) are public
+            # even without an owning agent; the Claude and Codex call sites
+            # resolve them the same way.
+            from scripts.shared.agent_catalog import detect_command_skills
+
+            command_skills = (
+                set() if context.dev_mode else detect_command_skills(skills_source)
+            )
+
             entries = enumerate_skills(skills_source)
-            entries = filter_public_skills(entries, public_agents, ownership_map)
+            entries = filter_public_skills(
+                entries, public_agents, ownership_map, command_skills
+            )
 
             duplicate_names = _detect_duplicate_names(entries)
 

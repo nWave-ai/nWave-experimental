@@ -180,6 +180,15 @@ _REGISTRY: tuple[_SubcommandRow, ...] = (
     # be produced by a crossing that carried nothing. This row is the whole
     # public surface of that value -- no second surface advertises it.
     _SubcommandRow("verify-agreement", "des.cli.verify_agreement", "main"),
+    # The READ-ONLY wave-entry query. It resolves the documentation preference
+    # ONCE, at the start of a wave, and hands back ONE relayable chat sentence
+    # plus separate assistant-only instruction rows, for when that wave
+    # completes -- so the end of a wave invokes no step and rereads no
+    # configuration. Deliberately outside
+    # the canonical delivery order: no NEXT line names it, and it is not
+    # projected through `des state`, which an orchestrator runs after EVERY
+    # terminal and which would therefore surface the offer after every step.
+    _SubcommandRow("wave-entry", "des.cli.wave_entry", "main"),
 )
 
 

@@ -150,14 +150,24 @@ output on its own.
 
 #### `documentation.expansion_prompt` (string, optional)
 
-Valid values: `ask`, `always-skip`, `always-expand`, `smart`,
-`ask-intelligent`. Same resolver and same caveat as `documentation.density`
-above: it is validated and resolved by `resolve_density()` and reported by
-`nwave-ai doctor`, but there is no shipped `--expand` CLI flag and no
-implemented wave-end expansion menu to consume it yet. If you want more
-detail on a specific feature today, ask the assisting LLM directly during
-the wave; it produces additional detail through the existing DES document
-producer rather than through a persisted, freeform handoff document.
+`ask`, `always-skip`, `always-expand`, `smart`, `ask-intelligent`. The
+existing density resolver validates this preference; `nwave-ai doctor` reports
+the resolved configuration. For the seven installed waves, `des wave-entry`
+reads it once from global config before work starts. The assistant applies it
+only after that wave completes; it never opens an interactive CLI menu and
+does not make an offer after a lone DES step or an unsuccessful wave.
+
+| Value | Assistant response after a completed wave |
+|---|---|
+| `ask` | Offers optional detail. |
+| `always-skip` | Does not offer detail. |
+| `always-expand` | Explains pertinent detail directly, without asking. |
+| `smart` | Offers detail only if the result contains a concrete optional alternative, trade-off, risk, constraint, or deferred consequence. |
+| `ask-intelligent` | Uses the same condition as `smart` and names at most two specific relevant topics from the completed result. |
+
+The offer is a chat response, not a document edit. Accepting or ignoring it
+does not change accepted documents or execute another DES step. You may ask
+for more detail directly at any time, even with `always-skip`.
 
 `nwave-ai install` checks existing documentation preferences before writing any
 installation files, including when `--density-only` is used. An invalid

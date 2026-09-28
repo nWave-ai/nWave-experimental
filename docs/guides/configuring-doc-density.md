@@ -1,8 +1,7 @@
 # How to configure documentation density
 
-This guide shows you how to set the `documentation.density` and
-`documentation.expansion_prompt` preferences in nWave's config, and what
-those values currently do (and do not yet do).
+This guide shows how to set `documentation.density` and
+`documentation.expansion_prompt` in the global nWave config.
 
 ## Prerequisites
 
@@ -10,18 +9,15 @@ those values currently do (and do not yet do).
 - A text editor
 - Basic familiarity with JSON files
 
-## What this actually controls today
+## What these settings control
 
-`documentation.density` and `documentation.expansion_prompt` are validated
-and resolved by `scripts/shared/density_config.py:resolve_density()`, and the
-resolved value is surfaced by `nwave-ai doctor`. That is the current, real
-surface: a declared preference you can inspect and verify. There is **no**
-`--expand` CLI flag and **no** implemented wave-end expansion menu in the
-current codebase — if earlier docs or your memory of nWave described either,
-that described a plan, not shipped behavior. If you want more detail on a
-specific feature, ask the assisting LLM directly during the wave; it produces
-the extra detail through the existing DES typed document producer rather
-than through a separate expansion mechanism.
+`documentation.density` selects a declared documentation preference; it does
+not by itself change the sections that a wave produces. `nwave-ai doctor`
+reports the resolved setting. `documentation.expansion_prompt` controls what
+the assistant says about optional detail after a **completed** wave. The
+assistant resolves it once at wave entry. There is no interactive CLI menu or
+`--expand` flag. A single DES step, a refused or indeterminate wave, and a
+stopped wave do not produce a proactive offer.
 
 ## Quick start: Change density via config
 
@@ -106,11 +102,20 @@ This resolves to `density: lean` with `expansion_prompt: always-expand`
 
 ## Getting more detail on a specific feature
 
-There is currently no `--expand` flag and no wave-end expansion prompt
-implementation to drive automatically. If `lean` output leaves out detail
-you want for one feature, ask the assisting LLM in the conversation for
-that detail; it can produce it through the existing DES document producer
-without you touching global configuration or waiting for a future feature.
+Set `documentation.expansion_prompt` in `~/.nwave/config.json`:
+
+| Value | After a completed wave |
+|---|---|
+| `ask` | Offer an optional explanation. |
+| `always-skip` | Do not offer an explanation. |
+| `always-expand` | Explain relevant detail directly without asking first. |
+| `smart` | Offer an optional explanation only when the completed result contains a concrete alternative, trade-off, risk, constraint, or deferred consequence. |
+| `ask-intelligent` | Use the `smart` condition and name at most two relevant topics from the actual result in the optional offer. This is the default when no preference or rigor profile is set. |
+
+You can ask the assistant for more detail at any time, including with
+`always-skip`. A direct question receives an answer; it does not change
+accepted documents or trigger another DES step. Ignoring an offer also
+changes nothing.
 
 ---
 

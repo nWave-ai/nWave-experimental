@@ -61,3 +61,24 @@ apply the worktree lifecycle and completed-feature evolution guidance in
 host skill catalog and read its `SKILL.md`.
 
 Document scope must be explicit for DISCUSS, PO and DEVOPS. The examples select a feature; alternatives are `--project`, `--epic EPIC_ID`, or `--slice FEATURE_ID SLICE_ID`. Select exactly one. Later steps inherit the persisted scope.
+
+## Wave-end expansion offer — resolved at entry, said at the end
+
+At the START of this wave, before any devops work, run once:
+
+```
+des wave-entry --repo-root <repository top level> --wave devops
+```
+
+It is read-only. Retain its output for the rest of the wave and obey the
+`WAVE-END-OFFER-INTERNAL-*` rows; they are addressed to you alone and are never
+shown to the user. Do not reread the configuration later: the preference was
+already resolved at this entry.
+
+Say nothing about expansion before your final response for this wave, and only
+after the whole wave has really completed. The `WAVE-END-OFFER-INTERNAL-NOT-NOW`
+rows decide which situations carry no offer — a single DES step terminal of any
+outcome among them. Invoke no wave-end step: none exists.
+
+If `des wave-entry` refuses or returns `Indeterminate`, make no offer and do not
+invent one; report its WHAT/WHY/HOW to the human.

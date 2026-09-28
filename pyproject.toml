@@ -34,7 +34,7 @@ path = "scripts/release/offline_wheelhouse_hook.py"
 
 [project]
 name = "nwave-ai"
-version = "4.0.0+atddpure.59c47180b"
+version = "4.0.0+atddpure.6fc9d71b2"
 description = "Modern CLI installer for nwave with rich terminal UI"
 readme = "README.md"
 license = {text = "MIT"}
@@ -73,11 +73,11 @@ dependencies = [
     "rich>=13.7.0",
     "typer>=0.27.2",
     "pydantic>=2.13.5",
-    "pydantic-settings>=2.14.2",
+    "pydantic-settings>=2.15.0",
     "httpx>=0.27.0",
     "platformdirs>=4.11.12",
     "pyyaml>=6.0",
-    "packaging>=21.0",
+    "packaging>=26.3",
     "tomli>=2.0.0; python_version < '3.11'",
     "typing_extensions>=4.16.0",
     "jsonschema>=4.0.0"
@@ -114,18 +114,18 @@ dev = [
     "pytest-split>=0.11.0",
     "allure-pytest>=2.16.1",
     "respx>=0.20.0",
-    "hypothesis>=6.168.0",
+    "hypothesis>=6.168.1",
     # Mutation testing
-    "cosmic-ray>=8.4.0",
+    "cosmic-ray>=8.7.0",
     "mutmut==3.8.0",
     # Linting & formatting
-    "mypy>=2.3.0",
+    "mypy>=2.3.1",
     "ruff==0.16.9",
     "bandit[toml]>=1.9.4",
     "detect-secrets>=1.4.0",
     # Git & release
-    "pre-commit>=4.6.1",
-    "commitizen>=4.18.1",
+    "pre-commit>=4.6.2",
+    "commitizen>=4.19.0",
     # `gitlint-core` (not the `gitlint` meta-package) — the meta-package forces the
     # `trusted-deps` extra, which exact-pins `sh==1.14.3` (CVE-2026-54552 /
     # GHSA-q38v-wp89-2w55, incomplete privilege drop in `sh`'s `_uid` option).
@@ -144,12 +144,12 @@ dev = [
     # future `uv lock` re-resolution could silently drop back below the patched
     # version. gitpython + aiohttp come in via cosmic-ray (mutation testing);
     # pillow comes in via fpdf2 (PDF report generation).
-    "gitpython>=3.1.58",
+    "gitpython>=3.1.60",
     "aiohttp>=3.14.3",
     # Task runner (replaces Pipfile [scripts]; run via `uv run poe <task>`)
     "poethepoet>=0.48.0",
     # Utilities
-    "fpdf2>=2.7.0",
+    "fpdf2>=2.8.8",
     "pillow>=12.3.0",
     "click>=8.5.0",
     "colorama>=0.4.0",
@@ -171,7 +171,7 @@ dev = [
     # (unlike the prior pipenv venv), so it MUST be declared or every
     # build-leg test fails with
     # "No module named pip". Env-parity restore after the pipenv->uv merge.
-    "pip>=24.0"
+    "pip>=26.2.0"
 ]
 
 [project.urls]
